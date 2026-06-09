@@ -57,6 +57,7 @@ type RefreshOptions = {
 }
 
 const MAX_COMPARISON_RUNS = 10
+const ALL_COMPARISON_ACTIONS = 'all'
 
 type ResultSourceRow = {
   rowKey: string
@@ -287,6 +288,72 @@ function formatBaselinePin(value?: string) {
   return value ? new Date(value).toLocaleString() : 'Pinned baseline'
 }
 
+function comparisonFilenameToken(value: string) {
+  return value.trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'transaction'
+}
+
+function peakComparisonTPS(summaries: IntervalSummaryRecord[]) {
+  return summaries.reduce((peak, summary) => Math.max(peak, summary.tps || 0), 0)
+}
+
+function peakComparisonSummaryMetric(summaries: IntervalSummaryRecord[], metric: ComparisonChartMetric) {
+  const values = summaries
+    .map(summary => comparisonChartMetricValue(summary, metric))
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  if (values.length === 0) return undefined
+  return Math.max(...values)
+}
+
+function comparisonTableMetricLabel(metric: ComparisonChartMetric) {
+  const config = getComparisonChartMetricConfig(metric)
+  if (metric === 'art') return 'Avg ART'
+  if (metric === 'tps') return 'Peak TPS'
+  if (metric === 'errors') return 'Error Rate'
+  return config.label
+}
+
+function comparisonTableMetricValue(stats: RunArchiveActionStats | undefined, summaries: IntervalSummaryRecord[], metric: ComparisonChartMetric, actionFiltered: boolean) {
+  switch (metric) {
+    case 'art':
+      return finiteComparisonValue(stats?.avg_response_ms)
+    case 'p50':
+      return finiteComparisonValue(stats?.p50_ms) ?? (actionFiltered ? peakComparisonSummaryMetric(summaries, metric) : undefined)
+    case 'p90':
+      return finiteComparisonValue(stats?.p90_ms) ?? (actionFiltered ? peakComparisonSummaryMetric(summaries, metric) : undefined)
+    case 'p95':
+      return finiteComparisonValue(stats?.p95_ms) ?? (actionFiltered ? peakComparisonSummaryMetric(summaries, metric) : undefined)
+    case 'p99':
+      return finiteComparisonValue(stats?.p99_ms) ?? (actionFiltered ? peakComparisonSummaryMetric(summaries, metric) : undefined)
+    case 'errors':
+      return finiteComparisonValue(stats?.error_pct)
+    case 'tps':
+      return finiteComparisonValue(stats?.peak_tps) ?? (actionFiltered ? peakComparisonSummaryMetric(summaries, metric) : undefined)
+    default:
+      return undefined
+  }
+}
+
+function finiteComparisonValue(value: number | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function formatComparisonTableMetricValue(value: number | undefined, metric: ComparisonChartMetric) {
+  if (value === undefined) return '-'
+  return formatComparisonChartValue(value, getComparisonChartMetricConfig(metric).valueFormat)
+}
+
+function formatComparisonTableDelta(delta: number | undefined, metric: ComparisonChartMetric) {
+  if (delta === undefined) return '-'
+  const formatted = formatComparisonChartValue(Math.abs(delta), getComparisonChartMetricConfig(metric).valueFormat)
+  return `${delta >= 0 ? '+' : '-'}${formatted}`
+}
+
+function comparisonTableDeltaClass(delta: number | undefined, metric: ComparisonChartMetric) {
+  if (delta === undefined || delta === 0) return 'cell-muted'
+  if (metric === 'tps') return delta > 0 ? 'text-success' : 'text-danger'
+  return delta > 0 ? 'text-danger' : 'text-success'
+}
+
 function SortIcon({ active, direction }: { active: boolean; direction: 'asc' | 'desc' }) {
   if (!active) return <span className="sort-icon">↕</span>
   return <span className="sort-icon active">{direction === 'asc' ? '↑' : '↓'}</span>
@@ -304,6 +371,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
   const [comparisonError, setComparisonError] = useState('')
   const [comparisonBreakdown, setComparisonBreakdown] = useState<ComparisonBreakdown>('device')
   const [comparisonChartMetric, setComparisonChartMetric] = useState<ComparisonChartMetric>('tps')
+  const [comparisonActionFilter, setComparisonActionFilter] = useState(ALL_COMPARISON_ACTIONS)
   const [error, setError] = useState('')
   const [resultsLoading, setResultsLoading] = useState(true)
   const [resultsRefreshing, setResultsRefreshing] = useState(false)
@@ -378,6 +446,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     setSelectedIds(new Set())
     setComparisonTestIds([])
     setComparisonTestSnapshots([])
+    setComparisonActionFilter(ALL_COMPARISON_ACTIONS)
     setReleaseFilter(activeRelease?.id || 'all')
   }, [activeRelease?.id])
 
@@ -573,6 +642,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     [completed, comparisonSnapshotIdKey, comparisonTestIdKey, comparisonTestIds, comparisonTestSnapshots],
   )
 
+  const comparisonSummaryAction = comparisonActionFilter === ALL_COMPARISON_ACTIONS ? undefined : comparisonActionFilter
+
   useEffect(() => {
     if (comparisonTestIds.length < 2 || comparisonTestIds.length > MAX_COMPARISON_RUNS) {
       setComparisonReports({})
@@ -598,7 +669,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
           comparisonTests.map(async test => [test.id, (await api.getTestArchiveReport(test.id)) as RunArchiveReport] as const),
         )
         const summaries = await Promise.all(
-          comparisonTests.map(async test => [test.id, ((await api.getTestArchiveSummaries(test.id, { limit: 120, offset: 0 })).summaries || []) as IntervalSummaryRecord[]] as const),
+          comparisonTests.map(async test => [test.id, ((await api.getTestArchiveSummaries(test.id, { limit: 120, offset: 0, action: comparisonSummaryAction })).summaries || []) as IntervalSummaryRecord[]] as const),
         )
         if (!cancelled) {
           setComparisonReports(Object.fromEntries(reports))
@@ -619,16 +690,34 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     return () => {
       cancelled = true
     }
-  }, [api, comparisonTestIdKey, comparisonTests])
+  }, [api, comparisonSummaryAction, comparisonTestIdKey, comparisonTests])
 
   const comparisonCards = useMemo(() => {
     if (comparisonTests.length < 2 || comparisonTests.length > MAX_COMPARISON_RUNS) return []
     return comparisonTests.map(test => ({ test, report: comparisonReports[test.id] }))
   }, [comparisonReports, comparisonTests])
 
+  const comparisonActionOptions = useMemo(() => {
+    if (comparisonCards.length < 2 || !comparisonCards.every(item => item.report)) return []
+    const actionSets = comparisonCards.map(({ report }) => new Set(Object.keys(report?.by_action || {}).filter(Boolean)))
+    if (actionSets.some(set => set.size === 0)) return []
+    const [first, ...rest] = actionSets
+    return Array.from(first)
+      .filter(action => rest.every(set => set.has(action)))
+      .sort((left, right) => left.localeCompare(right))
+  }, [comparisonCards])
+
+  const comparisonActionFiltered = comparisonActionFilter !== ALL_COMPARISON_ACTIONS
+
+  useEffect(() => {
+    if (comparisonActionFilter !== ALL_COMPARISON_ACTIONS && !comparisonActionOptions.includes(comparisonActionFilter)) {
+      setComparisonActionFilter(ALL_COMPARISON_ACTIONS)
+    }
+  }, [comparisonActionFilter, comparisonActionOptions])
+
   const comparisonHasBrowserBreakdowns = useMemo(
-    () => comparisonCards.some(({ report }) => getBrowserDeviceEntries(report).length > 0 || getBrowserPlatformEntries(report).length > 0 || getBrowserEngineEntries(report).length > 0),
-    [comparisonCards],
+    () => !comparisonActionFiltered && comparisonCards.some(({ report }) => getBrowserDeviceEntries(report).length > 0 || getBrowserPlatformEntries(report).length > 0 || getBrowserEngineEntries(report).length > 0),
+    [comparisonActionFiltered, comparisonCards],
   )
 
   const exportComparison = useCallback(async () => {
@@ -637,39 +726,62 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     }
 
     const [baseline, ...comparisonRuns] = comparisonCards
+    const action = comparisonActionFiltered ? comparisonActionFilter : undefined
+    const actionFilename = action ? `-${comparisonFilenameToken(action)}` : ''
     try {
       if (comparisonCards.length === 2) {
         const [current] = comparisonRuns
-        const blob = await api.downloadTestArchiveComparison(current.test.id, baseline.test.id, comparisonBreakdown)
-        downloadBlob(blob, `archive-comparison-${current.test.id}-${baseline.test.id}-${comparisonBreakdown}.csv`)
+        const blob = action
+          ? await api.downloadTestArchiveComparison(current.test.id, baseline.test.id, comparisonBreakdown, action)
+          : await api.downloadTestArchiveComparison(current.test.id, baseline.test.id, comparisonBreakdown)
+        downloadBlob(blob, `archive-comparison-${current.test.id}-${baseline.test.id}-${comparisonBreakdown}${actionFilename}.csv`)
       } else {
-        const blob = await api.downloadTestArchiveMultiComparison(baseline.test.id, comparisonRuns.map(item => item.test.id), comparisonBreakdown)
-        downloadBlob(blob, `archive-comparison-${baseline.test.id}-${comparisonCards.length}-runs-${comparisonBreakdown}.csv`)
+        const comparisonIds = comparisonRuns.map(item => item.test.id)
+        const blob = action
+          ? await api.downloadTestArchiveMultiComparison(baseline.test.id, comparisonIds, comparisonBreakdown, action)
+          : await api.downloadTestArchiveMultiComparison(baseline.test.id, comparisonIds, comparisonBreakdown)
+        downloadBlob(blob, `archive-comparison-${baseline.test.id}-${comparisonCards.length}-runs-${comparisonBreakdown}${actionFilename}.csv`)
       }
       setComparisonError('')
     } catch (error: unknown) {
       setComparisonError(getErrorMessage(error, 'Unable to export comparison CSV'))
     }
-  }, [api, comparisonBreakdown, comparisonCards])
+  }, [api, comparisonActionFilter, comparisonActionFiltered, comparisonBreakdown, comparisonCards])
 
   const comparisonActionRows = useMemo(() => {
     if (comparisonCards.length < 2 || !comparisonCards.every(item => item.report)) return []
     const [baseline] = comparisonCards
     const baselineActions = baseline.report?.by_action || {}
     const actionNames = new Set<string>()
-    comparisonCards.forEach(({ report }) => {
-      Object.keys(report?.by_action || {}).forEach(name => actionNames.add(name))
-    })
+    if (comparisonActionFiltered) {
+      actionNames.add(comparisonActionFilter)
+    } else {
+      comparisonCards.forEach(({ report }) => {
+        Object.keys(report?.by_action || {}).forEach(name => actionNames.add(name))
+      })
+    }
     return Array.from(actionNames)
       .map(name => {
-        const baselineMs = baselineActions[name]?.avg_response_ms || 0
+        const baselineMetricValue = comparisonTableMetricValue(
+          baselineActions[name] as RunArchiveActionStats | undefined,
+          comparisonSummaries[baseline.test.id] || [],
+          comparisonChartMetric,
+          comparisonActionFiltered,
+        )
         const runs = comparisonCards.map((card, index) => {
           const stats = card.report?.by_action?.[name] as RunArchiveActionStats | undefined
-          const deltaMs = (stats?.avg_response_ms || 0) - baselineMs
+          const metricValue = comparisonTableMetricValue(
+            stats,
+            comparisonSummaries[card.test.id] || [],
+            comparisonChartMetric,
+            comparisonActionFiltered,
+          )
+          const metricDelta = metricValue !== undefined && baselineMetricValue !== undefined ? metricValue - baselineMetricValue : undefined
           return {
             test: card.test,
             stats,
-            deltaMs,
+            metricValue,
+            metricDelta,
             isBaseline: index === 0,
             color: comparisonRunColor(index),
           }
@@ -677,12 +789,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
         return {
           name,
           runs,
-          maxDeltaMs: Math.max(...runs.map(run => Math.abs(run.deltaMs))),
+          maxDelta: Math.max(...runs.map(run => Math.abs(run.metricDelta ?? 0))),
         }
       })
-      .sort((a, b) => b.maxDeltaMs - a.maxDeltaMs)
+      .sort((a, b) => b.maxDelta - a.maxDelta)
       .slice(0, 8)
-  }, [comparisonCards])
+  }, [comparisonActionFilter, comparisonActionFiltered, comparisonCards, comparisonChartMetric, comparisonSummaries])
 
   const comparisonChartData = useMemo(() => {
     if (comparisonCards.length < 2 || !comparisonCards.every(item => item.report)) return []
@@ -711,7 +823,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
   }, [comparisonCards, comparisonChartMetric])
 
   const browserBreakdownChartData = useMemo(() => {
-    if (comparisonCards.length < 2 || !comparisonCards.every(item => item.report)) {
+    if (comparisonActionFiltered || comparisonCards.length < 2 || !comparisonCards.every(item => item.report)) {
       return [] as BrowserBreakdownDatum[]
     }
 
@@ -734,7 +846,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     }
 
     return Array.from(segmentMap.values()).sort((left, right) => String(left.segment).localeCompare(String(right.segment)))
-  }, [comparisonBreakdown, comparisonCards])
+  }, [comparisonActionFiltered, comparisonBreakdown, comparisonCards])
 
   const browserBreakdownChartSeries = useMemo(
     () => buildComparisonBrowserBreakdownSeries(comparisonCards.map(({ test }) => ({ id: test.id, name: formatComparisonRunLabel(test) }))),
@@ -778,6 +890,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
   const runSelectedComparison = useCallback(() => {
     if (!canCompareSelected) return
     const sortedSelection = sortTestsByStartAscending(selectedArchivedTests)
+    setComparisonActionFilter(ALL_COMPARISON_ACTIONS)
     setComparisonTestSnapshots(sortedSelection)
     setComparisonTestIds(sortedSelection.map(test => test.id))
   }, [canCompareSelected, selectedArchivedTests])
@@ -793,6 +906,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     if (comparisonTestIds.includes(id)) {
       setComparisonTestIds([])
       setComparisonTestSnapshots([])
+      setComparisonActionFilter(ALL_COMPARISON_ACTIONS)
     }
     setSelectedIds(prev => {
       const next = new Set(prev)
@@ -808,6 +922,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     if (Array.from(selectedIds).some(id => comparisonTestIds.includes(id))) {
       setComparisonTestIds([])
       setComparisonTestSnapshots([])
+      setComparisonActionFilter(ALL_COMPARISON_ACTIONS)
     }
     setSelectedIds(new Set())
     await refresh()
@@ -892,22 +1007,37 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
                 <h3 className="section-title">Run Comparison</h3>
                 <p className="page-subtitle">Compare 2-{MAX_COMPARISON_RUNS} archived runs. The oldest run is the baseline.</p>
               </div>
-              {comparisonCards.length >= 2 && comparisonCards.every(item => item.report) && comparisonHasBrowserBreakdowns && (
+              {comparisonCards.length >= 2 && comparisonCards.every(item => item.report) && (
                 <div className="results-compare-controls">
-                  <div className="results-breakdown-toggle" role="tablist" aria-label="Comparison breakdown mode">
-                    {(['overall', 'platform', 'engine', 'device'] as ComparisonBreakdown[]).map(mode => (
-                      <button
-                        key={mode}
-                        type="button"
-                        role="tab"
-                        aria-selected={comparisonBreakdown === mode}
-                        className={`results-breakdown-button${comparisonBreakdown === mode ? ' active' : ''}`}
-                        onClick={() => setComparisonBreakdown(mode)}
-                      >
-                        {mode === 'overall' ? 'Overall' : mode === 'platform' ? 'Platform' : mode === 'engine' ? 'Engine' : 'Device'}
-                      </button>
-                    ))}
-                  </div>
+                  <label className="results-compare-filter">
+                    <span>Transaction</span>
+                    <select
+                      className="settings-input library-source-select"
+                      value={comparisonActionFilter}
+                      onChange={event => setComparisonActionFilter(event.target.value)}
+                    >
+                      <option value={ALL_COMPARISON_ACTIONS}>All transactions</option>
+                      {comparisonActionOptions.map(action => (
+                        <option key={action} value={action}>{action}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {comparisonHasBrowserBreakdowns && (
+                    <div className="results-breakdown-toggle" role="tablist" aria-label="Comparison breakdown mode">
+                      {(['overall', 'platform', 'engine', 'device'] as ComparisonBreakdown[]).map(mode => (
+                        <button
+                          key={mode}
+                          type="button"
+                          role="tab"
+                          aria-selected={comparisonBreakdown === mode}
+                          className={`results-breakdown-button${comparisonBreakdown === mode ? ' active' : ''}`}
+                          onClick={() => setComparisonBreakdown(mode)}
+                        >
+                          {mode === 'overall' ? 'Overall' : mode === 'platform' ? 'Platform' : mode === 'engine' ? 'Engine' : 'Device'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <button type="button" className="btn btn-secondary" onClick={exportComparison}>
                     Export CSV
                   </button>
@@ -928,132 +1058,142 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
                         const platformEntries = getBrowserPlatformEntries(report)
                         const engineEntries = getBrowserEngineEntries(report)
                         const browserRuntimeSummary = formatBrowserRuntimeSummary(report?.manifest.provenance?.runtime_settings?.browser)
+                        const actionStats = comparisonActionFiltered ? report?.by_action?.[comparisonActionFilter] : undefined
+                        const runSummaries = comparisonSummaries[test.id] || []
+                        const cardTransactions = comparisonActionFiltered ? actionStats?.transactions ?? 0 : report!.overview.transactions
+                        const cardAvgResponseMs = comparisonActionFiltered ? actionStats?.avg_response_ms ?? 0 : report!.overview.avg_response_ms
+                        const cardErrorPct = comparisonActionFiltered ? actionStats?.error_pct ?? 0 : report!.overview.error_pct
+                        const cardPeakTPS = comparisonActionFiltered ? peakComparisonTPS(runSummaries) : report!.overview.peak_tps
 
                         return (
                           <>
-                      <div className="results-compare-panel-header">
-                        <div>
-                          <h4>{test.name}</h4>
-                          <p>{formatDate(test.start_time || test.created_at)}</p>
-                          <span className="results-compare-run-label results-compare-run-label-inline">
-                            <span className="results-run-dot" style={{ background: comparisonRunColor(index) }} aria-hidden="true" />
-                            {index === 0 ? 'Baseline' : `Run ${index + 1}`}
-                          </span>
-                          {test.ref_key ? (
-                            <ReferenceKeyBadge value={test.ref_key} />
-                          ) : (
-                            <span className="results-run-id" title={test.id}>Run ID {formatShortRunId(test.id)}</span>
-                          )}
-                        </div>
-                        <div className="results-compare-panel-badges">
-                          {index === 0 && <span className="results-compare-baseline-chip">Reference</span>}
-                          <StatusBadge status={resolveStatus(test, testStatuses)} />
-                        </div>
-                      </div>
-                      <div className="results-compare-metrics">
-                        <div className="results-compare-metric">
-                          <span className="results-compare-label">Transactions</span>
-                          <span className="results-compare-value">{report!.overview.transactions}</span>
-                        </div>
-                        <div className="results-compare-metric">
-                          <span className="results-compare-label">Avg Latency</span>
-                          <span className="results-compare-value">{report!.overview.avg_response_ms.toFixed(1)} ms</span>
-                        </div>
-                        <div className="results-compare-metric">
-                          <span className="results-compare-label">Error Rate</span>
-                          <span className="results-compare-value">{report!.overview.error_pct.toFixed(2)}%</span>
-                        </div>
-                        <div className="results-compare-metric">
-                          <span className="results-compare-label">Peak TPS</span>
-                          <span className="results-compare-value">{report!.overview.peak_tps.toFixed(1)}</span>
-                        </div>
-                        <div className="results-compare-metric">
-                          <span className="results-compare-label">Peak VUsers</span>
-                          <span className="results-compare-value">{report!.overview.peak_active_vusers}</span>
-                        </div>
-                        <div className="results-compare-metric">
-                          <span className="results-compare-label">CPU Peak</span>
-                          <span className="results-compare-value">{report!.resource_peaks.cpu_process_pct.toFixed(1)}%</span>
-                        </div>
-                        {(hasBrowserOverview(report) || comparisonCards.some(item => hasBrowserOverview(item.report))) && (
-                          <>
-                            {browserRuntimeSummary && (
+                            <div className="results-compare-panel-header">
+                              <div>
+                                <h4>{test.name}</h4>
+                                <p>{formatDate(test.start_time || test.created_at)}</p>
+                                <span className="results-compare-run-label results-compare-run-label-inline">
+                                  <span className="results-run-dot" style={{ background: comparisonRunColor(index) }} aria-hidden="true" />
+                                  {index === 0 ? 'Baseline' : `Run ${index + 1}`}
+                                </span>
+                                {test.ref_key ? (
+                                  <ReferenceKeyBadge value={test.ref_key} />
+                                ) : (
+                                  <span className="results-run-id" title={test.id}>Run ID {formatShortRunId(test.id)}</span>
+                                )}
+                              </div>
+                              <div className="results-compare-panel-badges">
+                                {index === 0 && <span className="results-compare-baseline-chip">Reference</span>}
+                                <StatusBadge status={resolveStatus(test, testStatuses)} />
+                              </div>
+                            </div>
+                            <div className="results-compare-metrics">
                               <div className="results-compare-metric">
-                                <span className="results-compare-label">Browser Runtime</span>
-                                <span className="results-compare-value">{browserRuntimeSummary}</span>
+                                <span className="results-compare-label">Transactions</span>
+                                <span className="results-compare-value">{cardTransactions}</span>
                               </div>
+                              <div className="results-compare-metric">
+                                <span className="results-compare-label">Avg Latency</span>
+                                <span className="results-compare-value">{cardAvgResponseMs.toFixed(1)} ms</span>
+                              </div>
+                              <div className="results-compare-metric">
+                                <span className="results-compare-label">Error Rate</span>
+                                <span className="results-compare-value">{cardErrorPct.toFixed(2)}%</span>
+                              </div>
+                              <div className="results-compare-metric">
+                                <span className="results-compare-label">Peak TPS</span>
+                                <span className="results-compare-value">{cardPeakTPS.toFixed(1)}</span>
+                              </div>
+                              {!comparisonActionFiltered && (
+                                <>
+                                  <div className="results-compare-metric">
+                                    <span className="results-compare-label">Peak VUsers</span>
+                                    <span className="results-compare-value">{report!.overview.peak_active_vusers}</span>
+                                  </div>
+                                  <div className="results-compare-metric">
+                                    <span className="results-compare-label">CPU Peak</span>
+                                    <span className="results-compare-value">{report!.resource_peaks.cpu_process_pct.toFixed(1)}%</span>
+                                  </div>
+                                </>
+                              )}
+                              {!comparisonActionFiltered && (hasBrowserOverview(report) || comparisonCards.some(item => hasBrowserOverview(item.report))) && (
+                                <>
+                                  {browserRuntimeSummary && (
+                                    <div className="results-compare-metric">
+                                      <span className="results-compare-label">Browser Runtime</span>
+                                      <span className="results-compare-value">{browserRuntimeSummary}</span>
+                                    </div>
+                                  )}
+                                  <div className="results-compare-metric">
+                                    <span className="results-compare-label">Avg LCP</span>
+                                    <span className="results-compare-value">{formatBrowserMetric(report!.overview.browser?.avg_lcp_ms, ' ms')}</span>
+                                  </div>
+                                  <div className="results-compare-metric">
+                                    <span className="results-compare-label">Avg INP</span>
+                                    <span className="results-compare-value">{formatBrowserMetric(report!.overview.browser?.avg_inp_ms, ' ms')}</span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                            {!comparisonActionFiltered && comparisonBreakdown === 'platform' && platformEntries.length > 0 && (
+                              <>
+                                <span className="results-compare-label">Platform Rollup</span>
+                                <div className="browser-device-grid archive-browser-device-grid">
+                                  {platformEntries.map(metrics => (
+                                    <div key={metrics.device_platform || 'unknown'} className="browser-device-card">
+                                      <div className="browser-device-header">
+                                        <span className="browser-device-name">{formatDevicePlatformLabel(metrics.device_platform)}</span>
+                                        <span className="browser-device-tier">{formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.samples} samples</span>
+                                      </div>
+                                      <div className="browser-device-stats">
+                                        <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
+                                        <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
+                                        <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
                             )}
-                            <div className="results-compare-metric">
-                              <span className="results-compare-label">Avg LCP</span>
-                              <span className="results-compare-value">{formatBrowserMetric(report!.overview.browser?.avg_lcp_ms, ' ms')}</span>
-                            </div>
-                            <div className="results-compare-metric">
-                              <span className="results-compare-label">Avg INP</span>
-                              <span className="results-compare-value">{formatBrowserMetric(report!.overview.browser?.avg_inp_ms, ' ms')}</span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                      {comparisonBreakdown === 'platform' && platformEntries.length > 0 && (
-                        <>
-                          <span className="results-compare-label">Platform Rollup</span>
-                          <div className="browser-device-grid archive-browser-device-grid">
-                            {platformEntries.map(metrics => (
-                              <div key={metrics.device_platform || 'unknown'} className="browser-device-card">
-                                <div className="browser-device-header">
-                                  <span className="browser-device-name">{formatDevicePlatformLabel(metrics.device_platform)}</span>
-                                  <span className="browser-device-tier">{formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.samples} samples</span>
+                            {!comparisonActionFiltered && comparisonBreakdown === 'engine' && engineEntries.length > 0 && (
+                              <>
+                                <span className="results-compare-label">Engine Rollup</span>
+                                <div className="browser-device-grid archive-browser-device-grid">
+                                  {engineEntries.map(metrics => (
+                                    <div key={metrics.browser_engine || 'browser'} className="browser-device-card">
+                                      <div className="browser-device-header">
+                                        <span className="browser-device-name">{formatBrowserEngineLabel(metrics.browser_engine)}</span>
+                                        <span className="browser-device-tier">{metrics.samples} samples</span>
+                                      </div>
+                                      <div className="browser-device-stats">
+                                        <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
+                                        <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
+                                        <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
-                                <div className="browser-device-stats">
-                                  <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
-                                  <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
-                                  <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+                              </>
+                            )}
+                            {!comparisonActionFiltered && comparisonBreakdown === 'device' && deviceEntries.length > 0 && (
+                              <>
+                                <span className="results-compare-label">Devices</span>
+                                <div className="browser-device-grid archive-browser-device-grid">
+                                  {deviceEntries.map(([profile, metrics]) => (
+                                    <div key={profile} className="browser-device-card">
+                                      <div className="browser-device-header">
+                                        <span className="browser-device-name">{profile}</span>
+                                        <span className="browser-device-tier">{formatDevicePlatformLabel(metrics.device_platform)} · {formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
+                                      </div>
+                                      <div className="browser-device-stats">
+                                        <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
+                                        <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
+                                        <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                      {comparisonBreakdown === 'engine' && engineEntries.length > 0 && (
-                        <>
-                          <span className="results-compare-label">Engine Rollup</span>
-                          <div className="browser-device-grid archive-browser-device-grid">
-                            {engineEntries.map(metrics => (
-                              <div key={metrics.browser_engine || 'browser'} className="browser-device-card">
-                                <div className="browser-device-header">
-                                  <span className="browser-device-name">{formatBrowserEngineLabel(metrics.browser_engine)}</span>
-                                  <span className="browser-device-tier">{metrics.samples} samples</span>
-                                </div>
-                                <div className="browser-device-stats">
-                                  <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
-                                  <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
-                                  <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                      {comparisonBreakdown === 'device' && deviceEntries.length > 0 && (
-                        <>
-                          <span className="results-compare-label">Devices</span>
-                          <div className="browser-device-grid archive-browser-device-grid">
-                            {deviceEntries.map(([profile, metrics]) => (
-                              <div key={profile} className="browser-device-card">
-                                <div className="browser-device-header">
-                                  <span className="browser-device-name">{profile}</span>
-                                  <span className="browser-device-tier">{formatDevicePlatformLabel(metrics.device_platform)} · {formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
-                                </div>
-                                <div className="browser-device-stats">
-                                  <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
-                                  <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
-                                  <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
+                              </>
+                            )}
                           </>
                         )
                       })()}
@@ -1143,7 +1283,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
                       <tr>
                         <th>Action</th>
                         <th>Run</th>
-                        <th>Avg ART</th>
+                        <th>{comparisonTableMetricLabel(comparisonChartMetric)}</th>
                         <th>Errors</th>
                         <th>Delta vs Baseline</th>
                       </tr>
@@ -1160,10 +1300,10 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
                                   {formatComparisonRunLabel(run.test)}
                                 </span>
                               </td>
-                              <td>{run.stats?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
+                              <td>{formatComparisonTableMetricValue(run.metricValue, comparisonChartMetric)}</td>
                               <td>{run.stats?.errors || 0}</td>
-                              <td className={run.isBaseline ? 'cell-muted' : run.deltaMs > 0 ? 'text-danger' : run.deltaMs < 0 ? 'text-success' : 'cell-muted'}>
-                                {run.isBaseline ? 'Reference' : `${run.deltaMs >= 0 ? '+' : ''}${run.deltaMs.toFixed(1)} ms`}
+                              <td className={run.isBaseline ? 'cell-muted' : comparisonTableDeltaClass(run.metricDelta, comparisonChartMetric)}>
+                                {run.isBaseline ? 'Reference' : formatComparisonTableDelta(run.metricDelta, comparisonChartMetric)}
                               </td>
                             </tr>
                           ))}

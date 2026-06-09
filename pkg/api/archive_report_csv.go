@@ -311,8 +311,13 @@ func writeArchiveReportStatsCSVRows(writer *csv.Writer, section string, key stri
 		{"errors", formatCSVInt(stats.Errors)},
 		{"error_pct", formatCSVFloat(stats.ErrorPct)},
 		{"avg_response_ms", formatCSVFloat(stats.AvgResponseMs)},
+		{"peak_tps", formatCSVFloat(stats.PeakTPS)},
 		{"min_response_ms", formatCSVFloat(stats.MinResponseMs)},
 		{"max_response_ms", formatCSVFloat(stats.MaxResponseMs)},
+		{"p50_ms", formatCSVFloat(stats.P50Ms)},
+		{"p90_ms", formatCSVFloat(stats.P90Ms)},
+		{"p95_ms", formatCSVFloat(stats.P95Ms)},
+		{"p99_ms", formatCSVFloat(stats.P99Ms)},
 	}
 	for _, row := range rows {
 		if err := writer.Write([]string{section, key, row.metric, row.value}); err != nil {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -213,15 +214,20 @@ func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	items, total, err := loadArchiveIntervalSummaries(record, page)
+	action := strings.TrimSpace(r.URL.Query().Get("action"))
+	items, total, err := loadArchiveIntervalSummaries(record, page, action)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read archive summaries: "+err.Error())
 		return
 	}
 	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "csv") {
 		testID := r.PathValue("id")
+		filename := "apexload-archive-summaries-" + testID
+		if action != "" {
+			filename += "-" + sanitizeFilename(action)
+		}
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-summaries-"+testID+".csv\"")
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+".csv\"")
 		if err := writeArchiveSummariesCSV(items, w); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to write archive summaries csv: "+err.Error())
 		}
@@ -233,6 +239,9 @@ func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Req
 		"total":     total,
 		"limit":     page.Limit,
 		"offset":    page.Offset,
+		"filters": map[string]any{
+			"action": action,
+		},
 	})
 }
 
@@ -345,8 +354,9 @@ func (s *Server) handleGetRunArchiveComparison(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "unsupported comparison breakdown")
 		return
 	}
+	action := strings.TrimSpace(r.URL.Query().Get("action"))
 	if comparisonIDs := strings.TrimSpace(r.URL.Query().Get("comparison_ids")); comparisonIDs != "" {
-		s.handleGetRunArchiveMultiComparison(w, r, currentRecord, breakdown, comparisonIDs)
+		s.handleGetRunArchiveMultiComparison(w, r, currentRecord, breakdown, action, comparisonIDs)
 		return
 	}
 	baselineID := strings.TrimSpace(r.URL.Query().Get("baseline_id"))
@@ -363,36 +373,35 @@ func (s *Server) handleGetRunArchiveComparison(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusNotFound, "baseline archive not found")
 		return
 	}
-	currentReport, err := buildRunArchiveReport(currentRecord)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
-		return
-	}
-	baselineReport, err := buildRunArchiveReport(baselineRecord)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build baseline archive report: "+err.Error())
-		return
-	}
 	currentID := r.PathValue("id")
-	currentName := currentID
-	if test, ok := s.runner.GetTest(currentID); ok {
-		currentName = test.Name
+	currentTest, _ := s.runner.GetTest(currentID)
+	currentRun, err := s.archiveComparisonRunFromRecord(currentID, currentTest, currentRecord, action)
+	if err != nil {
+		s.writeArchiveComparisonRunError(w, err)
+		return
 	}
-	baselineName := baselineID
-	if test, ok := s.runner.GetTest(baselineID); ok {
-		baselineName = test.Name
+	baselineTest, _ := s.runner.GetTest(baselineID)
+	baselineRun, err := s.archiveComparisonRunFromRecord(baselineID, baselineTest, baselineRecord, action)
+	if err != nil {
+		s.writeArchiveComparisonRunError(w, err)
+		return
+	}
+	filename := "apexload-archive-comparison-" + currentID + "-" + baselineID
+	if action != "" {
+		filename += "-" + sanitizeFilename(action)
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-comparison-"+currentID+"-"+baselineID+".csv\"")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+".csv\"")
 	if err := writeArchiveComparisonCSV(w, breakdown,
-		archiveComparisonRun{ID: baselineID, Name: baselineName, Report: baselineReport},
-		archiveComparisonRun{ID: currentID, Name: currentName, Report: currentReport},
+		action,
+		baselineRun.archiveComparisonRun,
+		currentRun.archiveComparisonRun,
 	); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to write archive comparison csv: "+err.Error())
 	}
 }
 
-func (s *Server) handleGetRunArchiveMultiComparison(w http.ResponseWriter, r *http.Request, baselineRecord *storage.RunArchiveRecord, breakdown string, rawComparisonIDs string) {
+func (s *Server) handleGetRunArchiveMultiComparison(w http.ResponseWriter, r *http.Request, baselineRecord *storage.RunArchiveRecord, breakdown string, action string, rawComparisonIDs string) {
 	baselineID := r.PathValue("id")
 	ids, ok := parseArchiveComparisonIDs(rawComparisonIDs)
 	if !ok {
@@ -415,17 +424,9 @@ func (s *Server) handleGetRunArchiveMultiComparison(w http.ResponseWriter, r *ht
 		return
 	}
 
-	runs, err := s.archiveComparisonRunsFromRecords(baselineID, baselineRecord, ids)
+	runs, err := s.archiveComparisonRunsFromRecords(baselineID, baselineRecord, ids, action)
 	if err != nil {
-		status := http.StatusInternalServerError
-		message := err.Error()
-		switch {
-		case strings.Contains(message, "test not found"):
-			status = http.StatusNotFound
-		case strings.Contains(message, "archive not found"):
-			status = http.StatusNotFound
-		}
-		writeError(w, status, message)
+		s.writeArchiveComparisonRunError(w, err)
 		return
 	}
 	sort.SliceStable(runs, func(i, j int) bool {
@@ -438,12 +439,16 @@ func (s *Server) handleGetRunArchiveMultiComparison(w http.ResponseWriter, r *ht
 	})
 
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-comparison-"+baselineID+"-"+strconv.Itoa(len(runs))+"-runs.csv\"")
+	filename := "apexload-archive-comparison-" + baselineID + "-" + strconv.Itoa(len(runs)) + "-runs"
+	if action != "" {
+		filename += "-" + sanitizeFilename(action)
+	}
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+".csv\"")
 	csvRuns := make([]archiveComparisonRun, 0, len(runs))
 	for _, run := range runs {
 		csvRuns = append(csvRuns, run.archiveComparisonRun)
 	}
-	if err := writeArchiveComparisonCSV(w, breakdown, csvRuns...); err != nil {
+	if err := writeArchiveComparisonCSV(w, breakdown, action, csvRuns...); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to write archive comparison csv: "+err.Error())
 	}
 }
@@ -471,13 +476,13 @@ func parseArchiveComparisonIDs(raw string) ([]string, bool) {
 	return ids, true
 }
 
-func (s *Server) archiveComparisonRunsFromRecords(baselineID string, baselineRecord *storage.RunArchiveRecord, comparisonIDs []string) ([]archiveComparisonRunWithStart, error) {
+func (s *Server) archiveComparisonRunsFromRecords(baselineID string, baselineRecord *storage.RunArchiveRecord, comparisonIDs []string, action string) ([]archiveComparisonRunWithStart, error) {
 	baselineTest, ok := s.runner.GetTest(baselineID)
 	if !ok {
 		return nil, fmt.Errorf("baseline test not found")
 	}
 	runs := make([]archiveComparisonRunWithStart, 0, len(comparisonIDs)+1)
-	baselineRun, err := s.archiveComparisonRunFromRecord(baselineID, baselineTest, baselineRecord)
+	baselineRun, err := s.archiveComparisonRunFromRecord(baselineID, baselineTest, baselineRecord, action)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build baseline archive report: %w", err)
 	}
@@ -495,7 +500,7 @@ func (s *Server) archiveComparisonRunsFromRecords(baselineID string, baselineRec
 		if err := ensureArchiveMaterialized(record); err != nil {
 			return nil, fmt.Errorf("failed to materialize comparison archive: %w", err)
 		}
-		run, err := s.archiveComparisonRunFromRecord(id, test, record)
+		run, err := s.archiveComparisonRunFromRecord(id, test, record, action)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build comparison archive report: %w", err)
 		}
@@ -504,7 +509,7 @@ func (s *Server) archiveComparisonRunsFromRecords(baselineID string, baselineRec
 	return runs, nil
 }
 
-func (s *Server) archiveComparisonRunFromRecord(id string, test *ManagedTest, record *storage.RunArchiveRecord) (archiveComparisonRunWithStart, error) {
+func (s *Server) archiveComparisonRunFromRecord(id string, test *ManagedTest, record *storage.RunArchiveRecord, action string) (archiveComparisonRunWithStart, error) {
 	report, err := buildRunArchiveReport(record)
 	if err != nil {
 		return archiveComparisonRunWithStart{}, err
@@ -526,10 +531,59 @@ func (s *Server) archiveComparisonRunFromRecord(id string, test *ManagedTest, re
 	if startedAt.IsZero() {
 		startedAt = record.CompletedAt
 	}
-	return archiveComparisonRunWithStart{
+	run := archiveComparisonRunWithStart{
 		archiveComparisonRun: archiveComparisonRun{ID: id, Name: name, Report: report},
 		startedAt:            startedAt,
-	}, nil
+	}
+	if strings.TrimSpace(action) != "" {
+		if err := applyArchiveComparisonActionScope(record, &run.archiveComparisonRun, action); err != nil {
+			return archiveComparisonRunWithStart{}, err
+		}
+	}
+	return run, nil
+}
+
+type archiveComparisonActionNotFoundError struct {
+	runID  string
+	action string
+}
+
+func (err archiveComparisonActionNotFoundError) Error() string {
+	return fmt.Sprintf("action %q not found in run %s", err.action, err.runID)
+}
+
+func applyArchiveComparisonActionScope(record *storage.RunArchiveRecord, run *archiveComparisonRun, action string) error {
+	action = strings.TrimSpace(action)
+	if action == "" {
+		return nil
+	}
+	stats, ok := run.Report.ByAction[action]
+	if !ok {
+		return archiveComparisonActionNotFoundError{runID: run.ID, action: action}
+	}
+	summaries, err := loadArchiveIntervalSummariesForAction(record, action)
+	if err != nil {
+		return err
+	}
+	run.Action = action
+	run.ActionStats = &stats
+	run.ActionSummaries = summaries
+	return nil
+}
+
+func (s *Server) writeArchiveComparisonRunError(w http.ResponseWriter, err error) {
+	status := http.StatusInternalServerError
+	message := err.Error()
+	var actionErr archiveComparisonActionNotFoundError
+	switch {
+	case errors.As(err, &actionErr):
+		status = http.StatusBadRequest
+	case strings.Contains(message, "test not found"):
+		status = http.StatusNotFound
+	case strings.Contains(message, "archive not found"):
+		status = http.StatusNotFound
+	}
+	writeError(w, status, message)
 }
 
 func archiveComparisonRunStartedAt(run archiveComparisonRunWithStart) time.Time {

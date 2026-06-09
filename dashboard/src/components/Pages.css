@@ -2538,6 +2538,22 @@
   flex-wrap: wrap;
 }
 
+.results-compare-filter {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.results-compare-filter span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .results-breakdown-button {
   border: 0;
   border-radius: 999px;
@@ -8580,6 +8596,10 @@ col.results-actions-col {
   }
 
   .results-compare-controls {
+    width: 100%;
+  }
+
+  .results-compare-filter {
     width: 100%;
   }
 

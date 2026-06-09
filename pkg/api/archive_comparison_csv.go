@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 )
 
 const (
@@ -15,20 +16,29 @@ const (
 )
 
 type archiveComparisonRun struct {
-	ID     string
-	Name   string
-	Report *RunArchiveReport
+	ID              string
+	Name            string
+	Report          *RunArchiveReport
+	Action          string
+	ActionStats     *RunArchiveActionStats
+	ActionSummaries []IntervalSummaryRecord
 }
 
-func writeArchiveComparisonCSV(writer io.Writer, breakdown string, runs ...archiveComparisonRun) error {
+func writeArchiveComparisonCSV(writer io.Writer, breakdown string, action string, runs ...archiveComparisonRun) error {
 	breakdown = normalizeArchiveComparisonBreakdown(breakdown)
 	if breakdown == "" {
 		return fmt.Errorf("unsupported comparison breakdown")
 	}
+	action = strings.TrimSpace(action)
 	csvWriter := csv.NewWriter(writer)
 	headers := []string{
 		"run_id",
 		"run_name",
+	}
+	if action != "" {
+		headers = append(headers, "action_name")
+	}
+	headers = append(headers,
 		"breakdown",
 		"segment_key",
 		"device_platform",
@@ -40,13 +50,18 @@ func writeArchiveComparisonCSV(writer io.Writer, breakdown string, runs ...archi
 		"avg_inp_ms",
 		"transactions",
 		"error_pct",
+	)
+	if action != "" {
+		headers = append(headers, "avg_response_ms")
+	}
+	headers = append(headers,
 		"peak_tps",
 		"peak_target_tps",
 		"max_throughput_gap_pct",
 		"throughput_missed_intervals",
 		"throughput_target_missed",
 		"peak_active_vusers",
-	}
+	)
 	if err := csvWriter.Write(headers); err != nil {
 		return err
 	}
@@ -54,7 +69,7 @@ func writeArchiveComparisonCSV(writer io.Writer, breakdown string, runs ...archi
 		if run.Report == nil {
 			continue
 		}
-		if err := writeArchiveComparisonRows(csvWriter, breakdown, run); err != nil {
+		if err := writeArchiveComparisonRows(csvWriter, breakdown, action, run); err != nil {
 			return err
 		}
 	}
@@ -73,7 +88,10 @@ func normalizeArchiveComparisonBreakdown(raw string) string {
 	}
 }
 
-func writeArchiveComparisonRows(writer *csv.Writer, breakdown string, run archiveComparisonRun) error {
+func writeArchiveComparisonRows(writer *csv.Writer, breakdown string, action string, run archiveComparisonRun) error {
+	if strings.TrimSpace(action) != "" {
+		return writer.Write(archiveComparisonActionCSVRow(run, action))
+	}
 	switch breakdown {
 	case archiveComparisonBreakdownOverall:
 		return writer.Write(archiveComparisonCSVRow(run, breakdown, "overall", "", "", "", run.Report.Overview.Browser))
@@ -100,6 +118,37 @@ func writeArchiveComparisonRows(writer *csv.Writer, breakdown string, run archiv
 		}
 	}
 	return nil
+}
+
+func archiveComparisonActionCSVRow(run archiveComparisonRun, action string) []string {
+	stats := run.ActionStats
+	if stats == nil {
+		emptyStats := RunArchiveActionStats{}
+		stats = &emptyStats
+	}
+	return []string{
+		run.ID,
+		run.Name,
+		action,
+		"action",
+		action,
+		"",
+		"",
+		"",
+		"0",
+		"",
+		"",
+		"",
+		formatCSVInt(stats.Transactions),
+		formatCSVFloat(stats.ErrorPct),
+		formatCSVFloat(stats.AvgResponseMs),
+		formatCSVFloat(archiveComparisonActionPeakTPS(run.ActionSummaries)),
+		"",
+		"",
+		"",
+		"",
+		"",
+	}
 }
 
 func archiveComparisonCSVRow(run archiveComparisonRun, breakdown string, segmentKey string, platform string, engine string, tier string, browser *BrowserLiveMetrics) []string {
@@ -134,6 +183,16 @@ func archiveComparisonCSVRow(run archiveComparisonRun, breakdown string, segment
 		fmt.Sprintf("%t", run.Report.Overview.ThroughputMissedIntervals > 0),
 		formatCSVInt(run.Report.Overview.PeakActiveVUsers),
 	}
+}
+
+func archiveComparisonActionPeakTPS(summaries []IntervalSummaryRecord) float64 {
+	var peak float64
+	for _, summary := range summaries {
+		if summary.TPS > peak {
+			peak = summary.TPS
+		}
+	}
+	return peak
 }
 
 func browserLiveMetricsFromDevice(metrics *BrowserDeviceLiveMetrics) *BrowserLiveMetrics {

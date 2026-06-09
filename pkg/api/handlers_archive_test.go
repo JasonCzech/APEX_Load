@@ -271,6 +271,26 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("summaries action filter csv", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/summaries?format=csv&limit=5&action=step-1", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("action summaries csv status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read action summaries csv: %v", err)
+		}
+		if len(rows) < 2 || rows[0][4] != "tps" {
+			t.Fatalf("action summaries csv rows = %#v, want tps header", rows)
+		}
+		if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "step-1") {
+			t.Fatalf("action summaries content disposition = %q, want action token", got)
+		}
+	})
+
 	t.Run("resources", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/resources?limit=5", nil)
 		resp := httptest.NewRecorder()
@@ -332,6 +352,12 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 		if stats.Transactions == 0 {
 			t.Fatal("expected action breakdown to include transactions")
+		}
+		if stats.P95Ms == 0 {
+			t.Fatal("expected action breakdown to include percentile metrics")
+		}
+		if stats.PeakTPS == 0 {
+			t.Fatal("expected action breakdown to include peak TPS")
 		}
 		if payload.BySOAPOperation["CreateOrder"].Transactions == 0 {
 			t.Fatalf("expected SOAP operation breakdown, got %#v", payload.BySOAPOperation)
@@ -530,6 +556,33 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("comparison csv action filter", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/comparison?format=csv&baseline_id="+baselineID+"&breakdown=device&action=step-1", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("action comparison csv status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read action comparison csv: %v", err)
+		}
+		if len(rows) != 3 {
+			t.Fatalf("action comparison csv rows = %#v, want header plus two runs", rows)
+		}
+		index := csvHeaderIndex(rows[0])
+		if rows[1][index["action_name"]] != "step-1" || rows[1][index["breakdown"]] != "action" {
+			t.Fatalf("action comparison row = %#v, want action breakdown", rows[1])
+		}
+		if rows[1][index["transactions"]] == "0" || rows[1][index["avg_response_ms"]] == "" || rows[1][index["peak_tps"]] == "" {
+			t.Fatalf("action comparison metrics row = %#v, want filtered metrics", rows[1])
+		}
+		if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "step-1") {
+			t.Fatalf("action comparison content disposition = %q, want action token", got)
+		}
+	})
+
 	t.Run("multi comparison csv orders runs oldest to newest", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+baselineID+"/archive/comparison?format=csv&comparison_ids="+testRun.ID+","+laterID+"&breakdown=overall", nil)
 		resp := httptest.NewRecorder()
@@ -604,6 +657,16 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 
 		if resp.Code != http.StatusNotFound {
 			t.Fatalf("missing multi comparison archive status = %d, want %d body=%s", resp.Code, http.StatusNotFound, resp.Body.String())
+		}
+	})
+
+	t.Run("multi comparison csv rejects missing action", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+baselineID+"/archive/comparison?format=csv&comparison_ids="+testRun.ID+"&breakdown=overall&action=missing-action", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("missing action comparison status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
 		}
 	})
 
@@ -704,6 +767,52 @@ func hasArchiveAnalysisEdge(edges []RunArchiveAnalysisEdge, kind string, from st
 		}
 	}
 	return false
+}
+
+func TestLoadArchiveIntervalSummariesForActionAggregatesTransactions(t *testing.T) {
+	archiveDir := t.TempDir()
+	start := time.Date(2026, 5, 12, 18, 0, 0, 0, time.UTC)
+	manifest := RunArchiveManifest{
+		TestID:                "run-action-summary",
+		TestName:              "Action Summary Run",
+		CreatedAt:             start,
+		TransactionsFile:      "transactions.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+	}
+	writeJSONL(t, filepath.Join(archiveDir, "manifest.json"), manifest)
+	writeJSONL(t, filepath.Join(archiveDir, manifest.IntervalSummariesFile),
+		IntervalSummaryRecord{Timestamp: start.Add(time.Second), TestID: manifest.TestID, TestName: manifest.TestName, ActiveVUsers: 2},
+		IntervalSummaryRecord{Timestamp: start.Add(2 * time.Second), TestID: manifest.TestID, TestName: manifest.TestName, ActiveVUsers: 3},
+		IntervalSummaryRecord{Timestamp: start.Add(3 * time.Second), TestID: manifest.TestID, TestName: manifest.TestName, ActiveVUsers: 4},
+	)
+	writeJSONL(t, filepath.Join(archiveDir, manifest.TransactionsFile),
+		TransactionEvent{Timestamp: start.Add(500 * time.Millisecond), TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "Checkout", DurationMs: 100, Success: true},
+		TransactionEvent{Timestamp: start.Add(1500 * time.Millisecond), TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "Search", DurationMs: 900, Success: true},
+		TransactionEvent{Timestamp: start.Add(1500 * time.Millisecond), TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "Checkout", DurationMs: 300, Success: false},
+		TransactionEvent{Timestamp: start.Add(2500 * time.Millisecond), TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "Checkout", DurationMs: 200, Success: true},
+	)
+	record := &storage.RunArchiveRecord{
+		TestID:       manifest.TestID,
+		ArchivePath:  archiveDir,
+		ManifestPath: filepath.Join(archiveDir, "manifest.json"),
+	}
+
+	summaries, total, err := loadArchiveIntervalSummaries(record, archivePage{Limit: 10}, "Checkout")
+	if err != nil {
+		t.Fatalf("loadArchiveIntervalSummaries returned error: %v", err)
+	}
+	if total != 3 || len(summaries) != 3 {
+		t.Fatalf("filtered summaries total=%d len=%d, want 3", total, len(summaries))
+	}
+	if summaries[0].TotalTx != 1 || summaries[0].TotalErrors != 0 || summaries[0].TPS != 1 || summaries[0].AvgResponseMs != 100 || summaries[0].P95Ms != 100 {
+		t.Fatalf("first filtered bucket = %#v, want one successful checkout", summaries[0])
+	}
+	if summaries[1].TotalTx != 2 || summaries[1].TotalErrors != 1 || summaries[1].TPS != 1 || summaries[1].AvgResponseMs != 300 || summaries[1].ErrorPct != 100 || summaries[1].P50Ms != 300 {
+		t.Fatalf("second filtered bucket = %#v, want one failed checkout and cumulative totals", summaries[1])
+	}
+	if summaries[2].TotalTx != 3 || summaries[2].TotalErrors != 1 || summaries[2].TPS != 1 || summaries[2].AvgResponseMs != 200 || summaries[2].P99Ms != 200 {
+		t.Fatalf("third filtered bucket = %#v, want final checkout cumulative totals", summaries[2])
+	}
 }
 
 func TestArchiveTransactionsApplyConfiguredRedactionRules(t *testing.T) {

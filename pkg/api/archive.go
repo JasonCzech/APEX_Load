@@ -473,6 +473,12 @@ type RunArchiveActionStats struct {
 	AvgResponseMs float64 `json:"avg_response_ms"`
 	MinResponseMs float64 `json:"min_response_ms"`
 	MaxResponseMs float64 `json:"max_response_ms"`
+	PeakTPS       float64 `json:"peak_tps,omitempty"`
+	P50Ms         float64 `json:"p50_ms,omitempty"`
+	P90Ms         float64 `json:"p90_ms,omitempty"`
+	P95Ms         float64 `json:"p95_ms,omitempty"`
+	P99Ms         float64 `json:"p99_ms,omitempty"`
+	durations     []float64
 }
 
 type RunArchiveResourcePeaks struct {
@@ -1096,7 +1102,15 @@ func loadArchiveResourceSamples(record *storage.RunArchiveRecord, page archivePa
 	return readJSONLPage[ResourceSample](path, page, nil)
 }
 
-func loadArchiveIntervalSummaries(record *storage.RunArchiveRecord, page archivePage) ([]IntervalSummaryRecord, int, error) {
+func loadArchiveIntervalSummaries(record *storage.RunArchiveRecord, page archivePage, action string) ([]IntervalSummaryRecord, int, error) {
+	action = strings.TrimSpace(action)
+	if action != "" {
+		summaries, err := loadArchiveIntervalSummariesForAction(record, action)
+		if err != nil {
+			return nil, 0, err
+		}
+		return pageArchiveItems(summaries, page), len(summaries), nil
+	}
 	if err := ensureArchiveMaterialized(record); err != nil {
 		return nil, 0, err
 	}
@@ -1106,6 +1120,117 @@ func loadArchiveIntervalSummaries(record *storage.RunArchiveRecord, page archive
 	}
 	path := filepath.Join(record.ArchivePath, manifest.IntervalSummariesFile)
 	return readJSONLPage[IntervalSummaryRecord](path, page, nil)
+}
+
+func loadArchiveIntervalSummariesForAction(record *storage.RunArchiveRecord, action string) ([]IntervalSummaryRecord, error) {
+	action = strings.TrimSpace(action)
+	summaries, err := readAllArchiveSummaries(record)
+	if err != nil {
+		return nil, err
+	}
+	if action == "" || len(summaries) == 0 {
+		return summaries, nil
+	}
+	transactions, err := readAllArchiveTransactions(record)
+	if err != nil {
+		return nil, err
+	}
+	buckets := make([]archiveActionSummaryBucket, len(summaries))
+	for _, tx := range transactions {
+		if !strings.EqualFold(tx.ActionName, action) {
+			continue
+		}
+		index := archiveSummaryBucketIndex(summaries, tx.Timestamp)
+		if index < 0 {
+			continue
+		}
+		bucket := &buckets[index]
+		bucket.transactions++
+		bucket.totalDurationMs += tx.DurationMs
+		bucket.durations = append(bucket.durations, tx.DurationMs)
+		if !tx.Success {
+			bucket.errors++
+		}
+	}
+
+	filtered := make([]IntervalSummaryRecord, 0, len(summaries))
+	var cumulativeTx int64
+	var cumulativeErrors int64
+	for index, summary := range summaries {
+		bucket := buckets[index]
+		cumulativeTx += bucket.transactions
+		cumulativeErrors += bucket.errors
+		record := IntervalSummaryRecord{
+			Timestamp:              summary.Timestamp,
+			TestID:                 summary.TestID,
+			TestName:               summary.TestName,
+			ActiveVUsers:           summary.ActiveVUsers,
+			TargetTPS:              summary.TargetTPS,
+			ThroughputGapPct:       summary.ThroughputGapPct,
+			ThroughputTargetMissed: summary.ThroughputTargetMissed,
+			TotalTx:                cumulativeTx,
+			TotalErrors:            cumulativeErrors,
+		}
+		if bucket.transactions > 0 {
+			record.TPS = float64(bucket.transactions) / archiveSummaryBucketSeconds(summaries, index)
+			record.AvgResponseMs = bucket.totalDurationMs / float64(bucket.transactions)
+			record.ErrorPct = float64(bucket.errors) / float64(bucket.transactions) * 100
+			sort.Float64s(bucket.durations)
+			record.P50Ms = archiveAnalysisPercentile(bucket.durations, 0.50)
+			record.P90Ms = archiveAnalysisPercentile(bucket.durations, 0.90)
+			record.P95Ms = archiveAnalysisPercentile(bucket.durations, 0.95)
+			record.P99Ms = archiveAnalysisPercentile(bucket.durations, 0.99)
+		}
+		filtered = append(filtered, record)
+	}
+	return filtered, nil
+}
+
+type archiveActionSummaryBucket struct {
+	transactions    int64
+	errors          int64
+	totalDurationMs float64
+	durations       []float64
+}
+
+func archiveSummaryBucketIndex(summaries []IntervalSummaryRecord, timestamp time.Time) int {
+	if len(summaries) == 0 {
+		return -1
+	}
+	for index, summary := range summaries {
+		if !timestamp.After(summary.Timestamp) {
+			return index
+		}
+	}
+	return len(summaries) - 1
+}
+
+func archiveSummaryBucketSeconds(summaries []IntervalSummaryRecord, index int) float64 {
+	if index > 0 && index < len(summaries) {
+		if seconds := summaries[index].Timestamp.Sub(summaries[index-1].Timestamp).Seconds(); seconds > 0 {
+			return seconds
+		}
+	}
+	if index == 0 && len(summaries) > 1 {
+		if seconds := summaries[1].Timestamp.Sub(summaries[0].Timestamp).Seconds(); seconds > 0 {
+			return seconds
+		}
+	}
+	return 1
+}
+
+func archiveActionPeakTPSFromBuckets(summaries []IntervalSummaryRecord, buckets []archiveActionSummaryBucket) float64 {
+	var peak float64
+	for index, bucket := range buckets {
+		if bucket.transactions == 0 {
+			continue
+		}
+		tps := float64(bucket.transactions) / archiveSummaryBucketSeconds(summaries, index)
+		if tps > peak {
+			peak = tps
+		}
+	}
+	return peak
 }
 
 func normalizeArchiveTransactionSnapshots(items []TransactionEvent) {
@@ -1197,6 +1322,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 	faultTimelineBuckets := make(map[time.Time]*RunArchiveSOAPFaultTimelineBucket)
 	payloadTimelineBuckets := make(map[time.Time]*RunArchiveSOAPPayloadTimelineBucket)
+	actionSummaryBuckets := make(map[string][]archiveActionSummaryBucket)
 	errorPatterns := make(map[string]*RunArchiveErrorPattern)
 	errorPatternActions := make(map[string]map[string]struct{})
 
@@ -1217,6 +1343,17 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 
 		stats := report.ByAction[tx.ActionName]
 		report.ByAction[tx.ActionName] = mergeRunArchiveActionStats(stats, tx)
+		if len(summaries) > 0 {
+			index := archiveSummaryBucketIndex(summaries, tx.Timestamp)
+			if index >= 0 {
+				buckets := actionSummaryBuckets[tx.ActionName]
+				if len(buckets) == 0 {
+					buckets = make([]archiveActionSummaryBucket, len(summaries))
+				}
+				buckets[index].transactions++
+				actionSummaryBuckets[tx.ActionName] = buckets
+			}
+		}
 		if tx.Group != "" {
 			report.ByGroup[tx.Group] = mergeRunArchiveActionStats(report.ByGroup[tx.Group], tx)
 		}
@@ -1321,6 +1458,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.BrowserResources = finalizeBrowserResourceTimings(report.BrowserResources, 50)
 	report.Web2Migration = buildRunArchiveWeb2MigrationEvidence(transactions)
 	for action, stats := range report.ByAction {
+		stats.PeakTPS = archiveActionPeakTPSFromBuckets(summaries, actionSummaryBuckets[action])
 		report.ByAction[action] = finalizeRunArchiveActionStats(stats)
 	}
 	for group, stats := range report.ByGroup {
@@ -2634,6 +2772,7 @@ func finalizeArchiveSOAPPayloadTimelineBucket(bucket RunArchiveSOAPPayloadTimeli
 func mergeRunArchiveActionStats(stats RunArchiveActionStats, tx TransactionEvent) RunArchiveActionStats {
 	stats.Transactions++
 	stats.AvgResponseMs += tx.DurationMs
+	stats.durations = append(stats.durations, tx.DurationMs)
 	if !tx.Success {
 		stats.Errors++
 	}
@@ -2650,7 +2789,15 @@ func finalizeRunArchiveActionStats(stats RunArchiveActionStats) RunArchiveAction
 	if stats.Transactions > 0 {
 		stats.ErrorPct = float64(stats.Errors) / float64(stats.Transactions) * 100
 		stats.AvgResponseMs = stats.AvgResponseMs / float64(stats.Transactions)
+		if len(stats.durations) > 0 {
+			sort.Float64s(stats.durations)
+			stats.P50Ms = archiveAnalysisPercentile(stats.durations, 0.50)
+			stats.P90Ms = archiveAnalysisPercentile(stats.durations, 0.90)
+			stats.P95Ms = archiveAnalysisPercentile(stats.durations, 0.95)
+			stats.P99Ms = archiveAnalysisPercentile(stats.durations, 0.99)
+		}
 	}
+	stats.durations = nil
 	return stats
 }
 

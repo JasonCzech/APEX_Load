@@ -792,6 +792,11 @@ export interface RunArchiveActionStats {
   avg_response_ms: number
   min_response_ms: number
   max_response_ms: number
+  peak_tps?: number
+  p50_ms?: number
+  p90_ms?: number
+  p95_ms?: number
+  p99_ms?: number
 }
 
 export interface RunArchiveResourcePeaks {

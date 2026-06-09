@@ -424,7 +424,16 @@ describe('ResultsPage', () => {
         peak_active_vusers: id === 'run-a' ? 10 : 12,
       },
       by_action: {
-        Search: { count: 20, errors: 0, avg_response_ms: id === 'run-a' ? 90 : 120 },
+        Search: {
+          transactions: 20,
+          errors: 0,
+          error_pct: 0,
+          avg_response_ms: id === 'run-a' ? 90 : 120,
+          min_response_ms: 60,
+          max_response_ms: 180,
+          peak_tps: id === 'run-a' ? 4 : 6,
+          p95_ms: id === 'run-a' ? 110 : 145,
+        },
       },
       resource_peaks: {
         cpu_process_pct: 10,
@@ -484,9 +493,12 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('Checkout (LOC-RUN-20260512-002)')
     expect(container.textContent).toContain('Search')
     expect(container.textContent).toContain('Run')
-    expect(container.textContent).toContain('Avg ART')
+    let comparisonTable = container.querySelector('.results-compare-table') as HTMLElement
+    expect(comparisonTable.textContent).toContain('Peak TPS')
+    expect(comparisonTable.textContent).toContain('4.0')
+    expect(comparisonTable.textContent).toContain('6.0')
+    expect(comparisonTable.textContent).toContain('+2.0')
     expect(container.textContent).toContain('Reference')
-    expect(container.textContent).toContain('+30.0 ms')
 
     const tpsTab = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'TPS') as HTMLButtonElement | undefined
     const p95Tab = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'P95') as HTMLButtonElement | undefined
@@ -500,6 +512,141 @@ describe('ResultsPage', () => {
 
     expect(p95Tab?.getAttribute('aria-selected')).toBe('true')
     expect(container.textContent).toContain('Showing 95th percentile response time; color identifies the run.')
+    comparisonTable = container.querySelector('.results-compare-table') as HTMLElement
+    expect(comparisonTable.textContent).toContain('P95')
+    expect(comparisonTable.textContent).toContain('110.0 ms')
+    expect(comparisonTable.textContent).toContain('145.0 ms')
+    expect(comparisonTable.textContent).toContain('+35.0 ms')
+    expect(comparisonTable.textContent).not.toContain('Avg ART')
+  })
+
+  it('filters pairwise comparison cards, table, graph, and export by common transaction', async () => {
+    apiMock.getTestArchiveReport.mockImplementation(async (id: string) => ({
+      manifest: { test_id: id, provenance: { runtime_settings: {} } },
+      overview: {
+        transactions: id === 'run-a' ? 1000 : 1100,
+        errors: 0,
+        error_pct: 0,
+        avg_response_ms: id === 'run-a' ? 95 : 102,
+        min_response_ms: 80,
+        max_response_ms: 140,
+        resource_samples: 0,
+        interval_summaries: 2,
+        peak_tps: id === 'run-a' ? 30 : 28,
+        peak_active_vusers: id === 'run-a' ? 10 : 12,
+      },
+      by_action: {
+        Checkout: {
+          transactions: id === 'run-a' ? 50 : 60,
+          errors: id === 'run-a' ? 5 : 0,
+          error_pct: id === 'run-a' ? 10 : 0,
+          avg_response_ms: id === 'run-a' ? 120 : 150,
+          min_response_ms: 80,
+          max_response_ms: 250,
+        },
+        [id === 'run-a' ? 'Search' : 'Browse']: {
+          transactions: 10,
+          errors: 0,
+          error_pct: 0,
+          avg_response_ms: 90,
+          min_response_ms: 70,
+          max_response_ms: 110,
+        },
+      },
+      resource_peaks: {
+        cpu_process_pct: 10,
+        mem_process_mb: 100,
+        net_sent_kbps: 0,
+        net_recv_kbps: 0,
+        disk_read_kbps: 0,
+        disk_write_kbps: 0,
+      },
+    }))
+    apiMock.getTestArchiveSummaries.mockImplementation(async (id: string, params?: { action?: string }) => ({
+      summaries: params?.action === 'Checkout'
+        ? [
+            { timestamp: '2026-05-12T18:01:00Z', tps: id === 'run-a' ? 5 : 7, avg_response_ms: id === 'run-a' ? 120 : 150, p95_ms: id === 'run-a' ? 180 : 220, error_pct: id === 'run-a' ? 10 : 0 },
+          ]
+        : [
+            { timestamp: '2026-05-12T18:01:00Z', tps: id === 'run-a' ? 30 : 28, avg_response_ms: id === 'run-a' ? 95 : 102, p95_ms: id === 'run-a' ? 110 : 140, error_pct: 0 },
+          ],
+    }))
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const rowCheckboxes = Array.from(container.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[]
+    await act(async () => {
+      rowCheckboxes[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      rowCheckboxes[0].dispatchEvent(new Event('change', { bubbles: true }))
+      rowCheckboxes[1].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      rowCheckboxes[1].dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      buttonByText(container, 'Run Comparison')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const transactionSelect = selectByLabel(container, 'Transaction')
+    expect(transactionSelect).toBeTruthy()
+    expect(Array.from(transactionSelect!.options).map(option => option.textContent)).toEqual(['All transactions', 'Checkout'])
+    const comparisonCard = container.querySelector('.results-compare-card') as HTMLElement
+    expect(comparisonCard.textContent).toContain('Search')
+    expect(comparisonCard.textContent).toContain('Browse')
+
+    await changeSelect(transactionSelect!, 'Checkout')
+    await flushPromises()
+
+    expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledWith('run-a', expect.objectContaining({ action: 'Checkout' }))
+    expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledWith('run-b', expect.objectContaining({ action: 'Checkout' }))
+    expect(container.textContent).toContain('50')
+    expect(container.textContent).toContain('60')
+    expect(container.textContent).toContain('120.0 ms')
+    expect(container.textContent).toContain('150.0 ms')
+    expect(container.textContent).toContain('5.0')
+    expect(container.textContent).toContain('7.0')
+    let comparisonTable = container.querySelector('.results-compare-table') as HTMLElement
+    expect(comparisonTable.textContent).toContain('Peak TPS')
+    expect(comparisonTable.textContent).toContain('+2.0')
+    expect(container.textContent).toContain('Showing transactions per second; color identifies the run.')
+    expect(comparisonCard.textContent).not.toContain('Search')
+    expect(comparisonCard.textContent).not.toContain('Browse')
+    expect(comparisonCard.textContent).not.toContain('CPU Peak')
+    expect(comparisonCard.textContent).not.toContain('Peak VUsers')
+
+    const p95Tab = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'P95') as HTMLButtonElement | undefined
+    await act(async () => {
+      p95Tab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    comparisonTable = container.querySelector('.results-compare-table') as HTMLElement
+    expect(comparisonTable.textContent).toContain('P95')
+    expect(comparisonTable.textContent).toContain('180.0 ms')
+    expect(comparisonTable.textContent).toContain('220.0 ms')
+    expect(comparisonTable.textContent).toContain('+40.0 ms')
+
+    const exportButton = buttonByText(container, 'Export CSV')
+    await act(async () => {
+      exportButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.downloadTestArchiveComparison).toHaveBeenCalledWith('run-b', 'run-a', 'device', 'Checkout')
+    const [, filename] = vi.mocked(downloadBlob).mock.calls[0]
+    expect(filename).toBe('archive-comparison-run-b-run-a-device-Checkout.csv')
   })
 
   it('allows selecting more than two results without auto-running comparison', async () => {
@@ -510,6 +657,8 @@ describe('ResultsPage', () => {
           ref_key: 'LOC-RUN-20260512-001',
           name: 'Checkout A',
           status: 'COMPLETE',
+          application_id: 'app-1',
+          release_id: 'rel-1',
           total_vusers: 10,
           duration: '5m',
           created_at: '2026-05-12T18:00:00Z',
@@ -521,6 +670,8 @@ describe('ResultsPage', () => {
           ref_key: 'LOC-RUN-20260512-002',
           name: 'Checkout B',
           status: 'COMPLETE',
+          application_id: 'app-1',
+          release_id: 'rel-1',
           total_vusers: 12,
           duration: '5m',
           created_at: '2026-05-12T19:00:00Z',
@@ -604,6 +755,129 @@ describe('ResultsPage', () => {
     const [blob, filename] = vi.mocked(downloadBlob).mock.calls[0]
     expect(filename).toBe('archive-comparison-run-a-3-runs-device.csv')
     expect(await blob.text()).toBe('backend multi comparison csv')
+  })
+
+  it('passes the transaction filter to multi-run comparison export', async () => {
+    apiMock.listTests.mockResolvedValueOnce({
+      tests: [
+        {
+          id: 'run-a',
+          ref_key: 'LOC-RUN-20260512-001',
+          name: 'Checkout A',
+          status: 'COMPLETE',
+          total_vusers: 10,
+          duration: '5m',
+          created_at: '2026-05-12T18:00:00Z',
+          ended_at: '2026-05-12T18:05:00Z',
+          archive: { ref_key: 'LOC-RUN-20260512-001', transaction_count: 1000 },
+        },
+        {
+          id: 'run-b',
+          ref_key: 'LOC-RUN-20260512-002',
+          name: 'Checkout B',
+          status: 'COMPLETE',
+          total_vusers: 12,
+          duration: '5m',
+          created_at: '2026-05-12T19:00:00Z',
+          ended_at: '2026-05-12T19:05:00Z',
+          archive: { ref_key: 'LOC-RUN-20260512-002', transaction_count: 1100 },
+        },
+        {
+          id: 'run-c',
+          ref_key: 'LOC-RUN-20260512-003',
+          name: 'Checkout C',
+          status: 'COMPLETE',
+          application_id: 'app-1',
+          release_id: 'rel-1',
+          total_vusers: 14,
+          duration: '5m',
+          created_at: '2026-05-12T20:00:00Z',
+          ended_at: '2026-05-12T20:05:00Z',
+          archive: { ref_key: 'LOC-RUN-20260512-003', transaction_count: 1200 },
+        },
+      ],
+    })
+    apiMock.getTestArchiveReport.mockImplementation(async (id: string) => ({
+      manifest: { test_id: id, provenance: { runtime_settings: {} } },
+      overview: {
+        transactions: 1000,
+        errors: 0,
+        error_pct: 0,
+        avg_response_ms: 100,
+        min_response_ms: 80,
+        max_response_ms: 140,
+        resource_samples: 0,
+        interval_summaries: 1,
+        peak_tps: 30,
+        peak_active_vusers: 10,
+      },
+      by_action: {
+        Checkout: {
+          transactions: id === 'run-a' ? 50 : id === 'run-b' ? 60 : 70,
+          errors: 0,
+          error_pct: 0,
+          avg_response_ms: id === 'run-a' ? 100 : id === 'run-b' ? 120 : 140,
+          min_response_ms: 80,
+          max_response_ms: 180,
+        },
+      },
+      resource_peaks: {
+        cpu_process_pct: 10,
+        mem_process_mb: 100,
+        net_sent_kbps: 0,
+        net_recv_kbps: 0,
+        disk_read_kbps: 0,
+        disk_write_kbps: 0,
+      },
+    }))
+    apiMock.getTestArchiveSummaries.mockResolvedValue({ summaries: [{ timestamp: '2026-05-12T18:01:00Z', tps: 5, avg_response_ms: 100, p95_ms: 120, error_pct: 0 }] })
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+      await Promise.resolve()
+    })
+    await flushPromises()
+
+    const rowCheckboxes = Array.from(container.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[]
+    expect(rowCheckboxes).toHaveLength(3)
+    await act(async () => {
+      rowCheckboxes.forEach(checkbox => {
+        checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        checkbox.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      buttonByText(container, 'Run Comparison')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Run 3')
+    expect(Array.from(selectByLabel(container, 'Transaction')!.options).map(option => option.textContent)).toEqual(['All transactions', 'Checkout'])
+
+    await changeSelect(selectByLabel(container, 'Transaction')!, 'Checkout')
+    await flushPromises()
+    expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledWith('run-c', expect.objectContaining({ action: 'Checkout' }))
+
+    const exportButton = buttonByText(container, 'Export CSV')
+    await act(async () => {
+      exportButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.downloadTestArchiveMultiComparison).toHaveBeenCalledWith('run-a', ['run-b', 'run-c'], 'device', 'Checkout')
+    const [, filename] = vi.mocked(downloadBlob).mock.calls[0]
+    expect(filename).toBe('archive-comparison-run-a-3-runs-device-Checkout.csv')
   })
 
   it('disables comparison when more than ten archived runs are selected', async () => {

@@ -54,6 +54,7 @@ type ArchiveTransactionsParams = {
 type ArchiveListParams = {
   limit?: number
   offset?: number
+  action?: string
 }
 
 type TestListResponse = {
@@ -431,7 +432,7 @@ export function useTestApi() {
 
   const getTestArchiveSummaries = useCallback(
     (id: string, params?: ArchiveListParams) => {
-      const suffix = buildQuery({ limit: params?.limit, offset: params?.offset })
+      const suffix = buildQuery({ limit: params?.limit, offset: params?.offset, action: params?.action })
       return request<ArchiveSummariesResponse>(`/tests/${id}/archive/summaries${suffix}`)
     },
     [],
@@ -468,14 +469,14 @@ export function useTestApi() {
   const downloadTestArchive = useCallback((id: string) => fetchBlob(`/tests/${id}/archive`), [])
 
   const downloadTestArchiveComparison = useCallback(
-    (id: string, baselineId: string, breakdown: 'overall' | 'platform' | 'engine' | 'device') =>
-      fetchBlob(`/tests/${id}/archive/comparison${buildQuery({ format: 'csv', baseline_id: baselineId, breakdown })}`),
+    (id: string, baselineId: string, breakdown: 'overall' | 'platform' | 'engine' | 'device', action?: string) =>
+      fetchBlob(`/tests/${id}/archive/comparison${buildQuery({ format: 'csv', baseline_id: baselineId, breakdown, action })}`),
     [],
   )
 
   const downloadTestArchiveMultiComparison = useCallback(
-    (baselineId: string, comparisonIds: string[], breakdown: 'overall' | 'platform' | 'engine' | 'device') =>
-      fetchBlob(`/tests/${baselineId}/archive/comparison${buildQuery({ format: 'csv', comparison_ids: comparisonIds.join(','), breakdown })}`),
+    (baselineId: string, comparisonIds: string[], breakdown: 'overall' | 'platform' | 'engine' | 'device', action?: string) =>
+      fetchBlob(`/tests/${baselineId}/archive/comparison${buildQuery({ format: 'csv', comparison_ids: comparisonIds.join(','), breakdown, action })}`),
     [],
   )
 
