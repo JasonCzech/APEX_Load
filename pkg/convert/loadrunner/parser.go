@@ -55,6 +55,7 @@ type ParsedAction struct {
 // ProjectConfig holds parsed .usr file settings.
 type ProjectConfig struct {
 	ScriptType   string // e.g. "Web"
+	ActiveTypes  []string
 	ActionFiles  []string
 	RuntimeFile  string
 	ParamFiles   []string
@@ -275,9 +276,11 @@ func parseFunctionBlock(block string, filename string, lineNum int, endLine int,
 		parseWebSubmitData(&fn, inner)
 	case "web_custom_request":
 		parseWebCustomRequest(&fn, inner)
+	case "web_rest":
+		parseWebREST(&fn, inner)
 	case "web_service_call":
 		parseWebServiceCall(&fn, inner)
-	case "web_reg_save_param", "web_reg_save_param_json":
+	case "web_reg_save_param", "web_reg_save_param_json", "web_reg_save_param_xpath", "web_reg_save_param_ex":
 		parseWebRegSaveParam(&fn, inner)
 	case "web_reg_save_param_regexp":
 		parseWebRegSaveParam(&fn, inner)
@@ -516,6 +519,68 @@ func parseWebCustomRequest(fn *ParsedFunction, inner string) {
 	if fn.Args["Body"] != "" {
 		fn.Body = fn.Args["Body"]
 	}
+}
+
+func parseWebREST(fn *ParsedFunction, inner string) {
+	if len(fn.RawArgs) > 0 {
+		fn.StepName = fn.RawArgs[0]
+	}
+	fn.Method = "GET"
+	extractNamedArgs(fn, inner)
+
+	if fn.Args["URL"] != "" {
+		fn.URL = fn.Args["URL"]
+	} else if m := reURLArg.FindStringSubmatch(inner); len(m) > 1 {
+		fn.URL = m[1]
+	}
+	if fn.Args["Method"] != "" {
+		fn.Method = fn.Args["Method"]
+	} else if m := reMethodArg.FindStringSubmatch(inner); len(m) > 1 {
+		fn.Method = m[1]
+	}
+	if fn.Args["Body"] != "" {
+		fn.Body = fn.Args["Body"]
+	} else if m := reBodyArg.FindStringSubmatch(inner); len(m) > 1 {
+		fn.Body = m[1]
+	}
+	extractWebRESTHeaders(fn)
+}
+
+func extractWebRESTHeaders(fn *ParsedFunction) {
+	inHeaders := false
+	currentName := ""
+	for _, arg := range fn.CallArgs {
+		if loadRunnerArgTokenEquals(arg, "HEADERS") {
+			inHeaders = true
+			currentName = ""
+			continue
+		}
+		if !inHeaders {
+			continue
+		}
+		if loadRunnerArgTokenEquals(arg, "ENDHEADER") {
+			currentName = ""
+			continue
+		}
+		if loadRunnerArgTokenEquals(arg, "LAST") {
+			break
+		}
+		if arg.Kind != "key_value" {
+			continue
+		}
+		switch strings.ToLower(arg.Name) {
+		case "name":
+			currentName = arg.Value
+		case "value":
+			if currentName != "" {
+				fn.Headers[currentName] = arg.Value
+			}
+		}
+	}
+}
+
+func loadRunnerArgTokenEquals(arg ParsedArgument, token string) bool {
+	return strings.EqualFold(strings.TrimSpace(arg.Value), token) || strings.EqualFold(strings.TrimSpace(arg.Raw), token)
 }
 
 func parseWebServiceCall(fn *ParsedFunction, inner string) {
@@ -760,6 +825,8 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 			switch key {
 			case "Type":
 				cfg.ScriptType = value
+			case "ActiveTypes", "AdditionalTypes", "GenerateTypes":
+				cfg.ActiveTypes = appendUnique(cfg.ActiveTypes, splitConfigList(value)...)
 			}
 		case "Actions":
 			if strings.HasSuffix(value, ".c") {
@@ -783,6 +850,19 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 	}
 
 	return cfg, nil
+}
+
+func splitConfigList(value string) []string {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ';' || r == '|'
+	})
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func cleanConfigValue(value string) string {

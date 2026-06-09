@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/devweb"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -86,6 +87,9 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			}
 			break
 		}
+	}
+	if loadRunnerZipHasDevWebMain(files) {
+		return convertDevWebZipViaLoadRunnerImport(zipData, opts, files, projectConfig)
 	}
 	if projectConfig != nil {
 		if scope, ok := trueclient.LookupScriptTypeScope(projectConfig.ScriptType); ok {
@@ -438,6 +442,107 @@ func findParameterFiles(files map[string]string, projectConfig *ProjectConfig) [
 	}
 	sort.Strings(parameterFiles)
 	return uniqueStrings(parameterFiles)
+}
+
+func loadRunnerZipHasDevWebMain(files map[string]string) bool {
+	for name, content := range files {
+		if strings.EqualFold(filepath.Base(name), "main.js") && strings.Contains(content, "load.") {
+			return true
+		}
+	}
+	return false
+}
+
+func convertDevWebZipViaLoadRunnerImport(zipData []byte, opts ConvertOptions, files map[string]string, projectConfig *ProjectConfig) (*ConvertResult, error) {
+	devResult, err := devweb.ConvertZip(zipData, devweb.ConvertOptions{
+		BaseURL:            opts.BaseURL,
+		DefaultThinkTimeMs: int(opts.DefaultThinkTimeMs),
+	})
+	if err != nil {
+		return nil, err
+	}
+	detected := detectedDevWebProtocol(projectConfig, devResult)
+	unsupported := append([]string(nil), devResult.Stats.UnsupportedCalls...)
+	unsupported = append(unsupported, devResult.Unsupported.Strings()...)
+	result := &ConvertResult{
+		Script:           devResult.Script,
+		Warnings:         append([]string(nil), devResult.Warnings...),
+		DetectedProtocol: &detected,
+		SourceReview:     devResult.SourceReview,
+		Stats: ConvertStats{
+			TotalFunctions:      devResult.Stats.TotalSteps,
+			ConvertedActions:    devResult.Stats.ConvertedActions,
+			RawRequestActions:   devResult.Stats.HTTPRequests,
+			ThinkTimes:          devResult.Stats.ThinkTimes,
+			Transactions:        devResult.Stats.Transactions,
+			Extractors:          devResult.Stats.Extractors,
+			Skipped:             devResult.Stats.Skipped,
+			ReviewOnlyFunctions: len(devResult.Unsupported),
+			UnsupportedFuncs:    uniqueStrings(unsupported),
+		},
+	}
+	if result.Script != nil {
+		preserved := ensureDevWebLoadRunnerPreserved(result.Script)
+		preserved["detected_protocol"] = result.DetectedProtocol
+		preserved["loadrunner_endpoint_routed_to"] = "devweb"
+		if result.SourceReview != nil {
+			preserved["source_review"] = result.SourceReview
+		}
+		if len(files) > 0 {
+			preserved["archive_file_count"] = len(files)
+		}
+	}
+	if len(result.Stats.UnsupportedFuncs) > 0 {
+		result.Warnings = append(result.Warnings, "DevWeb archive imported through LoadRunner endpoint has review-gated JavaScript or helper constructs.")
+	}
+	return result, nil
+}
+
+func detectedDevWebProtocol(projectConfig *ProjectConfig, result *devweb.ConvertResult) DetectedProtocol {
+	apexProtocol := "http"
+	if result != nil && result.Script != nil && strings.TrimSpace(result.Script.Protocol) != "" {
+		apexProtocol = result.Script.Protocol
+	}
+	signals := []string{"DevWeb main.js archive"}
+	confidence := DetectionConfidenceMedium
+	sourceType := ""
+	if projectConfig != nil {
+		sourceType = strings.TrimSpace(projectConfig.ScriptType)
+		if strings.EqualFold(sourceType, "devweb") {
+			signals = append(signals, ".usr [General] Type=DevWeb")
+			confidence = DetectionConfidenceHigh
+		}
+		for _, activeType := range projectConfig.ActiveTypes {
+			if strings.EqualFold(activeType, "devweb") {
+				signals = append(signals, ".usr [General] ActiveTypes=DevWeb")
+				confidence = DetectionConfidenceHigh
+			}
+		}
+	}
+	return DetectedProtocol{
+		CanonicalLoadRunnerProtocol: "devweb",
+		APEXLoadProtocol:            apexProtocol,
+		Bundle:                      "Templates Protocol Bundle",
+		ImportMode:                  ImportModeExecutable,
+		Confidence:                  confidence,
+		DisplayName:                 "DevWeb",
+		SourceType:                  sourceType,
+		Signals:                     uniqueSortedStrings(signals),
+		RequiredEvidence:            []string{"Native DevWeb import review", "Replay validation evidence"},
+	}
+}
+
+func ensureDevWebLoadRunnerPreserved(script *dsl.Script) map[string]any {
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{Source: "devweb"}
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = map[string]any{}
+	}
+	return script.Metadata.Import.Preserved
 }
 
 func collectRuntimeSections(files map[string]string) map[string]map[string]map[string]string {

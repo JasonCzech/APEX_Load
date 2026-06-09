@@ -839,6 +839,214 @@ func TestConvertWebRegFindToAssertions(t *testing.T) {
 	}
 }
 
+func TestConvertWebRESTAndXPathExtractors(t *testing.T) {
+	parsed, err := ParseActionFile("Action.c", `Action()
+{
+	web_reg_save_param_xpath(
+		"ParamName=userId",
+		"QueryString=//ns2:userId/text()",
+		SEARCH_FILTERS,
+		"Scope=Body",
+		LAST);
+
+	web_reg_save_param_ex(
+		"ParamName=sessionToken",
+		"LB=\"token\":\"",
+		"RB=\"",
+		SEARCH_FILTERS,
+		"Scope=Body",
+		LAST);
+
+	web_rest("Create Post",
+		"URL=https://jsonplaceholder.typicode.com/posts/{randomPostID}",
+		"Method=POST",
+		"EncType=raw",
+		"Body={\r\n"
+		"\"title\": \"foo\",\r\n"
+		"\"id\": \"{randomPostID}\"\r\n"
+		"}",
+		HEADERS,
+		"Name=Accept", "Value=*/*", ENDHEADER,
+		"Name=Content-Type", "Value=application/json; charset=UTF-8", ENDHEADER,
+		LAST);
+}`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+	}
+	action := result.Script.Actions[0]
+	if action.Method != "POST" || action.Target != "/posts/{{var.randompostid}}" {
+		t.Fatalf("action method/target = %s/%q", action.Method, action.Target)
+	}
+	if action.Headers["Accept"] != "*/*" || action.Headers["Content-Type"] != "application/json; charset=UTF-8" {
+		t.Fatalf("headers = %#v", action.Headers)
+	}
+	if !strings.Contains(action.Body, `"id": "{{var.randompostid}}"`) {
+		t.Fatalf("body = %q, want converted LoadRunner parameter", action.Body)
+	}
+	if len(action.Extractors) != 2 {
+		t.Fatalf("extractors = %#v, want xpath + boundary", action.Extractors)
+	}
+	if action.Extractors[0].Name != "userid" || action.Extractors[0].Type != "xpath" || action.Extractors[0].Expression != "//ns2:userId/text()" {
+		t.Fatalf("xpath extractor = %#v", action.Extractors[0])
+	}
+	if action.Extractors[1].Name != "sessiontoken" || action.Extractors[1].Type != "boundary" {
+		t.Fatalf("ex extractor = %#v", action.Extractors[1])
+	}
+}
+
+func TestConvertZipRoutesDevWebMainJSArchive(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("LRD/DevWeb.usr", `[General]
+Type=DevWeb
+`)
+	addFile("LRD/main.js", strings.Join([]string{
+		`load.action("Browse", async function() {`,
+		`  const helper = require("./helper");`,
+		"  new load.WebRequest({ url: `${load.params.BASE_URL}/orders`, method: \"GET\" }).sendSync();",
+		`});`,
+	}, "\n"))
+	addFile("LRD/helper.js", `module.exports = { enabled: true };`)
+	addFile("LRD/parameters.yml", `
+parameters:
+- name: BASE_URL
+  type: csv
+  fileName: base.csv
+  columnName: url
+`)
+	addFile("LRD/base.csv", "url\nhttps://api.example.test\n")
+	addFile("LRD/rts.yml", `
+httpConnection:
+  connectTimeout: 7
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalLoadRunnerProtocol != "devweb" || result.DetectedProtocol.ImportMode != ImportModeExecutable {
+		t.Fatalf("detected protocol = %#v, want executable DevWeb routing", result.DetectedProtocol)
+	}
+	if result.Script == nil || result.Script.Protocol != "http" || len(result.Script.Actions) != 2 {
+		t.Fatalf("script = %#v, want review gate plus native DevWeb HTTP action", result.Script)
+	}
+	if result.Script.Actions[0].Type != "review_required" || result.Script.Actions[1].Target != "{{data.base.url}}/orders" {
+		t.Fatalf("actions = %#v, want helper review gate followed by DevWeb parameter template request", result.Script.Actions)
+	}
+	preserved := result.Script.Metadata.Import.Preserved
+	if preserved["loadrunner_endpoint_routed_to"] != "devweb" {
+		t.Fatalf("preserved metadata = %#v, want loadrunner endpoint route marker", preserved)
+	}
+	helpers, ok := preserved["helper_modules"].([]string)
+	if !ok || len(helpers) != 1 || helpers[0] != "LRD/helper.js" {
+		t.Fatalf("helper_modules = %#v, want preserved helper.js", preserved["helper_modules"])
+	}
+	parity, ok := preserved["runtime_parity"].(map[string]string)
+	if !ok || parity["httpConnection.connectTimeout"] != "executed" {
+		t.Fatalf("runtime parity = %#v, want DevWeb rts.yml parity", preserved["runtime_parity"])
+	}
+	if result.Stats.ConvertedActions != 2 || result.Stats.ReviewOnlyFunctions == 0 {
+		t.Fatalf("stats = %#v, want converted action plus helper-module review gate", result.Stats)
+	}
+}
+
+func TestConvertZipSAPWebAsyncHelpersRemainReviewGated(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("SAPWeb.usr", `[General]
+Type=Multi
+ActiveTypes=SAP_Web
+GenerateTypes=SAP_Web
+
+[Actions]
+Action1=Action.c
+`)
+	addFile("Action.c", `Action()
+{
+	web_reg_async_attributes("ID=SapAsync", "Pattern=.*", LAST);
+	web_url("FLP",
+		"URL=https://sap.example.test/sap/bc/ui2/flp",
+		LAST);
+	web_stop_async("ID=SapAsync", LAST);
+	return 0;
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalLoadRunnerProtocol != "sap_web" || result.DetectedProtocol.APEXLoadProtocol != "http" {
+		t.Fatalf("detected protocol = %#v, want SAP Web over HTTP", result.DetectedProtocol)
+	}
+	if result.Script == nil || result.Script.Protocol != "http" {
+		t.Fatalf("script = %#v, want executable HTTP script with review-gated SAP helpers", result.Script)
+	}
+	if result.Stats.RawRequestActions != 1 || result.Stats.ReviewOnlyFunctions != 2 {
+		t.Fatalf("stats = %#v, want one HTTP request plus two review-only async helpers", result.Stats)
+	}
+	assertSourceReviewFunctionStatus(t, result.SourceReview.Mappings, "web_reg_async_attributes", "review_only")
+	assertSourceReviewFunctionStatus(t, result.SourceReview.Mappings, "web_stop_async", "review_only")
+	assertSourceReviewFunctionStatus(t, result.SourceReview.Mappings, "web_url", "converted")
+}
+
+func TestConvertLoadRunnerParamArrayRandomInSaveString(t *testing.T) {
+	parsed, err := ParseActionFile("Action.c", `Action()
+{
+	lr_save_string(lr_paramarr_random("postIDs"),"randomPostID");
+	web_url("Post", "URL=https://example.test/posts/{randomPostID}", LAST);
+}`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %#v, want parameter action and request", result.Script.Actions)
+	}
+	paramAction := result.Script.Actions[0]
+	args, _ := paramAction.Params["args"].([]any)
+	if len(args) < 2 || args[0] != "{{var.postids}}" || args[1] != "randomPostID" {
+		t.Fatalf("parameter action args = %#v", paramAction.Params["args"])
+	}
+	if result.Script.Actions[1].Target != "/posts/{{var.randompostid}}" {
+		t.Fatalf("request target = %q", result.Script.Actions[1].Target)
+	}
+}
+
 func TestConvertSOAPCustomRequest(t *testing.T) {
 	parsed, err := ParseActionFile("Action.c", sampleSOAPActionC)
 	if err != nil {
@@ -880,6 +1088,52 @@ func TestConvertSOAPCustomRequest(t *testing.T) {
 	}
 	if got := action.Headers["Content-Type"]; !strings.Contains(got, "text/xml") {
 		t.Fatalf("content type = %q, want text/xml SOAP content type", got)
+	}
+}
+
+func TestConvertWebServiceCallGeneratesSOAPAction(t *testing.T) {
+	parsed, err := ParseActionFile("Action.c", `Action()
+{
+	web_service_call( "StepName=GetFlights_102",
+		"SOAPMethod=Flights_Service|FlightsServiceMethods|GetFlights",
+		"ResponseParam=response",
+		"Service=Flights_Service",
+		"ExpectedResponse=SoapResult",
+		"Snapshot=t1699436746.inf",
+		BEGIN_ARGUMENTS,
+		"DepartureCity={City}",
+		"ArrivalCity={City}",
+		"FlightDate=11/9/2025",
+		END_ARGUMENTS,
+		BEGIN_RESULT,
+		END_RESULT,
+		LAST);
+}`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if result.Script.Protocol != "soap" {
+		t.Fatalf("protocol = %q, want soap", result.Script.Protocol)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %#v, want one SOAP request", result.Script.Actions)
+	}
+	action := result.Script.Actions[0]
+	if action.Target != "{{env.FLIGHTS_SERVICE_URL}}" {
+		t.Fatalf("target = %q, want env endpoint placeholder", action.Target)
+	}
+	if action.SOAP == nil || action.SOAP.Operation != "GetFlights" || action.SOAP.BodyMode != "generated" {
+		t.Fatalf("soap metadata = %#v, want generated GetFlights operation", action.SOAP)
+	}
+	if action.Metadata["soap_service"] != "Flights_Service" || action.Metadata["soap_binding"] != "FlightsServiceMethods" || action.Metadata["soap_response_param"] != "response" {
+		t.Fatalf("metadata = %#v, want preserved service/binding/response metadata", action.Metadata)
+	}
+	if !strings.Contains(action.Body, "<GetFlights>") || !strings.Contains(action.Body, "<DepartureCity>{{var.city}}</DepartureCity>") {
+		t.Fatalf("generated SOAP body = %q", action.Body)
 	}
 }
 

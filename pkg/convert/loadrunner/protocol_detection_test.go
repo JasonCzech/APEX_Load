@@ -17,7 +17,9 @@ func TestDetectProtocolFromUSRType(t *testing.T) {
 		{name: "web", scriptType: "Web HTTP/HTML", canonical: "web_http_html", storm: "http", mode: ImportModeExecutable},
 		{name: "soap", scriptType: "Web Services", canonical: "soap", storm: "soap", mode: ImportModeExecutable},
 		{name: "mobile", scriptType: "TruClientMobileWeb", canonical: "truclient_mobile_web", storm: "browser", mode: ImportModeExecutable},
+		{name: "mobile web2 ui", scriptType: "Web2UIMob", canonical: "truclient_mobile_web", storm: "browser", mode: ImportModeExecutable},
 		{name: "web2", scriptType: "TruClient 2.0 - Web", canonical: "truclient2_web", storm: "browser", mode: ImportModeReviewOnly},
+		{name: "truclient web", scriptType: "TruClientWeb", canonical: "truclient_web", storm: "browser", mode: ImportModeReviewOnly},
 		{name: "database", scriptType: "ODBC", canonical: "database", storm: "database", mode: ImportModeExecutable},
 		{name: "dns", scriptType: "DNS", canonical: "dns", storm: "network", mode: ImportModeExecutable},
 		{name: "ftp", scriptType: "FTP", canonical: "ftp", storm: "network", mode: ImportModeExecutable},
@@ -28,8 +30,12 @@ func TestDetectProtocolFromUSRType(t *testing.T) {
 		{name: "winsock", scriptType: "Windows Sockets", canonical: "winsock", storm: "network", mode: ImportModeExecutable},
 		{name: "oracle web", scriptType: "Oracle-Web", canonical: "oracle_web", storm: "http", mode: ImportModeExecutable},
 		{name: "siebel web", scriptType: "Siebel-Web", canonical: "siebel_web", storm: "http", mode: ImportModeExecutable},
+		{name: "sap web", scriptType: "SAP Web", canonical: "sap_web", storm: "http", mode: ImportModeExecutable},
 		{name: "oracle nca", scriptType: "Oracle NCA", canonical: "oracle_nca", storm: "", mode: ImportModeExternalRunnerRequired},
 		{name: "sap gui", scriptType: "SAP GUI", canonical: "sap_gui", storm: "", mode: ImportModeExternalRunnerRequired},
+		{name: "rdp", scriptType: "RDP", canonical: "rdp", storm: "", mode: ImportModeExternalRunnerRequired},
+		{name: "rte", scriptType: "RTE", canonical: "rte", storm: "", mode: ImportModeExternalRunnerRequired},
+		{name: "native mobile", scriptType: "TC4Mobile", canonical: "truclient_native_mobile", storm: "", mode: ImportModeExternalRunnerRequired},
 		{name: "template", scriptType: "C Vuser", canonical: "c_vuser", storm: "", mode: ImportModeReviewOnly},
 	}
 
@@ -38,6 +44,64 @@ func TestDetectProtocolFromUSRType(t *testing.T) {
 			detected := DetectProtocol(nil, &ProjectConfig{ScriptType: tt.scriptType}, nil)
 			if detected.CanonicalLoadRunnerProtocol != tt.canonical || detected.APEXLoadProtocol != tt.storm || detected.ImportMode != tt.mode {
 				t.Fatalf("detected = %#v, want canonical=%s storm=%s mode=%s", detected, tt.canonical, tt.storm, tt.mode)
+			}
+		})
+	}
+}
+
+func TestDetectProtocolUsesUSRActiveTypesForMultiScripts(t *testing.T) {
+	cfg, err := ParseUSRFile(`[General]
+Type=Multi
+ActiveTypes=SAP_Web
+GenerateTypes=SAP_Web
+[Actions]
+Action=Action.c
+`)
+	if err != nil {
+		t.Fatalf("ParseUSRFile returned error: %v", err)
+	}
+	parsed := mustParseActionFile(t, `Action()
+{
+	web_url("flp", "URL=https://example.test/sap/bc/ui2/flp", LAST);
+}`)
+	detected := DetectProtocol(nil, cfg, []*ParsedAction{parsed})
+	if detected.CanonicalLoadRunnerProtocol != "sap_web" || detected.APEXLoadProtocol != "http" || detected.ImportMode != ImportModeExecutable {
+		t.Fatalf("detected = %#v, want executable SAP Web over generic Web HTTP/HTML", detected)
+	}
+	if !containsString(detected.Signals, ".usr [General] ActiveTypes=SAP_Web") {
+		t.Fatalf("signals = %#v, want ActiveTypes evidence", detected.Signals)
+	}
+}
+
+func TestDetectProtocolExternalRunnerContentFallbacks(t *testing.T) {
+	tests := []struct {
+		name      string
+		action    string
+		canonical string
+		signal    string
+	}{
+		{name: "rdp", canonical: "rdp", signal: "rdp_* function calls", action: `Action()
+{
+    rdp_connect_server("Host=server", LAST);
+}`},
+		{name: "rte", canonical: "rte", signal: "TE_* function calls", action: `Action()
+{
+    TE_connect("terminal.example.test", LAST);
+}`},
+		{name: "sap gui", canonical: "sap_gui", signal: "sapgui_* function calls", action: `Action()
+{
+    sapgui_logon("Login", "ASHOST=server", LAST);
+}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed := mustParseActionFile(t, tt.action)
+			detected := DetectProtocol(nil, nil, []*ParsedAction{parsed})
+			if detected.CanonicalLoadRunnerProtocol != tt.canonical || detected.ImportMode != ImportModeExternalRunnerRequired {
+				t.Fatalf("detected = %#v, want %s external-runner", detected, tt.canonical)
+			}
+			if !containsString(detected.Signals, tt.signal) {
+				t.Fatalf("signals = %#v, want %q", detected.Signals, tt.signal)
 			}
 		})
 	}

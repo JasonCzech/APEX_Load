@@ -425,7 +425,11 @@ func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action,
 		if err != nil {
 			return nil, nil, false, err
 		}
-		return []dsl.Action{action}, nil, false, nil
+		var warnings []string
+		if reviewRequired(action.Metadata) {
+			warnings = append(warnings, reviewGatedClickWarning(step, action.Metadata))
+		}
+		return []dsl.Action{action}, warnings, false, nil
 	case "Hover", "Mouse Over", "MouseOver":
 		selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
 		if err != nil {
@@ -484,10 +488,13 @@ func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action,
 		selector = resolveSelector(step, descriptors, trimQuotedValue(selector))
 		value = trimQuotedValue(value)
 		if selector == "" {
-			return nil, nil, false, fmt.Errorf("TruClient Select step is missing a selector value")
+			action := unresolvedBrowserStepAction(step, "Select", "missing_selector")
+			return []dsl.Action{action}, []string{reviewGatedStepWarning(step, action.Metadata)}, false, nil
 		}
 		if value == "" {
-			return nil, nil, false, fmt.Errorf("TruClient Select step is missing a value")
+			action := unresolvedBrowserStepAction(step, "Select", "missing_select_value")
+			action.Metadata["source_selector"] = selector
+			return []dsl.Action{action}, []string{reviewGatedStepWarning(step, action.Metadata)}, false, nil
 		}
 		return []dsl.Action{{
 			Name:     stepDisplayName(step, "Select"),
@@ -609,7 +616,10 @@ func convertClickLikeStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.
 	}
 	selector = resolveSelector(step, descriptors, trimQuotedValue(selector))
 	if selector == "" {
-		return dsl.Action{}, fmt.Errorf("TruClient %s step is missing a selector value", actionName)
+		if x, y, ok := stepCoordinates(step); ok {
+			return coordinateClickAction(step, actionName, x, y), nil
+		}
+		return unresolvedClickAction(step, actionName), nil
 	}
 	action := dsl.Action{
 		Name:     stepDisplayName(step, firstNonEmptyString(actionName, "Click")),
@@ -636,6 +646,96 @@ func convertClickLikeStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.
 	}
 	action.Metadata = metadata
 	return action, nil
+}
+
+func unresolvedClickAction(step truXMLStep, actionName string) dsl.Action {
+	return unresolvedBrowserStepAction(step, firstNonEmptyString(actionName, "Click"), "missing_selector")
+}
+
+func unresolvedBrowserStepAction(step truXMLStep, fallback string, reason string) dsl.Action {
+	actionName := firstNonEmptyString(strings.TrimSpace(step.Action), fallback)
+	return dsl.Action{
+		Name:   stepDisplayName(step, fallback),
+		Type:   "browser_evaluate_js",
+		Target: "(() => null)()",
+		Metadata: map[string]any{
+			"source":          "truclient_" + stableActionToken(actionName),
+			"review_required": true,
+			"review_reason":   reason,
+		},
+	}
+}
+
+func reviewGatedClickWarning(step truXMLStep, metadata map[string]any) string {
+	actionName := firstNonEmptyString(strings.TrimSpace(step.Action), "Click")
+	displayName := stepDisplayName(step, "Click")
+	switch stringFromAny(metadata["review_reason"]) {
+	case "selectorless_coordinate_click":
+		return fmt.Sprintf("TruClient %s step %q was converted as a review-gated coordinate click because no selector was available", actionName, displayName)
+	case "missing_selector":
+		return fmt.Sprintf("TruClient %s step %q has no selector or coordinate fallback; a review-gated placeholder was preserved for manual repair", actionName, displayName)
+	default:
+		return fmt.Sprintf("TruClient %s step %q was converted with a review gate", actionName, displayName)
+	}
+}
+
+func reviewGatedStepWarning(step truXMLStep, metadata map[string]any) string {
+	actionName := firstNonEmptyString(strings.TrimSpace(step.Action), "step")
+	displayName := stepDisplayName(step, actionName)
+	switch stringFromAny(metadata["review_reason"]) {
+	case "missing_selector":
+		return fmt.Sprintf("TruClient %s step %q has no selector; a review-gated placeholder was preserved for manual repair", actionName, displayName)
+	case "missing_select_value":
+		return fmt.Sprintf("TruClient %s step %q has no selected value; a review-gated placeholder was preserved for manual repair", actionName, displayName)
+	default:
+		return fmt.Sprintf("TruClient %s step %q was converted with a review gate", actionName, displayName)
+	}
+}
+
+func reviewRequired(metadata map[string]any) bool {
+	value, _ := metadata["review_required"].(bool)
+	return value
+}
+
+func stepCoordinates(step truXMLStep) (int, int, bool) {
+	values, err := parseArgumentValues(step.Arguments)
+	if err != nil {
+		return 0, 0, false
+	}
+	x := parseSignedInt(trimArgumentValue(values, "X Coordinate", "X", "x", "ClientX", "client_x"))
+	y := parseSignedInt(trimArgumentValue(values, "Y Coordinate", "Y", "y", "ClientY", "client_y"))
+	if x == 0 && y == 0 {
+		return 0, 0, false
+	}
+	return x, y, true
+}
+
+func coordinateClickAction(step truXMLStep, actionName string, x int, y int) dsl.Action {
+	script := fmt.Sprintf(`(() => {
+  const x = %d;
+  const y = %d;
+  const el = document.elementFromPoint(x, y);
+  if (!el) {
+    throw new Error("No element found at TruClient coordinate click " + x + "," + y);
+  }
+  el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+  return el.tagName;
+})()`, x, y)
+	return dsl.Action{
+		Name:   stepDisplayName(step, firstNonEmptyString(actionName, "Click")),
+		Type:   "browser_evaluate_js",
+		Target: script,
+		Params: map[string]any{
+			"x": x,
+			"y": y,
+		},
+		Metadata: map[string]any{
+			"source":                  "truclient_" + stableActionToken(actionName),
+			"review_required":         true,
+			"review_reason":           "selectorless_coordinate_click",
+			"source_coordinate_click": true,
+		},
+	}
 }
 
 func convertScrollStep(step truXMLStep) (dsl.Action, error) {

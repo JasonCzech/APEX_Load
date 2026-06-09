@@ -532,6 +532,58 @@ func TestConvertArchiveMapsDirectClickAndTypeSteps(t *testing.T) {
 	}
 }
 
+func TestConvertArchiveReviewGatesSelectorlessCoordinateClick(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Click" index="1" arguments="{&quot;X Coordinate&quot;:{&quot;value&quot;:60},&quot;Y Coordinate&quot;:{&quot;value&quot;:192}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Coordinate Click"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions len = %d, want 1", len(result.Script.Actions))
+	}
+	action := result.Script.Actions[0]
+	if action.Type != "browser_evaluate_js" || !strings.Contains(action.Target, "document.elementFromPoint(x, y)") {
+		t.Fatalf("action = %#v, want review-gated coordinate click JS", action)
+	}
+	if action.Metadata["review_required"] != true || action.Metadata["review_reason"] != "selectorless_coordinate_click" {
+		t.Fatalf("metadata = %#v, want selectorless coordinate review gate", action.Metadata)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "coordinate click") {
+		t.Fatalf("warnings = %#v, want coordinate click warning", result.Warnings)
+	}
+	issues := dsl.ValidateScriptIssues(result.Script)
+	if len(issues) != 0 {
+		t.Fatalf("ValidateScriptIssues returned %v, want no issues", issues)
+	}
+}
+
+func TestConvertArchiveReviewGatesSelectorlessClickWithoutCoordinates(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Click" index="1" arguments="{}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Unresolved Click"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	if action.Type != "browser_evaluate_js" || action.Target != "(() => null)()" || action.Metadata["review_reason"] != "missing_selector" {
+		t.Fatalf("action = %#v, want review placeholder for missing selector", action)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "review-gated") {
+		t.Fatalf("warnings = %#v, want review-gated warning", result.Warnings)
+	}
+}
+
 func TestConvertArchiveMapsSelectStep(t *testing.T) {
 	result, err := ConvertArchive(map[string]string{
 		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
@@ -556,6 +608,27 @@ func TestConvertArchiveMapsSelectStep(t *testing.T) {
 	}
 	if len(result.Warnings) != 0 {
 		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
+func TestConvertArchiveReviewGatesSelectWithoutValue(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Select" index="1" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;#quantity&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Select Review"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	if action.Type != "browser_evaluate_js" || action.Metadata["review_reason"] != "missing_select_value" || action.Metadata["source_selector"] != "#quantity" {
+		t.Fatalf("action = %#v, want review placeholder for missing select value", action)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "selected value") {
+		t.Fatalf("warnings = %#v, want selected value warning", result.Warnings)
 	}
 }
 

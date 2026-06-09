@@ -416,7 +416,7 @@ func normalizeScriptType(scriptType string) string {
 	compact := strings.ReplaceAll(value, " ", "")
 
 	switch compact {
-	case "truclientmobileweb", "truclient2mobileweb", "truclient20mobileweb":
+	case "truclientmobileweb", "truclient2mobileweb", "truclient20mobileweb", "web2uimob":
 		return "truclient_mobile_web"
 	case "truclient2web", "truclient20web":
 		return "truclient2_web"

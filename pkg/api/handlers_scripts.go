@@ -1,6 +1,8 @@
 package api
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -114,6 +116,20 @@ type trueClient2CompatReport struct {
 	FixtureContractStatus   map[string]string `json:"fixture_contract_status,omitempty"`
 	Findings                []string          `json:"findings,omitempty"`
 	NextActions             []string          `json:"next_actions,omitempty"`
+}
+
+type protocolCompatReport struct {
+	SourceFormat         string         `json:"source_format"`
+	CanonicalProtocol    string         `json:"canonical_protocol"`
+	ImportMode           string         `json:"import_mode"`
+	MappedSteps          int            `json:"mapped_steps"`
+	ReviewGatedSteps     int            `json:"review_gated_steps"`
+	UnsupportedFragments []string       `json:"unsupported_fragments,omitempty"`
+	RuntimeParity        map[string]int `json:"runtime_parity,omitempty"`
+	DataSources          int            `json:"data_sources"`
+	CorrelationCoverage  string         `json:"correlation_coverage"`
+	PromotionStatus      string         `json:"promotion_status"`
+	NextActions          []string       `json:"next_actions,omitempty"`
 }
 
 // handleImportLoadRunner handles POST /api/v1/scripts/import/loadrunner
@@ -307,6 +323,8 @@ func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
 	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
+	protocolCompat := buildDevWebProtocolCompatReport(result)
+	persistProtocolCompatReport(result.Script, "devweb", protocolCompat)
 
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
@@ -316,6 +334,7 @@ func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
 		SourceReview:        result.SourceReview,
+		ProtocolCompat:      protocolCompat,
 	}))
 }
 
@@ -592,8 +611,9 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 	contentType := r.Header.Get("Content-Type")
 	var data []byte
 	fileName := r.URL.Query().Get("filename")
+	sidecarFiles := map[string][]byte{}
 
-	if strings.HasPrefix(contentType, "application/xml") || strings.HasPrefix(contentType, "text/xml") || strings.HasPrefix(contentType, "application/octet-stream") {
+	if strings.HasPrefix(contentType, "application/xml") || strings.HasPrefix(contentType, "text/xml") || strings.HasPrefix(contentType, "application/octet-stream") || strings.HasPrefix(contentType, "application/zip") || strings.HasPrefix(contentType, "application/x-zip-compressed") {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
@@ -620,11 +640,22 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 			return nil, false
 		}
 		data = body
+		sidecarFiles = readJMeterSidecarFiles(r, "file", fileName)
 	}
 
 	if len(data) == 0 {
 		writeError(w, http.StatusBadRequest, "empty file uploaded")
 		return nil, false
+	}
+	if isJMeterZipUpload(fileName, contentType) {
+		jmxData, jmxFileName, zipSidecars, err := readJMeterZipImport(data)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read JMeter ZIP: "+err.Error())
+			return nil, false
+		}
+		data = jmxData
+		fileName = jmxFileName
+		sidecarFiles = mergeJMeterSidecarFiles(sidecarFiles, zipSidecars)
 	}
 
 	return &jmeterImportRequest{
@@ -636,8 +667,113 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 			IncludeAssertions: r.FormValue("include_assertions") == "true",
 			ScenarioDraft:     r.FormValue("scenario_draft") == "true",
 			FileName:          fileName,
+			SidecarFiles:      sidecarFiles,
 		},
 	}, true
+}
+
+func isJMeterZipUpload(fileName string, contentType string) bool {
+	return strings.EqualFold(filepath.Ext(fileName), ".zip") ||
+		strings.HasPrefix(contentType, "application/zip") ||
+		strings.HasPrefix(contentType, "application/x-zip-compressed")
+}
+
+func readJMeterZipImport(data []byte) ([]byte, string, map[string][]byte, error) {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, "", nil, err
+	}
+	jmxFiles := map[string][]byte{}
+	sidecars := map[string][]byte{}
+	for _, entry := range reader.File {
+		if entry.FileInfo().IsDir() {
+			continue
+		}
+		file, err := entry.Open()
+		if err != nil {
+			continue
+		}
+		content, err := io.ReadAll(file)
+		_ = file.Close()
+		if err != nil {
+			continue
+		}
+		name := filepath.ToSlash(entry.Name)
+		switch strings.ToLower(filepath.Ext(name)) {
+		case ".jmx":
+			jmxFiles[name] = content
+		case ".csv":
+			sidecars[name] = content
+			sidecars[filepath.Base(name)] = content
+		}
+	}
+	if len(jmxFiles) == 0 {
+		return nil, "", nil, fmt.Errorf("no .jmx file found")
+	}
+	names := make([]string, 0, len(jmxFiles))
+	for name := range jmxFiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	selected := names[0]
+	return jmxFiles[selected], selected, sidecars, nil
+}
+
+func mergeJMeterSidecarFiles(first map[string][]byte, second map[string][]byte) map[string][]byte {
+	if len(first) == 0 {
+		if len(second) == 0 {
+			return nil
+		}
+		out := make(map[string][]byte, len(second))
+		for key, value := range second {
+			out[key] = value
+		}
+		return out
+	}
+	out := make(map[string][]byte, len(first)+len(second))
+	for key, value := range first {
+		out[key] = value
+	}
+	for key, value := range second {
+		out[key] = value
+	}
+	return out
+}
+
+func readJMeterSidecarFiles(r *http.Request, primaryField string, primaryFileName string) map[string][]byte {
+	if r == nil || r.MultipartForm == nil || len(r.MultipartForm.File) == 0 {
+		return nil
+	}
+	files := map[string][]byte{}
+	for field, headers := range r.MultipartForm.File {
+		if field == primaryField {
+			continue
+		}
+		for _, header := range headers {
+			if header == nil || strings.TrimSpace(header.Filename) == "" {
+				continue
+			}
+			file, err := header.Open()
+			if err != nil {
+				continue
+			}
+			data, err := io.ReadAll(file)
+			_ = file.Close()
+			if err != nil || len(data) == 0 {
+				continue
+			}
+			name := strings.TrimSpace(header.Filename)
+			if name == primaryFileName {
+				continue
+			}
+			files[name] = data
+			files[filepath.Base(name)] = data
+		}
+	}
+	if len(files) == 0 {
+		return nil
+	}
+	return files
 }
 
 func readLoadRunnerImportRequest(w http.ResponseWriter, r *http.Request) (*loadRunnerImportRequest, bool) {
@@ -738,6 +874,8 @@ func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *lo
 	persistLoadRunnerImportSummary(result, summary)
 	reviewSections := buildLoadRunnerImportReviewSections(warnings, result, unsupportedElements, summary)
 	repairSuggestions := buildLoadRunnerImportRepairSuggestions(result, unsupportedElements, summary)
+	protocolCompat := buildLoadRunnerProtocolCompatReport(result, unsupportedElements, summary)
+	persistProtocolCompatReport(result.Script, "loadrunner", protocolCompat)
 
 	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
@@ -752,6 +890,7 @@ func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *lo
 		ReviewArtifact:      result.ReviewArtifact,
 		SourceReview:        summary.SourceReview,
 		TrueClient2Compat:   summary.TrueClient2CompatReport,
+		ProtocolCompat:      protocolCompat,
 	}))
 }
 
@@ -2243,8 +2382,221 @@ func attachSourceReviewToScript(script *dsl.Script, source string, sourceScriptN
 	script.Metadata.Import.Preserved["source_review"] = review
 }
 
+func persistProtocolCompatReport(script *dsl.Script, source string, report *protocolCompatReport) {
+	if script == nil || report == nil {
+		return
+	}
+	preserved := ensureScriptImportPreserved(script, source)
+	preserved["protocol_compat_report"] = report
+}
+
+func buildDevWebProtocolCompatReport(result *devweb.ConvertResult) *protocolCompatReport {
+	if result == nil {
+		return nil
+	}
+	unsupported := result.Unsupported.Strings()
+	status := protocolPromotionStatus("executable", len(unsupported), len(result.Warnings))
+	return &protocolCompatReport{
+		SourceFormat:         "DevWeb",
+		CanonicalProtocol:    "devweb",
+		ImportMode:           "executable",
+		MappedSteps:          result.Stats.ConvertedActions,
+		ReviewGatedSteps:     len(unsupported),
+		UnsupportedFragments: uniqueSortedStrings(append(append([]string{}, result.Stats.UnsupportedCalls...), unsupported...)),
+		RuntimeParity:        protocolRuntimeParityFromScript(result.Script),
+		DataSources:          result.Stats.DataSources,
+		CorrelationCoverage:  protocolCorrelationCoverage(result.Stats.Extractors, result.Stats.HTTPRequests),
+		PromotionStatus:      status,
+		NextActions:          protocolNextActions(status, "Validate DevWeb replay against the target environment."),
+	}
+}
+
+func buildJMeterProtocolCompatReport(result *jmeter.ConvertResult, unsupported []string) *protocolCompatReport {
+	if result == nil {
+		return nil
+	}
+	status := protocolPromotionStatus("executable", len(unsupported), len(result.Warnings))
+	return &protocolCompatReport{
+		SourceFormat:         "JMeter JMX",
+		CanonicalProtocol:    "jmeter",
+		ImportMode:           "executable",
+		MappedSteps:          result.Stats.ConvertedActions,
+		ReviewGatedSteps:     len(unsupported),
+		UnsupportedFragments: unsupported,
+		RuntimeParity:        protocolRuntimeParityFromScript(result.Script),
+		DataSources:          result.Stats.CSVSources,
+		CorrelationCoverage:  protocolCorrelationCoverage(countJMeterExtractors(result), result.Stats.Samplers),
+		PromotionStatus:      status,
+		NextActions:          protocolNextActions(status, "Validate converted JMeter thread groups and scenario draft before promotion."),
+	}
+}
+
+func buildLoadRunnerProtocolCompatReport(result *loadrunner.ConvertResult, unsupported []string, summary loadRunnerImportSummary) *protocolCompatReport {
+	if result == nil {
+		return nil
+	}
+	importMode := "executable"
+	canonical := "web_http_html"
+	if result.DetectedProtocol != nil {
+		importMode = string(result.DetectedProtocol.ImportMode)
+		canonical = result.DetectedProtocol.CanonicalLoadRunnerProtocol
+	}
+	status := protocolPromotionStatus(importMode, len(unsupported), len(result.Warnings))
+	nextActions := protocolNextActions(status, loadRunnerProtocolValidationAction(canonical))
+	if result.ReviewArtifact != nil && len(result.ReviewArtifact.NextActions) > 0 {
+		nextActions = result.ReviewArtifact.NextActions
+	}
+	runtimeParity := summary.RuntimeSettingsStatusCounts
+	if len(runtimeParity) == 0 {
+		runtimeParity = protocolRuntimeParityFromScript(result.Script)
+	}
+	unsupportedFragments := loadRunnerUnsupportedFragments(result, unsupported)
+	return &protocolCompatReport{
+		SourceFormat:         loadRunnerProtocolSourceFormat(canonical),
+		CanonicalProtocol:    canonical,
+		ImportMode:           importMode,
+		MappedSteps:          result.Stats.ConvertedActions,
+		ReviewGatedSteps:     len(unsupported) + result.Stats.ReviewOnlyFunctions + result.Stats.CustomCallFunctions + result.Stats.ExternalRequiredFunctions,
+		UnsupportedFragments: unsupportedFragments,
+		RuntimeParity:        runtimeParity,
+		DataSources:          protocolDataSourceCount(result.Script),
+		CorrelationCoverage:  protocolCorrelationCoverage(result.Stats.Extractors, result.Stats.RawRequestActions),
+		PromotionStatus:      status,
+		NextActions:          nextActions,
+	}
+}
+
+func loadRunnerUnsupportedFragments(result *loadrunner.ConvertResult, unsupported []string) []string {
+	fragments := append([]string(nil), unsupported...)
+	if result != nil && result.ReviewArtifact != nil && len(result.ReviewArtifact.PreservedFunctions) > 0 {
+		fragments = append(fragments, result.ReviewArtifact.PreservedFunctions...)
+	}
+	return uniqueSortedStrings(fragments)
+}
+
+func loadRunnerProtocolSourceFormat(canonical string) string {
+	switch canonical {
+	case "devweb":
+		return "DevWeb"
+	case "jmeter":
+		return "JMeter JMX"
+	default:
+		return "LoadRunner"
+	}
+}
+
+func loadRunnerProtocolValidationAction(canonical string) string {
+	switch canonical {
+	case "devweb":
+		return "Validate converted DevWeb replay and review JavaScript/helper-module blockers before promotion."
+	case "jmeter":
+		return "Validate converted JMeter thread groups and scenario draft before promotion."
+	default:
+		return "Validate converted LoadRunner replay and correlation behavior before promotion."
+	}
+}
+
+func protocolPromotionStatus(importMode string, reviewCount int, warningCount int) string {
+	switch importMode {
+	case string(loadrunner.ImportModeExternalRunnerRequired):
+		return "external_runner_required"
+	case string(loadrunner.ImportModeUnsupported):
+		return "unsupported"
+	case string(loadrunner.ImportModeReviewOnly):
+		return "review_required"
+	}
+	if reviewCount > 0 {
+		return "review_required"
+	}
+	if warningCount > 0 {
+		return "ready_with_warnings"
+	}
+	return "ready_for_validation"
+}
+
+func protocolNextActions(status string, validationAction string) []string {
+	switch status {
+	case "external_runner_required":
+		return []string{"Preserve source artifact and attach approved external runner evidence before promotion."}
+	case "unsupported":
+		return []string{"Confirm protocol support strategy or defer this import as unsupported."}
+	case "review_required":
+		return []string{"Resolve review-gated fragments and unsupported constructs.", validationAction}
+	case "ready_with_warnings":
+		return []string{"Review converter warnings.", validationAction}
+	default:
+		return []string{validationAction}
+	}
+}
+
+func protocolCorrelationCoverage(extractors int, requests int) string {
+	if requests <= 0 {
+		return "not_applicable"
+	}
+	if extractors <= 0 {
+		return "none_detected"
+	}
+	return fmt.Sprintf("%d extractor(s) across %d request action(s)", extractors, requests)
+}
+
+func protocolRuntimeParityFromScript(script *dsl.Script) map[string]int {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {
+		return nil
+	}
+	switch typed := script.Metadata.Import.Preserved["runtime_parity"].(type) {
+	case map[string]string:
+		counts := map[string]int{}
+		for _, status := range typed {
+			counts[status]++
+		}
+		return counts
+	case map[string]any:
+		counts := map[string]int{}
+		for _, status := range typed {
+			if text, ok := status.(string); ok {
+				counts[text]++
+			}
+		}
+		return counts
+	default:
+		return nil
+	}
+}
+
+func protocolDataSourceCount(script *dsl.Script) int {
+	if script == nil {
+		return 0
+	}
+	return len(script.DataSources)
+}
+
+func countJMeterExtractors(result *jmeter.ConvertResult) int {
+	if result == nil {
+		return 0
+	}
+	total := 0
+	var walk func(actions []dsl.Action)
+	walk = func(actions []dsl.Action) {
+		for _, action := range actions {
+			total += len(action.Extractors)
+			if action.Control != nil {
+				walk(action.Control.Steps)
+				walk(action.Control.Else)
+			}
+		}
+	}
+	for _, script := range result.Scripts {
+		walk(script.Actions)
+	}
+	return total
+}
+
 func writeJMeterImportResponse(w http.ResponseWriter, status int, result *jmeter.ConvertResult) {
 	unsupportedElements := uniqueSortedStrings(append(append([]string{}, result.UnsupportedElements...), result.Unsupported.Strings()...))
+	protocolCompat := buildJMeterProtocolCompatReport(result, unsupportedElements)
+	for _, script := range result.Scripts {
+		persistProtocolCompatReport(script, "jmeter", protocolCompat)
+	}
 	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
 		Scripts:             result.Scripts,
@@ -2257,6 +2609,7 @@ func writeJMeterImportResponse(w http.ResponseWriter, status int, result *jmeter
 		Stats:               result.Stats,
 		Summary:             result.Summary,
 		SourceReview:        result.SourceReview,
+		ProtocolCompat:      protocolCompat,
 	}))
 }
 

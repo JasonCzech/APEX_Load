@@ -139,7 +139,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 	for _, fn := range allFunctions {
 		switch fn.Name {
-		case "web_reg_save_param", "web_reg_save_param_regexp", "web_reg_save_param_json":
+		case "web_reg_save_param", "web_reg_save_param_regexp", "web_reg_save_param_json", "web_reg_save_param_xpath", "web_reg_save_param_ex":
 			ext := convertExtractor(fn)
 			if ext != nil {
 				pendingExtractors = append(pendingExtractors, *ext)
@@ -321,7 +321,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			result.Stats.ContributorFunctions++
 			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
-		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_service_call":
+		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_rest", "web_service_call":
 			action, warnings := convertAction(fn, baseURL, currentTransaction, currentSubTransaction, opts, lastRequestURL)
 			if contextURL := loadRunnerRequestContextURL(fn, lastRequestURL); contextURL != "" {
 				lastRequestURL = contextURL
@@ -545,10 +545,43 @@ func convertLoadRunnerMessageExpression(value string) string {
 	if cleaned == "" {
 		return ""
 	}
+	if converted, ok := convertLoadRunnerParamArrayExpression(cleaned); ok {
+		return converted
+	}
 	if param, ok := unwrapLoadRunnerEvalString(cleaned); ok {
 		return convertParamReferences(param)
 	}
 	return convertParamReferences(cleaned)
+}
+
+func convertLoadRunnerParamArrayExpression(value string) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	open := strings.Index(trimmed, "(")
+	close := strings.LastIndex(trimmed, ")")
+	if open <= 0 || close <= open {
+		return "", false
+	}
+	name := strings.TrimSpace(trimmed[:open])
+	if name != "lr_paramarr_random" && name != "lr_paramarr_len" && name != "lr_paramarr_idx" {
+		return "", false
+	}
+	args := splitCFunctionArgs(trimmed[open+1 : close])
+	if len(args) == 0 {
+		return "", false
+	}
+	param := canonicalLoadRunnerParameterName(cleanConfigValue(args[0]))
+	if param == "" {
+		return "", false
+	}
+	switch name {
+	case "lr_paramarr_len":
+		return "{{var." + param + "_count}}", true
+	case "lr_paramarr_idx":
+		if len(args) >= 2 {
+			return "{{var." + param + "_" + canonicalLoadRunnerParameterName(cleanConfigValue(args[1])) + "}}", true
+		}
+	}
+	return "{{var." + param + "}}", true
 }
 
 func unwrapLoadRunnerEvalString(value string) (string, bool) {
@@ -957,7 +990,7 @@ func detectImportProtocol(functions []ParsedFunction) (string, *dsl.SOAPConfig, 
 
 func isRequestFunction(name string) bool {
 	switch name {
-	case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_service_call":
+	case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_rest", "web_service_call":
 		return true
 	default:
 		return false
@@ -1039,22 +1072,49 @@ func applySOAPImportHints(action *dsl.Action, fn ParsedFunction) {
 		action.Method = "POST"
 		action.Type = "POST"
 	}
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
 	soapAction := strings.TrimSpace(firstNonEmptyArg(fn, "SOAPAction"))
 	if soapAction == "" {
 		soapAction = strings.TrimSpace(firstHeaderValue(action.Headers, "SOAPAction"))
 	}
-	operation := strings.TrimSpace(firstNonEmptyArg(fn, "SOAPMethod"))
-	if operation == "" {
-		operation = strings.TrimSpace(firstNonEmptyArg(fn, "Operation"))
+	soapMethod := strings.TrimSpace(firstNonEmptyArg(fn, "SOAPMethod"))
+	service, binding, operation := splitLoadRunnerSOAPMethod(soapMethod)
+	if soapMethod != "" {
+		action.Metadata["soap_method"] = soapMethod
 	}
 	if operation == "" && soapAction != "" {
 		operation = strings.Trim(soapAction, `"`)
 	}
 	if operation == "" {
+		operation = strings.TrimSpace(firstNonEmptyArg(fn, "Operation"))
+	}
+	if operation == "" {
 		operation = action.Name
 	}
+	if explicitService := strings.TrimSpace(firstNonEmptyArg(fn, "Service")); explicitService != "" {
+		service = explicitService
+	}
+	if service != "" {
+		action.Metadata["soap_service"] = service
+	}
+	if binding != "" {
+		action.Metadata["soap_binding"] = binding
+	}
+	if responseParam := strings.TrimSpace(firstNonEmptyArg(fn, "ResponseParam")); responseParam != "" {
+		action.Metadata["soap_response_param"] = responseParam
+	}
+	generatedBody := false
+	if strings.TrimSpace(action.Body) == "" {
+		if body := generateLoadRunnerSOAPBody(fn, operation); body != "" {
+			action.Body = body
+			generatedBody = true
+			action.Metadata["soap_body_generated"] = true
+		}
+	}
 	bodyMode := "generated"
-	if strings.TrimSpace(action.Body) != "" {
+	if strings.TrimSpace(action.Body) != "" && !generatedBody {
 		bodyMode = "raw_xml"
 	}
 	action.SOAP = &dsl.SOAPActionConfig{
@@ -1111,9 +1171,19 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 
 	// Determine target URL (relative to base)
 	rawURL := loadRunnerRequestContextURL(fn, previousRequestURL)
+	generatedSOAPEndpoint := false
+	if rawURL == "" && fn.Name == "web_service_call" {
+		rawURL = loadRunnerSOAPEndpointPlaceholder(fn)
+		generatedSOAPEndpoint = rawURL != ""
+	}
 	if rawURL == "" {
 		warnings = append(warnings, fmt.Sprintf("line %d: %s '%s' has no URL, skipping", fn.LineNumber, fn.Name, fn.StepName))
 		return nil, warnings
+	}
+	if generatedSOAPEndpoint {
+		action.Metadata["soap_endpoint_placeholder"] = rawURL
+		action.Metadata["review_required"] = true
+		warnings = append(warnings, fmt.Sprintf("line %d: web_service_call '%s' has no inline endpoint; using %s until WSDL/service settings are mapped", fn.LineNumber, fn.StepName, rawURL))
 	}
 	if fn.URL == "" && fn.Name == "web_submit_form" {
 		action.Metadata["inferred_url_from"] = "loadrunner_form_context"
@@ -1158,11 +1228,177 @@ func loadRunnerRequestContextURL(fn ParsedFunction, previousRequestURL string) s
 	return inferLoadRunnerSubmitFormURL(fn, previousRequestURL)
 }
 
+func loadRunnerSOAPEndpointPlaceholder(fn ParsedFunction) string {
+	service := strings.TrimSpace(firstNonEmptyArg(fn, "Service"))
+	if service == "" {
+		service, _, _ = splitLoadRunnerSOAPMethod(strings.TrimSpace(firstNonEmptyArg(fn, "SOAPMethod")))
+	}
+	if service == "" {
+		service = firstNonEmpty(fn.StepName, "soap_service")
+	}
+	key := strings.Trim(sanitizeEnvToken(service), "_")
+	if key == "" {
+		key = "SOAP_SERVICE"
+	}
+	return "{{env." + key + "_URL}}"
+}
+
+func splitLoadRunnerSOAPMethod(value string) (service, binding, operation string) {
+	parts := strings.Split(value, "|")
+	cleaned := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			cleaned = append(cleaned, trimmed)
+		}
+	}
+	if len(cleaned) > 0 {
+		service = cleaned[0]
+	}
+	if len(cleaned) > 1 {
+		binding = cleaned[1]
+	}
+	if len(cleaned) > 2 {
+		operation = cleaned[len(cleaned)-1]
+	} else if len(cleaned) == 1 {
+		operation = cleaned[0]
+	}
+	return service, binding, operation
+}
+
+func generateLoadRunnerSOAPBody(fn ParsedFunction, operation string) string {
+	operation = sanitizeXMLName(firstNonEmpty(operation, fn.StepName, "Operation"))
+	if operation == "" {
+		return ""
+	}
+	payload := webServicePayloadArgs(fn)
+	if len(payload) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(`<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><`)
+	b.WriteString(operation)
+	b.WriteString(">")
+	for _, arg := range payload {
+		name := sanitizeXMLName(arg.Name)
+		value := convertParamReferences(unescapeLoadRunnerCString(arg.Value))
+		if strings.HasPrefix(strings.ToLower(arg.Name), "xml:") {
+			b.WriteString(value)
+			continue
+		}
+		if name == "" {
+			continue
+		}
+		b.WriteString("<")
+		b.WriteString(name)
+		b.WriteString(">")
+		b.WriteString(escapeXMLText(value))
+		b.WriteString("</")
+		b.WriteString(name)
+		b.WriteString(">")
+	}
+	b.WriteString("</")
+	b.WriteString(operation)
+	b.WriteString(`></soapenv:Body></soapenv:Envelope>`)
+	return b.String()
+}
+
+type webServicePayloadArg struct {
+	Name  string
+	Value string
+}
+
+func webServicePayloadArgs(fn ParsedFunction) []webServicePayloadArg {
+	skip := map[string]struct{}{
+		"stepname":           {},
+		"soapmethod":         {},
+		"responseparam":      {},
+		"service":            {},
+		"expectedresponse":   {},
+		"snapshot":           {},
+		"soapaction":         {},
+		"url":                {},
+		"action":             {},
+		"body":               {},
+		"contenttype":        {},
+		"content-type":       {},
+		"method":             {},
+		"reccontenttype":     {},
+		"resource":           {},
+		"referer":            {},
+		"mode":               {},
+		"enctype":            {},
+		"targetframe":        {},
+		"targetbrowser":      {},
+		"ordinal":            {},
+		"savecount":          {},
+		"scope":              {},
+		"requesturl":         {},
+		"search":             {},
+		"fail":               {},
+		"ignoreredirections": {},
+	}
+	args := make([]webServicePayloadArg, 0)
+	for _, arg := range fn.CallArgs {
+		if arg.Kind != "key_value" || arg.Name == "" {
+			continue
+		}
+		if _, ok := skip[strings.ToLower(arg.Name)]; ok {
+			continue
+		}
+		args = append(args, webServicePayloadArg{Name: arg.Name, Value: arg.Value})
+	}
+	return args
+}
+
+func sanitizeEnvToken(value string) string {
+	var b strings.Builder
+	prevUnderscore := false
+	for _, r := range strings.ToUpper(value) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			prevUnderscore = false
+			continue
+		}
+		if !prevUnderscore {
+			b.WriteByte('_')
+			prevUnderscore = true
+		}
+	}
+	return b.String()
+}
+
+func sanitizeXMLName(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(strings.ToLower(value), "xml:") {
+		value = value[4:]
+	}
+	var b strings.Builder
+	for i, r := range value {
+		valid := (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '_' || r == ':' || (i > 0 && ((r >= '0' && r <= '9') || r == '-' || r == '.'))
+		if valid {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func escapeXMLText(value string) string {
+	value = strings.ReplaceAll(value, "&", "&amp;")
+	value = strings.ReplaceAll(value, "<", "&lt;")
+	value = strings.ReplaceAll(value, ">", "&gt;")
+	value = strings.ReplaceAll(value, `"`, "&quot;")
+	value = strings.ReplaceAll(value, "'", "&apos;")
+	return value
+}
+
 func requestContentTypeFromFunction(fn ParsedFunction) string {
-	for _, key := range []string{"EncType", "ContentType", "Content-Type"} {
+	for _, key := range []string{"ContentType", "Content-Type"} {
 		if value := firstNonEmptyArg(fn, key); strings.TrimSpace(value) != "" {
 			return unescapeLoadRunnerCString(value)
 		}
+	}
+	if encType := firstNonEmptyArg(fn, "EncType"); strings.TrimSpace(encType) != "" && !strings.EqualFold(strings.TrimSpace(encType), "raw") {
+		return unescapeLoadRunnerCString(encType)
 	}
 	return ""
 }
@@ -1296,7 +1532,7 @@ func stripURLQueryAndFragment(value string) string {
 
 // convertExtractor converts a web_reg_save_param to a DSL Extractor.
 func convertExtractor(fn ParsedFunction) *dsl.Extractor {
-	paramName := canonicalLoadRunnerParameterName(firstNonEmpty(fn.StepName, firstNonEmptyArg(fn, "ParamName")))
+	paramName := canonicalLoadRunnerParameterName(firstNonEmpty(firstNonEmptyArg(fn, "ParamName"), fn.StepName))
 	if paramName == "" {
 		return nil
 	}
@@ -1338,6 +1574,25 @@ func convertExtractor(fn ParsedFunction) *dsl.Extractor {
 		}
 	}
 
+	if fn.Name == "web_reg_save_param_xpath" {
+		expression := firstNonEmptyArg(fn, "QueryString")
+		if expression == "" {
+			expression = firstNonEmptyArg(fn, "XPath")
+		}
+		if expression == "" {
+			expression = firstNonEmptyArg(fn, "Query")
+		}
+		if expression == "" {
+			return nil
+		}
+		return &dsl.Extractor{
+			Name:       paramName,
+			Source:     loadRunnerExtractorSource(firstNonEmptyArg(fn, "Scope")),
+			Type:       "xpath",
+			Expression: unescapeLoadRunnerCString(expression),
+		}
+	}
+
 	lb := fn.Args["LB"]
 	rb := fn.Args["RB"]
 
@@ -1360,8 +1615,10 @@ func convertExtractor(fn ParsedFunction) *dsl.Extractor {
 		Source: loadRunnerExtractorSource(firstNonEmptyArg(fn, "Scope")),
 	}
 
-	// If boundaries look like JSON path markers, use jsonpath
-	if strings.Contains(lb, "\"") && strings.Contains(rb, "\"") {
+	if fn.Name == "web_reg_save_param_ex" && (lb != "" || rb != "") {
+		ext.Type = "boundary"
+		ext.Expression = lb + "|||" + rb
+	} else if strings.Contains(lb, "\"") && strings.Contains(rb, "\"") {
 		ext.Type = "regex"
 		ext.Expression = regexp.QuoteMeta(lb) + "(.+?)" + regexp.QuoteMeta(rb)
 	} else if lb != "" || rb != "" {

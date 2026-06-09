@@ -272,6 +272,56 @@ func TestConvertJMXHTTPPlan(t *testing.T) {
 	assertJMeterSourceMapping(t, result.SourceReview.Mappings, "jmeter_assertion", "actions[0].assertions[0]", "contributor")
 }
 
+func TestConvertJMXCSVDataSetInfersHeadersFromSidecarFile(t *testing.T) {
+	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="CSV Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <CSVDataSet testname="Customers" enabled="true">
+          <stringProp name="filename">data/customers.csv</stringProp>
+          <stringProp name="delimiter">,</stringProp>
+        </CSVDataSet>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Lookup" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/customers/${customer_id}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(jmx), ConvertOptions{
+		FileName: "checkout.jmx",
+		SidecarFiles: map[string][]byte{
+			"customers.csv": []byte("customer_id,zip\n42,02139\n"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	script := result.Scripts[0]
+	if len(script.DataSources) != 1 {
+		t.Fatalf("data_sources = %#v, want one", script.DataSources)
+	}
+	source := script.DataSources[0]
+	if !source.FirstRowHeader || source.InlineData == "" {
+		t.Fatalf("source = %#v, want first-row header with preserved inline data", source)
+	}
+	if strings.Join(source.Columns, ",") != "customer_id,zip" {
+		t.Fatalf("columns = %#v, want inferred customer_id,zip", source.Columns)
+	}
+	if script.Actions[0].Target != "/customers/{{var.customer_id}}" {
+		t.Fatalf("target = %q, want converted CSV variable reference", script.Actions[0].Target)
+	}
+}
+
 func assertJMeterSourceMapping(t *testing.T, mappings []sourceview.Mapping, function string, targetPath string, status string) {
 	t.Helper()
 	for _, mapping := range mappings {
@@ -718,7 +768,7 @@ func TestConvertJMXXPath2InvalidNamespacesWarn(t *testing.T) {
 	}
 }
 
-func TestConvertJMXReportsFlattenedControllersAndScriptSamplers(t *testing.T) {
+func TestConvertJMXMapsSimpleIfControllerAndReportsScriptSamplers(t *testing.T) {
 	const scriptedJMX = `<?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
@@ -755,14 +805,81 @@ func TestConvertJMXReportsFlattenedControllersAndScriptSamplers(t *testing.T) {
 	if result.Stats.ConvertedActions != 1 {
 		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
 	}
+	if len(result.Scripts[0].Actions) != 1 || result.Scripts[0].Actions[0].Type != "control_if" {
+		t.Fatalf("actions = %#v, want one control_if", result.Scripts[0].Actions)
+	}
+	control := result.Scripts[0].Actions[0].Control
+	if control == nil || control.Condition == nil || control.Condition.Left != "{{var.isPremium}}" || control.Condition.Op != "exists" || len(control.Steps) != 1 {
+		t.Fatalf("control = %#v, want exists condition with one child", control)
+	}
 	if result.Stats.TotalSamplers != 2 || result.Stats.SkippedSamplers != 1 {
 		t.Fatalf("sampler accounting = total %d skipped %d, want total 2 skipped 1", result.Stats.TotalSamplers, result.Stats.SkippedSamplers)
 	}
-	if !containsJMeterDiagnostic(result, "JMeter IfController") {
-		t.Fatalf("diagnostics = %#v, want IfController warning", result.Unsupported)
-	}
 	if !containsJMeterDiagnostic(result, "JMeter JSR223Sampler") {
 		t.Fatalf("diagnostics = %#v, want JSR223Sampler warning", result.Unsupported)
+	}
+}
+
+func TestConvertJMXMapsLoopCacheManagerTestActionAndDebugSampler(t *testing.T) {
+	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <CacheManager testname="Cache" enabled="true">
+          <boolProp name="clearEachIteration">true</boolProp>
+          <boolProp name="useExpires">false</boolProp>
+        </CacheManager>
+        <LoopController testname="Browse Twice" enabled="true">
+          <stringProp name="LoopController.loops">2</stringProp>
+        </LoopController>
+        <hashTree>
+          <TestAction testname="Pause" enabled="true">
+            <intProp name="ActionProcessor.duration">750</intProp>
+          </TestAction>
+          <hashTree/>
+          <HTTPSamplerProxy testname="Home" enabled="true">
+            <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+            <stringProp name="HTTPSampler.protocol">https</stringProp>
+            <stringProp name="HTTPSampler.path">/home</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+          </HTTPSamplerProxy>
+          <hashTree/>
+          <DebugSampler testname="Debug Vars" enabled="true"/>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(jmx), ConvertOptions{FileName: "loop.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	script := result.Scripts[0]
+	if got := script.Config.WebRuntime.AdditionalAttributes["jmeter.cache_manager.clear_each_iteration"]; got != "true" {
+		t.Fatalf("cache manager attributes = %#v", script.Config.WebRuntime.AdditionalAttributes)
+	}
+	parity, ok := script.Metadata.Import.Preserved["runtime_parity"].(map[string]string)
+	if !ok || parity["cacheManager"] != "partial" || parity["testActionPause"] != "executed" {
+		t.Fatalf("runtime parity = %#v, want cacheManager partial and TestAction executed", script.Metadata.Import.Preserved["runtime_parity"])
+	}
+	if len(script.Actions) != 1 || script.Actions[0].Type != "control_loop" {
+		t.Fatalf("actions = %#v, want one control_loop", script.Actions)
+	}
+	control := script.Actions[0].Control
+	if control == nil || control.Count != 2 || len(control.Steps) != 1 {
+		t.Fatalf("control = %#v, want count=2 with one child", control)
+	}
+	child := control.Steps[0]
+	if child.Target != "/home" || !child.ThinkTimeAfter || child.ThinkTime.MeanMs != 750 {
+		t.Fatalf("loop child = %#v, want /home with TestAction think time", child)
+	}
+	if containsJMeterDiagnostic(result, "JMeter DebugSampler") && len(result.UnsupportedElements) > 0 {
+		t.Fatalf("debug sampler diagnostics/unsupported = %#v/%#v, want non-blocking diagnostic only", result.Unsupported, result.UnsupportedElements)
 	}
 }
 
