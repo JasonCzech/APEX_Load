@@ -1157,6 +1157,8 @@ describe('ScriptEditor', () => {
     expect(Array.from(actionTypeSelect?.options || []).map(option => option.value)).toEqual(expect.arrayContaining([
       'browser_hover',
       'browser_drag_and_drop',
+      'browser_set_files',
+      'browser_press_key',
       'browser_evaluate_js',
       'browser_switch_frame',
       'browser_switch_window',

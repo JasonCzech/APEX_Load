@@ -975,6 +975,141 @@ func TestConvertArchiveWeb2ObjectRepositoryVariantsFixture(t *testing.T) {
 	}
 }
 
+func TestConvertArchiveAppliesEmbeddedTestObjectSelectors(t *testing.T) {
+	files := map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript platform="TruClient Browser118.0" engineVersion="2024.3.0.53">
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://advantage.example.com\&quot;&quot;}}" />
+    <step type="testObject" testObject="testObj:{menu-search}" action="Click" index="2" arguments="{&quot;X Coordinate&quot;:{&quot;value&quot;:4},&quot;Y Coordinate&quot;:{&quot;value&quot;:13}}" />
+  </step>
+  <testObjects>
+    <testObject testObjId="testObj:{menu-search}" platform="web" fallbackName="Search button">
+      <roles><role>element</role><role>button</role></roles>
+      <idents active="Electors">
+        <ident type="XPath"><![CDATA[{"implData":{"value":"(//svg[@id='menuSearch'])[1]"}}]]></ident>
+        <ident type="Electors"><![CDATA[{"implData":{"electors":[{"id":"tagName","value":"SVG"},{"id":"id","value":{"id":"menuSearch","isValidWord":true}}]}}]]></ident>
+      </idents>
+    </testObject>
+  </testObjects>
+</truScript>`),
+	}
+	result, err := ConvertArchive(files, ConvertOptions{ScriptName: "Embedded Objects"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	click := result.Script.Actions[1]
+	if click.Type != "browser_click" || click.Selector != "#menuSearch" || click.Target != "#menuSearch" {
+		t.Fatalf("click action = %#v, want embedded object id selector", click)
+	}
+	if click.Metadata["source_object_descriptor_id"] != "testObj:{menu-search}" {
+		t.Fatalf("source_object_descriptor_id = %#v, want embedded test object id", click.Metadata["source_object_descriptor_id"])
+	}
+	if confidence, ok := click.Metadata["source_selector_confidence"].(int); !ok || confidence != 90 {
+		t.Fatalf("source_selector_confidence = %#v, want 90", click.Metadata["source_selector_confidence"])
+	}
+	fallbacks, ok := click.Metadata["source_selector_fallbacks"].([]SelectorCandidate)
+	if !ok || !containsSelectorCandidate(fallbacks, "xpath", "(//svg[@id='menuSearch'])[1]", 58) {
+		t.Fatalf("source_selector_fallbacks = %#v, want embedded XPath fallback", click.Metadata["source_selector_fallbacks"])
+	}
+
+	inspection, err := InspectArchive(files, "TruClient 2.0 - Web")
+	if err != nil {
+		t.Fatalf("InspectArchive returned error: %v", err)
+	}
+	if len(inspection.ObjectDescriptors) != 1 || inspection.ObjectDescriptors[0].ID != "testObj:{menu-search}" {
+		t.Fatalf("object descriptors = %#v, want embedded test object descriptor", inspection.ObjectDescriptors)
+	}
+	if len(inspection.Steps) != 2 || inspection.Steps[1].ObjectDescriptorID != "testObj:{menu-search}" || !containsSelectorCandidate(inspection.Steps[1].SelectorCandidates, "css", "#menuSearch", 90) {
+		t.Fatalf("inspection steps = %#v, want click step matched to embedded selector candidates", inspection.Steps)
+	}
+}
+
+func TestConvertArchiveMapsEmbeddedSetPathToFileUpload(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript platform="Chromium24" engineVersion="2024.3.0.53">
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://westwind.example.com/upload\&quot;&quot;}}" />
+    <step type="testObject" testObject="testObj:{upload-input}" action="Set" index="2" arguments="{&quot;Path&quot;:{&quot;value&quot;:&quot;\&quot;C:\\Users\\qa\\upload.png\&quot;&quot;}}" />
+  </step>
+  <testObjects>
+    <testObject testObjId="testObj:{upload-input}" platform="web" autoName="File Upload" fallbackName="Upload">
+      <roles><role>element</role><role>input</role></roles>
+      <idents active="Electors">
+        <ident type="XPath"><![CDATA[{"implData":{"value":"(//input[@type='file' and @name='upload'])[1]"}}]]></ident>
+        <ident type="Electors"><![CDATA[{"implData":{"electors":[{"id":"id","value":{"id":"uploadFile","isValidWord":true}},{"id":"name","value":"upload"},{"id":"input/type","value":"file"}]}}]]></ident>
+      </idents>
+    </testObject>
+  </testObjects>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Embedded File Upload"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	upload := result.Script.Actions[1]
+	if upload.Type != "browser_set_files" || upload.Selector != "#uploadFile" || upload.Target != "#uploadFile" {
+		t.Fatalf("upload action = %#v, want browser_set_files with embedded id selector", upload)
+	}
+	if upload.Value != `C:\Users\qa\upload.png` {
+		t.Fatalf("upload value = %q, want Windows file path preserved", upload.Value)
+	}
+	if upload.Metadata["source"] != "truclient_set_file" || upload.Metadata["source_object_descriptor_id"] != "testObj:{upload-input}" {
+		t.Fatalf("upload metadata = %#v, want file upload source and descriptor id", upload.Metadata)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("ValidateScriptIssues returned %v, want no issues", issues)
+	}
+}
+
+func TestConvertArchiveMapsEmbeddedPressKey(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript platform="TruClient Browser118.0" engineVersion="2024.3.0.53">
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://advantage.example.com/search\&quot;&quot;}}" />
+    <step type="testObject" testObject="testObj:{search-box}" action="Type" index="2" arguments="{&quot;Value&quot;:{&quot;value&quot;:&quot;hp&quot;}}" />
+    <step type="testObject" testObject="testObj:{search-box}" action="Press Key" index="3" arguments="{&quot;Key Name&quot;:{&quot;value&quot;:&quot;Enter&quot;}}" />
+  </step>
+  <testObjects>
+    <testObject testObjId="testObj:{search-box}" platform="web" autoName="Search">
+      <roles><role>element</role><role>focusable</role><role>textbox</role></roles>
+      <idents active="Electors">
+        <ident type="XPath"><![CDATA[{"implData":{"value":"(//input[@name='q'])[1]"}}]]></ident>
+        <ident type="Electors"><![CDATA[{"implData":{"electors":[{"id":"id","value":{"id":"searchInput","isValidWord":true}},{"id":"name","value":"q"}]}}]]></ident>
+      </idents>
+    </testObject>
+  </testObjects>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Embedded Press Key"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
+	}
+	fill := result.Script.Actions[1]
+	if fill.Type != "browser_fill" || fill.Selector != "#searchInput" || fill.Value != "hp" {
+		t.Fatalf("fill action = %#v, want embedded textbox fill", fill)
+	}
+	press := result.Script.Actions[2]
+	if press.Type != "browser_press_key" || press.Selector != "#searchInput" || press.Value != "Enter" {
+		t.Fatalf("press action = %#v, want selector-scoped browser_press_key Enter", press)
+	}
+	if press.Metadata["source"] != "truclient_press_key" || press.Metadata["source_object_descriptor_id"] != "testObj:{search-box}" {
+		t.Fatalf("press metadata = %#v, want press-key source and descriptor id", press.Metadata)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("ValidateScriptIssues returned %v, want no issues", issues)
+	}
+}
+
 // TestConvertArchiveWeb2IframeWindowFixture is the web2_iframe_window fixture: the importer
 // preserves frame/window context as action metadata and the inspector flags replay diagnostics
 // so browser protocol replay can prove the context transition before production promotion.

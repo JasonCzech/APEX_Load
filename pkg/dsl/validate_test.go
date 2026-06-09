@@ -91,6 +91,8 @@ func TestValidateScriptIssues_BrowserRuntimeActionParity(t *testing.T) {
 			{Name: "hover", Type: "browser_hover", Selector: "#menu"},
 			{Name: "double click", Type: "browser_dblclick", Selector: "#quantity"},
 			{Name: "drag", Type: "browser_drag_and_drop", Selector: "#source", Params: map[string]any{"target": "#target"}},
+			{Name: "upload", Type: "browser_set_files", Selector: "#upload", Value: "/tmp/upload.txt"},
+			{Name: "press enter", Type: "browser_press_key", Selector: "#search", Value: "Enter"},
 			{Name: "evaluate", Type: "browser_evaluate_js", Target: "window.app.ready", Metadata: map[string]any{"review_required": true}},
 			{Name: "sync click", Type: "browser_click", Selector: "#save", Sync: &BrowserSyncPolicy{Type: "network_idle", TimeoutMs: 5000}},
 		},
@@ -481,6 +483,15 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 					"duration_ms": 0,
 				},
 			},
+			{
+				Name:   "missing upload file",
+				Type:   "browser_set_files",
+				Target: "#upload",
+			},
+			{
+				Name: "missing key",
+				Type: "browser_press_key",
+			},
 		},
 	}
 
@@ -497,6 +508,8 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 	assertIssue(t, issues, `actions[3] "bad swipe": browser_swipe direction must be left, right, up, or down`)
 	assertIssue(t, issues, `actions[3] "bad swipe": browser_swipe distance must be greater than zero`)
 	assertIssue(t, issues, `actions[4] "bad long press": browser_long_press duration_ms must be greater than zero`)
+	assertIssue(t, issues, `actions[5] "missing upload file": browser_set_files requires value, params.file, params.path, or params.files`)
+	assertIssue(t, issues, `actions[6] "missing key": browser_press_key requires value, params.key, or params.key_name`)
 }
 
 func TestValidateScriptIssues_WebSocketValidation(t *testing.T) {

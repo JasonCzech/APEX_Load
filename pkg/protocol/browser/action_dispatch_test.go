@@ -27,6 +27,9 @@ func TestDispatchActionValidationFailures(t *testing.T) {
 		{name: "dblclick selector", action: protocol.Action{Type: "browser_dblclick"}, wantError: "browser_dblclick requires selector or target"},
 		{name: "hover selector", action: protocol.Action{Type: "browser_hover"}, wantError: "browser_hover requires selector or target"},
 		{name: "drag target", action: protocol.Action{Type: "browser_drag_and_drop", Selector: "#source"}, wantError: "browser_drag_and_drop requires selector/target and target param"},
+		{name: "set files selector", action: protocol.Action{Type: "browser_set_files"}, wantError: "browser_set_files requires selector or target"},
+		{name: "set files value", action: protocol.Action{Type: "browser_set_files", Selector: "#upload"}, wantError: "browser_set_files requires value or params.files"},
+		{name: "press key value", action: protocol.Action{Type: "browser_press_key"}, wantError: "browser_press_key requires value or params.key"},
 		{name: "evaluate script", action: protocol.Action{Type: "browser_evaluate_js"}, wantError: "browser_evaluate_js requires script in target"},
 		{name: "unsupported", action: protocol.Action{Type: "browser_unknown"}, wantError: "unsupported browser action type: browser_unknown"},
 	}

@@ -487,7 +487,7 @@ func validateBrowserActionIssues(index int, action Action) []string {
 			issues = append(issues, fmt.Sprintf("%s: browser_wait requires wait_for, selector, or target", label))
 		}
 		return issues
-	case "browser_navigate", "browser_click", "browser_fill", "browser_select", "browser_tap", "browser_long_press", "browser_swipe", "browser_dblclick", "browser_hover":
+	case "browser_navigate", "browser_click", "browser_fill", "browser_select", "browser_tap", "browser_long_press", "browser_swipe", "browser_dblclick", "browser_hover", "browser_set_files":
 		if action.Target == "" && action.Selector == "" {
 			issues = append(issues, fmt.Sprintf("%s: missing target or selector", label))
 		}
@@ -498,6 +498,8 @@ func validateBrowserActionIssues(index int, action Action) []string {
 		if target, ok := actionParamStringValue(action.Params, "target"); !ok || strings.TrimSpace(target) == "" {
 			issues = append(issues, fmt.Sprintf("%s: browser_drag_and_drop requires params.target", label))
 		}
+	case "browser_press_key":
+		// Selector is optional; without one the key is pressed in the currently focused page.
 	case "browser_evaluate_js":
 		if strings.TrimSpace(action.Target) == "" {
 			issues = append(issues, fmt.Sprintf("%s: browser_evaluate_js requires target script", label))
@@ -520,6 +522,26 @@ func validateBrowserActionIssues(index int, action Action) []string {
 	case "browser_fill", "browser_select":
 		if action.Value == "" {
 			issues = append(issues, fmt.Sprintf("%s: %s requires value", label, action.Type))
+		}
+	case "browser_set_files":
+		if action.Value == "" {
+			if file, ok := actionParamStringValue(action.Params, "file"); !ok || strings.TrimSpace(file) == "" {
+				if path, ok := actionParamStringValue(action.Params, "path"); !ok || strings.TrimSpace(path) == "" {
+					if _, ok := action.Params["files"]; !ok {
+						issues = append(issues, fmt.Sprintf("%s: browser_set_files requires value, params.file, params.path, or params.files", label))
+					}
+				}
+			}
+		}
+	case "browser_press_key":
+		if strings.TrimSpace(action.Value) == "" {
+			if key, ok := actionParamStringValue(action.Params, "key"); !ok || strings.TrimSpace(key) == "" {
+				if keyName, ok := actionParamStringValue(action.Params, "key_name"); !ok || strings.TrimSpace(keyName) == "" {
+					if camelKeyName, ok := actionParamStringValue(action.Params, "keyName"); !ok || strings.TrimSpace(camelKeyName) == "" {
+						issues = append(issues, fmt.Sprintf("%s: browser_press_key requires value, params.key, or params.key_name", label))
+					}
+				}
+			}
 		}
 	case "browser_long_press":
 		if durationMs, ok := actionParamIntValue(action.Params, "duration_ms"); ok && durationMs <= 0 {

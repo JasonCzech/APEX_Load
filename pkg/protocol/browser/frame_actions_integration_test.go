@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -84,6 +86,91 @@ func TestBrowserProtocolExecutesFrameScopedActions(t *testing.T) {
 	})
 	if !strings.Contains(result.HTML, "Coupon from iframe") {
 		t.Fatalf("HTML did not reflect frame-scoped click: %q", result.HTML)
+	}
+}
+
+func TestBrowserProtocolSetsHiddenFileInput(t *testing.T) {
+	uploadFile := filepath.Join(t.TempDir(), "receipt.txt")
+	if err := os.WriteFile(uploadFile, []byte("receipt"), 0o600); err != nil {
+		t.Fatalf("write upload fixture: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html>
+<html>
+  <body>
+    <input id="uploadFile" type="file" style="display:none" onchange="document.querySelector('#status').textContent = this.files[0].name" />
+    <div id="status">No file</div>
+  </body>
+</html>`))
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open upload", Type: "browser_navigate", Target: "/"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name:     "Set upload file",
+		Type:     "browser_set_files",
+		Selector: "#uploadFile",
+		Value:    uploadFile,
+	})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name: "Wait for upload",
+		Type: "browser_wait",
+		WaitFor: &protocol.WaitCondition{
+			Type:      "text",
+			Value:     "receipt.txt",
+			TimeoutMs: 3000,
+		},
+	})
+	result := executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name:   "Read upload status",
+		Type:   "browser_evaluate_js",
+		Target: "document.querySelector('#status').textContent",
+	})
+	if result.Extractions["result"] != "receipt.txt" {
+		t.Fatalf("upload status = %#v, want receipt.txt", result.Extractions)
+	}
+}
+
+func TestBrowserProtocolPressesKeyOnSelector(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html>
+<html>
+  <body>
+    <form onsubmit="event.preventDefault(); document.querySelector('#status').textContent = document.querySelector('#search').value">
+      <input id="search" />
+    </form>
+    <div id="status">Idle</div>
+  </body>
+</html>`))
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open search", Type: "browser_navigate", Target: "/"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Fill search", Type: "browser_fill", Selector: "#search", Value: "hp"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Press Enter", Type: "browser_press_key", Selector: "#search", Value: "Enter"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name: "Wait for submit",
+		Type: "browser_wait",
+		WaitFor: &protocol.WaitCondition{
+			Type:      "text",
+			Value:     "hp",
+			TimeoutMs: 3000,
+		},
+	})
+	result := executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name:   "Read search status",
+		Type:   "browser_evaluate_js",
+		Target: "document.querySelector('#status').textContent",
+	})
+	if result.Extractions["result"] != "hp" {
+		t.Fatalf("search status = %#v, want hp", result.Extractions)
 	}
 }
 

@@ -61,6 +61,7 @@ func TestLookupStepScope(t *testing.T) {
 		{stepName: "Scroll", wantName: "Scroll", wantStatus: ScopeSupported, wantType: "browser_swipe", wantOK: true},
 		{stepName: "Evaluate JavaScript", wantName: "Evaluate JavaScript", wantStatus: ScopeReviewOnly, wantType: "browser_fill, browser_click, browser_swipe, or browser_navigate when decomposable", wantOK: true},
 		{stepName: "Hover", wantName: "Hover", wantStatus: ScopeSupported, wantType: "browser_hover", wantOK: true},
+		{stepName: "Press Key", wantName: "Press Key", wantStatus: ScopeSupported, wantType: "browser_press_key", wantOK: true},
 		{stepName: "Unknown Step", wantOK: false},
 	}
 

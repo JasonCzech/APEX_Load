@@ -205,6 +205,13 @@ var stepScopes = []StepScope{
 		APEXLoadShape: "browser_hover",
 		Notes:         "Hover and mouse-over steps map to the native browser_hover action using the captured selector or highest-confidence object-repository candidate.",
 	},
+	{
+		CanonicalName: "press_key",
+		DisplayName:   "Press Key",
+		Status:        ScopeSupported,
+		APEXLoadShape: "browser_press_key",
+		Notes:         "Keyboard steps map to selector-scoped browser_press_key actions when object identification is available, with focused-page keypress replay as a fallback.",
+	},
 }
 
 var web2ProfileCapabilityScopes = []ProfileCapabilityScope{

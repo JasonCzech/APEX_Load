@@ -83,6 +83,25 @@ func TestActionParamString(t *testing.T) {
 	}
 }
 
+func TestActionFilesAndKey(t *testing.T) {
+	files := actionFiles(&protocol.Action{
+		Value: "/tmp/primary.txt",
+		Params: map[string]any{
+			"file":  " /tmp/secondary.txt ",
+			"files": []any{"/tmp/third.txt", 12, " "},
+		},
+	})
+	if len(files) != 3 || files[0] != "/tmp/primary.txt" || files[1] != "/tmp/secondary.txt" || files[2] != "/tmp/third.txt" {
+		t.Fatalf("actionFiles = %#v, want primary/secondary/third paths", files)
+	}
+	if got := actionKey(&protocol.Action{Value: " Enter "}); got != "Enter" {
+		t.Fatalf("actionKey(value) = %q, want Enter", got)
+	}
+	if got := actionKey(&protocol.Action{Params: map[string]any{"key_name": "Tab"}}); got != "Tab" {
+		t.Fatalf("actionKey(params) = %q, want Tab", got)
+	}
+}
+
 func TestParseWaitDelay(t *testing.T) {
 	tests := []struct {
 		name    string

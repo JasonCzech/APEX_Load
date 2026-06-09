@@ -65,6 +65,53 @@ func actionParamString(params map[string]any, key, defaultValue string) string {
 	return defaultValue
 }
 
+func actionFiles(action *protocol.Action) []string {
+	if action == nil {
+		return nil
+	}
+	files := make([]string, 0)
+	appendFile := func(value string) {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			files = append(files, value)
+		}
+	}
+	appendFile(action.Value)
+	if action.Params == nil {
+		return files
+	}
+	for _, key := range []string{"file", "path"} {
+		if value := actionParamString(action.Params, key, ""); value != "" {
+			appendFile(value)
+		}
+	}
+	switch value := action.Params["files"].(type) {
+	case string:
+		appendFile(value)
+	case []string:
+		for _, file := range value {
+			appendFile(file)
+		}
+	case []any:
+		for _, file := range value {
+			if path, ok := file.(string); ok {
+				appendFile(path)
+			}
+		}
+	}
+	return files
+}
+
+func actionKey(action *protocol.Action) string {
+	if action == nil {
+		return ""
+	}
+	if key := strings.TrimSpace(action.Value); key != "" {
+		return key
+	}
+	return firstActionString(action.Params, "key", "key_name", "keyName")
+}
+
 func (b *Browser) screenshotSelector(action *protocol.Action) string {
 	if action == nil {
 		return ""

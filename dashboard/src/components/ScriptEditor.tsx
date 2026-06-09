@@ -13827,6 +13827,8 @@ const BROWSER_ACTION_TYPES = [
   'browser_dblclick',
   'browser_hover',
   'browser_drag_and_drop',
+  'browser_set_files',
+  'browser_press_key',
   'browser_evaluate_js',
   'browser_switch_frame',
   'browser_switch_window',
@@ -14073,8 +14075,8 @@ function ControlFlowFields({ action, index, onUpdate }: ControlFlowFieldsProps) 
 }
 
 function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScript, onUpdate }: ActionCoreFieldsProps) {
-  const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_select', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe', 'browser_dblclick', 'browser_hover', 'browser_drag_and_drop', 'browser_switch_frame'].includes(action.type)
-  const showValue = isBrowserScript && ['browser_fill', 'browser_select'].includes(action.type)
+  const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_select', 'browser_set_files', 'browser_press_key', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe', 'browser_dblclick', 'browser_hover', 'browser_drag_and_drop', 'browser_switch_frame'].includes(action.type)
+  const showValue = isBrowserScript && ['browser_fill', 'browser_select', 'browser_set_files', 'browser_press_key'].includes(action.type)
   const isWebSocketScript = protocol === 'websocket'
   const isGrpcScript = protocol === 'grpc'
   const isDatabaseScript = protocol === 'database'
@@ -14149,7 +14151,7 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
         <label className="full-width"><span>Selector Override</span><input value={action.selector || ''} onChange={e => onUpdate(index, 'selector', e.target.value)} placeholder="#submit, input[name=email], [data-testid=save]" /></label>
       )}
       {showValue && (
-        <label className="full-width"><span>Value</span><input value={action.value || ''} onChange={e => onUpdate(index, 'value', e.target.value)} placeholder="{{data.users.email}}" /></label>
+        <label className="full-width"><span>{action.type === 'browser_set_files' ? 'File Path(s)' : action.type === 'browser_press_key' ? 'Key' : 'Value'}</span><input value={action.value || ''} onChange={e => onUpdate(index, 'value', e.target.value)} placeholder={action.type === 'browser_set_files' ? '/tmp/upload.pdf or {{data.files.path}}' : action.type === 'browser_press_key' ? 'Enter' : '{{data.users.email}}'} /></label>
       )}
     </div>
   )

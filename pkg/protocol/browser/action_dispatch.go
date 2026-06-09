@@ -85,6 +85,22 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 			return nil, failBrowserAction(result, "browser_drag_and_drop requires selector/target and target param")
 		}
 		return b.dragAndDropAction(action, source, target), false
+	case "browser_set_files":
+		selector := b.actionSelector(action)
+		if selector == "" {
+			return nil, failBrowserAction(result, "browser_set_files requires selector or target")
+		}
+		files := actionFiles(action)
+		if len(files) == 0 {
+			return nil, failBrowserAction(result, "browser_set_files requires value or params.files")
+		}
+		return b.setInputFilesAction(action, selector, files), false
+	case "browser_press_key":
+		key := actionKey(action)
+		if key == "" {
+			return nil, failBrowserAction(result, "browser_press_key requires value or params.key")
+		}
+		return b.pressKeyAction(action, b.actionSelector(action), key), false
 	case "browser_evaluate_js":
 		return b.dispatchEvaluateJS(ctx, action, result)
 	case "browser_switch_frame":

@@ -36,8 +36,9 @@ type ConvertResult struct {
 }
 
 type truScriptDocument struct {
-	XMLName xml.Name     `xml:"truScript"`
-	Steps   []truXMLStep `xml:"step"`
+	XMLName     xml.Name           `xml:"truScript"`
+	Steps       []truXMLStep       `xml:"step"`
+	TestObjects []truXMLTestObject `xml:"testObjects>testObject"`
 }
 
 type truXMLStep struct {
@@ -45,13 +46,57 @@ type truXMLStep struct {
 	StepID     string       `xml:"stepId,attr"`
 	Action     string       `xml:"action,attr"`
 	ActionName string       `xml:"actionName,attr"`
+	TestObject string       `xml:"testObject,attr"`
 	Arguments  string       `xml:"arguments,attr"`
 	Index      string       `xml:"index,attr"`
 	Steps      []truXMLStep `xml:"step"`
 }
 
+type truXMLTestObject struct {
+	TestObjID    string           `xml:"testObjId,attr"`
+	AutoName     string           `xml:"autoName,attr"`
+	FallbackName string           `xml:"fallbackName,attr"`
+	Roles        []string         `xml:"roles>role"`
+	Idents       []truXMLObjectID `xml:"idents>ident"`
+}
+
+type truXMLObjectID struct {
+	Type    string `xml:"type,attr"`
+	Content string `xml:",chardata"`
+}
+
 type truArgument struct {
 	Value string `json:"value"`
+}
+
+func (argument *truArgument) UnmarshalJSON(data []byte) error {
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	argument.Value = truArgumentValueString(raw["value"])
+	return nil
+}
+
+func truArgumentValueString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case bool:
+		if typed {
+			return "true"
+		}
+		return "false"
+	case nil:
+		return ""
+	default:
+		if encoded, err := json.Marshal(typed); err == nil {
+			return string(encoded)
+		}
+		return fmt.Sprint(typed)
+	}
 }
 
 var (
@@ -108,7 +153,7 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 		Warnings: make([]string, 0),
 	}
 
-	descriptors := collectObjectDescriptors(files)
+	descriptors := uniqueObjectDescriptors(append(collectObjectDescriptors(files), embeddedObjectDescriptorsFromDocument(xmlName, doc)...))
 	baseURL := strings.TrimSpace(opts.BaseURL)
 	currentTransaction := ""
 	for _, step := range executionSteps(doc.Steps) {
@@ -397,6 +442,13 @@ func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action,
 			Selector: selector,
 		}}, nil, false, nil
 	case "Set / Type", "Set", "Type":
+		if strings.EqualFold(strings.TrimSpace(step.Action), "Set") {
+			if action, ok, err := convertSetFilesStep(step, descriptors); err != nil {
+				return nil, nil, false, err
+			} else if ok {
+				return []dsl.Action{action}, nil, false, nil
+			}
+		}
 		selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
 		if err != nil {
 			return nil, nil, false, fmt.Errorf("parse TruClient Set / Type step selector arguments: %w", err)
@@ -444,6 +496,12 @@ func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action,
 			Selector: selector,
 			Value:    value,
 		}}, nil, false, nil
+	case "Press Key":
+		action, err := convertPressKeyStep(step, descriptors)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		return []dsl.Action{action}, nil, false, nil
 	case "Scroll":
 		action, err := convertScrollStep(step)
 		if err != nil {
@@ -481,6 +539,66 @@ func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action,
 		}
 		return nil, []string{fmt.Sprintf("TruClient step %q is not supported yet and was skipped during import", actionName)}, true, nil
 	}
+}
+
+func convertPressKeyStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.Action, error) {
+	keyName, err := parseFirstArgumentValue(step.Arguments, "Key Name", "KeyName", "Key", "key")
+	if err != nil {
+		return dsl.Action{}, fmt.Errorf("parse TruClient Press Key arguments: %w", err)
+	}
+	keyName = trimQuotedValue(keyName)
+	if keyName == "" {
+		return dsl.Action{}, fmt.Errorf("TruClient Press Key step is missing a key name")
+	}
+	selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
+	if err != nil {
+		return dsl.Action{}, fmt.Errorf("parse TruClient Press Key selector arguments: %w", err)
+	}
+	selector = resolveSelector(step, descriptors, trimQuotedValue(selector))
+	action := dsl.Action{
+		Name:  stepDisplayName(step, "Press Key"),
+		Type:  "browser_press_key",
+		Value: keyName,
+		Metadata: map[string]any{
+			"source":     "truclient_press_key",
+			"source_key": keyName,
+		},
+	}
+	if selector != "" {
+		action.Target = selector
+		action.Selector = selector
+	}
+	return action, nil
+}
+
+func convertSetFilesStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.Action, bool, error) {
+	rawPath, err := parseFirstArgumentValue(step.Arguments, "Path", "path", "File", "file", "File Path", "file_path")
+	if err != nil {
+		return dsl.Action{}, false, fmt.Errorf("parse TruClient Set file path arguments: %w", err)
+	}
+	path := trimQuotedValue(rawPath)
+	if path == "" {
+		return dsl.Action{}, false, nil
+	}
+	selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
+	if err != nil {
+		return dsl.Action{}, false, fmt.Errorf("parse TruClient Set file selector arguments: %w", err)
+	}
+	selector = resolveSelector(step, descriptors, trimQuotedValue(selector))
+	if selector == "" {
+		return dsl.Action{}, false, fmt.Errorf("TruClient Set file step is missing a selector value")
+	}
+	return dsl.Action{
+		Name:     stepDisplayName(step, "Set File"),
+		Type:     "browser_set_files",
+		Target:   selector,
+		Selector: selector,
+		Value:    path,
+		Metadata: map[string]any{
+			"source":           "truclient_set_file",
+			"source_file_path": path,
+		},
+	}, true, nil
 }
 
 func convertClickLikeStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.Action, error) {
@@ -601,7 +719,7 @@ func attachSourceStepMetadata(action *dsl.Action, step truXMLStep, transaction s
 	if value := strings.TrimSpace(step.ActionName); value != "" {
 		action.Metadata["source_action_name"] = value
 	}
-	if value := objectDescriptorID(step.Arguments); value != "" {
+	if value := stepObjectDescriptorID(step); value != "" {
 		action.Metadata["source_object_descriptor_id"] = value
 	}
 	if candidates, _ := rankedSelectorCandidates(step, descriptors); len(candidates) > 0 {
@@ -664,7 +782,7 @@ func rankedSelectorCandidates(step truXMLStep, descriptors []ObjectDescriptor) (
 	values, _ := parseArgumentValues(step.Arguments)
 	candidates := selectorCandidatesFromValues(values)
 	matched := false
-	if descriptor := matchObjectDescriptor(descriptors, objectDescriptorIDFromValues(values), step); descriptor != nil {
+	if descriptor := matchObjectDescriptor(descriptors, stepObjectDescriptorIDFromValues(step, values), step); descriptor != nil {
 		matched = true
 		candidates = append(candidates, descriptor.SelectorCandidates...)
 	}
