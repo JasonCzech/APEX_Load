@@ -574,6 +574,71 @@ func TestValidateScriptForReplayBlocksReviewGatedJavaScriptUntilApproved(t *test
 	}
 }
 
+func TestReplayPreflightWalksNestedControlFlow(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "Nested Control Replay",
+		Protocol: "browser",
+		Actions: []dsl.Action{
+			{
+				Name: "Ready Branch",
+				Type: "control_if",
+				Control: &dsl.ControlFlow{
+					Condition: &dsl.Condition{Left: "{{var.ready}}", Op: "eq", Right: "true"},
+					Steps: []dsl.Action{
+						{
+							Name:   "Create Cart",
+							Type:   "browser_click",
+							Target: "#create-cart",
+							Extractors: []dsl.Extractor{{
+								Name:       "cart_id",
+								Source:     "body",
+								Type:       "jsonpath",
+								Expression: "$.cart_id",
+							}},
+						},
+						{
+							Name: "Add Items",
+							Type: "control_loop",
+							Control: &dsl.ControlFlow{
+								Count: 3,
+								Steps: []dsl.Action{{
+									Name:   "Add SKU",
+									Type:   "browser_click",
+									Target: "#sku-{{var.sku}}-{{var.cart_id}}",
+								}},
+							},
+						},
+					},
+					Else: []dsl.Action{{
+						Name:   "Guest Cart",
+						Type:   "browser_click",
+						Target: "#guest-cart",
+					}},
+				},
+			},
+			{
+				Name:   "Checkout",
+				Type:   "browser_click",
+				Target: "#checkout-{{var.cart_id}}",
+			},
+		},
+	}
+
+	preflight := buildReplayPreflight(script, map[string]string{"ready": "true"}, nil, nil)
+	if preflight.ActionCount != 4 {
+		t.Fatalf("ActionCount = %d, want 4 nested executable action definitions", preflight.ActionCount)
+	}
+	if preflight.ExpectedActionCount != 5 {
+		t.Fatalf("ExpectedActionCount = %d, want 5 with fixed loop expansion", preflight.ExpectedActionCount)
+	}
+	if !slices.Contains(preflight.MissingVariables, "sku") {
+		t.Fatalf("missing variables = %v, want nested sku", preflight.MissingVariables)
+	}
+	if slices.Contains(preflight.MissingVariables, "cart_id") {
+		t.Fatalf("missing variables = %v, cart_id should be available from nested extractor", preflight.MissingVariables)
+	}
+}
+
 func replayPreflightCheckStatus(preflight *ReplayPreflight, id string) string {
 	if preflight == nil {
 		return ""

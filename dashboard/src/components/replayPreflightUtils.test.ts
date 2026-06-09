@@ -151,6 +151,63 @@ describe('buildLocalReplayPreflight', () => {
     })
   })
 
+  it('walks nested control-flow bodies for variables and replay action counts', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      protocol: 'browser',
+      config: {
+        base_url: 'https://app.example.com',
+        browser: {
+          engine: 'chromium',
+        },
+      },
+      actions: [
+        {
+          name: 'Ready Branch',
+          type: 'control_if',
+          target: '',
+          control: {
+            condition: { left: '{{var.ready}}', op: 'eq', right: 'true' },
+            steps: [
+              {
+                name: 'Create Cart',
+                type: 'browser_click',
+                target: '#create-cart',
+                extractors: [
+                  { name: 'cart_id', source: 'body', type: 'json_path', expression: '$.cart_id' },
+                ],
+              },
+              {
+                name: 'Add Items',
+                type: 'control_loop',
+                target: '',
+                control: {
+                  count: 3,
+                  steps: [
+                    { name: 'Add SKU', type: 'browser_click', target: '#sku-{{var.sku}}-{{var.cart_id}}' },
+                  ],
+                },
+              },
+            ],
+            else: [
+              { name: 'Guest Cart', type: 'browser_click', target: '#guest-cart' },
+            ],
+          },
+        },
+        {
+          name: 'Checkout',
+          type: 'browser_click',
+          target: '#checkout-{{var.cart_id}}',
+        },
+      ],
+    }, { ready: 'true' })
+
+    expect(preflight.action_count).toBe(4)
+    expect(preflight.expected_action_count).toBe(5)
+    expect(preflight.missing_variables).toEqual(['sku'])
+    expect(preflight.missing_variables).not.toContain('cart_id')
+  })
+
   it('warns when browser replay screenshot evidence is disabled', () => {
     const preflight = buildLocalReplayPreflight({
       ...baseScript,

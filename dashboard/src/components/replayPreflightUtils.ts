@@ -6,6 +6,7 @@ type ScriptWithPhases = ScriptDefinition & {
 }
 
 const REPLAY_TEMPLATE_REF_PATTERN = /\{\{\s*(var|env|data|param)\.([a-zA-Z0-9_.-]+)/g
+const REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH = 32
 
 export function replayPreflightStatusLabel(preflight?: ReplayPreflight | null) {
   if (!preflight) return 'Not checked'
@@ -14,13 +15,91 @@ export function replayPreflightStatusLabel(preflight?: ReplayPreflight | null) {
   return 'Ready'
 }
 
-function orderedReplayActions(script: ScriptDefinition): ScriptActionDefinition[] {
+function phaseReplayActions(script: ScriptDefinition): ScriptActionDefinition[] {
   const phasedScript = script as ScriptWithPhases
   return [
     ...(phasedScript.init || []),
     ...(script.actions || []),
     ...(phasedScript.teardown || []),
   ]
+}
+
+function orderedReplayActions(script: ScriptDefinition): ScriptActionDefinition[] {
+  return flattenReplayActionsForReadiness(phaseReplayActions(script), 0)
+}
+
+function flattenReplayActionsForReadiness(actions: ScriptActionDefinition[], depth: number): ScriptActionDefinition[] {
+  const ordered: ScriptActionDefinition[] = []
+  actions.forEach(action => {
+    switch (action.type?.trim().toLowerCase()) {
+      case 'control_if':
+        ordered.push(controlShellAction(action))
+        if (action.control && depth < REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH) {
+          ordered.push(...flattenReplayActionsForReadiness(action.control.steps || [], depth + 1))
+          ordered.push(...flattenReplayActionsForReadiness(action.control.else || [], depth + 1))
+        }
+        break
+      case 'control_loop':
+        ordered.push(controlShellAction(action))
+        if (action.control && depth < REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH) {
+          ordered.push(...flattenReplayActionsForReadiness(action.control.steps || [], depth + 1))
+        }
+        break
+      default:
+        ordered.push(action)
+    }
+  })
+  return ordered
+}
+
+function controlShellAction(action: ScriptActionDefinition): ScriptActionDefinition {
+  if (!action.control) return action
+  return {
+    ...action,
+    control: {
+      condition: action.control.condition,
+      count: action.control.count,
+      max_iterations: action.control.max_iterations,
+    },
+  }
+}
+
+function actionDefinitionCount(actions: ScriptActionDefinition[], depth: number): number {
+  return actions.reduce((count, action) => {
+    switch (action.type?.trim().toLowerCase()) {
+      case 'control_if':
+        if (!action.control || depth >= REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH) return count
+        return count
+          + actionDefinitionCount(action.control.steps || [], depth + 1)
+          + actionDefinitionCount(action.control.else || [], depth + 1)
+      case 'control_loop':
+        if (!action.control || depth >= REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH) return count
+        return count + actionDefinitionCount(action.control.steps || [], depth + 1)
+      default:
+        return count + 1
+    }
+  }, 0)
+}
+
+function expectedReplayActionCount(actions: ScriptActionDefinition[], depth: number): number {
+  return actions.reduce((count, action) => {
+    switch (action.type?.trim().toLowerCase()) {
+      case 'control_if': {
+        if (!action.control || depth >= REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH) return count
+        const thenCount = expectedReplayActionCount(action.control.steps || [], depth + 1)
+        const elseCount = expectedReplayActionCount(action.control.else || [], depth + 1)
+        return count + Math.max(thenCount, elseCount)
+      }
+      case 'control_loop': {
+        if (!action.control || depth >= REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH) return count
+        const bodyCount = expectedReplayActionCount(action.control.steps || [], depth + 1)
+        const passes = action.control.count && action.control.count > 0 ? action.control.count : 1
+        return count + (bodyCount * passes)
+      }
+      default:
+        return count + 1
+    }
+  }, 0)
 }
 
 function sortedValues(values: Set<string>): string[] {
@@ -87,7 +166,10 @@ function browserEvidenceCaptureCheck(script: ScriptDefinition) {
 }
 
 export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: Record<string, string>): ReplayPreflight {
+  const phaseActions = phaseReplayActions(script)
   const orderedActions = orderedReplayActions(script)
+  const definitionCount = actionDefinitionCount(phaseActions, 0)
+  const expectedCount = expectedReplayActionCount(phaseActions, 0)
   const availableVariables = new Set<string>([
     ...Object.keys(variables || {}).filter(Boolean),
     ...(script.parameters || []).map(parameter => parameter.name).filter(Boolean),
@@ -114,7 +196,7 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
   const requiredSecretList = sortedValues(requiredSecrets)
   const browserRequired = script.protocol === 'browser'
   const prerequisites = runtimePrerequisites(script, browserRequired)
-  const hasRequiredFields = Boolean(script.name && orderedActions.length > 0)
+  const hasRequiredFields = Boolean(script.name && definitionCount > 0)
 
   const checks = [
     {
@@ -152,8 +234,8 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
 
   return {
     valid: hasRequiredFields && missingVariableList.length === 0 && dataWarnings.length === 0,
-    action_count: orderedActions.length,
-    expected_action_count: orderedActions.length,
+    action_count: definitionCount,
+    expected_action_count: expectedCount,
     data_source_count: script.data_sources?.length || 0,
     parameter_count: script.parameters?.length || 0,
     browser_required: browserRequired,
