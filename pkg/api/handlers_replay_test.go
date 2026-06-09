@@ -518,6 +518,63 @@ func TestValidateScript_AllowsBrowserScreenshotWithoutTarget(t *testing.T) {
 	}
 }
 
+func TestValidateScriptForReplayBlocksReviewGatedJavaScriptUntilApproved(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "Review Gated Browser Script",
+		Protocol: "browser",
+		Actions: []dsl.Action{{
+			Name:   "Custom JS",
+			Type:   "browser_evaluate_js",
+			Target: "window.checkoutReady === true",
+			Metadata: map[string]any{
+				"review_required":   true,
+				"review_gate":       "javascript",
+				"promotion_blocker": true,
+			},
+		}},
+	}
+
+	if issues := validateScript(script); len(issues) != 0 {
+		t.Fatalf("structural issues = %v, want none", issues)
+	}
+
+	issues := validateScriptForReplay(script)
+	if len(issues) != 1 || !strings.Contains(issues[0], "allow_reviewed_javascript=true") {
+		t.Fatalf("replay issues = %v, want reviewed JavaScript gate", issues)
+	}
+	preflight := buildReplayPreflight(script, nil, validateScript(script), nil)
+	if preflight.Valid {
+		t.Fatalf("preflight.Valid = true, want false for review-gated JavaScript")
+	}
+	if status := replayPreflightCheckStatus(preflight, "review_gates"); status != "fail" {
+		t.Fatalf("review_gates status = %q, want fail", status)
+	}
+
+	script.Config.Browser.ReviewPolicy.AllowReviewedJavaScript = true
+	if issues := validateScriptForReplay(script); len(issues) != 0 {
+		t.Fatalf("approved replay issues = %v, want none", issues)
+	}
+	preflight = buildReplayPreflight(script, nil, validateScript(script), nil)
+	if !preflight.Valid {
+		t.Fatalf("approved preflight.Valid = false, issues=%v", preflight.Issues)
+	}
+	if status := replayPreflightCheckStatus(preflight, "review_gates"); status != "pass" {
+		t.Fatalf("approved review_gates status = %q, want pass", status)
+	}
+}
+
+func replayPreflightCheckStatus(preflight *ReplayPreflight, id string) string {
+	if preflight == nil {
+		return ""
+	}
+	for _, check := range preflight.Checks {
+		if check.ID == id {
+			return check.Status
+		}
+	}
+	return ""
+}
+
 func TestValidateScript_JMSMockDoesNotRequireBaseURL(t *testing.T) {
 	issues := validateScript(&dsl.Script{
 		Name:     "Mock JMS",

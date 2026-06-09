@@ -37,6 +37,7 @@ type ReplayPreflightCheck struct {
 var replayTemplateRefPattern = regexp.MustCompile(`\{\{\s*(var|env|data|param)\.([a-zA-Z0-9_.-]+)`)
 
 func buildReplayPreflight(script *dsl.Script, variables map[string]string, issues []string, warnings []string) *ReplayPreflight {
+	reviewGateIssues := replayReviewGateIssues(script)
 	preflight := &ReplayPreflight{
 		Valid:                len(issues) == 0,
 		ActionCount:          replayActionCount(script),
@@ -45,7 +46,7 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 		ParameterCount:       len(scriptParameters(script)),
 		BrowserRequired:      script != nil && strings.EqualFold(strings.TrimSpace(script.Protocol), "browser"),
 		RuntimePrerequisites: replayRuntimePrerequisites(script),
-		Issues:               append([]string(nil), issues...),
+		Issues:               appendUniqueStrings(append([]string(nil), issues...), reviewGateIssues...),
 		Warnings:             append([]string(nil), warnings...),
 	}
 	preflight.MissingVariables = replayMissingVariables(script, variables)
@@ -54,13 +55,19 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 	if len(dataWarnings) > 0 {
 		preflight.Warnings = append(preflight.Warnings, dataWarnings...)
 	}
-	preflight.Valid = preflight.Valid && len(preflight.MissingVariables) == 0 && len(preflight.MissingSecrets) == 0 && len(dataWarnings) == 0
+	preflight.Valid = preflight.Valid && len(reviewGateIssues) == 0 && len(preflight.MissingVariables) == 0 && len(preflight.MissingSecrets) == 0 && len(dataWarnings) == 0
 	preflight.Checks = []ReplayPreflightCheck{
 		{
 			ID:     "validation",
 			Label:  "Script validation",
 			Status: replayCheckStatus(len(issues) == 0, len(warnings) > 0),
 			Detail: replayCheckDetail(len(issues), len(warnings), "validation issue", "validation warning"),
+		},
+		{
+			ID:     "review_gates",
+			Label:  "Review gates",
+			Status: replayCheckStatus(len(reviewGateIssues) == 0, false),
+			Detail: replayListDetail(reviewGateIssues, "No review-gated actions block replay."),
 		},
 		{
 			ID:     "variables",

@@ -124,7 +124,7 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 
 func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Request, id string, script *dsl.Script, req ScriptDebugStartRequest) {
 	script = applyScriptDebugOverrides(script, req)
-	issues := validateScript(script)
+	issues := validateScriptForReplay(script)
 	warnings := validationWarnings(script)
 	preflight := buildReplayPreflight(script, req.Variables, issues, warnings)
 	if len(issues) > 0 {
