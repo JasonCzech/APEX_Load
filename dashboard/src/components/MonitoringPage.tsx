@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useMemo, type DragEvent, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
+import { useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
 import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, SystemServicesResponse, TelemetryDiagnosticEntry } from '../types'
 import { readStoredStringArray, writeStoredJSON } from '../utils/browserStorage'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
@@ -65,10 +66,6 @@ function safeApiCall<T>(request: () => Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-function formatMonitorScheduleHealthCount(value?: number): string {
-  return typeof value === 'number' ? value.toLocaleString() : '-'
-}
-
 export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
@@ -89,11 +86,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [provisioner, setProvisioner] = useState<ProvisionerInfo | null>(null)
   const [isTelemetryModalOpen, setIsTelemetryModalOpen] = useState(false)
   const [isGeneratorsModalOpen, setIsGeneratorsModalOpen] = useState(false)
-  const [customizing, setCustomizing] = useState(false)
-  const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
   const [activeCategoryId, setActiveCategoryId] = useState<MonitorCategoryId>('overview')
   const [cardOrder, setCardOrder] = useState<string[]>(() => readStoredStringArray('apexload.monitoring.cardOrder'))
-  const [hiddenCardIds, setHiddenCardIds] = useState<string[]>(() => readStoredStringArray('apexload.monitoring.hiddenCards'))
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const websocketValueClass = connectionState === 'connected' ? 'text-success' : connectionState === 'disconnected' ? 'text-danger' : ''
   const websocketLabel = connectionState === 'connected' ? 'Connected' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
@@ -130,11 +124,6 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const fleetAlertWarningCount = fleetAlerts.filter(alert => alert.severity === 'warning').length
   const fleetAlertHeaderSeverity = fleetAlertDangerCount > 0 ? 'danger' : fleetAlertWarningCount > 0 ? 'warning' : generators.length > 0 ? 'healthy' : 'unknown'
   const fleetAlertHeaderLabel = fleetAlerts.length > 0 ? `${fleetAlerts.length} alert${fleetAlerts.length === 1 ? '' : 's'}` : generators.length > 0 ? 'clear' : 'no inventory'
-  const scheduleStatusCounts = scheduleHealth?.status_counts ?? {}
-  const scheduleQueuedCount = scheduleHealth?.queued ?? scheduleStatusCounts.queued ?? 0
-  const scheduleMaterializedCount = scheduleHealth?.materialized ?? scheduleStatusCounts.materialized ?? 0
-  const scheduleSkippedCount = scheduleHealth?.skipped ?? scheduleStatusCounts.skipped ?? 0
-  const scheduleCompletedCount = scheduleHealth?.completed ?? scheduleStatusCounts.completed ?? 0
   const scheduleHeaderSeverity = !scheduleHealth
     ? 'unknown'
     : scheduleHealth.failed > 0 || scheduleHealth.blocked > 0
@@ -157,22 +146,6 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             : scheduleHealth.total > 0
               ? `${scheduleHealth.enabled}/${scheduleHealth.total} enabled`
               : 'no schedules'
-  const scheduleHealthMetrics = [
-    { label: 'Due', value: scheduleHealth?.due, tone: scheduleHealth?.due ? 'warning' : undefined },
-    { label: 'Blocked', value: scheduleHealth?.blocked, tone: scheduleHealth?.blocked ? 'danger' : undefined },
-    { label: 'Failed', value: scheduleHealth?.failed, tone: scheduleHealth?.failed ? 'danger' : undefined },
-    { label: 'Approval', value: scheduleHealth?.pending_approval, tone: scheduleHealth?.pending_approval ? 'warning' : undefined },
-    { label: 'Queued', value: scheduleHealth ? scheduleQueuedCount : undefined },
-    { label: 'Materialized', value: scheduleHealth ? scheduleMaterializedCount : undefined },
-    { label: 'Skipped', value: scheduleHealth ? scheduleSkippedCount : undefined },
-    { label: 'Completed', value: scheduleHealth ? scheduleCompletedCount : undefined },
-  ]
-  const scheduleHealthContext = [
-    { label: 'Enabled Schedules', value: scheduleHealth ? `${formatMonitorScheduleHealthCount(scheduleHealth.enabled)}/${formatMonitorScheduleHealthCount(scheduleHealth.total)}` : '-' },
-    { label: 'Source', value: activeProject?.name || 'Current project' },
-    { label: 'Current Runs', value: runCalendar ? String((runCalendar.events ?? []).filter(event => isRunCalendarActiveStatus(event.status)).length) : '-' },
-    { label: 'Future Runs', value: runCalendar ? String((runCalendar.events ?? []).filter(event => event.projected || event.status.toLowerCase() === 'scheduled').length) : '-' },
-  ]
   const readinessReadyCount = systemReadiness?.checks.filter(check => check.status === 'ready').length ?? 0
   const readinessDegradedCount = systemReadiness?.checks.filter(check => check.status === 'degraded').length ?? 0
   const readinessBlockedCount = systemReadiness?.checks.filter(check => check.status === 'not_ready').length ?? 0
@@ -863,10 +836,6 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     writeStoredJSON('apexload.monitoring.cardOrder', cardOrder)
   }, [cardOrder])
 
-  useEffect(() => {
-    writeStoredJSON('apexload.monitoring.hiddenCards', hiddenCardIds)
-  }, [hiddenCardIds])
-
   const orderedCards = useMemo(() => {
     const byId = new Map(cards.map(card => [card.id, card]))
     return mergeOrder(cardOrder, cards.map(card => card.id))
@@ -874,47 +843,12 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       .filter((card): card is MonitorCard => Boolean(card))
   }, [cards, cardOrder])
 
-  const visibleCards = orderedCards.filter(card => !hiddenCardIds.includes(card.id))
-  const hiddenCards = orderedCards.filter(card => hiddenCardIds.includes(card.id))
   const activeCategory = MONITOR_CATEGORIES.find(category => category.id === activeCategoryId) ?? MONITOR_CATEGORIES[0]
   const activeCategoryCardIds = new Set<string>(activeCategory.cardIds)
-  const activeVisibleCards = visibleCards.filter(card => activeCategoryCardIds.has(card.id))
-  const activeHiddenCards = hiddenCards.filter(card => activeCategoryCardIds.has(card.id))
-
-  const toggleCard = (id: string) => {
-    setHiddenCardIds(prev => prev.includes(id) ? prev.filter(cardId => cardId !== id) : [...prev, id])
-  }
+  const activeVisibleCards = orderedCards.filter(card => activeCategoryCardIds.has(card.id))
 
   const selectCategory = (id: MonitorCategoryId) => {
     setActiveCategoryId(id)
-    setDraggedCardId(null)
-  }
-
-  const resetCards = () => {
-    setCardOrder(cards.map(card => card.id))
-    setHiddenCardIds([])
-  }
-
-  const handleDragStart = (event: DragEvent<HTMLDivElement>, id: string) => {
-    if (!customizing) return
-    setDraggedCardId(id)
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', id)
-  }
-
-  const handleDragOver = (event: DragEvent<HTMLDivElement>, id: string) => {
-    if (!customizing || !draggedCardId || draggedCardId === id) return
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
-  }
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>, id: string) => {
-    if (!customizing) return
-    event.preventDefault()
-    const sourceId = event.dataTransfer.getData('text/plain') || draggedCardId
-    if (!sourceId) return
-    setCardOrder(prev => moveId(mergeOrder(prev, cards.map(card => card.id)), sourceId, id))
-    setDraggedCardId(null)
   }
 
   const severityEntries = useMemo<{ label: string; severity: string; summary: string }[]>(() => {
@@ -979,97 +913,51 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       : overallSeverity === 'unknown'
         ? 'Waiting for system data...'
         : 'All systems operational'
+  const advisoryEntries = severityEntries.filter(entry => entry.severity === 'danger' || entry.severity === 'warning')
+  const advisoryTone: TopbarMetaTone | null = overallSeverity === 'danger'
+    ? 'danger'
+    : overallSeverity === 'warning'
+      ? 'warning'
+      : null
+  const advisorySummary = advisoryEntries
+    .map(entry => `${entry.label}: ${entry.summary || entry.severity}`)
+    .join('\n')
+  const monitoringTopbarContribution = useMemo(() => ({
+    id: 'monitoring-page',
+    priority: 10,
+    title: 'Monitoring',
+    titleNode: (
+      <div className="monitoring-topbar-title">
+        <strong className="topbar-page-title">Monitoring</strong>
+        {advisoryTone && (
+          <span className={`topbar-meta-chip ${advisoryTone}`} title={advisorySummary}>
+            {overallLabel}
+          </span>
+        )}
+      </div>
+    ),
+  }), [advisorySummary, advisoryTone, overallLabel])
+
+  useTopbarContribution(monitoringTopbarContribution)
 
   return (
     <div className="page">
       <div className="page-header">
         <div>
-          <h2>Monitoring</h2>
+          <h2 className="monitor-page-title">
+            <span>Monitoring</span>
+            {advisoryTone && (
+              <span className={`monitor-title-advisory monitor-header-badge ${advisoryTone}`} title={advisorySummary}>
+                {overallLabel}
+              </span>
+            )}
+          </h2>
           <p className="page-subtitle">System health, generator pods, and connection status</p>
-        </div>
-        <div className="monitor-actions">
-          {lastRefreshed && (
-            <span className="monitor-last-refreshed">
-              Updated {lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
-            </span>
-          )}
-          {customizing && (
-            <button className="btn btn-secondary btn-sm" type="button" onClick={resetCards}>Reset Cards</button>
-          )}
-          <button className="btn btn-sm btn-accent-action" type="button" onClick={() => setCustomizing(value => !value)}>
-            {customizing ? 'Done' : 'Customize Cards'}
-          </button>
         </div>
       </div>
 
-      {activeCategoryId === 'schedules' ? (
-        <section className={`monitor-schedule-health-card ${scheduleHeaderSeverity}`} aria-label="Advisory Panel">
-          <div className="monitor-schedule-health-header">
-            <div>
-              <h3>Advisory Panel</h3>
-            </div>
-            <span className={`monitor-header-badge ${scheduleHeaderSeverity}`}>{scheduleHeaderLabel}</span>
-          </div>
-          <div className="monitor-schedule-health-body">
-            <div className="monitor-schedule-health-metrics">
-              {scheduleHealthMetrics.map(metric => (
-                <div key={metric.label} className={metric.tone ? `is-${metric.tone}` : undefined}>
-                  <strong>{formatMonitorScheduleHealthCount(metric.value)}</strong>
-                  <span>{metric.label}</span>
-                </div>
-              ))}
-            </div>
-            <div className="monitor-schedule-health-context">
-              {scheduleHealthContext.map(item => (
-                <div key={item.label}>
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      ) : (
-        <div className={`monitor-health-banner ${overallSeverity}`} aria-label="Advisory Panel">
-          <div className="monitor-health-banner-header">
-            <div>
-              <h3>Advisory Panel</h3>
-            </div>
-            <span className={`monitor-header-badge ${overallSeverity}`}>{overallLabel}</span>
-          </div>
-          <div className="monitor-health-banner-body">
-            <ul className="monitor-health-checklist">
-              {severityEntries.map(entry => {
-                const isGreen = entry.severity === 'healthy'
-                return (
-                  <li key={entry.label} className={`monitor-health-check ${entry.severity} ${isGreen ? 'is-ok' : 'is-issue'}`}>
-                    <span className={`monitor-health-check-box ${entry.severity}`} aria-hidden="true">
-                      {isGreen ? (
-                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                          <rect x="0.5" y="0.5" width="15" height="15" rx="4" fill="currentColor" />
-                          <path d="M4.3 8.2 6.7 10.6 11.7 5.4" stroke="var(--accent-contrast)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      ) : (
-                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                          <rect x="1" y="1" width="14" height="14" rx="4" fill="none" stroke="currentColor" strokeWidth="1.6" />
-                        </svg>
-                      )}
-                    </span>
-                    <span className="monitor-health-check-label">{entry.label}</span>
-                    {!isGreen && entry.summary && (
-                      <span className="monitor-health-check-summary">{entry.summary}</span>
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        </div>
-      )}
-
       <div className="monitor-tab-row" role="tablist" aria-label="Monitor categories">
         {MONITOR_CATEGORIES.map(category => {
-          const visibleCount = category.cardIds.filter(id => !hiddenCardIds.includes(id)).length
           return (
             <button
               key={category.id}
@@ -1080,57 +968,42 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               onClick={() => selectCategory(category.id)}
             >
               <span>{category.label}</span>
-              <span className="monitor-tab-count">{visibleCount}/{category.cardIds.length}</span>
+              <span className="monitor-tab-count">{category.cardIds.length}/{category.cardIds.length}</span>
             </button>
           )
         })}
       </div>
 
-      {customizing && activeHiddenCards.length > 0 && (
-        <div className="hidden-chart-list">
-          {activeHiddenCards.map(card => (
-            <button key={card.id} className="hidden-chart-pill" type="button" onClick={() => toggleCard(card.id)}>
-              Show {card.title}
-            </button>
-          ))}
-        </div>
-      )}
-
       <div className="monitor-tab-panel" role="tabpanel" aria-label={`${activeCategory.label} monitors`}>
-        <div className={`monitoring-grid ${customizing ? 'is-customizing' : ''}`} data-active-category={activeCategory.id}>
+        <div className="monitoring-grid" data-active-category={activeCategory.id}>
         {activeVisibleCards.length === 0 ? (
           <div className="monitor-empty-category">
-            {customizing ? `All ${activeCategory.label} monitors are hidden.` : `No ${activeCategory.label} monitors are visible.`}
+            No {activeCategory.label} monitors are visible.
           </div>
         ) : activeVisibleCards.map(card => (
           <div
             key={card.id}
             data-card-id={card.id}
-            className={`monitor-card ${customizing ? 'editable' : ''} ${draggedCardId === card.id ? 'dragging' : ''}`}
-            draggable={customizing}
-            onDragStart={event => handleDragStart(event, card.id)}
-            onDragOver={event => handleDragOver(event, card.id)}
-            onDrop={event => handleDrop(event, card.id)}
-            onDragEnd={() => setDraggedCardId(null)}
+            className="monitor-card"
           >
             <div className="monitor-header">
-              {customizing && (
-              <span className="monitor-drag-handle" title="Drag to reorder">
-                <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor"><circle cx="2" cy="2" r="1.5"/><circle cx="8" cy="2" r="1.5"/><circle cx="2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="2" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/></svg>
-              </span>
-            )}
               {card.icon}
               <span>{card.title}</span>
               {card.headerBadge}
-              {customizing && (
-                <button className="btn-icon monitor-hide-btn" type="button" onClick={() => toggleCard(card.id)}>Hide</button>
-              )}
             </div>
             {card.content}
           </div>
         ))}
         </div>
       </div>
+
+      {lastRefreshed && (
+        <div className="monitor-update-footer">
+          <span className="monitor-last-refreshed">
+            Updated {lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
+          </span>
+        </div>
+      )}
 
       {isTelemetryModalOpen && telemetryDiagnostics.length > 0 && (
         <div className="modal-overlay" onClick={() => setIsTelemetryModalOpen(false)}>
@@ -1871,14 +1744,5 @@ function mergeOrder(order: string[], ids: string[]) {
     next.splice(insertIndex, 0, id)
     retained.add(id)
   })
-  return next
-}
-
-function moveId(ids: string[], draggedId: string, targetId: string) {
-  if (draggedId === targetId) return ids
-  const next = ids.filter(id => id !== draggedId)
-  const targetIndex = next.indexOf(targetId)
-  if (targetIndex === -1) return ids
-  next.splice(targetIndex, 0, draggedId)
   return next
 }

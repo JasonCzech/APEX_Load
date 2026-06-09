@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import MonitoringPage from './MonitoringPage'
 
 const apiMock = {
@@ -208,6 +209,38 @@ describe('MonitoringPage', () => {
   const visibleMonitorCardIds = () => Array.from(container.querySelectorAll<HTMLElement>('.monitoring-grid .monitor-card'))
     .map(card => card.dataset.cardId)
 
+  function TopbarContributionHarness() {
+    const contribution = useActiveTopbarContribution()
+    return (
+      <div data-testid="topbar-contribution">
+        {contribution?.titleNode || <span>{contribution?.title}</span>}
+        {contribution?.meta?.map(chip => (
+          <span key={chip.id} className={chip.tone}>{chip.label}</span>
+        ))}
+      </div>
+    )
+  }
+
+  it('publishes advisory warnings next to the floating Monitoring title', async () => {
+    await act(async () => {
+      root.render(
+        <TopbarContributionProvider>
+          <TopbarContributionHarness />
+          <MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />
+        </TopbarContributionProvider>,
+      )
+    })
+
+    const topbar = container.querySelector('[data-testid="topbar-contribution"]')
+    expect(topbar?.textContent).toContain('Monitoring')
+    expect(topbar?.textContent).toContain('1 advisory warning')
+    expect(topbar?.querySelector('.warning')?.textContent).toBe('1 advisory warning')
+    expect(container.querySelector('.page-header')?.textContent).not.toContain('Updated')
+    expect(container.querySelector('.monitor-update-footer .monitor-last-refreshed')?.textContent).toContain('Updated')
+    expect(container.textContent).not.toContain('Advisory Panel')
+    expect(container.textContent).not.toContain('Customize Cards')
+  })
+
   it('renders sampled telemetry diagnostics in the monitoring grid', async () => {
     await act(async () => {
       root.render(
@@ -248,13 +281,13 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Production Readiness')
     expect(container.textContent).toContain('Ready Checks')
     expect(container.textContent).toContain('4/6')
-    const advisoryBanner = container.querySelector('.monitor-health-banner')
-    expect(advisoryBanner).toBeTruthy()
-    expect(advisoryBanner?.getAttribute('aria-label')).toBe('Advisory Panel')
-    expect(advisoryBanner?.className).toContain('danger')
-    expect(advisoryBanner?.textContent).toContain('Advisory Panel')
-    expect(advisoryBanner?.querySelector('.monitor-health-banner-main')).toBeNull()
-    expect(container.querySelectorAll('.monitor-health-check')).toHaveLength(8)
+    const advisoryBadge = container.querySelector('.monitor-title-advisory')
+    expect(advisoryBadge).toBeTruthy()
+    expect(advisoryBadge?.className).toContain('danger')
+    expect(advisoryBadge?.textContent).toContain('2 issues need attention')
+    expect(container.querySelector('.monitor-health-banner')).toBeNull()
+    expect(container.textContent).not.toContain('Advisory Panel')
+    expect(container.textContent).not.toContain('Customize Cards')
     expect(container.textContent).toContain('Generator RPC: some generator RPC targets are not reachable')
     expect(container.textContent).toContain('Auth Mode: development auth bypass is enabled')
     expect(container.textContent).toContain('Generator Inventory')
@@ -703,29 +736,16 @@ describe('MonitoringPage', () => {
 
     await clickMonitorTab('Schedules')
 
-    const scheduleHealthPanel = container.querySelector('.monitor-schedule-health-card')
-    expect(scheduleHealthPanel).toBeTruthy()
-    expect(scheduleHealthPanel?.getAttribute('aria-label')).toBe('Advisory Panel')
-    expect(scheduleHealthPanel?.className).toContain('danger')
-    expect(scheduleHealthPanel?.querySelector('.monitor-schedule-health-hero')).toBeNull()
+    const advisoryBadge = container.querySelector('.monitor-title-advisory')
+    expect(advisoryBadge).toBeTruthy()
+    expect(advisoryBadge?.className).toContain('danger')
+    expect(advisoryBadge?.textContent).toContain('2 issues need attention')
+    expect(container.querySelector('.monitor-schedule-health-card')).toBeNull()
     expect(container.querySelector('[data-card-id="schedule-health"]')).toBeNull()
     expect(visibleMonitorCardIds()).toEqual(['run-calendar'])
     expect(container.textContent).toContain('Schedules1/1')
-    expect(container.textContent).toContain('Advisory Panel')
-    expect(container.textContent).toContain('1 blocked')
-    expect(container.textContent).toContain('Due')
-    expect(container.textContent).toContain('Blocked')
-    expect(container.textContent).toContain('Approval')
-    expect(container.textContent).toContain('Enabled Schedules')
-    expect(container.textContent).toContain('5/6')
-    expect(container.textContent).toContain('Queued')
-    expect(container.textContent).toContain('2')
-    expect(container.textContent).toContain('Materialized')
-    expect(container.textContent).toContain('9')
-    expect(container.textContent).toContain('Skipped')
-    expect(container.textContent).toContain('4')
-    expect(container.textContent).toContain('Completed')
-    expect(container.textContent).toContain('8')
+    expect(container.textContent).not.toContain('Advisory Panel')
+    expect(container.textContent).not.toContain('Enabled Schedules')
     expect(apiMock.getScheduleHealth).toHaveBeenCalled()
   })
 

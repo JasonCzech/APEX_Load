@@ -4260,391 +4260,31 @@
 .text-muted { color: var(--text-muted); }
 
 /* Monitoring page */
-.monitor-health-banner {
-  position: relative;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  padding: 0;
-  overflow: hidden;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-}
-
-.monitor-health-banner::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 4px;
-  background: var(--accent);
-}
-
-.monitor-health-banner.healthy {
-  border-color: var(--success-border);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--success) 8%, transparent), transparent 38%),
-    var(--bg-card);
-}
-
-.monitor-health-banner.healthy::before {
-  background: var(--success);
-}
-
-.monitor-health-banner.warning {
-  border-color: var(--warning-border);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--warning) 9%, transparent), transparent 40%),
-    var(--bg-card);
-}
-
-.monitor-health-banner.warning::before {
-  background: var(--warning);
-}
-
-.monitor-health-banner.danger {
-  border-color: var(--danger-border);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--danger) 9%, transparent), transparent 40%),
-    var(--bg-card);
-}
-
-.monitor-health-banner.danger::before {
-  background: var(--danger);
-}
-
-.monitor-health-banner.unknown::before {
-  background: var(--text-muted);
-}
-
-.monitor-health-banner-header,
-.monitor-schedule-health-header {
+.monitor-page-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border);
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--accent) 8%, var(--bg-secondary)),
-      color-mix(in srgb, var(--accent) 3%, var(--bg-secondary)) 58%,
-      var(--bg-secondary)
-    );
-}
-
-.monitor-health-banner-header {
-  padding-left: 20px;
-}
-
-.monitor-health-banner-header h3,
-.monitor-schedule-health-header h3 {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 15px;
-  line-height: 1.2;
-}
-
-.monitor-health-banner-body {
-  display: grid;
-  grid-template-columns: 1fr;
-  align-items: stretch;
-  min-height: 0;
-}
-
-.monitor-health-checklist {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-self: center;
+  flex-wrap: wrap;
+  gap: 8px;
   min-width: 0;
-  margin: 12px 16px 14px;
-  padding: 0;
-  list-style: none;
-  border: 1px solid var(--border);
-  background: var(--bg-primary);
 }
 
-.monitor-health-check {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 6px 9px;
-  min-width: 0;
-  padding: 10px 12px;
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--text-secondary);
+.monitor-title-advisory {
+  margin-left: 0;
+  transform: translateY(-1px);
 }
 
-.monitor-health-check:nth-child(4n) {
-  border-right: 0;
-}
-
-.monitor-health-check:nth-last-child(-n + 4) {
-  border-bottom: 0;
-}
-
-.monitor-health-check-box {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transform: translateY(2px);
-  color: var(--text-muted);
-}
-
-.monitor-health-check-box.healthy {
-  color: var(--success);
-}
-
-.monitor-health-check-box.warning {
-  color: var(--warning);
-}
-
-.monitor-health-check-box.danger {
-  color: var(--danger);
-}
-
-.monitor-health-check-label {
-  min-width: 0;
-  font-weight: 600;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.monitor-health-check.is-ok .monitor-health-check-label {
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-.monitor-health-check-summary {
-  grid-column: 2;
-  min-width: 0;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.monitor-health-check.danger .monitor-health-check-summary {
-  color: var(--danger);
-}
-
-.monitor-health-check.warning .monitor-health-check-summary {
-  color: var(--warning);
-}
-
-.monitor-schedule-health-card {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-card);
-}
-
-.monitor-schedule-health-card.danger {
-  border-color: rgba(239, 68, 68, 0.32);
-}
-
-.monitor-schedule-health-card.warning {
-  border-color: rgba(245, 158, 11, 0.34);
-}
-
-.monitor-schedule-health-card.healthy {
-  border-color: rgba(34, 197, 94, 0.28);
-}
-
-.monitor-schedule-health-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(260px, 0.85fr);
-  gap: 16px;
-  padding: 14px 16px 16px;
-  align-items: stretch;
-}
-
-.monitor-schedule-health-metrics span,
-.monitor-schedule-health-context span {
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.monitor-schedule-health-metrics,
-.monitor-schedule-health-context {
-  display: grid;
-  min-width: 0;
-  border: 1px solid var(--border);
-  background: var(--bg-primary);
-}
-
-.monitor-schedule-health-metrics {
-  grid-template-columns: repeat(4, minmax(92px, 1fr));
-}
-
-.monitor-schedule-health-context {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.monitor-schedule-health-metrics div,
-.monitor-schedule-health-context div {
+.monitoring-topbar-title {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   min-width: 0;
-  flex-direction: column;
-  justify-content: center;
-  gap: 5px;
-  padding: 13px 14px;
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  max-width: 100%;
 }
 
-.monitor-schedule-health-metrics div:nth-child(4n),
-.monitor-schedule-health-context div:nth-child(2n) {
-  border-right: 0;
-}
-
-.monitor-schedule-health-metrics div:nth-last-child(-n + 4),
-.monitor-schedule-health-context div:nth-last-child(-n + 2) {
-  border-bottom: 0;
-}
-
-.monitor-schedule-health-metrics strong,
-.monitor-schedule-health-context strong {
-  min-width: 0;
-  color: var(--text-primary);
-  font-size: 20px;
-  line-height: 1.1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.monitor-schedule-health-context strong {
-  font-size: 13px;
-  line-height: 1.35;
-}
-
-.monitor-schedule-health-metrics .is-warning strong {
-  color: var(--warning);
-}
-
-.monitor-schedule-health-metrics .is-danger strong {
-  color: var(--danger);
-}
-
-@media (max-width: 1100px) {
-  .monitor-health-banner,
-  .monitor-schedule-health-card {
-    min-height: auto;
-  }
-
-  .monitor-health-banner-body {
-    grid-template-columns: 1fr;
-    min-height: 0;
-  }
-
-  .monitor-health-checklist {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .monitor-health-check:nth-child(4n) {
-    border-right: 1px solid var(--border);
-  }
-
-  .monitor-health-check:nth-child(2n) {
-    border-right: 0;
-  }
-
-  .monitor-health-check:nth-last-child(-n + 4) {
-    border-bottom: 1px solid var(--border);
-  }
-
-  .monitor-health-check:nth-last-child(-n + 2) {
-    border-bottom: 0;
-  }
-
-  .monitor-schedule-health-body {
-    grid-template-columns: 1fr;
-    min-height: 0;
-  }
-
-  .monitor-schedule-health-metrics {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .monitor-schedule-health-context {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .monitor-schedule-health-context div:nth-child(2n) {
-    border-right: 1px solid var(--border);
-  }
-
-  .monitor-schedule-health-context div:nth-child(4n) {
-    border-right: 0;
-  }
-
-  .monitor-schedule-health-context div {
-    border-bottom: 0;
-  }
-}
-
-@media (max-width: 640px) {
-  .monitor-health-banner-header,
-  .monitor-schedule-health-header {
-    flex-direction: column;
-  }
-
-  .monitor-health-banner-header {
-    padding-left: 22px;
-  }
-
-  .monitor-schedule-health-metrics,
-  .monitor-schedule-health-context {
-    grid-template-columns: 1fr;
-  }
-
-  .monitor-schedule-health-metrics div,
-  .monitor-schedule-health-context div,
-  .monitor-schedule-health-context div:nth-child(2n),
-  .monitor-schedule-health-context div:nth-child(4n) {
-    border-right: 0;
-  }
-
-  .monitor-schedule-health-metrics div:nth-last-child(-n + 4),
-  .monitor-schedule-health-context div {
-    border-bottom: 1px solid var(--border);
-  }
-
-  .monitor-schedule-health-metrics div:last-child,
-  .monitor-schedule-health-context div:last-child {
-    border-bottom: 0;
-  }
-
-  .monitor-health-checklist {
-    grid-template-columns: 1fr;
-    margin: 14px;
-  }
-
-  .monitor-health-check,
-  .monitor-health-check:nth-child(2n),
-  .monitor-health-check:nth-child(4n) {
-    border-right: 0;
-  }
-
-  .monitor-health-check:nth-last-child(-n + 2) {
-    border-bottom: 1px solid var(--border);
-  }
-
-  .monitor-health-check:last-child {
-    border-bottom: 0;
-  }
+.monitoring-topbar-title .topbar-meta-chip {
+  flex: 0 1 auto;
+  max-width: min(190px, 55vw);
 }
 
 .monitor-tab-row {
@@ -4723,10 +4363,12 @@
   align-items: start;
 }
 
-.monitor-actions {
+.monitor-update-footer {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  margin-top: auto;
+  min-width: 0;
 }
 
 .monitor-last-refreshed {
@@ -4735,29 +4377,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-.monitoring-grid.is-customizing {
-  /* align-items: start is now applied globally to .monitoring-grid */
-}
-
 .monitor-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-}
-
-.monitor-card.editable {
-  border-style: dashed;
-  cursor: grab;
-}
-
-.monitor-card.editable:active {
-  cursor: grabbing;
-}
-
-.monitor-card.dragging {
-  opacity: 0.55;
-  border-color: var(--accent);
 }
 
 .monitor-empty-category {
@@ -4784,7 +4408,7 @@
   letter-spacing: 0.04em;
 }
 
-.monitor-header > span:not(.monitor-drag-handle) {
+.monitor-header > span {
   min-width: 0;
 }
 
@@ -4812,28 +4436,6 @@
 .monitor-header-badge.danger {
   background: rgba(239, 68, 68, 0.16);
   color: var(--danger);
-}
-
-.monitor-drag-handle {
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  background: var(--bg-primary);
-  font-size: 13px;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.monitor-hide-btn {
-  width: auto;
-  min-width: 44px;
-  padding: 0 8px;
-  font-size: 11px;
 }
 
 .monitor-body {
