@@ -46,6 +46,16 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element; requiresAccess
     ),
   },
   {
+    id: 'new-test',
+    label: 'New Test',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polygon points="10 8 16 12 10 16 10 8" />
+      </svg>
+    ),
+  },
+  {
     id: 'command-center',
     label: 'Command Center',
     icon: (
@@ -55,16 +65,6 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element; requiresAccess
         <circle cx="12" cy="12" r="2" />
         <path d="M12 14v6" />
         <path d="M8 20h8" />
-      </svg>
-    ),
-  },
-  {
-    id: 'new-test',
-    label: 'New Test',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <polygon points="10 8 16 12 10 16 10 8" />
       </svg>
     ),
   },
@@ -80,25 +80,6 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element; requiresAccess
     ),
   },
   {
-    id: 'repository',
-    label: 'Repository',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 7h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-        <path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2" />
-      </svg>
-    ),
-  },
-  {
-    id: 'tests',
-    label: 'Scenarios',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-      </svg>
-    ),
-  },
-  {
     id: 'scripts',
     label: 'Scripts',
     icon: (
@@ -110,6 +91,25 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element; requiresAccess
         <polyline points="10 9 9 9 8 9" />
       </svg>
     )
+  },
+  {
+    id: 'tests',
+    label: 'Scenarios',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+      </svg>
+    ),
+  },
+  {
+    id: 'repository',
+    label: 'Repository',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 7h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        <path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2" />
+      </svg>
+    ),
   },
   {
     id: 'monitoring',

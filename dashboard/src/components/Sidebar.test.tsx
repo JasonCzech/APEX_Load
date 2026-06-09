@@ -322,7 +322,7 @@ describe('Sidebar', () => {
     expect(onNavigate).toHaveBeenCalledWith('docs')
   })
 
-  it('places Command Center, New Test, and Results immediately after Dashboard in the main navigation', async () => {
+  it('places primary workflow destinations in the requested sidebar order', async () => {
     await act(async () => {
       root.render(
         <Sidebar
@@ -335,7 +335,7 @@ describe('Sidebar', () => {
 
     const labels = Array.from(container.querySelectorAll('.sidebar-nav .nav-label')).map(label => label.textContent)
 
-    expect(labels.slice(0, 4)).toEqual(['Dashboard', 'Command Center', 'New Test', 'Results'])
+    expect(labels.slice(0, 7)).toEqual(['Dashboard', 'New Test', 'Command Center', 'Results', 'Scripts', 'Scenarios', 'Repository'])
   })
 
   it('uses distinct Dashboard and Command Center sidebar icons', async () => {
