@@ -1378,6 +1378,47 @@ func TestHandleImportLoadRunnerReturnsReviewArtifactForExternalRunnerProtocol(t 
 	}
 }
 
+func TestHandleImportLoadRunnerClassifiesRDPAliasAsExternalRunner(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	archive := buildLoadRunnerProtocolArchive(t, "Remote Desktop Protocol", `Action()
+{
+    rdp_connect_server("Host=desktop.example.test", LAST);
+}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(archive))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		DetectedProtocol struct {
+			Canonical string `json:"canonical_loadrunner_protocol"`
+			Mode      string `json:"import_mode"`
+		} `json:"detected_protocol"`
+		ProtocolCompat struct {
+			CanonicalProtocol    string   `json:"canonical_protocol"`
+			ImportMode           string   `json:"import_mode"`
+			PromotionStatus      string   `json:"promotion_status"`
+			UnsupportedFragments []string `json:"unsupported_fragments"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.DetectedProtocol.Canonical != "rdp" || result.DetectedProtocol.Mode != "external_runner_required" {
+		t.Fatalf("detected_protocol = %#v, want RDP external runner", result.DetectedProtocol)
+	}
+	if result.ProtocolCompat.CanonicalProtocol != "rdp" || result.ProtocolCompat.ImportMode != "external_runner_required" || result.ProtocolCompat.PromotionStatus != "external_runner_required" {
+		t.Fatalf("protocol_compat_report = %#v, want RDP external-runner report", result.ProtocolCompat)
+	}
+	if !containsString(result.ProtocolCompat.UnsupportedFragments, "rdp_connect_server") {
+		t.Fatalf("unsupported_fragments = %#v, want preserved RDP function", result.ProtocolCompat.UnsupportedFragments)
+	}
+}
+
 func TestHandleImportLoadRunnerSupportsTruClientMobileWebArchive(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
@@ -2250,6 +2291,72 @@ func TestHandleImportJMeter(t *testing.T) {
 	}
 	if result.ProtocolCompat.RuntimeParity["partial"] != 1 {
 		t.Fatalf("runtime_parity = %#v, want one partial CacheManager mapping", result.ProtocolCompat.RuntimeParity)
+	}
+}
+
+func TestHandleImportJMeterProtocolCompatCountsControllerReviewDiagnostics(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "dynamic-controller.jmx")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	_, _ = part.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan"/>
+    <hashTree>
+      <ThreadGroup testname="Users"/>
+      <hashTree>
+        <WhileController testname="While Token">
+          <stringProp name="WhileController.condition">${token}</stringProp>
+        </WhileController>
+        <hashTree>
+          <HTTPSamplerProxy testname="Poll">
+            <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+            <stringProp name="HTTPSampler.protocol">https</stringProp>
+            <stringProp name="HTTPSampler.path">/poll</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+          </HTTPSamplerProxy>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`))
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		UnsupportedElements []string `json:"unsupported_elements"`
+		ProtocolCompat      struct {
+			PromotionStatus      string   `json:"promotion_status"`
+			ReviewGatedSteps     int      `json:"review_gated_steps"`
+			UnsupportedFragments []string `json:"unsupported_fragments"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if !containsStringContaining(result.UnsupportedElements, "WhileController") {
+		t.Fatalf("unsupported_elements = %#v, want controller warning surfaced for review", result.UnsupportedElements)
+	}
+	if result.ProtocolCompat.PromotionStatus != "review_required" || result.ProtocolCompat.ReviewGatedSteps == 0 {
+		t.Fatalf("protocol_compat_report = %#v, want review-required controller diagnostic", result.ProtocolCompat)
+	}
+	if !containsStringContaining(result.ProtocolCompat.UnsupportedFragments, "WhileController") {
+		t.Fatalf("unsupported_fragments = %#v, want WhileController diagnostic", result.ProtocolCompat.UnsupportedFragments)
 	}
 }
 
@@ -3884,6 +3991,15 @@ func reviewSectionsContain(sections any, wantKey string) bool {
 		section := value.Index(i)
 		key := section.FieldByName("Key")
 		if key.IsValid() && key.String() == wantKey {
+			return true
+		}
+	}
+	return false
+}
+
+func containsStringContaining(values []string, needle string) bool {
+	for _, value := range values {
+		if strings.Contains(value, needle) {
 			return true
 		}
 	}

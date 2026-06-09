@@ -292,7 +292,7 @@ func parseFunctionBlock(block string, filename string, lineNum int, endLine int,
 		if len(fn.RawArgs) > 0 {
 			fn.StepName = fn.RawArgs[0]
 		}
-	case "lr_continue_on_error", "lr_error_message", "lr_exit", "web_cache_cleanup", "web_cleanup_cookies", "web_set_sockets_option", "web_set_timeout", "web_convert_param", "web_revert_auto_header":
+	case "lr_continue_on_error", "lr_error_message", "lr_exit", "web_cache_cleanup", "web_cleanup_cookies", "web_set_sockets_option", "web_set_timeout", "web_convert_param", "web_revert_auto_header", "web_set_user":
 		parseLoadRunnerRuntimeControl(&fn, inner)
 	case "web_add_header", "web_add_auto_header":
 		parseWebAddHeader(&fn, inner)

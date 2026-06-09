@@ -321,6 +321,13 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			result.Stats.ContributorFunctions++
 			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
+		case "web_set_user":
+			loadRunnerRuntimeControls = append(loadRunnerRuntimeControls, fn)
+			details := applyLoadRunnerWebSetUser(result, fn)
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.http.auth", firstNonEmpty(stringMapValue(details, "username", ""), fn.Name), "config", "converted", "Mapped from LoadRunner web_set_user authentication.", LoadRunnerSupportExecutable))
+			result.Stats.ContributorFunctions++
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
+
 		case "web_set_max_html_param_len":
 			value := firstLoadRunnerControlArg(fn)
 			if value == "" {
@@ -517,6 +524,39 @@ func applyLoadRunnerSocketOption(result *ConvertResult, fn ParsedFunction) map[s
 func applyLoadRunnerTimeout(result *ConvertResult, fn ParsedFunction) map[string]any {
 	details := applyLoadRunnerTimeoutConfig(result, fn)
 	preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_timeouts", fn, details)
+	return details
+}
+
+func applyLoadRunnerWebSetUser(result *ConvertResult, fn ParsedFunction) map[string]any {
+	args := loadRunnerControlArgs(fn)
+	username := ""
+	password := ""
+	host := ""
+	if len(args) > 0 {
+		username = convertParamReferences(args[0])
+	}
+	if len(args) > 1 {
+		password = convertParamReferences(args[1])
+	}
+	if len(args) > 2 {
+		host = convertParamReferences(args[2])
+	}
+	details := map[string]any{
+		"username":  username,
+		"host":      host,
+		"mapped_to": "config.http.auth",
+	}
+	if username != "" {
+		result.Script.Config.HTTP.Auth = dsl.AuthConfig{
+			Type:     "basic",
+			Username: username,
+			Password: password,
+		}
+	}
+	if host != "" {
+		setLoadRunnerWebRuntimeAttribute(result.Script, "web_set_user.host", host)
+	}
+	preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_authentication", fn, details)
 	return details
 }
 

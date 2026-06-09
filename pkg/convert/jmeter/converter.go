@@ -148,6 +148,7 @@ func GetSupportMatrix() SupportMatrix {
 			"Boundary Extractor",
 			"Simple If Controller",
 			"Fixed Loop Controller",
+			"Once Only Controller",
 			"Test Action pauses",
 		},
 		Partial: []string{
@@ -386,6 +387,21 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			}
 			next.transaction = txName
 			walkThreadGroup(child, &next, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
+			continue
+		case "OnceOnlyController":
+			steps := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
+			if len(steps) == 0 {
+				diagnostics.Add(diag.Info, "JMeter OnceOnlyController", jmeterElementLocation(child.Element), "OnceOnlyController contained no converted child samplers")
+				continue
+			}
+			start := len(script.Init)
+			script.Init = append(script.Init, steps...)
+			setJMeterRuntimeParity(script, "onceOnlyController", "executed")
+			targetPath := fmt.Sprintf("init[%d]", start)
+			if len(steps) > 1 {
+				targetPath = fmt.Sprintf("init[%d:%d]", start, len(script.Init)-1)
+			}
+			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, targetPath, jmeterElementLocation(child.Element), "controller", "converted", fmt.Sprintf("JMeter OnceOnlyController was mapped to %d init action(s).", len(steps))))
 			continue
 		case "LoopController":
 			loopCountStr := prop(child.Element, "LoopController.loops")
@@ -728,7 +744,7 @@ func isKnownJMeterUnsupported(name string) bool {
 
 func isKnownJMeterSupported(name string) bool {
 	switch name {
-	case "TestPlan", "ThreadGroup", "hashTree", "ConfigTestElement", "HeaderManager", "CookieManager", "CacheManager", "AuthManager", "Arguments", "CSVDataSet", "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer", "ConstantThroughputTimer", "PreciseThroughputTimer", "ResponseAssertion", "HTTPSamplerProxy", "RegexExtractor", "JSONPostProcessor", "JMESPathExtractor", "HtmlExtractor", "XPathExtractor", "XPath2Extractor", "BoundaryExtractor", "LoopController", "IfController", "TestAction", "DebugSampler":
+	case "TestPlan", "ThreadGroup", "hashTree", "ConfigTestElement", "HeaderManager", "CookieManager", "CacheManager", "AuthManager", "Arguments", "CSVDataSet", "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer", "ConstantThroughputTimer", "PreciseThroughputTimer", "ResponseAssertion", "HTTPSamplerProxy", "RegexExtractor", "JSONPostProcessor", "JMESPathExtractor", "HtmlExtractor", "XPathExtractor", "XPath2Extractor", "BoundaryExtractor", "LoopController", "IfController", "OnceOnlyController", "TestAction", "DebugSampler":
 		return true
 	default:
 		return false

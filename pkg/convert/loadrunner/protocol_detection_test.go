@@ -33,9 +33,13 @@ func TestDetectProtocolFromUSRType(t *testing.T) {
 		{name: "sap web", scriptType: "SAP Web", canonical: "sap_web", storm: "http", mode: ImportModeExecutable},
 		{name: "oracle nca", scriptType: "Oracle NCA", canonical: "oracle_nca", storm: "", mode: ImportModeExternalRunnerRequired},
 		{name: "sap gui", scriptType: "SAP GUI", canonical: "sap_gui", storm: "", mode: ImportModeExternalRunnerRequired},
+		{name: "sapgui alias", scriptType: "SAPGUI", canonical: "sap_gui", storm: "", mode: ImportModeExternalRunnerRequired},
 		{name: "rdp", scriptType: "RDP", canonical: "rdp", storm: "", mode: ImportModeExternalRunnerRequired},
+		{name: "remote desktop alias", scriptType: "Remote Desktop Protocol", canonical: "rdp", storm: "", mode: ImportModeExternalRunnerRequired},
 		{name: "rte", scriptType: "RTE", canonical: "rte", storm: "", mode: ImportModeExternalRunnerRequired},
+		{name: "terminal emulation alias", scriptType: "Terminal Emulation", canonical: "rte", storm: "", mode: ImportModeExternalRunnerRequired},
 		{name: "native mobile", scriptType: "TC4Mobile", canonical: "truclient_native_mobile", storm: "", mode: ImportModeExternalRunnerRequired},
+		{name: "native mobile 2.0 alias", scriptType: "TruClient 2.0 - Native Mobile", canonical: "truclient_native_mobile", storm: "", mode: ImportModeExternalRunnerRequired},
 		{name: "template", scriptType: "C Vuser", canonical: "c_vuser", storm: "", mode: ImportModeReviewOnly},
 	}
 

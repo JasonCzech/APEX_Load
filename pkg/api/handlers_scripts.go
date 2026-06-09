@@ -2617,20 +2617,50 @@ func buildJMeterProtocolCompatReport(result *jmeter.ConvertResult, unsupported [
 	if result == nil {
 		return nil
 	}
-	status := protocolPromotionStatus("executable", len(unsupported), len(result.Warnings))
+	reviewDiagnostics := countJMeterReviewDiagnostics(result)
+	reviewGated := len(unsupported) + reviewDiagnostics
+	status := protocolPromotionStatus("executable", reviewGated, len(result.Warnings))
 	return &protocolCompatReport{
 		SourceFormat:         "JMeter JMX",
 		CanonicalProtocol:    "jmeter",
 		ImportMode:           "executable",
 		MappedSteps:          result.Stats.ConvertedActions,
-		ReviewGatedSteps:     len(unsupported),
-		UnsupportedFragments: unsupported,
+		ReviewGatedSteps:     reviewGated,
+		UnsupportedFragments: uniqueSortedStrings(append(append([]string(nil), unsupported...), jmeterReviewDiagnosticFragments(result)...)),
 		RuntimeParity:        protocolRuntimeParityFromScript(result.Script),
 		DataSources:          result.Stats.CSVSources,
 		CorrelationCoverage:  protocolCorrelationCoverage(countJMeterExtractors(result), result.Stats.Samplers),
 		PromotionStatus:      status,
 		NextActions:          protocolNextActions(status, "Validate converted JMeter thread groups and scenario draft before promotion."),
 	}
+}
+
+func countJMeterReviewDiagnostics(result *jmeter.ConvertResult) int {
+	if result == nil {
+		return 0
+	}
+	count := 0
+	for _, item := range result.Unsupported {
+		switch strings.ToLower(strings.TrimSpace(string(item.Severity))) {
+		case "warning", "blocker":
+			count++
+		}
+	}
+	return count
+}
+
+func jmeterReviewDiagnosticFragments(result *jmeter.ConvertResult) []string {
+	if result == nil {
+		return nil
+	}
+	fragments := make([]string, 0)
+	for _, item := range result.Unsupported {
+		switch strings.ToLower(strings.TrimSpace(string(item.Severity))) {
+		case "warning", "blocker":
+			fragments = append(fragments, item.String())
+		}
+	}
+	return fragments
 }
 
 func buildLoadRunnerProtocolCompatReport(result *loadrunner.ConvertResult, unsupported []string, summary loadRunnerImportSummary) *protocolCompatReport {

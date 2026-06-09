@@ -671,6 +671,48 @@ Action()
 	}
 }
 
+func TestConvertMapsWebSetUserToHTTPAuth(t *testing.T) {
+	actionC := `
+#include "web_api.h"
+
+Action()
+{
+	web_set_user("perfuser", "perfpass", "secure.example.com:443");
+
+	web_url("Secure Home",
+		"URL=https://secure.example.com/app/home",
+		LAST);
+
+	return 0;
+}
+`
+	parsed, err := ParseActionFile("Action.c", actionC)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if result.Stats.Skipped != 0 || len(result.Stats.UnsupportedFuncs) != 0 {
+		t.Fatalf("unsupported funcs = %#v skipped=%d, want none", result.Stats.UnsupportedFuncs, result.Stats.Skipped)
+	}
+	auth := result.Script.Config.HTTP.Auth
+	if auth.Type != "basic" || auth.Username != "perfuser" || auth.Password != "perfpass" {
+		t.Fatalf("http auth = %#v, want web_set_user basic auth", auth)
+	}
+	if result.Script.Config.WebRuntime.AdditionalAttributes["web_set_user.host"] != "secure.example.com:443" {
+		t.Fatalf("web runtime attrs = %#v, want web_set_user host", result.Script.Config.WebRuntime.AdditionalAttributes)
+	}
+	preserved := result.Script.Metadata.Import.Preserved
+	authControls, ok := preserved["loadrunner_authentication"].([]map[string]any)
+	if !ok || len(authControls) != 1 || authControls[0]["host"] != "secure.example.com:443" {
+		t.Fatalf("loadrunner_authentication = %#v, want preserved web_set_user control", preserved["loadrunner_authentication"])
+	}
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_set_user", "config.http.auth", "converted")
+}
+
 func TestConvertLRErrorMessageFormatsArgumentsAsNativeAction(t *testing.T) {
 	actionC := `
 #include "web_api.h"
