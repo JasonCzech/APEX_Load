@@ -27,6 +27,7 @@ import {
   DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS,
   LOAD_IMPACT_VISIBLE_CHARTS_STORAGE_KEY,
   buildLoadImpactCharts,
+  buildSmoothedGraphData,
   chartConfigs,
   chartMarginForOverlayKeys,
   chartMetricKeys,
@@ -54,6 +55,9 @@ import {
   routeLatencySeriesKeys,
   sameStringArray,
   sameStringSet,
+  rawGraphMetricKey,
+  smoothedGraphMetricKey,
+  smoothedMetricKeysForChart,
   visibleMetricDomain,
   type ChartConfig,
   type ChartDensityMode,
@@ -302,6 +306,15 @@ function routeLatencyTargetForKey(latency: NetworkLatency | undefined, key?: str
 function routeProbeStatusLabel(target: LatencyTarget) {
   if (target.http_status) return `HTTP ${target.http_status}`
   return target.last_success ? 'Reachable' : 'Failed'
+}
+
+function rawTooltipMetricValue(value: unknown, item: unknown) {
+  const payload = (item as { payload?: MetricsHistoryPoint } | undefined)?.payload
+  const dataKey = String((item as { dataKey?: unknown } | undefined)?.dataKey ?? '')
+  const rawKey = rawGraphMetricKey(dataKey)
+  return rawKey !== dataKey && payload
+    ? payload[rawKey] ?? value
+    : value
 }
 
 function generatorImpactVerdictLabel(verdict: GeneratorImpactVerdict) {
@@ -635,13 +648,14 @@ export default function TestExecutionCharts({
     return undefined
   }
 
-  const renderSharedCursor = (chartData: MetricsHistoryPoint[]) => {
+  const renderSharedCursor = (chartData: MetricsHistoryPoint[], yAxisId?: string | number) => {
     if (surface !== 'command-center') return null
     const x = cursorXForChart(chartData)
     if (x === undefined) return null
     return (
       <ReferenceLine
         x={x}
+        yAxisId={yAxisId}
         stroke="var(--accent)"
         strokeOpacity={0.78}
         strokeDasharray="4 3"
@@ -689,7 +703,7 @@ export default function TestExecutionCharts({
         contentStyle={{ ...chartTooltipContentStyle, borderRadius: 8 }}
         labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: showTimeLabel ? 4 : 0, display: showTimeLabel ? undefined : 'none' }}
         labelFormatter={(value) => showTimeLabel ? formatXAxisLabel(value) : ''}
-        formatter={(value, name) => [formatGraphOverlayMetricValue(value), name]}
+        formatter={(value, name, item) => [formatGraphOverlayMetricValue(rawTooltipMetricValue(value, item)), name]}
         isAnimationActive={false}
       />
     )
@@ -1248,7 +1262,11 @@ export default function TestExecutionCharts({
     ) : null
   )
 
-  const renderOverlayLines = (chart: ChartConfig, visibleMetricKeys: string[]) => {
+  const renderOverlayLines = (
+    chart: ChartConfig,
+    visibleMetricKeys: string[],
+    displayMetricKey: (key: string) => string = key => key,
+  ) => {
     const visibleOverlayKeys = visibleOverlayMetricKeys(chart, visibleMetricKeys)
     return visibleOverlayKeys.map(key => {
       const row = overlayMetricRows[key]
@@ -1257,7 +1275,7 @@ export default function TestExecutionCharts({
           key={`overlay-${key}`}
           yAxisId={key === 'vusers' ? 'vusers' : 'rateOverlay'}
           type="monotone"
-          dataKey={key}
+          dataKey={displayMetricKey(key)}
           name={row.label}
           stroke={row.color}
           dot={false}
@@ -1555,6 +1573,14 @@ export default function TestExecutionCharts({
                   : 200
             const metricRows = metricRowsForChart(chart)
             const visibleMetricKeys = visibleMetricKeysForChart(chart, metricRows)
+            const smoothedMetricKeys = commandCenterSurface
+              ? smoothedMetricKeysForChart(chart, visibleMetricKeys)
+              : []
+            const smoothedMetricKeySet = new Set(smoothedMetricKeys)
+            const displayChartData = smoothedMetricKeys.length > 0
+              ? buildSmoothedGraphData(chartData, smoothedMetricKeys)
+              : chartData
+            const displayMetricKey = (key: string) => smoothedMetricKeySet.has(key) ? smoothedGraphMetricKey(key) : key
             const visibleOverlayKeysForTitle = visibleOverlayMetricKeys(chart, visibleMetricKeys)
             const primaryMetricKeysForDomain = visibleMetricKeys.filter(key => (
               !visibleOverlayKeysForTitle.includes(key as OverlayMetricKey)
@@ -1653,7 +1679,7 @@ export default function TestExecutionCharts({
                 <ResponsiveContainer width="100%" height={chartHeight}>
             {chart.type === 'area' ? (
               <ComposedChart
-                data={chartData}
+                data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
@@ -1665,18 +1691,18 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
-                {renderSharedCursor(chartData)}
+                {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {chart.dataKey && showMetric(chart.dataKey) && (
-                  <Area yAxisId={metricAxisIdForChart} type="monotone" dataKey={chart.dataKey} name="Total" stroke={chart.color!} fill={chart.color!} fillOpacity={0.15} isAnimationActive={false} />
+                  <Area yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(chart.dataKey)} name="Total" stroke={chart.color!} fill={chart.color!} fillOpacity={0.15} isAnimationActive={false} />
                 )}
-                {renderOverlayLines(chart, visibleMetricKeys)}
+                {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </ComposedChart>
             ) : chart.type === 'line-load-impact' ? (
               <LineChart
-                data={chartData}
+                data={displayChartData}
                 margin={chartMargin}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
               >
@@ -1685,7 +1711,7 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderLoadImpactTooltip(chart)}
-                {renderSharedCursor(chartData)}
+                {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {metricRows
                   .filter(row => !overlayMetricKeysForChart(chart).includes(row.key as OverlayMetricKey))
                   .map((row) => showMetric(row.key) && (
@@ -1693,7 +1719,7 @@ export default function TestExecutionCharts({
                       key={row.key}
                       yAxisId={metricAxisIdForChart}
                       type="monotone"
-                      dataKey={row.key}
+                      dataKey={displayMetricKey(row.key)}
                       name={row.label}
                       stroke={row.color}
                       dot={{ r: row.key === 'average' ? 3 : 2 }}
@@ -1704,11 +1730,11 @@ export default function TestExecutionCharts({
                       isAnimationActive={false}
                     />
                   ))}
-                {renderOverlayLines(chart, visibleMetricKeys)}
+                {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
               </LineChart>
             ) : chart.type === 'line-multi' ? (
               <LineChart
-                data={chartData}
+                data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
@@ -1720,25 +1746,25 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
-                {renderSharedCursor(chartData)}
+                {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {isMultiGroup && <Legend verticalAlign="bottom" height={36} />}
                 {chart.totalKey && showMetric(chart.totalKey) && (
-                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={chart.totalKey} name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
+                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(chart.totalKey)} name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
                 )}
                 {surface === 'command-center' && chartData.some(point => typeof point.targetTps === 'number') && (
                   <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="targetTps" name="Target" stroke="var(--warning)" dot={false} strokeWidth={1.75} strokeDasharray="5 3" isAnimationActive={false} />
                 )}
                 {isMultiGroup && groupNames.map((name, index) => showMetric(`${name}_tps`) && (
-                  <Line key={name} yAxisId={metricAxisIdForChart} type="monotone" dataKey={`${name}_tps`} name={name} stroke={groupColors[index % groupColors.length]} dot={false} isAnimationActive={false} />
+                  <Line key={name} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(`${name}_tps`)} name={name} stroke={groupColors[index % groupColors.length]} dot={false} isAnimationActive={false} />
                 ))}
-                {renderOverlayLines(chart, visibleMetricKeys)}
+                {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </LineChart>
             ) : chart.type === 'line-latency' ? (
               <LineChart
-                data={chartData}
+                data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
@@ -1750,26 +1776,26 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
-                {renderSharedCursor(chartData)}
+                {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 <Legend verticalAlign="bottom" height={36} />
                 {showMetric('avgMs') && (
-                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="avgMs" name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
+                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('avgMs')} name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
                 )}
                 {isMultiGroup && groupNames.map((name, index) => showMetric(`${name}_avgMs`) && (
-                  <Line key={name} yAxisId={metricAxisIdForChart} type="monotone" dataKey={`${name}_avgMs`} name={name} stroke={groupColors[index % groupColors.length]} dot={false} strokeWidth={2} isAnimationActive={false} />
+                  <Line key={name} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(`${name}_avgMs`)} name={name} stroke={groupColors[index % groupColors.length]} dot={false} strokeWidth={2} isAnimationActive={false} />
                 ))}
-                {showMetric('p50') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p50" name="P50" stroke="var(--chart-5)" dot={false} strokeWidth={1.25} strokeDasharray="3 3" isAnimationActive={false} />}
-                {showMetric('p90') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p90" name="P90" stroke="var(--chart-3)" dot={false} strokeWidth={1.25} strokeDasharray="3 3" isAnimationActive={false} />}
-                {showMetric('p95') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p95" name="P95" stroke="var(--chart-2)" dot={false} strokeWidth={1.25} strokeDasharray="4 2" isAnimationActive={false} />}
-                {showMetric('p99') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p99" name="P99" stroke="var(--chart-4)" dot={false} strokeWidth={1.25} strokeDasharray="4 2" isAnimationActive={false} />}
-                {renderOverlayLines(chart, visibleMetricKeys)}
+                {showMetric('p50') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('p50')} name="P50" stroke="var(--chart-5)" dot={false} strokeWidth={1.25} strokeDasharray="3 3" isAnimationActive={false} />}
+                {showMetric('p90') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('p90')} name="P90" stroke="var(--chart-3)" dot={false} strokeWidth={1.25} strokeDasharray="3 3" isAnimationActive={false} />}
+                {showMetric('p95') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('p95')} name="P95" stroke="var(--chart-2)" dot={false} strokeWidth={1.25} strokeDasharray="4 2" isAnimationActive={false} />}
+                {showMetric('p99') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('p99')} name="P99" stroke="var(--chart-4)" dot={false} strokeWidth={1.25} strokeDasharray="4 2" isAnimationActive={false} />}
+                {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </LineChart>
             ) : chart.type === 'area-multi' ? (
               <ComposedChart
-                data={chartData}
+                data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
@@ -1781,19 +1807,19 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
-                {renderSharedCursor(chartData)}
+                {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 <Legend verticalAlign="bottom" height={36} />
                 {chart.keys!.filter(key => showMetric(key.k)).map((key) => (
-                  <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={key.k} name={key.n} stroke={key.c} fill={key.c} fillOpacity={0.2} isAnimationActive={false} />
+                  <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(key.k)} name={key.n} stroke={key.c} fill={key.c} fillOpacity={0.2} isAnimationActive={false} />
                 ))}
-                {renderOverlayLines(chart, visibleMetricKeys)}
+                {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </ComposedChart>
             ) : chart.type === 'line-impact' ? (
               <LineChart
-                data={chartData}
+                data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
@@ -1805,13 +1831,13 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
-                {renderSharedCursor(chartData)}
+                {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {metricRows.map((row) => showMetric(row.key) && (
                   <Line
                     key={row.key}
                     yAxisId={metricAxisIdForChart}
                     type="monotone"
-                    dataKey={row.key}
+                    dataKey={displayMetricKey(row.key)}
                     name={row.label}
                     stroke={row.color}
                     dot={false}
@@ -1819,14 +1845,14 @@ export default function TestExecutionCharts({
                     isAnimationActive={false}
                   />
                 ))}
-                {renderOverlayLines(chart, visibleMetricKeys)}
+                {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </LineChart>
             ) : chart.type === 'line-network' ? (
               <LineChart
-                data={chartData}
+                data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
@@ -1839,14 +1865,14 @@ export default function TestExecutionCharts({
                 {renderRouteLatencySuccessAxis(visibleMetricKeys)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
-                {renderSharedCursor(chartData)}
+                {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 <Legend verticalAlign="bottom" height={36} />
                 {metricRows.map((row) => showMetric(row.key) && (
                     <Line
                       key={row.key}
                       yAxisId={row.key === routeLatencySuccessRateKey ? 'successRate' : metricAxisIdForChart}
                       type="monotone"
-                      dataKey={row.key}
+                      dataKey={displayMetricKey(row.key)}
                       name={row.label}
                       stroke={row.color}
                       dot={false}
@@ -1854,14 +1880,14 @@ export default function TestExecutionCharts({
                       isAnimationActive={false}
                     />
                   ))}
-                {renderOverlayLines(chart, visibleMetricKeys)}
+                {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </LineChart>
             ) : (
               <LineChart
-                data={chartData}
+                data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
@@ -1873,13 +1899,13 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
-                {renderSharedCursor(chartData)}
+                {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 <Legend />
-                {showMetric('netSent') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="netSent" name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} isAnimationActive={false} />}
-                {showMetric('netRecv') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="netRecv" name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} isAnimationActive={false} />}
-                {showMetric('diskRead') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="diskRead" name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
-                {showMetric('diskWrite') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="diskWrite" name="Disk Write" stroke="var(--chart-6)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
-                {renderOverlayLines(chart, visibleMetricKeys)}
+                {showMetric('netSent') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netSent')} name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} isAnimationActive={false} />}
+                {showMetric('netRecv') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netRecv')} name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} isAnimationActive={false} />}
+                {showMetric('diskRead') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('diskRead')} name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
+                {showMetric('diskWrite') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('diskWrite')} name="Disk Write" stroke="var(--chart-6)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
+                {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}

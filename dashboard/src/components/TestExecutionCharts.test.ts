@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildSmoothedGraphData,
   chartMetricKeys,
   chartMetricRows,
   chartMetricSummary,
@@ -9,8 +10,11 @@ import {
   formatRelativeRunTime,
   graphCsvForChart,
   latestRouteLatencyValues,
+  rawGraphMetricKey,
   responseTimeDataWithoutNetworkLatency,
   routeLatencySeriesKeys,
+  smoothedGraphMetricKey,
+  smoothedMetricKeysForChart,
   visibleMetricDomain,
   type ChartConfig,
 } from './testExecutionChartModel'
@@ -289,5 +293,35 @@ describe('chartStateForMonitorPreset', () => {
     expect(formatRelativeRunTime(0)).toBe('0s')
     expect(formatRelativeRunTime(65_000)).toBe('1m5s')
     expect(formatRelativeRunTime(3_723_000)).toBe('1h2m3s')
+  })
+
+  it('builds display-only smoothed metric keys without changing raw graph data', () => {
+    const data = [
+      { time: '10:00:00', vusers: 1, tps: 10, avgMs: 100, errorPct: 0, p50: 90, p90: 100, p99: 120, Checkout_tps: 8 },
+      { time: '10:00:01', vusers: 1, tps: 30, avgMs: 100, errorPct: 0, p50: 90, p90: 100, p99: 120, Checkout_tps: 24 },
+      { time: '10:00:02', vusers: 1, tps: 10, avgMs: 100, errorPct: 0, p50: 90, p90: 100, p99: 120, Checkout_tps: 8 },
+      { time: '10:00:03', vusers: 1, tps: 30, avgMs: 100, errorPct: 0, p50: 90, p90: 100, p99: 120, Checkout_tps: 24 },
+      { time: '10:00:04', vusers: 1, tps: 10, avgMs: 100, errorPct: 0, p50: 90, p90: 100, p99: 120, Checkout_tps: 8 },
+    ]
+
+    const smoothed = buildSmoothedGraphData(data, ['tps', 'Checkout_tps'])
+
+    expect(smoothed).not.toBe(data)
+    expect(smoothed.map(point => point.tps)).toEqual([10, 30, 10, 30, 10])
+    expect(smoothed.map(point => point[smoothedGraphMetricKey('tps')])).toEqual([10, 22, 17.3, 22, 10])
+    expect(smoothed.map(point => point[smoothedGraphMetricKey('Checkout_tps')])).toEqual([8, 17.6, 13.8, 17.6, 8])
+    expect(rawGraphMetricKey(smoothedGraphMetricKey('tps'))).toBe('tps')
+  })
+
+  it('selects only high-variability chart metrics for display smoothing', () => {
+    const tpsChart: ChartConfig = { id: 'tps', title: 'Transactions Per Second', type: 'line-multi', totalKey: 'tps' }
+    const vusersChart: ChartConfig = { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers' }
+    const routeChart: ChartConfig = { id: 'network_latency', title: 'Route Latency (ms)', type: 'line-network' }
+    const ioChart: ChartConfig = { id: 'io', title: 'Network & Disk I/O (KB/s)', type: 'line-io' }
+
+    expect(smoothedMetricKeysForChart(tpsChart, ['tps', 'Checkout_tps', 'targetTps', 'avgMs'])).toEqual(['tps', 'Checkout_tps'])
+    expect(smoothedMetricKeysForChart(vusersChart, ['vusers', 'tps'])).toEqual([])
+    expect(smoothedMetricKeysForChart(routeChart, ['latency_edge', 'tps'])).toEqual([])
+    expect(smoothedMetricKeysForChart(ioChart, ['netSent', 'diskRead', 'avgMs'])).toEqual(['netSent', 'diskRead'])
   })
 })

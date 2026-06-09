@@ -77,7 +77,9 @@ vi.mock('recharts', () => {
       <path data-testid="mock-line" data-key={dataKey} data-name={name} data-y-axis-id={String(yAxisId ?? '')} />
     ),
     LineChart: MockChart,
-    ReferenceLine: ({ x }: { x?: string | number }) => <path data-testid="mock-reference-line" data-x={String(x ?? '')} />,
+    ReferenceLine: ({ x, yAxisId }: { x?: string | number; yAxisId?: string | number }) => (
+      <path data-testid="mock-reference-line" data-x={String(x ?? '')} data-y-axis-id={String(yAxisId ?? '')} />
+    ),
     ReferenceArea: Mock,
     ResponsiveContainer: ({ children, height }: { children?: ReactNode; height?: number }) => <div data-testid="mock-responsive-container" data-height={String(height ?? '')}>{children}</div>,
     Tooltip: MockTooltip,
@@ -850,6 +852,27 @@ describe('TestExecutionCharts context menu', () => {
     const cursorXValues = cursorLines.map(line => line.getAttribute('data-x'))
     expect(cursorXValues).toContain('10:00:01')
     expect(cursorXValues.every(value => Boolean(value))).toBe(true)
+
+    const tpsChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Transactions Per Second'))
+    expect(tpsChart?.querySelector('path[data-testid="mock-line"][data-name="Total"]')?.getAttribute('data-key')).toBe('tps__smoothed')
+    expect(tpsChart?.querySelector('path[data-testid="mock-line"][data-name="Target"]')?.getAttribute('data-key')).toBe('targetTps')
+
+    await act(async () => {
+      tpsChart?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 180, clientY: 160 }))
+    })
+
+    expect(container.querySelector('.chart-context-menu-title')?.textContent).toBe('Transactions Per Second')
+    expect(menuActionTexts()).toContain('Overlay VUsers')
+
+    await act(async () => {
+      menuButton('Overlay VUsers')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const tpsChartWithOverlay = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Transactions Per Second + VUsers'))
+    expect(tpsChartWithOverlay).not.toBeUndefined()
+    expect(tpsChartWithOverlay?.querySelector('path[data-testid="mock-line"][data-name="Active VUsers"]')?.getAttribute('data-key')).toBe('vusers')
+    expect(tpsChartWithOverlay?.querySelector('path[data-testid="mock-line"][data-name="Total"]')?.getAttribute('data-key')).toBe('tps__smoothed')
+    expect(tpsChartWithOverlay?.querySelector('path[data-testid="mock-reference-line"]')?.getAttribute('data-y-axis-id')).toBe('metric')
 
     await act(async () => {
       container.querySelector<SVGElement>('[data-testid="mock-chart"]')?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))

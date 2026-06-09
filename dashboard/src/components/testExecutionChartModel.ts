@@ -47,9 +47,20 @@ export type ChartMargin = ComponentProps<typeof LineChart>['margin']
 export type RouteLatencyMode = 'total' | 'phases' | 'stability'
 
 const LOAD_IMPACT_CHART_ID_PREFIX = 'load_impact_'
+const SMOOTHED_GRAPH_METRIC_SUFFIX = '__smoothed'
 export const LOAD_IMPACT_VISIBLE_CHARTS_STORAGE_KEY = 'apexload.execution.visibleLoadImpactCharts'
 export const DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS = ['avgMs', 'p95', 'tps', 'errorPct', 'cpuProcess', 'memProcess']
 const LOAD_IMPACT_GRAPH_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
+const SMOOTHED_GRAPH_KERNEL = [1, 2, 5, 2, 1] as const
+const SMOOTHED_THROUGHPUT_KEYS = new Set(['tps', 'netSent', 'netRecv', 'diskRead', 'diskWrite'])
+const SMOOTHED_IMPACT_KEYS = new Set([
+  'containerCPUThrottledSecondsRate',
+  'gcPauseMs',
+  'netDropsPerSec',
+  'netErrorsPerSec',
+  'tcpRetransmitsPerSec',
+  'diskIOTimePct',
+])
 
 export const chartConfigs: ChartConfig[] = [
   { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
@@ -314,6 +325,85 @@ function averageRouteLatencyForPoint(point: MetricsHistoryPoint, latencyKeys: st
 
 function roundChartValue(value: number) {
   return Math.round(value * 10) / 10
+}
+
+export function smoothedGraphMetricKey(key: string) {
+  return `${key}${SMOOTHED_GRAPH_METRIC_SUFFIX}`
+}
+
+export function rawGraphMetricKey(key: string) {
+  return key.endsWith(SMOOTHED_GRAPH_METRIC_SUFFIX)
+    ? key.slice(0, -SMOOTHED_GRAPH_METRIC_SUFFIX.length)
+    : key
+}
+
+function isThroughputMetricKey(key: string) {
+  return key === 'tps' || key.endsWith('_tps')
+}
+
+export function smoothedMetricKeysForChart(chart: ChartConfig, visibleMetricKeys: string[]) {
+  if (isLoadImpactChart(chart) || chart.id === 'network_latency') {
+    return []
+  }
+  if (chart.id === 'tps') {
+    return visibleMetricKeys.filter(isThroughputMetricKey)
+  }
+  if (chart.id === 'io') {
+    return visibleMetricKeys.filter(key => SMOOTHED_THROUGHPUT_KEYS.has(key))
+  }
+  if (chart.id === 'generator_impact') {
+    return visibleMetricKeys.filter(key => SMOOTHED_IMPACT_KEYS.has(key))
+  }
+  return []
+}
+
+function smoothedMetricValue(data: MetricsHistoryPoint[], key: string, index: number) {
+  const rawValue = data[index][key]
+  if (typeof rawValue !== 'number' || !Number.isFinite(rawValue)) return undefined
+
+  let weightedTotal = 0
+  let weightTotal = 0
+  const kernelCenter = Math.floor(SMOOTHED_GRAPH_KERNEL.length / 2)
+  for (let offset = -kernelCenter; offset <= kernelCenter; offset += 1) {
+    const candidate = data[index + offset]?.[key]
+    if (typeof candidate !== 'number' || !Number.isFinite(candidate)) continue
+    const weight = SMOOTHED_GRAPH_KERNEL[offset + kernelCenter]
+    weightedTotal += candidate * weight
+    weightTotal += weight
+  }
+
+  if (weightTotal === 0) return undefined
+  return roundChartValue(weightedTotal / weightTotal)
+}
+
+export function buildSmoothedGraphData(data: MetricsHistoryPoint[], metricKeys: string[]) {
+  const uniqueMetricKeys = Array.from(new Set(metricKeys))
+  if (data.length === 0 || uniqueMetricKeys.length === 0) return data
+
+  const next = data.map(point => ({ ...point }))
+  uniqueMetricKeys.forEach(key => {
+    const finiteIndexes = data
+      .map((point, index) => ({ value: point[key], index }))
+      .filter((item): item is { value: number; index: number } => typeof item.value === 'number' && Number.isFinite(item.value))
+      .map(item => item.index)
+
+    if (finiteIndexes.length < SMOOTHED_GRAPH_KERNEL.length) {
+      finiteIndexes.forEach(index => {
+        next[index][smoothedGraphMetricKey(key)] = data[index][key]
+      })
+      return
+    }
+
+    const firstFiniteIndex = finiteIndexes[0]
+    const lastFiniteIndex = finiteIndexes[finiteIndexes.length - 1]
+    finiteIndexes.forEach(index => {
+      next[index][smoothedGraphMetricKey(key)] = index === firstFiniteIndex || index === lastFiniteIndex
+        ? data[index][key]
+        : smoothedMetricValue(data, key, index)
+    })
+  })
+
+  return next
 }
 
 export function responseTimeDataWithoutNetworkLatency(data: MetricsHistoryPoint[], latencyKeys: string[], groupNames: string[]) {
