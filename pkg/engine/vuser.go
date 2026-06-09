@@ -206,30 +206,81 @@ func (vu *VUser) Run(ctx context.Context) {
 
 		iterSuccess := true
 
-		for _, action := range vu.Script.Actions {
+		// runOne executes a single action and reports whether the iteration should
+		// continue or abort to teardown. runActions drives a slice of actions and is
+		// reused recursively for control_if / control_loop block bodies.
+		var runActions func(actions []dsl.Action, depth int) actionFlow
+		runOne := func(action dsl.Action, depth int) actionFlow {
 			if vu.PauseControl != nil {
 				if err := vu.PauseControl.WaitIfPaused(ctx); err != nil {
-					goto teardown
+					return flowTeardown
 				}
 			}
 			if ctx.Err() != nil {
-				goto teardown
+				return flowTeardown
 			}
+
+			switch strings.ToLower(strings.TrimSpace(action.Type)) {
+			case "control_if":
+				if action.Control == nil || depth >= maxControlDepth {
+					if depth >= maxControlDepth {
+						logger.Error("control flow nesting exceeded", "action", action.Name)
+					}
+					return flowNext
+				}
+				body := action.Control.Else
+				if vu.evalCondition(action.Control.Condition) {
+					body = action.Control.Steps
+				}
+				if runActions(body, depth+1) == flowTeardown {
+					return flowTeardown
+				}
+				applyActionThinkTime(action)
+				return flowNext
+			case "control_loop":
+				if action.Control == nil || depth >= maxControlDepth {
+					if depth >= maxControlDepth {
+						logger.Error("control flow nesting exceeded", "action", action.Name)
+					}
+					return flowNext
+				}
+				loop := action.Control
+				maxPasses := controlLoopMaxPasses(loop)
+				fixed := loop.Count > 0
+				for pass := 0; ; pass++ {
+					if ctx.Err() != nil {
+						return flowTeardown
+					}
+					if fixed {
+						if pass >= loop.Count || pass >= maxPasses {
+							break
+						}
+					} else if pass >= maxPasses || !vu.evalCondition(loop.Condition) {
+						break
+					}
+					if runActions(loop.Steps, depth+1) == flowTeardown {
+						return flowTeardown
+					}
+				}
+				applyActionThinkTime(action)
+				return flowNext
+			}
+
 			if handled, err := vu.handleEngineAction(ctx, action); handled {
 				if err != nil {
 					logger.Error("action error", "action", action.Name, "err", err)
 					iterSuccess = false
 					if !continueOnError {
 						recordIterationTransaction(false)
-						goto teardown
+						return flowTeardown
 					}
 				}
-				continue
+				return flowNext
 			}
 
 			if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
 				if vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
-					goto teardown
+					return flowTeardown
 				}
 				result, err := vu.executeHTTPSequenceAction(ctx, action, cfg.ErrorHandling)
 				if err != nil {
@@ -237,9 +288,9 @@ func (vu *VUser) Run(ctx context.Context) {
 					iterSuccess = false
 					if !continueOnError {
 						recordIterationTransaction(false)
-						goto teardown
+						return flowTeardown
 					}
-					continue
+					return flowNext
 				}
 				iterTxDuration += result.Duration
 				vu.recordTransaction(action.Name, result.Duration, result.Success, result)
@@ -251,18 +302,18 @@ func (vu *VUser) Run(ctx context.Context) {
 					}
 					if !continueOnError {
 						recordIterationTransaction(false)
-						goto teardown
+						return flowTeardown
 					}
 				} else if logCfg.Level == "extended" {
 					logger.Info("action ok", actionLogAttrs(action.Name, vu.resolveAction(action), result, logCfg, false)...)
 				}
 				applyActionThinkTime(action)
-				continue
+				return flowNext
 			}
 
 			resolved := vu.resolveAction(action)
 			if actionTxMode && vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
-				goto teardown
+				return flowTeardown
 			}
 
 			// Track action-level transaction
@@ -280,9 +331,9 @@ func (vu *VUser) Run(ctx context.Context) {
 				}
 				if !continueOnError {
 					recordIterationTransaction(false)
-					goto teardown
+					return flowTeardown
 				}
-				continue
+				return flowNext
 			}
 
 			vu.recordResult(result, cfg.ErrorHandling)
@@ -301,13 +352,26 @@ func (vu *VUser) Run(ctx context.Context) {
 				}
 				if !continueOnError {
 					recordIterationTransaction(false)
-					goto teardown
+					return flowTeardown
 				}
 			} else if logCfg.Level == "extended" {
 				logger.Info("action ok", actionLogAttrs(action.Name, resolved, result, logCfg, false)...)
 			}
 
 			applyActionThinkTime(action)
+			return flowNext
+		}
+		runActions = func(actions []dsl.Action, depth int) actionFlow {
+			for _, action := range actions {
+				if runOne(action, depth) == flowTeardown {
+					return flowTeardown
+				}
+			}
+			return flowNext
+		}
+
+		if runActions(vu.Script.Actions, 0) == flowTeardown {
+			goto teardown
 		}
 
 		// Record iteration-level transaction

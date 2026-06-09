@@ -38,50 +38,7 @@ func ValidateScriptIssues(script *Script) []string {
 	}
 
 	for i, action := range script.Actions {
-		if strings.TrimSpace(action.Name) == "" {
-			issues = append(issues, fmt.Sprintf("actions[%d]: missing name", i))
-		}
-		if strings.TrimSpace(action.Type) == "" {
-			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing type", i, action.Name))
-			continue
-		}
-		if isEngineActionType(action.Type) {
-			issues = append(issues, validateEngineActionIssues(i, action)...)
-			continue
-		}
-
-		if script.Protocol == "browser" {
-			issues = append(issues, validateBrowserActionIssues(i, action)...)
-			continue
-		}
-
-		if script.Protocol == "websocket" {
-			issues = append(issues, validateWebSocketActionIssues(i, action)...)
-			continue
-		}
-		if script.Protocol == "grpc" {
-			issues = append(issues, validateGRPCActionIssues(i, action)...)
-			continue
-		}
-
-		if script.Protocol == "database" {
-			issues = append(issues, validateDatabaseActionIssues(i, action)...)
-			continue
-		}
-
-		if script.Protocol == "network" {
-			issues = append(issues, validateNetworkActionIssues(i, action)...)
-			continue
-		}
-
-		if action.Type == "http_sequence" {
-			issues = append(issues, validateHTTPSequenceActionIssues(i, action)...)
-			continue
-		}
-
-		if action.Target == "" {
-			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing target", i, action.Name))
-		}
+		issues = append(issues, validateActionForProtocol(script.Protocol, i, action)...)
 	}
 
 	if script.Protocol == "soap" {
@@ -211,7 +168,8 @@ func validateGRPCConfigIssues(script *Script) []string {
 
 func isEngineActionType(actionType string) bool {
 	switch actionType {
-	case "rendezvous", "error_message",
+	case "control_if", "control_loop",
+		"rendezvous", "error_message",
 		"loadrunner_message", "loadrunner_runtime", "loadrunner_transaction", "loadrunner_timer",
 		"loadrunner_metric", "loadrunner_parameter", "loadrunner_json", "loadrunner_xml",
 		"loadrunner_database", "loadrunner_secret", "loadrunner_external", "loadrunner_review",
@@ -222,10 +180,47 @@ func isEngineActionType(actionType string) bool {
 	}
 }
 
-func validateEngineActionIssues(index int, action Action) []string {
+// validateActionForProtocol dispatches a single action to the engine or the
+// protocol-specific validator. It is used for top-level actions and, recursively,
+// for the nested bodies of control_if / control_loop blocks.
+func validateActionForProtocol(protocol string, index int, action Action) []string {
+	var issues []string
+	if strings.TrimSpace(action.Name) == "" {
+		issues = append(issues, fmt.Sprintf("actions[%d]: missing name", index))
+	}
+	if strings.TrimSpace(action.Type) == "" {
+		return append(issues, fmt.Sprintf("actions[%d] %q: missing type", index, action.Name))
+	}
+	if isEngineActionType(action.Type) {
+		return append(issues, validateEngineActionIssues(protocol, index, action)...)
+	}
+	switch protocol {
+	case "browser":
+		return append(issues, validateBrowserActionIssues(index, action)...)
+	case "websocket":
+		return append(issues, validateWebSocketActionIssues(index, action)...)
+	case "grpc":
+		return append(issues, validateGRPCActionIssues(index, action)...)
+	case "database":
+		return append(issues, validateDatabaseActionIssues(index, action)...)
+	case "network":
+		return append(issues, validateNetworkActionIssues(index, action)...)
+	}
+	if action.Type == "http_sequence" {
+		return append(issues, validateHTTPSequenceActionIssues(index, action)...)
+	}
+	if action.Target == "" {
+		issues = append(issues, fmt.Sprintf("actions[%d] %q: missing target", index, action.Name))
+	}
+	return issues
+}
+
+func validateEngineActionIssues(protocol string, index int, action Action) []string {
 	switch action.Type {
 	case "rendezvous":
 		return validateRendezvousActionIssues(index, action)
+	case "control_if", "control_loop":
+		return validateControlFlowIssues(protocol, index, action)
 	case "error_message":
 		label := fmt.Sprintf("actions[%d] %q", index, action.Name)
 		if strings.TrimSpace(action.Value) == "" {
@@ -236,6 +231,36 @@ func validateEngineActionIssues(index int, action Action) []string {
 		}
 	}
 	return nil
+}
+
+// validateControlFlowIssues validates a control_if / control_loop block and
+// recursively validates its nested step bodies against the script protocol.
+func validateControlFlowIssues(protocol string, index int, action Action) []string {
+	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+	if action.Control == nil {
+		return []string{fmt.Sprintf("%s: %s requires a control block", label, action.Type)}
+	}
+	var issues []string
+	if action.Control.MaxIterations < 0 {
+		issues = append(issues, fmt.Sprintf("%s: control max_iterations must be zero or greater", label))
+	}
+	switch action.Type {
+	case "control_loop":
+		if action.Control.Count <= 0 && action.Control.Condition == nil {
+			issues = append(issues, fmt.Sprintf("%s: control_loop requires a positive count or a condition", label))
+		}
+	case "control_if":
+		if len(action.Control.Steps) == 0 && len(action.Control.Else) == 0 {
+			issues = append(issues, fmt.Sprintf("%s: control_if requires steps or else", label))
+		}
+	}
+	for j, nested := range action.Control.Steps {
+		issues = append(issues, validateActionForProtocol(protocol, j, nested)...)
+	}
+	for j, nested := range action.Control.Else {
+		issues = append(issues, validateActionForProtocol(protocol, j, nested)...)
+	}
+	return issues
 }
 
 func validateGRPCActionIssues(index int, action Action) []string {

@@ -475,11 +475,33 @@ type Action struct {
 	Assertions     []Assertion            `json:"assertions,omitempty"`
 	ThinkTime      ThinkTimeConfig        `json:"think_time,omitempty"`
 	ThinkTimeAfter bool                   `json:"think_time_after,omitempty"`
+	// Control flow (for action types "control_if" and "control_loop").
+	Control *ControlFlow `json:"control,omitempty"`
 	// Per-action overrides
 	Auth         *AuthConfig       `json:"auth,omitempty"`          // override global auth
 	TimeoutMs    int               `json:"timeout_ms,omitempty"`    // override global request timeout
 	MaxRedirects *int              `json:"max_redirects,omitempty"` // override global redirect policy
 	SOAP         *SOAPActionConfig `json:"soap,omitempty"`
+}
+
+// ControlFlow carries the body and branching/looping parameters for control_if
+// and control_loop actions. It models TruClient-style If/Else and Loop/While steps
+// as nested action blocks evaluated at runtime.
+type ControlFlow struct {
+	Condition     *Condition `json:"condition,omitempty"`      // branch/while predicate (nil = always true)
+	Steps         []Action   `json:"steps,omitempty"`          // body run when the condition holds / each loop pass
+	Else          []Action   `json:"else,omitempty"`           // control_if: body run when the condition is false
+	Count         int        `json:"count,omitempty"`          // control_loop: fixed pass count (0 = condition-driven)
+	MaxIterations int        `json:"max_iterations,omitempty"` // control_loop: safety cap (0 = engine default)
+}
+
+// Condition is a deterministic boolean expression over template-expanded operands,
+// e.g. {Left: "{{var.status}}", Op: "eq", Right: "active"}. Both operands are
+// interpolated against VUser variables/parameters before comparison.
+type Condition struct {
+	Left  string `json:"left,omitempty"`  // left operand (template-expanded)
+	Op    string `json:"op,omitempty"`    // eq|ne|contains|not_contains|gt|lt|gte|lte|exists|not_exists
+	Right string `json:"right,omitempty"` // right operand (template-expanded)
 }
 
 type SOAPActionConfig struct {
