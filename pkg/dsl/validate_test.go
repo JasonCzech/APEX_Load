@@ -114,7 +114,46 @@ func TestValidateScriptIssues_BrowserRuntimeActionParity(t *testing.T) {
 	assertIssue(t, issues, `actions[0] "bad control": control count must be zero or greater`)
 	assertIssue(t, issues, `actions[0] "bad control": control max_iterations must be zero or greater`)
 	assertIssue(t, issues, `actions[0] "bad control": condition op "roughly" is not supported`)
-	assertIssue(t, issues, `actions[0] "bad control".control.steps[0]: actions[0] "bad hover": missing target or selector`)
+	assertIssue(t, issues, `actions[0].control.steps[0] "bad hover": missing target or selector`)
+}
+
+func TestValidateScriptIssues_ControlFlowLifecyclePaths(t *testing.T) {
+	script := &Script{
+		Name:     "browser-lifecycle-control",
+		Protocol: "browser",
+		Init: []Action{{
+			Name: "init branch",
+			Type: "control_if",
+			Control: &ControlFlow{
+				Condition: &Condition{Left: "{{var.phase}}", Op: "exists"},
+				Steps: []Action{{
+					Name: "bad init hover",
+					Type: "browser_hover",
+				}},
+			},
+		}},
+		Actions: []Action{{
+			Name:   "open",
+			Type:   "browser_navigate",
+			Target: "/",
+		}},
+		Teardown: []Action{{
+			Name: "teardown loop",
+			Type: "control_loop",
+			Control: &ControlFlow{
+				Count: -1,
+				Steps: []Action{{
+					Name: "bad teardown click",
+					Type: "browser_click",
+				}},
+			},
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, `init[0].control.steps[0] "bad init hover": missing target or selector`)
+	assertIssue(t, issues, `teardown[0] "teardown loop": control count must be zero or greater`)
+	assertIssue(t, issues, `teardown[0].control.steps[0] "bad teardown click": missing target or selector`)
 }
 
 func TestValidateScriptIssues_RunLogicGlobalGoals(t *testing.T) {

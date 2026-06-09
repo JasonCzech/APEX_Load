@@ -37,8 +37,14 @@ func ValidateScriptIssues(script *Script) []string {
 		issues = append(issues, "config.base_url is empty")
 	}
 
+	for i, action := range script.Init {
+		issues = append(issues, validateActionForProtocolAtPath(script.Protocol, fmt.Sprintf("init[%d]", i), i, action)...)
+	}
 	for i, action := range script.Actions {
 		issues = append(issues, validateActionForProtocol(script.Protocol, i, action)...)
+	}
+	for i, action := range script.Teardown {
+		issues = append(issues, validateActionForProtocolAtPath(script.Protocol, fmt.Sprintf("teardown[%d]", i), i, action)...)
 	}
 
 	if script.Protocol == "soap" {
@@ -184,45 +190,52 @@ func isEngineActionType(actionType string) bool {
 // protocol-specific validator. It is used for top-level actions and, recursively,
 // for the nested bodies of control_if / control_loop blocks.
 func validateActionForProtocol(protocol string, index int, action Action) []string {
+	return validateActionForProtocolAtPath(protocol, fmt.Sprintf("actions[%d]", index), index, action)
+}
+
+func validateActionForProtocolAtPath(protocol string, path string, index int, action Action) []string {
 	var issues []string
 	if strings.TrimSpace(action.Name) == "" {
-		issues = append(issues, fmt.Sprintf("actions[%d]: missing name", index))
+		issues = append(issues, fmt.Sprintf("%s: missing name", path))
 	}
 	if strings.TrimSpace(action.Type) == "" {
-		return append(issues, fmt.Sprintf("actions[%d] %q: missing type", index, action.Name))
+		return append(issues, fmt.Sprintf("%s: missing type", actionLabel(path, action)))
 	}
 	if isEngineActionType(action.Type) {
-		return append(issues, validateEngineActionIssues(protocol, index, action)...)
+		return append(issues, validateEngineActionIssues(protocol, path, index, action)...)
+	}
+	rebased := func(nestedIssues []string) []string {
+		return rebaseActionIssues(fmt.Sprintf("actions[%d]", index), path, nestedIssues)
 	}
 	switch protocol {
 	case "browser":
-		return append(issues, validateBrowserActionIssues(index, action)...)
+		return append(issues, rebased(validateBrowserActionIssues(index, action))...)
 	case "websocket":
-		return append(issues, validateWebSocketActionIssues(index, action)...)
+		return append(issues, rebased(validateWebSocketActionIssues(index, action))...)
 	case "grpc":
-		return append(issues, validateGRPCActionIssues(index, action)...)
+		return append(issues, rebased(validateGRPCActionIssues(index, action))...)
 	case "database":
-		return append(issues, validateDatabaseActionIssues(index, action)...)
+		return append(issues, rebased(validateDatabaseActionIssues(index, action))...)
 	case "network":
-		return append(issues, validateNetworkActionIssues(index, action)...)
+		return append(issues, rebased(validateNetworkActionIssues(index, action))...)
 	}
 	if action.Type == "http_sequence" {
-		return append(issues, validateHTTPSequenceActionIssues(index, action)...)
+		return append(issues, rebased(validateHTTPSequenceActionIssues(index, action))...)
 	}
 	if action.Target == "" {
-		issues = append(issues, fmt.Sprintf("actions[%d] %q: missing target", index, action.Name))
+		issues = append(issues, fmt.Sprintf("%s: missing target", actionLabel(path, action)))
 	}
 	return issues
 }
 
-func validateEngineActionIssues(protocol string, index int, action Action) []string {
+func validateEngineActionIssues(protocol string, path string, index int, action Action) []string {
 	switch action.Type {
 	case "rendezvous":
-		return validateRendezvousActionIssues(index, action)
+		return rebaseActionIssues(fmt.Sprintf("actions[%d]", index), path, validateRendezvousActionIssues(index, action))
 	case "control_if", "control_loop":
-		return validateControlFlowIssues(protocol, index, action)
+		return validateControlFlowIssues(protocol, path, action)
 	case "error_message":
-		label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+		label := actionLabel(path, action)
 		if strings.TrimSpace(action.Value) == "" {
 			if format, ok := actionParamStringValue(action.Params, "format"); ok && format != "" {
 				return nil
@@ -235,8 +248,8 @@ func validateEngineActionIssues(protocol string, index int, action Action) []str
 
 // validateControlFlowIssues validates a control_if / control_loop block and
 // recursively validates its nested step bodies against the script protocol.
-func validateControlFlowIssues(protocol string, index int, action Action) []string {
-	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+func validateControlFlowIssues(protocol string, path string, action Action) []string {
+	label := actionLabel(path, action)
 	if action.Control == nil {
 		return []string{fmt.Sprintf("%s: %s requires a control block", label, action.Type)}
 	}
@@ -259,10 +272,10 @@ func validateControlFlowIssues(protocol string, index int, action Action) []stri
 		}
 	}
 	for j, nested := range action.Control.Steps {
-		issues = append(issues, prefixNestedActionIssues(fmt.Sprintf("%s.control.steps[%d]", label, j), validateActionForProtocol(protocol, j, nested))...)
+		issues = append(issues, validateActionForProtocolAtPath(protocol, fmt.Sprintf("%s.control.steps[%d]", path, j), j, nested)...)
 	}
 	for j, nested := range action.Control.Else {
-		issues = append(issues, prefixNestedActionIssues(fmt.Sprintf("%s.control.else[%d]", label, j), validateActionForProtocol(protocol, j, nested))...)
+		issues = append(issues, validateActionForProtocolAtPath(protocol, fmt.Sprintf("%s.control.else[%d]", path, j), j, nested)...)
 	}
 	return issues
 }
@@ -292,15 +305,29 @@ func validateConditionIssues(label string, condition *Condition) []string {
 	return nil
 }
 
-func prefixNestedActionIssues(prefix string, issues []string) []string {
+func actionLabel(path string, action Action) string {
+	if strings.TrimSpace(action.Name) == "" {
+		return path
+	}
+	return fmt.Sprintf("%s %q", path, action.Name)
+}
+
+func rebaseActionIssues(oldPath, newPath string, issues []string) []string {
 	if len(issues) == 0 {
 		return nil
 	}
-	prefixed := make([]string, len(issues))
-	for i, issue := range issues {
-		prefixed[i] = prefix + ": " + issue
+	if oldPath == newPath {
+		return issues
 	}
-	return prefixed
+	rebased := make([]string, len(issues))
+	for i, issue := range issues {
+		if strings.HasPrefix(issue, oldPath) {
+			rebased[i] = newPath + strings.TrimPrefix(issue, oldPath)
+		} else {
+			rebased[i] = newPath + ": " + issue
+		}
+	}
+	return rebased
 }
 
 func validateGRPCActionIssues(index int, action Action) []string {
