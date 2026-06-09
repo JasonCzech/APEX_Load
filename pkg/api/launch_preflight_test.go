@@ -20,6 +20,23 @@ func storePreflightScript(runner *TestRunner, id string, projectID string) {
 	})
 }
 
+func storePreflightBrowserScript(runner *TestRunner, id string, projectID string) {
+	runner.StoreScript(&dsl.Script{
+		ID:        id,
+		Name:      id,
+		Protocol:  "browser",
+		Version:   "1.0.0",
+		ProjectID: projectID,
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.test",
+			Browser: dsl.BrowserConfig{
+				DeviceProfile: "iphone_15_pro",
+			},
+		},
+		Actions: []dsl.Action{{Name: "open", Type: "browser_navigate", Target: "https://example.test"}},
+	})
+}
+
 func TestPreflightLaunchAllowsImmediateStartWhenCapacityAvailable(t *testing.T) {
 	runner := NewTestRunner(10, NewHub(), nil)
 	storePreflightScript(runner, "script-preflight-start", "")
@@ -37,6 +54,74 @@ func TestPreflightLaunchAllowsImmediateStartWhenCapacityAvailable(t *testing.T) 
 	}
 	if !preflight.StartNowAllowed || preflight.QueueAllowed || preflight.Decision != "start_now" {
 		t.Fatalf("preflight = %#v, want start-now decision", preflight)
+	}
+}
+
+func TestPreflightLaunchBlocksBrowserDensityWithoutBenchmarkEvidence(t *testing.T) {
+	runner := NewTestRunner(100, NewHub(), nil)
+	storePreflightBrowserScript(runner, "script-preflight-browser-density", "")
+	settings := runner.GetSystemSettings()
+	settings.CapacityPlanning.HeadroomPct = 0
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 2
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
+		CreateTestRequest: CreateTestRequest{
+			Name:     "Browser Density",
+			Duration: "5m",
+			ScriptID: "script-preflight-browser-density",
+			VUsers:   30,
+		},
+	})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	if preflight.Decision != "blocked" || preflight.StartNowAllowed {
+		t.Fatalf("preflight = %#v, want blocked browser density gate", preflight)
+	}
+	if len(preflight.BlockingConflicts) != 1 || preflight.BlockingConflicts[0].Code != "browser_density_release_gate" {
+		t.Fatalf("blocking conflicts = %#v, want browser density gate only", preflight.BlockingConflicts)
+	}
+	if preflight.CapacityAdvisory == nil || !preflight.CapacityAdvisory.BrowserDensityOverrideRequired || preflight.CapacityAdvisory.RequiresOverride {
+		t.Fatalf("capacity advisory = %#v, want browser density gate without capacity shortfall", preflight.CapacityAdvisory)
+	}
+}
+
+func TestPreflightLaunchAllowsBoundedBrowserDensityWithEvidenceOverride(t *testing.T) {
+	runner := NewTestRunner(100, NewHub(), nil)
+	storePreflightBrowserScript(runner, "script-preflight-browser-density-cleared", "")
+	settings := runner.GetSystemSettings()
+	settings.CapacityPlanning.HeadroomPct = 0
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 2
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
+		CreateTestRequest: CreateTestRequest{
+			Name:     "Bounded Browser Density",
+			Duration: "5m",
+			ScriptID: "script-preflight-browser-density-cleared",
+			VUsers:   30,
+			RuntimeSettings: &RuntimeSettingsOverride{Env: map[string]string{
+				"APEXLOAD_BROWSER_BENCHMARK_EVIDENCE": "benchmarks/browser-density-2026-06-09.txt",
+				"APEXLOAD_BROWSER_DENSITY_OVERRIDE":   "true",
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	if !preflight.StartNowAllowed || preflight.Decision != "start_now" {
+		t.Fatalf("preflight = %#v, want start_now after browser density evidence override", preflight)
+	}
+	if len(preflight.BlockingConflicts) != 0 {
+		t.Fatalf("blocking conflicts = %#v, want none", preflight.BlockingConflicts)
+	}
+	if preflight.CapacityAdvisory == nil || preflight.CapacityAdvisory.BrowserDensityReleaseGate != browserDensityReleaseGateCleared {
+		t.Fatalf("capacity advisory = %#v, want cleared browser density release gate", preflight.CapacityAdvisory)
 	}
 }
 

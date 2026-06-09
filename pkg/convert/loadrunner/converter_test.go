@@ -268,7 +268,10 @@ func TestConvert(t *testing.T) {
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "actions[0].params.requests[0]", "converted")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_reg_save_param", "actions[0].params.requests[0].extractors[0]", "contributor")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_think_time", "config.think_time", "converted")
-	assertSourceReviewFunctionStatus(t, result.SourceReview.Mappings, "web_set_max_html_param_len", "review_only")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_set_max_html_param_len", "config.web_runtime.additional_attributes.web_set_max_html_param_len", "converted")
+	if result.Script.Config.WebRuntime.AdditionalAttributes["web_set_max_html_param_len"] != "4096" {
+		t.Fatalf("web_set_max_html_param_len = %#v, want 4096", result.Script.Config.WebRuntime.AdditionalAttributes)
+	}
 
 	// Check think time config was computed
 	if result.Script.Config.ThinkTime.MeanMs == 0 {

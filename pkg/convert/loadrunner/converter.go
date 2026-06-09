@@ -321,6 +321,18 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			result.Stats.ContributorFunctions++
 			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
+		case "web_set_max_html_param_len":
+			value := firstLoadRunnerControlArg(fn)
+			if value == "" {
+				value = fn.StepName
+			}
+			if value != "" {
+				setLoadRunnerWebRuntimeAttribute(result.Script, "web_set_max_html_param_len", value)
+			}
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.additional_attributes.web_set_max_html_param_len", firstNonEmpty(value, fn.Name), "config", "converted", "Preserved as a LoadRunner HTTP/HTML runtime compatibility setting.", LoadRunnerSupportNativeNoop))
+			result.Stats.ContributorFunctions++
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportNativeNoop)
+
 		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_rest", "web_service_call":
 			action, warnings := convertAction(fn, baseURL, currentTransaction, currentSubTransaction, opts, lastRequestURL)
 			if contextURL := loadRunnerRequestContextURL(fn, lastRequestURL); contextURL != "" {
@@ -843,7 +855,7 @@ func loadRunnerControlArgs(fn ParsedFunction) []string {
 
 func isLoadRunnerMetadataOnlyContributor(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "web_set_max_html_param_len", "web_convert_param":
+	case "web_convert_param":
 		return true
 	default:
 		return false

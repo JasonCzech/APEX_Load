@@ -14,6 +14,8 @@ import (
 	"testing"
 	"unicode/utf16"
 
+	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
+	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -1635,6 +1637,54 @@ func TestBrowserSelectorStabilityScoreRanksStableAndBrittleSelectors(t *testing.
 	}
 	if !strings.Contains(strings.Join(brittleSignals, ","), "positional selector") {
 		t.Fatalf("brittle signals = %v, want positional selector signal", brittleSignals)
+	}
+}
+
+func TestTrueClientJavaScriptReviewPolicyRequiresReviewerEvidence(t *testing.T) {
+	inspection := &trueclient.ArchiveInspection{
+		ScriptType: "TruClient 2.0 - Web",
+		StepInventory: trueclient.StepInventory{
+			Total:     1,
+			Supported: map[string]int{"evaluate_javascript": 1},
+		},
+	}
+	result := &loadrunner.ConvertResult{
+		Script: &dsl.Script{
+			Protocol: "browser",
+			Actions: []dsl.Action{{
+				Name:   "Checkout JS",
+				Type:   "browser_evaluate_js",
+				Target: "window.app.checkout()",
+				Metadata: map[string]any{
+					"review_gate":                "javascript",
+					"javascript_review_approved": true,
+					"review_reason":              "TruClient JavaScript could not be decomposed into native browser actions.",
+				},
+			}},
+			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Preserved: map[string]any{
+				"browser_replay_status": "passed",
+			}}},
+		},
+		DetectedProtocol: &loadrunner.DetectedProtocol{ImportMode: loadrunner.ImportModeExecutable},
+		Stats:            loadrunner.ConvertStats{ConvertedActions: 1},
+	}
+	summary := loadRunnerImportSummary{
+		ImportMode:           string(loadrunner.ImportModeExecutable),
+		TrueClientInspection: inspection,
+		SourceScriptType:     "TruClient 2.0 - Web",
+		SourceProfile:        "vugen_web2 browser profile",
+	}
+
+	report := buildTrueClient2CompatReport(result, summary)
+	if report.JavaScriptReviewGate != "required" || report.JavaScriptReview.PendingActions != 1 || report.PromotionAllowed {
+		t.Fatalf("report = %#v, want pending JS gate without reviewer evidence", report)
+	}
+
+	result.Script.Actions[0].Metadata["javascript_review_reviewer"] = "qa-reviewer"
+	result.Script.Actions[0].Metadata["javascript_review_approved_at"] = "2026-06-09T12:00:00Z"
+	report = buildTrueClient2CompatReport(result, summary)
+	if report.JavaScriptReviewGate != "approved" || report.JavaScriptReview.ApprovedActions != 1 || !report.PromotionAllowed {
+		t.Fatalf("approved report = %#v, want approved JS gate and promotion allowed", report)
 	}
 }
 

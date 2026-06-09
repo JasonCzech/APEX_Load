@@ -198,6 +198,76 @@ new load.WebRequest({ url: "https://api.example.test/health" }).send();`))
 	}
 }
 
+func TestConvertZipMapsHelperFactoryDirectSendAndLocalConstArgs(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	writeDevWebZipFile(t, zw, "scripts/helper.js", `
+module.exports = function() {
+  return {
+    getOrder(orderId) {
+      return new load.WebRequest({
+        url: `+"`https://api.example.test/orders/${orderId}`"+`,
+        method: "GET",
+        headers: { "accept": "application/json" }
+      });
+    },
+    createOrder: function(orderId, sku) {
+      return new load.WebRequest({
+        url: `+"`https://api.example.test/orders/${orderId}/items`"+`,
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: { "sku": `+"`${sku}`"+` }
+      });
+    }
+  };
+};`)
+	writeDevWebZipFile(t, zw, "scripts/main.js", `
+const helper = require("./helper.js")();
+const orderId = "A-42";
+const sku = "SKU-9";
+helper.getOrder(orderId).sendSync();
+const created = helper.createOrder(orderId, sku);
+created.send();`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip: %v", err)
+	}
+	var helperActions []dsl.Action
+	for _, action := range result.Script.Actions {
+		if action.Metadata["devweb_helper_module"] == "scripts/helper.js" {
+			helperActions = append(helperActions, action)
+		}
+	}
+	if len(helperActions) != 2 {
+		t.Fatalf("helper actions = %#v, want two converted helper requests", helperActions)
+	}
+	if helperActions[0].Target != "https://api.example.test/orders/A-42" || helperActions[0].Method != "GET" {
+		t.Fatalf("first helper action = %#v, want direct send GET with local const argument", helperActions[0])
+	}
+	if helperActions[1].Target != "https://api.example.test/orders/A-42/items" || helperActions[1].Method != "POST" {
+		t.Fatalf("second helper action = %#v, want assigned POST with local const arguments", helperActions[1])
+	}
+	if !strings.Contains(helperActions[1].Body, `"sku":"SKU-9"`) {
+		t.Fatalf("helper body = %q, want resolved sku constant", helperActions[1].Body)
+	}
+	preserved := result.Script.Metadata.Import.Preserved
+	templates, ok := preserved["helper_module_request_templates"].([]devWebHelperRequestTemplate)
+	if !ok || len(templates) != 2 {
+		t.Fatalf("helper_module_request_templates = %#v, want two object-method templates", preserved["helper_module_request_templates"])
+	}
+	invocations, ok := preserved["helper_module_invocations"].([]devWebHelperInvocation)
+	if !ok || len(invocations) != 2 {
+		t.Fatalf("helper_module_invocations = %#v, want two helper invocations", preserved["helper_module_invocations"])
+	}
+	if !invocations[0].Sent || !invocations[0].TemplateInventoried || invocations[0].AssignedTo != "" {
+		t.Fatalf("direct invocation = %#v, want direct-send inventoried invocation", invocations[0])
+	}
+}
+
 func TestConvertZipMapsDevWebParametersRuntimeTemplatesExtractorsAndTransactions(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

@@ -122,6 +122,15 @@ func TestEstimateCapacityAdvisoryUsesBrowserVUserDensity(t *testing.T) {
 	if advisory.MaxBrowserVUsersPerGenerator != 25 {
 		t.Fatalf("max browser vusers per generator = %d, want 25", advisory.MaxBrowserVUsersPerGenerator)
 	}
+	if advisory.MaxBrowserCanaryVUsersPerGenerator != 5 {
+		t.Fatalf("max browser canary vusers per generator = %d, want 5", advisory.MaxBrowserCanaryVUsersPerGenerator)
+	}
+	if advisory.BrowserDensityTier != browserDensityTierDiagnosticCanary || advisory.BrowserDensityReleaseGate != browserDensityReleaseGateRequired {
+		t.Fatalf("browser density governance = tier %q gate %q, want diagnostic canary requiring evidence", advisory.BrowserDensityTier, advisory.BrowserDensityReleaseGate)
+	}
+	if !advisory.BrowserDensityOverrideRequired || !advisory.BrowserBenchmarkEvidenceRequired {
+		t.Fatalf("browser density gates = override %v evidence %v, want both required", advisory.BrowserDensityOverrideRequired, advisory.BrowserBenchmarkEvidenceRequired)
+	}
 	if advisory.DimensionRecommendations.VUsers != 2 {
 		t.Fatalf("vuser recommendation = %d, want 2", advisory.DimensionRecommendations.VUsers)
 	}
@@ -133,6 +142,49 @@ func TestEstimateCapacityAdvisoryUsesBrowserVUserDensity(t *testing.T) {
 	}
 	if !containsSubstring(advisory.Warnings, "Browser VUsers launch real browser runtimes") {
 		t.Fatalf("warnings = %#v, want browser runtime guidance", advisory.Warnings)
+	}
+}
+
+func TestEstimateCapacityAdvisoryClearsBrowserDensityGateWithBenchmarkEvidence(t *testing.T) {
+	settings := defaultSystemSettings(4)
+	settings.CapacityPlanning.HeadroomPct = 0
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 2
+
+	advisory := estimateCapacityAdvisory(settings, []TestGroup{{
+		Name:     "browser checkout",
+		Protocol: "browser",
+		VUsers:   30,
+		script: &dsl.Script{
+			Protocol: "browser",
+			Config: dsl.ScriptConfig{
+				Browser: dsl.BrowserConfig{DeviceProfile: "iphone_15_pro"},
+			},
+			Actions: []dsl.Action{{Name: "Open", Type: "browser_navigate", Target: "https://example.test"}},
+		},
+	}}, 30, 10*time.Minute, false, &RuntimeSettingsOverride{
+		Env: map[string]string{
+			"APEXLOAD_BROWSER_BENCHMARK_EVIDENCE": "benchmarks/browser-density-2026-06-09.txt",
+			"APEXLOAD_BROWSER_DENSITY_OVERRIDE":   "true",
+		},
+	})
+
+	if advisory == nil {
+		t.Fatal("expected advisory to be returned")
+	}
+	if advisory.RequiresOverride {
+		t.Fatalf("requires_override = true, want capacity to fit two generators: %#v", advisory)
+	}
+	if !advisory.BrowserDensityOverrideRequired || !advisory.BrowserBenchmarkEvidenceRequired {
+		t.Fatalf("browser density gates = override %v evidence %v, want high-density gate requirement recorded", advisory.BrowserDensityOverrideRequired, advisory.BrowserBenchmarkEvidenceRequired)
+	}
+	if !advisory.BrowserDensityOverrideRequested || !advisory.BrowserBenchmarkEvidenceAttached {
+		t.Fatalf("browser density override/evidence = %v/%v, want both attached", advisory.BrowserDensityOverrideRequested, advisory.BrowserBenchmarkEvidenceAttached)
+	}
+	if advisory.BrowserDensityTier != browserDensityTierBoundedRealBrowserLoad || advisory.BrowserDensityReleaseGate != browserDensityReleaseGateCleared {
+		t.Fatalf("browser density governance = tier %q gate %q, want bounded tier cleared by evidence", advisory.BrowserDensityTier, advisory.BrowserDensityReleaseGate)
+	}
+	if advisory.BrowserBenchmarkEvidence != "benchmarks/browser-density-2026-06-09.txt" {
+		t.Fatalf("benchmark evidence = %q", advisory.BrowserBenchmarkEvidence)
 	}
 }
 

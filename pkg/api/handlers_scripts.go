@@ -95,27 +95,58 @@ type web2MigrationReadinessReport struct {
 }
 
 type trueClient2CompatReport struct {
-	SourceScriptType        string            `json:"source_script_type,omitempty"`
-	SourceProfile           string            `json:"source_profile,omitempty"`
-	ImportMode              string            `json:"import_mode,omitempty"`
-	PromotionStatus         string            `json:"promotion_status"`
-	PromotionAllowed        bool              `json:"promotion_allowed"`
-	ImportedSteps           int               `json:"imported_steps"`
-	ConvertedActions        int               `json:"converted_actions"`
-	SkippedReviewSteps      int               `json:"skipped_review_steps"`
-	SupportedStepFamilies   int               `json:"supported_step_families"`
-	ReviewOnlyStepFamilies  int               `json:"review_only_step_families"`
-	UnsupportedStepFamilies int               `json:"unsupported_step_families"`
-	SelectorConfidencePct   int               `json:"selector_confidence_pct"`
-	SelectorCandidateCount  int               `json:"selector_candidate_count"`
-	RuntimeParityStatus     string            `json:"runtime_parity_status"`
-	ReplayStatus            string            `json:"replay_status"`
-	JavaScriptReviewGate    string            `json:"javascript_review_gate"`
-	FrameWindowBlockers     int               `json:"frame_window_blockers"`
-	HTTPConversionReadiness string            `json:"http_conversion_readiness"`
-	FixtureContractStatus   map[string]string `json:"fixture_contract_status,omitempty"`
-	Findings                []string          `json:"findings,omitempty"`
-	NextActions             []string          `json:"next_actions,omitempty"`
+	SourceScriptType        string                                  `json:"source_script_type,omitempty"`
+	SourceProfile           string                                  `json:"source_profile,omitempty"`
+	ImportMode              string                                  `json:"import_mode,omitempty"`
+	PromotionStatus         string                                  `json:"promotion_status"`
+	PromotionAllowed        bool                                    `json:"promotion_allowed"`
+	ImportedSteps           int                                     `json:"imported_steps"`
+	ConvertedActions        int                                     `json:"converted_actions"`
+	SkippedReviewSteps      int                                     `json:"skipped_review_steps"`
+	SupportedStepFamilies   int                                     `json:"supported_step_families"`
+	ReviewOnlyStepFamilies  int                                     `json:"review_only_step_families"`
+	UnsupportedStepFamilies int                                     `json:"unsupported_step_families"`
+	SelectorConfidencePct   int                                     `json:"selector_confidence_pct"`
+	SelectorCandidateCount  int                                     `json:"selector_candidate_count"`
+	RuntimeParityStatus     string                                  `json:"runtime_parity_status"`
+	ReplayStatus            string                                  `json:"replay_status"`
+	JavaScriptReviewGate    string                                  `json:"javascript_review_gate"`
+	JavaScriptReview        *trueClientJavaScriptReviewPolicyReport `json:"javascript_review,omitempty"`
+	FrameWindowBlockers     int                                     `json:"frame_window_blockers"`
+	HTTPConversionReadiness string                                  `json:"http_conversion_readiness"`
+	FixtureContractStatus   map[string]string                       `json:"fixture_contract_status,omitempty"`
+	Findings                []string                                `json:"findings,omitempty"`
+	NextActions             []string                                `json:"next_actions,omitempty"`
+}
+
+type trueClientJavaScriptReviewPolicyReport struct {
+	Status                 string                             `json:"status"`
+	Policy                 string                             `json:"policy"`
+	ApprovalRequired       bool                               `json:"approval_required"`
+	ReplayEvidenceRequired bool                               `json:"replay_evidence_required"`
+	RequiredActions        int                                `json:"required_actions"`
+	ApprovedActions        int                                `json:"approved_actions"`
+	PendingActions         int                                `json:"pending_actions"`
+	RejectedActions        int                                `json:"rejected_actions"`
+	SourceOnlyFragments    int                                `json:"source_only_fragments,omitempty"`
+	ActionReviews          []trueClientJavaScriptActionReview `json:"action_reviews,omitempty"`
+	Findings               []string                           `json:"findings,omitempty"`
+	NextActions            []string                           `json:"next_actions,omitempty"`
+}
+
+type trueClientJavaScriptActionReview struct {
+	Index           int    `json:"index"`
+	Name            string `json:"name,omitempty"`
+	Type            string `json:"type,omitempty"`
+	Status          string `json:"status"`
+	Gate            string `json:"gate,omitempty"`
+	Reason          string `json:"reason,omitempty"`
+	Reviewer        string `json:"reviewer,omitempty"`
+	ApprovedAt      string `json:"approved_at,omitempty"`
+	Source          string `json:"source,omitempty"`
+	SourceStepID    string `json:"source_step_id,omitempty"`
+	SourceStepIndex string `json:"source_step_index,omitempty"`
+	ScriptPreview   string `json:"script_preview,omitempty"`
 }
 
 type protocolCompatReport struct {
@@ -1114,6 +1145,32 @@ func trueClientWeb2ReviewSections(summary loadRunnerImportSummary) []scriptImpor
 		})
 	}
 
+	if summary.TrueClient2CompatReport != nil && summary.TrueClient2CompatReport.JavaScriptReview != nil && summary.TrueClient2CompatReport.JavaScriptReview.ApprovalRequired {
+		jsReview := summary.TrueClient2CompatReport.JavaScriptReview
+		severity := "warning"
+		if jsReview.Status == "rejected" {
+			severity = "blocker"
+		} else if jsReview.Status == "approved" {
+			severity = "info"
+		}
+		jsItems := []string{
+			"Policy: " + jsReview.Policy,
+			fmt.Sprintf("Actions requiring approval: %d", jsReview.RequiredActions),
+			fmt.Sprintf("Approved: %d; pending: %d; rejected: %d", jsReview.ApprovedActions, jsReview.PendingActions, jsReview.RejectedActions),
+		}
+		for _, review := range jsReview.ActionReviews {
+			label := firstNonEmpty(review.Name, fmt.Sprintf("action_%d", review.Index))
+			jsItems = append(jsItems, fmt.Sprintf("%s: %s (%s)", label, review.Status, firstNonEmpty(review.Reason, review.Gate, "JavaScript review required")))
+		}
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "web2_javascript_review",
+			Title:    "JavaScript Review Gate",
+			Severity: severity,
+			Summary:  "Review-gated JavaScript requires explicit approval metadata before production promotion.",
+			Items:    jsItems,
+		})
+	}
+
 	objectItems := make([]string, 0, len(inspection.ObjectRepositories)+1)
 	for _, file := range inspection.ObjectRepositories {
 		objectItems = append(objectItems, "Object repository: "+file.Path)
@@ -1284,17 +1341,21 @@ func buildTrueClient2CompatReport(result *loadrunner.ConvertResult, summary load
 	for _, count := range inspection.StepInventory.Unsupported {
 		reviewSteps += count
 	}
-	jsGate := trueClientJavaScriptReviewGate(result, inspection)
 	frameWindowBlockers := trueClientFrameWindowBlockerCount(inspection)
 	replayStatus := trueClientReplayStatus(result)
 	runtimeStatus := trueClientRuntimeParityStatus(summary)
+	jsReview := buildTrueClientJavaScriptReviewPolicy(result, inspection, replayStatus)
+	jsGate := "clear"
+	if jsReview != nil {
+		jsGate = jsReview.Status
+	}
 	httpReadiness := "needs_replay_network"
-	if replayStatus == "passed" && jsGate == "clear" {
+	if replayStatus == "passed" && (jsGate == "clear" || jsGate == "approved") {
 		httpReadiness = "ready_for_preview"
 	}
 	promotionAllowed := importMode == string(loadrunner.ImportModeExecutable) &&
 		replayStatus == "passed" &&
-		jsGate == "clear" &&
+		(jsGate == "clear" || jsGate == "approved") &&
 		frameWindowBlockers == 0 &&
 		runtimeStatus != "blocked" &&
 		len(inspection.StepInventory.Unsupported) == 0
@@ -1324,6 +1385,7 @@ func buildTrueClient2CompatReport(result *loadrunner.ConvertResult, summary load
 		RuntimeParityStatus:     runtimeStatus,
 		ReplayStatus:            replayStatus,
 		JavaScriptReviewGate:    jsGate,
+		JavaScriptReview:        jsReview,
 		FrameWindowBlockers:     frameWindowBlockers,
 		HTTPConversionReadiness: httpReadiness,
 		FixtureContractStatus:   trueClientFixtureContractStatus(),
@@ -1336,8 +1398,15 @@ func buildTrueClient2CompatReport(result *loadrunner.ConvertResult, summary load
 		},
 	}
 	if jsGate != "clear" {
-		report.Findings = append(report.Findings, "Review-gated JavaScript is present and must be approved or replaced before promotion.")
-		report.NextActions = append(report.NextActions, "Approve browser_evaluate_js only after code review and replay evidence, or replace it with native browser actions.")
+		switch jsGate {
+		case "approved":
+			report.Findings = append(report.Findings, "Review-gated JavaScript has approval metadata; replay evidence is still required before promotion.")
+		case "rejected":
+			report.Findings = append(report.Findings, "At least one review-gated JavaScript action was rejected and must be replaced before promotion.")
+		default:
+			report.Findings = append(report.Findings, "Review-gated JavaScript is present and must be approved or replaced before promotion.")
+			report.NextActions = append(report.NextActions, "Approve browser_evaluate_js only after code review and replay evidence, or replace it with native browser actions.")
+		}
 	}
 	if frameWindowBlockers > 0 {
 		report.Findings = append(report.Findings, fmt.Sprintf("%d iframe/window context blocker(s) require frame or popup replay evidence.", frameWindowBlockers))
@@ -1373,22 +1442,6 @@ func trueClientRuntimeParityStatus(summary loadRunnerImportSummary) string {
 	return "not_imported"
 }
 
-func trueClientJavaScriptReviewGate(result *loadrunner.ConvertResult, inspection *trueclient.ArchiveInspection) string {
-	if result != nil && result.Script != nil {
-		for _, action := range result.Script.Actions {
-			if action.Type == "browser_evaluate_js" || boolMapValue(action.Metadata, "review_required") {
-				return "required"
-			}
-		}
-	}
-	if inspection != nil {
-		if count := inspection.StepInventory.ReviewOnly["evaluate_javascript"]; count > 0 {
-			return "required"
-		}
-	}
-	return "clear"
-}
-
 func trueClientFrameWindowBlockerCount(inspection *trueclient.ArchiveInspection) int {
 	if inspection == nil {
 		return 0
@@ -1402,6 +1455,128 @@ func trueClientFrameWindowBlockerCount(inspection *trueclient.ArchiveInspection)
 		}
 	}
 	return count
+}
+
+func buildTrueClientJavaScriptReviewPolicy(result *loadrunner.ConvertResult, inspection *trueclient.ArchiveInspection, replayStatus string) *trueClientJavaScriptReviewPolicyReport {
+	report := &trueClientJavaScriptReviewPolicyReport{
+		Status:                 "clear",
+		Policy:                 "explicit_approval_required",
+		ReplayEvidenceRequired: true,
+		NextActions:            []string{"No review-gated JavaScript actions were imported."},
+	}
+	if inspection != nil {
+		report.SourceOnlyFragments = inspection.StepInventory.ReviewOnly["evaluate_javascript"]
+	}
+	if result != nil && result.Script != nil {
+		actions := append(append([]dsl.Action{}, result.Script.Init...), append(result.Script.Actions, result.Script.Teardown...)...)
+		for index, action := range actions {
+			if !trueClientActionRequiresJavaScriptReview(action) {
+				continue
+			}
+			review := trueClientJavaScriptActionReviewFor(index+1, action)
+			report.ActionReviews = append(report.ActionReviews, review)
+			report.RequiredActions++
+			switch review.Status {
+			case "approved":
+				report.ApprovedActions++
+			case "rejected":
+				report.RejectedActions++
+			default:
+				report.PendingActions++
+			}
+		}
+	}
+	if report.RequiredActions == 0 && report.SourceOnlyFragments == 0 {
+		report.ApprovalRequired = false
+		report.ReplayEvidenceRequired = false
+		report.Findings = []string{"No browser_evaluate_js or source-only Evaluate JavaScript steps require approval."}
+		return report
+	}
+	report.ApprovalRequired = true
+	report.NextActions = []string{
+		"Review each browser_evaluate_js action against source TruClient code.",
+		"Attach reviewer, approval timestamp, and replay evidence before production promotion.",
+		"Prefer replacing JavaScript with native browser actions when possible.",
+	}
+	switch {
+	case report.RejectedActions > 0:
+		report.Status = "rejected"
+		report.Findings = []string{fmt.Sprintf("%d review-gated JavaScript action(s) were rejected.", report.RejectedActions)}
+	case report.PendingActions > 0 || report.SourceOnlyFragments > 0:
+		report.Status = "required"
+		report.Findings = []string{fmt.Sprintf("%d JavaScript action(s) require explicit approval; %d are pending.", report.RequiredActions, report.PendingActions)}
+	case replayStatus != "passed":
+		report.Status = "approved_pending_replay"
+		report.Findings = []string{"All imported JavaScript actions carry approval metadata, but replay evidence has not passed."}
+	default:
+		report.Status = "approved"
+		report.Findings = []string{"All imported JavaScript actions carry approval metadata and replay evidence has passed."}
+	}
+	if report.SourceOnlyFragments > 0 {
+		report.Findings = append(report.Findings, fmt.Sprintf("%d source Evaluate JavaScript fragment(s) remain review-only in the archive inspection.", report.SourceOnlyFragments))
+	}
+	return report
+}
+
+func trueClientActionRequiresJavaScriptReview(action dsl.Action) bool {
+	if action.Type == "browser_evaluate_js" {
+		return true
+	}
+	if strings.EqualFold(stringMapAnyValue(action.Metadata, "review_gate"), "javascript") {
+		return true
+	}
+	if strings.EqualFold(stringMapAnyValue(action.Metadata, "compatibility_gate"), "trueclient2_javascript_review") {
+		return true
+	}
+	if strings.Contains(strings.ToLower(stringMapAnyValue(action.Metadata, "source")), "evaluate_javascript") {
+		return true
+	}
+	return boolMapValue(action.Metadata, "promotion_blocker") && strings.Contains(strings.ToLower(stringMapAnyValue(action.Metadata, "review_reason")), "javascript")
+}
+
+func trueClientJavaScriptActionReviewFor(index int, action dsl.Action) trueClientJavaScriptActionReview {
+	status := strings.ToLower(strings.TrimSpace(firstNonEmpty(
+		stringMapAnyValue(action.Metadata, "javascript_review_status"),
+		stringMapAnyValue(action.Metadata, "js_review_status"),
+		stringMapAnyValue(action.Metadata, "review_status"),
+	)))
+	if status == "" {
+		if boolMapValue(action.Metadata, "javascript_review_approved") || boolMapValue(action.Metadata, "js_review_approved") {
+			status = "approved"
+		} else {
+			status = "pending"
+		}
+	}
+	switch status {
+	case "approved", "approve", "accepted":
+		status = "approved"
+	case "rejected", "reject", "blocked", "denied":
+		status = "rejected"
+	default:
+		status = "pending"
+	}
+	reviewer := firstNonEmpty(
+		stringMapAnyValue(action.Metadata, "javascript_review_reviewer"),
+		stringMapAnyValue(action.Metadata, "js_review_reviewer"),
+		stringMapAnyValue(action.Metadata, "approved_by"),
+	)
+	if status == "approved" && reviewer == "" {
+		status = "pending"
+	}
+	return trueClientJavaScriptActionReview{
+		Index:           index,
+		Name:            action.Name,
+		Type:            action.Type,
+		Status:          status,
+		Gate:            firstNonEmpty(stringMapAnyValue(action.Metadata, "compatibility_gate"), stringMapAnyValue(action.Metadata, "review_gate")),
+		Reason:          stringMapAnyValue(action.Metadata, "review_reason"),
+		Reviewer:        reviewer,
+		ApprovedAt:      firstNonEmpty(stringMapAnyValue(action.Metadata, "javascript_review_approved_at"), stringMapAnyValue(action.Metadata, "js_review_approved_at"), stringMapAnyValue(action.Metadata, "approved_at")),
+		Source:          stringMapAnyValue(action.Metadata, "source"),
+		SourceStepID:    stringMapAnyValue(action.Metadata, "source_step_id"),
+		SourceStepIndex: stringMapAnyValue(action.Metadata, "source_step_index"),
+		ScriptPreview:   truncateReviewText(firstNonEmpty(action.Target, action.Value, action.Body), 160),
+	}
 }
 
 func trueClientReplayStatus(result *loadrunner.ConvertResult) string {
@@ -1446,6 +1621,33 @@ func boolMapValue(values map[string]any, key string) bool {
 	default:
 		return false
 	}
+}
+
+func stringMapAnyValue(values map[string]any, key string) string {
+	if values == nil {
+		return ""
+	}
+	switch value := values[key].(type) {
+	case string:
+		return strings.TrimSpace(value)
+	case fmt.Stringer:
+		return strings.TrimSpace(value.String())
+	case nil:
+		return ""
+	default:
+		return strings.TrimSpace(fmt.Sprint(value))
+	}
+}
+
+func truncateReviewText(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if limit <= 0 || len(value) <= limit {
+		return value
+	}
+	if limit <= 3 {
+		return value[:limit]
+	}
+	return strings.TrimSpace(value[:limit-3]) + "..."
 }
 
 func averageTrueClientSelectorConfidence(inspection *trueclient.ArchiveInspection) int {

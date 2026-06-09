@@ -112,6 +112,9 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 			AvailableGenerators: preview.CapacityAdvisory.AvailableGenerators,
 		})
 	}
+	if conflict := browserDensityGovernanceLaunchConflict(preview.CapacityAdvisory); conflict != nil {
+		blocking = append(blocking, *conflict)
+	}
 
 	if conflicts := tr.launchWindowConflictsLocked(preview, window, now, ""); len(conflicts) > 0 {
 		blocking = append(blocking, conflicts...)
@@ -158,6 +161,27 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 		BlockingConflicts: blocking,
 		Warnings:          warnings,
 	}, nil
+}
+
+func browserDensityGovernanceLaunchConflict(advisory *CapacityAdvisory) *LaunchConflict {
+	if advisory == nil || !advisory.BrowserDensityOverrideRequired {
+		return nil
+	}
+	if advisory.BrowserBenchmarkEvidenceAttached && advisory.BrowserDensityOverrideRequested {
+		return nil
+	}
+	maxCanary := advisory.MaxBrowserCanaryVUsersPerGenerator
+	if maxCanary <= 0 {
+		maxCanary = browserDiagnosticCanaryEnvelope().MaximumClaimedVUsersPerGenerator
+	}
+	return &LaunchConflict{
+		Code:                "browser_density_release_gate",
+		Severity:            "blocking",
+		Source:              "capacity_advisory",
+		Message:             fmt.Sprintf("Browser VUsers exceed the diagnostic canary envelope of %d VUsers/generator; attach benchmark evidence and set APEXLOAD_BROWSER_DENSITY_OVERRIDE=true before using the bounded real-browser-load tier.", maxCanary),
+		RequiredGenerators:  advisory.RecommendedGenerators,
+		AvailableGenerators: advisory.AvailableGenerators,
+	}
 }
 
 func launchWindowForTest(test *ManagedTest, start time.Time) LaunchWindow {

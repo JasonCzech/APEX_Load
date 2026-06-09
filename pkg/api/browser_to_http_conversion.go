@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -17,12 +18,14 @@ import (
 const browserToHTTPSchemaVersion = "apexload.browser_to_http_preview.v1"
 
 type BrowserToHTTPPreviewRequest struct {
-	Name                string                  `json:"name,omitempty"`
-	ProjectID           string                  `json:"project_id,omitempty"`
-	ReplaySessionID     string                  `json:"replay_session_id,omitempty"`
-	SourceBrowserScript *dsl.Script             `json:"source_browser_script,omitempty"`
-	NetworkEntries      []protocol.NetworkEntry `json:"network_entries,omitempty"`
-	IncludeStaticAssets bool                    `json:"include_static_assets,omitempty"`
+	Name                    string                                `json:"name,omitempty"`
+	ProjectID               string                                `json:"project_id,omitempty"`
+	ReplaySessionID         string                                `json:"replay_session_id,omitempty"`
+	SourceBrowserScript     *dsl.Script                           `json:"source_browser_script,omitempty"`
+	NetworkEntries          []protocol.NetworkEntry               `json:"network_entries,omitempty"`
+	CorrelationObservations []BrowserToHTTPCorrelationObservation `json:"correlation_observations,omitempty"`
+	IncludeStaticAssets     bool                                  `json:"include_static_assets,omitempty"`
+	Approval                BrowserToHTTPApproval                 `json:"approval,omitempty"`
 }
 
 type BrowserToHTTPPreviewResponse struct {
@@ -33,21 +36,27 @@ type BrowserToHTTPPreviewResponse struct {
 	GeneratedScript     *dsl.Script                   `json:"generated_script,omitempty"`
 	Warnings            []string                      `json:"warnings,omitempty"`
 	Review              BrowserToHTTPReview           `json:"review"`
+	Governance          BrowserToHTTPGovernance       `json:"governance"`
+	Diff                BrowserToHTTPDraftDiff        `json:"diff"`
 	ScenarioTemplate    BrowserToHTTPScenarioTemplate `json:"scenario_template"`
 }
 
 type BrowserToHTTPReview struct {
 	Status                string                   `json:"status"`
+	PromotionStatus       string                   `json:"promotion_status"`
 	SourceBrowserActions  int                      `json:"source_browser_actions"`
 	CapturedRequests      int                      `json:"captured_requests"`
 	GeneratedHTTPActions  int                      `json:"generated_http_actions"`
 	SkippedStaticAssets   int                      `json:"skipped_static_assets"`
+	CorrelationEngine     string                   `json:"correlation_engine,omitempty"`
 	CorrelationCandidates []BrowserToHTTPCandidate `json:"correlation_candidates,omitempty"`
 	DataSourceCandidates  []BrowserToHTTPCandidate `json:"data_source_candidates,omitempty"`
 	AuthFindings          []BrowserToHTTPFinding   `json:"auth_findings,omitempty"`
 	CookieFindings        []BrowserToHTTPFinding   `json:"cookie_findings,omitempty"`
 	BlockingFindings      []BrowserToHTTPFinding   `json:"blocking_findings,omitempty"`
 	Findings              []string                 `json:"findings,omitempty"`
+	NextActions           []string                 `json:"next_actions,omitempty"`
+	Evidence              BrowserToHTTPEvidence    `json:"evidence"`
 }
 
 type BrowserToHTTPCandidate struct {
@@ -63,6 +72,55 @@ type BrowserToHTTPFinding struct {
 	Summary  string `json:"summary"`
 	Evidence string `json:"evidence,omitempty"`
 	Action   string `json:"action,omitempty"`
+}
+
+type BrowserToHTTPEvidence struct {
+	ReplaySessionID         string   `json:"replay_session_id,omitempty"`
+	NetworkEntries          int      `json:"network_entries"`
+	CorrelationObservations int      `json:"correlation_observations,omitempty"`
+	SourceBrowserScriptID   string   `json:"source_browser_script_id,omitempty"`
+	SourceBrowserScriptName string   `json:"source_browser_script_name,omitempty"`
+	RequiredArtifacts       []string `json:"required_artifacts,omitempty"`
+}
+
+type BrowserToHTTPApproval struct {
+	Status      string   `json:"status,omitempty"`
+	ApprovedBy  string   `json:"approved_by,omitempty"`
+	ApprovedAt  string   `json:"approved_at,omitempty"`
+	Notes       string   `json:"notes,omitempty"`
+	EvidenceIDs []string `json:"evidence_ids,omitempty"`
+}
+
+type BrowserToHTTPGovernance struct {
+	Status           string                 `json:"status"`
+	ApprovalRequired bool                   `json:"approval_required"`
+	ApprovalStatus   string                 `json:"approval_status"`
+	ApprovedBy       string                 `json:"approved_by,omitempty"`
+	ApprovedAt       string                 `json:"approved_at,omitempty"`
+	RequiredEvidence []string               `json:"required_evidence,omitempty"`
+	Blockers         []BrowserToHTTPFinding `json:"blockers,omitempty"`
+	NextActions      []string               `json:"next_actions,omitempty"`
+}
+
+type BrowserToHTTPDraftDiff struct {
+	SourceProtocol       string   `json:"source_protocol,omitempty"`
+	GeneratedProtocol    string   `json:"generated_protocol,omitempty"`
+	SourceBrowserActions int      `json:"source_browser_actions"`
+	GeneratedHTTPActions int      `json:"generated_http_actions"`
+	CapturedRequests     int      `json:"captured_requests"`
+	EndpointCoveragePct  int      `json:"endpoint_coverage_pct"`
+	Hosts                []string `json:"hosts,omitempty"`
+	Methods              []string `json:"methods,omitempty"`
+	Notes                []string `json:"notes,omitempty"`
+}
+
+type BrowserToHTTPCorrelationObservation struct {
+	ID              int               `json:"id,omitempty"`
+	RequestURL      string            `json:"request_url,omitempty"`
+	RequestBody     string            `json:"request_body,omitempty"`
+	RequestHeaders  map[string]string `json:"request_headers,omitempty"`
+	ResponseBody    string            `json:"response_body,omitempty"`
+	ResponseHeaders map[string]string `json:"response_headers,omitempty"`
 }
 
 type BrowserToHTTPScenarioTemplate struct {
@@ -124,11 +182,15 @@ func (s *Server) handlePreviewBrowserToHTTP(w http.ResponseWriter, r *http.Reque
 		result.Script.ProjectID = normalizeProjectID(firstNonEmpty(req.ProjectID, sourceScriptProjectID(req.SourceBrowserScript)))
 		result.Script.GeneratedBy = "apexload-browser-to-http-converter"
 		result.Script.GeneratedFrom = "browser_replay"
-		attachBrowserToHTTPMetadata(result.Script, req, len(entries))
 	}
 	warnings := append([]string(nil), result.Warnings...)
 	warnings = append(warnings, validateScript(result.Script)...)
-	review := buildBrowserToHTTPReview(req.SourceBrowserScript, result.Script, entries, skippedStatic)
+	review := buildBrowserToHTTPReview(req, result.Script, entries, skippedStatic)
+	governance := buildBrowserToHTTPGovernance(req, review)
+	diff := buildBrowserToHTTPDraftDiff(req.SourceBrowserScript, result.Script, entries)
+	if result.Script != nil {
+		attachBrowserToHTTPMetadata(result.Script, req, len(entries), review, governance, diff)
+	}
 	response := BrowserToHTTPPreviewResponse{
 		SchemaVersion:       browserToHTTPSchemaVersion,
 		GeneratedAt:         time.Now().UTC(),
@@ -137,6 +199,8 @@ func (s *Server) handlePreviewBrowserToHTTP(w http.ResponseWriter, r *http.Reque
 		GeneratedScript:     result.Script,
 		Warnings:            uniqueSortedStrings(warnings),
 		Review:              review,
+		Governance:          governance,
+		Diff:                diff,
 		ScenarioTemplate:    buildBrowserToHTTPScenarioTemplate(req.SourceBrowserScript, result.Script),
 	}
 	writeJSON(w, http.StatusOK, response)
@@ -246,19 +310,40 @@ func browserNetworkEntriesToHAR(entries []protocol.NetworkEntry) ([]byte, error)
 	return json.Marshal(payload)
 }
 
-func buildBrowserToHTTPReview(source *dsl.Script, generated *dsl.Script, entries []protocol.NetworkEntry, skippedStatic int) BrowserToHTTPReview {
+func buildBrowserToHTTPReview(req BrowserToHTTPPreviewRequest, generated *dsl.Script, entries []protocol.NetworkEntry, skippedStatic int) BrowserToHTTPReview {
 	review := BrowserToHTTPReview{
 		Status:               "ready_for_review",
-		SourceBrowserActions: countBrowserActions(source),
+		PromotionStatus:      "draft_requires_approval",
+		SourceBrowserActions: countBrowserActions(req.SourceBrowserScript),
 		CapturedRequests:     len(entries),
 		GeneratedHTTPActions: countScriptActions(generated),
 		SkippedStaticAssets:  skippedStatic,
+		CorrelationEngine:    "apexload-correlate",
+		Evidence: BrowserToHTTPEvidence{
+			ReplaySessionID:         strings.TrimSpace(req.ReplaySessionID),
+			NetworkEntries:          len(entries),
+			CorrelationObservations: len(req.CorrelationObservations),
+			SourceBrowserScriptID:   sourceScriptID(req.SourceBrowserScript),
+			SourceBrowserScriptName: sourceScriptName(req.SourceBrowserScript),
+			RequiredArtifacts: []string{
+				"browser replay session id",
+				"network capture or HAR",
+				"HTTP draft validation result",
+				"correlation review decision",
+				"approval record",
+			},
+		},
 		Findings: []string{
 			fmt.Sprintf("%d replay network request(s) were converted into an HTTP draft.", len(entries)),
 			"Generated HTTP scripts still require validation, replay, correlation review, data-source fit, and approval before density use.",
 		},
+		NextActions: []string{
+			"Review conversion blockers and generated HTTP actions.",
+			"Validate the HTTP draft against the target environment.",
+			"Approve the draft only after correlation and authentication handling are reviewed.",
+		},
 	}
-	review.CorrelationCandidates = browserToHTTPCorrelationCandidates(entries)
+	review.CorrelationCandidates = uniqueBrowserToHTTPCandidates(append(browserToHTTPCorrelationCandidates(entries), browserToHTTPCorrelateCandidates(req)...))
 	review.DataSourceCandidates = browserToHTTPDataSourceCandidates(entries)
 	review.AuthFindings = []BrowserToHTTPFinding{{
 		Severity: "info",
@@ -274,6 +359,7 @@ func buildBrowserToHTTPReview(source *dsl.Script, generated *dsl.Script, entries
 	}}
 	if len(entries) == 0 || review.GeneratedHTTPActions == 0 {
 		review.Status = "blocked"
+		review.PromotionStatus = "blocked"
 		review.BlockingFindings = append(review.BlockingFindings, BrowserToHTTPFinding{
 			Severity: "blocker",
 			Summary:  "No convertible replay network requests were available.",
@@ -281,12 +367,62 @@ func buildBrowserToHTTPReview(source *dsl.Script, generated *dsl.Script, entries
 		})
 	} else if len(review.CorrelationCandidates) > 0 || len(review.DataSourceCandidates) > 0 {
 		review.Status = "needs_repair"
+		review.PromotionStatus = "draft_blocked"
 		review.Findings = append(review.Findings, "Dynamic URL values were detected and should be parameterized or correlated before approval.")
+	}
+	if strings.TrimSpace(req.ReplaySessionID) == "" {
+		review.BlockingFindings = append(review.BlockingFindings, BrowserToHTTPFinding{
+			Severity: "blocker",
+			Summary:  "No durable browser replay session id was attached.",
+			Evidence: "replay_session_id",
+			Action:   "Run or attach a browser replay session before approving the generated HTTP draft.",
+		})
+	}
+	if len(req.CorrelationObservations) == 0 {
+		review.BlockingFindings = append(review.BlockingFindings, BrowserToHTTPFinding{
+			Severity: "warning",
+			Summary:  "No request/response bodies were provided for deterministic correlation detection.",
+			Evidence: "correlation_observations",
+			Action:   "Attach detailed HAR or replay observations so APEX can run the correlation engine before approval.",
+		})
+	}
+	if len(review.BlockingFindings) > 0 && review.PromotionStatus == "draft_requires_approval" {
+		review.PromotionStatus = "draft_blocked"
 	}
 	if skippedStatic > 0 {
 		review.Findings = append(review.Findings, fmt.Sprintf("%d static browser asset request(s) were skipped for protocol-load focus.", skippedStatic))
 	}
 	return review
+}
+
+func browserToHTTPCorrelateCandidates(req BrowserToHTTPPreviewRequest) []BrowserToHTTPCandidate {
+	observations := make([]correlate.Observation, 0, len(req.CorrelationObservations))
+	for index, observation := range req.CorrelationObservations {
+		id := observation.ID
+		if id == 0 {
+			id = index + 1
+		}
+		observations = append(observations, correlate.Observation{
+			ID:              id,
+			RequestURL:      observation.RequestURL,
+			RequestBody:     observation.RequestBody,
+			RequestHeaders:  observation.RequestHeaders,
+			ResponseBody:    observation.ResponseBody,
+			ResponseHeaders: observation.ResponseHeaders,
+		})
+	}
+	correlations := correlate.Detect(observations)
+	candidates := make([]BrowserToHTTPCandidate, 0, len(correlations))
+	for _, correlation := range correlations {
+		candidates = append(candidates, BrowserToHTTPCandidate{
+			Name:     correlation.Name,
+			Source:   correlation.Source,
+			Value:    correlation.SampleValue,
+			Evidence: fmt.Sprintf("response %d reused by request(s) %v via %s confidence %.2f", correlation.FoundInID, correlation.UsedInIDs, correlation.RuleID, correlation.Confidence),
+			Action:   "Add an extractor at the source response and replace downstream uses with " + "{{var." + correlation.Name + "}} before approval.",
+		})
+	}
+	return candidates
 }
 
 func browserToHTTPCorrelationCandidates(entries []protocol.NetworkEntry) []BrowserToHTTPCandidate {
@@ -385,7 +521,88 @@ func buildBrowserToHTTPScenarioTemplate(source *dsl.Script, generated *dsl.Scrip
 	}
 }
 
-func attachBrowserToHTTPMetadata(script *dsl.Script, req BrowserToHTTPPreviewRequest, requestCount int) {
+func buildBrowserToHTTPGovernance(req BrowserToHTTPPreviewRequest, review BrowserToHTTPReview) BrowserToHTTPGovernance {
+	governance := BrowserToHTTPGovernance{
+		Status:           "approval_required",
+		ApprovalRequired: true,
+		ApprovalStatus:   firstNonEmpty(strings.ToLower(strings.TrimSpace(req.Approval.Status)), "not_requested"),
+		ApprovedBy:       strings.TrimSpace(req.Approval.ApprovedBy),
+		ApprovedAt:       strings.TrimSpace(req.Approval.ApprovedAt),
+		RequiredEvidence: append([]string(nil), review.Evidence.RequiredArtifacts...),
+		Blockers:         append([]BrowserToHTTPFinding(nil), review.BlockingFindings...),
+		NextActions: []string{
+			"Resolve conversion blockers and replay the generated HTTP draft.",
+			"Review correlation candidates, auth headers, cookies, and data-source candidates.",
+			"Record approval only after validation evidence is attached.",
+		},
+	}
+	if len(review.CorrelationCandidates) > 0 {
+		governance.Blockers = append(governance.Blockers, BrowserToHTTPFinding{
+			Severity: "blocker",
+			Summary:  "Correlation candidates require review before density promotion.",
+			Evidence: "review.correlation_candidates",
+			Action:   "Apply extractors and variable substitutions or explicitly waive each candidate.",
+		})
+	}
+	if len(review.DataSourceCandidates) > 0 {
+		governance.Blockers = append(governance.Blockers, BrowserToHTTPFinding{
+			Severity: "warning",
+			Summary:  "Data-source candidates require parameterization review.",
+			Evidence: "review.data_source_candidates",
+			Action:   "Bind user/order/customer values to governed data sources before scale-out.",
+		})
+	}
+	switch strings.ToLower(strings.TrimSpace(req.Approval.Status)) {
+	case "approved":
+		if governance.ApprovedBy == "" {
+			governance.Status = "approval_invalid"
+			governance.Blockers = append(governance.Blockers, BrowserToHTTPFinding{
+				Severity: "blocker",
+				Summary:  "Approval status is approved but approved_by is missing.",
+				Evidence: "approval.approved_by",
+				Action:   "Record the approving reviewer before promotion.",
+			})
+		} else if len(governance.Blockers) == 0 {
+			governance.Status = "approved_for_validation"
+			governance.ApprovalRequired = false
+			governance.NextActions = []string{"Run the approved HTTP draft in a protocol validation scenario before density use."}
+		} else {
+			governance.Status = "approved_with_blockers"
+		}
+	case "rejected":
+		governance.Status = "rejected"
+	default:
+		if len(governance.Blockers) > 0 {
+			governance.Status = "blocked"
+		}
+	}
+	return governance
+}
+
+func buildBrowserToHTTPDraftDiff(source *dsl.Script, generated *dsl.Script, entries []protocol.NetworkEntry) BrowserToHTTPDraftDiff {
+	diff := BrowserToHTTPDraftDiff{
+		SourceProtocol:       scriptProtocol(source),
+		GeneratedProtocol:    scriptProtocol(generated),
+		SourceBrowserActions: countBrowserActions(source),
+		GeneratedHTTPActions: countScriptActions(generated),
+		CapturedRequests:     len(entries),
+		Hosts:                browserToHTTPHosts(entries),
+		Methods:              browserToHTTPMethods(entries),
+	}
+	if len(entries) > 0 {
+		diff.EndpointCoveragePct = int(float64(diff.GeneratedHTTPActions)/float64(len(entries))*100 + 0.5)
+		if diff.EndpointCoveragePct > 100 {
+			diff.EndpointCoveragePct = 100
+		}
+	}
+	diff.Notes = []string{
+		fmt.Sprintf("%d browser action(s) remain as canary evidence; %d HTTP action(s) were generated for protocol replay.", diff.SourceBrowserActions, diff.GeneratedHTTPActions),
+		"Coverage is based on compact replay network entries after static asset filtering.",
+	}
+	return diff
+}
+
+func attachBrowserToHTTPMetadata(script *dsl.Script, req BrowserToHTTPPreviewRequest, requestCount int, review BrowserToHTTPReview, governance BrowserToHTTPGovernance, diff BrowserToHTTPDraftDiff) {
 	if script == nil {
 		return
 	}
@@ -402,8 +619,52 @@ func attachBrowserToHTTPMetadata(script *dsl.Script, req BrowserToHTTPPreviewReq
 			"source_browser_script_id":     sourceScriptID(req.SourceBrowserScript),
 			"source_browser_script_name":   sourceScriptName(req.SourceBrowserScript),
 			"conversion_requires_approval": true,
+			"browser_to_http_review":       review,
+			"browser_to_http_governance":   governance,
+			"browser_to_http_diff":         diff,
 		},
 	}
+}
+
+func scriptProtocol(script *dsl.Script) string {
+	if script == nil {
+		return ""
+	}
+	return strings.TrimSpace(script.Protocol)
+}
+
+func browserToHTTPHosts(entries []protocol.NetworkEntry) []string {
+	seen := map[string]struct{}{}
+	for _, entry := range entries {
+		parsed, err := url.Parse(entry.URL)
+		if err != nil || parsed.Host == "" {
+			continue
+		}
+		seen[parsed.Host] = struct{}{}
+	}
+	hosts := make([]string, 0, len(seen))
+	for host := range seen {
+		hosts = append(hosts, host)
+	}
+	sort.Strings(hosts)
+	return hosts
+}
+
+func browserToHTTPMethods(entries []protocol.NetworkEntry) []string {
+	seen := map[string]struct{}{}
+	for _, entry := range entries {
+		method := strings.ToUpper(strings.TrimSpace(entry.Method))
+		if method == "" {
+			method = http.MethodGet
+		}
+		seen[method] = struct{}{}
+	}
+	methods := make([]string, 0, len(seen))
+	for method := range seen {
+		methods = append(methods, method)
+	}
+	sort.Strings(methods)
+	return methods
 }
 
 func countBrowserActions(script *dsl.Script) int {
