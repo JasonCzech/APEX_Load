@@ -328,12 +328,18 @@ describe('NewTestPage', () => {
 
     await flushPromises()
 
+    const runSetupButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Run Setup')
     const schedulesButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedules')
+    expect(runSetupButton).toBeTruthy()
     expect(schedulesButton).toBeTruthy()
+    expect(runSetupButton?.getAttribute('aria-pressed')).toBe('true')
+    expect(schedulesButton?.getAttribute('aria-pressed')).toBe('false')
 
     await act(async () => {
       schedulesButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    expect(runSetupButton?.getAttribute('aria-pressed')).toBe('false')
+    expect(schedulesButton?.getAttribute('aria-pressed')).toBe('true')
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Save Schedule')
     expect(saveButton).toBeTruthy()

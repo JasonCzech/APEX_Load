@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties, type DragEvent } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useApi } from '../hooks/useApi'
@@ -6,7 +6,6 @@ import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { TestSummary, MetricsHistoryPoint, Release, RunArchiveReport, GroupLiveMetrics } from '../types'
 import { downloadBlob } from '../utils/fileUtils'
-import { readStoredJSON, readStoredStringArray, writeStoredJSON } from '../utils/browserStorage'
 import { isCompletedTestStatus, isLiveTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { ReleaseTrendPanel } from './ReleaseTrendPanel'
@@ -50,11 +49,6 @@ interface AttentionItem {
   title: string
   detail: string
   testId?: string
-}
-
-interface GraphCardSettings {
-  metric: CardMetricKey
-  showGraph: boolean
 }
 
 interface ActiveGroupMetricRow {
@@ -125,11 +119,6 @@ interface ReleaseSnapshotPanelProps {
   onMonitoring: () => void
   onNewTest: () => void
   onSelectTest: (id: string) => void
-}
-
-const defaultGraphCardSettings: GraphCardSettings = {
-  metric: 'tps',
-  showGraph: true,
 }
 
 const tableBottomGutterPx = 24
@@ -305,15 +294,6 @@ function getHistoryMetric(point: MetricsHistoryPoint, metric: CardMetricKey) {
     default:
       return Number(point.tps || 0)
   }
-}
-
-function moveId(ids: string[], draggedId: string, targetId: string) {
-  if (draggedId === targetId) return ids
-  const next = ids.filter(id => id !== draggedId)
-  const targetIndex = next.indexOf(targetId)
-  if (targetIndex === -1) return ids
-  next.splice(targetIndex, 0, draggedId)
-  return next
 }
 
 function useBottomBoundedTable(dependencySignature: string) {
@@ -540,16 +520,10 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const [tests, setTests] = useState<TestSummary[]>([])
   const [health, setHealth] = useState<HealthData | null>(null)
   const [archiveReports, setArchiveReports] = useState<Record<string, RunArchiveReport | null>>({})
-  const [customizingCards, setCustomizingCards] = useState(false)
-  const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
   const [releasePanelOpen, setReleasePanelOpen] = useState(true)
   const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTabKey>('activity')
   const [performanceSort, setPerformanceSort] = useState<{ field: PerformanceSortField; direction: SortDirection }>({ field: 'completed', direction: 'desc' })
   const [activitySort, setActivitySort] = useState<{ field: ActivitySortField; direction: SortDirection }>({ field: 'date', direction: 'desc' })
-  const [activeCardOrder, setActiveCardOrder] = useState<string[]>(() => readStoredStringArray('apexload.dashboard.activeCardOrder'))
-  const [activeCardSettings, setActiveCardSettings] = useState<Record<string, GraphCardSettings>>(() =>
-    readStoredJSON<Record<string, GraphCardSettings>>('apexload.dashboard.activeCardSettings', {}),
-  )
 
   useEffect(() => {
     if (!dashboardScopeReady) {
@@ -615,30 +589,6 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       }),
     [resolvedTests],
   )
-
-  useEffect(() => {
-    const activeIds = activeTests.map(test => test.id)
-    setActiveCardOrder(prev => {
-      const retained = prev.filter(id => activeIds.includes(id))
-      const added = activeIds.filter(id => !retained.includes(id))
-      return [...retained, ...added]
-    })
-  }, [activeTests])
-
-  useEffect(() => {
-    writeStoredJSON('apexload.dashboard.activeCardOrder', activeCardOrder)
-  }, [activeCardOrder])
-
-  useEffect(() => {
-    writeStoredJSON('apexload.dashboard.activeCardSettings', activeCardSettings)
-  }, [activeCardSettings])
-
-  const orderedActiveTests = useMemo(() => {
-    const byId = new Map(activeTests.map(test => [test.id, test]))
-    return activeCardOrder
-      .map(id => byId.get(id))
-      .filter((test): test is TestSummary => Boolean(test))
-  }, [activeTests, activeCardOrder])
 
   const recentTests = useMemo(() =>
     resolvedTests
@@ -898,49 +848,10 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         ? 'var(--accent)'
         : 'var(--success)'
 
-  const updateCardSettings = (testId: string, patch: Partial<GraphCardSettings>) => {
-    setActiveCardSettings(prev => ({
-      ...prev,
-      [testId]: {
-        ...defaultGraphCardSettings,
-        ...prev[testId],
-        ...patch,
-      },
-    }))
-  }
-
-  const handleCardDragStart = (event: DragEvent<HTMLDivElement>, testId: string) => {
-    if (!customizingCards) return
-    setDraggedCardId(testId)
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', testId)
-  }
-
-  const handleCardDragOver = (event: DragEvent<HTMLDivElement>, targetId: string) => {
-    if (!customizingCards || !draggedCardId || draggedCardId === targetId) return
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
-  }
-
-  const handleCardDrop = (event: DragEvent<HTMLDivElement>, targetId: string) => {
-    if (!customizingCards) return
-    event.preventDefault()
-    const sourceId = event.dataTransfer.getData('text/plain') || draggedCardId
-    if (!sourceId) return
-    setActiveCardOrder(prev => moveId(prev, sourceId, targetId))
-    setDraggedCardId(null)
-  }
-
-  const resetCardLayout = () => {
-    setActiveCardOrder(activeTests.map(test => test.id))
-    setActiveCardSettings({})
-  }
-
   const navigateToMonitoring = () => onNavigate('monitoring')
   const navigateToTests = () => onNavigate('tests')
   const navigateToNewTest = () => onNavigate('new-test')
   const navigateToResults = () => onNavigate('results')
-  const navigateToApiGuide = () => onNavigate('docs')
   const downloadTrendCsv = async () => {
     if (!activeRelease?.id) return
     const blob = await api.downloadReleaseTrend(activeRelease.id)
@@ -1020,23 +931,6 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           <p className="page-subtitle">
             {activeApplication?.name || 'Application'} / {activeRelease?.name || 'All releases'} performance overview
           </p>
-        </div>
-        <div className="dash-customize-actions">
-          <button className="btn btn-secondary btn-sm btn-accent-action" onClick={navigateToApiGuide} type="button">
-            API Guide
-          </button>
-          {customizingCards && (
-            <button className="btn btn-secondary btn-sm" onClick={resetCardLayout} type="button">
-              Reset Cards
-            </button>
-          )}
-          <button
-            className="btn btn-sm btn-accent-action"
-            onClick={() => setCustomizingCards(value => !value)}
-            type="button"
-          >
-            {customizingCards ? 'Done' : 'Customize Cards'}
-          </button>
         </div>
       </div>
 
@@ -1247,59 +1141,29 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                 <span className="dash-empty-hint">{pendingTests.length > 0 ? `${pendingTests.length} test${pendingTests.length === 1 ? '' : 's'} waiting on project capacity.` : 'Start a scenario from the New Test page'}</span>
               </div>
             ) : (
-              <div className={`dash-active-grid ${customizingCards ? 'is-customizing' : ''}`}>
-                {orderedActiveTests.map(test => {
+              <div className="dash-active-grid">
+                {activeTests.map(test => {
                   const history = metricsHistory[test.id] || []
                   const latest = test.live_metrics
                   const runtimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
-                  const cardSettings = { ...defaultGraphCardSettings, ...activeCardSettings[test.id] }
-                  const metricOption = graphMetricOptions.find(option => option.key === cardSettings.metric) || graphMetricOptions[0]
+                  const metricOption = graphMetricOptions[0]
                   const chartData = history.slice(-60).map(point => ({
                     ...point,
-                    selectedMetric: getHistoryMetric(point, cardSettings.metric),
+                    selectedMetric: getHistoryMetric(point, metricOption.key),
                   }))
                   const groupRows = buildActiveGroupMetricRows(test)
                   return (
                     <div
                       key={test.id}
-                      className={`dash-active-card ${customizingCards ? 'editable' : ''} ${draggedCardId === test.id ? 'dragging' : ''}`}
-                      draggable={customizingCards}
-                      onDragStart={event => handleCardDragStart(event, test.id)}
-                      onDragOver={event => handleCardDragOver(event, test.id)}
-                      onDrop={event => handleCardDrop(event, test.id)}
-                      onDragEnd={() => setDraggedCardId(null)}
-                      onClick={() => !customizingCards && onSelectTest(test.id)}
+                      className="dash-active-card"
+                      onClick={() => onSelectTest(test.id)}
                     >
                       <div className="dac-header">
                         <div className="dac-title-wrap">
-                          {customizingCards && <span className="dac-drag-handle" title="Drag to reorder">::</span>}
                           <span className="dac-name">{test.name}</span>
                         </div>
                         <StatusBadge status={test.status} />
                       </div>
-                      {customizingCards && (
-                        <div className="dac-editor" onClick={event => event.stopPropagation()}>
-                          <label>
-                            Graph
-                            <select
-                              value={cardSettings.metric}
-                              onChange={event => updateCardSettings(test.id, { metric: event.target.value as CardMetricKey })}
-                            >
-                              {graphMetricOptions.map(option => (
-                                <option key={option.key} value={option.key}>{option.label}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="dac-checkbox">
-                            <input
-                              type="checkbox"
-                              checked={cardSettings.showGraph}
-                              onChange={event => updateCardSettings(test.id, { showGraph: event.target.checked })}
-                            />
-                            Show graph
-                          </label>
-                        </div>
-                      )}
                       <div className="dac-metrics">
                         <div className="dac-metric">
                           <span className="dac-metric-value">{latest?.active_vusers ?? test.total_vusers}</span>
@@ -1320,7 +1184,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                           <span className="dac-metric-label">Errors</span>
                         </div>
                       </div>
-                      {cardSettings.showGraph && chartData.length > 1 && (
+                      {chartData.length > 1 && (
                         <div className="dac-sparkline">
                           <ResponsiveContainer width="100%" height={60}>
                             <AreaChart data={chartData}>

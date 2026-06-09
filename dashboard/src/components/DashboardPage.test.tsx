@@ -272,6 +272,8 @@ describe('DashboardPage', () => {
     await flushDashboard()
 
     expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', project_id: 'project-1' })
+    expect(container.textContent).not.toContain('API Guide')
+    expect(container.textContent).not.toContain('Customize Cards')
 
     const healthCards = Array.from(container.querySelectorAll('.dash-health-card'))
     expect(healthCards).toHaveLength(4)
@@ -325,9 +327,6 @@ describe('DashboardPage', () => {
     expect(apiMock.getReleaseTrend).toHaveBeenCalledWith('rel-1')
     expect(container.querySelector('[data-testid="release-trend-panel"]')).toBeTruthy()
     expect(container.textContent).toContain('No archived runs yet for this release.')
-
-    clickButtonByText('API Guide')
-    expect(onNavigate).toHaveBeenCalledWith('docs')
 
     clickButtonByText('API Server')
     expect(onNavigate).toHaveBeenCalledWith('monitoring')

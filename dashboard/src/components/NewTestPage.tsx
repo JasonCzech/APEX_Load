@@ -7,6 +7,7 @@ import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import { formatTimeCompact, parseDurationToSeconds } from '../utils/timeUtils'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
+import PageViewToggle from './PageViewToggle'
 import {
   buildEffectiveScenarioGroups,
   buildEmptyRunDefaultOverrides,
@@ -1431,9 +1432,17 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
           <h2>New Test</h2>
           <p className="page-subtitle">Choose the release context, scenario, and run setup.</p>
         </div>
-        <div className="inline-create-row">
-          <button className="btn btn-accent-action" aria-pressed={pageMode === 'launch'} onClick={() => setPageMode('launch')}>Launch Runs</button>
-          <button className="btn btn-accent-action" aria-pressed={pageMode === 'schedules'} onClick={() => setPageMode('schedules')}>Schedules</button>
+        <div className="inline-create-row new-test-view-switcher">
+          <PageViewToggle
+            value={pageMode}
+            ariaLabel="New test page view"
+            className="new-test-view-toggle"
+            onChange={setPageMode}
+            options={[
+              { value: 'launch', label: 'Run Setup' },
+              { value: 'schedules', label: 'Schedules' },
+            ]}
+          />
         </div>
       </div>
 

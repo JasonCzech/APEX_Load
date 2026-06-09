@@ -6152,6 +6152,37 @@
   gap: 8px;
 }
 
+.new-test-view-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.new-test-view-toggle {
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.new-test-view-toggle .mode-chip {
+  min-width: 96px;
+  border-radius: 999px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.new-test-view-toggle .mode-chip.active,
+.new-test-view-toggle .mode-chip[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: var(--glow-sm);
+}
+
+.new-test-view-toggle .mode-chip:hover:not(:disabled):not(.active) {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
 .new-test-empty {
   padding: 24px;
   color: var(--text-muted);
