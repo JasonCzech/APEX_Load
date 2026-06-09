@@ -145,6 +145,18 @@ func TestBrowserScreenshotSelector(t *testing.T) {
 	}
 }
 
+func TestNormalizeFrameSelector(t *testing.T) {
+	if got := normalizeFrameSelector("#checkout-frame"); got != "#checkout-frame" {
+		t.Fatalf("normalizeFrameSelector explicit = %q, want #checkout-frame", got)
+	}
+	if got := normalizeFrameSelector("checkout-frame"); got != `iframe[name="checkout-frame"], iframe[id="checkout-frame"], iframe[title="checkout-frame"]` {
+		t.Fatalf("normalizeFrameSelector name = %q, want iframe attribute selector", got)
+	}
+	if got := normalizeFrameSelector(`pay"frame`); got != `iframe[name="pay\"frame"], iframe[id="pay\"frame"], iframe[title="pay\"frame"]` {
+		t.Fatalf("normalizeFrameSelector escaped = %q", got)
+	}
+}
+
 func TestCloneDOMSummary(t *testing.T) {
 	original := &protocol.DOMSummary{
 		Title:       "page",

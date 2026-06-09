@@ -47,14 +47,16 @@ type Browser struct {
 	viewportW                  int
 	viewportH                  int
 
-	pwContext playwright.BrowserContext
-	pwPage    playwright.Page
-	pwCDP     playwright.CDPSession
+	pwContext            playwright.BrowserContext
+	pwPage               playwright.Page
+	pwCDP                playwright.CDPSession
+	currentFrameSelector string
 
 	mu                 sync.Mutex
 	consoleEntries     []protocol.ConsoleEntry
 	networkEntries     []protocol.NetworkEntry
 	resourceValidators map[string]string
+	pages              []playwright.Page
 }
 
 type browserProcessSnapshot struct {
@@ -99,6 +101,9 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		return result, nil
 	}
 
+	if actionErr == nil {
+		actionErr = b.runPostActionSync(actionCtx, action)
+	}
 	if actionErr == nil {
 		actionErr = b.afterActionDelay(actionCtx)
 	}

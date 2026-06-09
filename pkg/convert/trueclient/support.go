@@ -18,7 +18,7 @@ type ScriptTypeScope struct {
 	CanonicalName    string
 	DisplayName      string
 	Status           ScopeStatus
-	APEXLoadShape string
+	APEXLoadShape    string
 	SupportedInputs  []string
 	RequiredEvidence []string
 	ReviewSections   []string
@@ -26,18 +26,18 @@ type ScriptTypeScope struct {
 }
 
 type StepScope struct {
-	CanonicalName    string
-	DisplayName      string
-	Status           ScopeStatus
+	CanonicalName string
+	DisplayName   string
+	Status        ScopeStatus
 	APEXLoadShape string
-	Notes            string
+	Notes         string
 }
 
 type ProfileCapabilityScope struct {
 	CanonicalName    string
 	DisplayName      string
 	Status           ScopeStatus
-	APEXLoadShape string
+	APEXLoadShape    string
 	RequiredEvidence []string
 	Notes            string
 }
@@ -89,7 +89,7 @@ var scriptTypeScopes = []ScriptTypeScope{
 		CanonicalName:    "truclient_mobile_web",
 		DisplayName:      "TruClient - Mobile Web",
 		Status:           ScopeSupported,
-		APEXLoadShape: "browser script import",
+		APEXLoadShape:    "browser script import",
 		SupportedInputs:  []string{"LoadRunner ZIP", ".usr project metadata", "default.xml", "default.cfg", "parameter files"},
 		RequiredEvidence: []string{"conversion warnings", "unsupported step summary", "browser replay validation"},
 		ReviewSections:   []string{"preserved_metadata", "runtime_settings_parity", "browser_import_assumptions"},
@@ -99,7 +99,7 @@ var scriptTypeScopes = []ScriptTypeScope{
 		CanonicalName:    "truclient2_web",
 		DisplayName:      "TruClient 2.0 - Web",
 		Status:           ScopeReviewOnly,
-		APEXLoadShape: "vugen_web2 browser profile",
+		APEXLoadShape:    "vugen_web2 browser profile",
 		SupportedInputs:  []string{"LoadRunner ZIP", ".usr project metadata", "default.xml", "object repository files", "parameter files", "runtime settings"},
 		RequiredEvidence: []string{"fixture-backed parser coverage", "object identification summary", "runtime settings parity", "browser replay evidence", "browser-to-http conversion evidence"},
 		ReviewSections:   []string{"web2_profile_summary", "object_identification", "runtime_settings_parity", "browser_replay_evidence", "conversion_readiness"},
@@ -109,7 +109,7 @@ var scriptTypeScopes = []ScriptTypeScope{
 		CanonicalName:    "truclient_web",
 		DisplayName:      "TruClient - Web",
 		Status:           ScopePlanned,
-		APEXLoadShape: "vugen_web2 browser profile",
+		APEXLoadShape:    "vugen_web2 browser profile",
 		SupportedInputs:  []string{"LoadRunner ZIP", ".usr project metadata", "default.xml", "object repository files", "parameter files", "runtime settings"},
 		RequiredEvidence: []string{"fixture-backed parser coverage", "object identification summary", "runtime settings parity", "browser replay evidence"},
 		ReviewSections:   []string{"web2_profile_summary", "object_identification", "runtime_settings_parity", "browser_replay_evidence"},
@@ -119,7 +119,7 @@ var scriptTypeScopes = []ScriptTypeScope{
 		CanonicalName:    "truclient_legacy_desktop",
 		DisplayName:      "TruClient",
 		Status:           ScopeOutOfScope,
-		APEXLoadShape: "manual guided review",
+		APEXLoadShape:    "manual guided review",
 		SupportedInputs:  []string{"LoadRunner ZIP metadata only"},
 		RequiredEvidence: []string{"manual migration decision"},
 		ReviewSections:   []string{"unsupported_script_type"},
@@ -129,81 +129,81 @@ var scriptTypeScopes = []ScriptTypeScope{
 
 var stepScopes = []StepScope{
 	{
-		CanonicalName:    "navigate",
-		DisplayName:      "Navigate",
-		Status:           ScopeSupported,
+		CanonicalName: "navigate",
+		DisplayName:   "Navigate",
+		Status:        ScopeSupported,
 		APEXLoadShape: "browser_navigate",
-		Notes:            "URL-driven page transitions map cleanly to browser navigation.",
+		Notes:         "URL-driven page transitions map cleanly to browser navigation.",
 	},
 	{
-		CanonicalName:    "click",
-		DisplayName:      "Click / Submit / Check",
-		Status:           ScopeSupported,
+		CanonicalName: "click",
+		DisplayName:   "Click / Submit / Check",
+		Status:        ScopeSupported,
 		APEXLoadShape: "browser_click",
-		Notes:            "Direct object clicks, submit actions, checkbox/radio selection actions, and double-click metadata map to browser click actions with the captured selector.",
+		Notes:         "Direct object clicks, submit actions, checkbox/radio selection actions, and double-click metadata map to browser click actions with the captured selector.",
 	},
 	{
-		CanonicalName:    "set_type",
-		DisplayName:      "Set / Type",
-		Status:           ScopeSupported,
+		CanonicalName: "set_type",
+		DisplayName:   "Set / Type",
+		Status:        ScopeSupported,
 		APEXLoadShape: "browser_fill",
-		Notes:            "Text entry is in scope for the MVP action mapping.",
+		Notes:         "Text entry is in scope for the MVP action mapping.",
 	},
 	{
-		CanonicalName:    "wait",
-		DisplayName:      "Wait",
-		Status:           ScopeSupported,
+		CanonicalName: "wait",
+		DisplayName:   "Wait",
+		Status:        ScopeSupported,
 		APEXLoadShape: "browser_wait",
-		Notes:            "Wait conditions remain in scope when they can be normalized to existing browser wait semantics.",
+		Notes:         "Wait conditions remain in scope when they can be normalized to existing browser wait semantics.",
 	},
 	{
-		CanonicalName:    "verify",
-		DisplayName:      "Verify",
-		Status:           ScopeSupported,
+		CanonicalName: "verify",
+		DisplayName:   "Verify",
+		Status:        ScopeSupported,
 		APEXLoadShape: "action assertions",
-		Notes:            "Verification steps map into browser action assertions instead of a separate browser action type.",
+		Notes:         "Verification steps map into browser action assertions instead of a separate browser action type.",
 	},
 	{
-		CanonicalName:    "start_transaction",
-		DisplayName:      "Start Transaction",
-		Status:           ScopeSupported,
+		CanonicalName: "start_transaction",
+		DisplayName:   "Start Transaction",
+		Status:        ScopeSupported,
 		APEXLoadShape: "transaction metadata",
-		Notes:            "Transaction boundaries should reuse the existing import preservation model instead of inventing a second representation.",
+		Notes:         "Transaction boundaries should reuse the existing import preservation model instead of inventing a second representation.",
 	},
 	{
-		CanonicalName:    "end_transaction",
-		DisplayName:      "End Transaction",
-		Status:           ScopeSupported,
+		CanonicalName: "end_transaction",
+		DisplayName:   "End Transaction",
+		Status:        ScopeSupported,
 		APEXLoadShape: "transaction metadata",
-		Notes:            "Transaction close events remain in scope with the same preservation model as start events.",
+		Notes:         "Transaction close events remain in scope with the same preservation model as start events.",
 	},
 	{
-		CanonicalName:    "select",
-		DisplayName:      "Select",
-		Status:           ScopeSupported,
+		CanonicalName: "select",
+		DisplayName:   "Select",
+		Status:        ScopeSupported,
 		APEXLoadShape: "browser_select",
-		Notes:            "Select inputs map to a native browser_select action that chooses an option by value, text, or label.",
+		Notes:         "Select inputs map to a native browser_select action that chooses an option by value, text, or label.",
 	},
 	{
-		CanonicalName:    "scroll",
-		DisplayName:      "Scroll",
-		Status:           ScopeSupported,
+		CanonicalName: "scroll",
+		DisplayName:   "Scroll",
+		Status:        ScopeSupported,
 		APEXLoadShape: "browser_swipe",
-		Notes:            "Direct Scroll steps and simple JavaScript scrollTo/scrollBy statements map to browser_swipe; viewport-specific behavior should still be replay-validated.",
+		Notes:         "Direct Scroll steps and simple JavaScript scrollTo/scrollBy statements map to browser_swipe; viewport-specific behavior should still be replay-validated.",
 	},
 	{
-		CanonicalName:    "evaluate_javascript",
-		DisplayName:      "Evaluate JavaScript",
-		Status:           ScopeReviewOnly,
+		CanonicalName: "evaluate_javascript",
+		DisplayName:   "Evaluate JavaScript",
+		Status:        ScopeReviewOnly,
 		APEXLoadShape: "browser_fill, browser_click, browser_swipe, or browser_navigate when decomposable",
-		Notes:            "Simple jQuery .val(...), .attr('value', ...), .click(), and .trigger('click'), document.querySelector, first-match document.querySelectorAll, document.getElementById, first-match document.getElementsByName, first-match document.getElementsByClassName with safe class tokens, first-match document.getElementsByTagName with safe tag tokens, and document.forms[].elements[] fill/click statements plus window scroll and location navigation statements are decomposed into native browser actions. Collection first-match access supports both [0] and item(0). Statements that cannot be decomposed are imported as executable browser_evaluate_js actions but remain review-gated so recorded JavaScript is validated before promotion.",
+		Notes:         "Simple jQuery .val(...), .attr('value', ...), .click(), and .trigger('click'), document.querySelector, first-match document.querySelectorAll, document.getElementById, first-match document.getElementsByName, first-match document.getElementsByClassName with safe class tokens, first-match document.getElementsByTagName with safe tag tokens, and document.forms[].elements[] fill/click statements plus window scroll and location navigation statements are decomposed into native browser actions. Collection first-match access supports both [0] and item(0). Statements that cannot be decomposed are imported as executable browser_evaluate_js actions but remain review-gated so recorded JavaScript is validated before promotion.",
 	},
 	{
-		CanonicalName:    "hover",
-		DisplayName:      "Hover",
-		Status:           ScopeSupported,
+		CanonicalName: "hover",
+		DisplayName:   "Hover",
+		Status:        ScopeSupported,
 		APEXLoadShape: "browser_hover",
-		Notes:            "Hover and mouse-over steps map to the native browser_hover action using the captured selector or highest-confidence object-repository candidate.",
+		Notes:         "Hover and mouse-over steps map to the native browser_hover action using the captured selector or highest-confidence object-repository candidate.",
 	},
 }
 
@@ -211,40 +211,40 @@ var web2ProfileCapabilityScopes = []ProfileCapabilityScope{
 	{
 		CanonicalName:    "archive_detection",
 		DisplayName:      "Archive Detection",
-		Status:           ScopePlanned,
-		APEXLoadShape: "LoadRunner ZIP classifier with Web 2.0 profile metadata",
+		Status:           ScopeSupported,
+		APEXLoadShape:    "LoadRunner ZIP classifier with Web 2.0 profile metadata",
 		RequiredEvidence: []string{".usr type detection", "default.xml discovery", "object repository discovery"},
-		Notes:            "The importer must classify TruClient - Web and TruClient 2.0 - Web without routing them through Mobile Web or HTTP C-script conversion.",
+		Notes:            "The importer classifies TruClient - Web and TruClient 2.0 - Web before C-script conversion and preserves default.xml, object repositories, parameters, and runtime files for review.",
 	},
 	{
 		CanonicalName:    "step_mapping",
 		DisplayName:      "Step Mapping",
-		Status:           ScopePlanned,
-		APEXLoadShape: "browser DSL actions plus review-only unsupported steps",
+		Status:           ScopeSupported,
+		APEXLoadShape:    "browser DSL actions plus review-only unsupported steps",
 		RequiredEvidence: []string{"fixture step coverage", "unsupported step warnings", "transaction preservation"},
-		Notes:            "Navigation, object interaction, waits, verification, transactions, and parameterized input should map into auditable browser actions.",
+		Notes:            "Navigation, object interaction, hover, waits, verification, JavaScript fallback review gates, transactions, and parameterized input map into auditable browser actions for covered fixtures.",
 	},
 	{
 		CanonicalName:    "object_identification",
 		DisplayName:      "Object Identification",
 		Status:           ScopeReviewOnly,
-		APEXLoadShape: "object repository descriptors, selector candidates, context evidence, diagnostics, and guided repair",
+		APEXLoadShape:    "object repository descriptors, selector candidates, context evidence, diagnostics, and guided repair",
 		RequiredEvidence: []string{"object repository parse summary", "selector ranking explanation", "replay validation"},
 		Notes:            "APEX Load preserves object identity evidence and ranks selectors, but approval still requires browser replay evidence.",
 	},
 	{
 		CanonicalName:    "runtime_settings",
 		DisplayName:      "Runtime Settings",
-		Status:           ScopePlanned,
-		APEXLoadShape: "browser runtime settings parity summary",
+		Status:           ScopeReviewOnly,
+		APEXLoadShape:    "browser runtime settings parity summary",
 		RequiredEvidence: []string{"browser runtime setting matrix", "unsupported setting warnings", "replay profile summary"},
-		Notes:            "Browser, pacing, think time, iteration, proxy, credential, and replay behavior need explicit parity status.",
+		Notes:            "Browser, pacing, think time, iteration, proxy, credential, and replay behavior are summarized for review; production promotion still requires replay evidence.",
 	},
 	{
 		CanonicalName:    "browser_to_http_conversion",
 		DisplayName:      "Browser-To-HTTP Conversion",
 		Status:           ScopeReviewOnly,
-		APEXLoadShape: "conversion candidate report and generated HTTP script draft",
+		APEXLoadShape:    "conversion candidate report and generated HTTP script draft",
 		RequiredEvidence: []string{"request capture summary", "correlation candidate list", "conversion blockers"},
 		Notes:            "Conversion should be treated as a governed draft flow, not an automatic promotion to high-density load.",
 	},
@@ -252,7 +252,7 @@ var web2ProfileCapabilityScopes = []ProfileCapabilityScope{
 		CanonicalName:    "native_desktop_automation",
 		DisplayName:      "Native Desktop Automation",
 		Status:           ScopeOutOfScope,
-		APEXLoadShape: "manual migration guidance",
+		APEXLoadShape:    "manual migration guidance",
 		RequiredEvidence: []string{"unsupported capability warning"},
 		Notes:            "APEX Load browser parity targets web browser flows; native desktop automation remains outside the Web 2.0 profile.",
 	},
@@ -260,7 +260,7 @@ var web2ProfileCapabilityScopes = []ProfileCapabilityScope{
 		CanonicalName:    "high_density_browser_load",
 		DisplayName:      "High-Density Browser Load",
 		Status:           ScopeOutOfScope,
-		APEXLoadShape: "browser canary plus converted HTTP load where suitable",
+		APEXLoadShape:    "browser canary plus converted HTTP load where suitable",
 		RequiredEvidence: []string{"density warning", "scenario validation"},
 		Notes:            "Browser VUsers remain diagnostic canaries; HTTP/API protocols carry density load after conversion and validation.",
 	},

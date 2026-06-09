@@ -83,6 +83,40 @@ func TestValidateScriptIssues_LoadRunnerEngineActionsDoNotRequireTarget(t *testi
 	}
 }
 
+func TestValidateScriptIssues_BrowserRuntimeActionParity(t *testing.T) {
+	script := &Script{
+		Name:     "browser-runtime-actions",
+		Protocol: "browser",
+		Actions: []Action{
+			{Name: "hover", Type: "browser_hover", Selector: "#menu"},
+			{Name: "double click", Type: "browser_dblclick", Selector: "#quantity"},
+			{Name: "drag", Type: "browser_drag_and_drop", Selector: "#source", Params: map[string]any{"target": "#target"}},
+			{Name: "evaluate", Type: "browser_evaluate_js", Target: "window.app.ready", Metadata: map[string]any{"review_required": true}},
+			{Name: "sync click", Type: "browser_click", Selector: "#save", Sync: &BrowserSyncPolicy{Type: "network_idle", TimeoutMs: 5000}},
+		},
+	}
+
+	if issues := ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+
+	script.Actions = []Action{{
+		Name: "bad control",
+		Type: "control_loop",
+		Control: &ControlFlow{
+			Count:         -1,
+			MaxIterations: -2,
+			Condition:     &Condition{Left: "{{var.count}}", Op: "roughly", Right: "5"},
+			Steps:         []Action{{Name: "bad hover", Type: "browser_hover"}},
+		},
+	}}
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, `actions[0] "bad control": control count must be zero or greater`)
+	assertIssue(t, issues, `actions[0] "bad control": control max_iterations must be zero or greater`)
+	assertIssue(t, issues, `actions[0] "bad control": condition op "roughly" is not supported`)
+	assertIssue(t, issues, `actions[0] "bad control".control.steps[0]: actions[0] "bad hover": missing target or selector`)
+}
+
 func TestValidateScriptIssues_RunLogicGlobalGoals(t *testing.T) {
 	script := &Script{
 		Name:     "invalid-global-goals",

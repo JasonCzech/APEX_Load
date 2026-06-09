@@ -18,6 +18,7 @@ type scriptImportResponseOptions struct {
 	DetectedProtocol    any
 	ReviewArtifact      any
 	SourceReview        any
+	TrueClient2Compat   any
 }
 
 type scriptImportReviewSection struct {
@@ -84,20 +85,21 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	}
 
 	response := map[string]any{
-		"scripts":              scripts,
-		"script":               opts.Script,
-		"warnings":             warnings,
-		"stats":                stats,
-		"correlations":         correlations,
-		"assumptions":          assumptions,
-		"unsupported_elements": unsupported,
-		"review_sections":      reviewSections,
-		"repair_suggestions":   repairSuggestions,
-		"scenario_draft":       opts.ScenarioDraft,
-		"summary":              summary,
-		"detected_protocol":    opts.DetectedProtocol,
-		"review_artifact":      opts.ReviewArtifact,
-		"source_review":        opts.SourceReview,
+		"scripts":                   scripts,
+		"script":                    opts.Script,
+		"warnings":                  warnings,
+		"stats":                     stats,
+		"correlations":              correlations,
+		"assumptions":               assumptions,
+		"unsupported_elements":      unsupported,
+		"review_sections":           reviewSections,
+		"repair_suggestions":        repairSuggestions,
+		"scenario_draft":            opts.ScenarioDraft,
+		"summary":                   summary,
+		"detected_protocol":         opts.DetectedProtocol,
+		"review_artifact":           opts.ReviewArtifact,
+		"source_review":             opts.SourceReview,
+		"trueclient2_compat_report": opts.TrueClient2Compat,
 	}
 	if opts.Result != nil {
 		response["result"] = opts.Result

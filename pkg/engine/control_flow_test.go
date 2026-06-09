@@ -205,3 +205,30 @@ func TestVUser_Run_NestedControlFlow(t *testing.T) {
 		t.Fatalf("nested control flow executed %d actions, want 2: %v", len(proto.names), proto.names)
 	}
 }
+
+func TestVUser_RunLifecycleBlock_ControlFlow(t *testing.T) {
+	proto := &captureProtocol{}
+	vu := newControlFlowVUser(proto, map[string]string{"phase": "init"}, nil)
+	ok := vu.RunLifecycleBlock(context.Background(), []dsl.Action{{
+		Name: "LifecycleBranch",
+		Type: "control_if",
+		Control: &dsl.ControlFlow{
+			Condition: &dsl.Condition{Left: "{{var.phase}}", Op: "eq", Right: "init"},
+			Steps: []dsl.Action{{
+				Name: "RepeatLifecycle",
+				Type: "control_loop",
+				Control: &dsl.ControlFlow{
+					Count: 2,
+					Steps: []dsl.Action{click("LifecycleStep")},
+				},
+			}},
+			Else: []dsl.Action{click("Skipped")},
+		},
+	}}, "init")
+	if !ok {
+		t.Fatal("RunLifecycleBlock returned false, want true")
+	}
+	if len(proto.names) != 2 || proto.names[0] != "LifecycleStep" || proto.names[1] != "LifecycleStep" {
+		t.Fatalf("lifecycle control flow executed %v, want two LifecycleStep actions", proto.names)
+	}
+}

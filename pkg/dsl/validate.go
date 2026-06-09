@@ -241,9 +241,13 @@ func validateControlFlowIssues(protocol string, index int, action Action) []stri
 		return []string{fmt.Sprintf("%s: %s requires a control block", label, action.Type)}
 	}
 	var issues []string
+	if action.Control.Count < 0 {
+		issues = append(issues, fmt.Sprintf("%s: control count must be zero or greater", label))
+	}
 	if action.Control.MaxIterations < 0 {
 		issues = append(issues, fmt.Sprintf("%s: control max_iterations must be zero or greater", label))
 	}
+	issues = append(issues, validateConditionIssues(label, action.Control.Condition)...)
 	switch action.Type {
 	case "control_loop":
 		if action.Control.Count <= 0 && action.Control.Condition == nil {
@@ -255,12 +259,48 @@ func validateControlFlowIssues(protocol string, index int, action Action) []stri
 		}
 	}
 	for j, nested := range action.Control.Steps {
-		issues = append(issues, validateActionForProtocol(protocol, j, nested)...)
+		issues = append(issues, prefixNestedActionIssues(fmt.Sprintf("%s.control.steps[%d]", label, j), validateActionForProtocol(protocol, j, nested))...)
 	}
 	for j, nested := range action.Control.Else {
-		issues = append(issues, validateActionForProtocol(protocol, j, nested)...)
+		issues = append(issues, prefixNestedActionIssues(fmt.Sprintf("%s.control.else[%d]", label, j), validateActionForProtocol(protocol, j, nested))...)
 	}
 	return issues
+}
+
+func validateConditionIssues(label string, condition *Condition) []string {
+	if condition == nil {
+		return nil
+	}
+	op := strings.ToLower(strings.TrimSpace(condition.Op))
+	if op == "" {
+		op = "eq"
+	}
+	if !isAllowedValue(op, "eq", "==", "equals", "ne", "!=", "not_equals", "contains", "not_contains", "gt", "lt", "gte", "lte", ">", "<", ">=", "<=", "exists", "truthy", "not_exists", "falsy", "empty") {
+		return []string{fmt.Sprintf("%s: condition op %q is not supported", label, condition.Op)}
+	}
+	if strings.TrimSpace(condition.Left) == "" {
+		return []string{fmt.Sprintf("%s: condition left operand is required", label)}
+	}
+	switch op {
+	case "exists", "truthy", "not_exists", "falsy", "empty":
+		return nil
+	default:
+		if strings.TrimSpace(condition.Right) == "" {
+			return []string{fmt.Sprintf("%s: condition right operand is required for op %q", label, condition.Op)}
+		}
+	}
+	return nil
+}
+
+func prefixNestedActionIssues(prefix string, issues []string) []string {
+	if len(issues) == 0 {
+		return nil
+	}
+	prefixed := make([]string, len(issues))
+	for i, issue := range issues {
+		prefixed[i] = prefix + ": " + issue
+	}
+	return prefixed
 }
 
 func validateGRPCActionIssues(index int, action Action) []string {
@@ -420,14 +460,34 @@ func validateBrowserActionIssues(index int, action Action) []string {
 			issues = append(issues, fmt.Sprintf("%s: browser_wait requires wait_for, selector, or target", label))
 		}
 		return issues
-	case "browser_navigate", "browser_click", "browser_fill", "browser_select", "browser_tap", "browser_long_press", "browser_swipe":
+	case "browser_navigate", "browser_click", "browser_fill", "browser_select", "browser_tap", "browser_long_press", "browser_swipe", "browser_dblclick", "browser_hover":
 		if action.Target == "" && action.Selector == "" {
 			issues = append(issues, fmt.Sprintf("%s: missing target or selector", label))
+		}
+	case "browser_drag_and_drop":
+		if action.Target == "" && action.Selector == "" {
+			issues = append(issues, fmt.Sprintf("%s: missing target or selector", label))
+		}
+		if target, ok := actionParamStringValue(action.Params, "target"); !ok || strings.TrimSpace(target) == "" {
+			issues = append(issues, fmt.Sprintf("%s: browser_drag_and_drop requires params.target", label))
+		}
+	case "browser_evaluate_js":
+		if strings.TrimSpace(action.Target) == "" {
+			issues = append(issues, fmt.Sprintf("%s: browser_evaluate_js requires target script", label))
+		}
+	case "browser_switch_frame", "browser_switch_window":
+		if action.Type == "browser_switch_frame" && action.Target == "" && action.Selector == "" {
+			if frame, ok := actionParamStringValue(action.Params, "frame"); !ok || strings.TrimSpace(frame) == "" {
+				if frameSelector, ok := actionParamStringValue(action.Params, "frame_selector"); !ok || strings.TrimSpace(frameSelector) == "" {
+					issues = append(issues, fmt.Sprintf("%s: browser_switch_frame requires selector, target, params.frame, or params.frame_selector", label))
+				}
+			}
 		}
 	default:
 		issues = append(issues, fmt.Sprintf("%s: unsupported browser action type %q", label, action.Type))
 		return issues
 	}
+	issues = append(issues, validateBrowserSyncPolicyIssues(label, action.Sync)...)
 
 	switch action.Type {
 	case "browser_fill", "browser_select":
@@ -447,6 +507,33 @@ func validateBrowserActionIssues(index int, action Action) []string {
 		}
 	}
 
+	return issues
+}
+
+func validateBrowserSyncPolicyIssues(label string, sync *BrowserSyncPolicy) []string {
+	if sync == nil {
+		return nil
+	}
+	var issues []string
+	syncType := strings.ToLower(strings.TrimSpace(sync.Type))
+	if syncType == "" {
+		syncType = "network_idle"
+	}
+	if !isAllowedValue(syncType, "network_idle", "networkidle", "dom_stable", "element_visible", "visible", "duration", "sleep", "load", "domcontentloaded") {
+		issues = append(issues, fmt.Sprintf("%s: sync.type %q is not supported", label, sync.Type))
+	}
+	if sync.TimeoutMs < 0 {
+		issues = append(issues, fmt.Sprintf("%s: sync.timeout_ms must be zero or greater", label))
+	}
+	if sync.StableMs < 0 {
+		issues = append(issues, fmt.Sprintf("%s: sync.stable_ms must be zero or greater", label))
+	}
+	if (syncType == "element_visible" || syncType == "visible") && strings.TrimSpace(sync.Value) == "" {
+		issues = append(issues, fmt.Sprintf("%s: sync.value is required for element_visible", label))
+	}
+	if (syncType == "duration" || syncType == "sleep") && strings.TrimSpace(sync.Value) == "" {
+		issues = append(issues, fmt.Sprintf("%s: sync.value is required for duration", label))
+	}
 	return issues
 }
 

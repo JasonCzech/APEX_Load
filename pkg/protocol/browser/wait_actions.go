@@ -24,12 +24,12 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 			if waitValue == "" {
 				return fmt.Errorf("browser_wait requires selector, target, or wait_for value")
 			}
-			return b.waitVisible(waitCtx, waitValue)
+			return b.waitVisibleForAction(waitCtx, action, waitValue)
 		case "hidden":
 			if waitValue == "" {
 				return fmt.Errorf("browser_wait hidden requires selector or wait_for value")
 			}
-			return b.waitHidden(waitCtx, waitValue)
+			return b.waitHiddenForAction(waitCtx, action, waitValue)
 		case "text":
 			if waitValue == "" {
 				return fmt.Errorf("browser_wait text requires wait_for value")
@@ -64,7 +64,7 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 	if selector != "" {
 		waitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		return b.waitVisible(waitCtx, selector)
+		return b.waitVisibleForAction(waitCtx, action, selector)
 	}
 	if action.Target == "" {
 		return fmt.Errorf("browser_wait requires wait_for, selector, or target")
@@ -74,4 +74,108 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 		return b.waitVisible(ctx, action.Target)
 	}
 	return b.sleep(ctx, delay)
+}
+
+func (b *Browser) runPostActionSync(ctx context.Context, action *protocol.Action) error {
+	sync := browserSyncPolicy(action)
+	if sync == nil {
+		return nil
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, b.waitTimeout(sync.TimeoutMs))
+	defer cancel()
+	syncType := strings.ToLower(strings.TrimSpace(sync.Type))
+	if syncType == "" {
+		syncType = "network_idle"
+	}
+	switch syncType {
+	case "network_idle", "networkidle":
+		return b.pwPage.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+			State:   playwright.LoadStateNetworkidle,
+			Timeout: playwright.Float(float64(b.waitTimeout(sync.TimeoutMs).Milliseconds())),
+		})
+	case "load":
+		return b.pwPage.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+			State:   playwright.LoadStateLoad,
+			Timeout: playwright.Float(float64(b.waitTimeout(sync.TimeoutMs).Milliseconds())),
+		})
+	case "domcontentloaded":
+		return b.pwPage.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+			State:   playwright.LoadStateDomcontentloaded,
+			Timeout: playwright.Float(float64(b.waitTimeout(sync.TimeoutMs).Milliseconds())),
+		})
+	case "element_visible", "visible":
+		value := sync.Value
+		if value == "" {
+			value = b.actionSelector(action)
+		}
+		if value == "" {
+			return fmt.Errorf("sync element_visible requires value, selector, or target")
+		}
+		return b.waitVisibleForAction(waitCtx, action, value)
+	case "duration", "sleep":
+		delay, err := parseWaitDelay(sync.Value)
+		if err != nil {
+			return err
+		}
+		return b.sleep(waitCtx, delay)
+	case "dom_stable":
+		stable := time.Duration(sync.StableMs) * time.Millisecond
+		if stable <= 0 {
+			stable = 500 * time.Millisecond
+		}
+		return b.waitForDOMStable(waitCtx, stable)
+	default:
+		return nil
+	}
+}
+
+func browserSyncPolicy(action *protocol.Action) *protocol.BrowserSyncPolicy {
+	if action == nil {
+		return nil
+	}
+	if action.Sync != nil {
+		return action.Sync
+	}
+	if action.Params == nil {
+		return nil
+	}
+	if value := actionParamString(action.Params, "sync", ""); value != "" {
+		return &protocol.BrowserSyncPolicy{Type: value}
+	}
+	if value := actionParamString(action.Params, "wait_for_after", ""); value != "" {
+		return &protocol.BrowserSyncPolicy{Type: value}
+	}
+	return nil
+}
+
+func (b *Browser) waitForDOMStable(ctx context.Context, stableWindow time.Duration) error {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	lastSignature := ""
+	stableSince := time.Now()
+	for {
+		var signature string
+		_ = b.evaluatePageExpression(ctx, `(() => {
+			const body = document.body;
+			return [
+				document.readyState,
+				body ? body.innerText.length : 0,
+				document.querySelectorAll('*').length,
+				location.href,
+			].join('|');
+		})()`, &signature)
+		if signature != "" && signature == lastSignature {
+			if time.Since(stableSince) >= stableWindow {
+				return nil
+			}
+		} else {
+			lastSignature = signature
+			stableSince = time.Now()
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }

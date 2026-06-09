@@ -26,7 +26,7 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		if b.touchMode {
 			return b.dispatchTap(ctx, selector), false
 		}
-		return b.click(ctx, selector), false
+		return b.clickAction(ctx, action, selector), false
 	case "browser_tap":
 		selector := b.actionSelector(action)
 		if selector == "" {
@@ -56,7 +56,7 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		if action.Value == "" {
 			return nil, failBrowserAction(result, "browser_fill requires value")
 		}
-		return b.fill(ctx, selector, action.Value), false
+		return b.fillAction(ctx, action, selector, action.Value), false
 	case "browser_select":
 		selector := b.actionSelector(action)
 		if selector == "" {
@@ -65,28 +65,32 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		if action.Value == "" {
 			return nil, failBrowserAction(result, "browser_select requires value")
 		}
-		return b.selectOption(ctx, selector, action.Value), false
+		return b.selectAction(ctx, action, selector, action.Value), false
 	case "browser_dblclick":
 		selector := b.actionSelector(action)
 		if selector == "" {
 			return nil, failBrowserAction(result, "browser_dblclick requires selector or target")
 		}
-		return b.pwPage.Dblclick(selector), false
+		return b.dblclickAction(action, selector), false
 	case "browser_hover":
 		selector := b.actionSelector(action)
 		if selector == "" {
 			return nil, failBrowserAction(result, "browser_hover requires selector or target")
 		}
-		return b.pwPage.Hover(selector), false
+		return b.hoverAction(action, selector), false
 	case "browser_drag_and_drop":
 		source := b.actionSelector(action)
 		target := actionParamString(action.Params, "target", "")
 		if source == "" || target == "" {
 			return nil, failBrowserAction(result, "browser_drag_and_drop requires selector/target and target param")
 		}
-		return b.pwPage.DragAndDrop(source, target), false
+		return b.dragAndDropAction(action, source, target), false
 	case "browser_evaluate_js":
 		return b.dispatchEvaluateJS(ctx, action, result)
+	case "browser_switch_frame":
+		return b.dispatchSwitchFrame(action), false
+	case "browser_switch_window":
+		return b.dispatchSwitchWindow(action), false
 	case "browser_screenshot":
 		// Capture is handled with the rest of the page state below.
 		return nil, false

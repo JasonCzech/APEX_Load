@@ -300,6 +300,13 @@ type WaitCondition struct {
 	TimeoutMs int    `json:"timeout_ms,omitempty"`
 }
 
+type BrowserSyncPolicy struct {
+	Type      string `json:"type,omitempty"`
+	Value     string `json:"value,omitempty"`
+	TimeoutMs int    `json:"timeout_ms,omitempty"`
+	StableMs  int    `json:"stable_ms,omitempty"`
+}
+
 type BrowserCaptureOptions struct {
 	Screenshot bool `json:"screenshot,omitempty"`
 	FullPage   bool `json:"full_page,omitempty"`
@@ -469,6 +476,7 @@ type Action struct {
 	BodyEncoding   string                 `json:"body_encoding,omitempty"`
 	Params         map[string]any         `json:"params,omitempty"`
 	WaitFor        *WaitCondition         `json:"wait_for,omitempty"`
+	Sync           *BrowserSyncPolicy     `json:"sync,omitempty"`
 	Capture        *BrowserCaptureOptions `json:"capture,omitempty"`
 	Metadata       map[string]any         `json:"metadata,omitempty"`
 	Extractors     []Extractor            `json:"extractors,omitempty"`

@@ -3215,6 +3215,7 @@ Type=TruClient 2.0 - Web
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://shop.example.com\&quot;&quot;}}" />
     <step type="testObject" action="Click" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#cart\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="3" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;window.app.checkout()&quot;}}" />
   </step>
 </truScript>`))
 	addFile("Web2/ObjectRepository/MainObjects.xml", "<objects><object name=\"Cart\" /></objects>")
@@ -3231,11 +3232,14 @@ Type=TruClient 2.0 - Web
 	if result.Script.Protocol != "browser" {
 		t.Fatalf("protocol = %q, want browser", result.Script.Protocol)
 	}
-	if len(result.Script.Actions) != 2 {
-		t.Fatalf("actions = %#v, want navigate and click actions", result.Script.Actions)
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions = %#v, want navigate, click, and review-gated JS actions", result.Script.Actions)
 	}
-	if result.Script.Actions[0].Type != "browser_navigate" || result.Script.Actions[1].Type != "browser_click" {
-		t.Fatalf("actions = %#v, want browser navigate and click", result.Script.Actions)
+	if result.Script.Actions[0].Type != "browser_navigate" || result.Script.Actions[1].Type != "browser_click" || result.Script.Actions[2].Type != "browser_evaluate_js" {
+		t.Fatalf("actions = %#v, want browser navigate, click, and evaluate_js", result.Script.Actions)
+	}
+	if result.Script.Actions[2].Metadata["review_required"] != true || result.Script.Actions[2].Metadata["compatibility_gate"] != "trueclient2_javascript_review" {
+		t.Fatalf("evaluate_js metadata = %#v, want review gate preserved", result.Script.Actions[2].Metadata)
 	}
 	if result.Script.Actions[0].Metadata["source_step_index"] != "1" || result.Script.Actions[0].Metadata["source_action"] != "Navigate" {
 		t.Fatalf("first action metadata = %#v, want TruClient source step metadata", result.Script.Actions[0].Metadata)
@@ -3257,7 +3261,7 @@ Type=TruClient 2.0 - Web
 	if !ok {
 		t.Fatalf("trueclient_archive_inspection = %#v, want *trueclient.ArchiveInspection", preserved["trueclient_archive_inspection"])
 	}
-	if inspection.StepInventory.Total != 2 || len(inspection.ObjectRepositories) != 1 || len(inspection.ParameterFiles) != 1 || len(inspection.RuntimeFiles) != 1 {
+	if inspection.StepInventory.Total != 3 || len(inspection.ObjectRepositories) != 1 || len(inspection.ParameterFiles) != 1 || len(inspection.RuntimeFiles) != 1 {
 		t.Fatalf("inspection = %#v, want step/object/parameter/runtime inventory", inspection)
 	}
 }

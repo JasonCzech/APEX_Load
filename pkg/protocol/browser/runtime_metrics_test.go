@@ -137,3 +137,20 @@ func TestBrowserProcessResourceMetrics(t *testing.T) {
 		t.Fatalf("memoryMB = %v, want 256", memoryMB)
 	}
 }
+
+func TestParseProcessSamples(t *testing.T) {
+	samples := parseProcessSamples(`
+  100   1  2048 00:00:01
+  101 100 10240 01:02:03
+  102 101  5120 2-03:04:05
+`)
+	if len(samples) != 3 {
+		t.Fatalf("samples len = %d, want 3: %#v", len(samples), samples)
+	}
+	if samples[1].PID != 101 || samples[1].PPID != 100 || samples[1].RSSKB != 10240 || samples[1].CPUTimeSeconds != 3723 {
+		t.Fatalf("sample[1] = %#v, want parsed pid/ppid/rss/time", samples[1])
+	}
+	if samples[2].CPUTimeSeconds != 183845 {
+		t.Fatalf("sample[2].CPUTimeSeconds = %v, want 183845", samples[2].CPUTimeSeconds)
+	}
+}
