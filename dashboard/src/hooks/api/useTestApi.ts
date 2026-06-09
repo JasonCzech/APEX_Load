@@ -16,6 +16,8 @@ import {
   LiveErrorEvidence,
   LiveMetrics,
   ResourceSample,
+  ReportAnnotationsInput,
+  ReportAnnotationsResponse,
   RunArchiveAnalysisResponse,
   RunArchiveManifest,
   RunArchiveReport,
@@ -440,6 +442,26 @@ export function useTestApi() {
 
   const getTestArchiveReport = useCallback((id: string) => request<RunArchiveReport>(`/tests/${id}/archive/report`), [])
 
+  const getTestReportAnnotations = useCallback(
+    (id: string, profile: string) =>
+      request<ReportAnnotationsResponse>(`/tests/${id}/report/annotations${buildQuery({ profile })}`),
+    [],
+  )
+
+  const saveTestReportAnnotations = useCallback(
+    (id: string, profile: string, data: ReportAnnotationsInput) =>
+      request<ReportAnnotationsResponse>(`/tests/${id}/report/annotations${buildQuery({ profile })}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    [],
+  )
+
+  const downloadTestReport = useCallback(
+    (id: string, profile: string) => fetchBlob(`/tests/${id}/report${buildQuery({ profile })}`),
+    [],
+  )
+
   const getTestArchiveAnalysis = useCallback(
     (id: string, params?: ArchiveAnalysisParams) => {
       const suffix = buildQuery({
@@ -543,6 +565,9 @@ export function useTestApi() {
       getTestArchiveResources,
       getTestArchiveSummaries,
       getTestArchiveReport,
+      getTestReportAnnotations,
+      saveTestReportAnnotations,
+      downloadTestReport,
       getTestArchiveAnalysis,
       downloadTestArchive,
       downloadTestArchiveComparison,
@@ -600,6 +625,9 @@ export function useTestApi() {
       getTestArchiveResources,
       getTestArchiveSummaries,
       getTestArchiveReport,
+      getTestReportAnnotations,
+      saveTestReportAnnotations,
+      downloadTestReport,
       getTestArchiveAnalysis,
       downloadTestArchive,
       downloadTestArchiveComparison,

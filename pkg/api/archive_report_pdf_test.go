@@ -18,7 +18,7 @@ func TestWriteRunArchiveReportPDFWithProfile(t *testing.T) {
 	for _, expected := range []string{
 		"%PDF-1.4",
 		"APEX Load Archive Report",
-		"Profile: Engineer",
+		"Profile: Detailed Technical",
 		"Top Actions",
 		"Browser Metrics",
 		"Resource Peaks",
@@ -34,7 +34,7 @@ func TestWriteRunArchiveReportPDFWithProfile(t *testing.T) {
 		t.Fatalf("write executive pdf returned error: %v", err)
 	}
 	executivePDF := executive.String()
-	if !strings.Contains(executivePDF, "Profile: Executive") {
+	if !strings.Contains(executivePDF, "Profile: Executive Summary") {
 		t.Fatalf("executive pdf missing profile label:\n%s", executivePDF)
 	}
 	if strings.Contains(executivePDF, "Top Actions") || strings.Contains(executivePDF, "Browser Metrics") {

@@ -604,7 +604,12 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 	if profile == "" {
 		profile = "engineer"
 	}
-	html, err := renderRunArchiveHTMLReportWithProfile(report, profile)
+	annotations, err := resolveReportAnnotations(s.store, report, r.PathValue("id"), profile)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
+		return
+	}
+	html, err := renderRunArchiveHTMLReportWithAnnotations(report, profile, annotations)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to render archive report: "+err.Error())
 		return

@@ -2,10 +2,12 @@ package api
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"html/template"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -39,6 +41,10 @@ type runArchiveHTMLReportData struct {
 	GeneratedAt           time.Time
 	Report                *RunArchiveReport
 	Profile               RunArchiveReportProfile
+	Annotations           *ReportAnnotations
+	CommentarySections    []reportCommentarySection
+	Charts                reportCharts
+	LogoDataURI           template.URL
 	ActionRows            []runArchiveHTMLActionRow
 	SOAPOperationRows     []runArchiveHTMLActionRow
 	SOAPFaultCodeRows     []runArchiveHTMLCountRow
@@ -190,6 +196,31 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
       margin: 0 0 14px;
       color: var(--muted);
     }
+    .brand-logo {
+      height: 38px;
+      width: auto;
+      margin-bottom: 14px;
+    }
+    .narrative p.lead {
+      margin: 0;
+      color: var(--ink);
+      font-size: 17px;
+      line-height: 1.55;
+      max-width: 80ch;
+    }
+    .charts {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    .comment-block {
+      margin-top: 12px;
+    }
+    .comment-block p {
+      margin: 8px 0 0;
+      color: var(--ink);
+      white-space: pre-wrap;
+    }
     .footer {
       margin-top: 28px;
       color: var(--muted);
@@ -254,9 +285,10 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
 <body>
   <main>
     <section class="hero">
-      <p class="eyebrow">APEX Load standalone report</p>
-      <h1>{{.Report.Manifest.TestName}}</h1>
-      <p class="subhead">{{.Profile.Label}} profile generated from the archived run bundle for test {{.Report.Manifest.TestID}}. {{.Profile.Description}}</p>
+      {{if .LogoDataURI}}<img class="brand-logo" src="{{.LogoDataURI}}" alt="APEX Load">{{end}}
+      <p class="eyebrow">APEX Load {{.Profile.Label}} report</p>
+      <h1>{{if .Annotations.Title}}{{.Annotations.Title}}{{else}}{{.Report.Manifest.TestName}}{{end}}</h1>
+      <p class="subhead">{{.Profile.Label}} profile generated from the archived run bundle for test {{.Report.Manifest.TestID}}.{{if .Annotations.PreparedBy}} Prepared by {{.Annotations.PreparedBy}}.{{end}} {{.Profile.Description}}</p>
       <div class="meta">
         <div class="card">
           <span class="metric-label">Status</span>
@@ -279,6 +311,13 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
         </div>
       </div>
     </section>
+
+    {{if .Annotations.ExecutiveNarrative}}
+    <section class="narrative">
+      <h2>Executive Summary</h2>
+      <p class="lead">{{.Annotations.ExecutiveNarrative}}</p>
+    </section>
+    {{end}}
 
     <section>
       <h2>Overview</h2>
@@ -321,6 +360,22 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
         </div>
       </div>
     </section>
+
+    {{if or .Charts.HasTimeline .Charts.HasActions}}
+    <section>
+      <h2>Performance Graphs</h2>
+      <p class="section-copy">Supporting graphs rendered from the archived interval timeline and per-action statistics.</p>
+      <div class="charts">
+        {{if .Charts.HasTimeline}}
+        {{.Charts.Throughput}}
+        {{.Charts.ResponseTime}}
+        {{.Charts.ErrorRate}}
+        {{.Charts.VUsers}}
+        {{end}}
+        {{if .Charts.HasActions}}{{.Charts.ActionLatency}}{{end}}
+      </div>
+    </section>
+    {{end}}
 
     <section>
       <h2>Completeness Score</h2>
@@ -766,7 +821,22 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
     </section>
     {{end}}
 
-    <p class="footer">Report generated at {{formatTime .GeneratedAt}} from archived artifacts. Keep this file with the run archive for audit history.</p>
+    {{if .Annotations}}
+    <section>
+      <h2>Analyst Commentary</h2>
+      {{range .CommentarySections}}
+      {{$comment := index $.Annotations.SectionComments .ID}}
+      {{if $comment}}
+      <div class="card comment-block">
+        <span class="metric-label">{{.Label}}</span>
+        <p>{{$comment}}</p>
+      </div>
+      {{end}}
+      {{end}}
+    </section>
+    {{end}}
+
+    <p class="footer">Report generated at {{formatTime .GeneratedAt}} from archived artifacts.{{if .Annotations.UpdatedBy}} Commentary last edited by {{.Annotations.UpdatedBy}} at {{formatTime .Annotations.UpdatedAt}}.{{end}} Keep this file with the run archive for audit history.</p>
   </main>
 </body>
 </html>`))
@@ -776,12 +846,22 @@ func renderRunArchiveHTMLReport(report *RunArchiveReport) ([]byte, error) {
 }
 
 func renderRunArchiveHTMLReportWithProfile(report *RunArchiveReport, profileID string) ([]byte, error) {
+	return renderRunArchiveHTMLReportWithAnnotations(report, profileID, nil)
+}
+
+// renderRunArchiveHTMLReportWithAnnotations renders the report with analyst
+// commentary and supporting graphs. When annotations is nil, generated defaults
+// are derived from the report data so the document still reads well unedited.
+func renderRunArchiveHTMLReportWithAnnotations(report *RunArchiveReport, profileID string, annotations *ReportAnnotations) ([]byte, error) {
 	if report == nil || report.Manifest == nil {
 		return nil, fmt.Errorf("archive report is incomplete")
 	}
 	profile, ok := lookupRunArchiveReportProfile(profileID)
 	if !ok {
 		return nil, fmt.Errorf("unknown report profile %q", profileID)
+	}
+	if annotations == nil {
+		annotations = defaultReportAnnotations(report, report.Manifest.TestID, profile.ID)
 	}
 
 	actionRows := make([]runArchiveHTMLActionRow, 0, len(report.ByAction))
@@ -818,6 +898,10 @@ func renderRunArchiveHTMLReportWithProfile(report *RunArchiveReport, profileID s
 		GeneratedAt:           time.Now().UTC(),
 		Report:                report,
 		Profile:               profile,
+		Annotations:           annotations,
+		CommentarySections:    reportCommentarySectionOrder(),
+		Charts:                buildReportCharts(report),
+		LogoDataURI:           reportLogoDataURI(),
 		ActionRows:            actionRows,
 		SOAPOperationRows:     soapOperationRows,
 		SOAPFaultCodeRows:     soapFaultCodeRows,
@@ -834,6 +918,26 @@ func renderRunArchiveHTMLReportWithProfile(report *RunArchiveReport, profileID s
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+var (
+	reportLogoOnce sync.Once
+	reportLogoURI  template.URL
+)
+
+// reportLogoDataURI returns the APEX Load logo as a base64 data URI so reports
+// are self-contained (no external asset fetch). Returns "" if the embedded
+// asset cannot be read. Wrapped as template.URL so html/template emits the
+// data: URI without rewriting it to a safe placeholder.
+func reportLogoDataURI() template.URL {
+	reportLogoOnce.Do(func() {
+		data, err := StaticFS.ReadFile("static/apex-load-logo.png")
+		if err != nil {
+			return
+		}
+		reportLogoURI = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(data))
+	})
+	return reportLogoURI
 }
 
 func buildHTMLCountRows(source map[string]int64) []runArchiveHTMLCountRow {
