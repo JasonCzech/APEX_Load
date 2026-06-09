@@ -3982,6 +3982,14 @@
   background: rgba(239, 68, 68, 0.16);
   color: var(--danger);
 }
+.action-signal-pill.control {
+  background: rgba(59, 130, 246, 0.14);
+  color: #2563eb;
+}
+.action-signal-pill.selector {
+  background: rgba(16, 185, 129, 0.14);
+  color: #047857;
+}
 .action-item-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
 .action-item:hover .action-item-actions { opacity: 1; }
 .action-empty { padding: 32px 16px; text-align: center; color: var(--text-muted); font-size: 13px; }
@@ -4693,6 +4701,10 @@
 .section-body {
   padding: 4px 20px 16px;
   animation: sectionReveal 0.2s ease;
+}
+.body-textarea.invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.18);
 }
 @keyframes sectionReveal {
   from { opacity: 0; transform: translateY(-6px); }

@@ -3,6 +3,9 @@ package browser
 import (
 	"context"
 	"encoding/json"
+	"os/exec"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -208,11 +211,135 @@ func bytesToMegabytes(value float64) float64 {
 }
 
 func (b *Browser) captureBrowserProcessMetrics(ctx context.Context, metrics *protocol.ClientMetrics, before browserProcessSnapshot) error {
+	after, err := b.captureBrowserProcessSnapshot(ctx)
+	if err != nil {
+		return err
+	}
+	cpuPct, memoryMB := browserProcessResourceMetrics(before, after)
+	if cpuPct > 0 {
+		metrics.BrowserProcessCPUPct = cpuPct
+	}
+	if memoryMB > 0 {
+		metrics.BrowserProcessMemMB = memoryMB
+	}
 	return nil
 }
 
 func (b *Browser) captureBrowserProcessSnapshot(ctx context.Context) (browserProcessSnapshot, error) {
-	return browserProcessSnapshot{}, nil
+	rootPID := playwrightDriverPID()
+	if rootPID <= 0 {
+		return browserProcessSnapshot{}, nil
+	}
+	return processTreeSnapshot(ctx, rootPID)
+}
+
+func playwrightDriverPID() int {
+	globalMutex.Lock()
+	defer globalMutex.Unlock()
+	if globalPlaywright == nil {
+		return 0
+	}
+	return globalPlaywright.Pid()
+}
+
+type processSample struct {
+	PID            int
+	PPID           int
+	RSSKB          float64
+	CPUTimeSeconds float64
+}
+
+func processTreeSnapshot(ctx context.Context, rootPID int) (browserProcessSnapshot, error) {
+	out, err := exec.CommandContext(ctx, "ps", "-eo", "pid=,ppid=,rss=,time=").Output()
+	if err != nil {
+		return browserProcessSnapshot{}, err
+	}
+	samples := parseProcessSamples(string(out))
+	childrenByParent := map[int][]processSample{}
+	byPID := map[int]processSample{}
+	for _, sample := range samples {
+		byPID[sample.PID] = sample
+		childrenByParent[sample.PPID] = append(childrenByParent[sample.PPID], sample)
+	}
+	queue := append([]processSample(nil), childrenByParent[rootPID]...)
+	if len(queue) == 0 {
+		if root, ok := byPID[rootPID]; ok {
+			queue = append(queue, root)
+		}
+	}
+	var totalRSSKB float64
+	var totalCPU float64
+	for len(queue) > 0 {
+		sample := queue[0]
+		queue = queue[1:]
+		totalRSSKB += sample.RSSKB
+		totalCPU += sample.CPUTimeSeconds
+		queue = append(queue, childrenByParent[sample.PID]...)
+	}
+	if totalRSSKB <= 0 && totalCPU <= 0 {
+		return browserProcessSnapshot{}, nil
+	}
+	return browserProcessSnapshot{
+		CPUTimeSeconds: totalCPU,
+		MemoryMB:       totalRSSKB / 1024,
+		CapturedAt:     time.Now(),
+	}, nil
+}
+
+func parseProcessSamples(output string) []processSample {
+	lines := strings.Split(output, "\n")
+	samples := make([]processSample, 0, len(lines))
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		pid, pidErr := strconv.Atoi(fields[0])
+		ppid, ppidErr := strconv.Atoi(fields[1])
+		rssKB, rssErr := strconv.ParseFloat(fields[2], 64)
+		cpuSeconds := parseProcessCPUTime(fields[3])
+		if pidErr != nil || ppidErr != nil || rssErr != nil {
+			continue
+		}
+		samples = append(samples, processSample{
+			PID:            pid,
+			PPID:           ppid,
+			RSSKB:          rssKB,
+			CPUTimeSeconds: cpuSeconds,
+		})
+	}
+	return samples
+}
+
+func parseProcessCPUTime(value string) float64 {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	days := 0
+	if parts := strings.SplitN(value, "-", 2); len(parts) == 2 {
+		if parsed, err := strconv.Atoi(parts[0]); err == nil {
+			days = parsed
+		}
+		value = parts[1]
+	}
+	parts := strings.Split(value, ":")
+	total := float64(days * 24 * 60 * 60)
+	switch len(parts) {
+	case 3:
+		hours, _ := strconv.Atoi(parts[0])
+		minutes, _ := strconv.Atoi(parts[1])
+		seconds, _ := strconv.ParseFloat(parts[2], 64)
+		total += float64(hours*3600+minutes*60) + seconds
+	case 2:
+		minutes, _ := strconv.Atoi(parts[0])
+		seconds, _ := strconv.ParseFloat(parts[1], 64)
+		total += float64(minutes*60) + seconds
+	case 1:
+		seconds, _ := strconv.ParseFloat(parts[0], 64)
+		total += seconds
+	}
+	return total
 }
 
 func browserProcessResourceMetrics(before, after browserProcessSnapshot) (float64, float64) {

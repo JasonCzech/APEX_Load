@@ -4,6 +4,13 @@ export interface ScriptWaitCondition {
   timeout_ms?: number
 }
 
+export interface ScriptBrowserSyncPolicy {
+  type?: string
+  value?: string
+  timeout_ms?: number
+  stable_ms?: number
+}
+
 export interface BrowserCaptureOptions {
   screenshot?: boolean
   full_page?: boolean
@@ -37,7 +44,9 @@ export interface ScriptActionDefinition {
   params?: Record<string, unknown>
   metadata?: Record<string, unknown>
   wait_for?: ScriptWaitCondition
+  sync?: ScriptBrowserSyncPolicy
   capture?: BrowserCaptureOptions
+  control?: ScriptControlFlow
   extractors?: ScriptExtractorDefinition[]
   assertions?: ScriptAssertionDefinition[]
   think_time_after?: boolean
@@ -46,6 +55,20 @@ export interface ScriptActionDefinition {
     operation?: string
     body_mode?: string
   }
+}
+
+export interface ScriptCondition {
+  left?: string
+  op?: string
+  right?: string
+}
+
+export interface ScriptControlFlow {
+  condition?: ScriptCondition
+  steps?: ScriptActionDefinition[]
+  else?: ScriptActionDefinition[]
+  count?: number
+  max_iterations?: number
 }
 
 export interface ThinkTimeConfig {
@@ -147,6 +170,10 @@ export interface BrowserConfig {
   viewport?: {
     width?: number
     height?: number
+  }
+  review_policy?: {
+    allow_reviewed_javascript?: boolean
+    allow_review_required?: boolean
   }
 }
 

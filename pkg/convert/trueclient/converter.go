@@ -879,6 +879,15 @@ func convertEvaluateJavaScript(code string, baseName string) ([]dsl.Action, []st
 				Name:   fmt.Sprintf("%s - Statement %d", baseName, i+1),
 				Type:   "browser_evaluate_js",
 				Target: statement,
+				Metadata: map[string]any{
+					"source":             "truclient_evaluate_javascript",
+					"source_script":      statement,
+					"review_required":    true,
+					"review_gate":        "javascript",
+					"review_reason":      "TruClient JavaScript could not be decomposed into native browser actions; replay and approval are required before promotion.",
+					"promotion_blocker":  true,
+					"compatibility_gate": "trueclient2_javascript_review",
+				},
 			})
 			continue
 		}

@@ -987,6 +987,91 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('No screenshot yet')
   })
 
+  it('surfaces TruClient2 review gates, selector fallbacks, and control actions in the browser editor', async () => {
+    const browserScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'browser',
+      config: {
+        ...initialScript.config,
+        base_url: 'https://shop.example.com',
+        browser: {
+          engine: 'chromium',
+          headless: true,
+        },
+      },
+      actions: [
+        {
+          name: 'Custom JS',
+          type: 'browser_evaluate_js',
+          target: 'window.checkoutReady === true',
+          selector: '',
+          metadata: {
+            review_required: true,
+            review_gate: 'javascript',
+            promotion_blocker: true,
+            source_selector_fallbacks: [{ kind: 'css', value: '#checkout-ready', confidence: 80 }],
+          },
+        },
+        {
+          name: 'Ready Branch',
+          type: 'control_if',
+          target: '',
+          control: {
+            condition: { left: '{{var.checkout_ready}}', op: 'eq', right: 'true' },
+            steps: [{ name: 'Hover Pay', type: 'browser_hover', target: '#pay' }],
+            else: [{ name: 'Wait Pay', type: 'browser_wait', target: '#pay' }],
+          },
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={browserScript} />)
+    })
+
+    const rows = Array.from(container.querySelectorAll('.action-item'))
+    const jsRow = rows.find(row => row.textContent?.includes('Custom JS'))
+    const controlRow = rows.find(row => row.textContent?.includes('Ready Branch'))
+    expect(jsRow?.textContent).toContain('REV')
+    expect(jsRow?.textContent).toContain('JS')
+    expect(jsRow?.textContent).toContain('F1')
+    expect(controlRow?.textContent).toContain('CTRL')
+
+    if (!jsRow) return
+    await act(async () => {
+      jsRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('fallbacks 1')
+    const actionTypeSelect = Array.from(container.querySelectorAll('select')).find(select => Array.from(select.options).some(option => option.value === 'browser_hover'))
+    expect(actionTypeSelect).toBeDefined()
+    expect(Array.from(actionTypeSelect?.options || []).map(option => option.value)).toEqual(expect.arrayContaining([
+      'browser_hover',
+      'browser_drag_and_drop',
+      'browser_evaluate_js',
+      'browser_switch_frame',
+      'browser_switch_window',
+      'control_if',
+      'control_loop',
+    ]))
+
+    const configButton = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Runtime / RTS'))
+    expect(configButton).toBeDefined()
+    if (!configButton) return
+    await act(async () => {
+      configButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const transportToggle = Array.from(container.querySelectorAll('.section-toggle')).find(button => button.textContent?.includes('HTTP Transport'))
+    expect(transportToggle).toBeDefined()
+    if (!transportToggle) return
+    await act(async () => {
+      transportToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Allow reviewed JavaScript')
+    expect(container.textContent).toContain('Allow review-required actions')
+  })
+
   it('shows imported lifecycle phases in the action list and debug rail', async () => {
     const lifecycleScript: ScriptDefinition = {
       ...initialScript,

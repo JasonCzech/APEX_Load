@@ -62,7 +62,7 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	issues := validateScript(script)
+	issues := validateScriptForReplay(script)
 	warnings := validationWarnings(script)
 	preflight := buildReplayPreflight(script, req.Variables, issues, warnings)
 	if len(issues) > 0 {
@@ -79,7 +79,7 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *dsl.Script, req ReplayScriptRequest) {
-	issues := validateScript(script)
+	issues := validateScriptForReplay(script)
 	warnings := validationWarnings(script)
 	preflight := buildReplayPreflight(script, req.Variables, issues, warnings)
 	if len(issues) > 0 {

@@ -218,21 +218,27 @@ type KafkaTLSConfig struct {
 }
 
 type BrowserConfig struct {
-	Engine             string          `json:"engine,omitempty"`
-	Headless           *bool           `json:"headless,omitempty"`
-	SlowMoMs           int             `json:"slow_mo_ms,omitempty"`
-	UserAgent          string          `json:"user_agent,omitempty"`
-	DeviceProfile      string          `json:"device_profile,omitempty"`
-	TouchMode          *bool           `json:"touch_mode,omitempty"`
-	Orientation        string          `json:"orientation,omitempty"`
-	ClientMetrics      *bool           `json:"client_metrics,omitempty"`
-	CaptureScreenshots string          `json:"capture_screenshots,omitempty"`
-	CacheEnabled       *bool           `json:"cache_enabled,omitempty"`
-	CacheContentURLs   *bool           `json:"cache_content_urls,omitempty"`
-	CheckNewerVersions *bool           `json:"check_newer_versions,omitempty"`
-	NewUserPerIter     *bool           `json:"new_user_per_iteration,omitempty"`
-	DownloadResources  string          `json:"download_resources,omitempty"`
-	Viewport           BrowserViewport `json:"viewport,omitempty"`
+	Engine             string              `json:"engine,omitempty"`
+	Headless           *bool               `json:"headless,omitempty"`
+	SlowMoMs           int                 `json:"slow_mo_ms,omitempty"`
+	UserAgent          string              `json:"user_agent,omitempty"`
+	DeviceProfile      string              `json:"device_profile,omitempty"`
+	TouchMode          *bool               `json:"touch_mode,omitempty"`
+	Orientation        string              `json:"orientation,omitempty"`
+	ClientMetrics      *bool               `json:"client_metrics,omitempty"`
+	CaptureScreenshots string              `json:"capture_screenshots,omitempty"`
+	CacheEnabled       *bool               `json:"cache_enabled,omitempty"`
+	CacheContentURLs   *bool               `json:"cache_content_urls,omitempty"`
+	CheckNewerVersions *bool               `json:"check_newer_versions,omitempty"`
+	NewUserPerIter     *bool               `json:"new_user_per_iteration,omitempty"`
+	DownloadResources  string              `json:"download_resources,omitempty"`
+	Viewport           BrowserViewport     `json:"viewport,omitempty"`
+	ReviewPolicy       BrowserReviewPolicy `json:"review_policy,omitempty"`
+}
+
+type BrowserReviewPolicy struct {
+	AllowReviewedJavaScript bool `json:"allow_reviewed_javascript,omitempty"`
+	AllowReviewRequired     bool `json:"allow_review_required,omitempty"`
 }
 
 type WebRuntimeConfig struct {
@@ -298,6 +304,13 @@ type WaitCondition struct {
 	Type      string `json:"type,omitempty"`
 	Value     string `json:"value,omitempty"`
 	TimeoutMs int    `json:"timeout_ms,omitempty"`
+}
+
+type BrowserSyncPolicy struct {
+	Type      string `json:"type,omitempty"`
+	Value     string `json:"value,omitempty"`
+	TimeoutMs int    `json:"timeout_ms,omitempty"`
+	StableMs  int    `json:"stable_ms,omitempty"`
 }
 
 type BrowserCaptureOptions struct {
@@ -469,6 +482,7 @@ type Action struct {
 	BodyEncoding   string                 `json:"body_encoding,omitempty"`
 	Params         map[string]any         `json:"params,omitempty"`
 	WaitFor        *WaitCondition         `json:"wait_for,omitempty"`
+	Sync           *BrowserSyncPolicy     `json:"sync,omitempty"`
 	Capture        *BrowserCaptureOptions `json:"capture,omitempty"`
 	Metadata       map[string]any         `json:"metadata,omitempty"`
 	Extractors     []Extractor            `json:"extractors,omitempty"`

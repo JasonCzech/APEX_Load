@@ -71,6 +71,7 @@ type loadRunnerImportSummary struct {
 	SourceScriptType            string                                       `json:"source_script_type,omitempty"`
 	SourceProfile               string                                       `json:"source_profile,omitempty"`
 	Web2MigrationReadiness      *web2MigrationReadinessReport                `json:"web2_migration_readiness,omitempty"`
+	TrueClient2CompatReport     *trueClient2CompatReport                     `json:"trueclient2_compat_report,omitempty"`
 	SalesforceReview            *salesforce.Review                           `json:"salesforce_review,omitempty"`
 	DetectedProtocol            *loadrunner.DetectedProtocol                 `json:"detected_protocol,omitempty"`
 	ReviewArtifact              *loadrunner.ReviewArtifact                   `json:"review_artifact,omitempty"`
@@ -89,6 +90,30 @@ type web2MigrationReadinessReport struct {
 	ConversionToHTTPReadiness string   `json:"conversion_to_http_readiness"`
 	Findings                  []string `json:"findings,omitempty"`
 	NextActions               []string `json:"next_actions,omitempty"`
+}
+
+type trueClient2CompatReport struct {
+	SourceScriptType        string            `json:"source_script_type,omitempty"`
+	SourceProfile           string            `json:"source_profile,omitempty"`
+	ImportMode              string            `json:"import_mode,omitempty"`
+	PromotionStatus         string            `json:"promotion_status"`
+	PromotionAllowed        bool              `json:"promotion_allowed"`
+	ImportedSteps           int               `json:"imported_steps"`
+	ConvertedActions        int               `json:"converted_actions"`
+	SkippedReviewSteps      int               `json:"skipped_review_steps"`
+	SupportedStepFamilies   int               `json:"supported_step_families"`
+	ReviewOnlyStepFamilies  int               `json:"review_only_step_families"`
+	UnsupportedStepFamilies int               `json:"unsupported_step_families"`
+	SelectorConfidencePct   int               `json:"selector_confidence_pct"`
+	SelectorCandidateCount  int               `json:"selector_candidate_count"`
+	RuntimeParityStatus     string            `json:"runtime_parity_status"`
+	ReplayStatus            string            `json:"replay_status"`
+	JavaScriptReviewGate    string            `json:"javascript_review_gate"`
+	FrameWindowBlockers     int               `json:"frame_window_blockers"`
+	HTTPConversionReadiness string            `json:"http_conversion_readiness"`
+	FixtureContractStatus   map[string]string `json:"fixture_contract_status,omitempty"`
+	Findings                []string          `json:"findings,omitempty"`
+	NextActions             []string          `json:"next_actions,omitempty"`
 }
 
 // handleImportLoadRunner handles POST /api/v1/scripts/import/loadrunner
@@ -726,6 +751,7 @@ func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *lo
 		DetectedProtocol:    result.DetectedProtocol,
 		ReviewArtifact:      result.ReviewArtifact,
 		SourceReview:        summary.SourceReview,
+		TrueClient2Compat:   summary.TrueClient2CompatReport,
 	}))
 }
 
@@ -1095,6 +1121,192 @@ func buildWeb2MigrationReadinessReport(result *loadrunner.ConvertResult, summary
 		report.Findings = append(report.Findings, "Average selector confidence is below the recommended migration threshold.")
 	}
 	return report
+}
+
+func buildTrueClient2CompatReport(result *loadrunner.ConvertResult, summary loadRunnerImportSummary) *trueClient2CompatReport {
+	inspection := summary.TrueClientInspection
+	if inspection == nil {
+		return nil
+	}
+	converted := 0
+	skipped := 0
+	importMode := summary.ImportMode
+	if result != nil {
+		converted = result.Stats.ConvertedActions
+		skipped = result.Stats.Skipped
+		if result.DetectedProtocol != nil && importMode == "" {
+			importMode = string(result.DetectedProtocol.ImportMode)
+		}
+	}
+	reviewSteps := skipped + len(inspection.UnsupportedFragments)
+	for _, count := range inspection.StepInventory.ReviewOnly {
+		reviewSteps += count
+	}
+	for _, count := range inspection.StepInventory.Unsupported {
+		reviewSteps += count
+	}
+	jsGate := trueClientJavaScriptReviewGate(result, inspection)
+	frameWindowBlockers := trueClientFrameWindowBlockerCount(inspection)
+	replayStatus := trueClientReplayStatus(result)
+	runtimeStatus := trueClientRuntimeParityStatus(summary)
+	httpReadiness := "needs_replay_network"
+	if replayStatus == "passed" && jsGate == "clear" {
+		httpReadiness = "ready_for_preview"
+	}
+	promotionAllowed := importMode == string(loadrunner.ImportModeExecutable) &&
+		replayStatus == "passed" &&
+		jsGate == "clear" &&
+		frameWindowBlockers == 0 &&
+		runtimeStatus != "blocked" &&
+		len(inspection.StepInventory.Unsupported) == 0
+	promotionStatus := "blocked_review_only"
+	if promotionAllowed {
+		promotionStatus = "promotion_ready"
+	} else if replayStatus == "passed" {
+		promotionStatus = "needs_final_review"
+	} else if frameWindowBlockers > 0 || jsGate != "clear" || runtimeStatus == "blocked" || len(inspection.StepInventory.Unsupported) > 0 {
+		promotionStatus = "blocked"
+	}
+
+	report := &trueClient2CompatReport{
+		SourceScriptType:        firstNonEmpty(summary.SourceScriptType, inspection.ScriptType),
+		SourceProfile:           summary.SourceProfile,
+		ImportMode:              importMode,
+		PromotionStatus:         promotionStatus,
+		PromotionAllowed:        promotionAllowed,
+		ImportedSteps:           inspection.StepInventory.Total,
+		ConvertedActions:        converted,
+		SkippedReviewSteps:      reviewSteps,
+		SupportedStepFamilies:   len(inspection.StepInventory.Supported),
+		ReviewOnlyStepFamilies:  len(inspection.StepInventory.ReviewOnly),
+		UnsupportedStepFamilies: len(inspection.StepInventory.Unsupported),
+		SelectorConfidencePct:   averageTrueClientSelectorConfidence(inspection),
+		SelectorCandidateCount:  trueClientSelectorCandidateCount(inspection),
+		RuntimeParityStatus:     runtimeStatus,
+		ReplayStatus:            replayStatus,
+		JavaScriptReviewGate:    jsGate,
+		FrameWindowBlockers:     frameWindowBlockers,
+		HTTPConversionReadiness: httpReadiness,
+		FixtureContractStatus:   trueClientFixtureContractStatus(),
+		Findings: []string{
+			fmt.Sprintf("%d imported step(s) produced %d browser action(s).", inspection.StepInventory.Total, converted),
+		},
+		NextActions: []string{
+			"Run browser replay and attach screenshot, DOM, console, and network evidence.",
+			"Review selector candidates and repair low-confidence locators before approval.",
+		},
+	}
+	if jsGate != "clear" {
+		report.Findings = append(report.Findings, "Review-gated JavaScript is present and must be approved or replaced before promotion.")
+		report.NextActions = append(report.NextActions, "Approve browser_evaluate_js only after code review and replay evidence, or replace it with native browser actions.")
+	}
+	if frameWindowBlockers > 0 {
+		report.Findings = append(report.Findings, fmt.Sprintf("%d iframe/window context blocker(s) require frame or popup replay evidence.", frameWindowBlockers))
+		report.NextActions = append(report.NextActions, "Replay frame and popup actions and verify active page/frame targeting.")
+	}
+	if runtimeStatus == "blocked" {
+		report.Findings = append(report.Findings, "Runtime parity policy reports blocking settings.")
+	}
+	if report.SelectorConfidencePct == 0 {
+		report.Findings = append(report.Findings, "No selector confidence evidence was available.")
+	} else if report.SelectorConfidencePct < 70 {
+		report.Findings = append(report.Findings, "Average selector confidence is below the recommended migration threshold.")
+	}
+	if !promotionAllowed {
+		report.NextActions = append(report.NextActions, "Keep this draft review-only until blockers are resolved and replay evidence passes.")
+	}
+	return report
+}
+
+func trueClientRuntimeParityStatus(summary loadRunnerImportSummary) string {
+	if summary.MigrationReadiness != nil {
+		if summary.MigrationReadiness.Blocked {
+			return "blocked"
+		}
+		if summary.MigrationReadiness.ScorePct < 100 {
+			return "needs_review"
+		}
+		return "ready"
+	}
+	if len(summary.RuntimeSettingsParity) > 0 {
+		return "needs_review"
+	}
+	return "not_imported"
+}
+
+func trueClientJavaScriptReviewGate(result *loadrunner.ConvertResult, inspection *trueclient.ArchiveInspection) string {
+	if result != nil && result.Script != nil {
+		for _, action := range result.Script.Actions {
+			if action.Type == "browser_evaluate_js" || boolMapValue(action.Metadata, "review_required") {
+				return "required"
+			}
+		}
+	}
+	if inspection != nil {
+		if count := inspection.StepInventory.ReviewOnly["evaluate_javascript"]; count > 0 {
+			return "required"
+		}
+	}
+	return "clear"
+}
+
+func trueClientFrameWindowBlockerCount(inspection *trueclient.ArchiveInspection) int {
+	if inspection == nil {
+		return 0
+	}
+	count := 0
+	for _, step := range inspection.Steps {
+		for _, diagnostic := range step.ReplayDiagnostics {
+			if diagnostic.Code == "frame_mismatch_risk" || diagnostic.Code == "window_context_risk" {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func trueClientReplayStatus(result *loadrunner.ConvertResult) string {
+	if result == nil || result.Script == nil || result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+		return "required"
+	}
+	preserved := result.Script.Metadata.Import.Preserved
+	if preserved == nil {
+		return "required"
+	}
+	for _, key := range []string{"browser_replay_status", "replay_status"} {
+		switch strings.ToLower(strings.TrimSpace(stringValue(preserved[key]))) {
+		case "passed", "pass", "success", "successful":
+			return "passed"
+		case "failed", "failure":
+			return "failed"
+		}
+	}
+	if !isNilImportValue(preserved["browser_replay_evidence"]) || !isNilImportValue(preserved["replay_evidence"]) {
+		return "evidence_attached"
+	}
+	return "required"
+}
+
+func trueClientFixtureContractStatus() map[string]string {
+	status := map[string]string{}
+	for _, fixture := range trueclient.Web2FixtureContracts() {
+		status[fixture.ID] = string(fixture.Status)
+	}
+	return status
+}
+
+func boolMapValue(values map[string]any, key string) bool {
+	if values == nil {
+		return false
+	}
+	switch value := values[key].(type) {
+	case bool:
+		return value
+	case string:
+		return strings.EqualFold(strings.TrimSpace(value), "true")
+	default:
+		return false
+	}
 }
 
 func averageTrueClientSelectorConfidence(inspection *trueclient.ArchiveInspection) int {
@@ -1549,6 +1761,7 @@ func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedE
 	}
 	if isWeb2TrueClientInspection(summary.TrueClientInspection) {
 		summary.Web2MigrationReadiness = buildWeb2MigrationReadinessReport(result, summary)
+		summary.TrueClient2CompatReport = buildTrueClient2CompatReport(result, summary)
 	}
 	summary.SalesforceReview = salesforceReviewValue(preserved["salesforce_review"])
 
@@ -1567,6 +1780,9 @@ func persistLoadRunnerImportSummary(result *loadrunner.ConvertResult, summary lo
 	}
 	if summary.Web2MigrationReadiness != nil {
 		result.Script.Metadata.Import.Preserved["web2_migration_readiness"] = summary.Web2MigrationReadiness
+	}
+	if summary.TrueClient2CompatReport != nil {
+		result.Script.Metadata.Import.Preserved["trueclient2_compat_report"] = summary.TrueClient2CompatReport
 	}
 	if summary.SalesforceReview != nil {
 		result.Script.Metadata.Import.Preserved["salesforce_review"] = summary.SalesforceReview

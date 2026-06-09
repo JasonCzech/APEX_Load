@@ -411,7 +411,8 @@ func (vu *VUser) prepareRuntimeState() {
 }
 
 func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, phase string, ignoreErrors bool, logger *slog.Logger, logCfg dsl.LogConfig, errCfg dsl.ErrorHandlingConfig) bool {
-	for _, action := range actions {
+	var runActions func(actions []dsl.Action, depth int) bool
+	runOne := func(action dsl.Action, depth int) bool {
 		if vu.PauseControl != nil {
 			if err := vu.PauseControl.WaitIfPaused(ctx); err != nil {
 				return false
@@ -420,6 +421,48 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 		if ctx.Err() != nil {
 			return false
 		}
+		switch strings.ToLower(strings.TrimSpace(action.Type)) {
+		case "control_if":
+			if action.Control == nil {
+				return true
+			}
+			if depth >= maxControlDepth {
+				logger.Error(phase+" control flow nesting exceeded", "action", action.Name)
+				return true
+			}
+			body := action.Control.Else
+			if vu.evalCondition(action.Control.Condition) {
+				body = action.Control.Steps
+			}
+			return runActions(body, depth+1)
+		case "control_loop":
+			if action.Control == nil {
+				return true
+			}
+			if depth >= maxControlDepth {
+				logger.Error(phase+" control flow nesting exceeded", "action", action.Name)
+				return true
+			}
+			loop := action.Control
+			maxPasses := controlLoopMaxPasses(loop)
+			fixed := loop.Count > 0
+			for pass := 0; ; pass++ {
+				if ctx.Err() != nil {
+					return false
+				}
+				if fixed {
+					if pass >= loop.Count || pass >= maxPasses {
+						break
+					}
+				} else if pass >= maxPasses || !vu.evalCondition(loop.Condition) {
+					break
+				}
+				if !runActions(loop.Steps, depth+1) {
+					return false
+				}
+			}
+			return true
+		}
 		if handled, err := vu.handleEngineAction(ctx, action); handled {
 			if err != nil {
 				logger.Error(phase+" action failed", "action", action.Name, "err", err)
@@ -427,7 +470,7 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 					return false
 				}
 			}
-			continue
+			return true
 		}
 		resolved := vu.resolveAction(action)
 		result, err := vu.executeWithRetry(ctx, resolved, errCfg)
@@ -436,7 +479,7 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 			if !ignoreErrors {
 				return false
 			}
-			continue
+			return true
 		}
 		vu.recordResult(result, errCfg)
 		if result != nil && !result.Success {
@@ -449,8 +492,17 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 				return false
 			}
 		}
+		return true
 	}
-	return true
+	runActions = func(actions []dsl.Action, depth int) bool {
+		for _, action := range actions {
+			if !runOne(action, depth) {
+				return false
+			}
+		}
+		return true
+	}
+	return runActions(actions, 0)
 }
 
 func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingConfig) {
@@ -1744,6 +1796,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		RedactedBody:    []byte(redactedBody),
 		Params:          vu.interpolateAnyMap(action.Params),
 		WaitFor:         toProtocolWaitCondition(action.WaitFor, vu),
+		Sync:            toProtocolBrowserSyncPolicy(action.Sync, vu),
 		Capture:         toProtocolCaptureOptions(action.Capture),
 		Metadata:        vu.interpolateAnyMap(action.Metadata),
 		Extractors:      toProtocolExtractors(action.Extractors),
@@ -1973,6 +2026,18 @@ func toProtocolWaitCondition(wait *dsl.WaitCondition, vu *VUser) *protocol.WaitC
 		Type:      wait.Type,
 		Value:     vu.interpolate(wait.Value),
 		TimeoutMs: wait.TimeoutMs,
+	}
+}
+
+func toProtocolBrowserSyncPolicy(sync *dsl.BrowserSyncPolicy, vu *VUser) *protocol.BrowserSyncPolicy {
+	if sync == nil {
+		return nil
+	}
+	return &protocol.BrowserSyncPolicy{
+		Type:      sync.Type,
+		Value:     vu.interpolate(sync.Value),
+		TimeoutMs: sync.TimeoutMs,
+		StableMs:  sync.StableMs,
 	}
 }
 

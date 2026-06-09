@@ -38,8 +38,7 @@ func (b *Browser) openBrowserContext() error {
 	}
 
 	b.pwContext = browserContext
-	b.pwPage = page
-	b.installCDPSession(browserContext, page)
+	b.registerPage(page, true)
 	return nil
 }
 
@@ -56,6 +55,9 @@ func (b *Browser) browserContextOptions() playwright.BrowserNewContextOptions {
 }
 
 func (b *Browser) installBrowserContextHandlers(browserContext playwright.BrowserContext) {
+	browserContext.OnPage(func(page playwright.Page) {
+		b.registerPage(page, true)
+	})
 	browserContext.OnConsole(func(message playwright.ConsoleMessage) {
 		source := ""
 		if location := message.Location(); location != nil {
@@ -82,6 +84,30 @@ func (b *Browser) installBrowserContextHandlers(browserContext playwright.Browse
 	browserContext.OnRequestFailed(func(request playwright.Request) {
 		go b.recordNetworkRequest(request, false)
 	})
+}
+
+func (b *Browser) registerPage(page playwright.Page, activate bool) {
+	if page == nil {
+		return
+	}
+	b.mu.Lock()
+	known := false
+	for _, existing := range b.pages {
+		if existing == page {
+			known = true
+			break
+		}
+	}
+	if !known {
+		b.pages = append(b.pages, page)
+	}
+	if activate {
+		b.pwPage = page
+	}
+	b.mu.Unlock()
+	if activate {
+		b.installCDPSession(b.pwContext, page)
+	}
 }
 
 func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool) {
@@ -125,6 +151,9 @@ func requestDurationMs(timing *playwright.RequestTiming) float64 {
 }
 
 func (b *Browser) installCDPSession(browserContext playwright.BrowserContext, page playwright.Page) {
+	if browserContext == nil || page == nil {
+		return
+	}
 	if b.engine != "chromium" || (b.cpuThrottleRate <= 1.0 && !b.clientMetricsEnabled) {
 		return
 	}

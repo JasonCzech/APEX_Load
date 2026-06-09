@@ -395,8 +395,8 @@ func TestConvertArchiveLeavesUnsafeTagNameJavaScriptForReview(t *testing.T) {
 	if len(result.Script.Actions) != 2 {
 		t.Fatalf("actions len = %d, want 2 actions", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_evaluate_js" {
-		t.Fatalf("action[1] type = %s, want browser_evaluate_js", action.Type)
+	if action := result.Script.Actions[1]; action.Type != "browser_evaluate_js" || action.Metadata["review_required"] != true || action.Metadata["compatibility_gate"] != "trueclient2_javascript_review" {
+		t.Fatalf("action[1] = %#v, want review-gated browser_evaluate_js", action)
 	}
 	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
 		t.Fatalf("stats = %#v, want total=2 converted=2 skipped=0", result.Stats)
@@ -425,8 +425,8 @@ func TestConvertArchiveLeavesUnsafeClassNameJavaScriptForReview(t *testing.T) {
 	if len(result.Script.Actions) != 2 {
 		t.Fatalf("actions len = %d, want 2 actions", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_evaluate_js" {
-		t.Fatalf("action[1] type = %s, want browser_evaluate_js", action.Type)
+	if action := result.Script.Actions[1]; action.Type != "browser_evaluate_js" || action.Metadata["review_required"] != true || action.Metadata["compatibility_gate"] != "trueclient2_javascript_review" {
+		t.Fatalf("action[1] = %#v, want review-gated browser_evaluate_js", action)
 	}
 	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
 		t.Fatalf("stats = %#v, want total=2 converted=2 skipped=0", result.Stats)
@@ -1040,7 +1040,7 @@ func TestConvertArchiveWeb2CustomJavaScriptAPIFixture(t *testing.T) {
 	if click := result.Script.Actions[2]; click.Type != "browser_click" || click.Selector != "#apply" {
 		t.Fatalf("action[2] = %#v, want decomposed browser_click", click)
 	}
-	if evalAction := result.Script.Actions[3]; evalAction.Type != "browser_evaluate_js" || evalAction.Target != "window.MyApp.checkout({express: true})" {
+	if evalAction := result.Script.Actions[3]; evalAction.Type != "browser_evaluate_js" || evalAction.Target != "window.MyApp.checkout({express: true})" || evalAction.Metadata["review_required"] != true {
 		t.Fatalf("action[3] = %#v, want executable browser_evaluate_js fallback", evalAction)
 	}
 }

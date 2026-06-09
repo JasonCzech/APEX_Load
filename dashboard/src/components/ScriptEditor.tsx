@@ -1543,6 +1543,35 @@ function actionAssertionCount(action: Action) {
   return (action.assertions?.length || 0) + httpSequenceRequests(action).reduce((count, request) => count + (request.assertions?.length || 0), 0)
 }
 
+function actionMetadataBool(action: Action, key: string) {
+  const value = action.metadata?.[key]
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') return value.trim().toLowerCase() === 'true'
+  return false
+}
+
+function isControlAction(action: Action) {
+  return action.type === 'control_if' || action.type === 'control_loop'
+}
+
+function isReviewGatedJavaScriptAction(action: Action) {
+  if (action.type !== 'browser_evaluate_js') return false
+  const reviewGate = asString(action.metadata?.review_gate).trim().toLowerCase()
+  return reviewGate === 'javascript' || actionMetadataBool(action, 'review_required') || actionMetadataBool(action, 'promotion_blocker')
+}
+
+function actionRequiresReview(action: Action) {
+  return isReviewGatedJavaScriptAction(action) || actionMetadataBool(action, 'review_required') || actionMetadataBool(action, 'promotion_blocker')
+}
+
+function actionSelectorFallbackCount(action: Action) {
+  const fallbacks = action.metadata?.source_selector_fallbacks
+  if (Array.isArray(fallbacks)) return fallbacks.length
+  const candidates = action.metadata?.source_selector_candidates
+  if (Array.isArray(candidates)) return Math.max(0, candidates.length - 1)
+  return 0
+}
+
 function actionDisplayType(action: Action) {
   return action.type === 'http_sequence' ? 'HTTP sequence' : (action.type || action.method || 'action')
 }
@@ -8310,6 +8339,28 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             <span>Capture client metrics</span>
                           </label>
                           <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.browser?.review_policy?.allow_reviewed_javascript || false}
+                              onChange={e => updateField('config.browser', {
+                                ...script.config.browser,
+                                review_policy: {
+                                  ...script.config.browser?.review_policy,
+                                  allow_reviewed_javascript: e.target.checked,
+                                },
+                              })} />
+                            <span>Allow reviewed JavaScript</span>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.browser?.review_policy?.allow_review_required || false}
+                              onChange={e => updateField('config.browser', {
+                                ...script.config.browser,
+                                review_policy: {
+                                  ...script.config.browser?.review_policy,
+                                  allow_review_required: e.target.checked,
+                                },
+                              })} />
+                            <span>Allow review-required actions</span>
+                          </label>
+                          <label className="checkbox-label">
                             <input type="checkbox" checked={script.config.browser?.cache_enabled || false}
                               onChange={e => updateField('config.browser', { ...script.config.browser, cache_enabled: e.target.checked })} />
                             <span>Simulate browser cache</span>
@@ -8998,6 +9049,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         const actionBreakpointLabel = `${actionBreakpointActive ? 'Remove' : 'Set'} breakpoint on ${breakpointPhaseLabel} ${i + 1}`
                         const requestCount = actionRequestCount(a)
                         const extractorCount = actionExtractorCount(a)
+                        const fallbackCount = actionSelectorFallbackCount(a)
+                        const reviewGated = actionRequiresReview(a)
+                        const controlAction = isControlAction(a)
                         const rowIssues = phase === 'action' ? actionIssueBuckets[i] || [] : []
                         const rowActive = authorCodeFocus
                           ? authorCodeFocus.phase === phase && authorCodeFocus.actionIndex === i
@@ -9020,6 +9074,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             <span className="action-method" style={{ color: methodColor(a.type) }}>{a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
                             <span className="action-name-text">{a.name || 'Unnamed'}</span>
                             <div className="action-item-signals">
+                              {controlAction && <span className="action-signal-pill control" title="Control block">CTRL</span>}
+                              {reviewGated && <span className="action-signal-pill warning" title="Review gate">REV</span>}
+                              {isReviewGatedJavaScriptAction(a) && <span className="action-signal-pill warning" title="JavaScript review gate">JS</span>}
+                              {fallbackCount > 0 && <span className="action-signal-pill selector" title={`${fallbackCount} selector fallback${fallbackCount === 1 ? '' : 's'}`}>F{fallbackCount}</span>}
                               {requestCount > 0 && <span className="action-signal-pill">R{requestCount}</span>}
                               {extractorCount > 0 && <span className="action-signal-pill">E{extractorCount}</span>}
                               {rowIssues.length > 0 && (
@@ -13415,8 +13473,12 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
             onUpdate={onUpdate}
           />
 
-          {isBrowserScript && (
+          {isBrowserScript && action.type.startsWith('browser_') && (
             <BrowserActionFields action={action} index={index} onUpdate={onUpdate} />
+          )}
+
+          {isControlAction(action) && (
+            <ControlFlowFields action={action} index={index} onUpdate={onUpdate} />
           )}
 
           {isWebSocketScript ? (
@@ -13525,7 +13587,25 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
   )
 }
 
-const BROWSER_ACTION_TYPES = ['browser_navigate', 'browser_click', 'browser_fill', 'browser_select', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe']
+const BROWSER_ACTION_TYPES = [
+  'browser_navigate',
+  'browser_click',
+  'browser_fill',
+  'browser_select',
+  'browser_wait',
+  'browser_screenshot',
+  'browser_dblclick',
+  'browser_hover',
+  'browser_drag_and_drop',
+  'browser_evaluate_js',
+  'browser_switch_frame',
+  'browser_switch_window',
+  'browser_tap',
+  'browser_long_press',
+  'browser_swipe',
+  'control_if',
+  'control_loop',
+]
 const JMS_ACTION_TYPES = ['jms_publish', 'jms_consume', 'jms_request_reply', 'jms_ack', 'jms_commit', 'jms_rollback']
 const WEBSOCKET_ACTION_TYPES = ['ws_connect', 'ws_send', 'ws_receive', 'ws_ping', 'ws_close']
 const GRPC_ACTION_TYPES = ['grpc_unary', 'grpc_server_stream', 'grpc_client_stream', 'grpc_bidi_stream']
@@ -13612,11 +13692,21 @@ interface ActionEditorHeaderProps {
 
 function ActionEditorHeader({ action, issues, methodColor }: ActionEditorHeaderProps) {
   const badgeLabel = action.type === 'http_sequence' ? 'SEQ' : action.type
+  const fallbackCount = actionSelectorFallbackCount(action)
+  const reviewGated = actionRequiresReview(action)
   return (
     <>
       <div className="action-editor-top">
         <span className="action-badge" style={{ background: methodColor(action.type), color: '#fff' }}>{badgeLabel}</span>
         <h3>{action.name || 'Unnamed Action'}</h3>
+        {(isControlAction(action) || reviewGated || fallbackCount > 0) && (
+          <div className="action-editor-issue-pills">
+            {isControlAction(action) && <span className="action-signal-pill control">control</span>}
+            {reviewGated && <span className="action-signal-pill warning">review</span>}
+            {isReviewGatedJavaScriptAction(action) && <span className="action-signal-pill warning">js</span>}
+            {fallbackCount > 0 && <span className="action-signal-pill selector">fallbacks {fallbackCount}</span>}
+          </div>
+        )}
         {issues.length > 0 && (
           <div className="action-editor-issue-pills">
             {issues.map((issue) => (
@@ -13647,8 +13737,113 @@ interface ActionCoreFieldsProps {
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
 }
 
+function formatControlActions(actions: Action[] | undefined) {
+  return JSON.stringify(actions || [], null, 2)
+}
+
+function parseControlActions(value: string): Action[] | null {
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed as Action[] : null
+  } catch {
+    return null
+  }
+}
+
+interface ControlFlowFieldsProps {
+  action: Action
+  index: number
+  onUpdate: (i: number, f: keyof Action, v: unknown) => void
+}
+
+function ControlFlowFields({ action, index, onUpdate }: ControlFlowFieldsProps) {
+  const control = action.control || {}
+  const condition = control.condition || {}
+  const [stepsDraft, setStepsDraft] = useState(formatControlActions(control.steps))
+  const [elseDraft, setElseDraft] = useState(formatControlActions(control.else))
+  const [stepsInvalid, setStepsInvalid] = useState(false)
+  const [elseInvalid, setElseInvalid] = useState(false)
+
+  useEffect(() => {
+    setStepsDraft(formatControlActions(control.steps))
+    setElseDraft(formatControlActions(control.else))
+    setStepsInvalid(false)
+    setElseInvalid(false)
+  }, [action.control])
+
+  const updateControl = (patch: Record<string, unknown>) => {
+    onUpdate(index, 'control', { ...control, ...patch })
+  }
+  const updateCondition = (patch: Record<string, unknown>) => {
+    updateControl({ condition: { ...condition, ...patch } })
+  }
+  const commitStepsDraft = () => {
+    const parsed = parseControlActions(stepsDraft)
+    setStepsInvalid(parsed === null)
+    if (parsed !== null) updateControl({ steps: parsed })
+  }
+  const commitElseDraft = () => {
+    const parsed = parseControlActions(elseDraft)
+    setElseInvalid(parsed === null)
+    if (parsed !== null) updateControl({ else: parsed })
+  }
+
+  return (
+    <div className="sub-section control-flow-section">
+      <div className="sub-header"><h4>Control Flow</h4></div>
+      <div className="form-grid">
+        <label className="full-width">
+          <span>Condition Left</span>
+          <input value={condition.left || ''} onChange={e => updateCondition({ left: e.target.value })} placeholder="{{var.status}}" />
+        </label>
+        <label>
+          <span>Operator</span>
+          <select value={condition.op || 'exists'} onChange={e => updateCondition({ op: e.target.value })}>
+            <option value="exists">exists</option>
+            <option value="not_exists">not exists</option>
+            <option value="eq">equals</option>
+            <option value="ne">not equals</option>
+            <option value="contains">contains</option>
+            <option value="not_contains">not contains</option>
+            <option value="gt">greater than</option>
+            <option value="gte">greater/equal</option>
+            <option value="lt">less than</option>
+            <option value="lte">less/equal</option>
+          </select>
+        </label>
+        <label>
+          <span>Condition Right</span>
+          <input value={condition.right || ''} onChange={e => updateCondition({ right: e.target.value })} placeholder="ready" />
+        </label>
+        {action.type === 'control_loop' && (
+          <>
+            <label>
+              <span>Loop Count</span>
+              <input type="number" min="0" value={control.count ?? 0} onChange={e => updateControl({ count: Math.max(0, Number(e.target.value) || 0) })} />
+            </label>
+            <label>
+              <span>Max Iterations</span>
+              <input type="number" min="0" value={control.max_iterations ?? 0} onChange={e => updateControl({ max_iterations: Math.max(0, Number(e.target.value) || 0) })} />
+            </label>
+          </>
+        )}
+        <label className="full-width">
+          <span>Then Steps JSON</span>
+          <textarea className={`body-textarea ${stepsInvalid ? 'invalid' : ''}`} rows={6} value={stepsDraft} onChange={e => setStepsDraft(e.target.value)} onBlur={commitStepsDraft} />
+        </label>
+        {stepsInvalid && <div className="browser-config-warning">Then steps must be a JSON array.</div>}
+        <label className="full-width">
+          <span>Else Steps JSON</span>
+          <textarea className={`body-textarea ${elseInvalid ? 'invalid' : ''}`} rows={5} value={elseDraft} onChange={e => setElseDraft(e.target.value)} onBlur={commitElseDraft} />
+        </label>
+        {elseInvalid && <div className="browser-config-warning">Else steps must be a JSON array.</div>}
+      </div>
+    </div>
+  )
+}
+
 function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScript, onUpdate }: ActionCoreFieldsProps) {
-  const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_select', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe'].includes(action.type)
+  const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_select', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe', 'browser_dblclick', 'browser_hover', 'browser_drag_and_drop', 'browser_switch_frame'].includes(action.type)
   const showValue = isBrowserScript && ['browser_fill', 'browser_select'].includes(action.type)
   const isWebSocketScript = protocol === 'websocket'
   const isGrpcScript = protocol === 'grpc'
@@ -13659,6 +13854,10 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
     : isBrowserScript
     ? action.type === 'browser_navigate'
       ? 'URL or Path'
+      : action.type === 'browser_evaluate_js'
+        ? 'JavaScript'
+        : action.type === 'browser_switch_window'
+          ? 'Window Title or URL'
       : action.type === 'browser_wait'
         ? 'Wait Target or Duration'
         : 'Target Selector'
@@ -13676,6 +13875,10 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
     : isBrowserScript
     ? action.type === 'browser_navigate'
       ? 'https://example.com or /login'
+      : action.type === 'browser_evaluate_js'
+        ? 'window.app.ready === true'
+        : action.type === 'browser_switch_window'
+          ? 'checkout or /payment'
       : action.type === 'browser_wait'
         ? '#ready, text, or 750ms'
         : '#submit'
@@ -14200,6 +14403,7 @@ function BrowserActionFields({ action, index, onUpdate }: BrowserActionFieldsPro
   const waitFor = action.wait_for || {}
   const capture = action.capture || {}
   const params = action.params || {}
+  const sync = action.sync || {}
 
   return (
     <>
@@ -14286,6 +14490,66 @@ function BrowserActionFields({ action, index, onUpdate }: BrowserActionFieldsPro
           </div>
         </div>
       )}
+
+      {action.type === 'browser_drag_and_drop' && (
+        <div className="sub-section browser-action-section">
+          <div className="sub-header"><h4>Drag Target</h4></div>
+          <div className="browser-action-grid">
+            <label className="full-width">
+              <span>Drop Target Selector</span>
+              <input
+                value={typeof params.target === 'string' ? params.target : ''}
+                onChange={e => onUpdate(index, 'params', { ...params, target: e.target.value })}
+                placeholder="#drop-zone"
+              />
+            </label>
+          </div>
+        </div>
+      )}
+
+      <div className="sub-section browser-action-section">
+        <div className="sub-header"><h4>Post-Action Sync</h4></div>
+        <div className="browser-action-grid">
+          <label>
+            <span>Type</span>
+            <select value={sync.type || ''} onChange={e => onUpdate(index, 'sync', { ...sync, type: e.target.value || undefined })}>
+              <option value="">Default</option>
+              <option value="network_idle">Network idle</option>
+              <option value="dom_stable">DOM stable</option>
+              <option value="element_visible">Element visible</option>
+              <option value="load">Load event</option>
+              <option value="domcontentloaded">DOM content loaded</option>
+              <option value="duration">Duration</option>
+            </select>
+          </label>
+          <label>
+            <span>Value</span>
+            <input
+              value={sync.value || ''}
+              onChange={e => onUpdate(index, 'sync', { ...sync, value: e.target.value || undefined })}
+              placeholder={sync.type === 'duration' ? '750ms' : '#ready'}
+            />
+          </label>
+          <label>
+            <span>Timeout (ms)</span>
+            <input
+              type="number"
+              min="0"
+              value={sync.timeout_ms ?? ''}
+              onChange={e => onUpdate(index, 'sync', { ...sync, timeout_ms: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })}
+            />
+          </label>
+          <label>
+            <span>Stable (ms)</span>
+            <input
+              type="number"
+              min="0"
+              value={sync.stable_ms ?? ''}
+              onChange={e => onUpdate(index, 'sync', { ...sync, stable_ms: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })}
+            />
+          </label>
+        </div>
+      </div>
 
       <div className="sub-section browser-action-section">
         <div className="sub-header"><h4>Capture</h4></div>

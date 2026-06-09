@@ -1425,7 +1425,8 @@ RuntimeSettings=default.cfg
 		Script struct {
 			Protocol string `json:"protocol"`
 			Actions  []struct {
-				Type string `json:"type"`
+				Type     string         `json:"type"`
+				Metadata map[string]any `json:"metadata"`
 			} `json:"actions"`
 		} `json:"script"`
 		Warnings       []string `json:"warnings"`
@@ -1439,13 +1440,23 @@ RuntimeSettings=default.cfg
 			Severity string `json:"severity"`
 			Title    string `json:"title"`
 		} `json:"repair_suggestions"`
-		Summary map[string]any `json:"summary"`
+		Summary                 map[string]any `json:"summary"`
+		TrueClient2CompatReport struct {
+			PromotionStatus      string `json:"promotion_status"`
+			PromotionAllowed     bool   `json:"promotion_allowed"`
+			JavaScriptReviewGate string `json:"javascript_review_gate"`
+			ReplayStatus         string `json:"replay_status"`
+			ConvertedActions     int    `json:"converted_actions"`
+		} `json:"trueclient2_compat_report"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
-	if result.Script.Protocol != "browser" || len(result.Script.Actions) != 2 {
-		t.Fatalf("script = %#v, want browser draft with two converted actions", result.Script)
+	if result.Script.Protocol != "browser" || len(result.Script.Actions) != 3 {
+		t.Fatalf("script = %#v, want browser draft with three converted actions", result.Script)
+	}
+	if result.Script.Actions[2].Type != "browser_evaluate_js" || result.Script.Actions[2].Metadata["review_required"] != true {
+		t.Fatalf("action[2] = %#v, want review-gated browser_evaluate_js", result.Script.Actions[2])
 	}
 	if !containsString(result.Warnings, "TruClient 2.0 - Web import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.") {
 		t.Fatalf("warnings = %#v, want review-only warning", result.Warnings)
@@ -1476,11 +1487,14 @@ RuntimeSettings=default.cfg
 	if !ok {
 		t.Fatalf("summary.web2_migration_readiness = %#v, want readiness report", result.Summary["web2_migration_readiness"])
 	}
-	if readiness["imported_steps"] != float64(3) || readiness["converted_steps"] != float64(2) || readiness["conversion_to_http_readiness"] != "needs_replay_network" {
+	if readiness["imported_steps"] != float64(3) || readiness["converted_steps"] != float64(3) || readiness["conversion_to_http_readiness"] != "needs_replay_network" {
 		t.Fatalf("web2 readiness = %#v, want import/convert counts and HTTP conversion readiness", readiness)
 	}
 	if readiness["replay_status"] != "required" || readiness["runtime_parity_status"] != "ready" {
 		t.Fatalf("web2 readiness status = %#v, want replay required/runtime ready", readiness)
+	}
+	if result.TrueClient2CompatReport.PromotionAllowed || result.TrueClient2CompatReport.PromotionStatus != "blocked" || result.TrueClient2CompatReport.JavaScriptReviewGate != "required" || result.TrueClient2CompatReport.ReplayStatus != "required" || result.TrueClient2CompatReport.ConvertedActions != 3 {
+		t.Fatalf("trueclient2_compat_report = %#v, want blocked review-gated report", result.TrueClient2CompatReport)
 	}
 }
 

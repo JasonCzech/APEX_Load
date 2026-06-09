@@ -70,7 +70,7 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 
 func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.Request, id string, script *dsl.Script, req BrowserReplayStartRequest) {
 	script = applyBrowserReplayOverrides(script, req)
-	issues := validateScript(script)
+	issues := validateScriptForReplay(script)
 	warnings := validationWarnings(script)
 	preflight := buildReplayPreflight(script, req.Variables, issues, warnings)
 	if len(issues) > 0 {
@@ -139,6 +139,9 @@ func applyBrowserReplayOverrides(script *dsl.Script, req BrowserReplayStartReque
 	}
 	if req.Browser.Viewport.Height > 0 {
 		browserCfg.Viewport.Height = req.Browser.Viewport.Height
+	}
+	if req.Browser.ReviewPolicy.AllowReviewedJavaScript || req.Browser.ReviewPolicy.AllowReviewRequired {
+		browserCfg.ReviewPolicy = req.Browser.ReviewPolicy
 	}
 	clone.Config.Browser = browserCfg
 	return &clone
