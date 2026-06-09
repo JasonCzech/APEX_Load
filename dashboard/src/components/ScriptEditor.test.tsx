@@ -676,6 +676,115 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
   })
 
+  it('surfaces saved TruClient2 promotion review evidence in imported metadata', async () => {
+    const importedWeb2Script: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'browser',
+      actions: [
+        {
+          name: 'Click Checkout',
+          type: 'browser_click',
+          target: '#checkout',
+          selector: '#checkout',
+          metadata: {
+            source_selector_fallbacks: [
+              { kind: 'css', value: '[data-testid="checkout"]', confidence: 92 },
+              { kind: 'xpath', value: '//*[@id="checkout"]', confidence: 70 },
+            ],
+          },
+        },
+        {
+          name: 'Evaluate Ready',
+          type: 'browser_evaluate_js',
+          target: 'window.checkoutReady === true',
+          metadata: {
+            review_required: true,
+            review_gate: 'javascript',
+          },
+        },
+      ],
+      metadata: {
+        import: {
+          source: 'loadrunner',
+          source_script_name: 'CheckoutWeb2.zip',
+          preserved: {
+            source_script_type: 'TruClient 2.0 - Web',
+            trueclient2_promotion_review: {
+              schema_version: 1,
+              status: 'replay_evidence_attached',
+              generated_at: '2026-05-14T20:00:03Z',
+              source: 'loadrunner',
+              source_script_name: 'CheckoutWeb2.zip',
+              compatibility: {
+                source_profile: 'truclient2_web',
+                import_mode: 'review',
+                promotion_status: 'review_required',
+                promotion_allowed: false,
+                runtime_parity_status: 'partial',
+                replay_status: 'attached',
+                javascript_review_gate: 'required',
+                http_conversion_readiness: 'needs_approval',
+                selector_confidence_pct: 92,
+                frame_window_blockers: 1,
+              },
+              gates: {
+                review_required_actions: 1,
+                javascript_review_actions: 1,
+                selector_fallback_candidates: 2,
+                replay_required: false,
+                replay_warnings: ['Review JavaScript before promotion.'],
+                import_warnings: ['Frame context requires replay verification.'],
+              },
+              replay_evidence: {
+                session_id: 'draft-browser-validation',
+                status: 'completed',
+                started_at: '2026-05-14T20:00:00Z',
+                completed_at: '2026-05-14T20:00:02Z',
+                events: 2,
+                passed: 2,
+                failed: 0,
+                screenshots: 1,
+                dom_html_captures: 1,
+                console_entries: 3,
+                network_entries: 4,
+                source_steps: 2,
+                source_transactions: 1,
+              },
+              next_actions: ['Review selector fallbacks and JavaScript approvals before production promotion.'],
+            },
+          },
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={importedWeb2Script} />)
+    })
+
+    const importedLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Imported Metadata'))
+    expect(importedLauncher).toBeDefined()
+    await act(async () => {
+      importedLauncher?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const metadataSection = container.querySelector('#imported-metadata-section')
+    expect(metadataSection?.textContent).toContain('TruClient Promotion Review')
+    expect(metadataSection?.textContent).toContain('Replay evidence attached')
+    expect(metadataSection?.textContent).toContain('draft-browser-validation')
+    expect(metadataSection?.textContent).toContain('2 passed / 0 failed')
+    expect(metadataSection?.textContent).toContain('Selector Fallbacks')
+    expect(metadataSection?.textContent).toContain('92% selector confidence')
+    expect(metadataSection?.textContent).toContain('Frame context requires replay verification.')
+    expect(metadataSection?.textContent).toContain('Review selector fallbacks and JavaScript approvals before production promotion.')
+
+    const utilitySidebar = container.querySelector('.editor-utility-sidebar')
+    expect(utilitySidebar?.textContent).toContain('TruClient Promotion')
+    expect(utilitySidebar?.textContent).toContain('draft-browser-validation')
+    expect(utilitySidebar?.textContent).toContain('2 passed / 0 failed')
+    expect(utilitySidebar?.textContent).toContain('2 fallbacks')
+    expect(utilitySidebar?.textContent).toContain('1 frame/window blocker')
+  })
+
   it('renders grouped HTTP sequence actions with child request details', async () => {
     const sequenceScript: ScriptDefinition = {
       ...initialScript,
