@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { type DetectedLoadRunnerProtocol, type ImportRepairSuggestion, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerProtocolSupportEntry, type LoadRunnerReviewArtifact, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse, type SalesforceReview, type TrueClient2CompatReport } from '../types/scriptImports'
-import { type BrowserReplaySession } from '../types'
+import { type BrowserReplayEvent, type BrowserReplaySession } from '../types'
 import { type LoadRunnerSourceReview, type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from './scriptEditorUtils'
@@ -223,6 +223,18 @@ const DEFAULT_IMPORT_OPTIONS: ImportOptions = {
 }
 const EMPTY_REPLAY_VALIDATION_WARNINGS: string[] = []
 
+interface BrowserReplayEvidenceSummary {
+  events: number
+  passed: number
+  failed: number
+  screenshots: number
+  domHtmlCaptures: number
+  consoleEntries: number
+  networkEntries: number
+  sourceSteps: number
+  sourceTransactions: number
+}
+
 function getImportedRuntimeSectionId(area?: string | null): string | null {
   const normalizedArea = area?.trim().toLowerCase()
   switch (normalizedArea) {
@@ -258,6 +270,59 @@ function formatRuntimeSettingStatusLabel(status?: string | null) {
   const normalized = status?.trim().replace(/[_-]+/g, ' ')
   if (!normalized) return 'Unknown'
   return normalized.replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function formatEvidenceCount(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
+function getReplaySessionEvents(session?: BrowserReplaySession | null): BrowserReplayEvent[] {
+  if (Array.isArray(session?.events) && session.events.length > 0) return session.events
+  if (Array.isArray(session?.report?.events) && session.report.events.length > 0) return session.report.events
+  return session?.current_event ? [session.current_event] : []
+}
+
+function summarizeBrowserReplayEvidence(session?: BrowserReplaySession | null): BrowserReplayEvidenceSummary {
+  const events = getReplaySessionEvents(session)
+  const manifest = session?.report?.artifact_manifest
+  const sourceSteps = new Set<string>()
+  const sourceTransactions = new Set<string>()
+  let screenshots = 0
+  let domHtmlCaptures = 0
+  let consoleEntries = 0
+  let networkEntries = 0
+  let passed = 0
+  let failed = 0
+
+  events.forEach((event) => {
+    const snapshot = event.snapshot
+    if (event.success) {
+      passed += 1
+    } else {
+      failed += 1
+    }
+    if (event.screenshot_base64 || snapshot?.screenshot_base64) screenshots += 1
+    if (event.html || event.dom_summary || snapshot?.html || snapshot?.dom_summary) domHtmlCaptures += 1
+    consoleEntries += (event.console_entries || snapshot?.console_entries || []).length
+    networkEntries += (event.network_entries || snapshot?.network_entries || []).length
+    const sourceStep = event.source_step_id || event.source_action || event.source_action_name || (
+      typeof event.source_step_index === 'number' ? `source-step-${event.source_step_index}` : ''
+    )
+    if (sourceStep) sourceSteps.add(sourceStep)
+    if (event.source_transaction) sourceTransactions.add(event.source_transaction)
+  })
+
+  return {
+    events: events.length,
+    passed,
+    failed,
+    screenshots: Math.max(screenshots, manifest?.screenshots || 0),
+    domHtmlCaptures: Math.max(domHtmlCaptures, manifest?.snapshots || 0, manifest?.html_captured ? 1 : 0),
+    consoleEntries: Math.max(consoleEntries, manifest?.console_entries || 0),
+    networkEntries: Math.max(networkEntries, manifest?.network_entries || 0),
+    sourceSteps: sourceSteps.size,
+    sourceTransactions: sourceTransactions.size,
+  }
 }
 
 function normalizeReplaySuggestionCopy(value?: string | null) {
@@ -431,6 +496,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const saveBlockedByProtocolGate = Boolean(detectedProtocol && detectedProtocol.import_mode !== 'executable')
   const browserImport = isBrowserImport(importedScript)
   const browserReplayStatus = replayValidationSession?.status || null
+  const browserReplayEvidence = useMemo(
+    () => summarizeBrowserReplayEvidence(replayValidationSession),
+    [replayValidationSession],
+  )
   const browserReplayStarting = browserImport && replayValidationLoading
   const browserReplayStatusLabel = browserReplayStarting
     ? 'Starting'
@@ -1421,11 +1490,41 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                     </button>
                   </div>
                   {replayValidationSession && !replayValidationLoading && (
-                    <ul>
-                      <li>Replay Session: {replayValidationSession.id}</li>
-                      <li>Replay Status: {browserReplayStatusLabel}</li>
-                      <li>Replay Group: {replayValidationSession.group}</li>
-                    </ul>
+                    <>
+                      <ul>
+                        <li>Replay Session: {replayValidationSession.id}</li>
+                        <li>Replay Status: {browserReplayStatusLabel}</li>
+                        <li>Replay Group: {replayValidationSession.group}</li>
+                      </ul>
+                      <div className="lr-replay-evidence">
+                        <div className="lr-review-section-header">
+                          <strong>Replay Evidence</strong>
+                          <span>{browserReplayEvidence.events > 0 ? 'Captured' : 'Pending'}</span>
+                        </div>
+                        <div className="lr-compat-grid lr-replay-evidence-grid">
+                          <div>
+                            <span>Actions</span>
+                            <strong>{formatEvidenceCount(browserReplayEvidence.events, 'action')}</strong>
+                            <small>{browserReplayEvidence.passed} passed / {browserReplayEvidence.failed} failed</small>
+                          </div>
+                          <div>
+                            <span>Captures</span>
+                            <strong>{formatEvidenceCount(browserReplayEvidence.screenshots, 'screenshot')}</strong>
+                            <small>{formatEvidenceCount(browserReplayEvidence.domHtmlCaptures, 'DOM/HTML capture')}</small>
+                          </div>
+                          <div>
+                            <span>Telemetry</span>
+                            <strong>{formatEvidenceCount(browserReplayEvidence.consoleEntries, 'console entry', 'console entries')}</strong>
+                            <small>{formatEvidenceCount(browserReplayEvidence.networkEntries, 'network entry', 'network entries')}</small>
+                          </div>
+                          <div>
+                            <span>Source Links</span>
+                            <strong>{formatEvidenceCount(browserReplayEvidence.sourceSteps, 'source step')}</strong>
+                            <small>{formatEvidenceCount(browserReplayEvidence.sourceTransactions, 'transaction')}</small>
+                          </div>
+                        </div>
+                      </div>
+                    </>
                   )}
                   {replayValidationWarnings.length > 0 && (
                     <ul>{replayValidationWarnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>

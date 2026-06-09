@@ -2689,6 +2689,55 @@ describe('LoadRunnerImport', () => {
         group: 'default',
         protocol: 'browser',
         current_event_index: 1,
+        events: [
+          {
+            event_id: 'event-1',
+            action_index: 0,
+            event_index: 0,
+            phase: 'actions',
+            action_name: 'Open Store',
+            action_type: 'browser_navigate',
+            target: '/store',
+            success: true,
+            started_at: '2026-01-01T00:00:00Z',
+            completed_at: '2026-01-01T00:00:01Z',
+            duration_ms: 1000,
+            source_step_id: 'step-open-store',
+            source_transaction: 'Checkout',
+            screenshot_base64: 'iVBORw0KGgo=',
+            dom_summary: {
+              title: 'Store',
+              ready_state: 'complete',
+              visible_text: ['Store'],
+            },
+            network_entries: [
+              { method: 'GET', url: 'https://shop.example.test/store', status_code: 200 },
+            ],
+          },
+          {
+            event_id: 'event-2',
+            action_index: 1,
+            event_index: 1,
+            phase: 'actions',
+            action_name: 'Add To Cart',
+            action_type: 'browser_click',
+            target: '#add-to-cart',
+            selector: '#add-to-cart',
+            success: true,
+            started_at: '2026-01-01T00:00:01Z',
+            completed_at: '2026-01-01T00:00:02Z',
+            duration_ms: 1000,
+            source_step_id: 'step-add-to-cart',
+            source_transaction: 'Checkout',
+            html: '<button id="add-to-cart">Add</button>',
+            console_entries: [
+              { level: 'info', text: 'ready' },
+            ],
+            network_entries: [
+              { method: 'POST', url: 'https://shop.example.test/cart', status_code: 200 },
+            ],
+          },
+        ],
       },
       warnings: ['selector repair recommended'],
     })
@@ -2793,6 +2842,15 @@ describe('LoadRunnerImport', () => {
       expect(apiMock.getBrowserReplaySession).toHaveBeenCalledWith('draft-browser-validation')
       expect(container.textContent).toContain('Replay Status: Completed')
       expect(container.textContent).toContain('The latest draft browser replay completed. Review the draft browser replay results before saving it to the library.')
+      expect(container.textContent).toContain('Replay Evidence')
+      expect(container.textContent).toContain('2 actions')
+      expect(container.textContent).toContain('2 passed / 0 failed')
+      expect(container.textContent).toContain('1 screenshot')
+      expect(container.textContent).toContain('2 DOM/HTML captures')
+      expect(container.textContent).toContain('1 console entry')
+      expect(container.textContent).toContain('2 network entries')
+      expect(container.textContent).toContain('2 source steps')
+      expect(container.textContent).toContain('1 transaction')
 
       const finalSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
       expect(finalSaveButton).toBeDefined()

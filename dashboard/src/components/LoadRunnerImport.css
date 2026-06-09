@@ -416,6 +416,12 @@
   color: var(--text-primary);
   font-size: 14px;
 }
+.lr-replay-evidence {
+  margin-top: 12px;
+}
+.lr-replay-evidence-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 .lr-preserved {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
