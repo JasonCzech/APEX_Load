@@ -875,6 +875,20 @@ describe('TestExecutionCharts context menu', () => {
     expect(tpsChartWithOverlay?.querySelector('path[data-testid="mock-reference-line"]')?.getAttribute('data-y-axis-id')).toBe('metric')
 
     await act(async () => {
+      tpsChartWithOverlay?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 170 }))
+    })
+
+    expect(menuActionTexts()).toContain('Overlay ART')
+
+    await act(async () => {
+      menuButton('Overlay ART')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const tpsChartWithArtOverlay = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Transactions Per Second + VUsers + ART'))
+    expect(tpsChartWithArtOverlay).not.toBeUndefined()
+    expect(tpsChartWithArtOverlay?.querySelector('path[data-testid="mock-line"][data-name="ART"]')?.getAttribute('data-key')).toBe('avgMs__smoothed')
+
+    await act(async () => {
       container.querySelector<SVGElement>('[data-testid="mock-chart"]')?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
     })
 

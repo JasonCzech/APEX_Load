@@ -51,16 +51,18 @@ const SMOOTHED_GRAPH_METRIC_SUFFIX = '__smoothed'
 export const LOAD_IMPACT_VISIBLE_CHARTS_STORAGE_KEY = 'apexload.execution.visibleLoadImpactCharts'
 export const DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS = ['avgMs', 'p95', 'tps', 'errorPct', 'cpuProcess', 'memProcess']
 const LOAD_IMPACT_GRAPH_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
-const SMOOTHED_GRAPH_KERNEL = [1, 2, 5, 2, 1] as const
-const SMOOTHED_THROUGHPUT_KEYS = new Set(['tps', 'netSent', 'netRecv', 'diskRead', 'diskWrite'])
-const SMOOTHED_IMPACT_KEYS = new Set([
-  'containerCPUThrottledSecondsRate',
-  'gcPauseMs',
-  'netDropsPerSec',
-  'netErrorsPerSec',
-  'tcpRetransmitsPerSec',
-  'diskIOTimePct',
-])
+const MIN_GRAPH_SMOOTHING_RADIUS = 2
+const MAX_GRAPH_SMOOTHING_RADIUS = 6
+const DEFAULT_GRAPH_CARD_WIDTH = 520
+const DEFAULT_GRAPH_CARD_HEIGHT = 196
+const UNSMOOTHED_GRAPH_KEYS = new Set(['targetTps', 'vusers'])
+
+export interface GraphSmoothingDensity {
+  chartWidth?: number
+  chartHeight?: number
+  visibleMetricCount?: number
+  expanded?: boolean
+}
 
 export const chartConfigs: ChartConfig[] = [
   { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
@@ -337,37 +339,60 @@ export function rawGraphMetricKey(key: string) {
     : key
 }
 
-function isThroughputMetricKey(key: string) {
-  return key === 'tps' || key.endsWith('_tps')
+function isSmoothableGraphMetricKey(key: string) {
+  return !UNSMOOTHED_GRAPH_KEYS.has(key)
+    && !key.startsWith('latency_success_rate_')
+    && !key.endsWith('_successRate')
 }
 
 export function smoothedMetricKeysForChart(chart: ChartConfig, visibleMetricKeys: string[]) {
-  if (isLoadImpactChart(chart) || chart.id === 'network_latency') {
-    return []
-  }
-  if (chart.id === 'tps') {
-    return visibleMetricKeys.filter(isThroughputMetricKey)
-  }
-  if (chart.id === 'io') {
-    return visibleMetricKeys.filter(key => SMOOTHED_THROUGHPUT_KEYS.has(key))
-  }
-  if (chart.id === 'generator_impact') {
-    return visibleMetricKeys.filter(key => SMOOTHED_IMPACT_KEYS.has(key))
-  }
-  return []
+  if (isLoadImpactChart(chart)) return []
+  return visibleMetricKeys.filter(isSmoothableGraphMetricKey)
 }
 
-function smoothedMetricValue(data: MetricsHistoryPoint[], key: string, index: number) {
+export function smoothingRadiusForGraphDensity(pointCount: number, density: GraphSmoothingDensity = {}) {
+  if (pointCount < (MIN_GRAPH_SMOOTHING_RADIUS * 2) + 1) return 0
+
+  const chartWidth = Math.max(220, density.chartWidth ?? DEFAULT_GRAPH_CARD_WIDTH)
+  const chartHeight = Math.max(120, density.chartHeight ?? DEFAULT_GRAPH_CARD_HEIGHT)
+  const plotWidth = Math.max(180, chartWidth - 122)
+  const plotHeight = Math.max(90, chartHeight - 74)
+  const pixelsPerPoint = plotWidth / Math.max(1, pointCount - 1)
+  const seriesCrowding = Math.min(1.5, 1 + Math.max(0, (density.visibleMetricCount ?? 1) - 2) * 0.08)
+  const verticalCrowding = plotHeight < 110 ? 1.2 : plotHeight > 240 ? 0.85 : 1
+  const adjustedPixelsPerPoint = pixelsPerPoint / (seriesCrowding * verticalCrowding)
+
+  let radius = MIN_GRAPH_SMOOTHING_RADIUS
+  if (adjustedPixelsPerPoint < 2) {
+    radius = 6
+  } else if (adjustedPixelsPerPoint < 3.5) {
+    radius = 5
+  } else if (adjustedPixelsPerPoint < 5.5) {
+    radius = 4
+  } else if (adjustedPixelsPerPoint < 8) {
+    radius = 3
+  }
+  if (density.expanded) {
+    radius = Math.max(MIN_GRAPH_SMOOTHING_RADIUS, radius - 1)
+  }
+
+  return Math.min(MAX_GRAPH_SMOOTHING_RADIUS, radius, Math.floor((pointCount - 1) / 2))
+}
+
+function smoothingWeightForOffset(offset: number, radius: number) {
+  return radius + 1 - Math.abs(offset)
+}
+
+function smoothedMetricValue(data: MetricsHistoryPoint[], key: string, index: number, radius: number) {
   const rawValue = data[index][key]
   if (typeof rawValue !== 'number' || !Number.isFinite(rawValue)) return undefined
 
   let weightedTotal = 0
   let weightTotal = 0
-  const kernelCenter = Math.floor(SMOOTHED_GRAPH_KERNEL.length / 2)
-  for (let offset = -kernelCenter; offset <= kernelCenter; offset += 1) {
+  for (let offset = -radius; offset <= radius; offset += 1) {
     const candidate = data[index + offset]?.[key]
     if (typeof candidate !== 'number' || !Number.isFinite(candidate)) continue
-    const weight = SMOOTHED_GRAPH_KERNEL[offset + kernelCenter]
+    const weight = smoothingWeightForOffset(offset, radius)
     weightedTotal += candidate * weight
     weightTotal += weight
   }
@@ -376,9 +401,10 @@ function smoothedMetricValue(data: MetricsHistoryPoint[], key: string, index: nu
   return roundChartValue(weightedTotal / weightTotal)
 }
 
-export function buildSmoothedGraphData(data: MetricsHistoryPoint[], metricKeys: string[]) {
+export function buildSmoothedGraphData(data: MetricsHistoryPoint[], metricKeys: string[], smoothingRadius = MIN_GRAPH_SMOOTHING_RADIUS) {
   const uniqueMetricKeys = Array.from(new Set(metricKeys))
   if (data.length === 0 || uniqueMetricKeys.length === 0) return data
+  const radius = Math.max(0, Math.floor(smoothingRadius))
 
   const next = data.map(point => ({ ...point }))
   uniqueMetricKeys.forEach(key => {
@@ -387,7 +413,7 @@ export function buildSmoothedGraphData(data: MetricsHistoryPoint[], metricKeys: 
       .filter((item): item is { value: number; index: number } => typeof item.value === 'number' && Number.isFinite(item.value))
       .map(item => item.index)
 
-    if (finiteIndexes.length < SMOOTHED_GRAPH_KERNEL.length) {
+    if (radius < 1 || finiteIndexes.length < (radius * 2) + 1) {
       finiteIndexes.forEach(index => {
         next[index][smoothedGraphMetricKey(key)] = data[index][key]
       })
@@ -399,7 +425,7 @@ export function buildSmoothedGraphData(data: MetricsHistoryPoint[], metricKeys: 
     finiteIndexes.forEach(index => {
       next[index][smoothedGraphMetricKey(key)] = index === firstFiniteIndex || index === lastFiniteIndex
         ? data[index][key]
-        : smoothedMetricValue(data, key, index)
+        : smoothedMetricValue(data, key, index, radius)
     })
   })
 

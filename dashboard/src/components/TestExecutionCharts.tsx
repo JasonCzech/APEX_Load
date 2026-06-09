@@ -56,6 +56,7 @@ import {
   sameStringArray,
   sameStringSet,
   rawGraphMetricKey,
+  smoothingRadiusForGraphDensity,
   smoothedGraphMetricKey,
   smoothedMetricKeysForChart,
   visibleMetricDomain,
@@ -117,6 +118,7 @@ interface Props {
 
 type ChartDropPosition = 'before' | 'after'
 type GraphGroupTabId = 'test_results' | 'under_load' | 'infrastructure'
+type ChartCardSize = { width: number; height: number }
 
 export interface GraphCursorState {
   label?: string | number
@@ -412,6 +414,7 @@ export default function TestExecutionCharts({
   const [hoveredChartId, setHoveredChartId] = useState<string | null>(null)
   const [draggingChartId, setDraggingChartId] = useState<string | null>(null)
   const [dragOverChartId, setDragOverChartId] = useState<string | null>(null)
+  const [chartCardSizes, setChartCardSizes] = useState<Record<string, ChartCardSize>>({})
   const chartCardRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const chartMenuRef = useRef<HTMLDivElement | null>(null)
   const commandCenterSurface = surface === 'command-center'
@@ -601,10 +604,6 @@ export default function TestExecutionCharts({
     }
   }, [latencyKeys, selectedRouteLatencyKey])
 
-  if (filteredData.length <= 1 && loadImpactCharts.length === 0 && !loadImpactLoading && !loadImpactError) {
-    return null
-  }
-
   const latest = filteredData[filteredData.length - 1] || loadImpactSourceData[loadImpactSourceData.length - 1] || {}
   const visibleCharts = orderedCharts.filter(chart => !hiddenChartIds.includes(chart.id))
   const tabbedCharts = enableGraphGroupTabs
@@ -616,6 +615,42 @@ export default function TestExecutionCharts({
         ...tabbedCharts.filter(chart => chart.id !== expandedChart),
       ]
     : tabbedCharts
+  const displayedChartIds = displayedCharts.map(chart => chart.id)
+  const displayedChartIdSignature = displayedChartIds.join('|')
+
+  useEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(entries => {
+      setChartCardSizes(prev => {
+        let changed = false
+        const next = { ...prev }
+        entries.forEach(entry => {
+          const chartId = (entry.target as HTMLElement).dataset.chartId
+          if (!chartId) return
+          const width = Math.round(entry.contentRect.width)
+          const height = Math.round(entry.contentRect.height)
+          if (width <= 0 || height <= 0) return
+          const current = prev[chartId]
+          if (current?.width === width && current.height === height) return
+          next[chartId] = { width, height }
+          changed = true
+        })
+        return changed ? next : prev
+      })
+    })
+
+    displayedChartIds.forEach(chartId => {
+      const element = chartCardRefs.current[chartId]
+      if (element) observer.observe(element)
+    })
+
+    return () => observer.disconnect()
+  }, [displayedChartIdSignature])
+
+  if (filteredData.length <= 1 && loadImpactCharts.length === 0 && !loadImpactLoading && !loadImpactError) {
+    return null
+  }
+
   const contextChart = chartMenu ? tabbedCharts.find(chart => chart.id === chartMenu.chartId) : undefined
   const graphGroupCounts: Record<GraphGroupTabId, number> = { test_results: 0, under_load: 0, infrastructure: 0 }
   visibleCharts.forEach(chart => {
@@ -1577,8 +1612,15 @@ export default function TestExecutionCharts({
               ? smoothedMetricKeysForChart(chart, visibleMetricKeys)
               : []
             const smoothedMetricKeySet = new Set(smoothedMetricKeys)
+            const chartCardSize = chartCardSizes[chart.id]
+            const smoothingRadius = smoothingRadiusForGraphDensity(chartData.length, {
+              chartWidth: chartCardSize?.width,
+              chartHeight,
+              visibleMetricCount: visibleMetricKeys.length,
+              expanded: expandedChart === chart.id,
+            })
             const displayChartData = smoothedMetricKeys.length > 0
-              ? buildSmoothedGraphData(chartData, smoothedMetricKeys)
+              ? buildSmoothedGraphData(chartData, smoothedMetricKeys, smoothingRadius)
               : chartData
             const displayMetricKey = (key: string) => smoothedMetricKeySet.has(key) ? smoothedGraphMetricKey(key) : key
             const visibleOverlayKeysForTitle = visibleOverlayMetricKeys(chart, visibleMetricKeys)
@@ -1601,6 +1643,7 @@ export default function TestExecutionCharts({
                 ref={element => {
                   chartCardRefs.current[chart.id] = element
                 }}
+                data-chart-id={chart.id}
                 className={`chart-card ${commandCenterSurface ? 'command-center-chart-card' : ''} ${expandedChart === chart.id ? 'expanded' : ''} ${draggingChartId === chart.id ? 'dragging' : ''} ${dragOverChartId === chart.id ? 'drop-target' : ''}`}
                 onContextMenu={event => openChartMenu(event, chart.id)}
                 onMouseEnter={() => setHoveredChartId(chart.id)}

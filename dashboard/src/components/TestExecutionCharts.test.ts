@@ -13,6 +13,7 @@ import {
   rawGraphMetricKey,
   responseTimeDataWithoutNetworkLatency,
   routeLatencySeriesKeys,
+  smoothingRadiusForGraphDensity,
   smoothedGraphMetricKey,
   smoothedMetricKeysForChart,
   visibleMetricDomain,
@@ -308,20 +309,39 @@ describe('chartStateForMonitorPreset', () => {
 
     expect(smoothed).not.toBe(data)
     expect(smoothed.map(point => point.tps)).toEqual([10, 30, 10, 30, 10])
-    expect(smoothed.map(point => point[smoothedGraphMetricKey('tps')])).toEqual([10, 22, 17.3, 22, 10])
-    expect(smoothed.map(point => point[smoothedGraphMetricKey('Checkout_tps')])).toEqual([8, 17.6, 13.8, 17.6, 8])
+    expect(smoothed.map(point => point[smoothedGraphMetricKey('tps')])).toEqual([10, 20, 18.9, 20, 10])
+    expect(smoothed.map(point => point[smoothedGraphMetricKey('Checkout_tps')])).toEqual([8, 16, 15.1, 16, 8])
     expect(rawGraphMetricKey(smoothedGraphMetricKey('tps'))).toBe('tps')
+  })
+
+  it('increases display smoothing for dense graph content', () => {
+    const sparseRadius = smoothingRadiusForGraphDensity(20, {
+      chartWidth: 900,
+      chartHeight: 320,
+      visibleMetricCount: 2,
+      expanded: true,
+    })
+    const denseRadius = smoothingRadiusForGraphDensity(240, {
+      chartWidth: 360,
+      chartHeight: 150,
+      visibleMetricCount: 6,
+    })
+
+    expect(sparseRadius).toBe(2)
+    expect(denseRadius).toBeGreaterThan(sparseRadius)
   })
 
   it('selects only high-variability chart metrics for display smoothing', () => {
     const tpsChart: ChartConfig = { id: 'tps', title: 'Transactions Per Second', type: 'line-multi', totalKey: 'tps' }
     const vusersChart: ChartConfig = { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers' }
     const routeChart: ChartConfig = { id: 'network_latency', title: 'Route Latency (ms)', type: 'line-network' }
+    const latencyChart: ChartConfig = { id: 'latency', title: 'Response Time (ms)', type: 'line-latency' }
     const ioChart: ChartConfig = { id: 'io', title: 'Network & Disk I/O (KB/s)', type: 'line-io' }
 
-    expect(smoothedMetricKeysForChart(tpsChart, ['tps', 'Checkout_tps', 'targetTps', 'avgMs'])).toEqual(['tps', 'Checkout_tps'])
-    expect(smoothedMetricKeysForChart(vusersChart, ['vusers', 'tps'])).toEqual([])
-    expect(smoothedMetricKeysForChart(routeChart, ['latency_edge', 'tps'])).toEqual([])
-    expect(smoothedMetricKeysForChart(ioChart, ['netSent', 'diskRead', 'avgMs'])).toEqual(['netSent', 'diskRead'])
+    expect(smoothedMetricKeysForChart(tpsChart, ['tps', 'Checkout_tps', 'targetTps', 'avgMs'])).toEqual(['tps', 'Checkout_tps', 'avgMs'])
+    expect(smoothedMetricKeysForChart(vusersChart, ['vusers', 'tps', 'avgMs'])).toEqual(['tps', 'avgMs'])
+    expect(smoothedMetricKeysForChart(routeChart, ['latency_edge', 'latency_success_rate_edge', 'tps'])).toEqual(['latency_edge', 'tps'])
+    expect(smoothedMetricKeysForChart(latencyChart, ['avgMs', 'Checkout_avgMs', 'p95', 'vusers'])).toEqual(['avgMs', 'Checkout_avgMs', 'p95'])
+    expect(smoothedMetricKeysForChart(ioChart, ['netSent', 'diskRead', 'avgMs'])).toEqual(['netSent', 'diskRead', 'avgMs'])
   })
 })
