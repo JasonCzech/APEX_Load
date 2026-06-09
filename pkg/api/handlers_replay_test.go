@@ -549,6 +549,9 @@ func TestValidateScriptForReplayBlocksReviewGatedJavaScriptUntilApproved(t *test
 	if status := replayPreflightCheckStatus(preflight, "review_gates"); status != "fail" {
 		t.Fatalf("review_gates status = %q, want fail", status)
 	}
+	if status := replayPreflightCheckStatus(preflight, "evidence_capture"); status != "pass" {
+		t.Fatalf("evidence_capture status = %q, want pass", status)
+	}
 
 	script.Config.Browser.ReviewPolicy.AllowReviewedJavaScript = true
 	if issues := validateScriptForReplay(script); len(issues) != 0 {
@@ -560,6 +563,14 @@ func TestValidateScriptForReplayBlocksReviewGatedJavaScriptUntilApproved(t *test
 	}
 	if status := replayPreflightCheckStatus(preflight, "review_gates"); status != "pass" {
 		t.Fatalf("approved review_gates status = %q, want pass", status)
+	}
+	script.Config.Browser.CaptureScreenshots = "off"
+	preflight = buildReplayPreflight(script, nil, validateScript(script), nil)
+	if !preflight.Valid {
+		t.Fatalf("screenshot warning preflight.Valid = false, issues=%v", preflight.Issues)
+	}
+	if status := replayPreflightCheckStatus(preflight, "evidence_capture"); status != "warn" {
+		t.Fatalf("disabled screenshot evidence_capture status = %q, want warn", status)
 	}
 }
 

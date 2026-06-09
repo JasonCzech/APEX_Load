@@ -73,6 +73,19 @@ function runtimePrerequisites(script: ScriptDefinition, browserRequired: boolean
   ]
 }
 
+function browserEvidenceCaptureCheck(script: ScriptDefinition) {
+  const capture = script.config.browser?.capture_screenshots?.trim() || 'per_action'
+  const captureDisabled = ['off', 'none', 'disabled'].includes(capture.toLowerCase())
+  return {
+    id: 'evidence_capture',
+    label: 'Evidence capture',
+    status: captureDisabled ? 'warn' : 'pass',
+    detail: captureDisabled
+      ? 'Screenshot capture is disabled; enable per_action or on_failure before using replay as promotion evidence.'
+      : 'Replay will capture screenshot, DOM, console, and network evidence for browser review.',
+  }
+}
+
 export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: Record<string, string>): ReplayPreflight {
   const orderedActions = orderedReplayActions(script)
   const availableVariables = new Set<string>([
@@ -103,6 +116,40 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
   const prerequisites = runtimePrerequisites(script, browserRequired)
   const hasRequiredFields = Boolean(script.name && orderedActions.length > 0)
 
+  const checks = [
+    {
+      id: 'validation',
+      label: 'Script validation',
+      status: hasRequiredFields ? 'pass' : 'fail',
+      detail: hasRequiredFields ? 'Ready' : 'Script name and actions are required.',
+    },
+    {
+      id: 'variables',
+      label: 'Variable readiness',
+      status: missingVariableList.length > 0 ? 'fail' : 'pass',
+      detail: missingVariableList.length > 0 ? missingVariableList.join(', ') : 'All replay variables are seeded or extracted before use.',
+    },
+    {
+      id: 'secrets',
+      label: 'Secret bindings',
+      status: requiredSecretList.length > 0 ? 'warn' : 'pass',
+      detail: requiredSecretList.length > 0 ? requiredSecretList.join(', ') : 'No environment secret references detected.',
+    },
+    {
+      id: 'data_sources',
+      label: 'Data source readiness',
+      status: dataWarnings.length > 0 ? 'fail' : (script.data_sources?.length ? 'warn' : 'pass'),
+      detail: dataWarnings.length > 0 ? dataWarnings.join('; ') : `${script.data_sources?.length || 0} data source${(script.data_sources?.length || 0) === 1 ? '' : 's'} configured.`,
+    },
+    {
+      id: 'runtime',
+      label: 'Runtime prerequisites',
+      status: browserRequired ? 'warn' : 'pass',
+      detail: prerequisites.join('; '),
+    },
+  ]
+  if (browserRequired) checks.push(browserEvidenceCaptureCheck(script))
+
   return {
     valid: hasRequiredFields && missingVariableList.length === 0 && dataWarnings.length === 0,
     action_count: orderedActions.length,
@@ -114,37 +161,6 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
     required_secrets: requiredSecretList,
     runtime_prerequisites: prerequisites,
     warnings: dataWarnings,
-    checks: [
-      {
-        id: 'validation',
-        label: 'Script validation',
-        status: hasRequiredFields ? 'pass' : 'fail',
-        detail: hasRequiredFields ? 'Ready' : 'Script name and actions are required.',
-      },
-      {
-        id: 'variables',
-        label: 'Variable readiness',
-        status: missingVariableList.length > 0 ? 'fail' : 'pass',
-        detail: missingVariableList.length > 0 ? missingVariableList.join(', ') : 'All replay variables are seeded or extracted before use.',
-      },
-      {
-        id: 'secrets',
-        label: 'Secret bindings',
-        status: requiredSecretList.length > 0 ? 'warn' : 'pass',
-        detail: requiredSecretList.length > 0 ? requiredSecretList.join(', ') : 'No environment secret references detected.',
-      },
-      {
-        id: 'data_sources',
-        label: 'Data source readiness',
-        status: dataWarnings.length > 0 ? 'fail' : (script.data_sources?.length ? 'warn' : 'pass'),
-        detail: dataWarnings.length > 0 ? dataWarnings.join('; ') : `${script.data_sources?.length || 0} data source${(script.data_sources?.length || 0) === 1 ? '' : 's'} configured.`,
-      },
-      {
-        id: 'runtime',
-        label: 'Runtime prerequisites',
-        status: browserRequired ? 'warn' : 'pass',
-        detail: prerequisites.join('; '),
-      },
-    ],
+    checks,
   }
 }

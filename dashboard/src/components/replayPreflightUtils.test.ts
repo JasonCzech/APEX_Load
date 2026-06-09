@@ -145,5 +145,32 @@ describe('buildLocalReplayPreflight', () => {
       'Screenshot capture: on_failure',
     ])
     expect(preflight.checks?.find(check => check.id === 'runtime')?.status).toBe('warn')
+    expect(preflight.checks?.find(check => check.id === 'evidence_capture')).toMatchObject({
+      status: 'pass',
+      detail: 'Replay will capture screenshot, DOM, console, and network evidence for browser review.',
+    })
+  })
+
+  it('warns when browser replay screenshot evidence is disabled', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      protocol: 'browser',
+      config: {
+        base_url: 'https://app.example.com',
+        browser: {
+          engine: 'chromium',
+          capture_screenshots: 'off',
+        },
+      },
+      actions: [
+        { name: 'Open', type: 'browser_navigate', target: '/' },
+      ],
+    })
+
+    expect(preflight.valid).toBe(true)
+    expect(preflight.checks?.find(check => check.id === 'evidence_capture')).toMatchObject({
+      status: 'warn',
+      detail: 'Screenshot capture is disabled; enable per_action or on_failure before using replay as promotion evidence.',
+    })
   })
 })

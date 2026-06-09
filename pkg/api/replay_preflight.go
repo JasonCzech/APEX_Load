@@ -94,6 +94,9 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 			Detail: strings.Join(preflight.RuntimePrerequisites, "; "),
 		},
 	}
+	if preflight.BrowserRequired {
+		preflight.Checks = append(preflight.Checks, replayEvidenceCaptureCheck(script))
+	}
 	return preflight
 }
 
@@ -154,6 +157,29 @@ func replayRuntimePrerequisites(script *dsl.Script) []string {
 	}
 	prereqs = append(prereqs, "Screenshot capture: "+capture)
 	return prereqs
+}
+
+func replayEvidenceCaptureCheck(script *dsl.Script) ReplayPreflightCheck {
+	capture := "per_action"
+	if script != nil {
+		if configured := strings.TrimSpace(script.Config.Browser.CaptureScreenshots); configured != "" {
+			capture = configured
+		}
+	}
+	if strings.EqualFold(capture, "off") || strings.EqualFold(capture, "none") || strings.EqualFold(capture, "disabled") {
+		return ReplayPreflightCheck{
+			ID:     "evidence_capture",
+			Label:  "Evidence capture",
+			Status: "warn",
+			Detail: "Screenshot capture is disabled; enable per_action or on_failure before using replay as promotion evidence.",
+		}
+	}
+	return ReplayPreflightCheck{
+		ID:     "evidence_capture",
+		Label:  "Evidence capture",
+		Status: "pass",
+		Detail: "Replay will capture screenshot, DOM, console, and network evidence for browser review.",
+	}
 }
 
 func replayMissingVariables(script *dsl.Script, variables map[string]string) []string {
