@@ -26,6 +26,7 @@ interface Props {
   onOpenCommandCenter?: (id: string) => void
   onCreateTestFromScenario?: (scenarioId: string) => void
   onNavigate?: (page: NavPage) => void
+  onScenarioViewChange?: (view: 'library' | 'builder') => void
   initialView?: 'library' | 'builder'
 }
 
@@ -628,7 +629,7 @@ function ScenarioModelPreviewPanel({
   )
 }
 
-function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, initialView = 'library' }: Props) {
+function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, onScenarioViewChange, initialView = 'library' }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
@@ -995,12 +996,14 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     setShowForm(true)
+    onScenarioViewChange?.('builder')
   }
 
   const openScenarioLibrary = () => {
     setShowForm(false)
     setEditingId(null)
     setConfirmDeleteScenarioId(null)
+    onScenarioViewChange?.('library')
   }
 
   const openEdit = (scenario: StoredScenario) => {

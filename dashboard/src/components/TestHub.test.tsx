@@ -1033,9 +1033,10 @@ describe('TestHub', () => {
 
   it('toggles between the scenario library and builder wizard views', async () => {
     const onSelectTest = vi.fn()
+    const onScenarioViewChange = vi.fn()
 
     await act(async () => {
-      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} onScenarioViewChange={onScenarioViewChange} />)
     })
 
     await flushPromises()
@@ -1046,6 +1047,7 @@ describe('TestHub', () => {
 
     await clickButton('Scenario Builder')
 
+    expect(onScenarioViewChange).toHaveBeenLastCalledWith('builder')
     expect(container.textContent).toContain('Scenario Builder')
     expect(container.textContent).not.toContain('Model Preview')
     expect(container.textContent).not.toContain('Scenario Library (')
@@ -1084,6 +1086,12 @@ describe('TestHub', () => {
 
     expect(container.textContent).toContain('Scenario Library')
     expect(container.textContent).not.toContain('Existing Scripts Library')
+
+    await clickButton('Scenario Library')
+
+    expect(onScenarioViewChange).toHaveBeenLastCalledWith('library')
+    expect(container.textContent).toContain('Scenario Library')
+    expect(container.querySelector('.scenario-builder')).toBeNull()
   })
 
   it('renders script groups in the spacious multi-card list on the Scripts step', async () => {

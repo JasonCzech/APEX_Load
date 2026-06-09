@@ -269,6 +269,16 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     setScriptsTopbarState(state)
   }, [])
 
+  const handleScenarioViewChange = useCallback((scenarioView: 'library' | 'builder') => {
+    setView(current => {
+      if (current.page !== 'tests') return current
+      const next: AppView = scenarioView === 'builder'
+        ? { page: 'tests', scenarioView: 'builder' }
+        : { page: 'tests' }
+      return viewToLocationHash(current) === viewToLocationHash(next) ? current : next
+    })
+  }, [])
+
   useEffect(() => {
     if (view.page !== 'scripts') {
       setScriptsTopbarState(null)
@@ -686,6 +696,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               onOpenCommandCenter={navigateToCommandCenter}
               onCreateTestFromScenario={navigateToNewTestForScenario}
               onNavigate={handleNavigate}
+              onScenarioViewChange={handleScenarioViewChange}
             />
           )}
           {view.page === 'new-test' && (
