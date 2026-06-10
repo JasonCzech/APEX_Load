@@ -158,6 +158,20 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		var browserDensityErr *BrowserDensityGateError
+		if errors.As(err, &browserDensityErr) {
+			if test, ok := s.runner.GetTest(id); ok {
+				s.recordAuditEvent(r, "capacity.browser_density.reject", "blocked", "test", id, test.ProjectID, browserDensityGateAuditDetails(browserDensityErr.Advisory))
+			}
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":              browserDensityErr.Error(),
+				"code":               "browser_density_release_gate",
+				"test_id":            id,
+				"capacity_advisory":  browserDensityErr.Advisory,
+				"override_available": false,
+			})
+			return
+		}
 		var shakeoutErr *ScriptShakeoutGateError
 		if errors.As(err, &shakeoutErr) {
 			if test, ok := s.runner.GetTest(id); ok {
@@ -231,6 +245,25 @@ func capacityShortfallAuditDetails(advisory *CapacityAdvisory, overrideRequested
 	details["shortfall_generators"] = advisory.ShortfallGenerators
 	details["requires_override"] = advisory.RequiresOverride
 	details["availability_source"] = advisory.AvailabilitySource
+	if len(advisory.Warnings) > 0 {
+		details["warnings"] = append([]string(nil), advisory.Warnings...)
+	}
+	return details
+}
+
+func browserDensityGateAuditDetails(advisory *CapacityAdvisory) map[string]any {
+	details := map[string]any{
+		"reason": "browser_density_release_gate",
+	}
+	if advisory == nil {
+		return details
+	}
+	details["browser_vusers"] = advisory.BrowserVUsers
+	details["max_browser_canary_vusers_per_generator"] = advisory.MaxBrowserCanaryVUsersPerGenerator
+	details["browser_density_tier"] = advisory.BrowserDensityTier
+	details["browser_density_release_gate"] = advisory.BrowserDensityReleaseGate
+	details["browser_benchmark_evidence_attached"] = advisory.BrowserBenchmarkEvidenceAttached
+	details["browser_density_override_requested"] = advisory.BrowserDensityOverrideRequested
 	if len(advisory.Warnings) > 0 {
 		details["warnings"] = append([]string(nil), advisory.Warnings...)
 	}

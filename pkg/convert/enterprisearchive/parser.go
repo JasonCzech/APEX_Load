@@ -100,9 +100,34 @@ var (
 	reSectionHeader = regexp.MustCompile(`^\[(.+)\]$`)
 )
 
-// ParseActionFile parses an enterprise C/VUser action file and extracts source function calls.
+// ParseActionFile parses an enterprise C/VUser action file and extracts source
+// function calls. It prefers the full C AST parser for fidelity but falls back
+// to the lenient line scanner when the AST path cannot recover any calls.
+//
+// The strict C frontend (cc.Parse) rejects the entire translation unit on any
+// syntax error — an LR-specific macro, a vendor pragma, or a single malformed
+// helper line — which would otherwise discard every well-formed web_url /
+// web_submit_data call in the file and silently demote the import to
+// review-only. The legacy scanner extracts calls block-by-block regardless of
+// surrounding C validity, so it recovers the valid steps the AST parser drops.
 func ParseActionFile(filename string, content string) (*ParsedAction, error) {
-	return ParseActionFileAST(filename, content)
+	astParsed, astErr := ParseActionFileAST(filename, content)
+	if astErr == nil && len(astParsed.Functions) > 0 {
+		return astParsed, nil
+	}
+
+	legacyParsed, legacyErr := parseActionFileLegacy(filename, content)
+	if legacyErr == nil && len(legacyParsed.Functions) > 0 {
+		return legacyParsed, nil
+	}
+
+	// Neither parser recovered any calls. Trust a clean AST parse of an
+	// otherwise-empty file; otherwise surface the richer AST diagnostic so the
+	// caller can flag the archive for review.
+	if astErr == nil {
+		return astParsed, nil
+	}
+	return nil, astErr
 }
 
 func parseActionFileLegacy(filename string, content string) (*ParsedAction, error) {

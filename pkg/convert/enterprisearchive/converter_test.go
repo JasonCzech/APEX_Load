@@ -201,6 +201,50 @@ func TestParseActionFileStructuredCallArgs(t *testing.T) {
 	}
 }
 
+func TestParseActionFileFallsBackToLegacyOnSyntaxError(t *testing.T) {
+	// A malformed declaration makes the strict C frontend reject the whole
+	// translation unit; the lenient scanner must still recover the valid call.
+	action := `Action()
+{
+	web_url("Homepage",
+		"URL=https://example.com/app/home",
+		LAST);
+	int broken = ;
+	return 0;
+}
+`
+
+	if _, astErr := ParseActionFileAST("Action.c", action); astErr == nil {
+		t.Fatal("expected ParseActionFileAST to reject the malformed C source; choose a stronger malformation")
+	}
+
+	parsed, err := ParseActionFile("Action.c", action)
+	if err != nil {
+		t.Fatalf("ParseActionFile should recover via legacy fallback, got error: %v", err)
+	}
+	var web *ParsedFunction
+	for i := range parsed.Functions {
+		if parsed.Functions[i].Name == "web_url" {
+			web = &parsed.Functions[i]
+			break
+		}
+	}
+	if web == nil {
+		t.Fatalf("expected web_url to be recovered, got %#v", parsed.Functions)
+	}
+	if web.StepName != "Homepage" || web.URL != "https://example.com/app/home" {
+		t.Fatalf("recovered web_url = %#v, want Homepage / example.com URL", web)
+	}
+}
+
+func TestParseActionFilePropagatesErrorWhenNothingRecoverable(t *testing.T) {
+	// Malformed source with no extractable calls should surface the AST
+	// diagnostic so the importer can flag the archive for review.
+	if _, err := ParseActionFile("Action.c", "Action()\n{\n\tint broken = ;\n}\n"); err == nil {
+		t.Fatal("expected error when neither parser can recover any calls")
+	}
+}
+
 func TestConvert(t *testing.T) {
 	parsed, err := ParseActionFile("Action.c", sampleActionC)
 	if err != nil {

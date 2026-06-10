@@ -164,24 +164,26 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 }
 
 func browserDensityGovernanceLaunchConflict(advisory *CapacityAdvisory) *LaunchConflict {
-	if advisory == nil || !advisory.BrowserDensityOverrideRequired {
+	if !browserDensityReleaseGateBlocks(advisory) {
 		return nil
-	}
-	if advisory.BrowserBenchmarkEvidenceAttached && advisory.BrowserDensityOverrideRequested {
-		return nil
-	}
-	maxCanary := advisory.MaxBrowserCanaryVUsersPerGenerator
-	if maxCanary <= 0 {
-		maxCanary = browserDiagnosticCanaryEnvelope().MaximumClaimedVUsersPerGenerator
 	}
 	return &LaunchConflict{
-		Code:                "browser_density_release_gate",
-		Severity:            "blocking",
-		Source:              "capacity_advisory",
-		Message:             fmt.Sprintf("Browser VUsers exceed the diagnostic canary envelope of %d VUsers/generator; attach benchmark evidence and set APEXLOAD_BROWSER_DENSITY_OVERRIDE=true before using the bounded real-browser-load tier.", maxCanary),
-		RequiredGenerators:  advisory.RecommendedGenerators,
-		AvailableGenerators: advisory.AvailableGenerators,
+		Code:     "browser_density_release_gate",
+		Severity: "blocking",
+		Source:   "capacity_advisory",
+		Message:  browserDensityReleaseGateMessage(advisory),
 	}
+}
+
+// browserDensityReleaseGateMessage renders the operator-facing remediation
+// string for a blocking browser-density release gate. Shared by the preflight
+// conflict and the start-time gate error so the guidance stays identical.
+func browserDensityReleaseGateMessage(advisory *CapacityAdvisory) string {
+	maxCanary := browserDiagnosticCanaryEnvelope().MaximumClaimedVUsersPerGenerator
+	if advisory != nil && advisory.MaxBrowserCanaryVUsersPerGenerator > 0 {
+		maxCanary = advisory.MaxBrowserCanaryVUsersPerGenerator
+	}
+	return fmt.Sprintf("Browser VUsers exceed the diagnostic canary envelope of %d VUsers/generator; attach benchmark evidence and set APEXLOAD_BROWSER_DENSITY_OVERRIDE=true before using the bounded real-browser-load tier.", maxCanary)
 }
 
 func launchWindowForTest(test *ManagedTest, start time.Time) LaunchWindow {

@@ -947,3 +947,38 @@ func TestVUser_Run_RendezvousSynchronizesStaggeredVUsers(t *testing.T) {
 		t.Fatalf("execute delta = %v, want rendezvous to release both VUsers together", delta)
 	}
 }
+
+func TestScriptHasExplicitTransactionsRecognizesLegacyTypes(t *testing.T) {
+	legacyTypeScript := &dsl.Script{
+		Actions: []dsl.Action{{Name: "txn", Type: "loadrunner_transaction"}},
+	}
+	if !scriptHasExplicitTransactions(legacyTypeScript) {
+		t.Error("expected legacy loadrunner_transaction action type to count as an explicit transaction")
+	}
+
+	legacyMetadataScript := &dsl.Script{
+		Actions: []dsl.Action{{
+			Name:     "seq",
+			Type:     "http_sequence",
+			Metadata: map[string]any{"loadrunner_transaction": "CheckoutFlow"},
+		}},
+	}
+	if !scriptHasExplicitTransactions(legacyMetadataScript) {
+		t.Error("expected legacy loadrunner_transaction metadata key to count as an explicit transaction")
+	}
+}
+
+func TestSourceTransactionNameAcceptsLegacyKey(t *testing.T) {
+	if got := sourceTransactionName(map[string]any{"source_transaction": "Checkout"}); got != "Checkout" {
+		t.Errorf("source_transaction key = %q, want Checkout", got)
+	}
+	if got := sourceTransactionName(map[string]any{"loadrunner_transaction": "Checkout"}); got != "Checkout" {
+		t.Errorf("loadrunner_transaction key = %q, want Checkout", got)
+	}
+	if got := sourceTransactionName(map[string]any{
+		"source_transaction":     "New",
+		"loadrunner_transaction": "Old",
+	}); got != "New" {
+		t.Errorf("canonical key should win, got %q, want New", got)
+	}
+}

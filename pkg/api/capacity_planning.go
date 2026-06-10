@@ -120,6 +120,19 @@ const (
 	browserDensityReleaseGateCleared         = "benchmark_evidence_attached_override_requested"
 )
 
+// browserDensityReleaseGateBlocks reports whether an advisory's browser-density
+// release gate is in the blocking state, i.e. browser VUsers exceed the
+// diagnostic-canary envelope and benchmark evidence + override have not yet been
+// supplied. It keys off the single ReleaseGate decision computed in
+// buildBrowserDensityGovernance so the preflight and start chokepoints cannot
+// drift from each other (or from the advisory the dashboard displays).
+func browserDensityReleaseGateBlocks(advisory *CapacityAdvisory) bool {
+	if advisory == nil {
+		return false
+	}
+	return advisory.BrowserDensityReleaseGate == browserDensityReleaseGateRequired
+}
+
 func cloneCapacityAdvisory(in *CapacityAdvisory) *CapacityAdvisory {
 	if in == nil {
 		return nil
