@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import ScriptsPage from './ScriptsPage'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -175,6 +176,16 @@ vi.mock('./ProtocolAssetImport', () => ({
     </div>
   ),
 }))
+
+function TopbarContributionHarness() {
+  const contribution = useActiveTopbarContribution()
+  return (
+    <div data-testid="topbar-contribution">
+      {contribution?.titleNode || contribution?.title}
+      {contribution?.controls}
+    </div>
+  )
+}
 
 describe('ScriptsPage', () => {
   let container: HTMLDivElement
@@ -383,6 +394,38 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Script Library')
     expect(container.textContent).not.toContain('Script Library (')
     expect(container.textContent).not.toContain('Model From Existing Script')
+  })
+
+  it('renders only one script library/builder toggle when the title bar provider is present', async () => {
+    await act(async () => {
+      root.render(
+        <TopbarContributionProvider>
+          <TopbarContributionHarness />
+          <ScriptsPage />
+        </TopbarContributionProvider>,
+      )
+    })
+
+    await flushPromises()
+
+    let toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
+    expect(toggleButtons).toHaveLength(2)
+    expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('true')
+
+    const builderButton = toggleButtons.find(button => button.textContent?.includes('Script Builder'))
+    expect(builderButton).toBeDefined()
+    await act(async () => {
+      builderButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
+    expect(toggleButtons).toHaveLength(2)
+    expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('false')
+    expect(toggleButtons.find(button => button.textContent?.includes('Script Builder'))?.getAttribute('aria-pressed')).toBe('true')
+    expect(container.textContent).toContain('Model From Existing Script')
+    expect(container.querySelectorAll('[data-testid="topbar-contribution"] .script-page-toggle')).toHaveLength(1)
   })
 
   it('consolidates source import choices under one create workflow', async () => {

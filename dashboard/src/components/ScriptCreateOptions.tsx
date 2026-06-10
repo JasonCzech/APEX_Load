@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { type AuthoringComponent, type AuthoringTemplate, type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
+import { useHasTopbarContributionProvider } from '../hooks/TopbarContributionProvider'
 import PageViewToggle from './PageViewToggle'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
 
@@ -162,6 +163,7 @@ export default function ScriptCreateOptions({
   onStartExistingScript,
 }: Props) {
   const api = useApi()
+  const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const [templates, setTemplates] = useState<AuthoringTemplate[]>([])
   const [components, setComponents] = useState<AuthoringComponent[]>([])
   const [workflow, setWorkflow] = useState<'existing' | 'start-new' | 'source' | 'record'>('existing')
@@ -344,18 +346,20 @@ export default function ScriptCreateOptions({
           <h2>Create Script</h2>
           <p className="page-subtitle">Model from saved work, start a new script, record a browser flow, or import from a source asset.</p>
         </div>
-        <PageViewToggle
-          value="create-options"
-          ariaLabel="Script page view"
-          className="script-page-toggle"
-          onChange={view => {
-            if (view === 'library') onBack()
-          }}
-          options={[
-            { value: 'library', label: 'Script Library' },
-            { value: 'create-options', label: 'Script Builder' },
-          ]}
-        />
+        {!hasTopbarContributionProvider && (
+          <PageViewToggle
+            value="create-options"
+            ariaLabel="Script page view"
+            className="script-page-toggle"
+            onChange={view => {
+              if (view === 'library') onBack()
+            }}
+            options={[
+              { value: 'library', label: 'Script Library' },
+              { value: 'create-options', label: 'Script Builder' },
+            ]}
+          />
+        )}
       </div>
 
       <div className="script-workflow-picker" aria-label="Script creation workflows">
