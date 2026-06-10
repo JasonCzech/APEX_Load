@@ -127,7 +127,7 @@ func TestHandleStartScriptDebugDraftScriptReturnsSession(t *testing.T) {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
 	if payload.DebugSessionID != "debug-api" || payload.Session.Status != ScriptDebugPaused || payload.Session.LogLevel != "trace" {
-		t.Fatalf("payload = %#v, want paused trace session debug-api", payload)
+		t.Fatalf("payload id/status/log_level = %q/%q/%q, want debug-api/%q/trace", payload.DebugSessionID, payload.Session.Status, payload.Session.LogLevel, ScriptDebugPaused)
 	}
 	if payload.Preflight.ActionCount != 1 || payload.Session.Preflight == nil || payload.Session.RuntimeProfile.LogLevel != "trace" {
 		t.Fatalf("preflight/runtime = %#v/%#v, want preflight and trace runtime profile", payload.Preflight, payload.Session.RuntimeProfile)
@@ -193,7 +193,7 @@ func TestHandleStartReplaySessionDraftScriptReturnsUnifiedPreflight(t *testing.T
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
 	if payload.ReplaySessionID != "unified-replay-api" || payload.Session.Mode != "replay" || payload.Session.Preflight == nil {
-		t.Fatalf("payload = %#v, want unified replay session with preflight", payload)
+		t.Fatalf("payload id/mode/preflight_nil = %q/%q/%t, want unified-replay-api/replay/false", payload.ReplaySessionID, payload.Session.Mode, payload.Session.Preflight == nil)
 	}
 	if !slices.Contains(payload.Preflight.MissingVariables, "account_id") || payload.Preflight.ActionCount != 1 {
 		t.Fatalf("preflight = %#v, want missing account_id and one action", payload.Preflight)

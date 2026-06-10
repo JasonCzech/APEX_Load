@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"net/http"
@@ -360,8 +361,14 @@ func TestHandleGetAuthAccessMatrixReturnsResourcePolicies(t *testing.T) {
 	if identityAndAudit.ID != "identity_and_audit" {
 		t.Fatalf("last resource = %#v, want identity_and_audit", identityAndAudit)
 	}
-	if len(identityAndAudit.Operations) != 5 || identityAndAudit.Operations[0].ID != "view_auth_diagnostics" || identityAndAudit.Operations[2].ID != "view_user_activity" || identityAndAudit.Operations[3].ID != "manage_users" {
+	if len(identityAndAudit.Operations) != 6 || identityAndAudit.Operations[0].ID != "view_auth_diagnostics" || identityAndAudit.Operations[2].ID != "view_user_activity" || identityAndAudit.Operations[3].ID != "manage_users" || identityAndAudit.Operations[4].ID != "manage_user_bindings" {
 		t.Fatalf("identity and audit operations = %#v, want diagnostics, audit, user, activity, and service account operations", identityAndAudit.Operations)
+	}
+	if got := identityAndAudit.Operations[3].GlobalRoles; len(got) != 1 || got[0] != RoleSystemAdmin {
+		t.Fatalf("manage_users roles = %#v, want system admin only", got)
+	}
+	if got := identityAndAudit.Operations[4].ProjectRoles; len(got) != 1 || got[0] != RoleProjectAdmin {
+		t.Fatalf("manage_user_bindings project roles = %#v, want project admin", got)
 	}
 }
 
@@ -478,6 +485,31 @@ func TestHandleGetAuthEffectiveAccessEvaluatesProjectRoles(t *testing.T) {
 	}
 	if manageSystem.Allowed {
 		t.Fatalf("manage system = %#v, want denied for project editor", manageSystem)
+	}
+}
+
+func TestHandleGetAuthEffectiveAccessSplitsUserLifecycleAndBindings(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/effective-access?project_id=project-a", nil)
+	req.Header.Set("X-Auth-Request-User", "project-admin")
+	req.Header.Set("X-APEXLoad-Project-Roles", "project-a="+RoleProjectAdmin)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload AuthEffectiveAccessResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal auth effective access: %v", err)
+	}
+	if allowed := effectiveAccessOperationAllowed(payload.Resources, "manage_users"); allowed {
+		t.Fatal("expected project admin to be denied manage_users")
+	}
+	if allowed := effectiveAccessOperationAllowed(payload.Resources, "manage_user_bindings"); !allowed {
+		t.Fatal("expected project admin to be allowed manage_user_bindings")
 	}
 }
 
@@ -746,6 +778,151 @@ func TestAuthUserAdminLifecycleAndActivity(t *testing.T) {
 	if len(rows) < 2 || rows[0][5] != "actor_subject" || rows[1][5] != "dev-mode" {
 		t.Fatalf("activity export rows = %#v, want dev-mode actor", rows)
 	}
+}
+
+func TestScopedProjectAdminCanOnlyManageScopedUserBindings(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	now := time.Now().UTC()
+	for _, user := range []*storage.User{
+		{ID: "admin-user-id", Subject: "admin-user", Email: "admin@example.com", Active: true, CreatedAt: now, UpdatedAt: now},
+		{ID: "delegated-user-id", Subject: "delegated-user", Email: "delegated@example.com", Active: true, CreatedAt: now, UpdatedAt: now},
+		{ID: "target-user-id", Subject: "target-user", Email: "target@example.com", Active: true, CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := store.SaveUser(user); err != nil {
+			t.Fatalf("SaveUser(%s) returned error: %v", user.ID, err)
+		}
+	}
+	for _, binding := range []*storage.UserRoleBinding{
+		{ID: "admin-system", UserID: "admin-user-id", ScopeType: "global", Role: RoleSystemAdmin, CreatedAt: now, UpdatedAt: now},
+		{ID: "delegated-project-a", UserID: "delegated-user-id", ScopeType: "project", ScopeID: "project-a", Role: RoleProjectAdmin, CreatedAt: now, UpdatedAt: now},
+		{ID: "target-project-a", UserID: "target-user-id", ScopeType: "project", ScopeID: "project-a", Role: RoleViewer, CreatedAt: now, UpdatedAt: now},
+		{ID: "target-project-b", UserID: "target-user-id", ScopeType: "project", ScopeID: "project-b", Role: RoleViewer, CreatedAt: now, UpdatedAt: now},
+		{ID: "target-global", UserID: "target-user-id", ScopeType: "global", Role: RoleViewer, CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := store.SaveUserRoleBinding(binding); err != nil {
+			t.Fatalf("SaveUserRoleBinding(%s) returned error: %v", binding.ID, err)
+		}
+	}
+
+	createReq := trustedHeaderJSONRequest(http.MethodPost, "/api/v1/auth/users", `{"subject":"new-user"}`, "delegated-user")
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusForbidden {
+		t.Fatalf("delegated create user status = %d, want %d body=%s", createResp.Code, http.StatusForbidden, createResp.Body.String())
+	}
+
+	updateReq := trustedHeaderJSONRequest(http.MethodPatch, "/api/v1/auth/users/target-user-id", `{"display_name":"Nope"}`, "delegated-user")
+	updateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(updateResp, updateReq)
+	if updateResp.Code != http.StatusForbidden {
+		t.Fatalf("delegated update user status = %d, want %d body=%s", updateResp.Code, http.StatusForbidden, updateResp.Body.String())
+	}
+
+	disableReq := trustedHeaderJSONRequest(http.MethodPost, "/api/v1/auth/users/target-user-id/disable", `{}`, "delegated-user")
+	disableResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(disableResp, disableReq)
+	if disableResp.Code != http.StatusForbidden {
+		t.Fatalf("delegated disable user status = %d, want %d body=%s", disableResp.Code, http.StatusForbidden, disableResp.Body.String())
+	}
+
+	listReq := trustedHeaderJSONRequest(http.MethodGet, "/api/v1/auth/users?q=target", ``, "delegated-user")
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("delegated list users status = %d, want %d body=%s", listResp.Code, http.StatusOK, listResp.Body.String())
+	}
+	var users AuthUserListResponse
+	if err := json.Unmarshal(listResp.Body.Bytes(), &users); err != nil {
+		t.Fatalf("unmarshal delegated users: %v", err)
+	}
+	if users.Count != 1 || len(users.Users) != 1 || len(users.Users[0].Bindings) != 1 || users.Users[0].Bindings[0].ScopeID != "project-a" {
+		t.Fatalf("delegated visible bindings = %#v, want only project-a binding", users.Users)
+	}
+
+	allowedBindingReq := trustedHeaderJSONRequest(http.MethodPost, "/api/v1/auth/users/target-user-id/bindings", `{"scope_type":"project","scope_id":"project-a","role":"editor"}`, "delegated-user")
+	allowedBindingResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(allowedBindingResp, allowedBindingReq)
+	if allowedBindingResp.Code != http.StatusCreated {
+		t.Fatalf("delegated project binding status = %d, want %d body=%s", allowedBindingResp.Code, http.StatusCreated, allowedBindingResp.Body.String())
+	}
+
+	for name, body := range map[string]string{
+		"other project": `{"scope_type":"project","scope_id":"project-b","role":"editor"}`,
+		"global role":   `{"scope_type":"global","role":"viewer"}`,
+		"system admin":  `{"scope_type":"project","scope_id":"project-a","role":"system_admin"}`,
+	} {
+		req := trustedHeaderJSONRequest(http.MethodPost, "/api/v1/auth/users/target-user-id/bindings", body, "delegated-user")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusForbidden {
+			t.Fatalf("%s binding status = %d, want %d body=%s", name, resp.Code, http.StatusForbidden, resp.Body.String())
+		}
+	}
+
+	deleteReq := trustedHeaderJSONRequest(http.MethodDelete, "/api/v1/auth/users/target-user-id/bindings/target-project-b", ``, "delegated-user")
+	deleteResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusForbidden {
+		t.Fatalf("delegated delete other project binding status = %d, want %d body=%s", deleteResp.Code, http.StatusForbidden, deleteResp.Body.String())
+	}
+
+	adminUpdateReq := trustedHeaderJSONRequest(http.MethodPatch, "/api/v1/auth/users/target-user-id", `{"display_name":"Target Renamed"}`, "admin-user")
+	adminUpdateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(adminUpdateResp, adminUpdateReq)
+	if adminUpdateResp.Code != http.StatusOK {
+		t.Fatalf("system admin update user status = %d, want %d body=%s", adminUpdateResp.Code, http.StatusOK, adminUpdateResp.Body.String())
+	}
+}
+
+func TestCanManageBindingAllowsScopedDelegationAcrossSupportedScopes(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/users/user-id/bindings", nil)
+	user := &AuthenticatedUser{
+		ProjectRoles:    map[string]map[string]struct{}{"project-a": {RoleProjectAdmin: {}}},
+		DomainRoles:     map[string]map[string]struct{}{"domain-a": {RoleProjectAdmin: {}}},
+		RepositoryRoles: map[string]map[string]struct{}{"repo-a": {RoleProjectAdmin: {}}},
+		GlobalRoles:     map[string]struct{}{},
+	}
+	req = req.WithContext(context.WithValue(req.Context(), authUserContextKey{}, user))
+	cases := []struct {
+		name    string
+		binding *storage.UserRoleBinding
+		want    bool
+	}{
+		{name: "project in scope", binding: &storage.UserRoleBinding{ScopeType: "project", ScopeID: "project-a", Role: RoleEditor}, want: true},
+		{name: "project out of scope", binding: &storage.UserRoleBinding{ScopeType: "project", ScopeID: "project-b", Role: RoleEditor}, want: false},
+		{name: "domain in scope", binding: &storage.UserRoleBinding{ScopeType: "domain", ScopeID: "domain-a", Role: RoleViewer}, want: true},
+		{name: "repository in scope", binding: &storage.UserRoleBinding{ScopeType: "application_repository", ScopeID: "repo-a", Role: RoleViewer}, want: true},
+		{name: "global denied", binding: &storage.UserRoleBinding{ScopeType: "global", Role: RoleViewer}, want: false},
+		{name: "system admin denied", binding: &storage.UserRoleBinding{ScopeType: "project", ScopeID: "project-a", Role: RoleSystemAdmin}, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := canManageBinding(req, nil, tc.binding); got != tc.want {
+				t.Fatalf("canManageBinding() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func trustedHeaderJSONRequest(method string, path string, body string, subject string) *http.Request {
+	var reader *strings.Reader
+	if body == "" {
+		reader = strings.NewReader("")
+	} else {
+		reader = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, path, reader)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("X-Auth-Request-User", subject)
+	return req
 }
 
 func effectiveAccessOperationAllowed(resources []AuthEffectiveAccessResource, operationID string) bool {

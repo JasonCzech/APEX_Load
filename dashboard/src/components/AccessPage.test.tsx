@@ -286,7 +286,7 @@ describe('AccessPage', () => {
 
   it('creates a service-account key from the Generate Key subtab', async () => {
     await act(async () => {
-      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUsers={false} canViewUserActivity={false} canManageServiceAccounts />)
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings={false} canViewUserActivity={false} canManageServiceAccounts />)
     })
     await flushPromises()
 
@@ -328,7 +328,7 @@ describe('AccessPage', () => {
   it('sorts, filters, selects, and performs service-account lifecycle actions', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     await act(async () => {
-      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUsers={false} canViewUserActivity={false} canManageServiceAccounts />)
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings={false} canViewUserActivity={false} canManageServiceAccounts />)
     })
     await flushPromises()
 
@@ -375,7 +375,7 @@ describe('AccessPage', () => {
   it('onboards users with initial access and edits existing user access from the main panel', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     await act(async () => {
-      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUsers canViewUserActivity canManageServiceAccounts={false} />)
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle canManageUserBindings canViewUserActivity canManageServiceAccounts={false} />)
     })
     await flushPromises()
 
@@ -508,9 +508,65 @@ describe('AccessPage', () => {
     expect(apiMock.deleteAuthUserBinding).not.toHaveBeenCalled()
   })
 
+  it('lets binding-only access users edit scoped bindings without lifecycle controls', async () => {
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings canViewUserActivity={false} canManageServiceAccounts={false} />)
+    })
+    await flushPromises()
+
+    expect(apiMock.listAuthUsers).toHaveBeenCalledWith({ limit: 100 })
+    expect(container.textContent).toContain('Existing Users')
+    expect(container.textContent).toContain('Alice Admin')
+    expect(container.textContent).not.toContain('Onboard Users')
+    expect(container.textContent).not.toContain('Create User')
+
+    const userManagement = container.querySelector('.access-user-management') as HTMLElement | null
+    expect(userManagement?.textContent).toContain('User Access')
+    if (!userManagement) return
+    await clickScopedButton(userManagement, 'Edit')
+
+    const editManagement = container.querySelector('.access-user-management') as HTMLElement | null
+    expect(editManagement?.textContent).toContain('Edit User')
+    expect(editManagement?.textContent).toContain('Roles, Domains, and Projects')
+    expect(editManagement?.textContent).not.toContain('Add Global Role')
+    if (!editManagement) return
+
+    const profileInputs = Array.from(editManagement.querySelectorAll<HTMLInputElement>('.access-form-grid input'))
+    expect(profileInputs.length).toBe(3)
+    expect(profileInputs.every(input => input.disabled)).toBe(true)
+
+    const lifecycleButton = findButton(editManagement, 'Remove Access')
+    expect(lifecycleButton?.disabled).toBe(true)
+
+    await clickScopedButton(editManagement, 'Add Project')
+    const editProjectRows = Array.from(editManagement.querySelectorAll<HTMLElement>('.access-binding-draft-row')).filter(row => {
+      const scopeSelect = row.querySelector('select') as HTMLSelectElement | null
+      return scopeSelect?.value === 'project'
+    })
+    expect(editProjectRows.length).toBeGreaterThanOrEqual(2)
+    const editSecondProjectSelect = editProjectRows[1]?.querySelectorAll<HTMLSelectElement>('select')[1]
+    expect(editSecondProjectSelect).toBeDefined()
+    if (!editSecondProjectSelect) return
+    await act(async () => {
+      changeSelect(editSecondProjectSelect, 'project-2')
+    })
+    await clickScopedButton(editManagement, 'Save Changes')
+    await flushPromises()
+
+    expect(apiMock.updateAuthUser).not.toHaveBeenCalled()
+    expect(apiMock.createAuthUser).not.toHaveBeenCalled()
+    expect(apiMock.disableAuthUser).not.toHaveBeenCalled()
+    expect(apiMock.enableAuthUser).not.toHaveBeenCalled()
+    expect(apiMock.createAuthUserBinding).toHaveBeenCalledWith('user-1', {
+      scope_type: 'project',
+      scope_id: 'project-2',
+      role: 'viewer',
+    })
+  })
+
   it('filters, exports, sorts, and selects activity events and usage rows', async () => {
     await act(async () => {
-      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUsers={false} canViewUserActivity canManageServiceAccounts={false} />)
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings={false} canViewUserActivity canManageServiceAccounts={false} />)
     })
     await flushPromises()
 

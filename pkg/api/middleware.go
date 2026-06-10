@@ -59,6 +59,7 @@ type accessRequirement struct {
 	DomainLookup      func(*http.Request, storage.Store) (string, int, string)
 	RepositoryRoles   []string
 	RepositoryLookup  func(*http.Request, storage.Store) (string, int, string)
+	MaxBodyBytes      int64
 }
 
 type requestProjectLookup func(*http.Request) (string, int, string)
@@ -1358,6 +1359,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveImportProjectIDFromForm,
+			MaxBodyBytes:  enterpriseArchiveImportMaxBodyBytes,
 		}, true
 	}
 
@@ -1366,6 +1368,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveImportProjectIDFromForm,
+			MaxBodyBytes:  enterpriseArchiveImportMaxBodyBytes,
 		}, true
 	}
 
@@ -1374,6 +1377,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveImportProjectIDFromForm,
+			MaxBodyBytes:  jmeterImportMaxBodyBytes,
 		}, true
 	}
 
@@ -1382,6 +1386,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveImportProjectIDFromForm,
+			MaxBodyBytes:  jmeterImportMaxBodyBytes,
 		}, true
 	}
 
@@ -1455,6 +1460,25 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveImportProjectIDFromJSONOrForm,
+			MaxBodyBytes:  oracleReviewImportMaxBodyBytes,
+		}, true
+	}
+
+	if path == "/api/v1/scripts/import/k6" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveImportProjectIDFromJSONOrForm,
+			MaxBodyBytes:  k6ImportMaxBodyBytes,
+		}, true
+	}
+
+	if path == "/api/v1/scripts/import/har" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveImportProjectIDFromJSONOrForm,
+			MaxBodyBytes:  harImportMaxBodyBytes,
 		}, true
 	}
 
@@ -1463,6 +1487,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveImportProjectIDFromJSONOrForm,
+			MaxBodyBytes:  webAPIImportMaxBodyBytes,
 		}, true
 	}
 
@@ -2541,7 +2566,15 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 // set above the largest explicit per-handler http.MaxBytesReader limit (100 MiB
 // for Enterprise Script Archive imports) so handlers with their own, smaller limit always win,
 // while handlers that decode the body without any limit are still bounded.
-const defaultMaxRequestBodyBytes = 128 << 20
+const (
+	k6ImportMaxBodyBytes                int64 = 10 << 20
+	oracleReviewImportMaxBodyBytes      int64 = 10 << 20
+	webAPIImportMaxBodyBytes            int64 = 20 << 20
+	harImportMaxBodyBytes               int64 = 50 << 20
+	jmeterImportMaxBodyBytes            int64 = 50 << 20
+	enterpriseArchiveImportMaxBodyBytes int64 = 100 << 20
+	defaultMaxRequestBodyBytes          int64 = 128 << 20
+)
 
 // bodyLimitMiddleware caps request body size as a defense against memory-
 // exhaustion DoS on handlers that decode the body without their own limit.
@@ -2550,10 +2583,18 @@ func bodyLimitMiddleware(next http.Handler) http.Handler {
 		// Limit only methods that carry a body; leave GET/HEAD (incl. the
 		// WebSocket upgrade, which hijacks the connection) untouched.
 		if r.Body != nil && isMutatingMethod(r.Method) {
-			r.Body = http.MaxBytesReader(w, r.Body, defaultMaxRequestBodyBytes)
+			r.Body = http.MaxBytesReader(w, r.Body, requestMaxBodyBytes(r))
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func requestMaxBodyBytes(r *http.Request) int64 {
+	limit := defaultMaxRequestBodyBytes
+	if requirement, ok := accessRequirementForRequest(r); ok && requirement.MaxBodyBytes > 0 && requirement.MaxBodyBytes < limit {
+		limit = requirement.MaxBodyBytes
+	}
+	return limit
 }
 
 // securityHeadersMiddleware applies baseline security response headers to every

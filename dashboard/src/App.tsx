@@ -214,9 +214,10 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const { connectionState } = useWebSocket({ onMessage: handleWSMessage, projectId: activeProject?.id })
   const { applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, createAndSelectApplication, createAndSelectRelease } = useApplication()
   const canManageServiceAccounts = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_service_accounts', false)
-  const canManageUsers = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_users', false)
+  const canManageUserLifecycle = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_users', false)
+  const canManageUserBindings = canManageUserLifecycle || isEffectiveOperationAllowed(effectiveAccessResources, 'manage_user_bindings', false)
   const canViewUserActivity = isEffectiveOperationAllowed(effectiveAccessResources, 'view_user_activity', false)
-  const canUseAccessWorkspace = canManageServiceAccounts || canManageUsers || canViewUserActivity
+  const canUseAccessWorkspace = canManageServiceAccounts || canManageUserBindings || canViewUserActivity
   const canManageRepositoryProjects = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_repository_projects', false)
   const canManageRepositoryReleases = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_repository_releases', false)
   const canManageRepository = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_application_repository', false)
@@ -744,9 +745,11 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             <AccessPage
               projects={projects}
               domains={domains}
+              applicationRepository={applicationRepository}
               activeDomain={activeDomain}
               activeProject={activeProject}
-              canManageUsers={canManageUsers}
+              canManageUserLifecycle={canManageUserLifecycle}
+              canManageUserBindings={canManageUserBindings}
               canViewUserActivity={canViewUserActivity}
               canManageServiceAccounts={canManageServiceAccounts}
             />

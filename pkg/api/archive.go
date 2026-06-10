@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -891,10 +892,16 @@ func loadRunArchiveManifest(manifestPath string) (*RunArchiveManifest, error) {
 	if strings.TrimSpace(manifest.SchemaVersion) == "" {
 		manifest.SchemaVersion = archiveSchemaVersion
 	}
+	if err := validateRunArchiveManifestArtifacts(&manifest); err != nil {
+		return nil, err
+	}
 	return &manifest, nil
 }
 
-func archiveManifestArtifactNames(manifest *RunArchiveManifest) map[string]struct{} {
+func archiveManifestArtifactNames(manifest *RunArchiveManifest) (map[string]struct{}, error) {
+	if err := validateRunArchiveManifestArtifacts(manifest); err != nil {
+		return nil, err
+	}
 	artifacts := map[string]struct{}{}
 	for _, name := range []string{
 		manifest.TransactionsFile,
@@ -906,12 +913,120 @@ func archiveManifestArtifactNames(manifest *RunArchiveManifest) map[string]struc
 		manifest.TestManifestFile,
 		"manifest.json",
 	} {
-		if name == "" {
+		if strings.TrimSpace(name) == "" {
 			continue
 		}
 		artifacts[name] = struct{}{}
 	}
-	return artifacts
+	return artifacts, nil
+}
+
+func validateRunArchiveManifestArtifacts(manifest *RunArchiveManifest) error {
+	if manifest == nil {
+		return fmt.Errorf("archive manifest is missing")
+	}
+	var err error
+	if manifest.TransactionsFile, err = optionalArchiveArtifactName("transactions_file", manifest.TransactionsFile); err != nil {
+		return err
+	}
+	if manifest.ResourceSamplesFile, err = optionalArchiveArtifactName("resource_samples_file", manifest.ResourceSamplesFile); err != nil {
+		return err
+	}
+	if manifest.IntervalSummariesFile, err = optionalArchiveArtifactName("interval_summaries_file", manifest.IntervalSummariesFile); err != nil {
+		return err
+	}
+	if manifest.TransactionsParquetFile, err = optionalArchiveArtifactName("transactions_parquet_file", manifest.TransactionsParquetFile); err != nil {
+		return err
+	}
+	if manifest.ResourceSamplesParquetFile, err = optionalArchiveArtifactName("resource_samples_parquet_file", manifest.ResourceSamplesParquetFile); err != nil {
+		return err
+	}
+	if manifest.IntervalSummariesParquetFile, err = optionalArchiveArtifactName("interval_summaries_parquet_file", manifest.IntervalSummariesParquetFile); err != nil {
+		return err
+	}
+	if manifest.TestManifestFile, err = optionalArchiveArtifactName("test_manifest_file", manifest.TestManifestFile); err != nil {
+		return err
+	}
+	return nil
+}
+
+func requiredArchiveArtifactName(field, name string) (string, error) {
+	normalized, err := normalizeArchiveArtifactName(name)
+	if err != nil {
+		return "", fmt.Errorf("invalid archive manifest artifact %s: %w", field, err)
+	}
+	return normalized, nil
+}
+
+func optionalArchiveArtifactName(field, name string) (string, error) {
+	if strings.TrimSpace(name) == "" {
+		return "", nil
+	}
+	return requiredArchiveArtifactName(field, name)
+}
+
+func normalizeArchiveArtifactName(name string) (string, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "", fmt.Errorf("name is empty")
+	}
+	if strings.ContainsRune(trimmed, '\x00') {
+		return "", fmt.Errorf("name contains NUL byte")
+	}
+	if strings.Contains(trimmed, "\\") {
+		return "", fmt.Errorf("name contains backslash")
+	}
+	if hasWindowsVolumeName(trimmed) {
+		return "", fmt.Errorf("name uses a Windows volume path")
+	}
+	if path.IsAbs(trimmed) || filepath.IsAbs(trimmed) {
+		return "", fmt.Errorf("name is absolute")
+	}
+	for _, segment := range strings.Split(trimmed, "/") {
+		if segment == ".." {
+			return "", fmt.Errorf("name contains parent directory traversal")
+		}
+	}
+	cleaned := path.Clean(trimmed)
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", fmt.Errorf("name is not a file path")
+	}
+	return cleaned, nil
+}
+
+func hasWindowsVolumeName(name string) bool {
+	if len(name) < 2 || name[1] != ':' {
+		return false
+	}
+	ch := name[0]
+	return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')
+}
+
+func archiveArtifactPath(root, name string) (string, error) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return "", fmt.Errorf("archive root is empty")
+	}
+	normalized, err := normalizeArchiveArtifactName(name)
+	if err != nil {
+		return "", err
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	fullPath, err := filepath.Abs(filepath.Join(rootAbs, filepath.FromSlash(normalized)))
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(rootAbs, fullPath)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("archive artifact escapes archive root")
+	}
+	return fullPath, nil
 }
 
 func loadArchiveTransactions(record *storage.RunArchiveRecord, filter transactionEventFilter, page archivePage) ([]TransactionEvent, int, error) {
@@ -922,7 +1037,10 @@ func loadArchiveTransactions(record *storage.RunArchiveRecord, filter transactio
 	if err != nil {
 		return nil, 0, err
 	}
-	path := filepath.Join(record.ArchivePath, manifest.TransactionsFile)
+	path, err := archiveArtifactPath(record.ArchivePath, manifest.TransactionsFile)
+	if err != nil {
+		return nil, 0, err
+	}
 	predicate := func(item *TransactionEvent) bool {
 		return transactionMatchesArchiveFilter(item, filter)
 	}
@@ -1100,7 +1218,10 @@ func loadArchiveResourceSamples(record *storage.RunArchiveRecord, page archivePa
 	if err != nil {
 		return nil, 0, err
 	}
-	path := filepath.Join(record.ArchivePath, manifest.ResourceSamplesFile)
+	path, err := archiveArtifactPath(record.ArchivePath, manifest.ResourceSamplesFile)
+	if err != nil {
+		return nil, 0, err
+	}
 	return readJSONLPage[ResourceSample](path, page, nil)
 }
 
@@ -1120,7 +1241,10 @@ func loadArchiveIntervalSummaries(record *storage.RunArchiveRecord, page archive
 	if err != nil {
 		return nil, 0, err
 	}
-	path := filepath.Join(record.ArchivePath, manifest.IntervalSummariesFile)
+	path, err := archiveArtifactPath(record.ArchivePath, manifest.IntervalSummariesFile)
+	if err != nil {
+		return nil, 0, err
+	}
 	return readJSONLPage[IntervalSummaryRecord](path, page, nil)
 }
 
@@ -2157,7 +2281,13 @@ func archiveFileOutputCompatibility(record *storage.RunArchiveRecord, artifactNa
 		output.Reason = "archive root is not available"
 		return output
 	}
-	if _, err := os.Stat(filepath.Join(record.ArchivePath, artifactName)); err != nil {
+	path, err := archiveArtifactPath(record.ArchivePath, artifactName)
+	if err != nil {
+		output.Status = "missing"
+		output.Reason = "archive artifact path is invalid"
+		return output
+	}
+	if _, err := os.Stat(path); err != nil {
 		output.Status = "missing"
 		output.Reason = "artifact is not present in the archive bundle"
 	}
@@ -3087,7 +3217,10 @@ func readAllArchiveRecords[T any](record *storage.RunArchiveRecord, pathSelector
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(record.ArchivePath, pathSelector(manifest))
+	path, err := archiveArtifactPath(record.ArchivePath, pathSelector(manifest))
+	if err != nil {
+		return nil, err
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err

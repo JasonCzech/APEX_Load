@@ -37,7 +37,7 @@ type HTTP struct {
 	contentChecks            []contentCheck
 	dataFormattingAutoDetect bool
 	dataFormattingChain      []dataFormattingTransform
-	streaming                streamingProfile
+	streaming                *streamingProfile
 	defaultHeaders           map[string]string
 	authType                 string
 	authHeader               string // pre-computed Authorization header value

@@ -3,6 +3,7 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -28,6 +29,8 @@ const libraryBundleSchemaVersion = "apexload.library_bundle.v1"
 const libraryRemotesSettingKey = "library.remotes.v1"
 const librarySyncLinksSettingKey = "library.sync_links.v1"
 const defaultLibraryArchiveMaxBytes int64 = 512 * 1024 * 1024
+const defaultLibraryRemoteJSONTimeout = 30 * time.Second
+const defaultLibraryRemoteArchiveTimeout = 5 * time.Minute
 
 type LibraryCapabilitiesResponse struct {
 	SchemaVersion string    `json:"schema_version"`
@@ -476,10 +479,9 @@ func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Reques
 		updated.Name = strings.TrimSpace(req.Name)
 	}
 	if strings.TrimSpace(req.BaseURL) != "" {
-		baseURL := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
-		parsed, err := url.Parse(baseURL)
-		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-			writeError(w, http.StatusBadRequest, "remote base_url must be an absolute URL")
+		baseURL, err := normalizeLibraryRemoteBaseURL(req.BaseURL)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		updated.BaseURL = baseURL
@@ -536,7 +538,7 @@ func (s *Server) handleLibraryProbeRemote(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "remote library not found")
 		return
 	}
-	caps, err := s.remoteLibraryCapabilities(remote)
+	caps, err := s.remoteLibraryCapabilities(r.Context(), remote)
 	now := time.Now().UTC()
 	s.libraryMu.Lock()
 	if stored := s.libraryRemotes[remote.ID]; stored != nil {
@@ -571,7 +573,7 @@ func (s *Server) handleLibraryRemoteCatalog(w http.ResponseWriter, r *http.Reque
 	}
 	projectID := strings.TrimSpace(firstNonEmpty(r.URL.Query().Get("project_id"), remote.DefaultProjectID))
 	kind := normalizeLibraryKind(r.URL.Query().Get("kind"))
-	catalog, err := s.remoteLibraryCatalog(remote, projectID, kind)
+	catalog, err := s.remoteLibraryCatalog(r.Context(), remote, projectID, kind)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -596,7 +598,7 @@ func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request)
 	if strings.TrimSpace(req.ProjectID) == "" {
 		req.ProjectID = remote.DefaultProjectID
 	}
-	bundle, err := s.remoteLibraryExport(remote, req)
+	bundle, err := s.remoteLibraryExport(r.Context(), remote, req)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -604,7 +606,7 @@ func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request)
 	var archiveImport *libraryArchiveImport
 	var cleanup func()
 	if normalizeLibraryKind(req.Kind) == "result" && libraryBundleHasStreamedArchive(bundle) {
-		archiveImport, cleanup, err = s.remoteLibraryDownloadArchive(remote, firstNonEmpty(req.RemoteID, req.ID))
+		archiveImport, cleanup, err = s.remoteLibraryDownloadArchive(r.Context(), remote, firstNonEmpty(req.RemoteID, req.ID))
 		if cleanup != nil {
 			defer cleanup()
 		}
@@ -654,9 +656,9 @@ func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request)
 	}
 	var imported *LibraryImportResponse
 	if normalizeLibraryKind(req.Kind) == "result" && libraryBundleHasStreamedArchive(bundle) {
-		imported, err = s.remoteLibraryImportArchive(remote, LibraryImportRequest{Bundle: *bundle, ProjectID: req.ProjectID, Mode: "push"}, req.ID)
+		imported, err = s.remoteLibraryImportArchive(r.Context(), remote, LibraryImportRequest{Bundle: *bundle, ProjectID: req.ProjectID, Mode: "push"}, req.ID)
 	} else {
-		imported, err = s.remoteLibraryImport(remote, LibraryImportRequest{Bundle: *bundle, ProjectID: req.ProjectID, Mode: "push"})
+		imported, err = s.remoteLibraryImport(r.Context(), remote, LibraryImportRequest{Bundle: *bundle, ProjectID: req.ProjectID, Mode: "push"})
 	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
@@ -700,7 +702,7 @@ func (s *Server) handleLibraryRemoteDiff(w http.ResponseWriter, r *http.Request)
 		req.ProjectID = remote.DefaultProjectID
 	}
 	req.ID = remoteItemID
-	bundle, err := s.remoteLibraryExport(remote, req)
+	bundle, err := s.remoteLibraryExport(r.Context(), remote, req)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -1170,15 +1172,15 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 	return imported.ID, "created", nil
 }
 
-func (s *Server) remoteLibraryCapabilities(remote LibraryRemote) (*LibraryCapabilitiesResponse, error) {
+func (s *Server) remoteLibraryCapabilities(ctx context.Context, remote LibraryRemote) (*LibraryCapabilitiesResponse, error) {
 	var caps LibraryCapabilitiesResponse
-	if err := s.remoteJSON(remote, http.MethodGet, "/api/v1/library/capabilities", nil, &caps); err != nil {
+	if err := s.remoteJSON(ctx, remote, http.MethodGet, "/api/v1/library/capabilities", nil, &caps); err != nil {
 		return nil, err
 	}
 	return &caps, nil
 }
 
-func (s *Server) remoteLibraryCatalog(remote LibraryRemote, projectID string, kind string) (*LibraryCatalogResponse, error) {
+func (s *Server) remoteLibraryCatalog(ctx context.Context, remote LibraryRemote, projectID string, kind string) (*LibraryCatalogResponse, error) {
 	values := url.Values{}
 	if projectID != "" {
 		values.Set("project_id", projectID)
@@ -1191,32 +1193,32 @@ func (s *Server) remoteLibraryCatalog(remote LibraryRemote, projectID string, ki
 		path += "?" + encoded
 	}
 	var catalog LibraryCatalogResponse
-	if err := s.remoteJSON(remote, http.MethodGet, path, nil, &catalog); err != nil {
+	if err := s.remoteJSON(ctx, remote, http.MethodGet, path, nil, &catalog); err != nil {
 		return nil, err
 	}
 	return &catalog, nil
 }
 
-func (s *Server) remoteLibraryExport(remote LibraryRemote, req LibraryTransferRequest) (*LibraryBundle, error) {
+func (s *Server) remoteLibraryExport(ctx context.Context, remote LibraryRemote, req LibraryTransferRequest) (*LibraryBundle, error) {
 	var bundle LibraryBundle
-	if err := s.remoteJSON(remote, http.MethodPost, "/api/v1/library/export", req, &bundle); err != nil {
+	if err := s.remoteJSON(ctx, remote, http.MethodPost, "/api/v1/library/export", req, &bundle); err != nil {
 		return nil, err
 	}
 	return &bundle, nil
 }
 
-func (s *Server) remoteLibraryImport(remote LibraryRemote, req LibraryImportRequest) (*LibraryImportResponse, error) {
+func (s *Server) remoteLibraryImport(ctx context.Context, remote LibraryRemote, req LibraryImportRequest) (*LibraryImportResponse, error) {
 	var imported LibraryImportResponse
-	if _, err := s.remoteJSONAccepted(remote, http.MethodPost, "/api/v1/library/import", req, &imported, map[int]bool{http.StatusConflict: true}); err != nil {
+	if _, err := s.remoteJSONAccepted(ctx, remote, http.MethodPost, "/api/v1/library/import", req, &imported, map[int]bool{http.StatusConflict: true}); err != nil {
 		return nil, err
 	}
 	return &imported, nil
 }
 
-func (s *Server) remoteLibraryImportArchive(remote LibraryRemote, req LibraryImportRequest, resultID string) (*LibraryImportResponse, error) {
+func (s *Server) remoteLibraryImportArchive(ctx context.Context, remote LibraryRemote, req LibraryImportRequest, resultID string) (*LibraryImportResponse, error) {
 	record, ok := s.runner.GetRunArchive(resultID)
 	if !ok || record == nil {
-		return s.remoteLibraryImport(remote, req)
+		return s.remoteLibraryImport(ctx, remote, req)
 	}
 	if err := ensureArchiveMaterialized(record); err != nil {
 		return nil, fmt.Errorf("materialize local archive: %w", err)
@@ -1271,7 +1273,10 @@ func (s *Server) remoteLibraryImportArchive(remote LibraryRemote, req LibraryImp
 		values.Set("project_id", req.ProjectID)
 	}
 	endpoint := base.ResolveReference(&url.URL{Path: "/api/v1/library/import/archive", RawQuery: values.Encode()})
-	httpReq, err := http.NewRequest(http.MethodPost, endpoint.String(), reader)
+	timeout := libraryRemoteArchiveTimeout()
+	reqCtx, cancel := context.WithTimeout(ctxOrBackground(ctx), timeout)
+	defer cancel()
+	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, endpoint.String(), reader)
 	if err != nil {
 		_ = reader.Close()
 		return nil, err
@@ -1281,7 +1286,7 @@ func (s *Server) remoteLibraryImportArchive(remote LibraryRemote, req LibraryImp
 		_ = reader.Close()
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(httpReq)
+	resp, err := libraryRemoteArchiveHTTPClient(timeout).Do(httpReq)
 	if err != nil {
 		_ = reader.Close()
 		if writeErr := <-errCh; writeErr != nil {
@@ -1304,21 +1309,24 @@ func (s *Server) remoteLibraryImportArchive(remote LibraryRemote, req LibraryImp
 	return &imported, nil
 }
 
-func (s *Server) remoteLibraryDownloadArchive(remote LibraryRemote, resultID string) (*libraryArchiveImport, func(), error) {
+func (s *Server) remoteLibraryDownloadArchive(ctx context.Context, remote LibraryRemote, resultID string) (*libraryArchiveImport, func(), error) {
 	base, err := url.Parse(remote.BaseURL)
 	if err != nil {
 		return nil, nil, err
 	}
 	path := "/api/v1/library/results/" + url.PathEscape(strings.TrimSpace(resultID)) + "/archive"
 	endpoint := base.ResolveReference(&url.URL{Path: path})
-	req, err := http.NewRequest(http.MethodGet, endpoint.String(), nil)
+	timeout := libraryRemoteArchiveTimeout()
+	reqCtx, cancel := context.WithTimeout(ctxOrBackground(ctx), timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
 		return nil, nil, err
 	}
 	if err := s.authorizeRemoteRequest(req, remote); err != nil {
 		return nil, nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := libraryRemoteArchiveHTTPClient(timeout).Do(req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1344,12 +1352,12 @@ func (s *Server) remoteLibraryDownloadArchive(remote LibraryRemote, resultID str
 	return &libraryArchiveImport{ZipPath: tmp.Name(), SizeBytes: written}, cleanup, nil
 }
 
-func (s *Server) remoteJSON(remote LibraryRemote, method string, path string, body any, out any) error {
-	_, err := s.remoteJSONAccepted(remote, method, path, body, out, nil)
+func (s *Server) remoteJSON(ctx context.Context, remote LibraryRemote, method string, path string, body any, out any) error {
+	_, err := s.remoteJSONAccepted(ctx, remote, method, path, body, out, nil)
 	return err
 }
 
-func (s *Server) remoteJSONAccepted(remote LibraryRemote, method string, path string, body any, out any, accepted map[int]bool) (int, error) {
+func (s *Server) remoteJSONAccepted(ctx context.Context, remote LibraryRemote, method string, path string, body any, out any, accepted map[int]bool) (int, error) {
 	base, err := url.Parse(remote.BaseURL)
 	if err != nil {
 		return 0, err
@@ -1369,7 +1377,10 @@ func (s *Server) remoteJSONAccepted(remote LibraryRemote, method string, path st
 	} else {
 		reader = bytes.NewReader(nil)
 	}
-	req, err := http.NewRequest(method, endpoint.String(), reader)
+	timeout := libraryRemoteJSONTimeout()
+	reqCtx, cancel := context.WithTimeout(ctxOrBackground(ctx), timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, method, endpoint.String(), reader)
 	if err != nil {
 		return 0, err
 	}
@@ -1379,7 +1390,7 @@ func (s *Server) remoteJSONAccepted(remote LibraryRemote, method string, path st
 	if err := s.authorizeRemoteRequest(req, remote); err != nil {
 		return 0, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := libraryRemoteJSONHTTPClient(timeout).Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -1388,6 +1399,29 @@ func (s *Server) remoteJSONAccepted(remote LibraryRemote, method string, path st
 		return resp.StatusCode, fmt.Errorf("remote library returned %s", resp.Status)
 	}
 	return resp.StatusCode, json.NewDecoder(resp.Body).Decode(out)
+}
+
+func libraryRemoteJSONTimeout() time.Duration {
+	return firstConfiguredDuration(defaultLibraryRemoteJSONTimeout, "APEXLOAD_LIBRARY_REMOTE_JSON_TIMEOUT", "APEXLOAD_LIBRARY_REMOTE_JSON_TIMEOUT_SECONDS")
+}
+
+func libraryRemoteArchiveTimeout() time.Duration {
+	return firstConfiguredDuration(defaultLibraryRemoteArchiveTimeout, "APEXLOAD_LIBRARY_REMOTE_ARCHIVE_TIMEOUT", "APEXLOAD_LIBRARY_REMOTE_ARCHIVE_TIMEOUT_SECONDS")
+}
+
+func libraryRemoteJSONHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout}
+}
+
+func libraryRemoteArchiveHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout}
+}
+
+func ctxOrBackground(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
 }
 
 func (s *Server) authorizeRemoteRequest(req *http.Request, remote LibraryRemote) error {
@@ -1406,10 +1440,9 @@ func buildLibraryRemote(req LibraryRemoteRequest) (*LibraryRemote, error) {
 	if name == "" {
 		return nil, fmt.Errorf("remote name is required")
 	}
-	baseURL := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
-	parsed, err := url.Parse(baseURL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return nil, fmt.Errorf("remote base_url must be an absolute URL")
+	baseURL, err := normalizeLibraryRemoteBaseURL(req.BaseURL)
+	if err != nil {
+		return nil, err
 	}
 	authMethod := strings.TrimSpace(req.AuthMethod)
 	if authMethod == "" {
@@ -1428,6 +1461,18 @@ func buildLibraryRemote(req LibraryRemoteRequest) (*LibraryRemote, error) {
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}, nil
+}
+
+func normalizeLibraryRemoteBaseURL(raw string) (string, error) {
+	baseURL := strings.TrimRight(strings.TrimSpace(raw), "/")
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("remote base_url must be an absolute URL")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("remote base_url must use http or https")
+	}
+	return baseURL, nil
 }
 
 func (s *Server) libraryRemote(id string) (LibraryRemote, bool) {

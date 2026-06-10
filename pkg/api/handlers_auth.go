@@ -316,7 +316,8 @@ var authAccessMatrix = []AuthAccessResource{
 			{ID: "view_auth_diagnostics", Label: "View auth diagnostics", GlobalRoles: []string{RoleSystemAdmin}},
 			{ID: "view_audit", Label: "View audit events", GlobalRoles: []string{RoleSystemAdmin}},
 			{ID: "view_user_activity", Label: "View user activity and usage attribution", GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, DomainRoles: []string{RoleProjectAdmin}, RepositoryRoles: []string{RoleProjectAdmin}},
-			{ID: "manage_users", Label: "Onboard users and manage delegated role bindings", GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, DomainRoles: []string{RoleProjectAdmin}, RepositoryRoles: []string{RoleProjectAdmin}},
+			{ID: "manage_users", Label: "Onboard users and manage user lifecycle", GlobalRoles: []string{RoleSystemAdmin}},
+			{ID: "manage_user_bindings", Label: "Manage delegated role bindings", GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, DomainRoles: []string{RoleProjectAdmin}, RepositoryRoles: []string{RoleProjectAdmin}},
 			{ID: "manage_service_accounts", Label: "Create, disable, rotate, and delete service-account API keys", GlobalRoles: []string{RoleSystemAdmin}},
 		},
 	},
@@ -557,7 +558,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
-	if !s.currentRequestCanManageUsers(r) {
+	if !s.currentRequestCanReadUsers(r) {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -571,7 +572,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, AuthUserListResponse{Users: users, Count: len(users)})
+	writeJSON(w, http.StatusOK, AuthUserListResponse{Users: s.visibleUsersForRequest(r, users), Count: len(users)})
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -585,7 +586,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "subject is required")
 		return
 	}
-	if !s.currentRequestCanManageUsers(r) {
+	if !s.currentRequestCanManageUserLifecycle(r) {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -607,7 +608,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
-	if !s.currentRequestCanManageUsers(r) {
+	if !s.currentRequestCanReadUsers(r) {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -615,7 +616,7 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, user)
+	writeJSON(w, http.StatusOK, s.visibleUserForRequest(r, user))
 }
 
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -623,7 +624,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.currentRequestCanManageUsers(r) {
+	if !s.currentRequestCanManageUserLifecycle(r) {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -728,7 +729,7 @@ func (s *Server) setUserActive(w http.ResponseWriter, r *http.Request, active bo
 	if !ok {
 		return
 	}
-	if !s.currentRequestCanManageUsers(r) {
+	if !s.currentRequestCanManageUserLifecycle(r) {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -794,11 +795,25 @@ func normalizeUserBindingRequest(userID string, req AuthUserBindingRequest) *sto
 	return &storage.UserRoleBinding{UserID: userID, ScopeType: scopeType, ScopeID: scopeID, Role: role}
 }
 
-func (s *Server) currentRequestCanManageUsers(r *http.Request) bool {
+func (s *Server) currentRequestCanManageUserLifecycle(r *http.Request) bool {
 	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
 		return true
 	}
-	return currentUserCanManageUsers(r, s.store)
+	return currentUserCanManageUserLifecycle(r)
+}
+
+func (s *Server) currentRequestCanReadUsers(r *http.Request) bool {
+	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+		return true
+	}
+	return currentUserCanManageUserLifecycle(r) || currentUserCanManageUserBindings(r, s.store)
+}
+
+func (s *Server) currentRequestCanViewUserActivity(r *http.Request) bool {
+	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+		return true
+	}
+	return currentUserCanViewUserActivity(r, s.store)
 }
 
 func (s *Server) canManageUserBinding(r *http.Request, binding *storage.UserRoleBinding) bool {
@@ -808,15 +823,28 @@ func (s *Server) canManageUserBinding(r *http.Request, binding *storage.UserRole
 	return canManageBinding(r, s.store, binding)
 }
 
-func currentUserCanManageUsers(r *http.Request, store storage.Store) bool {
+func currentUserCanManageUserLifecycle(r *http.Request) bool {
 	user, ok := AuthenticatedUserFromContext(r.Context())
 	if !ok || user == nil {
 		return false
 	}
-	if user.hasGlobalRole(RoleSystemAdmin, RoleProjectAdmin) {
-		return true
+	return user.hasGlobalRole(RoleSystemAdmin)
+}
+
+func currentUserCanViewUserActivity(r *http.Request, store storage.Store) bool {
+	user, ok := AuthenticatedUserFromContext(r.Context())
+	if !ok || user == nil {
+		return false
 	}
-	return hasAnyScopedProjectAdmin(user, store)
+	return user.hasGlobalRole(RoleSystemAdmin, RoleProjectAdmin) || hasAnyScopedProjectAdmin(user, store)
+}
+
+func currentUserCanManageUserBindings(r *http.Request, store storage.Store) bool {
+	user, ok := AuthenticatedUserFromContext(r.Context())
+	if !ok || user == nil {
+		return false
+	}
+	return user.hasGlobalRole(RoleSystemAdmin, RoleProjectAdmin) || hasAnyScopedProjectAdmin(user, store)
 }
 
 func canManageBinding(r *http.Request, store storage.Store, binding *storage.UserRoleBinding) bool {
@@ -871,6 +899,37 @@ func hasAnyScopedProjectAdmin(user *AuthenticatedUser, store storage.Store) bool
 	return false
 }
 
+func (s *Server) visibleUsersForRequest(r *http.Request, users []*storage.User) []*storage.User {
+	out := make([]*storage.User, 0, len(users))
+	for _, user := range users {
+		out = append(out, s.visibleUserForRequest(r, user))
+	}
+	return out
+}
+
+func (s *Server) visibleUserForRequest(r *http.Request, user *storage.User) *storage.User {
+	if user == nil {
+		return nil
+	}
+	clone := *user
+	if s.currentRequestCanManageUserLifecycle(r) {
+		clone.Bindings = append([]*storage.UserRoleBinding(nil), user.Bindings...)
+		return &clone
+	}
+	clone.Bindings = s.visibleUserBindingsForRequest(r, user.Bindings)
+	return &clone
+}
+
+func (s *Server) visibleUserBindingsForRequest(r *http.Request, bindings []*storage.UserRoleBinding) []*storage.UserRoleBinding {
+	visible := make([]*storage.UserRoleBinding, 0, len(bindings))
+	for _, binding := range bindings {
+		if s.canManageUserBinding(r, binding) {
+			visible = append(visible, binding)
+		}
+	}
+	return visible
+}
+
 func projectIDForBinding(binding *storage.UserRoleBinding) string {
 	if binding != nil && binding.ScopeType == "project" {
 		return binding.ScopeID
@@ -883,7 +942,7 @@ func (s *Server) handleGetUserActivity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
-	if !s.currentRequestCanManageUsers(r) {
+	if !s.currentRequestCanViewUserActivity(r) {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -908,7 +967,7 @@ func (s *Server) handleExportUserActivity(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
-	if !s.currentRequestCanManageUsers(r) {
+	if !s.currentRequestCanViewUserActivity(r) {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}

@@ -240,7 +240,11 @@ func ensureArchiveMaterialized(record *storage.RunArchiveRecord) error {
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
 		return err
 	}
-	for artifact := range archiveManifestArtifactNames(&manifest) {
+	artifacts, err := archiveManifestArtifactNames(&manifest)
+	if err != nil {
+		return err
+	}
+	for artifact := range artifacts {
 		if artifact == "manifest.json" {
 			continue
 		}
@@ -248,7 +252,10 @@ func ensureArchiveMaterialized(record *storage.RunArchiveRecord) error {
 		if err != nil {
 			return fmt.Errorf("download archive artifact %s: %w", artifact, err)
 		}
-		localPath := filepath.Join(localRoot, filepath.FromSlash(artifact))
+		localPath, err := archiveArtifactPath(localRoot, artifact)
+		if err != nil {
+			return err
+		}
 		if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 			return err
 		}

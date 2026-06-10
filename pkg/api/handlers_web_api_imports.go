@@ -237,7 +237,7 @@ func buildAsyncAPIReviewSections(result *asyncapi.ConvertResult) []scriptImportR
 }
 
 func readAsyncAPIImportRequest(w http.ResponseWriter, r *http.Request) (*asyncAPIImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, 20<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "application/json") {
 		data, err := io.ReadAll(r.Body)
@@ -261,7 +261,7 @@ func readAsyncAPIImportRequest(w http.ResponseWriter, r *http.Request) (*asyncAP
 		return &asyncAPIImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(20 << 20); err != nil {
+		if err := r.ParseMultipartForm(webAPIImportMaxBodyBytes); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 			return nil, false
 		}
@@ -298,7 +298,7 @@ func readAsyncAPIImportRequest(w http.ResponseWriter, r *http.Request) (*asyncAP
 }
 
 func readOpenAPIImportRequest(w http.ResponseWriter, r *http.Request) (*openAPIImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, 20<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "application/json") {
 		data, err := io.ReadAll(r.Body)
@@ -325,7 +325,7 @@ func readOpenAPIImportRequest(w http.ResponseWriter, r *http.Request) (*openAPII
 		return &openAPIImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(20 << 20); err != nil {
+		if err := r.ParseMultipartForm(webAPIImportMaxBodyBytes); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 			return nil, false
 		}
@@ -368,7 +368,7 @@ func readOpenAPIImportRequest(w http.ResponseWriter, r *http.Request) (*openAPII
 }
 
 func readWSDLImportRequest(w http.ResponseWriter, r *http.Request) (*wsdlImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, 20<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "application/json") {
 		var req wsdl.ImportRequest
@@ -379,7 +379,7 @@ func readWSDLImportRequest(w http.ResponseWriter, r *http.Request) (*wsdlImportR
 		return &wsdlImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(20 << 20); err != nil {
+		if err := r.ParseMultipartForm(webAPIImportMaxBodyBytes); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 			return nil, false
 		}
@@ -424,7 +424,7 @@ func readWSDLImportRequest(w http.ResponseWriter, r *http.Request) (*wsdlImportR
 }
 
 func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, 20<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "application/json") {
 		data, err := io.ReadAll(r.Body)
@@ -451,7 +451,7 @@ func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanI
 		return &postmanImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(20 << 20); err != nil {
+		if err := r.ParseMultipartForm(webAPIImportMaxBodyBytes); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 			return nil, false
 		}

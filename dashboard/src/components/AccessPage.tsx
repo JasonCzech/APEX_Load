@@ -9,6 +9,7 @@ import {
   DashboardUserRoleBinding,
   DashboardUserRoleScopeType,
   Domain,
+  ApplicationRepository,
   Project,
   UsageAccountingBucket,
 } from '../types'
@@ -34,9 +35,11 @@ type SortState<T extends string> = {
 type AccessPageProps = {
   projects: Project[]
   domains?: Domain[]
+  applicationRepository?: ApplicationRepository | null
   activeDomain?: Domain | null
   activeProject?: Project | null
-  canManageUsers: boolean
+  canManageUserLifecycle: boolean
+  canManageUserBindings: boolean
   canViewUserActivity: boolean
   canManageServiceAccounts: boolean
 }
@@ -236,8 +239,8 @@ const usageSortDefaults: Record<UsageSortField, SortDirection> = {
   vuser_seconds: 'desc',
 }
 
-function preferredTab(canManageUsers: boolean, canManageServiceAccounts: boolean, canViewUserActivity: boolean): AccessTab {
-  if (canManageUsers) return 'users'
+function preferredTab(canUseUsers: boolean, canManageServiceAccounts: boolean, canViewUserActivity: boolean): AccessTab {
+  if (canUseUsers) return 'users'
   if (canManageServiceAccounts) return 'service_accounts'
   if (canViewUserActivity) return 'activity'
   return 'users'
@@ -371,9 +374,10 @@ function nextSort<T extends string>(current: SortState<T>, field: T, defaults: R
   return { field, direction: defaults[field] }
 }
 
-function defaultScopeID(scopeType: DashboardUserRoleScopeType, projects: Project[], domains: Domain[], activeProject?: Project | null, activeDomain?: Domain | null): string {
+function defaultScopeID(scopeType: DashboardUserRoleScopeType, projects: Project[], domains: Domain[], activeProject?: Project | null, activeDomain?: Domain | null, applicationRepository?: ApplicationRepository | null): string {
   if (scopeType === 'project') return activeProject?.id || projects[0]?.id || ''
   if (scopeType === 'domain') return activeDomain?.id || domains[0]?.id || activeProject?.domain_id || ''
+  if (scopeType === 'application_repository') return applicationRepository?.id || ''
   return ''
 }
 
@@ -381,23 +385,26 @@ function createBindingDraftID(): string {
   return `binding-${Date.now()}-${Math.floor(Math.random() * 100000)}`
 }
 
-function createUserBindingDraft(scopeType: DashboardUserRoleScopeType, projects: Project[], domains: Domain[], activeProject?: Project | null, activeDomain?: Domain | null): UserBindingForm {
+function createUserBindingDraft(scopeType: DashboardUserRoleScopeType, projects: Project[], domains: Domain[], activeProject?: Project | null, activeDomain?: Domain | null, applicationRepository?: ApplicationRepository | null): UserBindingForm {
   return {
     id: createBindingDraftID(),
     scopeType,
-    scopeID: defaultScopeID(scopeType, projects, domains, activeProject, activeDomain),
+    scopeID: defaultScopeID(scopeType, projects, domains, activeProject, activeDomain, applicationRepository),
     role: roleOptionsForScope(scopeType)[0]?.id || 'viewer',
   }
 }
 
-function initialUserBindingDrafts(projects: Project[], domains: Domain[], activeProject?: Project | null, activeDomain?: Domain | null): UserBindingForm[] {
+function initialUserBindingDrafts(projects: Project[], domains: Domain[], activeProject?: Project | null, activeDomain?: Domain | null, applicationRepository?: ApplicationRepository | null): UserBindingForm[] {
   if (activeProject || projects.length > 0) {
-    return [createUserBindingDraft('project', projects, domains, activeProject, activeDomain)]
+    return [createUserBindingDraft('project', projects, domains, activeProject, activeDomain, applicationRepository)]
   }
   if (activeDomain || domains.length > 0) {
-    return [createUserBindingDraft('domain', projects, domains, activeProject, activeDomain)]
+    return [createUserBindingDraft('domain', projects, domains, activeProject, activeDomain, applicationRepository)]
   }
-  return [createUserBindingDraft('global', projects, domains, activeProject, activeDomain)]
+  if (applicationRepository) {
+    return [createUserBindingDraft('application_repository', projects, domains, activeProject, activeDomain, applicationRepository)]
+  }
+  return [createUserBindingDraft('global', projects, domains, activeProject, activeDomain, applicationRepository)]
 }
 
 function userBindingDraftFromBinding(binding: DashboardUserRoleBinding): UserBindingForm {
@@ -476,13 +483,16 @@ function accountStatusKeys(account: DashboardServiceAccount): string[] {
   return keys
 }
 
-function bindingLabel(binding: DashboardUserRoleBinding, projects: Project[], domains: Domain[]): string {
+function bindingLabel(binding: DashboardUserRoleBinding, projects: Project[], domains: Domain[], applicationRepository?: ApplicationRepository | null): string {
   if (binding.scope_type === 'global') return 'Global'
   if (binding.scope_type === 'project') {
     return projects.find(project => project.id === binding.scope_id)?.name || binding.scope_id || 'Project'
   }
   if (binding.scope_type === 'domain') {
     return domains.find(domain => domain.id === binding.scope_id)?.name || binding.scope_id || 'Domain'
+  }
+  if (binding.scope_type === 'application_repository') {
+    return applicationRepository && applicationRepository.id === binding.scope_id ? applicationRepository.name : binding.scope_id || 'Repository'
   }
   return binding.scope_id || 'Repository'
 }
@@ -491,10 +501,10 @@ function userRoleList(user: DashboardUser): string[] {
   return uniqueValues((user.bindings || []).map(binding => binding.role))
 }
 
-function userAccessLabels(user: DashboardUser, projects: Project[], domains: Domain[]): string[] {
+function userAccessLabels(user: DashboardUser, projects: Project[], domains: Domain[], applicationRepository?: ApplicationRepository | null): string[] {
   return (user.bindings || []).map(binding => {
     const scope = SCOPE_LABELS[binding.scope_type] || binding.scope_type
-    const label = bindingLabel(binding, projects, domains)
+    const label = bindingLabel(binding, projects, domains, applicationRepository)
     return `${scope}: ${label} (${ROLE_LABELS[binding.role] || binding.role})`
   })
 }
@@ -619,14 +629,17 @@ function SortHeader<T extends string>({
 export default function AccessPage({
   projects,
   domains = [],
+  applicationRepository,
   activeDomain,
   activeProject,
-  canManageUsers,
+  canManageUserLifecycle,
+  canManageUserBindings,
   canViewUserActivity,
   canManageServiceAccounts,
 }: AccessPageProps) {
   const api = useApi()
-  const [activeTab, setActiveTab] = useState<AccessTab>(() => preferredTab(canManageUsers, canManageServiceAccounts, canViewUserActivity))
+  const canUseUsers = canManageUserLifecycle || canManageUserBindings
+  const [activeTab, setActiveTab] = useState<AccessTab>(() => preferredTab(canUseUsers, canManageServiceAccounts, canViewUserActivity))
   const [userSubTab, setUserSubTab] = useState<UserSubTab>('existing')
   const [serviceAccountSubTab, setServiceAccountSubTab] = useState<ServiceAccountSubTab>('existing')
   const [activitySubTab, setActivitySubTab] = useState<ActivitySubTab>('events')
@@ -648,7 +661,7 @@ export default function AccessPage({
   const [usageSort, setUsageSort] = useState<SortState<UsageSortField>>({ field: 'vuser_seconds', direction: 'desc' })
   const [userForm, setUserForm] = useState<UserForm>({ subject: '', email: '', displayName: '' })
   const [editUserForm, setEditUserForm] = useState<UserForm>({ subject: '', email: '', displayName: '' })
-  const [onboardBindingDrafts, setOnboardBindingDrafts] = useState<UserBindingForm[]>(() => initialUserBindingDrafts(projects, domains, activeProject, activeDomain))
+  const [onboardBindingDrafts, setOnboardBindingDrafts] = useState<UserBindingForm[]>(() => initialUserBindingDrafts(projects, domains, activeProject, activeDomain, applicationRepository))
   const [editBindingDrafts, setEditBindingDrafts] = useState<UserBindingForm[]>([])
   const [selectedUserEditMode, setSelectedUserEditMode] = useState(false)
   const [activityFilter, setActivityFilter] = useState<ActivityFilterForm>({
@@ -681,12 +694,12 @@ export default function AccessPage({
   const selectedAccount = useMemo(() => accounts.find(account => account.id === selectedAccountID) || null, [accounts, selectedAccountID])
   const selectedActivity = useMemo(() => activityEvents.find(event => event.id === selectedActivityID) || null, [activityEvents, selectedActivityID])
   const userBuckets = useMemo(() => activityUsage?.by_user || [], [activityUsage?.by_user])
-  const accessWorkspaceAvailable = canManageUsers || canManageServiceAccounts || canViewUserActivity
+  const accessWorkspaceAvailable = canUseUsers || canManageServiceAccounts || canViewUserActivity
 
   const accessTabControls = useMemo(() => (
     accessWorkspaceAvailable ? (
       <div className="access-tab-row topbar-page-section-toggle" role="tablist" aria-label="Access workspace sections">
-        {canManageUsers && (
+        {canUseUsers && (
           <button type="button" role="tab" aria-selected={activeTab === 'users'} className={`access-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
             Users <strong>{users.length}</strong>
           </button>
@@ -703,7 +716,7 @@ export default function AccessPage({
         )}
       </div>
     ) : null
-  ), [accessWorkspaceAvailable, accounts.length, activeTab, activityEvents.length, canManageServiceAccounts, canManageUsers, canViewUserActivity, users.length])
+  ), [accessWorkspaceAvailable, accounts.length, activeTab, activityEvents.length, canManageServiceAccounts, canUseUsers, canViewUserActivity, users.length])
 
   const accessTopbarContribution = useMemo(() => ({
     id: 'access-page',
@@ -728,7 +741,7 @@ export default function AccessPage({
   const filteredUsers = useMemo(() => {
     const filtered = users.filter(user => {
       const roles = userRoleList(user)
-      const accessLabels = userAccessLabels(user, projects, domains)
+      const accessLabels = userAccessLabels(user, projects, domains, applicationRepository)
       const usage = usageForUser(user, userBuckets)
       if (userFilters.status === 'active' && !user.active) return false
       if (userFilters.status === 'disabled' && user.active) return false
@@ -754,7 +767,7 @@ export default function AccessPage({
           case 'status': return user.active ? 'Active' : 'Disabled'
           case 'email': return user.email || ''
           case 'roles': return formatRoleList(userRoleList(user))
-          case 'access': return userAccessLabels(user, projects, domains).join(' ')
+          case 'access': return userAccessLabels(user, projects, domains, applicationRepository).join(' ')
           case 'last_seen': return timestampValue(user.last_seen_at)
           case 'created': return timestampValue(user.created_at)
           case 'updated': return timestampValue(user.updated_at)
@@ -766,7 +779,7 @@ export default function AccessPage({
       }
       return comparePrimitive(valueFor(a, usageA), valueFor(b, usageB), userSort.direction)
     })
-  }, [domains, projects, userBuckets, userFilters, userSort, users])
+  }, [applicationRepository, domains, projects, userBuckets, userFilters, userSort, users])
 
   const filteredAccounts = useMemo(() => {
     const filtered = accounts.filter(account => {
@@ -882,7 +895,7 @@ export default function AccessPage({
   }, [api, canManageServiceAccounts])
 
   const loadUsers = useCallback(async () => {
-    if (!canManageUsers) {
+    if (!canUseUsers) {
       setUsers([])
       setUsersLoading(false)
       return
@@ -898,7 +911,7 @@ export default function AccessPage({
     } finally {
       setUsersLoading(false)
     }
-  }, [api, canManageUsers])
+  }, [api, canUseUsers])
 
   const loadActivity = useCallback(async () => {
     if (!canViewUserActivity) {
@@ -924,12 +937,18 @@ export default function AccessPage({
 
   useEffect(() => {
     setActiveTab(current => {
-      if (current === 'users' && canManageUsers) return current
+      if (current === 'users' && canUseUsers) return current
       if (current === 'service_accounts' && canManageServiceAccounts) return current
       if (current === 'activity' && canViewUserActivity) return current
-      return preferredTab(canManageUsers, canManageServiceAccounts, canViewUserActivity)
+      return preferredTab(canUseUsers, canManageServiceAccounts, canViewUserActivity)
     })
-  }, [canManageServiceAccounts, canManageUsers, canViewUserActivity])
+  }, [canManageServiceAccounts, canUseUsers, canViewUserActivity])
+
+  useEffect(() => {
+    if (!canManageUserLifecycle && userSubTab === 'onboard') {
+      setUserSubTab('existing')
+    }
+  }, [canManageUserLifecycle, userSubTab])
 
   useEffect(() => {
     loadAccounts()
@@ -988,8 +1007,8 @@ export default function AccessPage({
   }, [selectedUser])
 
   useEffect(() => {
-    setOnboardBindingDrafts(prev => prev.length > 0 ? prev : initialUserBindingDrafts(projects, domains, activeProject, activeDomain))
-  }, [activeDomain, activeProject, domains, projects])
+    setOnboardBindingDrafts(prev => prev.length > 0 ? prev : initialUserBindingDrafts(projects, domains, activeProject, activeDomain, applicationRepository))
+  }, [activeDomain, activeProject, applicationRepository, domains, projects])
 
   const applyPreset = (preset: PurposePreset) => {
     setForm(buildPresetForm(preset, activeProject?.id))
@@ -998,7 +1017,7 @@ export default function AccessPage({
   }
 
   const createUser = async () => {
-    if (!canManageUsers) {
+    if (!canManageUserLifecycle) {
       setUserActionError('Current session cannot manage users.')
       setUserActionMessage('')
       return
@@ -1031,7 +1050,7 @@ export default function AccessPage({
       setUserInspectorCollapsed(false)
       setUserSubTab('existing')
       setUserForm({ subject: '', email: '', displayName: '' })
-      setOnboardBindingDrafts(initialUserBindingDrafts(projects, domains, activeProject, activeDomain))
+      setOnboardBindingDrafts(initialUserBindingDrafts(projects, domains, activeProject, activeDomain, applicationRepository))
       setSelectedUserEditMode(false)
       setUserActionMessage(`Onboarded ${user.display_name || user.email || user.subject} with ${initialBindings.length} role ${initialBindings.length === 1 ? 'binding' : 'bindings'}.`)
       setUserActionError('')
@@ -1043,19 +1062,21 @@ export default function AccessPage({
   }
 
   const updateSelectedUser = async () => {
-    if (!selectedUser || !canManageUsers) return
-    if (!editUserForm.subject.trim()) {
+    if (!selectedUser || !canManageUserBindings) return
+    if (canManageUserLifecycle && !editUserForm.subject.trim()) {
       setUserActionError('Subject is required.')
       setUserActionMessage('')
       return
     }
     const desiredBindings = normalizedUserBindingDrafts(editBindingDrafts)
     try {
-      const user = await api.updateAuthUser(selectedUser.id, {
-        subject: editUserForm.subject.trim(),
-        email: editUserForm.email.trim() || undefined,
-        display_name: editUserForm.displayName.trim() || undefined,
-      })
+      const user = canManageUserLifecycle
+        ? await api.updateAuthUser(selectedUser.id, {
+          subject: editUserForm.subject.trim(),
+          email: editUserForm.email.trim() || undefined,
+          display_name: editUserForm.displayName.trim() || undefined,
+        })
+        : selectedUser
       const desiredSignatures = new Set(desiredBindings.map(draftSignature))
       const existingBindings = selectedUser.bindings || []
       const existingSignatures = new Set(existingBindings.map(bindingSignature))
@@ -1075,7 +1096,7 @@ export default function AccessPage({
       }
       setSelectedUserID(user.id)
       setSelectedUserEditMode(false)
-      setUserActionMessage(`Updated ${user.display_name || user.email || user.subject}.`)
+      setUserActionMessage(`${canManageUserLifecycle ? 'Updated' : 'Updated access for'} ${user.display_name || user.email || user.subject}.`)
       setUserActionError('')
       await loadUsers()
     } catch (error: unknown) {
@@ -1085,7 +1106,7 @@ export default function AccessPage({
   }
 
   const setUserActive = async (user: DashboardUser, active: boolean) => {
-    if (!canManageUsers) return
+    if (!canManageUserLifecycle) return
     const action = active ? 'restore access for' : 'remove access from'
     if (typeof window !== 'undefined' && !window.confirm(`Really ${action} ${user.display_name || user.subject}?`)) {
       return
@@ -1213,7 +1234,7 @@ export default function AccessPage({
   }
 
   const addBindingDraft = (setter: Dispatch<SetStateAction<UserBindingForm[]>>, scopeType: DashboardUserRoleScopeType) => {
-    setter(prev => [...prev, createUserBindingDraft(scopeType, projects, domains, activeProject, activeDomain)])
+    setter(prev => [...prev, createUserBindingDraft(scopeType, projects, domains, activeProject, activeDomain, applicationRepository)])
   }
 
   const updateBindingDraft = (setter: Dispatch<SetStateAction<UserBindingForm[]>>, draftID: string, updates: Partial<UserBindingForm>) => {
@@ -1252,6 +1273,7 @@ export default function AccessPage({
   }
 
   const editUser = (user: DashboardUser) => {
+    if (!canManageUserBindings) return
     setSelectedUserID(user.id)
     setUserInspectorCollapsed(false)
     setSelectedUserEditMode(true)
@@ -1282,9 +1304,10 @@ export default function AccessPage({
               <label>
                 <span>Scope</span>
                 <select value={draft.scopeType} onChange={event => updateBindingDraft(setter, draft.id, { scopeType: event.target.value as DashboardUserRoleScopeType })}>
-                  <option value="global">Global</option>
+                  {canManageUserLifecycle && <option value="global">Global</option>}
                   <option value="domain">Domain</option>
                   <option value="project">Project</option>
+                  {applicationRepository && <option value="application_repository">Repository</option>}
                 </select>
               </label>
               {draft.scopeType === 'domain' && (
@@ -1304,6 +1327,14 @@ export default function AccessPage({
                   </select>
                 </label>
               )}
+              {draft.scopeType === 'application_repository' && applicationRepository && (
+                <label>
+                  <span>Repository</span>
+                  <select value={draft.scopeID} onChange={event => updateBindingDraft(setter, draft.id, { scopeID: event.target.value })}>
+                    <option value={applicationRepository.id}>{applicationRepository.name}</option>
+                  </select>
+                </label>
+              )}
               <label>
                 <span>Role</span>
                 <select value={draft.role} onChange={event => updateBindingDraft(setter, draft.id, { role: event.target.value })}>
@@ -1320,9 +1351,12 @@ export default function AccessPage({
         )}
       </div>
       <div className="access-form-actions access-binding-add-actions">
-        <button className="btn btn-secondary btn-sm" type="button" onClick={() => addBindingDraft(setter, 'global')}>Add Global Role</button>
+        {canManageUserLifecycle && (
+          <button className="btn btn-secondary btn-sm" type="button" onClick={() => addBindingDraft(setter, 'global')}>Add Global Role</button>
+        )}
         <button className="btn btn-secondary btn-sm" type="button" onClick={() => addBindingDraft(setter, 'domain')} disabled={domains.length === 0 && !activeDomain}>Add Domain</button>
         <button className="btn btn-secondary btn-sm" type="button" onClick={() => addBindingDraft(setter, 'project')} disabled={projects.length === 0}>Add Project</button>
+        <button className="btn btn-secondary btn-sm" type="button" onClick={() => addBindingDraft(setter, 'application_repository')} disabled={!applicationRepository}>Add Repository</button>
       </div>
     </div>
   )
@@ -1338,7 +1372,7 @@ export default function AccessPage({
                 <h4>User Access</h4>
                 <p>Review assigned roles, domains, and projects. Click Edit to change access.</p>
               </div>
-              <button className="btn btn-secondary btn-sm" type="button" onClick={() => setSelectedUserEditMode(true)} disabled={!canManageUsers}>
+              <button className="btn btn-secondary btn-sm" type="button" onClick={() => setSelectedUserEditMode(true)} disabled={!canManageUserBindings}>
                 Edit
               </button>
             </div>
@@ -1347,7 +1381,7 @@ export default function AccessPage({
                 <div className="access-binding-row" key={binding.id}>
                   <div>
                     <strong>{ROLE_LABELS[binding.role] || binding.role}</strong>
-                    <span>{SCOPE_LABELS[binding.scope_type] || binding.scope_type} · {bindingLabel(binding, projects, domains)}</span>
+                    <span>{SCOPE_LABELS[binding.scope_type] || binding.scope_type} · {bindingLabel(binding, projects, domains, applicationRepository)}</span>
                   </div>
                 </div>
               )) : (
@@ -1371,21 +1405,21 @@ export default function AccessPage({
           <div className="access-form-grid">
             <label>
               <span>Subject</span>
-              <input value={editUserForm.subject} onChange={event => setEditUserForm(prev => ({ ...prev, subject: event.target.value }))} />
+              <input value={editUserForm.subject} onChange={event => setEditUserForm(prev => ({ ...prev, subject: event.target.value }))} disabled={!canManageUserLifecycle} />
             </label>
             <label>
               <span>Email</span>
-              <input value={editUserForm.email} onChange={event => setEditUserForm(prev => ({ ...prev, email: event.target.value }))} />
+              <input value={editUserForm.email} onChange={event => setEditUserForm(prev => ({ ...prev, email: event.target.value }))} disabled={!canManageUserLifecycle} />
             </label>
             <label>
               <span>Display Name</span>
-              <input value={editUserForm.displayName} onChange={event => setEditUserForm(prev => ({ ...prev, displayName: event.target.value }))} />
+              <input value={editUserForm.displayName} onChange={event => setEditUserForm(prev => ({ ...prev, displayName: event.target.value }))} disabled={!canManageUserLifecycle} />
             </label>
           </div>
           <div className="access-account-actions">
-            <button className="btn btn-primary btn-sm" type="button" onClick={updateSelectedUser} disabled={!canManageUsers}>Save Changes</button>
+            <button className="btn btn-primary btn-sm" type="button" onClick={updateSelectedUser} disabled={!canManageUserBindings}>Save Changes</button>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => { resetSelectedUserEditDrafts(); setSelectedUserEditMode(false) }}>Cancel</button>
-            <button className="btn btn-secondary btn-sm" type="button" onClick={() => setUserActive(selectedUser, !selectedUser.active)} disabled={!canManageUsers}>
+            <button className="btn btn-secondary btn-sm" type="button" onClick={() => setUserActive(selectedUser, !selectedUser.active)} disabled={!canManageUserLifecycle}>
               {selectedUser.active ? 'Remove Access' : 'Restore Access'}
             </button>
           </div>
@@ -1431,7 +1465,7 @@ export default function AccessPage({
               <div className="access-binding-row" key={binding.id}>
                 <div>
                   <strong>{ROLE_LABELS[binding.role] || binding.role}</strong>
-                  <span>{SCOPE_LABELS[binding.scope_type] || binding.scope_type} · {bindingLabel(binding, projects, domains)}</span>
+                  <span>{SCOPE_LABELS[binding.scope_type] || binding.scope_type} · {bindingLabel(binding, projects, domains, applicationRepository)}</span>
                 </div>
               </div>
             )) : (
@@ -1517,8 +1551,8 @@ export default function AccessPage({
         </div>
         {!hasTopbarContributionProvider && (
           <div className="access-header-actions">
-            <span className={`access-permission-badge ${(canManageUsers || canManageServiceAccounts || canViewUserActivity) ? 'healthy' : 'danger'}`}>
-              {(canManageUsers || canManageServiceAccounts || canViewUserActivity) ? 'Access workspace available' : 'Read-only session'}
+            <span className={`access-permission-badge ${accessWorkspaceAvailable ? 'healthy' : 'danger'}`}>
+              {accessWorkspaceAvailable ? 'Access workspace available' : 'Read-only session'}
             </span>
           </div>
         )}
@@ -1540,7 +1574,9 @@ export default function AccessPage({
             </div>
             <div className="access-subtab-row" role="tablist" aria-label="User workspace views">
               <button type="button" role="tab" aria-selected={userSubTab === 'existing'} className={`access-subtab ${userSubTab === 'existing' ? 'active' : ''}`} onClick={() => setUserSubTab('existing')}>Existing Users</button>
-              <button type="button" role="tab" aria-selected={userSubTab === 'onboard'} className={`access-subtab ${userSubTab === 'onboard' ? 'active' : ''}`} onClick={() => setUserSubTab('onboard')}>Onboard Users</button>
+              {canManageUserLifecycle && (
+                <button type="button" role="tab" aria-selected={userSubTab === 'onboard'} className={`access-subtab ${userSubTab === 'onboard' ? 'active' : ''}`} onClick={() => setUserSubTab('onboard')}>Onboard Users</button>
+              )}
             </div>
 
             {userSubTab === 'existing' && (
@@ -1606,7 +1642,7 @@ export default function AccessPage({
                     <tbody>
                       {filteredUsers.map(user => {
                         const roles = userRoleList(user)
-                        const accessLabels = userAccessLabels(user, projects, domains)
+                        const accessLabels = userAccessLabels(user, projects, domains, applicationRepository)
                         const usage = usageForUser(user, userBuckets)
                         const selected = selectedUserID === user.id && !userInspectorCollapsed
                         return (
@@ -1635,8 +1671,8 @@ export default function AccessPage({
                             <td>
                               <div className="access-table-actions">
                                 <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); selectUser(user) }}>Inspect</button>
-                                <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); editUser(user) }}>Edit</button>
-                                <button className="btn btn-ghost btn-sm" type="button" onClick={event => { event.stopPropagation(); setUserActive(user, !user.active) }}>
+                                <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); editUser(user) }} disabled={!canManageUserBindings}>Edit</button>
+                                <button className="btn btn-ghost btn-sm" type="button" onClick={event => { event.stopPropagation(); setUserActive(user, !user.active) }} disabled={!canManageUserLifecycle}>
                                   {user.active ? 'Remove Access' : 'Restore Access'}
                                 </button>
                               </div>
@@ -1657,7 +1693,7 @@ export default function AccessPage({
               </>
             )}
 
-            {userSubTab === 'onboard' && (
+            {userSubTab === 'onboard' && canManageUserLifecycle && (
               <>
                 <div className="access-form-grid">
                   <label>
@@ -1684,7 +1720,7 @@ export default function AccessPage({
                   </div>
                 )}
                 <div className="access-form-actions">
-                  <button className="btn btn-primary" type="button" onClick={createUser} disabled={!canManageUsers || !userForm.subject.trim()}>
+                  <button className="btn btn-primary" type="button" onClick={createUser} disabled={!canManageUserLifecycle || !userForm.subject.trim()}>
                     Create User
                   </button>
                 </div>

@@ -130,6 +130,48 @@ func TestLibraryRemotePullAndPushScriptBetweenControllers(t *testing.T) {
 	}
 }
 
+func TestLibraryRemoteJSONHonorsConfiguredTimeout(t *testing.T) {
+	t.Setenv("APEXLOAD_LIBRARY_REMOTE_JSON_TIMEOUT", "10ms")
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		writeJSON(w, http.StatusOK, LibraryCapabilitiesResponse{})
+	}))
+	defer slow.Close()
+	server := NewServer(ServerConfig{})
+
+	if _, err := server.remoteLibraryCapabilities(nil, LibraryRemote{BaseURL: slow.URL, AuthMethod: "none"}); err == nil {
+		t.Fatal("remoteLibraryCapabilities returned nil error, want timeout")
+	}
+}
+
+func TestLibraryRemoteArchiveDownloadHonorsConfiguredTimeout(t *testing.T) {
+	t.Setenv("APEXLOAD_LIBRARY_REMOTE_ARCHIVE_TIMEOUT", "10ms")
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("zip"))
+	}))
+	defer slow.Close()
+	server := NewServer(ServerConfig{})
+
+	archiveImport, cleanup, err := server.remoteLibraryDownloadArchive(nil, LibraryRemote{BaseURL: slow.URL, AuthMethod: "none"}, "run-1")
+	if cleanup != nil {
+		defer cleanup()
+	}
+	if err == nil {
+		t.Fatalf("remoteLibraryDownloadArchive = %#v, want timeout error", archiveImport)
+	}
+}
+
+func TestBuildLibraryRemoteRequiresHTTPURL(t *testing.T) {
+	if _, err := buildLibraryRemote(LibraryRemoteRequest{Name: "FTP", BaseURL: "ftp://example.test/library"}); err == nil {
+		t.Fatal("buildLibraryRemote accepted ftp URL, want error")
+	}
+	if _, err := buildLibraryRemote(LibraryRemoteRequest{Name: "HTTPS", BaseURL: "https://example.test/library"}); err != nil {
+		t.Fatalf("buildLibraryRemote returned error for https URL: %v", err)
+	}
+}
+
 func TestLibraryPullDetectsLocalAndRemoteConflict(t *testing.T) {
 	host := NewServer(ServerConfig{})
 	local := NewServer(ServerConfig{})

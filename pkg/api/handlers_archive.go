@@ -78,11 +78,25 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	if _, allowed := archiveManifestArtifactNames(manifest)[name]; !allowed {
+	name, err = normalizeArchiveArtifactName(name)
+	if err != nil {
 		writeError(w, http.StatusNotFound, "archive artifact not found")
 		return
 	}
-	fullPath := filepath.Join(record.ArchivePath, name)
+	artifacts, err := archiveManifestArtifactNames(manifest)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "invalid archive manifest: "+err.Error())
+		return
+	}
+	if _, allowed := artifacts[name]; !allowed {
+		writeError(w, http.StatusNotFound, "archive artifact not found")
+		return
+	}
+	fullPath, err := archiveArtifactPath(record.ArchivePath, name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "archive artifact not found")
+		return
+	}
 	filename := fmt.Sprintf("%s-%s-%s", sanitizeFilename(test.Name), id, name)
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 	w.Header().Set("Content-Type", artifactContentType(name))

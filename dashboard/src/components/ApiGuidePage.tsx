@@ -38,12 +38,12 @@ const authRows: EndpointDoc[] = [
   { method: 'GET', path: '/api/v1/auth/access-matrix', purpose: 'Role-to-operation catalog.' },
   { method: 'GET', path: '/api/v1/auth/roles', purpose: 'Role catalog used by delegated access administration.' },
   { method: 'GET', path: '/api/v1/auth/diagnostics', purpose: 'OIDC and trusted-header readiness diagnostics.', operations: ['view_auth_diagnostics'] },
-  { method: 'GET', path: '/api/v1/auth/users', purpose: 'Search local human users available for APEX Load access.', operations: ['manage_users'] },
+  { method: 'GET', path: '/api/v1/auth/users', purpose: 'Search local human users available for APEX Load access.', operations: ['manage_users', 'manage_user_bindings'] },
   { method: 'POST', path: '/api/v1/auth/users', purpose: 'Onboard a human user subject from OIDC or trusted headers.', operations: ['manage_users'] },
-  { method: 'GET', path: '/api/v1/auth/users/{id}', purpose: 'Get one local user and role bindings.', operations: ['manage_users'] },
+  { method: 'GET', path: '/api/v1/auth/users/{id}', purpose: 'Get one local user and role bindings.', operations: ['manage_users', 'manage_user_bindings'] },
   { method: 'PATCH', path: '/api/v1/auth/users/{id}', purpose: 'Update local user metadata.', operations: ['manage_users'] },
-  { method: 'POST', path: '/api/v1/auth/users/{id}/bindings', purpose: 'Grant a global, domain, or project role binding.', operations: ['manage_users'] },
-  { method: 'DELETE', path: '/api/v1/auth/users/{id}/bindings/{binding_id}', purpose: 'Remove a local role binding.', operations: ['manage_users'] },
+  { method: 'POST', path: '/api/v1/auth/users/{id}/bindings', purpose: 'Grant a global, domain, project, or repository role binding.', operations: ['manage_user_bindings'] },
+  { method: 'DELETE', path: '/api/v1/auth/users/{id}/bindings/{binding_id}', purpose: 'Remove a local role binding.', operations: ['manage_user_bindings'] },
   { method: 'POST', path: '/api/v1/auth/users/{id}/disable', purpose: 'Disable a local user while preserving audit history.', operations: ['manage_users'] },
   { method: 'POST', path: '/api/v1/auth/users/{id}/enable', purpose: 'Re-enable a local user record.', operations: ['manage_users'] },
   { method: 'GET', path: '/api/v1/auth/user-activity', purpose: 'Audit events and attributed run usage filtered by user, timeframe, domain, project, action, or status.', operations: ['view_user_activity'] },
@@ -364,7 +364,7 @@ export default function ApiGuidePage({ activePage = API_GUIDE_DEFAULT_PAGE, onNa
       endpoints: group.endpoints.filter(endpoint => canShowEndpoint(endpoint, allowedOperations)),
     }))
     .filter(group => group.endpoints.length > 0)
-  const canUseAccessWorkspace = ['manage_users', 'view_user_activity', 'manage_service_accounts'].some(operation => allowedOperations.has(operation))
+  const canUseAccessWorkspace = ['manage_users', 'manage_user_bindings', 'view_user_activity', 'manage_service_accounts'].some(operation => allowedOperations.has(operation))
   const canViewFullRepositoryGuide = allowedOperations.has('manage_system') && allowedOperations.has('view_audit')
   const handleContentPageChange = useCallback((page: ApiGuideContentPageID) => {
     setActiveGuideSection(page)

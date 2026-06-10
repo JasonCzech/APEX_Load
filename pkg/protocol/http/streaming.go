@@ -25,7 +25,7 @@ type streamingProfile struct {
 	rollingBitrateKbpsMutex sync.Mutex
 }
 
-func parseStreamingProfile(config map[string]any) streamingProfile {
+func parseStreamingProfile(config map[string]any) *streamingProfile {
 	mode, _ := config["web_streaming_mode"].(string)
 	bandwidthEstimation, _ := config["web_streaming_bandwidth_estimation"].(string)
 	bufferSizeSeconds := configInt(config, "web_streaming_buffer_size_seconds")
@@ -51,7 +51,7 @@ func parseStreamingProfile(config map[string]any) streamingProfile {
 	if profile.bandwidthEstimation == "" {
 		profile.bandwidthEstimation = "rolling"
 	}
-	return profile
+	return &profile
 }
 
 func stringConfig(config map[string]any, key string) string {
@@ -59,7 +59,10 @@ func stringConfig(config map[string]any, key string) string {
 	return value
 }
 
-func (p streamingProfile) active() bool {
+func (p *streamingProfile) active() bool {
+	if p == nil {
+		return false
+	}
 	return p.enabled || strings.TrimSpace(p.mode) != "" || p.bufferSize > 0 || p.fixedBitrateKbps > 0
 }
 

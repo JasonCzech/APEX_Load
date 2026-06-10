@@ -461,7 +461,7 @@ func (s *Server) handleExportK6(w http.ResponseWriter, r *http.Request) {
 }
 
 func readK6ImportRequest(w http.ResponseWriter, r *http.Request) (*k6ImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, k6ImportMaxBodyBytes)
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "application/json") {
 		var req k6.ImportRequest
@@ -472,7 +472,7 @@ func readK6ImportRequest(w http.ResponseWriter, r *http.Request) (*k6ImportReque
 		return &k6ImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(10 << 20); err != nil {
+		if err := r.ParseMultipartForm(k6ImportMaxBodyBytes); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 			return nil, false
 		}
@@ -515,7 +515,7 @@ func readK6ImportRequest(w http.ResponseWriter, r *http.Request) (*k6ImportReque
 }
 
 func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, harImportMaxBodyBytes)
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "application/json") {
 		var req struct {
@@ -532,7 +532,7 @@ func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportReq
 		return &harImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(50 << 20); err != nil {
+		if err := r.ParseMultipartForm(harImportMaxBodyBytes); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 			return nil, false
 		}
@@ -575,7 +575,7 @@ func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportReq
 }
 
 func readDevWebImportRequest(w http.ResponseWriter, r *http.Request) (*devWebImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, 20<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "application/json") {
 		var req devweb.ImportRequest
@@ -592,7 +592,7 @@ func readDevWebImportRequest(w http.ResponseWriter, r *http.Request) (*devWebImp
 	}
 
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(20 << 20); err != nil {
+		if err := r.ParseMultipartForm(webAPIImportMaxBodyBytes); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 			return nil, false
 		}
@@ -637,7 +637,7 @@ func readDevWebImportRequest(w http.ResponseWriter, r *http.Request) (*devWebImp
 }
 
 func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, jmeterImportMaxBodyBytes)
 
 	contentType := r.Header.Get("Content-Type")
 	var data []byte
@@ -652,7 +652,7 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 		}
 		data = body
 	} else {
-		if err := r.ParseMultipartForm(50 << 20); err != nil {
+		if err := r.ParseMultipartForm(jmeterImportMaxBodyBytes); err != nil {
 			writeError(w, http.StatusBadRequest, "failed to parse multipart form (max 50MB): "+err.Error())
 			return nil, false
 		}
@@ -808,7 +808,7 @@ func readJMeterSidecarFiles(r *http.Request, primaryField string, primaryFileNam
 }
 
 func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) (*enterpriseArchiveImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, 100<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, enterpriseArchiveImportMaxBodyBytes)
 
 	contentType := r.Header.Get("Content-Type")
 	var data []byte
@@ -824,7 +824,7 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 		}
 		data = body
 	} else {
-		if err := r.ParseMultipartForm(100 << 20); err != nil {
+		if err := r.ParseMultipartForm(enterpriseArchiveImportMaxBodyBytes); err != nil {
 			writeError(w, http.StatusBadRequest, "failed to parse multipart form (max 100MB): "+err.Error())
 			return nil, false
 		}

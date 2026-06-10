@@ -42,32 +42,32 @@ func TestNormalizeRecordedResources(t *testing.T) {
 func TestRequestPolicyEnabled(t *testing.T) {
 	tests := []struct {
 		name string
-		b    Browser
+		b    *Browser
 		want bool
 	}{
 		{
 			name: "default no policy",
-			b:    Browser{cacheEnabled: true, downloadResources: "all"},
+			b:    &Browser{cacheEnabled: true, downloadResources: "all"},
 			want: false,
 		},
 		{
 			name: "cache disabled",
-			b:    Browser{cacheEnabled: false, downloadResources: "all"},
+			b:    &Browser{cacheEnabled: false, downloadResources: "all"},
 			want: true,
 		},
 		{
 			name: "check newer versions",
-			b:    Browser{cacheEnabled: true, checkNewerVersions: true, downloadResources: "all"},
+			b:    &Browser{cacheEnabled: true, checkNewerVersions: true, downloadResources: "all"},
 			want: true,
 		},
 		{
 			name: "download resources none",
-			b:    Browser{cacheEnabled: true, downloadResources: "none"},
+			b:    &Browser{cacheEnabled: true, downloadResources: "none"},
 			want: true,
 		},
 		{
 			name: "download filter",
-			b: Browser{
+			b: &Browser{
 				cacheEnabled:        true,
 				downloadResources:   "all",
 				downloadFilterMode:  "allow_list",
@@ -77,7 +77,7 @@ func TestRequestPolicyEnabled(t *testing.T) {
 		},
 		{
 			name: "network latency",
-			b:    Browser{cacheEnabled: true, downloadResources: "all", networkLatencyMS: 50},
+			b:    &Browser{cacheEnabled: true, downloadResources: "all", networkLatencyMS: 50},
 			want: true,
 		},
 	}

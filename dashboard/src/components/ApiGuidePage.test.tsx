@@ -43,6 +43,7 @@ const allGuideOperations = accessResources([
   'view_auth_diagnostics',
   'view_user_activity',
   'manage_users',
+  'manage_user_bindings',
   'manage_service_accounts',
 ])
 
@@ -246,5 +247,26 @@ describe('ApiGuidePage', () => {
     expect(topbarText()).toContain('Repo Guide')
     expect(topbarText()).toContain('Swagger')
     expect(container.querySelector('a[href="#/swagger"]')).toBeNull()
+  })
+
+  it('shows binding endpoints without lifecycle endpoints for delegated user-binding access', async () => {
+    const onNavigate = vi.fn()
+    await renderApiGuidePage({ onNavigate, effectiveAccessResources: accessResources(['manage_user_bindings']) })
+    await selectTopbarPage('Authentication')
+
+    const authEndpointRows = Array.from(container.querySelectorAll('.api-guide-table-card tbody tr')).map(row => {
+      const codes = Array.from(row.querySelectorAll('code')).map(node => node.textContent || '')
+      return `${codes[0]} ${codes[1]}`
+    })
+    expect(authEndpointRows).toContain('GET /api/v1/auth/users')
+    expect(authEndpointRows).toContain('GET /api/v1/auth/users/{id}')
+    expect(authEndpointRows).toContain('POST /api/v1/auth/users/{id}/bindings')
+    expect(authEndpointRows).toContain('DELETE /api/v1/auth/users/{id}/bindings/{binding_id}')
+    expect(authEndpointRows).not.toContain('POST /api/v1/auth/users')
+    expect(authEndpointRows).not.toContain('PATCH /api/v1/auth/users/{id}')
+    expect(authEndpointRows).not.toContain('POST /api/v1/auth/users/{id}/disable')
+    expect(authEndpointRows).not.toContain('POST /api/v1/auth/users/{id}/enable')
+    expect(container.textContent).toContain('Access Workspace')
+    expect(container.textContent).toContain('Open Access')
   })
 })

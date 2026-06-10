@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -1411,6 +1412,64 @@ func TestTrustedHeaderAuthReadsEnterpriseArchiveMultipartProjectID(t *testing.T)
 	if missingResp.Code != http.StatusBadRequest {
 		t.Fatalf("enterprise archive multipart missing project status = %d, want %d body=%s", missingResp.Code, http.StatusBadRequest, missingResp.Body.String())
 	}
+}
+
+func TestImportMultipartProjectLookupHonorsRouteBodyLimits(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	projectID := uuid.New().String()
+	tests := []struct {
+		name  string
+		path  string
+		limit int64
+	}{
+		{name: "k6 import", path: "/api/v1/scripts/import/k6", limit: k6ImportMaxBodyBytes},
+		{name: "devweb import", path: "/api/v1/scripts/import/devweb", limit: webAPIImportMaxBodyBytes},
+		{name: "asyncapi import", path: "/api/v1/scripts/import/asyncapi", limit: webAPIImportMaxBodyBytes},
+		{name: "har import", path: "/api/v1/scripts/import/har", limit: harImportMaxBodyBytes},
+		{name: "jmeter import", path: "/api/v1/scripts/import/jmeter", limit: jmeterImportMaxBodyBytes},
+		{name: "enterprise archive import", path: "/api/v1/scripts/import/enterprise-script-archive", limit: enterpriseArchiveImportMaxBodyBytes},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := oversizedMultipartImportRequest(t, tt.path, projectID, tt.limit+1024)
+			req.Header.Set("X-Auth-Request-User", "editor-user")
+			req.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
+			resp := httptest.NewRecorder()
+
+			server.httpServer.Handler.ServeHTTP(resp, req)
+
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+			}
+		})
+	}
+}
+
+func oversizedMultipartImportRequest(t *testing.T, path string, projectID string, fileBytes int64) *http.Request {
+	t.Helper()
+	prefix := &bytes.Buffer{}
+	writer := multipart.NewWriter(prefix)
+	if err := writer.WriteField("project_id", projectID); err != nil {
+		t.Fatalf("WriteField returned error: %v", err)
+	}
+	if _, err := writer.CreateFormFile("file", "oversized.bin"); err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	suffix := "\r\n--" + writer.Boundary() + "--\r\n"
+	body := io.MultiReader(bytes.NewReader(prefix.Bytes()), io.LimitReader(zeroReader{}, fileBytes), strings.NewReader(suffix))
+	req := httptest.NewRequest(http.MethodPost, path, body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return req
+}
+
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 0
+	}
+	return len(p), nil
 }
 
 func TestTrustedHeaderAuthScopesRecorderListAndStartToProjectRoles(t *testing.T) {

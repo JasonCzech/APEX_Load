@@ -42,7 +42,7 @@ Service-account requests must satisfy both RBAC role checks and token scopes. Fo
 
 The MCP server under `mcp/` also uses service-account authentication by default. Configure `APEXLOAD_API_KEY` or `APEXLOAD_BEARER_TOKEN` for AI-agent and CI/CD automation rather than relying on local dev preview headers.
 
-Dashboard operators with access management permission can onboard users, assign scoped roles, review user activity, and manage scoped API keys from **Access**. APEX Load returns created or rotated service-account keys once and then retains only the hash.
+Dashboard operators with access management permission can onboard users, assign scoped roles, review user activity, and manage scoped API keys from **Access**. `manage_users` is the system-admin-only lifecycle operation for creating users, editing user metadata, and enabling or disabling access. `manage_user_bindings` allows delegated admins to view the local user directory and manage role bindings inside their permitted scope. APEX Load returns created or rotated service-account keys once and then retains only the hash.
 
 Useful auth endpoints:
 
@@ -55,14 +55,14 @@ Useful auth endpoints:
 | `GET` | `/api/v1/auth/effective-access?project_id=<id>` | Operations allowed for the current principal from local user bindings or service-account roles. |
 | `GET` | `/api/v1/auth/access-matrix` | Full role-to-operation catalog. |
 | `GET` | `/api/v1/auth/diagnostics` | OIDC/trusted-header readiness diagnostics. |
-| `GET` | `/api/v1/auth/users` | Search local human users. |
-| `POST` | `/api/v1/auth/users` | Onboard a human user subject. |
-| `GET` | `/api/v1/auth/users/{id}` | Get one local user and role bindings. |
-| `PATCH` | `/api/v1/auth/users/{id}` | Update local user metadata or active state. |
-| `POST` | `/api/v1/auth/users/{id}/bindings` | Grant a global, domain, project, or repository role binding. |
-| `DELETE` | `/api/v1/auth/users/{id}/bindings/{binding_id}` | Remove one local role binding. |
-| `POST` | `/api/v1/auth/users/{id}/disable` | Disable a local user while preserving audit history. |
-| `POST` | `/api/v1/auth/users/{id}/enable` | Re-enable a local user. |
+| `GET` | `/api/v1/auth/users` | Search local human users. Requires `manage_users` or `manage_user_bindings`; binding-only callers see manageable bindings only. |
+| `POST` | `/api/v1/auth/users` | Onboard a human user subject. Requires `manage_users`. |
+| `GET` | `/api/v1/auth/users/{id}` | Get one local user and role bindings. Requires `manage_users` or `manage_user_bindings`; binding-only callers see manageable bindings only. |
+| `PATCH` | `/api/v1/auth/users/{id}` | Update local user metadata. Requires `manage_users`. |
+| `POST` | `/api/v1/auth/users/{id}/bindings` | Grant a global, domain, project, or repository role binding. Requires `manage_users` or `manage_user_bindings`, with delegated scope checks. |
+| `DELETE` | `/api/v1/auth/users/{id}/bindings/{binding_id}` | Remove one local role binding. Requires `manage_users` or `manage_user_bindings`, with delegated scope checks. |
+| `POST` | `/api/v1/auth/users/{id}/disable` | Disable a local user while preserving audit history. Requires `manage_users`. |
+| `POST` | `/api/v1/auth/users/{id}/enable` | Re-enable a local user. Requires `manage_users`. |
 | `GET` | `/api/v1/auth/user-activity` | Audit events plus attributed usage filtered by user, timeframe, domain, project, action, or status. |
 | `GET` | `/api/v1/auth/user-activity/export` | Export user activity as CSV. |
 | `GET` | `/api/v1/auth/service-accounts` | List service accounts. |
@@ -102,7 +102,7 @@ curl -X POST http://localhost:8080/api/v1/auth/users/usr_123/bindings \
   }'
 ```
 
-Supported roles remain `viewer`, `editor`, `project_admin`, and `system_admin`. Delegated administration is scoped: system admins can manage all users and bindings; domain project admins can manage domain and child-project bindings inside their domain; project admins can manage bindings for their project only. Delegated admins cannot grant `system_admin` or create bindings broader than their own scope.
+Supported roles remain `viewer`, `editor`, `project_admin`, and `system_admin`. Delegated administration is scoped: system admins can manage all users and bindings; global project admins can manage scoped bindings but cannot grant global roles; domain project admins can manage domain and child-project bindings inside their domain; project admins can manage bindings for their project only; repository project admins can manage bindings for their repository only. Delegated admins receive `manage_user_bindings`, not `manage_users`, so they cannot create users, edit user metadata, disable users, enable users, grant `system_admin`, or create bindings broader than their own scope.
 
 Disable users instead of deleting them:
 
