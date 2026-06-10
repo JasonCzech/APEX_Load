@@ -14,7 +14,7 @@ import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
 import { useApi } from '../hooks/useApi'
 import { parseDurationToSeconds } from '../utils/timeUtils'
-import type { BrowserReplaySnapshot, GroupLiveMetrics, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, TestGroup, TestStatus, TestSummary } from '../types'
+import type { BrowserReplaySnapshot, GroupLiveMetrics, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, TestGroup, TestStatus, TestSummary, TransactionEvent } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
 import type { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
@@ -45,7 +45,7 @@ interface CommandCenterPrototypeProps {
   prototypeMode?: boolean
 }
 
-interface CommandGroup {
+export interface CommandGroup {
   key: string
   name: string
   protocol: string
@@ -1125,6 +1125,26 @@ export default function CommandCenterPrototype({
     const responseHonorsGroupFilter = (metrics?: LiveMetrics) => (
       Object.keys(metrics?.groups || {}).every(name => selectedGroupSet.has(name))
     )
+    const loadArchiveTransactionsForSelectedGroups = async () => {
+      const transactions: TransactionEvent[] = []
+      for (const groupName of selectedGroupNames) {
+        let offset = 0
+        let total = Number.POSITIVE_INFINITY
+        while (!cancelled && offset < total) {
+          const response = await api.getTestArchiveTransactions(testId, {
+            group: groupName,
+            limit: 1000,
+            offset,
+          })
+          const page = response.transactions || []
+          transactions.push(...page)
+          total = typeof response.total === 'number' ? response.total : offset + page.length
+          if (page.length === 0) break
+          offset += page.length
+        }
+      }
+      return transactions
+    }
     const loadScopedHistory = async () => {
       try {
         if (historicalRun && displayTest.archive?.interval_summary_count) {
@@ -1148,9 +1168,22 @@ export default function CommandCenterPrototype({
           }
           if (!cancelled) {
             const mappedHistory = mapArchiveSummarySamples(loaded)
-            setBackendScopedChartData(archiveFilterHonored
-              ? mappedHistory
-              : selectedGroupLoadImpactData(mappedHistory, selectedGroupScopes))
+            if (archiveFilterHonored) {
+              setBackendScopedChartData(mappedHistory)
+            } else if (selectedGroupHistoryHasFields(mappedHistory, selectedGroupNames)) {
+              setBackendScopedChartData(selectedGroupLoadImpactData(mappedHistory, selectedGroupScopes))
+            } else {
+              try {
+                const transactions = await loadArchiveTransactionsForSelectedGroups()
+                if (cancelled) return
+                const transactionHistory = buildSelectedGroupChartHistoryFromTransactions(mappedHistory, transactions, graphWallGroups, groups)
+                setBackendScopedChartData(transactionHistory.length > 0 ? transactionHistory : mappedHistory)
+              } catch {
+                if (!cancelled) {
+                  setBackendScopedChartData(mappedHistory)
+                }
+              }
+            }
             setBackendScopedMetrics(undefined)
           }
           return
@@ -1182,6 +1215,8 @@ export default function CommandCenterPrototype({
     api,
     displayTest.archive?.interval_summary_count,
     graphWallGroupSignature,
+    graphWallGroups,
+    groups,
     historicalRun,
     liveMetrics?.timestamp,
     liveMode,
@@ -2598,8 +2633,21 @@ function snapshotSection(snapshot: BrowserReplaySnapshot) {
   }
 }
 
-function selectedGroupLoadImpactData(data: MetricsHistoryPoint[], groups: CommandGroup[]) {
+export function selectedGroupHistoryHasFields(data: MetricsHistoryPoint[], groupNames: string[]) {
+  if (groupNames.length === 0) return false
+  return groupNames.every(name => data.some(point => (
+    typeof point[`${name}_vusers`] === 'number'
+    || typeof point[`${name}_tps`] === 'number'
+    || typeof point[`${name}_avgMs`] === 'number'
+    || typeof point[`${name}_transactions`] === 'number'
+    || typeof point[`${name}_errors`] === 'number'
+  )))
+}
+
+export function selectedGroupLoadImpactData(data: MetricsHistoryPoint[], groups: CommandGroup[]) {
   if (groups.length === 0) return []
+  const selectedNames = groups.map(group => group.name)
+  if (!selectedGroupHistoryHasFields(data, selectedNames)) return data
   return data.map(point => {
     let hasGroupData = false
     let selectedVUsers = 0
@@ -2697,6 +2745,168 @@ function selectedGroupLoadImpactData(data: MetricsHistoryPoint[], groups: Comman
       p95: percentileWeight > 0 ? Math.round((weightedPercentiles.p95 / percentileWeight) * 10) / 10 : point.p95,
       p99: percentileWeight > 0 ? Math.round((weightedPercentiles.p99 / percentileWeight) * 10) / 10 : point.p99,
     }
+  })
+}
+
+interface ArchiveTransactionBucket {
+  transactions: number
+  errors: number
+  totalDurationMs: number
+  durations: number[]
+  byGroup: Record<string, ArchiveTransactionBucketStats>
+}
+
+interface ArchiveTransactionBucketStats {
+  transactions: number
+  errors: number
+  totalDurationMs: number
+  durations: number[]
+}
+
+function emptyArchiveTransactionBucket(): ArchiveTransactionBucket {
+  return {
+    transactions: 0,
+    errors: 0,
+    totalDurationMs: 0,
+    durations: [],
+    byGroup: {},
+  }
+}
+
+function emptyArchiveTransactionBucketStats(): ArchiveTransactionBucketStats {
+  return {
+    transactions: 0,
+    errors: 0,
+    totalDurationMs: 0,
+    durations: [],
+  }
+}
+
+function commandGroupConfiguredVusers(group: CommandGroup) {
+  return Math.max(0, group.targetVusers || group.target || group.current || 0)
+}
+
+function estimatedGroupVusers(globalVusers: number, selectedGroups: CommandGroup[], allGroups: CommandGroup[]) {
+  const totalConfigured = allGroups.reduce((sum, group) => sum + commandGroupConfiguredVusers(group), 0)
+  const selectedConfigured = selectedGroups.reduce((sum, group) => sum + commandGroupConfiguredVusers(group), 0)
+  if (globalVusers <= 0 || selectedConfigured <= 0 || totalConfigured <= 0) return 0
+  return Math.max(0, Math.min(globalVusers, Math.round(globalVusers * selectedConfigured / totalConfigured)))
+}
+
+function archiveBucketSeconds(referenceData: MetricsHistoryPoint[], index: number) {
+  const current = referenceData[index]?.timestampMs
+  if (typeof current !== 'number') return 1
+  if (index > 0 && typeof referenceData[index - 1]?.timestampMs === 'number') {
+    return Math.max(1, (current - referenceData[index - 1]!.timestampMs!) / 1000)
+  }
+  if (referenceData.length > 1 && typeof referenceData[index + 1]?.timestampMs === 'number') {
+    return Math.max(1, (referenceData[index + 1]!.timestampMs! - current) / 1000)
+  }
+  return 1
+}
+
+function archiveBucketIndex(referenceData: MetricsHistoryPoint[], timestampMs: number) {
+  if (referenceData.length === 0 || !Number.isFinite(timestampMs)) return -1
+  const index = referenceData.findIndex(point => typeof point.timestampMs === 'number' && timestampMs <= point.timestampMs)
+  return index >= 0 ? index : referenceData.length - 1
+}
+
+function percentile(values: number[], ratio: number) {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1))
+  return sorted[index]
+}
+
+function roundedTenth(value: number) {
+  return Math.round(value * 10) / 10
+}
+
+function roundedHundredth(value: number) {
+  return Math.round(value * 100) / 100
+}
+
+function applyBucketStats(point: MetricsHistoryPoint, stats: ArchiveTransactionBucketStats, seconds: number) {
+  const transactions = stats.transactions
+  const errorPct = transactions > 0 ? roundedHundredth(stats.errors / transactions * 100) : 0
+  point.tps = transactions > 0 ? roundedTenth(transactions / seconds) : 0
+  point.avgMs = transactions > 0 ? roundedTenth(stats.totalDurationMs / transactions) : 0
+  point.errorPct = errorPct
+  point.p50 = transactions > 0 ? roundedTenth(percentile(stats.durations, 0.50)) : 0
+  point.p90 = transactions > 0 ? roundedTenth(percentile(stats.durations, 0.90)) : 0
+  point.p95 = transactions > 0 ? roundedTenth(percentile(stats.durations, 0.95)) : 0
+  point.p99 = transactions > 0 ? roundedTenth(percentile(stats.durations, 0.99)) : 0
+}
+
+export function buildSelectedGroupChartHistoryFromTransactions(
+  referenceData: MetricsHistoryPoint[],
+  transactions: TransactionEvent[],
+  selectedGroups: CommandGroup[],
+  allGroups: CommandGroup[],
+) {
+  if (selectedGroups.length === 0) return []
+  const usableReference = referenceData.filter(point => typeof point.timestampMs === 'number')
+  if (usableReference.length === 0 || transactions.length === 0) return []
+  const selectedGroupNames = new Set(selectedGroups.map(group => group.name))
+  const buckets = usableReference.map(emptyArchiveTransactionBucket)
+
+  transactions.forEach(transaction => {
+    const groupName = transaction.group || ''
+    if (!selectedGroupNames.has(groupName)) return
+    const timestampMs = Date.parse(transaction.timestamp)
+    const bucketIndex = archiveBucketIndex(usableReference, timestampMs)
+    if (bucketIndex < 0) return
+    const durationMs = Number(transaction.duration_ms)
+    if (!Number.isFinite(durationMs)) return
+    const bucket = buckets[bucketIndex]
+    const groupStats = bucket.byGroup[groupName] ?? emptyArchiveTransactionBucketStats()
+    bucket.byGroup[groupName] = groupStats
+    const success = transaction.success !== false
+    bucket.transactions += 1
+    groupStats.transactions += 1
+    bucket.totalDurationMs += durationMs
+    groupStats.totalDurationMs += durationMs
+    bucket.durations.push(durationMs)
+    groupStats.durations.push(durationMs)
+    if (!success) {
+      bucket.errors += 1
+      groupStats.errors += 1
+    }
+  })
+
+  let cumulativeTransactions = 0
+  let cumulativeErrors = 0
+  return usableReference.map((referencePoint, index) => {
+    const bucket = buckets[index]
+    const seconds = archiveBucketSeconds(usableReference, index)
+    cumulativeTransactions += bucket.transactions
+    cumulativeErrors += bucket.errors
+    const point: MetricsHistoryPoint = {
+      ...referencePoint,
+      vusers: estimatedGroupVusers(referencePoint.vusers, selectedGroups, allGroups),
+    }
+    applyBucketStats(point, bucket, seconds)
+    point.totalTransactions = cumulativeTransactions
+    point.totalErrors = cumulativeErrors
+    selectedGroups.forEach(group => {
+      const stats = bucket.byGroup[group.name] ?? emptyArchiveTransactionBucketStats()
+      const groupPoint: MetricsHistoryPoint = {
+        ...point,
+        vusers: estimatedGroupVusers(referencePoint.vusers, [group], allGroups),
+      }
+      applyBucketStats(groupPoint, stats, seconds)
+      point[`${group.name}_vusers`] = groupPoint.vusers
+      point[`${group.name}_tps`] = groupPoint.tps
+      point[`${group.name}_avgMs`] = groupPoint.avgMs
+      point[`${group.name}_transactions`] = stats.transactions
+      point[`${group.name}_errors`] = stats.errors
+      point[`${group.name}_errorPct`] = groupPoint.errorPct
+      point[`${group.name}_p50`] = groupPoint.p50
+      point[`${group.name}_p90`] = groupPoint.p90
+      point[`${group.name}_p95`] = groupPoint.p95
+      point[`${group.name}_p99`] = groupPoint.p99
+    })
+    return point
   })
 }
 

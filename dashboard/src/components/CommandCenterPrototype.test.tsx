@@ -4,8 +4,12 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import CommandCenterPrototype from './CommandCenterPrototype'
-import type { MetricsHistoryPoint, TestSummary } from '../types'
+import CommandCenterPrototype, {
+  buildSelectedGroupChartHistoryFromTransactions,
+  selectedGroupLoadImpactData,
+  type CommandGroup,
+} from './CommandCenterPrototype'
+import type { MetricsHistoryPoint, TestSummary, TransactionEvent } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -26,6 +30,99 @@ describe('CommandCenterPrototype', () => {
     })
     vi.restoreAllMocks()
     container.remove()
+  })
+
+  it('keeps unfiltered graph data when selected group fields are absent', () => {
+    const data: MetricsHistoryPoint[] = [{
+      time: '12:00',
+      timestampMs: Date.parse('2026-06-08T12:00:00Z'),
+      vusers: 20,
+      tps: 10,
+      avgMs: 150,
+      errorPct: 1,
+      p50: 100,
+      p90: 200,
+      p95: 250,
+      p99: 300,
+    }]
+    const selectedGroups = [commandGroup('Wikipedia', 10)]
+
+    expect(selectedGroupLoadImpactData(data, selectedGroups)).toEqual(data)
+  })
+
+  it('rebuilds selected historical group chart history from archive transactions', () => {
+    const referenceData: MetricsHistoryPoint[] = [{
+      time: '12:00:01',
+      timestampMs: Date.parse('2026-06-08T12:00:01Z'),
+      vusers: 2,
+      tps: 4,
+      avgMs: 100,
+      errorPct: 0,
+      p50: 100,
+      p90: 100,
+      p95: 100,
+      p99: 100,
+    }, {
+      time: '12:00:02',
+      timestampMs: Date.parse('2026-06-08T12:00:02Z'),
+      vusers: 4,
+      tps: 6,
+      avgMs: 200,
+      errorPct: 0,
+      p50: 200,
+      p90: 200,
+      p95: 200,
+      p99: 200,
+    }]
+    const allGroups = [commandGroup('Wikipedia', 10), commandGroup('BBC', 10)]
+    const transactions: TransactionEvent[] = [
+      archiveTransaction('2026-06-08T12:00:00.300Z', 'Wikipedia', 100, true),
+      archiveTransaction('2026-06-08T12:00:00.400Z', 'Wikipedia', 300, false),
+      archiveTransaction('2026-06-08T12:00:01.300Z', 'Wikipedia', 200, true),
+      archiveTransaction('2026-06-08T12:00:01.400Z', 'BBC', 1000, true),
+    ]
+
+    const scoped = buildSelectedGroupChartHistoryFromTransactions(referenceData, transactions, [allGroups[0]], allGroups)
+
+    expect(scoped).toHaveLength(2)
+    expect(scoped[0]).toEqual(expect.objectContaining({
+      time: '12:00:01',
+      vusers: 1,
+      tps: 2,
+      avgMs: 200,
+      errorPct: 50,
+      p50: 100,
+      p90: 300,
+      p95: 300,
+      p99: 300,
+      totalTransactions: 2,
+      totalErrors: 1,
+      Wikipedia_vusers: 1,
+      Wikipedia_tps: 2,
+      Wikipedia_avgMs: 200,
+      Wikipedia_transactions: 2,
+      Wikipedia_errors: 1,
+      Wikipedia_errorPct: 50,
+      Wikipedia_p95: 300,
+    }))
+    expect(scoped[1]).toEqual(expect.objectContaining({
+      time: '12:00:02',
+      vusers: 2,
+      tps: 1,
+      avgMs: 200,
+      errorPct: 0,
+      p50: 200,
+      p90: 200,
+      p95: 200,
+      p99: 200,
+      totalTransactions: 3,
+      totalErrors: 1,
+      Wikipedia_vusers: 2,
+      Wikipedia_tps: 1,
+      Wikipedia_avgMs: 200,
+      Wikipedia_transactions: 1,
+      Wikipedia_errors: 0,
+    }))
   })
 
   it('does not show the prototype run when no live run is selected', async () => {
@@ -674,5 +771,36 @@ describe('CommandCenterPrototype', () => {
 
   async function changeTextInput(input: HTMLInputElement, value: string) {
     await changeNumberInput(input, value)
+  }
+
+  function commandGroup(name: string, targetVusers: number): CommandGroup {
+    return {
+      key: name.toLowerCase(),
+      name,
+      protocol: 'http',
+      current: targetVusers,
+      target: targetVusers,
+      targetVusers,
+      targetMode: 'vusers',
+      tps: 0,
+      art: 0,
+      errorPct: 0,
+      p99: 0,
+      transactions: 0,
+      errors: 0,
+      color: 'var(--chart-1)',
+    }
+  }
+
+  function archiveTransaction(timestamp: string, group: string, durationMs: number, success: boolean): TransactionEvent {
+    return {
+      timestamp,
+      test_id: 'completed-run',
+      test_name: 'Completed Run',
+      group,
+      action_name: 'GET /',
+      duration_ms: durationMs,
+      success,
+    }
   }
 })

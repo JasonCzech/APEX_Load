@@ -4,10 +4,21 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import RepositoryGuidePage from './RepositoryGuidePage'
 import { parseMarkdown } from './repositoryGuideMarkdown'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+function TopbarContributionHarness() {
+  const contribution = useActiveTopbarContribution()
+  return (
+    <div data-testid="topbar-contribution">
+      {contribution?.titleNode || contribution?.title}
+      {contribution?.controls}
+    </div>
+  )
+}
 
 describe('parseMarkdown', () => {
   it('parses headings, paragraphs, lists, code blocks, and tables', () => {
@@ -56,6 +67,7 @@ describe('RepositoryGuidePage', () => {
   let root: Root
 
   beforeEach(() => {
+    window.history.replaceState(null, '', '/')
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -66,17 +78,49 @@ describe('RepositoryGuidePage', () => {
     container.remove()
   })
 
-  it('renders the in-repository guide with a back link to the API Guide', async () => {
+  async function renderRepositoryGuidePage() {
     await act(async () => {
-      root.render(<RepositoryGuidePage />)
+      root.render(
+        <TopbarContributionProvider>
+          <TopbarContributionHarness />
+          <RepositoryGuidePage />
+        </TopbarContributionProvider>,
+      )
     })
+  }
+
+  function topbarText() {
+    return container.querySelector('[data-testid="topbar-contribution"]')?.textContent || ''
+  }
+
+  function findTopbarButton(label: string) {
+    const topbar = container.querySelector('[data-testid="topbar-contribution"]')
+    return Array.from(topbar?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === label)
+  }
+
+  it('renders the in-repository guide with retained API Guide title toggles', async () => {
+    await renderRepositoryGuidePage()
 
     expect(container.textContent).toContain('APEX Load API User Guide')
+    expect(topbarText()).toContain('Repository Guide')
+    expect(topbarText()).toContain('General')
+    expect(topbarText()).toContain('MCP Server')
+    expect(topbarText()).toContain('Quick Start')
+    expect(topbarText()).toContain('Authentication')
+    expect(topbarText()).toContain('Endpoint Map')
+    expect(topbarText()).toContain('Swagger')
+    expect(topbarText()).toContain('Repo Guide')
+    expect(findTopbarButton('Repo Guide')?.getAttribute('aria-pressed')).toBe('true')
     expect(container.textContent).toContain('Authentication')
     expect(container.querySelector('.markdown-table-wrap table')).not.toBeNull()
     expect(container.querySelector('pre.markdown-code-block code')).not.toBeNull()
 
-    const backLink = container.querySelector('a[href="#/docs"]')
-    expect(backLink?.textContent).toContain('API Guide')
+    expect(container.querySelector('a[href="#/docs"]')).toBeNull()
+    const endpointMapButton = findTopbarButton('Endpoint Map')
+    expect(endpointMapButton).toBeDefined()
+    await act(async () => {
+      endpointMapButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(window.location.hash).toBe('#/docs?guide=endpoint-map')
   })
 })

@@ -19,6 +19,7 @@ import LibraryFederationControls from './LibraryFederationControls'
 import { useLibraryFederation } from './useLibraryFederation'
 import { shortLibraryHash } from './libraryFederationUtils'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
+import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -644,6 +645,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const [showForm, setShowForm] = useState(initialView === 'builder')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [wizardStep, setWizardStep] = useState<ScenarioWizardStep>('start')
+  const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const [scenarioSourceMode, setScenarioSourceMode] = useState<ScenarioSourceMode>('shape')
   const [scenarioCloneQuery, setScenarioCloneQuery] = useState('')
   const [selectedCloneScenarioId, setSelectedCloneScenarioId] = useState('')
@@ -979,7 +981,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     await loadScenarioRuns(scenario)
   }
 
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     if (!canManageTests) {
       setError('Current session can view scenarios but cannot create or edit them.')
       return
@@ -997,14 +999,39 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setLoadModelValidationError('')
     setShowForm(true)
     onScenarioViewChange?.('builder')
-  }
+  }, [canManageTests, onScenarioViewChange, scripts])
 
-  const openScenarioLibrary = () => {
+  const openScenarioLibrary = useCallback(() => {
     setShowForm(false)
     setEditingId(null)
     setConfirmDeleteScenarioId(null)
     onScenarioViewChange?.('library')
-  }
+  }, [onScenarioViewChange])
+
+  const scenarioPageControls = useMemo(() => (
+    <PageViewToggle
+      value={showForm ? 'builder' : 'library'}
+      ariaLabel="Scenario page view"
+      className="scenario-page-toggle topbar-page-section-toggle"
+      onChange={view => {
+        if (view === 'library') openScenarioLibrary()
+        else openCreate()
+      }}
+      options={[
+        { value: 'library', label: 'Scenario Library' },
+        { value: 'builder', label: 'Scenario Builder', disabled: !canManageTests },
+      ]}
+    />
+  ), [canManageTests, openCreate, openScenarioLibrary, showForm])
+
+  const scenarioTopbarContribution = useMemo(() => ({
+    id: 'scenario-page',
+    title: showForm ? 'Scenario Builder' : 'Scenario Library',
+    controls: scenarioPageControls,
+    priority: 10,
+  }), [scenarioPageControls, showForm])
+
+  useTopbarContribution(scenarioTopbarContribution)
 
   const openEdit = (scenario: StoredScenario) => {
     if (!canManageTests) {
@@ -2174,19 +2201,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
           <h2>{showForm ? 'Scenario Builder' : 'Scenario Library'}</h2>
           <p className="page-subtitle">Reusable scenario definitions linked to scripts, releases, and results.</p>
         </div>
-        <PageViewToggle
-          value={showForm ? 'builder' : 'library'}
-          ariaLabel="Scenario page view"
-          className="scenario-page-toggle"
-          onChange={view => {
-            if (view === 'library') openScenarioLibrary()
-            else openCreate()
-          }}
-          options={[
-            { value: 'library', label: 'Scenario Library' },
-            { value: 'builder', label: 'Scenario Builder', disabled: !canManageTests },
-          ]}
-        />
+        {!hasTopbarContributionProvider && scenarioPageControls}
       </div>
 
       {error && <div className="settings-error-inline">{error}</div>}

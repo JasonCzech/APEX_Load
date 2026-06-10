@@ -686,33 +686,6 @@ export default function ApplicationRepositoryPage({
         </label>
       </div>
 
-      <section className="repository-summary-band catalog">
-        <div>
-          <span className="metric-label">Projects</span>
-          <strong>{summary.project}</strong>
-        </div>
-        <div>
-          <span className="metric-label">Releases</span>
-          <strong>{summary.release}</strong>
-        </div>
-        <div>
-          <span className="metric-label">Scripts</span>
-          <strong>{summary.script}</strong>
-        </div>
-        <div>
-          <span className="metric-label">Scenarios</span>
-          <strong>{summary.scenario}</strong>
-        </div>
-        <div>
-          <span className="metric-label">Tests</span>
-          <strong>{summary.test}</strong>
-        </div>
-        <div>
-          <span className="metric-label">Data Pools</span>
-          <strong>{summary.data_pool}</strong>
-        </div>
-      </section>
-
       {(status || error) && (
         <div className={error ? 'form-error' : 'form-success'}>{error || status}</div>
       )}

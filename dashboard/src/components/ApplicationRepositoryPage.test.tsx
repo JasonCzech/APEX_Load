@@ -216,6 +216,7 @@ describe('ApplicationRepositoryPage', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Application Repository')
+    expect(container.querySelector('.repository-summary-band')).toBeNull()
     expect(container.textContent).toContain('Projects')
     expect(container.textContent).toContain('Checkout API')
     expect(container.textContent).toContain('2026.05')

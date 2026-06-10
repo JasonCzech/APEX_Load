@@ -214,6 +214,7 @@ describe('MonitoringPage', () => {
     return (
       <div data-testid="topbar-contribution">
         {contribution?.titleNode || <span>{contribution?.title}</span>}
+        {contribution?.controls}
         {contribution?.meta?.map(chip => (
           <span key={chip.id} className={chip.tone}>{chip.label}</span>
         ))}
@@ -221,7 +222,7 @@ describe('MonitoringPage', () => {
     )
   }
 
-  it('publishes advisory warnings next to the floating Monitoring title', async () => {
+  it('publishes advisory warnings after the floating Monitoring section toggle', async () => {
     await act(async () => {
       root.render(
         <TopbarContributionProvider>
@@ -234,7 +235,10 @@ describe('MonitoringPage', () => {
     const topbar = container.querySelector('[data-testid="topbar-contribution"]')
     expect(topbar?.textContent).toContain('Monitoring')
     expect(topbar?.textContent).toContain('1 advisory warning')
-    expect(topbar?.querySelector('.warning')?.textContent).toBe('1 advisory warning')
+    expect(topbar?.querySelector('.monitoring-topbar-controls .warning')?.textContent).toBe('1 advisory warning')
+    const topbarText = topbar?.textContent ?? ''
+    expect(topbarText.indexOf('Overview')).toBeGreaterThan(topbarText.indexOf('Monitoring'))
+    expect(topbarText.indexOf('1 advisory warning')).toBeGreaterThan(topbarText.indexOf('Schedules'))
     expect(container.querySelector('.page-header')?.textContent).not.toContain('Updated')
     expect(container.querySelector('.monitor-update-footer .monitor-last-refreshed')?.textContent).toContain('Updated')
     expect(container.textContent).not.toContain('Advisory Panel')

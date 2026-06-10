@@ -1141,6 +1141,10 @@ func loadArchiveIntervalSummariesForFilters(record *storage.RunArchiveRecord, ac
 	if err != nil {
 		return nil, err
 	}
+	var configuredGroups []TestGroup
+	if manifest, err := loadRunArchiveManifest(record.ManifestPath); err == nil && manifest != nil {
+		configuredGroups = manifest.Provenance.Groups
+	}
 	groupSet := selectedGroupNameSet(groupFilter.Names)
 	buckets := make([]archiveActionSummaryBucket, len(summaries))
 	for _, tx := range transactions {
@@ -1179,7 +1183,7 @@ func loadArchiveIntervalSummariesForFilters(record *storage.RunArchiveRecord, ac
 			Timestamp:              summary.Timestamp,
 			TestID:                 summary.TestID,
 			TestName:               summary.TestName,
-			ActiveVUsers:           archiveSummaryActiveVUsersForGroups(summary, groupSet, groupFilter.Explicit),
+			ActiveVUsers:           archiveSummaryActiveVUsersForGroups(summary, groupSet, groupFilter.Explicit, configuredGroups),
 			TargetTPS:              summary.TargetTPS,
 			ThroughputGapPct:       summary.ThroughputGapPct,
 			ThroughputTargetMissed: summary.ThroughputTargetMissed,
@@ -1209,23 +1213,47 @@ type archiveActionSummaryBucket struct {
 	durations       []float64
 }
 
-func archiveSummaryActiveVUsersForGroups(summary IntervalSummaryRecord, groupSet map[string]struct{}, explicit bool) int64 {
+func archiveSummaryActiveVUsersForGroups(summary IntervalSummaryRecord, groupSet map[string]struct{}, explicit bool, configuredGroups []TestGroup) int64 {
 	if !explicit {
 		return summary.ActiveVUsers
 	}
 	if len(groupSet) == 0 {
 		return 0
 	}
-	if len(summary.Groups) == 0 {
+	if len(summary.Groups) > 0 {
+		var active int64
+		for name := range groupSet {
+			if group := summary.Groups[name]; group != nil {
+				active += int64(group.VUsers)
+			}
+		}
+		return active
+	}
+	if summary.ActiveVUsers <= 0 || len(configuredGroups) == 0 {
 		return 0
 	}
-	var active int64
-	for name := range groupSet {
-		if group := summary.Groups[name]; group != nil {
-			active += int64(group.VUsers)
+	var selectedConfigured int
+	var totalConfigured int
+	for _, group := range configuredGroups {
+		if group.VUsers <= 0 {
+			continue
+		}
+		totalConfigured += group.VUsers
+		if _, selected := groupSet[group.Name]; selected {
+			selectedConfigured += group.VUsers
 		}
 	}
-	return active
+	if selectedConfigured <= 0 || totalConfigured <= 0 {
+		return 0
+	}
+	estimated := int64(math.Round(float64(summary.ActiveVUsers) * float64(selectedConfigured) / float64(totalConfigured)))
+	if estimated < 0 {
+		return 0
+	}
+	if estimated > summary.ActiveVUsers {
+		return summary.ActiveVUsers
+	}
+	return estimated
 }
 
 func archiveSelectedSummaryGroups(groups map[string]*GroupLiveMetrics, groupSet map[string]struct{}, explicit bool) map[string]*GroupLiveMetrics {

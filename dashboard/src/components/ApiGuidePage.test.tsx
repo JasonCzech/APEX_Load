@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, type ComponentProps } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import ApiGuidePage from './ApiGuidePage'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -45,11 +46,22 @@ const allGuideOperations = accessResources([
   'manage_service_accounts',
 ])
 
+function TopbarContributionHarness() {
+  const contribution = useActiveTopbarContribution()
+  return (
+    <div data-testid="topbar-contribution">
+      {contribution?.titleNode || contribution?.title}
+      {contribution?.controls}
+    </div>
+  )
+}
+
 describe('ApiGuidePage', () => {
   let container: HTMLDivElement
   let root: Root
 
   beforeEach(() => {
+    window.history.replaceState(null, '', '/')
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -62,20 +74,83 @@ describe('ApiGuidePage', () => {
     container.remove()
   })
 
-  it('renders the API guide entry points and endpoint catalogue', async () => {
+  async function renderApiGuidePage(props: ComponentProps<typeof ApiGuidePage> = {}) {
     await act(async () => {
-      root.render(<ApiGuidePage effectiveAccessResources={allGuideOperations} />)
+      root.render(
+        <TopbarContributionProvider>
+          <TopbarContributionHarness />
+          <ApiGuidePage {...props} />
+        </TopbarContributionProvider>,
+      )
     })
+  }
+
+  function topbarText() {
+    return container.querySelector('[data-testid="topbar-contribution"]')?.textContent || ''
+  }
+
+  function findTopbarButton(label: string) {
+    const topbar = container.querySelector('[data-testid="topbar-contribution"]')
+    return Array.from(topbar?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === label)
+  }
+
+  async function selectTopbarPage(label: string) {
+    const button = findTopbarButton(label)
+    expect(button).toBeDefined()
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    return button
+  }
+
+  it('renders the API guide title toggle and General page by default', async () => {
+    await renderApiGuidePage({ effectiveAccessResources: allGuideOperations })
 
     expect(container.textContent).toContain('API Guide')
+    expect(topbarText()).toContain('API Guide')
+    expect(topbarText()).toContain('General')
+    expect(topbarText()).toContain('MCP Server')
+    expect(topbarText()).toContain('Quick Start')
+    expect(topbarText()).toContain('Authentication')
+    expect(topbarText()).toContain('Endpoint Map')
+    expect(topbarText()).not.toContain('Response/Errors')
+    expect(topbarText()).toContain('Swagger')
+    expect(topbarText()).toContain('Repo Guide')
     expect(container.textContent).toContain('http://<controller-host>:8080/api/v1')
-    expect(container.textContent).toContain('/api/v1/auth/me')
-    expect(container.textContent).toContain('/api/v1/auth/diagnostics')
-    expect(container.textContent).toContain('/api/v1/auth/service-accounts')
-    expect(container.textContent).toContain('/api/v1/auth/users')
-    expect(container.textContent).toContain('/api/v1/auth/users/{id}/bindings')
-    expect(container.textContent).toContain('/api/v1/auth/user-activity')
-    expect(container.textContent).toContain('/api/v1/auth/user-activity/export')
+    expect(container.textContent).toContain('Responses And Errors')
+    expect(container.textContent).toContain('script_shakeout_failed')
+    expect(container.textContent).toContain('Dev Preview Headers')
+    expect(container.textContent).toContain('X-APEXLoad-Dev-View')
+    expect(container.textContent).toContain('project editor User behavior')
+    expect(container.textContent).not.toContain('/api/v1/auth/me')
+    expect(container.textContent).not.toContain('python3 mcp/server.py')
+    expect(container.textContent).not.toContain('/api/v1/scripts/import/postman')
+
+    expect(container.querySelector('.api-guide-header-actions')).toBeNull()
+    expect(container.querySelector('a[href="#/repository-guide"]')).toBeNull()
+    expect(container.querySelector('a[href="#/swagger"]')).toBeNull()
+  })
+
+  it('swaps API guide pages from the title toggle and keeps companion pages routed', async () => {
+    await renderApiGuidePage({ effectiveAccessResources: allGuideOperations })
+
+    const mcpButton = await selectTopbarPage('MCP Server')
+    expect(mcpButton?.getAttribute('aria-pressed')).toBe('true')
+    expect(window.location.hash).toBe('#/docs?guide=mcp')
+    expect(container.textContent).toContain('python3 mcp/server.py')
+    expect(container.textContent).toContain('apexload://api-guide')
+    expect(container.textContent).toContain('confirm=true')
+    expect(container.textContent).not.toContain('Responses And Errors')
+    const mcpLink = container.querySelector('a[href*="mcp/README.md"]')
+    expect(mcpLink?.textContent).toContain('MCP setup guide')
+
+    const quickStartButton = await selectTopbarPage('Quick Start')
+    expect(quickStartButton?.getAttribute('aria-pressed')).toBe('true')
+    expect(window.location.hash).toBe('#/docs?guide=quick-start')
+    expect(container.textContent).toContain('curl http://localhost:8080/api/v1/system/health')
+    expect(container.textContent).not.toContain('python3 mcp/server.py')
+
+    await selectTopbarPage('Endpoint Map')
     expect(container.textContent).toContain('/api/v1/scripts/import/enterprise-script-archive')
     expect(container.textContent).toContain('/api/v1/scripts/import/jmeter/save')
     expect(container.textContent).toContain('/api/v1/scripts/import/oracle-ebusiness/review')
@@ -100,31 +175,30 @@ describe('ApiGuidePage', () => {
     expect(container.textContent).toContain('/api/v1/system/settings')
     expect(container.textContent).toContain('/api/v1/protocols/native-support-matrix')
     expect(container.textContent).toContain('/api/v1/ai/review-queue')
-    expect(container.textContent).toContain('script_shakeout_failed')
-    expect(container.textContent).toContain('MCP Server')
-    expect(container.textContent).toContain('python3 mcp/server.py')
-    expect(container.textContent).toContain('apexload://api-guide')
-    expect(container.textContent).toContain('confirm=true')
-    expect(container.textContent).toContain('Access Workspace')
+
+    await selectTopbarPage('Authentication')
+    expect(window.location.hash).toBe('#/docs?guide=authentication')
+    expect(container.textContent).toContain('/api/v1/auth/me')
+    expect(container.textContent).toContain('/api/v1/auth/diagnostics')
+    expect(container.textContent).toContain('/api/v1/auth/service-accounts')
+    expect(container.textContent).toContain('/api/v1/auth/users')
+    expect(container.textContent).toContain('/api/v1/auth/users/{id}/bindings')
+    expect(container.textContent).toContain('/api/v1/auth/user-activity')
+    expect(container.textContent).toContain('/api/v1/auth/user-activity/export')
     expect(container.textContent).toContain('active local APEX Load user record')
     expect(container.textContent).toContain('Human roles come from local bindings')
-    expect(container.textContent).toContain('X-APEXLoad-Dev-View')
-    expect(container.textContent).toContain('project editor User behavior')
-    expect(container.textContent).toContain('/api/v1/scripts/import/postman')
 
-    const repositoryLink = container.querySelector('a[href="#/repository-guide"]')
-    expect(repositoryLink?.textContent).toContain('Repository Guide')
-    const swaggerLink = container.querySelector('a[href="#/swagger"]')
-    expect(swaggerLink?.textContent).toContain('Swagger Docs')
-    const mcpLink = container.querySelector('a[href*="mcp/README.md"]')
-    expect(mcpLink?.textContent).toContain('MCP setup guide')
+    await selectTopbarPage('Swagger')
+    expect(window.location.hash).toBe('#/swagger')
+
+    await selectTopbarPage('Repo Guide')
+    expect(window.location.hash).toBe('#/repository-guide')
   })
 
   it('links access guidance to the Access page when dashboard navigation is available', async () => {
     const onNavigate = vi.fn()
-    await act(async () => {
-      root.render(<ApiGuidePage onNavigate={onNavigate} effectiveAccessResources={allGuideOperations} />)
-    })
+    await renderApiGuidePage({ onNavigate, effectiveAccessResources: allGuideOperations })
+    await selectTopbarPage('Authentication')
 
     const accessButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Access'))
     expect(accessButton).toBeDefined()
@@ -138,13 +212,11 @@ describe('ApiGuidePage', () => {
   })
 
   it('filters endpoint rows to the current effective access', async () => {
-    await act(async () => {
-      root.render(<ApiGuidePage onNavigate={vi.fn()} effectiveAccessResources={accessResources(['view_scripts'])} />)
-    })
+    await renderApiGuidePage({ onNavigate: vi.fn(), effectiveAccessResources: accessResources(['view_scripts']) })
+    await selectTopbarPage('Endpoint Map')
 
     const codeValues = Array.from(container.querySelectorAll('code')).map(node => node.textContent || '')
 
-    expect(container.textContent).toContain('/api/v1/auth/me')
     expect(codeValues).toContain('GET /api/v1/scripts')
     expect(codeValues).toContain('POST /api/v1/scripts/validate')
     expect(codeValues).toContain('GET /api/v1/scripts/web-api/support-matrix')
@@ -161,15 +233,18 @@ describe('ApiGuidePage', () => {
     expect(codeValues).not.toContain('POST /api/v1/scripts/import/github')
     expect(codeValues).not.toContain('POST /api/v1/scripts/{id}/github/push')
     expect(codeValues).not.toContain('PUT /api/v1/projects/{id}/github/policy')
-    expect(container.textContent).not.toContain('/api/v1/auth/users')
-    expect(container.textContent).not.toContain('/api/v1/auth/user-activity')
     expect(container.textContent).not.toContain('/api/v1/scenarios')
     expect(codeValues).not.toContain('POST /api/v1/library/remotes')
+    expect(container.textContent).toContain('filtered to your current domain, project, and role access')
+
+    await selectTopbarPage('Authentication')
+    expect(container.textContent).toContain('/api/v1/auth/me')
+    expect(container.textContent).not.toContain('/api/v1/auth/users')
+    expect(container.textContent).not.toContain('/api/v1/auth/user-activity')
     expect(container.textContent).not.toContain('Access Workspace')
     expect(container.textContent).not.toContain('Open Access')
-    expect(container.textContent).not.toContain('Repository Guide')
-    expect(container.textContent).toContain('Swagger Docs')
-    expect(container.querySelector('a[href="#/swagger"]')).not.toBeNull()
-    expect(container.textContent).toContain('filtered to your current domain, project, and role access')
+    expect(topbarText()).toContain('Repo Guide')
+    expect(topbarText()).toContain('Swagger')
+    expect(container.querySelector('a[href="#/swagger"]')).toBeNull()
   })
 })

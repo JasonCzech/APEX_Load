@@ -1,5 +1,6 @@
 import { Fragment, useMemo, type ReactNode } from 'react'
 import guideMarkdown from '../../../docs/API_USER_GUIDE.md?raw'
+import { useApiGuideTopbarContribution } from './ApiGuideTopbarToggle'
 import { parseMarkdown, type MarkdownBlock } from './repositoryGuideMarkdown'
 
 // Inline formatting: `code`, **bold**, [text](url)
@@ -109,6 +110,7 @@ export default function RepositoryGuidePage() {
       ),
     [blocks],
   )
+  useApiGuideTopbarContribution('repo-guide', 'Repository Guide')
 
   return (
     <div className="page repository-guide-page">
@@ -117,7 +119,6 @@ export default function RepositoryGuidePage() {
           <h2>Repository Guide</h2>
           <p className="page-subtitle">{headingTitle} — rendered from the in-repository documentation.</p>
         </div>
-        <a className="btn btn-secondary btn-sm btn-accent-action" href="#/docs">API Guide</a>
       </div>
 
       {tableOfContents.length > 0 && (

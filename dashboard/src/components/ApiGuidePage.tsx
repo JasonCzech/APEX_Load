@@ -1,4 +1,9 @@
+import { useCallback, useEffect, useState } from 'react'
+
+import { API_GUIDE_DEFAULT_PAGE, type ApiGuideContentPageID } from '../apiGuideNavigation'
+import { useHasTopbarContributionProvider } from '../hooks/TopbarContributionProvider'
 import { DashboardAuthEffectiveAccessResource } from '../types'
+import { ApiGuideTopbarToggle, useApiGuideTopbarContribution } from './ApiGuideTopbarToggle'
 
 type EndpointDoc = {
   method: string
@@ -342,11 +347,14 @@ const statusRows = [
 ]
 
 type ApiGuidePageProps = {
+  activePage?: ApiGuideContentPageID
   onNavigate?: (page: 'access') => void
   effectiveAccessResources?: DashboardAuthEffectiveAccessResource[]
 }
 
-export default function ApiGuidePage({ onNavigate, effectiveAccessResources = [] }: ApiGuidePageProps) {
+export default function ApiGuidePage({ activePage = API_GUIDE_DEFAULT_PAGE, onNavigate, effectiveAccessResources = [] }: ApiGuidePageProps) {
+  const [activeGuideSection, setActiveGuideSection] = useState<ApiGuideContentPageID>(activePage)
+  const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const allowedOperations = buildAllowedOperationSet(effectiveAccessResources)
   const visibleQuickStartCommands = quickStartCommands.filter(command => canShowEndpoint(command, allowedOperations))
   const visibleAuthRows = authRows.filter(row => canShowEndpoint(row, allowedOperations))
@@ -358,6 +366,16 @@ export default function ApiGuidePage({ onNavigate, effectiveAccessResources = []
     .filter(group => group.endpoints.length > 0)
   const canUseAccessWorkspace = ['manage_users', 'view_user_activity', 'manage_service_accounts'].some(operation => allowedOperations.has(operation))
   const canViewFullRepositoryGuide = allowedOperations.has('manage_system') && allowedOperations.has('view_audit')
+  const handleContentPageChange = useCallback((page: ApiGuideContentPageID) => {
+    setActiveGuideSection(page)
+  }, [])
+  useApiGuideTopbarContribution(activeGuideSection, 'API Guide', handleContentPageChange)
+
+  useEffect(() => {
+    setActiveGuideSection(activePage)
+  }, [activePage])
+
+  const activeContentPage = activeGuideSection
 
   return (
     <div className="page api-guide-page">
@@ -366,150 +384,159 @@ export default function ApiGuidePage({ onNavigate, effectiveAccessResources = []
           <h2>API Guide</h2>
           <p className="page-subtitle">REST and WebSocket reference for automating APEX Load from CI/CD, integrations, and operator tooling.</p>
         </div>
-        <div className="api-guide-header-actions">
-          <a className="btn btn-secondary btn-sm btn-accent-action" href="#/swagger">
-            Swagger Docs
-          </a>
-          {canViewFullRepositoryGuide && (
-            <a className="btn btn-secondary btn-sm btn-accent-action" href="#/repository-guide">
-              Repository Guide
-            </a>
-          )}
-        </div>
       </div>
-
-      <section className="api-guide-hero" aria-labelledby="api-guide-base-url">
-        <div>
-          <span className="api-guide-kicker">Base URL</span>
-          <h3 id="api-guide-base-url">http://&lt;controller-host&gt;:8080/api/v1</h3>
-          <p>Local dashboard development proxies `/api` from `localhost:3000`; direct clients should call the controller origin.</p>
+      {!hasTopbarContributionProvider && (
+        <div className="inline-create-row api-guide-section-switcher">
+          <ApiGuideTopbarToggle active={activeGuideSection} onContentPageChange={handleContentPageChange} />
         </div>
-        <div className="api-guide-meta-grid">
-          <div><span>Auth</span><strong>Dev, OIDC/trusted headers, local users, service accounts</strong></div>
-          <div><span>Payloads</span><strong>JSON plus CSV, HTML, ZIP, and archive downloads</strong></div>
-          <div><span>Streams</span><strong>WebSocket at /api/v1/ws</strong></div>
-          <div><span>MCP</span><strong>FastMCP bridge for agent and CI automation</strong></div>
-        </div>
-      </section>
-
-      <section className="page-section api-guide-mcp-section">
-        <div className="api-guide-section-header">
-          <h3>MCP Server</h3>
-          <p>Run the APEX Load MCP bridge for agent-driven automation. It uses service-account auth and adds confirmation guardrails before mutating API calls.</p>
-        </div>
-        <div className="api-guide-mcp-grid">
-          <article className="api-guide-mcp-card">
-            <h4>Start The Server</h4>
-            <pre><code>{'APEXLOAD_URL=http://localhost:8080/api/v1 \\\nAPEXLOAD_API_KEY=srk_... \\\npython3 mcp/server.py'}</code></pre>
-            <a href="https://github.com/jasonczech/apexload/blob/main/mcp/README.md" target="_blank" rel="noreferrer">MCP setup guide</a>
-          </article>
-          <article className="api-guide-mcp-card">
-            <h4>Tool Coverage</h4>
-            <p>Structured tools cover system, auth, projects, scripts, scenarios, runs, reports, scheduling, fleet, data pools, imports, and AI assistance.</p>
-            <div className="api-guide-mcp-tags">
-              <span>service accounts</span>
-              <span>confirm=true</span>
-              <span>reason required</span>
-            </div>
-          </article>
-          <article className="api-guide-mcp-card">
-            <h4>Agent Resources</h4>
-            <ul>
-              {mcpResources.map(resource => (
-                <li key={resource}><code>{resource}</code></li>
-              ))}
-            </ul>
-          </article>
-        </div>
-      </section>
-
-      {canUseAccessWorkspace && (
-        <section className="api-guide-callout api-guide-key-callout">
-          <div>
-            <h3>Access Workspace</h3>
-            <p>Use Access to onboard human users, assign global/domain/project roles, review activity by user and scope, and generate service-account keys for MCP, CI/CD, reporting exports, and controlled external automation.</p>
-          </div>
-          {onNavigate && (
-            <button className="btn btn-secondary btn-sm btn-accent-action" type="button" onClick={() => onNavigate('access')}>
-              Open Access
-            </button>
-          )}
-        </section>
       )}
 
-      <section className="page-section">
-        <div className="api-guide-section-header">
-          <h3>Quick Start</h3>
-          <p>Use a service account key for automation and keep project/application/release ids in your pipeline context.</p>
-        </div>
-        <div className="api-guide-code-stack">
-          {visibleQuickStartCommands.map(({ command }) => (
-            <pre key={command}><code>{command}</code></pre>
-          ))}
-        </div>
-      </section>
+      {activeContentPage === 'general' && (
+        <>
+          <section className="api-guide-hero" aria-labelledby="api-guide-base-url">
+            <div>
+              <span className="api-guide-kicker">Base URL</span>
+              <h3 id="api-guide-base-url">http://&lt;controller-host&gt;:8080/api/v1</h3>
+              <p>Local dashboard development proxies `/api` from `localhost:3000`; direct clients should call the controller origin.</p>
+            </div>
+            <div className="api-guide-meta-grid">
+              <div><span>Auth</span><strong>Dev, OIDC/trusted headers, local users, service accounts</strong></div>
+              <div><span>Payloads</span><strong>JSON plus CSV, HTML, ZIP, and archive downloads</strong></div>
+              <div><span>Streams</span><strong>WebSocket at /api/v1/ws</strong></div>
+              <div><span>MCP</span><strong>FastMCP bridge for agent and CI automation</strong></div>
+            </div>
+          </section>
 
-      <section className="page-section">
-        <div className="api-guide-section-header">
-          <h3>Authentication</h3>
-          <p>OIDC or trusted headers prove human identity, but an active local APEX Load user record is required after bootstrap. Human roles come from local bindings; service accounts can use `Authorization: Bearer &lt;api-key&gt;` or `X-APEXLoad-API-Key`, with RBAC roles and token scopes both enforced.</p>
-        </div>
-        <div className="api-guide-table-card">
-          <table>
-            <thead>
-              <tr><th>Method</th><th>Endpoint</th><th>Use</th></tr>
-            </thead>
-            <tbody>
-              {visibleAuthRows.map(({ method, path, purpose }) => (
-                <tr key={`${method}-${path}`}>
-                  <td><code>{method}</code></td>
-                  <td><code>{path}</code></td>
-                  <td>{purpose}</td>
-                </tr>
+          <section className="page-section">
+            <div className="api-guide-section-header">
+              <h3>Responses And Errors</h3>
+              <p>JSON error responses use <code>{'{"error":"message"}'}</code>. Download endpoints may return CSV, HTML, ZIP, or binary artifacts.</p>
+            </div>
+            <div className="api-guide-status-grid">
+              {statusRows.map(([status, meaning]) => (
+                <div className="api-guide-status-card" key={status}>
+                  <strong>{status}</strong>
+                  <span>{meaning}</span>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+            </div>
+          </section>
 
-      <section className="page-section">
-        <div className="api-guide-section-header">
-          <h3>Endpoint Map</h3>
-          <p>{canViewFullRepositoryGuide ? <>The repository guide at <code>docs/API_USER_GUIDE.md</code> includes the longer workflow notes and expanded catalogue.</> : 'This endpoint map is filtered to your current domain, project, and role access.'}</p>
-        </div>
-        <div className="api-guide-endpoint-grid">
-          {visibleEndpointGroups.map(group => (
-            <article className="api-guide-card" key={group.title}>
-              <h4>{group.title}</h4>
+          <section className="api-guide-callout">
+            <h3>Dev Preview Headers</h3>
+            <p>In local dev auth mode only, API clients may send <code>X-APEXLoad-Dev-View: admin|user</code> and <code>X-APEXLoad-Dev-Project-ID: &lt;project-id&gt;</code> to simulate dashboard Admin or project editor User behavior. Production auth modes ignore these headers.</p>
+          </section>
+        </>
+      )}
+
+      {activeContentPage === 'mcp' && (
+        <section className="page-section api-guide-mcp-section">
+          <div className="api-guide-section-header">
+            <h3>MCP Server</h3>
+            <p>Run the APEX Load MCP bridge for agent-driven automation. It uses service-account auth and adds confirmation guardrails before mutating API calls.</p>
+          </div>
+          <div className="api-guide-mcp-grid">
+            <article className="api-guide-mcp-card">
+              <h4>Start The Server</h4>
+              <pre><code>{'APEXLOAD_URL=http://localhost:8080/api/v1 \\\nAPEXLOAD_API_KEY=srk_... \\\npython3 mcp/server.py'}</code></pre>
+              <a href="https://github.com/jasonczech/apexload/blob/main/mcp/README.md" target="_blank" rel="noreferrer">MCP setup guide</a>
+            </article>
+            <article className="api-guide-mcp-card">
+              <h4>Tool Coverage</h4>
+              <p>Structured tools cover system, auth, projects, scripts, scenarios, runs, reports, scheduling, fleet, data pools, imports, and AI assistance.</p>
+              <div className="api-guide-mcp-tags">
+                <span>service accounts</span>
+                <span>confirm=true</span>
+                <span>reason required</span>
+              </div>
+            </article>
+            <article className="api-guide-mcp-card">
+              <h4>Agent Resources</h4>
               <ul>
-                {group.endpoints.map(endpoint => (
-                  <li key={`${endpoint.method}-${endpoint.path}`}><code>{formatEndpoint(endpoint)}</code></li>
+                {mcpResources.map(resource => (
+                  <li key={resource}><code>{resource}</code></li>
                 ))}
               </ul>
             </article>
-          ))}
-        </div>
-      </section>
+          </div>
+        </section>
+      )}
 
-      <section className="page-section">
-        <div className="api-guide-section-header">
-          <h3>Responses And Errors</h3>
-          <p>JSON error responses use <code>{'{"error":"message"}'}</code>. Download endpoints may return CSV, HTML, ZIP, or binary artifacts.</p>
-        </div>
-        <div className="api-guide-status-grid">
-          {statusRows.map(([status, meaning]) => (
-            <div className="api-guide-status-card" key={status}>
-              <strong>{status}</strong>
-              <span>{meaning}</span>
+      {activeContentPage === 'quick-start' && (
+        <section className="page-section">
+          <div className="api-guide-section-header">
+            <h3>Quick Start</h3>
+            <p>Use a service account key for automation and keep project/application/release ids in your pipeline context.</p>
+          </div>
+          <div className="api-guide-code-stack">
+            {visibleQuickStartCommands.map(({ command }) => (
+              <pre key={command}><code>{command}</code></pre>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {activeContentPage === 'authentication' && (
+        <>
+          <section className="page-section">
+            <div className="api-guide-section-header">
+              <h3>Authentication</h3>
+              <p>OIDC or trusted headers prove human identity, but an active local APEX Load user record is required after bootstrap. Human roles come from local bindings; service accounts can use `Authorization: Bearer &lt;api-key&gt;` or `X-APEXLoad-API-Key`, with RBAC roles and token scopes both enforced.</p>
             </div>
-          ))}
-        </div>
-      </section>
+            <div className="api-guide-table-card">
+              <table>
+                <thead>
+                  <tr><th>Method</th><th>Endpoint</th><th>Use</th></tr>
+                </thead>
+                <tbody>
+                  {visibleAuthRows.map(({ method, path, purpose }) => (
+                    <tr key={`${method}-${path}`}>
+                      <td><code>{method}</code></td>
+                      <td><code>{path}</code></td>
+                      <td>{purpose}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-      <section className="api-guide-callout">
-        <h3>Dev Preview Headers</h3>
-        <p>In local dev auth mode only, API clients may send <code>X-APEXLoad-Dev-View: admin|user</code> and <code>X-APEXLoad-Dev-Project-ID: &lt;project-id&gt;</code> to simulate dashboard Admin or project editor User behavior. Production auth modes ignore these headers.</p>
-      </section>
+          {canUseAccessWorkspace && (
+            <section className="api-guide-callout api-guide-key-callout">
+              <div>
+                <h3>Access Workspace</h3>
+                <p>Use Access to onboard human users, assign global/domain/project roles, review activity by user and scope, and generate service-account keys for MCP, CI/CD, reporting exports, and controlled external automation.</p>
+              </div>
+              {onNavigate && (
+                <button className="btn btn-secondary btn-sm btn-accent-action" type="button" onClick={() => onNavigate('access')}>
+                  Open Access
+                </button>
+              )}
+            </section>
+          )}
+        </>
+      )}
+
+      {activeContentPage === 'endpoint-map' && (
+        <section className="page-section">
+          <div className="api-guide-section-header">
+            <h3>Endpoint Map</h3>
+            <p>{canViewFullRepositoryGuide ? <>The repository guide at <code>docs/API_USER_GUIDE.md</code> includes the longer workflow notes and expanded catalogue.</> : 'This endpoint map is filtered to your current domain, project, and role access.'}</p>
+          </div>
+          <div className="api-guide-endpoint-grid">
+            {visibleEndpointGroups.map(group => (
+              <article className="api-guide-card" key={group.title}>
+                <h4>{group.title}</h4>
+                <ul>
+                  {group.endpoints.map(endpoint => (
+                    <li key={`${endpoint.method}-${endpoint.path}`}><code>{formatEndpoint(endpoint)}</code></li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

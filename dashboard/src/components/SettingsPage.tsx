@@ -33,6 +33,26 @@ import './CreateTestModal.css'
 import { downloadBlob } from '../utils/fileUtils'
 import LibraryFederationPanel from './LibraryFederationPanel'
 import GitHubIntegrationPanel from './GitHubIntegrationPanel'
+import PageViewToggle from './PageViewToggle'
+import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
+
+const SETTINGS_SECTION_TOPBAR_LABELS: Record<SettingsSectionId, string> = {
+  general: 'General',
+  thresholds: 'Thresholds',
+  capacity: 'Capacity',
+  domains: 'Domains',
+  applications: 'Apps & Releases',
+  projects: 'Projects',
+  'data-pools': 'Data Pools',
+  integrations: 'Integrations',
+}
+
+const SETTINGS_SECTION_TOPBAR_OPTIONS = SETTINGS_SECTIONS.map(section => ({
+  value: section.id,
+  label: SETTINGS_SECTION_TOPBAR_LABELS[section.id],
+  ariaLabel: section.title,
+  title: section.title,
+}))
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
   general: {
@@ -900,8 +920,6 @@ export default function SettingsPage({
   const [customizingSections] = useState(false)
   const [draggedSectionId, setDraggedSectionId] = useState<SettingsSectionId | null>(null)
   const [sectionOrder, setSectionOrder] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('apexload.settings.sectionOrder'))
-  const [hiddenSectionIds, setHiddenSectionIds] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('apexload.settings.hiddenSections'))
-  const [collapsedSectionIds, setCollapsedSectionIds] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('apexload.settings.collapsedSections'))
   const [selectedDomainId, setSelectedDomainId] = useState(activeDomain?.id || domains[0]?.id || '')
   const [newDomainName, setNewDomainName] = useState('')
   const [newDomainDescription, setNewDomainDescription] = useState('')
@@ -1487,14 +1505,6 @@ export default function SettingsPage({
   }, [sectionOrder])
 
   useEffect(() => {
-    writeStoredJSON('apexload.settings.hiddenSections', hiddenSectionIds)
-  }, [hiddenSectionIds])
-
-  useEffect(() => {
-    writeStoredJSON('apexload.settings.collapsedSections', collapsedSectionIds)
-  }, [collapsedSectionIds])
-
-  useEffect(() => {
     writeStoredJSON('apexload.settings.generalSubsection', activeGeneralSubsection)
   }, [activeGeneralSubsection])
 
@@ -1807,16 +1817,16 @@ export default function SettingsPage({
     }
   }
 
-  const refreshAuthDiagnostics = async () => {
+  const refreshAuthDiagnostics = useCallback(async () => {
     try {
       const response = await api.getAuthDiagnostics()
       setAuthDiagnostics(response)
     } catch {
       setAuthDiagnostics(null)
     }
-  }
+  }, [api])
 
-  const saveSettings = async () => {
+  const saveSettings = useCallback(async () => {
     if (!canSave) return
     try {
       const response = normalizeDashboardSystemSettings(await api.updateSystemSettings(settings))
@@ -1829,9 +1839,9 @@ export default function SettingsPage({
       setRequestError(getErrorMessage(error, 'Unable to save settings'))
       setSaveMessage('')
     }
-  }
+  }, [api, canSave, refreshAuthDiagnostics, settings])
 
-  const resetSettings = async () => {
+  const resetSettings = useCallback(async () => {
     try {
       const response = normalizeDashboardSystemSettings(await api.updateSystemSettings(DEFAULT_SETTINGS))
       setSettings(response)
@@ -1845,13 +1855,13 @@ export default function SettingsPage({
       setSaveMessage('')
       setConfirmingResetAll(false)
     }
-  }
+  }, [api, refreshAuthDiagnostics])
 
-  const discardChanges = () => {
+  const discardChanges = useCallback(() => {
     setSettings(savedSettings)
     setSaveMessage('')
     setRequestError('')
-  }
+  }, [savedSettings])
 
   const applyGeneratorPreset = (preset: typeof GENERATOR_PRESETS[number]) => {
     setSettings(prev => ({
@@ -1905,15 +1915,7 @@ export default function SettingsPage({
   const orderedSectionIds = mergeSettingsOrder(sectionOrder)
   const getSectionOrder = (id: SettingsSectionId) => orderedSectionIds.indexOf(id)
   const sectionClass = (id: SettingsSectionId) =>
-    `settings-card ${customizingSections ? 'editable' : ''} ${collapsedSectionIds.includes(id) ? 'collapsed' : ''} ${draggedSectionId === id ? 'dragging' : ''}`
-
-  const toggleHiddenSection = (id: SettingsSectionId) => {
-    setHiddenSectionIds(prev => prev.includes(id) ? prev.filter(sectionId => sectionId !== id) : [...prev, id])
-  }
-
-  const toggleCollapsedSection = (id: SettingsSectionId) => {
-    setCollapsedSectionIds(prev => prev.includes(id) ? prev.filter(sectionId => sectionId !== id) : [...prev, id])
-  }
+    `settings-card ${customizingSections ? 'editable' : ''} ${draggedSectionId === id ? 'dragging' : ''}`
 
   const createApplication = async () => {
     const name = newApplicationName.trim()
@@ -2352,29 +2354,6 @@ export default function SettingsPage({
     setDraggedSectionId(null)
   }
 
-  const renderSettingsHeader = (id: SettingsSectionId, title: string) => (
-    <h3 className="settings-card-title">
-      <span className="settings-title-main">
-        {customizingSections && (
-          <span className="settings-drag-handle" title="Drag to reorder">
-            <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor"><circle cx="2" cy="2" r="1.5"/><circle cx="8" cy="2" r="1.5"/><circle cx="2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="2" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/></svg>
-          </span>
-        )}
-        {title}
-      </span>
-      <span className="settings-card-controls">
-        <button className="btn-icon settings-collapse-btn" type="button" onClick={() => toggleCollapsedSection(id)}>
-          {collapsedSectionIds.includes(id) ? 'Show' : 'Hide Body'}
-        </button>
-        {customizingSections && (
-          <button className="btn-icon settings-collapse-btn" type="button" onClick={() => toggleHiddenSection(id)}>
-            Hide
-          </button>
-        )}
-      </span>
-    </h3>
-  )
-
   const renderSettingsSubnav = <SubsectionId extends string,>(
     ariaLabel: string,
     idPrefix: string,
@@ -2425,6 +2404,43 @@ export default function SettingsPage({
   }, [saveMessage, requestError, domainActionMessage, domainActionError, applicationActionError, projectActionMessage, projectActionError, dataPoolActionError, activeSection])
 
   const activeSectionMessages = sectionMessages[activeSection]
+  const settingsTopbarContribution = useMemo(() => ({
+    id: 'settings-page',
+    title: 'Settings',
+    controls: (
+      <PageViewToggle
+        value={activeSection}
+        ariaLabel="Settings sections"
+        className="settings-section-toggle settings-topbar-section-toggle new-test-view-toggle"
+        options={SETTINGS_SECTION_TOPBAR_OPTIONS}
+        onChange={setActiveSection}
+      />
+    ),
+    primaryActions: [
+      {
+        id: 'save-settings',
+        label: hasUnsavedChanges ? 'Save Changes' : 'Saved',
+        compactLabel: hasUnsavedChanges ? 'Save' : 'Saved',
+        onClick: () => { void saveSettings() },
+        disabled: !canSave,
+        tone: 'primary' as const,
+        title: canSave ? 'Save settings changes' : 'Settings are already saved or cannot be saved',
+      },
+    ],
+    secondaryActions: [
+      {
+        id: 'discard-settings',
+        label: 'Discard Changes',
+        compactLabel: 'Discard',
+        onClick: discardChanges,
+        hidden: !hasUnsavedChanges,
+        tone: 'secondary' as const,
+      },
+    ],
+    priority: 20,
+  }), [activeSection, canSave, discardChanges, hasUnsavedChanges, saveSettings])
+
+  useTopbarContribution(settingsTopbarContribution)
 
   return (
     <div className="page settings-page">
@@ -2433,54 +2449,12 @@ export default function SettingsPage({
           <h2>Settings</h2>
           <p className="page-subtitle">Configuration, thresholds, and integrations</p>
         </div>
-        <div className="settings-actions">
-          {hasUnsavedChanges && (
-            <button className="btn btn-secondary" onClick={discardChanges}>
-              Discard Changes
-            </button>
-          )}
-          <button className="btn btn-primary" disabled={!canSave} onClick={saveSettings}>
-            {hasUnsavedChanges ? 'Save Changes' : 'Saved'}
-          </button>
-        </div>
         {!canManageSystem && (
           <p className="settings-error">Current session can view settings but cannot save global configuration changes.</p>
         )}
       </div>
 
-      <div className="settings-overview">
-        <div>
-          <span>Save State</span>
-          <strong>{hasUnsavedChanges ? 'Unsaved changes' : 'Up to date'}</strong>
-        </div>
-        <div>
-          <span>Concurrency</span>
-          <strong>{settings.general.max_concurrent_tests} tests</strong>
-        </div>
-        <div>
-          <span>Generator Profile</span>
-          <strong>{settings.capacity_planning.generator.cpu_cores} CPU / {settings.capacity_planning.generator.memory_mb} MB</strong>
-        </div>
-        <div>
-          <span>Capacity Source</span>
-          <strong>{availabilitySourceLabel}</strong>
-        </div>
-      </div>
-
       <div className="settings-tabbed-layout">
-        <nav className="settings-sidebar">
-          {SETTINGS_SECTIONS.map(section => (
-            <button
-              key={section.id}
-              type="button"
-              className={`settings-sidebar-item ${activeSection === section.id ? 'active' : ''}`}
-              onClick={() => setActiveSection(section.id)}
-            >
-              {section.title}
-            </button>
-          ))}
-        </nav>
-
         <div className="settings-main">
           {loading && <p className="settings-notice">Loading settings...</p>}
           {activeSectionMessages.notices.map(msg => (
@@ -2509,7 +2483,6 @@ export default function SettingsPage({
           onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('general') }}
         >
-          {renderSettingsHeader('general', 'General')}
           <div className="settings-subsection-layout">
             <nav className="settings-subnav" role="tablist" aria-label="General settings categories">
               {GENERAL_SETTINGS_SUBSECTIONS.map(subsection => (
@@ -3374,7 +3347,6 @@ export default function SettingsPage({
           onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('thresholds') }}
         >
-          {renderSettingsHeader('thresholds', 'Performance Thresholds')}
           <div className="settings-group">
             <div className="settings-subgroup-header">
               <span className="settings-subgroup-title">Performance SLAs</span>
@@ -3534,7 +3506,6 @@ export default function SettingsPage({
           onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('capacity') }}
         >
-          {renderSettingsHeader('capacity', 'Capacity Planning')}
           <div className="settings-subsection-layout">
             {renderSettingsSubnav(
               'Capacity settings categories',
@@ -3863,7 +3834,6 @@ export default function SettingsPage({
           onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('domains') }}
         >
-          {renderSettingsHeader('domains', 'Domains')}
           <div className="settings-group">
             <div className="settings-subsection">
               <div className="settings-manager-summary">
@@ -4019,7 +3989,6 @@ export default function SettingsPage({
           onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('applications') }}
         >
-          {renderSettingsHeader('applications', 'Applications & Releases')}
           <div className="settings-group">
             <div className="settings-subsection">
               <div className="settings-manager-summary">
@@ -4166,7 +4135,6 @@ export default function SettingsPage({
           onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('projects') }}
         >
-          {renderSettingsHeader('projects', 'Projects & Compliance')}
           <div className="settings-subsection-layout">
             {renderSettingsSubnav(
               'Project settings categories',
@@ -4607,7 +4575,6 @@ export default function SettingsPage({
           onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('data-pools') }}
         >
-          {renderSettingsHeader('data-pools', 'Shared Data Pools')}
           <div className="settings-group">
             <div className="settings-subsection">
               <div className="settings-manager-summary">
@@ -4744,7 +4711,6 @@ export default function SettingsPage({
           onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('integrations') }}
         >
-          {renderSettingsHeader('integrations', 'Integrations')}
           <div className="settings-subsection-layout">
             {renderSettingsSubnav(
               'Integration settings categories',

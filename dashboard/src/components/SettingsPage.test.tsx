@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
-import { act, useState } from 'react'
+import { act, useState, type ReactElement } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SettingsPage from './SettingsPage'
 import type { DashboardAuthEffectiveAccessResource, Domain } from '../types'
+import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -171,6 +172,38 @@ function SettingsPageDomainHarness({ initialDomains = [defaultDomain, retailDoma
       onDomainChange={setActiveDomain}
       onDomainsRefresh={refreshDomains}
     />
+  )
+}
+
+function SettingsTopbarHarness() {
+  const contribution = useActiveTopbarContribution()
+  const visibleSecondaryActions = (contribution?.secondaryActions || []).filter(action => !action.hidden)
+  const visiblePrimaryActions = (contribution?.primaryActions || []).filter(action => !action.hidden)
+
+  return (
+    <div data-testid="settings-topbar">
+      {contribution?.titleNode || <span>{contribution?.title}</span>}
+      {contribution?.controls}
+      {visibleSecondaryActions.map(action => (
+        <button key={action.id} type="button" disabled={action.disabled} onClick={action.onClick}>
+          {action.label}
+        </button>
+      ))}
+      {visiblePrimaryActions.map(action => (
+        <button key={action.id} type="button" disabled={action.disabled} onClick={action.onClick}>
+          {action.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function renderWithSettingsTopbar(testRoot: Root, page: ReactElement) {
+  testRoot.render(
+    <TopbarContributionProvider>
+      <SettingsTopbarHarness />
+      {page}
+    </TopbarContributionProvider>,
   )
 }
 
@@ -610,7 +643,7 @@ describe('SettingsPage', () => {
 
   it('defaults General to the Platform panel and switches panels accessibly', async () => {
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -618,6 +651,12 @@ describe('SettingsPage', () => {
     const generalSection = container.querySelector('#settings-section-general')
     expect(generalSection).toBeTruthy()
     if (!generalSection) return
+
+    const topbar = container.querySelector('[data-testid="settings-topbar"]')
+    expect(topbar?.textContent).toContain('General')
+    expect(topbar?.textContent).toContain('Thresholds')
+    expect(topbar?.querySelector('button[aria-label="Performance Thresholds"]')).toBeTruthy()
+    expect(container.querySelector('.settings-section-switcher')).toBeNull()
 
     const platformButton = findGeneralSubnavButton(generalSection, 'Platform')
     const usageButton = findGeneralSubnavButton(generalSection, 'Usage')
@@ -641,7 +680,7 @@ describe('SettingsPage', () => {
 
   it('keeps edited platform settings while switching General panels', async () => {
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -675,7 +714,7 @@ describe('SettingsPage', () => {
 
   it('subdivides capacity, project, and integration settings into focused panels', async () => {
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -730,7 +769,7 @@ describe('SettingsPage', () => {
     repositoryApiMock.listDomains.mockResolvedValue({ domains: [defaultDomain, paymentsDomain], count: 2 })
 
     await act(async () => {
-      root.render(<SettingsPageDomainHarness initialDomains={[defaultDomain]} />)
+      renderWithSettingsTopbar(root, <SettingsPageDomainHarness initialDomains={[defaultDomain]} />)
     })
     await flushPromises()
     await flushPromises()
@@ -777,7 +816,7 @@ describe('SettingsPage', () => {
     repositoryApiMock.listDomains.mockResolvedValue({ domains: [defaultDomain, updatedDomain], count: 2 })
 
     await act(async () => {
-      root.render(<SettingsPageDomainHarness />)
+      renderWithSettingsTopbar(root, <SettingsPageDomainHarness />)
     })
     await flushPromises()
     await flushPromises()
@@ -839,7 +878,7 @@ describe('SettingsPage', () => {
     })
 
     await act(async () => {
-      root.render(<SettingsPageDomainHarness />)
+      renderWithSettingsTopbar(root, <SettingsPageDomainHarness />)
     })
     await flushPromises()
     await flushPromises()
@@ -875,7 +914,7 @@ describe('SettingsPage', () => {
     repositoryApiMock.listDomains.mockResolvedValue({ domains: [defaultDomain], count: 1 })
 
     await act(async () => {
-      root.render(<SettingsPageDomainHarness />)
+      renderWithSettingsTopbar(root, <SettingsPageDomainHarness />)
     })
     await flushPromises()
     await flushPromises()
@@ -920,7 +959,7 @@ describe('SettingsPage', () => {
     })
 
     await act(async () => {
-      root.render(<SettingsPageDomainHarness />)
+      renderWithSettingsTopbar(root, <SettingsPageDomainHarness />)
     })
     await flushPromises()
     await flushPromises()
@@ -950,7 +989,7 @@ describe('SettingsPage', () => {
     const onThemeChange = vi.fn()
 
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={onThemeChange} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={onThemeChange} />)
     })
 
     await flushPromises()
@@ -972,7 +1011,7 @@ describe('SettingsPage', () => {
     window.localStorage.setItem('apexload.settings.focusSection', 'integrations')
 
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -988,7 +1027,7 @@ describe('SettingsPage', () => {
 
   it('defaults generator capacity fields to the connected live pod capacity when settings are still at the stock defaults', async () => {
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -1012,13 +1051,15 @@ describe('SettingsPage', () => {
     expect(maxVUsersInput?.value).toBe('8000')
     expect(availableGeneratorsInput?.value).toBe('2')
     expect(container.textContent).toContain('2 CPU / 4096 MB')
-    expect(container.textContent).toContain('Up to date')
+    expect(container.querySelector('.settings-overview')).toBeNull()
+    expect(container.textContent).not.toContain('Save State')
+    expect(container.textContent).not.toContain('Up to date')
     expect(apiMock.getSystemInventory).toHaveBeenCalledTimes(1)
   })
 
   it('plans archive retention pruning from the capacity settings section', async () => {
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -1052,7 +1093,7 @@ describe('SettingsPage', () => {
 
   it('surfaces usage accounting snapshots and exports chargeback CSV', async () => {
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -1099,7 +1140,7 @@ describe('SettingsPage', () => {
 
   it('surfaces production readiness checks and refreshes the backend payload', async () => {
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -1149,7 +1190,7 @@ describe('SettingsPage', () => {
     apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
 
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -1198,7 +1239,7 @@ describe('SettingsPage', () => {
     apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
 
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
     await flushPromises()
 
@@ -1288,7 +1329,7 @@ describe('SettingsPage', () => {
     })
 
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -1335,7 +1376,7 @@ describe('SettingsPage', () => {
     }))
 
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -1449,7 +1490,7 @@ describe('SettingsPage', () => {
     })
 
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -1483,7 +1524,7 @@ describe('SettingsPage', () => {
 
   it('blocks saving project compliance when a rule is missing its regex pattern', async () => {
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -1525,7 +1566,7 @@ describe('SettingsPage', () => {
     apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
 
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -1596,7 +1637,7 @@ describe('SettingsPage', () => {
     })
 
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -1628,7 +1669,7 @@ describe('SettingsPage', () => {
     apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
 
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -1686,7 +1727,7 @@ describe('SettingsPage', () => {
 
   it('applies OIDC provider presets without overwriting deployment-specific values', async () => {
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -1818,7 +1859,7 @@ describe('SettingsPage', () => {
 
     const onNavigate = vi.fn()
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} authStatus={{ enabled: false, mode: 'dev', authenticated: false }} onNavigate={onNavigate} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} authStatus={{ enabled: false, mode: 'dev', authenticated: false }} onNavigate={onNavigate} />)
     })
 
     await flushPromises()
@@ -1931,7 +1972,7 @@ describe('SettingsPage', () => {
     })
 
     await act(async () => {
-      root.render(
+      renderWithSettingsTopbar(root,
         <SettingsPage
           theme="dark"
           onThemeChange={vi.fn()}
@@ -2056,7 +2097,7 @@ describe('SettingsPage', () => {
     })
 
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -2080,7 +2121,7 @@ describe('SettingsPage', () => {
     apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
 
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -2142,7 +2183,7 @@ describe('SettingsPage', () => {
     apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
 
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -2236,7 +2277,7 @@ describe('SettingsPage', () => {
 
   it('validates trusted-header auth when no roles headers are configured', async () => {
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
 
     await flushPromises()
@@ -2270,7 +2311,9 @@ describe('SettingsPage', () => {
 })
 
 function findButton(label: string) {
-  return Array.from(document.querySelectorAll('button')).find(button => button.textContent?.trim() === label) as HTMLButtonElement | undefined
+  return Array.from(document.querySelectorAll('button')).find(button => (
+    button.textContent?.trim() === label || button.getAttribute('aria-label') === label
+  )) as HTMLButtonElement | undefined
 }
 
 function findSettingsSubnavButton(root: Element, label: string) {

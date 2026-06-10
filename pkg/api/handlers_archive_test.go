@@ -254,6 +254,26 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("summaries group filter echoes filters", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/summaries?limit=5&groups=Wikipedia,BBC", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("summaries group filter status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		var payload struct {
+			Filters map[string]any `json:"filters"`
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("unmarshal summaries group filter: %v", err)
+		}
+		groups, ok := payload.Filters["groups"].([]any)
+		if !ok || len(groups) != 2 || groups[0] != "Wikipedia" || groups[1] != "BBC" {
+			t.Fatalf("filters.groups = %#v, want Wikipedia and BBC", payload.Filters["groups"])
+		}
+	})
+
 	t.Run("summaries csv", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/summaries?format=csv&limit=5", nil)
 		resp := httptest.NewRecorder()
@@ -879,6 +899,53 @@ func TestLoadArchiveIntervalSummariesForGroupsAggregatesTransactions(t *testing.
 	}
 	if empty[0].ActiveVUsers != 0 || empty[0].TotalTx != 0 || empty[1].TotalTx != 0 {
 		t.Fatalf("empty group filter = %#v, want zeroed performance summaries", empty)
+	}
+}
+
+func TestLoadArchiveIntervalSummariesForGroupsEstimatesLegacyVUsers(t *testing.T) {
+	archiveDir := t.TempDir()
+	start := time.Date(2026, 6, 8, 17, 0, 0, 0, time.UTC)
+	manifest := RunArchiveManifest{
+		TestID:                "run-legacy-group-summary",
+		TestName:              "Legacy Group Summary Run",
+		CreatedAt:             start,
+		TransactionsFile:      "transactions.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+		Provenance: RunArchiveProvenance{
+			Groups: []TestGroup{
+				{Name: "Wikipedia", VUsers: 10},
+				{Name: "BBC", VUsers: 10},
+			},
+		},
+	}
+	writeJSONL(t, filepath.Join(archiveDir, "manifest.json"), manifest)
+	writeJSONL(t, filepath.Join(archiveDir, manifest.IntervalSummariesFile),
+		IntervalSummaryRecord{Timestamp: start.Add(time.Second), TestID: manifest.TestID, TestName: manifest.TestName, ActiveVUsers: 2},
+		IntervalSummaryRecord{Timestamp: start.Add(2 * time.Second), TestID: manifest.TestID, TestName: manifest.TestName, ActiveVUsers: 4},
+	)
+	writeJSONL(t, filepath.Join(archiveDir, manifest.TransactionsFile),
+		TransactionEvent{Timestamp: start.Add(500 * time.Millisecond), TestID: manifest.TestID, TestName: manifest.TestName, Group: "Wikipedia", ActionName: "Home", DurationMs: 100, Success: true},
+		TransactionEvent{Timestamp: start.Add(1500 * time.Millisecond), TestID: manifest.TestID, TestName: manifest.TestName, Group: "BBC", ActionName: "Home", DurationMs: 900, Success: true},
+		TransactionEvent{Timestamp: start.Add(1500 * time.Millisecond), TestID: manifest.TestID, TestName: manifest.TestName, Group: "Wikipedia", ActionName: "Home", DurationMs: 300, Success: false},
+	)
+	record := &storage.RunArchiveRecord{
+		TestID:       manifest.TestID,
+		ArchivePath:  archiveDir,
+		ManifestPath: filepath.Join(archiveDir, "manifest.json"),
+	}
+
+	summaries, total, err := loadArchiveIntervalSummaries(record, archivePage{Limit: 10}, "", groupFilterQuery{Names: []string{"Wikipedia"}, Explicit: true})
+	if err != nil {
+		t.Fatalf("loadArchiveIntervalSummaries returned error: %v", err)
+	}
+	if total != 2 || len(summaries) != 2 {
+		t.Fatalf("filtered summaries total=%d len=%d, want 2", total, len(summaries))
+	}
+	if summaries[0].ActiveVUsers != 1 || summaries[0].TotalTx != 1 || summaries[0].AvgResponseMs != 100 || summaries[0].P95Ms != 100 {
+		t.Fatalf("first legacy group bucket = %#v, want estimated VUsers and Wikipedia transaction", summaries[0])
+	}
+	if summaries[1].ActiveVUsers != 2 || summaries[1].TotalTx != 2 || summaries[1].TotalErrors != 1 || summaries[1].ErrorPct != 100 || summaries[1].P50Ms != 300 {
+		t.Fatalf("second legacy group bucket = %#v, want estimated VUsers and Wikipedia failure", summaries[1])
 	}
 }
 
