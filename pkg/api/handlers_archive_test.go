@@ -949,6 +949,75 @@ func TestLoadArchiveIntervalSummariesForGroupsEstimatesLegacyVUsers(t *testing.T
 	}
 }
 
+func TestArchiveFilteredThroughputTarget(t *testing.T) {
+	groupSet := map[string]struct{}{"Checkout": {}}
+	withGroupTarget := IntervalSummaryRecord{
+		// Whole-test target/gap must not leak into the filtered subset.
+		TargetTPS:              999,
+		ThroughputGapPct:       88,
+		ThroughputTargetMissed: true,
+		Groups: map[string]*GroupLiveMetrics{
+			"Checkout": {Name: "Checkout", TargetTPS: 100},
+			"Browse":   {Name: "Browse", TargetTPS: 50},
+		},
+	}
+	// Subset TPS 80 vs Checkout's own target 100 -> 20% gap, missed.
+	if target, gap, missed := archiveFilteredThroughputTarget(withGroupTarget, groupSet, true, 80); target != 100 || gap != 20 || !missed {
+		t.Fatalf("filtered target = (%v,%v,%v), want (100,20,true) from Checkout target only", target, gap, missed)
+	}
+	// Subset meeting its own target -> no gap, not missed.
+	if target, gap, missed := archiveFilteredThroughputTarget(withGroupTarget, groupSet, true, 120); target != 100 || gap != 0 || missed {
+		t.Fatalf("filtered target = (%v,%v,%v), want (100,0,false) when subset meets target", target, gap, missed)
+	}
+
+	// No per-group target captured -> zeroed, despite whole-test target/gap.
+	noGroupTarget := IntervalSummaryRecord{
+		TargetTPS:              999,
+		ThroughputGapPct:       88,
+		ThroughputTargetMissed: true,
+		Groups:                 map[string]*GroupLiveMetrics{"Checkout": {Name: "Checkout"}},
+	}
+	if target, gap, missed := archiveFilteredThroughputTarget(noGroupTarget, groupSet, true, 10); target != 0 || gap != 0 || missed {
+		t.Fatalf("no-group-target filtered = (%v,%v,%v), want all zero", target, gap, missed)
+	}
+
+	// Action-only filter (not explicit group) -> zeroed.
+	if target, gap, missed := archiveFilteredThroughputTarget(withGroupTarget, nil, false, 80); target != 0 || gap != 0 || missed {
+		t.Fatalf("action-only filtered = (%v,%v,%v), want all zero", target, gap, missed)
+	}
+}
+
+func TestArchiveSummaryActiveVUsersFallsBackToRunWide(t *testing.T) {
+	groupSet := map[string]struct{}{"Checkout": {}}
+
+	// No per-group metrics and no configured groups: a group that ran must not
+	// report flat zero; fall back to the run-wide active VUser count.
+	summary := IntervalSummaryRecord{ActiveVUsers: 9}
+	if got := archiveSummaryActiveVUsersForGroups(summary, groupSet, true, nil); got != 9 {
+		t.Fatalf("active vusers = %d, want run-wide fallback 9", got)
+	}
+
+	// Selected group absent from the configured set: still falls back run-wide.
+	configured := []TestGroup{{Name: "Other", VUsers: 5}}
+	if got := archiveSummaryActiveVUsersForGroups(summary, groupSet, true, configured); got != 9 {
+		t.Fatalf("active vusers = %d, want run-wide fallback 9 when group not configured", got)
+	}
+
+	// No VUser data at all -> zero.
+	if got := archiveSummaryActiveVUsersForGroups(IntervalSummaryRecord{}, groupSet, true, nil); got != 0 {
+		t.Fatalf("active vusers = %d, want 0 when no VUser data exists", got)
+	}
+
+	// Per-group counts still take precedence when present.
+	withGroups := IntervalSummaryRecord{
+		ActiveVUsers: 9,
+		Groups:       map[string]*GroupLiveMetrics{"Checkout": {Name: "Checkout", VUsers: 4}},
+	}
+	if got := archiveSummaryActiveVUsersForGroups(withGroups, groupSet, true, nil); got != 4 {
+		t.Fatalf("active vusers = %d, want exact per-group count 4", got)
+	}
+}
+
 func TestArchiveTransactionsApplyConfiguredRedactionRules(t *testing.T) {
 	archiveDir := t.TempDir()
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)

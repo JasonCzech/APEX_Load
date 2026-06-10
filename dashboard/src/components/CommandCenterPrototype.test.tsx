@@ -50,6 +50,45 @@ describe('CommandCenterPrototype', () => {
     expect(selectedGroupLoadImpactData(data, selectedGroups)).toEqual(data)
   })
 
+  it('does not dilute aggregate percentiles when a selected group omits one', () => {
+    const data: MetricsHistoryPoint[] = [{
+      time: '12:00',
+      timestampMs: Date.parse('2026-06-08T12:00:00Z'),
+      vusers: 20,
+      tps: 20,
+      avgMs: 150,
+      errorPct: 0,
+      p50: 0,
+      p90: 0,
+      p95: 0,
+      p99: 0,
+      Alpha_transactions: 100,
+      Alpha_errors: 0,
+      Alpha_tps: 10,
+      Alpha_p50: 100,
+      Alpha_p90: 400,
+      Alpha_p95: 500,
+      Alpha_p99: 600,
+      Beta_transactions: 100,
+      Beta_errors: 0,
+      Beta_tps: 10,
+      Beta_p50: 120,
+      Beta_p90: 420,
+      // Beta omits p95 (server dropped it via omitempty); p99 is present.
+      Beta_p99: 620,
+    }]
+    const selectedGroups = [commandGroup('Alpha', 10), commandGroup('Beta', 10)]
+
+    const [aggregated] = selectedGroupLoadImpactData(data, selectedGroups)
+
+    // p95 is weighted only by Alpha (the group that reported it) -> 500, not
+    // diluted toward 0 by Beta's equal attempts (which would yield 250).
+    expect(aggregated.p95).toBe(500)
+    // p50/p99 are reported by both groups and weight across both equally.
+    expect(aggregated.p50).toBe(110)
+    expect(aggregated.p99).toBe(610)
+  })
+
   it('rebuilds selected historical group chart history from archive transactions', () => {
     const referenceData: MetricsHistoryPoint[] = [{
       time: '12:00:01',

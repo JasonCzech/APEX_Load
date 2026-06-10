@@ -145,6 +145,40 @@ describe('testExecutionMetricsModel', () => {
     })
   })
 
+  it('leaves an omitted group percentile undefined instead of coercing it to 0', () => {
+    const [point] = mapExecutionHistory([{
+      timestamp: '2026-05-12T20:00:00Z',
+      active_vusers: 5,
+      tps: 2,
+      avg_response_ms: 100,
+      error_pct: 0,
+      total_transactions: 5,
+      total_errors: 0,
+      p50_ms: 100,
+      p90_ms: 150,
+      p95_ms: 200,
+      p99_ms: 220,
+      groups: {
+        Checkout: {
+          name: 'Checkout',
+          vusers: 5,
+          transactions: 5,
+          errors: 0,
+          tps: 2,
+          avg_response_ms: 100,
+          p50_ms: 100,
+          p90_ms: 150,
+          // p95_ms omitted by the server (omitempty); must stay a gap, not 0.
+          p99_ms: 220,
+        },
+      },
+    }])
+
+    expect(point.Checkout_p95).toBeUndefined()
+    expect(point.Checkout_p50).toBe(100)
+    expect(point.Checkout_p99).toBe(220)
+  })
+
   it('keeps the paused chart frozen shortly after TPS reaches zero', () => {
     const chartData = buildExecutionChartData({
       mappedBackendHistory: [],
