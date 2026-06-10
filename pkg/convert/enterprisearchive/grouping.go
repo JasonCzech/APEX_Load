@@ -1,4 +1,4 @@
-package loadrunner
+package enterprisearchive
 
 import (
 	"fmt"
@@ -8,21 +8,21 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-type loadRunnerPhaseCompaction struct {
+type sourcePhaseCompaction struct {
 	actions           []dsl.Action
 	pathMap           map[string]string
 	collapsedRequests int
 	sequenceActions   int
 }
 
-func compactLoadRunnerHTTPActions(result *ConvertResult) {
+func compactSourceHTTPActions(result *ConvertResult) {
 	if result == nil || result.Script == nil {
 		return
 	}
 	pathMap := make(map[string]string)
-	init := compactLoadRunnerHTTPPhase(result.Script.Init, "init")
-	main := compactLoadRunnerHTTPPhase(result.Script.Actions, "action")
-	teardown := compactLoadRunnerHTTPPhase(result.Script.Teardown, "teardown")
+	init := compactSourceHTTPPhase(result.Script.Init, "init")
+	main := compactSourceHTTPPhase(result.Script.Actions, "action")
+	teardown := compactSourceHTTPPhase(result.Script.Teardown, "teardown")
 	result.Script.Init = init.actions
 	result.Script.Actions = main.actions
 	result.Script.Teardown = teardown.actions
@@ -35,8 +35,8 @@ func compactLoadRunnerHTTPActions(result *ConvertResult) {
 	result.Stats.LogicalActions = len(result.Script.Init) + len(result.Script.Actions) + len(result.Script.Teardown)
 	result.Stats.ConvertedActions = result.Stats.LogicalActions
 	if result.Stats.CollapsedRequests > 0 || result.Stats.TransactionMarkers > 0 {
-		preserved := ensureLoadRunnerImportPreserved(result.Script)
-		preserved["loadrunner_grouping"] = map[string]any{
+		preserved := ensureEnterpriseArchiveImportPreserved(result.Script)
+		preserved["source_grouping"] = map[string]any{
 			"mode":                "transaction_sequence",
 			"logical_actions":     result.Stats.LogicalActions,
 			"raw_request_actions": result.Stats.RawRequestActions,
@@ -47,7 +47,7 @@ func compactLoadRunnerHTTPActions(result *ConvertResult) {
 	}
 }
 
-func compactLoadRunnerHTTPPhase(actions []dsl.Action, phase string) loadRunnerPhaseCompaction {
+func compactSourceHTTPPhase(actions []dsl.Action, phase string) sourcePhaseCompaction {
 	out := make([]dsl.Action, 0, len(actions))
 	pathMap := make(map[string]string, len(actions))
 	collapsed := 0
@@ -78,7 +78,7 @@ func compactLoadRunnerHTTPPhase(actions []dsl.Action, phase string) loadRunnerPh
 			continue
 		}
 
-		sequence := buildLoadRunnerHTTPSequence(transaction, group)
+		sequence := buildSourceHTTPSequence(transaction, group)
 		out = append(out, sequence)
 		sequencePath := sourceReviewActionPath(phase, newIndex)
 		for offset := range group {
@@ -88,7 +88,7 @@ func compactLoadRunnerHTTPPhase(actions []dsl.Action, phase string) loadRunnerPh
 		collapsed += len(group) - 1
 		sequences++
 	}
-	return loadRunnerPhaseCompaction{
+	return sourcePhaseCompaction{
 		actions:           out,
 		pathMap:           pathMap,
 		collapsedRequests: collapsed,
@@ -96,26 +96,26 @@ func compactLoadRunnerHTTPPhase(actions []dsl.Action, phase string) loadRunnerPh
 	}
 }
 
-func buildLoadRunnerHTTPSequence(transaction string, requests []dsl.Action) dsl.Action {
+func buildSourceHTTPSequence(transaction string, requests []dsl.Action) dsl.Action {
 	first := requests[0]
-	metadata := cloneLoadRunnerAnyMap(first.Metadata)
+	metadata := cloneSourceAnyMap(first.Metadata)
 	if metadata == nil {
 		metadata = make(map[string]any)
 	}
-	metadata["loadrunner_transaction"] = transaction
 	metadata["source_transaction"] = transaction
-	metadata["loadrunner_request_count"] = len(requests)
-	if subtransactions := loadRunnerSubtransactions(requests); len(subtransactions) > 0 {
-		metadata["loadrunner_subtransactions"] = subtransactions
+	metadata["source_transaction"] = transaction
+	metadata["source_request_count"] = len(requests)
+	if subtransactions := sourceSubtransactions(requests); len(subtransactions) > 0 {
+		metadata["source_subtransactions"] = subtransactions
 	}
 
 	children := make([]map[string]any, 0, len(requests))
 	for _, request := range requests {
-		children = append(children, loadRunnerSequenceChild(request))
+		children = append(children, sourceSequenceChild(request))
 	}
 
 	return dsl.Action{
-		Name:           sanitizeName(firstNonEmpty(transaction, first.Name, "loadrunner_transaction")),
+		Name:           sanitizeName(firstNonEmpty(transaction, first.Name, "source_transaction")),
 		Type:           "http_sequence",
 		Method:         "SEQUENCE",
 		Target:         first.Target,
@@ -126,7 +126,7 @@ func buildLoadRunnerHTTPSequence(transaction string, requests []dsl.Action) dsl.
 	}
 }
 
-func loadRunnerSequenceChild(action dsl.Action) map[string]any {
+func sourceSequenceChild(action dsl.Action) map[string]any {
 	child := map[string]any{
 		"name":   action.Name,
 		"type":   action.Type,
@@ -134,7 +134,7 @@ func loadRunnerSequenceChild(action dsl.Action) map[string]any {
 		"target": action.Target,
 	}
 	if len(action.Headers) > 0 {
-		child["headers"] = cloneLoadRunnerStringMap(action.Headers)
+		child["headers"] = cloneSourceStringMap(action.Headers)
 	}
 	if action.Body != "" {
 		child["body"] = action.Body
@@ -143,10 +143,10 @@ func loadRunnerSequenceChild(action dsl.Action) map[string]any {
 		child["body_encoding"] = action.BodyEncoding
 	}
 	if len(action.Params) > 0 {
-		child["params"] = cloneLoadRunnerAnyMap(action.Params)
+		child["params"] = cloneSourceAnyMap(action.Params)
 	}
 	if len(action.Metadata) > 0 {
-		child["metadata"] = cloneLoadRunnerAnyMap(action.Metadata)
+		child["metadata"] = cloneSourceAnyMap(action.Metadata)
 	}
 	if len(action.Extractors) > 0 {
 		child["extractors"] = action.Extractors
@@ -170,7 +170,7 @@ func loadRunnerSequenceChild(action dsl.Action) map[string]any {
 }
 
 func actionTransactionName(action dsl.Action) string {
-	if value := metadataString(action.Metadata, "loadrunner_transaction"); value != "" {
+	if value := metadataString(action.Metadata, "source_transaction"); value != "" {
 		return value
 	}
 	return metadataString(action.Metadata, "source_transaction")
@@ -186,11 +186,11 @@ func isHTTPProtocolAction(action dsl.Action) bool {
 	}
 }
 
-func loadRunnerSubtransactions(actions []dsl.Action) []string {
+func sourceSubtransactions(actions []dsl.Action) []string {
 	seen := make(map[string]struct{})
 	out := make([]string, 0)
 	for _, action := range actions {
-		value := metadataString(action.Metadata, "loadrunner_subtransaction")
+		value := metadataString(action.Metadata, "source_subtransaction")
 		if value == "" {
 			value = metadataString(action.Metadata, "source_subtransaction")
 		}
@@ -250,7 +250,7 @@ func metadataString(metadata map[string]any, key string) string {
 	return strings.TrimSpace(value)
 }
 
-func cloneLoadRunnerStringMap(in map[string]string) map[string]string {
+func cloneSourceStringMap(in map[string]string) map[string]string {
 	if len(in) == 0 {
 		return nil
 	}
@@ -261,7 +261,7 @@ func cloneLoadRunnerStringMap(in map[string]string) map[string]string {
 	return out
 }
 
-func cloneLoadRunnerAnyMap(in map[string]any) map[string]any {
+func cloneSourceAnyMap(in map[string]any) map[string]any {
 	if len(in) == 0 {
 		return nil
 	}

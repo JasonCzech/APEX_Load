@@ -105,14 +105,14 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 			RecommendedScenario: AuthoringTemplateScenario{Duration: "5m", VUsers: 3, RampUp: "1m", Iterations: 1},
 		},
 		{
-			ID:          "vugen-web2-review-profile",
-			Name:        "VuGen Web 2.0 Review Profile",
+			ID:          "web2-browser-review-profile",
+			Name:        "Web 2.0 Browser Profile Review",
 			Protocol:    "browser",
 			UseCase:     "migration_review",
-			Description: "Review-only browser profile aligned with TruClient 2.0 - Web imports, replay evidence, and selector repair.",
-			Tags:        []string{"vugen", "web2", "truclient", "migration"},
+			Description: "Review-only browser profile aligned with Web 2.0 source archives, replay evidence, and selector repair.",
+			Tags:        []string{"web2", "browser-profile", "enterprise-archive", "migration"},
 			Script: dsl.Script{
-				Name:     "VuGen Web 2.0 Review Profile",
+				Name:     "Web 2.0 Browser Profile Review",
 				Version:  "1.0.0",
 				Protocol: "browser",
 				Config: dsl.ScriptConfig{

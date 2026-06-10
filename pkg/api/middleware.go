@@ -1341,7 +1341,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
-	if path == "/api/v1/scripts/import/loadrunner/support-matrix" && method == http.MethodGet {
+	if path == "/api/v1/scripts/import/enterprise-script-archive/support-matrix" && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
@@ -1353,7 +1353,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
-	if path == "/api/v1/scripts/import/loadrunner" && method == http.MethodPost {
+	if path == "/api/v1/scripts/import/enterprise-script-archive" && method == http.MethodPost {
 		return accessRequirement{
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
@@ -1361,7 +1361,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}, true
 	}
 
-	if path == "/api/v1/scripts/import/loadrunner/validate" && method == http.MethodPost {
+	if path == "/api/v1/scripts/import/enterprise-script-archive/validate" && method == http.MethodPost {
 		return accessRequirement{
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
@@ -2539,7 +2539,7 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 
 // defaultMaxRequestBodyBytes is a global backstop for request body size. It is
 // set above the largest explicit per-handler http.MaxBytesReader limit (100 MiB
-// for LoadRunner imports) so handlers with their own, smaller limit always win,
+// for Enterprise Script Archive imports) so handlers with their own, smaller limit always win,
 // while handlers that decode the body without any limit are still bounded.
 const defaultMaxRequestBodyBytes = 128 << 20
 

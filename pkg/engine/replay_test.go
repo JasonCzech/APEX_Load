@@ -165,7 +165,7 @@ func TestReplayScriptPreservesSourceStepLabels(t *testing.T) {
 				"source_action":      "Click",
 				"source_action_name": "Click Checkout",
 				"source_transaction": "Checkout",
-				"source_profile":     "vugen_web2",
+				"source_profile":     "web2_browser_profile",
 			},
 		}},
 	}, ReplayOptions{IgnoreThinkTime: true})
@@ -176,7 +176,7 @@ func TestReplayScriptPreservesSourceStepLabels(t *testing.T) {
 		t.Fatalf("event count = %d, want 1", len(report.Events))
 	}
 	event := report.Events[0]
-	if event.SourceStepID != "step-checkout" || event.SourceStepIndex != 7 || event.SourceTransaction != "Checkout" || event.SourceProfile != "vugen_web2" {
+	if event.SourceStepID != "step-checkout" || event.SourceStepIndex != 7 || event.SourceTransaction != "Checkout" || event.SourceProfile != "web2_browser_profile" {
 		t.Fatalf("event source labels = %#v, want Web2 source metadata", event)
 	}
 }

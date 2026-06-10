@@ -146,7 +146,7 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 			Version:       "1.0.0",
 			Protocol:      "browser",
 			GeneratedBy:   "apexload-truclient-converter",
-			GeneratedFrom: "loadrunner",
+			GeneratedFrom: "enterprise_script_archive",
 			Config:        dsl.ScriptConfig{},
 			Actions:       make([]dsl.Action, 0),
 		},

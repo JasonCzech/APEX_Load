@@ -89,7 +89,7 @@ DELETE /api/v1/scripts/{id}          — Delete a script
 POST   /api/v1/scripts/{id}/validate — Dry-run validation
 POST   /api/v1/scripts/{id}/export   — Export script JSON to disk
 GET    /api/v1/scripts/{id}/download — Download script as JSON file
-POST   /api/v1/scripts/import/loadrunner — Upload LR .zip, get converted DSL
+POST   /api/v1/scripts/import/enterprise-script-archive — Upload LR .zip, get converted DSL
 POST   /api/v1/scripts/import/asyncapi — Upload AsyncAPI 2.x/3.x spec, get converted Kafka DSL
 GET    /api/v1/scripts/import/asyncapi/support-matrix — AsyncAPI import coverage matrix
 POST   /api/v1/scripts/import/github — Pull a script JSON file from GitHub (GHES), get import-review draft

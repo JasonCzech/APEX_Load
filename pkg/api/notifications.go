@@ -264,7 +264,7 @@ func buildDynatraceNotificationPayload(webhook NotificationWebhookSettings, even
 		"title":     fmt.Sprintf("APEX Load %s: %s", humanizeNotificationEvent(event.Type), event.TestName),
 		"startTime": event.Timestamp.UTC().UnixMilli(),
 		"properties": map[string]string{
-			"Tool":                   "APEX Load",
+			"Tool":                "APEX Load",
 			"apexload.event_type": event.Type,
 			"apexload.project_id": fallbackNotificationValue(event.ProjectID),
 			"apexload.status":     event.Status,

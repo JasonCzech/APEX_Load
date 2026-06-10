@@ -305,8 +305,8 @@ POST   /api/v1/scripts/{id}/export      — Export script JSON to disk
 GET    /api/v1/scripts/{id}/download    — Download script JSON
 POST   /api/v1/scripts/import/sample    — Build a script from raw HTTP, cURL, REST JSON, or HAR samples
 GET    /api/v1/scripts/web-api/support-matrix — Get Web/API support, diagnostics, envelopes, and sample projects
-POST   /api/v1/scripts/import/loadrunner — Detect and route a LoadRunner/VuGen ZIP archive to executable script or review artifact
-POST   /api/v1/scripts/import/loadrunner/validate — Validate a LoadRunner/VuGen import draft without saving
+POST   /api/v1/scripts/import/enterprise-script-archive — Detect and route an enterprise script archive ZIP to executable script or review artifact
+POST   /api/v1/scripts/import/enterprise-script-archive/validate — Validate an enterprise script archive draft without saving
 POST   /api/v1/scripts/import/jmeter    — Convert a JMeter plan to DSL
 POST   /api/v1/scripts/import/jmeter/save — Save a reviewed JMeter import draft
 POST   /api/v1/scripts/import/jmeter/validate — Validate a JMeter import draft
@@ -433,7 +433,7 @@ Scripts are JSON with these sections:
 **Features:**
 - **Template variables**: `{{env.VAR}}`, `{{data.source.column}}`, `{{param.name}}`, `{{var.name}}`, `{{fn.uuid()}}`
 - **Scenario-native guardrails**: Optional top-level `goal_config` thresholds are honored by `apexctl run`, with explicit CLI guardrail flags taking precedence when both are present
-- **Named parameters**: random number, date/time, timestamp, counter, LoadRunner-compatible current iteration, host, time, file/list, UUID, and random string generators with `once`, `each_iteration`, and `each_occurrence` update modes
+- **Named parameters**: random number, date/time, timestamp, counter, source-compatible current iteration, host, time, file/list, UUID, and random string generators with `once`, `each_iteration`, and `each_occurrence` update modes
 - **Protocol surfaces**: `http`, `soap`, `java_http`, `browser`, and `jms-solace` authoring paths in the dashboard
 - **Extractors**: Pull values from responses for use in subsequent requests
 - **Assertions**: Validate response status, headers, body content

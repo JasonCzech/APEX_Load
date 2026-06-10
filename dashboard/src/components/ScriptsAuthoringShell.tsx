@@ -61,7 +61,7 @@ export default function ScriptsAuthoringShell({
         onStartKafkaScript={createOptionActions.startKafkaScript}
         onStartTemplateScript={createOptionActions.startTemplateScript}
         onComposeComponent={createOptionActions.composeComponentScript}
-        onOpenLoadRunnerImport={createOptionActions.openLoadRunnerImport}
+        onOpenEnterpriseArchiveImport={createOptionActions.openEnterpriseArchiveImport}
         onOpenJMeterImport={createOptionActions.openJMeterImport}
         onOpenDevWebImport={createOptionActions.openDevWebImport}
         onOpenHARImport={createOptionActions.openHARImport}

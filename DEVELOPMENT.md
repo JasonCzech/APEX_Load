@@ -281,7 +281,7 @@ POST   /api/v1/scripts/{id}/validate          — Dry-run validation
 POST   /api/v1/scripts/{id}/export            — Export as JSON file
 GET    /api/v1/scripts/{id}/download          — Download as JSON
 POST   /api/v1/scripts/import/sample          — Convert raw HTTP, cURL, REST JSON, or HAR samples into a draft
-POST   /api/v1/scripts/import/loadrunner      — Convert LoadRunner .zip to DSL
+POST   /api/v1/scripts/import/enterprise-script-archive      — Convert enterprise script archive ZIP to DSL
 ```
 
 ### Projects & Folders

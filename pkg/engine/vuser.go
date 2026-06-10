@@ -599,10 +599,10 @@ func scriptHasExplicitTransactions(script *dsl.Script) bool {
 	}
 	for _, action := range script.Actions {
 		switch strings.ToLower(strings.TrimSpace(action.Type)) {
-		case "loadrunner_transaction", "transaction":
+		case "source_transaction", "transaction":
 			return true
 		case "http_sequence":
-			if sourceMetadataString(action.Metadata, "source_transaction") != "" || sourceMetadataString(action.Metadata, "loadrunner_transaction") != "" {
+			if sourceMetadataString(action.Metadata, "source_transaction") != "" {
 				return true
 			}
 		}
@@ -659,39 +659,39 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 	case "error_message":
 		vu.logErrorMessageAction(ctx, action)
 		return true, nil
-	case "loadrunner_message":
-		vu.handleLoadRunnerMessageAction(ctx, action)
+	case "source_message":
+		vu.handleSourceMessageAction(ctx, action)
 		return true, nil
-	case "loadrunner_runtime":
-		return true, vu.handleLoadRunnerRuntimeAction(ctx, action)
-	case "loadrunner_transaction":
-		vu.handleLoadRunnerTransactionAction(action)
+	case "source_runtime":
+		return true, vu.handleSourceRuntimeAction(ctx, action)
+	case "source_transaction":
+		vu.handleSourceTransactionAction(action)
 		return true, nil
-	case "loadrunner_timer":
-		vu.handleLoadRunnerTimerAction(action)
+	case "source_timer":
+		vu.handleSourceTimerAction(action)
 		return true, nil
-	case "loadrunner_metric":
-		vu.handleLoadRunnerMetricAction(ctx, action)
+	case "source_metric":
+		vu.handleSourceMetricAction(ctx, action)
 		return true, nil
-	case "loadrunner_parameter", "loadrunner_json", "loadrunner_xml", "loadrunner_database", "loadrunner_secret":
-		vu.handleLoadRunnerStateAction(ctx, action)
+	case "source_parameter", "source_json", "source_xml", "source_database", "source_secret":
+		vu.handleSourceStateAction(ctx, action)
 		return true, nil
-	case "loadrunner_external", "loadrunner_review", "custom_call":
-		vu.logLoadRunnerReviewAction(ctx, action)
+	case "source_external", "source_review", "custom_call":
+		vu.logSourceReviewAction(ctx, action)
 		return true, nil
 	default:
 		return false, nil
 	}
 }
 
-func (vu *VUser) handleLoadRunnerMessageAction(ctx context.Context, action dsl.Action) {
+func (vu *VUser) handleSourceMessageAction(ctx context.Context, action dsl.Action) {
 	message := vu.renderErrorMessage(action)
 	level, _ := actionParamString(action.Params, "level")
 	attrs := []any{
 		"vuser", vu.ID,
 		"group", vu.Group,
 		"action", action.Name,
-		"function", loadRunnerActionFunction(action),
+		"function", sourceActionFunction(action),
 		"message", message,
 	}
 	if status, _ := actionParamBool(action.Params, "status_message"); status {
@@ -700,30 +700,30 @@ func (vu *VUser) handleLoadRunnerMessageAction(ctx context.Context, action dsl.A
 	}
 	switch level {
 	case "debug":
-		slog.Default().DebugContext(ctx, "loadrunner message", attrs...)
+		slog.Default().DebugContext(ctx, "source message", attrs...)
 	case "error":
-		slog.Default().ErrorContext(ctx, "loadrunner message", attrs...)
+		slog.Default().ErrorContext(ctx, "source message", attrs...)
 	default:
-		slog.Default().InfoContext(ctx, "loadrunner message", attrs...)
+		slog.Default().InfoContext(ctx, "source message", attrs...)
 	}
 }
 
-func (vu *VUser) handleLoadRunnerRuntimeAction(ctx context.Context, action dsl.Action) error {
-	function := loadRunnerActionFunction(action)
+func (vu *VUser) handleSourceRuntimeAction(ctx context.Context, action dsl.Action) error {
+	function := sourceActionFunction(action)
 	vu.ensureVariables()
 	switch function {
 	case "lr_abort":
-		return fmt.Errorf("loadrunner abort requested by %s", action.Name)
+		return fmt.Errorf("source runtime abort requested by %s", action.Name)
 	case "lr_exit":
-		vu.Variables["__lr_exit_requested"] = strings.Join(loadRunnerActionArgs(action), ",")
+		vu.Variables["__source_exit_requested"] = strings.Join(sourceActionArgs(action), ",")
 	case "lr_disable_ip_spoofing":
 		vu.Variables["__lr_ip_spoofing"] = "disabled"
 	case "lr_enable_ip_spoofing":
 		vu.Variables["__lr_ip_spoofing"] = "enabled"
 	case "lr_load_dll":
-		vu.logLoadRunnerReviewAction(ctx, action)
+		vu.logSourceReviewAction(ctx, action)
 	default:
-		slog.Default().DebugContext(ctx, "loadrunner runtime action",
+		slog.Default().DebugContext(ctx, "source runtime action",
 			"vuser", vu.ID,
 			"group", vu.Group,
 			"action", action.Name,
@@ -733,14 +733,14 @@ func (vu *VUser) handleLoadRunnerRuntimeAction(ctx context.Context, action dsl.A
 	return nil
 }
 
-func (vu *VUser) handleLoadRunnerTransactionAction(action dsl.Action) {
-	function := loadRunnerActionFunction(action)
-	args := loadRunnerActionArgs(action)
+func (vu *VUser) handleSourceTransactionAction(action dsl.Action) {
+	function := sourceActionFunction(action)
+	args := sourceActionArgs(action)
 	name := firstEngineValue(action.Name, args...)
 	vu.ensureVariables()
 	switch {
 	case strings.Contains(function, "start"):
-		vu.Variables[loadRunnerTransactionStartKey(name)] = strconv.FormatInt(time.Now().UnixNano(), 10)
+		vu.Variables[sourceTransactionStartKey(name)] = strconv.FormatInt(time.Now().UnixNano(), 10)
 	case strings.Contains(function, "end"), strings.Contains(function, "stop"), function == "lr_fail_trans_with_error":
 		success := !strings.Contains(function, "fail")
 		if len(args) > 1 {
@@ -750,80 +750,80 @@ func (vu *VUser) handleLoadRunnerTransactionAction(action dsl.Action) {
 			}
 		}
 		start := time.Now()
-		if raw := vu.Variables[loadRunnerTransactionStartKey(name)]; raw != "" {
+		if raw := vu.Variables[sourceTransactionStartKey(name)]; raw != "" {
 			if nanos, err := strconv.ParseInt(raw, 10, 64); err == nil {
 				start = time.Unix(0, nanos)
 			}
 		}
 		vu.recordTransaction(name, time.Since(start), success, nil)
-		vu.Variables[loadRunnerTransactionStatusKey(name)] = strconv.FormatBool(success)
+		vu.Variables[sourceTransactionStatusKey(name)] = strconv.FormatBool(success)
 	case strings.Contains(function, "status"):
 		if len(args) > 1 {
-			vu.Variables[loadRunnerTransactionStatusKey(args[0])] = args[1]
+			vu.Variables[sourceTransactionStatusKey(args[0])] = args[1]
 		}
 	}
 }
 
-func (vu *VUser) handleLoadRunnerTimerAction(action dsl.Action) {
-	function := loadRunnerActionFunction(action)
-	args := loadRunnerActionArgs(action)
+func (vu *VUser) handleSourceTimerAction(action dsl.Action) {
+	function := sourceActionFunction(action)
+	args := sourceActionArgs(action)
 	name := firstEngineValue(action.Name, args...)
 	vu.ensureVariables()
 	switch function {
 	case "lr_start_timer":
-		vu.Variables[loadRunnerTimerStartKey(name)] = strconv.FormatInt(time.Now().UnixNano(), 10)
+		vu.Variables[sourceTimerStartKey(name)] = strconv.FormatInt(time.Now().UnixNano(), 10)
 	case "lr_end_timer":
-		if raw := vu.Variables[loadRunnerTimerStartKey(name)]; raw != "" {
+		if raw := vu.Variables[sourceTimerStartKey(name)]; raw != "" {
 			if nanos, err := strconv.ParseInt(raw, 10, 64); err == nil {
 				durationMs := time.Since(time.Unix(0, nanos)).Milliseconds()
-				vu.Variables[loadRunnerTimerDurationKey(name)] = strconv.FormatInt(durationMs, 10)
+				vu.Variables[sourceTimerDurationKey(name)] = strconv.FormatInt(durationMs, 10)
 			}
 		}
 	}
 }
 
-func (vu *VUser) handleLoadRunnerMetricAction(ctx context.Context, action dsl.Action) {
-	args := loadRunnerActionArgs(action)
+func (vu *VUser) handleSourceMetricAction(ctx context.Context, action dsl.Action) {
+	args := sourceActionArgs(action)
 	name := firstEngineValue(action.Name, args...)
 	value := ""
 	if len(args) > 1 {
 		value = args[1]
 	}
-	slog.Default().InfoContext(ctx, "loadrunner metric",
+	slog.Default().InfoContext(ctx, "source metric",
 		"vuser", vu.ID,
 		"group", vu.Group,
 		"action", action.Name,
-		"function", loadRunnerActionFunction(action),
+		"function", sourceActionFunction(action),
 		"name", name,
 		"value", value,
 	)
 }
 
-func (vu *VUser) handleLoadRunnerStateAction(ctx context.Context, action dsl.Action) {
-	function := loadRunnerActionFunction(action)
+func (vu *VUser) handleSourceStateAction(ctx context.Context, action dsl.Action) {
+	function := sourceActionFunction(action)
 	switch action.Type {
-	case "loadrunner_parameter":
-		vu.handleLoadRunnerParameterAction(function, action)
-	case "loadrunner_json", "loadrunner_xml":
-		vu.handleLoadRunnerDocumentAction(function, action)
-	case "loadrunner_secret":
-		vu.handleLoadRunnerSecretAction(function, action)
+	case "source_parameter":
+		vu.handleSourceParameterAction(function, action)
+	case "source_json", "source_xml":
+		vu.handleSourceDocumentAction(function, action)
+	case "source_secret":
+		vu.handleSourceSecretAction(function, action)
 	default:
-		vu.logLoadRunnerReviewAction(ctx, action)
+		vu.logSourceReviewAction(ctx, action)
 	}
 }
 
-func (vu *VUser) handleLoadRunnerParameterAction(function string, action dsl.Action) {
-	args := loadRunnerActionArgs(action)
+func (vu *VUser) handleSourceParameterAction(function string, action dsl.Action) {
+	args := sourceActionArgs(action)
 	vu.ensureVariables()
 	switch function {
 	case "lr_save_string", "lr_save_int":
 		if len(args) >= 2 {
-			vu.setLoadRunnerVariable(args[1], args[0])
+			vu.setSourceVariable(args[1], args[0])
 		}
 	case "lr_save_var":
 		if len(args) >= 4 {
-			vu.setLoadRunnerVariable(args[3], args[0])
+			vu.setSourceVariable(args[3], args[0])
 		}
 	case "lr_param_sprintf":
 		if len(args) >= 2 {
@@ -831,7 +831,7 @@ func (vu *VUser) handleLoadRunnerParameterAction(function string, action dsl.Act
 			for _, arg := range args[2:] {
 				values = append(values, arg)
 			}
-			vu.setLoadRunnerVariable(args[0], renderPrintfLikeMessage(args[1], values))
+			vu.setSourceVariable(args[0], renderPrintfLikeMessage(args[1], values))
 		}
 	case "lr_param_increment":
 		if len(args) >= 1 {
@@ -842,7 +842,7 @@ func (vu *VUser) handleLoadRunnerParameterAction(function string, action dsl.Act
 				}
 			}
 			current, _ := strconv.Atoi(strings.TrimSpace(vu.Variables[strings.ToLower(args[0])]))
-			vu.setLoadRunnerVariable(args[0], strconv.Itoa(current+delta))
+			vu.setSourceVariable(args[0], strconv.Itoa(current+delta))
 		}
 	case "lr_free_parameter":
 		if len(args) >= 1 {
@@ -851,33 +851,33 @@ func (vu *VUser) handleLoadRunnerParameterAction(function string, action dsl.Act
 		}
 	case "lr_save_timestamp":
 		name := firstEngineValue("timestamp", args...)
-		vu.setLoadRunnerVariable(name, strconv.FormatInt(time.Now().Unix(), 10))
+		vu.setSourceVariable(name, strconv.FormatInt(time.Now().Unix(), 10))
 	case "lr_save_datetime":
 		name := firstEngineValue("datetime", args...)
 		format := defaultDateTimeLayout
 		if len(args) > 1 {
-			format = loadRunnerDateTimeLayout(args[0])
+			format = sourceDateTimeLayout(args[0])
 			name = args[len(args)-1]
 		}
-		vu.setLoadRunnerVariable(name, time.Now().Format(format))
+		vu.setSourceVariable(name, time.Now().Format(format))
 	case "lr_whoami":
-		vu.setLoadRunnerVariable("vuser_id", strconv.Itoa(vu.ID))
-		vu.setLoadRunnerVariable("vuser_group", vu.Group)
+		vu.setSourceVariable("vuser_id", strconv.Itoa(vu.ID))
+		vu.setSourceVariable("vuser_group", vu.Group)
 	case "lr_get_host_name", "lr_get_master_host_name":
 		if host, err := os.Hostname(); err == nil {
-			vu.setLoadRunnerVariable(firstEngineValue("host_name", args...), host)
+			vu.setSourceVariable(firstEngineValue("host_name", args...), host)
 		}
 	case "lr_get_vuser_ip":
-		vu.setLoadRunnerVariable(firstEngineValue("vuser_ip", args...), "127.0.0.1")
+		vu.setSourceVariable(firstEngineValue("vuser_ip", args...), "127.0.0.1")
 	default:
 		if saveName := saveParamNameFromAction(action); saveName != "" {
-			vu.setLoadRunnerVariable(saveName, firstEngineValue("", args...))
+			vu.setSourceVariable(saveName, firstEngineValue("", args...))
 		}
 	}
 }
 
-func (vu *VUser) handleLoadRunnerDocumentAction(function string, action dsl.Action) {
-	args := loadRunnerActionArgs(action)
+func (vu *VUser) handleSourceDocumentAction(function string, action dsl.Action) {
+	args := sourceActionArgs(action)
 	vu.ensureVariables()
 	saveName := saveParamNameFromAction(action)
 	if saveName == "" && len(args) > 0 {
@@ -888,14 +888,14 @@ func (vu *VUser) handleLoadRunnerDocumentAction(function string, action dsl.Acti
 	}
 	switch {
 	case strings.Contains(function, "find"):
-		vu.setLoadRunnerVariable(saveName, "0")
+		vu.setSourceVariable(saveName, "0")
 	case strings.Contains(function, "get_values"), strings.Contains(function, "extract"), strings.Contains(function, "stringify"), strings.Contains(function, "eval"):
-		vu.setLoadRunnerVariable(saveName, firstEngineValue("", args...))
+		vu.setSourceVariable(saveName, firstEngineValue("", args...))
 	}
 }
 
-func (vu *VUser) handleLoadRunnerSecretAction(function string, action dsl.Action) {
-	args := loadRunnerActionArgs(action)
+func (vu *VUser) handleSourceSecretAction(function string, action dsl.Action) {
+	args := sourceActionArgs(action)
 	saveName := saveParamNameFromAction(action)
 	if saveName == "" && len(args) > 0 {
 		saveName = args[len(args)-1]
@@ -903,16 +903,16 @@ func (vu *VUser) handleLoadRunnerSecretAction(function string, action dsl.Action
 	if saveName == "" {
 		saveName = strings.TrimPrefix(function, "lr_")
 	}
-	vu.setLoadRunnerVariable(saveName, "{{secret."+strings.ToLower(saveName)+"}}")
+	vu.setSourceVariable(saveName, "{{secret."+strings.ToLower(saveName)+"}}")
 }
 
-func (vu *VUser) logLoadRunnerReviewAction(ctx context.Context, action dsl.Action) {
-	slog.Default().InfoContext(ctx, "loadrunner review action",
+func (vu *VUser) logSourceReviewAction(ctx context.Context, action dsl.Action) {
+	slog.Default().InfoContext(ctx, "source review action",
 		"vuser", vu.ID,
 		"group", vu.Group,
 		"action", action.Name,
-		"function", loadRunnerActionFunction(action),
-		"support_mode", loadRunnerActionSupportMode(action),
+		"function", sourceActionFunction(action),
+		"support_mode", sourceActionSupportMode(action),
 	)
 }
 
@@ -922,7 +922,7 @@ func (vu *VUser) ensureVariables() {
 	}
 }
 
-func (vu *VUser) setLoadRunnerVariable(name string, value string) {
+func (vu *VUser) setSourceVariable(name string, value string) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return
@@ -933,7 +933,7 @@ func (vu *VUser) setLoadRunnerVariable(name string, value string) {
 	vu.Variables[strings.ToLower(name)] = resolved
 }
 
-func loadRunnerActionFunction(action dsl.Action) string {
+func sourceActionFunction(action dsl.Action) string {
 	if value, ok := actionParamString(action.Params, "function"); ok {
 		return value
 	}
@@ -943,7 +943,7 @@ func loadRunnerActionFunction(action dsl.Action) string {
 	return action.Type
 }
 
-func loadRunnerActionSupportMode(action dsl.Action) string {
+func sourceActionSupportMode(action dsl.Action) string {
 	if value, ok := actionParamString(action.Params, "support_mode"); ok {
 		return value
 	}
@@ -953,7 +953,7 @@ func loadRunnerActionSupportMode(action dsl.Action) string {
 	return ""
 }
 
-func loadRunnerActionArgs(action dsl.Action) []string {
+func sourceActionArgs(action dsl.Action) []string {
 	if action.Params == nil {
 		return nil
 	}
@@ -995,19 +995,19 @@ func firstEngineValue(fallback string, values ...string) string {
 	return fallback
 }
 
-func loadRunnerTransactionStartKey(name string) string {
+func sourceTransactionStartKey(name string) string {
 	return "__lr_transaction." + strings.ToLower(strings.TrimSpace(name)) + ".start"
 }
 
-func loadRunnerTransactionStatusKey(name string) string {
+func sourceTransactionStatusKey(name string) string {
 	return "__lr_transaction." + strings.ToLower(strings.TrimSpace(name)) + ".status"
 }
 
-func loadRunnerTimerStartKey(name string) string {
+func sourceTimerStartKey(name string) string {
 	return "__lr_timer." + strings.ToLower(strings.TrimSpace(name)) + ".start"
 }
 
-func loadRunnerTimerDurationKey(name string) string {
+func sourceTimerDurationKey(name string) string {
 	return "__lr_timer." + strings.ToLower(strings.TrimSpace(name)) + ".duration_ms"
 }
 
@@ -1052,7 +1052,7 @@ func structuredCallArgs(action dsl.Action) []map[string]any {
 	}
 }
 
-func loadRunnerDateTimeLayout(format string) string {
+func sourceDateTimeLayout(format string) string {
 	switch strings.TrimSpace(format) {
 	case "", "%Y-%m-%d %H:%M:%S":
 		return defaultDateTimeLayout
@@ -1080,7 +1080,7 @@ func loadRunnerDateTimeLayout(format string) string {
 
 func (vu *VUser) logErrorMessageAction(ctx context.Context, action dsl.Action) {
 	message := vu.renderErrorMessage(action)
-	slog.Default().ErrorContext(ctx, "loadrunner error message",
+	slog.Default().ErrorContext(ctx, "source error message",
 		"vuser", vu.ID,
 		"group", vu.Group,
 		"action", action.Name,
@@ -1623,7 +1623,7 @@ func httpSequenceChildActions(action dsl.Action) ([]dsl.Action, error) {
 		if child.Metadata == nil {
 			child.Metadata = map[string]any{}
 		}
-		for _, key := range []string{"source_transaction", "loadrunner_transaction"} {
+		for _, key := range []string{"source_transaction", "source_transaction"} {
 			if child.Metadata[key] == nil && action.Metadata != nil && action.Metadata[key] != nil {
 				child.Metadata[key] = action.Metadata[key]
 			}

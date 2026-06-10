@@ -82,7 +82,7 @@ const sourceReview = {
 }
 
 const script = {
-  name: 'Imported LoadRunner Script',
+  name: 'Imported Enterprise Script Archive',
   version: '1.0',
   protocol: 'http',
   config: {

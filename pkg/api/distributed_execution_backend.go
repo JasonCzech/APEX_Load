@@ -2482,15 +2482,5 @@ func incrementTelemetryClassCount(values *map[string]int64, key string) {
 }
 
 func percentileValue(sorted []float64, percentile float64) float64 {
-	if len(sorted) == 0 {
-		return 0
-	}
-	if percentile <= 0 {
-		return sorted[0]
-	}
-	if percentile >= 1 {
-		return sorted[len(sorted)-1]
-	}
-	index := int(float64(len(sorted)-1) * percentile)
-	return sorted[index]
+	return percentileFromSortedSamples(sorted, percentile)
 }

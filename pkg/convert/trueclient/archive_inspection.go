@@ -911,7 +911,7 @@ func replayDiagnosticsForStep(step StepInspection) []ReplayDiagnostic {
 			Code:     "window_context_risk",
 			Severity: "info",
 			Summary:  "The imported step carries window or tab context.",
-			Action:   "Replay the flow and confirm the active page matches the original VuGen window context.",
+			Action:   "Replay the flow and confirm the active page matches the original source window context.",
 		})
 	}
 	if step.Ordinal != "" {

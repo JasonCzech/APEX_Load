@@ -112,7 +112,7 @@ async def test_file_import_requires_confirmation(tmp_path: Path):
     archive = tmp_path / "script.zip"
     archive.write_bytes(b"zip")
 
-    result = json.loads(await run_file_import_tool("loadrunner", str(archive)))
+    result = json.loads(await run_file_import_tool("enterprise_script_archive", str(archive)))
 
     assert result["ok"] is False
     assert result["error"]["code"] == "confirmation_required"
@@ -137,10 +137,10 @@ async def test_file_import_posts_accessible_file(tmp_path: Path):
         transport=httpx.MockTransport(handler),
     )
 
-    result = json.loads(await run_file_import_tool("loadrunner", str(archive), confirm=True, client=client))
+    result = json.loads(await run_file_import_tool("enterprise_script_archive", str(archive), confirm=True, client=client))
 
     assert result["ok"] is True
-    assert seen[0].url.path == "/api/v1/scripts/import/loadrunner"
+    assert seen[0].url.path == "/api/v1/scripts/import/enterprise-script-archive"
 
 
 def test_api_guide_resource_uses_repo_documentation():

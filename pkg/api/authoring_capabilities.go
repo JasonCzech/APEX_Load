@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
+	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -125,9 +125,9 @@ func runtimeParityHealthPenalty(counts map[string]int) int {
 		return 0
 	}
 	penalty := 0
-	penalty += counts[string(loadrunner.RuntimeSettingStatusBlocked)] * 20
-	penalty += counts[string(loadrunner.RuntimeSettingStatusPartial)] * 5
-	penalty += counts[string(loadrunner.RuntimeSettingStatusCompatibilityOnly)] * 8
+	penalty += counts[string(enterprisearchive.RuntimeSettingStatusBlocked)] * 20
+	penalty += counts[string(enterprisearchive.RuntimeSettingStatusPartial)] * 5
+	penalty += counts[string(enterprisearchive.RuntimeSettingStatusCompatibilityOnly)] * 8
 	if penalty > 30 {
 		return 30
 	}
@@ -137,8 +137,8 @@ func runtimeParityHealthPenalty(counts map[string]int) int {
 func authoringCapabilityResponse() AuthoringCapabilityResponse {
 	sources := []AuthoringSourceCapability{
 		{
-			Source:      "loadrunner",
-			DisplayName: "LoadRunner",
+			Source:      "enterprise_script_archive",
+			DisplayName: "Enterprise Script Archive",
 			Status:      "active",
 			Acquisition: []string{"zip_upload", "validate_only"},
 			Features: AuthoringFeatures{
@@ -155,13 +155,13 @@ func authoringCapabilityResponse() AuthoringCapabilityResponse {
 				ApprovalGateCandidate: true,
 			},
 			HealthInputs: []string{"validation_issues", "runtime_parity", "unsupported_constructs", "replay_readiness"},
-			Notes:        []string{"TrueClient Mobile Web archives use the LoadRunner acquisition surface with browser-specific review sections."},
+			Notes:        []string{"Browser-profile archives use the Enterprise Script Archive acquisition surface with browser-specific review sections."},
 		},
 		{
 			Source:      "trueclient_mobile_web",
 			DisplayName: "TrueClient Mobile Web",
 			Status:      "active",
-			Acquisition: []string{"loadrunner_zip_upload", "validate_only"},
+			Acquisition: []string{"enterprise_archive_zip_upload", "validate_only"},
 			Features: AuthoringFeatures{
 				DraftValidation:       true,
 				StoredValidation:      true,
@@ -181,7 +181,7 @@ func authoringCapabilityResponse() AuthoringCapabilityResponse {
 			Source:      "trueclient2_web",
 			DisplayName: "TruClient 2.0 - Web",
 			Status:      "review_only",
-			Acquisition: []string{"loadrunner_zip_upload", "validate_only", "starter_template"},
+			Acquisition: []string{"enterprise_archive_zip_upload", "validate_only", "starter_template"},
 			Features: AuthoringFeatures{
 				DraftValidation:       true,
 				StoredValidation:      true,
@@ -196,13 +196,13 @@ func authoringCapabilityResponse() AuthoringCapabilityResponse {
 				ApprovalGateCandidate: true,
 			},
 			HealthInputs: []string{"web2_profile_summary", "object_identification", "unsupported_fragments", "browser_replay_readiness", "runtime_parity"},
-			Notes:        []string{"TruClient 2.0 - Web imports produce review-only browser drafts until replay evidence and selector review are complete."},
+			Notes:        []string{"Web 2.0 browser-profile archives produce review-only browser drafts until replay evidence and selector review are complete."},
 		},
 		{
-			Source:      "vugen_web2",
-			DisplayName: "VuGen Web 2.0 Browser Profile",
+			Source:      "web2_browser_profile",
+			DisplayName: "Web 2.0 Browser Profile",
 			Status:      "review_only",
-			Acquisition: []string{"loadrunner_zip_upload", "validate_only", "starter_template", "browser_to_http_preview"},
+			Acquisition: []string{"enterprise_archive_zip_upload", "validate_only", "starter_template", "browser_to_http_preview"},
 			Features: AuthoringFeatures{
 				DraftValidation:       true,
 				StoredValidation:      true,

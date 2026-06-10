@@ -87,7 +87,7 @@ func TestImportScopeError(t *testing.T) {
 	}
 
 	err = ImportScopeError("TruClient 2.0 - Web")
-	if err == nil || !containsAll(err.Error(), "requires guided import review", "Review-only VuGen Web 2.0") {
+	if err == nil || !containsAll(err.Error(), "requires guided import review", "Review-only Web 2.0 browser-profile") {
 		t.Fatalf("ImportScopeError web2 = %v, want review-only guidance", err)
 	}
 

@@ -242,9 +242,9 @@ Import endpoints:
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/v1/scripts/import/loadrunner` | Import a LoadRunner/VuGen ZIP with protocol auto-detection. |
-| `POST` | `/api/v1/scripts/import/loadrunner/validate` | Validate a LoadRunner archive without saving. |
-| `GET` | `/api/v1/scripts/import/loadrunner/support-matrix` | LoadRunner protocol import support. |
+| `POST` | `/api/v1/scripts/import/enterprise-script-archive` | Import an enterprise script archive ZIP with protocol auto-detection. |
+| `POST` | `/api/v1/scripts/import/enterprise-script-archive/validate` | Validate an enterprise script archive without saving. |
+| `GET` | `/api/v1/scripts/import/enterprise-script-archive/support-matrix` | Enterprise script archive protocol import support. |
 | `POST` | `/api/v1/scripts/import/jmeter` | Import a JMeter test plan. |
 | `POST` | `/api/v1/scripts/import/jmeter/save` | Save a reviewed JMeter import draft. |
 | `POST` | `/api/v1/scripts/import/jmeter/validate` | Validate a JMeter archive or plan without saving. |
@@ -619,9 +619,9 @@ Useful recorder and replay endpoints:
 
 | Method | Path |
 | --- | --- |
-| `POST` | `/api/v1/scripts/import/loadrunner` |
-| `POST` | `/api/v1/scripts/import/loadrunner/validate` |
-| `GET` | `/api/v1/scripts/import/loadrunner/support-matrix` |
+| `POST` | `/api/v1/scripts/import/enterprise-script-archive` |
+| `POST` | `/api/v1/scripts/import/enterprise-script-archive/validate` |
+| `GET` | `/api/v1/scripts/import/enterprise-script-archive/support-matrix` |
 | `POST` | `/api/v1/scripts/import/jmeter` |
 | `POST` | `/api/v1/scripts/import/jmeter/save` |
 | `POST` | `/api/v1/scripts/import/jmeter/validate` |

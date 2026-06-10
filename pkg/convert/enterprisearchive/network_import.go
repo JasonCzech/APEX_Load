@@ -1,4 +1,4 @@
-package loadrunner
+package enterprisearchive
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ import (
 var hostPortPattern = regexp.MustCompile(`(?i)([a-z0-9][a-z0-9.-]*|\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})`)
 
 func ConvertNetwork(actions []*ParsedAction, opts ConvertOptions, detected DetectedProtocol) (*ConvertResult, error) {
-	subprotocol := detected.CanonicalLoadRunnerProtocol
+	subprotocol := detected.CanonicalSourceProtocol
 	if subprotocol == "" || subprotocol == "network" {
 		subprotocol = detectNetworkSubprotocolFromActions(actions)
 	}
@@ -28,8 +28,8 @@ func ConvertNetwork(actions []*ParsedAction, opts ConvertOptions, detected Detec
 			Name:          firstNonEmpty(opts.ScriptName, "Converted_LR_Network_Script"),
 			Version:       "1.0.0",
 			Protocol:      "network",
-			GeneratedBy:   "apexload-loadrunner-converter",
-			GeneratedFrom: "loadrunner",
+			GeneratedBy:   "apexload-enterprise-script-archive-importer",
+			GeneratedFrom: "enterprise_script_archive",
 			Config: dsl.ScriptConfig{
 				Network: dsl.NetworkConfig{
 					Subprotocol: subprotocol,
@@ -46,26 +46,26 @@ func ConvertNetwork(actions []*ParsedAction, opts ConvertOptions, detected Detec
 	functions := flattenParsedFunctions(actions)
 	result.Stats.TotalFunctions = len(functions)
 	if len(functions) == 0 {
-		return nil, fmt.Errorf("no LoadRunner functions found in action files")
+		return nil, fmt.Errorf("no source functions found in action files")
 	}
 
 	for _, fn := range functions {
 		action, ok := convertNetworkFunction(fn, subprotocol)
 		if !ok {
-			if fallback, mode, fallbackOK := convertLoadRunnerFunctionAction(fn); fallbackOK {
-				appendLoadRunnerAction(result, fn, fallback, mode, loadRunnerSupportNotes(fn, mode))
+			if fallback, mode, fallbackOK := convertSourceFunctionAction(fn); fallbackOK {
+				appendSourceAction(result, fn, fallback, mode, sourceSupportNotes(fn, mode))
 				continue
 			}
 			result.Stats.Skipped++
 			result.Stats.UnsupportedFuncs = append(result.Stats.UnsupportedFuncs, fn.Name)
-			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable network mapping exists for this LoadRunner function yet."))
+			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable network mapping exists for this source function yet."))
 			continue
 		}
 		actionIndex := actionCountForPhase(result.Script, fn.Phase)
-		appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, sourceReviewActionPath(fn.Phase, actionIndex), action.Name, "action", "converted", "Converted to a generated APEX Load network action.", LoadRunnerSupportExecutable))
+		appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, sourceReviewActionPath(fn.Phase, actionIndex), action.Name, "action", "converted", "Converted to a generated APEX Load network action.", SourceFunctionSupportExecutable))
 		appendActionForPhase(result.Script, fn.Phase, action)
 		result.Stats.ConvertedActions++
-		recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
+		recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 	}
 
 	if len(result.Script.Init)+len(result.Script.Actions)+len(result.Script.Teardown) == 0 {

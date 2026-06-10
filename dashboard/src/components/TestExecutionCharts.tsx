@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Area,
@@ -6,7 +6,6 @@ import {
   ComposedChart,
   Legend,
   Line,
-  LineChart,
   ReferenceLine,
   ReferenceArea,
   ResponsiveContainer,
@@ -25,9 +24,13 @@ import {
 import { chartTooltipContentStyle } from './chartTooltipTheme'
 import {
   DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS,
+  ART_STD_DEV_BAND_KEY,
   LOAD_IMPACT_VISIBLE_CHARTS_STORAGE_KEY,
+  buildArtStdDevBandData,
   buildLoadImpactCharts,
+  hasLoadImpactPercentileRows,
   buildSmoothedGraphData,
+  chartMetricLinePresentation,
   chartConfigs,
   chartMarginForOverlayKeys,
   chartMetricKeys,
@@ -41,11 +44,15 @@ import {
   formatRelativeRunTime,
   graphCsvForChart,
   isLoadImpactChart,
+  isLoadImpactHeatmapChart,
+  isLoadImpactPercentilesChart,
   isOverlayMetricAvailable,
   latestRouteLatencyValues,
+  loadImpactHeatmapChart,
+  loadImpactPercentilesChart,
   loadImpactChartDataForRow,
   loadImpactChartId,
-  monitorPresets,
+  loadImpactPercentileChartData,
   normalizedChartOrder,
   overlayMetricMenuLabels,
   overlayMetricRows,
@@ -56,6 +63,7 @@ import {
   sameStringArray,
   sameStringSet,
   rawGraphMetricKey,
+  shouldRenderArtStdDevBands,
   smoothingRadiusForGraphDensity,
   smoothedGraphMetricKey,
   smoothedMetricKeysForChart,
@@ -75,7 +83,13 @@ import {
   routeLatencySeriesLabel,
   routeLatencyTargetLabelFromKey,
 } from './latencySeries'
-import { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
+import {
+  executionChartMaxMinuteRange,
+  executionChartMinMinuteRange,
+  executionChartMinuteRangeValue,
+  executionChartTimeRangeForMinutes,
+  type ExecutionChartTimeRange,
+} from './testExecutionChartZoomModel'
 import {
   readStoredString,
   readStoredStringArray,
@@ -113,12 +127,17 @@ interface Props {
   activeCursor?: GraphCursorState | null
   onActiveCursorChange?: (cursor: GraphCursorState | null) => void
   enableGraphGroupTabs?: boolean
+  activeGraphGroupTab?: GraphGroupTabId
+  onActiveGraphGroupTabChange?: (tab: GraphGroupTabId) => void
+  underLoadDisplayMode?: UnderLoadDisplayMode
   externalControlsTarget?: HTMLElement | null
 }
 
 type ChartDropPosition = 'before' | 'after'
-type GraphGroupTabId = 'test_results' | 'under_load' | 'infrastructure'
+export type GraphGroupTabId = 'test_results' | 'under_load' | 'infrastructure'
+export type UnderLoadDisplayMode = 'graphs' | 'heatmap'
 type ChartCardSize = { width: number; height: number }
+type ChartCardElement = HTMLElement | null
 
 export interface GraphCursorState {
   label?: string | number
@@ -137,9 +156,16 @@ const graphGroupTabs: Array<{ id: GraphGroupTabId; label: string }> = [
 ]
 
 const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'generator_impact', 'network_latency'])
+const displayWindowAllSliderValue = executionChartMaxMinuteRange + 1
+
+function displayWindowSliderPercent(value: number) {
+  const clamped = Math.min(displayWindowAllSliderValue, Math.max(executionChartMinMinuteRange, value))
+  const percent = (clamped - executionChartMinMinuteRange) / (displayWindowAllSliderValue - executionChartMinMinuteRange) * 100
+  return `${Number(percent.toFixed(4))}%`
+}
 
 function graphGroupForChart(chart: ChartConfig): GraphGroupTabId {
-  if (isLoadImpactChart(chart)) return 'under_load'
+  if (isLoadImpactChart(chart) || isLoadImpactHeatmapChart(chart) || isLoadImpactPercentilesChart(chart)) return 'under_load'
   if (infrastructureChartIds.has(chart.id)) return 'infrastructure'
   return 'test_results'
 }
@@ -197,6 +223,14 @@ function readStoredRouteLatencyMode(storageKey: string): RouteLatencyMode {
 
 function safeFileName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'graph'
+}
+
+function chartGradientId(chart: ChartConfig, key: string, variant = 'fill') {
+  return `chart-gradient-${safeFileName(`${chart.id}-${key}-${variant}`)}`
+}
+
+function chartGradientFill(chart: ChartConfig, key: string, variant = 'fill') {
+  return `url(#${chartGradientId(chart, key, variant)})`
 }
 
 function downloadBlob(filename: string, blob: Blob) {
@@ -314,9 +348,12 @@ function rawTooltipMetricValue(value: unknown, item: unknown) {
   const payload = (item as { payload?: MetricsHistoryPoint } | undefined)?.payload
   const dataKey = String((item as { dataKey?: unknown } | undefined)?.dataKey ?? '')
   const rawKey = rawGraphMetricKey(dataKey)
-  return rawKey !== dataKey && payload
+  const resolved = rawKey !== dataKey && payload
     ? payload[rawKey] ?? value
     : value
+  return Array.isArray(resolved)
+    ? resolved.map(itemValue => formatGraphOverlayMetricValue(itemValue)).join(' - ')
+    : resolved
 }
 
 function generatorImpactVerdictLabel(verdict: GeneratorImpactVerdict) {
@@ -374,6 +411,9 @@ export default function TestExecutionCharts({
   activeCursor,
   onActiveCursorChange,
   enableGraphGroupTabs = false,
+  activeGraphGroupTab: activeGraphGroupTabProp,
+  onActiveGraphGroupTabChange,
+  underLoadDisplayMode,
   externalControlsTarget = null,
 }: Props) {
   const densityFallback = defaultDensity ?? (surface === 'command-center' ? 'command_center' : 'standard')
@@ -390,6 +430,7 @@ export default function TestExecutionCharts({
   const graphTableRowsStorageKey = storageKeyFor('graphTableRows')
   const cursorLabelsStorageKey = storageKeyFor('cursorLabels')
   const responseTimeNetworkModeStorageKey = storageKeyFor('responseTimeNetworkMode')
+  const artStdDevBandsStorageKey = storageKeyFor('artStdDevBands')
   const routeLatencyModeStorageKey = storageKeyFor('routeLatencyMode')
   const [hasStoredChartState] = useState(() => Boolean(readStoredString(chartOrderStorageKey) || readStoredString(hiddenChartsStorageKey)))
   const [initialPresetApplied, setInitialPresetApplied] = useState(false)
@@ -402,12 +443,16 @@ export default function TestExecutionCharts({
   const [tpsOverlayChartIds, setTpsOverlayChartIds] = useState<string[]>(() => readStoredStringArray(tpsOverlayStorageKey))
   const [chartMetricFilters, setChartMetricFilters] = useState<Record<string, string[]>>(() => readStoredStringArrayRecord(chartMetricFiltersStorageKey))
   const [timeAxisMode, setTimeAxisMode] = useState<ChartTimeAxisMode>(() => readStoredTimeAxisMode(timeAxisModeStorageKey))
-  const [chartDensity, setChartDensity] = useState<ChartDensityMode>(() => readStoredChartDensity(chartDensityStorageKey, densityFallback))
+  const [chartDensity, setChartDensity] = useState<ChartDensityMode>(() => {
+    const storedDensity = readStoredChartDensity(chartDensityStorageKey, densityFallback)
+    return surface === 'command-center' && storedDensity === 'six_up' ? 'command_center' : storedDensity
+  })
   const [showGraphTableRows, setShowGraphTableRows] = useState(() => readStoredString(graphTableRowsStorageKey) === 'true')
   const [showCursorLabels, setShowCursorLabels] = useState(() => readStoredString(cursorLabelsStorageKey) !== 'false')
   const [responseTimeNetworkMode, setResponseTimeNetworkMode] = useState<ResponseTimeNetworkMode>(() => readStoredResponseTimeNetworkMode(responseTimeNetworkModeStorageKey))
+  const [artStdDevBandsEnabled, setArtStdDevBandsEnabled] = useState(() => readStoredString(artStdDevBandsStorageKey) === 'true')
   const [routeLatencyMode, setRouteLatencyMode] = useState<RouteLatencyMode>(() => readStoredRouteLatencyMode(routeLatencyModeStorageKey))
-  const [activeGraphGroupTab, setActiveGraphGroupTab] = useState<GraphGroupTabId>('test_results')
+  const [localActiveGraphGroupTab, setLocalActiveGraphGroupTab] = useState<GraphGroupTabId>('test_results')
   const [selectedRouteLatencyKey, setSelectedRouteLatencyKey] = useState('')
   const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
   const [chartDrawerOpen, setChartDrawerOpen] = useState(false)
@@ -415,15 +460,35 @@ export default function TestExecutionCharts({
   const [draggingChartId, setDraggingChartId] = useState<string | null>(null)
   const [dragOverChartId, setDragOverChartId] = useState<string | null>(null)
   const [chartCardSizes, setChartCardSizes] = useState<Record<string, ChartCardSize>>({})
-  const chartCardRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const chartCardRefs = useRef<Record<string, ChartCardElement>>({})
   const chartMenuRef = useRef<HTMLDivElement | null>(null)
   const commandCenterSurface = surface === 'command-center'
   const loadImpactSourceData = loadImpactData.length > 0 ? loadImpactData : filteredData
   const loadImpactModel = useMemo(() => buildLoadImpactModel(loadImpactSourceData), [loadImpactSourceData])
   const loadImpactRows = loadImpactModel.rows
   const loadImpactRowsByChartId = useMemo(() => new Map(loadImpactRows.map(row => [loadImpactChartId(row.metric.id), row])), [loadImpactRows])
+  const hasLoadImpactPercentiles = useMemo(() => hasLoadImpactPercentileRows(loadImpactRows), [loadImpactRows])
+  const loadImpactPercentileData = useMemo(() => loadImpactPercentileChartData(loadImpactRows), [loadImpactRows])
   const loadImpactCharts = useMemo(() => buildLoadImpactCharts(loadImpactRows), [loadImpactRows])
-  const allChartConfigs = useMemo(() => [...chartConfigs, ...loadImpactCharts], [loadImpactCharts])
+  const loadImpactGraphCharts = useMemo(() => (
+    loadImpactRows.length > 0
+      ? [
+          loadImpactHeatmapChart,
+          ...(hasLoadImpactPercentiles ? [loadImpactPercentilesChart] : []),
+          ...loadImpactCharts,
+        ]
+      : loadImpactCharts
+  ), [hasLoadImpactPercentiles, loadImpactCharts, loadImpactRows.length])
+  const loadImpactDefaultVisibleChartIds = useMemo(() => loadImpactGraphCharts
+    .filter(chart => (
+      isLoadImpactHeatmapChart(chart)
+      || (
+        isLoadImpactChart(chart)
+        && DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS.includes(chart.loadImpactMetric!.id)
+      )
+    ))
+    .map(chart => chart.id), [loadImpactGraphCharts])
+  const allChartConfigs = useMemo(() => [...chartConfigs, ...loadImpactGraphCharts], [loadImpactGraphCharts])
   const allChartIds = useMemo(() => allChartConfigs.map(chart => chart.id), [allChartConfigs])
   const allChartIdSignature = allChartIds.join('|')
   const visibleLoadImpactChartIdSignature = visibleLoadImpactChartIds.join('|')
@@ -433,14 +498,14 @@ export default function TestExecutionCharts({
   }, [allChartIdSignature, allChartIds])
 
   useEffect(() => {
-    if (!enableGraphGroupTabs || hasStoredChartState || loadImpactCharts.length === 0) return
-    const loadImpactIds = loadImpactCharts.map(chart => chart.id)
+    if (!enableGraphGroupTabs || hasStoredChartState || loadImpactDefaultVisibleChartIds.length === 0) return
+    const loadImpactIds = loadImpactDefaultVisibleChartIds
     setVisibleLoadImpactChartIds(prev => sameStringSet(prev, loadImpactIds) ? prev : loadImpactIds)
     setHiddenChartIds(prev => {
       const next = prev.filter(id => !loadImpactIds.includes(id))
       return sameStringArray(next, prev) ? prev : next
     })
-  }, [enableGraphGroupTabs, hasStoredChartState, loadImpactCharts])
+  }, [enableGraphGroupTabs, hasStoredChartState, loadImpactDefaultVisibleChartIds])
 
   useEffect(() => {
     const knownChartIds = new Set(allChartIds)
@@ -454,11 +519,11 @@ export default function TestExecutionCharts({
   useEffect(() => {
     if (!initialPresetId || initialPresetApplied || hasStoredChartState || allChartIds.length === 0) return
     const next = chartStateForMonitorPreset(initialPresetId, allChartIds)
-    const loadImpactIds = enableGraphGroupTabs ? loadImpactCharts.map(chart => chart.id) : []
+    const loadImpactIds = enableGraphGroupTabs ? loadImpactDefaultVisibleChartIds : []
     setChartOrder(next.chartOrder)
     setHiddenChartIds(loadImpactIds.length > 0 ? next.hiddenChartIds.filter(id => !loadImpactIds.includes(id)) : next.hiddenChartIds)
     setInitialPresetApplied(true)
-  }, [allChartIds, enableGraphGroupTabs, hasStoredChartState, initialPresetApplied, initialPresetId, loadImpactCharts])
+  }, [allChartIds, enableGraphGroupTabs, hasStoredChartState, initialPresetApplied, initialPresetId, loadImpactDefaultVisibleChartIds])
 
   useEffect(() => {
     writeStoredJSON(chartOrderStorageKey, chartOrder)
@@ -510,6 +575,10 @@ export default function TestExecutionCharts({
   }, [responseTimeNetworkMode, responseTimeNetworkModeStorageKey])
 
   useEffect(() => {
+    writeStoredString(artStdDevBandsStorageKey, artStdDevBandsEnabled ? 'true' : 'false')
+  }, [artStdDevBandsEnabled, artStdDevBandsStorageKey])
+
+  useEffect(() => {
     writeStoredString(routeLatencyModeStorageKey, routeLatencyMode)
   }, [routeLatencyMode, routeLatencyModeStorageKey])
 
@@ -557,14 +626,6 @@ export default function TestExecutionCharts({
       .filter((chart): chart is ChartConfig => Boolean(chart))
     return ordered.length ? ordered : allChartConfigs
   }, [allChartConfigs, chartOrder])
-  const activeMonitorPresetId = useMemo(() => {
-    const currentOrder = orderedCharts.map(chart => chart.id)
-    return monitorPresets.find(preset => {
-      const presetState = chartStateForMonitorPreset(preset.id, allChartIds)
-      return sameStringArray(presetState.chartOrder, currentOrder)
-        && sameStringSet(presetState.hiddenChartIds, hiddenChartIds.filter(id => allChartIds.includes(id)))
-    })?.id ?? ''
-  }, [allChartIds, hiddenChartIds, orderedCharts])
   const latencyKeys = useMemo(() => routeLatencySeriesKeys(filteredData), [filteredData])
   const activeRouteLatencyKey = latencyKeys.includes(selectedRouteLatencyKey)
     ? selectedRouteLatencyKey
@@ -605,16 +666,30 @@ export default function TestExecutionCharts({
   }, [latencyKeys, selectedRouteLatencyKey])
 
   const latest = filteredData[filteredData.length - 1] || loadImpactSourceData[loadImpactSourceData.length - 1] || {}
+  const activeGraphGroupTab = activeGraphGroupTabProp ?? localActiveGraphGroupTab
+  const updateActiveGraphGroupTab = (tab: GraphGroupTabId) => {
+    if (activeGraphGroupTabProp === undefined) {
+      setLocalActiveGraphGroupTab(tab)
+    }
+    onActiveGraphGroupTabChange?.(tab)
+  }
   const visibleCharts = orderedCharts.filter(chart => !hiddenChartIds.includes(chart.id))
   const tabbedCharts = enableGraphGroupTabs
     ? visibleCharts.filter(chart => graphGroupForChart(chart) === activeGraphGroupTab)
     : visibleCharts
+  const dedicatedHeatmapMode = enableGraphGroupTabs && activeGraphGroupTab === 'under_load' && underLoadDisplayMode === 'heatmap'
+  const graphModeWithoutHeatmap = enableGraphGroupTabs && activeGraphGroupTab === 'under_load' && underLoadDisplayMode === 'graphs'
+  const displayModeCharts = dedicatedHeatmapMode
+    ? orderedCharts.filter(isLoadImpactHeatmapChart).slice(0, 1)
+    : graphModeWithoutHeatmap
+      ? tabbedCharts.filter(chart => !isLoadImpactHeatmapChart(chart))
+      : tabbedCharts
   const displayedCharts = expandedChart
     ? [
-        ...tabbedCharts.filter(chart => chart.id === expandedChart),
-        ...tabbedCharts.filter(chart => chart.id !== expandedChart),
+        ...displayModeCharts.filter(chart => chart.id === expandedChart),
+        ...displayModeCharts.filter(chart => chart.id !== expandedChart),
       ]
-    : tabbedCharts
+    : displayModeCharts
   const displayedChartIds = displayedCharts.map(chart => chart.id)
   const displayedChartIdSignature = displayedChartIds.join('|')
 
@@ -651,12 +726,18 @@ export default function TestExecutionCharts({
     return null
   }
 
-  const contextChart = chartMenu ? tabbedCharts.find(chart => chart.id === chartMenu.chartId) : undefined
+  const contextChart = chartMenu ? displayModeCharts.find(chart => chart.id === chartMenu.chartId) : undefined
   const graphGroupCounts: Record<GraphGroupTabId, number> = { test_results: 0, under_load: 0, infrastructure: 0 }
   visibleCharts.forEach(chart => {
     graphGroupCounts[graphGroupForChart(chart)] += 1
   })
   const chartDataFor = (chart: ChartConfig) => {
+    if (isLoadImpactHeatmapChart(chart)) {
+      return loadImpactSourceData
+    }
+    if (isLoadImpactPercentilesChart(chart)) {
+      return loadImpactPercentileData
+    }
     if (isLoadImpactChart(chart)) {
       return loadImpactChartDataForRow(loadImpactRowsByChartId.get(chart.id), loadImpactRows)
     }
@@ -790,8 +871,13 @@ export default function TestExecutionCharts({
     const chart = allChartConfigs.find(candidate => candidate.id === chartId)
     const togglingHiddenLoadImpactChart = (
       chart
-      && isLoadImpactChart(chart)
-      && !DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS.includes(chart.loadImpactMetric!.id)
+      && (
+        isLoadImpactPercentilesChart(chart)
+        || (
+          isLoadImpactChart(chart)
+          && !DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS.includes(chart.loadImpactMetric!.id)
+        )
+      )
     )
     if (togglingHiddenLoadImpactChart) {
       const revealingChart = hiddenChartIds.includes(chartId)
@@ -887,7 +973,7 @@ export default function TestExecutionCharts({
     })
   }
 
-  const openChartMenu = (event: MouseEvent<HTMLDivElement>, chartId: string) => {
+  const openChartMenu = (event: MouseEvent<HTMLElement>, chartId: string) => {
     event.preventDefault()
     event.stopPropagation()
     const menuWidth = 224
@@ -1042,7 +1128,7 @@ export default function TestExecutionCharts({
   }
 
   const resetCharts = () => {
-    const loadImpactIds = enableGraphGroupTabs ? loadImpactCharts.map(chart => chart.id) : []
+    const loadImpactIds = enableGraphGroupTabs ? loadImpactDefaultVisibleChartIds : []
     setVisibleLoadImpactChartIds(loadImpactIds)
     if (initialPresetId) {
       const next = chartStateForMonitorPreset(initialPresetId, allChartIds)
@@ -1058,23 +1144,23 @@ export default function TestExecutionCharts({
     }
   }
 
-  const applyMonitorPreset = (presetId: string) => {
-    if (!presetId) {
-      resetCharts()
-      return
-    }
-    const loadImpactIds = enableGraphGroupTabs ? loadImpactCharts.map(chart => chart.id) : []
-    setVisibleLoadImpactChartIds(loadImpactIds)
-    const next = chartStateForMonitorPreset(presetId, allChartIds)
-    setChartOrder(next.chartOrder)
-    setHiddenChartIds(loadImpactIds.length > 0 ? next.hiddenChartIds.filter(id => !loadImpactIds.includes(id)) : next.hiddenChartIds)
-  }
-
   const setResponseTimeNetworkLatencyIncluded = (included: boolean) => {
     setResponseTimeNetworkMode(included ? 'end_to_end' : 'application')
   }
 
   const renderSectionSubtext = (text: string) => commandCenterSurface ? null : <span>{text}</span>
+  const displayWindowMinuteValue = executionChartMinuteRangeValue(timeRange)
+  const displayWindowSliderValue = displayWindowMinuteValue ?? displayWindowAllSliderValue
+  const displayWindowLabel = timeRange === 'custom'
+    ? 'Custom'
+    : displayWindowSliderValue >= displayWindowAllSliderValue
+      ? 'All'
+      : `${displayWindowSliderValue}m`
+  const displayWindowSliderPosition = displayWindowSliderPercent(displayWindowSliderValue)
+  const setDisplayWindowFromSlider = (value: string) => {
+    const nextValue = Number(value)
+    onTimeRangeChange(nextValue >= displayWindowAllSliderValue ? 'all' : executionChartTimeRangeForMinutes(nextValue))
+  }
 
   const renderChartDisplayControlSections = () => (
     <>
@@ -1083,10 +1169,23 @@ export default function TestExecutionCharts({
           <h4>Display Window</h4>
           {renderSectionSubtext('Graph data range')}
         </div>
-        <div className="time-range-selector" role="group" aria-label="Graph display window">
-          <button className={`btn-chip ${timeRange === '3m' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('3m')}>3m</button>
-          <button className={`btn-chip ${timeRange === '10m' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('10m')}>10m</button>
-          <button className={`btn-chip ${timeRange === 'all' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('all')}>Max</button>
+        <div
+          className="chart-window-slider-control"
+          style={{ '--chart-window-slider-position': displayWindowSliderPosition } as CSSProperties}
+        >
+          <input
+            type="range"
+            min={executionChartMinMinuteRange}
+            max={displayWindowAllSliderValue}
+            step={1}
+            value={displayWindowSliderValue}
+            aria-label="Graph display window"
+            aria-valuetext={displayWindowLabel}
+            onChange={event => setDisplayWindowFromSlider(event.currentTarget.value)}
+          />
+          <div className="chart-window-slider-value" aria-live="polite">
+            <span>{displayWindowLabel}</span>
+          </div>
         </div>
       </div>
       <div className="charts-config-panel-section">
@@ -1136,23 +1235,6 @@ export default function TestExecutionCharts({
             </label>
           )}
         </div>
-      </div>
-      <div className="charts-config-panel-section">
-        <div>
-          <h4>Role View</h4>
-          {renderSectionSubtext('Graph preset')}
-        </div>
-        <select
-          className="chart-role-select"
-          aria-label="Graph role view"
-          value={activeMonitorPresetId}
-          onChange={event => applyMonitorPreset(event.currentTarget.value)}
-        >
-          <option value="">Manual view</option>
-          {monitorPresets.map(preset => (
-            <option key={preset.id} value={preset.id}>{preset.label}</option>
-          ))}
-        </select>
       </div>
       <div className="charts-config-panel-section">
         <div>
@@ -1296,6 +1378,131 @@ export default function TestExecutionCharts({
       />
     ) : null
   )
+
+  const isGradientEligibleMetric = (chart: ChartConfig, row: ChartMetricRow, visibleMetricKeys: string[]) => {
+    const visibleOverlayKeys = visibleOverlayMetricKeys(chart, visibleMetricKeys)
+    if (visibleOverlayKeys.includes(row.key as OverlayMetricKey)) return false
+    if (row.kind === 'percentile') return false
+    if (row.key === 'targetTps') return false
+    if (row.key === routeLatencySuccessRateKey || row.key.startsWith('latency_success_rate_') || row.key.endsWith('_successRate')) return false
+    if (isLoadImpactHeatmapChart(chart)) return false
+    if (isLoadImpactChart(chart) && row.key !== 'average') return false
+    return true
+  }
+
+  const renderChartGradientDefs = (chart: ChartConfig, rows: ChartMetricRow[], visibleMetricKeys: string[], includeArtStdDevBand = false) => {
+    const gradientRows = rows.filter(row => visibleMetricKeys.includes(row.key) && isGradientEligibleMetric(chart, row, visibleMetricKeys))
+    if (gradientRows.length === 0 && !includeArtStdDevBand) return null
+
+    return (
+      <defs>
+        {gradientRows.map(row => (
+          <linearGradient key={`${row.key}-gradient`} id={chartGradientId(chart, row.key)} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={row.color} stopOpacity="0.24" />
+            <stop offset="70%" stopColor={row.color} stopOpacity="0.08" />
+            <stop offset="100%" stopColor={row.color} stopOpacity="0" />
+          </linearGradient>
+        ))}
+        {includeArtStdDevBand && (
+          <linearGradient id={chartGradientId(chart, ART_STD_DEV_BAND_KEY, 'band')} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--chart-4)" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="var(--chart-4)" stopOpacity="0.04" />
+          </linearGradient>
+        )}
+      </defs>
+    )
+  }
+
+  const renderGradientUnderlays = (
+    chart: ChartConfig,
+    rows: ChartMetricRow[],
+    visibleMetricKeys: string[],
+    displayMetricKey: (key: string) => string,
+    yAxisId?: string | number,
+  ) => rows
+    .filter(row => visibleMetricKeys.includes(row.key) && isGradientEligibleMetric(chart, row, visibleMetricKeys))
+    .map(row => (
+      <Area
+        key={`gradient-${row.key}`}
+        yAxisId={yAxisId}
+        type="monotone"
+        dataKey={displayMetricKey(row.key)}
+        name={row.label}
+        stroke="none"
+        fill={chartGradientFill(chart, row.key)}
+        fillOpacity={1}
+        dot={false}
+        activeDot={false}
+        connectNulls
+        legendType="none"
+        tooltipType="none"
+        isAnimationActive={false}
+      />
+    ))
+
+  const renderArtStdDevBand = (chart: ChartConfig, visible: boolean, yAxisId?: string | number) => visible ? (
+    <Area
+      yAxisId={yAxisId}
+      type="monotone"
+      dataKey={ART_STD_DEV_BAND_KEY}
+      name="±1σ"
+      stroke="none"
+      fill={chartGradientFill(chart, ART_STD_DEV_BAND_KEY, 'band')}
+      fillOpacity={1}
+      dot={false}
+      activeDot={false}
+      connectNulls
+      legendType="none"
+      tooltipType="none"
+      isAnimationActive={false}
+    />
+  ) : null
+
+  const renderLatencySeriesLegend = (rows: ChartMetricRow[], visibleMetricKeys: string[], includeArtStdDevBand: boolean) => {
+    const visibleRows = rows.filter(row => visibleMetricKeys.includes(row.key))
+    const transactionRows = visibleRows.filter(row => row.kind === 'transaction')
+    const percentileRows = visibleRows.filter(row => row.kind === 'percentile')
+    if (transactionRows.length === 0 && percentileRows.length === 0 && !includeArtStdDevBand) return null
+
+    const renderLegendItems = (items: ChartMetricRow[]) => items.map(row => {
+      const presentation = chartMetricLinePresentation(row)
+      return (
+        <span key={row.key} className={`chart-series-legend-item ${presentation.role}`}>
+          <span
+            className="chart-series-swatch"
+            style={{
+              background: row.kind === 'percentile' ? undefined : row.color,
+              borderColor: row.color,
+            }}
+          />
+          <span>{row.label}</span>
+        </span>
+      )
+    })
+
+    return (
+      <div className="chart-series-legend" aria-label="Response time series legend">
+        {transactionRows.length > 0 && (
+          <div className="chart-series-legend-group">
+            <span className="chart-series-legend-heading">Transactions</span>
+            {renderLegendItems(transactionRows)}
+            {includeArtStdDevBand && (
+              <span className="chart-series-legend-item band">
+                <span className="chart-series-swatch" />
+                <span>±1σ</span>
+              </span>
+            )}
+          </div>
+        )}
+        {percentileRows.length > 0 && (
+          <div className="chart-series-legend-group percentiles">
+            <span className="chart-series-legend-heading">Percentiles</span>
+            {renderLegendItems(percentileRows)}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   const renderOverlayLines = (
     chart: ChartConfig,
@@ -1511,8 +1718,15 @@ export default function TestExecutionCharts({
     : chartDensity === 'six_up'
       ? '6 Graphs'
       : chartDensity === 'command_center'
-        ? 'Compact'
-        : 'Standard'
+      ? 'Compact'
+      : 'Standard'
+  const heatmapGridSpanClassName = commandCenterSurface
+    ? chartDensity === 'command_center'
+      ? 'load-impact-graph-card-span-3'
+      : 'load-impact-graph-card-span-2'
+    : chartDensity === 'six_up'
+      ? 'load-impact-graph-card-span-3'
+      : 'load-impact-graph-card-span-2'
   const gridClassName = [
     'charts-grid',
     chartDensity === 'six_up' ? 'six-up' : '',
@@ -1570,7 +1784,7 @@ export default function TestExecutionCharts({
                   role="tab"
                   className={`graph-group-tab ${activeGraphGroupTab === tab.id ? 'active' : ''}`}
                   aria-selected={activeGraphGroupTab === tab.id}
-                  onClick={() => setActiveGraphGroupTab(tab.id)}
+                  onClick={() => updateActiveGraphGroupTab(tab.id)}
                 >
                   <span>{tab.label}</span>
                   <small>{graphGroupCounts[tab.id]}</small>
@@ -1579,7 +1793,7 @@ export default function TestExecutionCharts({
             </div>
           )}
           <div className="charts-toolbar-badges">
-            <span className="archive-chip">{tabbedCharts.length} graph{tabbedCharts.length === 1 ? '' : 's'}</span>
+            <span className="archive-chip">{displayModeCharts.length} graph{displayModeCharts.length === 1 ? '' : 's'}</span>
             <span className="archive-chip">{densityLabel}</span>
             <span className="archive-chip">{timeAxisMode === 'relative' ? 'Relative time' : 'Clock time'}</span>
             {loadImpactLoading && <span className="archive-chip">Loading load metrics</span>}
@@ -1590,7 +1804,7 @@ export default function TestExecutionCharts({
 
       {loadImpactError && <p className="scenario-script-status error">{loadImpactError}</p>}
 
-      {tabbedCharts.length === 0 ? (
+      {displayModeCharts.length === 0 ? (
         <div className="charts-empty">
           <span>{visibleCharts.length === 0 ? 'All graphs are hidden' : 'No graphs visible in this group'}</span>
           <button className="btn btn-secondary btn-sm" type="button" onClick={resetCharts}>Reset Graphs</button>
@@ -1598,6 +1812,28 @@ export default function TestExecutionCharts({
       ) : (
         <div className={gridClassName}>
           {displayedCharts.map((chart) => {
+            if (isLoadImpactHeatmapChart(chart)) {
+              return (
+                <LoadImpactHeatmap
+                  key={chart.id}
+                  ref={element => {
+                    chartCardRefs.current[chart.id] = element
+                  }}
+                  dataChartId={chart.id}
+                  points={loadImpactSourceData}
+                  title={chart.title}
+                  subtitle="Performance and resource response grouped by active VUser load."
+                  loading={loadImpactLoading}
+                  error={loadImpactError}
+                  emptyMessage="Load impact heatmap appears after live metrics include active VUsers and performance or resource samples."
+                  variant="graph-card"
+                  className={`chart-card load-impact-graph-card ${heatmapGridSpanClassName} ${dedicatedHeatmapMode ? 'load-impact-map-mode' : ''} ${commandCenterSurface ? 'command-center-chart-card' : ''} ${expandedChart === chart.id ? 'expanded' : ''}`}
+                  onContextMenu={event => openChartMenu(event, chart.id)}
+                  onMouseEnter={() => setHoveredChartId(chart.id)}
+                  onMouseLeave={() => handleChartMouseLeave(chart.id)}
+                />
+              )
+            }
             const chartData = chartDataFor(chart)
             const chartHeight = expandedChart === chart.id
               ? commandCenterSurface ? 360 : 400
@@ -1619,16 +1855,24 @@ export default function TestExecutionCharts({
               visibleMetricCount: visibleMetricKeys.length,
               expanded: expandedChart === chart.id,
             })
-            const displayChartData = smoothedMetricKeys.length > 0
-              ? buildSmoothedGraphData(chartData, smoothedMetricKeys, smoothingRadius)
+            const includeArtStdDevBand = shouldRenderArtStdDevBands(chart, visibleMetricKeys, artStdDevBandsEnabled)
+            const chartDataWithDisplayBands = includeArtStdDevBand
+              ? buildArtStdDevBandData(chartData, smoothingRadius)
               : chartData
+            const displayChartData = smoothedMetricKeys.length > 0
+              ? buildSmoothedGraphData(chartDataWithDisplayBands, smoothedMetricKeys, smoothingRadius)
+              : chartDataWithDisplayBands
             const displayMetricKey = (key: string) => smoothedMetricKeySet.has(key) ? smoothedGraphMetricKey(key) : key
             const visibleOverlayKeysForTitle = visibleOverlayMetricKeys(chart, visibleMetricKeys)
             const primaryMetricKeysForDomain = visibleMetricKeys.filter(key => (
               !visibleOverlayKeysForTitle.includes(key as OverlayMetricKey)
               && key !== routeLatencySuccessRateKey
             ))
-            const metricAxisDomain = visibleMetricDomain(chartData, primaryMetricKeysForDomain, chart.domain)
+            const metricAxisDomain = visibleMetricDomain(
+              chartDataWithDisplayBands,
+              includeArtStdDevBand ? [...primaryMetricKeysForDomain, ART_STD_DEV_BAND_KEY] : primaryMetricKeysForDomain,
+              chart.domain,
+            )
             const chartTitle = chartTitleWithOverlays(chart, visibleOverlayKeysForTitle)
             const baseChartMargin = chartMarginForOverlayKeys(visibleOverlayKeysForTitle) ?? {}
             const chartMargin = chart.id === 'network_latency' && routeLatencyMode === 'stability' && visibleMetricKeys.includes(routeLatencySuccessRateKey)
@@ -1668,18 +1912,31 @@ export default function TestExecutionCharts({
                   </div>
                   <div className="chart-card-actions">
                     {chart.id === 'latency' && (
-                      <label
-                        className="chart-card-checkbox"
-                        title={latencyKeys.length === 0 ? 'No route latency samples available' : undefined}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={responseTimeNetworkMode === 'end_to_end'}
-                          disabled={latencyKeys.length === 0}
-                          onChange={event => setResponseTimeNetworkLatencyIncluded(event.currentTarget.checked)}
-                        />
-                        <span>Include network latency</span>
-                      </label>
+                      <>
+                        <label
+                          className="chart-card-checkbox"
+                          title={latencyKeys.length === 0 ? 'No route latency samples available' : undefined}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={responseTimeNetworkMode === 'end_to_end'}
+                            disabled={latencyKeys.length === 0}
+                            onChange={event => setResponseTimeNetworkLatencyIncluded(event.currentTarget.checked)}
+                          />
+                          <span>Include network latency</span>
+                        </label>
+                        <label
+                          className="chart-card-checkbox"
+                          title="Show rolling standard deviation band for Total ART"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={artStdDevBandsEnabled}
+                            onChange={event => setArtStdDevBandsEnabled(event.currentTarget.checked)}
+                          />
+                          <span>σ Bands</span>
+                        </label>
+                      </>
                     )}
                     {chart.id === 'network_latency' && latencyKeys.length > 0 && (
                       <div className="route-latency-card-controls">
@@ -1735,8 +1992,9 @@ export default function TestExecutionCharts({
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
+                {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {chart.dataKey && showMetric(chart.dataKey) && (
-                  <Area yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(chart.dataKey)} name="Total" stroke={chart.color!} fill={chart.color!} fillOpacity={0.15} isAnimationActive={false} />
+                  <Area yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(chart.dataKey)} name="Total" stroke={chart.color!} fill={chartGradientFill(chart, chart.dataKey)} fillOpacity={1} isAnimationActive={false} />
                 )}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {showRefArea && (
@@ -1744,7 +2002,7 @@ export default function TestExecutionCharts({
                 )}
               </ComposedChart>
             ) : chart.type === 'line-load-impact' ? (
-              <LineChart
+              <ComposedChart
                 data={displayChartData}
                 margin={chartMargin}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
@@ -1755,6 +2013,8 @@ export default function TestExecutionCharts({
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderLoadImpactTooltip(chart)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
+                {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
+                {renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {metricRows
                   .filter(row => !overlayMetricKeysForChart(chart).includes(row.key as OverlayMetricKey))
                   .map((row) => showMetric(row.key) && (
@@ -1772,11 +2032,48 @@ export default function TestExecutionCharts({
                       connectNulls
                       isAnimationActive={false}
                     />
-                  ))}
+                ))}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
-              </LineChart>
+              </ComposedChart>
+            ) : chart.type === 'line-load-impact-percentiles' ? (
+              <ComposedChart
+                data={displayChartData}
+                margin={chartMargin}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                {renderLoadImpactAxis()}
+                {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
+                {renderOverlayAxes(chart, visibleMetricKeys)}
+                {renderLoadImpactTooltip(chart)}
+                {renderSharedCursor(displayChartData, metricAxisIdForChart)}
+                <Legend verticalAlign="bottom" height={36} />
+                {metricRows
+                  .filter(row => !overlayMetricKeysForChart(chart).includes(row.key as OverlayMetricKey))
+                  .map(row => {
+                    const presentation = chartMetricLinePresentation(row)
+                    return showMetric(row.key) && (
+                      <Line
+                        key={row.key}
+                        yAxisId={metricAxisIdForChart}
+                        type="monotone"
+                        dataKey={displayMetricKey(row.key)}
+                        name={row.label}
+                        stroke={row.color}
+                        dot={{ r: 2 }}
+                        activeDot={{ r: 5 }}
+                        strokeWidth={presentation.strokeWidth}
+                        strokeDasharray={presentation.strokeDasharray}
+                        strokeOpacity={presentation.strokeOpacity}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
+                    )
+                  })}
+                {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
+              </ComposedChart>
             ) : chart.type === 'line-multi' ? (
-              <LineChart
+              <ComposedChart
                 data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
@@ -1791,6 +2088,8 @@ export default function TestExecutionCharts({
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {isMultiGroup && <Legend verticalAlign="bottom" height={36} />}
+                {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
+                {renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {chart.totalKey && showMetric(chart.totalKey) && (
                   <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(chart.totalKey)} name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
                 )}
@@ -1804,9 +2103,9 @@ export default function TestExecutionCharts({
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
-              </LineChart>
+              </ComposedChart>
             ) : chart.type === 'line-latency' ? (
-              <LineChart
+              <ComposedChart
                 data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
@@ -1820,22 +2119,54 @@ export default function TestExecutionCharts({
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
-                <Legend verticalAlign="bottom" height={36} />
-                {showMetric('avgMs') && (
-                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('avgMs')} name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
-                )}
-                {isMultiGroup && groupNames.map((name, index) => showMetric(`${name}_avgMs`) && (
-                  <Line key={name} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(`${name}_avgMs`)} name={name} stroke={groupColors[index % groupColors.length]} dot={false} strokeWidth={2} isAnimationActive={false} />
-                ))}
-                {showMetric('p50') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('p50')} name="P50" stroke="var(--chart-5)" dot={false} strokeWidth={1.25} strokeDasharray="3 3" isAnimationActive={false} />}
-                {showMetric('p90') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('p90')} name="P90" stroke="var(--chart-3)" dot={false} strokeWidth={1.25} strokeDasharray="3 3" isAnimationActive={false} />}
-                {showMetric('p95') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('p95')} name="P95" stroke="var(--chart-2)" dot={false} strokeWidth={1.25} strokeDasharray="4 2" isAnimationActive={false} />}
-                {showMetric('p99') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('p99')} name="P99" stroke="var(--chart-4)" dot={false} strokeWidth={1.25} strokeDasharray="4 2" isAnimationActive={false} />}
+                {renderChartGradientDefs(chart, metricRows, visibleMetricKeys, includeArtStdDevBand)}
+                {renderArtStdDevBand(chart, includeArtStdDevBand, metricAxisIdForChart)}
+                {renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
+                {metricRows
+                  .filter(row => row.kind === 'transaction')
+                  .map(row => {
+                    const presentation = chartMetricLinePresentation(row)
+                    return showMetric(row.key) && (
+                      <Line
+                        key={row.key}
+                        yAxisId={metricAxisIdForChart}
+                        type="monotone"
+                        dataKey={displayMetricKey(row.key)}
+                        name={row.label}
+                        stroke={row.color}
+                        dot={false}
+                        strokeWidth={presentation.strokeWidth}
+                        strokeDasharray={presentation.strokeDasharray}
+                        strokeOpacity={presentation.strokeOpacity}
+                        isAnimationActive={false}
+                      />
+                    )
+                  })}
+                {metricRows
+                  .filter(row => row.kind === 'percentile')
+                  .map(row => {
+                    const presentation = chartMetricLinePresentation(row)
+                    return showMetric(row.key) && (
+                      <Line
+                        key={row.key}
+                        yAxisId={metricAxisIdForChart}
+                        type="monotone"
+                        dataKey={displayMetricKey(row.key)}
+                        name={row.label}
+                        stroke={row.color}
+                        dot={false}
+                        strokeWidth={presentation.strokeWidth}
+                        strokeDasharray={presentation.strokeDasharray}
+                        strokeOpacity={presentation.strokeOpacity}
+                        isAnimationActive={false}
+                      />
+                    )
+                  })}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
-              </LineChart>
+              </ComposedChart>
             ) : chart.type === 'area-multi' ? (
               <ComposedChart
                 data={displayChartData}
@@ -1852,8 +2183,9 @@ export default function TestExecutionCharts({
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 <Legend verticalAlign="bottom" height={36} />
+                {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {chart.keys!.filter(key => showMetric(key.k)).map((key) => (
-                  <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(key.k)} name={key.n} stroke={key.c} fill={key.c} fillOpacity={0.2} isAnimationActive={false} />
+                  <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(key.k)} name={key.n} stroke={key.c} fill={chartGradientFill(chart, key.k)} fillOpacity={1} isAnimationActive={false} />
                 ))}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {showRefArea && (
@@ -1861,7 +2193,7 @@ export default function TestExecutionCharts({
                 )}
               </ComposedChart>
             ) : chart.type === 'line-impact' ? (
-              <LineChart
+              <ComposedChart
                 data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
@@ -1875,6 +2207,8 @@ export default function TestExecutionCharts({
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
+                {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
+                {renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {metricRows.map((row) => showMetric(row.key) && (
                   <Line
                     key={row.key}
@@ -1892,9 +2226,9 @@ export default function TestExecutionCharts({
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
-              </LineChart>
+              </ComposedChart>
             ) : chart.type === 'line-network' ? (
-              <LineChart
+              <ComposedChart
                 data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
@@ -1910,6 +2244,8 @@ export default function TestExecutionCharts({
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 <Legend verticalAlign="bottom" height={36} />
+                {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
+                {renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {metricRows.map((row) => showMetric(row.key) && (
                     <Line
                       key={row.key}
@@ -1927,9 +2263,9 @@ export default function TestExecutionCharts({
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
-              </LineChart>
+              </ComposedChart>
             ) : (
-              <LineChart
+              <ComposedChart
                 data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
@@ -1944,6 +2280,8 @@ export default function TestExecutionCharts({
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 <Legend />
+                {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
+                {renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showMetric('netSent') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netSent')} name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} isAnimationActive={false} />}
                 {showMetric('netRecv') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netRecv')} name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} isAnimationActive={false} />}
                 {showMetric('diskRead') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('diskRead')} name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
@@ -1952,10 +2290,11 @@ export default function TestExecutionCharts({
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
-              </LineChart>
+              </ComposedChart>
             )}
           </ResponsiveContainer>
 
+          {chart.id === 'latency' && renderLatencySeriesLegend(metricRows, visibleMetricKeys, includeArtStdDevBand)}
           {chart.id === 'network_latency' && showDetails && renderRouteLatencyDetails()}
           {chart.id === 'generator_impact' && showDetails && renderGeneratorImpactDetails()}
           {showDetails && renderMetricsTable(chart, metricRows, visibleMetricKeys, chartData)}

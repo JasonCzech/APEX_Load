@@ -37,16 +37,16 @@ func TestHandleGetParityStatusReturnsReleaseGateSummary(t *testing.T) {
 		t.Fatalf("browser benchmark profiles = %d, want 3", len(payload.BrowserBenchmarks))
 	}
 	required := map[string]bool{
-		"architecture":         false,
-		"fleet":                false,
-		"authoring":            false,
-		"ai_assistance":        false,
-		"load_modeling":        false,
-		"browser_testing":      false,
-		"vugen_web2_migration": false,
-		"monitoring":           false,
-		"reporting":            false,
-		"scheduling":           false,
+		"architecture":                   false,
+		"fleet":                          false,
+		"authoring":                      false,
+		"ai_assistance":                  false,
+		"load_modeling":                  false,
+		"browser_testing":                false,
+		"web2_browser_profile_migration": false,
+		"monitoring":                     false,
+		"reporting":                      false,
+		"scheduling":                     false,
 	}
 	for _, area := range payload.Areas {
 		if _, ok := required[area.ID]; ok {

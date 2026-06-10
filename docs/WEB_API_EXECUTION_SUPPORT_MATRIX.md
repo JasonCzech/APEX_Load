@@ -22,7 +22,7 @@ OpenAPI and WSDL import endpoints return the shared script-import envelope:
 - `unsupported_elements`
 - `repair_suggestions`
 
-This keeps OpenAPI/WSDL acquisition aligned with HAR, JMeter, LoadRunner, sample, and DevWeb imports.
+This keeps OpenAPI/WSDL acquisition aligned with HAR, JMeter, Enterprise Script Archive, sample, and DevWeb imports.
 
 ## Support Matrix
 
@@ -39,7 +39,7 @@ This keeps OpenAPI/WSDL acquisition aligned with HAR, JMeter, LoadRunner, sample
 | JMS Solace | Supported | Executable with mock/local validation and controlled broker settings |
 | Browser canaries | Supported | Diagnostic canary, not density load |
 | DevWeb import | Supported | Review, then executable for mapped constructs |
-| HAR/JMeter/LoadRunner migration | Supported | Review, then executable for mapped constructs |
+| HAR/JMeter/Enterprise Script Archive migration | Supported | Review, then executable for mapped constructs |
 
 ## OpenAPI Import
 

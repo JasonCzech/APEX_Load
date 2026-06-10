@@ -358,4 +358,17 @@ describe('testExecutionMetricsModel', () => {
       maxVusers: 6,
     })
   })
+
+  it('filters relative display windows across the full minute slider range', () => {
+    const chartData = [
+      { time: '10:00:00', timestampMs: 0, vusers: 1, tps: 1, avgMs: 100, errorPct: 0, p50: 90, p90: 120, p99: 150 },
+      { time: '10:15:00', timestampMs: 15 * 60_000, vusers: 2, tps: 2, avgMs: 110, errorPct: 0, p50: 95, p90: 125, p99: 155 },
+      { time: '10:30:00', timestampMs: 30 * 60_000, vusers: 3, tps: 3, avgMs: 120, errorPct: 0, p50: 100, p90: 130, p99: 160 },
+      { time: '10:31:00', timestampMs: 31 * 60_000, vusers: 4, tps: 4, avgMs: 130, errorPct: 0, p50: 105, p90: 135, p99: 165 },
+    ]
+
+    expect(filterExecutionChartData(chartData, '1m', null).map(point => point.time)).toEqual(['10:30:00', '10:31:00'])
+    expect(filterExecutionChartData(chartData, '30m', null).map(point => point.time)).toEqual(['10:15:00', '10:30:00', '10:31:00'])
+    expect(filterExecutionChartData(chartData, 'all', null)).toBe(chartData)
+  })
 })

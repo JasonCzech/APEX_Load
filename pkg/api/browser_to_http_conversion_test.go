@@ -26,7 +26,7 @@ func TestHandlePreviewBrowserToHTTPGeneratesReviewDraftAndScenarioTemplate(t *te
 				{Name: "Open Cart", Type: "browser_navigate", Target: "https://shop.example.test/cart"},
 				{Name: "Submit Order", Type: "browser_click", Target: "#submit", Selector: "#submit"},
 			},
-			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "loadrunner", Preserved: map[string]any{"source_profile": "vugen_web2 browser profile"}}},
+			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "enterprise_script_archive", Preserved: map[string]any{"source_profile": "web2_browser_profile browser profile"}}},
 		},
 		NetworkEntries: []protocol.NetworkEntry{
 			{URL: "https://shop.example.test/api/cart?customer_id=123&csrf_token=abcdef0123456789abcdef0123456789", Method: "GET", StatusCode: 200, ResourceType: "fetch", DurationMs: 12},

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { type LoadRunnerSourceReviewMapping } from '../types/scripts'
+import { type SourceArchiveReviewMapping } from '../types/scripts'
 import { buildDslDocument } from './dslJsonPointers'
 import {
   computeCoverage,
@@ -12,7 +12,7 @@ import {
   statusCategory,
 } from './sourceMappingModel'
 
-function mapping(overrides: Partial<LoadRunnerSourceReviewMapping>): LoadRunnerSourceReviewMapping {
+function mapping(overrides: Partial<SourceArchiveReviewMapping>): SourceArchiveReviewMapping {
   return {
     id: overrides.id || 'm',
     source_file: overrides.source_file ?? 'Action.c',

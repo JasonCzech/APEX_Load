@@ -1,4 +1,4 @@
-package loadrunner
+package enterprisearchive
 
 import (
 	"fmt"
@@ -26,18 +26,18 @@ const (
 )
 
 type DetectedProtocol struct {
-	CanonicalLoadRunnerProtocol string              `json:"canonical_loadrunner_protocol"`
-	APEXLoadProtocol            string              `json:"apexload_protocol,omitempty"`
-	Bundle                      string              `json:"bundle,omitempty"`
-	ImportMode                  ImportMode          `json:"import_mode"`
-	Confidence                  DetectionConfidence `json:"confidence"`
-	DisplayName                 string              `json:"display_name,omitempty"`
-	SourceType                  string              `json:"source_type,omitempty"`
-	Signals                     []string            `json:"signals,omitempty"`
-	Conflicts                   []string            `json:"conflicts,omitempty"`
-	Warnings                    []string            `json:"warnings,omitempty"`
-	RequiredEvidence            []string            `json:"required_evidence,omitempty"`
-	RunnerRequirement           string              `json:"runner_requirement,omitempty"`
+	CanonicalSourceProtocol string              `json:"canonical_source_protocol"`
+	APEXLoadProtocol        string              `json:"apexload_protocol,omitempty"`
+	Bundle                  string              `json:"bundle,omitempty"`
+	ImportMode              ImportMode          `json:"import_mode"`
+	Confidence              DetectionConfidence `json:"confidence"`
+	DisplayName             string              `json:"display_name,omitempty"`
+	SourceType              string              `json:"source_type,omitempty"`
+	Signals                 []string            `json:"signals,omitempty"`
+	Conflicts               []string            `json:"conflicts,omitempty"`
+	Warnings                []string            `json:"warnings,omitempty"`
+	RequiredEvidence        []string            `json:"required_evidence,omitempty"`
+	RunnerRequirement       string              `json:"runner_requirement,omitempty"`
 }
 
 type ReviewArtifact struct {
@@ -90,7 +90,7 @@ var protocolTypeAliases = map[string]protocolProfile{
 	"truclient - web":               trueClientWebProfile(),
 	"truclient web":                 trueClientWebProfile(),
 	"truclientweb":                  trueClientWebProfile(),
-	"truclient":                     externalProfile("truclient_legacy", "TruClient", "Foundation Entitlement", "Legacy desktop TruClient requires the VuGen/TruClient runtime and is preserved for review."),
+	"truclient":                     externalProfile("truclient_legacy", "TruClient", "Foundation Entitlement", "Legacy desktop browser-profile archives require an external runtime and are preserved for review."),
 	"database":                      databaseProfile(),
 	"odbc":                          databaseProfile(),
 	"sql":                           databaseProfile(),
@@ -175,31 +175,31 @@ func DetectProtocol(files map[string]string, projectConfig *ProjectConfig, actio
 	}
 
 	detected := DetectedProtocol{
-		CanonicalLoadRunnerProtocol: selected.Canonical,
-		APEXLoadProtocol:            selected.APEXLoad,
-		Bundle:                      selected.Bundle,
-		ImportMode:                  selected.Mode,
-		Confidence:                  confidence,
-		DisplayName:                 selected.DisplayName,
-		SourceType:                  sourceType,
-		Signals:                     uniqueSortedStrings(signals),
-		Conflicts:                   uniqueSortedStrings(conflicts),
-		Warnings:                    append([]string(nil), selected.Warnings...),
-		RequiredEvidence:            append([]string(nil), selected.Evidence...),
-		RunnerRequirement:           selected.Runner,
+		CanonicalSourceProtocol: selected.Canonical,
+		APEXLoadProtocol:        selected.APEXLoad,
+		Bundle:                  selected.Bundle,
+		ImportMode:              selected.Mode,
+		Confidence:              confidence,
+		DisplayName:             selected.DisplayName,
+		SourceType:              sourceType,
+		Signals:                 uniqueSortedStrings(signals),
+		Conflicts:               uniqueSortedStrings(conflicts),
+		Warnings:                append([]string(nil), selected.Warnings...),
+		RequiredEvidence:        append([]string(nil), selected.Evidence...),
+		RunnerRequirement:       selected.Runner,
 	}
 
 	if len(conflicts) > 0 && !isHarmlessSOAPConflict(selected, contentProfile) {
 		detected.ImportMode = ImportModeReviewOnly
 		detected.APEXLoadProtocol = ""
 		detected.Warnings = append(detected.Warnings, "Metadata and content disagree; import is gated as review-only until an operator confirms the correct protocol.")
-		detected.RequiredEvidence = appendUnique(detected.RequiredEvidence, "Operator-confirmed VuGen protocol profile", "Replay or runtime evidence for the selected protocol")
+		detected.RequiredEvidence = appendUnique(detected.RequiredEvidence, "Operator-confirmed source protocol profile", "Replay or runtime evidence for the selected protocol")
 	}
-	if detected.CanonicalLoadRunnerProtocol == "" {
-		detected.CanonicalLoadRunnerProtocol = "unknown"
-		detected.DisplayName = "Unknown LoadRunner Protocol"
+	if detected.CanonicalSourceProtocol == "" {
+		detected.CanonicalSourceProtocol = "unknown"
+		detected.DisplayName = "Unknown Source Protocol"
 		detected.ImportMode = ImportModeUnsupported
-		detected.RequiredEvidence = appendUnique(detected.RequiredEvidence, "VuGen .usr file or protocol-specific source files")
+		detected.RequiredEvidence = appendUnique(detected.RequiredEvidence, "Project metadata file or protocol-specific source files")
 	}
 	detected.Warnings = uniqueSortedStrings(detected.Warnings)
 	detected.RequiredEvidence = uniqueSortedStrings(detected.RequiredEvidence)
@@ -357,7 +357,7 @@ func NewReviewArtifact(detected DetectedProtocol, files map[string]string, actio
 		sourceFiles = append(sourceFiles, filepath.Base(name))
 	}
 	sort.Strings(sourceFiles)
-	title := firstNonEmpty(detected.DisplayName, detected.CanonicalLoadRunnerProtocol, "LoadRunner import") + " review artifact"
+	title := firstNonEmpty(detected.DisplayName, detected.CanonicalSourceProtocol, "Enterprise script archive import") + " review artifact"
 	status := string(detected.ImportMode)
 	if status == "" {
 		status = string(ImportModeReviewOnly)
@@ -394,7 +394,7 @@ func reviewArtifactSummary(detected DetectedProtocol) string {
 	case ImportModeExternalRunnerRequired:
 		return "This protocol requires an external runner before APEX Load can execute it natively."
 	case ImportModeUnsupported:
-		return "APEX Load can classify this LoadRunner archive, but no executable converter is available."
+		return "APEX Load can classify this enterprise script archive, but no executable converter is available."
 	default:
 		return "APEX Load preserved this archive as a review-only import artifact."
 	}
@@ -418,7 +418,7 @@ func reviewArtifactNextActions(detected DetectedProtocol) []string {
 
 func stableReviewArtifactID(detected DetectedProtocol, files []string, functions []string) string {
 	h := fnv.New32a()
-	_, _ = h.Write([]byte(detected.CanonicalLoadRunnerProtocol))
+	_, _ = h.Write([]byte(detected.CanonicalSourceProtocol))
 	_, _ = h.Write([]byte(strings.Join(files, "|")))
 	_, _ = h.Write([]byte(strings.Join(functions, "|")))
 	return fmt.Sprintf("lr-review-%08x", h.Sum32())
@@ -626,7 +626,7 @@ func databaseProfile() protocolProfile {
 		Canonical:   "database",
 		DisplayName: "Database/ODBC",
 		APEXLoad:    "database",
-		Bundle:      "LoadRunner Enterprise Database Protocol Bundle",
+		Bundle:      "Enterprise Database Protocol Bundle",
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"DSN or connection string", "SQL bind data review"},
 	}
@@ -640,7 +640,7 @@ func networkProfile(canonical, display string) protocolProfile {
 		Canonical:   canonical,
 		DisplayName: display,
 		APEXLoad:    "network",
-		Bundle:      "LoadRunner Enterprise Network Protocol Bundle",
+		Bundle:      "Enterprise Network Protocol Bundle",
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"Endpoint and credential review"},
 	}
@@ -696,7 +696,7 @@ func templateProfile(canonical, display string) protocolProfile {
 	return protocolProfile{
 		Canonical:   canonical,
 		DisplayName: display,
-		Bundle:      "LoadRunner Enterprise Templates Protocol Bundle",
+		Bundle:      "Enterprise Templates Protocol Bundle",
 		Mode:        ImportModeReviewOnly,
 		Evidence:    []string{"Template implementation review", "Mapping to supported APEX Load DSL actions"},
 		Runner:      "Template VUser imports require manual mapping to executable APEX Load actions.",

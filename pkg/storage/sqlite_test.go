@@ -50,7 +50,7 @@ func TestSQLiteStoreSaveScriptPreservesMetadata(t *testing.T) {
 		}},
 		Metadata: &dsl.ScriptMetadata{
 			Import: &dsl.ImportMetadata{
-				Source:           "loadrunner",
+				Source:           "enterprise_script_archive",
 				SourceScriptName: "Demo",
 				Preserved: map[string]any{
 					"runtime_files": map[string]any{
@@ -81,7 +81,7 @@ func TestSQLiteStoreSaveScriptPreservesMetadata(t *testing.T) {
 		t.Fatalf("json.Marshal returned error: %v", err)
 	}
 	text := string(payload)
-	for _, want := range []string{"\"source\":\"loadrunner\"", "default.cfg", "\"ConnectTimeout\":\"45\""} {
+	for _, want := range []string{"\"source\":\"enterprise_script_archive\"", "default.cfg", "\"ConnectTimeout\":\"45\""} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected metadata JSON to contain %q, got %s", want, text)
 		}
@@ -111,7 +111,7 @@ func TestSQLiteStoreAuthoringSessionsRoundTrip(t *testing.T) {
 	session := &AuthoringSession{
 		ID:        "session-1",
 		ProjectID: "project-1",
-		Source:    "loadrunner",
+		Source:    "enterprise_script_archive",
 		Name:      "Checkout migration",
 		Status:    "editing",
 		Draft: &dsl.Script{
@@ -132,7 +132,7 @@ func TestSQLiteStoreAuthoringSessionsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAuthoringSession returned error: %v", err)
 	}
-	if roundTrip.ProjectID != "project-1" || roundTrip.Source != "loadrunner" || roundTrip.Name != "Checkout migration" {
+	if roundTrip.ProjectID != "project-1" || roundTrip.Source != "enterprise_script_archive" || roundTrip.Name != "Checkout migration" {
 		t.Fatalf("roundTrip metadata = %#v", roundTrip)
 	}
 	if roundTrip.Draft == nil || roundTrip.Draft.Name != "Checkout" || roundTrip.Draft.Config.BaseURL != "https://example.test" {

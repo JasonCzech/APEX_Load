@@ -14,10 +14,10 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
+	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
 	"github.com/jasonczech/apexload/pkg/convert/k6"
-	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
@@ -30,12 +30,12 @@ type jmeterImportRequest struct {
 	Opts      jmeter.ConvertOptions
 }
 
-type loadRunnerImportRequest struct {
+type enterpriseArchiveImportRequest struct {
 	Data             []byte
 	HARData          []byte
 	ProjectID        string
-	Opts             loadrunner.ConvertOptions
-	ReadinessPolicy  loadrunner.RuntimeSettingMigrationPolicy
+	Opts             enterprisearchive.ConvertOptions
+	ReadinessPolicy  enterprisearchive.RuntimeSettingMigrationPolicy
 	SalesforceNative bool
 }
 
@@ -60,26 +60,26 @@ type k6ImportRequest struct {
 	Opts      k6.ConvertOptions
 }
 
-type loadRunnerImportSummary struct {
-	ProjectFile                 string                                       `json:"project_file,omitempty"`
-	MappedRuntimeFile           string                                       `json:"mapped_runtime_file,omitempty"`
-	ProjectSections             []string                                     `json:"project_sections,omitempty"`
-	RuntimeFiles                []string                                     `json:"runtime_files,omitempty"`
-	ParameterFiles              []string                                     `json:"parameter_files,omitempty"`
-	RuntimeSettingsParity       []loadrunner.RuntimeSettingParityEntry       `json:"runtime_settings_parity,omitempty"`
-	RuntimeSettingsStatusCounts map[string]int                               `json:"runtime_settings_status_counts,omitempty"`
-	MigrationReadiness          *loadrunner.RuntimeSettingMigrationReadiness `json:"migration_readiness,omitempty"`
-	TrueClientInspection        *trueclient.ArchiveInspection                `json:"trueclient_archive_inspection,omitempty"`
-	SourceScriptType            string                                       `json:"source_script_type,omitempty"`
-	SourceProfile               string                                       `json:"source_profile,omitempty"`
-	Web2MigrationReadiness      *web2MigrationReadinessReport                `json:"web2_migration_readiness,omitempty"`
-	TrueClient2CompatReport     *trueClient2CompatReport                     `json:"trueclient2_compat_report,omitempty"`
-	SalesforceReview            *salesforce.Review                           `json:"salesforce_review,omitempty"`
-	DetectedProtocol            *loadrunner.DetectedProtocol                 `json:"detected_protocol,omitempty"`
-	ReviewArtifact              *loadrunner.ReviewArtifact                   `json:"review_artifact,omitempty"`
-	SourceReview                *loadrunner.SourceReview                     `json:"source_review,omitempty"`
-	ImportMode                  string                                       `json:"import_mode,omitempty"`
-	UnsupportedFunctionCount    int                                          `json:"unsupported_function_count"`
+type enterpriseArchiveImportSummary struct {
+	ProjectFile                 string                                              `json:"project_file,omitempty"`
+	MappedRuntimeFile           string                                              `json:"mapped_runtime_file,omitempty"`
+	ProjectSections             []string                                            `json:"project_sections,omitempty"`
+	RuntimeFiles                []string                                            `json:"runtime_files,omitempty"`
+	ParameterFiles              []string                                            `json:"parameter_files,omitempty"`
+	RuntimeSettingsParity       []enterprisearchive.RuntimeSettingParityEntry       `json:"runtime_settings_parity,omitempty"`
+	RuntimeSettingsStatusCounts map[string]int                                      `json:"runtime_settings_status_counts,omitempty"`
+	MigrationReadiness          *enterprisearchive.RuntimeSettingMigrationReadiness `json:"migration_readiness,omitempty"`
+	TrueClientInspection        *trueclient.ArchiveInspection                       `json:"trueclient_archive_inspection,omitempty"`
+	SourceScriptType            string                                              `json:"source_script_type,omitempty"`
+	SourceProfile               string                                              `json:"source_profile,omitempty"`
+	Web2MigrationReadiness      *web2MigrationReadinessReport                       `json:"web2_migration_readiness,omitempty"`
+	TrueClient2CompatReport     *trueClient2CompatReport                            `json:"trueclient2_compat_report,omitempty"`
+	SalesforceReview            *salesforce.Review                                  `json:"salesforce_review,omitempty"`
+	DetectedProtocol            *enterprisearchive.DetectedProtocol                 `json:"detected_protocol,omitempty"`
+	ReviewArtifact              *enterprisearchive.ReviewArtifact                   `json:"review_artifact,omitempty"`
+	SourceReview                *enterprisearchive.SourceReview                     `json:"source_review,omitempty"`
+	ImportMode                  string                                              `json:"import_mode,omitempty"`
+	UnsupportedFunctionCount    int                                                 `json:"unsupported_function_count"`
 }
 
 type web2MigrationReadinessReport struct {
@@ -163,16 +163,16 @@ type protocolCompatReport struct {
 	NextActions          []string       `json:"next_actions,omitempty"`
 }
 
-// handleImportLoadRunner handles POST /api/v1/scripts/import/loadrunner
-// Accepts a multipart form upload of a ZIP file containing a LoadRunner script folder.
-func (s *Server) handleImportLoadRunner(w http.ResponseWriter, r *http.Request) {
-	importReq, ok := readLoadRunnerImportRequest(w, r)
+// handleImportEnterpriseArchive handles POST /api/v1/scripts/import/enterprise-script-archive.
+// Accepts a multipart form upload of a ZIP file containing enterprise C/VUser source files.
+func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Request) {
+	importReq, ok := readEnterpriseArchiveImportRequest(w, r)
 	if !ok {
 		return
 	}
 
 	// Run the conversion
-	result, err := loadrunner.ConvertZip(importReq.Data, importReq.Opts)
+	result, err := enterprisearchive.ConvertZip(importReq.Data, importReq.Opts)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
@@ -180,20 +180,20 @@ func (s *Server) handleImportLoadRunner(w http.ResponseWriter, r *http.Request) 
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
-	attachSalesforceReviewToLoadRunnerResult(result, importReq)
+	attachSalesforceReviewToEnterpriseArchiveResult(result, importReq)
 
-	writeLoadRunnerImportResponse(w, http.StatusOK, result, importReq.ReadinessPolicy)
+	writeEnterpriseArchiveImportResponse(w, http.StatusOK, result, importReq.ReadinessPolicy)
 }
 
-// handleValidateLoadRunnerImport handles POST /api/v1/scripts/import/loadrunner/validate.
+// handleValidateEnterpriseArchiveImport handles POST /api/v1/scripts/import/enterprise-script-archive/validate.
 // It parses and converts the ZIP payload without persisting any generated assets.
-func (s *Server) handleValidateLoadRunnerImport(w http.ResponseWriter, r *http.Request) {
-	importReq, ok := readLoadRunnerImportRequest(w, r)
+func (s *Server) handleValidateEnterpriseArchiveImport(w http.ResponseWriter, r *http.Request) {
+	importReq, ok := readEnterpriseArchiveImportRequest(w, r)
 	if !ok {
 		return
 	}
 
-	result, err := loadrunner.ConvertZip(importReq.Data, importReq.Opts)
+	result, err := enterprisearchive.ConvertZip(importReq.Data, importReq.Opts)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "validation failed: "+err.Error())
 		return
@@ -201,12 +201,12 @@ func (s *Server) handleValidateLoadRunnerImport(w http.ResponseWriter, r *http.R
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
-	attachSalesforceReviewToLoadRunnerResult(result, importReq)
+	attachSalesforceReviewToEnterpriseArchiveResult(result, importReq)
 
-	writeLoadRunnerImportResponse(w, http.StatusOK, result, importReq.ReadinessPolicy)
+	writeEnterpriseArchiveImportResponse(w, http.StatusOK, result, importReq.ReadinessPolicy)
 }
 
-func attachSalesforceReviewToLoadRunnerResult(result *loadrunner.ConvertResult, importReq *loadRunnerImportRequest) {
+func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.ConvertResult, importReq *enterpriseArchiveImportRequest) {
 	if result == nil || result.Script == nil || importReq == nil {
 		return
 	}
@@ -224,7 +224,7 @@ func attachSalesforceReviewToLoadRunnerResult(result *loadrunner.ConvertResult, 
 	if review == nil || (!review.Detected && !importReq.SalesforceNative) {
 		return
 	}
-	preserved := ensureScriptImportPreserved(result.Script, "loadrunner")
+	preserved := ensureScriptImportPreserved(result.Script, "enterprise_script_archive")
 	preserved["salesforce_review"] = review
 }
 
@@ -303,11 +303,11 @@ func (s *Server) handleK6SupportMatrix(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleLoadRunnerSupportMatrix(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleEnterpriseArchiveSupportMatrix(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"support_matrix":            loadrunner.GetRTSSupportMatrix(),
-		"notes":                     loadrunner.GetRTSSupportMatrixNotes(),
-		"tested_examples":           loadrunner.GetRTSSupportMatrixExamples(),
+		"support_matrix":            enterprisearchive.GetRTSSupportMatrix(),
+		"notes":                     enterprisearchive.GetRTSSupportMatrixNotes(),
+		"tested_examples":           enterprisearchive.GetRTSSupportMatrixExamples(),
 		"trueclient_script_types":   trueclient.ScriptTypeScopes(),
 		"trueclient_step_matrix":    trueclient.StepScopes(),
 		"web2_profile_capabilities": trueclient.Web2ProfileCapabilityScopes(),
@@ -807,7 +807,7 @@ func readJMeterSidecarFiles(r *http.Request, primaryField string, primaryFileNam
 	return files
 }
 
-func readLoadRunnerImportRequest(w http.ResponseWriter, r *http.Request) (*loadRunnerImportRequest, bool) {
+func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) (*enterpriseArchiveImportRequest, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, 100<<20)
 
 	contentType := r.Header.Get("Content-Type")
@@ -856,18 +856,18 @@ func readLoadRunnerImportRequest(w http.ResponseWriter, r *http.Request) (*loadR
 		return nil, false
 	}
 
-	return &loadRunnerImportRequest{
+	return &enterpriseArchiveImportRequest{
 		Data:             data,
 		HARData:          harData,
 		ProjectID:        firstNonEmpty(r.FormValue("project_id"), r.URL.Query().Get("project_id")),
 		SalesforceNative: parseBoolDefault(firstNonEmpty(r.FormValue("salesforce_native"), r.URL.Query().Get("salesforce_native")), false),
-		Opts: loadrunner.ConvertOptions{
+		Opts: enterprisearchive.ConvertOptions{
 			ScriptName:           r.FormValue("name"),
 			BaseURL:              r.FormValue("base_url"),
 			IncludeAssertions:    r.FormValue("include_assertions") == "true",
 			PreserveTransactions: parseBoolDefault(r.FormValue("preserve_transactions"), true),
 		},
-		ReadinessPolicy: loadrunner.ParseRuntimeSettingMigrationPolicy(r.FormValue("migration_block_statuses")),
+		ReadinessPolicy: enterprisearchive.ParseRuntimeSettingMigrationPolicy(r.FormValue("migration_block_statuses")),
 	}, true
 }
 
@@ -894,19 +894,19 @@ func parseOptionalBool(value string) *bool {
 	return &parsed
 }
 
-func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *loadrunner.ConvertResult, readinessPolicy loadrunner.RuntimeSettingMigrationPolicy) {
+func writeEnterpriseArchiveImportResponse(w http.ResponseWriter, status int, result *enterprisearchive.ConvertResult, readinessPolicy enterprisearchive.RuntimeSettingMigrationPolicy) {
 	if result == nil {
 		writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{}))
 		return
 	}
 	unsupportedElements := uniqueSortedStrings(result.Stats.UnsupportedFuncs)
-	warnings := loadRunnerImportWarnings(result)
-	summary := buildLoadRunnerImportSummary(result, unsupportedElements, readinessPolicy)
-	persistLoadRunnerImportSummary(result, summary)
-	reviewSections := buildLoadRunnerImportReviewSections(warnings, result, unsupportedElements, summary)
-	repairSuggestions := buildLoadRunnerImportRepairSuggestions(result, unsupportedElements, summary)
-	protocolCompat := buildLoadRunnerProtocolCompatReport(result, unsupportedElements, summary)
-	persistProtocolCompatReport(result.Script, "loadrunner", protocolCompat)
+	warnings := enterpriseArchiveImportWarnings(result)
+	summary := buildEnterpriseArchiveImportSummary(result, unsupportedElements, readinessPolicy)
+	persistEnterpriseArchiveImportSummary(result, summary)
+	reviewSections := buildEnterpriseArchiveImportReviewSections(warnings, result, unsupportedElements, summary)
+	repairSuggestions := buildEnterpriseArchiveImportRepairSuggestions(result, unsupportedElements, summary)
+	protocolCompat := buildEnterpriseArchiveProtocolCompatReport(result, unsupportedElements, summary)
+	persistProtocolCompatReport(result.Script, "enterprise_script_archive", protocolCompat)
 
 	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
@@ -925,7 +925,7 @@ func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *lo
 	}))
 }
 
-func loadRunnerImportWarnings(result *loadrunner.ConvertResult) []string {
+func enterpriseArchiveImportWarnings(result *enterprisearchive.ConvertResult) []string {
 	if result == nil {
 		return nil
 	}
@@ -933,7 +933,7 @@ func loadRunnerImportWarnings(result *loadrunner.ConvertResult) []string {
 	return uniqueSortedStrings(warnings)
 }
 
-func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, unsupportedElements []string, summary loadRunnerImportSummary) []scriptImportRepairSuggestion {
+func buildEnterpriseArchiveImportRepairSuggestions(result *enterprisearchive.ConvertResult, unsupportedElements []string, summary enterpriseArchiveImportSummary) []scriptImportRepairSuggestion {
 	suggestions := make([]scriptImportRepairSuggestion, 0)
 	if result == nil {
 		return suggestions
@@ -944,10 +944,10 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 		description := "Review the preserved source construct and replace it with equivalent APEX Load DSL behavior before relying on this script."
 		action := "Open the generated script in the visual editor, inspect preserved metadata, and either remove the unsupported construct or model it with supported actions."
 		if strings.Contains(normalized, "evaluate javascript") {
-			description = "This TruClient JavaScript statement could not be decomposed into a supported browser action."
+			description = "This source JavaScript statement could not be decomposed into a supported browser action."
 			action = "Replace the JavaScript with browser_click, browser_fill, browser_select, browser_wait, browser_swipe, or a supported assertion, then validate with browser replay."
-			if loadRunnerWarningsContain(result, "window.scrollto(") {
-				description = "This TruClient JavaScript scroll statement could not be decomposed safely into a supported browser action."
+			if enterpriseArchiveWarningsContain(result, "window.scrollto(") {
+				description = "This source JavaScript scroll statement could not be decomposed safely into a supported browser action."
 				action = "Replace the JavaScript with browser_swipe and any required browser_wait actions, then validate the resulting scroll behavior with browser replay."
 			}
 		}
@@ -969,13 +969,13 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 		suggestions = append(suggestions, trueClientWeb2RepairSuggestions(summary)...)
 	}
 
-	if result.DetectedProtocol != nil && result.DetectedProtocol.ImportMode != loadrunner.ImportModeExecutable {
+	if result.DetectedProtocol != nil && result.DetectedProtocol.ImportMode != enterprisearchive.ImportModeExecutable {
 		suggestions = append(suggestions, scriptImportRepairSuggestion{
 			ID:          "protocol:review-artifact",
 			Category:    "protocol",
 			Severity:    "blocker",
 			Title:       "Resolve protocol import gate",
-			Description: fmt.Sprintf("%s was classified as %s and is not ready to save as an executable APEX Load script.", firstNonEmpty(result.DetectedProtocol.DisplayName, result.DetectedProtocol.CanonicalLoadRunnerProtocol), result.DetectedProtocol.ImportMode),
+			Description: fmt.Sprintf("%s was classified as %s and is not ready to save as an executable APEX Load script.", firstNonEmpty(result.DetectedProtocol.DisplayName, result.DetectedProtocol.CanonicalSourceProtocol), result.DetectedProtocol.ImportMode),
 			Action:      "Save the review artifact, collect the required protocol evidence, and rerun import after the protocol is confirmed or a runner bridge is available.",
 		})
 	}
@@ -986,7 +986,7 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 			Category:    "runtime",
 			Severity:    "info",
 			Title:       "Review preserved runtime settings",
-			Description: "The source archive included LoadRunner runtime metadata that may not all execute natively in APEX Load yet.",
+			Description: "The source archive included source runtime metadata that may not all execute natively in APEX Load yet.",
 			Action:      "Compare the preserved runtime file and project settings against the generated APEX Load config before promoting the script.",
 		})
 	}
@@ -1009,14 +1009,14 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 			Severity:    "blocker",
 			Title:       "Resolve Salesforce native preview blockers",
 			Description: "The exact replay script was imported, but the Salesforce native preview needs additional evidence or correlation review before promotion.",
-			Action:      "Attach a HAR captured from the same LoadRunner recording, review Salesforce transaction grouping and correlations, then rerun the native preview.",
+			Action:      "Attach a HAR captured from the same source recording, review Salesforce transaction grouping and correlations, then rerun the native preview.",
 		})
 	}
 
 	return suggestions
 }
 
-func trueClientWeb2RepairSuggestions(summary loadRunnerImportSummary) []scriptImportRepairSuggestion {
+func trueClientWeb2RepairSuggestions(summary enterpriseArchiveImportSummary) []scriptImportRepairSuggestion {
 	inspection := summary.TrueClientInspection
 	if inspection == nil {
 		return nil
@@ -1027,7 +1027,7 @@ func trueClientWeb2RepairSuggestions(summary loadRunnerImportSummary) []scriptIm
 			Category:    "replay",
 			Severity:    "warning",
 			Title:       "Attach browser replay evidence",
-			Description: "TruClient Web 2.0 imports are review-only until selector, wait, runtime, and screenshot evidence is captured.",
+			Description: "Web 2.0 browser-profile archives are review-only until selector, wait, runtime, and screenshot evidence is captured.",
 			Action:      "Run browser replay from the visual editor and attach the replay report before approving the imported draft.",
 		},
 		{
@@ -1070,14 +1070,14 @@ func trueClientWeb2RepairSuggestions(summary loadRunnerImportSummary) []scriptIm
 			Category:    "unsupported",
 			Severity:    severity,
 			Title:       "Resolve Web 2.0 source fragments",
-			Description: fmt.Sprintf("%d review-only or unsupported TruClient fragment(s) were preserved from the source archive.", len(inspection.UnsupportedFragments)),
+			Description: fmt.Sprintf("%d review-only or unsupported source fragment(s) were preserved from the source archive.", len(inspection.UnsupportedFragments)),
 			Action:      "Use the Web 2.0 source-fragment review section to replace unsupported JavaScript/API behavior with supported browser actions or documented manual steps.",
 		})
 	}
 	return suggestions
 }
 
-func loadRunnerWarningsContain(result *loadrunner.ConvertResult, needle string) bool {
+func enterpriseArchiveWarningsContain(result *enterprisearchive.ConvertResult, needle string) bool {
 	if result == nil {
 		return false
 	}
@@ -1093,7 +1093,7 @@ func loadRunnerWarningsContain(result *loadrunner.ConvertResult, needle string) 
 	return false
 }
 
-func trueClientWeb2ReviewSections(summary loadRunnerImportSummary) []scriptImportReviewSection {
+func trueClientWeb2ReviewSections(summary enterpriseArchiveImportSummary) []scriptImportReviewSection {
 	inspection := summary.TrueClientInspection
 	if inspection == nil {
 		return nil
@@ -1104,7 +1104,7 @@ func trueClientWeb2ReviewSections(summary loadRunnerImportSummary) []scriptImpor
 		sourceProfile = inspection.ScriptTypeScope.APEXLoadShape
 	}
 	items := []string{
-		fmt.Sprintf("Source script type: %s", firstNonEmpty(sourceType, "TruClient archive")),
+		fmt.Sprintf("Source script type: %s", firstNonEmpty(sourceType, "browser-profile archive")),
 		fmt.Sprintf("Source profile: %s", firstNonEmpty(sourceProfile, "browser profile")),
 		fmt.Sprintf("Executable steps inspected: %d", inspection.StepInventory.Total),
 		fmt.Sprintf("Supported step families: %d", len(inspection.StepInventory.Supported)),
@@ -1117,9 +1117,9 @@ func trueClientWeb2ReviewSections(summary loadRunnerImportSummary) []scriptImpor
 	}
 	sections := []scriptImportReviewSection{{
 		Key:      "web2_profile_summary",
-		Title:    "VuGen Web 2.0 Profile Summary",
+		Title:    "Web 2.0 Browser Profile Summary",
 		Severity: "warning",
-		Summary:  "This TruClient Web 2.0 archive was converted into a review-only browser draft.",
+		Summary:  "This Web 2.0 browser-profile archive was converted into a review-only browser draft.",
 		Items:    items,
 	}}
 
@@ -1260,7 +1260,7 @@ func trueClientReplayDiagnosticCount(inspection *trueclient.ArchiveInspection) i
 	return count
 }
 
-func buildWeb2MigrationReadinessReport(result *loadrunner.ConvertResult, summary loadRunnerImportSummary) *web2MigrationReadinessReport {
+func buildWeb2MigrationReadinessReport(result *enterprisearchive.ConvertResult, summary enterpriseArchiveImportSummary) *web2MigrationReadinessReport {
 	inspection := summary.TrueClientInspection
 	if inspection == nil {
 		return nil
@@ -1298,7 +1298,7 @@ func buildWeb2MigrationReadinessReport(result *loadrunner.ConvertResult, summary
 		RuntimeParityStatus:       runtimeStatus,
 		ConversionToHTTPReadiness: "needs_replay_network",
 		Findings: []string{
-			fmt.Sprintf("%d imported TruClient Web 2.0 step(s), %d converted browser action(s), %d skipped or review step(s).", inspection.StepInventory.Total, converted, reviewSteps),
+			fmt.Sprintf("%d imported Web 2.0 browser-profile step(s), %d converted browser action(s), %d skipped or review step(s).", inspection.StepInventory.Total, converted, reviewSteps),
 			"Browser replay evidence is required before approval.",
 			"Browser-to-HTTP conversion requires replay network capture and generated HTTP validation.",
 		},
@@ -1319,7 +1319,7 @@ func buildWeb2MigrationReadinessReport(result *loadrunner.ConvertResult, summary
 	return report
 }
 
-func buildTrueClient2CompatReport(result *loadrunner.ConvertResult, summary loadRunnerImportSummary) *trueClient2CompatReport {
+func buildTrueClient2CompatReport(result *enterprisearchive.ConvertResult, summary enterpriseArchiveImportSummary) *trueClient2CompatReport {
 	inspection := summary.TrueClientInspection
 	if inspection == nil {
 		return nil
@@ -1353,7 +1353,7 @@ func buildTrueClient2CompatReport(result *loadrunner.ConvertResult, summary load
 	if replayStatus == "passed" && (jsGate == "clear" || jsGate == "approved") {
 		httpReadiness = "ready_for_preview"
 	}
-	promotionAllowed := importMode == string(loadrunner.ImportModeExecutable) &&
+	promotionAllowed := importMode == string(enterprisearchive.ImportModeExecutable) &&
 		replayStatus == "passed" &&
 		(jsGate == "clear" || jsGate == "approved") &&
 		frameWindowBlockers == 0 &&
@@ -1426,7 +1426,7 @@ func buildTrueClient2CompatReport(result *loadrunner.ConvertResult, summary load
 	return report
 }
 
-func trueClientRuntimeParityStatus(summary loadRunnerImportSummary) string {
+func trueClientRuntimeParityStatus(summary enterpriseArchiveImportSummary) string {
 	if summary.MigrationReadiness != nil {
 		if summary.MigrationReadiness.Blocked {
 			return "blocked"
@@ -1457,7 +1457,7 @@ func trueClientFrameWindowBlockerCount(inspection *trueclient.ArchiveInspection)
 	return count
 }
 
-func buildTrueClientJavaScriptReviewPolicy(result *loadrunner.ConvertResult, inspection *trueclient.ArchiveInspection, replayStatus string) *trueClientJavaScriptReviewPolicyReport {
+func buildTrueClientJavaScriptReviewPolicy(result *enterprisearchive.ConvertResult, inspection *trueclient.ArchiveInspection, replayStatus string) *trueClientJavaScriptReviewPolicyReport {
 	report := &trueClientJavaScriptReviewPolicyReport{
 		Status:                 "clear",
 		Policy:                 "explicit_approval_required",
@@ -1494,7 +1494,7 @@ func buildTrueClientJavaScriptReviewPolicy(result *loadrunner.ConvertResult, ins
 	}
 	report.ApprovalRequired = true
 	report.NextActions = []string{
-		"Review each browser_evaluate_js action against source TruClient code.",
+		"Review each browser_evaluate_js action against source JavaScript code.",
 		"Attach reviewer, approval timestamp, and replay evidence before production promotion.",
 		"Prefer replacing JavaScript with native browser actions when possible.",
 	}
@@ -1579,7 +1579,7 @@ func trueClientJavaScriptActionReviewFor(index int, action dsl.Action) trueClien
 	}
 }
 
-func trueClientReplayStatus(result *loadrunner.ConvertResult) string {
+func trueClientReplayStatus(result *enterprisearchive.ConvertResult) string {
 	if result == nil || result.Script == nil || result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
 		return "required"
 	}
@@ -1832,7 +1832,7 @@ func stableReviewKey(value string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.ConvertResult, unsupportedElements []string, summary loadRunnerImportSummary) []scriptImportReviewSection {
+func buildEnterpriseArchiveImportReviewSections(warnings []string, result *enterprisearchive.ConvertResult, unsupportedElements []string, summary enterpriseArchiveImportSummary) []scriptImportReviewSection {
 	sections := make([]scriptImportReviewSection, 0, 4)
 	if result == nil {
 		return sections
@@ -1840,7 +1840,7 @@ func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.C
 
 	if result.DetectedProtocol != nil {
 		items := []string{
-			"LoadRunner protocol: " + firstNonEmpty(result.DetectedProtocol.DisplayName, result.DetectedProtocol.CanonicalLoadRunnerProtocol),
+			"Source protocol: " + firstNonEmpty(result.DetectedProtocol.DisplayName, result.DetectedProtocol.CanonicalSourceProtocol),
 			"Import mode: " + string(result.DetectedProtocol.ImportMode),
 			"Confidence: " + string(result.DetectedProtocol.Confidence),
 		}
@@ -1857,12 +1857,12 @@ func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.C
 			items = append(items, "Conflict: "+conflict)
 		}
 		severity := "info"
-		if result.DetectedProtocol.ImportMode != loadrunner.ImportModeExecutable || len(result.DetectedProtocol.Conflicts) > 0 {
+		if result.DetectedProtocol.ImportMode != enterprisearchive.ImportModeExecutable || len(result.DetectedProtocol.Conflicts) > 0 {
 			severity = "warning"
 		}
 		sections = append(sections, scriptImportReviewSection{
 			Key:      "detected_protocol",
-			Title:    "Detected LoadRunner Protocol",
+			Title:    "Detected Source Protocol",
 			Severity: severity,
 			Summary:  "Protocol-aware routing classified this archive before conversion.",
 			Items:    items,
@@ -1902,7 +1902,7 @@ func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.C
 	if len(unsupportedElements) > 0 {
 		sections = append(sections, scriptImportReviewSection{
 			Key:      "unsupported_elements",
-			Title:    "Unsupported LoadRunner Elements",
+			Title:    "Unsupported Source Elements",
 			Severity: "blocker",
 			Summary:  "These source constructs were preserved for review but were not converted into executable APEX Load actions.",
 			Items:    unsupportedElements,
@@ -1928,7 +1928,7 @@ func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.C
 	if len(preservedItems) > 0 {
 		sections = append(sections, scriptImportReviewSection{
 			Key:      "preserved_metadata",
-			Title:    "Preserved LoadRunner Metadata",
+			Title:    "Preserved Source Metadata",
 			Severity: "info",
 			Summary:  "Source project metadata was saved with the generated script for audit and repair workflows.",
 			Items:    preservedItems,
@@ -1964,16 +1964,16 @@ func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.C
 			Key:      "browser_import_assumptions",
 			Title:    "Browser Import Assumptions",
 			Severity: "info",
-			Summary:  "TruClient Mobile Web imports map supported steps into browser DSL and require replay validation for selectors, waits, and device behavior; TruClient Web and Web 2.0 are tracked as separate planned profiles.",
+			Summary:  "Mobile browser-profile archives map supported steps into browser DSL and require replay validation for selectors, waits, and device behavior; Web and Web 2.0 browser profiles are tracked as separate review profiles.",
 			Items: []string{
-				"Legacy desktop TruClient remains out of scope; TruClient - Web and TruClient 2.0 - Web are planned under the VuGen Web 2.0 profile.",
+				"Legacy desktop browser-profile archives remain out of scope; Web and Web 2.0 source profiles require guided review.",
 				"Simple JavaScript fill/click statements are decomposed when possible; other JavaScript is preserved as review guidance.",
 				"Selector fidelity should be checked with browser replay before production use.",
 			},
 		})
 	}
 
-	if result.DetectedProtocol != nil && (result.DetectedProtocol.CanonicalLoadRunnerProtocol == "oracle_web" || result.DetectedProtocol.CanonicalLoadRunnerProtocol == "siebel_web") {
+	if result.DetectedProtocol != nil && (result.DetectedProtocol.CanonicalSourceProtocol == "oracle_web" || result.DetectedProtocol.CanonicalSourceProtocol == "siebel_web") {
 		sections = append(sections, scriptImportReviewSection{
 			Key:      "oracle_ebusiness_review",
 			Title:    "Oracle E-Business Review Pack",
@@ -2059,8 +2059,8 @@ func salesforceReviewItems(review *salesforce.Review) []string {
 	return items
 }
 
-func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedElements []string, readinessPolicy loadrunner.RuntimeSettingMigrationPolicy) loadRunnerImportSummary {
-	summary := loadRunnerImportSummary{
+func buildEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResult, unsupportedElements []string, readinessPolicy enterprisearchive.RuntimeSettingMigrationPolicy) enterpriseArchiveImportSummary {
+	summary := enterpriseArchiveImportSummary{
 		UnsupportedFunctionCount: len(unsupportedElements),
 	}
 	if result != nil && result.DetectedProtocol != nil {
@@ -2090,7 +2090,7 @@ func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedE
 	summary.ParameterFiles = stringSliceValue(preserved["parameter_files"])
 	summary.RuntimeSettingsParity = runtimeSettingsParityValue(preserved["runtime_settings_parity"])
 	summary.RuntimeSettingsStatusCounts = intMapValue(preserved["runtime_settings_status_counts"])
-	summary.MigrationReadiness = loadRunnerMigrationReadinessValue(preserved["runtime_settings_migration_readiness"])
+	summary.MigrationReadiness = enterpriseArchiveMigrationReadinessValue(preserved["runtime_settings_migration_readiness"])
 	summary.TrueClientInspection = trueClientArchiveInspectionValue(preserved["trueclient_archive_inspection"])
 	summary.SourceScriptType = stringValue(preserved["source_script_type"])
 	summary.SourceProfile = stringValue(preserved["source_profile"])
@@ -2098,7 +2098,7 @@ func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedE
 		summary.SourceReview = sourceReviewValue(preserved["source_review"])
 	}
 	if summary.MigrationReadiness == nil && len(summary.RuntimeSettingsParity) > 0 {
-		summary.MigrationReadiness = loadrunner.BuildRTSMigrationReadiness(summary.RuntimeSettingsParity, readinessPolicy)
+		summary.MigrationReadiness = enterprisearchive.BuildRTSMigrationReadiness(summary.RuntimeSettingsParity, readinessPolicy)
 	}
 	if isWeb2TrueClientInspection(summary.TrueClientInspection) {
 		summary.Web2MigrationReadiness = buildWeb2MigrationReadinessReport(result, summary)
@@ -2109,7 +2109,7 @@ func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedE
 	return summary
 }
 
-func persistLoadRunnerImportSummary(result *loadrunner.ConvertResult, summary loadRunnerImportSummary) {
+func persistEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResult, summary enterpriseArchiveImportSummary) {
 	if result == nil || result.Script == nil || result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
 		return
 	}
@@ -2151,23 +2151,23 @@ func salesforceReviewValue(value any) *salesforce.Review {
 	return &review
 }
 
-func runtimeSettingsParityValue(value any) []loadrunner.RuntimeSettingParityEntry {
+func runtimeSettingsParityValue(value any) []enterprisearchive.RuntimeSettingParityEntry {
 	switch typed := value.(type) {
-	case []loadrunner.RuntimeSettingParityEntry:
-		return append([]loadrunner.RuntimeSettingParityEntry(nil), typed...)
+	case []enterprisearchive.RuntimeSettingParityEntry:
+		return append([]enterprisearchive.RuntimeSettingParityEntry(nil), typed...)
 	case []any:
-		entries := make([]loadrunner.RuntimeSettingParityEntry, 0, len(typed))
+		entries := make([]enterprisearchive.RuntimeSettingParityEntry, 0, len(typed))
 		for _, item := range typed {
 			mapping, ok := item.(map[string]any)
 			if !ok {
 				continue
 			}
-			entry := loadrunner.RuntimeSettingParityEntry{
+			entry := enterprisearchive.RuntimeSettingParityEntry{
 				ID:           stringValue(mapping["id"]),
 				Area:         stringValue(mapping["area"]),
 				Concept:      stringValue(mapping["concept"]),
 				Fields:       stringSliceValue(mapping["fields"]),
-				Status:       loadrunner.RuntimeSettingStatus(stringValue(mapping["status"])),
+				Status:       enterprisearchive.RuntimeSettingStatus(stringValue(mapping["status"])),
 				Notes:        stringValue(mapping["notes"]),
 				RuntimeFiles: stringSliceValue(mapping["runtime_files"]),
 			}
@@ -2182,21 +2182,21 @@ func runtimeSettingsParityValue(value any) []loadrunner.RuntimeSettingParityEntr
 	}
 }
 
-func loadRunnerMigrationReadinessValue(value any) *loadrunner.RuntimeSettingMigrationReadiness {
+func enterpriseArchiveMigrationReadinessValue(value any) *enterprisearchive.RuntimeSettingMigrationReadiness {
 	switch typed := value.(type) {
-	case *loadrunner.RuntimeSettingMigrationReadiness:
+	case *enterprisearchive.RuntimeSettingMigrationReadiness:
 		return typed
-	case loadrunner.RuntimeSettingMigrationReadiness:
+	case enterprisearchive.RuntimeSettingMigrationReadiness:
 		clone := typed
 		return &clone
 	case map[string]any:
-		readiness := &loadrunner.RuntimeSettingMigrationReadiness{
+		readiness := &enterprisearchive.RuntimeSettingMigrationReadiness{
 			ScorePct:         intValue(typed["score_pct"]),
 			Blocked:          boolValue(typed["blocked"]),
 			Summary:          stringValue(typed["summary"]),
 			BlockingStatuses: runtimeSettingStatusSliceValue(typed["blocking_statuses"]),
 			BlockingSettings: runtimeSettingsParityValue(typed["blocking_settings"]),
-			Policy: loadrunner.RuntimeSettingMigrationPolicy{
+			Policy: enterprisearchive.RuntimeSettingMigrationPolicy{
 				BlockStatuses: runtimeSettingPolicyStatuses(typed["policy"]),
 			},
 		}
@@ -2220,15 +2220,15 @@ func trueClientArchiveInspectionValue(value any) *trueclient.ArchiveInspection {
 	}
 }
 
-func sourceReviewValue(value any) *loadrunner.SourceReview {
+func sourceReviewValue(value any) *enterprisearchive.SourceReview {
 	switch typed := value.(type) {
-	case *loadrunner.SourceReview:
+	case *enterprisearchive.SourceReview:
 		return typed
-	case loadrunner.SourceReview:
+	case enterprisearchive.SourceReview:
 		clone := typed
 		return &clone
 	case map[string]any:
-		review := &loadrunner.SourceReview{
+		review := &enterprisearchive.SourceReview{
 			SourceFiles: sourceReviewFilesValue(typed["source_files"]),
 			Mappings:    sourceReviewMappingsValue(typed["mappings"]),
 		}
@@ -2241,18 +2241,18 @@ func sourceReviewValue(value any) *loadrunner.SourceReview {
 	}
 }
 
-func sourceReviewFilesValue(value any) []loadrunner.SourceReviewFile {
+func sourceReviewFilesValue(value any) []enterprisearchive.SourceReviewFile {
 	switch typed := value.(type) {
-	case []loadrunner.SourceReviewFile:
-		return append([]loadrunner.SourceReviewFile(nil), typed...)
+	case []enterprisearchive.SourceReviewFile:
+		return append([]enterprisearchive.SourceReviewFile(nil), typed...)
 	case []any:
-		files := make([]loadrunner.SourceReviewFile, 0, len(typed))
+		files := make([]enterprisearchive.SourceReviewFile, 0, len(typed))
 		for _, item := range typed {
 			mapping, ok := item.(map[string]any)
 			if !ok {
 				continue
 			}
-			file := loadrunner.SourceReviewFile{
+			file := enterprisearchive.SourceReviewFile{
 				Path:          stringValue(mapping["path"]),
 				Language:      stringValue(mapping["language"]),
 				Content:       stringValue(mapping["content"]),
@@ -2271,18 +2271,18 @@ func sourceReviewFilesValue(value any) []loadrunner.SourceReviewFile {
 	}
 }
 
-func sourceReviewMappingsValue(value any) []loadrunner.SourceReviewMapping {
+func sourceReviewMappingsValue(value any) []enterprisearchive.SourceReviewMapping {
 	switch typed := value.(type) {
-	case []loadrunner.SourceReviewMapping:
-		return append([]loadrunner.SourceReviewMapping(nil), typed...)
+	case []enterprisearchive.SourceReviewMapping:
+		return append([]enterprisearchive.SourceReviewMapping(nil), typed...)
 	case []any:
-		mappings := make([]loadrunner.SourceReviewMapping, 0, len(typed))
+		mappings := make([]enterprisearchive.SourceReviewMapping, 0, len(typed))
 		for _, item := range typed {
 			raw, ok := item.(map[string]any)
 			if !ok {
 				continue
 			}
-			mapping := loadrunner.SourceReviewMapping{
+			mapping := enterprisearchive.SourceReviewMapping{
 				ID:          stringValue(raw["id"]),
 				SourceFile:  stringValue(raw["source_file"]),
 				StartLine:   intValue(raw["start_line"]),
@@ -2361,14 +2361,14 @@ func boolValue(value any) bool {
 	}
 }
 
-func runtimeSettingStatusSliceValue(value any) []loadrunner.RuntimeSettingStatus {
+func runtimeSettingStatusSliceValue(value any) []enterprisearchive.RuntimeSettingStatus {
 	switch typed := value.(type) {
-	case []loadrunner.RuntimeSettingStatus:
-		return append([]loadrunner.RuntimeSettingStatus(nil), typed...)
+	case []enterprisearchive.RuntimeSettingStatus:
+		return append([]enterprisearchive.RuntimeSettingStatus(nil), typed...)
 	case []any:
-		statuses := make([]loadrunner.RuntimeSettingStatus, 0, len(typed))
+		statuses := make([]enterprisearchive.RuntimeSettingStatus, 0, len(typed))
 		for _, item := range typed {
-			status := loadrunner.RuntimeSettingStatus(stringValue(item))
+			status := enterprisearchive.RuntimeSettingStatus(stringValue(item))
 			if status == "" {
 				continue
 			}
@@ -2380,7 +2380,7 @@ func runtimeSettingStatusSliceValue(value any) []loadrunner.RuntimeSettingStatus
 	}
 }
 
-func runtimeSettingPolicyStatuses(value any) []loadrunner.RuntimeSettingStatus {
+func runtimeSettingPolicyStatuses(value any) []enterprisearchive.RuntimeSettingStatus {
 	mapping, ok := value.(map[string]any)
 	if !ok {
 		return nil
@@ -2388,13 +2388,13 @@ func runtimeSettingPolicyStatuses(value any) []loadrunner.RuntimeSettingStatus {
 	return runtimeSettingStatusSliceValue(mapping["block_statuses"])
 }
 
-func runtimeSettingsParitySeverity(entries []loadrunner.RuntimeSettingParityEntry) string {
+func runtimeSettingsParitySeverity(entries []enterprisearchive.RuntimeSettingParityEntry) string {
 	severity := "info"
 	for _, entry := range entries {
 		switch entry.Status {
-		case loadrunner.RuntimeSettingStatusBlocked:
+		case enterprisearchive.RuntimeSettingStatusBlocked:
 			return "blocker"
-		case loadrunner.RuntimeSettingStatusPartial, loadrunner.RuntimeSettingStatusCompatibilityOnly:
+		case enterprisearchive.RuntimeSettingStatusPartial, enterprisearchive.RuntimeSettingStatusCompatibilityOnly:
 			severity = "warning"
 		}
 	}
@@ -2403,15 +2403,15 @@ func runtimeSettingsParitySeverity(entries []loadrunner.RuntimeSettingParityEntr
 
 func runtimeSettingsParitySummary(counts map[string]int) string {
 	if len(counts) == 0 {
-		return "Imported runtime settings were classified against APEX Load's code-owned LoadRunner RTS matrix."
+		return "Imported runtime settings were classified against APEX Load's code-owned runtime compatibility matrix."
 	}
 	parts := make([]string, 0, 5)
 	for _, status := range []string{
-		string(loadrunner.RuntimeSettingStatusExecuted),
-		string(loadrunner.RuntimeSettingStatusPartial),
-		string(loadrunner.RuntimeSettingStatusCompatibilityOnly),
-		string(loadrunner.RuntimeSettingStatusBlocked),
-		string(loadrunner.RuntimeSettingStatusNonApplicable),
+		string(enterprisearchive.RuntimeSettingStatusExecuted),
+		string(enterprisearchive.RuntimeSettingStatusPartial),
+		string(enterprisearchive.RuntimeSettingStatusCompatibilityOnly),
+		string(enterprisearchive.RuntimeSettingStatusBlocked),
+		string(enterprisearchive.RuntimeSettingStatusNonApplicable),
 	} {
 		if counts[status] == 0 {
 			continue
@@ -2419,12 +2419,12 @@ func runtimeSettingsParitySummary(counts map[string]int) string {
 		parts = append(parts, fmt.Sprintf("%d %s", counts[status], strings.ReplaceAll(status, "_", "-")))
 	}
 	if len(parts) == 0 {
-		return "Imported runtime settings were classified against APEX Load's code-owned LoadRunner RTS matrix."
+		return "Imported runtime settings were classified against APEX Load's code-owned runtime compatibility matrix."
 	}
-	return "Imported runtime settings were classified against APEX Load's code-owned LoadRunner RTS matrix: " + strings.Join(parts, ", ") + "."
+	return "Imported runtime settings were classified against APEX Load's code-owned runtime compatibility matrix: " + strings.Join(parts, ", ") + "."
 }
 
-func runtimeSettingsParityItems(entries []loadrunner.RuntimeSettingParityEntry) []string {
+func runtimeSettingsParityItems(entries []enterprisearchive.RuntimeSettingParityEntry) []string {
 	items := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		item := fmt.Sprintf("%s: %s / %s", runtimeSettingStatusLabel(entry.Status), entry.Area, entry.Concept)
@@ -2436,7 +2436,7 @@ func runtimeSettingsParityItems(entries []loadrunner.RuntimeSettingParityEntry) 
 	return items
 }
 
-func migrationReadinessSeverity(readiness *loadrunner.RuntimeSettingMigrationReadiness) string {
+func migrationReadinessSeverity(readiness *enterprisearchive.RuntimeSettingMigrationReadiness) string {
 	if readiness == nil {
 		return "info"
 	}
@@ -2449,7 +2449,7 @@ func migrationReadinessSeverity(readiness *loadrunner.RuntimeSettingMigrationRea
 	return "info"
 }
 
-func migrationReadinessItems(readiness *loadrunner.RuntimeSettingMigrationReadiness) []string {
+func migrationReadinessItems(readiness *enterprisearchive.RuntimeSettingMigrationReadiness) []string {
 	if readiness == nil {
 		return nil
 	}
@@ -2468,7 +2468,7 @@ func migrationReadinessItems(readiness *loadrunner.RuntimeSettingMigrationReadin
 	return items
 }
 
-func runtimeSettingStatusLabels(statuses []loadrunner.RuntimeSettingStatus) string {
+func runtimeSettingStatusLabels(statuses []enterprisearchive.RuntimeSettingStatus) string {
 	if len(statuses) == 0 {
 		return "None"
 	}
@@ -2479,17 +2479,17 @@ func runtimeSettingStatusLabels(statuses []loadrunner.RuntimeSettingStatus) stri
 	return strings.Join(labels, ", ")
 }
 
-func runtimeSettingStatusLabel(status loadrunner.RuntimeSettingStatus) string {
+func runtimeSettingStatusLabel(status enterprisearchive.RuntimeSettingStatus) string {
 	switch status {
-	case loadrunner.RuntimeSettingStatusExecuted:
+	case enterprisearchive.RuntimeSettingStatusExecuted:
 		return "Executed"
-	case loadrunner.RuntimeSettingStatusPartial:
+	case enterprisearchive.RuntimeSettingStatusPartial:
 		return "Partial"
-	case loadrunner.RuntimeSettingStatusCompatibilityOnly:
+	case enterprisearchive.RuntimeSettingStatusCompatibilityOnly:
 		return "Compatibility-only"
-	case loadrunner.RuntimeSettingStatusBlocked:
+	case enterprisearchive.RuntimeSettingStatusBlocked:
 		return "Blocked"
-	case loadrunner.RuntimeSettingStatusNonApplicable:
+	case enterprisearchive.RuntimeSettingStatusNonApplicable:
 		return "Non-applicable"
 	default:
 		label := strings.ReplaceAll(string(status), "_", " ")
@@ -2663,7 +2663,7 @@ func jmeterReviewDiagnosticFragments(result *jmeter.ConvertResult) []string {
 	return fragments
 }
 
-func buildLoadRunnerProtocolCompatReport(result *loadrunner.ConvertResult, unsupported []string, summary loadRunnerImportSummary) *protocolCompatReport {
+func buildEnterpriseArchiveProtocolCompatReport(result *enterprisearchive.ConvertResult, unsupported []string, summary enterpriseArchiveImportSummary) *protocolCompatReport {
 	if result == nil {
 		return nil
 	}
@@ -2671,10 +2671,10 @@ func buildLoadRunnerProtocolCompatReport(result *loadrunner.ConvertResult, unsup
 	canonical := "web_http_html"
 	if result.DetectedProtocol != nil {
 		importMode = string(result.DetectedProtocol.ImportMode)
-		canonical = result.DetectedProtocol.CanonicalLoadRunnerProtocol
+		canonical = result.DetectedProtocol.CanonicalSourceProtocol
 	}
 	status := protocolPromotionStatus(importMode, len(unsupported), len(result.Warnings))
-	nextActions := protocolNextActions(status, loadRunnerProtocolValidationAction(canonical))
+	nextActions := protocolNextActions(status, enterpriseArchiveProtocolValidationAction(canonical))
 	if result.ReviewArtifact != nil && len(result.ReviewArtifact.NextActions) > 0 {
 		nextActions = result.ReviewArtifact.NextActions
 	}
@@ -2682,9 +2682,9 @@ func buildLoadRunnerProtocolCompatReport(result *loadrunner.ConvertResult, unsup
 	if len(runtimeParity) == 0 {
 		runtimeParity = protocolRuntimeParityFromScript(result.Script)
 	}
-	unsupportedFragments := loadRunnerUnsupportedFragments(result, unsupported)
+	unsupportedFragments := enterpriseArchiveUnsupportedFragments(result, unsupported)
 	return &protocolCompatReport{
-		SourceFormat:         loadRunnerProtocolSourceFormat(canonical),
+		SourceFormat:         enterpriseArchiveProtocolSourceFormat(canonical),
 		CanonicalProtocol:    canonical,
 		ImportMode:           importMode,
 		MappedSteps:          result.Stats.ConvertedActions,
@@ -2698,7 +2698,7 @@ func buildLoadRunnerProtocolCompatReport(result *loadrunner.ConvertResult, unsup
 	}
 }
 
-func loadRunnerUnsupportedFragments(result *loadrunner.ConvertResult, unsupported []string) []string {
+func enterpriseArchiveUnsupportedFragments(result *enterprisearchive.ConvertResult, unsupported []string) []string {
 	fragments := append([]string(nil), unsupported...)
 	if result != nil && result.ReviewArtifact != nil && len(result.ReviewArtifact.PreservedFunctions) > 0 {
 		fragments = append(fragments, result.ReviewArtifact.PreservedFunctions...)
@@ -2706,35 +2706,35 @@ func loadRunnerUnsupportedFragments(result *loadrunner.ConvertResult, unsupporte
 	return uniqueSortedStrings(fragments)
 }
 
-func loadRunnerProtocolSourceFormat(canonical string) string {
+func enterpriseArchiveProtocolSourceFormat(canonical string) string {
 	switch canonical {
 	case "devweb":
 		return "DevWeb"
 	case "jmeter":
 		return "JMeter JMX"
 	default:
-		return "LoadRunner"
+		return "Enterprise Script Archive"
 	}
 }
 
-func loadRunnerProtocolValidationAction(canonical string) string {
+func enterpriseArchiveProtocolValidationAction(canonical string) string {
 	switch canonical {
 	case "devweb":
 		return "Validate converted DevWeb replay and review JavaScript/helper-module blockers before promotion."
 	case "jmeter":
 		return "Validate converted JMeter thread groups and scenario draft before promotion."
 	default:
-		return "Validate converted LoadRunner replay and correlation behavior before promotion."
+		return "Validate converted enterprise script archive replay and correlation behavior before promotion."
 	}
 }
 
 func protocolPromotionStatus(importMode string, reviewCount int, warningCount int) string {
 	switch importMode {
-	case string(loadrunner.ImportModeExternalRunnerRequired):
+	case string(enterprisearchive.ImportModeExternalRunnerRequired):
 		return "external_runner_required"
-	case string(loadrunner.ImportModeUnsupported):
+	case string(enterprisearchive.ImportModeUnsupported):
 		return "unsupported"
-	case string(loadrunner.ImportModeReviewOnly):
+	case string(enterprisearchive.ImportModeReviewOnly):
 		return "review_required"
 	}
 	if reviewCount > 0 {

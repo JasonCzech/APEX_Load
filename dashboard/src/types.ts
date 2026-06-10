@@ -2276,7 +2276,7 @@ export interface MetricsHistoryPoint {
   diskIOTimePct?: number
   jmsConsumerLagMs?: number
   jmsPeakConsumerLagMs?: number
-  [key: string]: string | number | undefined
+  [key: string]: string | number | number[] | undefined
 }
 
 export interface VersionResponse {

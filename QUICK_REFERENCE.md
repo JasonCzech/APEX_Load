@@ -115,7 +115,7 @@ cp apexload.db apexload.db.backup
 | DELETE | `/api/v1/scripts/{id}` | Delete script |
 | POST | `/api/v1/scripts/{id}/validate` | Validate script |
 | POST | `/api/v1/scripts/import/sample` | Build a script from raw HTTP, cURL, REST JSON, or HAR samples |
-| POST | `/api/v1/scripts/import/loadrunner` | Convert a LoadRunner archive |
+| POST | `/api/v1/scripts/import/enterprise-script-archive` | Convert a LoadRunner archive |
 | POST | `/api/v1/scripts/import/jmeter/validate` | Validate a JMeter import draft |
 
 ### WebSocket

@@ -1,6 +1,7 @@
 import { IntervalSummaryRecord, LiveMetrics, MetricsHistoryPoint, ResourceSample, TestStatus } from '../types'
 import { resourceImpactHistoryValues } from './generatorImpact'
 import { routeLatencySeriesValuesForTarget } from './latencySeries'
+import { executionChartMinuteRangeValue, type ExecutionChartTimeRange } from './testExecutionChartZoomModel'
 
 export interface ExecutionChartSummary {
   avgTps: number
@@ -296,7 +297,7 @@ function addRelativeRunTime(points: MetricsHistoryPoint[]): MetricsHistoryPoint[
 
 export function filterExecutionChartData(
   chartData: MetricsHistoryPoint[],
-  timeRange: '3m' | '10m' | 'all' | 'custom',
+  timeRange: ExecutionChartTimeRange,
   zoomRange: { left: string | number; right: string | number } | null,
 ): MetricsHistoryPoint[] {
   if (timeRange === 'custom' && zoomRange) {
@@ -311,10 +312,11 @@ export function filterExecutionChartData(
     return chartData
   }
 
-  const windowMs = timeRange === '3m' ? 180_000 : 600_000
+  const minutes = executionChartMinuteRangeValue(timeRange) ?? 10
+  const windowMs = minutes * 60_000
   const newestTimestamp = [...chartData].reverse().find(point => typeof point.timestampMs === 'number')?.timestampMs
   if (newestTimestamp === undefined) {
-    const approximatePoints = timeRange === '3m' ? 180 : 600
+    const approximatePoints = minutes * 60
     return chartData.slice(-approximatePoints)
   }
 

@@ -39,7 +39,7 @@ func TestParameterRuntime_CounterUpdateModes(t *testing.T) {
 	}
 }
 
-func TestParameterRuntime_LoadRunnerNativeParameters(t *testing.T) {
+func TestParameterRuntime_SourceNativeParameters(t *testing.T) {
 	runtime := NewParameterRuntime([]dsl.Parameter{
 		{Name: "iteration", Type: "current_iteration", Update: "each_iteration", PadWidth: 4},
 		{Name: "lr_iteration_alias", Type: "CurrentIteration", Update: "each_iteration"},

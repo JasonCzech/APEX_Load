@@ -65,8 +65,8 @@ const SUPPORTING_ACTION_KEYS = new Set([
 const TRANSACTION_METADATA_KEYS = new Set([
   'source_transaction',
   'source_subtransaction',
-  'loadrunner_transaction',
-  'loadrunner_subtransaction',
+  'source_transaction',
+  'source_subtransaction',
   'transaction',
   'transaction_name',
 ])

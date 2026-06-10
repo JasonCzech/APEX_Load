@@ -613,7 +613,7 @@ func attachBrowserToHTTPMetadata(script *dsl.Script, req BrowserToHTTPPreviewReq
 		Source:           "browser_replay",
 		SourceScriptName: browserHTTPDraftName(req.SourceBrowserScript),
 		Preserved: map[string]any{
-			"source_profile":               "vugen_web2_to_http",
+			"source_profile":               "web2_browser_profile_to_http",
 			"replay_session_id":            req.ReplaySessionID,
 			"captured_network_requests":    requestCount,
 			"source_browser_script_id":     sourceScriptID(req.SourceBrowserScript),

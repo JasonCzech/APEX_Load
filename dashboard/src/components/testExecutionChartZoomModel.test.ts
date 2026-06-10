@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  executionChartMaxMinuteRange,
+  executionChartMinuteRangeValue,
+  executionChartTimeRangeForMinutes,
   executionChartZoomReducer,
   getExecutionChartRefArea,
   initialExecutionChartZoomState,
@@ -59,5 +62,16 @@ describe('testExecutionChartZoomModel', () => {
       refAreaLeft: '',
       refAreaRight: '',
     })
+  })
+
+  it('maps slider minute values to supported chart ranges', () => {
+    expect(executionChartMaxMinuteRange).toBe(30)
+    expect(executionChartMinuteRangeValue('1m')).toBe(1)
+    expect(executionChartMinuteRangeValue('30m')).toBe(30)
+    expect(executionChartMinuteRangeValue('all')).toBeNull()
+    expect(executionChartMinuteRangeValue('custom')).toBeNull()
+    expect(executionChartTimeRangeForMinutes(0)).toBe('1m')
+    expect(executionChartTimeRangeForMinutes(16)).toBe('16m')
+    expect(executionChartTimeRangeForMinutes(99)).toBe('30m')
   })
 })

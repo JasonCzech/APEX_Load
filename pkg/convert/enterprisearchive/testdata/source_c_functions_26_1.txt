@@ -1,4 +1,4 @@
-# OpenText VuGen 26.1 C Vuser utility function baseline.
+# OpenText C/VUser 26.1 C Vuser utility function baseline.
 # Format: name,family,support_mode
 web_reg_async_attributes,web,review_only
 web_stop_async,web,review_only

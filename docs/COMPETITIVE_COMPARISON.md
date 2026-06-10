@@ -2,7 +2,7 @@
 
 **Audience:** internal engineering, product, and evaluators.
 
-APEX Load is a Kubernetes-native HTTP/API load testing platform built on goroutine-based VUsers, an open JSON DSL, and first-class migration paths from LoadRunner, JMeter, DevWeb, and HAR. It is architecturally cleaner and more usable than LoadRunner Enterprise for day-to-day HTTP/API testing. It trails in correlation intelligence, browser fidelity, offline analysis depth, and battle-tested scale.
+APEX Load is a Kubernetes-native HTTP/API load testing platform built on goroutine-based VUsers, an open JSON DSL, and first-class migration paths from enterprise script archives, JMeter, DevWeb, and HAR. It is architecturally cleaner and more usable than LoadRunner Enterprise for day-to-day HTTP/API testing. It trails in correlation intelligence, browser fidelity, offline analysis depth, and battle-tested scale.
 
 This document consolidates all competitor positioning, support matrices, and migration/import reference into one place. The [Migration and Import Reference](#migration-and-import-reference) appendix contains the functional tables (RTS mappings, protocol routing, protocol bundle coverage) that the product's evidence API cites.
 
@@ -24,9 +24,9 @@ This document consolidates all competitor positioning, support matrices, and mig
 - [Gap Analysis](#gap-analysis)
   - [APM Observability Correlation](#apm-observability-correlation)
 - [Migration and Import Reference](#migration-and-import-reference)
-  - [LoadRunner Import Routing](#loadrunner-import-routing)
-  - [LoadRunner RTS Reference](#loadrunner-rts-reference)
-  - [VuGen Web2 TruClient](#vugen-web2-truclient)
+  - [Enterprise Script Archive Routing](#enterprise-script-archive-routing)
+  - [Enterprise Archive Runtime Settings Reference](#enterprise-archive-runtime-settings-reference)
+  - [Web 2.0 Browser Profile](#web-20-browser-profile)
   - [JMeter Import](#jmeter-import)
   - [DevWeb Import](#devweb-import)
   - [Protocol Bundle Coverage](#protocol-bundle-coverage)
@@ -68,7 +68,7 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 | --- | --- | --- | --- |
 | Native APEX Load JSON DSL | Supported | `pkg/dsl`, `/api/v1/scripts`, `API_AND_DSL_REFERENCE.md` | More first-party examples. |
 | Dashboard guided script creation | Supported | `ScriptEditor.tsx`, `/api/v1/scripts/authoring/sessions` | Expand packaged demo projects. |
-| LoadRunner Web HTTP/HTML import | Supported | `/api/v1/scripts/import/loadrunner`, `pkg/convert/loadrunner` | Long-tail historical protocol families outside planned scope. |
+| Enterprise Script Archive HTTP import | Supported | `/api/v1/scripts/import/enterprise-script-archive`, `pkg/convert/enterprisearchive` | Long-tail historical protocol families outside planned scope. |
 | TrueClient Mobile Web | Partial | `docs/MOBILE_BROWSER_EMULATION_PLAN.md` | Browser VUsers are diagnostic canaries; desktop TruClient parity is out of scope. |
 | JMeter plan import | Supported | `/api/v1/scripts/import/jmeter`, `/api/v1/scripts/import/jmeter/support-matrix` | Expand fixture coverage and trend overlays. |
 | OpenAPI import | Supported | `/api/v1/scripts/import/openapi`, `pkg/convert/openapi` | Dashboard guided create flow. |
@@ -229,7 +229,7 @@ These overstatements existed in earlier docs and are now corrected:
 **Where APEX leads k6:**
 - Protocol breadth (SOAP, Java-over-HTTP, JMS, Kafka, WebSocket, gRPC native)
 - Single-pane authoring + execution + analysis + admin
-- LoadRunner/JMeter/HAR migration paths
+- Enterprise Script Archive/JMeter/HAR migration paths
 - Governed scheduling, RBAC, and audit out of the box for self-hosted
 
 **Where APEX trails k6:**
@@ -251,7 +251,7 @@ These overstatements existed in earlier docs and are now corrected:
 
 **Where APEX leads NeoLoad:**
 - Open JSON DSL vs proprietary project format
-- LoadRunner/JMeter/HAR migration paths
+- Enterprise Script Archive/JMeter/HAR migration paths
 - Goroutine-based engine efficiency
 - Single-pane web experience
 
@@ -303,7 +303,7 @@ These areas correspond to the `competitive_parity` dimensions in `GET /api/v1/sy
 
 ### Specialized Enterprise Protocols
 
-**Status: Gap.** APEX Load covers HTTP/API, SOAP, Java-over-HTTP, JMS, Kafka, WebSocket, gRPC, HAR, JMeter, DevWeb, AsyncAPI, and LoadRunner migration paths. SAP GUI, Citrix, Oracle Forms, and desktop UI protocols are demand-gated non-goals.
+**Status: Gap.** APEX Load covers HTTP/API, SOAP, Java-over-HTTP, JMS, Kafka, WebSocket, gRPC, HAR, JMeter, DevWeb, AsyncAPI, and enterprise script archive migration paths. SAP GUI, Citrix, Oracle Forms, and desktop UI protocols are demand-gated non-goals.
 
 **Evidence:** `docs/PROTOCOL_EXTENSION_PLAN.md`, `docs/BROWSER_CLIENT_METRICS_PLAN.md#non-goals`, `/api/v1/protocol-bundles/support-matrix`
 
@@ -327,7 +327,7 @@ These areas correspond to the `competitive_parity` dimensions in `GET /api/v1/sy
 
 A comprehensive audit of APEX Load against enterprise performance testing platform capabilities, compared against LoadRunner Enterprise, Gatling Enterprise, k6 Cloud, NeoLoad, and Locust.
 
-**Already built (representative):** goroutine VUser engine, multi-protocol support, JSON DSL, real-time dashboard, CLI, REST API, LoadRunner/JMeter import, distributed execution, live VUser controls, Parquet/JSONL archives, system metrics, t-digest percentiles, telemetry pipeline, capacity planning, browser recording, script editor, project/folder organization, shared data pools, error snapshots, browser replay, settings management.
+**Already built (representative):** goroutine VUser engine, multi-protocol support, JSON DSL, real-time dashboard, CLI, REST API, Enterprise Script Archive/JMeter import, distributed execution, live VUser controls, Parquet/JSONL archives, system metrics, t-digest percentiles, telemetry pipeline, capacity planning, browser recording, script editor, project/folder organization, shared data pools, error snapshots, browser replay, settings management.
 
 **Remaining significant gaps:**
 
@@ -360,9 +360,9 @@ The following sections carry functional tables referenced by `pkg/api/` evidence
 
 ---
 
-### LoadRunner Import Routing
+### Enterprise Script Archive Routing
 
-APEX Load's LoadRunner/VuGen ZIP importer is protocol-aware. It classifies the archive before conversion using `.usr` `[General] Type` as the primary signal.
+APEX Load's Enterprise Script Archive importer is protocol-aware. It classifies ZIP archives containing C-based virtual-user scripts, runtime settings, parameter files, and protocol metadata before conversion using project metadata as the primary signal.
 
 **Import modes:**
 
@@ -375,12 +375,12 @@ APEX Load's LoadRunner/VuGen ZIP importer is protocol-aware. It classifies the a
 
 **Current routing:**
 
-| LoadRunner/VuGen family | APEX Load route |
+| Source protocol family | APEX Load route |
 | --- | --- |
 | Web HTTP/HTML | `http` executable import |
 | Web Services / SOAP | `soap` executable import (exclusive SOAP evidence); mixed SOAP/HTTP stays HTTP with warning |
-| TruClient Mobile Web | `browser` executable import with browser replay gate |
-| TruClient 2.0 Web | `browser` review path with required replay and selector evidence |
+| Mobile browser-profile archives | `browser` executable import with browser replay gate |
+| Web 2.0 browser-profile archives | `browser` review path with required replay and selector evidence |
 | Database / ODBC SQL-style scripts | `database` executable import for SQL statements, binds, transactions, and DSN/runtime hints |
 | DNS, FTP, SMTP, POP3, IMAP, LDAP, Winsock | `network` executable import with subprotocol config and endpoint placeholders |
 | Oracle-Web / Siebel-Web | `http` executable import plus Oracle E-Business correlation review pack |
@@ -389,19 +389,19 @@ APEX Load's LoadRunner/VuGen ZIP importer is protocol-aware. It classifies the a
 
 If `.usr` metadata and source content conflict, APEX Load returns a review artifact rather than claiming an executable import. The harmless exception: Web HTTP/HTML metadata with exclusive SOAP evidence routes to `soap`.
 
-**API surface:** `POST /api/v1/scripts/import/loadrunner` and `POST /api/v1/scripts/import/loadrunner/validate` return `detected_protocol`, `review_artifact`, `summary.import_mode`, confidence, signals, conflicts, and warnings.
+**API surface:** `POST /api/v1/scripts/import/enterprise-script-archive` and `POST /api/v1/scripts/import/enterprise-script-archive/validate` return `detected_protocol`, `review_artifact`, `summary.import_mode`, confidence, signals, conflicts, and warnings.
 
 ---
 
-### LoadRunner RTS Reference
+### Enterprise Archive Runtime Settings Reference
 
-Maps Web HTTP/HTML runtime settings from LoadRunner/VuGen to APEX Load fields and support status.
+Maps Web HTTP/HTML source runtime settings from enterprise script archives to APEX Load fields and support status.
 
-Code-owned source of truth: `pkg/convert/loadrunner/rts_support.go`. Published through `GET /api/v1/runtime-settings/support-matrix` and `GET /api/v1/scripts/import/loadrunner/support-matrix`.
+Code-owned source of truth: `pkg/convert/enterprisearchive/rts_support.go`. Published through `GET /api/v1/runtime-settings/support-matrix` and `GET /api/v1/scripts/import/enterprise-script-archive/support-matrix`.
 
 **Status legend:** `Executed` — enforced at runtime. `Partial` — partial surface enforced. `Compatibility-only` — preserved/editable; no runtime semantics yet. `Non-applicable` — concept doesn't map to APEX Load architecture.
 
-| RTS area | LoadRunner concept | APEX Load field | Status |
+| Runtime-setting area | Source concept | APEX Load field | Status |
 | --- | --- | --- | --- |
 | Run Logic | Iterations | `config.run_logic.iterations` | Executed |
 | Run Logic | Auto-transactions | `config.run_logic.auto_transactions` | Executed |
@@ -440,9 +440,9 @@ Code-owned source of truth: `pkg/convert/loadrunner/rts_support.go`. Published t
 
 ---
 
-### VuGen Web2 TruClient
+### Web 2.0 Browser Profile
 
-First-class APEX Load support for OpenText VuGen's browser-driven Web 2.0 scripting profile (**TruClient 2.0 - Web**) — import, authoring, replay, repair, and optional protocol-load conversion.
+First-class APEX Load support for browser-driven Web 2.0 source profiles: import, authoring, replay, repair, and optional protocol-load conversion.
 
 **Scope:**
 
@@ -463,9 +463,9 @@ First-class APEX Load support for OpenText VuGen's browser-driven Web 2.0 script
   "protocol": "browser",
   "metadata": {
     "import": {
-      "source": "vugen_truclient2_web",
+      "source": "web2_browser_profile",
       "preserved": {
-        "apexload_profile": "vugen_web2",
+        "apexload_profile": "web2_browser_profile",
         "source_script_type": "TruClient 2.0 - Web",
         "trueclient2_promotion_review": {
           "status": "replay_evidence_attached",
@@ -481,7 +481,7 @@ First-class APEX Load support for OpenText VuGen's browser-driven Web 2.0 script
 }
 ```
 
-**API surface:** `POST /api/v1/scripts/import/loadrunner` routes TruClient 2.0 - Web archives to a `browser` review path. `GET /api/v1/runtime-settings/support-matrix` includes Web 2.0 runtime settings rows. `POST /api/v1/scripts/browser-to-http/preview` supports optional protocol-load conversion preview.
+**API surface:** `POST /api/v1/scripts/import/enterprise-script-archive` routes TruClient 2.0 - Web archives to a `browser` review path. `GET /api/v1/runtime-settings/support-matrix` includes Web 2.0 runtime settings rows. `POST /api/v1/scripts/browser-to-http/preview` supports optional protocol-load conversion preview.
 
 **Import detection:** `.usr` script-type detection distinguishes `TruClient 2.0 - Web`, `TruClient - Web`, `TruClient - Mobile Web`, and legacy desktop/native variants.
 

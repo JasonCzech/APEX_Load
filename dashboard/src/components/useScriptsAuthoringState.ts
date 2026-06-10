@@ -54,7 +54,7 @@ export interface ScriptsCreateOptionActions {
   startKafkaScript: () => void
   startTemplateScript: (script: ScriptDefinition) => void
   composeComponentScript: (component: AuthoringComponent) => void
-  openLoadRunnerImport: () => void
+  openEnterpriseArchiveImport: () => void
   openJMeterImport: () => void
   openRecorder: () => void
   openSampleImport: () => void
@@ -145,7 +145,7 @@ export function useScriptsAuthoringState({
     setSubview('create-options')
   }, [setSubview])
 
-  const openLoadRunnerImport = useCallback(() => {
+  const openEnterpriseArchiveImport = useCallback(() => {
     setSubview('import')
   }, [setSubview])
 
@@ -331,7 +331,7 @@ export function useScriptsAuthoringState({
       startKafkaScript,
       startTemplateScript,
       composeComponentScript,
-      openLoadRunnerImport,
+      openEnterpriseArchiveImport,
       openJMeterImport,
       openRecorder,
       openSampleImport,

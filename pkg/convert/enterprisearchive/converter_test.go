@@ -1,4 +1,4 @@
-package loadrunner
+package enterprisearchive
 
 import (
 	"archive/zip"
@@ -313,7 +313,7 @@ func assertSourceReviewFunctionStatus(t *testing.T, mappings []SourceReviewMappi
 	t.Fatalf("missing source mapping function=%s status=%s in %#v", functionName, status, mappings)
 }
 
-func assertSourceReviewSupportMode(t *testing.T, mappings []SourceReviewMapping, functionName string, mode LoadRunnerSupportMode) {
+func assertSourceReviewSupportMode(t *testing.T, mappings []SourceReviewMapping, functionName string, mode SourceFunctionSupportMode) {
 	t.Helper()
 	for _, mapping := range mappings {
 		if mapping.Function == functionName && mapping.SupportMode == string(mode) {
@@ -379,7 +379,7 @@ func firstProtocolAction(t *testing.T, actions []dsl.Action) dsl.Action {
 	t.Helper()
 	for _, action := range actions {
 		switch action.Type {
-		case "loadrunner_transaction", "loadrunner_runtime", "loadrunner_message", "error_message", "custom_call", "loadrunner_review", "loadrunner_external":
+		case "source_transaction", "source_runtime", "source_message", "error_message", "custom_call", "source_review", "source_external":
 			continue
 		default:
 			return action
@@ -389,7 +389,7 @@ func firstProtocolAction(t *testing.T, actions []dsl.Action) dsl.Action {
 	return dsl.Action{}
 }
 
-func sampleLoadRunnerFunctionCall(def LoadRunnerFunctionDefinition) string {
+func sampleSourceFunctionCall(def SourceFunctionDefinition) string {
 	switch def.Name {
 	case "lr_continue_on_error":
 		return "\tlr_continue_on_error(1);"
@@ -470,7 +470,7 @@ Action()
 	}
 }
 
-func TestConvertInfersLoadRunnerFormTargetsAndIgnoresCommentedCode(t *testing.T) {
+func TestConvertInfersSourceFormTargetsAndIgnoresCommentedCode(t *testing.T) {
 	source := `Action()
 {
 	web_url("Login Page",
@@ -515,7 +515,7 @@ func TestConvertInfersLoadRunnerFormTargetsAndIgnoresCommentedCode(t *testing.T)
 	if strings.Contains(form.Body, "disabled") {
 		t.Fatalf("form body included commented ITEMDATA: %s", form.Body)
 	}
-	if form.Metadata["inferred_url_from"] != "loadrunner_form_context" {
+	if form.Metadata["inferred_url_from"] != "source_form_context" {
 		t.Fatalf("metadata = %#v, want inferred URL marker", form.Metadata)
 	}
 }
@@ -572,7 +572,7 @@ func TestConvertPreservesSaveCountAndRegexpCorrelations(t *testing.T) {
 	}
 }
 
-func TestConvertSupportsLoadRunnerRuntimeControls(t *testing.T) {
+func TestConvertSupportsSourceRuntimeControls(t *testing.T) {
 	actionC := `
 #include "web_api.h"
 
@@ -650,20 +650,20 @@ Action()
 		t.Fatalf("error action metadata = %#v, want source_function lr_error_message", errorAction.Metadata)
 	}
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_error_message", "actions[0]", "converted")
-	if exitAction := result.Script.Actions[1]; exitAction.Type != "loadrunner_runtime" || exitAction.Params["function"] != "lr_exit" {
+	if exitAction := result.Script.Actions[1]; exitAction.Type != "source_runtime" || exitAction.Params["function"] != "lr_exit" {
 		t.Fatalf("exit action = %#v, want native lr_exit runtime action", exitAction)
 	}
 	preserved := result.Script.Metadata.Import.Preserved
-	if _, ok := preserved["loadrunner_error_messages"]; ok {
-		t.Fatalf("loadrunner_error_messages = %#v, want lr_error_message converted natively", preserved["loadrunner_error_messages"])
+	if _, ok := preserved["source_error_messages"]; ok {
+		t.Fatalf("source_error_messages = %#v, want lr_error_message converted natively", preserved["source_error_messages"])
 	}
-	exits, ok := preserved["loadrunner_exit_controls"].([]map[string]any)
+	exits, ok := preserved["source_exit_controls"].([]map[string]any)
 	if !ok || len(exits) != 1 {
-		t.Fatalf("loadrunner_exit_controls = %#v, want one preserved lr_exit", preserved["loadrunner_exit_controls"])
+		t.Fatalf("source_exit_controls = %#v, want one preserved lr_exit", preserved["source_exit_controls"])
 	}
-	timeouts, ok := preserved["loadrunner_timeouts"].([]map[string]any)
+	timeouts, ok := preserved["source_timeouts"].([]map[string]any)
 	if !ok || len(timeouts) != 3 {
-		t.Fatalf("loadrunner_timeouts = %#v, want three preserved web_set_timeout calls", preserved["loadrunner_timeouts"])
+		t.Fatalf("source_timeouts = %#v, want three preserved web_set_timeout calls", preserved["source_timeouts"])
 	}
 	args, ok := exits[0]["args"].([]string)
 	if !ok || len(args) != 2 || args[0] != "LR_EXIT_VUSER" || args[1] != "LR_AUTO" {
@@ -706,9 +706,9 @@ Action()
 		t.Fatalf("web runtime attrs = %#v, want web_set_user host", result.Script.Config.WebRuntime.AdditionalAttributes)
 	}
 	preserved := result.Script.Metadata.Import.Preserved
-	authControls, ok := preserved["loadrunner_authentication"].([]map[string]any)
+	authControls, ok := preserved["source_authentication"].([]map[string]any)
 	if !ok || len(authControls) != 1 || authControls[0]["host"] != "secure.example.com:443" {
-		t.Fatalf("loadrunner_authentication = %#v, want preserved web_set_user control", preserved["loadrunner_authentication"])
+		t.Fatalf("source_authentication = %#v, want preserved web_set_user control", preserved["source_authentication"])
 	}
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_set_user", "config.http.auth", "converted")
 }
@@ -754,17 +754,17 @@ Action()
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_error_message", "actions[0]", "converted")
 }
 
-func TestLoadRunnerFunctionRegistryCoversDocumentedFunctions(t *testing.T) {
-	defs := allLoadRunnerFunctionDefinitions()
+func TestSourceFunctionRegistryCoversDocumentedFunctions(t *testing.T) {
+	defs := allSourceFunctionDefinitions()
 	if len(defs) < 80 {
-		t.Fatalf("registry definitions = %d, want documented VuGen 26.1 utility baseline", len(defs))
+		t.Fatalf("registry definitions = %d, want documented C/VUser 26.1 utility baseline", len(defs))
 	}
 	for _, def := range defs {
 		t.Run(def.Name, func(t *testing.T) {
 			if def.SupportMode == "" || def.Family == "" {
 				t.Fatalf("definition = %#v, want family and support mode", def)
 			}
-			source := "Action()\n{\n" + sampleLoadRunnerFunctionCall(def) + "\nweb_url(\"Home\", \"URL=https://example.test/home\", LAST);\nreturn 0;\n}\n"
+			source := "Action()\n{\n" + sampleSourceFunctionCall(def) + "\nweb_url(\"Home\", \"URL=https://example.test/home\", LAST);\nreturn 0;\n}\n"
 			parsed, err := ParseActionFile("Action.c", source)
 			if err != nil {
 				t.Fatalf("parse error: %v", err)
@@ -800,14 +800,14 @@ func TestConvertUnknownCFunctionAsCustomCallReviewAction(t *testing.T) {
 		t.Fatalf("stats = %#v, want one custom call and no unsupported funcs", result.Stats)
 	}
 	action := result.Script.Actions[0]
-	if action.Type != "custom_call" || action.Params["function"] != "my_custom_helper" || action.Params["support_mode"] != string(LoadRunnerSupportCustomReview) {
+	if action.Type != "custom_call" || action.Params["function"] != "my_custom_helper" || action.Params["support_mode"] != string(SourceFunctionSupportCustomReview) {
 		t.Fatalf("custom action = %#v, want custom_call review action", action)
 	}
 	args, ok := action.Params["args"].([]any)
 	if !ok || len(args) != 3 || args[0] != "42" || args[1] != "LR_AUTO" || args[2] != "value" {
 		t.Fatalf("custom args = %#v, want numeric, identifier, and string args preserved", action.Params["args"])
 	}
-	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "my_custom_helper", LoadRunnerSupportCustomReview)
+	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "my_custom_helper", SourceFunctionSupportCustomReview)
 }
 
 func TestConvertPreserveTransactionsOption(t *testing.T) {
@@ -934,7 +934,7 @@ func TestConvertWebRESTAndXPathExtractors(t *testing.T) {
 		t.Fatalf("headers = %#v", action.Headers)
 	}
 	if !strings.Contains(action.Body, `"id": "{{var.randompostid}}"`) {
-		t.Fatalf("body = %q, want converted LoadRunner parameter", action.Body)
+		t.Fatalf("body = %q, want converted source parameter", action.Body)
 	}
 	if len(action.Extractors) != 2 {
 		t.Fatalf("extractors = %#v, want xpath + boundary", action.Extractors)
@@ -989,7 +989,7 @@ httpConnection:
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalLoadRunnerProtocol != "devweb" || result.DetectedProtocol.ImportMode != ImportModeExecutable {
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "devweb" || result.DetectedProtocol.ImportMode != ImportModeExecutable {
 		t.Fatalf("detected protocol = %#v, want executable DevWeb routing", result.DetectedProtocol)
 	}
 	if result.Script == nil || result.Script.Protocol != "http" || len(result.Script.Actions) != 2 {
@@ -999,8 +999,8 @@ httpConnection:
 		t.Fatalf("actions = %#v, want helper review gate followed by DevWeb parameter template request", result.Script.Actions)
 	}
 	preserved := result.Script.Metadata.Import.Preserved
-	if preserved["loadrunner_endpoint_routed_to"] != "devweb" {
-		t.Fatalf("preserved metadata = %#v, want loadrunner endpoint route marker", preserved)
+	if preserved["source_endpoint_routed_to"] != "devweb" {
+		t.Fatalf("preserved metadata = %#v, want enterprise archive endpoint route marker", preserved)
 	}
 	helpers, ok := preserved["helper_modules"].([]string)
 	if !ok || len(helpers) != 1 || helpers[0] != "LRD/helper.js" {
@@ -1052,7 +1052,7 @@ Action1=Action.c
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalLoadRunnerProtocol != "sap_web" || result.DetectedProtocol.APEXLoadProtocol != "http" {
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "sap_web" || result.DetectedProtocol.APEXLoadProtocol != "http" {
 		t.Fatalf("detected protocol = %#v, want SAP Web over HTTP", result.DetectedProtocol)
 	}
 	if result.Script == nil || result.Script.Protocol != "http" {
@@ -1066,7 +1066,7 @@ Action1=Action.c
 	assertSourceReviewFunctionStatus(t, result.SourceReview.Mappings, "web_url", "converted")
 }
 
-func TestConvertLoadRunnerParamArrayRandomInSaveString(t *testing.T) {
+func TestConvertSourceParamArrayRandomInSaveString(t *testing.T) {
 	parsed, err := ParseActionFile("Action.c", `Action()
 {
 	lr_save_string(lr_paramarr_random("postIDs"),"randomPostID");
@@ -1257,7 +1257,7 @@ func TestConvertParamReferences(t *testing.T) {
 	}
 }
 
-func buildLoadRunnerZip(t *testing.T, files map[string]string) []byte {
+func buildSourceZip(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -1315,7 +1315,7 @@ Action2=vuser_end.c
 	}
 }
 
-func TestConvertZipPreservesLoadRunnerMetadata(t *testing.T) {
+func TestConvertZipPreservesSourceMetadata(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	addFile := func(name string, content string) {
@@ -1343,7 +1343,7 @@ ReceiveTimeout=20
 KeepAlive=0
 
 [Browser Emulation]
-UserAgent=VuGen Browser
+UserAgent=C/VUser Browser
 AcceptLanguage=en-US
 `)
 	addFile("LoginUsers.prm", `[LoginUser]
@@ -1398,7 +1398,7 @@ UpdateValueOn=Each Occurrence
 		t.Fatalf("json.Marshal returned error: %v", err)
 	}
 	text := string(payload)
-	for _, want := range []string{"\"source\":\"loadrunner\"", "\"project_settings\"", "\"runtime_files\"", "\"parameter_files\"", "LoginUsers.prm", "default.cfg", "\"ConnectTimeout\":\"45\""} {
+	for _, want := range []string{"\"source\":\"enterprise_script_archive\"", "\"project_settings\"", "\"runtime_files\"", "\"parameter_files\"", "LoginUsers.prm", "default.cfg", "\"ConnectTimeout\":\"45\""} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected metadata JSON to contain %q, got %s", want, text)
 		}
@@ -1420,7 +1420,7 @@ UpdateValueOn=Each Occurrence
 }
 
 func TestConvertZipPreservesSalesforceReplayFidelity(t *testing.T) {
-	archive := buildLoadRunnerZip(t, map[string]string{
+	archive := buildSourceZip(t, map[string]string{
 		"Salesforce.usr": `[General]
 Type=Web
 RuntimeSettings=default.cfg
@@ -1527,29 +1527,29 @@ Options=NOTHINK
 	}
 }
 
-func TestNormalizeLoadRunnerContentCheckScope(t *testing.T) {
+func TestNormalizeSourceContentCheckScope(t *testing.T) {
 	tests := []struct {
 		name  string
 		value string
 		want  string
 	}{
-		{name: "loadrunner body", value: "Body", want: "any_response"},
-		{name: "loadrunner all", value: "All", want: "any_response"},
+		{name: "source body", value: "Body", want: "any_response"},
+		{name: "source all", value: "All", want: "any_response"},
 		{name: "main document", value: "Main Document", want: "main_document"},
 		{name: "resource", value: "Embedded Resources", want: "resource"},
-		{name: "unknown fallback", value: "Some LoadRunner Scope", want: "any_response"},
+		{name: "unknown fallback", value: "Some Source Scope", want: "any_response"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := normalizeLoadRunnerContentCheckScope(test.value); got != test.want {
-				t.Fatalf("normalizeLoadRunnerContentCheckScope(%q) = %q, want %q", test.value, got, test.want)
+			if got := normalizeSourceContentCheckScope(test.value); got != test.want {
+				t.Fatalf("normalizeSourceContentCheckScope(%q) = %q, want %q", test.value, got, test.want)
 			}
 		})
 	}
 }
 
 func TestConvertZipSanitizedACCWLSFixtureShape(t *testing.T) {
-	archive := buildLoadRunnerZip(t, map[string]string{
+	archive := buildSourceZip(t, map[string]string{
 		"acc_wls_reg_1.usr": `[General]
 Type=Multi
 DefaultCfg=default.cfg
@@ -1733,10 +1733,10 @@ vuser_end()
 	}
 	sequence := result.Script.Actions[0]
 	if sequence.Name != "S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue" {
-		t.Fatalf("sequence name = %q, want LoadRunner transaction name", sequence.Name)
+		t.Fatalf("sequence name = %q, want source transaction name", sequence.Name)
 	}
-	if sequence.Metadata["loadrunner_request_count"] != 3 {
-		t.Fatalf("sequence request count metadata = %#v, want 3", sequence.Metadata["loadrunner_request_count"])
+	if sequence.Metadata["source_request_count"] != 3 {
+		t.Fatalf("sequence request count metadata = %#v, want 3", sequence.Metadata["source_request_count"])
 	}
 	address := sequenceChildByName(t, sequence, "Address_Search_Aura")
 	if address.Target != "https://acme.lightning.force.com/aura" {
@@ -1972,7 +1972,7 @@ Type="Table"
 		t.Fatalf("body = %q, want known .prm parameters as param and dynamic values as var", got)
 	}
 	if got := result.Script.Config.BaseURL; got != "https://csi-gw-ext.att.com:443" {
-		t.Fatalf("base_url = %q, want first URL.dat value to replace LoadRunner fallback", got)
+		t.Fatalf("base_url = %q, want first URL.dat value to replace source fallback", got)
 	}
 	if len(result.Script.Parameters) != 1 {
 		t.Fatalf("parameters = %#v, want one URL parameter", result.Script.Parameters)
@@ -1982,7 +1982,7 @@ Type="Table"
 	}
 }
 
-func TestParseParameterFileSupportsLoadRunnerBuiltinParameters(t *testing.T) {
+func TestParseParameterFileSupportsSourceBuiltinParameters(t *testing.T) {
 	parsed := ParseParameterFile("ACME_ISCD_Azure_2024.prm", `[parameter:IterationNo]
 Format="%04d"
 OriginalValue=""
@@ -2055,7 +2055,7 @@ Type="Random"
 		t.Fatalf("TimeStamp = %#v, want mapped timestamp-style time parameter", got)
 	}
 	if got := params["sim"]; got.Type != "random_number" || got.Min != 11111 || got.Max != 99999 || got.Update != "each_occurrence" || got.PadWidth != 5 {
-		t.Fatalf("SIM = %#v, want LoadRunner Random mapped to numeric parameter", got)
+		t.Fatalf("SIM = %#v, want source Random mapped to numeric parameter", got)
 	}
 }
 
@@ -2126,7 +2126,7 @@ ClientMetrics=1
 SlowMoMs=125
 ViewportWidth=390
 ViewportHeight=844
-UserAgent=VuGen Browser
+UserAgent=C/VUser Browser
 AcceptLanguage=en-US
 AcceptEncoding=gzip, deflate
 CacheEnabled=1
@@ -3485,11 +3485,11 @@ Type=TruClient
 	if result.Script != nil {
 		t.Fatalf("script = %#v, want nil for review-only legacy TruClient", result.Script)
 	}
-	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalLoadRunnerProtocol != "truclient_legacy" || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired {
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "truclient_legacy" || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired {
 		t.Fatalf("detected protocol = %#v, want legacy TruClient external-runner classification", result.DetectedProtocol)
 	}
-	if result.ReviewArtifact == nil || !strings.Contains(result.ReviewArtifact.Summary, "TruClient") {
-		t.Fatalf("review artifact = %#v, want TruClient review guidance", result.ReviewArtifact)
+	if result.ReviewArtifact == nil || !strings.Contains(result.ReviewArtifact.Summary, "browser-profile archives require an external runtime") {
+		t.Fatalf("review artifact = %#v, want browser-profile review guidance", result.ReviewArtifact)
 	}
 }
 
@@ -3553,8 +3553,8 @@ Type=TruClient 2.0 - Web
 		t.Fatal("expected import metadata to be populated")
 	}
 	preserved := result.Script.Metadata.Import.Preserved
-	if preserved["source_script_type"] != "TruClient 2.0 - Web" || preserved["source_profile"] != "vugen_web2 browser profile" {
-		t.Fatalf("preserved source metadata = %#v, want TruClient 2.0 Web profile", preserved)
+	if preserved["source_script_type"] != "TruClient 2.0 - Web" || preserved["source_profile"] != "web2_browser_profile browser profile" {
+		t.Fatalf("preserved source metadata = %#v, want Web 2.0 browser profile", preserved)
 	}
 	inspection, ok := preserved["trueclient_archive_inspection"].(*trueclient.ArchiveInspection)
 	if !ok {

@@ -214,7 +214,7 @@ func flattenRequestActions(script *dsl.Script) []actionRef {
 			FlowKind:    classifySalesforceFlow(evidence, descriptor),
 			Descriptor:  descriptor,
 			Object:      classifySalesforceObject(evidence, descriptor),
-			Transaction: firstNonEmpty(metadataString(action.Metadata, "loadrunner_transaction"), metadataString(action.Metadata, "source_transaction"), inheritedTransaction),
+			Transaction: firstNonEmpty(metadataString(action.Metadata, "source_transaction"), metadataString(action.Metadata, "source_transaction"), inheritedTransaction),
 		})
 		seq++
 	}
@@ -222,15 +222,15 @@ func flattenRequestActions(script *dsl.Script) []actionRef {
 		for index := range actions {
 			action := &actions[index]
 			if strings.EqualFold(action.Type, "http_sequence") {
-				transaction := firstNonEmpty(metadataString(action.Metadata, "loadrunner_transaction"), metadataString(action.Metadata, "source_transaction"))
+				transaction := firstNonEmpty(metadataString(action.Metadata, "source_transaction"), metadataString(action.Metadata, "source_transaction"))
 				children := salesforceSequenceChildren(*action)
 				for childIndex := range children {
 					child := children[childIndex]
 					if child.Metadata == nil {
 						child.Metadata = map[string]any{}
 					}
-					if child.Metadata["loadrunner_transaction"] == nil && transaction != "" {
-						child.Metadata["loadrunner_transaction"] = transaction
+					if child.Metadata["source_transaction"] == nil && transaction != "" {
+						child.Metadata["source_transaction"] = transaction
 					}
 					appendRef(phase, index, &child, transaction)
 				}
@@ -247,7 +247,7 @@ func flattenRequestActions(script *dsl.Script) []actionRef {
 
 func isEngineAction(actionType string) bool {
 	switch actionType {
-	case "rendezvous", "error_message", "loadrunner_message", "loadrunner_runtime", "loadrunner_transaction", "loadrunner_timer", "loadrunner_metric", "loadrunner_parameter", "loadrunner_json", "loadrunner_xml", "loadrunner_database", "loadrunner_secret", "loadrunner_external", "loadrunner_review", "custom_call":
+	case "rendezvous", "error_message", "source_message", "source_runtime", "source_transaction", "source_timer", "source_metric", "source_parameter", "source_json", "source_xml", "source_database", "source_secret", "source_external", "source_review", "custom_call":
 		return true
 	default:
 		return false
@@ -583,7 +583,7 @@ func transactionCandidates(refs []actionRef) []TransactionCandidate {
 	counts := map[string]*candidateAccumulator{}
 	for _, ref := range refs {
 		name := strings.TrimSpace(ref.Transaction)
-		source := "loadrunner_transaction"
+		source := "source_transaction"
 		if name == "" {
 			name = ref.Kind
 			source = "salesforce_classifier"
@@ -636,7 +636,7 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 	}
 	clone.Name = strings.TrimSpace(script.Name) + " Salesforce Native Preview"
 	clone.GeneratedBy = "apexload-salesforce-builder"
-	clone.GeneratedFrom = "loadrunner+har"
+	clone.GeneratedFrom = "enterprise_script_archive+har"
 	ensureMetadata(clone)["salesforce_native_preview"] = true
 
 	cloneRefs := flattenRequestActions(clone)

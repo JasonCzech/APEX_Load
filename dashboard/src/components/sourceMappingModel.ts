@@ -46,7 +46,7 @@ export interface CoverageSummary {
   preserved: number
   review: number
   unsupported: number
-  /** Distinct LoadRunner function names that did not convert cleanly. */
+  /** Distinct EnterpriseArchive function names that did not convert cleanly. */
   unsupportedFunctions: string[]
   /** Count of top-level DSL entities with no traceable source origin. */
   dslWithoutOrigin: number

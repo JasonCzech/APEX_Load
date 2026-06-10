@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
+	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 )
@@ -40,19 +40,19 @@ type RuntimeSettingsFinding struct {
 }
 
 type RuntimeSettingsReport struct {
-	SchemaVersion string                                 `json:"schema_version"`
-	GeneratedAt   time.Time                              `json:"generated_at"`
-	Scope         string                                 `json:"scope"`
-	TargetID      string                                 `json:"target_id"`
-	TargetName    string                                 `json:"target_name,omitempty"`
-	Status        string                                 `json:"status"`
-	Summary       string                                 `json:"summary,omitempty"`
-	StatusCounts  map[string]int                         `json:"status_counts,omitempty"`
-	Entries       []loadrunner.RuntimeSettingParityEntry `json:"entries,omitempty"`
-	Findings      []RuntimeSettingsFinding               `json:"findings,omitempty"`
-	Presets       []RuntimeSettingsProfilePreset         `json:"presets,omitempty"`
-	Support       RuntimeSettingsReportSupportRefs       `json:"support"`
-	Warnings      []string                               `json:"warnings,omitempty"`
+	SchemaVersion string                                        `json:"schema_version"`
+	GeneratedAt   time.Time                                     `json:"generated_at"`
+	Scope         string                                        `json:"scope"`
+	TargetID      string                                        `json:"target_id"`
+	TargetName    string                                        `json:"target_name,omitempty"`
+	Status        string                                        `json:"status"`
+	Summary       string                                        `json:"summary,omitempty"`
+	StatusCounts  map[string]int                                `json:"status_counts,omitempty"`
+	Entries       []enterprisearchive.RuntimeSettingParityEntry `json:"entries,omitempty"`
+	Findings      []RuntimeSettingsFinding                      `json:"findings,omitempty"`
+	Presets       []RuntimeSettingsProfilePreset                `json:"presets,omitempty"`
+	Support       RuntimeSettingsReportSupportRefs              `json:"support"`
+	Warnings      []string                                      `json:"warnings,omitempty"`
 }
 
 type RuntimeSettingsReportSupportRefs struct {
@@ -68,9 +68,9 @@ func buildRuntimeSettingsReviewForScript(scope string, scriptID string, group st
 		return review
 	}
 	parity := buildValidationRuntimeSettingsParity(script)
-	review.StatusCounts = loadrunner.RuntimeSettingStatusCounts(parity)
+	review.StatusCounts = enterprisearchive.RuntimeSettingStatusCounts(parity)
 	for _, entry := range parity {
-		if entry.Status == loadrunner.RuntimeSettingStatusExecuted || entry.Status == loadrunner.RuntimeSettingStatusNonApplicable {
+		if entry.Status == enterprisearchive.RuntimeSettingStatusExecuted || entry.Status == enterprisearchive.RuntimeSettingStatusNonApplicable {
 			continue
 		}
 		finding := RuntimeSettingsFinding{
@@ -165,20 +165,20 @@ func finalizeRuntimeSettingsReview(review *RuntimeSettingsReview) {
 	}
 }
 
-func runtimeSettingSeverity(status loadrunner.RuntimeSettingStatus) string {
+func runtimeSettingSeverity(status enterprisearchive.RuntimeSettingStatus) string {
 	switch status {
-	case loadrunner.RuntimeSettingStatusBlocked:
+	case enterprisearchive.RuntimeSettingStatusBlocked:
 		return "blocker"
-	case loadrunner.RuntimeSettingStatusPartial, loadrunner.RuntimeSettingStatusCompatibilityOnly:
+	case enterprisearchive.RuntimeSettingStatusPartial, enterprisearchive.RuntimeSettingStatusCompatibilityOnly:
 		return "warning"
-	case loadrunner.RuntimeSettingStatusNonApplicable:
+	case enterprisearchive.RuntimeSettingStatusNonApplicable:
 		return "info"
 	default:
 		return "info"
 	}
 }
 
-func runtimeSettingFindingSummary(entry loadrunner.RuntimeSettingParityEntry) string {
+func runtimeSettingFindingSummary(entry enterprisearchive.RuntimeSettingParityEntry) string {
 	status := strings.ReplaceAll(string(entry.Status), "_", " ")
 	if len(entry.RuntimeFiles) > 0 {
 		return fmt.Sprintf("%s runtime setting %s / %s from %s.", strings.Title(status), entry.Area, entry.Concept, strings.Join(entry.RuntimeFiles, ", "))
@@ -186,20 +186,20 @@ func runtimeSettingFindingSummary(entry loadrunner.RuntimeSettingParityEntry) st
 	return fmt.Sprintf("%s runtime setting %s / %s.", strings.Title(status), entry.Area, entry.Concept)
 }
 
-func runtimeSettingRecommendedAction(entry loadrunner.RuntimeSettingParityEntry) string {
+func runtimeSettingRecommendedAction(entry enterprisearchive.RuntimeSettingParityEntry) string {
 	switch entry.Status {
-	case loadrunner.RuntimeSettingStatusBlocked:
+	case enterprisearchive.RuntimeSettingStatusBlocked:
 		return "Change or remove this setting before saving or running the scenario."
-	case loadrunner.RuntimeSettingStatusCompatibilityOnly:
+	case enterprisearchive.RuntimeSettingStatusCompatibilityOnly:
 		return "Keep for migration documentation, but do not treat it as executed behavior."
-	case loadrunner.RuntimeSettingStatusPartial:
+	case enterprisearchive.RuntimeSettingStatusPartial:
 		return "Review the supported subset and attach replay evidence before promotion."
 	default:
 		return "Review the setting against the unified runtime support matrix."
 	}
 }
 
-func runtimeSettingEntryEvidence(entry loadrunner.RuntimeSettingParityEntry) []string {
+func runtimeSettingEntryEvidence(entry enterprisearchive.RuntimeSettingParityEntry) []string {
 	evidence := []string{"/api/v1/runtime-settings/support-matrix"}
 	if len(entry.RuntimeFiles) > 0 {
 		evidence = append(evidence, entry.RuntimeFiles...)
@@ -393,7 +393,7 @@ func runtimeSettingsReportForScenario(scenarioID string, scenario *StoredScenari
 		}
 		entries := buildValidationRuntimeSettingsParity(&scriptCopy)
 		report.Entries = append(report.Entries, entries...)
-		statusCounts = mergeRuntimeSettingStatusCounts(statusCounts, loadrunner.RuntimeSettingStatusCounts(entries))
+		statusCounts = mergeRuntimeSettingStatusCounts(statusCounts, enterprisearchive.RuntimeSettingStatusCounts(entries))
 		review := buildRuntimeSettingsReviewForScript("scenario", ref.ScriptID, ref.Name, &scriptCopy)
 		report.Findings = append(report.Findings, review.Findings...)
 		report.Warnings = append(report.Warnings, review.Warnings...)
@@ -418,7 +418,7 @@ func runtimeSettingsReportSupportRefs() RuntimeSettingsReportSupportRefs {
 	return RuntimeSettingsReportSupportRefs{
 		MatrixEndpoint: "/api/v1/runtime-settings/support-matrix",
 		ExportFormats:  []string{"json", "csv"},
-		Docs:           []string{"docs/RUNTIME_SETTINGS_PARITY.md", "docs/COMPETITIVE_COMPARISON.md#loadrunner-rts-reference"},
+		Docs:           []string{"docs/RUNTIME_SETTINGS_PARITY.md", "docs/COMPETITIVE_COMPARISON.md#enterprise-archive-runtime-settings-reference"},
 	}
 }
 
@@ -533,8 +533,8 @@ func runtimeSettingsReportCSV(report RuntimeSettingsReport) ([]byte, error) {
 	return buf.Bytes(), writer.Error()
 }
 
-func runtimeSettingsReportEntriesSorted(entries []loadrunner.RuntimeSettingParityEntry) []loadrunner.RuntimeSettingParityEntry {
-	out := make([]loadrunner.RuntimeSettingParityEntry, len(entries))
+func runtimeSettingsReportEntriesSorted(entries []enterprisearchive.RuntimeSettingParityEntry) []enterprisearchive.RuntimeSettingParityEntry {
+	out := make([]enterprisearchive.RuntimeSettingParityEntry, len(entries))
 	copy(out, entries)
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Area == out[j].Area {

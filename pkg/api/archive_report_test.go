@@ -225,7 +225,7 @@ func TestBuildRunArchiveReportIncludesWeb2MigrationEvidence(t *testing.T) {
 		SourceAction:      "Click",
 		SourceActionName:  "Click Checkout",
 		SourceTransaction: "Checkout",
-		SourceProfile:     "vugen_web2",
+		SourceProfile:     "web2_browser_profile",
 	}); err != nil {
 		t.Fatalf("Encode transaction returned error: %v", err)
 	}

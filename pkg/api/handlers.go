@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/buildinfo"
-	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
+	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
@@ -977,17 +977,17 @@ func validateScript(script *dsl.Script) []string {
 }
 
 type scriptValidationResponse struct {
-	ScriptID                    string                                       `json:"script_id"`
-	Valid                       bool                                         `json:"valid"`
-	Issues                      []string                                     `json:"issues"`
-	Warnings                    []string                                     `json:"warnings,omitempty"`
-	Preflight                   *ReplayPreflight                             `json:"preflight,omitempty"`
-	RuntimeSettingsParity       []loadrunner.RuntimeSettingParityEntry       `json:"runtime_settings_parity,omitempty"`
-	RuntimeSettingsStatusCounts map[string]int                               `json:"runtime_settings_status_counts,omitempty"`
-	MigrationReadiness          *loadrunner.RuntimeSettingMigrationReadiness `json:"migration_readiness,omitempty"`
-	DataSourceFit               *DataSourceFitReport                         `json:"data_source_fit,omitempty"`
-	AIGuardrails                *AIGuardrailReport                           `json:"ai_guardrails,omitempty"`
-	AuthoringHealth             AuthoringHealth                              `json:"authoring_health"`
+	ScriptID                    string                                              `json:"script_id"`
+	Valid                       bool                                                `json:"valid"`
+	Issues                      []string                                            `json:"issues"`
+	Warnings                    []string                                            `json:"warnings,omitempty"`
+	Preflight                   *ReplayPreflight                                    `json:"preflight,omitempty"`
+	RuntimeSettingsParity       []enterprisearchive.RuntimeSettingParityEntry       `json:"runtime_settings_parity,omitempty"`
+	RuntimeSettingsStatusCounts map[string]int                                      `json:"runtime_settings_status_counts,omitempty"`
+	MigrationReadiness          *enterprisearchive.RuntimeSettingMigrationReadiness `json:"migration_readiness,omitempty"`
+	DataSourceFit               *DataSourceFitReport                                `json:"data_source_fit,omitempty"`
+	AIGuardrails                *AIGuardrailReport                                  `json:"ai_guardrails,omitempty"`
+	AuthoringHealth             AuthoringHealth                                     `json:"authoring_health"`
 }
 
 func buildScriptValidationResponse(scriptID string, script *dsl.Script) scriptValidationResponse {
@@ -999,8 +999,8 @@ func buildScriptValidationResponseWithVariables(scriptID string, script *dsl.Scr
 	warnings := validationWarnings(script)
 	preflight := buildReplayPreflight(script, variables, issues, warnings)
 	parity := buildValidationRuntimeSettingsParity(script)
-	counts := loadrunner.RuntimeSettingStatusCounts(parity)
-	readiness := loadrunner.BuildRTSMigrationReadiness(parity, validationRuntimeSettingMigrationPolicy(script))
+	counts := enterprisearchive.RuntimeSettingStatusCounts(parity)
+	readiness := enterprisearchive.BuildRTSMigrationReadiness(parity, validationRuntimeSettingMigrationPolicy(script))
 	dataSourceFit := buildDataSourceFitReport(script)
 	aiGuardrails := buildAIGuardrailReport(script, len(issues) == 0)
 
@@ -1080,13 +1080,13 @@ func recordedResourceMetadataWarning() string {
 	return "Browser replay with download_resources=recorded requires preserved recorded-resource metadata. Manually authored scripts or imports without captured resource URLs cannot enforce recorded-only asset loading yet."
 }
 
-func buildValidationRuntimeSettingsParity(script *dsl.Script) []loadrunner.RuntimeSettingParityEntry {
+func buildValidationRuntimeSettingsParity(script *dsl.Script) []enterprisearchive.RuntimeSettingParityEntry {
 	if script == nil {
 		return nil
 	}
 
 	preserved := runtimeSettingsParityValue(validationImportPreservedValue(script, "runtime_settings_parity"))
-	derived := loadrunner.BuildRTSParityReportFromScript(script)
+	derived := enterprisearchive.BuildRTSParityReportFromScript(script)
 	if len(derived) == 0 {
 		return preserved
 	}
@@ -1094,12 +1094,12 @@ func buildValidationRuntimeSettingsParity(script *dsl.Script) []loadrunner.Runti
 		return derived
 	}
 
-	preservedByID := make(map[string]loadrunner.RuntimeSettingParityEntry, len(preserved))
+	preservedByID := make(map[string]enterprisearchive.RuntimeSettingParityEntry, len(preserved))
 	for _, entry := range preserved {
 		preservedByID[entry.ID] = entry
 	}
 
-	merged := make([]loadrunner.RuntimeSettingParityEntry, 0, len(derived))
+	merged := make([]enterprisearchive.RuntimeSettingParityEntry, 0, len(derived))
 	for _, entry := range derived {
 		if preservedEntry, ok := preservedByID[entry.ID]; ok && len(entry.RuntimeFiles) == 0 {
 			entry.RuntimeFiles = append([]string(nil), preservedEntry.RuntimeFiles...)
@@ -1110,12 +1110,12 @@ func buildValidationRuntimeSettingsParity(script *dsl.Script) []loadrunner.Runti
 	return merged
 }
 
-func validationRuntimeSettingMigrationPolicy(script *dsl.Script) loadrunner.RuntimeSettingMigrationPolicy {
-	readiness := loadRunnerMigrationReadinessValue(validationImportPreservedValue(script, "runtime_settings_migration_readiness"))
+func validationRuntimeSettingMigrationPolicy(script *dsl.Script) enterprisearchive.RuntimeSettingMigrationPolicy {
+	readiness := enterpriseArchiveMigrationReadinessValue(validationImportPreservedValue(script, "runtime_settings_migration_readiness"))
 	if readiness != nil && len(readiness.Policy.BlockStatuses) > 0 {
 		return readiness.Policy
 	}
-	return loadrunner.DefaultRuntimeSettingMigrationPolicy()
+	return enterprisearchive.DefaultRuntimeSettingMigrationPolicy()
 }
 
 func validationImportPreservedValue(script *dsl.Script, key string) any {

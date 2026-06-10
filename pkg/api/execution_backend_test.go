@@ -764,7 +764,7 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 	if updated.LiveMetrics.AvgResponseMs != 200 {
 		t.Fatalf("avg response ms = %v, want 200", updated.LiveMetrics.AvgResponseMs)
 	}
-	if updated.LiveMetrics.P50Ms != 200 || updated.LiveMetrics.P95Ms != 200 {
+	if updated.LiveMetrics.P50Ms != 200 || updated.LiveMetrics.P95Ms != 290 {
 		t.Fatalf("unexpected distributed percentiles: p50=%v p95=%v", updated.LiveMetrics.P50Ms, updated.LiveMetrics.P95Ms)
 	}
 	if updated.LiveMetrics.Telemetry == nil {

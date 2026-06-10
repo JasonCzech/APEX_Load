@@ -1203,18 +1203,18 @@ func TestTrustedHeaderAuthRequiresViewerForJMeterSupportMatrix(t *testing.T) {
 	}
 }
 
-func TestTrustedHeaderAuthRequiresViewerForLoadRunnerSupportMatrix(t *testing.T) {
+func TestTrustedHeaderAuthRequiresViewerForEnterpriseArchiveSupportMatrix(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableTrustedHeaderAuth(t, server)
 
-	unauthorizedReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/loadrunner/support-matrix", nil)
+	unauthorizedReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/enterprise-script-archive/support-matrix", nil)
 	unauthorizedResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(unauthorizedResp, unauthorizedReq)
 	if unauthorizedResp.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized support matrix status = %d, want %d body=%s", unauthorizedResp.Code, http.StatusUnauthorized, unauthorizedResp.Body.String())
 	}
 
-	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/loadrunner/support-matrix", nil)
+	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/enterprise-script-archive/support-matrix", nil)
 	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
 	viewerReq.Header.Set("X-APEXLoad-Roles", RoleViewer)
 	viewerResp := httptest.NewRecorder()
@@ -1318,24 +1318,24 @@ func TestTrustedHeaderAuthProjectRoleGuardsImportPreviewEndpoints(t *testing.T) 
 	enableTrustedHeaderAuth(t, server)
 	projectID := uuid.New().String()
 
-	viewerLoadRunnerReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner?project_id="+projectID, bytes.NewReader([]byte("zip")))
-	viewerLoadRunnerReq.Header.Set("Content-Type", "application/zip")
-	viewerLoadRunnerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerLoadRunnerReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
-	viewerLoadRunnerResp := httptest.NewRecorder()
-	server.mux.ServeHTTP(viewerLoadRunnerResp, viewerLoadRunnerReq)
-	if viewerLoadRunnerResp.Code != http.StatusForbidden {
-		t.Fatalf("loadrunner import viewer status = %d, want %d body=%s", viewerLoadRunnerResp.Code, http.StatusForbidden, viewerLoadRunnerResp.Body.String())
+	viewerEnterpriseArchiveReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive?project_id="+projectID, bytes.NewReader([]byte("zip")))
+	viewerEnterpriseArchiveReq.Header.Set("Content-Type", "application/zip")
+	viewerEnterpriseArchiveReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerEnterpriseArchiveReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
+	viewerEnterpriseArchiveResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerEnterpriseArchiveResp, viewerEnterpriseArchiveReq)
+	if viewerEnterpriseArchiveResp.Code != http.StatusForbidden {
+		t.Fatalf("enterprise archive import viewer status = %d, want %d body=%s", viewerEnterpriseArchiveResp.Code, http.StatusForbidden, viewerEnterpriseArchiveResp.Body.String())
 	}
 
-	editorLoadRunnerReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner?project_id="+projectID, bytes.NewReader([]byte("zip")))
-	editorLoadRunnerReq.Header.Set("Content-Type", "application/zip")
-	editorLoadRunnerReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorLoadRunnerReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
-	editorLoadRunnerResp := httptest.NewRecorder()
-	server.mux.ServeHTTP(editorLoadRunnerResp, editorLoadRunnerReq)
-	if editorLoadRunnerResp.Code == http.StatusForbidden || editorLoadRunnerResp.Code == http.StatusUnauthorized {
-		t.Fatalf("loadrunner import editor status = %d, want auth to pass body=%s", editorLoadRunnerResp.Code, editorLoadRunnerResp.Body.String())
+	editorEnterpriseArchiveReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive?project_id="+projectID, bytes.NewReader([]byte("zip")))
+	editorEnterpriseArchiveReq.Header.Set("Content-Type", "application/zip")
+	editorEnterpriseArchiveReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorEnterpriseArchiveReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
+	editorEnterpriseArchiveResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorEnterpriseArchiveResp, editorEnterpriseArchiveReq)
+	if editorEnterpriseArchiveResp.Code == http.StatusForbidden || editorEnterpriseArchiveResp.Code == http.StatusUnauthorized {
+		t.Fatalf("enterprise archive import editor status = %d, want auth to pass body=%s", editorEnterpriseArchiveResp.Code, editorEnterpriseArchiveResp.Body.String())
 	}
 
 	viewerSampleReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", bytes.NewReader([]byte(`{"project_id":"`+projectID+`","format":"raw_http","content":"GET / HTTP/1.1\nHost: example.com\n\n"}`)))
@@ -1359,7 +1359,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsImportPreviewEndpoints(t *testing.T) 
 	}
 }
 
-func TestTrustedHeaderAuthReadsLoadRunnerMultipartProjectID(t *testing.T) {
+func TestTrustedHeaderAuthReadsEnterpriseArchiveMultipartProjectID(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableTrustedHeaderAuth(t, server)
 	projectID := uuid.New().String()
@@ -1380,14 +1380,14 @@ func TestTrustedHeaderAuthReadsLoadRunnerMultipartProjectID(t *testing.T) {
 		t.Fatalf("writer.Close returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("X-Auth-Request-User", "editor-user")
 	req.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)
 	if resp.Code == http.StatusForbidden || resp.Code == http.StatusUnauthorized || resp.Code == http.StatusBadRequest {
-		t.Fatalf("loadrunner multipart editor status = %d, want auth to pass body=%s", resp.Code, resp.Body.String())
+		t.Fatalf("enterprise archive multipart editor status = %d, want auth to pass body=%s", resp.Code, resp.Body.String())
 	}
 
 	missingProjectBody := &bytes.Buffer{}
@@ -1402,14 +1402,14 @@ func TestTrustedHeaderAuthReadsLoadRunnerMultipartProjectID(t *testing.T) {
 	if err := missingWriter.Close(); err != nil {
 		t.Fatalf("missingWriter.Close returned error: %v", err)
 	}
-	missingReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", missingProjectBody)
+	missingReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", missingProjectBody)
 	missingReq.Header.Set("Content-Type", missingWriter.FormDataContentType())
 	missingReq.Header.Set("X-Auth-Request-User", "editor-user")
 	missingReq.Header.Set("X-APEXLoad-Project-Roles", storage.DefaultProjectID+"="+RoleEditor)
 	missingResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(missingResp, missingReq)
 	if missingResp.Code != http.StatusBadRequest {
-		t.Fatalf("loadrunner multipart missing project status = %d, want %d body=%s", missingResp.Code, http.StatusBadRequest, missingResp.Body.String())
+		t.Fatalf("enterprise archive multipart missing project status = %d, want %d body=%s", missingResp.Code, http.StatusBadRequest, missingResp.Body.String())
 	}
 }
 

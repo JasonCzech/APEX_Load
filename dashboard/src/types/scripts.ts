@@ -381,9 +381,9 @@ export interface SourceReview {
   mappings?: SourceReviewMapping[]
 }
 
-export type LoadRunnerSourceReviewFile = SourceReviewFile
-export type LoadRunnerSourceReviewMapping = SourceReviewMapping
-export type LoadRunnerSourceReview = SourceReview
+export type SourceArchiveReviewFile = SourceReviewFile
+export type SourceArchiveReviewMapping = SourceReviewMapping
+export type SourceArchiveReview = SourceReview
 
 export interface ScriptMetadata {
   import?: ScriptImportMetadata

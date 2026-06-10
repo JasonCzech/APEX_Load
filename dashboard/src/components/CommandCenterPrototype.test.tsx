@@ -99,6 +99,10 @@ describe('CommandCenterPrototype', () => {
     expect(graphSelectionPanel).not.toBeNull()
     expect(graphSelectionPanel?.textContent).toContain('Group Selection')
     expect(graphSelectionPanel?.textContent).toContain('3 / 3 groups visible')
+    const selectedGroupButtons = graphSelectionPanel?.querySelectorAll('.command-group-select-toggle[data-state="selected"]')
+    expect(selectedGroupButtons).toHaveLength(3)
+    expect(Array.from(selectedGroupButtons ?? []).every(button => button.textContent?.includes('Selected'))).toBe(true)
+    expect(selectedGroupButtons?.[0].querySelector('.command-group-select-status-dot')).not.toBeNull()
     expect(Array.from(graphSidebar!.children).indexOf(graphSwitchPanel!)).toBeLessThan(Array.from(graphSidebar!.children).indexOf(graphSelectionPanel!))
     expect(graphOptionsPanel).not.toBeNull()
     expect(graphOptionsPanel?.textContent).toContain('Graph Options')
@@ -106,7 +110,7 @@ describe('CommandCenterPrototype', () => {
     expect(graphOptionsPanel?.textContent).toContain('Layout')
     expect(graphOptionsPanel?.textContent).toContain('2x2')
     expect(graphOptionsPanel?.textContent).toContain('3x3')
-    expect(graphOptionsPanel?.textContent).toContain('Role View')
+    expect(graphOptionsPanel?.textContent).not.toContain('Role View')
     expect(graphOptionsPanel?.textContent).toContain('Display Time')
     expect(graphOptionsPanel?.textContent).not.toContain('Graph data range')
     expect(graphOptionsPanel?.textContent).not.toContain('Graph density')
@@ -126,8 +130,32 @@ describe('CommandCenterPrototype', () => {
     await click(tabNamed('Under Load'))
 
     expect(tabNamed('Under Load')?.getAttribute('aria-selected')).toBe('true')
+    const underLoadDisplayPanel = graphSidebar?.querySelector('[aria-label="Under Load display mode"]')
+    expect(underLoadDisplayPanel).not.toBeNull()
+    expect(underLoadDisplayPanel?.textContent).toContain('Graphs')
+    expect(underLoadDisplayPanel?.textContent).toContain('Heatmap')
+    expect(Array.from(graphSidebar!.children).indexOf(underLoadDisplayPanel!)).toBeGreaterThan(Array.from(graphSidebar!.children).indexOf(graphSwitchPanel!))
+    expect(Array.from(graphSidebar!.children).indexOf(underLoadDisplayPanel!)).toBeLessThan(Array.from(graphSidebar!.children).indexOf(graphSelectionPanel!))
+    expect(buttonWithin(underLoadDisplayPanel!, 'Graphs').getAttribute('aria-pressed')).toBe('true')
     expect(runtimeGraphs?.textContent).toContain('ART Under Load')
-    expect(runtimeGraphs?.textContent).toContain('Network Egress Under Load')
+    expect(runtimeGraphs?.textContent).toContain('TPS Under Load')
+    expect(runtimeGraphs?.textContent).not.toContain('Load Impact Heatmap')
+
+    await click(buttonWithin(underLoadDisplayPanel!, 'Heatmap'))
+
+    expect(buttonWithin(underLoadDisplayPanel!, 'Heatmap').getAttribute('aria-pressed')).toBe('true')
+    expect(runtimeGraphs?.textContent).toContain('Load Impact Heatmap')
+    expect(runtimeGraphs?.textContent).toContain('2D')
+    expect(runtimeGraphs?.textContent).toContain('3D')
+    expect(runtimeGraphs?.textContent).not.toContain('ART Under Load')
+    const dedicatedHeatmapCard = runtimeGraphs?.querySelector('.load-impact-card.load-impact-map-mode')
+    expect(dedicatedHeatmapCard).not.toBeNull()
+    const heatmapCell = Array.from(dedicatedHeatmapCard!.querySelectorAll<HTMLButtonElement>('.load-impact-cell')).find(cell => !cell.disabled)
+    expect(heatmapCell).toBeDefined()
+
+    await click(heatmapCell!)
+
+    expect(runtimeGraphs?.querySelector('.load-impact-detail')).not.toBeNull()
 
     await click(tabNamed('Infrastructure'))
 
@@ -146,6 +174,8 @@ describe('CommandCenterPrototype', () => {
     await click(browseVisibility)
 
     expect(browseVisibility.getAttribute('aria-pressed')).toBe('false')
+    expect(browseVisibility.getAttribute('data-state')).toBe('hidden')
+    expect(browseVisibility.textContent).toContain('Hidden')
     expect(graphSelectionPanel?.textContent).toContain('2 / 3 groups visible')
     expect(runtimeGraphs?.getAttribute('data-visible-groups')).not.toContain('browse')
     expect(runtimeGraphs?.getAttribute('data-visible-groups')).toContain('checkout')

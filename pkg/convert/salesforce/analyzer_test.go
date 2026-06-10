@@ -115,7 +115,7 @@ func TestAnalyzeClassifiesSalesforceObjectFlowsAndNestedJMESPath(t *testing.T) {
 			Target: "https://acme.lightning.force.com/aura",
 			Body:   `{"descriptor":"apex://AccountController/ACTION$getAccount","params":{"recordId":"001SANITIZED"}}`,
 			Metadata: map[string]any{
-				"loadrunner_transaction": "T_AccountLookup",
+				"source_transaction": "T_AccountLookup",
 			},
 		}, {
 			Name:   "Work Order Lookup",
@@ -124,7 +124,7 @@ func TestAnalyzeClassifiesSalesforceObjectFlowsAndNestedJMESPath(t *testing.T) {
 			Target: "https://acme.lightning.force.com/aura",
 			Body:   `{"descriptor":"apex://WorkOrderController/ACTION$getWorkOrder","params":{"record-id":"a0WSANITIZED123"}}`,
 			Metadata: map[string]any{
-				"loadrunner_transaction": "T_WorkOrderLookup",
+				"source_transaction": "T_WorkOrderLookup",
 			},
 		}, {
 			Name:   "Service Address Search",
@@ -133,7 +133,7 @@ func TestAnalyzeClassifiesSalesforceObjectFlowsAndNestedJMESPath(t *testing.T) {
 			Target: "https://acme.lightning.force.com/aura",
 			Body:   `{"descriptor":"apex://BWC_ServiceAddressController/ACTION$getSearchResults","params":{"query":"100 Main"}}`,
 			Metadata: map[string]any{
-				"loadrunner_transaction": "T_ServiceAddress",
+				"source_transaction": "T_ServiceAddress",
 			},
 		}, {
 			Name:   "Record UI",
@@ -141,7 +141,7 @@ func TestAnalyzeClassifiesSalesforceObjectFlowsAndNestedJMESPath(t *testing.T) {
 			Method: "GET",
 			Target: "https://acme.my.salesforce.com/services/data/v60.0/ui-api/records/001SANITIZED",
 			Metadata: map[string]any{
-				"loadrunner_transaction": "T_RecordUI",
+				"source_transaction": "T_RecordUI",
 			},
 		}, {
 			Name:   "Use Nested Record ID",
@@ -150,7 +150,7 @@ func TestAnalyzeClassifiesSalesforceObjectFlowsAndNestedJMESPath(t *testing.T) {
 			Target: "https://acme.lightning.force.com/aura",
 			Body:   `{"params":{"record-id":"a0WSANITIZED123"}}`,
 			Metadata: map[string]any{
-				"loadrunner_transaction": "T_WorkOrderLookup",
+				"source_transaction": "T_WorkOrderLookup",
 			},
 		}},
 	}
@@ -233,7 +233,7 @@ func TestAnalyzeFlattensHTTPSequenceChildren(t *testing.T) {
 			Method: "SEQUENCE",
 			Target: "https://acme.lightning.force.com/aura",
 			Metadata: map[string]any{
-				"loadrunner_transaction": "S01_AddressSearch",
+				"source_transaction": "S01_AddressSearch",
 			},
 			Params: map[string]any{
 				"requests": []map[string]any{{
@@ -263,7 +263,7 @@ func TestAnalyzeFlattensHTTPSequenceChildren(t *testing.T) {
 		t.Fatalf("transactions = %#v, want one grouped transaction", review.Transactions)
 	}
 	transaction := review.Transactions[0]
-	if transaction.Name != "S01_AddressSearch" || transaction.Source != "loadrunner_transaction" {
+	if transaction.Name != "S01_AddressSearch" || transaction.Source != "source_transaction" {
 		t.Fatalf("transaction = %#v, want grouped LoadRunner transaction", transaction)
 	}
 	if transaction.RequestCount != 2 || transaction.AuraActions != 1 || transaction.UIAPICalls != 1 {

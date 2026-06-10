@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   Area,
   AreaChart,
@@ -16,7 +16,7 @@ import { useApi } from '../hooks/useApi'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import type { BrowserReplaySnapshot, GroupLiveMetrics, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, TestGroup, TestStatus, TestSummary } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
-import TestExecutionCharts, { type GraphCursorState } from './TestExecutionCharts'
+import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
 import type { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
 import { mapExecutionMetricToHistoryPoint } from './testExecutionMetricsModel'
 import { useExecutionChartModel } from './useExecutionChartModel'
@@ -116,6 +116,11 @@ const TEST_STATUSES: TestStatus[] = [
 const VARIANT_OPTIONS: Array<{ value: VariantId; label: string }> = [
   { value: 'ops', label: 'OPS View' },
   { value: 'grafana', label: 'Graph Wall' },
+]
+
+const UNDER_LOAD_DISPLAY_OPTIONS: Array<{ value: UnderLoadDisplayMode; label: string }> = [
+  { value: 'graphs', label: 'Graphs' },
+  { value: 'heatmap', label: 'Heatmap' },
 ]
 
 const GROUPS: CommandGroup[] = [
@@ -1616,9 +1621,12 @@ function GrafanaWallView({
   onErrorSelect,
 }: GrafanaWallViewProps) {
   const [graphOptionsTarget, setGraphOptionsTarget] = useState<HTMLDivElement | null>(null)
+  const [activeGraphGroupTab, setActiveGraphGroupTab] = useState<GraphGroupTabId>('test_results')
+  const [underLoadDisplayMode, setUnderLoadDisplayMode] = useState<UnderLoadDisplayMode>('graphs')
   const bindGraphOptionsTarget = useCallback((node: HTMLDivElement | null) => {
     setGraphOptionsTarget(node)
   }, [])
+  const showUnderLoadDisplaySwitch = activeGraphGroupTab === 'under_load'
 
   return (
     <section className="command-layout command-layout-grafana" aria-label="Grafana wall mockup">
@@ -1641,10 +1649,19 @@ function GrafanaWallView({
           onTimeRangeChange={onTimeRangeChange}
           activeCursor={activeCursor}
           onActiveCursorChange={onActiveCursorChange}
+          activeGraphGroupTab={activeGraphGroupTab}
+          onActiveGraphGroupTabChange={setActiveGraphGroupTab}
+          underLoadDisplayMode={underLoadDisplayMode}
           externalControlsTarget={graphOptionsTarget}
         />
         <div className="command-grafana-side">
           <CommandViewSwitchPanel variant={variant} onVariantChange={onVariantChange} />
+          {showUnderLoadDisplaySwitch && (
+            <CommandUnderLoadDisplaySwitchPanel
+              value={underLoadDisplayMode}
+              onChange={setUnderLoadDisplayMode}
+            />
+          )}
           <GroupSelectionPanel groups={groups} groupVisibility={groupVisibility} onToggle={onGroupVisibilityToggle} />
           <ErrorDrilldown patterns={errorPatterns} selectedError={selectedError} onErrorSelect={onErrorSelect} compact />
           <div className="command-graph-options-slot" ref={bindGraphOptionsTarget} />
@@ -1663,6 +1680,20 @@ function CommandViewSwitchPanel({ variant, onVariantChange }: { variant: Variant
         ariaLabel="Command center views"
         className="command-center-variant-toggle"
         onChange={onVariantChange}
+      />
+    </section>
+  )
+}
+
+function CommandUnderLoadDisplaySwitchPanel({ value, onChange }: { value: UnderLoadDisplayMode; onChange: (value: UnderLoadDisplayMode) => void }) {
+  return (
+    <section className="command-panel command-under-load-display-panel" aria-label="Under Load display mode">
+      <PageViewToggle
+        value={value}
+        options={UNDER_LOAD_DISPLAY_OPTIONS}
+        ariaLabel="Under Load display mode"
+        className="command-under-load-display-toggle"
+        onChange={onChange}
       />
     </section>
   )
@@ -1695,13 +1726,18 @@ function GroupSelectionPanel({
               key={group.key}
               type="button"
               className={`command-group-select-toggle ${visible ? 'active' : ''}`}
+              data-state={visible ? 'selected' : 'hidden'}
               aria-pressed={visible}
               aria-label={`${group.name} graph visibility`}
+              style={{ '--command-group-color': group.color } as CSSProperties}
               onClick={() => onToggle(group.key)}
             >
-              <span className="command-group-select-swatch" style={{ background: group.color }} />
+              <span className="command-group-select-swatch" />
               <strong>{group.name}</strong>
-              <small>{visible ? 'Visible' : 'Hidden'}</small>
+              <small className="command-group-select-status">
+                <span className="command-group-select-status-dot" aria-hidden="true" />
+                {visible ? 'Selected' : 'Hidden'}
+              </small>
             </button>
           )
         })}
@@ -2513,6 +2549,9 @@ interface CommandRuntimeGraphsProps {
   onTimeRangeChange: (value: ExecutionChartTimeRange) => void
   activeCursor: GraphCursorState | null
   onActiveCursorChange: (cursor: GraphCursorState | null) => void
+  activeGraphGroupTab?: GraphGroupTabId
+  onActiveGraphGroupTabChange?: (tab: GraphGroupTabId) => void
+  underLoadDisplayMode?: UnderLoadDisplayMode
   externalControlsTarget?: HTMLElement | null
 }
 
@@ -2534,6 +2573,9 @@ function CommandRuntimeGraphs({
   onTimeRangeChange,
   activeCursor,
   onActiveCursorChange,
+  activeGraphGroupTab,
+  onActiveGraphGroupTabChange,
+  underLoadDisplayMode,
   externalControlsTarget = null,
 }: CommandRuntimeGraphsProps) {
   const groupNames = groups.map(group => group.name)
@@ -2579,6 +2621,9 @@ function CommandRuntimeGraphs({
         activeCursor={activeCursor}
         onActiveCursorChange={onActiveCursorChange}
         enableGraphGroupTabs={variant === 'grafana'}
+        activeGraphGroupTab={activeGraphGroupTab}
+        onActiveGraphGroupTabChange={onActiveGraphGroupTabChange}
+        underLoadDisplayMode={underLoadDisplayMode}
         externalControlsTarget={externalControlsTarget}
       />
     </div>

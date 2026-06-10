@@ -176,9 +176,9 @@ func isEngineActionType(actionType string) bool {
 	switch actionType {
 	case "control_if", "control_loop",
 		"rendezvous", "error_message",
-		"loadrunner_message", "loadrunner_runtime", "loadrunner_transaction", "loadrunner_timer",
-		"loadrunner_metric", "loadrunner_parameter", "loadrunner_json", "loadrunner_xml",
-		"loadrunner_database", "loadrunner_secret", "loadrunner_external", "loadrunner_review",
+		"source_message", "source_runtime", "source_transaction", "source_timer",
+		"source_metric", "source_parameter", "source_json", "source_xml",
+		"source_database", "source_secret", "source_external", "source_review",
 		"custom_call", "review_required":
 		return true
 	default:

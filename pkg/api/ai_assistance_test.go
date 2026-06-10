@@ -256,7 +256,7 @@ func TestAIRepairSuggestsWeb2SelectorRepairs(t *testing.T) {
 		Protocol: "browser",
 		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
 		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
-			Source: "loadrunner",
+			Source: "enterprise_script_archive",
 			Preserved: map[string]any{
 				"source_script_type": "TruClient 2.0 - Web",
 				"trueclient_archive_inspection": map[string]any{

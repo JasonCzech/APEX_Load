@@ -1,4 +1,15 @@
-export type ExecutionChartTimeRange = '3m' | '10m' | 'all' | 'custom'
+export const executionChartMinuteRangeValues = [
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+  11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+  21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+] as const
+
+export type ExecutionChartMinuteValue = typeof executionChartMinuteRangeValues[number]
+export type ExecutionChartMinuteRange = `${ExecutionChartMinuteValue}m`
+export type ExecutionChartTimeRange = ExecutionChartMinuteRange | 'all' | 'custom'
+
+export const executionChartMinMinuteRange = executionChartMinuteRangeValues[0]
+export const executionChartMaxMinuteRange = executionChartMinuteRangeValues[executionChartMinuteRangeValues.length - 1]
 
 export interface ExecutionChartZoomRange {
   left: string | number
@@ -24,6 +35,22 @@ export const initialExecutionChartZoomState: ExecutionChartZoomState = {
   zoomRange: null,
   refAreaLeft: '',
   refAreaRight: '',
+}
+
+export function executionChartMinuteRangeValue(timeRange: ExecutionChartTimeRange): ExecutionChartMinuteValue | null {
+  if (!timeRange.endsWith('m')) return null
+  const minutes = Number(timeRange.slice(0, -1))
+  return executionChartMinuteRangeValues.includes(minutes as ExecutionChartMinuteValue)
+    ? minutes as ExecutionChartMinuteValue
+    : null
+}
+
+export function executionChartTimeRangeForMinutes(minutes: number): ExecutionChartMinuteRange {
+  const clamped = Math.min(
+    executionChartMaxMinuteRange,
+    Math.max(executionChartMinMinuteRange, Math.round(minutes)),
+  ) as ExecutionChartMinuteValue
+  return `${clamped}m`
 }
 
 export function executionChartZoomReducer(

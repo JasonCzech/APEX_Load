@@ -27,7 +27,7 @@ import {
 } from '../../types'
 import { type AuthoringTemplate } from '../../types'
 import { type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
-import { type AsyncAPIImportResult, type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type LoadRunnerSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type AsyncAPIImportResult, type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -140,7 +140,7 @@ type AuthoringSessionApprovalResponse = {
   authoring_health: AuthoringHealth
 }
 
-type LoadRunnerImportOptions = {
+type EnterpriseArchiveImportOptions = {
   name?: string
   base_url?: string
   include_assertions?: boolean
@@ -401,8 +401,8 @@ export function useScriptApi() {
     [],
   )
 
-  const importLoadRunner = useCallback(
-    async (file: File, options?: LoadRunnerImportOptions): Promise<LoadRunnerImportResult> => {
+  const importEnterpriseArchive = useCallback(
+    async (file: File, options?: EnterpriseArchiveImportOptions): Promise<EnterpriseArchiveImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.har_file) formData.append('har_file', options.har_file)
@@ -414,7 +414,7 @@ export function useScriptApi() {
       if (options?.migration_block_statuses?.length) formData.append('migration_block_statuses', options.migration_block_statuses.join(','))
       if (options?.salesforce_native) formData.append('salesforce_native', 'true')
 
-      const res = await apiFetch('/scripts/import/loadrunner', {
+      const res = await apiFetch('/scripts/import/enterprise-script-archive', {
         method: 'POST',
         body: formData,
       })
@@ -422,13 +422,13 @@ export function useScriptApi() {
         const body = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(body.error || res.statusText)
       }
-      return res.json() as Promise<LoadRunnerImportResult>
+      return res.json() as Promise<EnterpriseArchiveImportResult>
     },
     [],
   )
 
-  const validateLoadRunnerImport = useCallback(
-    async (file: File, options?: LoadRunnerImportOptions): Promise<LoadRunnerImportResult> => {
+  const validateEnterpriseArchiveImport = useCallback(
+    async (file: File, options?: EnterpriseArchiveImportOptions): Promise<EnterpriseArchiveImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.har_file) formData.append('har_file', options.har_file)
@@ -440,7 +440,7 @@ export function useScriptApi() {
       if (options?.migration_block_statuses?.length) formData.append('migration_block_statuses', options.migration_block_statuses.join(','))
       if (options?.salesforce_native) formData.append('salesforce_native', 'true')
 
-      const res = await apiFetch('/scripts/import/loadrunner/validate', {
+      const res = await apiFetch('/scripts/import/enterprise-script-archive/validate', {
         method: 'POST',
         body: formData,
       })
@@ -448,13 +448,13 @@ export function useScriptApi() {
         const body = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(body.error || res.statusText)
       }
-      return res.json() as Promise<LoadRunnerImportResult>
+      return res.json() as Promise<EnterpriseArchiveImportResult>
     },
     [],
   )
 
-  const getLoadRunnerSupportMatrix = useCallback(
-		() => request<LoadRunnerSupportMatrixResponse>('/scripts/import/loadrunner/support-matrix'),
+  const getEnterpriseArchiveSupportMatrix = useCallback(
+		() => request<EnterpriseArchiveSupportMatrixResponse>('/scripts/import/enterprise-script-archive/support-matrix'),
 		[],
 	)
 
@@ -749,9 +749,9 @@ export function useScriptApi() {
       updateScriptDebugBreakpoints,
       exportScriptDebugSession,
       exportScript,
-      importLoadRunner,
-      validateLoadRunnerImport,
-      getLoadRunnerSupportMatrix,
+      importEnterpriseArchive,
+      validateEnterpriseArchiveImport,
+      getEnterpriseArchiveSupportMatrix,
       importJMeter,
       validateJMeterImport,
       getJMeterSupportMatrix,
@@ -815,9 +815,9 @@ export function useScriptApi() {
       updateScriptDebugBreakpoints,
       exportScriptDebugSession,
       exportScript,
-      importLoadRunner,
-      validateLoadRunnerImport,
-      getLoadRunnerSupportMatrix,
+      importEnterpriseArchive,
+      validateEnterpriseArchiveImport,
+      getEnterpriseArchiveSupportMatrix,
       importJMeter,
       validateJMeterImport,
       getJMeterSupportMatrix,
