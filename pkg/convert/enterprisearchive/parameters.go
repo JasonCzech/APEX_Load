@@ -1,4 +1,4 @@
-package loadrunner
+package enterprisearchive
 
 import (
 	"encoding/csv"
@@ -49,37 +49,37 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 		}
 		rawType := strings.ToLower(firstNonEmpty(lower["type"], lower["valuetype"], lower["datatype"], lower["paramtype"]))
 		switch {
-		case isLoadRunnerCurrentIterationType(rawType):
+		case isSourceCurrentIterationType(rawType):
 			param.Type = "current_iteration"
 			param.Update = "each_iteration"
 			param.Start = atoiDefault(firstNonEmpty(lower["startvalue"], lower["start"]), 1)
 			param.Step = atoiDefault(firstNonEmpty(lower["increment"], lower["step"]), 1)
-			param.PadWidth = loadRunnerIntegerFormatPadWidth(lower["format"])
-		case isLoadRunnerHostType(rawType):
+			param.PadWidth = sourceIntegerFormatPadWidth(lower["format"])
+		case isSourceHostType(rawType):
 			param.Type = "host"
 			param.Update = "once"
 			if originalValue := firstNonEmpty(lower["originalvalue"]); originalValue != "" {
 				param.Values = []string{originalValue}
 			}
-		case isLoadRunnerRandomNumberType(rawType, lower):
+		case isSourceRandomNumberType(rawType, lower):
 			param.Type = "random_number"
 			param.Min = atoiDefault(firstNonEmpty(lower["minimumvalue"], lower["minvalue"], lower["min"], lower["startvalue"]), 0)
 			param.Max = atoiDefault(firstNonEmpty(lower["maximumvalue"], lower["maxvalue"], lower["max"], lower["endvalue"]), 100)
-			param.PadWidth = loadRunnerIntegerFormatPadWidth(lower["format"])
+			param.PadWidth = sourceIntegerFormatPadWidth(lower["format"])
 		case strings.Contains(rawType, "date"):
 			param.Type = "date_time"
-			param.Format = mapLoadRunnerTimeFormat(firstNonEmpty(lower["format"], lower["dateformat"], lower["datetimeformat"]))
+			param.Format = mapSourceTimeFormat(firstNonEmpty(lower["format"], lower["dateformat"], lower["datetimeformat"]))
 			param.Timezone = firstNonEmpty(lower["timezone"], lower["time_zone"])
 			param.OffsetSeconds = atoiDefault(firstNonEmpty(lower["offsetseconds"], lower["offset"]), 0)
 		case strings.Contains(rawType, "timestamp") || strings.Contains(rawType, "time stamp"):
 			param.Type = "timestamp"
-			param.Format = mapLoadRunnerTimestampFormat(firstNonEmpty(lower["format"], lower["timestampformat"]))
+			param.Format = mapSourceTimestampFormat(firstNonEmpty(lower["format"], lower["timestampformat"]))
 			param.Timezone = firstNonEmpty(lower["timezone"], lower["time_zone"])
 			param.OffsetSeconds = atoiDefault(firstNonEmpty(lower["offsetseconds"], lower["offset"]), 0)
-		case isLoadRunnerTimeType(rawType):
+		case isSourceTimeType(rawType):
 			param.Type = "time"
-			param.Format = mapLoadRunnerTimeFormat(firstNonEmpty(lower["format"], lower["dateformat"], lower["datetimeformat"]))
-			param.Timezone = firstNonEmpty(lower["timezone"], lower["time_zone"], loadRunnerTimeFormatTimezone(param.Format))
+			param.Format = mapSourceTimeFormat(firstNonEmpty(lower["format"], lower["dateformat"], lower["datetimeformat"]))
+			param.Timezone = firstNonEmpty(lower["timezone"], lower["time_zone"], sourceTimeFormatTimezone(param.Format))
 			param.OffsetSeconds = atoiDefault(firstNonEmpty(lower["offsetseconds"], lower["offset"]), 0)
 		case strings.Contains(rawType, "counter") || lower["increment"] != "":
 			param.Type = "counter"
@@ -144,7 +144,7 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 	return result
 }
 
-func isLoadRunnerRandomNumberType(rawType string, values map[string]string) bool {
+func isSourceRandomNumberType(rawType string, values map[string]string) bool {
 	if strings.Contains(rawType, "random") && strings.Contains(rawType, "number") {
 		return true
 	}
@@ -190,10 +190,10 @@ func cleanParameterName(name string) string {
 	if strings.HasPrefix(strings.ToLower(name), "parameter:") {
 		name = strings.TrimSpace(name[len("parameter:"):])
 	}
-	return canonicalLoadRunnerParameterName(name)
+	return canonicalSourceParameterName(name)
 }
 
-func canonicalLoadRunnerParameterName(name string) string {
+func canonicalSourceParameterName(name string) string {
 	name = strings.ToLower(strings.TrimSpace(cleanConfigValue(name)))
 	name = strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
@@ -218,7 +218,7 @@ func applyKnownParameterReferences(script *dsl.Script) {
 	}
 	names := make(map[string]struct{}, len(script.Parameters))
 	for _, param := range script.Parameters {
-		name := canonicalLoadRunnerParameterName(param.Name)
+		name := canonicalSourceParameterName(param.Name)
 		if name != "" {
 			names[name] = struct{}{}
 		}
@@ -311,7 +311,7 @@ func rewriteKnownParameterReferencesAny(value any, names map[string]struct{}) an
 }
 
 func applyParameterizedBaseURL(script *dsl.Script) {
-	if script == nil || !isLoadRunnerFallbackBaseURL(script.Config.BaseURL) {
+	if script == nil || !isSourceFallbackBaseURL(script.Config.BaseURL) {
 		return
 	}
 	for _, action := range script.Actions {
@@ -331,7 +331,7 @@ func applyParameterizedBaseURL(script *dsl.Script) {
 	}
 }
 
-func isLoadRunnerFallbackBaseURL(value string) bool {
+func isSourceFallbackBaseURL(value string) bool {
 	trimmed := strings.TrimSpace(value)
 	return trimmed == "" || strings.EqualFold(trimmed, "https://example.com")
 }
@@ -473,17 +473,17 @@ func atoiDefault(value string, fallback int) int {
 	return parsed
 }
 
-func isLoadRunnerCurrentIterationType(rawType string) bool {
+func isSourceCurrentIterationType(rawType string) bool {
 	normalized := normalizeParameterType(rawType)
 	return normalized == "currentiteration" || normalized == "currentiterationnumber"
 }
 
-func isLoadRunnerHostType(rawType string) bool {
+func isSourceHostType(rawType string) bool {
 	normalized := normalizeParameterType(rawType)
 	return normalized == "host" || normalized == "hostname" || normalized == "loadgenerator" || normalized == "loadgeneratorname"
 }
 
-func isLoadRunnerTimeType(rawType string) bool {
+func isSourceTimeType(rawType string) bool {
 	normalized := normalizeParameterType(rawType)
 	return normalized == "time" || normalized == "datetime"
 }
@@ -497,7 +497,7 @@ func normalizeParameterType(rawType string) string {
 	}, strings.ToLower(cleanConfigValue(rawType)))
 }
 
-func loadRunnerIntegerFormatPadWidth(format string) int {
+func sourceIntegerFormatPadWidth(format string) int {
 	format = cleanConfigValue(format)
 	if !strings.HasPrefix(format, "%0") {
 		return 0
@@ -509,7 +509,7 @@ func loadRunnerIntegerFormatPadWidth(format string) int {
 	return atoiDefault(width, 0)
 }
 
-func mapLoadRunnerTimestampFormat(format string) string {
+func mapSourceTimestampFormat(format string) string {
 	format = cleanConfigValue(format)
 	switch strings.ToLower(format) {
 	case "", "%s":
@@ -517,11 +517,11 @@ func mapLoadRunnerTimestampFormat(format string) string {
 	case "%q", "%ms", "%3":
 		return "unix_ms"
 	default:
-		return mapLoadRunnerTimeFormat(format)
+		return mapSourceTimeFormat(format)
 	}
 }
 
-func mapLoadRunnerTimeFormat(format string) string {
+func mapSourceTimeFormat(format string) string {
 	format = cleanConfigValue(format)
 	if format == "" {
 		return ""
@@ -556,7 +556,7 @@ func mapLoadRunnerTimeFormat(format string) string {
 	return mapped
 }
 
-func loadRunnerTimeFormatTimezone(format string) string {
+func sourceTimeFormatTimezone(format string) string {
 	format = cleanConfigValue(format)
 	if strings.HasSuffix(format, "Z") && !strings.Contains(format, "MST") && !strings.Contains(format, "-0700") {
 		return "UTC"

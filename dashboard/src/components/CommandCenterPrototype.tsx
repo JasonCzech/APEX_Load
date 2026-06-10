@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   Area,
   AreaChart,
@@ -14,11 +14,11 @@ import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
 import { useApi } from '../hooks/useApi'
 import { parseDurationToSeconds } from '../utils/timeUtils'
-import type { BrowserReplaySnapshot, GroupLiveMetrics, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, TestGroup, TestStatus, TestSummary } from '../types'
+import type { BrowserReplaySnapshot, GroupLiveMetrics, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, TestGroup, TestStatus, TestSummary, TransactionEvent } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
-import TestExecutionCharts, { type GraphCursorState } from './TestExecutionCharts'
+import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
 import type { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
-import { mapExecutionMetricToHistoryPoint } from './testExecutionMetricsModel'
+import { mapArchiveSummarySamples, mapExecutionHistory, mapExecutionMetricToHistoryPoint } from './testExecutionMetricsModel'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
@@ -45,7 +45,7 @@ interface CommandCenterPrototypeProps {
   prototypeMode?: boolean
 }
 
-interface CommandGroup {
+export interface CommandGroup {
   key: string
   name: string
   protocol: string
@@ -116,6 +116,11 @@ const TEST_STATUSES: TestStatus[] = [
 const VARIANT_OPTIONS: Array<{ value: VariantId; label: string }> = [
   { value: 'ops', label: 'OPS View' },
   { value: 'grafana', label: 'Graph Wall' },
+]
+
+const UNDER_LOAD_DISPLAY_OPTIONS: Array<{ value: UnderLoadDisplayMode; label: string }> = [
+  { value: 'graphs', label: 'Graphs' },
+  { value: 'heatmap', label: 'Heatmap' },
 ]
 
 const GROUPS: CommandGroup[] = [
@@ -904,6 +909,8 @@ export default function CommandCenterPrototype({
   const [liveEvidenceBySignature, setLiveEvidenceBySignature] = useState<Record<string, LiveErrorEvidence[]>>({})
   const [evidenceLoadingSignature, setEvidenceLoadingSignature] = useState('')
   const [evidenceError, setEvidenceError] = useState('')
+  const [backendScopedChartData, setBackendScopedChartData] = useState<MetricsHistoryPoint[] | null>(null)
+  const [backendScopedMetrics, setBackendScopedMetrics] = useState<LiveMetrics | undefined>()
   const syncedTargetsRef = useRef<Record<string, number>>({})
   const syncedTargetTestIdRef = useRef<string | null>(null)
   const [state, setState] = useState<CommandCenterState>(() => ({
@@ -1013,6 +1020,8 @@ export default function CommandCenterPrototype({
     () => groups.filter(group => graphWallGroupVisibility[group.key] !== false),
     [graphWallGroupVisibility, groups],
   )
+  const graphWallGroupNames = useMemo(() => graphWallGroups.map(group => group.name), [graphWallGroups])
+  const graphWallGroupSignature = graphWallGroupNames.join('\u001f')
   const errorPatterns = useMemo(
     () => liveMode ? buildLiveErrorPatterns(displayTest.live_metrics) : hasLiveRoute || emptyMode ? [] : ERROR_PATTERNS,
     [displayTest.live_metrics, emptyMode, hasLiveRoute, liveMode],
@@ -1082,6 +1091,139 @@ export default function CommandCenterPrototype({
   const totalDurationSeconds = parseDurationToSeconds(displayTest.duration)
   const remainingSeconds = liveMode ? computeRemainingSeconds(displayTest, runStatus) : emptyMode || runStatus === 'STOPPING' || runStatus === 'ABORTED' ? 0 : 37 * 60 + 18
   const historicalRun = liveMode && isHistoricalRunStatus(runStatus)
+  const allGraphWallGroupsVisible = groups.length === 0 || graphWallGroups.length === groups.length
+  const noGraphWallGroupsVisible = groups.length > 0 && graphWallGroups.length === 0
+  const clientScopedChartData = useMemo(() => {
+    if (variant !== 'grafana' || groups.length === 0 || allGraphWallGroupsVisible) return chartData
+    if (noGraphWallGroupsVisible) return []
+    return selectedGroupLoadImpactData(chartData, graphWallGroups)
+  }, [allGraphWallGroupsVisible, chartData, graphWallGroups, groups.length, noGraphWallGroupsVisible, variant])
+  const alignedBackendScopedChartData = useMemo(
+    () => backendScopedChartData ? alignScopedChartDataToReference(backendScopedChartData, chartData) : null,
+    [backendScopedChartData, chartData],
+  )
+  const graphScopedChartData = noGraphWallGroupsVisible
+    ? []
+    : allGraphWallGroupsVisible
+      ? chartData
+      : alignedBackendScopedChartData ?? clientScopedChartData
+  const graphScopedMetrics = allGraphWallGroupsVisible || noGraphWallGroupsVisible
+    ? displayTest.live_metrics
+    : backendScopedMetrics ?? displayTest.live_metrics
+
+  useEffect(() => {
+    if (!liveMode || !testId || variant !== 'grafana' || allGraphWallGroupsVisible || noGraphWallGroupsVisible) {
+      setBackendScopedChartData(null)
+      setBackendScopedMetrics(undefined)
+      return undefined
+    }
+
+    let cancelled = false
+    const selectedGroupNames = graphWallGroupSignature ? graphWallGroupSignature.split('\u001f') : []
+    const selectedGroupSet = new Set(selectedGroupNames)
+    const selectedGroupScopes = selectedGroupNames.map(name => ({ name }) as CommandGroup)
+    const responseHonorsGroupFilter = (metrics?: LiveMetrics) => (
+      Object.keys(metrics?.groups || {}).every(name => selectedGroupSet.has(name))
+    )
+    const loadArchiveTransactionsForSelectedGroups = async () => {
+      const transactions: TransactionEvent[] = []
+      for (const groupName of selectedGroupNames) {
+        let offset = 0
+        let total = Number.POSITIVE_INFINITY
+        while (!cancelled && offset < total) {
+          const response = await api.getTestArchiveTransactions(testId, {
+            group: groupName,
+            limit: 1000,
+            offset,
+          })
+          const page = response.transactions || []
+          transactions.push(...page)
+          total = typeof response.total === 'number' ? response.total : offset + page.length
+          if (page.length === 0) break
+          offset += page.length
+        }
+      }
+      return transactions
+    }
+    const loadScopedHistory = async () => {
+      try {
+        if (historicalRun && displayTest.archive?.interval_summary_count) {
+          const loaded: IntervalSummaryRecord[] = []
+          let archiveFilterHonored = false
+          let offset = 0
+          let total = displayTest.archive.interval_summary_count
+          while (!cancelled && loaded.length < total) {
+            const response = await api.getTestArchiveSummaries(testId, {
+              limit: 1000,
+              offset,
+              groups: selectedGroupNames,
+            })
+            const page = response.summaries || []
+            const responseGroups = Array.isArray(response.filters?.groups) ? response.filters.groups : []
+            archiveFilterHonored = archiveFilterHonored || selectedGroupNames.every(name => responseGroups.includes(name))
+            loaded.push(...page)
+            total = response.total || loaded.length
+            if (page.length === 0) break
+            offset += page.length
+          }
+          if (!cancelled) {
+            const mappedHistory = mapArchiveSummarySamples(loaded)
+            if (archiveFilterHonored) {
+              setBackendScopedChartData(mappedHistory)
+            } else if (selectedGroupHistoryHasFields(mappedHistory, selectedGroupNames)) {
+              setBackendScopedChartData(selectedGroupLoadImpactData(mappedHistory, selectedGroupScopes))
+            } else {
+              try {
+                const transactions = await loadArchiveTransactionsForSelectedGroups()
+                if (cancelled) return
+                const transactionHistory = buildSelectedGroupChartHistoryFromTransactions(mappedHistory, transactions, graphWallGroups, groups)
+                setBackendScopedChartData(transactionHistory.length > 0 ? transactionHistory : mappedHistory)
+              } catch {
+                if (!cancelled) {
+                  setBackendScopedChartData(mappedHistory)
+                }
+              }
+            }
+            setBackendScopedMetrics(undefined)
+          }
+          return
+        }
+
+        const response = await api.getMetrics(testId, { groups: selectedGroupNames })
+        if (cancelled) return
+        const mappedHistory = mapExecutionHistory((response.history || []) as LiveMetrics[])
+        setBackendScopedChartData(responseHonorsGroupFilter(response.metrics)
+          ? mappedHistory
+          : selectedGroupLoadImpactData(mappedHistory, selectedGroupScopes))
+        setBackendScopedMetrics(responseHonorsGroupFilter(response.metrics)
+          ? response.metrics
+          : undefined)
+      } catch {
+        if (!cancelled) {
+          setBackendScopedChartData(null)
+          setBackendScopedMetrics(undefined)
+        }
+      }
+    }
+
+    void loadScopedHistory()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    allGraphWallGroupsVisible,
+    api,
+    displayTest.archive?.interval_summary_count,
+    graphWallGroupSignature,
+    graphWallGroups,
+    groups,
+    historicalRun,
+    liveMetrics?.timestamp,
+    liveMode,
+    noGraphWallGroupsVisible,
+    testId,
+    variant,
+  ])
   const feedback = loadError
     || (hasLiveRoute && !liveTest ? 'Loading live run data for the command center...' : '')
     || (emptyMode ? 'No active run is selected for the command center.' : '')
@@ -1295,6 +1437,8 @@ export default function CommandCenterPrototype({
           onGroupVisibilityToggle={toggleGraphWallGroup}
           metrics={displayTest.live_metrics}
           chartData={chartData}
+          groupScopedChartData={graphScopedChartData}
+          groupScopedMetrics={graphScopedMetrics}
           expandedChart={expandedCharts.grafana}
           onExpandedChartChange={setExpandedChartForVariant}
           onChartMouseDown={onChartMouseDown}
@@ -1526,6 +1670,8 @@ interface OpsCockpitViewProps {
 
 interface GrafanaWallViewProps extends CommonViewProps {
   chartGroups: CommandGroup[]
+  groupScopedChartData: MetricsHistoryPoint[]
+  groupScopedMetrics?: LiveMetrics
   groupVisibility: Record<string, boolean>
   onGroupVisibilityToggle: (groupKey: string) => void
 }
@@ -1594,6 +1740,8 @@ function GrafanaWallView({
   onVariantChange,
   groups,
   chartGroups,
+  groupScopedChartData,
+  groupScopedMetrics,
   groupVisibility,
   onGroupVisibilityToggle,
   metrics,
@@ -1616,9 +1764,12 @@ function GrafanaWallView({
   onErrorSelect,
 }: GrafanaWallViewProps) {
   const [graphOptionsTarget, setGraphOptionsTarget] = useState<HTMLDivElement | null>(null)
+  const [activeGraphGroupTab, setActiveGraphGroupTab] = useState<GraphGroupTabId>('test_results')
+  const [underLoadDisplayMode, setUnderLoadDisplayMode] = useState<UnderLoadDisplayMode>('graphs')
   const bindGraphOptionsTarget = useCallback((node: HTMLDivElement | null) => {
     setGraphOptionsTarget(node)
   }, [])
+  const showUnderLoadDisplaySwitch = activeGraphGroupTab === 'under_load'
 
   return (
     <section className="command-layout command-layout-grafana" aria-label="Grafana wall mockup">
@@ -1628,6 +1779,8 @@ function GrafanaWallView({
           groups={chartGroups}
           metrics={metrics}
           chartData={chartData}
+          groupScopedChartData={groupScopedChartData}
+          groupScopedMetrics={groupScopedMetrics}
           expandedChart={expandedChart}
           onExpandedChartChange={onExpandedChartChange}
           onChartMouseDown={onChartMouseDown}
@@ -1641,10 +1794,19 @@ function GrafanaWallView({
           onTimeRangeChange={onTimeRangeChange}
           activeCursor={activeCursor}
           onActiveCursorChange={onActiveCursorChange}
+          activeGraphGroupTab={activeGraphGroupTab}
+          onActiveGraphGroupTabChange={setActiveGraphGroupTab}
+          underLoadDisplayMode={underLoadDisplayMode}
           externalControlsTarget={graphOptionsTarget}
         />
         <div className="command-grafana-side">
           <CommandViewSwitchPanel variant={variant} onVariantChange={onVariantChange} />
+          {showUnderLoadDisplaySwitch && (
+            <CommandUnderLoadDisplaySwitchPanel
+              value={underLoadDisplayMode}
+              onChange={setUnderLoadDisplayMode}
+            />
+          )}
           <GroupSelectionPanel groups={groups} groupVisibility={groupVisibility} onToggle={onGroupVisibilityToggle} />
           <ErrorDrilldown patterns={errorPatterns} selectedError={selectedError} onErrorSelect={onErrorSelect} compact />
           <div className="command-graph-options-slot" ref={bindGraphOptionsTarget} />
@@ -1663,6 +1825,20 @@ function CommandViewSwitchPanel({ variant, onVariantChange }: { variant: Variant
         ariaLabel="Command center views"
         className="command-center-variant-toggle"
         onChange={onVariantChange}
+      />
+    </section>
+  )
+}
+
+function CommandUnderLoadDisplaySwitchPanel({ value, onChange }: { value: UnderLoadDisplayMode; onChange: (value: UnderLoadDisplayMode) => void }) {
+  return (
+    <section className="command-panel command-under-load-display-panel" aria-label="Under Load display mode">
+      <PageViewToggle
+        value={value}
+        options={UNDER_LOAD_DISPLAY_OPTIONS}
+        ariaLabel="Under Load display mode"
+        className="command-under-load-display-toggle"
+        onChange={onChange}
       />
     </section>
   )
@@ -1695,13 +1871,18 @@ function GroupSelectionPanel({
               key={group.key}
               type="button"
               className={`command-group-select-toggle ${visible ? 'active' : ''}`}
+              data-state={visible ? 'selected' : 'hidden'}
               aria-pressed={visible}
               aria-label={`${group.name} graph visibility`}
+              style={{ '--command-group-color': group.color } as CSSProperties}
               onClick={() => onToggle(group.key)}
             >
-              <span className="command-group-select-swatch" style={{ background: group.color }} />
+              <span className="command-group-select-swatch" />
               <strong>{group.name}</strong>
-              <small>{visible ? 'Visible' : 'Hidden'}</small>
+              <small className="command-group-select-status">
+                <span className="command-group-select-status-dot" aria-hidden="true" />
+                {visible ? 'Selected' : 'Hidden'}
+              </small>
             </button>
           )
         })}
@@ -2452,20 +2633,45 @@ function snapshotSection(snapshot: BrowserReplaySnapshot) {
   }
 }
 
-function selectedGroupLoadImpactData(data: MetricsHistoryPoint[], groups: CommandGroup[]) {
-  if (groups.length === 0) return data
+export function selectedGroupHistoryHasFields(data: MetricsHistoryPoint[], groupNames: string[]) {
+  if (groupNames.length === 0) return false
+  return groupNames.every(name => data.some(point => (
+    typeof point[`${name}_vusers`] === 'number'
+    || typeof point[`${name}_tps`] === 'number'
+    || typeof point[`${name}_avgMs`] === 'number'
+    || typeof point[`${name}_transactions`] === 'number'
+    || typeof point[`${name}_errors`] === 'number'
+  )))
+}
+
+export function selectedGroupLoadImpactData(data: MetricsHistoryPoint[], groups: CommandGroup[]) {
+  if (groups.length === 0) return []
+  const selectedNames = groups.map(group => group.name)
+  if (!selectedGroupHistoryHasFields(data, selectedNames)) return data
   return data.map(point => {
     let hasGroupData = false
     let selectedVUsers = 0
     let selectedTps = 0
+    let selectedTargetTps = 0
+    let selectedTransactions = 0
+    let selectedErrors = 0
     let tpsSamples = 0
     let weightedArt = 0
     let artWeight = 0
+    const weightedPercentiles = { p50: 0, p90: 0, p95: 0, p99: 0 }
+    let percentileWeight = 0
 
     groups.forEach(group => {
       const groupVusers = point[`${group.name}_vusers`]
       const groupTps = point[`${group.name}_tps`]
       const groupArt = point[`${group.name}_avgMs`]
+      const groupTargetTps = point[`${group.name}_targetTps`]
+      const groupTransactions = point[`${group.name}_transactions`]
+      const groupErrors = point[`${group.name}_errors`]
+      const groupP50 = point[`${group.name}_p50`]
+      const groupP90 = point[`${group.name}_p90`]
+      const groupP95 = point[`${group.name}_p95`]
+      const groupP99 = point[`${group.name}_p99`]
 
       if (typeof groupVusers === 'number' && Number.isFinite(groupVusers)) {
         selectedVUsers += groupVusers
@@ -2476,23 +2682,249 @@ function selectedGroupLoadImpactData(data: MetricsHistoryPoint[], groups: Comman
         tpsSamples += 1
         hasGroupData = true
       }
+      if (typeof groupTargetTps === 'number' && Number.isFinite(groupTargetTps)) {
+        selectedTargetTps += groupTargetTps
+        hasGroupData = true
+      }
+      if (typeof groupTransactions === 'number' && Number.isFinite(groupTransactions)) {
+        selectedTransactions += groupTransactions
+        hasGroupData = true
+      }
+      if (typeof groupErrors === 'number' && Number.isFinite(groupErrors)) {
+        selectedErrors += groupErrors
+        hasGroupData = true
+      }
       if (typeof groupArt === 'number' && Number.isFinite(groupArt)) {
-        const weight = typeof groupVusers === 'number' && Number.isFinite(groupVusers) && groupVusers > 0 ? groupVusers : 1
+        const attempts = typeof groupTransactions === 'number' && Number.isFinite(groupTransactions) && typeof groupErrors === 'number' && Number.isFinite(groupErrors)
+          ? groupTransactions + groupErrors
+          : 0
+        const weight = attempts > 0 ? attempts : typeof groupVusers === 'number' && Number.isFinite(groupVusers) && groupVusers > 0 ? groupVusers : 1
         weightedArt += groupArt * weight
         artWeight += weight
         hasGroupData = true
       }
+      const attempts = typeof groupTransactions === 'number' && Number.isFinite(groupTransactions) && typeof groupErrors === 'number' && Number.isFinite(groupErrors)
+        ? groupTransactions + groupErrors
+        : 0
+      const percentileValues = { p50: groupP50, p90: groupP90, p95: groupP95, p99: groupP99 }
+      if (attempts > 0 && Object.values(percentileValues).some(value => typeof value === 'number' && Number.isFinite(value))) {
+        if (typeof groupP50 === 'number' && Number.isFinite(groupP50)) weightedPercentiles.p50 += groupP50 * attempts
+        if (typeof groupP90 === 'number' && Number.isFinite(groupP90)) weightedPercentiles.p90 += groupP90 * attempts
+        if (typeof groupP95 === 'number' && Number.isFinite(groupP95)) weightedPercentiles.p95 += groupP95 * attempts
+        if (typeof groupP99 === 'number' && Number.isFinite(groupP99)) weightedPercentiles.p99 += groupP99 * attempts
+        percentileWeight += attempts
+        hasGroupData = true
+      }
     })
 
-    if (!hasGroupData) return point
+    if (!hasGroupData) {
+      return {
+        ...point,
+        vusers: 0,
+        tps: 0,
+        targetTps: 0,
+        avgMs: 0,
+        errorPct: 0,
+        p50: 0,
+        p90: 0,
+        p95: 0,
+        p99: 0,
+      }
+    }
+    const attempts = selectedTransactions + selectedErrors
 
     return {
       ...point,
       vusers: selectedVUsers > 0 ? selectedVUsers : point.vusers,
       tps: tpsSamples > 0 ? Math.round(selectedTps * 10) / 10 : point.tps,
+      targetTps: selectedTargetTps > 0 ? Math.round(selectedTargetTps * 10) / 10 : point.targetTps,
       avgMs: artWeight > 0 ? Math.round((weightedArt / artWeight) * 10) / 10 : point.avgMs,
+      errorPct: attempts > 0 ? Math.round((selectedErrors / attempts * 100) * 100) / 100 : point.errorPct,
+      p50: percentileWeight > 0 ? Math.round((weightedPercentiles.p50 / percentileWeight) * 10) / 10 : point.p50,
+      p90: percentileWeight > 0 ? Math.round((weightedPercentiles.p90 / percentileWeight) * 10) / 10 : point.p90,
+      p95: percentileWeight > 0 ? Math.round((weightedPercentiles.p95 / percentileWeight) * 10) / 10 : point.p95,
+      p99: percentileWeight > 0 ? Math.round((weightedPercentiles.p99 / percentileWeight) * 10) / 10 : point.p99,
     }
   })
+}
+
+interface ArchiveTransactionBucket {
+  transactions: number
+  errors: number
+  totalDurationMs: number
+  durations: number[]
+  byGroup: Record<string, ArchiveTransactionBucketStats>
+}
+
+interface ArchiveTransactionBucketStats {
+  transactions: number
+  errors: number
+  totalDurationMs: number
+  durations: number[]
+}
+
+function emptyArchiveTransactionBucket(): ArchiveTransactionBucket {
+  return {
+    transactions: 0,
+    errors: 0,
+    totalDurationMs: 0,
+    durations: [],
+    byGroup: {},
+  }
+}
+
+function emptyArchiveTransactionBucketStats(): ArchiveTransactionBucketStats {
+  return {
+    transactions: 0,
+    errors: 0,
+    totalDurationMs: 0,
+    durations: [],
+  }
+}
+
+function commandGroupConfiguredVusers(group: CommandGroup) {
+  return Math.max(0, group.targetVusers || group.target || group.current || 0)
+}
+
+function estimatedGroupVusers(globalVusers: number, selectedGroups: CommandGroup[], allGroups: CommandGroup[]) {
+  const totalConfigured = allGroups.reduce((sum, group) => sum + commandGroupConfiguredVusers(group), 0)
+  const selectedConfigured = selectedGroups.reduce((sum, group) => sum + commandGroupConfiguredVusers(group), 0)
+  if (globalVusers <= 0 || selectedConfigured <= 0 || totalConfigured <= 0) return 0
+  return Math.max(0, Math.min(globalVusers, Math.round(globalVusers * selectedConfigured / totalConfigured)))
+}
+
+function archiveBucketSeconds(referenceData: MetricsHistoryPoint[], index: number) {
+  const current = referenceData[index]?.timestampMs
+  if (typeof current !== 'number') return 1
+  if (index > 0 && typeof referenceData[index - 1]?.timestampMs === 'number') {
+    return Math.max(1, (current - referenceData[index - 1]!.timestampMs!) / 1000)
+  }
+  if (referenceData.length > 1 && typeof referenceData[index + 1]?.timestampMs === 'number') {
+    return Math.max(1, (referenceData[index + 1]!.timestampMs! - current) / 1000)
+  }
+  return 1
+}
+
+function archiveBucketIndex(referenceData: MetricsHistoryPoint[], timestampMs: number) {
+  if (referenceData.length === 0 || !Number.isFinite(timestampMs)) return -1
+  const index = referenceData.findIndex(point => typeof point.timestampMs === 'number' && timestampMs <= point.timestampMs)
+  return index >= 0 ? index : referenceData.length - 1
+}
+
+function percentile(values: number[], ratio: number) {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1))
+  return sorted[index]
+}
+
+function roundedTenth(value: number) {
+  return Math.round(value * 10) / 10
+}
+
+function roundedHundredth(value: number) {
+  return Math.round(value * 100) / 100
+}
+
+function applyBucketStats(point: MetricsHistoryPoint, stats: ArchiveTransactionBucketStats, seconds: number) {
+  const transactions = stats.transactions
+  const errorPct = transactions > 0 ? roundedHundredth(stats.errors / transactions * 100) : 0
+  point.tps = transactions > 0 ? roundedTenth(transactions / seconds) : 0
+  point.avgMs = transactions > 0 ? roundedTenth(stats.totalDurationMs / transactions) : 0
+  point.errorPct = errorPct
+  point.p50 = transactions > 0 ? roundedTenth(percentile(stats.durations, 0.50)) : 0
+  point.p90 = transactions > 0 ? roundedTenth(percentile(stats.durations, 0.90)) : 0
+  point.p95 = transactions > 0 ? roundedTenth(percentile(stats.durations, 0.95)) : 0
+  point.p99 = transactions > 0 ? roundedTenth(percentile(stats.durations, 0.99)) : 0
+}
+
+export function buildSelectedGroupChartHistoryFromTransactions(
+  referenceData: MetricsHistoryPoint[],
+  transactions: TransactionEvent[],
+  selectedGroups: CommandGroup[],
+  allGroups: CommandGroup[],
+) {
+  if (selectedGroups.length === 0) return []
+  const usableReference = referenceData.filter(point => typeof point.timestampMs === 'number')
+  if (usableReference.length === 0 || transactions.length === 0) return []
+  const selectedGroupNames = new Set(selectedGroups.map(group => group.name))
+  const buckets = usableReference.map(emptyArchiveTransactionBucket)
+
+  transactions.forEach(transaction => {
+    const groupName = transaction.group || ''
+    if (!selectedGroupNames.has(groupName)) return
+    const timestampMs = Date.parse(transaction.timestamp)
+    const bucketIndex = archiveBucketIndex(usableReference, timestampMs)
+    if (bucketIndex < 0) return
+    const durationMs = Number(transaction.duration_ms)
+    if (!Number.isFinite(durationMs)) return
+    const bucket = buckets[bucketIndex]
+    const groupStats = bucket.byGroup[groupName] ?? emptyArchiveTransactionBucketStats()
+    bucket.byGroup[groupName] = groupStats
+    const success = transaction.success !== false
+    bucket.transactions += 1
+    groupStats.transactions += 1
+    bucket.totalDurationMs += durationMs
+    groupStats.totalDurationMs += durationMs
+    bucket.durations.push(durationMs)
+    groupStats.durations.push(durationMs)
+    if (!success) {
+      bucket.errors += 1
+      groupStats.errors += 1
+    }
+  })
+
+  let cumulativeTransactions = 0
+  let cumulativeErrors = 0
+  return usableReference.map((referencePoint, index) => {
+    const bucket = buckets[index]
+    const seconds = archiveBucketSeconds(usableReference, index)
+    cumulativeTransactions += bucket.transactions
+    cumulativeErrors += bucket.errors
+    const point: MetricsHistoryPoint = {
+      ...referencePoint,
+      vusers: estimatedGroupVusers(referencePoint.vusers, selectedGroups, allGroups),
+    }
+    applyBucketStats(point, bucket, seconds)
+    point.totalTransactions = cumulativeTransactions
+    point.totalErrors = cumulativeErrors
+    selectedGroups.forEach(group => {
+      const stats = bucket.byGroup[group.name] ?? emptyArchiveTransactionBucketStats()
+      const groupPoint: MetricsHistoryPoint = {
+        ...point,
+        vusers: estimatedGroupVusers(referencePoint.vusers, [group], allGroups),
+      }
+      applyBucketStats(groupPoint, stats, seconds)
+      point[`${group.name}_vusers`] = groupPoint.vusers
+      point[`${group.name}_tps`] = groupPoint.tps
+      point[`${group.name}_avgMs`] = groupPoint.avgMs
+      point[`${group.name}_transactions`] = stats.transactions
+      point[`${group.name}_errors`] = stats.errors
+      point[`${group.name}_errorPct`] = groupPoint.errorPct
+      point[`${group.name}_p50`] = groupPoint.p50
+      point[`${group.name}_p90`] = groupPoint.p90
+      point[`${group.name}_p95`] = groupPoint.p95
+      point[`${group.name}_p99`] = groupPoint.p99
+    })
+    return point
+  })
+}
+
+function chartPointIdentity(point: MetricsHistoryPoint) {
+  return typeof point.timestampMs === 'number' ? `ts:${point.timestampMs}` : `time:${point.time}`
+}
+
+function alignScopedChartDataToReference(scopedData: MetricsHistoryPoint[], referenceData: MetricsHistoryPoint[]) {
+  if (scopedData.length === 0 || referenceData.length === 0) return scopedData
+  const referenceByIdentity = new Map(referenceData.map(point => [chartPointIdentity(point), point]))
+  return scopedData
+    .filter(point => referenceByIdentity.has(chartPointIdentity(point)))
+    .map(point => {
+      const reference = referenceByIdentity.get(chartPointIdentity(point))
+      return reference
+        ? { ...point, relativeMs: reference.relativeMs, time: reference.time }
+        : point
+    })
 }
 
 interface CommandRuntimeGraphsProps {
@@ -2500,6 +2932,8 @@ interface CommandRuntimeGraphsProps {
   groups: CommandGroup[]
   metrics?: LiveMetrics
   chartData: MetricsHistoryPoint[]
+  groupScopedChartData?: MetricsHistoryPoint[]
+  groupScopedMetrics?: LiveMetrics
   expandedChart: string | null
   onExpandedChartChange: (value: string | null) => void
   onChartMouseDown: (activeLabel?: string | number) => void
@@ -2513,6 +2947,9 @@ interface CommandRuntimeGraphsProps {
   onTimeRangeChange: (value: ExecutionChartTimeRange) => void
   activeCursor: GraphCursorState | null
   onActiveCursorChange: (cursor: GraphCursorState | null) => void
+  activeGraphGroupTab?: GraphGroupTabId
+  onActiveGraphGroupTabChange?: (tab: GraphGroupTabId) => void
+  underLoadDisplayMode?: UnderLoadDisplayMode
   externalControlsTarget?: HTMLElement | null
 }
 
@@ -2521,6 +2958,8 @@ function CommandRuntimeGraphs({
   groups,
   metrics,
   chartData,
+  groupScopedChartData,
+  groupScopedMetrics,
   expandedChart,
   onExpandedChartChange,
   onChartMouseDown,
@@ -2534,13 +2973,19 @@ function CommandRuntimeGraphs({
   onTimeRangeChange,
   activeCursor,
   onActiveCursorChange,
+  activeGraphGroupTab,
+  onActiveGraphGroupTabChange,
+  underLoadDisplayMode,
   externalControlsTarget = null,
 }: CommandRuntimeGraphsProps) {
   const groupNames = groups.map(group => group.name)
   const groupColors = groups.map(group => group.color)
+  const performanceChartData = groupScopedChartData ?? chartData
+  const activeChartData = variant === 'grafana' && activeGraphGroupTab !== 'infrastructure' ? performanceChartData : chartData
+  const activeMetrics = variant === 'grafana' && activeGraphGroupTab !== 'infrastructure' ? groupScopedMetrics ?? metrics : metrics
   const loadImpactSourceData = useMemo(
-    () => variant === 'grafana' ? selectedGroupLoadImpactData(chartData, groups) : chartData,
-    [chartData, groups, variant],
+    () => variant === 'grafana' ? performanceChartData : chartData,
+    [chartData, performanceChartData, variant],
   )
   const loadImpactVuserRange = useMemo(() => {
     const loads = loadImpactSourceData
@@ -2553,7 +2998,7 @@ function CommandRuntimeGraphs({
     <div className={`command-runtime-graphs command-runtime-graphs-${variant}`} data-visible-groups={groups.map(group => group.key).join(' ')} data-load-impact-vuser-range={loadImpactVuserRange}>
       <TestExecutionCharts
         key={variant}
-        filteredData={chartData}
+        filteredData={activeChartData}
         expandedChart={expandedChart}
         onExpandedChartChange={onExpandedChartChange}
         onChartMouseDown={onChartMouseDown}
@@ -2570,8 +3015,8 @@ function CommandRuntimeGraphs({
         groupColors={groupColors.length > 0 ? groupColors : ['var(--chart-1)']}
         showLoadImpact={false}
         loadImpactData={loadImpactSourceData}
-        latestLatency={metrics?.latency}
-        latestMetrics={metrics}
+        latestLatency={activeMetrics?.latency}
+        latestMetrics={activeMetrics}
         surface="command-center"
         storageScope={`apexload.commandCenter.${variant}`}
         initialPresetId={variant === 'ops' ? 'run_operator' : 'performance_engineer'}
@@ -2579,6 +3024,9 @@ function CommandRuntimeGraphs({
         activeCursor={activeCursor}
         onActiveCursorChange={onActiveCursorChange}
         enableGraphGroupTabs={variant === 'grafana'}
+        activeGraphGroupTab={activeGraphGroupTab}
+        onActiveGraphGroupTabChange={onActiveGraphGroupTabChange}
+        underLoadDisplayMode={underLoadDisplayMode}
         externalControlsTarget={externalControlsTarget}
       />
     </div>

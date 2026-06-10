@@ -61,7 +61,7 @@ func (e *PlannedImportError) Error() string {
 	if e == nil {
 		return ""
 	}
-	message := fmt.Sprintf("LoadRunner script type %q is recognized but not implemented yet. Current planned scope is %s", e.Scope.DisplayName, e.Scope.Notes)
+	message := fmt.Sprintf("Source script type %q is recognized but not implemented yet. Current planned scope is %s", e.Scope.DisplayName, e.Scope.Notes)
 	if e.Inspection == nil {
 		return message
 	}
@@ -90,7 +90,7 @@ var scriptTypeScopes = []ScriptTypeScope{
 		DisplayName:      "TruClient - Mobile Web",
 		Status:           ScopeSupported,
 		APEXLoadShape:    "browser script import",
-		SupportedInputs:  []string{"LoadRunner ZIP", ".usr project metadata", "default.xml", "default.cfg", "parameter files"},
+		SupportedInputs:  []string{"Enterprise Script Archive ZIP", ".usr project metadata", "default.xml", "default.cfg", "parameter files"},
 		RequiredEvidence: []string{"conversion warnings", "unsupported step summary", "browser replay validation"},
 		ReviewSections:   []string{"preserved_metadata", "runtime_settings_parity", "browser_import_assumptions"},
 		Notes:            "The MVP importer maps TruClient Mobile Web and TruClient 2.0 Mobile Web navigation, click, fill, select, wait, conservative verify assertions, simple JavaScript-derived fill or click, jQuery attr/trigger, and transaction flows into browser DSL actions.",
@@ -99,18 +99,18 @@ var scriptTypeScopes = []ScriptTypeScope{
 		CanonicalName:    "truclient2_web",
 		DisplayName:      "TruClient 2.0 - Web",
 		Status:           ScopeReviewOnly,
-		APEXLoadShape:    "vugen_web2 browser profile",
-		SupportedInputs:  []string{"LoadRunner ZIP", ".usr project metadata", "default.xml", "object repository files", "parameter files", "runtime settings"},
+		APEXLoadShape:    "web2_browser_profile browser profile",
+		SupportedInputs:  []string{"Enterprise Script Archive ZIP", ".usr project metadata", "default.xml", "object repository files", "parameter files", "runtime settings"},
 		RequiredEvidence: []string{"fixture-backed parser coverage", "object identification summary", "runtime settings parity", "browser replay evidence", "promotion review artifact", "browser-to-http conversion evidence"},
 		ReviewSections:   []string{"web2_profile_summary", "object_identification", "runtime_settings_parity", "browser_replay_evidence", "promotion_review", "conversion_readiness"},
-		Notes:            "Review-only VuGen Web 2.0 browser-profile import scope; supported step shapes produce a browser draft, but selector identity, waits, runtime parity, replay evidence, and the saved promotion review artifact must be reviewed before production promotion.",
+		Notes:            "Review-only Web 2.0 browser-profile import scope; supported step shapes produce a browser draft, but selector identity, waits, runtime parity, replay evidence, and the saved promotion review artifact must be reviewed before production promotion.",
 	},
 	{
 		CanonicalName:    "truclient_web",
 		DisplayName:      "TruClient - Web",
 		Status:           ScopePlanned,
-		APEXLoadShape:    "vugen_web2 browser profile",
-		SupportedInputs:  []string{"LoadRunner ZIP", ".usr project metadata", "default.xml", "object repository files", "parameter files", "runtime settings"},
+		APEXLoadShape:    "web2_browser_profile browser profile",
+		SupportedInputs:  []string{"Enterprise Script Archive ZIP", ".usr project metadata", "default.xml", "object repository files", "parameter files", "runtime settings"},
 		RequiredEvidence: []string{"fixture-backed parser coverage", "object identification summary", "runtime settings parity", "browser replay evidence"},
 		ReviewSections:   []string{"web2_profile_summary", "object_identification", "runtime_settings_parity", "browser_replay_evidence"},
 		Notes:            "Planned via the same APEX Load Web 2.0 browser-profile path, with TruClient 2.0 evidence prioritized first.",
@@ -120,7 +120,7 @@ var scriptTypeScopes = []ScriptTypeScope{
 		DisplayName:      "TruClient",
 		Status:           ScopeOutOfScope,
 		APEXLoadShape:    "manual guided review",
-		SupportedInputs:  []string{"LoadRunner ZIP metadata only"},
+		SupportedInputs:  []string{"Enterprise Script Archive metadata only"},
 		RequiredEvidence: []string{"manual migration decision"},
 		ReviewSections:   []string{"unsupported_script_type"},
 		Notes:            "Legacy desktop-style TruClient parity is out of scope for APEX Load browser import.",
@@ -219,7 +219,7 @@ var web2ProfileCapabilityScopes = []ProfileCapabilityScope{
 		CanonicalName:    "archive_detection",
 		DisplayName:      "Archive Detection",
 		Status:           ScopeSupported,
-		APEXLoadShape:    "LoadRunner ZIP classifier with Web 2.0 profile metadata",
+		APEXLoadShape:    "Enterprise Script Archive classifier with Web 2.0 profile metadata",
 		RequiredEvidence: []string{".usr type detection", "default.xml discovery", "object repository discovery"},
 		Notes:            "The importer classifies TruClient - Web and TruClient 2.0 - Web before C-script conversion and preserves default.xml, object repositories, parameters, and runtime files for review.",
 	},
@@ -390,11 +390,11 @@ func ImportScopeError(scriptType string) error {
 	case ScopeSupported:
 		return nil
 	case ScopePlanned:
-		return fmt.Errorf("LoadRunner script type %q is recognized but not implemented yet. Current planned scope is %s", scope.DisplayName, scope.Notes)
+		return fmt.Errorf("source script type %q is recognized but not implemented yet. Current planned scope is %s", scope.DisplayName, scope.Notes)
 	case ScopeOutOfScope:
-		return fmt.Errorf("LoadRunner script type %q is out of scope. %s", scope.DisplayName, scope.Notes)
+		return fmt.Errorf("source script type %q is out of scope. %s", scope.DisplayName, scope.Notes)
 	default:
-		return fmt.Errorf("LoadRunner script type %q requires guided import review. %s", scope.DisplayName, scope.Notes)
+		return fmt.Errorf("source script type %q requires guided import review. %s", scope.DisplayName, scope.Notes)
 	}
 }
 

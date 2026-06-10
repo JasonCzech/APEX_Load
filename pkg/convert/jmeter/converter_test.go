@@ -883,9 +883,71 @@ func TestConvertJMXMapsLoopCacheManagerTestActionAndDebugSampler(t *testing.T) {
 	}
 }
 
+func TestConvertJMXMapsOnceOnlyControllerToInit(t *testing.T) {
+	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <OnceOnlyController testname="Login Once" enabled="true"/>
+        <hashTree>
+          <HTTPSamplerProxy testname="Login" enabled="true">
+            <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+            <stringProp name="HTTPSampler.protocol">https</stringProp>
+            <stringProp name="HTTPSampler.path">/login</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+          </HTTPSamplerProxy>
+          <hashTree/>
+        </hashTree>
+        <HTTPSamplerProxy testname="Home" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/home</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(jmx), ConvertOptions{FileName: "once-only.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	script := result.Scripts[0]
+	if len(script.Init) != 1 || script.Init[0].Target != "/login" || script.Init[0].Method != "POST" {
+		t.Fatalf("init actions = %#v, want Login under OnceOnlyController", script.Init)
+	}
+	if len(script.Actions) != 1 || script.Actions[0].Target != "/home" {
+		t.Fatalf("main actions = %#v, want Home outside OnceOnlyController", script.Actions)
+	}
+	parity, ok := script.Metadata.Import.Preserved["runtime_parity"].(map[string]string)
+	if !ok || parity["onceOnlyController"] != "executed" {
+		t.Fatalf("runtime parity = %#v, want onceOnlyController executed", script.Metadata.Import.Preserved["runtime_parity"])
+	}
+	if result.Stats.ConvertedActions != 2 {
+		t.Fatalf("converted actions = %d, want init + main samplers counted", result.Stats.ConvertedActions)
+	}
+	if result.SourceReview == nil || !containsJMeterMapping(result.SourceReview.Mappings, "OnceOnlyController", "init[0]", "converted") {
+		t.Fatalf("source review = %#v, want OnceOnlyController init mapping", result.SourceReview)
+	}
+}
+
 func containsJMeterDiagnostic(result *ConvertResult, element string) bool {
 	for _, item := range result.Unsupported {
 		if strings.Contains(item.Element, element) || strings.Contains(item.String(), element) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsJMeterMapping(mappings []sourceview.Mapping, function string, targetPath string, status string) bool {
+	for _, mapping := range mappings {
+		if mapping.Function == function && mapping.TargetPath == targetPath && mapping.Status == status {
 			return true
 		}
 	}

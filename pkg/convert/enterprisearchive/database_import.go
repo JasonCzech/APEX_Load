@@ -1,4 +1,4 @@
-package loadrunner
+package enterprisearchive
 
 import (
 	"fmt"
@@ -18,8 +18,8 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 			Name:          firstNonEmpty(opts.ScriptName, "Converted_LR_Database_Script"),
 			Version:       "1.0.0",
 			Protocol:      "database",
-			GeneratedBy:   "apexload-loadrunner-converter",
-			GeneratedFrom: "loadrunner",
+			GeneratedBy:   "apexload-enterprise-script-archive-importer",
+			GeneratedFrom: "enterprise_script_archive",
 			Config: dsl.ScriptConfig{
 				Database: dsl.DatabaseConfig{
 					Driver:         detectDatabaseDriver(detected),
@@ -35,26 +35,26 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 	functions := flattenParsedFunctions(actions)
 	result.Stats.TotalFunctions = len(functions)
 	if len(functions) == 0 {
-		return nil, fmt.Errorf("no LoadRunner functions found in action files")
+		return nil, fmt.Errorf("no source functions found in action files")
 	}
 
 	for _, fn := range functions {
 		action, ok := convertDatabaseFunction(fn)
 		if !ok {
-			if fallback, mode, fallbackOK := convertLoadRunnerFunctionAction(fn); fallbackOK {
-				appendLoadRunnerAction(result, fn, fallback, mode, loadRunnerSupportNotes(fn, mode))
+			if fallback, mode, fallbackOK := convertSourceFunctionAction(fn); fallbackOK {
+				appendSourceAction(result, fn, fallback, mode, sourceSupportNotes(fn, mode))
 				continue
 			}
 			result.Stats.Skipped++
 			result.Stats.UnsupportedFuncs = append(result.Stats.UnsupportedFuncs, fn.Name)
-			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable database mapping exists for this LoadRunner function yet."))
+			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable database mapping exists for this source function yet."))
 			continue
 		}
 		actionIndex := actionCountForPhase(result.Script, fn.Phase)
-		appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, sourceReviewActionPath(fn.Phase, actionIndex), action.Name, "action", "converted", "Converted to a generated APEX Load database action.", LoadRunnerSupportExecutable))
+		appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, sourceReviewActionPath(fn.Phase, actionIndex), action.Name, "action", "converted", "Converted to a generated APEX Load database action.", SourceFunctionSupportExecutable))
 		appendActionForPhase(result.Script, fn.Phase, action)
 		result.Stats.ConvertedActions++
-		recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
+		recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 	}
 
 	if len(result.Script.Init)+len(result.Script.Actions)+len(result.Script.Teardown) == 0 {
@@ -174,7 +174,7 @@ func databaseActionName(fn ParsedFunction, fallback string) string {
 }
 
 func detectDatabaseDriver(detected DetectedProtocol) string {
-	value := strings.ToLower(firstNonEmpty(detected.SourceType, detected.CanonicalLoadRunnerProtocol, detected.DisplayName))
+	value := strings.ToLower(firstNonEmpty(detected.SourceType, detected.CanonicalSourceProtocol, detected.DisplayName))
 	switch {
 	case strings.Contains(value, "oracle"):
 		return "oracle"
@@ -195,7 +195,7 @@ func sourceFunctionMetadata(fn ParsedFunction) map[string]any {
 	if fn.Filename != "" {
 		metadata["source_file"] = fn.Filename
 	}
-	if phase := normalizeLoadRunnerPhase(fn.Phase); phase != "" {
+	if phase := normalizeSourcePhase(fn.Phase); phase != "" {
 		metadata["phase"] = phase
 	}
 	if fn.EndLine > 0 && fn.EndLine != fn.LineNumber {

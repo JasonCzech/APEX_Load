@@ -14,6 +14,7 @@ import {
 } from '../types'
 import { downloadBlob } from '../utils/fileUtils'
 import { getErrorMessage } from '../utils/errorUtils'
+import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 
 type AccessTab = 'users' | 'service_accounts' | 'activity'
 type UserSubTab = 'existing' | 'onboard'
@@ -673,13 +674,45 @@ export default function AccessPage({
   const [activityMessage, setActivityMessage] = useState('')
   const [issuedKey, setIssuedKey] = useState<IssuedKeyState | null>(null)
   const [copyMessage, setCopyMessage] = useState('')
+  const hasTopbarContributionProvider = useHasTopbarContributionProvider()
 
   const activePreset = useMemo(() => presetByID(form.purpose), [form.purpose])
   const selectedUser = useMemo(() => users.find(user => user.id === selectedUserID) || null, [selectedUserID, users])
   const selectedAccount = useMemo(() => accounts.find(account => account.id === selectedAccountID) || null, [accounts, selectedAccountID])
   const selectedActivity = useMemo(() => activityEvents.find(event => event.id === selectedActivityID) || null, [activityEvents, selectedActivityID])
-  const activeUsers = users.filter(user => user.active).length
   const userBuckets = useMemo(() => activityUsage?.by_user || [], [activityUsage?.by_user])
+  const accessWorkspaceAvailable = canManageUsers || canManageServiceAccounts || canViewUserActivity
+
+  const accessTabControls = useMemo(() => (
+    accessWorkspaceAvailable ? (
+      <div className="access-tab-row topbar-page-section-toggle" role="tablist" aria-label="Access workspace sections">
+        {canManageUsers && (
+          <button type="button" role="tab" aria-selected={activeTab === 'users'} className={`access-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
+            Users <strong>{users.length}</strong>
+          </button>
+        )}
+        {canManageServiceAccounts && (
+          <button type="button" role="tab" aria-selected={activeTab === 'service_accounts'} className={`access-tab ${activeTab === 'service_accounts' ? 'active' : ''}`} onClick={() => setActiveTab('service_accounts')}>
+            Service Accounts <strong>{accounts.length}</strong>
+          </button>
+        )}
+        {canViewUserActivity && (
+          <button type="button" role="tab" aria-selected={activeTab === 'activity'} className={`access-tab ${activeTab === 'activity' ? 'active' : ''}`} onClick={() => setActiveTab('activity')}>
+            Activity <strong>{activityEvents.length}</strong>
+          </button>
+        )}
+      </div>
+    ) : null
+  ), [accessWorkspaceAvailable, accounts.length, activeTab, activityEvents.length, canManageServiceAccounts, canManageUsers, canViewUserActivity, users.length])
+
+  const accessTopbarContribution = useMemo(() => ({
+    id: 'access-page',
+    title: 'Access',
+    controls: accessTabControls,
+    priority: 10,
+  }), [accessTabControls])
+
+  useTopbarContribution(accessTopbarContribution)
 
   const roleFilterOptions = useMemo(() => uniqueValues([
     ...GLOBAL_ROLE_OPTIONS.map(option => option.id),
@@ -1482,49 +1515,16 @@ export default function AccessPage({
           <h2>Access</h2>
           <p className="page-subtitle">Users, automation keys, and activity across domains and projects.</p>
         </div>
-        <div className="access-header-actions">
-          <span className={`access-permission-badge ${(canManageUsers || canManageServiceAccounts || canViewUserActivity) ? 'healthy' : 'danger'}`}>
-            {(canManageUsers || canManageServiceAccounts || canViewUserActivity) ? 'Access workspace available' : 'Read-only session'}
-          </span>
-        </div>
-      </div>
-
-      <div className="access-tab-row" role="tablist" aria-label="Access workspace sections">
-        {canManageUsers && (
-          <button type="button" role="tab" aria-selected={activeTab === 'users'} className={`access-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
-            Users <strong>{users.length}</strong>
-          </button>
-        )}
-        {canManageServiceAccounts && (
-          <button type="button" role="tab" aria-selected={activeTab === 'service_accounts'} className={`access-tab ${activeTab === 'service_accounts' ? 'active' : ''}`} onClick={() => setActiveTab('service_accounts')}>
-            Service Accounts <strong>{accounts.length}</strong>
-          </button>
-        )}
-        {canViewUserActivity && (
-          <button type="button" role="tab" aria-selected={activeTab === 'activity'} className={`access-tab ${activeTab === 'activity' ? 'active' : ''}`} onClick={() => setActiveTab('activity')}>
-            Activity <strong>{activityEvents.length}</strong>
-          </button>
+        {!hasTopbarContributionProvider && (
+          <div className="access-header-actions">
+            <span className={`access-permission-badge ${(canManageUsers || canManageServiceAccounts || canViewUserActivity) ? 'healthy' : 'danger'}`}>
+              {(canManageUsers || canManageServiceAccounts || canViewUserActivity) ? 'Access workspace available' : 'Read-only session'}
+            </span>
+          </div>
         )}
       </div>
 
-      <section className="access-summary-grid">
-        <div>
-          <span>Users</span>
-          <strong>{users.length}</strong>
-        </div>
-        <div>
-          <span>Active Users</span>
-          <strong>{activeUsers}</strong>
-        </div>
-        <div>
-          <span>Service Accounts</span>
-          <strong>{accounts.length}</strong>
-        </div>
-        <div>
-          <span>Activity Events</span>
-          <strong>{activityEvents.length}</strong>
-        </div>
-      </section>
+      {!hasTopbarContributionProvider && accessTabControls}
 
       {activeTab === 'users' && (
         <section className="access-workspace" role="tabpanel" aria-label="Users access workspace">

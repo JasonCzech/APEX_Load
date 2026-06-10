@@ -909,18 +909,18 @@ const COMPONENTS = {
     files: ['pkg/protocol/network/']
   },
   'conv-lr': {
-    title: 'LoadRunner Converter',
+    title: 'Enterprise Script Archive Importer',
     subtitle: 'C Parser &rarr; JSON DSL',
     layer: 'convert',
-    body: `<p>Converts LoadRunner VUser scripts (.zip archives containing C-based web_http scripts) into APEX Load JSON DSL format. Features a Go-based C parser that handles:</p>
+    body: `<p>Converts enterprise script archive ZIPs containing C-based virtual-user scripts into APEX Load JSON DSL format. Features a Go-based C AST parser that handles:</p>
     <p>&bull; <code>web_url()</code>, <code>web_submit_data()</code>, <code>web_custom_request()</code><br/>
     &bull; Correlation functions (<code>web_reg_save_param</code>)<br/>
     &bull; Transaction markers (<code>lr_start/end_transaction</code>)<br/>
     &bull; Think time and pacing directives<br/>
     &bull; Parameter files and data sources</p>
     <p>Preserves original runtime settings in metadata for fidelity comparison.</p>`,
-    connections: ['REST API &mdash; /scripts/import/loadrunner', 'DSL Parser &mdash; output validation'],
-    files: ['pkg/convert/loadrunner/']
+    connections: ['REST API &mdash; /scripts/import/enterprise-script-archive', 'DSL Parser &mdash; output validation'],
+    files: ['pkg/convert/enterprisearchive/']
   },
   'conv-har': {
     title: 'HAR Converter',

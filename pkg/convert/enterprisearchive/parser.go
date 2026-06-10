@@ -1,4 +1,4 @@
-package loadrunner
+package enterprisearchive
 
 import (
 	"bufio"
@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// ParsedFunction represents a single LoadRunner C function call extracted from a script.
+// ParsedFunction represents a single C/VUser source function call extracted from a script.
 type ParsedFunction struct {
 	Name       string            // e.g. "web_url", "web_submit_data", "lr_think_time"
 	StepName   string            // The first string argument (step name)
@@ -64,9 +64,9 @@ type ProjectConfig struct {
 	ThinkTimeMax float64
 }
 
-// regex patterns for LoadRunner C function parsing
+// regex patterns for enterprise C/VUser source function parsing.
 var (
-	// Matches VuGen C function calls such as web_url, lrd_stmt, ftp_command, or sapgui_*.
+	// Matches C/VUser source calls such as web_url, lrd_stmt, ftp_command, or sapgui_*.
 	reFuncCall = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 
 	// Matches key=value patterns inside ITEMDATA sections
@@ -100,8 +100,12 @@ var (
 	reSectionHeader = regexp.MustCompile(`^\[(.+)\]$`)
 )
 
-// ParseActionFile parses a LoadRunner .c action file and extracts function calls.
+// ParseActionFile parses an enterprise C/VUser action file and extracts source function calls.
 func ParseActionFile(filename string, content string) (*ParsedAction, error) {
+	return ParseActionFileAST(filename, content)
+}
+
+func parseActionFileLegacy(filename string, content string) (*ParsedAction, error) {
 	parsed := &ParsedAction{
 		Filename:  filename,
 		Functions: make([]ParsedFunction, 0),
@@ -135,7 +139,7 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 			}
 		}
 
-		// Check if this line starts a recognized VuGen function call.
+		// Check if this line starts a recognized C/VUser source function call.
 		if !inBlock && reFuncCall.MatchString(trimmed) && !isCControlCall(trimmed) {
 			inBlock = true
 			blockStartLine = lineNum
@@ -292,8 +296,8 @@ func parseFunctionBlock(block string, filename string, lineNum int, endLine int,
 		if len(fn.RawArgs) > 0 {
 			fn.StepName = fn.RawArgs[0]
 		}
-	case "lr_continue_on_error", "lr_error_message", "lr_exit", "web_cache_cleanup", "web_cleanup_cookies", "web_set_sockets_option", "web_set_timeout", "web_convert_param", "web_revert_auto_header":
-		parseLoadRunnerRuntimeControl(&fn, inner)
+	case "lr_continue_on_error", "lr_error_message", "lr_exit", "web_cache_cleanup", "web_cleanup_cookies", "web_set_sockets_option", "web_set_timeout", "web_convert_param", "web_revert_auto_header", "web_set_user":
+		parseSourceRuntimeControl(&fn, inner)
 	case "web_add_header", "web_add_auto_header":
 		parseWebAddHeader(&fn, inner)
 	case "web_add_cookie":
@@ -307,7 +311,7 @@ func parseFunctionBlock(block string, filename string, lineNum int, endLine int,
 	return fn, nil
 }
 
-func parseLoadRunnerRuntimeControl(fn *ParsedFunction, inner string) {
+func parseSourceRuntimeControl(fn *ParsedFunction, inner string) {
 	if len(fn.RawArgs) > 0 {
 		fn.StepName = fn.RawArgs[0]
 	}
@@ -339,7 +343,7 @@ func parseCFunctionArguments(inner string) []ParsedArgument {
 		switch {
 		case isQuotedCString(trimmed):
 			arg.Kind = "string"
-			if key, value, ok := splitLoadRunnerKeyValue(cleaned); ok {
+			if key, value, ok := splitSourceKeyValue(cleaned); ok {
 				arg.Kind = "key_value"
 				arg.Name = key
 				arg.Value = value
@@ -370,7 +374,7 @@ func isQuotedCString(value string) bool {
 	return (first == '"' && last == '"') || (first == '\'' && last == '\'')
 }
 
-func splitLoadRunnerKeyValue(value string) (string, string, bool) {
+func splitSourceKeyValue(value string) (string, string, bool) {
 	parts := strings.SplitN(value, "=", 2)
 	if len(parts) != 2 {
 		return "", "", false
@@ -550,7 +554,7 @@ func extractWebRESTHeaders(fn *ParsedFunction) {
 	inHeaders := false
 	currentName := ""
 	for _, arg := range fn.CallArgs {
-		if loadRunnerArgTokenEquals(arg, "HEADERS") {
+		if sourceArgTokenEquals(arg, "HEADERS") {
 			inHeaders = true
 			currentName = ""
 			continue
@@ -558,11 +562,11 @@ func extractWebRESTHeaders(fn *ParsedFunction) {
 		if !inHeaders {
 			continue
 		}
-		if loadRunnerArgTokenEquals(arg, "ENDHEADER") {
+		if sourceArgTokenEquals(arg, "ENDHEADER") {
 			currentName = ""
 			continue
 		}
-		if loadRunnerArgTokenEquals(arg, "LAST") {
+		if sourceArgTokenEquals(arg, "LAST") {
 			break
 		}
 		if arg.Kind != "key_value" {
@@ -579,7 +583,7 @@ func extractWebRESTHeaders(fn *ParsedFunction) {
 	}
 }
 
-func loadRunnerArgTokenEquals(arg ParsedArgument, token string) bool {
+func sourceArgTokenEquals(arg ParsedArgument, token string) bool {
 	return strings.EqualFold(strings.TrimSpace(arg.Value), token) || strings.EqualFold(strings.TrimSpace(arg.Raw), token)
 }
 
@@ -650,7 +654,7 @@ func parseWebAddCookie(fn *ParsedFunction, inner string) {
 	}
 	rawCookie := stringArgs[0]
 	fn.StepName = rawCookie
-	fn.Cookies = append(fn.Cookies, parseLoadRunnerCookie(rawCookie))
+	fn.Cookies = append(fn.Cookies, parseSourceCookie(rawCookie))
 	extractNamedArgs(fn, inner)
 }
 
@@ -667,7 +671,7 @@ func positionalStringArguments(args []ParsedArgument) []string {
 	return values
 }
 
-func parseLoadRunnerCookie(raw string) ParsedCookie {
+func parseSourceCookie(raw string) ParsedCookie {
 	cookie := ParsedCookie{Raw: raw, Path: "/"}
 	segments := strings.Split(raw, ";")
 	for index, segment := range segments {
@@ -786,7 +790,7 @@ func ParseConfigSections(content string) map[string]map[string]string {
 	return sections
 }
 
-// ParseUSRFile parses a LoadRunner .usr project configuration file.
+// ParseUSRFile parses a source .usr project configuration file.
 func ParseUSRFile(content string) (*ProjectConfig, error) {
 	cfg := &ProjectConfig{
 		ActionFiles: make([]string, 0),

@@ -619,19 +619,20 @@ type LiveDependencyEdge struct {
 }
 
 type GroupLiveMetrics struct {
-	Name                   string  `json:"name"`
-	VUsers                 int     `json:"vusers"`
-	Transactions           int64   `json:"transactions"`
-	Errors                 int64   `json:"errors"`
-	TPS                    float64 `json:"tps"`
-	TargetTPS              float64 `json:"target_tps,omitempty"`
-	ThroughputGapPct       float64 `json:"throughput_gap_pct,omitempty"`
-	ThroughputTargetMissed bool    `json:"throughput_target_missed,omitempty"`
-	AvgResponseMs          float64 `json:"avg_response_ms"`
-	P50Ms                  float64 `json:"p50_ms"`
-	P90Ms                  float64 `json:"p90_ms"`
-	P95Ms                  float64 `json:"p95_ms,omitempty"`
-	P99Ms                  float64 `json:"p99_ms"`
+	Name                   string                  `json:"name"`
+	VUsers                 int                     `json:"vusers"`
+	Transactions           int64                   `json:"transactions"`
+	Errors                 int64                   `json:"errors"`
+	TPS                    float64                 `json:"tps"`
+	TargetTPS              float64                 `json:"target_tps,omitempty"`
+	ThroughputGapPct       float64                 `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed bool                    `json:"throughput_target_missed,omitempty"`
+	AvgResponseMs          float64                 `json:"avg_response_ms"`
+	P50Ms                  float64                 `json:"p50_ms"`
+	P90Ms                  float64                 `json:"p90_ms"`
+	P95Ms                  float64                 `json:"p95_ms,omitempty"`
+	P99Ms                  float64                 `json:"p99_ms"`
+	DurationDigest         *engine.TDigestSnapshot `json:"-"`
 }
 
 type StoredScript struct {
@@ -5112,7 +5113,9 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 			AvgResponseMs:          float64(gm.AvgDuration.Microseconds()) / 1000.0,
 			P50Ms:                  float64(gm.P50.Microseconds()) / 1000.0,
 			P90Ms:                  float64(gm.P90.Microseconds()) / 1000.0,
+			P95Ms:                  float64(gm.P95.Microseconds()) / 1000.0,
 			P99Ms:                  float64(gm.P99.Microseconds()) / 1000.0,
+			DurationDigest:         gm.DurationDigest,
 		}
 	}
 

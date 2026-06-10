@@ -2473,42 +2473,42 @@ paths:
           type: string
       tags:
       - Scripts
-  /api/v1/scripts/import/loadrunner:
+  /api/v1/scripts/import/enterprise-script-archive:
     post:
       summary: Import Load Runner
-      description: '**Handler:** `handleImportLoadRunner`
+      description: '**Handler:** `handleImportEnterpriseArchive`
 
 
         **Access Control:** Requires Authentication (Role based on specific entity)'
-      operationId: handleImportLoadRunner
+      operationId: handleImportEnterpriseArchive
       responses:
         '200':
           description: Successful operation
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
       - Scripts
-  /api/v1/scripts/import/loadrunner/validate:
+  /api/v1/scripts/import/enterprise-script-archive/validate:
     post:
       summary: Validate Load Runner Import
-      description: '**Handler:** `handleValidateLoadRunnerImport`
+      description: '**Handler:** `handleValidateEnterpriseArchiveImport`
 
 
         **Access Control:** Requires Authentication (Role based on specific entity)'
-      operationId: handleValidateLoadRunnerImport
+      operationId: handleValidateEnterpriseArchiveImport
       responses:
         '200':
           description: Successful operation
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
       - Scripts
-  /api/v1/scripts/import/loadrunner/support-matrix:
+  /api/v1/scripts/import/enterprise-script-archive/support-matrix:
     get:
       summary: Load Runner Support Matrix
-      description: '**Handler:** `handleLoadRunnerSupportMatrix`
+      description: '**Handler:** `handleEnterpriseArchiveSupportMatrix`
 
 
         **Access Control:** Requires Authentication (Role based on specific entity)'
-      operationId: handleLoadRunnerSupportMatrix
+      operationId: handleEnterpriseArchiveSupportMatrix
       responses:
         '200':
           description: Successful operation

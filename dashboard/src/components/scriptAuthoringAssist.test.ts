@@ -52,7 +52,7 @@ const importedScript: ScriptDefinition = {
   data_sources: [],
   metadata: {
     import: {
-      source: 'loadrunner',
+      source: 'enterprise_script_archive',
       source_script_name: 'checkout.usr',
       preserved: {},
     },

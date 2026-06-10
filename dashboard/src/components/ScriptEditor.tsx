@@ -33,8 +33,8 @@ import {
   type ScriptDefinition,
   type ScriptDataSource,
   type ScriptImportMetadata,
-  type LoadRunnerSourceReview,
-  type LoadRunnerSourceReviewMapping,
+  type SourceArchiveReview,
+  type SourceArchiveReviewMapping,
   type ScriptParameterDefinition,
   type ScriptValidationResponse,
   type ReplayPreflight,
@@ -1635,7 +1635,7 @@ function buildScriptOutlineSummary(script: ScriptData): ScriptOutlineSummary {
     const assertionCount = actionAssertionCount(action)
     const sequenceRefs = httpSequenceRequests(action).flatMap(request => extractParameterReferences(request))
     const parameterRefs = [...new Set([...extractParameterReferences(action), ...sequenceRefs])]
-    const hasTransaction = autoTransactions === 'per_action' || Boolean(action.metadata?.transaction || action.metadata?.transaction_name || action.metadata?.source_transaction || action.metadata?.loadrunner_transaction)
+    const hasTransaction = autoTransactions === 'per_action' || Boolean(action.metadata?.transaction || action.metadata?.transaction_name || action.metadata?.source_transaction || action.metadata?.source_transaction)
     return {
       index: row.globalIndex,
       actionIndex: row.actionIndex,
@@ -1674,11 +1674,11 @@ function readPreservedImportObject(metadata?: ScriptImportMetadata | null, key?:
   return value as Record<string, unknown>
 }
 
-function readSourceReview(metadata?: ScriptImportMetadata | null): LoadRunnerSourceReview | null {
+function readSourceReview(metadata?: ScriptImportMetadata | null): SourceArchiveReview | null {
   const value = readPreservedImportObject(metadata, 'source_review')
   if (!value) return null
   if (!Array.isArray(value.source_files) && !Array.isArray(value.mappings)) return null
-  return value as LoadRunnerSourceReview
+  return value as SourceArchiveReview
 }
 
 function scriptHasImportMetadata(script?: ScriptData | null): boolean {
@@ -1696,13 +1696,13 @@ function normalizeMappingText(value: unknown): string {
   return String(value || '').trim().toLowerCase()
 }
 
-function mappingTargetsAction(mapping: LoadRunnerSourceReviewMapping, actionIndex: number): boolean {
+function mappingTargetsAction(mapping: SourceArchiveReviewMapping, actionIndex: number): boolean {
   const targetPath = mapping.target_path || ''
   const actionPath = `actions[${actionIndex}]`
   return targetPath === actionPath || targetPath.startsWith(`${actionPath}.`) || targetPath.startsWith(`${actionPath}[`)
 }
 
-function sourceMappingActionScore(mapping: LoadRunnerSourceReviewMapping, action: Action | undefined, actionIndex: number): number {
+function sourceMappingActionScore(mapping: SourceArchiveReviewMapping, action: Action | undefined, actionIndex: number): number {
   const targetPath = mapping.target_path || ''
   const actionPath = `actions[${actionIndex}]`
   let score = mapping.start_line || 0
@@ -1714,17 +1714,17 @@ function sourceMappingActionScore(mapping: LoadRunnerSourceReviewMapping, action
   if (mapping.support_mode === 'executable') score -= 100
   const targetName = normalizeMappingText(mapping.target_name)
   const actionName = normalizeMappingText(action?.name)
-  const sourceTransaction = normalizeMappingText(action?.metadata?.source_transaction || action?.metadata?.loadrunner_transaction || action?.metadata?.transaction_name || action?.metadata?.transaction)
+  const sourceTransaction = normalizeMappingText(action?.metadata?.source_transaction || action?.metadata?.source_transaction || action?.metadata?.transaction_name || action?.metadata?.transaction)
   if (actionName && targetName === actionName) score -= 250
   if (sourceTransaction && targetName === sourceTransaction) score -= 250
   return score
 }
 
-function findSourceMappingForAction(sourceReview: LoadRunnerSourceReview | null, action: Action | undefined, actionIndex: number): LoadRunnerSourceReviewMapping | null {
+function findSourceMappingForAction(sourceReview: SourceArchiveReview | null, action: Action | undefined, actionIndex: number): SourceArchiveReviewMapping | null {
   const mappings = (sourceReview?.mappings || []).filter(mapping => mapping && mapping.id)
   if (mappings.length === 0 || !action || actionIndex < 0) return null
   const actionName = normalizeMappingText(action.name)
-  const sourceTransaction = normalizeMappingText(action.metadata?.source_transaction || action.metadata?.loadrunner_transaction || action.metadata?.transaction_name || action.metadata?.transaction)
+  const sourceTransaction = normalizeMappingText(action.metadata?.source_transaction || action.metadata?.source_transaction || action.metadata?.transaction_name || action.metadata?.transaction)
   const matches = mappings.filter(mapping => {
     if (mappingTargetsAction(mapping, actionIndex)) return true
     const targetName = normalizeMappingText(mapping.target_name)
@@ -1778,7 +1778,7 @@ function readTrueClientPromotionReview(metadata?: ScriptImportMetadata | null): 
   return {
     status: readString(raw.status) || 'review_required',
     generatedAt: readString(raw.generated_at),
-    source: readString(raw.source) || metadata?.source || 'loadrunner',
+    source: readString(raw.source) || metadata?.source || 'enterprise_script_archive',
     sourceScriptName,
     compatibility: {
       sourceProfile: readString(compatibility.source_profile),
@@ -2041,7 +2041,7 @@ const TIMESTAMP_PARAMETER_FORMAT_PRESETS: ParameterFormatPreset[] = [
 
 const DATE_TIME_PARAMETER_FORMAT_PRESETS: ParameterFormatPreset[] = [
   { value: '2006-01-02 15:04:05', label: 'SQL date time', description: 'YYYY-MM-DD HH:mm:ss.' },
-  { value: '2006-01-02T15:04:05Z', label: 'LoadRunner UTC ISO', description: 'VuGen %Y-%m-%dT%H:%M:%SZ.', timezone: 'UTC' },
+  { value: '2006-01-02T15:04:05Z', label: 'Source UTC ISO', description: 'Source %Y-%m-%dT%H:%M:%SZ.', timezone: 'UTC' },
   { value: '2006-01-02T15:04:05Z07:00', label: 'ISO 8601 offset', description: 'YYYY-MM-DDTHH:mm:ss±hh:mm.' },
   { value: '2006-01-02T15:04:05.000Z07:00', label: 'ISO milliseconds', description: 'ISO timestamp with millisecond precision.' },
   { value: '2006-01-02T15:04:05.000000Z07:00', label: 'ISO microseconds', description: 'ISO timestamp with microsecond precision.' },
@@ -2050,7 +2050,7 @@ const DATE_TIME_PARAMETER_FORMAT_PRESETS: ParameterFormatPreset[] = [
   { value: '20060102150405', label: 'Compact date time', description: 'YYYYMMDDHHmmss.' },
   { value: '01/02/2006 15:04:05', label: 'US numeric date time', description: 'MM/DD/YYYY HH:mm:ss.' },
   { value: '02/01/2006 15:04:05', label: 'EU numeric date time', description: 'DD/MM/YYYY HH:mm:ss.' },
-  { value: '02-Jan-2006 15:04:05', label: 'LoadRunner short month', description: 'DD-Mon-YYYY HH:mm:ss.' },
+  { value: '02-Jan-2006 15:04:05', label: 'Source short month', description: 'DD-Mon-YYYY HH:mm:ss.' },
   { value: 'Monday, January 02, 2006 15:04:05', label: 'Long named date time', description: 'Weekday, Month DD, YYYY HH:mm:ss.' },
   { value: 'Mon Jan _2 15:04:05 MST 2006', label: 'Unix ctime style', description: 'Named day/month with timezone.' },
   { value: 'Mon, 02 Jan 2006 15:04:05 MST', label: 'RFC 1123', description: 'HTTP-date style timestamp.' },
@@ -7778,7 +7778,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <div className="center-document-header">
                   <div>
                     <h3 className="panel-title">Runtime Settings & RTS</h3>
-                    <p>Execution, pacing, browser, protocol, and LoadRunner RTS compatibility controls.</p>
+                    <p>Execution, pacing, browser, protocol, and source runtime compatibility controls.</p>
                   </div>
                 </div>
               <div className="runtime-settings-grid" style={{ padding: 20 }}>
@@ -8735,7 +8735,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   {openSections['web_runtime'] && (
                     <div className="section-body">
                       <div className="cell-muted" style={{ marginBottom: 12 }}>
-                        These settings are captured in the draft now so Web HTTP/HTML scripts can mirror VuGen RTS coverage even where full APEX Load execution support is still rolling out.
+                        These settings are captured in the draft now so Web HTTP/HTML scripts can mirror source runtime coverage even where full APEX Load execution support is still rolling out.
                       </div>
                       <div className="settings-sub-group">
                         <h5>Proxy Routing</h5>
@@ -9324,7 +9324,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         <h3 className="panel-title">Imported Metadata</h3>
                         <p>This script retains source-specific import metadata that APEX Load uses during review but does not edit directly.</p>
                       </div>
-                      <span className="import-source-chip">{importMetadata.source || 'loadrunner'}</span>
+                      <span className="import-source-chip">{importMetadata.source || 'enterprise_script_archive'}</span>
                     </div>
 
                     <div className="import-metadata-body">
@@ -9342,7 +9342,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       {importSummary.parameterFileSections.length > 0 && (
                         <div className="import-correlation-section">
                           <h4>Parameter File Mappings</h4>
-                          <p>These preserved LoadRunner parameter definitions show how the converter mapped file-backed data into APEX Load data sources.</p>
+                          <p>These preserved source parameter definitions show how the importer mapped file-backed data into APEX Load data sources.</p>
                           <div className="import-correlation-list">
                             {importedParameterFileMappings.map(({ section, sourceName }) => (
                               <div key={`${section.file}:${section.name}`} className="import-correlation-card">
@@ -9513,7 +9513,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       {importSummary.runtimeSettingsParity.length > 0 && (
                         <div className="import-correlation-section">
                           <h4>Runtime Settings Parity</h4>
-                          <p>These imported LoadRunner runtime settings were classified against APEX Load&apos;s code-owned support matrix.</p>
+                          <p>These imported source runtime settings were classified against APEX Load&apos;s code-owned support matrix.</p>
                           <div className="import-correlation-list">
                             {importSummary.runtimeSettingsParity.map((entry) => (
                               <div key={entry.id} className="import-correlation-card">
@@ -11275,7 +11275,7 @@ const PARAMETER_CHOICE_DEFINITIONS: Record<ParameterChoiceField, ParameterChoice
     description: 'Choose how this named parameter gets its value during execution.',
     options: [
       { value: 'list', label: 'List', description: 'Uses inline values or a mapped data source column, then advances according to the selection rule.' },
-      { value: 'file', label: 'File', description: 'Reads values from a data source file or imported VuGen parameter file mapping.' },
+      { value: 'file', label: 'File', description: 'Reads values from a data source file or imported source parameter file mapping.' },
       { value: 'random_number', label: 'Random Number', description: 'Generates a number between the configured minimum and maximum values.' },
       { value: 'date_time', label: 'Date/Time', description: 'Formats the current date and time with the configured layout, timezone, and offset.' },
       { value: 'timestamp', label: 'Timestamp', description: 'Generates a timestamp in a standard format such as Unix, Unix ms, or ISO 8601.' },
@@ -11300,7 +11300,7 @@ const PARAMETER_CHOICE_DEFINITIONS: Record<ParameterChoiceField, ParameterChoice
     title: 'Selection Strategy',
     description: 'Choose how row-backed parameter values are selected from the source.',
     options: [
-      { value: 'sequential', label: 'Sequential', description: 'Read rows in order, which is useful for deterministic replay and imported VuGen behavior.' },
+      { value: 'sequential', label: 'Sequential', description: 'Read rows in order, which is useful for deterministic replay and imported source behavior.' },
       { value: 'random', label: 'Random', description: 'Pick a row at random for each refresh, which spreads usage across the data set.' },
       { value: 'unique', label: 'Unique', description: 'Reserve unique rows so concurrent VUsers do not reuse the same value until the source is exhausted.' },
     ],
@@ -11495,7 +11495,7 @@ export function ParameterDefinitionsSection({
           <span aria-hidden="true" className="parameter-section-chevron">{isOpen ? '▾' : '▸'}</span>
           <span>
             <strong style={{ display: 'block', marginBottom: 4 }}>Parameters</strong>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Define parameters with VuGen-style update cadence and generated values.</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Define parameters with source-style update cadence and generated values.</span>
           </span>
         </button>
         <button type="button" className="btn btn-sm btn-accent" onClick={handleAddParameter}>+ Add Parameter</button>
@@ -13853,9 +13853,9 @@ interface HTTPSequenceFieldsProps {
 
 function HTTPSequenceFields({ action, index, onUpdate }: HTTPSequenceFieldsProps) {
   const requests = httpSequenceRequests(action)
-  const sourceTransaction = asString(action.metadata?.source_transaction) || asString(action.metadata?.loadrunner_transaction)
+  const sourceTransaction = asString(action.metadata?.source_transaction) || asString(action.metadata?.source_transaction)
   const subtransactions = requests
-    .map(request => asString(request.metadata?.source_subtransaction) || asString(request.metadata?.loadrunner_subtransaction))
+    .map(request => asString(request.metadata?.source_subtransaction) || asString(request.metadata?.source_subtransaction))
     .filter(Boolean)
   const uniqueSubtransactions = [...new Set(subtransactions)]
   return (
@@ -13883,7 +13883,7 @@ function HTTPSequenceFields({ action, index, onUpdate }: HTTPSequenceFieldsProps
             </thead>
             <tbody>
               {requests.map((request, requestIndex) => {
-                const subtransaction = asString(request.metadata?.source_subtransaction) || asString(request.metadata?.loadrunner_subtransaction)
+                const subtransaction = asString(request.metadata?.source_subtransaction) || asString(request.metadata?.source_subtransaction)
                 const signalParts = [
                   request.body ? 'Body' : '',
                   request.headers && Object.keys(request.headers).length > 0 ? `${Object.keys(request.headers).length} headers` : '',

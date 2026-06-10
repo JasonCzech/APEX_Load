@@ -1,7 +1,9 @@
+import { API_GUIDE_DEFAULT_PAGE, isApiGuideContentPageID, type ApiGuideContentPageID } from './apiGuideNavigation'
 import type { NavPage } from './components/Sidebar'
 
 export type AppView =
-  | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests'> }
+  | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests' | 'docs'> }
+  | { page: 'docs'; guidePage?: ApiGuideContentPageID }
   | { page: 'command-center'; testId?: string }
   | { page: 'tests'; scenarioView?: 'library' | 'builder' }
   | { page: 'new-test'; scenarioId?: string }
@@ -87,6 +89,14 @@ export function parseAppViewFromHash(hash: string): AppView {
     }
   }
 
+  if (page === 'docs') {
+    const guidePage = params.get('guide')
+    return {
+      page: 'docs',
+      ...(isApiGuideContentPageID(guidePage) ? { guidePage } : {}),
+    }
+  }
+
   if (page === 'swagger') {
     return { page: 'swagger' }
   }
@@ -127,6 +137,13 @@ export function viewToLocationHash(view: AppView): string {
     if (view.scriptId) params.set('scriptId', view.scriptId)
     const query = params.toString()
     return query ? `#/scripts?${query}` : '#/scripts'
+  }
+
+  if (view.page === 'docs') {
+    const params = new URLSearchParams()
+    if (view.guidePage && view.guidePage !== API_GUIDE_DEFAULT_PAGE) params.set('guide', view.guidePage)
+    const query = params.toString()
+    return query ? `#/docs?${query}` : '#/docs'
   }
 
   if (view.page === 'swagger') {

@@ -14,7 +14,7 @@ export type ChartDomain = ComponentProps<typeof YAxis>['domain']
 export interface ChartConfig {
   id: string
   title: string
-  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'line-io' | 'line-network' | 'line-impact' | 'line-load-impact'
+  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'line-io' | 'line-network' | 'line-impact' | 'line-load-impact' | 'line-load-impact-percentiles' | 'load-impact-heatmap'
   dataKey?: string
   color?: string
   totalKey?: string
@@ -24,11 +24,21 @@ export interface ChartConfig {
   loadImpactMetric?: LoadImpactMetric
 }
 
+export type ChartMetricRowKind = 'transaction' | 'percentile' | 'other'
+
 export interface ChartMetricRow {
   key: string
   label: string
   color: string
   unit?: string
+  kind?: ChartMetricRowKind
+}
+
+export interface ChartMetricLinePresentation {
+  role: 'transaction' | 'percentile' | 'default'
+  strokeWidth: number
+  strokeDasharray?: string
+  strokeOpacity: number
 }
 
 export interface ChartMetricSummary {
@@ -47,9 +57,29 @@ export type ChartMargin = ComponentProps<typeof LineChart>['margin']
 export type RouteLatencyMode = 'total' | 'phases' | 'stability'
 
 const LOAD_IMPACT_CHART_ID_PREFIX = 'load_impact_'
+export const LOAD_IMPACT_HEATMAP_CHART_ID = 'load_impact_heatmap'
+export const LOAD_IMPACT_PERCENTILES_CHART_ID = 'load_impact_percentiles'
+export const LOAD_IMPACT_PERCENTILE_KEYS = ['p50', 'p90', 'p95', 'p99'] as const
+export const ART_STD_DEV_BAND_KEY = 'avgMsStdDevBand'
+export const ART_STD_DEV_VALUE_KEY = 'avgMsStdDev'
+const SMOOTHED_GRAPH_METRIC_SUFFIX = '__smoothed'
 export const LOAD_IMPACT_VISIBLE_CHARTS_STORAGE_KEY = 'apexload.execution.visibleLoadImpactCharts'
 export const DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS = ['avgMs', 'p95', 'tps', 'errorPct', 'cpuProcess', 'memProcess']
 const LOAD_IMPACT_GRAPH_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
+const MIN_GRAPH_SMOOTHING_RADIUS = 2
+const MAX_GRAPH_SMOOTHING_RADIUS = 6
+const MIN_ART_STD_DEV_WINDOW = 5
+const MAX_ART_STD_DEV_WINDOW = 13
+const DEFAULT_GRAPH_CARD_WIDTH = 520
+const DEFAULT_GRAPH_CARD_HEIGHT = 196
+const UNSMOOTHED_GRAPH_KEYS = new Set(['targetTps', 'vusers'])
+
+export interface GraphSmoothingDensity {
+  chartWidth?: number
+  chartHeight?: number
+  visibleMetricCount?: number
+  expanded?: boolean
+}
 
 export const chartConfigs: ChartConfig[] = [
   { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
@@ -80,12 +110,37 @@ export const chartConfigs: ChartConfig[] = [
   { id: 'network_latency', title: 'Route Latency (ms)', type: 'line-network' },
 ]
 
+export const loadImpactHeatmapChart: ChartConfig = {
+  id: LOAD_IMPACT_HEATMAP_CHART_ID,
+  title: 'Load Impact Heatmap',
+  type: 'load-impact-heatmap',
+}
+
+export const loadImpactPercentilesChart: ChartConfig = {
+  id: LOAD_IMPACT_PERCENTILES_CHART_ID,
+  title: 'P Values Under Load',
+  type: 'line-load-impact-percentiles',
+  defaultMetricKeys: [...LOAD_IMPACT_PERCENTILE_KEYS],
+}
+
 export function loadImpactChartId(metricId: string) {
   return `${LOAD_IMPACT_CHART_ID_PREFIX}${metricId}`
 }
 
 export function isLoadImpactChart(chart: ChartConfig) {
   return chart.type === 'line-load-impact' && Boolean(chart.loadImpactMetric)
+}
+
+export function isLoadImpactHeatmapChart(chart: ChartConfig) {
+  return chart.type === 'load-impact-heatmap' || chart.id === LOAD_IMPACT_HEATMAP_CHART_ID
+}
+
+export function isLoadImpactPercentilesChart(chart: ChartConfig) {
+  return chart.type === 'line-load-impact-percentiles' || chart.id === LOAD_IMPACT_PERCENTILES_CHART_ID
+}
+
+export function hasLoadImpactPercentileRows(rows: LoadImpactRow[]) {
+  return LOAD_IMPACT_PERCENTILE_KEYS.some(key => rows.some(row => row.metric.id === key))
 }
 
 export function buildLoadImpactCharts(rows: LoadImpactRow[]): ChartConfig[] {
@@ -129,6 +184,13 @@ const generatorImpactMetricRows: ChartMetricRow[] = [
   { key: 'diskIOTimePct', label: 'Disk Busy', color: 'var(--chart-6)', unit: '%' },
 ]
 
+const loadImpactPercentileMetricRows: ChartMetricRow[] = [
+  { key: 'p50', label: 'P50', color: 'var(--chart-5)', unit: 'ms', kind: 'percentile' },
+  { key: 'p90', label: 'P90', color: 'var(--chart-3)', unit: 'ms', kind: 'percentile' },
+  { key: 'p95', label: 'P95', color: 'var(--chart-2)', unit: 'ms', kind: 'percentile' },
+  { key: 'p99', label: 'P99', color: 'var(--chart-4)', unit: 'ms', kind: 'percentile' },
+]
+
 export const overlayMetricRows: Record<OverlayMetricKey, ChartMetricRow> = {
   vusers: { key: 'vusers', label: 'Active VUsers', color: 'var(--chart-1)' },
   avgMs: { key: 'avgMs', label: 'ART', color: 'var(--chart-4)', unit: 'ms' },
@@ -142,6 +204,9 @@ export const overlayMetricMenuLabels: Record<OverlayMetricKey, string> = {
 }
 
 export function isOverlayMetricAvailable(chart: ChartConfig, key: OverlayMetricKey) {
+  if (isLoadImpactPercentilesChart(chart)) {
+    return key !== 'vusers'
+  }
   if (isLoadImpactChart(chart)) {
     return key !== 'vusers' && chart.loadImpactMetric?.key !== key
   }
@@ -179,6 +244,8 @@ export function chartPrimaryYAxisLabel(chart: ChartConfig) {
       return 'Impact metrics'
     case 'network_latency':
       return 'Route latency (ms)'
+    case LOAD_IMPACT_PERCENTILES_CHART_ID:
+      return 'Response time (ms)'
     default:
       if (isLoadImpactChart(chart)) {
         const metric = chart.loadImpactMetric!
@@ -188,14 +255,22 @@ export function chartPrimaryYAxisLabel(chart: ChartConfig) {
   }
 }
 
-export function chartMarginForOverlayKeys(overlayKeys: OverlayMetricKey[]): ChartMargin {
+export function chartMarginForOverlayKeys(overlayKeys: OverlayMetricKey[], compact = false): ChartMargin {
   const rightAxisCount = Number(overlayKeys.includes('vusers'))
     + Number(overlayKeys.some(key => key === 'avgMs' || key === 'tps'))
+  if (compact) {
+    return {
+      top: 12,
+      right: rightAxisCount > 0 ? 4 : 8,
+      bottom: 8,
+      left: 4,
+    }
+  }
   return {
     top: 12,
-    right: rightAxisCount > 1 ? 126 : rightAxisCount === 1 ? 88 : 18,
+    right: rightAxisCount > 1 ? 106 : rightAxisCount === 1 ? 70 : 12,
     bottom: 8,
-    left: 24,
+    left: 8,
   }
 }
 
@@ -221,8 +296,13 @@ export function defaultHiddenChartIds(charts: ChartConfig[], visibleLoadImpactCh
   const explicitlyVisible = new Set(visibleLoadImpactChartIds)
   return charts
     .filter(chart => (
-      isLoadImpactChart(chart)
-      && !DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS.includes(chart.loadImpactMetric!.id)
+      (
+        isLoadImpactPercentilesChart(chart)
+        || (
+          isLoadImpactChart(chart)
+          && !DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS.includes(chart.loadImpactMetric!.id)
+        )
+      )
       && !explicitlyVisible.has(chart.id)
     ))
     .map(chart => chart.id)
@@ -316,6 +396,161 @@ function roundChartValue(value: number) {
   return Math.round(value * 10) / 10
 }
 
+export function smoothedGraphMetricKey(key: string) {
+  return `${key}${SMOOTHED_GRAPH_METRIC_SUFFIX}`
+}
+
+export function rawGraphMetricKey(key: string) {
+  return key.endsWith(SMOOTHED_GRAPH_METRIC_SUFFIX)
+    ? key.slice(0, -SMOOTHED_GRAPH_METRIC_SUFFIX.length)
+    : key
+}
+
+function isSmoothableGraphMetricKey(key: string) {
+  return !UNSMOOTHED_GRAPH_KEYS.has(key)
+    && !key.startsWith('latency_success_rate_')
+    && !key.endsWith('_successRate')
+}
+
+export function smoothedMetricKeysForChart(chart: ChartConfig, visibleMetricKeys: string[]) {
+  if (isLoadImpactChart(chart) || isLoadImpactHeatmapChart(chart) || isLoadImpactPercentilesChart(chart)) return []
+  return visibleMetricKeys.filter(isSmoothableGraphMetricKey)
+}
+
+export function rollingArtStdDevWindowForRadius(radius: number) {
+  const normalizedRadius = Number.isFinite(radius) ? Math.max(0, Math.floor(radius)) : 0
+  return Math.min(MAX_ART_STD_DEV_WINDOW, Math.max(MIN_ART_STD_DEV_WINDOW, (normalizedRadius * 2) + 1))
+}
+
+export function shouldRenderArtStdDevBands(chart: ChartConfig, visibleMetricKeys: string[], enabled: boolean) {
+  return enabled && chart.id === 'latency' && visibleMetricKeys.includes('avgMs')
+}
+
+export function smoothingRadiusForGraphDensity(pointCount: number, density: GraphSmoothingDensity = {}) {
+  if (pointCount < (MIN_GRAPH_SMOOTHING_RADIUS * 2) + 1) return 0
+
+  const chartWidth = Math.max(220, density.chartWidth ?? DEFAULT_GRAPH_CARD_WIDTH)
+  const chartHeight = Math.max(120, density.chartHeight ?? DEFAULT_GRAPH_CARD_HEIGHT)
+  const plotWidth = Math.max(180, chartWidth - 122)
+  const plotHeight = Math.max(90, chartHeight - 74)
+  const pixelsPerPoint = plotWidth / Math.max(1, pointCount - 1)
+  const seriesCrowding = Math.min(1.5, 1 + Math.max(0, (density.visibleMetricCount ?? 1) - 2) * 0.08)
+  const verticalCrowding = plotHeight < 110 ? 1.2 : plotHeight > 240 ? 0.85 : 1
+  const adjustedPixelsPerPoint = pixelsPerPoint / (seriesCrowding * verticalCrowding)
+
+  let radius = MIN_GRAPH_SMOOTHING_RADIUS
+  if (adjustedPixelsPerPoint < 2) {
+    radius = 6
+  } else if (adjustedPixelsPerPoint < 3.5) {
+    radius = 5
+  } else if (adjustedPixelsPerPoint < 5.5) {
+    radius = 4
+  } else if (adjustedPixelsPerPoint < 8) {
+    radius = 3
+  }
+  if (density.expanded) {
+    radius = Math.max(MIN_GRAPH_SMOOTHING_RADIUS, radius - 1)
+  }
+
+  return Math.min(MAX_GRAPH_SMOOTHING_RADIUS, radius, Math.floor((pointCount - 1) / 2))
+}
+
+function smoothingWeightForOffset(offset: number, radius: number) {
+  return radius + 1 - Math.abs(offset)
+}
+
+function smoothedMetricValue(data: MetricsHistoryPoint[], key: string, index: number, radius: number) {
+  const rawValue = data[index][key]
+  if (typeof rawValue !== 'number' || !Number.isFinite(rawValue)) return undefined
+
+  let weightedTotal = 0
+  let weightTotal = 0
+  for (let offset = -radius; offset <= radius; offset += 1) {
+    const candidate = data[index + offset]?.[key]
+    if (typeof candidate !== 'number' || !Number.isFinite(candidate)) continue
+    const weight = smoothingWeightForOffset(offset, radius)
+    weightedTotal += candidate * weight
+    weightTotal += weight
+  }
+
+  if (weightTotal === 0) return undefined
+  return roundChartValue(weightedTotal / weightTotal)
+}
+
+export function buildSmoothedGraphData(data: MetricsHistoryPoint[], metricKeys: string[], smoothingRadius = MIN_GRAPH_SMOOTHING_RADIUS) {
+  const uniqueMetricKeys = Array.from(new Set(metricKeys))
+  if (data.length === 0 || uniqueMetricKeys.length === 0) return data
+  const radius = Math.max(0, Math.floor(smoothingRadius))
+
+  const next = data.map(point => ({ ...point }))
+  uniqueMetricKeys.forEach(key => {
+    const finiteIndexes = data
+      .map((point, index) => ({ value: point[key], index }))
+      .filter((item): item is { value: number; index: number } => typeof item.value === 'number' && Number.isFinite(item.value))
+      .map(item => item.index)
+
+    if (radius < 1 || finiteIndexes.length < (radius * 2) + 1) {
+      finiteIndexes.forEach(index => {
+        next[index][smoothedGraphMetricKey(key)] = data[index][key]
+      })
+      return
+    }
+
+    const firstFiniteIndex = finiteIndexes[0]
+    const lastFiniteIndex = finiteIndexes[finiteIndexes.length - 1]
+    finiteIndexes.forEach(index => {
+      next[index][smoothedGraphMetricKey(key)] = index === firstFiniteIndex || index === lastFiniteIndex
+        ? data[index][key]
+        : smoothedMetricValue(data, key, index, radius)
+    })
+  })
+
+  return next
+}
+
+export function buildArtStdDevBandData(
+  data: MetricsHistoryPoint[],
+  smoothingRadius = MIN_GRAPH_SMOOTHING_RADIUS,
+  sourceKey = 'avgMs',
+  bandKey = ART_STD_DEV_BAND_KEY,
+  deviationKey = ART_STD_DEV_VALUE_KEY,
+) {
+  if (data.length === 0) return data
+  const windowSize = rollingArtStdDevWindowForRadius(smoothingRadius)
+  const halfWindow = Math.floor(windowSize / 2)
+
+  return data.map((point, index) => {
+    const centerValue = point[sourceKey]
+    if (typeof centerValue !== 'number' || !Number.isFinite(centerValue)) {
+      return point
+    }
+
+    const values: number[] = []
+    const start = Math.max(0, index - halfWindow)
+    const end = Math.min(data.length - 1, index + halfWindow)
+    for (let sampleIndex = start; sampleIndex <= end; sampleIndex += 1) {
+      const value = data[sampleIndex]?.[sourceKey]
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        values.push(value)
+      }
+    }
+
+    if (values.length < 2) return point
+
+    const mean = values.reduce((sum, value) => sum + value, 0) / values.length
+    const variance = values.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / values.length
+    const stdDev = Math.sqrt(variance)
+    const lower = Math.max(0, roundChartValue(mean - stdDev))
+    const upper = Math.max(lower, roundChartValue(mean + stdDev))
+
+    return {
+      ...point,
+      [bandKey]: [lower, upper],
+      [deviationKey]: roundChartValue(stdDev),
+    }
+  })
+}
+
 export function responseTimeDataWithoutNetworkLatency(data: MetricsHistoryPoint[], latencyKeys: string[], groupNames: string[]) {
   if (latencyKeys.length === 0) return data
   const responseKeys = responseTimeMetricKeys(groupNames)
@@ -393,6 +628,15 @@ export function chartMetricKeys(
   selectedRouteLatencyKey?: string,
 ) {
   let keys: string[]
+  if (isLoadImpactHeatmapChart(chart)) {
+    return []
+  }
+  if (isLoadImpactPercentilesChart(chart)) {
+    keys = loadImpactPercentileMetricRows.map(row => row.key)
+    const overlays = normalizeOverlayMetricKeys(chart, includeVuserOverlay, overlayMetricKeys)
+      .filter(key => !keys.includes(key))
+    return overlays.length > 0 ? [...keys, ...overlays] : keys
+  }
   if (isLoadImpactChart(chart)) {
     keys = ['average', 'min', 'max']
     const overlays = normalizeOverlayMetricKeys(chart, includeVuserOverlay, overlayMetricKeys)
@@ -449,6 +693,16 @@ export function chartMetricRows(
   selectedRouteLatencyKey?: string,
 ): ChartMetricRow[] {
   let rows: ChartMetricRow[]
+  if (isLoadImpactHeatmapChart(chart)) {
+    return []
+  }
+  if (isLoadImpactPercentilesChart(chart)) {
+    rows = loadImpactPercentileMetricRows
+    const overlayRows = normalizeOverlayMetricKeys(chart, includeVuserOverlay, overlayMetricKeys)
+      .filter(key => !rows.some(row => row.key === key))
+      .map(key => overlayMetricRows[key])
+    return overlayRows.length > 0 ? [...rows, ...overlayRows] : rows
+  }
   if (isLoadImpactChart(chart)) {
     const unit = chart.loadImpactMetric?.unit
     rows = [
@@ -473,12 +727,12 @@ export function chartMetricRows(
       break
     case 'latency':
       rows = [
-        { key: 'avgMs', label: 'Total', color: 'var(--text-muted)', unit: 'ms' },
-        ...groupNames.map((name, index) => ({ key: `${name}_avgMs`, label: name, color: groupColors[index % groupColors.length], unit: 'ms' })),
-        { key: 'p50', label: 'P50', color: 'var(--chart-5)', unit: 'ms' },
-        { key: 'p90', label: 'P90', color: 'var(--chart-3)', unit: 'ms' },
-        { key: 'p95', label: 'P95', color: 'var(--chart-2)', unit: 'ms' },
-        { key: 'p99', label: 'P99', color: 'var(--chart-4)', unit: 'ms' },
+        { key: 'avgMs', label: 'Total', color: 'var(--text-muted)', unit: 'ms', kind: 'transaction' },
+        ...groupNames.map((name, index) => ({ key: `${name}_avgMs`, label: name, color: groupColors[index % groupColors.length], unit: 'ms', kind: 'transaction' as const })),
+        { key: 'p50', label: 'P50', color: 'var(--chart-5)', unit: 'ms', kind: 'percentile' },
+        { key: 'p90', label: 'P90', color: 'var(--chart-3)', unit: 'ms', kind: 'percentile' },
+        { key: 'p95', label: 'P95', color: 'var(--chart-2)', unit: 'ms', kind: 'percentile' },
+        { key: 'p99', label: 'P99', color: 'var(--chart-4)', unit: 'ms', kind: 'percentile' },
       ]
       break
     case 'errors':
@@ -512,6 +766,29 @@ export function chartMetricRows(
   return overlayRows.length > 0 ? [...rows, ...overlayRows] : rows
 }
 
+export function chartMetricLinePresentation(row: ChartMetricRow): ChartMetricLinePresentation {
+  if (row.kind === 'transaction') {
+    return {
+      role: 'transaction',
+      strokeWidth: row.key === 'avgMs' ? 2.5 : 2.2,
+      strokeOpacity: 1,
+    }
+  }
+  if (row.kind === 'percentile') {
+    return {
+      role: 'percentile',
+      strokeWidth: 1.25,
+      strokeDasharray: row.key === 'p95' || row.key === 'p99' ? '4 2' : '3 3',
+      strokeOpacity: 0.68,
+    }
+  }
+  return {
+    role: 'default',
+    strokeWidth: 2,
+    strokeOpacity: 1,
+  }
+}
+
 export function chartMetricSummary(data: MetricsHistoryPoint[], key: string): ChartMetricSummary {
   const values = data
     .map(point => point[key])
@@ -540,8 +817,14 @@ export function visibleMetricDomain(data: MetricsHistoryPoint[], metricKeys: str
 
   const values = data.flatMap(point => (
     Object.entries(point)
-      .filter(([key, value]) => visibleKeySet.has(key) && typeof value === 'number' && Number.isFinite(value))
-      .map(([, value]) => value as number)
+      .filter(([key]) => visibleKeySet.has(key))
+      .flatMap(([, value]) => (
+        Array.isArray(value)
+          ? value.filter((item): item is number => typeof item === 'number' && Number.isFinite(item))
+          : typeof value === 'number' && Number.isFinite(value)
+            ? [value]
+            : []
+      ))
   ))
 
   if (values.length === 0) return fallbackDomain
@@ -587,6 +870,37 @@ export function loadImpactChartDataForRow(row: LoadImpactRow | undefined, rows: 
   })
 }
 
+export function loadImpactPercentileChartData(rows: LoadImpactRow[]): MetricsHistoryPoint[] {
+  const percentileRows = new Map(LOAD_IMPACT_PERCENTILE_KEYS.map(key => [
+    key,
+    rows.find(row => row.metric.id === key),
+  ]))
+  const referenceRow = LOAD_IMPACT_PERCENTILE_KEYS
+    .map(key => percentileRows.get(key))
+    .find((row): row is LoadImpactRow => Boolean(row))
+  if (!referenceRow) return []
+
+  const avgRow = rows.find(candidate => candidate.metric.id === 'avgMs')
+  const tpsRow = rows.find(candidate => candidate.metric.id === 'tps')
+  return referenceRow.cells.map((cell): MetricsHistoryPoint => {
+    const midpointVusers = cell.bucket.minVusers + ((cell.bucket.maxVusers - cell.bucket.minVusers) / 2)
+    return {
+      time: cell.bucket.label,
+      vusers: midpointVusers,
+      tps: loadImpactMetricValueForBucket(tpsRow, cell.bucket.id) ?? 0,
+      avgMs: loadImpactMetricValueForBucket(avgRow, cell.bucket.id) ?? 0,
+      errorPct: 0,
+      p50: loadImpactMetricValueForBucket(percentileRows.get('p50'), cell.bucket.id) ?? 0,
+      p90: loadImpactMetricValueForBucket(percentileRows.get('p90'), cell.bucket.id) ?? 0,
+      p95: loadImpactMetricValueForBucket(percentileRows.get('p95'), cell.bucket.id) ?? 0,
+      p99: loadImpactMetricValueForBucket(percentileRows.get('p99'), cell.bucket.id) ?? 0,
+      bucketMinVusers: cell.bucket.minVusers,
+      bucketMaxVusers: cell.bucket.maxVusers,
+      sourceSamples: cell.sampleCount,
+    }
+  })
+}
+
 export function graphCsvForChart(
   chart: ChartConfig,
   data: MetricsHistoryPoint[],
@@ -597,7 +911,7 @@ export function graphCsvForChart(
   routeLatencyMode: RouteLatencyMode = 'total',
   selectedRouteLatencyKey?: string,
 ) {
-  const firstColumn = isLoadImpactChart(chart) ? 'load' : 'time'
+  const firstColumn = isLoadImpactChart(chart) || isLoadImpactPercentilesChart(chart) ? 'load' : 'time'
   const keys = [firstColumn, ...chartMetricKeys(chart, groupNames, latencyKeys, includeVuserOverlay, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey)]
   const rows = [
     keys.map(escapeCsvCell).join(','),

@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import SwaggerDocsPage from './SwaggerDocsPage'
 import { parseSwaggerDocument } from './swaggerDocsParser'
 
@@ -15,11 +16,22 @@ function setInputValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+function TopbarContributionHarness() {
+  const contribution = useActiveTopbarContribution()
+  return (
+    <div data-testid="topbar-contribution">
+      {contribution?.titleNode || contribution?.title}
+      {contribution?.controls}
+    </div>
+  )
+}
+
 describe('SwaggerDocsPage', () => {
   let container: HTMLDivElement
   let root: Root
 
   beforeEach(() => {
+    window.history.replaceState(null, '', '/')
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -31,6 +43,26 @@ describe('SwaggerDocsPage', () => {
     })
     container.remove()
   })
+
+  async function renderSwaggerDocsPage() {
+    await act(async () => {
+      root.render(
+        <TopbarContributionProvider>
+          <TopbarContributionHarness />
+          <SwaggerDocsPage />
+        </TopbarContributionProvider>,
+      )
+    })
+  }
+
+  function topbarText() {
+    return container.querySelector('[data-testid="topbar-contribution"]')?.textContent || ''
+  }
+
+  function findTopbarButton(label: string) {
+    const topbar = container.querySelector('[data-testid="topbar-contribution"]')
+    return Array.from(topbar?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === label)
+  }
 
   it('parses operation details from generated OpenAPI YAML', () => {
     const parsed = parseSwaggerDocument(`openapi: 3.0.3
@@ -80,11 +112,19 @@ paths:
   })
 
   it('renders a searchable API list with endpoint details', async () => {
-    await act(async () => {
-      root.render(<SwaggerDocsPage />)
-    })
+    await renderSwaggerDocsPage()
 
     expect(container.textContent).toContain('Swagger Docs')
+    expect(topbarText()).toContain('Swagger Docs')
+    expect(topbarText()).toContain('General')
+    expect(topbarText()).toContain('MCP Server')
+    expect(topbarText()).toContain('Quick Start')
+    expect(topbarText()).toContain('Authentication')
+    expect(topbarText()).toContain('Endpoint Map')
+    expect(topbarText()).toContain('Swagger')
+    expect(topbarText()).toContain('Repo Guide')
+    expect(findTopbarButton('Swagger')?.getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelector('a[href="#/docs"]')).toBeNull()
     expect(container.textContent).toContain('APEX Load API')
     expect(container.textContent).toContain('API Reference')
     expect(container.textContent).toContain('Create Domain')
@@ -101,5 +141,12 @@ paths:
 
     expect(container.textContent).toContain('/api/v1/system/health')
     expect(container.textContent).not.toContain('Create Domain')
+
+    const authButton = findTopbarButton('Authentication')
+    expect(authButton).toBeDefined()
+    await act(async () => {
+      authButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(window.location.hash).toBe('#/docs?guide=authentication')
   })
 })

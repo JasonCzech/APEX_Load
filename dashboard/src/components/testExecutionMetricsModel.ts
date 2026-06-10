@@ -1,6 +1,7 @@
 import { IntervalSummaryRecord, LiveMetrics, MetricsHistoryPoint, ResourceSample, TestStatus } from '../types'
 import { resourceImpactHistoryValues } from './generatorImpact'
 import { routeLatencySeriesValuesForTarget } from './latencySeries'
+import { executionChartMinuteRangeValue, type ExecutionChartTimeRange } from './testExecutionChartZoomModel'
 
 export interface ExecutionChartSummary {
   avgTps: number
@@ -9,28 +10,41 @@ export interface ExecutionChartSummary {
   maxVusers: number
 }
 
+function rounded(value: number | undefined, precision = 10) {
+  return Math.round((value ?? 0) * precision) / precision
+}
+
+function roundedHistoryValues(values: Partial<MetricsHistoryPoint>) {
+  return Object.entries(values).reduce((acc, [key, value]) => {
+    if (typeof value === 'number') {
+      acc[key] = rounded(value)
+    }
+    return acc
+  }, {} as Record<string, number>)
+}
+
 export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHistoryPoint {
   const point: MetricsHistoryPoint = {
     time: new Date(metric.timestamp).toLocaleTimeString(),
     timestampMs: Date.parse(metric.timestamp),
     vusers: metric.active_vusers,
-    tps: metric.tps,
+    tps: rounded(metric.tps),
     targetTps: metric.target_tps,
-    avgMs: metric.avg_response_ms,
-    errorPct: metric.error_pct || 0,
-    p50: metric.p50_ms,
-    p90: metric.p90_ms,
-    p95: metric.p95_ms,
-    p99: metric.p99_ms,
-    cpuProcess: metric.resources?.cpu_process_pct,
-    cpuFree: metric.resources?.cpu_free_pct,
-    memProcess: metric.resources?.mem_process_mb,
-    memFree: metric.resources?.mem_free_mb,
-    netSent: metric.resources?.net_sent_kbps,
-    netRecv: metric.resources?.net_recv_kbps,
-    diskRead: metric.resources?.disk_read_kbps,
-    diskWrite: metric.resources?.disk_write_kbps,
-    ...resourceImpactHistoryValues(metric.resources),
+    avgMs: rounded(metric.avg_response_ms),
+    errorPct: rounded(metric.error_pct || 0, 100),
+    p50: rounded(metric.p50_ms),
+    p90: rounded(metric.p90_ms),
+    p95: rounded(metric.p95_ms),
+    p99: rounded(metric.p99_ms),
+    cpuProcess: rounded(metric.resources?.cpu_process_pct),
+    cpuFree: rounded(metric.resources?.cpu_free_pct),
+    memProcess: rounded(metric.resources?.mem_process_mb),
+    memFree: rounded(metric.resources?.mem_free_mb),
+    netSent: rounded(metric.resources?.net_sent_kbps),
+    netRecv: rounded(metric.resources?.net_recv_kbps),
+    diskRead: rounded(metric.resources?.disk_read_kbps),
+    diskWrite: rounded(metric.resources?.disk_write_kbps),
+    ...roundedHistoryValues(resourceImpactHistoryValues(metric.resources)),
   }
 
   const jmsTransactions = Object.values(metric.transactions ?? {}).filter((tx) => tx.dependency_type?.startsWith('jms_') && tx.server_telemetry)
@@ -62,9 +76,18 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
 
   if (metric.groups) {
     Object.entries(metric.groups).forEach(([name, groupMetric]) => {
-      point[`${name}_tps`] = groupMetric.tps
-      point[`${name}_avgMs`] = groupMetric.avg_response_ms
+      point[`${name}_tps`] = rounded(groupMetric.tps)
+      point[`${name}_avgMs`] = rounded(groupMetric.avg_response_ms)
       point[`${name}_vusers`] = groupMetric.vusers
+      point[`${name}_transactions`] = groupMetric.transactions
+      point[`${name}_errors`] = groupMetric.errors
+      point[`${name}_targetTps`] = groupMetric.target_tps
+      point[`${name}_p50`] = rounded(groupMetric.p50_ms)
+      point[`${name}_p90`] = rounded(groupMetric.p90_ms)
+      point[`${name}_p95`] = rounded(groupMetric.p95_ms)
+      point[`${name}_p99`] = rounded(groupMetric.p99_ms)
+      const attempts = (groupMetric.transactions ?? 0) + (groupMetric.errors ?? 0)
+      point[`${name}_errorPct`] = attempts > 0 ? rounded((groupMetric.errors ?? 0) / attempts * 100, 100) : 0
     })
   }
 
@@ -138,6 +161,22 @@ export function mapArchiveSummarySamples(summaries: IntervalSummaryRecord[] | un
         p90: summary.p90_ms,
         p95: summary.p95_ms,
         p99: summary.p99_ms,
+      }
+      if (summary.groups) {
+        Object.entries(summary.groups).forEach(([name, groupMetric]) => {
+          point[`${name}_tps`] = groupMetric.tps
+          point[`${name}_avgMs`] = groupMetric.avg_response_ms
+          point[`${name}_vusers`] = groupMetric.vusers
+          point[`${name}_transactions`] = groupMetric.transactions
+          point[`${name}_errors`] = groupMetric.errors
+          point[`${name}_targetTps`] = groupMetric.target_tps
+          point[`${name}_p50`] = groupMetric.p50_ms
+          point[`${name}_p90`] = groupMetric.p90_ms
+          point[`${name}_p95`] = groupMetric.p95_ms
+          point[`${name}_p99`] = groupMetric.p99_ms
+          const attempts = (groupMetric.transactions ?? 0) + (groupMetric.errors ?? 0)
+          point[`${name}_errorPct`] = attempts > 0 ? (groupMetric.errors ?? 0) / attempts * 100 : 0
+        })
       }
       summary.latency?.targets?.forEach((target) => {
         Object.assign(point, routeLatencySeriesValuesForTarget(target))
@@ -296,7 +335,7 @@ function addRelativeRunTime(points: MetricsHistoryPoint[]): MetricsHistoryPoint[
 
 export function filterExecutionChartData(
   chartData: MetricsHistoryPoint[],
-  timeRange: '3m' | '10m' | 'all' | 'custom',
+  timeRange: ExecutionChartTimeRange,
   zoomRange: { left: string | number; right: string | number } | null,
 ): MetricsHistoryPoint[] {
   if (timeRange === 'custom' && zoomRange) {
@@ -311,10 +350,11 @@ export function filterExecutionChartData(
     return chartData
   }
 
-  const windowMs = timeRange === '3m' ? 180_000 : 600_000
+  const minutes = executionChartMinuteRangeValue(timeRange) ?? 10
+  const windowMs = minutes * 60_000
   const newestTimestamp = [...chartData].reverse().find(point => typeof point.timestampMs === 'number')?.timestampMs
   if (newestTimestamp === undefined) {
-    const approximatePoints = timeRange === '3m' ? 180 : 600
+    const approximatePoints = minutes * 60
     return chartData.slice(-approximatePoints)
   }
 

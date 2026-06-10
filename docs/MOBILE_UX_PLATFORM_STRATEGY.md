@@ -235,9 +235,9 @@ The existing plans define tactical phases. This section maps them to the strateg
 
 ### Stage 5: TrueClient Import (Mobile Emulation Plan Phase 4)
 - `pkg/convert/trueclient` converter
-- MVP implemented for `TruClientMobileWeb` LoadRunner ZIP archives
+- MVP implemented for `TruClientMobileWeb` enterprise script archive ZIPs
 - Step-to-action mapping for navigate, click, fill, select, wait, conservative verify assertions, transaction-preserved names, and simple decomposed JavaScript fill/click statements including jQuery `.attr('value', ...)` and `.trigger('click')` forms
-- Device profile extraction from LoadRunner runtime settings
+- Device profile extraction from source runtime settings
 
 **Evidence pending:** fixture-backed hardening for less common object-identification shapes and broader replay-validation coverage once representative TrueClient MobileWeb archives are available. Simple TruClient JavaScript fill/click, jQuery value/attr/trigger, scroll, and location-navigation statements now map to browser DSL actions, reducing previous review-only repair paths.
 

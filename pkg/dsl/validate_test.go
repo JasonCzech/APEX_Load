@@ -62,9 +62,9 @@ func TestValidateScriptIssues_ErrorMessageValidation(t *testing.T) {
 	assertIssue(t, issues, `actions[0] "Login Error": error_message requires value or params.format`)
 }
 
-func TestValidateScriptIssues_LoadRunnerEngineActionsDoNotRequireTarget(t *testing.T) {
+func TestValidateScriptIssues_SourceEngineActionsDoNotRequireTarget(t *testing.T) {
 	script := &Script{
-		Name:     "loadrunner-engine-actions",
+		Name:     "source-engine-actions",
 		Protocol: "http",
 		Config:   ScriptConfig{BaseURL: "https://example.test"},
 		Actions: []Action{{
@@ -73,7 +73,7 @@ func TestValidateScriptIssues_LoadRunnerEngineActionsDoNotRequireTarget(t *testi
 			Params: map[string]any{"function": "my_helper"},
 		}, {
 			Name:   "timer",
-			Type:   "loadrunner_timer",
+			Type:   "source_timer",
 			Params: map[string]any{"function": "lr_start_timer"},
 		}},
 	}

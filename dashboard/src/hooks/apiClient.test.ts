@@ -84,11 +84,11 @@ describe('dev preview API headers', () => {
     writeStoredDevViewMode('user')
     window.localStorage.setItem('apexload.activeProjectId', 'project-2')
 
-    await apiFetch('/scripts/import/loadrunner', { method: 'POST', body: new FormData() })
+    await apiFetch('/scripts/import/enterprise-script-archive', { method: 'POST', body: new FormData() })
 
     const init = fetchMock.mock.calls[0][1] as RequestInit
     const headers = init.headers as Headers
-    expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/scripts/import/loadrunner')
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/scripts/import/enterprise-script-archive')
     expect(headers.get('X-APEXLoad-Dev-View')).toBe('user')
     expect(headers.get('X-APEXLoad-Dev-Project-ID')).toBe('project-2')
     expect(headers.has('Content-Type')).toBe(false)

@@ -228,14 +228,14 @@ func TestEngine_RunCountsExplicitTransactionsWithinScript(t *testing.T) {
 			RunLogic: dsl.RunLogicConfig{Iterations: 1},
 		},
 		Actions: []dsl.Action{
-			{Name: "Login", Type: "loadrunner_transaction", Params: map[string]any{"function": "lr_start_transaction"}},
+			{Name: "Login", Type: "source_transaction", Params: map[string]any{"function": "lr_start_transaction"}},
 			{Name: "login-page", Type: "request", Target: "/login"},
-			{Name: "Login", Type: "loadrunner_transaction", Params: map[string]any{"function": "lr_end_transaction"}},
-			{Name: "Checkout", Type: "loadrunner_transaction", Params: map[string]any{"function": "lr_start_transaction"}},
+			{Name: "Login", Type: "source_transaction", Params: map[string]any{"function": "lr_end_transaction"}},
+			{Name: "Checkout", Type: "source_transaction", Params: map[string]any{"function": "lr_start_transaction"}},
 			{Name: "cart", Type: "request", Target: "/cart"},
 			{Name: "payment", Type: "request", Target: "/payment"},
 			{Name: "confirm", Type: "request", Target: "/confirm"},
-			{Name: "Checkout", Type: "loadrunner_transaction", Params: map[string]any{"function": "lr_end_transaction"}},
+			{Name: "Checkout", Type: "source_transaction", Params: map[string]any{"function": "lr_end_transaction"}},
 		},
 	}
 	e, err := New(Config{Script: script, VUsers: 1, Duration: time.Second})

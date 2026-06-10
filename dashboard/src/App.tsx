@@ -10,6 +10,7 @@ import DashboardPage, { type DashboardSnapshotAudience } from './components/Dash
 import TablePaginationManager from './components/TablePaginationManager'
 import { type AppView, parseAppViewFromHash, viewToLocationHash } from './appRouting'
 import { appendTelemetryDiagnostic } from './components/monitoringTelemetryDiagnostics'
+import { mapExecutionMetricToHistoryPoint } from './components/testExecutionMetricsModel'
 import AuthGate from './components/AuthGate'
 import { useAuthStatus } from './hooks/useAuthStatus'
 import { ProjectProvider } from './hooks/ProjectProvider'
@@ -171,35 +172,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const handleWSMessage = useCallback((msg: WSMessage) => {
     if (msg.type === 'metrics_update' && msg.data && msg.test_id && msg.timestamp) {
       const testId = msg.test_id
-      const point: MetricsHistoryPoint = {
-        time: new Date(msg.timestamp).toLocaleTimeString(),
-        timestampMs: Date.parse(msg.timestamp),
-        vusers: msg.data.active_vusers,
-        tps: Math.round(msg.data.tps * 10) / 10,
-        avgMs: Math.round(msg.data.avg_response_ms * 10) / 10,
-        errorPct: Math.round(msg.data.error_pct * 100) / 100,
-        p50: Math.round(msg.data.p50_ms * 10) / 10,
-        p90: Math.round(msg.data.p90_ms * 10) / 10,
-        p99: Math.round(msg.data.p99_ms * 10) / 10,
-      }
-      if (msg.data.groups) {
-        for (const [name, gm] of Object.entries(msg.data.groups)) {
-          point[`${name}_tps`] = Math.round(gm.tps * 10) / 10
-          point[`${name}_avgMs`] = Math.round(gm.avg_response_ms * 10) / 10
-          point[`${name}_vusers`] = gm.vusers
-        }
-      }
-      if (msg.data.resources) {
-        const r = msg.data.resources
-        point.cpuProcess = Math.round(r.cpu_process_pct * 10) / 10
-        point.cpuFree = Math.round(r.cpu_free_pct * 10) / 10
-        point.memProcess = Math.round(r.mem_process_mb * 10) / 10
-        point.memFree = Math.round(r.mem_free_mb * 10) / 10
-        point.netSent = Math.round(r.net_sent_kbps * 10) / 10
-        point.netRecv = Math.round(r.net_recv_kbps * 10) / 10
-        point.diskRead = Math.round(r.disk_read_kbps * 10) / 10
-        point.diskWrite = Math.round(r.disk_write_kbps * 10) / 10
-      }
+      const point = mapExecutionMetricToHistoryPoint({ ...msg.data, timestamp: String(msg.timestamp) })
       setMetricsHistory((prev) => {
         const existing = prev[testId] || []
         const updated = [...existing, point].slice(-300)
@@ -742,7 +715,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             />
           )}
           {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} />}
-          {view.page === 'docs' && <ApiGuidePage onNavigate={handleNavigate} effectiveAccessResources={effectiveAccessResources} />}
+          {view.page === 'docs' && <ApiGuidePage activePage={view.guidePage} onNavigate={handleNavigate} effectiveAccessResources={effectiveAccessResources} />}
           {view.page === 'swagger' && <SwaggerDocsPage />}
           {view.page === 'repository-guide' && <RepositoryGuidePage />}
           {view.page === 'repository' && (

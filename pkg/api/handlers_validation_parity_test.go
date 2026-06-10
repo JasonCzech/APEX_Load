@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
+	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -162,7 +162,7 @@ func TestValidateScriptTreatsStreamingSettingsAsExecutable(t *testing.T) {
 		t.Fatalf("warnings = %#v, want no streaming compatibility warning", warnings)
 	}
 	parity := extractValidationRuntimeSettingParity(t, resp.Body.Bytes())
-	if len(parity) != 1 || parity[0].ID != "streaming" || parity[0].Status != loadrunner.RuntimeSettingStatusExecuted {
+	if len(parity) != 1 || parity[0].ID != "streaming" || parity[0].Status != enterprisearchive.RuntimeSettingStatusExecuted {
 		t.Fatalf("runtime_settings_parity = %#v, want executable streaming entry", parity)
 	}
 }
@@ -223,22 +223,22 @@ func TestScriptValidationIncludesRuntimeSettingParityForImportedDraftsAndStoredS
 		Actions: []dsl.Action{{Name: "Capture current page", Type: "browser_screenshot"}},
 		Metadata: &dsl.ScriptMetadata{
 			Import: &dsl.ImportMetadata{
-				Source: "loadrunner",
+				Source: "enterprise_script_archive",
 				Preserved: map[string]any{
-					"runtime_settings_parity": []loadrunner.RuntimeSettingParityEntry{
-						{ID: "run_logic_iterations", Area: "Run Logic", Concept: "Iterations", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
-						{ID: "run_logic_auto_transactions", Area: "Run Logic", Concept: "Auto-transactions", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
-						{ID: "logging", Area: "Logging", Concept: "Log level, error-only, and extended logging options", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
-						{ID: "browser_download_resources_recorded", Area: "Browser Emulation", Concept: "Download resources = recorded", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
-						{ID: "streaming", Area: "Streaming", Concept: "Adaptive or fixed playback settings", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
+					"runtime_settings_parity": []enterprisearchive.RuntimeSettingParityEntry{
+						{ID: "run_logic_iterations", Area: "Run Logic", Concept: "Iterations", Status: enterprisearchive.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
+						{ID: "run_logic_auto_transactions", Area: "Run Logic", Concept: "Auto-transactions", Status: enterprisearchive.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
+						{ID: "logging", Area: "Logging", Concept: "Log level, error-only, and extended logging options", Status: enterprisearchive.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
+						{ID: "browser_download_resources_recorded", Area: "Browser Emulation", Concept: "Download resources = recorded", Status: enterprisearchive.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
+						{ID: "streaming", Area: "Streaming", Concept: "Adaptive or fixed playback settings", Status: enterprisearchive.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
 					},
-					"runtime_settings_migration_readiness": &loadrunner.RuntimeSettingMigrationReadiness{
+					"runtime_settings_migration_readiness": &enterprisearchive.RuntimeSettingMigrationReadiness{
 						ScorePct:         0,
 						Blocked:          false,
-						BlockingStatuses: []loadrunner.RuntimeSettingStatus{},
-						BlockingSettings: []loadrunner.RuntimeSettingParityEntry{},
-						Policy: loadrunner.RuntimeSettingMigrationPolicy{
-							BlockStatuses: []loadrunner.RuntimeSettingStatus{loadrunner.RuntimeSettingStatusPartial, loadrunner.RuntimeSettingStatusCompatibilityOnly},
+						BlockingStatuses: []enterprisearchive.RuntimeSettingStatus{},
+						BlockingSettings: []enterprisearchive.RuntimeSettingParityEntry{},
+						Policy: enterprisearchive.RuntimeSettingMigrationPolicy{
+							BlockStatuses: []enterprisearchive.RuntimeSettingStatus{enterprisearchive.RuntimeSettingStatusPartial, enterprisearchive.RuntimeSettingStatusCompatibilityOnly},
 						},
 					},
 				},
@@ -294,7 +294,7 @@ func TestScriptValidationIncludesRuntimeSettingParityForImportedDraftsAndStoredS
 			if readiness.Blocked || readiness.ScorePct != 100 {
 				t.Fatalf("migration_readiness = %#v, want ready score=100", readiness)
 			}
-			if len(readiness.Policy.BlockStatuses) != 2 || readiness.Policy.BlockStatuses[0] != loadrunner.RuntimeSettingStatusPartial || readiness.Policy.BlockStatuses[1] != loadrunner.RuntimeSettingStatusCompatibilityOnly {
+			if len(readiness.Policy.BlockStatuses) != 2 || readiness.Policy.BlockStatuses[0] != enterprisearchive.RuntimeSettingStatusPartial || readiness.Policy.BlockStatuses[1] != enterprisearchive.RuntimeSettingStatusCompatibilityOnly {
 				t.Fatalf("migration_readiness.policy = %#v, want partial + compatibility_only", readiness.Policy)
 			}
 		})
@@ -436,11 +436,11 @@ func extractValidationWarnings(t *testing.T, body []byte) []string {
 	return warnings
 }
 
-func extractValidationRuntimeSettingParity(t *testing.T, body []byte) []loadrunner.RuntimeSettingParityEntry {
+func extractValidationRuntimeSettingParity(t *testing.T, body []byte) []enterprisearchive.RuntimeSettingParityEntry {
 	t.Helper()
 
 	var payload struct {
-		RuntimeSettingsParity []loadrunner.RuntimeSettingParityEntry `json:"runtime_settings_parity"`
+		RuntimeSettingsParity []enterprisearchive.RuntimeSettingParityEntry `json:"runtime_settings_parity"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -460,11 +460,11 @@ func extractValidationRuntimeSettingStatusCounts(t *testing.T, body []byte) map[
 	return payload.RuntimeSettingsStatusCounts
 }
 
-func extractValidationMigrationReadiness(t *testing.T, body []byte) *loadrunner.RuntimeSettingMigrationReadiness {
+func extractValidationMigrationReadiness(t *testing.T, body []byte) *enterprisearchive.RuntimeSettingMigrationReadiness {
 	t.Helper()
 
 	var payload struct {
-		MigrationReadiness *loadrunner.RuntimeSettingMigrationReadiness `json:"migration_readiness"`
+		MigrationReadiness *enterprisearchive.RuntimeSettingMigrationReadiness `json:"migration_readiness"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
+	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -111,12 +111,12 @@ func buildRuntimeSettingsSupportResponse(now time.Time) RuntimeSettingsSupportRe
 				ID:        "streaming-media-runtime",
 				Decision:  "executed",
 				Status:    "decided",
-				Rationale: "APEX Load now maps LoadRunner-style streaming settings into HTTP runtime pacing for media-like responses, including startup buffer delay, fixed bitrate shaping, and adaptive bitrate estimation.",
-				Evidence:  []string{"docs/COMPETITIVE_COMPARISON.md#loadrunner-rts-reference", "docs/RUNTIME_SETTINGS_PARITY.md", "/api/v1/runtime-settings/support-matrix"},
+				Rationale: "APEX Load now maps source streaming settings into HTTP runtime pacing for media-like responses, including startup buffer delay, fixed bitrate shaping, and adaptive bitrate estimation.",
+				Evidence:  []string{"docs/COMPETITIVE_COMPARISON.md#enterprise-archive-runtime-settings-reference", "docs/RUNTIME_SETTINGS_PARITY.md", "/api/v1/runtime-settings/support-matrix"},
 			},
 		},
 		Notes: []string{
-			"The unified matrix extends the LoadRunner Web HTTP/HTML RTS matrix with native browser, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, DevWeb, HAR, and JMeter-derived coverage.",
+			"The unified matrix extends the Enterprise Script Archive Web HTTP/HTML RTS matrix with native browser, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, DevWeb, HAR, and JMeter-derived coverage.",
 			"Scenario validation and queued-run creation use the same runtime review contract so compatibility-only and blocking settings are visible before execution.",
 			"Browser VUsers remain diagnostic canaries; real-browser density claims are governed by the browser benchmark evidence endpoint.",
 		},
@@ -125,23 +125,23 @@ func buildRuntimeSettingsSupportResponse(now time.Time) RuntimeSettingsSupportRe
 
 func runtimeSettingsSupportMatrix() []RuntimeSettingsSupportEntry {
 	matrix := make([]RuntimeSettingsSupportEntry, 0, 64)
-	for _, entry := range loadrunner.GetRTSSupportMatrix() {
+	for _, entry := range enterprisearchive.GetRTSSupportMatrix() {
 		matrix = append(matrix, RuntimeSettingsSupportEntry{
-			ID:                  "loadrunner_web_" + entry.ID,
-			Protocols:           []string{"http", "browser", "loadrunner_web_http_html"},
-			Source:              "loadrunner_web_http_html",
+			ID:                  "source_web_" + entry.ID,
+			Protocols:           []string{"http", "browser", "source_web_http_html"},
+			Source:              "source_web_http_html",
 			Area:                entry.Area,
 			Concept:             entry.Concept,
 			Fields:              cloneStringSlice(entry.Fields),
 			Status:              string(entry.Status),
 			ExecutionScope:      "imported Web HTTP/HTML and TruClient Mobile Web runtime settings mapped into APEX Load DSL/runtime fields",
-			ImportSources:       []string{"LoadRunner Web HTTP/HTML", "TruClient Mobile Web"},
-			Evidence:            []string{"pkg/convert/loadrunner/rts_support.go", "docs/COMPETITIVE_COMPARISON.md#loadrunner-rts-reference"},
+			ImportSources:       []string{"Enterprise Script Archive Web HTTP/HTML", "TruClient Mobile Web"},
+			Evidence:            []string{"pkg/convert/enterprisearchive/rts_support.go", "docs/COMPETITIVE_COMPARISON.md#enterprise-archive-runtime-settings-reference"},
 			RecommendedWorkflow: "Import, validate runtime parity, replay, then approve or export the RTS report.",
 			Notes:               entry.Notes,
 		})
 	}
-	matrix = append(matrix, vugenWeb2RuntimeSupportEntries()...)
+	matrix = append(matrix, web2BrowserProfileRuntimeSupportEntries()...)
 	matrix = append(matrix, nativeRuntimeSupportEntries()...)
 	sort.SliceStable(matrix, func(i, j int) bool {
 		if strings.Join(matrix[i].Protocols, ",") == strings.Join(matrix[j].Protocols, ",") {
@@ -152,50 +152,50 @@ func runtimeSettingsSupportMatrix() []RuntimeSettingsSupportEntry {
 	return matrix
 }
 
-func vugenWeb2RuntimeSupportEntries() []RuntimeSettingsSupportEntry {
-	loadRunnerEntries := loadrunner.GetRTSSupportMatrix()
-	entries := make([]RuntimeSettingsSupportEntry, 0, len(loadRunnerEntries)+2)
-	for _, entry := range loadRunnerEntries {
+func web2BrowserProfileRuntimeSupportEntries() []RuntimeSettingsSupportEntry {
+	enterpriseArchiveEntries := enterprisearchive.GetRTSSupportMatrix()
+	entries := make([]RuntimeSettingsSupportEntry, 0, len(enterpriseArchiveEntries)+2)
+	for _, entry := range enterpriseArchiveEntries {
 		entries = append(entries, RuntimeSettingsSupportEntry{
-			ID:                  "vugen_web2_" + entry.ID,
-			Protocols:           []string{"browser", "vugen_web2", "trueclient2_web"},
-			Source:              "vugen_web2",
+			ID:                  "web2_browser_profile_" + entry.ID,
+			Protocols:           []string{"browser", "web2_browser_profile", "trueclient2_web"},
+			Source:              "web2_browser_profile",
 			Area:                entry.Area,
 			Concept:             entry.Concept,
 			Fields:              cloneStringSlice(entry.Fields),
 			Status:              string(entry.Status),
-			ExecutionScope:      "TruClient 2.0 - Web browser-profile runtime settings mapped into APEX Load browser, web runtime, logging, pacing, think-time, proxy, and capture config where executable.",
-			ImportSources:       []string{"TruClient 2.0 - Web", "VuGen Web 2.0"},
-			Evidence:            []string{"pkg/convert/loadrunner/converter_test.go::TestConvertZipProducesReviewDraftForTruClientWeb2Archive", "docs/COMPETITIVE_COMPARISON.md#vugen-web2-truclient"},
-			RecommendedWorkflow: "Import through LoadRunner ZIP acquisition, inspect the Web 2.0 review sections, run browser replay, then use the runtime report before promotion.",
+			ExecutionScope:      "Web 2.0 browser-profile runtime settings mapped into APEX Load browser, web runtime, logging, pacing, think-time, proxy, and capture config where executable.",
+			ImportSources:       []string{"C-based browser-profile archive", "source Web 2.0 browser profile"},
+			Evidence:            []string{"pkg/convert/enterprisearchive/converter_test.go::TestConvertZipProducesReviewDraftForTruClientWeb2Archive", "docs/COMPETITIVE_COMPARISON.md#web-20-browser-profile"},
+			RecommendedWorkflow: "Import through Enterprise Script Archive acquisition, inspect the Web 2.0 review sections, run browser replay, then use the runtime report before promotion.",
 			Notes:               entry.Notes,
 		})
 	}
 	entries = append(entries,
 		RuntimeSettingsSupportEntry{
-			ID:                  "vugen_web2_browser_replay_evidence",
-			Protocols:           []string{"browser", "vugen_web2", "trueclient2_web"},
-			Source:              "vugen_web2",
+			ID:                  "web2_browser_profile_browser_replay_evidence",
+			Protocols:           []string{"browser", "web2_browser_profile", "trueclient2_web"},
+			Source:              "web2_browser_profile",
 			Area:                "Browser Replay Evidence",
 			Concept:             "Screenshots, DOM summary, console entries, network entries, Core Web Vitals, and object-match diagnostics for Web 2.0 migration approval",
 			Fields:              []string{"browser_replay.events", "browser_replay.report", "actions[].metadata.source_*"},
 			Status:              "executed",
 			ExecutionScope:      "Replay/session evidence exported from the browser replay manager and used by authoring review flows.",
-			ImportSources:       []string{"TruClient 2.0 - Web", "VuGen Web 2.0"},
+			ImportSources:       []string{"C-based browser-profile archive", "source Web 2.0 browser profile"},
 			Evidence:            []string{"pkg/api/handlers_browser_replay_test.go", "dashboard/src/components/ScriptEditor.test.tsx"},
 			RecommendedWorkflow: "Capture browser replay evidence before approving or converting the Web 2.0 draft.",
 		},
 		RuntimeSettingsSupportEntry{
-			ID:                  "vugen_web2_http_conversion_readiness",
-			Protocols:           []string{"browser", "http", "vugen_web2", "trueclient2_web"},
-			Source:              "vugen_web2",
+			ID:                  "web2_browser_profile_http_conversion_readiness",
+			Protocols:           []string{"browser", "http", "web2_browser_profile", "trueclient2_web"},
+			Source:              "web2_browser_profile",
 			Area:                "Browser-To-HTTP Conversion",
 			Concept:             "Network capture, request eligibility, correlation/data-source repair, and canary-plus-protocol-load scenario guidance",
 			Fields:              []string{"browser_replay.events[].network_entries", "generated_http_script", "scenario_template"},
 			Status:              "executed",
 			ExecutionScope:      "Conversion is a governed review workflow; generated HTTP drafts still require validation, replay, and approval.",
-			ImportSources:       []string{"TruClient 2.0 - Web replay evidence"},
-			Evidence:            []string{"pkg/api/browser_to_http_conversion_test.go", "docs/COMPETITIVE_COMPARISON.md#vugen-web2-truclient"},
+			ImportSources:       []string{"Web 2.0 browser-profile replay evidence"},
+			Evidence:            []string{"pkg/api/browser_to_http_conversion_test.go", "docs/COMPETITIVE_COMPARISON.md#web-20-browser-profile"},
 			RecommendedWorkflow: "Keep the browser script as a canary, generate an HTTP draft from captured replay traffic, repair correlation/data issues, then assemble a paired scenario.",
 		},
 	)
@@ -226,7 +226,7 @@ func nativeRuntimeSupportEntries() []RuntimeSettingsSupportEntry {
 			Fields:              []string{"config.browser.download_resources", "metadata.import.preserved.recorded_resource_urls"},
 			Status:              "executed",
 			ExecutionScope:      "Runtime blocks recorded-only mode when metadata is unavailable to avoid false parity claims.",
-			ImportSources:       []string{"LoadRunner Web HTTP/HTML", "TruClient Mobile Web", "recorder"},
+			ImportSources:       []string{"Enterprise Script Archive Web HTTP/HTML", "TruClient Mobile Web", "recorder"},
 			Evidence:            []string{"pkg/protocol/browser/browser_test.go::TestBrowserProtocolDownloadResourcesRecordedRequiresMetadata", "pkg/api/runtime_settings_support_test.go::TestScenarioRuntimeSettingsValidationSurfacesCompatibilityAndBlockers"},
 			RecommendedWorkflow: "Use all/none for manually authored browser scripts unless recorded-resource URLs are preserved by import or recording.",
 		},
@@ -304,8 +304,8 @@ func nativeRuntimeSupportEntries() []RuntimeSettingsSupportEntry {
 			Fields:              []string{"config.database", "actions[].params.binds", "config.error_handling.snapshot_on_error"},
 			Status:              "executed",
 			ExecutionScope:      "Native database/sql execution path with SQLite fixture coverage and driver-governed project packaging.",
-			ImportSources:       []string{"JSON DSL", "LoadRunner database import"},
-			Evidence:            []string{"pkg/protocol/database/database_test.go", "docs/COMPETITIVE_COMPARISON.md#loadrunner-import-routing"},
+			ImportSources:       []string{"JSON DSL", "enterprise script archive database import"},
+			Evidence:            []string{"pkg/protocol/database/database_test.go", "docs/COMPETITIVE_COMPARISON.md#enterprise-script-archive-routing"},
 			RecommendedWorkflow: "Replay against non-production fixtures, keep read-only mode enabled for query checks, and export SQL/result evidence before approval.",
 		},
 		{
@@ -317,8 +317,8 @@ func nativeRuntimeSupportEntries() []RuntimeSettingsSupportEntry {
 			Fields:              []string{"config.network", "actions[].params", "config.error_handling.snapshot_on_error"},
 			Status:              "executed",
 			ExecutionScope:      "Native Linux network protocol execution against controlled endpoint fixtures.",
-			ImportSources:       []string{"JSON DSL", "LoadRunner network import"},
-			Evidence:            []string{"pkg/protocol/network/network_test.go", "docs/COMPETITIVE_COMPARISON.md#loadrunner-import-routing"},
+			ImportSources:       []string{"JSON DSL", "enterprise script archive network import"},
+			Evidence:            []string{"pkg/protocol/network/network_test.go", "docs/COMPETITIVE_COMPARISON.md#enterprise-script-archive-routing"},
 			RecommendedWorkflow: "Replay against local or allow-listed protocol fixtures, inspect transcript/record evidence, then approve endpoint policy.",
 		},
 		{
@@ -414,7 +414,7 @@ func runtimeSettingsProfilePresets() []RuntimeSettingsProfilePreset {
 		{
 			ID:                   "migration_replay",
 			Name:                 "Migration Replay",
-			Summary:              "High-evidence replay profile for LoadRunner/JMeter/HAR/DevWeb migration review.",
+			Summary:              "High-evidence replay profile for enterprise archive/JMeter/HAR/DevWeb migration review.",
 			RecommendedProtocols: []string{"http", "browser", "jmeter", "har", "devweb", "database", "network"},
 			RuntimeSettings: &RuntimeSettingsOverride{
 				Iterations:       &oneIteration,
@@ -429,10 +429,10 @@ func runtimeSettingsProfilePresets() []RuntimeSettingsProfilePreset {
 			ScenarioHints:     map[string]any{"duration": "2m", "requires_runtime_report": true},
 		},
 		{
-			ID:                   "vugen_web2_migration_review",
-			Name:                 "VuGen Web 2.0 Migration Review",
-			Summary:              "Replay-first profile for TruClient 2.0 - Web imports before approval or HTTP conversion.",
-			RecommendedProtocols: []string{"browser", "vugen_web2", "trueclient2_web"},
+			ID:                   "web2_browser_profile_migration_review",
+			Name:                 "Web 2.0 Browser Profile Review",
+			Summary:              "Replay-first profile for Web 2.0 browser-profile imports before approval or HTTP conversion.",
+			RecommendedProtocols: []string{"browser", "web2_browser_profile", "trueclient2_web"},
 			RuntimeSettings: &RuntimeSettingsOverride{
 				Iterations:       &oneIteration,
 				LogLevel:         "extended",
@@ -456,7 +456,7 @@ func runtimeSettingsProfilePresets() []RuntimeSettingsProfilePreset {
 				"requires_runtime_report": true,
 				"claim_policy":            "diagnostic_canary_only",
 			},
-			Evidence: []string{"docs/COMPETITIVE_COMPARISON.md#vugen-web2-truclient"},
+			Evidence: []string{"docs/COMPETITIVE_COMPARISON.md#web-20-browser-profile"},
 		},
 		{
 			ID:                   "browser_canary",

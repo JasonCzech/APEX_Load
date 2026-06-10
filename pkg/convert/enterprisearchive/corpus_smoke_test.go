@@ -1,4 +1,4 @@
-package loadrunner
+package enterprisearchive
 
 import (
 	"archive/zip"
@@ -58,13 +58,13 @@ func TestPinnedLRScriptsCorpusSmoke(t *testing.T) {
 			default:
 				result, err := ConvertZip(archive, ConvertOptions{PreserveTransactions: true, IncludeAssertions: true})
 				if err != nil {
-					t.Fatalf("LoadRunner ConvertZip returned error: %v", err)
+					t.Fatalf("EnterpriseArchive ConvertZip returned error: %v", err)
 				}
 				if result.Script == nil && result.ReviewArtifact == nil {
-					t.Fatalf("LoadRunner result has neither script nor review artifact: %#v", result)
+					t.Fatalf("EnterpriseArchive result has neither script nor review artifact: %#v", result)
 				}
 				if result.DetectedProtocol != nil {
-					counts[result.DetectedProtocol.CanonicalLoadRunnerProtocol]++
+					counts[result.DetectedProtocol.CanonicalSourceProtocol]++
 					assertCorpusProtocolPosture(t, dir, result)
 				}
 			}
@@ -129,7 +129,7 @@ func assertCorpusProtocolPosture(t *testing.T, dir string, result *ConvertResult
 	}
 	path := strings.ToLower(filepath.ToSlash(dir))
 	assert := func(canonical string, mode ImportMode, scriptExpected bool) {
-		if result.DetectedProtocol.CanonicalLoadRunnerProtocol != canonical || result.DetectedProtocol.ImportMode != mode {
+		if result.DetectedProtocol.CanonicalSourceProtocol != canonical || result.DetectedProtocol.ImportMode != mode {
 			t.Fatalf("detected protocol = %#v, want %s/%s", result.DetectedProtocol, canonical, mode)
 		}
 		if scriptExpected && result.Script == nil {

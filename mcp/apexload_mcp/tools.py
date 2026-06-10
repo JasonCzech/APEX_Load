@@ -107,7 +107,7 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
     EndpointTool("script_export", "POST", "/scripts/{id}/export", f"{WRITE} Export a script artifact from the controller.", True),
     EndpointTool("script_download", "GET", "/scripts/{id}/download", f"{READ} Download a script."),
     EndpointTool("script_runtime_settings_report", "GET", "/scripts/{id}/runtime-settings/report", f"{READ} Get script runtime settings report."),
-    EndpointTool("script_loadrunner_support_matrix", "GET", "/scripts/import/loadrunner/support-matrix", f"{READ} Get LoadRunner import support."),
+    EndpointTool("script_enterprise_archive_support_matrix", "GET", "/scripts/import/enterprise-script-archive/support-matrix", f"{READ} Get Enterprise Script Archive import support."),
     EndpointTool("script_jmeter_support_matrix", "GET", "/scripts/import/jmeter/support-matrix", f"{READ} Get JMeter import support."),
     EndpointTool("script_web_api_support_matrix", "GET", "/scripts/web-api/support-matrix", f"{READ} Get Web/API execution support."),
     EndpointTool("script_devweb_support_matrix", "GET", "/scripts/import/devweb/support-matrix", f"{READ} Get DevWeb import support."),
@@ -232,7 +232,7 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
 
 
 FILE_IMPORTERS = {
-    "loadrunner": "/scripts/import/loadrunner",
+    "enterprise_script_archive": "/scripts/import/enterprise-script-archive",
     "jmeter": "/scripts/import/jmeter",
     "devweb": "/scripts/import/devweb",
     "har": "/scripts/import/har",
@@ -241,7 +241,7 @@ FILE_IMPORTERS = {
 }
 
 VALIDATE_IMPORTERS = {
-    "loadrunner": "/scripts/import/loadrunner/validate",
+    "enterprise_script_archive": "/scripts/import/enterprise-script-archive/validate",
     "jmeter": "/scripts/import/jmeter/validate",
 }
 
@@ -337,7 +337,7 @@ def register_endpoint_tools(mcp: Any) -> None:
         options: dict[str, Any] | None = None,
         confirm: bool = False,
     ) -> str:
-        """Import a LoadRunner, JMeter, DevWeb, HAR, OpenAPI, or WSDL file. Mutates APEX Load and requires confirm=true."""
+        """Import an Enterprise Script Archive, JMeter, DevWeb, HAR, OpenAPI, or WSDL file. Mutates APEX Load and requires confirm=true."""
         return await run_file_import_tool(importer, file_path, options=options, confirm=confirm)
 
     async def script_validate_import_file(
@@ -345,7 +345,7 @@ def register_endpoint_tools(mcp: Any) -> None:
         file_path: str,
         options: dict[str, Any] | None = None,
     ) -> str:
-        """Validate a LoadRunner or JMeter file import without saving a script."""
+        """Validate an Enterprise Script Archive or JMeter file import without saving a script."""
         return await run_file_import_tool(importer, file_path, options=options, validate_only=True)
 
     mcp.tool(name="script_import_file", description=script_import_file.__doc__)(script_import_file)

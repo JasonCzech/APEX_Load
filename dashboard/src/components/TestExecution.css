@@ -1288,25 +1288,6 @@
   font-size: 0.76rem;
 }
 
-.chart-role-select {
-  min-width: 190px;
-  min-height: 32px;
-  padding: 6px 34px 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.chart-role-select:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.16);
-}
-
 .chart-reset-pill {
   border: 1px solid var(--border);
   background: var(--bg-secondary);
@@ -1625,6 +1606,69 @@
 .charts-grid.six-up .chart-card-checkbox span {
   max-width: 86px;
   white-space: normal;
+}
+
+.chart-series-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin: 6px 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
+}
+
+.chart-series-legend-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.chart-series-legend-group.percentiles {
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+}
+
+.chart-series-legend-heading {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.chart-series-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.chart-series-swatch {
+  width: 18px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  border: 0;
+  flex: 0 0 auto;
+}
+
+.chart-series-legend-item.percentile .chart-series-swatch {
+  height: 0;
+  border-top: 2px dashed currentColor;
+  background: transparent;
+}
+
+.chart-series-legend-item.band .chart-series-swatch {
+  height: 8px;
+  border: 1px solid color-mix(in srgb, var(--chart-4) 52%, transparent);
+  background: color-mix(in srgb, var(--chart-4) 16%, transparent);
 }
 
 .charts-grid.six-up .route-latency-card-controls {
@@ -2041,6 +2085,53 @@
   color: #ffffff;
 }
 
+.chart-y-axis-click-target {
+  cursor: help;
+}
+
+.chart-y-axis-click-target .recharts-cartesian-axis-tick-value {
+  cursor: help;
+}
+
+.chart-y-axis-click-target:focus-visible {
+  outline: none;
+}
+
+.chart-y-axis-click-target:focus-visible .recharts-cartesian-axis-line {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.chart-axis-label-popover {
+  position: fixed;
+  z-index: 1220;
+  min-width: 156px;
+  max-width: 220px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(33, 36, 47, 0.96);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(12px);
+}
+
+.chart-axis-label-popover-title {
+  margin-bottom: 4px;
+  color: #aeb7c8;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.chart-axis-label-popover-value {
+  color: #f3f6fb;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
 .time-range-selector {
   display: flex;
   background: var(--bg-secondary);
@@ -2048,6 +2139,50 @@
   border-radius: 20px;
   border: 1px solid var(--border);
   margin-right: 0;
+}
+
+.chart-window-slider-control {
+  display: grid;
+  gap: 7px;
+  width: min(420px, 100%);
+  min-width: min(340px, 100%);
+  --chart-window-slider-position: 0%;
+}
+
+.chart-window-slider-value {
+  position: relative;
+  min-width: 0;
+  height: 24px;
+}
+
+.chart-window-slider-value span {
+  position: absolute;
+  left: clamp(24px, var(--chart-window-slider-position), calc(100% - 24px));
+  top: 0;
+  min-width: 48px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: center;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.chart-window-slider-control input[type="range"] {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.command-sidebar-graph-controls .chart-window-slider-control {
+  width: 100%;
+  min-width: min(320px, 100%);
 }
 
 .btn-chip {

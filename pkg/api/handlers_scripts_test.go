@@ -14,11 +14,13 @@ import (
 	"testing"
 	"unicode/utf16"
 
+	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
+	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-const sampleLoadRunnerActionC = `
+const sampleEnterpriseArchiveActionC = `
 #include "web_api.h"
 
 Action()
@@ -48,7 +50,7 @@ func TestHandleCreateAndUpdateScriptPreservesExtendedRTSSettings(t *testing.T) {
 		Version:  "1.0.0",
 		Protocol: "browser",
 		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
-			Source:           "loadrunner",
+			Source:           "enterprise_script_archive",
 			SourceScriptName: "ExtendedRTS",
 			Preserved: map[string]any{
 				"runtime_cfg": "default.cfg",
@@ -631,7 +633,7 @@ func TestHandleImportHARHonorsIncludeStaticAssetsOption(t *testing.T) {
 	}
 }
 
-func TestHandleImportLoadRunnerReturnsStandardizedEnvelope(t *testing.T) {
+func TestHandleImportEnterpriseArchiveReturnsStandardizedEnvelope(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -663,7 +665,7 @@ Parameter1=LoginUsers.prm
 [Actions]
 Action1=Action.c
 `)
-	addFile("Action.c", sampleLoadRunnerActionC)
+	addFile("Action.c", sampleEnterpriseArchiveActionC)
 	addFile("default.cfg", `[HTTP]
 ConnectTimeout=45
 `)
@@ -682,7 +684,7 @@ UpdateValueOn=Each Iteration
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	resp := httptest.NewRecorder()
 
@@ -798,12 +800,12 @@ UpdateValueOn=Each Iteration
 	if _, ok := result.Script.Metadata.Import.Preserved["protocol_compat_report"]; !ok {
 		t.Fatalf("script metadata missing preserved protocol_compat_report: %#v", result.Script.Metadata.Import.Preserved)
 	}
-	if result.ProtocolCompat.SourceFormat != "LoadRunner" || result.ProtocolCompat.CanonicalProtocol != "web_http_html" || result.ProtocolCompat.ImportMode != "executable" || result.ProtocolCompat.MappedSteps == 0 {
+	if result.ProtocolCompat.SourceFormat != "Enterprise Script Archive" || result.ProtocolCompat.CanonicalProtocol != "web_http_html" || result.ProtocolCompat.ImportMode != "executable" || result.ProtocolCompat.MappedSteps == 0 {
 		t.Fatalf("protocol_compat_report = %#v", result.ProtocolCompat)
 	}
 }
 
-func TestHandleValidateLoadRunnerImportReturnsSalesforceNativePreview(t *testing.T) {
+func TestHandleValidateEnterpriseArchiveImportReturnsSalesforceNativePreview(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -865,7 +867,7 @@ Action()
 		t.Fatalf("multipart close returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner/validate", bytes.NewReader(body.Bytes()))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", bytes.NewReader(body.Bytes()))
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	resp := httptest.NewRecorder()
 
@@ -908,7 +910,7 @@ Action()
 	}
 }
 
-func TestHandleImportLoadRunnerSummarizesRuntimeSettingParity(t *testing.T) {
+func TestHandleImportEnterpriseArchiveSummarizesRuntimeSettingParity(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -937,7 +939,7 @@ RuntimeSettings=default.cfg
 [Actions]
 Action1=Action.c
 `)
-	addFile("Action.c", sampleLoadRunnerActionC)
+	addFile("Action.c", sampleEnterpriseArchiveActionC)
 	addFile("default.cfg", `[Run Logic]
 Iterations=5
 AutoTransactions=per_action
@@ -957,7 +959,7 @@ BufferSizeSeconds=30
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	resp := httptest.NewRecorder()
 
@@ -1003,14 +1005,14 @@ BufferSizeSeconds=30
 	}
 }
 
-func TestHandleImportLoadRunnerGoldenFixtureRuntimeParity(t *testing.T) {
+func TestHandleImportEnterpriseArchiveGoldenFixtureRuntimeParity(t *testing.T) {
 	server := NewServer(ServerConfig{})
-	body, contentType := loadRunnerFixtureMultipartBody(t, "../convert/loadrunner/testdata/golden_web_http_html", "golden-web.zip", map[string]string{
+	body, contentType := enterpriseArchiveFixtureMultipartBody(t, "../convert/enterprisearchive/testdata/golden_web_http_html", "golden-web.zip", map[string]string{
 		"include_assertions":       "true",
 		"preserve_transactions":    "true",
 		"migration_block_statuses": "partial,compatibility_only",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body))
 	req.Header.Set("Content-Type", contentType)
 	resp := httptest.NewRecorder()
 
@@ -1068,7 +1070,7 @@ func TestHandleImportLoadRunnerGoldenFixtureRuntimeParity(t *testing.T) {
 	}
 }
 
-func TestHandleValidateLoadRunnerImport(t *testing.T) {
+func TestHandleValidateEnterpriseArchiveImport(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -1095,7 +1097,7 @@ RuntimeSettings=default.cfg
 [Actions]
 Action1=Action.c
 `)
-	addFile("Action.c", sampleLoadRunnerActionC)
+	addFile("Action.c", sampleEnterpriseArchiveActionC)
 	addFile("default.cfg", `[HTTP]
 ConnectTimeout=45
 `)
@@ -1108,7 +1110,7 @@ ConnectTimeout=45
 		t.Fatalf("multipart.Close returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner/validate", &body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	resp := httptest.NewRecorder()
 
@@ -1146,11 +1148,11 @@ ConnectTimeout=45
 	}
 }
 
-func TestHandleValidateLoadRunnerImportMatchesImportEnvelope(t *testing.T) {
+func TestHandleValidateEnterpriseArchiveImportMatchesImportEnvelope(t *testing.T) {
 	server := NewServer(ServerConfig{})
-	archive := buildLoadRunnerImportArchive(t, true)
+	archive := buildEnterpriseArchiveImportArchive(t, true)
 
-	importReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(archive))
+	importReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(archive))
 	importReq.Header.Set("Content-Type", "application/zip")
 	importResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(importResp, importReq)
@@ -1158,7 +1160,7 @@ func TestHandleValidateLoadRunnerImportMatchesImportEnvelope(t *testing.T) {
 		t.Fatalf("import status = %d, want %d body=%s", importResp.Code, http.StatusOK, importResp.Body.String())
 	}
 
-	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner/validate", bytes.NewReader(archive))
+	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", bytes.NewReader(archive))
 	validateReq.Header.Set("Content-Type", "application/zip")
 	validateResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(validateResp, validateReq)
@@ -1171,18 +1173,18 @@ func TestHandleValidateLoadRunnerImportMatchesImportEnvelope(t *testing.T) {
 	assertSharedImportEnvelopeKeys(t, importEnvelope)
 	assertSharedImportEnvelopeKeys(t, validateEnvelope)
 	if !reflect.DeepEqual(importEnvelope, validateEnvelope) {
-		t.Fatalf("expected identical loadrunner import envelopes\nimport=%s\nvalidate=%s", importResp.Body.String(), validateResp.Body.String())
+		t.Fatalf("expected identical enterprise archive import envelopes\nimport=%s\nvalidate=%s", importResp.Body.String(), validateResp.Body.String())
 	}
 }
 
-func TestHandleValidateLoadRunnerImportIncludesDetectedProtocol(t *testing.T) {
+func TestHandleValidateEnterpriseArchiveImportIncludesDetectedProtocol(t *testing.T) {
 	server := NewServer(ServerConfig{})
-	archive := buildLoadRunnerProtocolArchive(t, "ODBC", `Action()
+	archive := buildEnterpriseArchiveProtocolArchive(t, "ODBC", `Action()
 {
     lrd_stmt("select id from customers where status = ?", "ParamStatus=active", LAST);
 }`)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner/validate", bytes.NewReader(archive))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", bytes.NewReader(archive))
 	req.Header.Set("Content-Type", "application/zip")
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)
@@ -1200,7 +1202,7 @@ func TestHandleValidateLoadRunnerImportIncludesDetectedProtocol(t *testing.T) {
 			} `json:"config"`
 		} `json:"script"`
 		DetectedProtocol struct {
-			Canonical string `json:"canonical_loadrunner_protocol"`
+			Canonical string `json:"canonical_source_protocol"`
 			Storm     string `json:"apexload_protocol"`
 			Mode      string `json:"import_mode"`
 		} `json:"detected_protocol"`
@@ -1222,7 +1224,7 @@ func TestHandleValidateLoadRunnerImportIncludesDetectedProtocol(t *testing.T) {
 	}
 }
 
-func TestHandleImportLoadRunnerRoutesDevWebArchive(t *testing.T) {
+func TestHandleImportEnterpriseArchiveRoutesDevWebArchive(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
 	writer := zip.NewWriter(&body)
@@ -1254,7 +1256,7 @@ parameters:
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
 	req.Header.Set("Content-Type", "application/zip")
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)
@@ -1275,7 +1277,7 @@ parameters:
 			} `json:"metadata"`
 		} `json:"script"`
 		DetectedProtocol struct {
-			Canonical string `json:"canonical_loadrunner_protocol"`
+			Canonical string `json:"canonical_source_protocol"`
 			Storm     string `json:"apexload_protocol"`
 			Mode      string `json:"import_mode"`
 		} `json:"detected_protocol"`
@@ -1303,19 +1305,19 @@ parameters:
 	if len(result.ProtocolCompat.NextActions) == 0 || !strings.Contains(result.ProtocolCompat.NextActions[0], "DevWeb replay") {
 		t.Fatalf("next_actions = %#v, want DevWeb-specific validation action", result.ProtocolCompat.NextActions)
 	}
-	if result.Script.Metadata.Import.Preserved["loadrunner_endpoint_routed_to"] != "devweb" {
+	if result.Script.Metadata.Import.Preserved["source_endpoint_routed_to"] != "devweb" {
 		t.Fatalf("preserved metadata = %#v, want DevWeb route marker", result.Script.Metadata.Import.Preserved)
 	}
 }
 
-func TestHandleImportLoadRunnerReturnsReviewArtifactForExternalRunnerProtocol(t *testing.T) {
+func TestHandleImportEnterpriseArchiveReturnsReviewArtifactForExternalRunnerProtocol(t *testing.T) {
 	server := NewServer(ServerConfig{})
-	archive := buildLoadRunnerProtocolArchive(t, "SAP GUI", `Action()
+	archive := buildEnterpriseArchiveProtocolArchive(t, "SAP GUI", `Action()
 {
     sapgui_logon("Login", "ASHOST=server", LAST);
 }`)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(archive))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(archive))
 	req.Header.Set("Content-Type", "application/zip")
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)
@@ -1327,7 +1329,7 @@ func TestHandleImportLoadRunnerReturnsReviewArtifactForExternalRunnerProtocol(t 
 		Scripts          []json.RawMessage `json:"scripts"`
 		Script           *json.RawMessage  `json:"script"`
 		DetectedProtocol struct {
-			Canonical string `json:"canonical_loadrunner_protocol"`
+			Canonical string `json:"canonical_source_protocol"`
 			Mode      string `json:"import_mode"`
 		} `json:"detected_protocol"`
 		ReviewArtifact struct {
@@ -1376,7 +1378,48 @@ func TestHandleImportLoadRunnerReturnsReviewArtifactForExternalRunnerProtocol(t 
 	}
 }
 
-func TestHandleImportLoadRunnerSupportsTruClientMobileWebArchive(t *testing.T) {
+func TestHandleImportEnterpriseArchiveClassifiesRDPAliasAsExternalRunner(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	archive := buildEnterpriseArchiveProtocolArchive(t, "Remote Desktop Protocol", `Action()
+{
+    rdp_connect_server("Host=desktop.example.test", LAST);
+}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(archive))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		DetectedProtocol struct {
+			Canonical string `json:"canonical_source_protocol"`
+			Mode      string `json:"import_mode"`
+		} `json:"detected_protocol"`
+		ProtocolCompat struct {
+			CanonicalProtocol    string   `json:"canonical_protocol"`
+			ImportMode           string   `json:"import_mode"`
+			PromotionStatus      string   `json:"promotion_status"`
+			UnsupportedFragments []string `json:"unsupported_fragments"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.DetectedProtocol.Canonical != "rdp" || result.DetectedProtocol.Mode != "external_runner_required" {
+		t.Fatalf("detected_protocol = %#v, want RDP external runner", result.DetectedProtocol)
+	}
+	if result.ProtocolCompat.CanonicalProtocol != "rdp" || result.ProtocolCompat.ImportMode != "external_runner_required" || result.ProtocolCompat.PromotionStatus != "external_runner_required" {
+		t.Fatalf("protocol_compat_report = %#v, want RDP external-runner report", result.ProtocolCompat)
+	}
+	if !containsString(result.ProtocolCompat.UnsupportedFragments, "rdp_connect_server") {
+		t.Fatalf("unsupported_fragments = %#v, want preserved RDP function", result.ProtocolCompat.UnsupportedFragments)
+	}
+}
+
+func TestHandleImportEnterpriseArchiveSupportsTruClientMobileWebArchive(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
 	writer := zip.NewWriter(&body)
@@ -1413,7 +1456,7 @@ TouchMode=1
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
 	req.Header.Set("Content-Type", "application/zip")
 	resp := httptest.NewRecorder()
 
@@ -1481,7 +1524,7 @@ TouchMode=1
 	if len(result.UnsupportedElements) != 0 {
 		t.Fatalf("unsupported_elements = %#v, want none", result.UnsupportedElements)
 	}
-	assertReviewSection(t, result.ReviewSections, "browser_import_assumptions", "info", "Legacy desktop TruClient remains out of scope; TruClient - Web and TruClient 2.0 - Web are planned under the VuGen Web 2.0 profile.")
+	assertReviewSection(t, result.ReviewSections, "browser_import_assumptions", "info", "Legacy desktop browser-profile archives remain out of scope; Web and Web 2.0 source profiles require guided review.")
 	assertRepairSuggestion(t, result.RepairSuggestions, "replay", "warning", "Run browser replay before saving as production-ready")
 	assertRepairSuggestion(t, result.RepairSuggestions, "selector", "warning", "Validate selector for Evaluate JavaScript Fill 1")
 	assertRepairSuggestion(t, result.RepairSuggestions, "wait", "info", "Add readiness wait after Evaluate JavaScript Fill 1")
@@ -1505,7 +1548,7 @@ TouchMode=1
 	}
 }
 
-func TestHandleImportLoadRunnerSurfacesTruClientWeb2ReviewSections(t *testing.T) {
+func TestHandleImportEnterpriseArchiveSurfacesTruClientWeb2ReviewSections(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
 	writer := zip.NewWriter(&body)
@@ -1537,7 +1580,7 @@ RuntimeSettings=default.cfg
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
 	req.Header.Set("Content-Type", "application/zip")
 	resp := httptest.NewRecorder()
 
@@ -1638,7 +1681,55 @@ func TestBrowserSelectorStabilityScoreRanksStableAndBrittleSelectors(t *testing.
 	}
 }
 
-func TestHandleImportLoadRunnerMapsTruClientQuerySelectorValueAssignment(t *testing.T) {
+func TestTrueClientJavaScriptReviewPolicyRequiresReviewerEvidence(t *testing.T) {
+	inspection := &trueclient.ArchiveInspection{
+		ScriptType: "TruClient 2.0 - Web",
+		StepInventory: trueclient.StepInventory{
+			Total:     1,
+			Supported: map[string]int{"evaluate_javascript": 1},
+		},
+	}
+	result := &enterprisearchive.ConvertResult{
+		Script: &dsl.Script{
+			Protocol: "browser",
+			Actions: []dsl.Action{{
+				Name:   "Checkout JS",
+				Type:   "browser_evaluate_js",
+				Target: "window.app.checkout()",
+				Metadata: map[string]any{
+					"review_gate":                "javascript",
+					"javascript_review_approved": true,
+					"review_reason":              "TruClient JavaScript could not be decomposed into native browser actions.",
+				},
+			}},
+			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Preserved: map[string]any{
+				"browser_replay_status": "passed",
+			}}},
+		},
+		DetectedProtocol: &enterprisearchive.DetectedProtocol{ImportMode: enterprisearchive.ImportModeExecutable},
+		Stats:            enterprisearchive.ConvertStats{ConvertedActions: 1},
+	}
+	summary := enterpriseArchiveImportSummary{
+		ImportMode:           string(enterprisearchive.ImportModeExecutable),
+		TrueClientInspection: inspection,
+		SourceScriptType:     "TruClient 2.0 - Web",
+		SourceProfile:        "web2_browser_profile browser profile",
+	}
+
+	report := buildTrueClient2CompatReport(result, summary)
+	if report.JavaScriptReviewGate != "required" || report.JavaScriptReview.PendingActions != 1 || report.PromotionAllowed {
+		t.Fatalf("report = %#v, want pending JS gate without reviewer evidence", report)
+	}
+
+	result.Script.Actions[0].Metadata["javascript_review_reviewer"] = "qa-reviewer"
+	result.Script.Actions[0].Metadata["javascript_review_approved_at"] = "2026-06-09T12:00:00Z"
+	report = buildTrueClient2CompatReport(result, summary)
+	if report.JavaScriptReviewGate != "approved" || report.JavaScriptReview.ApprovedActions != 1 || !report.PromotionAllowed {
+		t.Fatalf("approved report = %#v, want approved JS gate and promotion allowed", report)
+	}
+}
+
+func TestHandleImportEnterpriseArchiveMapsTruClientQuerySelectorValueAssignment(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
 	writer := zip.NewWriter(&body)
@@ -1670,7 +1761,7 @@ TouchMode=1
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
 	req.Header.Set("Content-Type", "application/zip")
 	resp := httptest.NewRecorder()
 
@@ -1704,7 +1795,7 @@ TouchMode=1
 	}
 }
 
-func TestHandleImportLoadRunnerMapsTruClientSelectStep(t *testing.T) {
+func TestHandleImportEnterpriseArchiveMapsTruClientSelectStep(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
 	writer := zip.NewWriter(&body)
@@ -1736,7 +1827,7 @@ TouchMode=1
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
 	req.Header.Set("Content-Type", "application/zip")
 	resp := httptest.NewRecorder()
 
@@ -1770,7 +1861,7 @@ TouchMode=1
 	}
 }
 
-func TestHandleImportLoadRunnerPreservesTruClientTransactionsAndWaitSteps(t *testing.T) {
+func TestHandleImportEnterpriseArchivePreservesTruClientTransactionsAndWaitSteps(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
 	writer := zip.NewWriter(&body)
@@ -1805,7 +1896,7 @@ TouchMode=1
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
 	req.Header.Set("Content-Type", "application/zip")
 	resp := httptest.NewRecorder()
 
@@ -1856,7 +1947,7 @@ TouchMode=1
 	}
 }
 
-func TestHandleImportLoadRunnerMapsTruClientVerifyToAssertions(t *testing.T) {
+func TestHandleImportEnterpriseArchiveMapsTruClientVerifyToAssertions(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
 	writer := zip.NewWriter(&body)
@@ -1890,7 +1981,7 @@ TouchMode=1
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
 	req.Header.Set("Content-Type", "application/zip")
 	resp := httptest.NewRecorder()
 
@@ -1929,7 +2020,7 @@ TouchMode=1
 	}
 }
 
-func TestHandleImportLoadRunnerMapsTruClientScrollToSwipe(t *testing.T) {
+func TestHandleImportEnterpriseArchiveMapsTruClientScrollToSwipe(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
 	writer := zip.NewWriter(&body)
@@ -1960,7 +2051,7 @@ DeviceProfile=iPhone_SE
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
 	req.Header.Set("Content-Type", "application/zip")
 	resp := httptest.NewRecorder()
 
@@ -2013,7 +2104,7 @@ DeviceProfile=iPhone_SE
 	assertRepairSuggestion(t, result.RepairSuggestions, "replay", "warning", "Run browser replay before saving as production-ready")
 }
 
-func TestHandleImportLoadRunnerSurfacesMixedTruClientEvaluateJavaScriptUnsupportedStatements(t *testing.T) {
+func TestHandleImportEnterpriseArchiveSurfacesMixedTruClientEvaluateJavaScriptUnsupportedStatements(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
 	writer := zip.NewWriter(&body)
@@ -2045,7 +2136,7 @@ TouchMode=1
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
 	req.Header.Set("Content-Type", "application/zip")
 	resp := httptest.NewRecorder()
 
@@ -2200,6 +2291,72 @@ func TestHandleImportJMeter(t *testing.T) {
 	}
 	if result.ProtocolCompat.RuntimeParity["partial"] != 1 {
 		t.Fatalf("runtime_parity = %#v, want one partial CacheManager mapping", result.ProtocolCompat.RuntimeParity)
+	}
+}
+
+func TestHandleImportJMeterProtocolCompatCountsControllerReviewDiagnostics(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "dynamic-controller.jmx")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	_, _ = part.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan"/>
+    <hashTree>
+      <ThreadGroup testname="Users"/>
+      <hashTree>
+        <WhileController testname="While Token">
+          <stringProp name="WhileController.condition">${token}</stringProp>
+        </WhileController>
+        <hashTree>
+          <HTTPSamplerProxy testname="Poll">
+            <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+            <stringProp name="HTTPSampler.protocol">https</stringProp>
+            <stringProp name="HTTPSampler.path">/poll</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+          </HTTPSamplerProxy>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`))
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		UnsupportedElements []string `json:"unsupported_elements"`
+		ProtocolCompat      struct {
+			PromotionStatus      string   `json:"promotion_status"`
+			ReviewGatedSteps     int      `json:"review_gated_steps"`
+			UnsupportedFragments []string `json:"unsupported_fragments"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if !containsStringContaining(result.UnsupportedElements, "WhileController") {
+		t.Fatalf("unsupported_elements = %#v, want controller warning surfaced for review", result.UnsupportedElements)
+	}
+	if result.ProtocolCompat.PromotionStatus != "review_required" || result.ProtocolCompat.ReviewGatedSteps == 0 {
+		t.Fatalf("protocol_compat_report = %#v, want review-required controller diagnostic", result.ProtocolCompat)
+	}
+	if !containsStringContaining(result.ProtocolCompat.UnsupportedFragments, "WhileController") {
+		t.Fatalf("unsupported_fragments = %#v, want WhileController diagnostic", result.ProtocolCompat.UnsupportedFragments)
 	}
 }
 
@@ -2489,9 +2646,9 @@ func TestHandleJMeterSupportMatrix(t *testing.T) {
 	}
 }
 
-func TestHandleLoadRunnerSupportMatrix(t *testing.T) {
+func TestHandleEnterpriseArchiveSupportMatrix(t *testing.T) {
 	server := NewServer(ServerConfig{})
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/loadrunner/support-matrix", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/enterprise-script-archive/support-matrix", nil)
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
@@ -2535,36 +2692,36 @@ func TestHandleLoadRunnerSupportMatrix(t *testing.T) {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
 	if len(result.SupportMatrix) == 0 {
-		t.Fatal("expected loadrunner support matrix entries")
+		t.Fatal("expected enterprise archive support matrix entries")
 	}
 	if result.SupportMatrix[0].ID == "" || result.SupportMatrix[0].Area == "" || result.SupportMatrix[0].Status == "" {
 		t.Fatalf("unexpected support matrix entry: %#v", result.SupportMatrix[0])
 	}
-	if containsLoadRunnerSupportMatrixStatus(result.SupportMatrix, "partial") {
-		t.Fatalf("expected no partial loadrunner support matrix entries after RTS parity reconciliation, got %#v", result.SupportMatrix)
+	if containsEnterpriseArchiveSupportMatrixStatus(result.SupportMatrix, "partial") {
+		t.Fatalf("expected no partial enterprise archive support matrix entries after RTS parity reconciliation, got %#v", result.SupportMatrix)
 	}
-	if !containsLoadRunnerSupportMatrixStatus(result.SupportMatrix, "compatibility_only") {
-		t.Fatalf("expected compatibility-only loadrunner support matrix entries, got %#v", result.SupportMatrix)
+	if !containsEnterpriseArchiveSupportMatrixStatus(result.SupportMatrix, "compatibility_only") {
+		t.Fatalf("expected compatibility-only enterprise archive support matrix entries, got %#v", result.SupportMatrix)
 	}
 	if len(result.Notes) == 0 {
-		t.Fatal("expected loadrunner support matrix notes")
+		t.Fatal("expected enterprise archive support matrix notes")
 	}
 	if len(result.TestedExamples) == 0 || result.TestedExamples[0].Title == "" || result.TestedExamples[0].Test == "" {
 		t.Fatalf("tested_examples = %#v, want populated tested examples", result.TestedExamples)
 	}
-	if !containsLoadRunnerSupportMatrixExample(result.TestedExamples, "Golden Web HTTP/HTML fixture") {
+	if !containsEnterpriseArchiveSupportMatrixExample(result.TestedExamples, "Golden Web HTTP/HTML fixture") {
 		t.Fatalf("tested_examples = %#v, want golden fixture example", result.TestedExamples)
 	}
-	if !containsLoadRunnerTrueClientScriptType(result.TrueClientScriptTypes, "truclient_mobile_web", "supported") {
+	if !containsEnterpriseArchiveTrueClientScriptType(result.TrueClientScriptTypes, "truclient_mobile_web", "supported") {
 		t.Fatalf("trueclient_script_types = %#v, want active Mobile Web row", result.TrueClientScriptTypes)
 	}
-	if !containsLoadRunnerTrueClientScriptType(result.TrueClientScriptTypes, "truclient2_web", "review_only") {
+	if !containsEnterpriseArchiveTrueClientScriptType(result.TrueClientScriptTypes, "truclient2_web", "review_only") {
 		t.Fatalf("trueclient_script_types = %#v, want review-only Web 2.0 row", result.TrueClientScriptTypes)
 	}
-	if !containsLoadRunnerTrueClientCapability(result.Web2ProfileCapabilities, "object_identification", "review_only") {
+	if !containsEnterpriseArchiveTrueClientCapability(result.Web2ProfileCapabilities, "object_identification", "review_only") {
 		t.Fatalf("web2_profile_capabilities = %#v, want review-only object identification capability", result.Web2ProfileCapabilities)
 	}
-	if !containsLoadRunnerWeb2Fixture(result.Web2FixtureContract, "web2_spa_checkout", true, "supported") {
+	if !containsEnterpriseArchiveWeb2Fixture(result.Web2FixtureContract, "web2_spa_checkout", true, "supported") {
 		t.Fatalf("web2_fixture_contract = %#v, want required SPA checkout fixture", result.Web2FixtureContract)
 	}
 }
@@ -2589,12 +2746,12 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 	if len(payload.Sources) < 9 {
 		t.Fatalf("sources = %d, want source matrix entries", len(payload.Sources))
 	}
-	loadRunner, ok := payload.SourceMap["loadrunner"]
+	enterpriseArchive, ok := payload.SourceMap["enterprise_script_archive"]
 	if !ok {
-		t.Fatal("expected loadrunner source map entry")
+		t.Fatal("expected enterprise_script_archive source map entry")
 	}
-	if !loadRunner.ImportReview || !loadRunner.RepairSuggestions || !loadRunner.SaveHandoff {
-		t.Fatalf("loadrunner features = %#v, want shared review/repair/save lifecycle", loadRunner)
+	if !enterpriseArchive.ImportReview || !enterpriseArchive.RepairSuggestions || !enterpriseArchive.SaveHandoff {
+		t.Fatalf("enterprise archive features = %#v, want shared review/repair/save lifecycle", enterpriseArchive)
 	}
 	jmeter, ok := payload.SourceMap["jmeter"]
 	if !ok {
@@ -2620,15 +2777,15 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 	if !containsAuthoringSourceStatus(payload.Sources, "trueclient2_web", "review_only") {
 		t.Fatalf("sources = %#v, want trueclient2_web review_only source", payload.Sources)
 	}
-	vugenWeb2, ok := payload.SourceMap["vugen_web2"]
+	web2Profile, ok := payload.SourceMap["web2_browser_profile"]
 	if !ok {
-		t.Fatal("expected vugen_web2 source map entry")
+		t.Fatal("expected web2_browser_profile source map entry")
 	}
-	if !vugenWeb2.BrowserReplay || !vugenWeb2.ScenarioDraft || !vugenWeb2.ApprovalGateCandidate {
-		t.Fatalf("vugen_web2 features = %#v, want replay, scenario draft, and approval-gated profile", vugenWeb2)
+	if !web2Profile.BrowserReplay || !web2Profile.ScenarioDraft || !web2Profile.ApprovalGateCandidate {
+		t.Fatalf("web2_browser_profile features = %#v, want replay, scenario draft, and approval-gated profile", web2Profile)
 	}
-	if !containsAuthoringSourceStatus(payload.Sources, "vugen_web2", "review_only") {
-		t.Fatalf("sources = %#v, want vugen_web2 review_only source", payload.Sources)
+	if !containsAuthoringSourceStatus(payload.Sources, "web2_browser_profile", "review_only") {
+		t.Fatalf("sources = %#v, want web2_browser_profile review_only source", payload.Sources)
 	}
 }
 
@@ -2696,8 +2853,8 @@ func TestAuthoringTemplatesEndpointReturnsValidProtocolStarters(t *testing.T) {
 	if err := json.Unmarshal(web2Resp.Body.Bytes(), &web2Payload); err != nil {
 		t.Fatalf("unmarshal web2 response: %v", err)
 	}
-	if web2Payload.Count != 1 || web2Payload.Templates[0].ID != "vugen-web2-review-profile" {
-		t.Fatalf("web2 payload = %#v, want VuGen Web 2.0 review profile", web2Payload)
+	if web2Payload.Count != 1 || web2Payload.Templates[0].ID != "web2-browser-review-profile" {
+		t.Fatalf("web2 payload = %#v, want Web 2.0 browser profile review", web2Payload)
 	}
 }
 
@@ -2988,7 +3145,7 @@ func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	body := []byte(`{
 		"project_id":"project-authoring",
-		"source":"loadrunner",
+		"source":"enterprise_script_archive",
 		"name":"Checkout repair",
 		"status":"reviewing",
 		"draft":{"name":"Checkout","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","target":"/"}]},
@@ -3004,7 +3161,7 @@ func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
 	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
 		t.Fatalf("unmarshal created session: %v", err)
 	}
-	if created.ID == "" || created.ProjectID != "project-authoring" || created.Source != "loadrunner" {
+	if created.ID == "" || created.ProjectID != "project-authoring" || created.Source != "enterprise_script_archive" {
 		t.Fatalf("created session = %#v", created)
 	}
 	if created.Draft == nil || created.Draft.ProjectID != "project-authoring" {
@@ -3036,7 +3193,7 @@ func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
 
 	updateBody := []byte(`{
 		"project_id":"project-authoring",
-		"source":"loadrunner",
+		"source":"enterprise_script_archive",
 		"name":"Checkout repair updated",
 		"status":"editing",
 		"draft":{"name":"Checkout Updated","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Cart","type":"request","target":"/cart"}]},
@@ -3073,7 +3230,7 @@ func TestApproveAuthoringSessionPromotesDraftToScriptLibrary(t *testing.T) {
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	body := []byte(`{
 		"project_id":"project-authoring",
-		"source":"loadrunner",
+		"source":"enterprise_script_archive",
 		"name":"Checkout approval",
 		"status":"ready",
 		"draft":{"name":"Checkout Approved","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","target":"/"}]},
@@ -3132,7 +3289,7 @@ func TestApproveAuthoringSessionRejectsBlockedDraft(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	body := []byte(`{
 		"project_id":"project-authoring",
-		"source":"loadrunner",
+		"source":"enterprise_script_archive",
 		"name":"Broken approval",
 		"status":"ready",
 		"draft":{"name":"","version":"1.0.0","protocol":"http","actions":[]}
@@ -3323,7 +3480,7 @@ func TestBatchAuthoringCorrelationAppliesHighConfidenceAndBlocksMediumRisk(t *te
 	server := NewServer(ServerConfig{Store: store})
 	body := []byte(`{
 		"project_id":"project-authoring",
-		"source":"loadrunner",
+		"source":"enterprise_script_archive",
 		"name":"Correlation batch",
 		"status":"reviewing",
 		"draft":{
@@ -3393,7 +3550,7 @@ type reviewSection struct {
 	Items    []string `json:"items"`
 }
 
-func containsLoadRunnerSupportMatrixStatus(entries []struct {
+func containsEnterpriseArchiveSupportMatrixStatus(entries []struct {
 	ID      string   `json:"id"`
 	Area    string   `json:"area"`
 	Concept string   `json:"concept"`
@@ -3409,7 +3566,7 @@ func containsLoadRunnerSupportMatrixStatus(entries []struct {
 	return false
 }
 
-func containsLoadRunnerSupportMatrixExample(entries []struct {
+func containsEnterpriseArchiveSupportMatrixExample(entries []struct {
 	Title    string `json:"title"`
 	Coverage string `json:"coverage"`
 	Test     string `json:"test"`
@@ -3422,7 +3579,7 @@ func containsLoadRunnerSupportMatrixExample(entries []struct {
 	return false
 }
 
-func containsLoadRunnerTrueClientScriptType(entries []struct {
+func containsEnterpriseArchiveTrueClientScriptType(entries []struct {
 	CanonicalName string   `json:"CanonicalName"`
 	DisplayName   string   `json:"DisplayName"`
 	Status        string   `json:"Status"`
@@ -3436,7 +3593,7 @@ func containsLoadRunnerTrueClientScriptType(entries []struct {
 	return false
 }
 
-func containsLoadRunnerTrueClientCapability(entries []struct {
+func containsEnterpriseArchiveTrueClientCapability(entries []struct {
 	CanonicalName string `json:"CanonicalName"`
 	DisplayName   string `json:"DisplayName"`
 	Status        string `json:"Status"`
@@ -3449,7 +3606,7 @@ func containsLoadRunnerTrueClientCapability(entries []struct {
 	return false
 }
 
-func containsLoadRunnerWeb2Fixture(entries []struct {
+func containsEnterpriseArchiveWeb2Fixture(entries []struct {
 	ID       string `json:"ID"`
 	Required bool   `json:"Required"`
 	Status   string `json:"Status"`
@@ -3471,7 +3628,7 @@ func containsAuthoringSourceStatus(sources []AuthoringSourceCapability, source s
 	return false
 }
 
-func loadRunnerFixtureMultipartBody(t *testing.T, fixtureDir string, archiveName string, fields map[string]string) ([]byte, string) {
+func enterpriseArchiveFixtureMultipartBody(t *testing.T, fixtureDir string, archiveName string, fields map[string]string) ([]byte, string) {
 	t.Helper()
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -3573,7 +3730,7 @@ func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
 	}
 }
 
-func buildLoadRunnerImportArchive(t *testing.T, includeParameterFiles bool) []byte {
+func buildEnterpriseArchiveImportArchive(t *testing.T, includeParameterFiles bool) []byte {
 	t.Helper()
 
 	var body bytes.Buffer
@@ -3607,7 +3764,7 @@ Action1=Action.c
 `
 	}
 	addFile("Demo.usr", userFile)
-	addFile("Action.c", sampleLoadRunnerActionC)
+	addFile("Action.c", sampleEnterpriseArchiveActionC)
 	addFile("default.cfg", `[HTTP]
 ConnectTimeout=45
 `)
@@ -3627,7 +3784,7 @@ UpdateValueOn=Each Iteration
 	return body.Bytes()
 }
 
-func buildLoadRunnerProtocolArchive(t *testing.T, scriptType string, action string) []byte {
+func buildEnterpriseArchiveProtocolArchive(t *testing.T, scriptType string, action string) []byte {
 	t.Helper()
 
 	var body bytes.Buffer
@@ -3834,6 +3991,15 @@ func reviewSectionsContain(sections any, wantKey string) bool {
 		section := value.Index(i)
 		key := section.FieldByName("Key")
 		if key.IsValid() && key.String() == wantKey {
+			return true
+		}
+	}
+	return false
+}
+
+func containsStringContaining(values []string, needle string) bool {
+	for _, value := range values {
+		if strings.Contains(value, needle) {
 			return true
 		}
 	}

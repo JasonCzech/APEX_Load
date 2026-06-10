@@ -1,4 +1,4 @@
-package loadrunner
+package enterprisearchive
 
 import (
 	"archive/zip"
@@ -18,12 +18,12 @@ import (
 // and of the archive as a whole, independent of the (already capped) compressed
 // upload size.
 const (
-	maxLoadRunnerEntryBytes = 64 << 20  // 64 MiB per file
-	maxLoadRunnerTotalBytes = 512 << 20 // 512 MiB total uncompressed
+	maxEnterpriseArchiveEntryBytes = 64 << 20  // 64 MiB per file
+	maxEnterpriseArchiveTotalBytes = 512 << 20 // 512 MiB total uncompressed
 )
 
-// ConvertZip processes a ZIP archive containing a LoadRunner script folder
-// and returns the converted APEX Load DSL script.
+// ConvertZip processes a ZIP archive containing enterprise C/VUser source files
+// and returns either converted APEX Load DSL or a review artifact.
 func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	reader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
 	if err != nil {
@@ -42,16 +42,16 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			continue
 		}
 		// Read at most one byte beyond the per-entry cap so we can detect overflow.
-		data, err := io.ReadAll(io.LimitReader(rc, maxLoadRunnerEntryBytes+1))
+		data, err := io.ReadAll(io.LimitReader(rc, maxEnterpriseArchiveEntryBytes+1))
 		rc.Close()
 		if err != nil {
 			continue
 		}
-		if int64(len(data)) > maxLoadRunnerEntryBytes {
+		if int64(len(data)) > maxEnterpriseArchiveEntryBytes {
 			return nil, fmt.Errorf("zip entry %q exceeds the maximum allowed uncompressed size", filepath.Base(f.Name))
 		}
 		totalUncompressed += int64(len(data))
-		if totalUncompressed > maxLoadRunnerTotalBytes {
+		if totalUncompressed > maxEnterpriseArchiveTotalBytes {
 			return nil, fmt.Errorf("zip archive exceeds the maximum allowed total uncompressed size")
 		}
 		// Normalize path: strip leading directory prefix if all files share one
@@ -88,8 +88,8 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			break
 		}
 	}
-	if loadRunnerZipHasDevWebMain(files) {
-		return convertDevWebZipViaLoadRunnerImport(zipData, opts, files, projectConfig)
+	if sourceZipHasDevWebMain(files) {
+		return convertDevWebZipViaEnterpriseArchiveImport(zipData, opts, files, projectConfig)
 	}
 	if projectConfig != nil {
 		if scope, ok := trueclient.LookupScriptTypeScope(projectConfig.ScriptType); ok {
@@ -110,14 +110,14 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 				detected.ImportMode = ImportModeReviewOnly
 				detected.RequiredEvidence = appendUnique(detected.RequiredEvidence, scope.RequiredEvidence...)
 				detected.Warnings = append(detected.Warnings, fmt.Sprintf("%s import is planned; archive was preserved as a review artifact.", scope.DisplayName))
-				return newLoadRunnerReviewResult(detected, files, nil, map[string]any{
+				return newEnterpriseArchiveReviewResult(detected, files, nil, map[string]any{
 					"trueclient_archive_inspection": inspection,
 					"source_script_type":            scope.DisplayName,
 					"source_profile":                scope.APEXLoadShape,
 				}), nil
 			default:
 				detected := DetectProtocol(files, projectConfig, nil)
-				return newLoadRunnerReviewResult(detected, files, nil, map[string]any{
+				return newEnterpriseArchiveReviewResult(detected, files, nil, map[string]any{
 					"source_script_type": scope.DisplayName,
 					"source_profile":     scope.APEXLoadShape,
 					"scope_status":       string(scope.Status),
@@ -192,7 +192,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		applyKnownParameterReferences(result.Script)
 		applyParameterizedBaseURL(result.Script)
 		result.SourceReview = BuildSourceReview(files, sourceReviewMappings(result))
-		attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, trueClientInspection)
+		attachSourceMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, trueClientInspection)
 		return result, nil
 	}
 
@@ -200,7 +200,8 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	// vuser_init.c and vuser_end.c, so a naive "parse init, parse [Actions],
 	// parse end" sequence duplicates setup and cleanup requests.
 	var parsedActions []*ParsedAction
-	for _, actionFile := range orderedLoadRunnerActionFiles(projectConfig, files) {
+	var parseErrors []string
+	for _, actionFile := range orderedSourceActionFiles(projectConfig, files) {
 		content, ok := findFile(files, actionFile)
 		if !ok {
 			// Try case-insensitive
@@ -215,19 +216,29 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		if ok {
 			parsed, err := ParseActionFile(actionFile, content)
 			if err == nil {
-				parsed.Phase = loadRunnerActionPhase(actionFile)
+				parsed.Phase = sourceActionPhase(actionFile)
 				for index := range parsed.Functions {
 					parsed.Functions[index].Phase = parsed.Phase
 				}
 				parsedActions = append(parsedActions, parsed)
+			} else {
+				parseErrors = append(parseErrors, fmt.Sprintf("%s: %v", actionFile, err))
 			}
 		}
 	}
 
 	if len(parsedActions) == 0 {
 		detected := DetectProtocol(files, projectConfig, nil)
-		if detected.ImportMode != ImportModeExecutable || detected.CanonicalLoadRunnerProtocol == "unknown" {
-			return newLoadRunnerReviewResult(detected, files, nil, map[string]any{"reason": "no_parseable_c_actions"}), nil
+		metadata := map[string]any{"reason": "no_parseable_c_actions"}
+		if len(parseErrors) > 0 {
+			metadata["parse_errors"] = parseErrors
+			detected.ImportMode = ImportModeReviewOnly
+			detected.Warnings = append(detected.Warnings, "C source parsing requires review before executable conversion.")
+			detected.RequiredEvidence = appendUnique(detected.RequiredEvidence, "Resolved C parser diagnostics or operator-approved review artifact")
+			return newEnterpriseArchiveReviewResult(detected, files, nil, metadata), nil
+		}
+		if detected.ImportMode != ImportModeExecutable || detected.CanonicalSourceProtocol == "unknown" {
+			return newEnterpriseArchiveReviewResult(detected, files, nil, metadata), nil
 		}
 		return nil, fmt.Errorf("no parseable .c action files found in the ZIP archive")
 	}
@@ -237,7 +248,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	var convertErr error
 	switch {
 	case detected.ImportMode != ImportModeExecutable && detected.APEXLoadProtocol == "":
-		return newLoadRunnerReviewResult(detected, files, parsedActions, map[string]any{"reason": "protocol_review_required"}), nil
+		return newEnterpriseArchiveReviewResult(detected, files, parsedActions, map[string]any{"reason": "protocol_review_required"}), nil
 	case detected.APEXLoadProtocol == "database":
 		result, convertErr = ConvertDatabase(parsedActions, opts, detected)
 	case detected.APEXLoadProtocol == "network":
@@ -246,14 +257,14 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		result, convertErr = Convert(parsedActions, opts)
 		if result != nil {
 			result.DetectedProtocol = &detected
-			if detected.CanonicalLoadRunnerProtocol == "oracle_web" || detected.CanonicalLoadRunnerProtocol == "siebel_web" {
+			if detected.CanonicalSourceProtocol == "oracle_web" || detected.CanonicalSourceProtocol == "siebel_web" {
 				result.ReviewArtifact = NewReviewArtifact(detected, files, parsedActions, map[string]any{
 					"review_pack": "oracle_ebusiness_correlation",
 				})
 			}
 		}
 	default:
-		return newLoadRunnerReviewResult(detected, files, parsedActions, map[string]any{"reason": "unsupported_protocol"}), nil
+		return newEnterpriseArchiveReviewResult(detected, files, parsedActions, map[string]any{"reason": "unsupported_protocol"}), nil
 	}
 	if convertErr != nil {
 		return nil, convertErr
@@ -282,11 +293,11 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	applyKnownParameterReferences(result.Script)
 	applyParameterizedBaseURL(result.Script)
 	result.SourceReview = BuildSourceReview(files, sourceReviewMappings(result))
-	attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, nil)
+	attachSourceMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, nil)
 	return result, nil
 }
 
-func orderedLoadRunnerActionFiles(projectConfig *ProjectConfig, files map[string]string) []string {
+func orderedSourceActionFiles(projectConfig *ProjectConfig, files map[string]string) []string {
 	candidates := []string{"vuser_init.c"}
 	if projectConfig != nil && len(projectConfig.ActionFiles) > 0 {
 		candidates = append(candidates, projectConfig.ActionFiles...)
@@ -324,7 +335,7 @@ func orderedLoadRunnerActionFiles(projectConfig *ProjectConfig, files map[string
 	return ordered
 }
 
-func loadRunnerActionPhase(fileName string) string {
+func sourceActionPhase(fileName string) string {
 	base := strings.ToLower(filepath.Base(strings.TrimSpace(fileName)))
 	switch base {
 	case "vuser_init.c":
@@ -340,7 +351,7 @@ func ptrDetectedProtocol(detected DetectedProtocol) *DetectedProtocol {
 	return &detected
 }
 
-func newLoadRunnerReviewResult(detected DetectedProtocol, files map[string]string, actions []*ParsedAction, metadata map[string]any) *ConvertResult {
+func newEnterpriseArchiveReviewResult(detected DetectedProtocol, files map[string]string, actions []*ParsedAction, metadata map[string]any) *ConvertResult {
 	if detected.ImportMode == "" {
 		detected.ImportMode = ImportModeReviewOnly
 	}
@@ -357,10 +368,10 @@ func newLoadRunnerReviewResult(detected DetectedProtocol, files map[string]strin
 		}
 		result.Stats.TotalFunctions += len(action.Functions)
 		for _, fn := range action.Functions {
-			if def, ok := lookupLoadRunnerFunction(fn.Name); ok {
-				recordLoadRunnerFunctionSupport(result, def.SupportMode)
+			if def, ok := lookupSourceFunction(fn.Name); ok {
+				recordSourceFunctionSupport(result, def.SupportMode)
 			} else {
-				recordLoadRunnerFunctionSupport(result, LoadRunnerSupportCustomReview)
+				recordSourceFunctionSupport(result, SourceFunctionSupportCustomReview)
 			}
 		}
 	}
@@ -444,7 +455,7 @@ func findParameterFiles(files map[string]string, projectConfig *ProjectConfig) [
 	return uniqueStrings(parameterFiles)
 }
 
-func loadRunnerZipHasDevWebMain(files map[string]string) bool {
+func sourceZipHasDevWebMain(files map[string]string) bool {
 	for name, content := range files {
 		if strings.EqualFold(filepath.Base(name), "main.js") && strings.Contains(content, "load.") {
 			return true
@@ -453,7 +464,7 @@ func loadRunnerZipHasDevWebMain(files map[string]string) bool {
 	return false
 }
 
-func convertDevWebZipViaLoadRunnerImport(zipData []byte, opts ConvertOptions, files map[string]string, projectConfig *ProjectConfig) (*ConvertResult, error) {
+func convertDevWebZipViaEnterpriseArchiveImport(zipData []byte, opts ConvertOptions, files map[string]string, projectConfig *ProjectConfig) (*ConvertResult, error) {
 	devResult, err := devweb.ConvertZip(zipData, devweb.ConvertOptions{
 		BaseURL:            opts.BaseURL,
 		DefaultThinkTimeMs: int(opts.DefaultThinkTimeMs),
@@ -482,9 +493,9 @@ func convertDevWebZipViaLoadRunnerImport(zipData []byte, opts ConvertOptions, fi
 		},
 	}
 	if result.Script != nil {
-		preserved := ensureDevWebLoadRunnerPreserved(result.Script)
+		preserved := ensureDevWebSourcePreserved(result.Script)
 		preserved["detected_protocol"] = result.DetectedProtocol
-		preserved["loadrunner_endpoint_routed_to"] = "devweb"
+		preserved["source_endpoint_routed_to"] = "devweb"
 		if result.SourceReview != nil {
 			preserved["source_review"] = result.SourceReview
 		}
@@ -493,7 +504,7 @@ func convertDevWebZipViaLoadRunnerImport(zipData []byte, opts ConvertOptions, fi
 		}
 	}
 	if len(result.Stats.UnsupportedFuncs) > 0 {
-		result.Warnings = append(result.Warnings, "DevWeb archive imported through LoadRunner endpoint has review-gated JavaScript or helper constructs.")
+		result.Warnings = append(result.Warnings, "DevWeb archive imported through the enterprise script archive endpoint has review-gated JavaScript or helper constructs.")
 	}
 	return result, nil
 }
@@ -520,19 +531,19 @@ func detectedDevWebProtocol(projectConfig *ProjectConfig, result *devweb.Convert
 		}
 	}
 	return DetectedProtocol{
-		CanonicalLoadRunnerProtocol: "devweb",
-		APEXLoadProtocol:            apexProtocol,
-		Bundle:                      "Templates Protocol Bundle",
-		ImportMode:                  ImportModeExecutable,
-		Confidence:                  confidence,
-		DisplayName:                 "DevWeb",
-		SourceType:                  sourceType,
-		Signals:                     uniqueSortedStrings(signals),
-		RequiredEvidence:            []string{"Native DevWeb import review", "Replay validation evidence"},
+		CanonicalSourceProtocol: "devweb",
+		APEXLoadProtocol:        apexProtocol,
+		Bundle:                  "Templates Protocol Bundle",
+		ImportMode:              ImportModeExecutable,
+		Confidence:              confidence,
+		DisplayName:             "DevWeb",
+		SourceType:              sourceType,
+		Signals:                 uniqueSortedStrings(signals),
+		RequiredEvidence:        []string{"Native DevWeb import review", "Replay validation evidence"},
 	}
 }
 
-func ensureDevWebLoadRunnerPreserved(script *dsl.Script) map[string]any {
+func ensureDevWebSourcePreserved(script *dsl.Script) map[string]any {
 	if script.Metadata == nil {
 		script.Metadata = &dsl.ScriptMetadata{}
 	}
@@ -576,7 +587,7 @@ func uniqueStrings(values []string) []string {
 	return result
 }
 
-func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, projectFileName string, projectSections map[string]map[string]string, projectConfig *ProjectConfig, files map[string]string, runtimeFileName string, parameterSections map[string]map[string]map[string]string, parameterFileNames []string, trueClientInspection *trueclient.ArchiveInspection) {
+func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFileName string, projectSections map[string]map[string]string, projectConfig *ProjectConfig, files map[string]string, runtimeFileName string, parameterSections map[string]map[string]map[string]string, parameterFileNames []string, trueClientInspection *trueclient.ArchiveInspection) {
 	if script == nil {
 		return
 	}
@@ -651,7 +662,7 @@ func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, project
 		script.Metadata = &dsl.ScriptMetadata{}
 	}
 	script.Metadata.Import = &dsl.ImportMetadata{
-		Source:           "loadrunner",
+		Source:           "enterprise_script_archive",
 		SourceScriptName: script.Name,
 		Preserved:        preserved,
 	}

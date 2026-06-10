@@ -26,7 +26,7 @@ func TestHandlePreviewBrowserToHTTPGeneratesReviewDraftAndScenarioTemplate(t *te
 				{Name: "Open Cart", Type: "browser_navigate", Target: "https://shop.example.test/cart"},
 				{Name: "Submit Order", Type: "browser_click", Target: "#submit", Selector: "#submit"},
 			},
-			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "loadrunner", Preserved: map[string]any{"source_profile": "vugen_web2 browser profile"}}},
+			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "enterprise_script_archive", Preserved: map[string]any{"source_profile": "web2_browser_profile browser profile"}}},
 		},
 		NetworkEntries: []protocol.NetworkEntry{
 			{URL: "https://shop.example.test/api/cart?customer_id=123&csrf_token=abcdef0123456789abcdef0123456789", Method: "GET", StatusCode: 200, ResourceType: "fetch", DurationMs: 12},
@@ -68,8 +68,61 @@ func TestHandlePreviewBrowserToHTTPGeneratesReviewDraftAndScenarioTemplate(t *te
 	if len(payload.ScenarioTemplate.Groups) != 2 || payload.ScenarioTemplate.Groups[0].Protocol != "browser" || payload.ScenarioTemplate.Groups[1].Protocol != "http" {
 		t.Fatalf("scenario template = %#v, want browser canary plus HTTP load groups", payload.ScenarioTemplate)
 	}
+	if payload.Governance.Status != "blocked" || !payload.Governance.ApprovalRequired || len(payload.Governance.Blockers) == 0 {
+		t.Fatalf("governance = %#v, want blocked approval-required draft", payload.Governance)
+	}
+	if payload.Diff.EndpointCoveragePct != 100 || !containsString(payload.Diff.Hosts, "shop.example.test") || !containsString(payload.Diff.Methods, "POST") {
+		t.Fatalf("diff = %#v, want full endpoint coverage for filtered requests", payload.Diff)
+	}
 	if !strings.Contains(resp.Body.String(), "conversion_requires_approval") {
 		t.Fatalf("response missing approval metadata: %s", resp.Body.String())
+	}
+}
+
+func TestHandlePreviewBrowserToHTTPRunsCorrelationEngineOnObservations(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	body, _ := json.Marshal(BrowserToHTTPPreviewRequest{
+		Name:            "Observed HTTP Draft",
+		ReplaySessionID: "replay-123",
+		SourceBrowserScript: &dsl.Script{
+			ID:       "browser-script",
+			Name:     "Browser Checkout",
+			Protocol: "browser",
+			Actions:  []dsl.Action{{Name: "Checkout", Type: "browser_click", Selector: "#checkout"}},
+		},
+		NetworkEntries: []protocol.NetworkEntry{
+			{URL: "https://shop.example.test/login", Method: "GET", StatusCode: 200, ResourceType: "document", DurationMs: 11},
+			{URL: "https://shop.example.test/checkout", Method: "POST", StatusCode: 200, ResourceType: "xhr", DurationMs: 24},
+		},
+		CorrelationObservations: []BrowserToHTTPCorrelationObservation{
+			{ID: 1, ResponseBody: `{"csrf_token":"abcdef0123456789abcdef0123456789"}`},
+			{ID: 2, RequestBody: `csrf_token=abcdef0123456789abcdef0123456789`},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-to-http/preview", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload BrowserToHTTPPreviewResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.Review.CorrelationEngine != "apexload-correlate" || len(payload.Review.CorrelationCandidates) == 0 {
+		t.Fatalf("review = %#v, want correlation-engine candidates", payload.Review)
+	}
+	if payload.Review.CorrelationCandidates[0].Name != "corr_csrf_token" || !strings.Contains(payload.Review.CorrelationCandidates[0].Evidence, "confidence") {
+		t.Fatalf("correlation candidates = %#v, want corr_csrf_token confidence evidence", payload.Review.CorrelationCandidates)
+	}
+	if payload.Governance.Status != "blocked" || !strings.Contains(resp.Body.String(), "Correlation candidates require review") {
+		t.Fatalf("governance/body = %#v/%s, want correlation review blocker", payload.Governance, resp.Body.String())
+	}
+	if payload.GeneratedScript.Metadata.Import.Preserved["browser_to_http_governance"] == nil || payload.GeneratedScript.Metadata.Import.Preserved["browser_to_http_diff"] == nil {
+		t.Fatalf("generated metadata = %#v, want governance and diff preserved", payload.GeneratedScript.Metadata.Import.Preserved)
 	}
 }
 

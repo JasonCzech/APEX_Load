@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
-import { type DetectedLoadRunnerProtocol, type ImportRepairSuggestion, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerProtocolSupportEntry, type LoadRunnerReviewArtifact, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse, type SalesforceReview, type TrueClient2CompatReport } from '../types/scriptImports'
+import { type DetectedSourceProtocol, type ImportRepairSuggestion, type EnterpriseArchiveImportResult, type EnterpriseArchiveImportSummary, type EnterpriseArchiveMigrationReadiness, type EnterpriseArchiveProtocolSupportEntry, type EnterpriseArchiveReviewArtifact, type EnterpriseArchiveSupportMatrixEntry, type EnterpriseArchiveSupportMatrixExample, type EnterpriseArchiveSupportMatrixResponse, type SalesforceReview, type TrueClient2CompatReport } from '../types/scriptImports'
 import { type BrowserReplayEvent, type BrowserReplaySession } from '../types'
-import { type LoadRunnerSourceReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
+import { type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuthoringState'
-import './LoadRunnerImport.css'
+import './EnterpriseArchiveImport.css'
 
 interface ImportMetadata {
   source?: string
@@ -21,8 +21,8 @@ function getImportMetadata(script?: ScriptDefinition): ImportMetadata | null {
   return script?.metadata?.import || null
 }
 
-function getSourceReviewFromMetadata(metadata?: ImportMetadata | null): LoadRunnerSourceReview | null {
-  const sourceReview = metadata?.preserved?.source_review as LoadRunnerSourceReview | undefined
+function getSourceReviewFromMetadata(metadata?: ImportMetadata | null): SourceArchiveReview | null {
+  const sourceReview = metadata?.preserved?.source_review as SourceArchiveReview | undefined
   if (!sourceReview) return null
   if (!Array.isArray(sourceReview.source_files) && !Array.isArray(sourceReview.mappings)) return null
   return sourceReview
@@ -36,7 +36,7 @@ function isBrowserImport(script: ScriptDefinition | null): boolean {
   return script?.protocol === 'browser'
 }
 
-function isLoadRunnerZipFile(file: File) {
+function isEnterpriseArchiveZipFile(file: File) {
   const lowerName = file.name.toLowerCase()
   return lowerName.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
 }
@@ -46,7 +46,7 @@ function isHARFile(file: File) {
   return lowerName.endsWith('.har') || lowerName.endsWith('.json') || file.type === 'application/json'
 }
 
-function formatLoadRunnerFileSize(file: File) {
+function formatEnterpriseArchiveFileSize(file: File) {
   return `${(file.size / 1024).toFixed(1)} KB`
 }
 
@@ -106,7 +106,7 @@ function importScriptActionsDeep(script?: ScriptDefinition | null): ScriptAction
   return flattenImportScriptActions(orderedImportScriptActions(script))
 }
 
-function getTrueClient2CompatReport(result: LoadRunnerImportResult | null, metadata?: ImportMetadata | null): TrueClient2CompatReport | null {
+function getTrueClient2CompatReport(result: EnterpriseArchiveImportResult | null, metadata?: ImportMetadata | null): TrueClient2CompatReport | null {
   const topLevel = result?.trueclient2_compat_report
   if (topLevel) return topLevel
   const summaryReport = result?.summary?.trueclient2_compat_report
@@ -118,7 +118,7 @@ function getTrueClient2CompatReport(result: LoadRunnerImportResult | null, metad
   return null
 }
 
-function loadRunnerImportStatusLabel(status: LoadRunnerImportQueueStatus) {
+function enterpriseArchiveImportStatusLabel(status: EnterpriseArchiveImportQueueStatus) {
   switch (status) {
     case 'validating':
       return 'Validating'
@@ -135,7 +135,7 @@ function loadRunnerImportStatusLabel(status: LoadRunnerImportQueueStatus) {
   }
 }
 
-function buildLoadRunnerImportQueueItem(file: File, id: string): LoadRunnerImportQueueItem {
+function buildEnterpriseArchiveImportQueueItem(file: File, id: string): EnterpriseArchiveImportQueueItem {
   return {
     id,
     file,
@@ -153,26 +153,26 @@ function buildLoadRunnerImportQueueItem(file: File, id: string): LoadRunnerImpor
 }
 
 function buildReviewArtifactDraft(
-  artifact: LoadRunnerReviewArtifact,
-  detectedProtocol: DetectedLoadRunnerProtocol | null,
+  artifact: EnterpriseArchiveReviewArtifact,
+  detectedProtocol: DetectedSourceProtocol | null,
   projectId?: string,
   requestedName?: string,
-  sourceReview?: LoadRunnerSourceReview | null,
+  sourceReview?: SourceArchiveReview | null,
 ): ScriptDefinition {
-  const protocol = detectedProtocol?.apexload_protocol || detectedProtocol?.canonical_loadrunner_protocol || 'review'
-  const name = requestedName?.trim() || artifact.title || detectedProtocol?.display_name || 'LoadRunner Protocol Review'
+  const protocol = detectedProtocol?.apexload_protocol || detectedProtocol?.canonical_source_protocol || 'review'
+  const name = requestedName?.trim() || artifact.title || detectedProtocol?.display_name || 'Enterprise Script Archive Protocol Review'
   return {
     name,
     version: '1.0.0',
     protocol,
     project_id: projectId,
-    generated_by: 'apexload-loadrunner-import',
-    generated_from: 'loadrunner',
+    generated_by: 'apexload-enterprise-script-archive-importer',
+    generated_from: 'enterprise_script_archive',
     config: { base_url: '' },
     actions: [],
     metadata: {
       import: {
-        source: 'loadrunner',
+        source: 'enterprise_script_archive',
         source_script_name: name,
         preserved: {
           detected_protocol: detectedProtocol,
@@ -192,14 +192,14 @@ interface Props {
 }
 
 type ReviewMode = 'validation' | 'conversion'
-type LoadRunnerImportQueueStatus = 'queued' | 'validating' | 'validated' | 'converting' | 'converted' | 'failed'
+type EnterpriseArchiveImportQueueStatus = 'queued' | 'validating' | 'validated' | 'converting' | 'converted' | 'failed'
 
-interface LoadRunnerImportQueueItem {
+interface EnterpriseArchiveImportQueueItem {
   id: string
   file: File
   harFile: File | null
-  status: LoadRunnerImportQueueStatus
-  result: LoadRunnerImportResult | null
+  status: EnterpriseArchiveImportQueueStatus
+  result: EnterpriseArchiveImportResult | null
   reviewMode: ReviewMode | null
   error: string
   notice: string
@@ -209,17 +209,17 @@ interface LoadRunnerImportQueueItem {
   replayValidationSession: BrowserReplaySession | null
 }
 
-type LoadRunnerSupportMatrixSection = {
+type EnterpriseArchiveSupportMatrixSection = {
   key: string
   title: string
-  items: LoadRunnerSupportMatrixEntry[]
+  items: EnterpriseArchiveSupportMatrixEntry[]
   preview: string
 }
 
-type LoadRunnerProtocolCoverageSection = {
+type EnterpriseArchiveProtocolCoverageSection = {
   key: string
   title: string
-  items: LoadRunnerProtocolSupportEntry[]
+  items: EnterpriseArchiveProtocolSupportEntry[]
   preview: string
 }
 
@@ -379,7 +379,7 @@ function buildTrueClientPromotionReview(script: ScriptDefinition, inputs: Promot
     schema_version: 1,
     status: replayAttached ? 'replay_evidence_attached' : 'needs_replay_evidence',
     generated_at: new Date().toISOString(),
-    source: metadata?.source || 'loadrunner',
+    source: metadata?.source || 'enterprise_script_archive',
     source_script_name: metadata?.source_script_name || '',
     compatibility: {
       source_profile: inputs.compatReport?.source_profile,
@@ -540,21 +540,21 @@ function findUnsupportedRepairSuggestion(repairSuggestions: ImportRepairSuggesti
   }) || null
 }
 
-export default function LoadRunnerImport({ projectId, onImported, onEdit, onClose }: Props) {
+export default function EnterpriseArchiveImport({ projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
   const harFileRef = useRef<HTMLInputElement>(null)
   const itemCounterRef = useRef(0)
-  const [importItems, setImportItems] = useState<LoadRunnerImportQueueItem[]>([])
+  const [importItems, setImportItems] = useState<EnterpriseArchiveImportQueueItem[]>([])
   const [selectedItemId, setSelectedItemId] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [workingMode, setWorkingMode] = useState<'convert' | 'validate' | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [supportMatrix, setSupportMatrix] = useState<LoadRunnerSupportMatrixEntry[]>([])
+  const [supportMatrix, setSupportMatrix] = useState<EnterpriseArchiveSupportMatrixEntry[]>([])
   const [supportMatrixNotes, setSupportMatrixNotes] = useState<string[]>([])
-  const [supportMatrixExamples, setSupportMatrixExamples] = useState<LoadRunnerSupportMatrixExample[]>([])
-  const [protocolSupportMatrix, setProtocolSupportMatrix] = useState<LoadRunnerProtocolSupportEntry[]>([])
+  const [supportMatrixExamples, setSupportMatrixExamples] = useState<EnterpriseArchiveSupportMatrixExample[]>([])
+  const [protocolSupportMatrix, setProtocolSupportMatrix] = useState<EnterpriseArchiveProtocolSupportEntry[]>([])
   const [runtimeCoverageOpen, setRuntimeCoverageOpen] = useState(false)
   const [reviewArtifactSaving, setReviewArtifactSaving] = useState(false)
 
@@ -574,7 +574,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const displayNotice = notice || selectedItem?.notice || ''
   const queuedFileCount = importItems.length
   const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Only'
-  const convertButtonLabel = queuedFileCount > 1 ? `Convert ${queuedFileCount} LoadRunner Scripts` : 'Convert LoadRunner Script'
+  const convertButtonLabel = queuedFileCount > 1 ? `Convert ${queuedFileCount} Enterprise Script Archives` : 'Convert Enterprise Script Archive'
   const importedScript = result?.script ?? result?.scripts?.[0] ?? null
   const detectedProtocol = result?.detected_protocol ?? result?.summary?.detected_protocol ?? null
   const reviewArtifact = result?.review_artifact ?? result?.summary?.review_artifact ?? null
@@ -582,7 +582,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const importMetadata = getImportMetadata(importedScript || undefined)
   const trueClient2CompatReport = getTrueClient2CompatReport(result, importMetadata)
   const importSummary = getImportSummary(importMetadata)
-  const reviewSummary: LoadRunnerImportSummary | null = result?.summary || null
+  const reviewSummary: EnterpriseArchiveImportSummary | null = result?.summary || null
   const salesforceReview = reviewSummary?.salesforce_review || null
   const salesforceNativeScript = salesforceReview?.native_preview?.script || null
   const sourceReview = reviewSummary?.source_review || getSourceReviewFromMetadata(importMetadata)
@@ -600,10 +600,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     : importSummary.unsupportedFunctions
   const reviewSections = result?.review_sections || []
   const repairSuggestions = result?.repair_suggestions || []
-  const supportMatrixSections = summarizeLoadRunnerSupportMatrix(supportMatrix)
+  const supportMatrixSections = summarizeEnterpriseArchiveSupportMatrix(supportMatrix)
   const hasRuntimeCoverage = supportMatrix.length > 0
-  const protocolCoverageSections = summarizeLoadRunnerProtocolSupport(protocolSupportMatrix)
-  const migrationReadiness: LoadRunnerMigrationReadiness | null = reviewSummary?.migration_readiness || null
+  const protocolCoverageSections = summarizeEnterpriseArchiveProtocolSupport(protocolSupportMatrix)
+  const migrationReadiness: EnterpriseArchiveMigrationReadiness | null = reviewSummary?.migration_readiness || null
   const reviewedMigrationPolicy = migrationReadiness?.policy?.block_statuses
     ? buildMigrationPolicyOptions(migrationReadiness.policy.block_statuses)
     : null
@@ -693,7 +693,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const actionWrapStyle: CSSProperties = { marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }
   const sectionActionStyle: CSSProperties = { marginBottom: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }
 
-  const updateImportItem = (itemId: string, patch: Partial<LoadRunnerImportQueueItem>) => {
+  const updateImportItem = (itemId: string, patch: Partial<EnterpriseArchiveImportQueueItem>) => {
     setImportItems(items => items.map(item => item.id === itemId ? { ...item, ...patch } : item))
   }
 
@@ -896,8 +896,8 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   useEffect(() => {
     let cancelled = false
 
-    api.getLoadRunnerSupportMatrix()
-      .then((response: LoadRunnerSupportMatrixResponse) => {
+    api.getEnterpriseArchiveSupportMatrix()
+      .then((response: EnterpriseArchiveSupportMatrixResponse) => {
         if (!cancelled) {
           setSupportMatrix(Array.isArray(response.support_matrix) ? response.support_matrix : [])
           setSupportMatrixNotes(Array.isArray(response.notes) ? response.notes : [])
@@ -959,15 +959,15 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     const incomingFiles = Array.from(fileList || [])
     if (incomingFiles.length === 0) return
 
-    const zipFiles = incomingFiles.filter(isLoadRunnerZipFile)
+    const zipFiles = incomingFiles.filter(isEnterpriseArchiveZipFile)
     if (zipFiles.length === 0) {
-      setError('Please upload ZIP files containing LoadRunner script folders.')
+      setError('Please upload ZIP files containing enterprise script archive folders.')
       return
     }
 
     const nextItems = zipFiles.map((nextFile) => {
       itemCounterRef.current += 1
-      return buildLoadRunnerImportQueueItem(nextFile, `lr-import-${Date.now()}-${itemCounterRef.current}`)
+      return buildEnterpriseArchiveImportQueueItem(nextFile, `lr-import-${Date.now()}-${itemCounterRef.current}`)
     })
     setImportItems(items => [...items, ...nextItems])
     setSelectedItemId(nextItems[0].id)
@@ -1071,7 +1071,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
 
     let successCount = 0
     let failureCount = 0
-    const request = mode === 'validate' ? api.validateLoadRunnerImport : api.importLoadRunner
+    const request = mode === 'validate' ? api.validateEnterpriseArchiveImport : api.importEnterpriseArchive
     const useNameOverride = targetItems.length === 1
 
     for (const item of targetItems) {
@@ -1109,7 +1109,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     setWorkingMode(null)
     if (targetItems.length > 1) {
       const action = mode === 'validate' ? 'Validated' : 'Converted'
-      setNotice(`${action} ${successCount} of ${targetItems.length} LoadRunner script${targetItems.length === 1 ? '' : 's'}${failureCount > 0 ? `; ${failureCount} failed` : ''}.`)
+      setNotice(`${action} ${successCount} of ${targetItems.length} enterprise script archive${targetItems.length === 1 ? '' : 's'}${failureCount > 0 ? `; ${failureCount} failed` : ''}.`)
     }
   }
 
@@ -1188,8 +1188,8 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     try {
       const session = await api.createAuthoringSession({
         project_id: projectId,
-        source: 'loadrunner_review_artifact',
-        name: reviewArtifact.title || detectedProtocol?.display_name || 'LoadRunner protocol review',
+        source: 'source_review_artifact',
+        name: reviewArtifact.title || detectedProtocol?.display_name || 'enterprise script archive protocol review',
         status: 'reviewing',
         draft: importedScript || buildReviewArtifactDraft(reviewArtifact, detectedProtocol, projectId, options.name, sourceReview),
         review_state: {
@@ -1220,8 +1220,8 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     <div className="lr-import">
       <div className="lr-import-header">
         <div>
-          <h2>Import LoadRunner Script</h2>
-          <p className="lr-subtitle">Upload a LoadRunner/VuGen ZIP archive. APEX Load detects the VuGen protocol, routes executable HTTP, SOAP, browser, database, and network imports, and preserves review artifacts for protocols that still require evidence or external runners.</p>
+          <h2>Import Enterprise Script Archive</h2>
+          <p className="lr-subtitle">Upload a ZIP containing C-based virtual-user scripts, runtime settings, parameter files, and protocol metadata. APEX Load routes executable HTTP, SOAP, browser, database, and network archives while preserving review artifacts for sources that still require evidence or external runners.</p>
         </div>
         {onClose && <button className="btn btn-ghost" onClick={onClose}>✕</button>}
       </div>
@@ -1243,7 +1243,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
               </div>
               <button className="btn btn-sm btn-ghost" onClick={e => { e.stopPropagation(); clearQueuedFiles() }}>Clear All</button>
             </div>
-            <div className="lr-file-list" aria-label="Queued LoadRunner scripts">
+            <div className="lr-file-list" aria-label="Queued enterprise script archives">
               {importItems.map(item => (
                 <div
                   key={item.id}
@@ -1270,7 +1270,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                   <span className="lr-file-row-main">
                     <strong>{item.file.name}</strong>
                     <small>
-                      {formatLoadRunnerFileSize(item.file)} · {loadRunnerImportStatusLabel(item.status)}
+                      {formatEnterpriseArchiveFileSize(item.file)} · {enterpriseArchiveImportStatusLabel(item.status)}
                       {item.harFile ? ` · HAR: ${item.harFile.name}` : ''}
                     </small>
                   </span>
@@ -1292,7 +1292,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
         ) : (
           <div className="lr-drop-content">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <p>Drop one or more LoadRunner <code>.zip</code> files here</p>
+            <p>Drop one or more enterprise script archive <code>.zip</code> files here</p>
             <span className="lr-drop-hint">or click to browse</span>
           </div>
         )}
@@ -1405,7 +1405,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             <div className="lr-modal-header">
               <div>
                 <h3 id="lr-runtime-coverage-title">Runtime Settings Coverage</h3>
-                <p>Code-owned LoadRunner runtime settings support matrix</p>
+                <p>Code-owned runtime compatibility support matrix</p>
               </div>
               <button type="button" className="btn btn-ghost" onClick={() => setRuntimeCoverageOpen(false)}>Close</button>
             </div>
@@ -1454,7 +1454,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       <div className="settings-notice">
         <p>Protocol-aware detection uses .usr metadata plus source signatures. Conflicting evidence is gated for review instead of being saved as an executable script.</p>
         {protocolCoverageSections.length > 0 && (
-          <ul className="lr-protocol-route-list" aria-label="VuGen protocol import routes">
+          <ul className="lr-protocol-route-list" aria-label="source protocol import routes">
             {protocolCoverageSections.map(section => (
               <li key={section.key}>
                 <strong>{section.title}</strong>: {section.items.length}
@@ -1734,7 +1734,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
 
             {unsupportedFunctions.length > 0 && (
               <div className="lr-warnings">
-                <h4>Unsupported LoadRunner Functions ({unsupportedFunctions.length})</h4>
+                <h4>Unsupported Source Functions ({unsupportedFunctions.length})</h4>
                 <ul>
                   {unsupportedFunctions.map((fnName, index) => {
                     const repairSuggestion = findUnsupportedRepairSuggestion(repairSuggestions, fnName)
@@ -1876,7 +1876,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             {importMetadata && (
               <div className="lr-preserved">
                 <div className="lr-preserved-header">
-                  <h4>Preserved LoadRunner Settings</h4>
+                  <h4>Preserved Source Settings</h4>
                   <span>These values will be saved with the APEX Load script.</span>
                 </div>
 
@@ -1884,7 +1884,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Project File</span>
                     <strong>{reviewSummary?.project_file || importMetadata.source_script_name || importedScript.name}</strong>
-                    <small>{importMetadata.source || 'loadrunner'}</small>
+                    <small>{importMetadata.source || 'enterprise_script_archive'}</small>
                     {onEdit && renderEditorActionButtons([
                       {
                         key: 'summary-project-file-script',
@@ -1963,7 +1963,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                   </div>
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Source</span>
-                    <strong>{importMetadata.source || 'loadrunner'}</strong>
+                    <strong>{importMetadata.source || 'enterprise_script_archive'}</strong>
                     <small>{importedScript.name}</small>
                     {onEdit && renderEditorActionButtons([
                       {
@@ -2247,23 +2247,23 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   )
 }
 
-function summarizeLoadRunnerSupportMatrix(entries: LoadRunnerSupportMatrixEntry[]): LoadRunnerSupportMatrixSection[] {
+function summarizeEnterpriseArchiveSupportMatrix(entries: EnterpriseArchiveSupportMatrixEntry[]): EnterpriseArchiveSupportMatrixSection[] {
   return [
-    buildLoadRunnerSupportMatrixSection('executed', 'Executed', entries),
-    buildLoadRunnerSupportMatrixSection('partial', 'Partial', entries),
-    buildLoadRunnerSupportMatrixSection('compatibility_only', 'Compatibility-only', entries),
-    buildLoadRunnerSupportMatrixSection('non_applicable', 'Non-applicable', entries),
-    buildLoadRunnerSupportMatrixSection('blocked', 'Blocked', entries),
+    buildEnterpriseArchiveSupportMatrixSection('executed', 'Executed', entries),
+    buildEnterpriseArchiveSupportMatrixSection('partial', 'Partial', entries),
+    buildEnterpriseArchiveSupportMatrixSection('compatibility_only', 'Compatibility-only', entries),
+    buildEnterpriseArchiveSupportMatrixSection('non_applicable', 'Non-applicable', entries),
+    buildEnterpriseArchiveSupportMatrixSection('blocked', 'Blocked', entries),
   ]
 }
 
-function summarizeLoadRunnerProtocolSupport(entries: LoadRunnerProtocolSupportEntry[]): LoadRunnerProtocolCoverageSection[] {
+function summarizeEnterpriseArchiveProtocolSupport(entries: EnterpriseArchiveProtocolSupportEntry[]): EnterpriseArchiveProtocolCoverageSection[] {
   if (entries.length === 0) return []
   return [
-    buildLoadRunnerProtocolCoverageSection('executable', 'Executable', entries),
-    buildLoadRunnerProtocolCoverageSection('review_only', 'Review-only', entries),
-    buildLoadRunnerProtocolCoverageSection('external_runner_required', 'External Runner', entries),
-    buildLoadRunnerProtocolCoverageSection('unsupported', 'Unsupported', entries),
+    buildEnterpriseArchiveProtocolCoverageSection('executable', 'Executable', entries),
+    buildEnterpriseArchiveProtocolCoverageSection('review_only', 'Review-only', entries),
+    buildEnterpriseArchiveProtocolCoverageSection('external_runner_required', 'External Runner', entries),
+    buildEnterpriseArchiveProtocolCoverageSection('unsupported', 'Unsupported', entries),
   ].filter(section => section.items.length > 0)
 }
 
@@ -2289,7 +2289,7 @@ function normalizeRelaxableMigrationBlockStatus(status?: string | null): Relaxab
 }
 
 function getRelaxableMigrationBlockStatuses(
-  readiness: LoadRunnerMigrationReadiness | null,
+  readiness: EnterpriseArchiveMigrationReadiness | null,
   options: Pick<ImportOptions, 'block_partial' | 'block_compatibility_only' | 'block_non_applicable'>,
 ): RelaxableMigrationBlockStatus[] {
   if (!readiness?.blocked || !Array.isArray(readiness.blocking_statuses)) return []
@@ -2322,7 +2322,7 @@ function getRelaxedMigrationBlockOptions(options: ImportOptions, status: Relaxab
   }
 }
 
-function buildLoadRunnerSupportMatrixSection(status: string, title: string, entries: LoadRunnerSupportMatrixEntry[]): LoadRunnerSupportMatrixSection {
+function buildEnterpriseArchiveSupportMatrixSection(status: string, title: string, entries: EnterpriseArchiveSupportMatrixEntry[]): EnterpriseArchiveSupportMatrixSection {
   const items = entries.filter(entry => entry.status === status)
   return {
     key: status,
@@ -2332,7 +2332,7 @@ function buildLoadRunnerSupportMatrixSection(status: string, title: string, entr
   }
 }
 
-function buildLoadRunnerProtocolCoverageSection(mode: string, title: string, entries: LoadRunnerProtocolSupportEntry[]): LoadRunnerProtocolCoverageSection {
+function buildEnterpriseArchiveProtocolCoverageSection(mode: string, title: string, entries: EnterpriseArchiveProtocolSupportEntry[]): EnterpriseArchiveProtocolCoverageSection {
   const items = entries.filter(entry => protocolImportMode(entry) === mode)
   return {
     key: mode,
@@ -2342,7 +2342,7 @@ function buildLoadRunnerProtocolCoverageSection(mode: string, title: string, ent
   }
 }
 
-function protocolImportMode(entry: LoadRunnerProtocolSupportEntry): string {
+function protocolImportMode(entry: EnterpriseArchiveProtocolSupportEntry): string {
   const status = entry.status || entry.import_mode || ''
   switch (status) {
     case 'supported':

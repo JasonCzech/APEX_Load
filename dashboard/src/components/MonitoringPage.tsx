@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
-import { useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
+import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
 import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, SystemServicesResponse, TelemetryDiagnosticEntry } from '../types'
 import { readStoredStringArray, writeStoredJSON } from '../utils/browserStorage'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
@@ -89,6 +89,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [activeCategoryId, setActiveCategoryId] = useState<MonitorCategoryId>('overview')
   const [cardOrder, setCardOrder] = useState<string[]>(() => readStoredStringArray('apexload.monitoring.cardOrder'))
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
+  const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const websocketValueClass = connectionState === 'connected' ? 'text-success' : connectionState === 'disconnected' ? 'text-danger' : ''
   const websocketLabel = connectionState === 'connected' ? 'Connected' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
   const telemetryWarningCount = telemetryDiagnostics.filter(entry => entry.diagnostic.severity === 'warning').length
@@ -847,9 +848,27 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const activeCategoryCardIds = new Set<string>(activeCategory.cardIds)
   const activeVisibleCards = orderedCards.filter(card => activeCategoryCardIds.has(card.id))
 
-  const selectCategory = (id: MonitorCategoryId) => {
+  const selectCategory = useCallback((id: MonitorCategoryId) => {
     setActiveCategoryId(id)
-  }
+  }, [])
+
+  const monitorCategoryControls = useMemo(() => (
+    <div className="monitor-tab-row topbar-page-section-toggle" role="tablist" aria-label="Monitor categories">
+      {MONITOR_CATEGORIES.map(category => (
+        <button
+          key={category.id}
+          type="button"
+          role="tab"
+          aria-selected={category.id === activeCategoryId}
+          className={`monitor-tab ${category.id === activeCategoryId ? 'active' : ''}`}
+          onClick={() => selectCategory(category.id)}
+        >
+          <span>{category.label}</span>
+          <span className="monitor-tab-count">{category.cardIds.length}/{category.cardIds.length}</span>
+        </button>
+      ))}
+    </div>
+  ), [activeCategoryId, selectCategory])
 
   const severityEntries = useMemo<{ label: string; severity: string; summary: string }[]>(() => {
     const joinCounts = (parts: string[]) => parts.filter(Boolean).join(', ')
@@ -922,21 +941,23 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const advisorySummary = advisoryEntries
     .map(entry => `${entry.label}: ${entry.summary || entry.severity}`)
     .join('\n')
+  const monitoringTopbarControls = useMemo(() => (
+    <div className="monitoring-topbar-controls">
+      {monitorCategoryControls}
+      {advisoryTone && (
+        <span className={`topbar-meta-chip ${advisoryTone} monitoring-topbar-advisory`} title={advisorySummary}>
+          {overallLabel}
+        </span>
+      )}
+    </div>
+  ), [advisorySummary, advisoryTone, monitorCategoryControls, overallLabel])
+
   const monitoringTopbarContribution = useMemo(() => ({
     id: 'monitoring-page',
     priority: 10,
     title: 'Monitoring',
-    titleNode: (
-      <div className="monitoring-topbar-title">
-        <strong className="topbar-page-title">Monitoring</strong>
-        {advisoryTone && (
-          <span className={`topbar-meta-chip ${advisoryTone}`} title={advisorySummary}>
-            {overallLabel}
-          </span>
-        )}
-      </div>
-    ),
-  }), [advisorySummary, advisoryTone, overallLabel])
+    controls: monitoringTopbarControls,
+  }), [monitoringTopbarControls])
 
   useTopbarContribution(monitoringTopbarContribution)
 
@@ -956,23 +977,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       </div>
 
-      <div className="monitor-tab-row" role="tablist" aria-label="Monitor categories">
-        {MONITOR_CATEGORIES.map(category => {
-          return (
-            <button
-              key={category.id}
-              type="button"
-              role="tab"
-              aria-selected={category.id === activeCategoryId}
-              className={`monitor-tab ${category.id === activeCategoryId ? 'active' : ''}`}
-              onClick={() => selectCategory(category.id)}
-            >
-              <span>{category.label}</span>
-              <span className="monitor-tab-count">{category.cardIds.length}/{category.cardIds.length}</span>
-            </button>
-          )
-        })}
-      </div>
+      {!hasTopbarContributionProvider && monitorCategoryControls}
 
       <div className="monitor-tab-panel" role="tabpanel" aria-label={`${activeCategory.label} monitors`}>
         <div className="monitoring-grid" data-active-category={activeCategory.id}>

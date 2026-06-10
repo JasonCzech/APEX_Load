@@ -2233,6 +2233,12 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		metrics.P90Ms = percentileValue(durations, 0.90)
 		metrics.P95Ms = percentileValue(durations, 0.95)
 		metrics.P99Ms = percentileValue(durations, 0.99)
+		digest := engine.NewTDigest(200)
+		for _, duration := range durations {
+			digest.Add(duration * 1_000_000)
+		}
+		digestSnapshot := digest.Snapshot()
+		metrics.DurationDigest = &digestSnapshot
 	}
 	sort.Strings(names)
 	if len(allDurations) > 0 {
@@ -2482,15 +2488,5 @@ func incrementTelemetryClassCount(values *map[string]int64, key string) {
 }
 
 func percentileValue(sorted []float64, percentile float64) float64 {
-	if len(sorted) == 0 {
-		return 0
-	}
-	if percentile <= 0 {
-		return sorted[0]
-	}
-	if percentile >= 1 {
-		return sorted[len(sorted)-1]
-	}
-	index := int(float64(len(sorted)-1) * percentile)
-	return sorted[index]
+	return percentileFromSortedSamples(sorted, percentile)
 }

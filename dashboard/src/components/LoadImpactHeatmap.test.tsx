@@ -92,7 +92,7 @@ describe('LoadImpactHeatmap', () => {
     expect(rowLabels()).toContain('TPS')
     expect(bucketLabels()).toContain('10 VUsers')
 
-    const configureButton = buttonByText('Configure Graphs')
+    const configureButton = buttonByText('Configure Map')
     await act(async () => {
       configureButton?.click()
     })
@@ -148,6 +148,52 @@ describe('LoadImpactHeatmap', () => {
     })
 
     expect(rowLabels().slice(0, 4)).toEqual(['ARTms', 'CPU VUsers%', 'P95ms', 'TPS'])
+  })
+
+  it('highlights the matching metric row and VUser load column on cell hover and focus', async () => {
+    await act(async () => {
+      root.render(
+        <LoadImpactHeatmap
+          points={[
+            point('10:00:00', 5, { avgMs: 100, tps: 3, p95: 130, cpuProcess: 18 }),
+            point('10:00:01', 10, { avgMs: 140, tps: 4, p95: 180, cpuProcess: 22 }),
+          ]}
+        />,
+      )
+    })
+
+    const p95AtTenVusers = container.querySelector<HTMLButtonElement>('button[aria-label^="P95 at 10 VUsers"]')
+    expect(p95AtTenVusers).not.toBeNull()
+
+    await act(async () => {
+      p95AtTenVusers?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    })
+
+    expect(activeRowHeader()?.textContent).toContain('P95')
+    expect(activeColumnHeader()?.textContent).toContain('10 VUsers')
+    expect(p95AtTenVusers?.closest('td')?.className).toContain('load-impact-cell-row-context')
+    expect(p95AtTenVusers?.closest('td')?.className).toContain('load-impact-cell-column-context')
+
+    await act(async () => {
+      p95AtTenVusers?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+    })
+
+    expect(activeRowHeader()).toBeNull()
+    expect(activeColumnHeader()).toBeNull()
+
+    await act(async () => {
+      p95AtTenVusers?.focus()
+    })
+
+    expect(activeRowHeader()?.textContent).toContain('P95')
+    expect(activeColumnHeader()?.textContent).toContain('10 VUsers')
+
+    await act(async () => {
+      p95AtTenVusers?.blur()
+    })
+
+    expect(activeRowHeader()).toBeNull()
+    expect(activeColumnHeader()).toBeNull()
   })
 
   it('opens the data point table when a populated heatmap cell is selected', async () => {
@@ -238,6 +284,14 @@ describe('LoadImpactHeatmap', () => {
   function sortButtonByLabel(text: string) {
     return Array.from(container.querySelectorAll<HTMLButtonElement>('.load-impact-sort-header'))
       .find(button => button.textContent?.includes(text)) ?? null
+  }
+
+  function activeColumnHeader() {
+    return container.querySelector<HTMLTableCellElement>('.load-impact-table thead th[data-axis-active="true"]')
+  }
+
+  function activeRowHeader() {
+    return container.querySelector<HTMLTableCellElement>('.load-impact-table tbody th[data-axis-active="true"]')
   }
 })
 

@@ -46,14 +46,14 @@ export interface ScriptImportResult<
   correlations: TCorrelation[]
   stats: TStats
   summary: TSummary
-  detected_protocol?: DetectedLoadRunnerProtocol
-  review_artifact?: LoadRunnerReviewArtifact
+  detected_protocol?: DetectedSourceProtocol
+  review_artifact?: EnterpriseArchiveReviewArtifact
   source_review?: SourceReview
   trueclient2_compat_report?: TrueClient2CompatReport
 }
 
-export interface DetectedLoadRunnerProtocol {
-  canonical_loadrunner_protocol: string
+export interface DetectedSourceProtocol {
+  canonical_source_protocol: string
   apexload_protocol?: string
   bundle?: string
   import_mode: 'executable' | 'review_only' | 'external_runner_required' | 'unsupported' | string
@@ -67,11 +67,11 @@ export interface DetectedLoadRunnerProtocol {
   runner_requirement?: string
 }
 
-export interface LoadRunnerReviewArtifact {
+export interface EnterpriseArchiveReviewArtifact {
   id: string
   title: string
   status: string
-  protocol: DetectedLoadRunnerProtocol
+  protocol: DetectedSourceProtocol
   summary: string
   source_files?: string[]
   preserved_functions?: string[]
@@ -80,7 +80,7 @@ export interface LoadRunnerReviewArtifact {
   metadata?: Record<string, unknown>
 }
 
-export interface LoadRunnerConvertStats {
+export interface EnterpriseArchiveConvertStats {
   total_functions: number
   converted_actions: number
   logical_actions?: number
@@ -95,17 +95,17 @@ export interface LoadRunnerConvertStats {
   unsupported_funcs?: string[]
 }
 
-export interface LoadRunnerImportSummary {
+export interface EnterpriseArchiveImportSummary {
   project_file?: string
   mapped_runtime_file?: string
   project_sections?: string[]
   runtime_files?: string[]
   parameter_files?: string[]
-  runtime_settings_parity?: LoadRunnerRuntimeSettingParity[]
+  runtime_settings_parity?: EnterpriseArchiveRuntimeSettingParity[]
   runtime_settings_status_counts?: Record<string, number>
-  migration_readiness?: LoadRunnerMigrationReadiness
-  detected_protocol?: DetectedLoadRunnerProtocol
-  review_artifact?: LoadRunnerReviewArtifact
+  migration_readiness?: EnterpriseArchiveMigrationReadiness
+  detected_protocol?: DetectedSourceProtocol
+  review_artifact?: EnterpriseArchiveReviewArtifact
   source_review?: SourceReview
   salesforce_review?: SalesforceReview
   trueclient2_compat_report?: TrueClient2CompatReport
@@ -196,7 +196,7 @@ export interface SalesforceReview {
   native_preview?: SalesforceNativePreview
 }
 
-export interface LoadRunnerProtocolSupportEntry {
+export interface EnterpriseArchiveProtocolSupportEntry {
   id: string
   bundle?: string
   bundle_id?: string
@@ -213,7 +213,7 @@ export interface LoadRunnerProtocolSupportEntry {
   notes?: string
 }
 
-export interface LoadRunnerSupportMatrixEntry {
+export interface EnterpriseArchiveSupportMatrixEntry {
   id: string
   area: string
   concept: string
@@ -222,24 +222,24 @@ export interface LoadRunnerSupportMatrixEntry {
   notes?: string
 }
 
-export interface LoadRunnerRuntimeSettingParity extends LoadRunnerSupportMatrixEntry {
+export interface EnterpriseArchiveRuntimeSettingParity extends EnterpriseArchiveSupportMatrixEntry {
   runtime_files?: string[]
 }
 
-export interface LoadRunnerMigrationPolicy {
+export interface EnterpriseArchiveMigrationPolicy {
   block_statuses?: string[]
 }
 
-export interface LoadRunnerMigrationReadiness {
+export interface EnterpriseArchiveMigrationReadiness {
   score_pct: number
   blocked: boolean
   summary?: string
   blocking_statuses?: string[]
-  blocking_settings?: LoadRunnerRuntimeSettingParity[]
-  policy?: LoadRunnerMigrationPolicy
+  blocking_settings?: EnterpriseArchiveRuntimeSettingParity[]
+  policy?: EnterpriseArchiveMigrationPolicy
 }
 
-export interface LoadRunnerSupportMatrixExample {
+export interface EnterpriseArchiveSupportMatrixExample {
   title: string
   coverage: string
   test: string
@@ -380,7 +380,7 @@ export interface RecorderCorrelation {
   reasons?: string[]
 }
 
-export type LoadRunnerImportResult = ScriptImportResult<LoadRunnerConvertStats, unknown, ScriptDefinition, unknown, LoadRunnerImportSummary>
+export type EnterpriseArchiveImportResult = ScriptImportResult<EnterpriseArchiveConvertStats, unknown, ScriptDefinition, unknown, EnterpriseArchiveImportSummary>
 export type JMeterImportResult = ScriptImportResult<JMeterConvertStats, unknown, ScriptDefinition, JMeterScenarioDraft, JMeterImportSummary>
 export type SampleImportResult = ScriptImportResult<SampleImportStats, SampleCorrelation>
 export type DevWebImportResult = ScriptImportResult<DevWebImportStats, unknown>
@@ -395,11 +395,11 @@ export interface JMeterSupportMatrixResponse {
   support_matrix?: SupportMatrix
 }
 
-export interface LoadRunnerSupportMatrixResponse {
-  support_matrix?: LoadRunnerSupportMatrixEntry[]
+export interface EnterpriseArchiveSupportMatrixResponse {
+  support_matrix?: EnterpriseArchiveSupportMatrixEntry[]
   notes?: string[]
-  tested_examples?: LoadRunnerSupportMatrixExample[]
-  protocol_support_matrix?: LoadRunnerProtocolSupportEntry[]
+  tested_examples?: EnterpriseArchiveSupportMatrixExample[]
+  protocol_support_matrix?: EnterpriseArchiveProtocolSupportEntry[]
 }
 
 export interface SaveJMeterImportRequest {

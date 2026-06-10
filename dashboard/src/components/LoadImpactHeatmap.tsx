@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useMemo, useState } from 'react'
+import { forwardRef, type CSSProperties, type MouseEventHandler, useEffect, useMemo, useState } from 'react'
 
 import type { MetricsHistoryPoint } from '../types'
 import LoadImpact3DHeatmap from './LoadImpact3DHeatmap'
@@ -10,7 +10,7 @@ import {
   formatLoadImpactValue,
   loadImpactCellKey,
 } from './loadImpactModel'
-import type { LoadImpactBucket, LoadImpactRow } from './loadImpactModel'
+import type { LoadImpactBucket, LoadImpactCell, LoadImpactRow } from './loadImpactModel'
 import { METRIC_SORT_KEY, sortLoadImpactRows, type LoadImpactSortState } from './loadImpactHeatmapUtils'
 import './LoadImpactHeatmap.css'
 
@@ -21,6 +21,12 @@ interface Props {
   loading?: boolean
   error?: string
   emptyMessage?: string
+  variant?: 'standalone' | 'graph-card'
+  className?: string
+  dataChartId?: string
+  onContextMenu?: MouseEventHandler<HTMLElement>
+  onMouseEnter?: MouseEventHandler<HTMLElement>
+  onMouseLeave?: MouseEventHandler<HTMLElement>
 }
 
 function formatPointTimestamp(point: MetricsHistoryPoint) {
@@ -47,20 +53,27 @@ function bucketSortKey(bucketId: string) {
   return `bucket:${bucketId}`
 }
 
-export default function LoadImpactHeatmap({
+const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeatmap({
   points,
   title = 'Load Impact',
   subtitle = 'Performance and resource behavior grouped by active VUser load.',
   loading = false,
   error = '',
   emptyMessage = 'Load impact appears after metrics include active VUsers and performance or resource samples.',
-}: Props) {
+  variant = 'standalone',
+  className = '',
+  dataChartId,
+  onContextMenu,
+  onMouseEnter,
+  onMouseLeave,
+}, ref) {
   const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [selectedMetricIds, setSelectedMetricIds] = useState<string[] | null>(null)
   const [selectedBucketIds, setSelectedBucketIds] = useState<string[] | null>(null)
   const [sortState, setSortState] = useState<LoadImpactSortState | null>(null)
+  const [highlightedAxis, setHighlightedAxis] = useState<{ metricId: string; bucketId: string } | null>(null)
   const model = useMemo(() => buildLoadImpactModel(points), [points])
   const availableMetricIds = useMemo(() => model.rows.map(row => row.metric.id), [model.rows])
   const availableBucketIds = useMemo(() => model.buckets.map(bucket => bucket.id), [model.buckets])
@@ -150,6 +163,14 @@ export default function LoadImpactHeatmap({
     setSelectedCellKey(null)
   }
 
+  const highlightCellAxis = (cell: LoadImpactCell) => {
+    setHighlightedAxis({ metricId: cell.metric.id, bucketId: cell.bucket.id })
+  }
+
+  const clearHighlightedAxis = () => {
+    setHighlightedAxis(null)
+  }
+
   const renderMetricOption = (row: LoadImpactRow) => {
     const checked = effectiveMetricIds.includes(row.metric.id)
     return (
@@ -186,8 +207,22 @@ export default function LoadImpactHeatmap({
     )
   }
 
+  const rootClassName = [
+    'load-impact-card',
+    variant === 'graph-card' ? 'load-impact-card-graph' : '',
+    className,
+  ].filter(Boolean).join(' ')
+
   return (
-    <section className="load-impact-card" aria-label={title}>
+    <section
+      ref={ref}
+      className={rootClassName}
+      data-chart-id={dataChartId}
+      aria-label={title}
+      onContextMenu={onContextMenu}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
       <div className="load-impact-header">
         <div>
           <h3 className="chart-title">{title}</h3>
@@ -201,7 +236,7 @@ export default function LoadImpactHeatmap({
             disabled={loading || model.rows.length === 0 || model.buckets.length === 0}
             aria-expanded={drawerOpen}
           >
-            Configure Graphs
+            Configure Map
           </button>
           {!loading && model.rows.length > 0 && model.buckets.length > 0 && (
             <div className="load-impact-view-toggle" role="tablist" aria-label="Load Impact view mode">
@@ -246,7 +281,7 @@ export default function LoadImpactHeatmap({
         </div>
       ) : displayModel.rows.length === 0 || displayModel.buckets.length === 0 ? (
         <div className="load-impact-state">
-          No heatmap cells selected. Open Configure Graphs to add metrics and VUser load points.
+          No heatmap cells selected. Open Configure Map to add metrics and VUser load points.
         </div>
       ) : (
         <>
@@ -271,55 +306,81 @@ export default function LoadImpactHeatmap({
                         <span className="load-impact-sort-icon" aria-hidden="true">{sortIndicator(METRIC_SORT_KEY)}</span>
                       </button>
                     </th>
-                    {displayModel.buckets.map(bucket => (
-                      <th key={bucket.id} scope="col" aria-sort={ariaSort(bucketSortKey(bucket.id))}>
-                        <button
-                          type="button"
-                          className="load-impact-sort-header"
-                          onClick={() => toggleSort(bucketSortKey(bucket.id))}
+                    {displayModel.buckets.map(bucket => {
+                      const columnHighlighted = highlightedAxis?.bucketId === bucket.id
+                      return (
+                        <th
+                          key={bucket.id}
+                          scope="col"
+                          aria-sort={ariaSort(bucketSortKey(bucket.id))}
+                          className={columnHighlighted ? 'load-impact-axis-highlighted' : undefined}
+                          data-axis-active={columnHighlighted ? 'true' : undefined}
                         >
-                          <span>
-                            <span>{bucket.label}</span>
-                            <small>{bucket.sampleCount} total</small>
-                          </span>
-                          <span className="load-impact-sort-icon" aria-hidden="true">{sortIndicator(bucketSortKey(bucket.id))}</span>
-                        </button>
-                      </th>
-                    ))}
+                          <button
+                            type="button"
+                            className="load-impact-sort-header"
+                            onClick={() => toggleSort(bucketSortKey(bucket.id))}
+                          >
+                            <span>
+                              <span>{bucket.label}</span>
+                              <small>{bucket.sampleCount} total</small>
+                            </span>
+                            <span className="load-impact-sort-icon" aria-hidden="true">{sortIndicator(bucketSortKey(bucket.id))}</span>
+                          </button>
+                        </th>
+                      )
+                    })}
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedRows.map(row => (
-                    <tr key={row.metric.id}>
-                      <th scope="row">
-                        <span>{row.metric.label}</span>
-                        {row.metric.unit && <small>{row.metric.unit}</small>}
-                      </th>
-                      {row.cells.map(cell => {
-                        const selected = selectedCellKey === loadImpactCellKey(cell)
-                        const alpha = cell.sampleCount > 0 ? 0.12 + cell.intensity * 0.68 : 0
-                        const title = formatLoadImpactCellTitle(cell)
-                        return (
-                          <td key={cell.bucket.id}>
-                            <button
-                              type="button"
-                              className={`load-impact-cell${selected ? ' selected' : ''}`}
-                              disabled={cell.sampleCount === 0}
-                              title={title}
-                              aria-label={`${cell.metric.label} at ${cell.bucket.label}: ${title}`}
-                              onClick={() => setSelectedCellKey(loadImpactCellKey(cell))}
-                              style={{
-                                '--load-impact-alpha': alpha,
-                              } as CSSProperties}
+                  {sortedRows.map(row => {
+                    const rowHighlighted = highlightedAxis?.metricId === row.metric.id
+                    return (
+                      <tr key={row.metric.id} className={rowHighlighted ? 'load-impact-row-highlighted' : undefined}>
+                        <th
+                          scope="row"
+                          className={rowHighlighted ? 'load-impact-axis-highlighted' : undefined}
+                          data-axis-active={rowHighlighted ? 'true' : undefined}
+                        >
+                          <span>{row.metric.label}</span>
+                          {row.metric.unit && <small>{row.metric.unit}</small>}
+                        </th>
+                        {row.cells.map(cell => {
+                          const selected = selectedCellKey === loadImpactCellKey(cell)
+                          const alpha = cell.sampleCount > 0 ? 0.12 + cell.intensity * 0.68 : 0
+                          const title = formatLoadImpactCellTitle(cell)
+                          return (
+                            <td
+                              key={cell.bucket.id}
+                              className={[
+                                highlightedAxis?.metricId === cell.metric.id ? 'load-impact-cell-row-context' : '',
+                                highlightedAxis?.bucketId === cell.bucket.id ? 'load-impact-cell-column-context' : '',
+                              ].filter(Boolean).join(' ') || undefined}
+                              onMouseEnter={() => highlightCellAxis(cell)}
+                              onMouseLeave={clearHighlightedAxis}
                             >
-                              <strong>{formatLoadImpactValue(cell.average, cell.metric.unit)}</strong>
-                              <span>{cell.sampleCount}</span>
-                            </button>
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
+                              <button
+                                type="button"
+                                className={`load-impact-cell${selected ? ' selected' : ''}`}
+                                disabled={cell.sampleCount === 0}
+                                title={title}
+                                aria-label={`${cell.metric.label} at ${cell.bucket.label}: ${title}`}
+                                onClick={() => setSelectedCellKey(loadImpactCellKey(cell))}
+                                onFocus={() => highlightCellAxis(cell)}
+                                onBlur={clearHighlightedAxis}
+                                style={{
+                                  '--load-impact-alpha': alpha,
+                                } as CSSProperties}
+                              >
+                                <strong>{formatLoadImpactValue(cell.average, cell.metric.unit)}</strong>
+                                <span>{cell.sampleCount}</span>
+                              </button>
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -425,4 +486,6 @@ export default function LoadImpactHeatmap({
       )}
     </section>
   )
-}
+})
+
+export default LoadImpactHeatmap

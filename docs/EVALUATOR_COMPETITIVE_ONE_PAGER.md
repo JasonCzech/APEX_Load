@@ -9,7 +9,7 @@ APEX Load is a self-hosted, Kubernetes-native performance testing platform for H
 | Area | Status |
 | --- | --- |
 | HTTP/API, SOAP, WebSocket, gRPC, Java-over-HTTP | Supported |
-| JMeter, LoadRunner Web HTTP/HTML, HAR, OpenAPI, WSDL, DevWeb import-review workflows | Supported for documented scopes |
+| JMeter, Enterprise Script Archive HTTP, HAR, OpenAPI, WSDL, DevWeb import-review workflows | Supported for documented scopes |
 | CI/CD gating with JSON and JUnit XML | Supported |
 | Live metrics, archive reports, comparison, release trends, Prometheus/Dynatrace hooks | Supported for current scope |
 | Self-hosted named load zones | Supported as region-derived generator pools |

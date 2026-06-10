@@ -616,28 +616,28 @@ GET /api/v1/scripts/script-456/download
 
 Returns raw JSON with `Content-Disposition: attachment` header.
 
-#### Convert LoadRunner .zip to DSL
+#### Convert Enterprise Script Archive .zip to DSL
 
 ```
-POST /api/v1/scripts/import/loadrunner
+POST /api/v1/scripts/import/enterprise-script-archive
 Content-Type: multipart/form-data
 
-[file: loadrunner_project.zip]
+[file: source_project.zip]
 ```
 
-Converts a LoadRunner project archive into APEX Load JSON DSL. The importer supports C-based web request archives and the TruClient Mobile Web MVP path for browser scripts. Legacy desktop-style `TruClient` archives are reported as out of scope with explicit guidance.
+Converts an enterprise script archive into APEX Load JSON DSL. The importer supports C-based virtual-user web request archives and browser-profile archives; legacy desktop-style browser-profile archives are reported as out of scope with explicit guidance.
 
-For `TruClientMobileWeb` archives, APEX Load reads the `.usr` file plus UTF-16 `default.xml`, maps common navigate, click, fill, select, wait, transaction, conservative verify assertions, and simple JavaScript-derived fill/click steps into browser DSL actions, and carries supported mobile browser runtime settings into `config.browser`.
+For supported mobile browser-profile archives, APEX Load reads the project metadata plus UTF-16 `default.xml`, maps common navigate, click, fill, select, wait, transaction, conservative verify assertions, and simple JavaScript-derived fill/click steps into browser DSL actions, and carries supported mobile browser runtime settings into `config.browser`.
 
 Import responses include a shared `review_sections` array. Each section has a stable `key`, `title`, `severity`, `summary`, and `items` list so clients can render warnings, unsupported elements, preserved metadata, and browser import assumptions consistently.
 
-They also include `repair_suggestions`, a deterministic list of suggested cleanup actions with `id`, `category`, `severity`, `title`, `description`, `action`, and optional `target_action` fields. LoadRunner and TruClient imports use this to call out unsupported constructs, selector validation, wait refinement, runtime-setting review, and browser replay validation.
+They also include `repair_suggestions`, a deterministic list of suggested cleanup actions with `id`, `category`, `severity`, `title`, `description`, `action`, and optional `target_action` fields. Enterprise script archive imports use this to call out unsupported constructs, selector validation, wait refinement, runtime-setting review, and browser replay validation.
 
 **Response:**
 ```json
 {
   "script_id": "script-999",
-  "name": "Imported LoadRunner",
+  "name": "Imported Enterprise Script Archive",
   "conversion_warnings": [
     "VB script blocks converted to comments",
     "Custom extractors simplified to JSON path extraction"
@@ -1232,7 +1232,7 @@ Emits JSON messages for all test events:
 - `config.web_runtime.network_simulation.preset`: `56k`, `dsl`, `t1`, or `10mbps`
 - `config.web_runtime.network_simulation.bandwidth_kbps`, `config.web_runtime.network_simulation.latency_ms`: Custom transport shaping values
 - `config.web_runtime.network_simulation.jitter_ms`, `config.web_runtime.network_simulation.packet_loss_pct`: Optional jitter and packet-loss simulation values for custom HTTP transport shaping
-- `config.web_runtime.source_ips[]`: Pool of local client IP addresses to bind outgoing HTTP connections to (LoadRunner-style "IP spoofing" / multiple IPs). VUsers are distributed round-robin across the pool (stable per VUser), so the test presents many distinct source addresses to the target — useful to defeat server-side IP throttling or sticky load balancing. The generator host must own these addresses.
+- `config.web_runtime.source_ips[]`: Pool of local client IP addresses to bind outgoing HTTP connections to (source-address spoofing / multiple IPs). VUsers are distributed round-robin across the pool (stable per VUser), so the test presents many distinct source addresses to the target — useful to defeat server-side IP throttling or sticky load balancing. The generator host must own these addresses.
 - `config.web_runtime.network_profiles[]`: Network-condition population mix. Each entry has `name`, `weight`, and the same shaping fields as `network_simulation` (`mode`, `preset`, `bandwidth_kbps`, `latency_ms`, `jitter_ms`, `packet_loss_pct`). VUsers are distributed across the profiles in proportion to their weights (stable per VUser), so a configurable share runs under each condition — e.g. 30% `3g` / 70% `4g`. Per-profile response time and error metrics surface in the archive `by_network_profile` breakdown. Overrides `network_simulation` when present.
 - `config.web_runtime.streaming.mode`: `adaptive` or `fixed` media-response pacing mode
 - `config.web_runtime.streaming.buffer_size_seconds`: Startup buffering delay for media-like HTTP responses
@@ -1257,7 +1257,7 @@ Emits JSON messages for all test events:
 | Streaming | `config.web_runtime.streaming.*` | Executed in HTTP runtime for media-like responses using buffer and bitrate pacing |
 | Additional attributes | `config.web_runtime.additional_attributes` | Compatibility-only metadata |
 
-See [docs/COMPETITIVE_COMPARISON.md#loadrunner-rts-reference](docs/COMPETITIVE_COMPARISON.md#loadrunner-rts-reference) for the broader Web HTTP/HTML mapping, including compatibility-only and non-applicable RTS concepts.
+See [docs/COMPETITIVE_COMPARISON.md#enterprise-archive-runtime-settings-reference](docs/COMPETITIVE_COMPARISON.md#enterprise-archive-runtime-settings-reference) for the broader Web HTTP/HTML mapping, including compatibility-only and non-applicable runtime-setting concepts.
 
 ### Data Sources Section
 
@@ -1347,14 +1347,14 @@ See [docs/COMPETITIVE_COMPARISON.md#loadrunner-rts-reference](docs/COMPETITIVE_C
 - `values`: Inline list values for `list`
 - `min`, `max`: Bounds for `random_number`
 - `start`, `end`, `step`: Counter configuration
-- `current_iteration`: LoadRunner-compatible current iteration value, starting at `1` by default and honoring `start`, `step`, `pad_width`, and `pad_char`
-- `host`: LoadRunner-compatible load-generator host value, using the controller/generator hostname by default or `values[0]` as an explicit override
-- `time`: LoadRunner-compatible formatted wall-clock time, using `format`, `timezone`, and `offset_seconds`
+- `current_iteration`: Source-compatible current iteration value, starting at `1` by default and honoring `start`, `step`, `pad_width`, and `pad_char`
+- `host`: Source-compatible load-generator host value, using the controller/generator hostname by default or `values[0]` as an explicit override
+- `time`: Source-compatible formatted wall-clock time, using `format`, `timezone`, and `offset_seconds`
 - `format`, `timezone`, `offset_seconds`: Date/time, time, and timestamp configuration
 - `length`, `charset`: Random string configuration
 - `pad_width`, `pad_char`: Left-padding for numeric outputs
 
-APEX uses snake_case canonical parameter types, but script validation and runtime resolution also accept the LoadRunner spellings `CurrentIteration`, `Host`, and `Time` for migration parity.
+APEX uses snake_case canonical parameter types, but script validation and runtime resolution also accept source spellings such as `CurrentIteration`, `Host`, and `Time` for migration parity.
 
 **Usage in templates:**
 ```json
@@ -1508,7 +1508,7 @@ APEX uses snake_case canonical parameter types, but script validation and runtim
 {{var.csrf_token}}
 ```
 
-Imported LoadRunner `{ParamName}` references are also resolved through `{{var.ParamName}}` compatibility lookup when the script declares a matching parameter.
+Imported source `{ParamName}` references are also resolved through `{{var.ParamName}}` compatibility lookup when the script declares a matching parameter.
 
 **Functions:**
 ```

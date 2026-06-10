@@ -101,7 +101,7 @@ Two distinct, additive deliverables:
 | **Kafka protocol plugin** | Direct-execution protocol | `pkg/protocol/kafka` | Kafka is a transport; models on JMS exactly. **Required core.** |
 | **AsyncAPI converter** | Source-artifact importer | `pkg/convert/asyncapi` | AsyncAPI is the event-streaming analog of OpenAPI; the only importer that legitimately emits Kafka DSL. **Authoring convenience; depends on the plugin.** |
 
-Existing importers (LoadRunner, JMeter, k6, Postman, OpenAPI, HAR, WSDL, DevWeb, …) are
+Existing importers (Enterprise Script Archive, JMeter, k6, Postman, OpenAPI, HAR, WSDL, DevWeb, ...) are
 **not** reused for Kafka: none can emit Kafka actions, and no Kafka source artifact exists
 for them to consume. Routing Kafka through the importer framework would miscategorize it.
 

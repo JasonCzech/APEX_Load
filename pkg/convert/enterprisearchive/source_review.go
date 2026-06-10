@@ -1,10 +1,9 @@
-package loadrunner
+package enterprisearchive
 
 import "github.com/jasonczech/apexload/pkg/convert/sourceview"
 
 // SourceReview contains the redacted source files and source-to-DSL mappings
-// produced during a LoadRunner import. The type aliases keep the public
-// LoadRunner API stable while sharing the generic import review model.
+// produced during an enterprise script archive import.
 type SourceReview = sourceview.Review
 type SourceReviewFile = sourceview.SourceFile
 type SourceReviewMapping = sourceview.Mapping
@@ -56,12 +55,12 @@ func reviewOnlySourceReviewMappings(actions []*ParsedAction, status string, note
 			continue
 		}
 		for _, fn := range action.Functions {
-			mode := LoadRunnerSupportCustomReview
-			if def, ok := lookupLoadRunnerFunction(fn.Name); ok {
+			mode := SourceFunctionSupportCustomReview
+			if def, ok := lookupSourceFunction(fn.Name); ok {
 				mode = def.SupportMode
 			}
 			mappingStatus := status
-			if mode == LoadRunnerSupportExternalRequired {
+			if mode == SourceFunctionSupportExternalRequired {
 				mappingStatus = "external_required"
 			}
 			mappings = append(mappings, sourceReviewMappingWithSupportMode(fn, "", "", "review", mappingStatus, notes, mode))
@@ -82,6 +81,6 @@ func sourceReviewLanguage(name string) string {
 	return sourceview.Language(name)
 }
 
-func redactLoadRunnerSourceContent(content string) (string, bool) {
+func redactSourceSourceContent(content string) (string, bool) {
 	return sourceview.Redact(content)
 }

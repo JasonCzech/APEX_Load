@@ -65,7 +65,7 @@ export function pageTitleForScriptSubView(subView?: string): string {
     case 'edit':
       return 'Edit Script'
     case 'import':
-      return 'Import LoadRunner'
+      return 'Import Enterprise Script Archive'
     case 'jmeter-import':
       return 'Import JMeter'
     case 'recorder':

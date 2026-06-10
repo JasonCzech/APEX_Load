@@ -441,7 +441,7 @@ export default function BrowserReplayDebugger({
                 </div>
                 {sourceStepLabel(selectedEvent) && (
                   <div className="browser-debugger-detail-item">
-                    <span>VuGen Source</span>
+                    <span>Source Syntax</span>
                     <strong>{sourceStepLabel(selectedEvent)}</strong>
                     {selectedEvent.source_profile && <small>{selectedEvent.source_profile}</small>}
                   </div>

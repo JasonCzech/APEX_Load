@@ -175,6 +175,58 @@
   flex: 0 0 auto;
 }
 
+.topbar-contribution-controls:has(.settings-topbar-section-toggle) {
+  flex: 1 1 auto;
+  max-width: 100%;
+}
+
+.topbar-contribution-controls:has(.topbar-page-section-toggle) {
+  flex: 1 1 auto;
+  max-width: 100%;
+}
+
+@media (min-width: 769px) {
+  .main-topbar.contextual:has(.settings-topbar-section-toggle) {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+  }
+
+  .main-topbar.contextual:has(.topbar-page-section-toggle) {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+  }
+
+  .main-topbar.contextual:has(.settings-topbar-section-toggle) .main-topbar-page {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .main-topbar.contextual:has(.topbar-page-section-toggle) .main-topbar-page {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .main-topbar.contextual:has(.settings-topbar-section-toggle) .main-topbar-actions,
+  .main-topbar.contextual:has(.settings-topbar-section-toggle) .topbar-action-group {
+    flex-wrap: nowrap;
+  }
+
+  .main-topbar.contextual:has(.topbar-page-section-toggle) .main-topbar-actions,
+  .main-topbar.contextual:has(.topbar-page-section-toggle) .topbar-action-group {
+    flex-wrap: nowrap;
+  }
+
+  .topbar-contribution-controls:has(.settings-topbar-section-toggle) {
+    overflow: hidden;
+  }
+
+  .topbar-contribution-controls:has(.topbar-page-section-toggle) {
+    overflow: hidden;
+  }
+}
+
 .topbar-segmented-control {
   display: inline-flex;
   align-items: center;
@@ -235,8 +287,8 @@
   position: sticky;
   top: 57px;
   z-index: 79;
-  margin: -20px -36px 20px;
-  padding: 8px 36px;
+  margin: -20px 0 20px;
+  padding: 8px 0;
   border-bottom: 1px solid var(--border);
   background: var(--topbar-bg);
   backdrop-filter: blur(20px);
@@ -506,8 +558,8 @@
 
   .main-topbar-feedback {
     top: 0;
-    margin: -14px -16px 16px;
-    padding: 8px 16px;
+    margin: -14px 0 16px;
+    padding: 8px 0;
   }
 
   .theme-toggle {
@@ -532,10 +584,25 @@
   .main-topbar {
     align-items: stretch;
     flex-direction: column;
+    justify-content: flex-start;
   }
 
   .main-topbar-page {
     max-width: none;
+  }
+
+  .main-topbar.contextual .main-topbar-page {
+    flex: 0 1 auto;
+  }
+
+  .topbar-contribution-controls:has(.settings-topbar-section-toggle) {
+    flex: 0 1 auto;
+    width: 100%;
+  }
+
+  .topbar-contribution-controls:has(.topbar-page-section-toggle) {
+    flex: 0 1 auto;
+    width: 100%;
   }
 
   .topbar-active-runs {

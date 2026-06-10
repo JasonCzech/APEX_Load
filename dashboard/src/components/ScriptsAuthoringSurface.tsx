@@ -2,7 +2,7 @@ import { type ReactNode } from 'react'
 import { type ScriptDefinition } from '../types/scripts'
 import { Project, type StoredScript } from '../types'
 import ScriptEditor from './ScriptEditor'
-import LoadRunnerImport from './LoadRunnerImport'
+import EnterpriseArchiveImport from './EnterpriseArchiveImport'
 import JMeterImport from './JMeterImport'
 import JavaHttpImport from './JavaHttpImport'
 import RecordingStudio from './RecordingStudio'
@@ -58,16 +58,16 @@ export default function ScriptsAuthoringSurface({
   onEditDraft,
   onReturnToDraftSource,
 }: Props) {
-  const loadRunnerEditReturnTarget: AuthoringReturnTarget = {
+  const enterpriseArchiveEditReturnTarget: AuthoringReturnTarget = {
     subView: 'import',
     label: 'Back to Converted Script',
-    description: 'Return to the converted LoadRunner review without losing the current import results.',
+    description: 'Return to the converted enterprise script archive review without losing the current import results.',
   }
-  const openLoadRunnerDraftInEditor = (script: ScriptDefinition, focus?: DraftEditorFocus) => {
-    onEditDraft(script, focus, loadRunnerEditReturnTarget)
+  const openEnterpriseArchiveDraftInEditor = (script: ScriptDefinition, focus?: DraftEditorFocus) => {
+    onEditDraft(script, focus, enterpriseArchiveEditReturnTarget)
   }
-  const renderLoadRunnerImportSurface = (hidden = false) => renderCreateOptionsSurface(
-    <LoadRunnerImport projectId={projectId} onImported={onImported} onEdit={openLoadRunnerDraftInEditor} onClose={onOpenCreateOptions} />,
+  const renderEnterpriseArchiveImportSurface = (hidden = false) => renderCreateOptionsSurface(
+    <EnterpriseArchiveImport projectId={projectId} onImported={onImported} onEdit={openEnterpriseArchiveDraftInEditor} onClose={onOpenCreateOptions} />,
     onOpenCreateOptions,
     hidden,
   )
@@ -78,7 +78,7 @@ export default function ScriptsAuthoringSurface({
       if (draftReturnTarget?.subView === 'import') {
         return (
           <div className="scripts-authoring-stack">
-            {renderLoadRunnerImportSurface(true)}
+            {renderEnterpriseArchiveImportSurface(true)}
             <div className="page">
               <div className="authoring-return-bar">
                 <button className="btn btn-secondary" onClick={onReturnToDraftSource}>{draftReturnTarget.label}</button>
@@ -96,7 +96,7 @@ export default function ScriptsAuthoringSurface({
     case 'import':
       return (
         <div className="scripts-authoring-stack">
-          {renderLoadRunnerImportSurface(false)}
+          {renderEnterpriseArchiveImportSurface(false)}
         </div>
       )
     case 'jmeter-import':

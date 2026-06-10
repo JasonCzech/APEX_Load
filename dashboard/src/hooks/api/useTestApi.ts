@@ -57,6 +57,11 @@ type ArchiveListParams = {
   limit?: number
   offset?: number
   action?: string
+  groups?: string[]
+}
+
+type MetricsParams = {
+  groups?: string[]
 }
 
 type TestListResponse = {
@@ -221,12 +226,12 @@ type ArchiveAnalysisParams = ArchiveTransactionsParams & {
   baseline_id?: string
 }
 
-function buildQuery(params?: Record<string, string | number | boolean | undefined>) {
+function buildQuery(params?: Record<string, string | number | boolean | string[] | undefined>) {
   const query = new URLSearchParams()
 
   Object.entries(params || {}).forEach(([key, value]) => {
     if (value !== undefined) {
-      query.set(key, String(value))
+      query.set(key, Array.isArray(value) ? value.join(',') : String(value))
     }
   })
 
@@ -383,7 +388,10 @@ export function useTestApi() {
     [],
   )
 
-  const getMetrics = useCallback((id: string) => request<TestMetricsResponse>(`/tests/${id}/metrics`), [])
+  const getMetrics = useCallback((id: string, params?: MetricsParams) => {
+    const suffix = buildQuery({ groups: params?.groups })
+    return request<TestMetricsResponse>(`/tests/${id}/metrics${suffix}`)
+  }, [])
 
   const getTestErrorEvidence = useCallback(
     (id: string, params: LiveErrorEvidenceParams) =>
@@ -434,7 +442,7 @@ export function useTestApi() {
 
   const getTestArchiveSummaries = useCallback(
     (id: string, params?: ArchiveListParams) => {
-      const suffix = buildQuery({ limit: params?.limit, offset: params?.offset, action: params?.action })
+      const suffix = buildQuery({ limit: params?.limit, offset: params?.offset, action: params?.action, groups: params?.groups })
       return request<ArchiveSummariesResponse>(`/tests/${id}/archive/summaries${suffix}`)
     },
     [],

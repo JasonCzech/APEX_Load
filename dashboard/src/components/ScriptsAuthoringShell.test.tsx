@@ -101,7 +101,7 @@ function createActions(overrides: Partial<ScriptsCreateOptionActions> = {}): Scr
     startKafkaScript: vi.fn(),
     startTemplateScript: vi.fn(),
     composeComponentScript: vi.fn(),
-    openLoadRunnerImport: vi.fn(),
+    openEnterpriseArchiveImport: vi.fn(),
     openJMeterImport: vi.fn(),
     openRecorder: vi.fn(),
     openSampleImport: vi.fn(),
@@ -206,7 +206,7 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('HAR Traffic')
     expect(container.textContent).toContain('Request / Response Sample')
     expect(container.textContent).toContain('Import Java over HTTP')
-    expect(container.textContent).toContain('Import LoadRunner')
+    expect(container.textContent).toContain('Import Enterprise Script Archive')
     expect(container.textContent).toContain('Import JMeter')
     expect(container.textContent).toContain('DevWeb Source')
     expect(container.textContent).not.toContain('Import SOAP Assets')
@@ -222,8 +222,8 @@ describe('ScriptsAuthoringShell', () => {
     await clickButton('Postman Collection')
     expect(actions.openPostmanImport).toHaveBeenCalled()
 
-    await clickButton('Import LoadRunner')
-    expect(actions.openLoadRunnerImport).toHaveBeenCalled()
+    await clickButton('Import Enterprise Script Archive')
+    expect(actions.openEnterpriseArchiveImport).toHaveBeenCalled()
 
     await clickButton('Script Library')
     expect(onOpenLibrary).toHaveBeenCalled()

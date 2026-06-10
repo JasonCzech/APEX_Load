@@ -304,17 +304,7 @@ func finalizeArchiveAnalysisStats(acc *archiveAnalysisStatsAccumulator) RunArchi
 }
 
 func archiveAnalysisPercentile(values []float64, q float64) float64 {
-	if len(values) == 0 {
-		return 0
-	}
-	index := int(float64(len(values)-1) * q)
-	if index < 0 {
-		index = 0
-	}
-	if index >= len(values) {
-		index = len(values) - 1
-	}
-	return values[index]
+	return percentileFromSortedSamples(values, q)
 }
 
 func archiveTransactionDrilldown(runID string, index int, tx TransactionEvent) RunArchiveTransactionDrilldown {

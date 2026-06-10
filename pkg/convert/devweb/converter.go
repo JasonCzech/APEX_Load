@@ -911,9 +911,9 @@ func devWebHelperInvocations(files map[string]string, sourceFileName string, hel
 		return nil
 	}
 	invocations := make([]devWebHelperInvocation, 0)
-	callPattern := regexp.MustCompile(`(?s)(?:(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*)?([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\s*\((.*?)\)\s*;`)
+	callPattern := devWebHelperCallPattern()
 	for _, match := range callPattern.FindAllStringSubmatch(content, -1) {
-		if len(match) < 5 {
+		if len(match) < 6 {
 			continue
 		}
 		objectName := strings.TrimSpace(match[2])
@@ -923,13 +923,14 @@ func devWebHelperInvocations(files map[string]string, sourceFileName string, hel
 		}
 		assignedTo := strings.TrimSpace(match[1])
 		functionName := strings.TrimSpace(match[3])
+		sent := strings.TrimSpace(match[5]) != "" || devWebHelperInvocationSent(content, assignedTo)
 		invocation := devWebHelperInvocation{
 			Module:              module,
 			Object:              objectName,
 			Function:            functionName,
 			AssignedTo:          assignedTo,
 			ArgumentCount:       len(splitTopLevel(strings.TrimSpace(match[4]), ',')),
-			Sent:                devWebHelperInvocationSent(content, assignedTo),
+			Sent:                sent,
 			ExtractorNames:      devWebHelperInvocationExtractors(content, assignedTo),
 			TemplateInventoried: devWebHelperModuleHasFunction(files[module], functionName),
 		}
@@ -954,10 +955,11 @@ func convertedDevWebHelperInvocationActions(block namedBlock, stats *ConvertStat
 	if len(definitions) == 0 {
 		return nil
 	}
-	callPattern := regexp.MustCompile(`(?s)(?:(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*)?([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\s*\((.*?)\)\s*;`)
+	localValues := devWebBlockConstantValues(block.Body, ctx)
+	callPattern := devWebHelperCallPattern()
 	var steps []parsedStep
 	for _, match := range callPattern.FindAllStringSubmatchIndex(block.Body, -1) {
-		if len(match) < 10 || match[4] < 0 || match[6] < 0 || match[8] < 0 {
+		if len(match) < 12 || match[4] < 0 || match[6] < 0 || match[8] < 0 {
 			continue
 		}
 		objectName := strings.TrimSpace(block.Body[match[4]:match[5]])
@@ -969,7 +971,8 @@ func convertedDevWebHelperInvocationActions(block namedBlock, stats *ConvertStat
 		if match[2] >= 0 && match[3] >= 0 {
 			assignedTo = strings.TrimSpace(block.Body[match[2]:match[3]])
 		}
-		if !devWebHelperInvocationSent(block.Body, assignedTo) {
+		directSend := match[10] >= 0 && match[11] >= 0
+		if !directSend && !devWebHelperInvocationSent(block.Body, assignedTo) {
 			continue
 		}
 		functionName := strings.TrimSpace(block.Body[match[6]:match[7]])
@@ -977,7 +980,7 @@ func convertedDevWebHelperInvocationActions(block namedBlock, stats *ConvertStat
 		if !ok {
 			continue
 		}
-		localCtx, ok := devWebHelperInvocationContext(ctx, definition.Params, block.Body[match[8]:match[9]])
+		localCtx, ok := devWebHelperInvocationContext(ctx, definition.Params, block.Body[match[8]:match[9]], localValues)
 		if !ok {
 			continue
 		}
@@ -991,7 +994,9 @@ func convertedDevWebHelperInvocationActions(block namedBlock, stats *ConvertStat
 		action.Metadata["devweb_helper_module"] = definition.Module
 		action.Metadata["devweb_helper_function"] = definition.Function
 		action.Metadata["devweb_helper_object"] = objectName
-		action.Metadata["devweb_request_variable"] = assignedTo
+		if assignedTo != "" {
+			action.Metadata["devweb_request_variable"] = assignedTo
+		}
 		action.Extractors = append(action.Extractors, devWebHelperInvocationExtractorsFull(block.Body, assignedTo)...)
 		stats.TotalSteps++
 		stats.HTTPRequests++
@@ -1049,7 +1054,11 @@ func devWebHelperRequestDefinitions(files map[string]string, helperModules []str
 	return definitions
 }
 
-func devWebHelperInvocationContext(ctx convertContext, params []string, rawArgs string) (convertContext, bool) {
+func devWebHelperCallPattern() *regexp.Regexp {
+	return regexp.MustCompile(`(?s)(?:(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*)?([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\s*\((.*?)\)\s*(?:\.\s*(send|sendSync)\s*\(\s*\))?\s*;`)
+}
+
+func devWebHelperInvocationContext(ctx convertContext, params []string, rawArgs string, localValues map[string]string) (convertContext, bool) {
 	args := splitTopLevel(strings.TrimSpace(rawArgs), ',')
 	if len(args) != len(params) {
 		return ctx, false
@@ -1060,7 +1069,7 @@ func devWebHelperInvocationContext(ctx convertContext, params []string, rawArgs 
 		local.parameterTemplates[key] = value
 	}
 	for i, param := range params {
-		value, ok := devWebHelperArgumentValue(args[i], ctx)
+		value, ok := devWebHelperArgumentValue(args[i], ctx, localValues)
 		if !ok {
 			return ctx, false
 		}
@@ -1069,7 +1078,20 @@ func devWebHelperInvocationContext(ctx convertContext, params []string, rawArgs 
 	return local, true
 }
 
-func devWebHelperArgumentValue(raw string, ctx convertContext) (string, bool) {
+func devWebHelperArgumentValue(raw string, ctx convertContext, localValues map[string]string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+	if regexp.MustCompile(`^[A-Za-z_$][\w$]*$`).MatchString(raw) && localValues != nil {
+		if value, ok := localValues[raw]; ok {
+			return value, true
+		}
+	}
+	return devWebStaticArgumentValue(raw, ctx)
+}
+
+func devWebStaticArgumentValue(raw string, ctx convertContext) (string, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "", false
@@ -1089,6 +1111,25 @@ func devWebHelperArgumentValue(raw string, ctx convertContext) (string, bool) {
 		return value, !containsTemplateExpression(value)
 	}
 	return "", false
+}
+
+func devWebBlockConstantValues(content string, ctx convertContext) map[string]string {
+	pattern := regexp.MustCompile(`(?m)\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n]+)\s*;`)
+	values := map[string]string{}
+	for _, match := range pattern.FindAllStringSubmatch(content, -1) {
+		if len(match) < 3 {
+			continue
+		}
+		value, ok := devWebStaticArgumentValue(match[2], ctx)
+		if !ok || containsTemplateExpression(value) {
+			continue
+		}
+		values[strings.TrimSpace(match[1])] = value
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	return values
 }
 
 func devWebHelperAliases(content string, sourceFileName string, helperModules []string) map[string]string {
@@ -1211,26 +1252,48 @@ type devWebFunctionRange struct {
 }
 
 func devWebFunctionRanges(content string) []devWebFunctionRange {
-	pattern := regexp.MustCompile(`(?s)function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*\{`)
-	matches := pattern.FindAllStringSubmatchIndex(content, -1)
-	ranges := make([]devWebFunctionRange, 0, len(matches))
-	for _, match := range matches {
-		if len(match) < 6 {
-			continue
+	ranges := make([]devWebFunctionRange, 0)
+	seen := map[string]struct{}{}
+	appendMatches := func(pattern *regexp.Regexp, nameGroup int, paramsGroup int) {
+		for _, match := range pattern.FindAllStringSubmatchIndex(content, -1) {
+			if len(match) <= paramsGroup*2+1 || match[nameGroup*2] < 0 || match[paramsGroup*2] < 0 {
+				continue
+			}
+			name := content[match[nameGroup*2]:match[nameGroup*2+1]]
+			if !isDevWebFunctionRangeName(name) {
+				continue
+			}
+			openBrace := match[1] - 1
+			closeBrace := findMatchingJavaScriptBrace(content, openBrace)
+			if closeBrace <= openBrace {
+				continue
+			}
+			key := fmt.Sprintf("%s:%d:%d", name, match[0], closeBrace)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			ranges = append(ranges, devWebFunctionRange{
+				Name:   name,
+				Params: devWebFunctionParams(content[match[paramsGroup*2]:match[paramsGroup*2+1]]),
+				Start:  match[0],
+				End:    closeBrace,
+			})
 		}
-		openBrace := match[1] - 1
-		closeBrace := findMatchingJavaScriptBrace(content, openBrace)
-		if closeBrace <= openBrace {
-			continue
-		}
-		ranges = append(ranges, devWebFunctionRange{
-			Name:   content[match[2]:match[3]],
-			Params: devWebFunctionParams(content[match[4]:match[5]]),
-			Start:  match[0],
-			End:    closeBrace,
-		})
 	}
+	appendMatches(regexp.MustCompile(`(?s)function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*\{`), 1, 2)
+	appendMatches(regexp.MustCompile(`(?s)(?:^|[,{]\s*)([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*\{`), 1, 2)
+	appendMatches(regexp.MustCompile(`(?s)(?:^|[,{]\s*)([A-Za-z_$][\w$]*)\s*:\s*function\s*\(([^)]*)\)\s*\{`), 1, 2)
 	return ranges
+}
+
+func isDevWebFunctionRangeName(name string) bool {
+	switch strings.TrimSpace(name) {
+	case "", "if", "for", "while", "switch", "catch", "function":
+		return false
+	default:
+		return true
+	}
 }
 
 func devWebFunctionParams(raw string) []string {

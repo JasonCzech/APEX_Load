@@ -56,32 +56,32 @@ vi.mock('./ScriptEditor', () => ({
   ),
 }))
 
-vi.mock('./LoadRunnerImport', () => ({
+vi.mock('./EnterpriseArchiveImport', () => ({
   default: ({ onImported, onEdit, onClose }: { onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null }) => void, onEdit?: (script: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] }, focus?: { targetSection?: string }) => void, onClose?: () => void }) => (
-    <div data-testid="loadrunner-import">
-      <input aria-label="mock-loadrunner-state" defaultValue="converted-review" />
+    <div data-testid="enterprise-archive-import">
+      <input aria-label="mock-enterprise-archive-state" defaultValue="converted-review" />
       <button onClick={() => onImported?.({
         scripts: [{
           id: 'imported-script-1',
-          name: 'Imported LoadRunner Script',
+          name: 'Imported Enterprise Script Archive',
           protocol: 'http',
           script: {
-            name: 'Imported LoadRunner Script',
+            name: 'Imported Enterprise Script Archive',
             version: '1.0.0',
             protocol: 'http',
             config: { base_url: 'https://import.example.com' },
             actions: [],
           },
         }],
-      })}>mock-loadrunner-save</button>
+      })}>mock-enterprise-archive-save</button>
       <button onClick={() => onEdit?.({
-        name: 'Converted LoadRunner Draft',
+        name: 'Converted Enterprise Script Archive Draft',
         version: '1.0.0',
         protocol: 'http',
         config: { base_url: 'https://import.example.com' },
         actions: [],
-      }, { targetSection: 'runtime' })}>mock-loadrunner-review-option</button>
-      <button onClick={onClose}>mock-loadrunner-close</button>
+      }, { targetSection: 'runtime' })}>mock-enterprise-archive-review-option</button>
+      <button onClick={onClose}>mock-enterprise-archive-close</button>
     </div>
   ),
 }))
@@ -421,7 +421,7 @@ describe('ScriptsPage', () => {
     expect(countImportOption('HAR Traffic')).toBe(1)
     expect(countImportOption('Request / Response Sample')).toBe(1)
     expect(countImportOption('Import Java over HTTP')).toBe(1)
-    expect(countImportOption('Import LoadRunner')).toBe(1)
+    expect(countImportOption('Import Enterprise Script Archive')).toBe(1)
     expect(countImportOption('Import JMeter')).toBe(1)
     expect(countImportOption('DevWeb Source')).toBe(1)
     expect(countImportOption('Import SOAP Assets')).toBe(0)
@@ -796,19 +796,19 @@ describe('ScriptsPage', () => {
 
     await clickButton('Import From Source')
 
-    const loadRunnerButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import LoadRunner'))
-    expect(loadRunnerButton).toBeDefined()
-    if (!loadRunnerButton) {
+    const enterpriseArchiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Enterprise Script Archive'))
+    expect(enterpriseArchiveButton).toBeDefined()
+    if (!enterpriseArchiveButton) {
       return
     }
 
     await act(async () => {
-      loadRunnerButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      enterpriseArchiveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('[data-testid="loadrunner-import"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
 
-    const importSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-loadrunner-save'))
+    const importSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-enterprise-archive-save'))
     expect(importSaveButton).toBeDefined()
     if (!importSaveButton) {
       return
@@ -822,11 +822,11 @@ describe('ScriptsPage', () => {
 
     expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
-    expect(container.textContent).toContain('editor:Imported LoadRunner Script')
+    expect(container.textContent).toContain('editor:Imported Enterprise Script Archive')
     expect(container.textContent).toContain('script-id:imported-script-1')
   })
 
-  it('returns LoadRunner import close actions to the create options shell', async () => {
+  it('returns Enterprise Script Archive import close actions to the create options shell', async () => {
     await act(async () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })
@@ -835,20 +835,20 @@ describe('ScriptsPage', () => {
 
     await clickButton('Import From Source')
 
-    const loadRunnerButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import LoadRunner'))
-    expect(loadRunnerButton).toBeDefined()
-    if (!loadRunnerButton) {
+    const enterpriseArchiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Enterprise Script Archive'))
+    expect(enterpriseArchiveButton).toBeDefined()
+    if (!enterpriseArchiveButton) {
       return
     }
 
     await act(async () => {
-      loadRunnerButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      enterpriseArchiveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('[data-testid="loadrunner-import"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
     expect(container.textContent).toContain('Back to Create Script')
 
-    const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-loadrunner-close'))
+    const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-enterprise-archive-close'))
     expect(closeButton).toBeDefined()
     if (!closeButton) {
       return
@@ -858,13 +858,13 @@ describe('ScriptsPage', () => {
       closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('[data-testid="loadrunner-import"]')).toBeNull()
+    expect(container.querySelector('[data-testid="enterprise-archive-import"]')).toBeNull()
     expect(container.textContent).toContain('Create Script')
     await clickButton('Import From Source')
     expect(container.textContent).toContain('Import JMeter')
   })
 
-  it('returns from LoadRunner review editor options to the converted script review', async () => {
+  it('returns from Enterprise Script Archive review editor options to the converted script review', async () => {
     await act(async () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })
@@ -873,37 +873,37 @@ describe('ScriptsPage', () => {
 
     await clickButton('Import From Source')
 
-    const loadRunnerButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import LoadRunner'))
-    expect(loadRunnerButton).toBeDefined()
-    if (!loadRunnerButton) {
+    const enterpriseArchiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Enterprise Script Archive'))
+    expect(enterpriseArchiveButton).toBeDefined()
+    if (!enterpriseArchiveButton) {
       return
     }
 
     await act(async () => {
-      loadRunnerButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      enterpriseArchiveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('[data-testid="loadrunner-import"]')).not.toBeNull()
-    const preservedInput = container.querySelector('input[aria-label="mock-loadrunner-state"]') as HTMLInputElement | null
+    expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
+    const preservedInput = container.querySelector('input[aria-label="mock-enterprise-archive-state"]') as HTMLInputElement | null
     expect(preservedInput).not.toBeNull()
     if (!preservedInput) {
       return
     }
     preservedInput.value = 'review-state-preserved'
 
-    await clickButton('mock-loadrunner-review-option')
+    await clickButton('mock-enterprise-archive-review-option')
 
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
-    expect(container.textContent).toContain('editor:Converted LoadRunner Draft')
+    expect(container.textContent).toContain('editor:Converted Enterprise Script Archive Draft')
     expect(container.textContent).toContain('Back to Converted Script')
-    expect(container.querySelector('[data-testid="loadrunner-import"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
 
     await clickButton('Back to Converted Script')
 
     expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
-    expect(container.querySelector('[data-testid="loadrunner-import"]')).not.toBeNull()
-    expect((container.querySelector('input[aria-label="mock-loadrunner-state"]') as HTMLInputElement | null)?.value).toBe('review-state-preserved')
-    expect(container.textContent).toContain('mock-loadrunner-review-option')
+    expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
+    expect((container.querySelector('input[aria-label="mock-enterprise-archive-state"]') as HTMLInputElement | null)?.value).toBe('review-state-preserved')
+    expect(container.textContent).toContain('mock-enterprise-archive-review-option')
   })
 
   it('returns JMeter import close actions to the create options shell', async () => {
@@ -942,7 +942,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Create Script')
     expect(container.textContent).toContain('Model From Existing Script')
     await clickButton('Import From Source')
-    expect(container.textContent).toContain('Import LoadRunner')
+    expect(container.textContent).toContain('Import Enterprise Script Archive')
   })
 
   it('shows SOAP and Java-over-HTTP create options and routes them into the draft editor', async () => {
@@ -1124,7 +1124,7 @@ describe('ScriptsPage', () => {
       sessions: [{
         id: 'session-1',
         project_id: 'project-1',
-        source: 'loadrunner',
+        source: 'enterprise_script_archive',
         name: 'Migrated checkout review',
         status: 'ready',
         draft: {
@@ -1166,7 +1166,7 @@ describe('ScriptsPage', () => {
     expect(apiMock.listAuthoringSessions).toHaveBeenCalledWith('project-1')
     expect(container.textContent).toContain('Authoring Sessions')
     expect(container.textContent).toContain('Migrated checkout review')
-    expect(container.textContent).toContain('Loadrunner')
+    expect(container.textContent).toContain('Enterprise Script Archive')
     expect(container.textContent).toContain('Last approval: needs_review')
     expect(container.textContent).toContain('1 pending repair')
     expect(container.textContent).toContain('approval ready')

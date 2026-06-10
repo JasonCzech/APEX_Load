@@ -28,6 +28,7 @@ function MetricsStreamHarness({ status = 'RUNNING' }: { status?: 'RUNNING' | 'CO
       <span data-testid="count">{String(localMetricsHistory.length)}</span>
       <span data-testid="tps">{String(latest?.tps ?? -1)}</span>
       <span data-testid="group-tps">{String(latest?.Checkout_tps ?? -1)}</span>
+      <span data-testid="group-p95">{String(latest?.Checkout_p95 ?? -1)}</span>
       <span data-testid="cpu">{String(latest?.cpuProcess ?? -1)}</span>
       <span data-testid="impact-throttle">{String(latest?.containerCPUThrottledSecondsRate ?? -1)}</span>
       <span data-testid="impact-net-errors">{String(latest?.netErrorsPerSec ?? -1)}</span>
@@ -94,9 +95,16 @@ describe('useExecutionMetricsStream', () => {
         p99_ms: 501.66,
         groups: {
           Checkout: {
+            name: 'Checkout',
             tps: 7.89,
             avg_response_ms: 180.11,
             vusers: 9,
+            transactions: 70,
+            errors: 3,
+            p50_ms: 120,
+            p90_ms: 230,
+            p95_ms: 260,
+            p99_ms: 340,
           },
         },
         resources: {
@@ -140,6 +148,7 @@ describe('useExecutionMetricsStream', () => {
     expect(readTestId('count')).toBe('1')
     expect(readTestId('tps')).toBe('12.3')
     expect(readTestId('group-tps')).toBe('7.9')
+    expect(readTestId('group-p95')).toBe('260')
     expect(readTestId('cpu')).toBe('44.4')
     expect(readTestId('impact-throttle')).toBe('0.3')
     expect(readTestId('impact-net-errors')).toBe('5.3')

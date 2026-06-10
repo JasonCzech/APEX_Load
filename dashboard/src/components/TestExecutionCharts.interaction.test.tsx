@@ -67,17 +67,41 @@ vi.mock('recharts', () => {
   }
 
   return {
-    Area: ({ dataKey, name, yAxisId }: { dataKey?: string; name?: string; yAxisId?: string | number }) => (
-      <path data-testid="mock-area" data-key={dataKey} data-name={name} data-y-axis-id={String(yAxisId ?? '')} />
+    Area: ({ dataKey, name, yAxisId, fill }: { dataKey?: string; name?: string; yAxisId?: string | number; fill?: string }) => (
+      <path data-testid="mock-area" data-key={dataKey} data-name={name} data-y-axis-id={String(yAxisId ?? '')} data-fill={fill ?? ''} />
     ),
     CartesianGrid: Mock,
     ComposedChart: MockChart,
     Legend: Mock,
-    Line: ({ dataKey, name, yAxisId }: { dataKey?: string; name?: string; yAxisId?: string | number }) => (
-      <path data-testid="mock-line" data-key={dataKey} data-name={name} data-y-axis-id={String(yAxisId ?? '')} />
+    Line: ({
+      dataKey,
+      name,
+      yAxisId,
+      strokeWidth,
+      strokeDasharray,
+      strokeOpacity,
+    }: {
+      dataKey?: string
+      name?: string
+      yAxisId?: string | number
+      strokeWidth?: number
+      strokeDasharray?: string
+      strokeOpacity?: number
+    }) => (
+      <path
+        data-testid="mock-line"
+        data-key={dataKey}
+        data-name={name}
+        data-y-axis-id={String(yAxisId ?? '')}
+        data-stroke-width={String(strokeWidth ?? '')}
+        data-stroke-dasharray={strokeDasharray ?? ''}
+        data-stroke-opacity={String(strokeOpacity ?? '')}
+      />
     ),
     LineChart: MockChart,
-    ReferenceLine: ({ x }: { x?: string | number }) => <path data-testid="mock-reference-line" data-x={String(x ?? '')} />,
+    ReferenceLine: ({ x, yAxisId }: { x?: string | number; yAxisId?: string | number }) => (
+      <path data-testid="mock-reference-line" data-x={String(x ?? '')} data-y-axis-id={String(yAxisId ?? '')} />
+    ),
     ReferenceArea: Mock,
     ResponsiveContainer: ({ children, height }: { children?: ReactNode; height?: number }) => <div data-testid="mock-responsive-container" data-height={String(height ?? '')}>{children}</div>,
     Tooltip: MockTooltip,
@@ -89,11 +113,17 @@ vi.mock('recharts', () => {
       label,
       orientation,
       domain,
+      onClick,
+      className,
+      ...props
     }: {
       yAxisId?: string | number
       label?: string | { value?: string; position?: string }
       orientation?: string
       domain?: Array<string | number>
+      onClick?: (...args: unknown[]) => void
+      className?: string
+      'aria-label'?: string
     }) => (
       <g
         data-testid="mock-y-axis"
@@ -102,6 +132,9 @@ vi.mock('recharts', () => {
         data-label={labelText(label)}
         data-label-position={labelPosition(label)}
         data-domain={Array.isArray(domain) ? domain.join('|') : ''}
+        data-axis-aria-label={props['aria-label'] ?? ''}
+        className={className}
+        onClick={onClick}
       />
     ),
   }
@@ -217,8 +250,15 @@ describe('TestExecutionCharts context menu', () => {
     const vusersChart = container.querySelectorAll('.chart-card')[0]
     expect(vusersChart?.textContent).toContain('Virtual Users')
     expect(vusersChart?.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('')
-    expect(axisLabels(vusersChart)).toContain('VUsers')
-    expect(axisLabelPositions(vusersChart)).toContain('left')
+    expect(axisLabels(vusersChart)).toEqual([])
+    expect(axisAriaLabels(vusersChart)).toContain('Show VUsers axis label')
+
+    await act(async () => {
+      vusersChart?.querySelector('[data-testid="mock-y-axis"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 140, clientY: 180 }))
+    })
+
+    expect(container.querySelector('.chart-axis-label-popover-title')?.textContent).toBe('Y-axis')
+    expect(container.querySelector('.chart-axis-label-popover-value')?.textContent).toBe('VUsers')
 
     await act(async () => {
       vusersChart?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 180, clientY: 160 }))
@@ -234,8 +274,8 @@ describe('TestExecutionCharts context menu', () => {
 
     expect(vusersChart?.querySelector('path[data-testid="mock-line"][data-name="ART"]')).not.toBeNull()
     expect(vusersChart?.querySelector('.chart-title')?.textContent).toBe('Virtual Users + ART')
-    expect(axisLabels(vusersChart)).toEqual(expect.arrayContaining(['VUsers', 'ART (ms)']))
-    expect(axisLabelPositions(vusersChart)).toEqual(expect.arrayContaining(['left', 'right']))
+    expect(axisLabels(vusersChart)).toEqual([])
+    expect(axisAriaLabels(vusersChart)).toEqual(expect.arrayContaining(['Show VUsers axis label', 'Show ART (ms) axis label']))
     expect(window.localStorage.getItem('apexload.execution.artOverlayCharts')).toBe('["vusers"]')
 
     await act(async () => {
@@ -252,7 +292,8 @@ describe('TestExecutionCharts context menu', () => {
 
     expect(vusersChart?.querySelector('path[data-testid="mock-line"][data-name="TPS"]')).not.toBeNull()
     expect(vusersChart?.querySelector('.chart-title')?.textContent).toBe('Virtual Users + ART + TPS')
-    expect(axisLabels(vusersChart)).toEqual(expect.arrayContaining(['VUsers', 'ART (ms) / TPS']))
+    expect(axisLabels(vusersChart)).toEqual([])
+    expect(axisAriaLabels(vusersChart)).toContain('Show ART (ms) / TPS axis label')
     expect(window.localStorage.getItem('apexload.execution.tpsOverlayCharts')).toBe('["vusers"]')
   })
 
@@ -428,6 +469,49 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"latency":["avgMs","p50","p90","p95"]')
   })
 
+  it('toggles and persists ART rolling standard-deviation bands', async () => {
+    await renderCharts()
+
+    let responseChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Response Time (ms)'))
+    const bandToggleLabel = () => Array.from(responseChart?.querySelectorAll<HTMLLabelElement>('.chart-card-checkbox') ?? [])
+      .find(label => label.textContent?.includes('σ Bands'))
+    const bandToggle = () => bandToggleLabel()?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+
+    expect(bandToggle()?.checked).toBe(false)
+    expect(responseChart?.querySelector('path[data-testid="mock-area"][data-key="avgMsStdDevBand"]')).toBeNull()
+
+    await act(async () => {
+      bandToggle()?.click()
+    })
+
+    expect(bandToggle()?.checked).toBe(true)
+    expect(responseChart?.querySelector('path[data-testid="mock-area"][data-key="avgMsStdDevBand"][data-name="±1σ"]')).not.toBeNull()
+    expect(window.localStorage.getItem('apexload.execution.artStdDevBands')).toBe('true')
+
+    await act(async () => {
+      root.unmount()
+    })
+    root = createRoot(container)
+    await renderCharts()
+
+    responseChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Response Time (ms)'))
+    expect(bandToggle()?.checked).toBe(true)
+    expect(responseChart?.querySelector('path[data-testid="mock-area"][data-key="avgMsStdDevBand"]')).not.toBeNull()
+  })
+
+  it('separates ART transaction and percentile legend groups', async () => {
+    await renderCharts()
+
+    const responseChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Response Time (ms)'))
+    expect(responseChart?.querySelector('.chart-series-legend')?.textContent).toContain('Transactions')
+    expect(responseChart?.querySelector('.chart-series-legend')?.textContent).toContain('Percentiles')
+    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-name="Total"]')?.getAttribute('data-stroke-width')).toBe('2.5')
+    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-name="Total"]')?.getAttribute('data-stroke-dasharray')).toBe('')
+    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-name="P95"]')?.getAttribute('data-stroke-width')).toBe('1.25')
+    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-name="P95"]')?.getAttribute('data-stroke-dasharray')).toBe('4 2')
+    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-name="P95"]')?.getAttribute('data-stroke-opacity')).toBe('0.68')
+  })
+
   it('renders load-under graphs as selectable runtime graph cards', async () => {
     await renderCharts(null, false)
 
@@ -437,6 +521,8 @@ describe('TestExecutionCharts context menu', () => {
     expect(chartTitles()).toContain('ART Under Load')
     expect(chartTitles()).toContain('TPS Under Load')
     expect(chartTitles()).toContain('Error % Under Load')
+    expect(chartTitles()).toContain('Load Impact Heatmap')
+    expect(chartTitles()).not.toContain('P Values Under Load')
     expect(chartTitles()).not.toContain('P99 Under Load')
     expect(artUnderLoad()?.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('')
     expect(artUnderLoad()?.querySelector('path[data-testid="mock-line"][data-key="average"][data-name="Average"]')).not.toBeNull()
@@ -466,6 +552,152 @@ describe('TestExecutionCharts context menu', () => {
 
     expect(chartTitles()).toContain('P99 Under Load')
     expect(window.localStorage.getItem('apexload.execution.visibleLoadImpactCharts')).toContain('load_impact_p99')
+
+    const pValuesToggle = container.querySelector<HTMLInputElement>('input[aria-label="Show P Values Under Load"]')
+    expect(pValuesToggle?.checked).toBe(false)
+
+    await act(async () => {
+      pValuesToggle?.click()
+    })
+
+    const pValuesUnderLoad = () => Array.from(container.querySelectorAll('.chart-card'))
+      .find(chart => chart.textContent?.includes('P Values Under Load'))
+    expect(chartTitles()).toContain('P Values Under Load')
+    expect(pValuesUnderLoad()?.querySelector('path[data-testid="mock-line"][data-key="p50"][data-name="P50"]')).not.toBeNull()
+    expect(pValuesUnderLoad()?.querySelector('path[data-testid="mock-line"][data-key="p90"][data-name="P90"]')).not.toBeNull()
+    expect(pValuesUnderLoad()?.querySelector('path[data-testid="mock-line"][data-key="p95"][data-name="P95"]')).not.toBeNull()
+    expect(pValuesUnderLoad()?.querySelector('path[data-testid="mock-line"][data-key="p99"][data-name="P99"]')).not.toBeNull()
+    expect(window.localStorage.getItem('apexload.execution.visibleLoadImpactCharts')).toContain('load_impact_percentiles')
+
+    const p90Toggle = Array.from(pValuesUnderLoad()?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [])
+      .find(input => input.getAttribute('aria-label') === 'Show P90')
+    expect(p90Toggle).not.toBeUndefined()
+
+    await act(async () => {
+      p90Toggle?.click()
+    })
+
+    expect(pValuesUnderLoad()?.querySelector('path[data-testid="mock-line"][data-key="p90"][data-name="P90"]')).toBeNull()
+    expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"load_impact_percentiles":["p50","p95","p99"]')
+  })
+
+  it('shows the load impact heatmap in Under Load by default and lets it be hidden', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', vusers: 5, tps: 2.5, avgMs: 115, errorPct: 0, p50: 105, p90: 132, p95: 145, p99: 180 },
+            { time: '10:01:00', vusers: 15, tps: 6.7, avgMs: 150, errorPct: 0.5, p50: 138, p90: 196, p95: 218, p99: 268 },
+            { time: '10:02:00', vusers: 30, tps: 11.6, avgMs: 224, errorPct: 1.1, p50: 202, p90: 308, p95: 340, p99: 410 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+          showLoadImpact={false}
+          enableGraphGroupTabs
+        />,
+      )
+    })
+
+    const underLoadTab = Array.from(container.querySelectorAll('button[role="tab"]')).find(button => button.textContent?.includes('Under Load'))
+    expect(underLoadTab?.textContent).toContain('5')
+
+    await act(async () => {
+      underLoadTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(chartTitles()).toContain('Load Impact Heatmap')
+    const heatmapCard = container.querySelector('.load-impact-card.load-impact-card-graph')
+    expect(heatmapCard).not.toBeNull()
+    expect(heatmapCard?.className).toContain('load-impact-graph-card-span-2')
+
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const heatmapToggle = container.querySelector<HTMLInputElement>('input[aria-label="Show Load Impact Heatmap"]')
+    expect(heatmapToggle?.checked).toBe(true)
+
+    await act(async () => {
+      heatmapToggle?.click()
+    })
+
+    expect(chartTitles()).not.toContain('Load Impact Heatmap')
+    expect(window.localStorage.getItem('apexload.execution.hiddenCharts')).toContain('load_impact_heatmap')
+  })
+
+  it('uses dedicated Under Load heatmap mode with map controls and detail rows', async () => {
+    const data = [
+      { time: '10:00:00', vusers: 5, tps: 2.5, avgMs: 115, errorPct: 0, p50: 105, p90: 132, p95: 145, p99: 180 },
+      { time: '10:01:00', vusers: 15, tps: 6.7, avgMs: 150, errorPct: 0.5, p50: 138, p90: 196, p95: 218, p99: 268 },
+      { time: '10:02:00', vusers: 30, tps: 11.6, avgMs: 224, errorPct: 1.1, p50: 202, p90: 308, p95: 340, p99: 410 },
+    ]
+
+    const renderUnderLoadMode = async (underLoadDisplayMode: 'graphs' | 'heatmap') => {
+      await act(async () => {
+        root.render(
+          <TestExecutionCharts
+            filteredData={data}
+            expandedChart={null}
+            onExpandedChartChange={vi.fn()}
+            onChartMouseDown={vi.fn()}
+            onChartMouseMove={vi.fn()}
+            onZoom={vi.fn()}
+            onResetZoom={vi.fn()}
+            showRefArea={false}
+            refAreaLeft=""
+            refAreaEnd=""
+            timeRange="3m"
+            onTimeRangeChange={vi.fn()}
+            isMultiGroup={false}
+            groupNames={[]}
+            groupColors={['#00a3ff']}
+            showLoadImpact={false}
+            surface="command-center"
+            storageScope="apexload.commandCenter.grafana"
+            enableGraphGroupTabs
+            activeGraphGroupTab="under_load"
+            underLoadDisplayMode={underLoadDisplayMode}
+          />,
+        )
+      })
+    }
+
+    await renderUnderLoadMode('graphs')
+
+    expect(chartTitles()).toContain('ART Under Load')
+    expect(chartTitles()).not.toContain('Load Impact Heatmap')
+    expect(container.querySelector('.load-impact-card.load-impact-map-mode')).toBeNull()
+
+    await renderUnderLoadMode('heatmap')
+
+    expect(chartTitles()).toEqual(['Load Impact Heatmap'])
+    const heatmapCard = container.querySelector('.load-impact-card.load-impact-map-mode')
+    expect(heatmapCard).not.toBeNull()
+    expect(heatmapCard?.className).toContain('load-impact-graph-card-span-3')
+    expect(heatmapCard?.textContent).toContain('2D')
+    expect(heatmapCard?.textContent).toContain('3D')
+
+    const enabledCell = Array.from(heatmapCard!.querySelectorAll<HTMLButtonElement>('.load-impact-cell')).find(cell => !cell.disabled)
+    expect(enabledCell).toBeDefined()
+
+    await act(async () => {
+      enabledCell?.click()
+    })
+
+    expect(heatmapCard?.querySelector('.load-impact-detail')).not.toBeNull()
+    expect(heatmapCard?.textContent).toContain('data points')
   })
 
   it('applies default load-under visibility when old graph preferences are stored', async () => {
@@ -557,7 +789,8 @@ describe('TestExecutionCharts context menu', () => {
   it('can suppress the chart-grid Load Impact card when the archive report owns it', async () => {
     await renderCharts(null, false)
 
-    expect(container.querySelector('.load-impact-card')).toBeNull()
+    expect(container.querySelector('.load-impact-card:not(.load-impact-card-graph)')).toBeNull()
+    expect(container.querySelector('.load-impact-card.load-impact-card-graph')).not.toBeNull()
     expect(chartTitles()[0]).toBe('Virtual Users')
   })
 
@@ -612,7 +845,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(container.querySelector('.monitor-preset-buttons')).toBeNull()
     expect(container.querySelector('.charts-customize-panel')).toBeNull()
     expect(container.querySelector('.charts-toolbar')?.textContent).toContain('Runtime Graphs')
-    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('12 graphs')
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('13 graphs')
     expect(container.querySelector('.charts-config-drawer')).toBeNull()
 
     await act(async () => {
@@ -623,13 +856,22 @@ describe('TestExecutionCharts context menu', () => {
     expect(drawer?.textContent).toContain('Graph Configuration')
     expect(drawer?.textContent).toContain('Graph Cards')
     expect(drawer?.textContent).toContain('Display Window')
-    expect(drawer?.textContent).toContain('3m')
-    expect(drawer?.textContent).toContain('10m')
-    expect(drawer?.textContent).toContain('Max')
+    expect(drawer?.textContent).not.toContain('Max')
     expect(drawer?.textContent).not.toContain('Custom')
+    const displayWindowSlider = drawer?.querySelector<HTMLInputElement>('input[aria-label="Graph display window"]')
+    expect(displayWindowSlider?.min).toBe('1')
+    expect(displayWindowSlider?.max).toBe('31')
+    expect(displayWindowSlider?.step).toBe('1')
+    expect(displayWindowSlider?.value).toBe('3')
+    expect(displayWindowSlider?.getAttribute('aria-valuetext')).toBe('3m')
+    const displayWindowControl = drawer?.querySelector<HTMLElement>('.chart-window-slider-control')
+    expect(displayWindowControl?.style.getPropertyValue('--chart-window-slider-position')).toBe('6.6667%')
+    expect(displayWindowControl?.querySelector('.chart-window-slider-value')?.textContent).toBe('3m')
+    expect(displayWindowControl?.querySelector('.chart-window-slider-scale')).toBeNull()
     expect(drawer?.textContent).toContain('Zoom')
     expect(drawer?.textContent).toContain('6 Graphs')
-    expect(drawer?.textContent).toContain('Role View')
+    expect(drawer?.textContent).not.toContain('Role View')
+    expect(drawer?.textContent).not.toContain('Graph preset')
     expect(drawer?.textContent).toContain('Display Time')
     expect(drawer?.textContent).toContain('Cursor Labels')
     expect(drawer?.textContent).not.toContain('Network latency')
@@ -643,14 +885,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(cursorLabelToggle?.checked).toBe(true)
 
     const roleSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Graph role view"]')
-    expect(roleSelect).not.toBeNull()
-    expect(Array.from(roleSelect?.options ?? []).map(option => option.textContent)).toEqual([
-      'Manual view',
-      'Run Operator',
-      'Performance Engineer',
-      'Platform Admin',
-      'Release Approver',
-    ])
+    expect(roleSelect).toBeNull()
 
     const errorRateGraphToggle = container.querySelector<HTMLInputElement>('input[aria-label="Show Error Rate (%)"]')
     expect(errorRateGraphToggle?.checked).toBe(true)
@@ -659,8 +894,8 @@ describe('TestExecutionCharts context menu', () => {
       errorRateGraphToggle?.click()
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(11)
-    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('11 graphs')
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(12)
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('12 graphs')
     expect(window.localStorage.getItem('apexload.execution.hiddenCharts')).toContain('errors')
 
     await act(async () => {
@@ -719,34 +954,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.responseTimeNetworkMode')).toBe('application')
     expect(responseChart?.textContent).toContain('82.6ms')
 
-    await act(async () => {
-      if (roleSelect) {
-        roleSelect.value = 'release_approver'
-        roleSelect.dispatchEvent(new Event('change', { bubbles: true }))
-      }
-    })
-
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(3)
-    expect(roleSelect?.value).toBe('release_approver')
-
-    await act(async () => {
-      if (roleSelect) {
-        roleSelect.value = ''
-        roleSelect.dispatchEvent(new Event('change', { bubbles: true }))
-      }
-    })
-
     expect(container.querySelectorAll('.chart-card')).toHaveLength(12)
-    expect(roleSelect?.value).toBe('')
-
-    await act(async () => {
-      if (roleSelect) {
-        roleSelect.value = 'release_approver'
-        roleSelect.dispatchEvent(new Event('change', { bubbles: true }))
-      }
-    })
-
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(3)
 
     const resetButton = buttonByText('Reset Graphs')
     expect(resetButton?.className).toContain('btn-chip')
@@ -755,8 +963,58 @@ describe('TestExecutionCharts context menu', () => {
       resetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(12)
-    expect(roleSelect?.value).toBe('')
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(13)
+  })
+
+  it('changes the graph display window from the minute slider', async () => {
+    const onTimeRangeChange = vi.fn()
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130 },
+            { time: '10:00:01', vusers: 4, tps: 2, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p99: 135 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={onTimeRangeChange}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+        />,
+      )
+    })
+
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const displayWindowSlider = container.querySelector<HTMLInputElement>('input[aria-label="Graph display window"]')
+    expect(displayWindowSlider).not.toBeNull()
+    const setSliderValue = (value: string) => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      valueSetter?.call(displayWindowSlider, value)
+      displayWindowSlider!.dispatchEvent(new Event('input', { bubbles: true }))
+      displayWindowSlider!.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+
+    await act(async () => {
+      setSliderValue('30')
+    })
+    expect(onTimeRangeChange).toHaveBeenLastCalledWith('30m')
+
+    await act(async () => {
+      setSliderValue('31')
+    })
+    expect(onTimeRangeChange).toHaveBeenLastCalledWith('all')
   })
 
   it('switches the route latency graph between total, phase, and stability diagnostics', async () => {
@@ -784,8 +1042,8 @@ describe('TestExecutionCharts context menu', () => {
     })
 
     expect(window.localStorage.getItem('apexload.execution.routeLatencyMode')).toBe('stability')
-    expect(axisLabels(routeChart())).toContain('Jitter (ms)')
-    expect(axisLabels(routeChart())).toContain('Success (%)')
+    expect(axisLabels(routeChart())).toEqual([])
+    expect(axisAriaLabels(routeChart())).toEqual(expect.arrayContaining(['Show Jitter (ms) axis label', 'Show Success (%) axis label']))
     expect(routeChart()?.querySelector('path[data-testid="mock-line"][data-key="latency_jitter_edge"][data-name="Jitter"]')).not.toBeNull()
     expect(routeChart()?.querySelector('path[data-testid="mock-line"][data-key="latency_success_rate_edge"][data-name="Success Rate"][data-y-axis-id="successRate"]')).not.toBeNull()
   })
@@ -807,6 +1065,7 @@ describe('TestExecutionCharts context menu', () => {
 
   it('renders compact command-center graph cards with a shared cursor crosshair', async () => {
     const onActiveCursorChange = vi.fn()
+    window.localStorage.setItem('apexload.commandCenter.ops.chartDensity', 'six_up')
 
     await act(async () => {
       root.render(
@@ -840,7 +1099,11 @@ describe('TestExecutionCharts context menu', () => {
     })
 
     expect(container.querySelector('.charts-grid')?.className).toContain('command-center-compact')
+    expect(window.localStorage.getItem('apexload.commandCenter.ops.chartDensity')).toBe('command_center')
     expect(container.querySelector('.chart-card')?.className).toContain('command-center-chart-card')
+    const compactHeatmapCard = container.querySelector('.load-impact-card.load-impact-card-graph')
+    expect(compactHeatmapCard?.className).toContain('load-impact-graph-card-span-3')
+    expect(compactHeatmapCard?.className).toContain('command-center-chart-card')
     const compactHeights = Array.from(container.querySelectorAll('[data-testid="mock-responsive-container"]')).map(item => item.getAttribute('data-height'))
     expect(compactHeights.length).toBeGreaterThan(0)
     expect(compactHeights.every(height => height === '170')).toBe(true)
@@ -850,6 +1113,41 @@ describe('TestExecutionCharts context menu', () => {
     const cursorXValues = cursorLines.map(line => line.getAttribute('data-x'))
     expect(cursorXValues).toContain('10:00:01')
     expect(cursorXValues.every(value => Boolean(value))).toBe(true)
+
+    const tpsChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Transactions Per Second'))
+    expect(tpsChart?.querySelector('path[data-testid="mock-line"][data-name="Total"]')?.getAttribute('data-key')).toBe('tps__smoothed')
+    expect(tpsChart?.querySelector('path[data-testid="mock-line"][data-name="Target"]')?.getAttribute('data-key')).toBe('targetTps')
+
+    await act(async () => {
+      tpsChart?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 180, clientY: 160 }))
+    })
+
+    expect(container.querySelector('.chart-context-menu-title')?.textContent).toBe('Transactions Per Second')
+    expect(menuActionTexts()).toContain('Overlay VUsers')
+
+    await act(async () => {
+      menuButton('Overlay VUsers')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const tpsChartWithOverlay = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Transactions Per Second + VUsers'))
+    expect(tpsChartWithOverlay).not.toBeUndefined()
+    expect(tpsChartWithOverlay?.querySelector('path[data-testid="mock-line"][data-name="Active VUsers"]')?.getAttribute('data-key')).toBe('vusers')
+    expect(tpsChartWithOverlay?.querySelector('path[data-testid="mock-line"][data-name="Total"]')?.getAttribute('data-key')).toBe('tps__smoothed')
+    expect(tpsChartWithOverlay?.querySelector('path[data-testid="mock-reference-line"]')?.getAttribute('data-y-axis-id')).toBe('metric')
+
+    await act(async () => {
+      tpsChartWithOverlay?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 170 }))
+    })
+
+    expect(menuActionTexts()).toContain('Overlay ART')
+
+    await act(async () => {
+      menuButton('Overlay ART')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const tpsChartWithArtOverlay = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Transactions Per Second + VUsers + ART'))
+    expect(tpsChartWithArtOverlay).not.toBeUndefined()
+    expect(tpsChartWithArtOverlay?.querySelector('path[data-testid="mock-line"][data-name="ART"]')?.getAttribute('data-key')).toBe('avgMs__smoothed')
 
     await act(async () => {
       container.querySelector<SVGElement>('[data-testid="mock-chart"]')?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
@@ -880,9 +1178,9 @@ describe('TestExecutionCharts context menu', () => {
       .filter(Boolean)
   }
 
-  function axisLabelPositions(chart: Element | undefined) {
+  function axisAriaLabels(chart: Element | undefined) {
     return Array.from(chart?.querySelectorAll('[data-testid="mock-y-axis"]') ?? [])
-      .map(axis => axis.getAttribute('data-label-position'))
+      .map(axis => axis.getAttribute('data-axis-aria-label'))
       .filter(Boolean)
   }
 

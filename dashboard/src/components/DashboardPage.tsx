@@ -12,6 +12,7 @@ import { ReleaseTrendPanel } from './ReleaseTrendPanel'
 import { chartTooltipContentStyle } from './chartTooltipTheme'
 import { type NavPage } from './Sidebar'
 import StatusBadge from './StatusBadge'
+import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import './DashboardPage.css'
 
 interface Props {
@@ -524,6 +525,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTabKey>('activity')
   const [performanceSort, setPerformanceSort] = useState<{ field: PerformanceSortField; direction: SortDirection }>({ field: 'completed', direction: 'desc' })
   const [activitySort, setActivitySort] = useState<{ field: ActivitySortField; direction: SortDirection }>({ field: 'date', direction: 'desc' })
+  const hasTopbarContributionProvider = useHasTopbarContributionProvider()
 
   useEffect(() => {
     if (!dashboardScopeReady) {
@@ -833,20 +835,6 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       : statusColor === 'checking'
         ? 'Connecting'
         : 'Offline'
-  const attentionStatusClass = attentionItems.some(item => item.tone === 'danger')
-    ? 'status-offline'
-    : attentionItems.some(item => item.tone === 'warning')
-      ? 'status-degraded'
-      : attentionItems.length > 0
-        ? 'status-idle'
-        : 'status-healthy'
-  const attentionIconColor = attentionItems.some(item => item.tone === 'danger')
-    ? 'var(--danger)'
-    : attentionItems.some(item => item.tone === 'warning')
-      ? 'var(--chart-3)'
-      : attentionItems.length > 0
-        ? 'var(--accent)'
-        : 'var(--success)'
 
   const navigateToMonitoring = () => onNavigate('monitoring')
   const navigateToTests = () => onNavigate('tests')
@@ -872,14 +860,6 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     }
     onNavigate('tests')
   }
-  const navigateToAttention = () => {
-    const firstAttentionItem = attentionItems[0]
-    if (firstAttentionItem?.testId) {
-      onSelectTest(firstAttentionItem.testId)
-      return
-    }
-    onNavigate('monitoring')
-  }
   const requestPerformanceSort = (field: PerformanceSortField) => {
     setPerformanceSort(current => ({
       field,
@@ -903,6 +883,31 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     releaseTrend: performanceTrend.length,
   }
   const activeDashboardTabLabel = dashboardTabs.find(tab => tab.id === activeDashboardTab)?.label || 'Dashboard'
+  const dashboardTabControls = useMemo(() => (
+    <div className="dash-tab-row topbar-page-section-toggle" role="tablist" aria-label="Dashboard sections">
+      {dashboardTabs.map(tab => (
+        <button
+          key={tab.id}
+          type="button"
+          role="tab"
+          aria-selected={activeDashboardTab === tab.id}
+          className={`dash-tab ${activeDashboardTab === tab.id ? 'active' : ''}`}
+          onClick={() => setActiveDashboardTab(tab.id)}
+        >
+          <span>{tab.label}</span>
+          <strong>{dashboardTabCounts[tab.id]}</strong>
+        </button>
+      ))}
+    </div>
+  ), [activeDashboardTab, dashboardTabCounts.active, dashboardTabCounts.activity, dashboardTabCounts.performance, dashboardTabCounts.releaseTrend])
+  const dashboardTopbarContribution = useMemo(() => ({
+    id: 'dashboard-page',
+    title: 'Dashboard',
+    controls: dashboardTabControls,
+    priority: 10,
+  }), [dashboardTabControls])
+
+  useTopbarContribution(dashboardTopbarContribution)
   const renderPerformanceSortHeader = (field: PerformanceSortField, label: string, className = '') => (
     <th className={`sortable ${className}`.trim()}>
       <button type="button" onClick={() => requestPerformanceSort(field)}>
@@ -936,77 +941,8 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
       <div className={`dash-dashboard-layout ${releasePanelOpen ? 'snapshot-open' : 'snapshot-collapsed'}`}>
         <div className="dash-main-column">
-          <div className="dash-primary-top">
-            <div className="dash-health-row">
-              <button type="button" className={`dash-health-card dash-card-button status-${statusColor}`} onClick={navigateToMonitoring}>
-                <div className="dhc-icon">
-                  <span className={`health-dot ${statusColor}`} />
-                </div>
-                <div className="dhc-content">
-                  <span className="dhc-value">{statusLabel}</span>
-                  <span className="dhc-label">API Server</span>
-                </div>
-              </button>
-
-              <button type="button" className={`dash-health-card dash-card-button ${stats.active > 0 ? 'status-active' : 'status-idle'}`} onClick={navigateToTests}>
-                <div className="dhc-icon">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--chart-2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                    <circle cx="9" cy="7" r="4" />
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                  </svg>
-                </div>
-                <div className="dhc-content">
-                  <span className="dhc-value">{stats.active}</span>
-                  <span className="dhc-label">Active Runs</span>
-                </div>
-              </button>
-
-              <button type="button" className={`dash-health-card dash-card-button ${stats.activeVUsers > 0 ? 'status-active' : 'status-idle'}`} onClick={navigateToTests}>
-                <div className="dhc-icon">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--chart-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                  </svg>
-                </div>
-                <div className="dhc-content">
-                  <span className="dhc-value">{stats.activeVUsers}</span>
-                  <span className="dhc-label">Active VUsers</span>
-                </div>
-              </button>
-
-              <button type="button" className={`dash-health-card dash-card-button ${attentionStatusClass}`} onClick={navigateToAttention}>
-                <div className="dhc-icon">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={attentionIconColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 9v4" />
-                    <path d="M12 17h.01" />
-                    <path d="M10.3 3.9 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
-                  </svg>
-                </div>
-                <div className="dhc-content">
-                  <span className="dhc-value">{attentionItems.length}</span>
-                  <span className="dhc-label">Attention Needed</span>
-                </div>
-              </button>
-            </div>
-          </div>
-
           <div className="dash-primary-content">
-            <div className="dash-tab-row" role="tablist" aria-label="Dashboard sections">
-              {dashboardTabs.map(tab => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeDashboardTab === tab.id}
-                  className={`dash-tab ${activeDashboardTab === tab.id ? 'active' : ''}`}
-                  onClick={() => setActiveDashboardTab(tab.id)}
-                >
-                  <span>{tab.label}</span>
-                  <strong>{dashboardTabCounts[tab.id]}</strong>
-                </button>
-              ))}
-            </div>
+            {!hasTopbarContributionProvider && dashboardTabControls}
 
             <div className="dash-tab-panel" role="tabpanel" aria-label={`${activeDashboardTabLabel} dashboard section`}>
         {activeDashboardTab === 'performance' && (

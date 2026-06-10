@@ -16,6 +16,7 @@ import { type ScriptDefinition } from '../types/scripts'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
 import { type ImportedSaveResult, type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
 import { getErrorMessage } from '../utils/errorUtils'
+import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 
 interface Props {
   initialMode?: ScriptsAuthoringSubView
@@ -110,6 +111,7 @@ function cloneScriptDraft(source: ScriptDefinition, fallbackName: string, projec
 export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario, onNavigate, onAuthoringStateChange }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
+  const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [authoringSessions, setAuthoringSessions] = useState<AuthoringSession[]>([])
   const [correlationPreviews, setCorrelationPreviews] = useState<Record<string, AuthoringCorrelationPreviewResponse>>({})
@@ -270,6 +272,55 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
       setGithubBulkRunning(false)
     }
   }, [activeProject?.id, githubApi, refresh])
+
+  const showScriptPageToggle = canManageScripts && (authoringState.subView === 'list' || authoringState.subView === 'create-options')
+  const scriptPageControls = useMemo(() => (
+    showScriptPageToggle ? (
+      <PageViewToggle
+        value={authoringState.subView === 'create-options' ? 'create-options' : 'library'}
+        ariaLabel="Script page view"
+        className="script-page-toggle topbar-page-section-toggle"
+        onChange={view => {
+          if (view === 'library') openLibrary()
+          else openCreateOptions()
+        }}
+        options={[
+          { value: 'library', label: 'Script Library' },
+          { value: 'create-options', label: 'Script Builder' },
+        ]}
+      />
+    ) : null
+  ), [authoringState.subView, openCreateOptions, openLibrary, showScriptPageToggle])
+
+  const scriptsTopbarContribution = useMemo(() => (
+    showScriptPageToggle ? {
+      id: 'scripts-page',
+      title: authoringState.subView === 'create-options' ? 'Script Builder' : 'Script Library',
+      controls: scriptPageControls,
+      secondaryActions: [
+        {
+          id: 'github-import',
+          label: 'Import from GitHub',
+          compactLabel: 'GitHub',
+          onClick: () => setGithubImportOpen(true),
+          hidden: authoringState.subView !== 'list' || !canManageScripts || !githubReady,
+          tone: 'secondary' as const,
+        },
+        {
+          id: 'github-bulk-import',
+          label: githubBulkRunning ? 'Bulk Importing...' : 'Bulk Import',
+          compactLabel: 'Bulk',
+          onClick: () => { void handleGithubBulkImport() },
+          disabled: githubBulkRunning,
+          hidden: authoringState.subView !== 'list' || !canManageScripts || !githubAutomationReady,
+          tone: 'secondary' as const,
+        },
+      ],
+      priority: 10,
+    } : null
+  ), [authoringState.subView, canManageScripts, githubAutomationReady, githubBulkRunning, githubReady, handleGithubBulkImport, scriptPageControls, showScriptPageToggle])
+
+  useTopbarContribution(scriptsTopbarContribution)
 
   useEffect(() => {
     let cancelled = false
@@ -457,33 +508,21 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             <h2>Script Library</h2>
             <p className="page-subtitle">Reusable scripts. Release associations are inferred from actual test usage.</p>
           </div>
-          <div className="settings-inline-actions" style={{ alignItems: 'center' }}>
-            {canManageScripts && githubReady && (
-              <button className="btn btn-secondary" type="button" onClick={() => setGithubImportOpen(true)}>
-                Import from GitHub
-              </button>
-            )}
-            {canManageScripts && githubAutomationReady && (
-              <button className="btn btn-secondary" type="button" onClick={() => { void handleGithubBulkImport() }} disabled={githubBulkRunning}>
-                Bulk Import
-              </button>
-            )}
-            {canManageScripts && (
-              <PageViewToggle
-                value="library"
-                ariaLabel="Script page view"
-                className="script-page-toggle"
-                onChange={view => {
-                  if (view === 'library') openLibrary()
-                  else openCreateOptions()
-                }}
-                options={[
-                  { value: 'library', label: 'Script Library' },
-                  { value: 'create-options', label: 'Script Builder' },
-                ]}
-              />
-            )}
-          </div>
+          {!hasTopbarContributionProvider && (
+            <div className="settings-inline-actions" style={{ alignItems: 'center' }}>
+              {canManageScripts && githubReady && (
+                <button className="btn btn-secondary" type="button" onClick={() => setGithubImportOpen(true)}>
+                  Import from GitHub
+                </button>
+              )}
+              {canManageScripts && githubAutomationReady && (
+                <button className="btn btn-secondary" type="button" onClick={() => { void handleGithubBulkImport() }} disabled={githubBulkRunning}>
+                  Bulk Import
+                </button>
+              )}
+              {scriptPageControls}
+            </div>
+          )}
         </div>
         {githubNotice && (
           <p className="settings-notice" role="status">

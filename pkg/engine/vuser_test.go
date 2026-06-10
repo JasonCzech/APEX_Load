@@ -730,7 +730,7 @@ func TestVUser_Run_ErrorMessageActionLogsWhenScriptLoggingDisabled(t *testing.T)
 	}
 	logOutput := logBuf.String()
 	for _, expected := range []string{
-		"msg=\"loadrunner error message\"",
+		"msg=\"source error message\"",
 		"vuser=7",
 		"group=Login",
 		"action=LR_Error_Message_12",
@@ -745,7 +745,7 @@ func TestVUser_Run_ErrorMessageActionLogsWhenScriptLoggingDisabled(t *testing.T)
 	}
 }
 
-func TestRenderPrintfLikeMessageSupportsLoadRunnerFormatting(t *testing.T) {
+func TestRenderPrintfLikeMessageSupportsSourceFormatting(t *testing.T) {
 	tests := []struct {
 		name   string
 		format string
@@ -787,7 +787,7 @@ func TestRenderPrintfLikeMessageSupportsLoadRunnerFormatting(t *testing.T) {
 	}
 }
 
-func TestVUser_Run_LoadRunnerUtilityActionsStayInEngine(t *testing.T) {
+func TestVUser_Run_SourceUtilityActionsStayInEngine(t *testing.T) {
 	vu := &VUser{
 		ID:        3,
 		Group:     "Checkout",
@@ -797,49 +797,49 @@ func TestVUser_Run_LoadRunnerUtilityActionsStayInEngine(t *testing.T) {
 			Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
 			Actions: []dsl.Action{{
 				Name: "SaveUser",
-				Type: "loadrunner_parameter",
+				Type: "source_parameter",
 				Params: map[string]any{
 					"function": "lr_save_string",
 					"args":     []any{"ada", "UserID"},
 				},
 			}, {
 				Name: "Greeting",
-				Type: "loadrunner_parameter",
+				Type: "source_parameter",
 				Params: map[string]any{
 					"function": "lr_param_sprintf",
 					"args":     []any{"Greeting", "Hello %s", "{{var.userid}}"},
 				},
 			}, {
 				Name: "Timer1",
-				Type: "loadrunner_timer",
+				Type: "source_timer",
 				Params: map[string]any{
 					"function": "lr_start_timer",
 					"args":     []any{"Timer1"},
 				},
 			}, {
 				Name: "Timer1",
-				Type: "loadrunner_timer",
+				Type: "source_timer",
 				Params: map[string]any{
 					"function": "lr_end_timer",
 					"args":     []any{"Timer1"},
 				},
 			}, {
 				Name: "Checkout",
-				Type: "loadrunner_transaction",
+				Type: "source_transaction",
 				Params: map[string]any{
 					"function": "lr_start_transaction",
 					"args":     []any{"Checkout"},
 				},
 			}, {
 				Name: "Checkout",
-				Type: "loadrunner_transaction",
+				Type: "source_transaction",
 				Params: map[string]any{
 					"function": "lr_end_transaction",
 					"args":     []any{"Checkout", "LR_PASS"},
 				},
 			}, {
 				Name:  "Status",
-				Type:  "loadrunner_message",
+				Type:  "source_message",
 				Value: "Working as %s",
 				Params: map[string]any{
 					"function":       "lr_vuser_status_message",
@@ -871,10 +871,10 @@ func TestVUser_Run_LoadRunnerUtilityActionsStayInEngine(t *testing.T) {
 	if got := vu.Variables["vuser_status"]; got != "Working as ada" {
 		t.Fatalf("vuser_status = %q, want rendered status", got)
 	}
-	if got := vu.Variables[loadRunnerTimerDurationKey("Timer1")]; got == "" {
+	if got := vu.Variables[sourceTimerDurationKey("Timer1")]; got == "" {
 		t.Fatalf("timer duration variable missing: %#v", vu.Variables)
 	}
-	if got := vu.Variables[loadRunnerTransactionStatusKey("Checkout")]; got != "true" {
+	if got := vu.Variables[sourceTransactionStatusKey("Checkout")]; got != "true" {
 		t.Fatalf("transaction status = %q, want true", got)
 	}
 }

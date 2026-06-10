@@ -92,7 +92,7 @@ DELETE /api/v1/scripts/{id}          — Delete a script
 POST   /api/v1/scripts/{id}/validate — Dry-run validation
 POST   /api/v1/scripts/{id}/export   — Export script JSON to disk
 GET    /api/v1/scripts/{id}/download — Download script as JSON file
-POST   /api/v1/scripts/import/loadrunner — Upload LR .zip, get converted DSL
+POST   /api/v1/scripts/import/enterprise-script-archive — Upload LR .zip, get converted DSL
 GET    /api/v1/system/health         — Health check
 WS     /api/v1/ws                    — Global WebSocket (all test events)
 ```

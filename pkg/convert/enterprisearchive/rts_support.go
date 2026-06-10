@@ -1,4 +1,4 @@
-package loadrunner
+package enterprisearchive
 
 import (
 	"path/filepath"
@@ -69,7 +69,7 @@ type runtimeSettingSupportDefinition struct {
 	matchers []runtimeSettingMatcher
 }
 
-var loadRunnerRTSSupportDefinitions = []runtimeSettingSupportDefinition{
+var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 	{
 		entry: RuntimeSettingSupportEntry{
 			ID:      "http_transport",
@@ -401,33 +401,33 @@ var loadRunnerRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 	},
 }
 
-var loadRunnerRTSSupportMatrixNotes = []string{
+var sourceRTSSupportMatrixNotes = []string{
 	"download_resources = recorded is executed for import/recording flows that preserve recorded-resource URL metadata; manually authored scripts should supply equivalent metadata before selecting that mode.",
 	"Streaming settings execute in the HTTP runtime for media-like responses through buffer and bitrate pacing.",
 	"DFE parity is complete for the supported HTTP response transform envelope: base64, gzip, JSON/XML, URL, and HTML transforms plus conservative base64/gzip auto-detection.",
 	"Extended logging parity is complete for APEX Load's trace envelope: log level, error-only logging, parameter substitution, returned data, and advanced trace metadata.",
 }
 
-var loadRunnerRTSSupportMatrixExamples = []RuntimeSettingSupportExample{
+var sourceRTSSupportMatrixExamples = []RuntimeSettingSupportExample{
 	{
 		Title:    "Extended Web HTTP/HTML runtime import",
 		Coverage: "Parses transport, proxy, pacing, think time, logging, browser emulation, download filters, content checks, network shaping, streaming, and DFE settings into APEX Load config.",
-		Test:     "pkg/convert/loadrunner/converter_test.go::TestParseRuntimeCfgToScriptConfigMapsExtendedRuntimeSettings",
+		Test:     "pkg/convert/enterprisearchive/converter_test.go::TestParseRuntimeCfgToScriptConfigMapsExtendedRuntimeSettings",
 	},
 	{
 		Title:    "ZIP import parity metadata",
 		Coverage: "Preserves runtime files and emits per-import runtime setting parity classifications with status counts for review workflows.",
-		Test:     "pkg/convert/loadrunner/converter_test.go::TestConvertZipMapsExtendedRuntimeSettings",
+		Test:     "pkg/convert/enterprisearchive/converter_test.go::TestConvertZipMapsExtendedRuntimeSettings",
 	},
 	{
 		Title:    "Import envelope parity review",
-		Coverage: "Surfaces runtime setting parity in the shared LoadRunner import response, including summary counts and review sections.",
-		Test:     "pkg/api/handlers_scripts_test.go::TestHandleImportLoadRunnerSummarizesRuntimeSettingParity",
+		Coverage: "Surfaces runtime setting parity in the shared enterprise script archive import response, including summary counts and review sections.",
+		Test:     "pkg/api/handlers_scripts_test.go::TestHandleImportSourceSummarizesRuntimeSettingParity",
 	},
 	{
 		Title:    "Golden Web HTTP/HTML fixture",
-		Coverage: "Converts a representative LoadRunner Web HTTP/HTML archive with transport, proxy, auth, browser emulation, recorded resources, logging, streaming, DFE, and network settings, then asserts side-by-side runtime support statuses.",
-		Test:     "pkg/convert/loadrunner/converter_test.go::TestGoldenWebHTTPHTMLFixtureRuntimeParity",
+		Coverage: "Converts a representative Web HTTP/HTML enterprise script archive with transport, proxy, auth, browser emulation, recorded resources, logging, streaming, DFE, and network settings, then asserts side-by-side runtime support statuses.",
+		Test:     "pkg/convert/enterprisearchive/converter_test.go::TestGoldenWebHTTPHTMLFixtureRuntimeParity",
 	},
 }
 
@@ -440,8 +440,8 @@ var runtimeSettingMigrationStatusWeights = map[RuntimeSettingStatus]int{
 }
 
 func GetRTSSupportMatrix() []RuntimeSettingSupportEntry {
-	entries := make([]RuntimeSettingSupportEntry, 0, len(loadRunnerRTSSupportDefinitions))
-	for _, definition := range loadRunnerRTSSupportDefinitions {
+	entries := make([]RuntimeSettingSupportEntry, 0, len(sourceRTSSupportDefinitions))
+	for _, definition := range sourceRTSSupportDefinitions {
 		entries = append(entries, RuntimeSettingSupportEntry{
 			ID:      definition.entry.ID,
 			Area:    definition.entry.Area,
@@ -455,15 +455,15 @@ func GetRTSSupportMatrix() []RuntimeSettingSupportEntry {
 }
 
 func GetRTSSupportMatrixNotes() []string {
-	return cloneStrings(loadRunnerRTSSupportMatrixNotes)
+	return cloneStrings(sourceRTSSupportMatrixNotes)
 }
 
 func GetRTSSupportMatrixExamples() []RuntimeSettingSupportExample {
-	if len(loadRunnerRTSSupportMatrixExamples) == 0 {
+	if len(sourceRTSSupportMatrixExamples) == 0 {
 		return nil
 	}
-	examples := make([]RuntimeSettingSupportExample, 0, len(loadRunnerRTSSupportMatrixExamples))
-	for _, example := range loadRunnerRTSSupportMatrixExamples {
+	examples := make([]RuntimeSettingSupportExample, 0, len(sourceRTSSupportMatrixExamples))
+	for _, example := range sourceRTSSupportMatrixExamples {
 		examples = append(examples, example)
 	}
 	return examples
@@ -539,7 +539,7 @@ func BuildRTSParityReport(runtimeSections map[string]map[string]map[string]strin
 	}
 
 	entries := make([]RuntimeSettingParityEntry, 0)
-	for _, definition := range loadRunnerRTSSupportDefinitions {
+	for _, definition := range sourceRTSSupportDefinitions {
 		files := runtimeSettingFilesForDefinition(definition, runtimeSections)
 		if len(files) == 0 {
 			continue
@@ -564,7 +564,7 @@ func BuildRTSParityReportFromScript(script *dsl.Script) []RuntimeSettingParityEn
 	}
 
 	entries := make([]RuntimeSettingParityEntry, 0)
-	for _, definition := range loadRunnerRTSSupportDefinitions {
+	for _, definition := range sourceRTSSupportDefinitions {
 		if !scriptConfigMatchesRuntimeSettingDefinition(script.Config, definition) {
 			continue
 		}

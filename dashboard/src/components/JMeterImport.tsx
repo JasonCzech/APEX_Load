@@ -8,7 +8,7 @@ import ScriptImportReview from './ScriptImportReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScripts } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
-import './LoadRunnerImport.css'
+import './EnterpriseArchiveImport.css'
 
 interface Props {
   projectId?: string

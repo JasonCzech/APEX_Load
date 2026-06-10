@@ -28,7 +28,7 @@ Multiple ways to create scripts are valid. The target is shared orchestration an
 The same script should produce the same validation result whether it is parsed from disk, saved through the API, replayed, or imported from another format.
 
 ### 3. Importers Should Differ Only At Acquisition Time
-LoadRunner, JMeter, sample import, and recorder conversion should keep their source-specific input logic, but converge on one review, edit, and save contract.
+Enterprise Script Archive, JMeter, sample import, and recorder conversion should keep their source-specific input logic, but converge on one review, edit, and save contract.
 
 ### 4. Script Authoring And Test Assembly Are Adjacent, Not The Same
 Script creation defines executable behavior. Test and scenario assembly define how those scripts are run. They can share components, but they should remain separate concerns.
@@ -109,7 +109,7 @@ This phase should also normalize lifecycle semantics so all import and conversio
 5. Save
 
 #### Exit Criteria
-- LoadRunner, JMeter, sample import, and recorder conversion emit the same envelope shape.
+- Enterprise Script Archive, JMeter, sample import, and recorder conversion emit the same envelope shape.
 - Preview and save semantics are consistent across builders.
 - Temporary compatibility adapters are minimized and explicitly tracked.
 
@@ -171,10 +171,10 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 
 ### Completed
 - Phase 1 validation unification is in place through the shared DSL validator.
-- Phase 2 backend import envelopes are standardized across LoadRunner, JMeter, sample import, and recorder conversion.
+- Phase 2 backend import envelopes are standardized across Enterprise Script Archive, JMeter, sample import, and recorder conversion.
 - The shared frontend import model and review/save contracts are in place for the active import and recorder paths.
 - Shared script, scenario, and dashboard API hook typing has been tightened across the current live authoring surfaces.
-- The temporary generic frontend import-result normalizer has been removed; the active LoadRunner, sample, and recorder paths now consume their typed backend envelopes directly, while JMeter keeps only its source-specific default filling.
+- The temporary generic frontend import-result normalizer has been removed; the active Enterprise Script Archive, sample, and recorder paths now consume their typed backend envelopes directly, while JMeter keeps only its source-specific default filling.
 - Phase 5 cleanup has started in the repo: duplicate dashboard page copies and obsolete patch/temp artifacts were removed after confirming that the live app shell imports only the current page surfaces.
 
 ### In Progress
@@ -208,9 +208,9 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - The execution detail page and header now share one small phase model for running, paused, live-control, and archive-visibility rules instead of duplicating those status gates between `TestExecution` and `TestExecutionHeader`.
 - The execution action bridge now owns stop and abort transitions alongside start, pause, and resume, including the shared optimistic status path for `STOPPING` and `ABORTED`, instead of leaving those last execution actions inline in `TestExecution`.
 - The execution metrics stream now enables the per-test websocket only for active execution phases instead of attempting a live stream for completed or aborted runs, which removes terminal-run stream churn from the execution detail page.
-- The LoadRunner import flow now exposes `preserve_transactions` end-to-end and supports a validate-only review path, so it follows the same preview-first lifecycle shape as the newer JMeter importer instead of forcing conversion as the only review entry point.
-- The LoadRunner import response now promotes unsupported functions and project/runtime review data into standardized `unsupported_elements` and `summary` fields, and the review UI renders those sections directly instead of relying on preserved metadata JSON for first-pass migration cleanup.
-- The JMeter import review now uses the shared import-review shell and edit handoff instead of keeping a bespoke review header/save shell that diverged from the LoadRunner, sample, and recorder flows.
+- The Enterprise Script Archive import flow now exposes `preserve_transactions` end-to-end and supports a validate-only review path, so it follows the same preview-first lifecycle shape as the newer JMeter importer instead of forcing conversion as the only review entry point.
+- The Enterprise Script Archive import response now promotes unsupported functions and project/runtime review data into standardized `unsupported_elements` and `summary` fields, and the review UI renders those sections directly instead of relying on preserved metadata JSON for first-pass migration cleanup.
+- The JMeter import review now uses the shared import-review shell and edit handoff instead of keeping a bespoke review header/save shell that diverged from the Enterprise Script Archive, sample, and recorder flows.
 - The scripts library now routes create/import/edit authoring transitions through a dedicated authoring-state hook instead of keeping those route-level draft/edit/subview transitions inline in `ScriptsPage`.
 - The scripts library create-options surface now renders through its own authoring-shell component instead of keeping the import/editor launcher lanes inline in `ScriptsPage`.
 - The scripts library now renders editor/import/recorder/sample authoring subviews through a dedicated authoring-surface component instead of keeping that switch and wrapper markup inline in `ScriptsPage`.
@@ -218,11 +218,11 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - The scripts library table and linked-run drill-down markup now render through a dedicated table component instead of keeping the entire sortable library table inline in `ScriptsPage`.
 - The scripts library now sources protocol-specific starter drafts from a dedicated factory module instead of keeping HTTP, browser, and JMS default draft definitions inline in `ScriptsPage`.
 - The scripts library now renders list, create-options, and active authoring subviews through a dedicated `ScriptsAuthoringShell`, leaving `ScriptsPage` focused on library fetch, refresh, delete, and table callbacks.
-- Editor replay and LoadRunner browser-import replay validation now build replay requests through one shared helper, so draft, saved, and imported browser paths agree on project binding, group names, variables, browser defaults, viewport fallback, and screenshot-capture behavior.
+- Editor replay and Enterprise Script Archive browser replay validation now build replay requests through one shared helper, so draft, saved, and imported browser paths agree on project binding, group names, variables, browser defaults, viewport fallback, and screenshot-capture behavior.
 - Draft script validation now has a first-class API endpoint and the script editor uses one validation action for both unsaved drafts and stored scripts, keeping browser compatibility warnings and validation issues aligned before save.
 - The script editor now returns the API's stored-script payload through the shared save callback, giving the authoring shell a concrete persisted-script handoff for both create and update saves.
 - Saving a draft script now advances the shared authoring state into persisted edit mode instead of dropping back to the library immediately, so create/edit/save flows stay in one continuous editor lifecycle while the script library refreshes in parallel.
-- LoadRunner, JMeter, sample-import, Java-over-HTTP sample-import, and recorder save actions now use that same persisted-script handoff, so saved import review flows reopen in the canonical editor instead of ending at the library list.
+- Enterprise Script Archive, JMeter, sample-import, Java-over-HTTP sample-import, and recorder save actions now use that same persisted-script handoff, so saved import review flows reopen in the canonical editor instead of ending at the library list.
 - Multi-script import saves now preserve that lifecycle context too: the shared shell reopens the first persisted script in edit mode and surfaces a follow-on notice when the import also saved additional scripts and/or a scenario draft.
 - Import save handoffs now also backfill the reviewed draft payload when the save API returns a thin stored-script response, so persisted reopen stays hydrated for import-review flows even without an embedded script body from the backend.
 - Import and recorder subviews now share one create-options frame in `ScriptsAuthoringSurface`, which removes the remaining per-surface back-navigation drift and starts trimming duplicated wrapper orchestration as the contracts stabilize.
@@ -246,7 +246,7 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - [dashboard/src/components/ScriptsPage.tsx](dashboard/src/components/ScriptsPage.tsx)
 - [dashboard/src/components/ScriptEditor.tsx](dashboard/src/components/ScriptEditor.tsx)
 - [dashboard/src/components/JMeterImport.tsx](dashboard/src/components/JMeterImport.tsx)
-- [dashboard/src/components/LoadRunnerImport.tsx](dashboard/src/components/LoadRunnerImport.tsx)
+- [dashboard/src/components/EnterpriseArchiveImport.tsx](dashboard/src/components/EnterpriseArchiveImport.tsx)
 - [dashboard/src/components/SampleScriptImport.tsx](dashboard/src/components/SampleScriptImport.tsx)
 - [dashboard/src/components/RecordingStudio.tsx](dashboard/src/components/RecordingStudio.tsx)
 - [dashboard/src/components/BrowserReplayDebugger.tsx](dashboard/src/components/BrowserReplayDebugger.tsx)
@@ -266,7 +266,7 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - [pkg/api/handlers_recorder.go](pkg/api/handlers_recorder.go)
 - [pkg/api/handlers_replay.go](pkg/api/handlers_replay.go)
 - [pkg/api/handlers_browser_replay.go](pkg/api/handlers_browser_replay.go)
-- [pkg/convert/loadrunner/converter.go](pkg/convert/loadrunner/converter.go)
+- [pkg/convert/enterprisearchive/converter.go](pkg/convert/enterprisearchive/converter.go)
 - [pkg/convert/jmeter/converter.go](pkg/convert/jmeter/converter.go)
 - [pkg/convert/sample/converter.go](pkg/convert/sample/converter.go)
 - [pkg/recorder/converter.go](pkg/recorder/converter.go)

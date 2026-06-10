@@ -1,7 +1,9 @@
 export type PageViewToggleOption<T extends string> = {
   value: T
   label: string
+  ariaLabel?: string
   disabled?: boolean
+  title?: string
 }
 
 interface PageViewToggleProps<T extends string> {
@@ -30,8 +32,10 @@ export default function PageViewToggle<T extends string>({
             key={option.value}
             type="button"
             className={`mode-chip ${active ? 'active' : ''}`}
+            aria-label={option.ariaLabel}
             aria-pressed={active}
             disabled={option.disabled}
+            title={option.title}
             onClick={() => {
               if (!active) onChange(option.value)
             }}

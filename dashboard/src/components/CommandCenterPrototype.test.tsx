@@ -4,8 +4,12 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import CommandCenterPrototype from './CommandCenterPrototype'
-import type { MetricsHistoryPoint, TestSummary } from '../types'
+import CommandCenterPrototype, {
+  buildSelectedGroupChartHistoryFromTransactions,
+  selectedGroupLoadImpactData,
+  type CommandGroup,
+} from './CommandCenterPrototype'
+import type { MetricsHistoryPoint, TestSummary, TransactionEvent } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -26,6 +30,99 @@ describe('CommandCenterPrototype', () => {
     })
     vi.restoreAllMocks()
     container.remove()
+  })
+
+  it('keeps unfiltered graph data when selected group fields are absent', () => {
+    const data: MetricsHistoryPoint[] = [{
+      time: '12:00',
+      timestampMs: Date.parse('2026-06-08T12:00:00Z'),
+      vusers: 20,
+      tps: 10,
+      avgMs: 150,
+      errorPct: 1,
+      p50: 100,
+      p90: 200,
+      p95: 250,
+      p99: 300,
+    }]
+    const selectedGroups = [commandGroup('Wikipedia', 10)]
+
+    expect(selectedGroupLoadImpactData(data, selectedGroups)).toEqual(data)
+  })
+
+  it('rebuilds selected historical group chart history from archive transactions', () => {
+    const referenceData: MetricsHistoryPoint[] = [{
+      time: '12:00:01',
+      timestampMs: Date.parse('2026-06-08T12:00:01Z'),
+      vusers: 2,
+      tps: 4,
+      avgMs: 100,
+      errorPct: 0,
+      p50: 100,
+      p90: 100,
+      p95: 100,
+      p99: 100,
+    }, {
+      time: '12:00:02',
+      timestampMs: Date.parse('2026-06-08T12:00:02Z'),
+      vusers: 4,
+      tps: 6,
+      avgMs: 200,
+      errorPct: 0,
+      p50: 200,
+      p90: 200,
+      p95: 200,
+      p99: 200,
+    }]
+    const allGroups = [commandGroup('Wikipedia', 10), commandGroup('BBC', 10)]
+    const transactions: TransactionEvent[] = [
+      archiveTransaction('2026-06-08T12:00:00.300Z', 'Wikipedia', 100, true),
+      archiveTransaction('2026-06-08T12:00:00.400Z', 'Wikipedia', 300, false),
+      archiveTransaction('2026-06-08T12:00:01.300Z', 'Wikipedia', 200, true),
+      archiveTransaction('2026-06-08T12:00:01.400Z', 'BBC', 1000, true),
+    ]
+
+    const scoped = buildSelectedGroupChartHistoryFromTransactions(referenceData, transactions, [allGroups[0]], allGroups)
+
+    expect(scoped).toHaveLength(2)
+    expect(scoped[0]).toEqual(expect.objectContaining({
+      time: '12:00:01',
+      vusers: 1,
+      tps: 2,
+      avgMs: 200,
+      errorPct: 50,
+      p50: 100,
+      p90: 300,
+      p95: 300,
+      p99: 300,
+      totalTransactions: 2,
+      totalErrors: 1,
+      Wikipedia_vusers: 1,
+      Wikipedia_tps: 2,
+      Wikipedia_avgMs: 200,
+      Wikipedia_transactions: 2,
+      Wikipedia_errors: 1,
+      Wikipedia_errorPct: 50,
+      Wikipedia_p95: 300,
+    }))
+    expect(scoped[1]).toEqual(expect.objectContaining({
+      time: '12:00:02',
+      vusers: 2,
+      tps: 1,
+      avgMs: 200,
+      errorPct: 0,
+      p50: 200,
+      p90: 200,
+      p95: 200,
+      p99: 200,
+      totalTransactions: 3,
+      totalErrors: 1,
+      Wikipedia_vusers: 2,
+      Wikipedia_tps: 1,
+      Wikipedia_avgMs: 200,
+      Wikipedia_transactions: 1,
+      Wikipedia_errors: 0,
+    }))
   })
 
   it('does not show the prototype run when no live run is selected', async () => {
@@ -54,6 +151,7 @@ describe('CommandCenterPrototype', () => {
     expect(container.querySelector('[aria-label="Ops cockpit mockup"]')).not.toBeNull()
     expect(container.textContent).not.toContain('Triage Console')
     expect(container.querySelector('.command-center-intro')).toBeNull()
+    expect(container.querySelector('[aria-label="Command center run controls"]')?.classList.contains('command-top-banner')).toBe(false)
 
     const opsSidebar = container.querySelector('[aria-label="Command center sidebar"]')
     const opsPrimaryColumn = container.querySelector('.command-layout-ops > .command-primary-column')
@@ -99,6 +197,10 @@ describe('CommandCenterPrototype', () => {
     expect(graphSelectionPanel).not.toBeNull()
     expect(graphSelectionPanel?.textContent).toContain('Group Selection')
     expect(graphSelectionPanel?.textContent).toContain('3 / 3 groups visible')
+    const selectedGroupButtons = graphSelectionPanel?.querySelectorAll('.command-group-select-toggle[data-state="selected"]')
+    expect(selectedGroupButtons).toHaveLength(3)
+    expect(Array.from(selectedGroupButtons ?? []).every(button => button.textContent?.includes('Selected'))).toBe(true)
+    expect(selectedGroupButtons?.[0].querySelector('.command-group-select-status-dot')).not.toBeNull()
     expect(Array.from(graphSidebar!.children).indexOf(graphSwitchPanel!)).toBeLessThan(Array.from(graphSidebar!.children).indexOf(graphSelectionPanel!))
     expect(graphOptionsPanel).not.toBeNull()
     expect(graphOptionsPanel?.textContent).toContain('Graph Options')
@@ -106,7 +208,7 @@ describe('CommandCenterPrototype', () => {
     expect(graphOptionsPanel?.textContent).toContain('Layout')
     expect(graphOptionsPanel?.textContent).toContain('2x2')
     expect(graphOptionsPanel?.textContent).toContain('3x3')
-    expect(graphOptionsPanel?.textContent).toContain('Role View')
+    expect(graphOptionsPanel?.textContent).not.toContain('Role View')
     expect(graphOptionsPanel?.textContent).toContain('Display Time')
     expect(graphOptionsPanel?.textContent).not.toContain('Graph data range')
     expect(graphOptionsPanel?.textContent).not.toContain('Graph density')
@@ -126,8 +228,32 @@ describe('CommandCenterPrototype', () => {
     await click(tabNamed('Under Load'))
 
     expect(tabNamed('Under Load')?.getAttribute('aria-selected')).toBe('true')
+    const underLoadDisplayPanel = graphSidebar?.querySelector('[aria-label="Under Load display mode"]')
+    expect(underLoadDisplayPanel).not.toBeNull()
+    expect(underLoadDisplayPanel?.textContent).toContain('Graphs')
+    expect(underLoadDisplayPanel?.textContent).toContain('Heatmap')
+    expect(Array.from(graphSidebar!.children).indexOf(underLoadDisplayPanel!)).toBeGreaterThan(Array.from(graphSidebar!.children).indexOf(graphSwitchPanel!))
+    expect(Array.from(graphSidebar!.children).indexOf(underLoadDisplayPanel!)).toBeLessThan(Array.from(graphSidebar!.children).indexOf(graphSelectionPanel!))
+    expect(buttonWithin(underLoadDisplayPanel!, 'Graphs').getAttribute('aria-pressed')).toBe('true')
     expect(runtimeGraphs?.textContent).toContain('ART Under Load')
-    expect(runtimeGraphs?.textContent).toContain('Network Egress Under Load')
+    expect(runtimeGraphs?.textContent).toContain('TPS Under Load')
+    expect(runtimeGraphs?.textContent).not.toContain('Load Impact Heatmap')
+
+    await click(buttonWithin(underLoadDisplayPanel!, 'Heatmap'))
+
+    expect(buttonWithin(underLoadDisplayPanel!, 'Heatmap').getAttribute('aria-pressed')).toBe('true')
+    expect(runtimeGraphs?.textContent).toContain('Load Impact Heatmap')
+    expect(runtimeGraphs?.textContent).toContain('2D')
+    expect(runtimeGraphs?.textContent).toContain('3D')
+    expect(runtimeGraphs?.textContent).not.toContain('ART Under Load')
+    const dedicatedHeatmapCard = runtimeGraphs?.querySelector('.load-impact-card.load-impact-map-mode')
+    expect(dedicatedHeatmapCard).not.toBeNull()
+    const heatmapCell = Array.from(dedicatedHeatmapCard!.querySelectorAll<HTMLButtonElement>('.load-impact-cell')).find(cell => !cell.disabled)
+    expect(heatmapCell).toBeDefined()
+
+    await click(heatmapCell!)
+
+    expect(runtimeGraphs?.querySelector('.load-impact-detail')).not.toBeNull()
 
     await click(tabNamed('Infrastructure'))
 
@@ -146,6 +272,8 @@ describe('CommandCenterPrototype', () => {
     await click(browseVisibility)
 
     expect(browseVisibility.getAttribute('aria-pressed')).toBe('false')
+    expect(browseVisibility.getAttribute('data-state')).toBe('hidden')
+    expect(browseVisibility.textContent).toContain('Hidden')
     expect(graphSelectionPanel?.textContent).toContain('2 / 3 groups visible')
     expect(runtimeGraphs?.getAttribute('data-visible-groups')).not.toContain('browse')
     expect(runtimeGraphs?.getAttribute('data-visible-groups')).toContain('checkout')
@@ -643,5 +771,36 @@ describe('CommandCenterPrototype', () => {
 
   async function changeTextInput(input: HTMLInputElement, value: string) {
     await changeNumberInput(input, value)
+  }
+
+  function commandGroup(name: string, targetVusers: number): CommandGroup {
+    return {
+      key: name.toLowerCase(),
+      name,
+      protocol: 'http',
+      current: targetVusers,
+      target: targetVusers,
+      targetVusers,
+      targetMode: 'vusers',
+      tps: 0,
+      art: 0,
+      errorPct: 0,
+      p99: 0,
+      transactions: 0,
+      errors: 0,
+      color: 'var(--chart-1)',
+    }
+  }
+
+  function archiveTransaction(timestamp: string, group: string, durationMs: number, success: boolean): TransactionEvent {
+    return {
+      timestamp,
+      test_id: 'completed-run',
+      test_name: 'Completed Run',
+      group,
+      action_name: 'GET /',
+      duration_ms: durationMs,
+      success,
+    }
   }
 })

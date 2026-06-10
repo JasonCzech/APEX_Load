@@ -28,7 +28,7 @@ func TestRuntimeSettingsSupportMatrixEndpointCoversW3ProtocolsAndPresets(t *test
 	if payload.SchemaVersion != runtimeSettingsSupportSchemaVersion {
 		t.Fatalf("schema version = %q", payload.SchemaVersion)
 	}
-	for _, protocol := range []string{"browser", "vugen_web2", "trueclient2_web", "soap", "java_http", "websocket", "grpc", "database", "network", "jms-solace", "devweb", "har", "jmeter"} {
+	for _, protocol := range []string{"browser", "web2_browser_profile", "trueclient2_web", "soap", "java_http", "websocket", "grpc", "database", "network", "jms-solace", "devweb", "har", "jmeter"} {
 		if !containsString(payload.Protocols, protocol) {
 			t.Fatalf("protocols = %#v, missing %s", payload.Protocols, protocol)
 		}
@@ -38,7 +38,7 @@ func TestRuntimeSettingsSupportMatrixEndpointCoversW3ProtocolsAndPresets(t *test
 			t.Fatalf("status vocabulary missing %s", status)
 		}
 	}
-	for _, preset := range []string{"ci_smoke", "release_gate", "migration_replay", "vugen_web2_migration_review", "browser_canary", "debug_trace", "soak_stress"} {
+	for _, preset := range []string{"ci_smoke", "release_gate", "migration_replay", "web2_browser_profile_migration_review", "browser_canary", "debug_trace", "soak_stress"} {
 		if !runtimeSettingsPresetContains(payload.Presets, preset) {
 			t.Fatalf("presets missing %s", preset)
 		}
@@ -49,13 +49,13 @@ func TestRuntimeSettingsSupportMatrixEndpointCoversW3ProtocolsAndPresets(t *test
 	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "devweb_runtime_mapping", "partial") {
 		t.Fatalf("support matrix missing partial DevWeb runtime classification")
 	}
-	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "vugen_web2_browser_device_emulation", "executed") {
+	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "web2_browser_profile_browser_device_emulation", "executed") {
 		t.Fatalf("support matrix missing Web 2.0 browser device emulation runtime classification")
 	}
-	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "vugen_web2_browser_replay_evidence", "executed") {
+	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "web2_browser_profile_browser_replay_evidence", "executed") {
 		t.Fatalf("support matrix missing Web 2.0 replay evidence classification")
 	}
-	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "vugen_web2_http_conversion_readiness", "executed") {
+	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "web2_browser_profile_http_conversion_readiness", "executed") {
 		t.Fatalf("support matrix missing Web 2.0 HTTP conversion readiness classification")
 	}
 	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "database_runtime_controls", "executed") {

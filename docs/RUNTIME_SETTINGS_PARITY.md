@@ -6,7 +6,7 @@ This is the W3 evidence record for runtime settings parity across APEX Load's cu
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /api/v1/runtime-settings/support-matrix` | Unified runtime setting matrix across HTTP, browser, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, DevWeb, HAR, JMeter, and LoadRunner Web HTTP/HTML. |
+| `GET /api/v1/runtime-settings/support-matrix` | Unified runtime setting matrix across HTTP, browser, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, DevWeb, HAR, JMeter, and Enterprise Script Archive Web HTTP/HTML. |
 | `GET /api/v1/scripts/{id}/runtime-settings/report?format=json\|csv` | Script-level runtime setting parity export for migration review and support handoff. |
 | `GET /api/v1/scenarios/{id}/runtime-settings/report?format=json\|csv` | Scenario-level runtime setting parity export after scenario/runtime overrides are applied. |
 
@@ -31,7 +31,7 @@ The support endpoint publishes six reusable profiles:
 | --- | --- |
 | `ci_smoke` | Fast deterministic validation for pull requests and import sanity checks. |
 | `release_gate` | Balanced release qualification with snapshots and per-iteration grouping. |
-| `migration_replay` | High-evidence replay for LoadRunner, JMeter, HAR, and DevWeb migration review. |
+| `migration_replay` | High-evidence replay for Enterprise Script Archive, JMeter, HAR, and DevWeb migration review. |
 | `browser_canary` | Low-density browser UX sentinel paired with protocol load. |
 | `debug_trace` | Verbose troubleshooting for protocol onboarding and failed migrations. |
 | `soak_stress` | Longer-running resource trend profile with conservative pacing and standard logging. |

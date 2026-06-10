@@ -633,7 +633,7 @@ describe('ScriptEditor', () => {
       ...initialScript,
       metadata: {
         import: {
-          source: 'loadrunner',
+          source: 'enterprise_script_archive',
           source_script_name: 'checkout.usr',
           preserved: {
             runtime_files: ['default.cfg'],
@@ -705,7 +705,7 @@ describe('ScriptEditor', () => {
       ],
       metadata: {
         import: {
-          source: 'loadrunner',
+          source: 'enterprise_script_archive',
           source_script_name: 'CheckoutWeb2.zip',
           preserved: {
             source_script_type: 'TruClient 2.0 - Web',
@@ -713,7 +713,7 @@ describe('ScriptEditor', () => {
               schema_version: 1,
               status: 'replay_evidence_attached',
               generated_at: '2026-05-14T20:00:03Z',
-              source: 'loadrunner',
+              source: 'enterprise_script_archive',
               source_script_name: 'CheckoutWeb2.zip',
               compatibility: {
                 source_profile: 'truclient2_web',
@@ -795,7 +795,7 @@ describe('ScriptEditor', () => {
         target: '/aura',
         metadata: {
           source_transaction: 'S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue',
-          loadrunner_request_count: 2,
+          source_request_count: 2,
         },
         params: {
           requests: [{
@@ -1210,7 +1210,7 @@ describe('ScriptEditor', () => {
       }],
       metadata: {
         import: {
-          source: 'loadrunner',
+          source: 'enterprise_script_archive',
           source_script_name: 'checkout.usr',
           preserved: {},
         },
@@ -1251,7 +1251,7 @@ describe('ScriptEditor', () => {
       ...initialScript,
       metadata: {
         import: {
-          source: 'loadrunner',
+          source: 'enterprise_script_archive',
           source_script_name: 'checkout.usr',
           preserved: {},
         },
@@ -1797,7 +1797,7 @@ describe('ScriptEditor', () => {
       ],
       metadata: {
         import: {
-          source: 'loadrunner',
+          source: 'enterprise_script_archive',
           source_script_name: 'CheckoutWeb2.zip',
           preserved: {
             source_script_type: 'TruClient 2.0 - Web',
@@ -1916,7 +1916,7 @@ describe('ScriptEditor', () => {
       ],
       metadata: {
         import: {
-          source: 'loadrunner',
+          source: 'enterprise_script_archive',
           source_script_name: 'CheckoutWeb2.zip',
           preserved: {
             source_script_type: 'TruClient 2.0 - Web',
@@ -2061,7 +2061,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
   })
 
-  it('exposes native LoadRunner parity parameter types in the parameter dialog', async () => {
+  it('exposes native source parity parameter types in the parameter dialog', async () => {
     const scriptWithoutParameters: ScriptDefinition = {
       ...initialScript,
       parameters: [],
@@ -3963,7 +3963,7 @@ describe('ScriptEditor', () => {
       ...initialScript,
       metadata: {
         import: {
-          source: 'loadrunner',
+          source: 'enterprise_script_archive',
           source_script_name: 'checkout.usr',
           preserved: {
             runtime_settings_migration_readiness: {
@@ -7011,7 +7011,7 @@ describe('ScriptEditor', () => {
       ],
       metadata: {
         import: {
-          source: 'loadrunner',
+          source: 'enterprise_script_archive',
           source_script_name: 'checkout.usr',
           preserved: {
             correlation_suggestions: [
@@ -7082,7 +7082,7 @@ describe('ScriptEditor', () => {
       ],
       metadata: {
         import: {
-          source: 'loadrunner',
+          source: 'enterprise_script_archive',
           source_script_name: 'checkout.usr',
           preserved: {},
         },

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"sort"
@@ -40,31 +41,40 @@ type ProtocolDensityEnvelope struct {
 }
 
 type CapacityAdvisory struct {
-	TotalVUsers                   int                              `json:"total_vusers"`
-	DurationSeconds               int                              `json:"duration_seconds"`
-	BaselineWindowEnabled         bool                             `json:"baseline_window_enabled"`
-	WorkloadClass                 string                           `json:"workload_class,omitempty"`
-	BrowserVUsers                 int                              `json:"browser_vusers,omitempty"`
-	MaxBrowserVUsersPerGenerator  int                              `json:"max_browser_vusers_per_generator,omitempty"`
-	ProtocolDensities             []ProtocolDensityEnvelope        `json:"protocol_densities,omitempty"`
-	HeadroomPct                   float64                          `json:"headroom_pct"`
-	ComplexityScore               float64                          `json:"complexity_score"`
-	Bottleneck                    string                           `json:"bottleneck"`
-	AvailabilitySource            string                           `json:"availability_source,omitempty"`
-	ConfiguredAvailableGenerators int                              `json:"configured_available_generators,omitempty"`
-	LiveAvailableGenerators       *int                             `json:"live_available_generators,omitempty"`
-	ReservationProjectID          string                           `json:"reservation_project_id,omitempty"`
-	ReservedGenerators            int                              `json:"reserved_generators,omitempty"`
-	SharedAvailableGenerators     int                              `json:"shared_available_generators,omitempty"`
-	RecommendedGenerators         int                              `json:"recommended_generators"`
-	AvailableGenerators           int                              `json:"available_generators"`
-	ShortfallGenerators           int                              `json:"shortfall_generators,omitempty"`
-	RequiresOverride              bool                             `json:"requires_override,omitempty"`
-	EstimatedPerVUser             CapacityResourceEstimate         `json:"estimated_per_vuser"`
-	EstimatedTotal                CapacityResourceEstimate         `json:"estimated_total"`
-	UsablePerGenerator            CapacityResourceEstimate         `json:"usable_per_generator"`
-	DimensionRecommendations      CapacityDimensionRecommendations `json:"dimension_recommendations"`
-	Warnings                      []string                         `json:"warnings,omitempty"`
+	TotalVUsers                        int                              `json:"total_vusers"`
+	DurationSeconds                    int                              `json:"duration_seconds"`
+	BaselineWindowEnabled              bool                             `json:"baseline_window_enabled"`
+	WorkloadClass                      string                           `json:"workload_class,omitempty"`
+	BrowserVUsers                      int                              `json:"browser_vusers,omitempty"`
+	MaxBrowserVUsersPerGenerator       int                              `json:"max_browser_vusers_per_generator,omitempty"`
+	MaxBrowserCanaryVUsersPerGenerator int                              `json:"max_browser_canary_vusers_per_generator,omitempty"`
+	BrowserDensityTier                 string                           `json:"browser_density_tier,omitempty"`
+	BrowserClaimPolicy                 string                           `json:"browser_claim_policy,omitempty"`
+	BrowserDensityOverrideRequired     bool                             `json:"browser_density_override_required,omitempty"`
+	BrowserDensityOverrideRequested    bool                             `json:"browser_density_override_requested,omitempty"`
+	BrowserBenchmarkEvidenceRequired   bool                             `json:"browser_benchmark_evidence_required,omitempty"`
+	BrowserBenchmarkEvidenceAttached   bool                             `json:"browser_benchmark_evidence_attached,omitempty"`
+	BrowserBenchmarkEvidence           string                           `json:"browser_benchmark_evidence,omitempty"`
+	BrowserDensityReleaseGate          string                           `json:"browser_density_release_gate,omitempty"`
+	ProtocolDensities                  []ProtocolDensityEnvelope        `json:"protocol_densities,omitempty"`
+	HeadroomPct                        float64                          `json:"headroom_pct"`
+	ComplexityScore                    float64                          `json:"complexity_score"`
+	Bottleneck                         string                           `json:"bottleneck"`
+	AvailabilitySource                 string                           `json:"availability_source,omitempty"`
+	ConfiguredAvailableGenerators      int                              `json:"configured_available_generators,omitempty"`
+	LiveAvailableGenerators            *int                             `json:"live_available_generators,omitempty"`
+	ReservationProjectID               string                           `json:"reservation_project_id,omitempty"`
+	ReservedGenerators                 int                              `json:"reserved_generators,omitempty"`
+	SharedAvailableGenerators          int                              `json:"shared_available_generators,omitempty"`
+	RecommendedGenerators              int                              `json:"recommended_generators"`
+	AvailableGenerators                int                              `json:"available_generators"`
+	ShortfallGenerators                int                              `json:"shortfall_generators,omitempty"`
+	RequiresOverride                   bool                             `json:"requires_override,omitempty"`
+	EstimatedPerVUser                  CapacityResourceEstimate         `json:"estimated_per_vuser"`
+	EstimatedTotal                     CapacityResourceEstimate         `json:"estimated_total"`
+	UsablePerGenerator                 CapacityResourceEstimate         `json:"usable_per_generator"`
+	DimensionRecommendations           CapacityDimensionRecommendations `json:"dimension_recommendations"`
+	Warnings                           []string                         `json:"warnings,omitempty"`
 }
 
 type CapacityAvailabilitySnapshot struct {
@@ -88,6 +98,27 @@ type capacityWorkloadProfile struct {
 	ProtocolDensities            []ProtocolDensityEnvelope
 	Warnings                     []string
 }
+
+type browserDensityGovernance struct {
+	MaxCanaryVUsersPerGenerator int
+	Tier                        string
+	ClaimPolicy                 string
+	OverrideRequired            bool
+	OverrideRequested           bool
+	BenchmarkEvidenceRequired   bool
+	BenchmarkEvidenceAttached   bool
+	BenchmarkEvidence           string
+	ReleaseGate                 string
+	Warnings                    []string
+}
+
+const (
+	browserDensityTierDiagnosticCanary       = "diagnostic_canary"
+	browserDensityTierBoundedRealBrowserLoad = "bounded_real_browser_load"
+	browserDensityReleaseGateClear           = "clear"
+	browserDensityReleaseGateRequired        = "benchmark_evidence_and_override_required"
+	browserDensityReleaseGateCleared         = "benchmark_evidence_attached_override_requested"
+)
 
 func cloneCapacityAdvisory(in *CapacityAdvisory) *CapacityAdvisory {
 	if in == nil {
@@ -188,34 +219,112 @@ func estimateCapacityAdvisoryWithAvailability(settings SystemSettings, availabil
 	if resourceBaseline {
 		warnings = append(warnings, "Baseline windows increase total test timeline but do not increase peak generator demand.")
 	}
+	browserGovernance := buildBrowserDensityGovernance(workloadProfile, availability, runtimeSettings)
+	warnings = append(warnings, browserGovernance.Warnings...)
 
 	return &CapacityAdvisory{
-		TotalVUsers:                   totalVUsers,
-		DurationSeconds:               int(duration.Seconds()),
-		BaselineWindowEnabled:         resourceBaseline,
-		WorkloadClass:                 workloadProfile.Class,
-		BrowserVUsers:                 workloadProfile.BrowserVUsers,
-		MaxBrowserVUsersPerGenerator:  workloadProfile.MaxBrowserVUsersPerGenerator,
-		ProtocolDensities:             cloneProtocolDensityEnvelopes(workloadProfile.ProtocolDensities),
-		HeadroomPct:                   settings.CapacityPlanning.HeadroomPct,
-		ComplexityScore:               roundCapacityValue(complexityScore),
-		Bottleneck:                    bottleneck,
-		AvailabilitySource:            availability.Source,
-		ConfiguredAvailableGenerators: availability.ConfiguredAvailableGenerators,
-		LiveAvailableGenerators:       availability.LiveAvailableGenerators,
-		ReservationProjectID:          availability.ReservationProjectID,
-		ReservedGenerators:            availability.ReservedGenerators,
-		SharedAvailableGenerators:     availability.SharedAvailableGenerators,
-		RecommendedGenerators:         recommended,
-		AvailableGenerators:           available,
-		ShortfallGenerators:           shortfall,
-		RequiresOverride:              shortfall > 0,
-		EstimatedPerVUser:             roundCapacityEstimate(perVUser),
-		EstimatedTotal:                roundCapacityEstimate(totalEstimate),
-		UsablePerGenerator:            roundCapacityEstimate(CapacityResourceEstimate{CPUCores: usableCPU, MemoryMB: usableMemory, NetworkMbps: usableNetwork}),
-		DimensionRecommendations:      recommendations,
-		Warnings:                      warnings,
+		TotalVUsers:                        totalVUsers,
+		DurationSeconds:                    int(duration.Seconds()),
+		BaselineWindowEnabled:              resourceBaseline,
+		WorkloadClass:                      workloadProfile.Class,
+		BrowserVUsers:                      workloadProfile.BrowserVUsers,
+		MaxBrowserVUsersPerGenerator:       workloadProfile.MaxBrowserVUsersPerGenerator,
+		MaxBrowserCanaryVUsersPerGenerator: browserGovernance.MaxCanaryVUsersPerGenerator,
+		BrowserDensityTier:                 browserGovernance.Tier,
+		BrowserClaimPolicy:                 browserGovernance.ClaimPolicy,
+		BrowserDensityOverrideRequired:     browserGovernance.OverrideRequired,
+		BrowserDensityOverrideRequested:    browserGovernance.OverrideRequested,
+		BrowserBenchmarkEvidenceRequired:   browserGovernance.BenchmarkEvidenceRequired,
+		BrowserBenchmarkEvidenceAttached:   browserGovernance.BenchmarkEvidenceAttached,
+		BrowserBenchmarkEvidence:           browserGovernance.BenchmarkEvidence,
+		BrowserDensityReleaseGate:          browserGovernance.ReleaseGate,
+		ProtocolDensities:                  cloneProtocolDensityEnvelopes(workloadProfile.ProtocolDensities),
+		HeadroomPct:                        settings.CapacityPlanning.HeadroomPct,
+		ComplexityScore:                    roundCapacityValue(complexityScore),
+		Bottleneck:                         bottleneck,
+		AvailabilitySource:                 availability.Source,
+		ConfiguredAvailableGenerators:      availability.ConfiguredAvailableGenerators,
+		LiveAvailableGenerators:            availability.LiveAvailableGenerators,
+		ReservationProjectID:               availability.ReservationProjectID,
+		ReservedGenerators:                 availability.ReservedGenerators,
+		SharedAvailableGenerators:          availability.SharedAvailableGenerators,
+		RecommendedGenerators:              recommended,
+		AvailableGenerators:                available,
+		ShortfallGenerators:                shortfall,
+		RequiresOverride:                   shortfall > 0,
+		EstimatedPerVUser:                  roundCapacityEstimate(perVUser),
+		EstimatedTotal:                     roundCapacityEstimate(totalEstimate),
+		UsablePerGenerator:                 roundCapacityEstimate(CapacityResourceEstimate{CPUCores: usableCPU, MemoryMB: usableMemory, NetworkMbps: usableNetwork}),
+		DimensionRecommendations:           recommendations,
+		Warnings:                           warnings,
 	}
+}
+
+func buildBrowserDensityGovernance(workload capacityWorkloadProfile, availability CapacityAvailabilitySnapshot, runtimeSettings *RuntimeSettingsOverride) browserDensityGovernance {
+	if workload.BrowserVUsers <= 0 {
+		return browserDensityGovernance{}
+	}
+	envelope := browserDiagnosticCanaryEnvelope()
+	maxCanary := envelope.MaximumClaimedVUsersPerGenerator
+	if maxCanary <= 0 {
+		maxCanary = 5
+	}
+	available := availability.EffectiveAvailableGenerators
+	if available < 1 {
+		available = 1
+	}
+	evidence := browserDensityBenchmarkEvidence(runtimeSettings)
+	overrideRequested := browserDensityOverrideRequested(runtimeSettings)
+	required := workload.BrowserVUsers > available*maxCanary
+	tier := browserDensityTierDiagnosticCanary
+	releaseGate := browserDensityReleaseGateClear
+	warnings := make([]string, 0, 1)
+	if required {
+		releaseGate = browserDensityReleaseGateRequired
+		if evidence != "" && overrideRequested {
+			tier = browserDensityTierBoundedRealBrowserLoad
+			releaseGate = browserDensityReleaseGateCleared
+			warnings = append(warnings, "Bounded real-browser-load override requested; verify attached benchmark evidence matches the generator image and hardware before release.")
+		} else {
+			warnings = append(warnings, fmt.Sprintf("Browser VUsers exceed the diagnostic canary envelope of %d VUsers/generator; attach browser benchmark evidence and set APEXLOAD_BROWSER_DENSITY_OVERRIDE=true to use the bounded real-browser-load tier.", maxCanary))
+		}
+	}
+	return browserDensityGovernance{
+		MaxCanaryVUsersPerGenerator: maxCanary,
+		Tier:                        tier,
+		ClaimPolicy:                 envelope.ClaimRule,
+		OverrideRequired:            required,
+		OverrideRequested:           overrideRequested,
+		BenchmarkEvidenceRequired:   required,
+		BenchmarkEvidenceAttached:   evidence != "",
+		BenchmarkEvidence:           evidence,
+		ReleaseGate:                 releaseGate,
+		Warnings:                    warnings,
+	}
+}
+
+func browserDensityBenchmarkEvidence(runtimeSettings *RuntimeSettingsOverride) string {
+	if runtimeSettings == nil || len(runtimeSettings.Env) == 0 {
+		return ""
+	}
+	for _, key := range []string{"APEXLOAD_BROWSER_BENCHMARK_EVIDENCE", "BROWSER_BENCHMARK_EVIDENCE", "browser_benchmark_evidence"} {
+		if value := strings.TrimSpace(runtimeSettings.Env[key]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func browserDensityOverrideRequested(runtimeSettings *RuntimeSettingsOverride) bool {
+	if runtimeSettings == nil || len(runtimeSettings.Env) == 0 {
+		return false
+	}
+	for _, key := range []string{"APEXLOAD_BROWSER_DENSITY_OVERRIDE", "BROWSER_DENSITY_OVERRIDE", "browser_density_override"} {
+		if value, ok := runtimeSettings.Env[key]; ok {
+			return parseBoolDefault(value, false)
+		}
+	}
+	return false
 }
 
 func resolveCapacityAvailability(settings SystemSettings) CapacityAvailabilitySnapshot {

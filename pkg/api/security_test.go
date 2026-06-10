@@ -161,7 +161,7 @@ func TestProductionMode(t *testing.T) {
 func TestRedactURL(t *testing.T) {
 	cases := map[string]string{
 		"https://hooks.slack.com/services/T000/B000/SECRETTOKEN": "https://hooks.slack.com/[redacted]",
-		"https://example.com/path?token=abc":                    "https://example.com/[redacted]",
+		"https://example.com/path?token=abc":                     "https://example.com/[redacted]",
 		"not a url":                                              "[redacted-url]",
 	}
 	for in, want := range cases {

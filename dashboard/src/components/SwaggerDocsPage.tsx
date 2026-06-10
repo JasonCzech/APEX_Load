@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import swaggerYaml from '../../../docs/swagger.yaml?raw'
+import { useApiGuideTopbarContribution } from './ApiGuideTopbarToggle'
 import { parseSwaggerDocument, type SwaggerOperation } from './swaggerDocsParser'
 
 function stripMarkdown(value: string) {
@@ -52,6 +53,7 @@ export default function SwaggerDocsPage() {
     [document.operations, query, tag],
   )
   const groupedOperations = useMemo(() => groupByTag(filteredOperations), [filteredOperations])
+  useApiGuideTopbarContribution('swagger', 'Swagger Docs')
 
   return (
     <div className="page swagger-docs-page">
@@ -60,7 +62,6 @@ export default function SwaggerDocsPage() {
           <h2>Swagger Docs</h2>
           <p className="page-subtitle">{stripMarkdown(document.description) || 'Interactive API reference generated from the APEX Load OpenAPI document.'}</p>
         </div>
-        <a className="btn btn-secondary btn-sm btn-accent-action" href="#/docs">API Guide</a>
       </div>
 
       <section className="swagger-docs-hero" aria-labelledby="swagger-docs-title">

@@ -4,14 +4,14 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import LoadRunnerImport from './LoadRunnerImport'
+import EnterpriseArchiveImport from './EnterpriseArchiveImport'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const apiMock = {
-  getLoadRunnerSupportMatrix: vi.fn(),
-  importLoadRunner: vi.fn(),
-  validateLoadRunnerImport: vi.fn(),
+  getEnterpriseArchiveSupportMatrix: vi.fn(),
+  importEnterpriseArchive: vi.fn(),
+  validateEnterpriseArchiveImport: vi.fn(),
   createScript: vi.fn(),
   createAuthoringSession: vi.fn(),
   startDraftBrowserReplaySession: vi.fn(),
@@ -64,7 +64,7 @@ function cssRule(css: string, selector: string) {
   return css.slice(bodyStart, bodyEnd)
 }
 
-describe('LoadRunnerImport', () => {
+describe('EnterpriseArchiveImport', () => {
   let container: HTMLDivElement
   let root: Root
 
@@ -73,7 +73,7 @@ describe('LoadRunnerImport', () => {
     document.body.appendChild(container)
     root = createRoot(container)
 
-    apiMock.getLoadRunnerSupportMatrix.mockResolvedValue({
+    apiMock.getEnterpriseArchiveSupportMatrix.mockResolvedValue({
       support_matrix: [
         {
           id: 'http_transport',
@@ -99,7 +99,7 @@ describe('LoadRunnerImport', () => {
         {
           title: 'Extended Web HTTP/HTML runtime import',
           coverage: 'Parses transport, pacing, logging, browser emulation, and DFE settings into APEX Load config.',
-          test: 'pkg/convert/loadrunner/converter_test.go::TestParseRuntimeCfgToScriptConfigMapsExtendedRuntimeSettings',
+          test: 'pkg/convert/enterprisearchive/converter_test.go::TestParseRuntimeCfgToScriptConfigMapsExtendedRuntimeSettings',
         },
       ],
       protocol_support_matrix: [
@@ -118,14 +118,14 @@ describe('LoadRunnerImport', () => {
         },
       ],
     })
-    apiMock.importLoadRunner.mockResolvedValue({
+    apiMock.importEnterpriseArchive.mockResolvedValue({
       script: {
-        name: 'Demo LoadRunner Script',
+        name: 'Demo Enterprise Script Archive',
         protocol: 'http',
         actions: [{ name: 'Homepage' }, { name: 'Submit Order' }, { name: 'Confirmation' }],
         metadata: {
           import: {
-            source: 'loadrunner',
+            source: 'enterprise_script_archive',
             source_script_name: 'Demo.usr',
             preserved: {
               runtime_files: { 'default.cfg': {} },
@@ -203,14 +203,14 @@ describe('LoadRunnerImport', () => {
       review_sections: [
         {
           key: 'unsupported_elements',
-          title: 'Unsupported LoadRunner Elements',
+          title: 'Unsupported Source Elements',
           severity: 'blocker',
           summary: 'These source constructs were preserved for review but were not converted into executable APEX Load actions.',
           items: ['web_set_max_html_param_len'],
         },
         {
           key: 'preserved_metadata',
-          title: 'Preserved LoadRunner Metadata',
+          title: 'Preserved Source Metadata',
           severity: 'info',
           summary: 'Source project metadata was saved with the generated script for audit and repair workflows.',
           items: ['Project file: Demo.usr'],
@@ -231,7 +231,7 @@ describe('LoadRunnerImport', () => {
           category: 'runtime',
           severity: 'info',
           title: 'Review preserved runtime settings',
-          description: 'The source archive included LoadRunner runtime metadata that may not all execute natively in APEX Load yet.',
+          description: 'The source archive included source runtime metadata that may not all execute natively in APEX Load yet.',
           action: 'Compare the preserved runtime file and project settings against the generated APEX Load config before promoting the script.',
         },
       ],
@@ -258,14 +258,14 @@ describe('LoadRunnerImport', () => {
         skipped: 0,
       },
     })
-    apiMock.validateLoadRunnerImport.mockResolvedValue({
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue({
       script: {
-        name: 'Demo LoadRunner Script',
+        name: 'Demo Enterprise Script Archive',
         protocol: 'http',
         actions: [{ name: 'Homepage' }],
         metadata: {
           import: {
-            source: 'loadrunner',
+            source: 'enterprise_script_archive',
             preserved: {
               source_review: sourceReviewFixture,
             },
@@ -278,7 +278,7 @@ describe('LoadRunnerImport', () => {
       review_sections: [
         {
           key: 'unsupported_elements',
-          title: 'Unsupported LoadRunner Elements',
+          title: 'Unsupported Source Elements',
           severity: 'blocker',
           summary: 'These source constructs were preserved for review but were not converted into executable APEX Load actions.',
           items: ['web_set_max_html_param_len'],
@@ -319,7 +319,7 @@ describe('LoadRunnerImport', () => {
     apiMock.createAuthoringSession.mockResolvedValue({
       id: 'review-session',
       name: 'SAP GUI review artifact',
-      source: 'loadrunner_review_artifact',
+      source: 'source_review_artifact',
       status: 'reviewing',
       created_at: '2026-05-17T00:00:00Z',
       updated_at: '2026-05-17T00:00:00Z',
@@ -351,7 +351,7 @@ describe('LoadRunnerImport', () => {
     // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
     const { readFileSync } = await import('node:fs')
     const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
-    const importCss = readFileSync(`${cwd}/src/components/LoadRunnerImport.css`, 'utf8') as string
+    const importCss = readFileSync(`${cwd}/src/components/EnterpriseArchiveImport.css`, 'utf8') as string
     const backdropRule = cssRule(importCss, '.lr-modal-backdrop')
 
     expect(backdropRule).toContain('z-index: 220;')
@@ -361,14 +361,14 @@ describe('LoadRunnerImport', () => {
     const onImported = vi.fn()
     apiMock.createScript.mockResolvedValueOnce({
       id: 'saved-script',
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
       version: '1.0.0',
       created_at: '2026-05-17T00:00:00Z',
     })
 
     await act(async () => {
-      root.render(<LoadRunnerImport onImported={onImported} />)
+      root.render(<EnterpriseArchiveImport onImported={onImported} />)
     })
 
     await flushPromises()
@@ -436,7 +436,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -448,7 +448,7 @@ describe('LoadRunnerImport', () => {
 
     await flushPromises()
 
-    expect(apiMock.importLoadRunner).toHaveBeenCalledWith(file, {
+    expect(apiMock.importEnterpriseArchive).toHaveBeenCalledWith(file, {
       name: undefined,
       project_id: undefined,
       base_url: undefined,
@@ -457,15 +457,15 @@ describe('LoadRunnerImport', () => {
       migration_block_statuses: ['blocked', 'partial', 'compatibility_only'],
     })
     expect(container.textContent).toContain('Conversion Complete')
-    expect(container.textContent).toContain('Demo LoadRunner Script')
+    expect(container.textContent).toContain('Demo Enterprise Script Archive')
     expect(container.textContent).toContain('manual review recommended')
-    expect(container.textContent).toContain('Unsupported LoadRunner Functions (1)')
+    expect(container.textContent).toContain('Unsupported Source Functions (1)')
     expect(container.textContent).toContain('Import Review Sections (2)')
     expect(container.textContent).toContain('Repair Suggestions (2)')
     expect(container.querySelectorAll('.lr-review-row .lr-warnings')).toHaveLength(2)
     expect(container.textContent).toContain('Replace unsupported web_set_max_html_param_len')
     expect(container.textContent).toContain('Review preserved runtime settings')
-    expect(container.textContent).toContain('Unsupported LoadRunner Elements')
+    expect(container.textContent).toContain('Unsupported Source Elements')
     expect(container.textContent).toContain('blocker')
     expect(container.textContent).toContain('web_set_max_html_param_len')
     expect(container.textContent).toContain('Demo.usr')
@@ -534,18 +534,18 @@ describe('LoadRunnerImport', () => {
     await flushPromises()
 
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), undefined)
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({
-        name: 'Demo LoadRunner Script',
+        name: 'Demo Enterprise Script Archive',
         protocol: 'http',
         script: expect.objectContaining({
-          name: 'Demo LoadRunner Script',
+          name: 'Demo Enterprise Script Archive',
           metadata: expect.objectContaining({
             import: expect.objectContaining({
-              source: 'loadrunner',
+              source: 'enterprise_script_archive',
             }),
           }),
         }),
@@ -553,8 +553,8 @@ describe('LoadRunnerImport', () => {
     }))
   })
 
-  it('surfaces TrueClient2 compatibility report from LoadRunner import responses', async () => {
-    apiMock.importLoadRunner.mockResolvedValueOnce({
+  it('surfaces TrueClient2 compatibility report from Enterprise Script Archive import responses', async () => {
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
       script: {
         name: 'Checkout Web2',
         protocol: 'browser',
@@ -572,7 +572,7 @@ describe('LoadRunnerImport', () => {
         ],
         metadata: {
           import: {
-            source: 'loadrunner',
+            source: 'enterprise_script_archive',
             source_script_name: 'CheckoutWeb2.zip',
             preserved: {},
           },
@@ -623,7 +623,7 @@ describe('LoadRunnerImport', () => {
     })
 
     await act(async () => {
-      root.render(<LoadRunnerImport />)
+      root.render(<EnterpriseArchiveImport />)
     })
     await flushPromises()
 
@@ -640,7 +640,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
 
@@ -675,7 +675,7 @@ describe('LoadRunnerImport', () => {
     })
 
     await act(async () => {
-      root.render(<LoadRunnerImport />)
+      root.render(<EnterpriseArchiveImport />)
     })
     await flushPromises()
 
@@ -692,7 +692,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
 
@@ -723,11 +723,11 @@ describe('LoadRunnerImport', () => {
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('"name": "Homepage"'))
   })
 
-  it('queues multiple LoadRunner archives, removes one, and converts the remaining files', async () => {
+  it('queues multiple enterprise script archives, removes one, and converts the remaining files', async () => {
     const firstFile = new File(['alpha'], 'alpha.zip', { type: 'application/zip' })
     const removedFile = new File(['beta'], 'beta.zip', { type: 'application/zip' })
     const lastFile = new File(['gamma'], 'gamma.zip', { type: 'application/zip' })
-    apiMock.importLoadRunner.mockImplementation(async (file: File) => ({
+    apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => ({
       script: {
         name: file.name.replace(/\.zip$/i, ''),
         protocol: 'http',
@@ -753,7 +753,7 @@ describe('LoadRunnerImport', () => {
     }))
 
     await act(async () => {
-      root.render(<LoadRunnerImport />)
+      root.render(<EnterpriseArchiveImport />)
     })
     await flushPromises()
 
@@ -790,7 +790,7 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('2 ZIP files queued')
     expect(container.textContent).not.toContain('beta.zip')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert 2 LoadRunner Scripts'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert 2 Enterprise Script Archives'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -802,20 +802,20 @@ describe('LoadRunnerImport', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(apiMock.importLoadRunner).toHaveBeenCalledTimes(2)
-    expect(apiMock.importLoadRunner.mock.calls[0][0]).toBe(firstFile)
-    expect(apiMock.importLoadRunner.mock.calls[1][0]).toBe(lastFile)
-    expect(apiMock.importLoadRunner.mock.calls.map(call => (call[0] as File).name)).toEqual(['alpha.zip', 'gamma.zip'])
-    expect(container.textContent).toContain('Converted 2 of 2 LoadRunner scripts')
+    expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(2)
+    expect(apiMock.importEnterpriseArchive.mock.calls[0][0]).toBe(firstFile)
+    expect(apiMock.importEnterpriseArchive.mock.calls[1][0]).toBe(lastFile)
+    expect(apiMock.importEnterpriseArchive.mock.calls.map(call => (call[0] as File).name)).toEqual(['alpha.zip', 'gamma.zip'])
+    expect(container.textContent).toContain('Converted 2 of 2 enterprise script archives')
     expect(container.textContent).toContain('alpha')
   })
 
   it('shows protocol review artifacts instead of executable save for external-runner imports', async () => {
-    apiMock.importLoadRunner.mockResolvedValueOnce({
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
       scripts: [],
       script: null,
       detected_protocol: {
-        canonical_loadrunner_protocol: 'sap_gui',
+        canonical_source_protocol: 'sap_gui',
         display_name: 'SAP GUI',
         import_mode: 'external_runner_required',
         confidence: 'high',
@@ -828,7 +828,7 @@ describe('LoadRunnerImport', () => {
         title: 'SAP GUI review artifact',
         status: 'external_runner_required',
         protocol: {
-          canonical_loadrunner_protocol: 'sap_gui',
+          canonical_source_protocol: 'sap_gui',
           display_name: 'SAP GUI',
           import_mode: 'external_runner_required',
           confidence: 'high',
@@ -865,7 +865,7 @@ describe('LoadRunnerImport', () => {
     })
 
     await act(async () => {
-      root.render(<LoadRunnerImport projectId="project-1" />)
+      root.render(<EnterpriseArchiveImport projectId="project-1" />)
     })
     await flushPromises()
 
@@ -883,7 +883,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -911,7 +911,7 @@ describe('LoadRunnerImport', () => {
 
     expect(apiMock.createAuthoringSession).toHaveBeenCalledWith(expect.objectContaining({
       project_id: 'project-1',
-      source: 'loadrunner_review_artifact',
+      source: 'source_review_artifact',
       review_state: expect.objectContaining({
         review_artifact: expect.objectContaining({ id: 'lr-review-sap' }),
       }),
@@ -921,7 +921,7 @@ describe('LoadRunnerImport', () => {
 
   it('runs validate-only review with preserve transaction option', async () => {
     await act(async () => {
-      root.render(<LoadRunnerImport />)
+      root.render(<EnterpriseArchiveImport />)
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
@@ -958,7 +958,7 @@ describe('LoadRunnerImport', () => {
 
     await flushPromises()
 
-    expect(apiMock.validateLoadRunnerImport).toHaveBeenCalledWith(file, {
+    expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledWith(file, {
       name: undefined,
       project_id: undefined,
       base_url: undefined,
@@ -968,7 +968,7 @@ describe('LoadRunnerImport', () => {
     })
     expect(container.textContent).toContain('Validation Review')
     expect(container.textContent).toContain('validation review')
-    expect(container.textContent).toContain('Unsupported LoadRunner Functions (1)')
+    expect(container.textContent).toContain('Unsupported Source Functions (1)')
   })
 
   it('passes Salesforce HAR evidence and opens the native preview draft', async () => {
@@ -993,9 +993,9 @@ describe('LoadRunnerImport', () => {
         },
       ],
     }
-    apiMock.validateLoadRunnerImport.mockResolvedValueOnce({
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce({
       script: {
-        name: 'Demo LoadRunner Script',
+        name: 'Demo Enterprise Script Archive',
         version: '1.0.0',
         protocol: 'http',
         config: { base_url: 'https://acme.my.salesforce.com' },
@@ -1034,7 +1034,7 @@ describe('LoadRunnerImport', () => {
           detected: true,
           domains: [{ host: 'acme.my.salesforce.com', kind: 'my_salesforce', count: 2 }],
           aura_endpoints: [{ method: 'POST', path: '/aura', host: 'acme.my.salesforce.com', count: 1 }],
-          transactions: [{ name: 'Open Account', source: 'loadrunner_transaction', request_count: 2, aura_actions: 1 }],
+          transactions: [{ name: 'Open Account', source: 'source_transaction', request_count: 2, aura_actions: 1 }],
           correlation_confidence: 'medium',
           har_match_coverage: {
             har_provided: true,
@@ -1072,7 +1072,7 @@ describe('LoadRunnerImport', () => {
     })
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     const fileInputs = Array.from(container.querySelectorAll('input[type="file"]')) as HTMLInputElement[]
@@ -1120,7 +1120,7 @@ describe('LoadRunnerImport', () => {
     })
     await flushPromises()
 
-    expect(apiMock.validateLoadRunnerImport).toHaveBeenCalledWith(zipFile, expect.objectContaining({
+    expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledWith(zipFile, expect.objectContaining({
       har_file: harFile,
       salesforce_native: true,
     }))
@@ -1147,7 +1147,7 @@ describe('LoadRunnerImport', () => {
   })
 
   it('disables saving while migration readiness is blocked by the active policy', async () => {
-    apiMock.importLoadRunner.mockResolvedValueOnce({
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
       script: {
         name: 'Blocked Runtime Script',
         protocol: 'http',
@@ -1200,7 +1200,7 @@ describe('LoadRunnerImport', () => {
     })
 
     await act(async () => {
-      root.render(<LoadRunnerImport />)
+      root.render(<EnterpriseArchiveImport />)
     })
 
     await flushPromises()
@@ -1220,7 +1220,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1252,7 +1252,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -1272,7 +1272,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1295,7 +1295,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetAction: 'Homepage' })
   })
@@ -1304,7 +1304,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -1324,7 +1324,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1347,7 +1347,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), undefined)
   })
@@ -1356,7 +1356,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -1376,7 +1376,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1399,7 +1399,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetAction: 'Homepage' })
   })
@@ -1408,7 +1408,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -1428,7 +1428,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1451,7 +1451,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetSection: 'runtime' })
   })
@@ -1460,7 +1460,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -1480,7 +1480,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1503,7 +1503,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetSection: 'runtime' })
   })
@@ -1512,7 +1512,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -1532,7 +1532,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1555,7 +1555,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetSection: 'runtime', targetRuntimeArea: 'Logging' })
   })
@@ -1564,7 +1564,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -1584,7 +1584,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1607,7 +1607,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetAction: 'Homepage' })
   })
@@ -1616,7 +1616,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -1636,7 +1636,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1659,7 +1659,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetAction: 'Submit Order' })
   })
@@ -1668,7 +1668,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -1688,7 +1688,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1711,7 +1711,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetAction: 'Homepage' })
   })
@@ -1720,7 +1720,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -1740,7 +1740,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1763,7 +1763,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetAction: 'Submit Order' })
   })
@@ -1772,7 +1772,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -1792,7 +1792,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1815,7 +1815,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetSection: 'parameter-data', targetDataSource: 'users' })
   })
@@ -1824,7 +1824,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -1844,7 +1844,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1867,7 +1867,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetSection: 'parameter-data', targetDataSource: 'users' })
   })
@@ -1876,7 +1876,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -1896,7 +1896,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1919,7 +1919,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetSection: 'parameter-data', targetDataSource: 'users' })
   })
@@ -1928,7 +1928,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -1948,7 +1948,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -1971,7 +1971,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetSection: 'parameter-data', targetDataSource: 'users' })
   })
@@ -1980,7 +1980,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -2000,7 +2000,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -2023,7 +2023,7 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetSection: 'runtime', targetRuntimeArea: 'Run Logic' })
   })
@@ -2032,7 +2032,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -2052,7 +2052,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -2075,20 +2075,20 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetSection: 'runtime', targetRuntimeArea: 'Logging' })
   })
 
   it('relaxes a blocked runtime migration policy and reruns the current review', async () => {
-    apiMock.importLoadRunner.mockResolvedValueOnce({
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
       script: {
         name: 'Blocked Runtime Script',
         protocol: 'http',
         actions: [{ name: 'Homepage' }],
         metadata: {
           import: {
-            source: 'loadrunner',
+            source: 'enterprise_script_archive',
             source_script_name: 'Demo.usr',
             preserved: {
               runtime_settings_migration_readiness: {
@@ -2155,7 +2155,7 @@ describe('LoadRunnerImport', () => {
         skipped: 0,
       },
     })
-    apiMock.importLoadRunner.mockResolvedValueOnce({
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
       script: {
         name: 'Blocked Runtime Script',
         protocol: 'http',
@@ -2188,7 +2188,7 @@ describe('LoadRunnerImport', () => {
         skipped: 0,
       },
     })
-    apiMock.importLoadRunner.mockResolvedValueOnce({
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
       script: {
         name: 'Blocked Runtime Script',
         protocol: 'http',
@@ -2241,7 +2241,7 @@ describe('LoadRunnerImport', () => {
     })
 
     await act(async () => {
-      root.render(<LoadRunnerImport />)
+      root.render(<EnterpriseArchiveImport />)
     })
 
     await flushPromises()
@@ -2261,7 +2261,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -2288,8 +2288,8 @@ describe('LoadRunnerImport', () => {
 
     await flushPromises()
 
-    expect(apiMock.importLoadRunner).toHaveBeenCalledTimes(2)
-    expect(apiMock.importLoadRunner.mock.calls[1]).toEqual([
+    expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(2)
+    expect(apiMock.importEnterpriseArchive.mock.calls[1]).toEqual([
       file,
       {
         name: undefined,
@@ -2319,8 +2319,8 @@ describe('LoadRunnerImport', () => {
 
     await flushPromises()
 
-    expect(apiMock.importLoadRunner).toHaveBeenCalledTimes(3)
-    expect(apiMock.importLoadRunner.mock.calls[2]).toEqual([
+    expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(3)
+    expect(apiMock.importEnterpriseArchive.mock.calls[2]).toEqual([
       file,
       {
         name: undefined,
@@ -2339,7 +2339,7 @@ describe('LoadRunnerImport', () => {
 
   it('shows pending migration policy changes until the review is refreshed', async () => {
     await act(async () => {
-      root.render(<LoadRunnerImport />)
+      root.render(<EnterpriseArchiveImport />)
     })
 
     await flushPromises()
@@ -2359,7 +2359,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -2388,7 +2388,7 @@ describe('LoadRunnerImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -2408,7 +2408,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -2431,13 +2431,13 @@ describe('LoadRunnerImport', () => {
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
+      name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetSection: 'parameter-data', targetDataSource: 'users' })
   })
 
   it('starts draft browser replay validation for converted browser imports before save', async () => {
-    apiMock.importLoadRunner.mockResolvedValueOnce({
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
       script: {
         name: 'Imported TruClient Mobile Web',
         version: '1.0',
@@ -2509,7 +2509,7 @@ describe('LoadRunnerImport', () => {
     }))
 
     await act(async () => {
-      root.render(<LoadRunnerImport projectId="project-1" />)
+      root.render(<EnterpriseArchiveImport projectId="project-1" />)
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
@@ -2527,7 +2527,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -2612,7 +2612,7 @@ describe('LoadRunnerImport', () => {
   it('starts draft browser replay validation when saving a browser import for the first time', async () => {
     vi.useFakeTimers()
 
-    apiMock.importLoadRunner.mockResolvedValueOnce({
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
       script: {
         name: 'Imported TruClient Mobile Web',
         version: '1.0',
@@ -2754,7 +2754,7 @@ describe('LoadRunnerImport', () => {
 
     try {
       await act(async () => {
-        root.render(<LoadRunnerImport projectId="project-1" />)
+        root.render(<EnterpriseArchiveImport projectId="project-1" />)
       })
 
       const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
@@ -2772,7 +2772,7 @@ describe('LoadRunnerImport', () => {
         fileInput.dispatchEvent(new Event('change', { bubbles: true }))
       })
 
-      const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+      const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
       expect(convertButton).toBeDefined()
       if (!convertButton) {
         return
@@ -2915,7 +2915,7 @@ describe('LoadRunnerImport', () => {
   it('shows a draft-specific replay refresh error when replay status polling fails', async () => {
     vi.useFakeTimers()
 
-    apiMock.importLoadRunner.mockResolvedValueOnce({
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
       script: {
         name: 'Imported TruClient Mobile Web',
         version: '1.0',
@@ -2986,7 +2986,7 @@ describe('LoadRunnerImport', () => {
 
     try {
       await act(async () => {
-        root.render(<LoadRunnerImport projectId="project-1" />)
+        root.render(<EnterpriseArchiveImport projectId="project-1" />)
       })
 
       const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
@@ -3004,7 +3004,7 @@ describe('LoadRunnerImport', () => {
         fileInput.dispatchEvent(new Event('change', { bubbles: true }))
       })
 
-      const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+      const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
       expect(convertButton).toBeDefined()
       if (!convertButton) {
         return
@@ -3044,7 +3044,7 @@ describe('LoadRunnerImport', () => {
   })
 
   it('shows a start-specific replay error when the draft browser replay fails to start', async () => {
-    apiMock.importLoadRunner.mockResolvedValueOnce({
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
       script: {
         name: 'Imported TruClient Mobile Web',
         version: '1.0',
@@ -3102,7 +3102,7 @@ describe('LoadRunnerImport', () => {
     apiMock.startDraftBrowserReplaySession.mockRejectedValueOnce(undefined)
 
     await act(async () => {
-      root.render(<LoadRunnerImport projectId="project-1" />)
+      root.render(<EnterpriseArchiveImport projectId="project-1" />)
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
@@ -3120,7 +3120,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -3150,7 +3150,7 @@ describe('LoadRunnerImport', () => {
   })
 
   it('shows the replay-first save label for browser validation reviews', async () => {
-    apiMock.validateLoadRunnerImport.mockResolvedValueOnce({
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce({
       script: {
         name: 'Imported TruClient Mobile Web',
         version: '1.0',
@@ -3200,7 +3200,7 @@ describe('LoadRunnerImport', () => {
     })
 
     await act(async () => {
-      root.render(<LoadRunnerImport projectId="project-1" />)
+      root.render(<EnterpriseArchiveImport projectId="project-1" />)
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
@@ -3239,7 +3239,7 @@ describe('LoadRunnerImport', () => {
   it('shows rerun copy after a browser validation replay fails', async () => {
     vi.useFakeTimers()
 
-    apiMock.validateLoadRunnerImport.mockResolvedValueOnce({
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce({
       script: {
         name: 'Imported TruClient Mobile Web',
         version: '1.0',
@@ -3324,7 +3324,7 @@ describe('LoadRunnerImport', () => {
 
     try {
       await act(async () => {
-        root.render(<LoadRunnerImport projectId="project-1" />)
+        root.render(<EnterpriseArchiveImport projectId="project-1" />)
       })
 
       const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
@@ -3401,7 +3401,7 @@ describe('LoadRunnerImport', () => {
 
   it('preserves rerun replay copy when a replay rerun fails to start', async () => {
     vi.useFakeTimers()
-    apiMock.validateLoadRunnerImport.mockResolvedValueOnce({
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce({
       script: {
         name: 'Validated Browser Script',
         version: '1.0',
@@ -3466,7 +3466,7 @@ describe('LoadRunnerImport', () => {
 
     try {
       await act(async () => {
-        root.render(<LoadRunnerImport projectId="project-1" />)
+        root.render(<EnterpriseArchiveImport projectId="project-1" />)
       })
 
       const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
@@ -3540,7 +3540,7 @@ describe('LoadRunnerImport', () => {
   it('opens a browser replay repair suggestion in the visual editor without an additional focus hint', async () => {
     const onEdit = vi.fn()
 
-    apiMock.importLoadRunner.mockResolvedValueOnce({
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
       script: {
         name: 'Imported TruClient Mobile Web',
         version: '1.0',
@@ -3606,7 +3606,7 @@ describe('LoadRunnerImport', () => {
     })
 
     await act(async () => {
-      root.render(<LoadRunnerImport onEdit={onEdit} />)
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -3626,7 +3626,7 @@ describe('LoadRunnerImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return

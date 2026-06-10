@@ -1,4 +1,4 @@
-package loadrunner
+package enterprisearchive
 
 import (
 	"archive/zip"
@@ -33,16 +33,20 @@ func TestDetectProtocolFromUSRType(t *testing.T) {
 		{name: "sap web", scriptType: "SAP Web", canonical: "sap_web", storm: "http", mode: ImportModeExecutable},
 		{name: "oracle nca", scriptType: "Oracle NCA", canonical: "oracle_nca", storm: "", mode: ImportModeExternalRunnerRequired},
 		{name: "sap gui", scriptType: "SAP GUI", canonical: "sap_gui", storm: "", mode: ImportModeExternalRunnerRequired},
+		{name: "sapgui alias", scriptType: "SAPGUI", canonical: "sap_gui", storm: "", mode: ImportModeExternalRunnerRequired},
 		{name: "rdp", scriptType: "RDP", canonical: "rdp", storm: "", mode: ImportModeExternalRunnerRequired},
+		{name: "remote desktop alias", scriptType: "Remote Desktop Protocol", canonical: "rdp", storm: "", mode: ImportModeExternalRunnerRequired},
 		{name: "rte", scriptType: "RTE", canonical: "rte", storm: "", mode: ImportModeExternalRunnerRequired},
+		{name: "terminal emulation alias", scriptType: "Terminal Emulation", canonical: "rte", storm: "", mode: ImportModeExternalRunnerRequired},
 		{name: "native mobile", scriptType: "TC4Mobile", canonical: "truclient_native_mobile", storm: "", mode: ImportModeExternalRunnerRequired},
+		{name: "native mobile 2.0 alias", scriptType: "TruClient 2.0 - Native Mobile", canonical: "truclient_native_mobile", storm: "", mode: ImportModeExternalRunnerRequired},
 		{name: "template", scriptType: "C Vuser", canonical: "c_vuser", storm: "", mode: ImportModeReviewOnly},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			detected := DetectProtocol(nil, &ProjectConfig{ScriptType: tt.scriptType}, nil)
-			if detected.CanonicalLoadRunnerProtocol != tt.canonical || detected.APEXLoadProtocol != tt.storm || detected.ImportMode != tt.mode {
+			if detected.CanonicalSourceProtocol != tt.canonical || detected.APEXLoadProtocol != tt.storm || detected.ImportMode != tt.mode {
 				t.Fatalf("detected = %#v, want canonical=%s storm=%s mode=%s", detected, tt.canonical, tt.storm, tt.mode)
 			}
 		})
@@ -65,7 +69,7 @@ Action=Action.c
 	web_url("flp", "URL=https://example.test/sap/bc/ui2/flp", LAST);
 }`)
 	detected := DetectProtocol(nil, cfg, []*ParsedAction{parsed})
-	if detected.CanonicalLoadRunnerProtocol != "sap_web" || detected.APEXLoadProtocol != "http" || detected.ImportMode != ImportModeExecutable {
+	if detected.CanonicalSourceProtocol != "sap_web" || detected.APEXLoadProtocol != "http" || detected.ImportMode != ImportModeExecutable {
 		t.Fatalf("detected = %#v, want executable SAP Web over generic Web HTTP/HTML", detected)
 	}
 	if !containsString(detected.Signals, ".usr [General] ActiveTypes=SAP_Web") {
@@ -97,7 +101,7 @@ func TestDetectProtocolExternalRunnerContentFallbacks(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			parsed := mustParseActionFile(t, tt.action)
 			detected := DetectProtocol(nil, nil, []*ParsedAction{parsed})
-			if detected.CanonicalLoadRunnerProtocol != tt.canonical || detected.ImportMode != ImportModeExternalRunnerRequired {
+			if detected.CanonicalSourceProtocol != tt.canonical || detected.ImportMode != ImportModeExternalRunnerRequired {
 				t.Fatalf("detected = %#v, want %s external-runner", detected, tt.canonical)
 			}
 			if !containsString(detected.Signals, tt.signal) {
@@ -116,7 +120,7 @@ func TestDetectProtocolContentFallbackAndConflicts(t *testing.T) {
 		t.Fatalf("ParseActionFile returned error: %v", err)
 	}
 	detected := DetectProtocol(nil, nil, []*ParsedAction{parsed})
-	if detected.CanonicalLoadRunnerProtocol != "database" || detected.Confidence != DetectionConfidenceMedium {
+	if detected.CanonicalSourceProtocol != "database" || detected.Confidence != DetectionConfidenceMedium {
 		t.Fatalf("detected = %#v, want content-only database classification", detected)
 	}
 
@@ -145,7 +149,7 @@ func TestDetectProtocolKeepsMixedSOAPAndHTTPExecutableHTTP(t *testing.T) {
 }
 
 func TestConvertZipRoutesDatabaseAndNetworkImports(t *testing.T) {
-	dbResult, err := ConvertZip(buildLoadRunnerProtocolZip(t, "ODBC", `Action()
+	dbResult, err := ConvertZip(buildSourceProtocolZip(t, "ODBC", `Action()
 {
     lrd_stmt("select id from customers where status = ?", "ParamStatus=active", LAST);
 }`), ConvertOptions{})
@@ -159,7 +163,7 @@ func TestConvertZipRoutesDatabaseAndNetworkImports(t *testing.T) {
 		t.Fatalf("database action/config = %#v/%#v, want db_query odbc", dbResult.Script.Actions[0], dbResult.Script.Config.Database)
 	}
 
-	networkResult, err := ConvertZip(buildLoadRunnerProtocolZip(t, "DNS", `Action()
+	networkResult, err := ConvertZip(buildSourceProtocolZip(t, "DNS", `Action()
 {
     dns_query("Lookup", "Domain=example.test", "RecordType=MX", LAST);
 }`), ConvertOptions{})
@@ -175,7 +179,7 @@ func TestConvertZipRoutesDatabaseAndNetworkImports(t *testing.T) {
 }
 
 func TestConvertZipPreservesDatabaseAndNetworkLifecyclePhases(t *testing.T) {
-	dbResult, err := ConvertZip(buildLoadRunnerZip(t, map[string]string{
+	dbResult, err := ConvertZip(buildSourceZip(t, map[string]string{
 		"Database.usr": `[General]
 Type=ODBC
 
@@ -216,7 +220,7 @@ Action2=vuser_end.c
 	assertSourceReviewMapping(t, dbResult.SourceReview.Mappings, "lrd_stmt", "actions[0]", "converted")
 	assertSourceReviewMapping(t, dbResult.SourceReview.Mappings, "lrd_stmt", "teardown[0]", "converted")
 
-	networkResult, err := ConvertZip(buildLoadRunnerZip(t, map[string]string{
+	networkResult, err := ConvertZip(buildSourceZip(t, map[string]string{
 		"Network.usr": `[General]
 Type=DNS
 
@@ -259,7 +263,7 @@ Action2=vuser_end.c
 }
 
 func TestConvertZipReturnsReviewArtifactForExternalRunnerProtocol(t *testing.T) {
-	result, err := ConvertZip(buildLoadRunnerProtocolZip(t, "SAP GUI", `Action()
+	result, err := ConvertZip(buildSourceProtocolZip(t, "SAP GUI", `Action()
 {
     sapgui_logon("Login", "ASHOST=server", LAST);
 }`), ConvertOptions{})
@@ -269,7 +273,7 @@ func TestConvertZipReturnsReviewArtifactForExternalRunnerProtocol(t *testing.T) 
 	if result.Script != nil {
 		t.Fatalf("script = %#v, want nil for SAP GUI external runner", result.Script)
 	}
-	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalLoadRunnerProtocol != "sap_gui" || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired {
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "sap_gui" || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired {
 		t.Fatalf("detected protocol = %#v, want SAP GUI external-runner classification", result.DetectedProtocol)
 	}
 	if result.ReviewArtifact == nil || len(result.ReviewArtifact.RequiredEvidence) == 0 {
@@ -286,7 +290,7 @@ func mustParseActionFile(t *testing.T, content string) *ParsedAction {
 	return parsed
 }
 
-func buildLoadRunnerProtocolZip(t *testing.T, scriptType string, action string) []byte {
+func buildSourceProtocolZip(t *testing.T, scriptType string, action string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

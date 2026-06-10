@@ -695,6 +695,7 @@ export interface IntervalSummaryRecord {
   p90_ms: number
   p95_ms: number
   p99_ms: number
+  groups?: Record<string, GroupLiveMetrics>
   browser?: BrowserLiveMetrics
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   latency?: NetworkLatency
@@ -2276,7 +2277,7 @@ export interface MetricsHistoryPoint {
   diskIOTimePct?: number
   jmsConsumerLagMs?: number
   jmsPeakConsumerLagMs?: number
-  [key: string]: string | number | undefined
+  [key: string]: string | number | number[] | undefined
 }
 
 export interface VersionResponse {

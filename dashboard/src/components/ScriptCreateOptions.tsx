@@ -22,7 +22,7 @@ interface Props {
   onStartKafkaScript: () => void
   onStartTemplateScript: (script: ScriptDefinition) => void
   onComposeComponent: (component: AuthoringComponent) => void
-  onOpenLoadRunnerImport: () => void
+  onOpenEnterpriseArchiveImport: () => void
   onOpenJMeterImport: () => void
   onOpenDevWebImport: () => void
   onOpenHARImport: () => void
@@ -150,7 +150,7 @@ export default function ScriptCreateOptions({
   onStartKafkaScript,
   onStartTemplateScript,
   onComposeComponent,
-  onOpenLoadRunnerImport,
+  onOpenEnterpriseArchiveImport,
   onOpenJMeterImport,
   onOpenDevWebImport,
   onOpenHARImport,
@@ -728,10 +728,10 @@ export default function ScriptCreateOptions({
             <div className="script-create-import-group">
               <h4>Legacy & Tool Exports</h4>
               <div className="script-create-grid">
-                <button className="script-create-option primary" onClick={onOpenLoadRunnerImport}>
-                  <span className="script-create-type-badge import">LR</span>
-                  <h3>Import LoadRunner</h3>
-                  <p>Convert a LoadRunner ZIP into a APEX Load script and keep unsupported functions visible for cleanup.</p>
+                <button className="script-create-option primary" onClick={onOpenEnterpriseArchiveImport}>
+                  <span className="script-create-type-badge import">ESA</span>
+                  <h3>Import Enterprise Script Archive</h3>
+                  <p>Convert an enterprise script archive ZIP into an APEX Load script and keep unsupported source functions visible for cleanup.</p>
                 </button>
                 <button className="script-create-option" onClick={onOpenJMeterImport}>
                   <span className="script-create-type-badge import">JMX</span>

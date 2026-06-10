@@ -251,7 +251,7 @@ describe('DashboardPage', () => {
     vi.clearAllMocks()
   })
 
-  it('wires summary and snapshot cards to navigation targets', async () => {
+  it('wires snapshot cards to navigation targets without the removed summary cards', async () => {
     await act(async () => {
       root.render(
         <DashboardPage
@@ -275,12 +275,9 @@ describe('DashboardPage', () => {
     expect(container.textContent).not.toContain('API Guide')
     expect(container.textContent).not.toContain('Customize Cards')
 
-    const healthCards = Array.from(container.querySelectorAll('.dash-health-card'))
-    expect(healthCards).toHaveLength(4)
-    expect(healthCards.every(card => card.className.includes('dash-card-button'))).toBe(true)
-    expect(healthCards.map(card => card.textContent)).toEqual(expect.arrayContaining([
-      expect.stringContaining('Attention Needed'),
-    ]))
+    expect(container.querySelectorAll('.dash-health-card')).toHaveLength(0)
+    expect(container.textContent).not.toContain('API Server')
+    expect(container.textContent).not.toContain('Active Runs')
     expect(container.querySelector('.dash-release-panel.is-open')).toBeTruthy()
     expect(getButtonByText('Collapse').getAttribute('aria-expanded')).toBe('true')
     expect(container.textContent).toContain('Operations Activity')
@@ -293,7 +290,6 @@ describe('DashboardPage', () => {
     expect(container.textContent).not.toContain('Archived Sprint')
     clickButtonByText('Sprint 23')
     expect(applicationState.setActiveRelease).toHaveBeenCalledWith(expect.objectContaining({ id: 'rel-2', name: 'Sprint 23' }))
-    expect(getButtonByText('Attention Needed').textContent).toContain('1')
     const dashboardTabs = Array.from(container.querySelectorAll<HTMLButtonElement>('.dash-tab'))
     expect(dashboardTabs.map(tab => tab.textContent?.trim())).toEqual([
       'Recent Activity3',
@@ -328,13 +324,10 @@ describe('DashboardPage', () => {
     expect(container.querySelector('[data-testid="release-trend-panel"]')).toBeTruthy()
     expect(container.textContent).toContain('No archived runs yet for this release.')
 
-    clickButtonByText('API Server')
+    clickButtonByText('API Health')
     expect(onNavigate).toHaveBeenCalledWith('monitoring')
 
-    clickButtonByText('Active Runs')
-    expect(onNavigate).toHaveBeenCalledWith('tests')
-
-    clickButtonByText('Attention Needed')
+    clickButtonByText('Payments Failure Drill failed')
     expect(onSelectTest).toHaveBeenCalledWith('test-failed')
 
     clickButtonByText('Latest Result')
@@ -345,12 +338,13 @@ describe('DashboardPage', () => {
 
     clickButtonByText('Current TPS')
     expect(onSelectTest).toHaveBeenCalledWith('test-active')
+    onSelectTest.mockClear()
 
     clickButtonByText('Completed')
     expect(onNavigate).toHaveBeenCalledWith('results')
 
     clickButtonByText('Active Now')
-    expect(onNavigate).toHaveBeenCalledWith('tests')
+    expect(onSelectTest).toHaveBeenCalledWith('test-active')
 
     clickButtonByText('Performance Trend')
     clickButtonByText('Export CSV')
@@ -457,23 +451,22 @@ describe('DashboardPage', () => {
     expect(panelText).not.toContain('Generators Ready')
   })
 
-  it('uses theme-aware accent fills for the first two dashboard rows', async () => {
+  it('uses theme-aware accent fills for dashboard controls', async () => {
     // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
     const { readFileSync } = await import('node:fs')
     const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
     const stylesheet = readFileSync(`${cwd}/src/components/DashboardPage.css`, 'utf8') as string
-    const topRowsCss = [
-      stylesheet.match(/\.dash-health-card \{[\s\S]*?\n\}/)?.[0] ?? '',
-      stylesheet.match(/\.dash-health-card\.status-idle \{[\s\S]*?\n\}/)?.[0] ?? '',
+    const dashboardControlCss = [
       stylesheet.match(/\.release-panel-header \{[\s\S]*?\n\}/)?.[0] ?? '',
       stylesheet.match(/\.dash-release-option\.active \{[\s\S]*?\n\}/)?.[0] ?? '',
       stylesheet.match(/\.dash-tab\.active \{[\s\S]*?\n\}/)?.[0] ?? '',
     ].join('\n')
 
-    expect(topRowsCss).toContain('color-mix(in srgb, var(--accent)')
-    expect(topRowsCss).toContain('var(--accent-border)')
-    expect(topRowsCss).not.toContain('rgba(14, 165, 233')
-    expect(topRowsCss).not.toContain('rgba(125, 211, 252')
+    expect(stylesheet).not.toContain('.dash-health-card')
+    expect(dashboardControlCss).toContain('color-mix(in srgb, var(--accent)')
+    expect(dashboardControlCss).toContain('var(--accent-border)')
+    expect(dashboardControlCss).not.toContain('rgba(14, 165, 233')
+    expect(dashboardControlCss).not.toContain('rgba(125, 211, 252')
   })
 
   it('keeps the dashboard snapshot in a right-side panel layout', async () => {

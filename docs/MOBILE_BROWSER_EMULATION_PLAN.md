@@ -384,8 +384,8 @@ Current script-type scope:
 
 | `.usr` Type | Current Status | Notes |
 |:---|:---|:---|
-| `TruClient - Mobile Web` | MVP implemented | This is the only browser-import target in scope for the MVP. The current LoadRunner ZIP importer converts `default.xml` steps into browser DSL actions and keeps unsupported constructs visible as warnings. |
-| `TruClient 2.0 - Web` | Planned separately | Desktop browser Web 2.0 scripting is tracked in `docs/COMPETITIVE_COMPARISON.md#vugen-web2-truclient` as a distinct `vugen_web2` browser-profile import and creation scope. It is not part of the Mobile Web MVP. |
+| `TruClient - Mobile Web` | MVP implemented | This is the only browser-import target in scope for the MVP. The current Enterprise Script Archive importer converts `default.xml` steps into browser DSL actions and keeps unsupported constructs visible as warnings. |
+| `TruClient 2.0 - Web` | Planned separately | Desktop browser Web 2.0 scripting is tracked in `docs/COMPETITIVE_COMPARISON.md#web-20-browser-profile` as a distinct `web2_browser_profile` browser-profile import and creation scope. It is not part of the Mobile Web MVP. |
 | `TruClient` | Out of scope | Legacy desktop-style TruClient parity remains outside APEX Load's browser-import target. |
 
 Current step support matrix:
@@ -405,8 +405,8 @@ Current step support matrix:
 
 ### Current Importer Behavior
 
-- `pkg/convert/loadrunner/zip.go` now checks the parsed `.usr` type before trying to parse C action files.
-- A `TruClient - Mobile Web` archive with `default.xml` now imports into a browser script with URL navigation, click, fill, select, scroll, wait, conservative verify assertions, simple decomposed JavaScript fill/click/jQuery attr/trigger/scroll/navigation, transaction-preserved action names, and mobile device settings from LoadRunner runtime configuration.
+- `pkg/convert/enterprisearchive/zip.go` now checks the parsed `.usr` type before trying to parse C action files.
+- A `TruClient - Mobile Web` archive with `default.xml` now imports into a browser script with URL navigation, click, fill, select, scroll, wait, conservative verify assertions, simple decomposed JavaScript fill/click/jQuery attr/trigger/scroll/navigation, transaction-preserved action names, and mobile device settings from source runtime configuration.
 - Import responses now include standardized `review_sections` for warnings, unsupported steps, preserved metadata, and browser-import assumptions so cleanup can be rendered consistently across API and dashboard flows.
 - Import responses now include deterministic `repair_suggestions` for unsupported constructs, selector validation, wait refinement, runtime-setting review, and replay validation.
 - Dashboard import review now exposes draft browser replay validation for converted browser imports before save, using the converted script and carried-forward browser configuration to start a browser replay session and show status, warnings, and errors inline.
@@ -511,4 +511,4 @@ Related documentation:
 - Mobile browser benchmark runbook: `docs/MOBILE_BROWSER_BENCHMARK_RUNBOOK.md`
 - Browser client metrics: `docs/BROWSER_CLIENT_METRICS_PLAN.md`
 - Protocol extensions (SOAP, Java): `docs/PROTOCOL_EXTENSION_PLAN.md`
-- LoadRunner RTS reference: `docs/COMPETITIVE_COMPARISON.md#loadrunner-rts-reference`
+- Enterprise archive runtime settings reference: `docs/COMPETITIVE_COMPARISON.md#enterprise-archive-runtime-settings-reference`

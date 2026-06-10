@@ -20,7 +20,7 @@ describe('scenarioWizardUtils', () => {
     expect(catalog[1].templates).toEqual([])
   })
 
-  it('parses LoadRunner-style duration strings into seconds', () => {
+  it('parses source-style duration strings into seconds', () => {
     expect(parseDurationSeconds('1h 2m 3s')).toBe(3723)
     expect(parseDurationSeconds('90s')).toBe(90)
     expect(parseDurationSeconds('2m')).toBe(120)
