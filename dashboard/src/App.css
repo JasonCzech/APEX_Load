@@ -53,6 +53,11 @@
   gap: 10px;
 }
 
+.main-content:has(.command-center-page) > .main-topbar {
+  margin-inline: -36px;
+  padding-inline: 36px;
+}
+
 .main-topbar-page {
   flex: 0 0 auto;
   min-width: 132px;
@@ -458,6 +463,11 @@
     justify-content: flex-start;
     margin: -16px 0 20px;
     padding: 12px 0;
+  }
+
+  .main-content:has(.command-center-page) > .main-topbar {
+    margin-inline: -16px;
+    padding-inline: 16px;
   }
 
   .main-topbar-page {

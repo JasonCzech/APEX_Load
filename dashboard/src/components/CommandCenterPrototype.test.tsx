@@ -54,6 +54,7 @@ describe('CommandCenterPrototype', () => {
     expect(container.querySelector('[aria-label="Ops cockpit mockup"]')).not.toBeNull()
     expect(container.textContent).not.toContain('Triage Console')
     expect(container.querySelector('.command-center-intro')).toBeNull()
+    expect(container.querySelector('[aria-label="Command center run controls"]')?.classList.contains('command-top-banner')).toBe(false)
 
     const opsSidebar = container.querySelector('[aria-label="Command center sidebar"]')
     const opsPrimaryColumn = container.querySelector('.command-layout-ops > .command-primary-column')
