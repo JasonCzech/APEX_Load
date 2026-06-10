@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -331,5 +332,135 @@ func TestScenarioSchedulerStartsDueOneTimeScheduledRun(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for due scheduled run to start")
+	}
+}
+
+func TestBuildStartGovernanceErrorEnforcesBrowserDensityGate(t *testing.T) {
+	blockingAdvisory := &CapacityAdvisory{
+		BrowserVUsers:                      30,
+		MaxBrowserCanaryVUsersPerGenerator: 5,
+		BrowserDensityOverrideRequired:     true,
+		BrowserDensityReleaseGate:          browserDensityReleaseGateRequired,
+	}
+	clearedAdvisory := &CapacityAdvisory{
+		BrowserVUsers:                      30,
+		MaxBrowserCanaryVUsersPerGenerator: 5,
+		BrowserDensityOverrideRequired:     true,
+		BrowserBenchmarkEvidenceAttached:   true,
+		BrowserDensityOverrideRequested:    true,
+		BrowserDensityReleaseGate:          browserDensityReleaseGateCleared,
+	}
+	clearGateAdvisory := &CapacityAdvisory{BrowserDensityReleaseGate: browserDensityReleaseGateClear}
+
+	tests := []struct {
+		name      string
+		advisory  *CapacityAdvisory
+		opts      StartTestOptions
+		wantBlock bool
+	}{
+		{name: "nil advisory allowed", advisory: nil, wantBlock: false},
+		{name: "clear gate allowed", advisory: clearGateAdvisory, wantBlock: false},
+		{name: "cleared gate allowed", advisory: clearedAdvisory, wantBlock: false},
+		{name: "blocking gate blocks", advisory: blockingAdvisory, wantBlock: true},
+		{
+			name:      "capacity override does not clear browser gate",
+			advisory:  blockingAdvisory,
+			opts:      StartTestOptions{OverrideCapacityShortfall: true},
+			wantBlock: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := buildStartGovernanceError("test-id", tc.advisory, tc.opts)
+			if !tc.wantBlock {
+				if err != nil {
+					t.Fatalf("buildStartGovernanceError = %v, want nil", err)
+				}
+				return
+			}
+			var gateErr *BrowserDensityGateError
+			if !errors.As(err, &gateErr) {
+				t.Fatalf("buildStartGovernanceError = %T (%v), want *BrowserDensityGateError", err, err)
+			}
+			if gateErr.Advisory == nil || gateErr.Advisory.BrowserDensityReleaseGate != browserDensityReleaseGateRequired {
+				t.Fatalf("gate error advisory = %#v, want blocking release gate", gateErr.Advisory)
+			}
+		})
+	}
+}
+
+func TestStartTestBlocksBrowserDensityGateAndIgnoresCapacityOverride(t *testing.T) {
+	runner := NewTestRunner(100, NewHub(), nil)
+	storePreflightBrowserScript(runner, "script-start-browser-density", "")
+	settings := runner.GetSystemSettings()
+	settings.CapacityPlanning.HeadroomPct = 0
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 2
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	test, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Browser Density Start",
+		Duration: "5m",
+		ScriptID: "script-start-browser-density",
+		VUsers:   30,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	// A direct start must apply the same gate the preflight endpoint reports.
+	err = runner.StartTestWithOptions(test.ID, StartTestOptions{})
+	var gateErr *BrowserDensityGateError
+	if !errors.As(err, &gateErr) {
+		t.Fatalf("StartTestWithOptions = %T (%v), want *BrowserDensityGateError", err, err)
+	}
+
+	// The capacity-shortfall override flag must not clear the browser-density gate.
+	err = runner.StartTestWithOptions(test.ID, StartTestOptions{OverrideCapacityShortfall: true})
+	if !errors.As(err, &gateErr) {
+		t.Fatalf("StartTestWithOptions(OverrideCapacityShortfall) = %T (%v), want *BrowserDensityGateError", err, err)
+	}
+
+	queued, ok := runner.GetTest(test.ID)
+	if !ok {
+		t.Fatalf("expected test %s to remain in runner", test.ID)
+	}
+	if queued.Status != "QUEUED" {
+		t.Fatalf("test status = %s, want QUEUED", queued.Status)
+	}
+}
+
+func TestStartTestAllowsBrowserDensityWithBenchmarkEvidenceOverride(t *testing.T) {
+	runner := NewTestRunner(100, NewHub(), nil)
+	storePreflightBrowserScript(runner, "script-start-browser-density-cleared", "")
+	settings := runner.GetSystemSettings()
+	settings.CapacityPlanning.HeadroomPct = 0
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 2
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	test, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Browser Density Cleared Start",
+		Duration: "5m",
+		ScriptID: "script-start-browser-density-cleared",
+		VUsers:   30,
+		RuntimeSettings: &RuntimeSettingsOverride{Env: map[string]string{
+			"APEXLOAD_BROWSER_BENCHMARK_EVIDENCE": "benchmarks/browser-density-2026-06-09.txt",
+			"APEXLOAD_BROWSER_DENSITY_OVERRIDE":   "true",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	// With evidence + override the gate clears; the start must not be blocked by it.
+	if err := runner.StartTestWithOptions(test.ID, StartTestOptions{SkipLaunchWindowPreflight: true}); err != nil {
+		var gateErr *BrowserDensityGateError
+		if errors.As(err, &gateErr) {
+			t.Fatalf("StartTestWithOptions returned browser density gate error after override: %v", err)
+		}
 	}
 }

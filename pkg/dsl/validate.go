@@ -172,8 +172,24 @@ func validateGRPCConfigIssues(script *Script) []string {
 	return issues
 }
 
+// legacyActionTypePrefix is the pre-rename prefix for enterprise-source engine
+// action types. Scripts persisted before the enterprise-archive rename use it
+// (e.g. "loadrunner_transaction").
+const legacyActionTypePrefix = "loadrunner_"
+
+// CanonicalActionType normalizes a DSL action type, mapping legacy pre-rename
+// "loadrunner_*" engine action types to their current "source_*" equivalents so
+// scripts stored before the enterprise-archive rename continue to validate and
+// execute. Types without the legacy prefix are returned unchanged.
+func CanonicalActionType(actionType string) string {
+	if strings.HasPrefix(actionType, legacyActionTypePrefix) {
+		return "source_" + strings.TrimPrefix(actionType, legacyActionTypePrefix)
+	}
+	return actionType
+}
+
 func isEngineActionType(actionType string) bool {
-	switch actionType {
+	switch CanonicalActionType(actionType) {
 	case "control_if", "control_loop",
 		"rendezvous", "error_message",
 		"source_message", "source_runtime", "source_transaction", "source_timer",

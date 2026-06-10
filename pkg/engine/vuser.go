@@ -598,16 +598,27 @@ func scriptHasExplicitTransactions(script *dsl.Script) bool {
 		return false
 	}
 	for _, action := range script.Actions {
-		switch strings.ToLower(strings.TrimSpace(action.Type)) {
+		switch dsl.CanonicalActionType(strings.ToLower(strings.TrimSpace(action.Type))) {
 		case "source_transaction", "transaction":
 			return true
 		case "http_sequence":
-			if sourceMetadataString(action.Metadata, "source_transaction") != "" {
+			if sourceTransactionName(action.Metadata) != "" {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// sourceTransactionName extracts the transaction name from action or result
+// metadata, accepting the legacy "loadrunner_transaction" key so scripts
+// persisted before the enterprise-archive rename keep their transaction
+// grouping.
+func sourceTransactionName(metadata map[string]any) string {
+	if name := sourceMetadataString(metadata, "source_transaction"); name != "" {
+		return name
+	}
+	return sourceMetadataString(metadata, "loadrunner_transaction")
 }
 
 func networkProfileLabel(config dsl.NetworkSimulationConfig) string {
@@ -653,7 +664,7 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 }
 
 func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (bool, error) {
-	switch action.Type {
+	switch dsl.CanonicalActionType(action.Type) {
 	case "rendezvous":
 		return true, vu.waitAtRendezvous(ctx, action)
 	case "error_message":
@@ -1623,7 +1634,7 @@ func httpSequenceChildActions(action dsl.Action) ([]dsl.Action, error) {
 		if child.Metadata == nil {
 			child.Metadata = map[string]any{}
 		}
-		for _, key := range []string{"source_transaction", "source_transaction"} {
+		for _, key := range []string{"source_transaction", "loadrunner_transaction"} {
 			if child.Metadata[key] == nil && action.Metadata != nil && action.Metadata[key] != nil {
 				child.Metadata[key] = action.Metadata[key]
 			}
@@ -1687,7 +1698,7 @@ func applyProtocolResultSourceMetadata(result *protocol.Result, metadata map[str
 	result.SourceStepIndex = sourceMetadataInt(metadata, "source_step_index")
 	result.SourceAction = sourceMetadataString(metadata, "source_action")
 	result.SourceActionName = sourceMetadataString(metadata, "source_action_name")
-	result.SourceTransaction = sourceMetadataString(metadata, "source_transaction")
+	result.SourceTransaction = sourceTransactionName(metadata)
 	result.SourceProfile = sourceMetadataString(metadata, "source_profile")
 }
 

@@ -83,6 +83,49 @@ func TestValidateScriptIssues_SourceEngineActionsDoNotRequireTarget(t *testing.T
 	}
 }
 
+func TestCanonicalActionTypeMapsLegacyTypes(t *testing.T) {
+	cases := map[string]string{
+		"loadrunner_transaction": "source_transaction",
+		"loadrunner_message":     "source_message",
+		"loadrunner_runtime":     "source_runtime",
+		"loadrunner_parameter":   "source_parameter",
+		"source_transaction":     "source_transaction",
+		"http_sequence":          "http_sequence",
+		"request":                "request",
+		"":                       "",
+	}
+	for in, want := range cases {
+		if got := CanonicalActionType(in); got != want {
+			t.Errorf("CanonicalActionType(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestValidateScriptIssues_LegacyLoadRunnerActionTypesStillValidate(t *testing.T) {
+	// A script persisted before the enterprise-archive rename carries
+	// loadrunner_* engine action types; they must remain recognized engine
+	// actions and not be rejected as unknown.
+	script := &Script{
+		Name:     "legacy-source-actions",
+		Protocol: "http",
+		Config:   ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []Action{{
+			Name: "txn",
+			Type: "loadrunner_transaction",
+		}, {
+			Name: "timer",
+			Type: "loadrunner_timer",
+		}},
+	}
+
+	if !isEngineActionType("loadrunner_transaction") {
+		t.Fatal("isEngineActionType should recognize legacy loadrunner_transaction")
+	}
+	if issues := ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("issues = %v, want none for legacy loadrunner_* action types", issues)
+	}
+}
+
 func TestValidateScriptIssues_BrowserRuntimeActionParity(t *testing.T) {
 	script := &Script{
 		Name:     "browser-runtime-actions",

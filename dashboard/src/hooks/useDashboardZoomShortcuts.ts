@@ -4,8 +4,8 @@ export const DASHBOARD_ZOOM_STORAGE_KEY = 'apexload.dashboardZoom'
 
 const DEFAULT_DASHBOARD_ZOOM = 1
 const DASHBOARD_ZOOM_STEP = 0.1
-const MIN_DASHBOARD_ZOOM = 0.75
-const MAX_DASHBOARD_ZOOM = 1.5
+const MIN_DASHBOARD_ZOOM = 0.5
+const MAX_DASHBOARD_ZOOM = 1.8
 
 type DashboardZoomAction = 'in' | 'out' | 'reset'
 
@@ -37,7 +37,7 @@ function applyDashboardZoom(zoom: number) {
   }
 
   const normalized = normalizeDashboardZoom(zoom)
-  document.documentElement.style.setProperty('zoom', String(normalized))
+  document.documentElement.style.setProperty('--dashboard-zoom', String(normalized))
 }
 
 function shortcutActionForEvent(event: KeyboardEvent): DashboardZoomAction | null {

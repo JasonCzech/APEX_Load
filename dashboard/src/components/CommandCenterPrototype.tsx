@@ -2659,7 +2659,7 @@ export function selectedGroupLoadImpactData(data: MetricsHistoryPoint[], groups:
     let weightedArt = 0
     let artWeight = 0
     const weightedPercentiles = { p50: 0, p90: 0, p95: 0, p99: 0 }
-    let percentileWeight = 0
+    const percentileWeights = { p50: 0, p90: 0, p95: 0, p99: 0 }
 
     groups.forEach(group => {
       const groupVusers = point[`${group.name}_vusers`]
@@ -2706,14 +2706,31 @@ export function selectedGroupLoadImpactData(data: MetricsHistoryPoint[], groups:
       const attempts = typeof groupTransactions === 'number' && Number.isFinite(groupTransactions) && typeof groupErrors === 'number' && Number.isFinite(groupErrors)
         ? groupTransactions + groupErrors
         : 0
-      const percentileValues = { p50: groupP50, p90: groupP90, p95: groupP95, p99: groupP99 }
-      if (attempts > 0 && Object.values(percentileValues).some(value => typeof value === 'number' && Number.isFinite(value))) {
-        if (typeof groupP50 === 'number' && Number.isFinite(groupP50)) weightedPercentiles.p50 += groupP50 * attempts
-        if (typeof groupP90 === 'number' && Number.isFinite(groupP90)) weightedPercentiles.p90 += groupP90 * attempts
-        if (typeof groupP95 === 'number' && Number.isFinite(groupP95)) weightedPercentiles.p95 += groupP95 * attempts
-        if (typeof groupP99 === 'number' && Number.isFinite(groupP99)) weightedPercentiles.p99 += groupP99 * attempts
-        percentileWeight += attempts
-        hasGroupData = true
+      if (attempts > 0) {
+        // Weight each percentile only by the attempts of groups that actually
+        // reported it. A group that omits a percentile (e.g. p95) must not
+        // inflate that percentile's denominator, which would bias the aggregate
+        // toward zero in proportion to the omitting group's traffic.
+        if (typeof groupP50 === 'number' && Number.isFinite(groupP50)) {
+          weightedPercentiles.p50 += groupP50 * attempts
+          percentileWeights.p50 += attempts
+          hasGroupData = true
+        }
+        if (typeof groupP90 === 'number' && Number.isFinite(groupP90)) {
+          weightedPercentiles.p90 += groupP90 * attempts
+          percentileWeights.p90 += attempts
+          hasGroupData = true
+        }
+        if (typeof groupP95 === 'number' && Number.isFinite(groupP95)) {
+          weightedPercentiles.p95 += groupP95 * attempts
+          percentileWeights.p95 += attempts
+          hasGroupData = true
+        }
+        if (typeof groupP99 === 'number' && Number.isFinite(groupP99)) {
+          weightedPercentiles.p99 += groupP99 * attempts
+          percentileWeights.p99 += attempts
+          hasGroupData = true
+        }
       }
     })
 
@@ -2740,10 +2757,10 @@ export function selectedGroupLoadImpactData(data: MetricsHistoryPoint[], groups:
       targetTps: selectedTargetTps > 0 ? Math.round(selectedTargetTps * 10) / 10 : point.targetTps,
       avgMs: artWeight > 0 ? Math.round((weightedArt / artWeight) * 10) / 10 : point.avgMs,
       errorPct: attempts > 0 ? Math.round((selectedErrors / attempts * 100) * 100) / 100 : point.errorPct,
-      p50: percentileWeight > 0 ? Math.round((weightedPercentiles.p50 / percentileWeight) * 10) / 10 : point.p50,
-      p90: percentileWeight > 0 ? Math.round((weightedPercentiles.p90 / percentileWeight) * 10) / 10 : point.p90,
-      p95: percentileWeight > 0 ? Math.round((weightedPercentiles.p95 / percentileWeight) * 10) / 10 : point.p95,
-      p99: percentileWeight > 0 ? Math.round((weightedPercentiles.p99 / percentileWeight) * 10) / 10 : point.p99,
+      p50: percentileWeights.p50 > 0 ? Math.round((weightedPercentiles.p50 / percentileWeights.p50) * 10) / 10 : point.p50,
+      p90: percentileWeights.p90 > 0 ? Math.round((weightedPercentiles.p90 / percentileWeights.p90) * 10) / 10 : point.p90,
+      p95: percentileWeights.p95 > 0 ? Math.round((weightedPercentiles.p95 / percentileWeights.p95) * 10) / 10 : point.p95,
+      p99: percentileWeights.p99 > 0 ? Math.round((weightedPercentiles.p99 / percentileWeights.p99) * 10) / 10 : point.p99,
     }
   })
 }

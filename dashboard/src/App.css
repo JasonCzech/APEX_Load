@@ -1,8 +1,11 @@
 .app-layout {
   display: flex;
-  height: 100vh;
-  min-height: 0;
+  width: calc(100% / var(--dashboard-zoom, 1));
+  height: calc(100vh / var(--dashboard-zoom, 1));
+  min-height: calc(100vh / var(--dashboard-zoom, 1));
   overflow: hidden;
+  transform: scale(var(--dashboard-zoom, 1));
+  transform-origin: top left;
   background: var(--bg-primary);
   color: var(--text-primary);
 }
@@ -12,7 +15,8 @@
   min-width: 0;
   padding: 20px 36px 28px;
   overflow-y: auto;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   color: var(--text-primary);
   /* Fluid mesh gradient background */
   background: 

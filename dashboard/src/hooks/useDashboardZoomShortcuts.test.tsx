@@ -32,7 +32,7 @@ describe('useDashboardZoomShortcuts', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     window.localStorage.clear()
-    document.documentElement.style.removeProperty('zoom')
+    document.documentElement.style.removeProperty('--dashboard-zoom')
   })
 
   afterEach(async () => {
@@ -40,7 +40,7 @@ describe('useDashboardZoomShortcuts', () => {
       root.unmount()
     })
     container.remove()
-    document.documentElement.style.removeProperty('zoom')
+    document.documentElement.style.removeProperty('--dashboard-zoom')
   })
 
   it('applies and persists the default zoom on mount', async () => {
@@ -49,7 +49,7 @@ describe('useDashboardZoomShortcuts', () => {
     })
 
     expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1')
-    expect(document.documentElement.style.getPropertyValue('zoom')).toBe('1')
+    expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1')
     expect(window.localStorage.getItem(DASHBOARD_ZOOM_STORAGE_KEY)).toBe('1')
   })
 
@@ -61,7 +61,7 @@ describe('useDashboardZoomShortcuts', () => {
     })
 
     expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1.2')
-    expect(document.documentElement.style.getPropertyValue('zoom')).toBe('1.2')
+    expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1.2')
   })
 
   it('zooms in with Cmd plus or equals', async () => {
@@ -76,7 +76,7 @@ describe('useDashboardZoomShortcuts', () => {
 
     expect(event.defaultPrevented).toBe(true)
     expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1.1')
-    expect(document.documentElement.style.getPropertyValue('zoom')).toBe('1.1')
+    expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1.1')
     expect(window.localStorage.getItem(DASHBOARD_ZOOM_STORAGE_KEY)).toBe('1.1')
 
     await act(async () => {
@@ -98,14 +98,14 @@ describe('useDashboardZoomShortcuts', () => {
     })
 
     expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1.1')
-    expect(document.documentElement.style.getPropertyValue('zoom')).toBe('1.1')
+    expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1.1')
 
     await act(async () => {
       window.dispatchEvent(keyboardEvent('0', { ctrlKey: true }))
     })
 
     expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1')
-    expect(document.documentElement.style.getPropertyValue('zoom')).toBe('1')
+    expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1')
     expect(window.localStorage.getItem(DASHBOARD_ZOOM_STORAGE_KEY)).toBe('1')
   })
 
@@ -125,7 +125,7 @@ describe('useDashboardZoomShortcuts', () => {
     expect(plainEvent.defaultPrevented).toBe(false)
     expect(altEvent.defaultPrevented).toBe(false)
     expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1')
-    expect(document.documentElement.style.getPropertyValue('zoom')).toBe('1')
+    expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1')
   })
 
   it('normalizes invalid and out-of-range stored zoom values', async () => {
@@ -135,8 +135,8 @@ describe('useDashboardZoomShortcuts', () => {
       root.render(<ZoomHarness />)
     })
 
-    expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1.5')
-    expect(document.documentElement.style.getPropertyValue('zoom')).toBe('1.5')
+    expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1.8')
+    expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1.8')
 
     await act(async () => {
       root.unmount()
@@ -149,6 +149,6 @@ describe('useDashboardZoomShortcuts', () => {
     })
 
     expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1')
-    expect(document.documentElement.style.getPropertyValue('zoom')).toBe('1')
+    expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1')
   })
 })

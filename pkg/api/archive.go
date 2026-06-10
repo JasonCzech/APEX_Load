@@ -1304,16 +1304,13 @@ func loadArchiveIntervalSummariesForFilters(record *storage.RunArchiveRecord, ac
 		cumulativeTx += bucket.transactions
 		cumulativeErrors += bucket.errors
 		record := IntervalSummaryRecord{
-			Timestamp:              summary.Timestamp,
-			TestID:                 summary.TestID,
-			TestName:               summary.TestName,
-			ActiveVUsers:           archiveSummaryActiveVUsersForGroups(summary, groupSet, groupFilter.Explicit, configuredGroups),
-			TargetTPS:              summary.TargetTPS,
-			ThroughputGapPct:       summary.ThroughputGapPct,
-			ThroughputTargetMissed: summary.ThroughputTargetMissed,
-			TotalTx:                cumulativeTx,
-			TotalErrors:            cumulativeErrors,
-			Groups:                 archiveSelectedSummaryGroups(summary.Groups, groupSet, groupFilter.Explicit),
+			Timestamp:    summary.Timestamp,
+			TestID:       summary.TestID,
+			TestName:     summary.TestName,
+			ActiveVUsers: archiveSummaryActiveVUsersForGroups(summary, groupSet, groupFilter.Explicit, configuredGroups),
+			TotalTx:      cumulativeTx,
+			TotalErrors:  cumulativeErrors,
+			Groups:       archiveSelectedSummaryGroups(summary.Groups, groupSet, groupFilter.Explicit),
 		}
 		if bucket.transactions > 0 {
 			record.TPS = float64(bucket.transactions) / archiveSummaryBucketSeconds(summaries, index)
@@ -1325,6 +1322,11 @@ func loadArchiveIntervalSummariesForFilters(record *storage.RunArchiveRecord, ac
 			record.P95Ms = archiveAnalysisPercentile(bucket.durations, 0.95)
 			record.P99Ms = archiveAnalysisPercentile(bucket.durations, 0.99)
 		}
+		// The whole-test throughput target does not apply to a filtered subset;
+		// derive it from the selected groups' own targets and recompute the gap
+		// against the filtered TPS to avoid a contradictory missed-target flag.
+		record.TargetTPS, record.ThroughputGapPct, record.ThroughputTargetMissed =
+			archiveFilteredThroughputTarget(summary, groupSet, groupFilter.Explicit, record.TPS)
 		filtered = append(filtered, record)
 	}
 	return filtered, nil
@@ -1335,6 +1337,29 @@ type archiveActionSummaryBucket struct {
 	errors          int64
 	totalDurationMs float64
 	durations       []float64
+}
+
+// archiveFilteredThroughputTarget derives the throughput target, gap, and
+// missed flag for a filtered interval row. The whole-test target does not apply
+// to a filtered subset, so it is recomputed from the selected groups' own
+// per-group targets when those were captured. When no per-group target exists
+// (older archives) or only an action filter is applied, it returns zeros rather
+// than a gap measured against a target the subset never owned.
+func archiveFilteredThroughputTarget(summary IntervalSummaryRecord, groupSet map[string]struct{}, explicit bool, filteredTPS float64) (float64, float64, bool) {
+	if !explicit || len(groupSet) == 0 || len(summary.Groups) == 0 {
+		return 0, 0, false
+	}
+	var targetTPS float64
+	for name := range groupSet {
+		if group := summary.Groups[name]; group != nil {
+			targetTPS += group.TargetTPS
+		}
+	}
+	if targetTPS <= 0 {
+		return 0, 0, false
+	}
+	gap, missed := throughputGap(filteredTPS, targetTPS)
+	return targetTPS, gap, missed
 }
 
 func archiveSummaryActiveVUsersForGroups(summary IntervalSummaryRecord, groupSet map[string]struct{}, explicit bool, configuredGroups []TestGroup) int64 {
@@ -1353,31 +1378,38 @@ func archiveSummaryActiveVUsersForGroups(summary IntervalSummaryRecord, groupSet
 		}
 		return active
 	}
-	if summary.ActiveVUsers <= 0 || len(configuredGroups) == 0 {
-		return 0
-	}
-	var selectedConfigured int
-	var totalConfigured int
-	for _, group := range configuredGroups {
-		if group.VUsers <= 0 {
-			continue
+	// No per-group VUser counts were captured for this interval. Estimate the
+	// subset proportionally from the configured group sizes when available.
+	if summary.ActiveVUsers > 0 && len(configuredGroups) > 0 {
+		var selectedConfigured int
+		var totalConfigured int
+		for _, group := range configuredGroups {
+			if group.VUsers <= 0 {
+				continue
+			}
+			totalConfigured += group.VUsers
+			if _, selected := groupSet[group.Name]; selected {
+				selectedConfigured += group.VUsers
+			}
 		}
-		totalConfigured += group.VUsers
-		if _, selected := groupSet[group.Name]; selected {
-			selectedConfigured += group.VUsers
+		if selectedConfigured > 0 && totalConfigured > 0 {
+			estimated := int64(math.Round(float64(summary.ActiveVUsers) * float64(selectedConfigured) / float64(totalConfigured)))
+			if estimated < 0 {
+				return 0
+			}
+			if estimated > summary.ActiveVUsers {
+				return summary.ActiveVUsers
+			}
+			return estimated
 		}
 	}
-	if selectedConfigured <= 0 || totalConfigured <= 0 {
-		return 0
-	}
-	estimated := int64(math.Round(float64(summary.ActiveVUsers) * float64(selectedConfigured) / float64(totalConfigured)))
-	if estimated < 0 {
-		return 0
-	}
-	if estimated > summary.ActiveVUsers {
+	// No basis to attribute VUsers to the subset (no per-group metrics and no
+	// usable configured group sizes). Fall back to the run-wide active VUser
+	// count so a group that demonstrably ran is not reported as flat zero.
+	if summary.ActiveVUsers > 0 {
 		return summary.ActiveVUsers
 	}
-	return estimated
+	return 0
 }
 
 func archiveSelectedSummaryGroups(groups map[string]*GroupLiveMetrics, groupSet map[string]struct{}, explicit bool) map[string]*GroupLiveMetrics {

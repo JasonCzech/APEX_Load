@@ -14,6 +14,14 @@ function rounded(value: number | undefined, precision = 10) {
   return Math.round((value ?? 0) * precision) / precision
 }
 
+// roundedOptional rounds a present value but preserves `undefined`, so a metric
+// the server omitted (e.g. a group's p95) stays a gap rather than becoming a
+// misleading 0. This keeps the live mapper consistent with the archive mapper,
+// which passes raw values through.
+function roundedOptional(value: number | undefined, precision = 10) {
+  return typeof value === 'number' ? Math.round(value * precision) / precision : undefined
+}
+
 function roundedHistoryValues(values: Partial<MetricsHistoryPoint>) {
   return Object.entries(values).reduce((acc, [key, value]) => {
     if (typeof value === 'number') {
@@ -82,10 +90,10 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
       point[`${name}_transactions`] = groupMetric.transactions
       point[`${name}_errors`] = groupMetric.errors
       point[`${name}_targetTps`] = groupMetric.target_tps
-      point[`${name}_p50`] = rounded(groupMetric.p50_ms)
-      point[`${name}_p90`] = rounded(groupMetric.p90_ms)
-      point[`${name}_p95`] = rounded(groupMetric.p95_ms)
-      point[`${name}_p99`] = rounded(groupMetric.p99_ms)
+      point[`${name}_p50`] = roundedOptional(groupMetric.p50_ms)
+      point[`${name}_p90`] = roundedOptional(groupMetric.p90_ms)
+      point[`${name}_p95`] = roundedOptional(groupMetric.p95_ms)
+      point[`${name}_p99`] = roundedOptional(groupMetric.p99_ms)
       const attempts = (groupMetric.transactions ?? 0) + (groupMetric.errors ?? 0)
       point[`${name}_errorPct`] = attempts > 0 ? rounded((groupMetric.errors ?? 0) / attempts * 100, 100) : 0
     })

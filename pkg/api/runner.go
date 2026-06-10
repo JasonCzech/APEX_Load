@@ -2368,6 +2368,27 @@ type CapacityShortfallError struct {
 	Message  string
 }
 
+// BrowserDensityGateError is returned by the start chokepoints when a test's
+// browser-VUser density exceeds the diagnostic-canary envelope and the
+// benchmark-evidence + override release gate has not been satisfied. It mirrors
+// the blocking conflict the preflight endpoint reports so a direct call to
+// POST /tests/{id}/start cannot bypass the governance gate.
+type BrowserDensityGateError struct {
+	TestID   string
+	Advisory *CapacityAdvisory
+	Message  string
+}
+
+func (e *BrowserDensityGateError) Error() string {
+	if e == nil {
+		return "browser density release gate"
+	}
+	if e.Message != "" {
+		return e.Message
+	}
+	return "browser VUser density exceeds the diagnostic canary envelope"
+}
+
 type ScriptShakeoutGateError struct {
 	TestID string
 	Report *ScriptShakeoutReport
@@ -3750,7 +3771,7 @@ func (tr *TestRunner) preflightStartBlocksLocked(id string, opts StartTestOption
 	}
 
 	tr.refreshCapacityAdvisoryLocked(test)
-	if err := buildCapacityShortfallStartError(id, test.CapacityAdvisory, opts); err != nil {
+	if err := buildStartGovernanceError(id, test.CapacityAdvisory, opts); err != nil {
 		return false, err
 	}
 	if !opts.SkipLaunchWindowPreflight {
@@ -3848,7 +3869,7 @@ func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (
 	}
 
 	tr.refreshCapacityAdvisoryLocked(test)
-	if err := buildCapacityShortfallStartError(id, test.CapacityAdvisory, opts); err != nil {
+	if err := buildStartGovernanceError(id, test.CapacityAdvisory, opts); err != nil {
 		return nil, err
 	}
 	if !opts.SkipLaunchWindowPreflight {
@@ -4244,6 +4265,31 @@ func buildCapacityShortfallStartError(id string, advisory *CapacityAdvisory, opt
 		TestID:   id,
 		Advisory: cloned,
 		Message:  fmt.Sprintf("capacity advisory recommends %d load generators but only %d are currently available", cloned.RecommendedGenerators, cloned.AvailableGenerators),
+	}
+}
+
+// buildStartGovernanceError enforces, at the start chokepoint, every advisory
+// gate that the launch-preflight endpoint enforces. It is called wherever a
+// test transitions toward RUNNING so that POST /tests/{id}/start, the scheduler,
+// and the pending-promotion loop all apply the same governance the preflight
+// path reports. The browser-density gate is intentionally not bypassable by
+// OverrideCapacityShortfall: the only way to clear it is the env-driven
+// benchmark-evidence + override path baked into the advisory.
+func buildStartGovernanceError(id string, advisory *CapacityAdvisory, opts StartTestOptions) error {
+	if err := buildCapacityShortfallStartError(id, advisory, opts); err != nil {
+		return err
+	}
+	return buildBrowserDensityGateStartError(id, advisory)
+}
+
+func buildBrowserDensityGateStartError(id string, advisory *CapacityAdvisory) error {
+	if !browserDensityReleaseGateBlocks(advisory) {
+		return nil
+	}
+	return &BrowserDensityGateError{
+		TestID:   id,
+		Advisory: cloneCapacityAdvisory(advisory),
+		Message:  browserDensityReleaseGateMessage(advisory),
 	}
 }
 
@@ -6801,7 +6847,7 @@ func (tr *TestRunner) nextPromotablePendingTestLocked() *ManagedTest {
 	tr.sortPendingTestsForFairShareLocked(pending)
 	for _, test := range pending {
 		tr.refreshCapacityAdvisoryLocked(test)
-		if buildCapacityShortfallStartError(test.ID, test.CapacityAdvisory, StartTestOptions{}) != nil {
+		if buildStartGovernanceError(test.ID, test.CapacityAdvisory, StartTestOptions{}) != nil {
 			continue
 		}
 		if blocked, _ := tr.evaluateQuotaBlockLocked(test, ""); blocked {
