@@ -492,6 +492,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const hasContextualTopbarActions = topbarPrimaryActions.length > 0 || topbarSecondaryActions.length > 0 || Boolean(activeTopbarContribution?.controls)
   const showTopbarRunChips = visibleTopbarRuns.length > 0 && !hasContextualTopbarActions
   const effectiveTopbarTitle = activeTopbarContribution?.title || topbarPageTitle
+  const mainContentClassName = `main-content topbar-title-mode page-${view.page}`
 
   useEffect(() => {
     let cancelled = false
@@ -549,7 +550,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
         onCreateApplication={createAndSelectApplication}
         showAccess={canUseAccessWorkspace}
       />
-      <main className="main-content topbar-title-mode">
+      <main className={mainContentClassName}>
         <div className={`main-topbar${activeTopbarContribution ? ' contextual' : ''}`} aria-label="Dashboard controls">
           <div className="main-topbar-page">
             {activeTopbarContribution?.titleNode || <strong className="topbar-page-title">{effectiveTopbarTitle}</strong>}

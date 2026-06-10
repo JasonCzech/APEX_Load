@@ -15,6 +15,15 @@ describe('app shell layout', () => {
     expect(appCss).not.toContain('margin: -20px 0 24px;')
     expect(appCss).not.toContain('padding: 10px 0;')
   })
+
+  it('adds extra topbar spacing on primary navigation pages', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const appCss = readFileSync(`${cwd}/src/App.css`, 'utf8') as string
+
+    expect(cssRule(appCss, '.main-content.page-dashboard > .main-topbar,\n.main-content.page-new-test > .main-topbar,\n.main-content.page-command-center > .main-topbar,\n.main-content.page-monitoring > .main-topbar,\n.main-content.page-docs > .main-topbar,\n.main-content.page-access > .main-topbar,\n.main-content.page-settings > .main-topbar')).toContain('margin-bottom: 30px;')
+  })
 })
 
 function cssRule(css: string, selector: string) {

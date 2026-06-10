@@ -940,6 +940,11 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     setTests(prev => prev.map(test => (test.id === updated.id ? { ...test, ...updated } : test)))
   }, [])
 
+  const showResultsLoadStatus = resultsLoading || resultsRefreshing || comparisonCards.length >= 2
+  const showComparisonLoadedHint = comparisonCards.length >= 2
+  const showDeleteSelectedAction = selectedIds.size > 0
+  const showResultsActions = showResultsLoadStatus || showComparisonLoadedHint || showDeleteSelectedAction
+
   const toggleBaselinePin = useCallback(async (test: TestSummary, event: React.MouseEvent) => {
     event.stopPropagation()
     try {
@@ -980,21 +985,23 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
             {activeApplication.name} / {activeRelease.name}
           </p>
         </div>
-        <div className="results-actions">
-          {(resultsLoading || resultsRefreshing || comparisonCards.length >= 2) && (
-            <span className={`results-load-status${resultsLoading || resultsRefreshing ? '' : ' idle'}`} aria-live="polite">
-              {resultsLoading ? 'Loading results...' : resultsRefreshing ? 'Refreshing...' : 'Results refreshed'}
-            </span>
-          )}
-          {comparisonCards.length >= 2 && (
-            <span className="results-compare-hint">Comparison loaded</span>
-          )}
-          {selectedIds.size > 0 && (
-            <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} onClick={deleteSelected}>
-              Delete Selected ({selectedIds.size})
-            </button>
-          )}
-        </div>
+        {showResultsActions && (
+          <div className="results-actions">
+            {showResultsLoadStatus && (
+              <span className={`results-load-status${resultsLoading || resultsRefreshing ? '' : ' idle'}`} aria-live="polite">
+                {resultsLoading ? 'Loading results...' : resultsRefreshing ? 'Refreshing...' : 'Results refreshed'}
+              </span>
+            )}
+            {showComparisonLoadedHint && (
+              <span className="results-compare-hint">Comparison loaded</span>
+            )}
+            {showDeleteSelectedAction && (
+              <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} onClick={deleteSelected}>
+                Delete Selected ({selectedIds.size})
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {error && <div className="settings-error-inline">{error}</div>}
