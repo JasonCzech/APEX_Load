@@ -255,14 +255,22 @@ export function chartPrimaryYAxisLabel(chart: ChartConfig) {
   }
 }
 
-export function chartMarginForOverlayKeys(overlayKeys: OverlayMetricKey[]): ChartMargin {
+export function chartMarginForOverlayKeys(overlayKeys: OverlayMetricKey[], compact = false): ChartMargin {
   const rightAxisCount = Number(overlayKeys.includes('vusers'))
     + Number(overlayKeys.some(key => key === 'avgMs' || key === 'tps'))
+  if (compact) {
+    return {
+      top: 12,
+      right: rightAxisCount > 0 ? 4 : 8,
+      bottom: 8,
+      left: 4,
+    }
+  }
   return {
     top: 12,
-    right: rightAxisCount > 1 ? 126 : rightAxisCount === 1 ? 88 : 18,
+    right: rightAxisCount > 1 ? 106 : rightAxisCount === 1 ? 70 : 12,
     bottom: 8,
-    left: 24,
+    left: 8,
   }
 }
 

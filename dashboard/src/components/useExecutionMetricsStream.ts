@@ -2,8 +2,8 @@ import { useCallback, useState } from 'react'
 
 import { useWebSocket } from '../hooks/useWebSocket'
 import { LiveMetrics, MetricsHistoryPoint, NetworkLatency, TelemetryHealth, TestStatus, WSMessage } from '../types'
-import { resourceImpactHistoryValues } from './generatorImpact'
 import { routeLatencySeriesValuesForTarget } from './latencySeries'
+import { mapExecutionMetricToHistoryPoint } from './testExecutionMetricsModel'
 
 export const EXECUTION_STREAM_HISTORY_LIMIT = 300
 
@@ -78,44 +78,7 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
       telemetry,
     })
 
-    const point: MetricsHistoryPoint = {
-      time: new Date(msg.timestamp).toLocaleTimeString(),
-      timestampMs: Date.parse(msg.timestamp),
-      vusers: msg.data.active_vusers,
-      tps: rounded(msg.data.tps),
-      targetTps: msg.data.target_tps,
-      avgMs: rounded(msg.data.avg_response_ms),
-      errorPct: rounded(msg.data.error_pct, 100),
-      p50: rounded(msg.data.p50_ms),
-      p90: rounded(msg.data.p90_ms),
-      p95: rounded(msg.data.p95_ms),
-      p99: rounded(msg.data.p99_ms),
-    }
-
-    if (msg.data.groups) {
-      for (const [name, groupMetrics] of Object.entries(msg.data.groups)) {
-        point[`${name}_tps`] = rounded(groupMetrics.tps)
-        point[`${name}_avgMs`] = rounded(groupMetrics.avg_response_ms)
-        point[`${name}_vusers`] = groupMetrics.vusers
-      }
-    }
-
-    if (msg.data.resources) {
-      const resources = msg.data.resources
-      point.cpuProcess = rounded(resources.cpu_process_pct)
-      point.cpuFree = rounded(resources.cpu_free_pct)
-      point.memProcess = rounded(resources.mem_process_mb)
-      point.memFree = rounded(resources.mem_free_mb)
-      point.netSent = rounded(resources.net_sent_kbps)
-      point.netRecv = rounded(resources.net_recv_kbps)
-      point.diskRead = rounded(resources.disk_read_kbps)
-      point.diskWrite = rounded(resources.disk_write_kbps)
-      Object.entries(resourceImpactHistoryValues(resources)).forEach(([key, value]) => {
-        if (typeof value === 'number') {
-          point[key] = rounded(value)
-        }
-      })
-    }
+    const point = mapExecutionMetricToHistoryPoint({ ...msg.data, timestamp: msg.timestamp })
 
     setLocalMetricsHistory((prev) => [...prev, applyLatencyTargets(point, msg.data?.latency)].slice(-EXECUTION_STREAM_HISTORY_LIMIT))
   }, [])

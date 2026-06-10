@@ -192,6 +192,12 @@ func TestMetricsCollector_ByGroup(t *testing.T) {
 	if buyers.Transactions != 2 {
 		t.Errorf("buyers transactions = %d, want 2", buyers.Transactions)
 	}
+	if buyers.P95 <= 0 {
+		t.Errorf("buyers P95 = %v, want populated group percentile", buyers.P95)
+	}
+	if buyers.DurationDigest == nil || buyers.DurationDigest.Count != 2 {
+		t.Fatalf("buyers duration digest = %#v, want 2 samples", buyers.DurationDigest)
+	}
 
 	sellers, ok := snap.ByGroup["sellers"]
 	if !ok {

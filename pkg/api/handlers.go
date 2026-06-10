@@ -356,11 +356,12 @@ func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	groupFilter := parseGroupFilterQuery(r.URL.Query())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"test_id": id,
 		"status":  test.Status,
-		"metrics": test.LiveMetrics,
-		"history": test.History,
+		"metrics": filterLiveMetricsForGroups(test.LiveMetrics, groupFilter),
+		"history": filterLiveMetricsHistoryForGroups(test.History, groupFilter),
 	})
 }
 

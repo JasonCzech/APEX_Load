@@ -172,7 +172,9 @@ type GroupMetrics struct {
 	AvgDuration            time.Duration
 	P50                    time.Duration
 	P90                    time.Duration
+	P95                    time.Duration
 	P99                    time.Duration
+	DurationDigest         *TDigestSnapshot `json:"-"`
 }
 
 type ActionMetrics struct {
@@ -546,7 +548,10 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			gm.TPS = float64(gm.Transactions) / window.Seconds()
 			gm.P50 = time.Duration(gd.Quantile(0.50))
 			gm.P90 = time.Duration(gd.Quantile(0.90))
+			gm.P95 = time.Duration(gd.Quantile(0.95))
 			gm.P99 = time.Duration(gd.Quantile(0.99))
+			digestSnapshot := gd.Snapshot()
+			gm.DurationDigest = &digestSnapshot
 		}
 		applyThroughputGap(&gm.TPS, gm.TargetTPS, &gm.ThroughputGapPct, &gm.ThroughputTargetMissed)
 	}

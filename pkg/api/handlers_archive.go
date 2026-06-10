@@ -215,7 +215,8 @@ func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Req
 		return
 	}
 	action := strings.TrimSpace(r.URL.Query().Get("action"))
-	items, total, err := loadArchiveIntervalSummaries(record, page, action)
+	groupFilter := parseGroupFilterQuery(r.URL.Query())
+	items, total, err := loadArchiveIntervalSummaries(record, page, action, groupFilter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read archive summaries: "+err.Error())
 		return
@@ -225,6 +226,9 @@ func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Req
 		filename := "apexload-archive-summaries-" + testID
 		if action != "" {
 			filename += "-" + sanitizeFilename(action)
+		}
+		for _, groupName := range groupFilter.Names {
+			filename += "-" + sanitizeFilename(groupName)
 		}
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+".csv\"")
@@ -241,6 +245,7 @@ func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Req
 		"offset":    page.Offset,
 		"filters": map[string]any{
 			"action": action,
+			"groups": groupFilter.Names,
 		},
 	})
 }

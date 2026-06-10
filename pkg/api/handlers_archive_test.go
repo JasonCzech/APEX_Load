@@ -797,7 +797,7 @@ func TestLoadArchiveIntervalSummariesForActionAggregatesTransactions(t *testing.
 		ManifestPath: filepath.Join(archiveDir, "manifest.json"),
 	}
 
-	summaries, total, err := loadArchiveIntervalSummaries(record, archivePage{Limit: 10}, "Checkout")
+	summaries, total, err := loadArchiveIntervalSummaries(record, archivePage{Limit: 10}, "Checkout", groupFilterQuery{})
 	if err != nil {
 		t.Fatalf("loadArchiveIntervalSummaries returned error: %v", err)
 	}
@@ -812,6 +812,73 @@ func TestLoadArchiveIntervalSummariesForActionAggregatesTransactions(t *testing.
 	}
 	if summaries[2].TotalTx != 3 || summaries[2].TotalErrors != 1 || summaries[2].TPS != 1 || summaries[2].AvgResponseMs != 200 || summaries[2].P99Ms != 200 {
 		t.Fatalf("third filtered bucket = %#v, want final checkout cumulative totals", summaries[2])
+	}
+}
+
+func TestLoadArchiveIntervalSummariesForGroupsAggregatesTransactions(t *testing.T) {
+	archiveDir := t.TempDir()
+	start := time.Date(2026, 5, 12, 18, 0, 0, 0, time.UTC)
+	manifest := RunArchiveManifest{
+		TestID:                "run-group-summary",
+		TestName:              "Group Summary Run",
+		CreatedAt:             start,
+		TransactionsFile:      "transactions.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+	}
+	writeJSONL(t, filepath.Join(archiveDir, "manifest.json"), manifest)
+	writeJSONL(t, filepath.Join(archiveDir, manifest.IntervalSummariesFile),
+		IntervalSummaryRecord{
+			Timestamp:    start.Add(time.Second),
+			TestID:       manifest.TestID,
+			TestName:     manifest.TestName,
+			ActiveVUsers: 10,
+			Groups: map[string]*GroupLiveMetrics{
+				"Checkout": &GroupLiveMetrics{Name: "Checkout", VUsers: 4},
+				"Browse":   &GroupLiveMetrics{Name: "Browse", VUsers: 6},
+			},
+		},
+		IntervalSummaryRecord{
+			Timestamp:    start.Add(2 * time.Second),
+			TestID:       manifest.TestID,
+			TestName:     manifest.TestName,
+			ActiveVUsers: 12,
+			Groups: map[string]*GroupLiveMetrics{
+				"Checkout": &GroupLiveMetrics{Name: "Checkout", VUsers: 5},
+				"Browse":   &GroupLiveMetrics{Name: "Browse", VUsers: 7},
+			},
+		},
+	)
+	writeJSONL(t, filepath.Join(archiveDir, manifest.TransactionsFile),
+		TransactionEvent{Timestamp: start.Add(500 * time.Millisecond), TestID: manifest.TestID, TestName: manifest.TestName, Group: "Checkout", ActionName: "Checkout", DurationMs: 100, Success: true},
+		TransactionEvent{Timestamp: start.Add(1500 * time.Millisecond), TestID: manifest.TestID, TestName: manifest.TestName, Group: "Browse", ActionName: "Browse", DurationMs: 900, Success: true},
+		TransactionEvent{Timestamp: start.Add(1500 * time.Millisecond), TestID: manifest.TestID, TestName: manifest.TestName, Group: "Checkout", ActionName: "Checkout", DurationMs: 300, Success: false},
+	)
+	record := &storage.RunArchiveRecord{
+		TestID:       manifest.TestID,
+		ArchivePath:  archiveDir,
+		ManifestPath: filepath.Join(archiveDir, "manifest.json"),
+	}
+
+	summaries, total, err := loadArchiveIntervalSummaries(record, archivePage{Limit: 10}, "", groupFilterQuery{Names: []string{"Checkout"}, Explicit: true})
+	if err != nil {
+		t.Fatalf("loadArchiveIntervalSummaries returned error: %v", err)
+	}
+	if total != 2 || len(summaries) != 2 {
+		t.Fatalf("filtered summaries total=%d len=%d, want 2", total, len(summaries))
+	}
+	if summaries[0].ActiveVUsers != 4 || summaries[0].TotalTx != 1 || summaries[0].AvgResponseMs != 100 {
+		t.Fatalf("first group bucket = %#v, want Checkout-only summary", summaries[0])
+	}
+	if summaries[1].ActiveVUsers != 5 || summaries[1].TotalTx != 2 || summaries[1].TotalErrors != 1 || summaries[1].ErrorPct != 100 {
+		t.Fatalf("second group bucket = %#v, want Checkout-only failed summary", summaries[1])
+	}
+
+	empty, _, err := loadArchiveIntervalSummaries(record, archivePage{Limit: 10}, "", groupFilterQuery{Explicit: true})
+	if err != nil {
+		t.Fatalf("empty group filter returned error: %v", err)
+	}
+	if empty[0].ActiveVUsers != 0 || empty[0].TotalTx != 0 || empty[1].TotalTx != 0 {
+		t.Fatalf("empty group filter = %#v, want zeroed performance summaries", empty)
 	}
 }
 

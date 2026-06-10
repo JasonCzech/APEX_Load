@@ -2233,6 +2233,12 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		metrics.P90Ms = percentileValue(durations, 0.90)
 		metrics.P95Ms = percentileValue(durations, 0.95)
 		metrics.P99Ms = percentileValue(durations, 0.99)
+		digest := engine.NewTDigest(200)
+		for _, duration := range durations {
+			digest.Add(duration * 1_000_000)
+		}
+		digestSnapshot := digest.Snapshot()
+		metrics.DurationDigest = &digestSnapshot
 	}
 	sort.Strings(names)
 	if len(allDurations) > 0 {

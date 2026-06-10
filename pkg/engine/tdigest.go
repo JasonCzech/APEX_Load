@@ -10,6 +10,20 @@ type centroid struct {
 	weight float64
 }
 
+type TDigestCentroidSnapshot struct {
+	Mean   float64 `json:"mean"`
+	Weight float64 `json:"weight"`
+}
+
+type TDigestSnapshot struct {
+	Compression float64                   `json:"compression"`
+	TotalWeight float64                   `json:"total_weight"`
+	Min         float64                   `json:"min"`
+	Max         float64                   `json:"max"`
+	Count       int64                     `json:"count"`
+	Centroids   []TDigestCentroidSnapshot `json:"centroids"`
+}
+
 // TDigest is a streaming quantile estimator using the merging digest algorithm.
 // It produces accurate percentile estimates with bounded memory, and supports
 // merging digests from multiple sources (required for multi-pod aggregation).
@@ -148,6 +162,44 @@ func (td *TDigest) Merge(other *TDigest) {
 	}
 
 	td.compress()
+}
+
+func (td *TDigest) Snapshot() TDigestSnapshot {
+	if td == nil {
+		return TDigestSnapshot{}
+	}
+	td.flushBuffer()
+	centroids := make([]TDigestCentroidSnapshot, 0, len(td.centroids))
+	for _, c := range td.centroids {
+		centroids = append(centroids, TDigestCentroidSnapshot{
+			Mean:   c.mean,
+			Weight: c.weight,
+		})
+	}
+	return TDigestSnapshot{
+		Compression: td.compression,
+		TotalWeight: td.totalWeight,
+		Min:         td.min,
+		Max:         td.max,
+		Count:       td.count,
+		Centroids:   centroids,
+	}
+}
+
+func NewTDigestFromSnapshot(snapshot TDigestSnapshot) *TDigest {
+	td := NewTDigest(snapshot.Compression)
+	td.totalWeight = snapshot.TotalWeight
+	td.min = snapshot.Min
+	td.max = snapshot.Max
+	td.count = snapshot.Count
+	td.centroids = make([]centroid, 0, len(snapshot.Centroids))
+	for _, c := range snapshot.Centroids {
+		td.centroids = append(td.centroids, centroid{
+			mean:   c.Mean,
+			weight: c.Weight,
+		})
+	}
+	return td
 }
 
 // Reset clears the digest for reuse.

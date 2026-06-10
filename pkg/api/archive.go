@@ -189,6 +189,7 @@ type IntervalSummaryRecord struct {
 	P90Ms                  float64                              `json:"p90_ms"`
 	P95Ms                  float64                              `json:"p95_ms"`
 	P99Ms                  float64                              `json:"p99_ms"`
+	Groups                 map[string]*GroupLiveMetrics         `json:"groups,omitempty"`
 	Browser                *BrowserLiveMetrics                  `json:"browser,omitempty"`
 	BrowserByDevice        map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
 	Telemetry              *TelemetryHealth                     `json:"telemetry,omitempty"`
@@ -814,6 +815,7 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 		P90Ms:                  live.P90Ms,
 		P95Ms:                  live.P95Ms,
 		P99Ms:                  live.P99Ms,
+		Groups:                 cloneGroupLiveMetricsMap(live.GroupMetrics),
 		Browser:                cloneBrowserLiveMetrics(live.Browser),
 		BrowserByDevice:        cloneBrowserByDeviceMetrics(live.BrowserByDevice),
 		Telemetry:              cloneTelemetryHealth(live.Telemetry),
@@ -1102,10 +1104,10 @@ func loadArchiveResourceSamples(record *storage.RunArchiveRecord, page archivePa
 	return readJSONLPage[ResourceSample](path, page, nil)
 }
 
-func loadArchiveIntervalSummaries(record *storage.RunArchiveRecord, page archivePage, action string) ([]IntervalSummaryRecord, int, error) {
+func loadArchiveIntervalSummaries(record *storage.RunArchiveRecord, page archivePage, action string, groupFilter groupFilterQuery) ([]IntervalSummaryRecord, int, error) {
 	action = strings.TrimSpace(action)
-	if action != "" {
-		summaries, err := loadArchiveIntervalSummariesForAction(record, action)
+	if action != "" || groupFilter.Explicit {
+		summaries, err := loadArchiveIntervalSummariesForFilters(record, action, groupFilter)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -1123,21 +1125,34 @@ func loadArchiveIntervalSummaries(record *storage.RunArchiveRecord, page archive
 }
 
 func loadArchiveIntervalSummariesForAction(record *storage.RunArchiveRecord, action string) ([]IntervalSummaryRecord, error) {
+	return loadArchiveIntervalSummariesForFilters(record, action, groupFilterQuery{})
+}
+
+func loadArchiveIntervalSummariesForFilters(record *storage.RunArchiveRecord, action string, groupFilter groupFilterQuery) ([]IntervalSummaryRecord, error) {
 	action = strings.TrimSpace(action)
 	summaries, err := readAllArchiveSummaries(record)
 	if err != nil {
 		return nil, err
 	}
-	if action == "" || len(summaries) == 0 {
+	if (action == "" && !groupFilter.Explicit) || len(summaries) == 0 {
 		return summaries, nil
 	}
 	transactions, err := readAllArchiveTransactions(record)
 	if err != nil {
 		return nil, err
 	}
+	groupSet := selectedGroupNameSet(groupFilter.Names)
 	buckets := make([]archiveActionSummaryBucket, len(summaries))
 	for _, tx := range transactions {
-		if !strings.EqualFold(tx.ActionName, action) {
+		if groupFilter.Explicit {
+			if len(groupSet) == 0 {
+				continue
+			}
+			if _, ok := groupSet[tx.Group]; !ok {
+				continue
+			}
+		}
+		if action != "" && !strings.EqualFold(tx.ActionName, action) {
 			continue
 		}
 		index := archiveSummaryBucketIndex(summaries, tx.Timestamp)
@@ -1164,12 +1179,13 @@ func loadArchiveIntervalSummariesForAction(record *storage.RunArchiveRecord, act
 			Timestamp:              summary.Timestamp,
 			TestID:                 summary.TestID,
 			TestName:               summary.TestName,
-			ActiveVUsers:           summary.ActiveVUsers,
+			ActiveVUsers:           archiveSummaryActiveVUsersForGroups(summary, groupSet, groupFilter.Explicit),
 			TargetTPS:              summary.TargetTPS,
 			ThroughputGapPct:       summary.ThroughputGapPct,
 			ThroughputTargetMissed: summary.ThroughputTargetMissed,
 			TotalTx:                cumulativeTx,
 			TotalErrors:            cumulativeErrors,
+			Groups:                 archiveSelectedSummaryGroups(summary.Groups, groupSet, groupFilter.Explicit),
 		}
 		if bucket.transactions > 0 {
 			record.TPS = float64(bucket.transactions) / archiveSummaryBucketSeconds(summaries, index)
@@ -1191,6 +1207,44 @@ type archiveActionSummaryBucket struct {
 	errors          int64
 	totalDurationMs float64
 	durations       []float64
+}
+
+func archiveSummaryActiveVUsersForGroups(summary IntervalSummaryRecord, groupSet map[string]struct{}, explicit bool) int64 {
+	if !explicit {
+		return summary.ActiveVUsers
+	}
+	if len(groupSet) == 0 {
+		return 0
+	}
+	if len(summary.Groups) == 0 {
+		return 0
+	}
+	var active int64
+	for name := range groupSet {
+		if group := summary.Groups[name]; group != nil {
+			active += int64(group.VUsers)
+		}
+	}
+	return active
+}
+
+func archiveSelectedSummaryGroups(groups map[string]*GroupLiveMetrics, groupSet map[string]struct{}, explicit bool) map[string]*GroupLiveMetrics {
+	if len(groups) == 0 {
+		return nil
+	}
+	if !explicit {
+		return cloneGroupLiveMetricsMap(groups)
+	}
+	if len(groupSet) == 0 {
+		return map[string]*GroupLiveMetrics{}
+	}
+	selected := make(map[string]*GroupLiveMetrics, len(groupSet))
+	for name := range groupSet {
+		if group := groups[name]; group != nil {
+			selected[name] = cloneGroupLiveMetrics(group)
+		}
+	}
+	return selected
 }
 
 func archiveSummaryBucketIndex(summaries []IntervalSummaryRecord, timestamp time.Time) int {
@@ -2807,6 +2861,17 @@ func cloneBrowserLiveMetrics(metrics *BrowserLiveMetrics) *BrowserLiveMetrics {
 	}
 	clone := *metrics
 	return &clone
+}
+
+func cloneGroupLiveMetricsMap(metrics map[string]*GroupLiveMetrics) map[string]*GroupLiveMetrics {
+	if len(metrics) == 0 {
+		return nil
+	}
+	cloned := make(map[string]*GroupLiveMetrics, len(metrics))
+	for name, groupMetrics := range metrics {
+		cloned[name] = cloneGroupLiveMetrics(groupMetrics)
+	}
+	return cloned
 }
 
 func cloneBrowserByDeviceMetrics(metrics map[string]*BrowserDeviceLiveMetrics) map[string]*BrowserDeviceLiveMetrics {

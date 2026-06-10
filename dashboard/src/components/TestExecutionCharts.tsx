@@ -138,6 +138,14 @@ export type GraphGroupTabId = 'test_results' | 'under_load' | 'infrastructure'
 export type UnderLoadDisplayMode = 'graphs' | 'heatmap'
 type ChartCardSize = { width: number; height: number }
 type ChartCardElement = HTMLElement | null
+type AxisLabelPopover = { label: string; x: number; y: number } | null
+type AxisInteractionEvent = {
+  clientX?: number
+  clientY?: number
+  currentTarget?: EventTarget | null
+  preventDefault?: () => void
+  stopPropagation?: () => void
+}
 
 export interface GraphCursorState {
   label?: string | number
@@ -170,30 +178,19 @@ function graphGroupForChart(chart: ChartConfig): GraphGroupTabId {
   return 'test_results'
 }
 
-const AXIS_LABEL_STYLE = {
-  fill: 'var(--text-muted)',
-  fontSize: 11,
-  fontWeight: 700,
-}
+const PRIMARY_Y_AXIS_WIDTH = 60
+const OVERLAY_Y_AXIS_WIDTH = 64
+const COMMAND_CENTER_PRIMARY_Y_AXIS_WIDTH = 52
+const COMMAND_CENTER_OVERLAY_Y_AXIS_WIDTH = 34
 
-function leftAxisLabel(value: string) {
-  return {
-    value,
-    angle: -90,
-    position: 'left',
-    offset: 0,
-    style: { ...AXIS_LABEL_STYLE, textAnchor: 'middle' },
-  }
-}
-
-function rightAxisLabel(value: string) {
-  return {
-    value,
-    angle: 90,
-    position: 'right',
-    offset: 0,
-    style: { ...AXIS_LABEL_STYLE, textAnchor: 'middle' },
-  }
+function isAxisInteractionEvent(value: unknown): value is AxisInteractionEvent {
+  return Boolean(value && typeof value === 'object' && (
+    'clientX' in value
+    || 'clientY' in value
+    || 'currentTarget' in value
+    || 'preventDefault' in value
+    || 'stopPropagation' in value
+  ))
 }
 
 function readStoredTimeAxisMode(storageKey: string): ChartTimeAxisMode {
@@ -455,6 +452,7 @@ export default function TestExecutionCharts({
   const [localActiveGraphGroupTab, setLocalActiveGraphGroupTab] = useState<GraphGroupTabId>('test_results')
   const [selectedRouteLatencyKey, setSelectedRouteLatencyKey] = useState('')
   const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
+  const [axisLabelPopover, setAxisLabelPopover] = useState<AxisLabelPopover>(null)
   const [chartDrawerOpen, setChartDrawerOpen] = useState(false)
   const [hoveredChartId, setHoveredChartId] = useState<string | null>(null)
   const [draggingChartId, setDraggingChartId] = useState<string | null>(null)
@@ -462,6 +460,7 @@ export default function TestExecutionCharts({
   const [chartCardSizes, setChartCardSizes] = useState<Record<string, ChartCardSize>>({})
   const chartCardRefs = useRef<Record<string, ChartCardElement>>({})
   const chartMenuRef = useRef<HTMLDivElement | null>(null)
+  const axisLabelPopoverRef = useRef<HTMLDivElement | null>(null)
   const commandCenterSurface = surface === 'command-center'
   const loadImpactSourceData = loadImpactData.length > 0 ? loadImpactData : filteredData
   const loadImpactModel = useMemo(() => buildLoadImpactModel(loadImpactSourceData), [loadImpactSourceData])
@@ -606,6 +605,31 @@ export default function TestExecutionCharts({
       window.removeEventListener('keydown', closeMenuOnEscape)
     }
   }, [chartMenu])
+
+  useEffect(() => {
+    if (!axisLabelPopover) return
+    const closeAxisLabelPopover = () => setAxisLabelPopover(null)
+    const closeAxisLabelPopoverOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Node && axisLabelPopoverRef.current?.contains(target)) {
+        return
+      }
+      setAxisLabelPopover(null)
+    }
+    const closeAxisLabelPopoverOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setAxisLabelPopover(null)
+      }
+    }
+    window.addEventListener('pointerdown', closeAxisLabelPopoverOnOutsidePointerDown)
+    window.addEventListener('resize', closeAxisLabelPopover)
+    window.addEventListener('keydown', closeAxisLabelPopoverOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', closeAxisLabelPopoverOnOutsidePointerDown)
+      window.removeEventListener('resize', closeAxisLabelPopover)
+      window.removeEventListener('keydown', closeAxisLabelPopoverOnEscape)
+    }
+  }, [axisLabelPopover])
 
   useEffect(() => {
     if (!chartDrawerOpen) return
@@ -976,6 +1000,7 @@ export default function TestExecutionCharts({
   const openChartMenu = (event: MouseEvent<HTMLElement>, chartId: string) => {
     event.preventDefault()
     event.stopPropagation()
+    setAxisLabelPopover(null)
     const menuWidth = 224
     const menuHeight = 340
     const viewportWidth = window.innerWidth || 1024
@@ -986,6 +1011,41 @@ export default function TestExecutionCharts({
       y: Math.max(12, Math.min(event.clientY, viewportHeight - menuHeight - 12)),
     })
   }
+
+  const openAxisLabelPopover = (event: AxisInteractionEvent | null, label: string) => {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
+    const targetRect = event?.currentTarget instanceof Element
+      ? event.currentTarget.getBoundingClientRect()
+      : null
+    const fallbackX = targetRect ? targetRect.left + targetRect.width / 2 : (window.innerWidth || 1024) / 2
+    const fallbackY = targetRect ? targetRect.top + targetRect.height / 2 : (window.innerHeight || 768) / 2
+    const clientX = typeof event?.clientX === 'number' && event.clientX > 0 ? event.clientX : fallbackX
+    const clientY = typeof event?.clientY === 'number' && event.clientY > 0 ? event.clientY : fallbackY
+    const popoverWidth = 196
+    const popoverHeight = 78
+    const viewportWidth = window.innerWidth || 1024
+    const viewportHeight = window.innerHeight || 768
+    setChartMenu(null)
+    setAxisLabelPopover({
+      label,
+      x: Math.max(12, Math.min(clientX + 10, viewportWidth - popoverWidth - 12)),
+      y: Math.max(12, Math.min(clientY - 12, viewportHeight - popoverHeight - 12)),
+    })
+  }
+
+  const axisInteractionProps = (label: string) => ({
+    className: 'chart-y-axis-click-target',
+    role: 'button',
+    tabIndex: 0,
+    'aria-label': `Show ${label} axis label`,
+    onClick: (...args: unknown[]) => openAxisLabelPopover(args.find(isAxisInteractionEvent) ?? null, label),
+    onKeyDown: (event: ReactKeyboardEvent<Element>) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        openAxisLabelPopover(event, label)
+      }
+    },
+  })
 
   const runChartAction = (action: () => void) => {
     action()
@@ -1322,6 +1382,7 @@ export default function TestExecutionCharts({
     const visibleOverlayKeys = visibleOverlayMetricKeys(chart, visibleMetricKeys)
     const showVuserAxis = visibleOverlayKeys.includes('vusers')
     const rateAxisLabel = rateOverlayAxisLabel(visibleOverlayKeys)
+    const overlayAxisWidth = commandCenterSurface ? COMMAND_CENTER_OVERLAY_Y_AXIS_WIDTH : OVERLAY_Y_AXIS_WIDTH
     return (
       <>
         {showVuserAxis && (
@@ -1330,9 +1391,10 @@ export default function TestExecutionCharts({
             orientation="right"
             stroke={overlayMetricRows.vusers.color}
             fontSize={11}
-            width={72}
+            width={overlayAxisWidth}
+            tickMargin={2}
             domain={[0, 'auto']}
-            label={rightAxisLabel('VUsers')}
+            {...axisInteractionProps('VUsers')}
           />
         )}
         {rateAxisLabel && (
@@ -1341,25 +1403,30 @@ export default function TestExecutionCharts({
             orientation="right"
             stroke="var(--text-muted)"
             fontSize={11}
-            width={86}
+            width={overlayAxisWidth}
+            tickMargin={2}
             domain={[0, 'auto']}
-            label={rightAxisLabel(rateAxisLabel)}
+            {...axisInteractionProps(rateAxisLabel)}
           />
         )}
       </>
     )
   }
 
-  const renderMetricAxis = (chart: ChartConfig, visibleMetricKeys: string[], domain?: ChartDomain) => (
-    <YAxis
-      yAxisId={metricYAxisId(chart, visibleMetricKeys)}
-      stroke="var(--text-muted)"
-      fontSize={11}
-      width={82}
-      domain={domain}
-      label={leftAxisLabel(chart.id === 'network_latency' && routeLatencyMode === 'stability' ? 'Jitter (ms)' : chartPrimaryYAxisLabel(chart))}
-    />
-  )
+  const renderMetricAxis = (chart: ChartConfig, visibleMetricKeys: string[], domain?: ChartDomain) => {
+    const label = chart.id === 'network_latency' && routeLatencyMode === 'stability' ? 'Jitter (ms)' : chartPrimaryYAxisLabel(chart)
+    return (
+      <YAxis
+        yAxisId={metricYAxisId(chart, visibleMetricKeys)}
+        stroke="var(--text-muted)"
+        fontSize={11}
+        width={commandCenterSurface ? COMMAND_CENTER_PRIMARY_Y_AXIS_WIDTH : PRIMARY_Y_AXIS_WIDTH}
+        tickMargin={2}
+        domain={domain}
+        {...axisInteractionProps(label)}
+      />
+    )
+  }
 
   const routeLatencySuccessRateKey = activeRouteLatencyKey
     ? routeLatencyDetailSeriesKey(activeRouteLatencyKey, 'successRate')
@@ -1372,9 +1439,10 @@ export default function TestExecutionCharts({
         orientation="right"
         stroke="var(--chart-5)"
         fontSize={11}
-        width={86}
+        width={commandCenterSurface ? COMMAND_CENTER_OVERLAY_Y_AXIS_WIDTH : OVERLAY_Y_AXIS_WIDTH}
+        tickMargin={2}
         domain={[0, 100]}
-        label={rightAxisLabel('Success (%)')}
+        {...axisInteractionProps('Success (%)')}
       />
     ) : null
   )
@@ -1874,9 +1942,9 @@ export default function TestExecutionCharts({
               chart.domain,
             )
             const chartTitle = chartTitleWithOverlays(chart, visibleOverlayKeysForTitle)
-            const baseChartMargin = chartMarginForOverlayKeys(visibleOverlayKeysForTitle) ?? {}
+            const baseChartMargin = chartMarginForOverlayKeys(visibleOverlayKeysForTitle, commandCenterSurface) ?? {}
             const chartMargin = chart.id === 'network_latency' && routeLatencyMode === 'stability' && visibleMetricKeys.includes(routeLatencySuccessRateKey)
-              ? { ...baseChartMargin, right: Math.max(baseChartMargin.right ?? 0, 88) }
+              ? { ...baseChartMargin, right: Math.max(baseChartMargin.right ?? 0, commandCenterSurface ? 4 : 70) }
               : baseChartMargin
             const metricAxisIdForChart = metricYAxisId(chart, visibleMetricKeys)
             const showMetric = (key: string) => visibleMetricKeys.includes(key)
@@ -2357,6 +2425,23 @@ export default function TestExecutionCharts({
           <button type="button" role="menuitem" onClick={() => runChartAction(() => exportChartCsv(contextChart))}>Export Graph Data</button>
           <button type="button" role="menuitem" onClick={() => runChartAction(() => copyLatestValues(contextChart))}>Copy Latest Values</button>
           <button type="button" role="menuitem" onClick={() => runChartAction(() => toggleChartVisibility(contextChart.id))}>Hide Graph</button>
+        </div>
+      )}
+      {axisLabelPopover && (
+        <div
+          ref={axisLabelPopoverRef}
+          className="chart-axis-label-popover"
+          style={{ left: axisLabelPopover.x, top: axisLabelPopover.y }}
+          role="status"
+          aria-live="polite"
+          onClick={event => event.stopPropagation()}
+          onContextMenu={event => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+        >
+          <div className="chart-axis-label-popover-title">Y-axis</div>
+          <div className="chart-axis-label-popover-value">{axisLabelPopover.label}</div>
         </div>
       )}
     </>

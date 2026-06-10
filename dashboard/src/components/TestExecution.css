@@ -2085,6 +2085,53 @@
   color: #ffffff;
 }
 
+.chart-y-axis-click-target {
+  cursor: help;
+}
+
+.chart-y-axis-click-target .recharts-cartesian-axis-tick-value {
+  cursor: help;
+}
+
+.chart-y-axis-click-target:focus-visible {
+  outline: none;
+}
+
+.chart-y-axis-click-target:focus-visible .recharts-cartesian-axis-line {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.chart-axis-label-popover {
+  position: fixed;
+  z-index: 1220;
+  min-width: 156px;
+  max-width: 220px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(33, 36, 47, 0.96);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(12px);
+}
+
+.chart-axis-label-popover-title {
+  margin-bottom: 4px;
+  color: #aeb7c8;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.chart-axis-label-popover-value {
+  color: #f3f6fb;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
 .time-range-selector {
   display: flex;
   background: var(--bg-secondary);

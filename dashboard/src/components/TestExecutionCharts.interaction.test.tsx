@@ -113,11 +113,17 @@ vi.mock('recharts', () => {
       label,
       orientation,
       domain,
+      onClick,
+      className,
+      ...props
     }: {
       yAxisId?: string | number
       label?: string | { value?: string; position?: string }
       orientation?: string
       domain?: Array<string | number>
+      onClick?: (...args: unknown[]) => void
+      className?: string
+      'aria-label'?: string
     }) => (
       <g
         data-testid="mock-y-axis"
@@ -126,6 +132,9 @@ vi.mock('recharts', () => {
         data-label={labelText(label)}
         data-label-position={labelPosition(label)}
         data-domain={Array.isArray(domain) ? domain.join('|') : ''}
+        data-axis-aria-label={props['aria-label'] ?? ''}
+        className={className}
+        onClick={onClick}
       />
     ),
   }
@@ -241,8 +250,15 @@ describe('TestExecutionCharts context menu', () => {
     const vusersChart = container.querySelectorAll('.chart-card')[0]
     expect(vusersChart?.textContent).toContain('Virtual Users')
     expect(vusersChart?.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('')
-    expect(axisLabels(vusersChart)).toContain('VUsers')
-    expect(axisLabelPositions(vusersChart)).toContain('left')
+    expect(axisLabels(vusersChart)).toEqual([])
+    expect(axisAriaLabels(vusersChart)).toContain('Show VUsers axis label')
+
+    await act(async () => {
+      vusersChart?.querySelector('[data-testid="mock-y-axis"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 140, clientY: 180 }))
+    })
+
+    expect(container.querySelector('.chart-axis-label-popover-title')?.textContent).toBe('Y-axis')
+    expect(container.querySelector('.chart-axis-label-popover-value')?.textContent).toBe('VUsers')
 
     await act(async () => {
       vusersChart?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 180, clientY: 160 }))
@@ -258,8 +274,8 @@ describe('TestExecutionCharts context menu', () => {
 
     expect(vusersChart?.querySelector('path[data-testid="mock-line"][data-name="ART"]')).not.toBeNull()
     expect(vusersChart?.querySelector('.chart-title')?.textContent).toBe('Virtual Users + ART')
-    expect(axisLabels(vusersChart)).toEqual(expect.arrayContaining(['VUsers', 'ART (ms)']))
-    expect(axisLabelPositions(vusersChart)).toEqual(expect.arrayContaining(['left', 'right']))
+    expect(axisLabels(vusersChart)).toEqual([])
+    expect(axisAriaLabels(vusersChart)).toEqual(expect.arrayContaining(['Show VUsers axis label', 'Show ART (ms) axis label']))
     expect(window.localStorage.getItem('apexload.execution.artOverlayCharts')).toBe('["vusers"]')
 
     await act(async () => {
@@ -276,7 +292,8 @@ describe('TestExecutionCharts context menu', () => {
 
     expect(vusersChart?.querySelector('path[data-testid="mock-line"][data-name="TPS"]')).not.toBeNull()
     expect(vusersChart?.querySelector('.chart-title')?.textContent).toBe('Virtual Users + ART + TPS')
-    expect(axisLabels(vusersChart)).toEqual(expect.arrayContaining(['VUsers', 'ART (ms) / TPS']))
+    expect(axisLabels(vusersChart)).toEqual([])
+    expect(axisAriaLabels(vusersChart)).toContain('Show ART (ms) / TPS axis label')
     expect(window.localStorage.getItem('apexload.execution.tpsOverlayCharts')).toBe('["vusers"]')
   })
 
@@ -1025,8 +1042,8 @@ describe('TestExecutionCharts context menu', () => {
     })
 
     expect(window.localStorage.getItem('apexload.execution.routeLatencyMode')).toBe('stability')
-    expect(axisLabels(routeChart())).toContain('Jitter (ms)')
-    expect(axisLabels(routeChart())).toContain('Success (%)')
+    expect(axisLabels(routeChart())).toEqual([])
+    expect(axisAriaLabels(routeChart())).toEqual(expect.arrayContaining(['Show Jitter (ms) axis label', 'Show Success (%) axis label']))
     expect(routeChart()?.querySelector('path[data-testid="mock-line"][data-key="latency_jitter_edge"][data-name="Jitter"]')).not.toBeNull()
     expect(routeChart()?.querySelector('path[data-testid="mock-line"][data-key="latency_success_rate_edge"][data-name="Success Rate"][data-y-axis-id="successRate"]')).not.toBeNull()
   })
@@ -1161,9 +1178,9 @@ describe('TestExecutionCharts context menu', () => {
       .filter(Boolean)
   }
 
-  function axisLabelPositions(chart: Element | undefined) {
+  function axisAriaLabels(chart: Element | undefined) {
     return Array.from(chart?.querySelectorAll('[data-testid="mock-y-axis"]') ?? [])
-      .map(axis => axis.getAttribute('data-label-position'))
+      .map(axis => axis.getAttribute('data-axis-aria-label'))
       .filter(Boolean)
   }
 
