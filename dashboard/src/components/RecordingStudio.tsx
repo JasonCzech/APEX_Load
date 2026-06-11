@@ -7,6 +7,7 @@ import { Project } from '../types'
 import { type RecorderImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { withFallbackPersistedScript } from './importSaveUtils'
+import PageViewToggle from './PageViewToggle'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import {
@@ -94,6 +95,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const api = useApi()
   const [sessions, setSessions] = useState<RecordingSession[]>([])
   const [activeSession, setActiveSession] = useState<RecordingSession | null>(null)
+  const [proxyPlatformView, setProxyPlatformView] = useState<'macos' | 'windows'>('macos')
   const [proxyAddr, setProxyAddr] = useState('')
   const [caCertPath, setCaCertPath] = useState('')
   const [macOSNetworkService, setMacOSNetworkService] = useState(DEFAULT_MACOS_NETWORK_SERVICE)
@@ -485,43 +487,56 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
                   <div><span className="rec-os-label">Windows 11:</span> Settings &rarr; Network &amp; internet &rarr; Proxy &rarr; Manual proxy setup &rarr; <code>localhost</code> port <code>{proxyPort}</code></div>
                 </div>
                 <div className="rec-proxy-shortcut">
-                  <div className="rec-proxy-platform">
-                    <div className="rec-proxy-platform-title">macOS</div>
-                    <label className="rec-proxy-service">
-                      <span>Network service</span>
-                      <input
-                        className="rec-input"
-                        aria-label="macOS network service"
-                        value={macOSNetworkService}
-                        onChange={e => setMacOSNetworkService(e.target.value)}
-                      />
-                    </label>
-                    <div className="rec-shortcut-actions">
-                      <button className="rec-download-alt" type="button" onClick={() => handleCopyMacOSProxyCommand('start')}>
-                        Copy Start Proxy Command
-                      </button>
-                      <button className="rec-download-alt" type="button" onClick={() => handleCopyMacOSProxyCommand('restore')}>
-                        Copy Restore Proxy Command
-                      </button>
-                      <button className="rec-download-alt" type="button" onClick={handleOpenMacOSNetworkSettings}>
-                        Open Network Settings
-                      </button>
+                  <PageViewToggle
+                    value={proxyPlatformView}
+                    ariaLabel="Proxy command platform"
+                    className="rec-proxy-platform-toggle script-page-toggle"
+                    onChange={value => setProxyPlatformView(value)}
+                    options={[
+                      { value: 'macos', label: 'macOS' },
+                      { value: 'windows', label: 'Windows 11' },
+                    ]}
+                  />
+                  {proxyPlatformView === 'macos' ? (
+                    <div className="rec-proxy-platform">
+                      <div className="rec-proxy-platform-title">macOS</div>
+                      <label className="rec-proxy-service">
+                        <span>Network service</span>
+                        <input
+                          className="rec-input"
+                          aria-label="macOS network service"
+                          value={macOSNetworkService}
+                          onChange={e => setMacOSNetworkService(e.target.value)}
+                        />
+                      </label>
+                      <div className="rec-shortcut-actions">
+                        <button className="rec-download-alt" type="button" onClick={() => handleCopyMacOSProxyCommand('start')}>
+                          Copy Start Proxy Command
+                        </button>
+                        <button className="rec-download-alt" type="button" onClick={() => handleCopyMacOSProxyCommand('restore')}>
+                          Copy Restore Proxy Command
+                        </button>
+                        <button className="rec-download-alt" type="button" onClick={handleOpenMacOSNetworkSettings}>
+                          Open Network Settings
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="rec-proxy-platform">
-                    <div className="rec-proxy-platform-title">Windows 11</div>
-                    <div className="rec-shortcut-actions">
-                      <button className="rec-download-alt" type="button" onClick={() => handleCopyWindowsProxyCommand('start')}>
-                        Copy Windows Start Command
-                      </button>
-                      <button className="rec-download-alt" type="button" onClick={() => handleCopyWindowsProxyCommand('restore')}>
-                        Copy Windows Restore Command
-                      </button>
-                      <button className="rec-download-alt" type="button" onClick={handleOpenWindowsProxySettings}>
-                        Open Windows Proxy Settings
-                      </button>
+                  ) : (
+                    <div className="rec-proxy-platform">
+                      <div className="rec-proxy-platform-title">Windows 11</div>
+                      <div className="rec-shortcut-actions">
+                        <button className="rec-download-alt" type="button" onClick={() => handleCopyWindowsProxyCommand('start')}>
+                          Copy Windows Start Command
+                        </button>
+                        <button className="rec-download-alt" type="button" onClick={() => handleCopyWindowsProxyCommand('restore')}>
+                          Copy Windows Restore Command
+                        </button>
+                        <button className="rec-download-alt" type="button" onClick={handleOpenWindowsProxySettings}>
+                          Open Windows Proxy Settings
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             </div>

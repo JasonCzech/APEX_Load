@@ -375,6 +375,7 @@ describe('RecordingStudio', () => {
     })
     await flushPromises()
 
+    expect(container.textContent).not.toContain('Copy Windows Start Command')
     const serviceInput = container.querySelector('input[aria-label="macOS network service"]') as HTMLInputElement | null
     expect(serviceInput).toBeDefined()
     if (!serviceInput) return
@@ -411,6 +412,16 @@ describe('RecordingStudio', () => {
     })
     await flushPromises()
 
+    const windowsToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Windows 11')
+    expect(windowsToggle).toBeDefined()
+    if (!windowsToggle) return
+
+    await act(async () => {
+      windowsToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.querySelector('input[aria-label="macOS network service"]')).toBeNull()
     const startShortcut = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Copy Windows Start Command')
     expect(startShortcut).toBeDefined()
     if (!startShortcut) return

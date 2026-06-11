@@ -238,14 +238,22 @@
 }
 
 .rec-proxy-shortcut {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   margin-top: 4px;
   padding: 10px 12px;
   background: var(--bg-hover);
   border: 1px solid var(--border);
   border-radius: 6px;
+}
+
+.rec-proxy-platform-toggle {
+  align-self: flex-start;
+}
+
+.rec-proxy-platform-toggle .mode-chip {
+  min-width: 112px;
 }
 
 .rec-proxy-platform {
