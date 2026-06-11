@@ -148,6 +148,7 @@ type DebuggerTab = 'request' | 'browser'
 type DebuggerBottomTab = 'console' | 'timeline' | 'problems' | 'output'
 type DebuggerResizeKind = 'rail' | 'vars' | 'bottom'
 type JsonDraftParseResult = { ok: true; script: ScriptData } | { ok: false; message: string }
+type ScriptJsonSidebarTab = 'map' | 'auto-params' | 'details'
 
 interface CenterWorkbenchTabDescriptor {
   id: CenterWorkbenchTabId
@@ -157,6 +158,7 @@ interface CenterWorkbenchTabDescriptor {
 }
 
 type AuthorRightSidebarKind =
+  | 'auto-parameterization'
   | 'signals'
   | 'parameters'
   | 'inspector'
@@ -274,6 +276,7 @@ const DEBUGGER_LAYOUT_LIMITS: Record<DebuggerResizeKind, { max: number; min: num
 
 const setScriptCodeRange = StateEffect.define<LineRange | null>()
 const setScriptCodeParameterMatches = StateEffect.define<ScriptCodeMatchRange[]>()
+const setScriptCodeCandidateMatches = StateEffect.define<ScriptCodeMatchRange[]>()
 
 interface ScriptCodeMatchRange {
   from: number
@@ -328,6 +331,34 @@ const scriptCodeParameterMatchField = StateField.define<DecorationSet>({
     for (const effect of tr.effects) {
       if (effect.is(setScriptCodeParameterMatches)) {
         next = buildScriptCodeParameterDecorations(tr.state, effect.value)
+      }
+    }
+    return next
+  },
+  provide: field => EditorView.decorations.from(field),
+})
+
+function buildScriptCodeCandidateDecorations(state: EditorView['state'], ranges: ScriptCodeMatchRange[]): DecorationSet {
+  if (ranges.length === 0) return Decoration.none
+  const builder = new RangeSetBuilder<Decoration>()
+  const matchDeco = Decoration.mark({ class: 'script-code-auto-parameter-match' })
+  const firstMatchDeco = Decoration.mark({ class: 'script-code-auto-parameter-match first' })
+  ranges
+    .filter(range => range.from >= 0 && range.to > range.from && range.to <= state.doc.length)
+    .sort((left, right) => left.from - right.from || left.to - right.to)
+    .forEach((range, index) => {
+      builder.add(range.from, range.to, index === 0 ? firstMatchDeco : matchDeco)
+    })
+  return builder.finish()
+}
+
+const scriptCodeCandidateMatchField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(decorations, tr) {
+    let next = decorations.map(tr.changes)
+    for (const effect of tr.effects) {
+      if (effect.is(setScriptCodeCandidateMatches)) {
+        next = buildScriptCodeCandidateDecorations(tr.state, effect.value)
       }
     }
     return next
@@ -606,10 +637,12 @@ interface ScriptCodePaneProps {
   activePath: string
   activeRange: LineRange | null
   activeParameterName?: string | null
+  activeCandidateName?: string | null
   actionCount: number
   assistExtensions?: Extension[]
   className?: string
   jumpToLineRequest?: ScriptCodeLineJumpRequest | null
+  candidateMatchRanges?: ScriptCodeMatchRange[]
   parameterMatchRanges?: ScriptCodeMatchRange[]
   onApply: () => void
   onChange: (value: string) => void
@@ -629,10 +662,12 @@ function ScriptCodePane({
   activePath,
   activeRange,
   activeParameterName,
+  activeCandidateName,
   actionCount,
   assistExtensions,
   className = '',
   jumpToLineRequest,
+  candidateMatchRanges = [],
   parameterMatchRanges = [],
   onApply,
   onChange,
@@ -653,6 +688,7 @@ function ScriptCodePane({
     apexDslSemanticHighlighting(),
     scriptCodeRangeField,
     scriptCodeParameterMatchField,
+    scriptCodeCandidateMatchField,
     EditorView.lineWrapping,
     ...(assistExtensions ?? []),
   ], [assistExtensions])
@@ -662,8 +698,15 @@ function ScriptCodePane({
     () => parameterMatchRanges.map(range => `${range.from}:${range.to}`).join('|'),
     [parameterMatchRanges],
   )
+  const candidateMatchKey = useMemo(
+    () => candidateMatchRanges.map(range => `${range.from}:${range.to}`).join('|'),
+    [candidateMatchRanges],
+  )
   const parameterStatus = activeParameterName
     ? `Parameter: ${activeParameterName} (${parameterMatchRanges.length} occurrence${parameterMatchRanges.length === 1 ? '' : 's'})`
+    : ''
+  const candidateStatus = activeCandidateName
+    ? `Auto parameter: ${activeCandidateName} (${candidateMatchRanges.length} highlighted)`
     : ''
 
   const emitScrollSnapshot = useCallback(() => {
@@ -782,6 +825,24 @@ function ScriptCodePane({
 
   useEffect(() => {
     const view = viewRef.current
+    if (!view) return
+    const firstMatch = candidateMatchRanges[0]
+    const effects: StateEffect<unknown>[] = [setScriptCodeCandidateMatches.of(candidateMatchRanges)]
+    if (firstMatch && firstMatch.to <= view.state.doc.length) {
+      effects.push(EditorView.scrollIntoView(firstMatch.from, { y: 'center' }))
+      view.dispatch({
+        selection: EditorSelection.range(firstMatch.from, firstMatch.to),
+        effects,
+      })
+      emitScrollSnapshot()
+      return
+    }
+    view.dispatch({ effects })
+    emitScrollSnapshot()
+  }, [candidateMatchKey, candidateMatchRanges, editorReadyVersion, emitScrollSnapshot, value])
+
+  useEffect(() => {
+    const view = viewRef.current
     if (!view || !jumpToLineRequest) return
     const lineNo = Math.max(1, Math.min(view.state.doc.lines, jumpToLineRequest.line))
     const line = view.state.doc.line(lineNo)
@@ -815,7 +876,7 @@ function ScriptCodePane({
       <div className="script-code-toolbar">
         <div className="script-code-title">
           <strong>{'{ }'} Script JSON</strong>
-          <span>{parameterStatus || activePath || `${actionCount} executable${actionCount === 1 ? '' : 's'}`}</span>
+          <span>{candidateStatus || parameterStatus || activePath || `${actionCount} executable${actionCount === 1 ? '' : 's'}`}</span>
         </div>
         <div className="script-code-status-row">
           <span className={`script-code-status ${status}`}>{statusMessage}</span>
@@ -865,6 +926,7 @@ interface JsonMinimapLine {
 interface JsonSourceMinimapProps {
   activePath: string
   activeRange: LineRange | null
+  candidateMatchRanges?: ScriptCodeMatchRange[]
   jsonText: string
   parameterMatchRanges: ScriptCodeMatchRange[]
   scrollSnapshot: ScriptCodeScrollSnapshot
@@ -894,6 +956,7 @@ function buildJsonMinimapLines(
   jsonText: string,
   activeRange: LineRange | null,
   parameterMatchRanges: ScriptCodeMatchRange[],
+  candidateMatchRanges: ScriptCodeMatchRange[] = [],
 ): JsonMinimapLine[] {
   const lines = jsonText.split('\n')
   const lineStarts: number[] = []
@@ -905,7 +968,8 @@ function buildJsonMinimapLines(
 
   const parameterLines = new Set<number>()
   let firstParameterLine: number | null = null
-  parameterMatchRanges.forEach((range, index) => {
+  const highlightedRanges = [...candidateMatchRanges, ...parameterMatchRanges]
+  highlightedRanges.forEach((range, index) => {
     const startLine = lineNumberForOffset(lineStarts, range.from)
     const endLine = lineNumberForOffset(lineStarts, Math.max(range.from, range.to - 1))
     for (let lineNo = startLine; lineNo <= endLine; lineNo += 1) {
@@ -932,6 +996,7 @@ function buildJsonMinimapLines(
 function JsonSourceMinimap({
   activePath,
   activeRange,
+  candidateMatchRanges = [],
   jsonText,
   parameterMatchRanges,
   scrollSnapshot,
@@ -944,8 +1009,8 @@ function JsonSourceMinimap({
   const sourceMapLinesRef = useRef<HTMLDivElement | null>(null)
   const dragStateRef = useRef<{ pointerId: number | null; startY: number; startRatio: number; trackHeight: number } | null>(null)
   const lines = useMemo(
-    () => buildJsonMinimapLines(jsonText, activeRange, parameterMatchRanges),
-    [activeRange, jsonText, parameterMatchRanges],
+    () => buildJsonMinimapLines(jsonText, activeRange, parameterMatchRanges, candidateMatchRanges),
+    [activeRange, candidateMatchRanges, jsonText, parameterMatchRanges],
   )
   const activeLabel = selectedParameterName
     ? `${selectedParameterName}: ${parameterMatchRanges.length} occurrence${parameterMatchRanges.length === 1 ? '' : 's'}`
@@ -2138,6 +2203,91 @@ interface ParameterCandidate {
   selected: boolean
 }
 
+function codePathForParameterCandidateOccurrence(occurrence?: CandidateOccurrence | null) {
+  if (!occurrence) return ''
+  if (occurrence.field === 'header' && occurrence.headerKey) {
+    return `script.actions[${occurrence.actionIdx}].headers.${occurrence.headerKey}`
+  }
+  return `script.actions[${occurrence.actionIdx}].${occurrence.field}`
+}
+
+function formatParameterCandidateOccurrence(occurrence?: CandidateOccurrence | null) {
+  if (!occurrence) return 'No occurrence selected'
+  const field = occurrence.field === 'header' && occurrence.headerKey
+    ? `header ${occurrence.headerKey}`
+    : occurrence.field
+  return `Action ${occurrence.actionIdx + 1} / ${field}`
+}
+
+function normalizeOccurrenceIndex(count: number, index: number) {
+  if (count <= 0) return 0
+  return ((index % count) + count) % count
+}
+
+function offsetForLine(text: string, lineNo: number) {
+  const targetLine = Math.max(1, lineNo)
+  let currentLine = 1
+  let offset = 0
+  while (currentLine < targetLine && offset < text.length) {
+    const nextBreak = text.indexOf('\n', offset)
+    if (nextBreak === -1) return text.length
+    offset = nextBreak + 1
+    currentLine += 1
+  }
+  return offset
+}
+
+function offsetsForLineRange(text: string, range: LineRange): ScriptCodeMatchRange {
+  const from = offsetForLine(text, range.startLine)
+  const nextLineOffset = offsetForLine(text, range.endLine + 1)
+  return {
+    from,
+    to: nextLineOffset > from ? nextLineOffset - 1 : text.length,
+  }
+}
+
+function escapedJsonStringContent(value: string) {
+  return JSON.stringify(value).slice(1, -1)
+}
+
+function occurrenceOrdinalForPath(candidate: ParameterCandidate, occurrenceIndex: number, path: string) {
+  let ordinal = 0
+  for (let index = 0; index < occurrenceIndex; index += 1) {
+    if (codePathForParameterCandidateOccurrence(candidate.occurrences[index]) === path) {
+      ordinal += 1
+    }
+  }
+  return ordinal
+}
+
+function findCandidateLiteralRangeInJson(
+  jsonText: string,
+  lineRange: LineRange | null,
+  candidate: ParameterCandidate | null,
+  occurrenceIndex: number,
+): ScriptCodeMatchRange[] {
+  if (!lineRange || !candidate?.value) return []
+  const activeOccurrence = candidate.occurrences[occurrenceIndex]
+  const activePath = codePathForParameterCandidateOccurrence(activeOccurrence)
+  const ordinal = occurrenceOrdinalForPath(candidate, occurrenceIndex, activePath)
+  const offsets = offsetsForLineRange(jsonText, lineRange)
+  const segment = jsonText.slice(offsets.from, offsets.to)
+  const needle = escapedJsonStringContent(candidate.value)
+  if (!needle) return []
+  let matchOffset = -1
+  let searchFrom = 0
+  for (let index = 0; index <= ordinal; index += 1) {
+    matchOffset = segment.indexOf(needle, searchFrom)
+    if (matchOffset < 0) break
+    searchFrom = matchOffset + Math.max(1, needle.length)
+  }
+  if (matchOffset < 0 && ordinal > 0) {
+    matchOffset = segment.indexOf(needle)
+  }
+  if (matchOffset < 0) return []
+  return [{ from: offsets.from + matchOffset, to: offsets.from + matchOffset + needle.length }]
+}
+
 function formatKeyValueLines(values?: Record<string, string>) {
   return Object.entries(values || {}).map(([key, value]) => `${key}=${value}`).join('\n')
 }
@@ -2611,6 +2761,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [debugActionListCollapsed, setDebugActionListCollapsed] = useState(false)
   const [debugParameterListCollapsed, setDebugParameterListCollapsed] = useState(false)
   const [selectedOutlineParameterName, setSelectedOutlineParameterName] = useState<string | null>(null)
+  const [scriptJsonSidebarTab, setScriptJsonSidebarTab] = useState<ScriptJsonSidebarTab>('map')
+  const [activeAutoParameterCandidateId, setActiveAutoParameterCandidateId] = useState<string | null>(null)
+  const [activeAutoParameterOccurrenceIndex, setActiveAutoParameterOccurrenceIndex] = useState(0)
   const [jsonLineJumpRequest, setJsonLineJumpRequest] = useState<ScriptCodeLineJumpRequest | null>(null)
   const [scriptCodeScrollSnapshot, setScriptCodeScrollSnapshot] = useState<ScriptCodeScrollSnapshot>(SCRIPT_CODE_SCROLL_EMPTY)
   const [scriptCodeScrollController, setScriptCodeScrollController] = useState<ScriptCodeScrollController | null>(null)
@@ -2660,6 +2813,38 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       : [],
     [jsonText, selectedOutlineParameterExists, selectedOutlineParameterName],
   )
+  const activeAutoParameterCandidate = useMemo(
+    () => parameterCandidates.find(candidate => candidate.id === activeAutoParameterCandidateId) || parameterCandidates[0] || null,
+    [activeAutoParameterCandidateId, parameterCandidates],
+  )
+  const activeAutoParameterOccurrenceCount = activeAutoParameterCandidate?.occurrences.length || 0
+  const normalizedAutoParameterOccurrenceIndex = normalizeOccurrenceIndex(
+    activeAutoParameterOccurrenceCount,
+    activeAutoParameterOccurrenceIndex,
+  )
+  const activeAutoParameterOccurrence = activeAutoParameterCandidate
+    ? activeAutoParameterCandidate.occurrences[normalizedAutoParameterOccurrenceIndex] || null
+    : null
+  const autoParameterSidebarActive = scriptJsonSidebarTab === 'auto-params'
+  const activeAutoParameterPath = autoParameterSidebarActive
+    ? codePathForParameterCandidateOccurrence(activeAutoParameterOccurrence)
+    : ''
+  useEffect(() => {
+    if (parameterCandidates.length === 0) {
+      setActiveAutoParameterCandidateId(null)
+      setActiveAutoParameterOccurrenceIndex(0)
+      return
+    }
+    setActiveAutoParameterCandidateId(current => (
+      current && parameterCandidates.some(candidate => candidate.id === current)
+        ? current
+        : parameterCandidates[0].id
+    ))
+  }, [parameterCandidates])
+  useEffect(() => {
+    if (!activeAutoParameterCandidate) return
+    setActiveAutoParameterOccurrenceIndex(index => normalizeOccurrenceIndex(activeAutoParameterCandidate.occurrences.length, index))
+  }, [activeAutoParameterCandidate])
   const importMetadata = scriptHasImportMetadata(script) ? script.metadata?.import : undefined
   const importSummary = getImportSummary(importMetadata)
   const sourceReview = readSourceReview(importMetadata)
@@ -2729,6 +2914,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }, [availableCenterTabIds])
   const selectOutlineParameter = useCallback((parameterName: string) => {
     setSelectedOutlineParameterName(parameterName)
+    setScriptJsonSidebarTab('map')
     openCenterTab(SCRIPT_JSON_TAB_ID)
   }, [openCenterTab])
   const closeCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
@@ -3001,9 +3187,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
     replaceScriptWithHistory(nextScript)
     setActiveAction(actionIndex)
+    setAuthorCodeFocus({ phase: 'action', actionIndex })
+    setScriptJsonSidebarTab('details')
+    setAuthorRightSidebarCollapsed(false)
+    openCenterTab(SCRIPT_JSON_TAB_ID)
     setError('')
     setSuccess(`Updated selector for ${currentAction.name || `Action ${actionIndex + 1}`}.`)
-  }, [replaceScriptWithHistory, script, setActiveAction, setError, setSuccess])
+  }, [openCenterTab, replaceScriptWithHistory, script, setActiveAction, setError, setSuccess])
 
   const recordAssistantChange = useCallback((title: string, summary: string) => {
     setAssistantChangeLog((previous) => [
@@ -3186,6 +3376,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 		if (focusedActionIndex !== null) {
 			setActiveAction(focusedActionIndex)
       setAuthorCodeFocus({ phase: 'action', actionIndex: focusedActionIndex })
+      setScriptJsonSidebarTab('details')
       setAuthorRightSidebarCollapsed(false)
       setOpenSections(prev => ({ ...prev, import: false }))
 		}
@@ -3222,6 +3413,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setActiveAction(index)
     setAuthorCodeFocus(index === null ? null : { phase: 'action', actionIndex: index })
     if (index !== null && centerTabsState.activeTabId === SCRIPT_JSON_TAB_ID) {
+      setScriptJsonSidebarTab('details')
       setAuthorRightSidebarCollapsed(false)
     }
   }
@@ -4761,7 +4953,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     : null
   const scriptCodeActivePath = workspaceTab === 'debug'
     ? codePathForDebugRow(selectedDebugCodeRow)
-    : authorCodeFocus
+    : activeAutoParameterPath
+      ? activeAutoParameterPath
+      : authorCodeFocus
       ? codePathForDebugRow(authorCodeFocus)
       : activeAction !== null
         ? `script.actions[${activeAction}]`
@@ -4769,6 +4963,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const scriptCodeActiveRange = jsonDirty || jsonParseMessage
     ? null
     : lineRangeForTargetPath(scriptDslDocument.ranges, scriptCodeActivePath)
+  const autoParameterCandidateMatchRanges = jsonDirty || jsonParseMessage
+    ? []
+    : findCandidateLiteralRangeInJson(
+        jsonText,
+        activeAutoParameterPath ? scriptCodeActiveRange : null,
+        activeAutoParameterCandidate,
+        normalizedAutoParameterOccurrenceIndex,
+      )
   const scriptCodeStatusPath = scriptCodeActivePath.replace(/^script\./, '')
 
   useEffect(() => {
@@ -5576,15 +5778,59 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setError('')
   }
 
+  const selectAutoParameterCandidate = (candidateId: string, occurrenceIndex = 0) => {
+    setActiveAutoParameterCandidateId(candidateId)
+    setActiveAutoParameterOccurrenceIndex(occurrenceIndex)
+    setSelectedOutlineParameterName(null)
+    setAuthorCodeFocus(null)
+    setScriptJsonSidebarTab('auto-params')
+    setAuthorRightSidebarCollapsed(false)
+    openCenterTab(SCRIPT_JSON_TAB_ID)
+  }
+
+  const moveAutoParameterOccurrence = (delta: number) => {
+    if (!activeAutoParameterCandidate) return
+    setSelectedOutlineParameterName(null)
+    setAuthorCodeFocus(null)
+    setAuthorRightSidebarCollapsed(false)
+    setActiveAutoParameterOccurrenceIndex(index => normalizeOccurrenceIndex(activeAutoParameterCandidate.occurrences.length, index + delta))
+  }
+
   const scanForAutoParameters = () => {
-    const candidates = buildAutoParameterCandidates(script)
-    openCenterTab('parameter-data')
+    let sourceScript = script
+    if (jsonDirty || jsonParseMessage) {
+      const parsed = parseScriptJsonDraft(jsonText)
+      if (!parsed.ok) {
+        setParameterCandidates([])
+        setActiveAutoParameterCandidateId(null)
+        setActiveAutoParameterOccurrenceIndex(0)
+        setScriptJsonSidebarTab('map')
+        setError(parsed.message)
+        setSuccess('')
+        setDebuggerBottomTab('problems')
+        openCenterTab(SCRIPT_JSON_TAB_ID)
+        return
+      }
+      sourceScript = parsed.script
+      commitJsonDraft(sourceScript)
+    }
+
+    const candidates = buildAutoParameterCandidates(sourceScript)
+    openCenterTab(SCRIPT_JSON_TAB_ID)
+    setScriptJsonSidebarTab('auto-params')
+    setAuthorRightSidebarCollapsed(false)
+    setSelectedOutlineParameterName(null)
+    setAuthorCodeFocus(null)
     setParameterCandidates(candidates)
     if (candidates.length === 0) {
+      setActiveAutoParameterCandidateId(null)
+      setActiveAutoParameterOccurrenceIndex(0)
       setSuccess('No strong parameterization candidates were detected.')
       setError('')
       return
     }
+    setActiveAutoParameterCandidateId(candidates[0].id)
+    setActiveAutoParameterOccurrenceIndex(0)
     setSuccess(`Detected ${candidates.length} parameter candidates. Review and apply below.`)
     setError('')
   }
@@ -5721,6 +5967,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }
 
   const activeInspectorAction = activeAction !== null ? script.actions[activeAction] || null : null
+  const hasScriptJsonDetailsTab = activeInspectorAction !== null && activeAction !== null
+  const activeScriptJsonSidebarTab = scriptJsonSidebarTab === 'details' && !hasScriptJsonDetailsTab
+    ? 'map'
+    : scriptJsonSidebarTab
   const debugEvidenceStatus = replayReport?.completed_at
     ? (replayReport.success ? 'passed' : 'failed')
     : activeReplaySessionId || browserReplaySession
@@ -6005,8 +6255,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           activePath={scriptCodeStatusPath}
           activeRange={scriptCodeActiveRange}
           activeParameterName={selectedOutlineParameterExists ? selectedOutlineParameterName : null}
+          activeCandidateName={autoParameterSidebarActive ? activeAutoParameterCandidate?.varName || activeAutoParameterCandidate?.keyHint || null : null}
           actionCount={scriptPhaseActionRows.length}
           assistExtensions={scriptAssistExtensions}
+          candidateMatchRanges={autoParameterCandidateMatchRanges}
           jumpToLineRequest={jsonLineJumpRequest}
           parameterMatchRanges={parameterMatchRanges}
           onApply={handleApplyJsonDraft}
@@ -6019,11 +6271,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           onScrollControllerChange={handleScriptCodeScrollControllerChange}
           onScrollSnapshotChange={handleScriptCodeScrollSnapshotChange}
         />
-        <AutoParameterizationSection
-          onApplyAutoParameterization={applyAutoParameterization}
-          onUpdateParameterCandidate={updateCandidate}
-          parameterCandidates={parameterCandidates}
-        />
         <ActionParameterMenu
           selectionState={jsonParameterSelection}
           onOpenParameterEditor={openJsonParameterEditor}
@@ -6031,11 +6278,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           onOpenOccurrenceReview={openJsonParameterOccurrenceReview}
           variant="json"
         />
-        {activeInspectorAction && activeAction !== null && (
-          <section className="script-code-inline-inspector" aria-label="Selected action editor">
-            {renderActionInspectorContent()}
-          </section>
-        )}
       </>
     )
   }
@@ -6056,6 +6298,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       case 'parameter-data':
         return { kind: 'parameters', title: 'Parameters', railLabel: 'Parameters' }
       case SCRIPT_JSON_TAB_ID:
+        if (activeScriptJsonSidebarTab === 'auto-params') {
+          return { kind: 'auto-parameterization', title: 'Auto Parameterization', railLabel: 'Auto Params', wide: true }
+        }
+        if (activeScriptJsonSidebarTab === 'details' && activeInspectorAction && activeAction !== null) {
+          return { kind: 'inspector', title: 'Action Details', railLabel: 'Details', wide: true }
+        }
         return { kind: 'source-map', title: 'Source Map', railLabel: 'Map' }
       case 'conversion-mapping':
         return { kind: 'conversion-mapping', title: 'Conversion Mapping', railLabel: 'Mapping' }
@@ -6077,11 +6325,27 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   })()
   const renderContextualRightSidebarContent = (): ReactNode => {
     switch (authorRightSidebarContext.kind) {
+      case 'auto-parameterization':
+        return (
+          <AutoParameterizationSidebar
+            activeCandidateId={activeAutoParameterCandidate?.id || null}
+            activeOccurrenceIndex={normalizedAutoParameterOccurrenceIndex}
+            activeOccurrenceLabel={formatParameterCandidateOccurrence(activeAutoParameterOccurrence)}
+            candidateMatchCount={autoParameterCandidateMatchRanges.length}
+            onApplyAutoParameterization={applyAutoParameterization}
+            onNextOccurrence={() => moveAutoParameterOccurrence(1)}
+            onPreviousOccurrence={() => moveAutoParameterOccurrence(-1)}
+            onSelectCandidate={selectAutoParameterCandidate}
+            onUpdateParameterCandidate={updateCandidate}
+            parameterCandidates={parameterCandidates}
+          />
+        )
       case 'source-map':
         return (
           <JsonSourceMinimap
             activePath={scriptCodeStatusPath}
             activeRange={scriptCodeActiveRange}
+            candidateMatchRanges={autoParameterCandidateMatchRanges}
             jsonText={jsonText}
             onJumpToLine={line => setJsonLineJumpRequest({ line, nonce: Date.now() })}
             onScrollTopChange={handleJsonSourceMapScrollTopChange}
@@ -9657,7 +9921,44 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 ) : (
                 <>
                 <div className="side-pane-header">
-                  <span>{authorRightSidebarContext.title}</span>
+                  {centerTabsState.activeTabId === SCRIPT_JSON_TAB_ID ? (
+                    <div className="script-json-sidebar-header">
+                      <span className="script-json-sidebar-header-title">{authorRightSidebarContext.title}</span>
+                      <div className="script-json-sidebar-tabs" role="tablist" aria-label="Script JSON companion panel">
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={activeScriptJsonSidebarTab === 'map'}
+                          className={`script-json-sidebar-tab ${activeScriptJsonSidebarTab === 'map' ? 'active' : ''}`}
+                          onClick={() => setScriptJsonSidebarTab('map')}
+                        >
+                          Map
+                        </button>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={activeScriptJsonSidebarTab === 'auto-params'}
+                          className={`script-json-sidebar-tab ${activeScriptJsonSidebarTab === 'auto-params' ? 'active' : ''}`}
+                          onClick={() => setScriptJsonSidebarTab('auto-params')}
+                        >
+                          Auto Params
+                        </button>
+                        {hasScriptJsonDetailsTab && (
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={activeScriptJsonSidebarTab === 'details'}
+                            className={`script-json-sidebar-tab ${activeScriptJsonSidebarTab === 'details' ? 'active' : ''}`}
+                            onClick={() => setScriptJsonSidebarTab('details')}
+                          >
+                            Details
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <span>{authorRightSidebarContext.title}</span>
+                  )}
                   <button
                     type="button"
                     className="debugger-pane-close"
@@ -10999,70 +11300,122 @@ function ParameterDraftPanel({
   )
 }
 
-interface AutoParameterizationSectionProps {
+interface AutoParameterizationSidebarProps {
+  activeCandidateId: string | null
+  activeOccurrenceIndex: number
+  activeOccurrenceLabel: string
+  candidateMatchCount: number
   onApplyAutoParameterization: () => void
+  onNextOccurrence: () => void
+  onPreviousOccurrence: () => void
+  onSelectCandidate: (id: string) => void
   onUpdateParameterCandidate: (id: string, patch: Partial<ParameterCandidate>) => void
   parameterCandidates: ParameterCandidate[]
 }
 
-function AutoParameterizationSection({
+function AutoParameterizationSidebar({
+  activeCandidateId,
+  activeOccurrenceIndex,
+  activeOccurrenceLabel,
+  candidateMatchCount,
   onApplyAutoParameterization,
+  onNextOccurrence,
+  onPreviousOccurrence,
+  onSelectCandidate,
   onUpdateParameterCandidate,
   parameterCandidates,
-}: AutoParameterizationSectionProps) {
+}: AutoParameterizationSidebarProps) {
+  const selectedCount = parameterCandidates.filter(candidate => candidate.selected && sanitizeVarName(candidate.varName).length > 0).length
+  const activeCandidate = parameterCandidates.find(candidate => candidate.id === activeCandidateId) || parameterCandidates[0] || null
+  const occurrenceCount = activeCandidate?.occurrences.length || 0
+
   if (parameterCandidates.length === 0) {
-    return null
+    return (
+      <div className="utility-card auto-parameter-sidebar-card">
+        <div className="utility-card-header">
+          <strong>Suggested Fields</strong>
+          <span>0</span>
+        </div>
+        <div className="utility-empty-state">
+          No strong parameterization candidates were detected.
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="auto-parameter-section">
-      <div className="panel-title-row" style={{ marginBottom: 0 }}>
-        <div>
-          <strong style={{ display: 'block', marginBottom: 4 }}>Auto Parameterization</strong>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Scan targets, headers, and body fields for values that can become reusable parameter data.</span>
+    <div className="auto-parameter-sidebar">
+      <div className="utility-card auto-parameter-sidebar-card">
+        <div className="utility-card-header">
+          <strong>Suggested Fields</strong>
+          <span>{parameterCandidates.length}</span>
         </div>
+        <div className="auto-parameter-sidebar-summary">
+          <span>{selectedCount} selected</span>
+          <span>{parameterCandidates.reduce((total, candidate) => total + candidate.occurrences.length, 0)} occurrence(s)</span>
+        </div>
+        <div className="auto-parameter-navigation" aria-label="Auto parameterization occurrence navigation">
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onPreviousOccurrence} disabled={!activeCandidate || occurrenceCount === 0}>
+            Back
+          </button>
+          <span className="auto-parameter-location">
+            {occurrenceCount > 0 ? `${activeOccurrenceIndex + 1} / ${occurrenceCount}` : '0 / 0'}
+            <small>{activeOccurrenceLabel}{candidateMatchCount === 0 ? ' · no literal match' : ''}</small>
+          </span>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onNextOccurrence} disabled={!activeCandidate || occurrenceCount === 0}>
+            Next
+          </button>
+        </div>
+        <button
+          type="button"
+          className="btn btn-sm btn-accent auto-parameter-apply"
+          onClick={onApplyAutoParameterization}
+          disabled={selectedCount === 0}
+        >
+          Apply Selected
+        </button>
       </div>
-      <div className="auto-parameter-panel">
-        <div className="auto-parameter-header">
-          <h4>Review Candidates</h4>
-          <button className="btn btn-sm btn-accent" onClick={onApplyAutoParameterization}>Apply Selected</button>
-        </div>
-        <div className="auto-parameter-table-wrap">
-          <table className="auto-parameter-table">
-            <thead>
-              <tr>
-                <th>Use</th>
-                <th>Field Hint</th>
-                <th>Current Value</th>
-                <th>Variable Name</th>
-                <th>Hits</th>
-              </tr>
-            </thead>
-            <tbody>
-              {parameterCandidates.map(candidate => (
-                <tr key={candidate.id}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={candidate.selected}
-                      onChange={e => onUpdateParameterCandidate(candidate.id, { selected: e.target.checked })}
-                    />
-                  </td>
-                  <td className="cell-mono">{candidate.keyHint}</td>
-                  <td className="cell-mono">{candidate.value}</td>
-                  <td>
-                    <input
-                      value={candidate.varName}
-                      onChange={e => onUpdateParameterCandidate(candidate.id, { varName: sanitizeVarName(e.target.value) })}
-                      placeholder="parameter_name"
-                    />
-                  </td>
-                  <td>{candidate.occurrences.length}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+
+      <div className="auto-parameter-candidate-list" role="list" aria-label="Suggested parameterization fields">
+        {parameterCandidates.map(candidate => {
+          const active = candidate.id === activeCandidate?.id
+          return (
+            <section
+              key={candidate.id}
+              className={`auto-parameter-candidate ${active ? 'active' : ''}`}
+              role="listitem"
+            >
+              <div className="auto-parameter-candidate-main">
+                <label className="auto-parameter-check">
+                  <input
+                    type="checkbox"
+                    checked={candidate.selected}
+                    onChange={event => onUpdateParameterCandidate(candidate.id, { selected: event.target.checked })}
+                  />
+                  <span>Use</span>
+                </label>
+                <button
+                  type="button"
+                  className="auto-parameter-candidate-select"
+                  onClick={() => onSelectCandidate(candidate.id)}
+                >
+                  <strong>{candidate.keyHint}</strong>
+                  <small>{candidate.occurrences.length} hit{candidate.occurrences.length === 1 ? '' : 's'}</small>
+                </button>
+              </div>
+              <code className="auto-parameter-value">{candidate.value}</code>
+              <label className="auto-parameter-name-field">
+                <span>Suggested name</span>
+                <input
+                  value={candidate.varName}
+                  onChange={event => onUpdateParameterCandidate(candidate.id, { varName: sanitizeVarName(event.target.value) })}
+                  onFocus={() => onSelectCandidate(candidate.id)}
+                  placeholder="parameter_name"
+                />
+              </label>
+            </section>
+          )
+        })}
       </div>
     </div>
   )
