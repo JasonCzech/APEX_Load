@@ -1,11 +1,15 @@
 # Binaries and build artifacts
 bin/
+# Local Go tool cache (compiled, platform-specific plugins like protoc-gen-go).
+.bin/
 # Anchored to repo root so these match the compiled binaries only, not the
-# cmd/controller, cmd/generator, and cmd/apexctl source directories.
+# cmd/controller, cmd/generator, cmd/apexctl, and cmd/dslschema source directories.
 /controller
 /generator
 /apexctl
 /main
+# Compiled output of `go run ./cmd/dslschema`; the source lives in cmd/dslschema.
+/dslschema
 *.exe
 *.exe~
 *.dll
@@ -89,3 +93,13 @@ examples/loadrunner/
 
 # Playwright screenshot output
 output/playwright/
+
+# Generated deck output (source is deck_build/gen.js)
+deck_build/*.pptx
+
+# One-off local working files at the repo root — not part of the product
+/files.zip
+/apex-load-logo.png
+/diff_*.txt
+/patch_sla.go
+/update_apexctl.py
