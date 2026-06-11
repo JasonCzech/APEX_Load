@@ -406,7 +406,7 @@ func buildFleetLoadZones(inventory SystemInventoryResponse, tests []*ManagedTest
 					acc.p95Ms += test.LiveMetrics.P95Ms * float64(vusers)
 					acc.p99Ms += test.LiveMetrics.P99Ms * float64(vusers)
 				}
-			case "QUEUED", "PENDING":
+			case "QUEUED", "PENDING", "RESERVED":
 				acc.queued += vusers
 			}
 			if test.CapacityAdvisory != nil && test.CapacityAdvisory.RequiresOverride {
@@ -498,7 +498,7 @@ func buildFleetProjectSlotAccounting(settings SystemSettings, tests []*ManagedTe
 		case "RUNNING", "INITIALIZING", "PAUSED":
 			entry.ActiveSlots += test.TotalVUsers
 			entry.RunningTests++
-		case "PENDING":
+		case "PENDING", "RESERVED":
 			entry.PendingSlots += test.TotalVUsers
 			entry.PendingTests++
 		}

@@ -15,8 +15,20 @@ type ExecutionGoalLimiter struct {
 	transactions    atomic.Int64
 }
 
+// hasExecutionGoals reports whether the run logic configures a shared
+// execution goal that requires an ExecutionGoalLimiter.
+func hasExecutionGoals(runLogic dsl.RunLogicConfig) bool {
+	return runLogic.GlobalIterations > 0 || runLogic.MaxTransactions > 0
+}
+
+// NewExecutionGoalLimiter builds a limiter that stops the run once a shared
+// goal is reached. The cancel function must only stop VUsers from *starting*
+// new iterations/transactions: a VUser that already claimed a reservation via
+// TryStartIteration/TryStartTransaction is entitled to finish and record it,
+// so callers must not abort in-flight iterations with this cancel (see the
+// loop/hard context split in Engine.Run and VUser.Run).
 func NewExecutionGoalLimiter(runLogic dsl.RunLogicConfig, cancel context.CancelFunc) *ExecutionGoalLimiter {
-	if runLogic.GlobalIterations <= 0 && runLogic.MaxTransactions <= 0 {
+	if !hasExecutionGoals(runLogic) {
 		return nil
 	}
 	return &ExecutionGoalLimiter{

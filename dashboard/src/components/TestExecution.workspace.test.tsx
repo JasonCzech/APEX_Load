@@ -192,7 +192,7 @@ describe('TestExecution workspace layout', () => {
     expect(topbarText()).toContain('Checkout Browser')
     expect(topbarText()).not.toContain('Live Controls')
     expect(topbarText()).toContain('Revise Queued Run')
-    expect(topbarText()).toContain('Start')
+    expect(topbarText()).toContain('Start Test')
     expect(topbarText()).toContain('Queued')
     expect(topbarText()).toContain('Load 10 VUsers')
     expect(topbarText()).toContain('5m')
@@ -201,7 +201,7 @@ describe('TestExecution workspace layout', () => {
     expect(container.querySelector('.execution-run-summary')).toBeNull()
 
     const queuedActions = latestActionBridge()
-    await clickTopbarButton('Start')
+    await clickTopbarButton('Start Test')
     expect(queuedActions.onStart).toHaveBeenCalledTimes(1)
 
     configureHooks(makeTest('RUNNING', {

@@ -68,6 +68,9 @@ export const DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS = ['avgMs', 'p95', 'tps', 'err
 const LOAD_IMPACT_GRAPH_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
 const MIN_GRAPH_SMOOTHING_RADIUS = 2
 const MAX_GRAPH_SMOOTHING_RADIUS = 6
+const DEFAULT_DOWNSAMPLED_GRAPH_POINTS = 420
+const MIN_DOWNSAMPLED_GRAPH_POINTS = 180
+const MAX_DOWNSAMPLED_GRAPH_POINTS = 900
 const MIN_ART_STD_DEV_WINDOW = 5
 const MAX_ART_STD_DEV_WINDOW = 13
 const DEFAULT_GRAPH_CARD_WIDTH = 520
@@ -453,6 +456,118 @@ export function smoothingRadiusForGraphDensity(pointCount: number, density: Grap
   }
 
   return Math.min(MAX_GRAPH_SMOOTHING_RADIUS, radius, Math.floor((pointCount - 1) / 2))
+}
+
+export function downsampleTargetPointsForGraphDensity(density: GraphSmoothingDensity = {}) {
+  if (!density.chartWidth) return DEFAULT_DOWNSAMPLED_GRAPH_POINTS
+  const chartWidth = Math.max(220, density.chartWidth)
+  const seriesCrowding = Math.min(1.5, 1 + Math.max(0, (density.visibleMetricCount ?? 1) - 2) * 0.08)
+  const expandedMultiplier = density.expanded ? 2.1 : 1.6
+  const target = Math.round((chartWidth * expandedMultiplier) / seriesCrowding)
+  return Math.min(MAX_DOWNSAMPLED_GRAPH_POINTS, Math.max(MIN_DOWNSAMPLED_GRAPH_POINTS, target))
+}
+
+function numericGraphValue(point: MetricsHistoryPoint, key: string) {
+  const value = point[key]
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (Array.isArray(value)) {
+    const finiteValues = value.filter((item): item is number => typeof item === 'number' && Number.isFinite(item))
+    if (finiteValues.length > 0) {
+      return finiteValues.reduce((sum, item) => sum + item, 0) / finiteValues.length
+    }
+  }
+  return undefined
+}
+
+function evenlySampleGraphData(data: MetricsHistoryPoint[], maxPoints: number) {
+  if (data.length <= maxPoints) return data
+  const lastIndex = data.length - 1
+  const indexes = new Set<number>()
+  for (let index = 0; index < maxPoints; index += 1) {
+    indexes.add(Math.round(index * lastIndex / Math.max(1, maxPoints - 1)))
+  }
+  return Array.from(indexes).sort((left, right) => left - right).map(index => data[index])
+}
+
+function metricRanges(data: MetricsHistoryPoint[], metricKeys: string[]) {
+  const ranges = new Map<string, { min: number; max: number }>()
+  metricKeys.forEach(key => {
+    data.forEach(point => {
+      const value = numericGraphValue(point, key)
+      if (value === undefined) return
+      const current = ranges.get(key)
+      if (!current) {
+        ranges.set(key, { min: value, max: value })
+        return
+      }
+      current.min = Math.min(current.min, value)
+      current.max = Math.max(current.max, value)
+    })
+  })
+  return ranges
+}
+
+function compositeGraphScore(point: MetricsHistoryPoint, metricKeys: string[], ranges: Map<string, { min: number; max: number }>) {
+  let total = 0
+  let samples = 0
+  metricKeys.forEach(key => {
+    const value = numericGraphValue(point, key)
+    const range = ranges.get(key)
+    if (value === undefined || !range) return
+    const spread = range.max - range.min
+    total += spread === 0 ? 0.5 : (value - range.min) / spread
+    samples += 1
+  })
+  return samples > 0 ? total / samples : undefined
+}
+
+export function downsampleGraphData(data: MetricsHistoryPoint[], metricKeys: string[], maxPoints = DEFAULT_DOWNSAMPLED_GRAPH_POINTS) {
+  const target = Math.max(3, Math.floor(maxPoints))
+  if (data.length <= target) return data
+  if (target < 8) return evenlySampleGraphData(data, target)
+
+  const uniqueMetricKeys = Array.from(new Set(metricKeys))
+  if (uniqueMetricKeys.length === 0) return evenlySampleGraphData(data, target)
+
+  const ranges = metricRanges(data, uniqueMetricKeys)
+  if (ranges.size === 0) return evenlySampleGraphData(data, target)
+
+  const retainedIndexes = new Set<number>([0, data.length - 1])
+  const bucketCount = Math.max(1, Math.floor((target - 2) / 4))
+  const interiorPointCount = data.length - 2
+
+  for (let bucket = 0; bucket < bucketCount; bucket += 1) {
+    const start = 1 + Math.floor(bucket * interiorPointCount / bucketCount)
+    const endExclusive = 1 + Math.floor((bucket + 1) * interiorPointCount / bucketCount)
+    if (start >= endExclusive) continue
+
+    let lowIndex = start
+    let highIndex = start
+    let lowScore = Number.POSITIVE_INFINITY
+    let highScore = Number.NEGATIVE_INFINITY
+
+    for (let index = start; index < endExclusive; index += 1) {
+      const score = compositeGraphScore(data[index], uniqueMetricKeys, ranges)
+      if (score === undefined) continue
+      if (score < lowScore) {
+        lowScore = score
+        lowIndex = index
+      }
+      if (score > highScore) {
+        highScore = score
+        highIndex = index
+      }
+    }
+
+    retainedIndexes.add(start)
+    retainedIndexes.add(lowIndex)
+    retainedIndexes.add(highIndex)
+    retainedIndexes.add(endExclusive - 1)
+  }
+
+  return Array.from(retainedIndexes)
+    .sort((left, right) => left - right)
+    .map(index => data[index])
 }
 
 function smoothingWeightForOffset(offset: number, radius: number) {

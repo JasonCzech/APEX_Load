@@ -6,10 +6,12 @@ import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarMet
 import { useWebSocket } from '../hooks/useWebSocket'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
-import { EditorSelection, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state'
+import { EditorSelection, RangeSetBuilder, StateEffect, StateField, type Extension } from '@codemirror/state'
 import { Decoration, type DecorationSet, EditorView } from '@codemirror/view'
 import { apexCodeMirrorTheme } from './codeMirrorTheme'
 import { apexDslSemanticHighlighting } from './apexDslSemanticHighlighting'
+import { buildDslAssistExtensions } from './dslEditorAssist'
+import { dslActionUsesSelector, dslActionUsesValue, ensureDslActionCatalog } from './dslActionCatalog'
 import {
   BrowserReplayEvent,
   BrowserReplayNetworkEntry,
@@ -604,6 +606,7 @@ interface ScriptCodePaneProps {
   activeRange: LineRange | null
   activeParameterName?: string | null
   actionCount: number
+  assistExtensions?: Extension[]
   className?: string
   jumpToLineRequest?: ScriptCodeLineJumpRequest | null
   parameterMatchRanges?: ScriptCodeMatchRange[]
@@ -626,6 +629,7 @@ function ScriptCodePane({
   activeRange,
   activeParameterName,
   actionCount,
+  assistExtensions,
   className = '',
   jumpToLineRequest,
   parameterMatchRanges = [],
@@ -649,7 +653,8 @@ function ScriptCodePane({
     scriptCodeRangeField,
     scriptCodeParameterMatchField,
     EditorView.lineWrapping,
-  ], [])
+    ...(assistExtensions ?? []),
+  ], [assistExtensions])
   const activeStartLine = activeRange?.startLine ?? null
   const activeEndLine = activeRange?.endLine ?? null
   const parameterMatchKey = useMemo(
@@ -2513,6 +2518,24 @@ interface ReplayScreenshotSelection {
 
 export default function ScriptEditor({ scriptId, initialScript, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
+  // Action-type catalog from GET /api/v1/dsl/actions: powers JSON-editor
+  // completion and the catalog-driven action form inputs. The state bump
+  // re-renders once the catalog arrives; helpers fall back to built-in
+  // lists until then.
+  const [, setDslCatalogReady] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    void ensureDslActionCatalog().then(catalog => {
+      if (!cancelled && catalog) setDslCatalogReady(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  const scriptAssistExtensions = useMemo(
+    () => buildDslAssistExtensions(script => api.validateDraftScript(script as ScriptDefinition, projectId, folderId ?? undefined)),
+    [api, projectId, folderId],
+  )
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const showProtocolSelector = Boolean(scriptId)
   const {
@@ -5995,6 +6018,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           activeRange={scriptCodeActiveRange}
           activeParameterName={selectedOutlineParameterExists ? selectedOutlineParameterName : null}
           actionCount={scriptPhaseActionRows.length}
+          assistExtensions={scriptAssistExtensions}
           jumpToLineRequest={jsonLineJumpRequest}
           parameterMatchRanges={parameterMatchRanges}
           onApply={handleApplyJsonDraft}
@@ -14075,8 +14099,8 @@ function ControlFlowFields({ action, index, onUpdate }: ControlFlowFieldsProps) 
 }
 
 function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScript, onUpdate }: ActionCoreFieldsProps) {
-  const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_select', 'browser_set_files', 'browser_press_key', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe', 'browser_dblclick', 'browser_hover', 'browser_drag_and_drop', 'browser_switch_frame'].includes(action.type)
-  const showValue = isBrowserScript && ['browser_fill', 'browser_select', 'browser_set_files', 'browser_press_key'].includes(action.type)
+  const showSelector = isBrowserScript && dslActionUsesSelector(action.type)
+  const showValue = isBrowserScript && dslActionUsesValue(action.type)
   const isWebSocketScript = protocol === 'websocket'
   const isGrpcScript = protocol === 'grpc'
   const isDatabaseScript = protocol === 'database'

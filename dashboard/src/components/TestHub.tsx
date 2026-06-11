@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
@@ -68,6 +68,8 @@ interface ScenarioFormGroup {
 }
 
 type ScenarioSortField = 'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_test_id' | 'last_run_at' | 'last_run_ended_at' | 'result_count'
+type ScriptLibrarySortField = 'name' | 'created_at' | 'last_run_at' | 'associated_scenarios' | 'associated_releases' | 'protocol'
+type ScenarioStartChoice = ScenarioSourceMode | 'goal' | ''
 
 const scenarioWizardSteps: Array<{ id: ScenarioWizardStep, label: string }> = [
   { id: 'start', label: 'Start' },
@@ -164,18 +166,23 @@ function scenarioFormGroupFromStored(group: StoredScenario['scripts'][number], f
   }
 }
 
-function ensureScenarioGroups(groups: ScenarioFormGroup[], fallbackScriptId: string): ScenarioFormGroup[] {
-  const nextGroups = groups.length > 0 ? groups : [emptyScenarioGroup(fallbackScriptId)]
+function ensureScenarioGroups(groups: ScenarioFormGroup[]): ScenarioFormGroup[] {
+  const nextGroups = groups.length > 0 ? groups : [emptyScenarioGroup()]
   return nextGroups.map((group, index) => ({
     ...group,
     name: group.name || (index === 0 ? '' : `Group ${index + 1}`),
-    script_id: group.script_id || fallbackScriptId,
+    script_id: group.script_id || '',
     vusers: Number(group.vusers) || 10,
     ramp_up: group.ramp_up || '',
     ramp_down: group.ramp_down || '',
     stages: group.stages || [],
     initialization: group.initialization || 'at_runtime',
   }))
+}
+
+function findScriptById(scripts: StoredScript[], scriptId?: string) {
+  if (!scriptId) return undefined
+  return scripts.find(script => script.id === scriptId)
 }
 
 function createDefaultStages(vusers: number, rampUp = '2m', totalDuration = '5m', rampDown = '1m'): LoadStageDraft[] {
@@ -340,7 +347,7 @@ function scenarioFormStateFromStoredScenario(
   return {
     name: cloneDraft ? `${scenario.name} (Copy)` : scenario.name,
     duration: scenario.duration,
-    groups: ensureScenarioGroups(groups, fallbackScriptId),
+    groups: ensureScenarioGroups(groups),
     scenario_mode: scenario.scenario_mode || 'vuser_driven',
     script_shakeout: Boolean(scenario.script_shakeout),
     resource_baseline: Boolean(scenario.resource_baseline),
@@ -444,13 +451,35 @@ function scenarioSearchText(scenario: StoredScenario) {
   ].filter(Boolean).join(' ').toLowerCase()
 }
 
+function uniqueValues(values: Array<string | undefined>) {
+  return Array.from(new Set(values.map(value => value?.trim()).filter(Boolean) as string[]))
+}
+
+function scriptProtocols(script: StoredScript) {
+  return uniqueValues([script.protocol || 'http'])
+}
+
+function associatedScenarioList(script: StoredScript) {
+  const scenarios = script.associated_scenarios || []
+  if (scenarios.length === 0) return 'No scenarios'
+  return uniqueValues(scenarios.map(scenario => scenario.name || scenario.id)).join(', ')
+}
+
 function scriptLibrarySearchText(script: StoredScript) {
   return [
+    script.id,
     script.name,
-    script.protocol,
+    ...scriptProtocols(script),
     script.version,
+    script.created_at,
+    script.last_run_at,
+    formatDate(script.created_at),
+    formatDate(script.last_run_at),
+    formatDateTime(script.last_run_at),
     script.authoring_health?.status,
+    ...(script.associated_scenarios || []).map(scenario => `${scenario.id} ${scenario.name}`),
     ...(script.associated_releases || []).map(release => release.name),
+    ...(script.associated_releases || []).map(release => release.id),
     ...(script.scenario_run_releases || []).map(release => release.name),
   ].filter(Boolean).join(' ').toLowerCase()
 }
@@ -458,12 +487,30 @@ function scriptLibrarySearchText(script: StoredScript) {
 function scriptReleaseList(script: StoredScript) {
   const releases = script.associated_releases || []
   if (releases.length === 0) return 'No releases yet'
-  return releases.map(release => release.name).join(', ')
+  return uniqueValues(releases.map(release => release.name || release.id)).join(', ')
 }
 
 function formatScriptScenarioCount(script: StoredScript) {
   const count = script.scenario_count || 0
   return `${count} scenario${count === 1 ? '' : 's'}`
+}
+
+function getScriptLibrarySortValue(script: StoredScript, field: ScriptLibrarySortField): string | number {
+  switch (field) {
+    case 'created_at':
+      return new Date(script.created_at || 0).getTime()
+    case 'last_run_at':
+      return new Date(script.last_run_at || 0).getTime()
+    case 'associated_scenarios':
+      return associatedScenarioList(script).toLowerCase()
+    case 'associated_releases':
+      return scriptReleaseList(script).toLowerCase()
+    case 'protocol':
+      return scriptProtocols(script).join(', ').toLowerCase()
+    case 'name':
+    default:
+      return `${script.name || ''} ${script.id || ''}`.toLowerCase()
+  }
 }
 
 function scenarioAssignmentSummary(scenario: StoredScenario) {
@@ -645,8 +692,10 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const [showForm, setShowForm] = useState(initialView === 'builder')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [wizardStep, setWizardStep] = useState<ScenarioWizardStep>('start')
+  const [maxVisitedWizardIndex, setMaxVisitedWizardIndex] = useState(0)
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const [scenarioSourceMode, setScenarioSourceMode] = useState<ScenarioSourceMode>('shape')
+  const [scenarioStartChoice, setScenarioStartChoice] = useState<ScenarioStartChoice>('')
   const [scenarioCloneQuery, setScenarioCloneQuery] = useState('')
   const [selectedCloneScenarioId, setSelectedCloneScenarioId] = useState('')
   const [selectedShapeId, setSelectedShapeId] = useState('')
@@ -655,6 +704,9 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const [scenarioQuery, setScenarioQuery] = useState('')
   const [scenarioReleaseFilter, setScenarioReleaseFilter] = useState('all')
   const [scriptLibraryQuery, setScriptLibraryQuery] = useState('')
+  const [scriptLibrarySortField, setScriptLibrarySortField] = useState<ScriptLibrarySortField>('name')
+  const [scriptLibrarySortDirection, setScriptLibrarySortDirection] = useState<'asc' | 'desc'>('asc')
+  const [scriptSelectionTargetIndex, setScriptSelectionTargetIndex] = useState<number | null>(null)
   const [sortField, setSortField] = useState<ScenarioSortField>('last_run_at')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [expandedScenarioId, setExpandedScenarioId] = useState<string | null>(null)
@@ -677,9 +729,12 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const [goalSizingError, setGoalSizingError] = useState('')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [stageGroupIndex, setStageGroupIndex] = useState(0)
+  const scriptLibraryRef = useRef<HTMLDivElement | null>(null)
+  const scriptLibrarySearchRef = useRef<HTMLInputElement | null>(null)
+  const scriptGroupRefs = useRef<Array<HTMLDivElement | null>>([])
   const formGroups = useMemo(
-    () => form.groups.length > 0 ? form.groups : [emptyScenarioGroup(scripts[0]?.id || '')],
-    [form.groups, scripts],
+    () => form.groups.length > 0 ? form.groups : [emptyScenarioGroup()],
+    [form.groups],
   )
   const activeStageGroup = formGroups[Math.min(stageGroupIndex, formGroups.length - 1)] || formGroups[0]
   const activeStageTimeline = useMemo(
@@ -697,7 +752,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     }
     return ''
   }, [form.duration, formGroups])
-  const showBrowserRuntimeSettings = formGroups.some(group => scripts.find(script => script.id === group.script_id)?.protocol === 'browser')
+  const showBrowserRuntimeSettings = formGroups.some(group => findScriptById(scripts, group.script_id)?.protocol === 'browser')
   const canManageTests = useMemo(
     () => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'),
     [effectiveAuthAccessResources],
@@ -716,7 +771,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     () => buildScenarioModelPreview({
       duration: form.duration,
       groups: formGroups.map(group => ({
-        name: group.name || scripts.find(script => script.id === group.script_id)?.name || undefined,
+        name: group.name || findScriptById(scripts, group.script_id)?.name || undefined,
         vusers: Number(group.vusers) || 0,
         ramp_up: group.ramp_up,
         ramp_down: group.ramp_down,
@@ -736,8 +791,16 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     const filtered = query
       ? scripts.filter(script => scriptLibrarySearchText(script).includes(query))
       : scripts
-    return [...filtered].sort((left, right) => left.name.localeCompare(right.name))
-  }, [scriptLibraryQuery, scripts])
+    return [...filtered].sort((left, right) => {
+      const leftValue = getScriptLibrarySortValue(left, scriptLibrarySortField)
+      const rightValue = getScriptLibrarySortValue(right, scriptLibrarySortField)
+      const direction = scriptLibrarySortDirection === 'asc' ? 1 : -1
+      if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+        return (leftValue - rightValue) * direction
+      }
+      return String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' }) * direction
+    })
+  }, [scriptLibraryQuery, scriptLibrarySortDirection, scriptLibrarySortField, scripts])
   const showScenarioLibrary = !showForm
   const showScriptLibrary = showForm && wizardStep === 'scripts'
   const showModelPreview = showForm && wizardStep !== 'start' && wizardStep !== 'scripts'
@@ -796,8 +859,8 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
         ...prev,
         groups: ensureScenarioGroups(prev.groups.map(group => ({
           ...group,
-          script_id: nextScripts.some(script => script.id === group.script_id) ? group.script_id : nextScripts[0]?.id || '',
-        })), nextScripts[0]?.id || ''),
+          script_id: group.script_id && nextScripts.some(script => script.id === group.script_id) ? group.script_id : '',
+        }))),
       }))
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Unable to load scenarios'))
@@ -834,6 +897,13 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
 
   useEffect(() => {
     setStageGroupIndex(current => Math.min(current, Math.max(0, form.groups.length - 1)))
+  }, [form.groups.length])
+
+  useEffect(() => {
+    scriptGroupRefs.current = scriptGroupRefs.current.slice(0, form.groups.length)
+    setScriptSelectionTargetIndex(current => (
+      current !== null && current >= form.groups.length ? null : current
+    ))
   }, [form.groups.length])
 
   useEffect(() => {
@@ -939,6 +1009,15 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     }
   }
 
+  const handleScriptLibrarySort = (field: ScriptLibrarySortField) => {
+    if (scriptLibrarySortField === field) {
+      setScriptLibrarySortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setScriptLibrarySortField(field)
+      setScriptLibrarySortDirection(field === 'created_at' || field === 'last_run_at' ? 'desc' : 'asc')
+    }
+  }
+
   const handleInnerSort = (field: typeof innerSortField) => {
     if (innerSortField === field) setInnerSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
     else { setInnerSortField(field); setInnerSortDirection('asc') }
@@ -987,24 +1066,30 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       return
     }
     setEditingId(null)
-    setForm(emptyScenarioForm(scripts[0]?.id || ''))
+    setForm(emptyScenarioForm())
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId('')
     setSelectedCloneScenarioId('')
     setScenarioSourceMode('shape')
+    setScenarioStartChoice('')
     setScenarioCloneQuery('')
+    setScriptSelectionTargetIndex(null)
     setWizardStep('start')
+    setMaxVisitedWizardIndex(0)
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     setShowForm(true)
     onScenarioViewChange?.('builder')
-  }, [canManageTests, onScenarioViewChange, scripts])
+  }, [canManageTests, onScenarioViewChange])
 
   const openScenarioLibrary = useCallback(() => {
     setShowForm(false)
     setEditingId(null)
     setConfirmDeleteScenarioId(null)
+    setScriptSelectionTargetIndex(null)
+    setScenarioStartChoice('')
+    setMaxVisitedWizardIndex(0)
     onScenarioViewChange?.('library')
   }, [onScenarioViewChange])
 
@@ -1046,8 +1131,11 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setSelectedShapeId('')
     setSelectedCloneScenarioId('')
     setScenarioSourceMode('existing')
+    setScenarioStartChoice('existing')
     setScenarioCloneQuery('')
+    setScriptSelectionTargetIndex(null)
     setWizardStep('scripts')
+    setMaxVisitedWizardIndex(2)
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     setShowForm(true)
@@ -1065,6 +1153,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
 
   const selectScenarioSourceMode = (mode: ScenarioSourceMode) => {
     setScenarioSourceMode(mode)
+    setScenarioStartChoice(mode)
     if (mode === 'shape') setSelectedCloneScenarioId('')
     setWizardStep('source')
   }
@@ -1078,6 +1167,8 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setSelectedShapeId('')
     setSelectedCloneScenarioId(scenario.id)
     setScenarioSourceMode('existing')
+    setScenarioStartChoice('existing')
+    setScriptSelectionTargetIndex(null)
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     void loadScenarioRuns(scenario)
@@ -1090,6 +1181,8 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     setScenarioSourceMode('shape')
+    setScenarioStartChoice('shape')
+    setScriptSelectionTargetIndex(null)
     setWizardStep('scripts')
   }
 
@@ -1102,6 +1195,8 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setSelectedShapeId(template.shape_id)
     setSelectedCloneScenarioId('')
     setScenarioSourceMode('shape')
+    setScenarioStartChoice('shape')
+    setScriptSelectionTargetIndex(null)
     setWizardStep('scripts')
     setForm(prev => ({
       ...prev,
@@ -1112,14 +1207,13 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       groups: ensureScenarioGroups(
         (template.scenario.groups.length > 0 ? template.scenario.groups : [{ name: '', vusers: 10 }]).map((group, index) => ({
           name: group.name || prev.groups[index]?.name || (index === 0 ? '' : `Group ${index + 1}`),
-          script_id: prev.groups[index]?.script_id || prev.groups[0]?.script_id || scripts[0]?.id || '',
+          script_id: prev.groups[index]?.script_id || prev.groups[0]?.script_id || '',
           vusers: group.vusers || prev.groups[index]?.vusers || 10,
           ramp_up: group.ramp_up || '',
           ramp_down: group.ramp_down || '',
           stages: group.stages || [],
           initialization: prev.groups[index]?.initialization || 'at_runtime',
         })),
-        scripts[0]?.id || '',
       ),
       goal_target_average_tps: template.scenario.goal_config?.target_average_tps,
       goal_min_vusers: template.scenario.goal_config?.min_vusers,
@@ -1137,6 +1231,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       return
     }
     setGoalSizingOpen(true)
+    setScenarioStartChoice('goal')
     setGoalBaselineId('')
     setGoalBaselineGroups([])
     setGoalTargetTps({})
@@ -1219,20 +1314,20 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       groups: ensureScenarioGroups(
         sizedGroups.map((group, index) => ({
           name: group.name,
-          script_id: group.script_id || prev.groups[index]?.script_id || scripts[0]?.id || '',
+          script_id: group.script_id || prev.groups[index]?.script_id || '',
           vusers: group.vusers,
           ramp_up: group.ramp_up,
           ramp_down: '',
           stages: [],
           initialization: 'at_runtime' as const,
         })),
-        scripts[0]?.id || '',
       ),
     }))
     setSelectedShapeId('')
     setSelectedLoadModelTemplateId('')
     setSelectedCloneScenarioId('')
     setScenarioSourceMode('shape')
+    setScenarioStartChoice('goal')
     setStageGroupIndex(0)
     setLoadModelValidation(null)
     setLoadModelValidationError('')
@@ -1250,7 +1345,6 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       ...prev,
       groups: ensureScenarioGroups(
         prev.groups.map((group, groupIndex) => groupIndex === index ? { ...group, ...patch } : group),
-        scripts[0]?.id || '',
       ),
     }))
     setLoadModelValidation(null)
@@ -1258,7 +1352,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
 
   const addScenarioGroup = () => {
     setForm(prev => {
-      const nextGroups = [...prev.groups, emptyScenarioGroup(scripts[0]?.id || '', prev.groups.length)]
+      const nextGroups = [...prev.groups, emptyScenarioGroup('', prev.groups.length)]
       return { ...prev, groups: nextGroups }
     })
     setStageGroupIndex(form.groups.length)
@@ -1275,16 +1369,42 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
           script_id: script.id,
         },
       ]
-      return { ...prev, groups: ensureScenarioGroups(nextGroups, scripts[0]?.id || '') }
+      return { ...prev, groups: ensureScenarioGroups(nextGroups) }
     })
     setStageGroupIndex(form.groups.length)
     setLoadModelValidation(null)
   }
 
+  const chooseScriptForGroup = (index: number) => {
+    setScriptSelectionTargetIndex(index)
+    window.setTimeout(() => {
+      scriptLibraryRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+      scriptLibrarySearchRef.current?.focus()
+    }, 0)
+  }
+
+  const selectScriptFromLibrary = (script: StoredScript) => {
+    if (scriptSelectionTargetIndex !== null && formGroups[scriptSelectionTargetIndex]) {
+      const targetIndex = scriptSelectionTargetIndex
+      updateScenarioGroup(targetIndex, { script_id: script.id })
+      setScriptSelectionTargetIndex(null)
+      window.setTimeout(() => {
+        scriptGroupRefs.current[targetIndex]?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+      }, 0)
+      return
+    }
+    addScenarioGroupFromScript(script)
+  }
+
   const removeScenarioGroup = (index: number) => {
     setForm(prev => {
       const nextGroups = prev.groups.filter((_, groupIndex) => groupIndex !== index)
-      return { ...prev, groups: ensureScenarioGroups(nextGroups, scripts[0]?.id || '') }
+      return { ...prev, groups: ensureScenarioGroups(nextGroups) }
+    })
+    setScriptSelectionTargetIndex(current => {
+      if (current === null) return null
+      if (current === index) return null
+      return current > index ? current - 1 : current
     })
     setStageGroupIndex(current => Math.max(0, Math.min(current, form.groups.length - 2)))
     setLoadModelValidation(null)
@@ -1395,13 +1515,15 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
 
   const resetScenarioBuilder = () => {
     setEditingId(null)
-    setForm(emptyScenarioForm(scripts[0]?.id || ''))
+    setForm(emptyScenarioForm())
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId('')
     setScenarioSourceMode('shape')
+    setScenarioStartChoice('')
     setScenarioCloneQuery('')
     setWizardStep('start')
+    setMaxVisitedWizardIndex(0)
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     setShowForm(false)
@@ -1452,12 +1574,30 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   }
 
   const currentWizardIndex = scenarioWizardSteps.findIndex(step => step.id === wizardStep)
+  useEffect(() => {
+    if (currentWizardIndex >= 0) {
+      setMaxVisitedWizardIndex(current => Math.max(current, currentWizardIndex))
+    }
+  }, [currentWizardIndex])
   const dataPoolLabel = form.data_pool_id
     ? dataPools.find(pool => pool.id === form.data_pool_id)?.name || 'Shared data configured'
     : 'No shared data pool'
   const shapeLabel = selectedTemplate?.name || selectedShape?.support.name || (scenarioSourceMode === 'existing' ? 'Modeled from scenario' : 'Manual shape')
   const validationLabel = loadModelValidation ? formatLoadModelDimension(loadModelValidation.status) : 'Not validated'
   const requiredDraftReady = Boolean(form.name.trim() && isValidDurationInput(form.duration) && formGroups.every(group => group.script_id))
+  const sourceStepComplete = scenarioStartChoice === 'goal'
+    ? Boolean(goalSizingResult)
+    : scenarioSourceMode === 'existing'
+      ? Boolean(selectedCloneScenarioId)
+      : Boolean(selectedShapeId || selectedLoadModelTemplateId)
+  const wizardStepCompletion: Record<ScenarioWizardStep, boolean> = {
+    start: Boolean(scenarioStartChoice),
+    source: sourceStepComplete,
+    scripts: Boolean(form.name.trim() && formGroups.length > 0 && formGroups.every(group => group.script_id)),
+    run: Boolean(isValidDurationInput(form.duration) && !blockingStageTimelineMessage),
+    data: true,
+    review: Boolean(requiredDraftReady && !blockingStageTimelineMessage),
+  }
 
   const renderScenarioRunsContent = (scenario: StoredScenario) => {
     const runs = scenarioRuns[scenario.id] || []
@@ -1810,7 +1950,6 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
               <h4>Scripts And Groups</h4>
               <p>Add each script participating in the scenario and set its initialization scope. Tune VUsers and ramp on the Run Settings step.</p>
             </div>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={addScenarioGroup}>+ Add Script Group</button>
           </div>
           <div className="settings-grid scenario-core-grid">
             <label className="scenario-field">
@@ -1819,35 +1958,56 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
             </label>
           </div>
           <div className="scenario-script-group-list scenario-script-group-list-spacious">
-            {formGroups.map((group, index) => (
-              <div key={`${group.script_id || 'script'}-${index}`} className="scenario-script-group-card">
-                <div className="scenario-script-group-title">
-                  <strong>{group.name || `Group ${index + 1}`}</strong>
-                  {formGroups.length > 1 && (
-                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => removeScenarioGroup(index)}>Remove</button>
-                  )}
+            {formGroups.map((group, index) => {
+              const selectedScript = findScriptById(scripts, group.script_id)
+              const isSelectionTarget = scriptSelectionTargetIndex === index
+              return (
+                <div
+                  key={`${group.script_id || 'script'}-${index}`}
+                  className={`scenario-script-group-card ${isSelectionTarget ? 'selecting-script' : ''}`}
+                  ref={node => { scriptGroupRefs.current[index] = node }}
+                >
+                  <div className="scenario-script-group-title">
+                    <strong>{group.name || `Group ${index + 1}`}</strong>
+                    {formGroups.length > 1 && (
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => removeScenarioGroup(index)}>Remove</button>
+                    )}
+                  </div>
+                  <div className="settings-grid scenario-group-grid">
+                    <label className="scenario-field">
+                      <span>Group Name</span>
+                      <input className="settings-input" value={group.name} onChange={event => updateScenarioGroup(index, { name: event.target.value })} placeholder={`Group ${index + 1}`} />
+                    </label>
+                    <div className="scenario-field scenario-script-picker-field">
+                      <span>Script</span>
+                      <button
+                        type="button"
+                        className={`scenario-script-select-button ${selectedScript ? 'has-script' : ''}`}
+                        onClick={() => chooseScriptForGroup(index)}
+                        aria-label={`Choose script for ${group.name || `Group ${index + 1}`}`}
+                      >
+                        <span className="scenario-script-select-copy">
+                          <strong>{selectedScript?.name || 'Add Script'}</strong>
+                          {selectedScript && <small>v{selectedScript.version || '—'}</small>}
+                        </span>
+                        {selectedScript && <span className="protocol-badge">{selectedScript.protocol || 'http'}</span>}
+                      </button>
+                    </div>
+                    <label className="scenario-field">
+                      <span>Initialization Scope</span>
+                      <select className="settings-input" value={group.initialization} onChange={event => updateScenarioGroup(index, { initialization: event.target.value as ScenarioFormGroup['initialization'] })}>
+                        <option value="at_runtime">Init/teardown per VUser</option>
+                        <option value="at_once">Init/teardown once per group</option>
+                      </select>
+                    </label>
+                  </div>
                 </div>
-                <div className="settings-grid scenario-group-grid">
-                  <label className="scenario-field">
-                    <span>Group Name</span>
-                    <input className="settings-input" value={group.name} onChange={event => updateScenarioGroup(index, { name: event.target.value })} placeholder={`Group ${index + 1}`} />
-                  </label>
-                  <label className="scenario-field">
-                    <span>Script</span>
-                    <select className="settings-input" value={group.script_id} onChange={event => updateScenarioGroup(index, { script_id: event.target.value })}>
-                      {scripts.map(script => <option key={script.id} value={script.id}>{script.name}</option>)}
-                    </select>
-                  </label>
-                  <label className="scenario-field">
-                    <span>Initialization Scope</span>
-                    <select className="settings-input" value={group.initialization} onChange={event => updateScenarioGroup(index, { initialization: event.target.value as ScenarioFormGroup['initialization'] })}>
-                      <option value="at_runtime">Init/teardown per VUser</option>
-                      <option value="at_once">Init/teardown once per group</option>
-                    </select>
-                  </label>
-                </div>
-              </div>
-            ))}
+              )
+            })}
+            <button type="button" className="scenario-add-group-card" onClick={addScenarioGroup}>
+              <span>+</span>
+              <strong>Add Group</strong>
+            </button>
           </div>
         </section>
       )
@@ -1885,7 +2045,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
               <select className="settings-input" value={stageGroupIndex} onChange={event => setStageGroupIndex(Number(event.target.value))}>
                 {formGroups.map((group, index) => (
                   <option key={`${group.script_id || 'group'}-${index}`} value={index}>
-                    {group.name || `Group ${index + 1}`} · {scripts.find(script => script.id === group.script_id)?.name || 'Unassigned script'}
+                    {group.name || `Group ${index + 1}`} · {findScriptById(scripts, group.script_id)?.name || 'Unassigned script'}
                   </option>
                 ))}
               </select>
@@ -1903,7 +2063,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
                 <div key={`${group.script_id || 'group'}-load-${index}`} className="scenario-script-group-card">
                   <div className="scenario-script-group-title">
                     <strong>{group.name || `Group ${index + 1}`}</strong>
-                    <span className="scenario-assignment-copy secondary">{scripts.find(script => script.id === group.script_id)?.name || 'Unassigned script'}</span>
+                    <span className="scenario-assignment-copy secondary">{findScriptById(scripts, group.script_id)?.name || 'Unassigned script'}</span>
                   </div>
                   <div className="settings-grid scenario-group-grid">
                     <label className="scenario-field">
@@ -2196,13 +2356,15 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
 
   return (
     <div className="page">
-      <div className="page-header">
-        <div>
-          <h2>{showForm ? 'Scenario Builder' : 'Scenario Library'}</h2>
-          <p className="page-subtitle">Reusable scenario definitions linked to scripts, releases, and results.</p>
+      {(!showForm || !hasTopbarContributionProvider) && (
+        <div className="page-header">
+          <div>
+            <h2>{showForm ? 'Scenario Builder' : 'Scenario Library'}</h2>
+            <p className="page-subtitle">Reusable scenario definitions linked to scripts, releases, and results.</p>
+          </div>
+          {!hasTopbarContributionProvider && scenarioPageControls}
         </div>
-        {!hasTopbarContributionProvider && scenarioPageControls}
-      </div>
+      )}
 
       {error && <div className="settings-error-inline">{error}</div>}
 
@@ -2210,7 +2372,6 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
         <div className="page-section scenario-builder">
           <div className="scenario-builder-header">
             <div>
-              <h3 className="section-title">{editingId ? 'Edit Scenario' : 'Scenario Builder'}</h3>
               {form.name.trim()
                 ? <p className="scenario-builder-name" aria-label="Scenario name">{form.name.trim()}</p>
                 : <p className="page-subtitle">Choose a source, compose scripts, tune run settings, attach data, and validate the planned model.</p>}
@@ -2223,17 +2384,21 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
           </div>
 
           <div className="scenario-wizard-stepper" aria-label="Scenario builder steps">
-            {scenarioWizardSteps.map((step, index) => (
-              <button
-                key={step.id}
-                type="button"
-                className={`scenario-wizard-step ${wizardStep === step.id ? 'active' : ''} ${index < currentWizardIndex ? 'complete' : ''}`}
-                onClick={() => setWizardStep(step.id)}
-              >
-                <span>{index + 1}</span>
-                {step.label}
-              </button>
-            ))}
+            {scenarioWizardSteps.map((step, index) => {
+              const stepComplete = index <= maxVisitedWizardIndex && wizardStepCompletion[step.id]
+              return (
+                <button
+                  key={step.id}
+                  type="button"
+                  className={`scenario-wizard-step ${wizardStep === step.id ? 'active' : ''} ${stepComplete ? 'complete' : ''}`}
+                  onClick={() => setWizardStep(step.id)}
+                  aria-label={`${step.label}${stepComplete ? ' complete' : ''}`}
+                >
+                  <span className="scenario-wizard-step-marker" aria-hidden="true">{stepComplete ? '✓' : index + 1}</span>
+                  <span className="scenario-wizard-step-label">{step.label}</span>
+                </button>
+              )
+            })}
           </div>
 
           {renderWizardStep()}
@@ -2284,17 +2449,23 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       )}
 
       {showScriptLibrary && (
-        <div className="page-section scenario-existing-script-library">
+        <div className="page-section scenario-existing-script-library" ref={scriptLibraryRef}>
           <div className="library-toolbar">
             <div>
               <h3 className="section-title">Existing Scripts Library ({scripts.length})</h3>
               <p className="library-toolbar-subtitle">
                 {scriptLibraryQuery.trim() ? `${visibleScriptLibrary.length} matching script${visibleScriptLibrary.length === 1 ? '' : 's'}` : 'Pick from existing scripts while assembling scenario groups.'}
               </p>
+              {scriptSelectionTargetIndex !== null && formGroups[scriptSelectionTargetIndex] && (
+                <p className="scenario-script-selection-status">
+                  Choosing for {formGroups[scriptSelectionTargetIndex].name || `Group ${scriptSelectionTargetIndex + 1}`}
+                </p>
+              )}
             </div>
             <label className="library-search">
               <span>Search scripts</span>
               <input
+                ref={scriptLibrarySearchRef}
                 type="search"
                 value={scriptLibraryQuery}
                 onChange={(event) => setScriptLibraryQuery(event.target.value)}
@@ -2306,40 +2477,55 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
             <table>
               <thead>
                 <tr>
-                  <th>Script</th>
-                  <th>Protocol</th>
-                  <th>Usage</th>
-                  <th>Last Run</th>
+                  <th onClick={() => handleScriptLibrarySort('name')} className="sortable">Script <SortIndicator active={scriptLibrarySortField === 'name'} direction={scriptLibrarySortDirection} /></th>
+                  <th onClick={() => handleScriptLibrarySort('created_at')} className="sortable">Created <SortIndicator active={scriptLibrarySortField === 'created_at'} direction={scriptLibrarySortDirection} /></th>
+                  <th onClick={() => handleScriptLibrarySort('last_run_at')} className="sortable">Last Run <SortIndicator active={scriptLibrarySortField === 'last_run_at'} direction={scriptLibrarySortDirection} /></th>
+                  <th onClick={() => handleScriptLibrarySort('associated_scenarios')} className="sortable">Associated Scenarios <SortIndicator active={scriptLibrarySortField === 'associated_scenarios'} direction={scriptLibrarySortDirection} /></th>
+                  <th onClick={() => handleScriptLibrarySort('associated_releases')} className="sortable">Associated Releases <SortIndicator active={scriptLibrarySortField === 'associated_releases'} direction={scriptLibrarySortDirection} /></th>
+                  <th onClick={() => handleScriptLibrarySort('protocol')} className="sortable">Protocol(s) <SortIndicator active={scriptLibrarySortField === 'protocol'} direction={scriptLibrarySortDirection} /></th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {visibleScriptLibrary.map(script => (
-                  <tr key={script.id}>
-                    <td className="cell-name">
-                      <div>{script.name}</div>
-                      <div className="scenario-table-assignment-detail">v{script.version || '—'} · Created {formatDate(script.created_at)}</div>
-                    </td>
-                    <td>
-                      <span className="protocol-badge">{script.protocol}</span>
-                    </td>
-                    <td>
-                      <div className="scenario-table-workload">
-                        <strong>{formatScriptScenarioCount(script)}</strong>
-                        <span>{scriptReleaseList(script)}</span>
-                      </div>
-                    </td>
-                    <td className="cell-muted">{formatDate(script.last_run_at)}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      <button className="btn btn-sm btn-secondary" type="button" onClick={() => addScenarioGroupFromScript(script)}>
-                        Add Group
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {visibleScriptLibrary.map(script => {
+                  const targetScriptId = scriptSelectionTargetIndex !== null ? formGroups[scriptSelectionTargetIndex]?.script_id : ''
+                  const selectedForTarget = Boolean(targetScriptId) && targetScriptId === script.id
+                  return (
+                    <tr key={script.id} className={selectedForTarget ? 'selected' : ''}>
+                      <td className="cell-name">
+                        <div>{script.name}</div>
+                        <div className="scenario-table-assignment-detail">v{script.version || '—'} · {script.id}</div>
+                      </td>
+                      <td className="cell-muted">{formatDate(script.created_at)}</td>
+                      <td className="cell-muted">{formatDate(script.last_run_at)}</td>
+                      <td>
+                        <div className="scenario-table-workload">
+                          <strong>{formatScriptScenarioCount(script)}</strong>
+                          <span>{associatedScenarioList(script)}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="scenario-table-workload">
+                          <strong>{scriptReleaseList(script)}</strong>
+                          {!!script.scenario_run_releases?.length && <span>Run releases: {uniqueValues(script.scenario_run_releases.map(release => release.name || release.id)).join(', ')}</span>}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="scenario-protocol-list">
+                          {scriptProtocols(script).map(protocol => <span key={protocol} className="protocol-badge">{protocol}</span>)}
+                        </div>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <button className="btn btn-sm btn-secondary" type="button" onClick={() => selectScriptFromLibrary(script)}>
+                          {scriptSelectionTargetIndex !== null ? `Use for Group ${scriptSelectionTargetIndex + 1}` : 'Add Group'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
                 {visibleScriptLibrary.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="cell-muted">
+                    <td colSpan={7} className="cell-muted">
                       {scriptLibraryQuery.trim() ? 'No scripts match this search.' : 'No existing scripts are available for this project.'}
                     </td>
                   </tr>

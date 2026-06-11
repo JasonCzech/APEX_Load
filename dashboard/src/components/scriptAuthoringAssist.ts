@@ -8,6 +8,7 @@ import {
   type ScriptDefinition,
   type ScriptParameterDefinition,
 } from '../types/scripts'
+import { dslActionNeedsExplicitTarget } from './dslActionCatalog'
 
 export type AuthoringIssueSeverity = 'error' | 'warning'
 
@@ -116,9 +117,10 @@ function buildUniqueActionName(baseName: string, seen: Set<string>): string {
   return nextName
 }
 
-function actionNeedsExplicitTarget(action: ScriptActionDefinition): boolean {
-  if (action.type.startsWith('browser_')) {
-    return action.type !== 'browser_screenshot'
+// Pre-catalog heuristic, used only while the action catalog has not loaded.
+function legacyActionNeedsExplicitTarget(actionType: string): boolean {
+  if (actionType.startsWith('browser_')) {
+    return actionType !== 'browser_screenshot'
   }
   return ![
     'jms_ack',
@@ -133,7 +135,11 @@ function actionNeedsExplicitTarget(action: ScriptActionDefinition): boolean {
     'database_rollback',
     'database_health',
     'network_health',
-  ].includes(action.type)
+  ].includes(actionType)
+}
+
+function actionNeedsExplicitTarget(action: ScriptActionDefinition): boolean {
+  return dslActionNeedsExplicitTarget(action.type, legacyActionNeedsExplicitTarget)
 }
 
 function deepMerge(base: Record<string, unknown>, patch?: Record<string, unknown>): Record<string, unknown> {

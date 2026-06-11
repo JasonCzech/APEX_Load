@@ -1,0 +1,149 @@
+package dsl
+
+// engineActionSpecs declares the engine-level action types that are valid in
+// any protocol script (Protocols: "*"). The validator intercepts these before
+// protocol dispatch; legacy "loadrunner_*" spellings resolve to the same
+// specs via CanonicalActionType. Validation rules for rendezvous,
+// error_message, and the control-flow blocks remain in validate.go because
+// they need path/protocol context for labels and recursion.
+func engineActionSpecs() []ActionSpec {
+	sourceFunctionFields := func(functionDoc string) []FieldSpec {
+		return []FieldSpec{
+			{Name: "params.function", Kind: FieldKindString, Doc: functionDoc},
+			{Name: "params.args", Kind: FieldKindArray, Doc: "Positional arguments of the imported source function call."},
+		}
+	}
+	return []ActionSpec{
+		{
+			Type:      "control_if",
+			Protocols: []string{"*"},
+			Summary:   "Conditional block: runs control.steps when the condition holds, control.else otherwise.",
+			Fields: []FieldSpec{
+				{Name: "control", Required: true, Kind: FieldKindObject, Doc: "Branch body: {condition, steps, else}. Requires steps or else."},
+			},
+		},
+		{
+			Type:      "control_loop",
+			Protocols: []string{"*"},
+			Summary:   "Loop block: repeats control.steps for a fixed count or while a condition holds.",
+			Fields: []FieldSpec{
+				{Name: "control", Required: true, Kind: FieldKindObject, Doc: "Loop body: {condition, steps, count, max_iterations}. Requires a positive count or a condition."},
+			},
+		},
+		{
+			Type:      "rendezvous",
+			Protocols: []string{"*"},
+			Summary:   "Synchronization barrier: VUsers wait until the rendezvous point is reached.",
+			Fields: []FieldSpec{
+				{Name: "params.count", Kind: FieldKindInt, Doc: "Participants to wait for; defaults to all VUsers. Must be greater than zero."},
+				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Maximum wait in milliseconds; zero or greater."},
+			},
+		},
+		{
+			Type:         "error_message",
+			Protocols:    []string{"*"},
+			Summary:      "Logs an error-level message rendered from value or a printf-style format.",
+			RequireOneOf: [][]string{{"value", "params.format"}},
+			Fields: []FieldSpec{
+				{Name: "value", Kind: FieldKindString, Doc: "Literal message. Required unless params.format is set."},
+				{Name: "params.format", Kind: FieldKindString, Doc: "Printf-style format rendered with params.args."},
+				{Name: "params.args", Kind: FieldKindArray, Doc: "Arguments substituted into params.format."},
+			},
+		},
+		{
+			Type:      "source_message",
+			Protocols: []string{"*"},
+			Summary:   "Logs an informational message from an imported script (lr_output_message family).",
+			Fields: []FieldSpec{
+				{Name: "value", Kind: FieldKindString, Doc: "Literal message. Used when params.format is absent."},
+				{Name: "params.format", Kind: FieldKindString, Doc: "Printf-style format rendered with params.args."},
+				{Name: "params.args", Kind: FieldKindArray, Doc: "Arguments substituted into params.format."},
+				{Name: "params.level", Kind: FieldKindEnum, Enum: []string{"debug", "info", "error"}, Doc: "Log level; defaults to info."},
+				{Name: "params.status_message", Kind: FieldKindBool, Doc: "Also publish the message as the VUser status."},
+			},
+		},
+		{
+			Type:      "source_runtime",
+			Protocols: []string{"*"},
+			Summary:   "Replays an imported runtime-control call (lr_abort, lr_exit, IP-spoofing toggles, ...).",
+			Fields:    sourceFunctionFields("Imported runtime function name, e.g. lr_abort, lr_exit, lr_enable_ip_spoofing."),
+		},
+		{
+			Type:      "source_transaction",
+			Protocols: []string{"*"},
+			Summary:   "Starts, ends, or annotates a named transaction imported from a source script.",
+			Fields:    sourceFunctionFields("Imported transaction function, e.g. lr_start_transaction, lr_end_transaction, lr_fail_trans_with_error."),
+		},
+		{
+			Type:      "source_timer",
+			Protocols: []string{"*"},
+			Summary:   "Starts or ends a named timer imported from a source script (lr_start_timer/lr_end_timer).",
+			Fields:    sourceFunctionFields("Imported timer function: lr_start_timer or lr_end_timer."),
+		},
+		{
+			Type:      "source_metric",
+			Protocols: []string{"*"},
+			Summary:   "Records a user-defined data point imported from a source script (lr_user_data_point).",
+			Fields:    sourceFunctionFields("Imported metric function; args carry the metric name and value."),
+		},
+		{
+			Type:      "source_parameter",
+			Protocols: []string{"*"},
+			Summary:   "Replays imported parameter operations (lr_save_string, lr_param_sprintf, lr_param_increment, ...).",
+			Fields: append(sourceFunctionFields("Imported parameter function, e.g. lr_save_string, lr_save_var, lr_param_sprintf."),
+				FieldSpec{Name: "params.save_param", Kind: FieldKindString, Doc: "Variable name receiving the result when the function does not name one."}),
+		},
+		{
+			Type:      "source_json",
+			Protocols: []string{"*"},
+			Summary:   "Replays an imported JSON document operation, saving the result into a variable.",
+			Fields: append(sourceFunctionFields("Imported JSON function from the source script."),
+				FieldSpec{Name: "params.save_param", Kind: FieldKindString, Doc: "Variable name receiving the extracted value."}),
+		},
+		{
+			Type:      "source_xml",
+			Protocols: []string{"*"},
+			Summary:   "Replays an imported XML document operation, saving the result into a variable.",
+			Fields: append(sourceFunctionFields("Imported XML function from the source script."),
+				FieldSpec{Name: "params.save_param", Kind: FieldKindString, Doc: "Variable name receiving the extracted value."}),
+		},
+		{
+			Type:      "source_database",
+			Protocols: []string{"*"},
+			Summary:   "Placeholder for an imported database call; logged for review during replay.",
+			Fields:    sourceFunctionFields("Imported database function from the source script."),
+		},
+		{
+			Type:      "source_secret",
+			Protocols: []string{"*"},
+			Summary:   "Replays an imported secret/credential operation (lr_decrypt family).",
+			Fields:    sourceFunctionFields("Imported secret function from the source script."),
+		},
+		{
+			Type:      "source_external",
+			Protocols: []string{"*"},
+			Summary:   "Placeholder for an imported external/DLL call; logged for manual review during replay.",
+			Fields:    sourceFunctionFields("Imported external function from the source script."),
+		},
+		{
+			Type:      "source_review",
+			Protocols: []string{"*"},
+			Summary:   "Imported step that converted with caveats; logged for manual review during replay.",
+			Fields:    sourceFunctionFields("Original source function awaiting review."),
+		},
+		{
+			Type:      "custom_call",
+			Protocols: []string{"*"},
+			Summary:   "Imported custom/user C function; logged for manual review during replay.",
+			Fields:    sourceFunctionFields("Custom function name from the source script."),
+		},
+		{
+			Type:      "review_required",
+			Protocols: []string{"*"},
+			Summary:   "Authoring placeholder for a step that must be resolved by a human before launch; not dispatched by the engine.",
+			Fields: []FieldSpec{
+				{Name: "params.reason", Kind: FieldKindString, Doc: "Why the step needs review."},
+			},
+		},
+	}
+}

@@ -2,10 +2,13 @@ package api
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/recorder"
@@ -151,6 +154,42 @@ func TestHandleExportRecordingHAR(t *testing.T) {
 	}
 	if len(payload.Log.Entries) != 1 {
 		t.Fatalf("entry count = %d, want 1", len(payload.Log.Entries))
+	}
+}
+
+func TestHandleRecorderCACertHonorsFormatAfterInitialization(t *testing.T) {
+	t.Setenv("APEXLOAD_RECORDER_CA_DIR", t.TempDir())
+	server := NewServer(ServerConfig{})
+
+	pemReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/ca.pem?format=pem", nil)
+	pemResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(pemResp, pemReq)
+
+	if pemResp.Code != http.StatusOK {
+		t.Fatalf("pem status = %d, want %d body=%s", pemResp.Code, http.StatusOK, pemResp.Body.String())
+	}
+	if ct := pemResp.Header().Get("Content-Type"); ct != "application/x-pem-file" {
+		t.Fatalf("pem content type = %q, want application/x-pem-file", ct)
+	}
+	if block, _ := pem.Decode(pemResp.Body.Bytes()); block == nil {
+		t.Fatal("expected PEM certificate body")
+	}
+
+	crtReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/ca.pem", nil)
+	crtResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(crtResp, crtReq)
+
+	if crtResp.Code != http.StatusOK {
+		t.Fatalf("crt status = %d, want %d body=%s", crtResp.Code, http.StatusOK, crtResp.Body.String())
+	}
+	if ct := crtResp.Header().Get("Content-Type"); ct != "application/x-x509-ca-cert" {
+		t.Fatalf("crt content type = %q, want application/x-x509-ca-cert", ct)
+	}
+	if cd := crtResp.Header().Get("Content-Disposition"); !strings.Contains(cd, "apexload-ca.crt") {
+		t.Fatalf("crt content disposition = %q, want apexload-ca.crt", cd)
+	}
+	if _, err := x509.ParseCertificate(crtResp.Body.Bytes()); err != nil {
+		t.Fatalf("expected DER certificate body: %v", err)
 	}
 }
 

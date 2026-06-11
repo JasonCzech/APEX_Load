@@ -188,6 +188,22 @@ describe('RecordingStudio', () => {
     expect(restoreCommand).toContain(`Remove-Item -Path $statePath -ErrorAction SilentlyContinue`)
   })
 
+  it('renders corrected CA installation and trust instructions', async () => {
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Install and trust the APEX Load CA certificate for SSL/TLS')
+    expect(container.textContent).toContain('ERR_CERT_AUTHORITY_INVALID')
+    expect(container.textContent).toContain('import into the System keychain')
+    expect(container.textContent).toContain('Secure Sockets Layer (SSL)')
+    expect(container.textContent).toContain('Always Trust')
+    expect(container.textContent).toContain('Trusted Root Certification Authorities')
+    expect(container.textContent).toContain('Trust this CA to identify websites')
+    expect(container.textContent).toContain('Remove older')
+  })
+
   it('reviews a recording conversion and saves it through the shared script flow', async () => {
     const onImported = vi.fn()
     const onEdit = vi.fn()

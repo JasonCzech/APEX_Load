@@ -645,6 +645,7 @@ type StoredScript struct {
 	FolderID            *string          `json:"folder_id,omitempty"`
 	CreatedAt           time.Time        `json:"created_at"`
 	ScenarioCount       int              `json:"scenario_count,omitempty"`
+	AssociatedScenarios []ScenarioRef    `json:"associated_scenarios,omitempty"`
 	AssociatedReleases  []ReleaseRef     `json:"associated_releases,omitempty"`
 	ScenarioRunReleases []ReleaseRef     `json:"scenario_run_releases,omitempty"`
 	LastRunAt           *time.Time       `json:"last_run_at,omitempty"`
@@ -756,6 +757,11 @@ type ReleaseRef struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
 	ApplicationID string `json:"application_id"`
+}
+
+type ScenarioRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type archiveRecorder interface {
@@ -1793,7 +1799,7 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 	if runtimeSettingsReview := buildRuntimeSettingsScenarioReview(testGroups, engineGroups); runtimeSettingsReview != nil && runtimeSettingsReview.Status == "blocked" {
 		return nil, fmt.Errorf("runtime settings blocked: %s", runtimeSettingsReview.Summary)
 	}
-	now := time.Now()
+	now := time.Now().UTC()
 	existing := tr.scenarios[id]
 	createdAt := now
 	refKey := ""
@@ -2149,14 +2155,14 @@ func (tr *TestRunner) enrichScriptSummaryLocked(script *StoredScript) *StoredScr
 		return nil
 	}
 	copy := *script
-	scenarioSet := map[string]bool{}
+	scenarioSet := map[string]ScenarioRef{}
 	releaseSet := map[string]ReleaseRef{}
 	scenarioRunReleaseSet := map[string]ReleaseRef{}
 	var lastRun *time.Time
 	for _, scenario := range tr.scenarios {
 		for _, scenarioScript := range scenario.Scripts {
 			if scenarioScript.ScriptID == script.ID {
-				scenarioSet[scenario.ID] = true
+				scenarioSet[scenario.ID] = ScenarioRef{ID: scenario.ID, Name: scenario.Name}
 			}
 		}
 	}
@@ -2183,6 +2189,7 @@ func (tr *TestRunner) enrichScriptSummaryLocked(script *StoredScript) *StoredScr
 		}
 	}
 	copy.ScenarioCount = len(scenarioSet)
+	copy.AssociatedScenarios = scenarioRefsFromSet(scenarioSet)
 	copy.AssociatedReleases = releaseRefsFromSet(releaseSet)
 	copy.ScenarioRunReleases = releaseRefsFromSet(scenarioRunReleaseSet)
 	copy.LastRunAt = lastRun
@@ -2249,23 +2256,38 @@ func releaseRefsFromSet(set map[string]ReleaseRef) []ReleaseRef {
 	return out
 }
 
+func scenarioRefsFromSet(set map[string]ScenarioRef) []ScenarioRef {
+	out := make([]ScenarioRef, 0, len(set))
+	for _, scenario := range set {
+		out = append(out, scenario)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name == out[j].Name {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
 type CreateTestRequest struct {
-	Name             string                            `json:"name"`
-	Duration         string                            `json:"duration"`
-	StartDelay       string                            `json:"start_delay,omitempty"`
-	ApplicationID    string                            `json:"application_id,omitempty"`
-	ReleaseID        string                            `json:"release_id,omitempty"`
-	ScenarioID       string                            `json:"scenario_id,omitempty"`
-	ProjectID        string                            `json:"project_id,omitempty"`
-	FolderID         *string                           `json:"folder_id,omitempty"`
-	ScheduledStartAt *time.Time                        `json:"scheduled_start_at,omitempty"`
-	ScenarioMode     string                            `json:"scenario_mode,omitempty"`
-	ScriptShakeout   bool                              `json:"script_shakeout,omitempty"`
-	ResourceBaseline bool                              `json:"resource_baseline,omitempty"`
-	Assignment       *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
-	GoalConfig       *GoalConfig                       `json:"goal_config,omitempty"`
-	Groups           []CreateGroupEntry                `json:"groups,omitempty"`
-	DataPools        []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	Name                string                            `json:"name"`
+	Duration            string                            `json:"duration"`
+	StartDelay          string                            `json:"start_delay,omitempty"`
+	ReserveLaunchWindow bool                              `json:"reserve_launch_window,omitempty"`
+	ApplicationID       string                            `json:"application_id,omitempty"`
+	ReleaseID           string                            `json:"release_id,omitempty"`
+	ScenarioID          string                            `json:"scenario_id,omitempty"`
+	ProjectID           string                            `json:"project_id,omitempty"`
+	FolderID            *string                           `json:"folder_id,omitempty"`
+	ScheduledStartAt    *time.Time                        `json:"scheduled_start_at,omitempty"`
+	ScenarioMode        string                            `json:"scenario_mode,omitempty"`
+	ScriptShakeout      bool                              `json:"script_shakeout,omitempty"`
+	ResourceBaseline    bool                              `json:"resource_baseline,omitempty"`
+	Assignment          *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
+	GoalConfig          *GoalConfig                       `json:"goal_config,omitempty"`
+	Groups              []CreateGroupEntry                `json:"groups,omitempty"`
+	DataPools           []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
 	// Single-script shorthand (backwards compatible)
 	ScriptID string `json:"script_id,omitempty"`
 	VUsers   int    `json:"vusers,omitempty"`
@@ -2707,13 +2729,28 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 
+	now := time.Now()
 	status := "QUEUED"
-	if req.ScheduledStartAt != nil && req.ScheduledStartAt.After(time.Now()) {
+	if req.ReserveLaunchWindow {
+		status = "RESERVED"
+		start := now
+		if req.ScheduledStartAt != nil && !req.ScheduledStartAt.IsZero() {
+			start = *req.ScheduledStartAt
+		}
+		roundedStart := ceilToNextQuarterHour(start)
+		req.ScheduledStartAt = &roundedStart
+	} else if req.ScheduledStartAt != nil && req.ScheduledStartAt.After(now) {
 		status = "SCHEDULED"
 	}
 	test, err := tr.buildManagedTestLocked(req, uuid.New().String(), status)
 	if err != nil {
 		return nil, err
+	}
+	if status == "RESERVED" && test.ScheduledStartAt != nil {
+		window := launchWindowForTest(test, test.ScheduledStartAt.UTC())
+		if conflicts := tr.launchWindowConflictsLocked(test, window, now.UTC(), ""); len(conflicts) > 0 {
+			return nil, fmt.Errorf("launch window conflict: %s", conflicts[0].Message)
+		}
 	}
 
 	tr.tests[test.ID] = test
@@ -2723,6 +2760,18 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 
 	tr.broadcastEvent("test_created", test)
 	return test, nil
+}
+
+func ceilToNextQuarterHour(value time.Time) time.Time {
+	if value.IsZero() {
+		return value
+	}
+	if value.Minute()%15 == 0 && value.Second() == 0 && value.Nanosecond() == 0 {
+		return value
+	}
+	floorMinute := value.Minute() / 15 * 15
+	floor := time.Date(value.Year(), value.Month(), value.Day(), value.Hour(), floorMinute, 0, 0, value.Location())
+	return floor.Add(15 * time.Minute)
 }
 
 func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, status string) (*ManagedTest, error) {
@@ -3766,8 +3815,8 @@ func (tr *TestRunner) preflightStartBlocksLocked(id string, opts StartTestOption
 	if !ok {
 		return false, fmt.Errorf("test not found: %s", id)
 	}
-	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SCHEDULED" && test.Status != "SHAKEOUT_REVIEW" {
-		return false, fmt.Errorf("test is %s, must be QUEUED, PENDING, SCHEDULED, or SHAKEOUT_REVIEW to start", test.Status)
+	if !isStartableTestStatus(test.Status) {
+		return false, startableTestStatusError(test.Status)
 	}
 
 	tr.refreshCapacityAdvisoryLocked(test)
@@ -3795,6 +3844,19 @@ func (tr *TestRunner) preflightStartBlocksLocked(id string, opts StartTestOption
 	return false, nil
 }
 
+func isStartableTestStatus(status string) bool {
+	switch status {
+	case "QUEUED", "PENDING", "RESERVED", "SCHEDULED", "SHAKEOUT_REVIEW":
+		return true
+	default:
+		return false
+	}
+}
+
+func startableTestStatusError(status string) error {
+	return fmt.Errorf("test is %s, must be QUEUED, PENDING, RESERVED, SCHEDULED, or SHAKEOUT_REVIEW to start", status)
+}
+
 func (tr *TestRunner) beginScriptShakeoutIfNeeded(id string, opts StartTestOptions) (*ManagedTest, error) {
 	if opts.OverrideScriptShakeoutError {
 		return nil, nil
@@ -3809,8 +3871,8 @@ func (tr *TestRunner) beginScriptShakeoutIfNeeded(id string, opts StartTestOptio
 	if !test.ScriptShakeout {
 		return nil, nil
 	}
-	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SCHEDULED" && test.Status != "SHAKEOUT_REVIEW" {
-		return nil, fmt.Errorf("test is %s, must be QUEUED, PENDING, SCHEDULED, or SHAKEOUT_REVIEW to start", test.Status)
+	if !isStartableTestStatus(test.Status) {
+		return nil, startableTestStatusError(test.Status)
 	}
 
 	test.Status = "SHAKEOUT"
@@ -3864,8 +3926,8 @@ func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
-	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SCHEDULED" && test.Status != "SHAKEOUT_REVIEW" {
-		return nil, fmt.Errorf("test is %s, must be QUEUED, PENDING, SCHEDULED, or SHAKEOUT_REVIEW to start", test.Status)
+	if !isStartableTestStatus(test.Status) {
+		return nil, startableTestStatusError(test.Status)
 	}
 
 	tr.refreshCapacityAdvisoryLocked(test)
@@ -4462,7 +4524,7 @@ func (tr *TestRunner) StopTest(id string) error {
 	if !ok {
 		return fmt.Errorf("test not found: %s", id)
 	}
-	if test.Status == "QUEUED" || test.Status == "PENDING" || test.Status == "SHAKEOUT" || test.Status == "SHAKEOUT_REVIEW" {
+	if test.Status == "QUEUED" || test.Status == "PENDING" || test.Status == "RESERVED" || test.Status == "SHAKEOUT" || test.Status == "SHAKEOUT_REVIEW" {
 		tr.mu.Lock()
 		if current, ok := tr.tests[id]; ok {
 			now := time.Now().UTC()
@@ -6256,7 +6318,7 @@ func buildLiveCapacityStatus(current *ManagedTest, live *LiveMetrics, tests []*M
 		switch test.Status {
 		case "INITIALIZING", "RUNNING", "PAUSED":
 			addCapacityDemand(status, test, "allocated")
-		case "QUEUED", "PENDING":
+		case "QUEUED", "PENDING", "RESERVED":
 			status.QueuedVUsers += test.TotalVUsers
 			addCapacityDemand(status, test, "queued")
 		}

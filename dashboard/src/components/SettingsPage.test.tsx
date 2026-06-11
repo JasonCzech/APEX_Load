@@ -251,6 +251,14 @@ describe('SettingsPage', () => {
         default_retention_days: 45,
         policies: [],
       },
+      schedule_defaults: {
+        approval_policy: 'auto',
+        missed_run_policy: 'skip',
+        blackout_start_time: '',
+        blackout_end_time: '',
+        availability_start_time: '',
+        availability_end_time: '',
+      },
       notifications: {
         webhooks: [],
       },
@@ -264,6 +272,27 @@ describe('SettingsPage', () => {
         email_header: 'X-Auth-Request-Email',
         roles_header: 'X-APEXLoad-Roles',
         project_roles_header: 'X-APEXLoad-Project-Roles',
+      },
+      github: {
+        enabled: false,
+        client_id: '',
+        client_secret_env_var: 'APEXLOAD_GITHUB_CLIENT_SECRET',
+        app_id: 0,
+        app_slug: '',
+        app_private_key_env_var: 'APEXLOAD_GITHUB_APP_PRIVATE_KEY',
+        app_private_key_file: '',
+        webhook_secret_env_var: 'APEXLOAD_GITHUB_WEBHOOK_SECRET',
+        pat_env_var: '',
+        automation_mode: 'app_oauth_pat',
+        checks_enabled: false,
+        api_base_url: 'https://api.github.com',
+        web_base_url: 'https://github.com',
+        ca_cert_file: '',
+        tls_insecure_skip_verify: false,
+        scopes: ['repo'],
+        default_repo: '',
+        default_branch: 'main',
+        path_template: 'apexload/scripts/{project}/{ref_key}.json',
       },
     })
     apiMock.getAuthRoleCatalog.mockResolvedValue({
@@ -710,6 +739,63 @@ describe('SettingsPage', () => {
 
     expect(findSettingInput(generalSection, 'Max Concurrent Tests')?.value).toBe('12')
     expect(findButton('Save Changes')?.disabled).toBe(false)
+  })
+
+  it('edits administrator-owned schedule governance and calendar defaults from Settings', async () => {
+    apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    await selectGeneralSubnav(generalSection, 'Governance')
+
+    expect(generalSection.textContent).toContain('Scenario Schedule Defaults')
+    const approvalSelect = findSettingSelect(generalSection, 'Approval Policy')
+    const missedRunSelect = findSettingSelect(generalSection, 'Missed Run Policy')
+    expect(approvalSelect?.value).toBe('auto')
+    expect(missedRunSelect?.value).toBe('skip')
+    if (!approvalSelect || !missedRunSelect) return
+
+    await setFieldValue(approvalSelect, 'production')
+    await setFieldValue(missedRunSelect, 'catch_up_once')
+
+    const blackoutRow = Array.from(generalSection.querySelectorAll('.setting-row')).find(row => row.textContent?.includes('Blackout Window'))
+    const availabilityRow = Array.from(generalSection.querySelectorAll('.setting-row')).find(row => row.textContent?.includes('Availability Window'))
+    const blackoutInputs = Array.from(blackoutRow?.querySelectorAll('input') || []) as HTMLInputElement[]
+    const availabilityInputs = Array.from(availabilityRow?.querySelectorAll('input') || []) as HTMLInputElement[]
+    expect(blackoutInputs).toHaveLength(2)
+    expect(availabilityInputs).toHaveLength(2)
+
+    await setFieldValue(blackoutInputs[0], '00:00')
+    await setFieldValue(blackoutInputs[1], '06:00')
+    await setFieldValue(availabilityInputs[0], '09:00')
+    await setFieldValue(availabilityInputs[1], '17:00')
+
+    const saveButton = findButton('Save Changes')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
+      schedule_defaults: expect.objectContaining({
+        approval_policy: 'production',
+        missed_run_policy: 'catch_up_once',
+        blackout_start_time: '00:00',
+        blackout_end_time: '06:00',
+        availability_start_time: '09:00',
+        availability_end_time: '17:00',
+      }),
+    }))
   })
 
   it('subdivides capacity, project, and integration settings into focused panels', async () => {

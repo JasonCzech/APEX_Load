@@ -306,6 +306,55 @@ paths:
           type: string
       tags:
       - Applications
+  /api/v1/applications/{id}/load-comparison:
+    get:
+      summary: Get Application Load Comparison
+      description: '**Handler:** `handleGetApplicationLoadComparison`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetApplicationLoadComparison
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: scope
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - transaction
+          - group
+      - name: key
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: test_id
+        in: query
+        required: false
+        description: Repeat to limit comparison input to selected archived test runs.
+        schema:
+          type: array
+          items:
+            type: string
+        style: form
+        explode: true
+      - name: test_ids
+        in: query
+        required: false
+        description: Comma-separated archived test run IDs used as an alternative to repeated test_id params.
+        schema:
+          type: string
+      tags:
+      - Applications
   /api/v1/applications/{id}/releases:
     post:
       summary: Create Release
@@ -2313,6 +2362,32 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
       - Correlations
+  /api/v1/dsl/actions:
+    get:
+      summary: List DSL Action Catalog
+      description: '**Handler:** `handleListDSLActions`
+
+
+        Declarative action-type catalog (types, protocols, fields, enums, docs)
+        generated from pkg/dsl. Optional `protocol` query narrows the list to the
+        action types valid for that script protocol.
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListDSLActions
+      parameters:
+      - name: protocol
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Script protocol to filter by (e.g. http, browser, jms-solace).
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
   /api/v1/scripts/{id}/validate:
     post:
       summary: Validate Script

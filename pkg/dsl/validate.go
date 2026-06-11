@@ -189,17 +189,8 @@ func CanonicalActionType(actionType string) string {
 }
 
 func isEngineActionType(actionType string) bool {
-	switch CanonicalActionType(actionType) {
-	case "control_if", "control_loop",
-		"rendezvous", "error_message",
-		"source_message", "source_runtime", "source_transaction", "source_timer",
-		"source_metric", "source_parameter", "source_json", "source_xml",
-		"source_database", "source_secret", "source_external", "source_review",
-		"custom_call", "review_required":
-		return true
-	default:
-		return false
-	}
+	spec, ok := actionCatalogIndex()[CanonicalActionType(actionType)]
+	return ok && spec.EngineAction()
 }
 
 // validateActionForProtocol dispatches a single action to the engine or the
@@ -347,25 +338,14 @@ func rebaseActionIssues(oldPath, newPath string, issues []string) []string {
 }
 
 func validateGRPCActionIssues(index int, action Action) []string {
-	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
-	var issues []string
-	switch action.Type {
-	case "grpc_unary", "grpc_server_stream", "grpc_client_stream", "grpc_bidi_stream":
-		if strings.TrimSpace(action.Target) == "" {
-			issues = append(issues, fmt.Sprintf("%s: missing target", label))
-		} else if !strings.Contains(strings.Trim(action.Target, "/"), "/") {
-			issues = append(issues, fmt.Sprintf("%s: %s target must be service/method", label, action.Type))
-		}
-		if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
-			issues = append(issues, fmt.Sprintf("%s: %s timeout_ms must be zero or greater", label, action.Type))
-		}
-		if maxMessages, ok := actionParamIntValue(action.Params, "max_messages"); ok && maxMessages < 0 {
-			issues = append(issues, fmt.Sprintf("%s: %s max_messages must be zero or greater", label, action.Type))
-		}
-	default:
-		issues = append(issues, fmt.Sprintf("%s: unsupported grpc action type %q", label, action.Type))
+	spec, ok := protocolActionSpec("grpc", action.Type)
+	if !ok {
+		return []string{fmt.Sprintf("actions[%d] %q: unsupported grpc action type %q", index, action.Name, action.Type)}
 	}
-	return issues
+	if spec.Validate == nil {
+		return nil
+	}
+	return spec.Validate(index, action)
 }
 
 func validateWebSocketConfigIssues(script *Script) []string {
@@ -387,30 +367,14 @@ func validateWebSocketConfigIssues(script *Script) []string {
 }
 
 func validateWebSocketActionIssues(index int, action Action) []string {
-	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
-	var issues []string
-	switch action.Type {
-	case "ws_connect":
-		if strings.TrimSpace(action.Target) == "" {
-			issues = append(issues, fmt.Sprintf("%s: missing target", label))
-		}
-	case "ws_send":
-		if action.Body == "" {
-			issues = append(issues, fmt.Sprintf("%s: ws_send requires body", label))
-		}
-		if messageType, ok := actionParamStringValue(action.Params, "type"); ok && !isAllowedValue(messageType, "text", "binary") {
-			issues = append(issues, fmt.Sprintf("%s: ws_send type must be text or binary", label))
-		}
-	case "ws_receive":
-		if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
-			issues = append(issues, fmt.Sprintf("%s: ws_receive timeout_ms must be zero or greater", label))
-		}
-	case "ws_close":
-	case "ws_ping":
-	default:
-		issues = append(issues, fmt.Sprintf("%s: unsupported websocket action type %q", label, action.Type))
+	spec, ok := protocolActionSpec("websocket", action.Type)
+	if !ok {
+		return []string{fmt.Sprintf("actions[%d] %q: unsupported websocket action type %q", index, action.Name, action.Type)}
 	}
-	return issues
+	if spec.Validate == nil {
+		return nil
+	}
+	return spec.Validate(index, action)
 }
 
 func validateGoalConfigIssues(goal *GoalConfig) []string {
@@ -491,88 +455,17 @@ func validateBrowserConfigIssues(script *Script) []string {
 }
 
 func validateBrowserActionIssues(index int, action Action) []string {
-	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
-	var issues []string
-	switch action.Type {
-	case "rendezvous":
+	if action.Type == "rendezvous" {
 		return validateRendezvousActionIssues(index, action)
-	case "browser_screenshot":
+	}
+	spec, ok := protocolActionSpec("browser", action.Type)
+	if !ok {
+		return []string{fmt.Sprintf("actions[%d] %q: unsupported browser action type %q", index, action.Name, action.Type)}
+	}
+	if spec.Validate == nil {
 		return nil
-	case "browser_wait":
-		if action.WaitFor == nil && action.Selector == "" && action.Target == "" {
-			issues = append(issues, fmt.Sprintf("%s: browser_wait requires wait_for, selector, or target", label))
-		}
-		return issues
-	case "browser_navigate", "browser_click", "browser_fill", "browser_select", "browser_tap", "browser_long_press", "browser_swipe", "browser_dblclick", "browser_hover", "browser_set_files":
-		if action.Target == "" && action.Selector == "" {
-			issues = append(issues, fmt.Sprintf("%s: missing target or selector", label))
-		}
-	case "browser_drag_and_drop":
-		if action.Target == "" && action.Selector == "" {
-			issues = append(issues, fmt.Sprintf("%s: missing target or selector", label))
-		}
-		if target, ok := actionParamStringValue(action.Params, "target"); !ok || strings.TrimSpace(target) == "" {
-			issues = append(issues, fmt.Sprintf("%s: browser_drag_and_drop requires params.target", label))
-		}
-	case "browser_press_key":
-		// Selector is optional; without one the key is pressed in the currently focused page.
-	case "browser_evaluate_js":
-		if strings.TrimSpace(action.Target) == "" {
-			issues = append(issues, fmt.Sprintf("%s: browser_evaluate_js requires target script", label))
-		}
-	case "browser_switch_frame", "browser_switch_window":
-		if action.Type == "browser_switch_frame" && action.Target == "" && action.Selector == "" {
-			if frame, ok := actionParamStringValue(action.Params, "frame"); !ok || strings.TrimSpace(frame) == "" {
-				if frameSelector, ok := actionParamStringValue(action.Params, "frame_selector"); !ok || strings.TrimSpace(frameSelector) == "" {
-					issues = append(issues, fmt.Sprintf("%s: browser_switch_frame requires selector, target, params.frame, or params.frame_selector", label))
-				}
-			}
-		}
-	default:
-		issues = append(issues, fmt.Sprintf("%s: unsupported browser action type %q", label, action.Type))
-		return issues
 	}
-	issues = append(issues, validateBrowserSyncPolicyIssues(label, action.Sync)...)
-
-	switch action.Type {
-	case "browser_fill", "browser_select":
-		if action.Value == "" {
-			issues = append(issues, fmt.Sprintf("%s: %s requires value", label, action.Type))
-		}
-	case "browser_set_files":
-		if action.Value == "" {
-			if file, ok := actionParamStringValue(action.Params, "file"); !ok || strings.TrimSpace(file) == "" {
-				if path, ok := actionParamStringValue(action.Params, "path"); !ok || strings.TrimSpace(path) == "" {
-					if _, ok := action.Params["files"]; !ok {
-						issues = append(issues, fmt.Sprintf("%s: browser_set_files requires value, params.file, params.path, or params.files", label))
-					}
-				}
-			}
-		}
-	case "browser_press_key":
-		if strings.TrimSpace(action.Value) == "" {
-			if key, ok := actionParamStringValue(action.Params, "key"); !ok || strings.TrimSpace(key) == "" {
-				if keyName, ok := actionParamStringValue(action.Params, "key_name"); !ok || strings.TrimSpace(keyName) == "" {
-					if camelKeyName, ok := actionParamStringValue(action.Params, "keyName"); !ok || strings.TrimSpace(camelKeyName) == "" {
-						issues = append(issues, fmt.Sprintf("%s: browser_press_key requires value, params.key, or params.key_name", label))
-					}
-				}
-			}
-		}
-	case "browser_long_press":
-		if durationMs, ok := actionParamIntValue(action.Params, "duration_ms"); ok && durationMs <= 0 {
-			issues = append(issues, fmt.Sprintf("%s: browser_long_press duration_ms must be greater than zero", label))
-		}
-	case "browser_swipe":
-		if direction, ok := actionParamStringValue(action.Params, "direction"); ok && !isAllowedValue(direction, "left", "right", "up", "down") {
-			issues = append(issues, fmt.Sprintf("%s: browser_swipe direction must be left, right, up, or down", label))
-		}
-		if distance, ok := actionParamIntValue(action.Params, "distance"); ok && distance <= 0 {
-			issues = append(issues, fmt.Sprintf("%s: browser_swipe distance must be greater than zero", label))
-		}
-	}
-
-	return issues
+	return spec.Validate(index, action)
 }
 
 func validateBrowserSyncPolicyIssues(label string, sync *BrowserSyncPolicy) []string {
@@ -705,11 +598,9 @@ func validateJMSScriptIssues(script *Script) []string {
 		if strings.TrimSpace(action.Name) == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d]: missing name", i))
 		}
-		switch action.Type {
-		case "jms_publish", "jms_consume", "jms_request_reply", "jms_ack", "jms_commit", "jms_rollback":
-		case "":
+		if action.Type == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing type", i, action.Name))
-		default:
+		} else if _, ok := protocolActionSpec("jms", action.Type); !ok {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: unsupported JMS action type %q", i, action.Name, action.Type))
 		}
 		if (action.Type == "jms_publish" || action.Type == "jms_consume" || action.Type == "jms_request_reply") && action.Target == "" && jms.Destination == "" {
@@ -774,11 +665,9 @@ func validateKafkaScriptIssues(script *Script) []string {
 		if strings.TrimSpace(action.Name) == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d]: missing name", i))
 		}
-		switch action.Type {
-		case "kafka_produce", "kafka_consume", "kafka_request_reply", "kafka_commit", "kafka_seek":
-		case "":
+		if action.Type == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing type", i, action.Name))
-		default:
+		} else if _, ok := protocolActionSpec("kafka", action.Type); !ok {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: unsupported Kafka action type %q", i, action.Name, action.Type))
 		}
 		if (action.Type == "kafka_produce" || action.Type == "kafka_consume" || action.Type == "kafka_request_reply") && action.Target == "" && kafka.Topic == "" {
@@ -1082,14 +971,11 @@ func validateDatabaseActionIssues(index int, action Action) []string {
 	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
 	var issues []string
 	actionType := strings.ToLower(strings.TrimSpace(action.Type))
-	switch actionType {
-	case "db_begin", "database_begin", "begin", "db_commit", "database_commit", "commit", "db_rollback", "database_rollback", "rollback", "db_health", "database_health", "ping":
-	case "db_query", "database_query", "query", "select", "db_exec", "database_exec", "exec", "execute", "insert", "update", "delete", "db_procedure", "stored_procedure":
-		if strings.TrimSpace(action.Target) == "" && strings.TrimSpace(action.Body) == "" {
-			issues = append(issues, fmt.Sprintf("%s: database action requires target or body SQL", label))
-		}
-	default:
+	spec, ok := protocolActionSpec("database", actionType)
+	if !ok {
 		issues = append(issues, fmt.Sprintf("%s: unsupported database action type %q", label, action.Type))
+	} else if spec.Validate != nil {
+		issues = append(issues, spec.Validate(index, action)...)
 	}
 	if maxRows, ok := actionParamIntValue(action.Params, "max_rows"); ok && maxRows < 0 {
 		issues = append(issues, fmt.Sprintf("%s: max_rows must be zero or greater", label))
@@ -1121,30 +1007,11 @@ func validateNetworkActionIssues(index int, action Action) []string {
 	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
 	var issues []string
 	actionType := strings.ToLower(strings.TrimSpace(action.Type))
-	switch actionType {
-	case "network_health":
-	case "dns_query", "dns_lookup":
-		if strings.TrimSpace(action.Target) == "" {
-			issues = append(issues, fmt.Sprintf("%s: dns action requires target host", label))
-		}
-		if recordType, ok := actionParamStringValue(action.Params, "record_type"); ok && !isAllowedValue(strings.ToUpper(recordType), "A", "AAAA", "CNAME", "MX", "NS", "TXT") {
-			issues = append(issues, fmt.Sprintf("%s: dns record_type must be A, AAAA, CNAME, MX, NS, or TXT", label))
-		}
-	case "tcp_request", "tcp_send", "winsock_tcp", "udp_request", "udp_send", "winsock_udp":
-		if strings.TrimSpace(action.Target) == "" {
-			issues = append(issues, fmt.Sprintf("%s: socket action requires target address", label))
-		}
-	case "ftp_command", "ftp_login", "ftp_noop", "smtp_send", "pop3_command", "imap_command":
-		if strings.TrimSpace(action.Target) == "" && strings.TrimSpace(action.Value) == "" && strings.TrimSpace(action.Body) == "" {
-			issues = append(issues, fmt.Sprintf("%s: %s requires target, value, or body", label, actionType))
-		}
-	case "ldap_bind":
-	case "ldap_search":
-		if strings.TrimSpace(action.Target) == "" {
-			issues = append(issues, fmt.Sprintf("%s: ldap_search requires target base DN", label))
-		}
-	default:
+	spec, ok := protocolActionSpec("network", actionType)
+	if !ok {
 		issues = append(issues, fmt.Sprintf("%s: unsupported network action type %q", label, action.Type))
+	} else if spec.Validate != nil {
+		issues = append(issues, spec.Validate(index, action)...)
 	}
 	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
 		issues = append(issues, fmt.Sprintf("%s: timeout_ms must be zero or greater", label))

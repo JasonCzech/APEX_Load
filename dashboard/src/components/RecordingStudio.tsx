@@ -434,10 +434,10 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
               <div className="rec-step-content">
                 <div className="rec-step-title">Download &amp; Install CA Certificate</div>
                 <div className="rec-step-desc">
-                  Install the APEX Load CA certificate so the proxy can intercept HTTPS traffic.
+                  Install and trust the APEX Load CA certificate for SSL/TLS so the proxy can intercept HTTPS traffic.
                 </div>
                 <div className="rec-step-note">
-                  The recorder now reuses the same CA across controller restarts. Trust it once, then only re-download if you delete the CA files or change the recorder CA directory.
+                  Only trust this private recording CA on a workstation you control. The recorder reuses the same CA across controller restarts, so install it again only if you delete the CA files or change the recorder CA directory.
                   {caCertPath && (
                     <div className="rec-step-note-path">
                       <span>Current certificate path:</span>
@@ -446,7 +446,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
                     </div>
                   )}
                   <div className="rec-step-note-troubleshoot">
-                    If the browser still says the connection is not secure, remove older APEX Load CA entries, trust this CA for SSL/TLS, and restart the browser. Firefox may require explicit import or system-root trust to be enabled.
+                    If the browser still reports <code>ERR_CERT_AUTHORITY_INVALID</code>, the CA is imported but not trusted for SSL/TLS, the browser is using a separate trust store, or an older APEX Load CA is still selected.
                   </div>
                 </div>
                 <div className="rec-download-row">
@@ -463,9 +463,11 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
                   </button>
                 </div>
                 <div className="rec-os-instructions">
-                  <div><span className="rec-os-label">macOS:</span> Double-click the .crt file &rarr; Keychain Access opens &rarr; Find &ldquo;APEX Load Recording Proxy CA&rdquo; &rarr; Double-click &rarr; Trust &rarr; Always Trust</div>
-                  <div><span className="rec-os-label">Windows:</span> Double-click .crt &rarr; Install Certificate &rarr; Local Machine &rarr; Place in &ldquo;Trusted Root Certification Authorities&rdquo;</div>
-                  <div><span className="rec-os-label">Firefox:</span> Download PEM format &rarr; Settings &rarr; Privacy &amp; Security &rarr; Certificates &rarr; View &rarr; Import &rarr; Check &ldquo;Trust for websites&rdquo;</div>
+                  <div><span className="rec-os-label">macOS Chrome, Edge, Safari:</span> Download .crt &rarr; open Keychain Access &rarr; import into the System keychain &rarr; open &ldquo;APEX Load Recording Proxy CA&rdquo; &rarr; expand Trust &rarr; set &ldquo;When using this certificate&rdquo; or &ldquo;Secure Sockets Layer (SSL)&rdquo; to Always Trust &rarr; close the window, enter your password, and restart the browser.</div>
+                  <div><span className="rec-os-label">Windows Chrome, Edge:</span> Download .crt &rarr; Install Certificate &rarr; Local Machine &rarr; place it in &ldquo;Trusted Root Certification Authorities&rdquo; &rarr; finish the wizard and restart the browser.</div>
+                  <div><span className="rec-os-label">Firefox:</span> Download PEM format &rarr; Settings &rarr; Privacy &amp; Security &rarr; Certificates &rarr; View Certificates &rarr; Authorities &rarr; Import &rarr; enable &ldquo;Trust this CA to identify websites&rdquo; &rarr; restart Firefox. If Firefox is configured to use system roots, restart after trusting the OS root instead.</div>
+                  <div><span className="rec-os-label">Linux:</span> Download PEM format and add it to the browser or distro trust store used by your browser, then restart the browser.</div>
+                  <div><span className="rec-os-label">Cleanup:</span> Remove older &ldquo;APEX Load Recording Proxy CA&rdquo; entries if more than one exists, then trust the current CA shown above.</div>
                 </div>
               </div>
             </div>

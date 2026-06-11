@@ -11,18 +11,21 @@ interface Props {
 
 export default function TestExecutionQueuedRunActions({ test, onStart, onSelectTest }: Props) {
   const [showScenarioEditor, setShowScenarioEditor] = useState(false)
+  const canStart = test.status === 'QUEUED' || test.status === 'RESERVED'
 
-  if (test.status !== 'QUEUED') {
+  if (!canStart) {
     return null
   }
 
   return (
     <>
-      <button className="btn btn-secondary" onClick={() => setShowScenarioEditor(true)}>
-        Revise Queued Run
-      </button>
+      {test.status === 'QUEUED' && (
+        <button className="btn btn-secondary" onClick={() => setShowScenarioEditor(true)}>
+          Revise Queued Run
+        </button>
+      )}
       <button className="btn btn-success" onClick={onStart}>
-        Start
+        Start Test
       </button>
 
       <TestExecutionScenarioEditor

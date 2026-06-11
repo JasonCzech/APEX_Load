@@ -66,7 +66,7 @@ describe('TestExecutionQueuedRunActions', () => {
 
     const buttons = Array.from(container.querySelectorAll('button'))
     const reviseButton = buttons.find((button) => button.textContent?.includes('Revise Queued Run'))
-    const startButton = buttons.find((button) => button.textContent?.includes('Start'))
+    const startButton = buttons.find((button) => button.textContent?.includes('Start Test'))
 
     expect(reviseButton).toBeDefined()
     expect(startButton).toBeDefined()
@@ -113,5 +113,38 @@ describe('TestExecutionQueuedRunActions', () => {
     })
 
     expect(container.textContent).toBe('')
+  })
+
+  it('shows the start action without queued-run revision for reserved tests', async () => {
+    const onStart = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <TestExecutionQueuedRunActions
+          test={{
+            id: 'test-1',
+            name: 'Reserved Checkout Run',
+            status: 'RESERVED',
+            total_vusers: 10,
+            duration: '5m',
+            created_at: '2026-05-12T20:00:00Z',
+            scheduled_start_at: '2026-05-12T20:15:00Z',
+            groups: [],
+          } as never}
+          onStart={onStart}
+          onSelectTest={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Start Test')
+    expect(container.textContent).not.toContain('Revise Queued Run')
+
+    const startButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Start Test'))
+    await act(async () => {
+      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onStart).toHaveBeenCalledTimes(1)
   })
 })

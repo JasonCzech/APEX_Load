@@ -100,6 +100,7 @@ const DEFAULT_LIVE_FEEDBACK = 'Command center is connected to live run data.'
 const DEFAULT_HISTORICAL_FEEDBACK = 'Historical snapshot. Live controls are unavailable for completed, failed, or aborted runs.'
 const TEST_STATUSES: TestStatus[] = [
   'QUEUED',
+  'RESERVED',
   'SCHEDULED',
   'PENDING',
   'SHAKEOUT',
@@ -1239,6 +1240,30 @@ export default function CommandCenterPrototype({
     setState(prev => ({ ...prev, feedback: feedbackMessage }))
   }, [])
 
+  const startRun = async () => {
+    if (liveMode && testId) {
+      try {
+        const response = await api.startTest(testId)
+        if (response.status === 'pending') {
+          setLiveTest(prev => prev ? {
+            ...prev,
+            status: 'PENDING',
+            pending_reason: response.message || prev.pending_reason,
+            pending_since: prev.pending_since || new Date().toISOString(),
+          } : prev)
+          setState(prev => ({ ...prev, feedback: response.message || 'Run is waiting for project capacity.' }))
+          return
+        }
+        setLiveTest(prev => response.test || (prev ? { ...prev, status: 'INITIALIZING' } : prev))
+        setState(prev => ({ ...prev, feedback: 'Start requested. Run is initializing.' }))
+      } catch (error: unknown) {
+        setState(prev => ({ ...prev, feedback: getErrorMessage(error, 'Unable to start test') }))
+      }
+      return
+    }
+    setRunStatus('RUNNING', 'Run started from the command center.')
+  }
+
   const togglePause = async () => {
     if (liveMode && testId) {
       try {
@@ -1389,6 +1414,7 @@ export default function CommandCenterPrototype({
         errorPct={displayTest.live_metrics?.error_pct ?? MOCK_LIVE_METRICS.error_pct}
         feedback={feedback}
         historicalRun={historicalRun}
+        onStart={() => { void startRun() }}
         onPauseResume={() => { void togglePause() }}
         onStop={() => { void stopRun() }}
         onAbort={() => { void abortRun() }}
@@ -1499,6 +1525,7 @@ interface RunControlShelfProps {
   errorPct: number
   feedback: string
   historicalRun?: boolean
+  onStart: () => void
   onPauseResume: () => void
   onStop: () => void
   onAbort: () => void
@@ -1515,13 +1542,16 @@ function RunControlShelf({
   errorPct,
   feedback,
   historicalRun = false,
+  onStart,
   onPauseResume,
   onStop,
   onAbort,
   onOpenExecution,
 }: RunControlShelfProps) {
   const terminal = status === 'ABORTED' || status === 'STOPPING' || status === 'COMPLETE' || status === 'FAILED'
+  const canStart = status === 'QUEUED' || status === 'RESERVED'
   const canPauseResume = status === 'RUNNING' || status === 'PAUSED'
+  const canStop = status === 'RUNNING' || status === 'INITIALIZING' || status === 'PAUSED'
   return (
     <section className="command-control-shelf" aria-label="Command center run controls">
       <div className="command-run-identity">
@@ -1551,15 +1581,26 @@ function RunControlShelf({
         )}
         {!historicalRun && (
           <>
-            <button type="button" className={`btn btn-sm ${status === 'PAUSED' ? 'btn-success' : 'btn-secondary'}`} onClick={onPauseResume} disabled={terminal || !canPauseResume}>
-              {status === 'PAUSED' ? 'Resume' : 'Pause'}
-            </button>
-            <button type="button" className="btn btn-sm btn-secondary" onClick={onStop} disabled={terminal}>
-              Stop
-            </button>
-            <button type="button" className="btn btn-sm btn-danger" onClick={onAbort} disabled={status === 'ABORTED'}>
-              Abort
-            </button>
+            {canStart && (
+              <button type="button" className="btn btn-sm btn-success" onClick={onStart}>
+                Start Test
+              </button>
+            )}
+            {canPauseResume && (
+              <button type="button" className={`btn btn-sm ${status === 'PAUSED' ? 'btn-success' : 'btn-secondary'}`} onClick={onPauseResume} disabled={terminal}>
+                {status === 'PAUSED' ? 'Resume' : 'Pause'}
+              </button>
+            )}
+            {canStop && (
+              <button type="button" className="btn btn-sm btn-secondary" onClick={onStop} disabled={terminal}>
+                Stop
+              </button>
+            )}
+            {!terminal && (
+              <button type="button" className="btn btn-sm btn-danger" onClick={onAbort}>
+                Abort
+              </button>
+            )}
           </>
         )}
       </div>

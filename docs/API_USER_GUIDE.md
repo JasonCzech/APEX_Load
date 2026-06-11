@@ -399,6 +399,8 @@ curl -X POST http://localhost:8080/api/v1/tests \
   -d @test-run.json
 ```
 
+Add `reserve_launch_window: true` to create a manual-start reservation. The API stores the rounded reservation start in `scheduled_start_at`, sets status to `RESERVED`, and waits for `POST /api/v1/tests/{id}/start` before execution begins.
+
 Control endpoints:
 
 | Method | Path | Purpose |
@@ -408,7 +410,7 @@ Control endpoints:
 | `POST` | `/api/v1/tests/preflight` | Pre-flight capacity and governance policy check for a proposed run without creating it. |
 | `GET` | `/api/v1/tests/{id}` | Get run status and live summary. |
 | `GET` | `/api/v1/tests/{id}/manifest` | Generator assignment manifest for a run (which generators host which groups). |
-| `POST` | `/api/v1/tests/{id}/start` | Start a queued run. |
+| `POST` | `/api/v1/tests/{id}/start` | Start a queued or reserved run. |
 | `POST` | `/api/v1/tests/{id}/stop` | Gracefully stop a run. |
 | `POST` | `/api/v1/tests/{id}/abort` | Abort immediately. |
 | `POST` | `/api/v1/tests/{id}/pause` | Soft-pause between actions. |
@@ -459,6 +461,7 @@ Messages are JSON and include a `type` field such as `metrics_update`, `test_cre
 | `GET` | `/api/v1/tests/{id}/archive/root-cause` | Deterministic root-cause analysis. |
 | `GET` | `/api/v1/tests/{id}/archive/ai-root-cause` | Governed AI root-cause assistance when policy allows it. |
 | `GET` | `/api/v1/tests/{id}/archive/comparison` | Comparison export. **Single-run** (existing): add `baseline_id=<id>` to compare the addressed run against one baseline. **Multi-run** (new): add `comparison_ids=<id1>,<id2>,...` (up to 9 comparison IDs; addressed run is the baseline; max 10 runs total) plus `breakdown=overall\|platform\|engine\|device`. Multi-run only supports `format=csv`; result is ordered oldest→newest with a `Content-Disposition` attachment header. |
+| `GET` | `/api/v1/applications/{id}/load-comparison?scope=transaction\|group&key=<name>&test_id=<run>` | Compare transaction or group TPS/ART under load across releases for an application. Add repeated `test_id` params or comma-separated `test_ids` to limit the archived runs considered. |
 | `POST` | `/api/v1/archives/retention/plan` | Preview archive-retention pruning. |
 | `POST` | `/api/v1/archives/retention/apply` | Apply archive-retention pruning. |
 | `GET` | `/api/v1/releases/{id}/trend/export` | Release trend CSV. |
@@ -562,6 +565,7 @@ Useful recorder and replay endpoints:
 | `PUT` / `DELETE` | `/api/v1/folders/{id}` |
 | `GET` / `POST` | `/api/v1/applications` |
 | `GET` / `PUT` / `DELETE` | `/api/v1/applications/{id}` |
+| `GET` | `/api/v1/applications/{id}/load-comparison` |
 | `GET` / `POST` | `/api/v1/applications/{id}/releases` |
 | `GET` / `PUT` / `DELETE` | `/api/v1/releases/{id}` |
 | `POST` | `/api/v1/releases/{id}/archive` |
@@ -592,6 +596,7 @@ Useful recorder and replay endpoints:
 | `POST` | `/api/v1/scripts/authoring/sessions/{id}/correlations/preview` |
 | `GET` | `/api/v1/correlations/rules` |
 | `POST` | `/api/v1/correlations/diagnose` |
+| `GET` | `/api/v1/dsl/actions` |
 | `POST` | `/api/v1/scripts/{id}/validate` |
 | `POST` | `/api/v1/scripts/{id}/replay` |
 | `POST` | `/api/v1/scripts/{id}/replay/sessions` |

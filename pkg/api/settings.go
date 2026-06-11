@@ -23,6 +23,7 @@ type SystemSettings struct {
 	Thresholds       ThresholdSettings        `json:"thresholds"`
 	CapacityPlanning CapacityPlanningSettings `json:"capacity_planning"`
 	ArchiveRetention ArchiveRetentionSettings `json:"archive_retention"`
+	ScheduleDefaults ScheduleDefaultsSettings `json:"schedule_defaults"`
 	Notifications    NotificationsSettings    `json:"notifications"`
 	Auth             AuthSettings             `json:"auth"`
 	GitHub           GitHubSettings           `json:"github"`
@@ -263,6 +264,15 @@ type ArchiveRetentionPolicy struct {
 	RetentionDays   int    `json:"retention_days"`
 }
 
+type ScheduleDefaultsSettings struct {
+	ApprovalPolicy        string `json:"approval_policy,omitempty"`
+	MissedRunPolicy       string `json:"missed_run_policy,omitempty"`
+	BlackoutStartTime     string `json:"blackout_start_time,omitempty"`
+	BlackoutEndTime       string `json:"blackout_end_time,omitempty"`
+	AvailabilityStartTime string `json:"availability_start_time,omitempty"`
+	AvailabilityEndTime   string `json:"availability_end_time,omitempty"`
+}
+
 type AuthSettings struct {
 	Mode                  string   `json:"mode"`
 	ProviderName          string   `json:"provider_name,omitempty"`
@@ -415,9 +425,10 @@ func defaultSystemSettings(maxConcurrent int) SystemSettings {
 			Enabled:              false,
 			DefaultRetentionDays: 90,
 		},
-		Notifications: NotificationsSettings{},
-		Auth:          defaultAuthSettings(),
-		GitHub:        defaultGitHubSettings(),
+		ScheduleDefaults: defaultScheduleDefaultsSettings(),
+		Notifications:    NotificationsSettings{},
+		Auth:             defaultAuthSettings(),
+		GitHub:           defaultGitHubSettings(),
 	}
 }
 
@@ -466,6 +477,7 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 	if in.ArchiveRetention.Policies != nil {
 		out.ArchiveRetention.Policies = append([]ArchiveRetentionPolicy(nil), in.ArchiveRetention.Policies...)
 	}
+	out.ScheduleDefaults = in.ScheduleDefaults
 	out.Auth = in.Auth
 	if in.Auth.Scopes != nil {
 		out.Auth.Scopes = append([]string(nil), in.Auth.Scopes...)
@@ -512,6 +524,7 @@ func normalizeLoadedSystemSettings(in SystemSettings, defaultMaxConcurrent int) 
 		out.CapacityPlanning.Availability.ConfiguredAvailableGenerators = defaults.CapacityPlanning.Availability.ConfiguredAvailableGenerators
 	}
 	out.ArchiveRetention = normalizeArchiveRetentionSettings(out.ArchiveRetention)
+	out.ScheduleDefaults = normalizeScheduleDefaultsSettings(out.ScheduleDefaults)
 	out.CapacityPlanning.Reservations = normalizeCapacityReservations(out.CapacityPlanning.Reservations)
 	out.Thresholds = normalizeThresholdSettings(out.Thresholds)
 	out.Notifications = cloneNotificationsSettings(out.Notifications)
@@ -619,6 +632,9 @@ func validateSystemSettings(settings SystemSettings) error {
 		return err
 	}
 	if err := validateArchiveRetentionSettings(settings.ArchiveRetention); err != nil {
+		return err
+	}
+	if err := validateScheduleDefaultsSettings(settings.ScheduleDefaults); err != nil {
 		return err
 	}
 	if err := validateAuthSettings(settings.Auth); err != nil {
@@ -821,6 +837,80 @@ func validateArchiveRetentionSettings(settings ArchiveRetentionSettings) error {
 		}
 	}
 	return nil
+}
+
+func defaultScheduleDefaultsSettings() ScheduleDefaultsSettings {
+	return ScheduleDefaultsSettings{
+		ApprovalPolicy:  "auto",
+		MissedRunPolicy: "skip",
+	}
+}
+
+func normalizeScheduleDefaultsSettings(settings ScheduleDefaultsSettings) ScheduleDefaultsSettings {
+	return ScheduleDefaultsSettings{
+		ApprovalPolicy:        normalizeScenarioScheduleApprovalPolicy(settings.ApprovalPolicy),
+		MissedRunPolicy:       normalizeScenarioScheduleMissedRunPolicy(settings.MissedRunPolicy),
+		BlackoutStartTime:     strings.TrimSpace(settings.BlackoutStartTime),
+		BlackoutEndTime:       strings.TrimSpace(settings.BlackoutEndTime),
+		AvailabilityStartTime: strings.TrimSpace(settings.AvailabilityStartTime),
+		AvailabilityEndTime:   strings.TrimSpace(settings.AvailabilityEndTime),
+	}
+}
+
+func validateScheduleDefaultsSettings(settings ScheduleDefaultsSettings) error {
+	switch strings.ToLower(strings.TrimSpace(settings.ApprovalPolicy)) {
+	case "", "auto", "manual", "manual_review", "high_cost", "off_hours", "production", "quota_burst":
+	default:
+		return fmt.Errorf("schedule_defaults.approval_policy is invalid")
+	}
+	switch strings.ToLower(strings.TrimSpace(settings.MissedRunPolicy)) {
+	case "", "skip", "catch_up_once", "catch_up_all", "require_operator_decision":
+	default:
+		return fmt.Errorf("schedule_defaults.missed_run_policy is invalid")
+	}
+	if err := validateScheduleDefaultTimePair("blackout", settings.BlackoutStartTime, settings.BlackoutEndTime); err != nil {
+		return err
+	}
+	if err := validateScheduleDefaultTimePair("availability", settings.AvailabilityStartTime, settings.AvailabilityEndTime); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateScheduleDefaultTimePair(label string, start string, end string) error {
+	start = strings.TrimSpace(start)
+	end = strings.TrimSpace(end)
+	if (start == "") != (end == "") {
+		return fmt.Errorf("schedule_defaults.%s window requires both start and end times", label)
+	}
+	for _, item := range []struct {
+		field string
+		value string
+	}{
+		{field: "start_time", value: start},
+		{field: "end_time", value: end},
+	} {
+		if item.value == "" {
+			continue
+		}
+		if !validScheduleDefaultClock(item.value) {
+			return fmt.Errorf("schedule_defaults.%s_%s must use HH:MM", label, item.field)
+		}
+	}
+	return nil
+}
+
+func validScheduleDefaultClock(value string) bool {
+	parts := strings.Split(value, ":")
+	if len(parts) != 2 || len(parts[0]) != 2 || len(parts[1]) != 2 {
+		return false
+	}
+	hour := -1
+	minute := -1
+	if _, err := fmt.Sscanf(value, "%02d:%02d", &hour, &minute); err != nil {
+		return false
+	}
+	return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
 }
 
 func validateAuthSettings(settings AuthSettings) error {

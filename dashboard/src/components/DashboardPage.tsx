@@ -8,6 +8,7 @@ import { TestSummary, MetricsHistoryPoint, Release, RunArchiveReport, GroupLiveM
 import { downloadBlob } from '../utils/fileUtils'
 import { isCompletedTestStatus, isLiveTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { LoadComparisonPanel, type LoadComparisonTestOption } from './LoadComparisonPanel'
 import { ReleaseTrendPanel } from './ReleaseTrendPanel'
 import { chartTooltipContentStyle } from './chartTooltipTheme'
 import { type NavPage } from './Sidebar'
@@ -685,6 +686,26 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     [archivedReleaseRuns, archiveReports],
   )
 
+  const releaseNameById = useMemo(() => {
+    const byId = new Map<string, string>()
+    releases.forEach(release => byId.set(release.id, release.name || release.id))
+    if (activeRelease) byId.set(activeRelease.id, activeRelease.name || activeRelease.id)
+    return byId
+  }, [activeRelease, releases])
+
+  const loadComparisonTestOptions = useMemo<LoadComparisonTestOption[]>(() =>
+    performanceTrend.map(({ test, report }) => ({
+      id: test.id,
+      name: test.name,
+      releaseId: test.release_id,
+      releaseName: test.release_id ? releaseNameById.get(test.release_id) || test.release_id : 'Unassigned release',
+      completedAt: test.ended_at || test.start_time || test.created_at,
+      vusers: report.overview.peak_active_vusers || test.total_vusers,
+      transactionCount: report.overview.transactions || test.archive?.transaction_count || 0,
+    })),
+    [performanceTrend, releaseNameById],
+  )
+
   const sortedPerformanceTrend = useMemo(() => {
     return [...performanceTrend].sort((left, right) => {
       let leftValue: string | number
@@ -969,32 +990,13 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               </div>
             ) : (
               <>
-                <div className="trend-signal-grid">
-                  <div className="trend-signal-card">
-                    <span className="trend-signal-value">{releaseTrendStats.slaBreaches}</span>
-                    <span className="trend-signal-label">SLA Breaches</span>
-                  </div>
-                  <div className="trend-signal-card">
-                    <span className="trend-signal-value">{formatNumber(releaseTrendStats.avgCompleteness, 0)}%</span>
-                    <span className="trend-signal-label">Avg Completeness</span>
-                  </div>
-                  <div className="trend-signal-card">
-                    <span className="trend-signal-value">{releaseTrendStats.peakVUsers.toLocaleString()}</span>
-                    <span className="trend-signal-label">Peak VUsers</span>
-                  </div>
-                  <div className="trend-signal-card">
-                    <span className="trend-signal-value">{formatNumber(releaseTrendStats.maxCPU, 1)}%</span>
-                    <span className="trend-signal-label">Max CPU</span>
-                  </div>
-                  <div className="trend-signal-card">
-                    <span className="trend-signal-value">{formatNumber(releaseTrendStats.maxMemoryMB, 0)} MB</span>
-                    <span className="trend-signal-label">Max Memory</span>
-                  </div>
-                  <div className="trend-signal-card">
-                    <span className="trend-signal-value">{releaseTrendStats.telemetryBreached}</span>
-                    <span className="trend-signal-label">Telemetry Breaches</span>
-                  </div>
-                </div>
+                {activeApplicationId && (
+                  <LoadComparisonPanel
+                    applicationId={activeApplicationId}
+                    getLoadComparison={api.getLoadComparison}
+                    testOptions={loadComparisonTestOptions}
+                  />
+                )}
                 <div className="trend-table-wrap" ref={performanceTableBounds.ref} style={performanceTableBounds.style}>
                   <table className="trend-table">
                     <thead>

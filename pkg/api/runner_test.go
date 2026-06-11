@@ -834,6 +834,10 @@ func TestListScriptsFilteredIncludesUsageMetadata(t *testing.T) {
 		Groups: []CreateGroupEntry{{
 			ScriptID: stored.ID,
 			VUsers:   1,
+		}, {
+			Name:     "Checkout Repeat",
+			ScriptID: stored.ID,
+			VUsers:   1,
 		}},
 	})
 	if err != nil {
@@ -857,6 +861,9 @@ func TestListScriptsFilteredIncludesUsageMetadata(t *testing.T) {
 	got := scripts[0]
 	if got.ScenarioCount != 1 {
 		t.Fatalf("ScenarioCount = %d, want 1", got.ScenarioCount)
+	}
+	if len(got.AssociatedScenarios) != 1 || got.AssociatedScenarios[0].ID != scenario.ID || got.AssociatedScenarios[0].Name != "Checkout Peak" {
+		t.Fatalf("AssociatedScenarios = %#v, want deduplicated scenario metadata", got.AssociatedScenarios)
 	}
 	if len(got.AssociatedReleases) != 1 || got.AssociatedReleases[0].ApplicationID != "app-1" || got.AssociatedReleases[0].Name != "PI29" {
 		t.Fatalf("AssociatedReleases = %#v, want release metadata for app-1", got.AssociatedReleases)

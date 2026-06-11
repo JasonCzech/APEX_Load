@@ -34,8 +34,15 @@ type VUser struct {
 	IterationRateLimiter *TokenBucket
 	Rendezvous           *RendezvousCoordinator
 	ExecutionGoals       *ExecutionGoalLimiter
-	SkipInit             bool
-	SkipTeardown         bool
+	// HardStopCtx, when set, is cancelled only on hard stops (duration
+	// timeout, explicit stop/abort) — not when ExecutionGoals exhausts a
+	// shared goal. An iteration that already claimed a goal reservation runs
+	// under this context so its transaction completes and is recorded instead
+	// of being lost when another VUser trips the goal-exhaustion cancel.
+	// When nil, the context passed to Run governs everything.
+	HardStopCtx context.Context
+	SkipInit    bool
+	SkipTeardown bool
 }
 
 type PauseController interface {
@@ -148,22 +155,32 @@ func (vu *VUser) Run(ctx context.Context) {
 	}
 
 	// --- Main iteration loop ---
+	// ctx stops the loop from starting new iterations (it is cancelled when a
+	// shared execution goal exhausts); iterCtx governs the body of an
+	// iteration once it holds a goal reservation, so that reservation always
+	// completes and is recorded unless the run is hard-stopped.
+	iterCtx := ctx
+	if vu.HardStopCtx != nil {
+		iterCtx = vu.HardStopCtx
+	}
 	iteration := 0
 	for {
 		// Check iteration limit
 		if maxIter > 0 && iteration >= maxIter {
 			break
 		}
-		if vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartIteration() {
+		// Must precede the goal reservations below: once a reservation is
+		// claimed, this iteration is entitled to run and record.
+		if ctx.Err() != nil {
 			break
 		}
-		if ctx.Err() != nil {
+		if vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartIteration() {
 			break
 		}
 		if iterationTxMode && vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
 			break
 		}
-		if pacingCfg.Type == "tps" && !pacingCfg.RateLimiter.WaitContext(ctx) {
+		if pacingCfg.Type == "tps" && !pacingCfg.RateLimiter.WaitContext(iterCtx) {
 			break
 		}
 
@@ -176,7 +193,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				vu.Parameters.RefreshIteration()
 			}
 			if vu.Script.Protocol == "browser" && cfg.Browser.NewUserPerIter != nil && *cfg.Browser.NewUserPerIter {
-				if err := vu.resetProtocolForIteration(ctx); err != nil {
+				if err := vu.resetProtocolForIteration(iterCtx); err != nil {
 					logger.Error("iteration protocol reset failed", "iteration", iteration+1, "err", err)
 					goto teardown
 				}
@@ -212,11 +229,11 @@ func (vu *VUser) Run(ctx context.Context) {
 		var runActions func(actions []dsl.Action, depth int) actionFlow
 		runOne := func(action dsl.Action, depth int) actionFlow {
 			if vu.PauseControl != nil {
-				if err := vu.PauseControl.WaitIfPaused(ctx); err != nil {
+				if err := vu.PauseControl.WaitIfPaused(iterCtx); err != nil {
 					return flowTeardown
 				}
 			}
-			if ctx.Err() != nil {
+			if iterCtx.Err() != nil {
 				return flowTeardown
 			}
 
@@ -248,7 +265,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				maxPasses := controlLoopMaxPasses(loop)
 				fixed := loop.Count > 0
 				for pass := 0; ; pass++ {
-					if ctx.Err() != nil {
+					if iterCtx.Err() != nil {
 						return flowTeardown
 					}
 					if fixed {
@@ -266,7 +283,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				return flowNext
 			}
 
-			if handled, err := vu.handleEngineAction(ctx, action); handled {
+			if handled, err := vu.handleEngineAction(iterCtx, action); handled {
 				if err != nil {
 					logger.Error("action error", "action", action.Name, "err", err)
 					iterSuccess = false
@@ -282,7 +299,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				if vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
 					return flowTeardown
 				}
-				result, err := vu.executeHTTPSequenceAction(ctx, action, cfg.ErrorHandling)
+				result, err := vu.executeHTTPSequenceAction(iterCtx, action, cfg.ErrorHandling)
 				if err != nil {
 					logger.Error("action error", "action", action.Name, "err", err)
 					iterSuccess = false
@@ -322,7 +339,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				actionTxStart = time.Now()
 			}
 
-			result, err := vu.executeWithRetry(ctx, resolved, cfg.ErrorHandling)
+			result, err := vu.executeWithRetry(iterCtx, resolved, cfg.ErrorHandling)
 			if err != nil {
 				logger.Error("action error", "action", action.Name, "err", err)
 				iterSuccess = false

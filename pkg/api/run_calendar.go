@@ -444,7 +444,7 @@ func runCalendarEventFromTest(test *ManagedTest, scenarios map[string]runCalenda
 	runType := "ad_hoc"
 	if test.ScheduledStartAt != nil {
 		runType = "one_time_scheduled"
-		if test.Status == "SCHEDULED" {
+		if test.Status == "SCHEDULED" || test.Status == "RESERVED" {
 			window := launchWindowForTest(test, start)
 			end = window.EndAt
 		}
@@ -528,7 +528,7 @@ func calendarTestStart(test *ManagedTest) time.Time {
 	if test == nil {
 		return time.Now().UTC()
 	}
-	if test.Status == "SCHEDULED" && test.ScheduledStartAt != nil {
+	if (test.Status == "SCHEDULED" || test.Status == "RESERVED") && test.ScheduledStartAt != nil {
 		return test.ScheduledStartAt.UTC()
 	}
 	if test.StartedAt != nil && !test.StartedAt.IsZero() {
@@ -656,7 +656,7 @@ func topologySummary(source string, shards []GeneratorShardSummary, inventory []
 
 func calendarStatusActive(status string) bool {
 	switch strings.TrimSpace(strings.ToUpper(status)) {
-	case "QUEUED", "PENDING", "INITIALIZING", "RUNNING", "STOPPING", "PAUSED":
+	case "QUEUED", "PENDING", "RESERVED", "INITIALIZING", "RUNNING", "STOPPING", "PAUSED":
 		return true
 	default:
 		return false

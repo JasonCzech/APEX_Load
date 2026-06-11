@@ -40,6 +40,8 @@ import {
   chartStateForMonitorPreset,
   chartTitleWithOverlays,
   defaultHiddenChartIds,
+  downsampleGraphData,
+  downsampleTargetPointsForGraphDensity,
   formatGraphOverlayMetricValue,
   formatRelativeRunTime,
   graphCsvForChart,
@@ -426,6 +428,8 @@ export default function TestExecutionCharts({
   const chartDensityStorageKey = storageKeyFor('chartDensity')
   const graphTableRowsStorageKey = storageKeyFor('graphTableRows')
   const cursorLabelsStorageKey = storageKeyFor('cursorLabels')
+  const gradientUnderlaysStorageKey = storageKeyFor('gradientUnderlays')
+  const downsampleChartsStorageKey = storageKeyFor('downsampleCharts')
   const responseTimeNetworkModeStorageKey = storageKeyFor('responseTimeNetworkMode')
   const artStdDevBandsStorageKey = storageKeyFor('artStdDevBands')
   const routeLatencyModeStorageKey = storageKeyFor('routeLatencyMode')
@@ -446,6 +450,8 @@ export default function TestExecutionCharts({
   })
   const [showGraphTableRows, setShowGraphTableRows] = useState(() => readStoredString(graphTableRowsStorageKey) === 'true')
   const [showCursorLabels, setShowCursorLabels] = useState(() => readStoredString(cursorLabelsStorageKey) !== 'false')
+  const [showGradientUnderlays, setShowGradientUnderlays] = useState(() => readStoredString(gradientUnderlaysStorageKey) !== 'false')
+  const [downsampleDenseCharts, setDownsampleDenseCharts] = useState(() => readStoredString(downsampleChartsStorageKey) !== 'false')
   const [responseTimeNetworkMode, setResponseTimeNetworkMode] = useState<ResponseTimeNetworkMode>(() => readStoredResponseTimeNetworkMode(responseTimeNetworkModeStorageKey))
   const [artStdDevBandsEnabled, setArtStdDevBandsEnabled] = useState(() => readStoredString(artStdDevBandsStorageKey) === 'true')
   const [routeLatencyMode, setRouteLatencyMode] = useState<RouteLatencyMode>(() => readStoredRouteLatencyMode(routeLatencyModeStorageKey))
@@ -568,6 +574,14 @@ export default function TestExecutionCharts({
   useEffect(() => {
     writeStoredString(cursorLabelsStorageKey, showCursorLabels ? 'true' : 'false')
   }, [cursorLabelsStorageKey, showCursorLabels])
+
+  useEffect(() => {
+    writeStoredString(gradientUnderlaysStorageKey, showGradientUnderlays ? 'true' : 'false')
+  }, [gradientUnderlaysStorageKey, showGradientUnderlays])
+
+  useEffect(() => {
+    writeStoredString(downsampleChartsStorageKey, downsampleDenseCharts ? 'true' : 'false')
+  }, [downsampleChartsStorageKey, downsampleDenseCharts])
 
   useEffect(() => {
     writeStoredString(responseTimeNetworkModeStorageKey, responseTimeNetworkMode)
@@ -1199,6 +1213,8 @@ export default function TestExecutionCharts({
       setHiddenChartIds(defaultHiddenChartIds(allChartConfigs, loadImpactIds))
     }
     setChartDensity(densityFallback)
+    setShowGradientUnderlays(true)
+    setDownsampleDenseCharts(true)
     if (commandCenterSurface) {
       setShowGraphTableRows(false)
     }
@@ -1334,6 +1350,32 @@ export default function TestExecutionCharts({
           />
           <span>Show cursor labels</span>
         </label>
+      </div>
+      <div className="charts-config-panel-section">
+        <div>
+          <h4>Rendering</h4>
+          {renderSectionSubtext('Graph paint optimization')}
+        </div>
+        <div className="chart-rendering-options">
+          <label className="chart-table-row-toggle">
+            <input
+              type="checkbox"
+              checked={showGradientUnderlays}
+              aria-label="Show gradient underlay on graphs"
+              onChange={event => setShowGradientUnderlays(event.currentTarget.checked)}
+            />
+            <span>Gradient underlay</span>
+          </label>
+          <label className="chart-table-row-toggle">
+            <input
+              type="checkbox"
+              checked={downsampleDenseCharts}
+              aria-label="Downsample dense charts"
+              onChange={event => setDownsampleDenseCharts(event.currentTarget.checked)}
+            />
+            <span>Downsample dense charts</span>
+          </label>
+        </div>
       </div>
     </>
   )
@@ -1912,12 +1954,26 @@ export default function TestExecutionCharts({
                   : 200
             const metricRows = metricRowsForChart(chart)
             const visibleMetricKeys = visibleMetricKeysForChart(chart, metricRows)
+            const visibleOverlayKeysForTitle = visibleOverlayMetricKeys(chart, visibleMetricKeys)
             const smoothedMetricKeys = commandCenterSurface
               ? smoothedMetricKeysForChart(chart, visibleMetricKeys)
               : []
             const smoothedMetricKeySet = new Set(smoothedMetricKeys)
             const chartCardSize = chartCardSizes[chart.id]
-            const smoothingRadius = smoothingRadiusForGraphDensity(chartData.length, {
+            const density = {
+              chartWidth: chartCardSize?.width,
+              chartHeight,
+              visibleMetricCount: visibleMetricKeys.length,
+              expanded: expandedChart === chart.id,
+            }
+            const downsampledChartData = downsampleDenseCharts
+              ? downsampleGraphData(
+                  chartData,
+                  [...visibleMetricKeys, ...visibleOverlayKeysForTitle, 'targetTps'],
+                  downsampleTargetPointsForGraphDensity(density),
+                )
+              : chartData
+            const smoothingRadius = smoothingRadiusForGraphDensity(downsampledChartData.length, {
               chartWidth: chartCardSize?.width,
               chartHeight,
               visibleMetricCount: visibleMetricKeys.length,
@@ -1925,13 +1981,12 @@ export default function TestExecutionCharts({
             })
             const includeArtStdDevBand = shouldRenderArtStdDevBands(chart, visibleMetricKeys, artStdDevBandsEnabled)
             const chartDataWithDisplayBands = includeArtStdDevBand
-              ? buildArtStdDevBandData(chartData, smoothingRadius)
-              : chartData
+              ? buildArtStdDevBandData(downsampledChartData, smoothingRadius)
+              : downsampledChartData
             const displayChartData = smoothedMetricKeys.length > 0
               ? buildSmoothedGraphData(chartDataWithDisplayBands, smoothedMetricKeys, smoothingRadius)
               : chartDataWithDisplayBands
             const displayMetricKey = (key: string) => smoothedMetricKeySet.has(key) ? smoothedGraphMetricKey(key) : key
-            const visibleOverlayKeysForTitle = visibleOverlayMetricKeys(chart, visibleMetricKeys)
             const primaryMetricKeysForDomain = visibleMetricKeys.filter(key => (
               !visibleOverlayKeysForTitle.includes(key as OverlayMetricKey)
               && key !== routeLatencySuccessRateKey
@@ -2082,7 +2137,7 @@ export default function TestExecutionCharts({
                 {renderLoadImpactTooltip(chart)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
-                {renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
+                {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {metricRows
                   .filter(row => !overlayMetricKeysForChart(chart).includes(row.key as OverlayMetricKey))
                   .map((row) => showMetric(row.key) && (
@@ -2157,7 +2212,7 @@ export default function TestExecutionCharts({
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {isMultiGroup && <Legend verticalAlign="bottom" height={36} />}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
-                {renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
+                {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {chart.totalKey && showMetric(chart.totalKey) && (
                   <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(chart.totalKey)} name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
                 )}
@@ -2189,7 +2244,7 @@ export default function TestExecutionCharts({
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys, includeArtStdDevBand)}
                 {renderArtStdDevBand(chart, includeArtStdDevBand, metricAxisIdForChart)}
-                {renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
+                {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {metricRows
                   .filter(row => row.kind === 'transaction')
                   .map(row => {
@@ -2276,7 +2331,7 @@ export default function TestExecutionCharts({
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
-                {renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
+                {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {metricRows.map((row) => showMetric(row.key) && (
                   <Line
                     key={row.key}
@@ -2313,7 +2368,7 @@ export default function TestExecutionCharts({
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 <Legend verticalAlign="bottom" height={36} />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
-                {renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
+                {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {metricRows.map((row) => showMetric(row.key) && (
                     <Line
                       key={row.key}
@@ -2349,7 +2404,7 @@ export default function TestExecutionCharts({
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 <Legend />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
-                {renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
+                {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showMetric('netSent') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netSent')} name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} isAnimationActive={false} />}
                 {showMetric('netRecv') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netRecv')} name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} isAnimationActive={false} />}
                 {showMetric('diskRead') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('diskRead')} name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}

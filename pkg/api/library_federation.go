@@ -783,7 +783,7 @@ func (s *Server) libraryCatalogItems(projectID string, kind string) []LibraryCat
 			tests = s.runner.ListTests()
 		}
 		for _, test := range tests {
-			if test == nil || test.Status == "QUEUED" || test.Status == "RUNNING" || test.Status == "PENDING" {
+			if test == nil || test.Status == "QUEUED" || test.Status == "RESERVED" || test.Status == "RUNNING" || test.Status == "PENDING" {
 				continue
 			}
 			releaseRef := ReleaseRef{}
@@ -935,7 +935,7 @@ func (s *Server) libraryResultBundleItem(id string) (LibraryBundleItem, error) {
 	if !ok || test == nil {
 		return LibraryBundleItem{}, fmt.Errorf("result not found")
 	}
-	if test.Status == "QUEUED" || test.Status == "RUNNING" || test.Status == "PENDING" {
+	if test.Status == "QUEUED" || test.Status == "RESERVED" || test.Status == "RUNNING" || test.Status == "PENDING" {
 		return LibraryBundleItem{}, fmt.Errorf("only completed, failed, stopped, or aborted results can be exported")
 	}
 	result := &LibraryResultPayload{

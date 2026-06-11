@@ -1,0 +1,306 @@
+package dsl
+
+import (
+	"fmt"
+	"strings"
+)
+
+// browserActionSpecs declares the browser protocol action types. The
+// validators preserve the exact issue messages and ordering of the former
+// switch-based validateBrowserActionIssues: locator checks first, then the
+// shared sync-policy rules, then per-type value checks. browser_wait and
+// browser_screenshot intentionally skip the sync-policy rules, matching the
+// early returns in the original validator.
+func browserActionSpecs() []ActionSpec {
+	fieldSelector := FieldSpec{Name: "selector", Kind: FieldKindString, Doc: "Element locator (CSS/XPath/object-repository reference)."}
+	fieldSync := FieldSpec{Name: "sync", Kind: FieldKindObject, Doc: "Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}."}
+	fieldCapture := FieldSpec{Name: "capture", Kind: FieldKindObject, Doc: "Evidence capture: {screenshot, full_page, html}."}
+	locatorFields := func(extra ...FieldSpec) []FieldSpec {
+		fields := []FieldSpec{
+			{Name: "target", Kind: FieldKindString, Doc: "Element locator; target or selector is required."},
+			fieldSelector,
+		}
+		fields = append(fields, extra...)
+		fields = append(fields, fieldSync, fieldCapture)
+		return fields
+	}
+
+	return []ActionSpec{
+		{
+			Type:         "browser_navigate",
+			Protocols:    []string{"browser"},
+			Summary:      "Navigates the page to a URL.",
+			RequireOneOf: [][]string{{"target", "selector"}},
+			Fields: []FieldSpec{
+				{Name: "target", Kind: FieldKindString, Doc: "Destination URL; target or selector is required."},
+				fieldSelector, fieldSync, fieldCapture,
+			},
+			Validate: browserValidator(browserRequireTargetOrSelector, nil),
+		},
+		{
+			Type:         "browser_click",
+			Protocols:    []string{"browser"},
+			Summary:      "Clicks an element.",
+			RequireOneOf: [][]string{{"target", "selector"}},
+			Fields:       locatorFields(),
+			Validate:     browserValidator(browserRequireTargetOrSelector, nil),
+		},
+		{
+			Type:         "browser_dblclick",
+			Protocols:    []string{"browser"},
+			Summary:      "Double-clicks an element.",
+			RequireOneOf: [][]string{{"target", "selector"}},
+			Fields:       locatorFields(),
+			Validate:     browserValidator(browserRequireTargetOrSelector, nil),
+		},
+		{
+			Type:         "browser_hover",
+			Protocols:    []string{"browser"},
+			Summary:      "Hovers the pointer over an element.",
+			RequireOneOf: [][]string{{"target", "selector"}},
+			Fields:       locatorFields(),
+			Validate:     browserValidator(browserRequireTargetOrSelector, nil),
+		},
+		{
+			Type:         "browser_fill",
+			Protocols:    []string{"browser"},
+			Summary:      "Types a value into an input element.",
+			RequireOneOf: [][]string{{"target", "selector"}},
+			Fields:       locatorFields(FieldSpec{Name: "value", Required: true, Kind: FieldKindString, Doc: "Text to enter; template variables are expanded."}),
+			Validate:     browserValidator(browserRequireTargetOrSelector, browserRequireValue),
+		},
+		{
+			Type:         "browser_select",
+			Protocols:    []string{"browser"},
+			Summary:      "Selects an option in a select element.",
+			RequireOneOf: [][]string{{"target", "selector"}},
+			Fields:       locatorFields(FieldSpec{Name: "value", Required: true, Kind: FieldKindString, Doc: "Option value or label to select."}),
+			Validate:     browserValidator(browserRequireTargetOrSelector, browserRequireValue),
+		},
+		{
+			Type:         "browser_set_files",
+			Protocols:    []string{"browser"},
+			Summary:      "Attaches files to a file input element.",
+			RequireOneOf: [][]string{{"target", "selector"}, {"value", "params.file", "params.path", "params.files"}},
+			Fields: locatorFields(
+				FieldSpec{Name: "value", Kind: FieldKindString, Doc: "File path; one of value, params.file, params.path, or params.files is required."},
+				FieldSpec{Name: "params.file", Kind: FieldKindString, Doc: "Single file path alternative to value."},
+				FieldSpec{Name: "params.path", Kind: FieldKindString, Doc: "Single file path alternative to value."},
+				FieldSpec{Name: "params.files", Kind: FieldKindArray, Doc: "Multiple file paths."},
+			),
+			Validate: browserValidator(browserRequireTargetOrSelector, browserRequireSetFilesValue),
+		},
+		{
+			Type:         "browser_press_key",
+			Protocols:    []string{"browser"},
+			Summary:      "Presses a keyboard key, optionally scoped to an element.",
+			RequireOneOf: [][]string{{"value", "params.key", "params.key_name", "params.keyName"}},
+			Fields: []FieldSpec{
+				fieldSelector,
+				{Name: "value", Kind: FieldKindString, Doc: "Key to press; one of value, params.key, or params.key_name is required."},
+				{Name: "params.key", Kind: FieldKindString, Doc: "Key name alternative to value."},
+				{Name: "params.key_name", Kind: FieldKindString, Doc: "Key name alternative to value."},
+				fieldSync, fieldCapture,
+			},
+			Validate: browserValidator(nil, browserRequirePressKeyValue),
+		},
+		{
+			Type:         "browser_tap",
+			Protocols:    []string{"browser"},
+			Summary:      "Taps an element (touch input).",
+			RequireOneOf: [][]string{{"target", "selector"}},
+			Fields:       locatorFields(),
+			Validate:     browserValidator(browserRequireTargetOrSelector, nil),
+		},
+		{
+			Type:         "browser_long_press",
+			Protocols:    []string{"browser"},
+			Summary:      "Long-presses an element (touch input).",
+			RequireOneOf: [][]string{{"target", "selector"}},
+			Fields:       locatorFields(FieldSpec{Name: "params.duration_ms", Kind: FieldKindInt, Doc: "Press duration in milliseconds; must be greater than zero."}),
+			Validate:     browserValidator(browserRequireTargetOrSelector, browserLongPressChecks),
+		},
+		{
+			Type:         "browser_swipe",
+			Protocols:    []string{"browser"},
+			Summary:      "Swipes from an element in a direction (touch input).",
+			RequireOneOf: [][]string{{"target", "selector"}},
+			Fields: locatorFields(
+				FieldSpec{Name: "params.direction", Kind: FieldKindEnum, Enum: []string{"left", "right", "up", "down"}, Doc: "Swipe direction."},
+				FieldSpec{Name: "params.distance", Kind: FieldKindInt, Doc: "Swipe distance in pixels; must be greater than zero."},
+			),
+			Validate: browserValidator(browserRequireTargetOrSelector, browserSwipeChecks),
+		},
+		{
+			Type:         "browser_drag_and_drop",
+			Protocols:    []string{"browser"},
+			Summary:      "Drags an element onto a drop target.",
+			RequireOneOf: [][]string{{"target", "selector"}},
+			Fields: locatorFields(
+				FieldSpec{Name: "params.target", Required: true, Kind: FieldKindString, Doc: "Drop-target locator."},
+			),
+			Validate: browserValidator(browserDragAndDropChecks, nil),
+		},
+		{
+			Type:         "browser_wait",
+			Protocols:    []string{"browser"},
+			Summary:      "Waits for a condition, element, or timeout before continuing.",
+			RequireOneOf: [][]string{{"wait_for", "selector", "target"}},
+			Fields: []FieldSpec{
+				{Name: "wait_for", Kind: FieldKindObject, Doc: "Wait condition: {type, value, timeout_ms}. One of wait_for, selector, or target is required."},
+				fieldSelector,
+				{Name: "target", Kind: FieldKindString, Doc: "Element locator alternative to selector."},
+			},
+			Validate: func(index int, action Action) []string {
+				if action.WaitFor == nil && action.Selector == "" && action.Target == "" {
+					return []string{fmt.Sprintf("actions[%d] %q: browser_wait requires wait_for, selector, or target", index, action.Name)}
+				}
+				return nil
+			},
+		},
+		{
+			Type:      "browser_screenshot",
+			Protocols: []string{"browser"},
+			Summary:   "Captures a screenshot of the current page, or of one element when a locator is set.",
+			Fields: []FieldSpec{
+				fieldSelector,
+				{Name: "target", Kind: FieldKindString, Doc: "Element locator alternative to selector; empty captures the full page."},
+				fieldCapture,
+			},
+		},
+		{
+			Type:      "browser_evaluate_js",
+			Protocols: []string{"browser"},
+			Summary:   "Evaluates a reviewed JavaScript snippet in the page (subject to the browser review policy).",
+			Fields: []FieldSpec{
+				{Name: "target", Required: true, Kind: FieldKindString, Doc: "JavaScript source to evaluate."},
+				fieldSync, fieldCapture,
+			},
+			Validate: browserValidator(func(label string, action Action) []string {
+				if strings.TrimSpace(action.Target) == "" {
+					return []string{fmt.Sprintf("%s: browser_evaluate_js requires target script", label)}
+				}
+				return nil
+			}, nil),
+		},
+		{
+			Type:         "browser_switch_frame",
+			Protocols:    []string{"browser"},
+			Summary:      "Switches the action scope into an iframe.",
+			RequireOneOf: [][]string{{"selector", "target", "params.frame", "params.frame_selector"}},
+			Fields: []FieldSpec{
+				fieldSelector,
+				{Name: "target", Kind: FieldKindString, Doc: "Frame locator alternative to selector."},
+				{Name: "params.frame", Kind: FieldKindString, Doc: "Frame name or index."},
+				{Name: "params.frame_selector", Kind: FieldKindString, Doc: "Frame element locator."},
+				fieldSync, fieldCapture,
+			},
+			Validate: browserValidator(browserSwitchFrameChecks, nil),
+		},
+		{
+			Type:      "browser_switch_window",
+			Protocols: []string{"browser"},
+			Summary:   "Switches the action scope to another window or tab.",
+			Fields: []FieldSpec{
+				{Name: "target", Kind: FieldKindString, Doc: "Window title, URL, or index to switch to."},
+				fieldSync, fieldCapture,
+			},
+			Validate: browserValidator(nil, nil),
+		},
+	}
+}
+
+// browserValidator composes the shared browser validation pipeline: the
+// per-type locator phase, then sync-policy checks, then the per-type value
+// phase — the same order the original switch-based validator produced.
+func browserValidator(locator func(label string, action Action) []string, value func(label string, action Action) []string) func(int, Action) []string {
+	return func(index int, action Action) []string {
+		label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+		var issues []string
+		if locator != nil {
+			issues = append(issues, locator(label, action)...)
+		}
+		issues = append(issues, validateBrowserSyncPolicyIssues(label, action.Sync)...)
+		if value != nil {
+			issues = append(issues, value(label, action)...)
+		}
+		return issues
+	}
+}
+
+func browserRequireTargetOrSelector(label string, action Action) []string {
+	if action.Target == "" && action.Selector == "" {
+		return []string{fmt.Sprintf("%s: missing target or selector", label)}
+	}
+	return nil
+}
+
+func browserDragAndDropChecks(label string, action Action) []string {
+	issues := browserRequireTargetOrSelector(label, action)
+	if target, ok := actionParamStringValue(action.Params, "target"); !ok || strings.TrimSpace(target) == "" {
+		issues = append(issues, fmt.Sprintf("%s: browser_drag_and_drop requires params.target", label))
+	}
+	return issues
+}
+
+func browserSwitchFrameChecks(label string, action Action) []string {
+	if action.Target == "" && action.Selector == "" {
+		if frame, ok := actionParamStringValue(action.Params, "frame"); !ok || strings.TrimSpace(frame) == "" {
+			if frameSelector, ok := actionParamStringValue(action.Params, "frame_selector"); !ok || strings.TrimSpace(frameSelector) == "" {
+				return []string{fmt.Sprintf("%s: browser_switch_frame requires selector, target, params.frame, or params.frame_selector", label)}
+			}
+		}
+	}
+	return nil
+}
+
+func browserRequireValue(label string, action Action) []string {
+	if action.Value == "" {
+		return []string{fmt.Sprintf("%s: %s requires value", label, action.Type)}
+	}
+	return nil
+}
+
+func browserRequireSetFilesValue(label string, action Action) []string {
+	if action.Value == "" {
+		if file, ok := actionParamStringValue(action.Params, "file"); !ok || strings.TrimSpace(file) == "" {
+			if path, ok := actionParamStringValue(action.Params, "path"); !ok || strings.TrimSpace(path) == "" {
+				if _, ok := action.Params["files"]; !ok {
+					return []string{fmt.Sprintf("%s: browser_set_files requires value, params.file, params.path, or params.files", label)}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func browserRequirePressKeyValue(label string, action Action) []string {
+	if strings.TrimSpace(action.Value) == "" {
+		if key, ok := actionParamStringValue(action.Params, "key"); !ok || strings.TrimSpace(key) == "" {
+			if keyName, ok := actionParamStringValue(action.Params, "key_name"); !ok || strings.TrimSpace(keyName) == "" {
+				if camelKeyName, ok := actionParamStringValue(action.Params, "keyName"); !ok || strings.TrimSpace(camelKeyName) == "" {
+					return []string{fmt.Sprintf("%s: browser_press_key requires value, params.key, or params.key_name", label)}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func browserLongPressChecks(label string, action Action) []string {
+	if durationMs, ok := actionParamIntValue(action.Params, "duration_ms"); ok && durationMs <= 0 {
+		return []string{fmt.Sprintf("%s: browser_long_press duration_ms must be greater than zero", label)}
+	}
+	return nil
+}
+
+func browserSwipeChecks(label string, action Action) []string {
+	var issues []string
+	if direction, ok := actionParamStringValue(action.Params, "direction"); ok && !isAllowedValue(direction, "left", "right", "up", "down") {
+		issues = append(issues, fmt.Sprintf("%s: browser_swipe direction must be left, right, up, or down", label))
+	}
+	if distance, ok := actionParamIntValue(action.Params, "distance"); ok && distance <= 0 {
+		issues = append(issues, fmt.Sprintf("%s: browser_swipe distance must be greater than zero", label))
+	}
+	return issues
+}
