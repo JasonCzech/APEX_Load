@@ -281,7 +281,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	includeAssertions := boolOption(req.Options.IncludeAssertions, true)
 	for index, item := range requests {
 		reportPostmanEvents(item, &diagnostics)
-		
+
 		// Extract JS scripts to virtual review files
 		for i, ev := range item.Events {
 			if len(ev.Script.Exec) == 0 {

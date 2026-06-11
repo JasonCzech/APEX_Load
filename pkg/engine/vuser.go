@@ -40,8 +40,8 @@ type VUser struct {
 	// under this context so its transaction completes and is recorded instead
 	// of being lost when another VUser trips the goal-exhaustion cancel.
 	// When nil, the context passed to Run governs everything.
-	HardStopCtx context.Context
-	SkipInit    bool
+	HardStopCtx  context.Context
+	SkipInit     bool
 	SkipTeardown bool
 }
 

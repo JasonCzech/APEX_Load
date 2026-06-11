@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	jmeterFunctionPattern  = regexp.MustCompile(`\$\{(__[A-Za-z][A-Za-z0-9_]*)(?:\(([^{}]*)\))?\}`)
+	jmeterFunctionPattern = regexp.MustCompile(`\$\{(__[A-Za-z][A-Za-z0-9_]*)(?:\(([^{}]*)\))?\}`)
 	postmanDynamicPattern = regexp.MustCompile(`\{\{\s*(\$[A-Za-z][A-Za-z0-9_]*)\s*\}\}`)
 )
 

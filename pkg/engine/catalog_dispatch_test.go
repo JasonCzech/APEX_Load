@@ -30,9 +30,9 @@ func TestEngineDispatchCoversCatalogEngineActions(t *testing.T) {
 			continue
 		}
 		vu := &VUser{
-			ID:       1,
-			Group:    "cross-check",
-			Script:   &dsl.Script{Name: "catalog-cross-check"},
+			ID:        1,
+			Group:     "cross-check",
+			Script:    &dsl.Script{Name: "catalog-cross-check"},
 			Variables: map[string]string{},
 		}
 		action := dsl.Action{Name: "step", Type: spec.Type}
