@@ -12,6 +12,8 @@ import {
   chartMetricSummary,
   chartStateForMonitorPreset,
   defaultHiddenChartIds,
+  downsampleGraphData,
+  downsampleTargetPointsForGraphDensity,
   formatGraphOverlayMetricValue,
   formatRelativeRunTime,
   graphCsvForChart,
@@ -437,7 +439,30 @@ describe('chartStateForMonitorPreset', () => {
     expect(denseRadius).toBeGreaterThan(sparseRadius)
   })
 
-  it('selects only high-variability chart metrics for display smoothing', () => {
+  it('downsamples dense graph data while preserving boundaries and composite extremes', () => {
+    const data: MetricsHistoryPoint[] = Array.from({ length: 1000 }, (_, index) => ({
+      time: `10:${String(Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}`,
+      vusers: index % 50,
+      tps: index === 500 ? 10_000 : index % 11,
+      avgMs: index === 700 ? 9_000 : 100 + (index % 7),
+      errorPct: 0,
+      p50: 90,
+      p90: 110,
+      p99: 150,
+    }))
+
+    const downsampled = downsampleGraphData(data, ['tps', 'avgMs'], 80)
+
+    expect(downsampled.length).toBeLessThanOrEqual(80)
+    expect(downsampled[0]).toBe(data[0])
+    expect(downsampled[downsampled.length - 1]).toBe(data[data.length - 1])
+    expect(downsampled).toContain(data[500])
+    expect(downsampled).toContain(data[700])
+    expect(downsampleTargetPointsForGraphDensity()).toBe(420)
+    expect(downsampleTargetPointsForGraphDensity({ chartWidth: 240, visibleMetricCount: 8 })).toBeGreaterThanOrEqual(180)
+  })
+
+  it('selects graph metrics that are safe for display smoothing', () => {
     const tpsChart: ChartConfig = { id: 'tps', title: 'Transactions Per Second', type: 'line-multi', totalKey: 'tps' }
     const vusersChart: ChartConfig = { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers' }
     const routeChart: ChartConfig = { id: 'network_latency', title: 'Route Latency (ms)', type: 'line-network' }

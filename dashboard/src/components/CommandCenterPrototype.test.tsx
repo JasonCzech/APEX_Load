@@ -514,6 +514,56 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).not.toContain('In-flight Run Command Center')
   })
 
+  it('starts a reserved run from the command center', async () => {
+    const reservedTest: TestSummary = {
+      id: 'reserved-run-1',
+      ref_key: 'RUN-RESERVED',
+      name: 'Reserved Checkout Ramp',
+      status: 'RESERVED',
+      total_vusers: 50,
+      duration: '10m',
+      created_at: '2026-06-08T13:00:00Z',
+      scheduled_start_at: '2026-06-08T13:15:00Z',
+      groups: [{
+        name: 'Live Checkout',
+        protocol: 'http',
+        script_id: 'script-live',
+        script_name: 'Live Checkout Script',
+        vusers: 50,
+      }],
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      status: 'started',
+      test_id: 'reserved-run-1',
+      test: {
+        ...reservedTest,
+        status: 'INITIALIZING',
+      },
+    }), { headers: { 'content-type': 'application/json' } }))
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="reserved-run-1" initialTest={reservedTest} history={[]} />)
+    })
+
+    const controlShelf = container.querySelector('[aria-label="Command center run controls"]')
+    expect(controlShelf?.textContent).toContain('RESERVED')
+    expect(controlShelf?.textContent).toContain('Start Test')
+    expect(controlShelf?.textContent).not.toContain('Pause')
+    expect(controlShelf?.textContent).not.toContain('Stop')
+
+    await click(buttonNamed('Start Test'))
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/tests/reserved-run-1/start'),
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(controlShelf?.textContent).toContain('Start requested. Run is initializing.')
+    fetchMock.mockRestore()
+  })
+
   it('renders terminal runs as historical read-only snapshots with archive navigation', async () => {
     const openExecution = vi.fn()
     const completedTest: TestSummary = {

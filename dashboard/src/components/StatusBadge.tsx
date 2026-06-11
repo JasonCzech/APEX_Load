@@ -3,6 +3,7 @@ import { normalizeTestStatus } from '../utils/testStatusUtils'
 
 const STATUS_STYLES: Record<string, string> = {
   QUEUED: 'status-queued',
+  RESERVED: 'status-queued',
   PENDING: 'status-queued',
   SHAKEOUT: 'status-init',
   SHAKEOUT_REVIEW: 'status-paused',

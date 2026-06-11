@@ -196,7 +196,7 @@ export default function TestExecutionScenarioPreview({
   onEditScript,
   groupColors,
 }: Props) {
-  if (test.status !== 'QUEUED' && test.status !== 'PENDING' && test.status !== 'SHAKEOUT' && test.status !== 'SHAKEOUT_REVIEW') {
+  if (test.status !== 'QUEUED' && test.status !== 'PENDING' && test.status !== 'RESERVED' && test.status !== 'SHAKEOUT' && test.status !== 'SHAKEOUT_REVIEW') {
     return null
   }
   const browserRuntimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)

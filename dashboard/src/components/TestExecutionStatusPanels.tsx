@@ -91,7 +91,7 @@ function capacityBadgeLabel(status?: LiveCapacityStatus, advisory?: CapacityAdvi
 function demandForStatus(test: TestSummary, status: 'queued' | 'rejected'): number {
   const normalized = test.status?.toUpperCase()
   if (status === 'queued') {
-    return normalized === 'QUEUED' || normalized === 'PENDING' ? test.total_vusers : 0
+    return normalized === 'QUEUED' || normalized === 'PENDING' || normalized === 'RESERVED' ? test.total_vusers : 0
   }
   return test.capacity_advisory?.requires_override ? test.total_vusers : 0
 }

@@ -897,7 +897,7 @@ func scalingSignalStats(tests []*ManagedTest) scalingSignals {
 			continue
 		}
 		switch test.Status {
-		case "QUEUED", "PENDING":
+		case "QUEUED", "PENDING", "RESERVED":
 			stats.QueuedTests++
 			stats.QueuedVUsers += test.TotalVUsers
 			addProtocolVUsers(stats.QueuedProtocolVUsers, test.Groups)

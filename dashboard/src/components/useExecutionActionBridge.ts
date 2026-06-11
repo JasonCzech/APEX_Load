@@ -45,7 +45,7 @@ export function useExecutionActionBridge(
   }, [])
 
   useEffect(() => {
-    if (test?.status && test.status !== 'QUEUED' && test.status !== 'PENDING' && test.status !== 'SHAKEOUT' && test.status !== 'SHAKEOUT_REVIEW') {
+    if (test?.status && test.status !== 'QUEUED' && test.status !== 'PENDING' && test.status !== 'RESERVED' && test.status !== 'SHAKEOUT' && test.status !== 'SHAKEOUT_REVIEW') {
       setStartCapacityConflict(null)
       setStartShakeoutConflict(null)
       setStartFeedback('')

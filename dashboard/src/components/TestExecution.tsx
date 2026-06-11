@@ -330,10 +330,10 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     primaryActions: [
       {
         id: 'start',
-        label: 'Start',
+        label: 'Start Test',
         compactLabel: 'Start',
         tone: 'success',
-        hidden: test.status !== 'QUEUED',
+        hidden: test.status !== 'QUEUED' && test.status !== 'RESERVED',
         onClick: () => { void onStart() },
       },
       {

@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react'
 
-import { Application, Release, ReleaseTrend } from '../../types'
+import { Application, LoadComparisonRequestOptions, LoadComparisonResponse, LoadComparisonScope, Release, ReleaseTrend } from '../../types'
 import { apiFetch, request } from '../apiClient'
 
 type DeleteEntityResponse = {
@@ -57,6 +57,18 @@ export function useApplicationApi() {
 
   const getReleaseTrend = useCallback((id: string) => request<ReleaseTrend>(`/releases/${id}/trend`), [])
 
+  const getLoadComparison = useCallback((applicationId: string, scope: LoadComparisonScope = 'transaction', key = '', options?: LoadComparisonRequestOptions) => {
+    const params = new URLSearchParams({ scope })
+    if (key.trim()) {
+      params.set('key', key.trim())
+    }
+    options?.testIds?.forEach(testId => {
+      const trimmed = testId.trim()
+      if (trimmed) params.append('test_id', trimmed)
+    })
+    return request<LoadComparisonResponse>(`/applications/${applicationId}/load-comparison?${params.toString()}`)
+  }, [])
+
   const deleteRelease = useCallback((id: string) => request<DeleteEntityResponse>(`/releases/${id}`, { method: 'DELETE' }), [])
 
   return useMemo(
@@ -71,8 +83,9 @@ export function useApplicationApi() {
       archiveRelease,
       downloadReleaseTrend,
       getReleaseTrend,
+      getLoadComparison,
       deleteRelease,
     }),
-    [listApplications, createApplication, updateApplication, deleteApplication, listReleases, createRelease, updateRelease, archiveRelease, downloadReleaseTrend, getReleaseTrend, deleteRelease],
+    [listApplications, createApplication, updateApplication, deleteApplication, listReleases, createRelease, updateRelease, archiveRelease, downloadReleaseTrend, getReleaseTrend, getLoadComparison, deleteRelease],
   )
 }

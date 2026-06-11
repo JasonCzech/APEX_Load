@@ -108,7 +108,7 @@ export function topbarRunTone(status?: string): 'running' | 'paused' | 'pending'
   const normalized = normalizeTestStatus(status)
   if (normalized === 'PAUSED') return 'paused'
   if (normalized === 'STOPPING') return 'stopping'
-  if (normalized === 'PENDING' || normalized === 'QUEUED' || normalized === 'SCHEDULED' || normalized === 'SHAKEOUT' || normalized === 'SHAKEOUT_REVIEW') {
+  if (normalized === 'PENDING' || normalized === 'QUEUED' || normalized === 'RESERVED' || normalized === 'SCHEDULED' || normalized === 'SHAKEOUT' || normalized === 'SHAKEOUT_REVIEW') {
     return 'pending'
   }
   return 'running'

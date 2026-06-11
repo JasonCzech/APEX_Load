@@ -15,15 +15,18 @@ vi.mock('recharts', () => {
   const labelPosition = (label?: string | { position?: string }) => (typeof label === 'string' ? '' : label?.position ?? '')
   const MockChart = ({
     children,
+    data,
     syncId,
     onMouseMove,
   }: {
     children?: ReactNode
+    data?: unknown[]
     syncId?: string
     onMouseMove?: (event: { activeLabel?: string; activeTooltipIndex?: number }) => void
   }) => (
     <svg
       data-testid="mock-chart"
+      data-length={String(data?.length ?? '')}
       data-sync-id={syncId ?? ''}
       width="640"
       height="200"
@@ -1154,6 +1157,80 @@ describe('TestExecutionCharts context menu', () => {
     })
 
     expect(onActiveCursorChange).toHaveBeenCalledWith({ label: '10:00:01', index: 1 })
+  })
+
+  it('toggles gradient underlays and dense chart downsampling from graph options', async () => {
+    const denseData = Array.from({ length: 600 }, (_, index) => ({
+      time: `10:${String(Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}`,
+      vusers: index % 40,
+      tps: index === 320 ? 120 : index % 8,
+      targetTps: 40,
+      avgMs: index === 410 ? 1800 : 100 + (index % 13),
+      errorPct: index % 25 === 0 ? 2 : 0,
+      p50: 90,
+      p90: 120,
+      p95: 150,
+      p99: 220,
+    }))
+
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={denseData}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="all"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+          showLoadImpact={false}
+          surface="command-center"
+          storageScope="apexload.commandCenter.ops"
+          defaultDensity="command_center"
+        />,
+      )
+    })
+
+    const dataLengths = () => Array.from(container.querySelectorAll('[data-testid="mock-chart"]'))
+      .map(chart => Number(chart.getAttribute('data-length')))
+      .filter(value => Number.isFinite(value) && value > 0)
+    const tpsChart = () => Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Transactions Per Second'))
+    const tpsGradientUnderlay = () => tpsChart()?.querySelector('path[data-testid="mock-area"][data-name="Total"]')
+
+    expect(Math.max(...dataLengths())).toBeLessThan(denseData.length)
+    expect(tpsGradientUnderlay()).not.toBeNull()
+
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const gradientCheckbox = container.querySelector<HTMLInputElement>('input[aria-label="Show gradient underlay on graphs"]')
+    const downsampleCheckbox = container.querySelector<HTMLInputElement>('input[aria-label="Downsample dense charts"]')
+
+    expect(gradientCheckbox?.checked).toBe(true)
+    expect(downsampleCheckbox?.checked).toBe(true)
+
+    await act(async () => {
+      gradientCheckbox?.click()
+    })
+
+    expect(window.localStorage.getItem('apexload.commandCenter.ops.gradientUnderlays')).toBe('false')
+    expect(tpsGradientUnderlay()).toBeNull()
+
+    await act(async () => {
+      downsampleCheckbox?.click()
+    })
+
+    expect(window.localStorage.getItem('apexload.commandCenter.ops.downsampleCharts')).toBe('false')
+    expect(Math.max(...dataLengths())).toBe(denseData.length)
   })
 
   function menuActionTexts() {

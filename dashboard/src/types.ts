@@ -146,6 +146,11 @@ export interface ReleaseRef {
   application_id: string
 }
 
+export interface ScenarioRef {
+  id: string
+  name: string
+}
+
 export interface Folder {
   id: string
   project_id: string
@@ -353,6 +358,61 @@ export interface ReleaseTrend {
   run_count: number
   points: ReleaseTrendPoint[]
   summary: ReleaseTrendSummary
+}
+
+export type LoadComparisonScope = 'transaction' | 'group'
+
+export interface LoadComparisonOption {
+  key: string
+  label: string
+  scope: LoadComparisonScope
+  source_kind: 'source_transaction' | 'action' | 'group' | string
+  release_count: number
+  run_count: number
+  transaction_count: number
+  sample_count: number
+}
+
+export interface LoadComparisonLoadLevel {
+  id: string
+  label: string
+  min_vusers: number
+  max_vusers: number
+  exact: boolean
+  sample_count: number
+}
+
+export interface LoadComparisonPoint {
+  load_level_id: string
+  load_label: string
+  tps: number
+  avg_response_ms: number
+  transactions: number
+  errors: number
+  error_pct: number
+  run_count: number
+  sample_count: number
+}
+
+export interface LoadComparisonReleaseSeries {
+  release_id: string
+  release_name: string
+  run_count: number
+  transaction_count: number
+  points: LoadComparisonPoint[]
+}
+
+export interface LoadComparisonResponse {
+  application_id: string
+  scope: LoadComparisonScope
+  selected_key?: string
+  options: LoadComparisonOption[]
+  load_levels: LoadComparisonLoadLevel[]
+  releases: LoadComparisonReleaseSeries[]
+}
+
+export interface LoadComparisonRequestOptions {
+  testIds?: string[]
 }
 
 export interface CapacityReservation {
@@ -1447,6 +1507,7 @@ export interface RunCalendarResponse {
 
 export type TestStatus =
   | 'QUEUED'
+  | 'RESERVED'
   | 'SCHEDULED'
   | 'PENDING'
   | 'SHAKEOUT'
@@ -1785,6 +1846,7 @@ export interface StoredScript {
   folder_id?: string | null
   created_at: string
   scenario_count?: number
+  associated_scenarios?: ScenarioRef[]
   associated_releases?: ReleaseRef[]
   scenario_run_releases?: ReleaseRef[]
   last_run_at?: string
@@ -2732,6 +2794,15 @@ export interface DashboardArchiveRetentionSettings {
   policies?: DashboardArchiveRetentionPolicy[]
 }
 
+export interface DashboardScheduleDefaultsSettings {
+  approval_policy?: 'auto' | 'manual_review' | 'manual' | 'high_cost' | 'off_hours' | 'production' | 'quota_burst' | string
+  missed_run_policy?: 'skip' | 'catch_up_once' | 'catch_up_all' | 'require_operator_decision' | string
+  blackout_start_time?: string
+  blackout_end_time?: string
+  availability_start_time?: string
+  availability_end_time?: string
+}
+
 export interface DashboardAuthSettings {
   mode: 'dev' | 'disabled' | 'trusted_headers' | 'oidc'
   provider_name?: string
@@ -3304,6 +3375,7 @@ export interface DashboardSystemSettings {
   thresholds: DashboardThresholdSettings
   capacity_planning: DashboardCapacityPlanningSettings
   archive_retention: DashboardArchiveRetentionSettings
+  schedule_defaults: DashboardScheduleDefaultsSettings
   notifications: DashboardNotificationsSettings
   auth: DashboardAuthSettings
   github: DashboardGitHubSettings

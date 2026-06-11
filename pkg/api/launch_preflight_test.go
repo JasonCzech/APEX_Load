@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -296,6 +297,153 @@ func TestCreateTestWithScheduledStartPersistsScheduledStatus(t *testing.T) {
 	}
 	if len(store.savedTests) == 0 || store.savedTests[len(store.savedTests)-1].ScheduledStartAt == nil {
 		t.Fatalf("saved tests = %#v, want scheduled_start_at persisted", store.savedTests)
+	}
+}
+
+func TestCreateTestWithReservedLaunchWindowRoundsAndPersistsReservedStatus(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(10, NewHub(), store)
+	storePreflightScript(runner, "script-preflight-reserved", "")
+
+	base := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Hour)
+	start := base.Add(7*time.Minute + 45*time.Second)
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:                "Manual Reservation",
+		Duration:            "5m",
+		ScriptID:            "script-preflight-reserved",
+		VUsers:              1,
+		ReserveLaunchWindow: true,
+		ScheduledStartAt:    &start,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	wantRounded := base.Add(15 * time.Minute)
+	if testRun.Status != "RESERVED" || testRun.ScheduledStartAt == nil || !testRun.ScheduledStartAt.Equal(wantRounded) {
+		t.Fatalf("testRun = %#v, want reserved run at %s", testRun, wantRounded)
+	}
+	if len(store.savedTests) == 0 || store.savedTests[len(store.savedTests)-1].Status != "RESERVED" || store.savedTests[len(store.savedTests)-1].ScheduledStartAt == nil {
+		t.Fatalf("saved tests = %#v, want RESERVED with scheduled_start_at", store.savedTests)
+	}
+
+	exact := base.Add(30 * time.Minute)
+	exactRun, err := runner.CreateTest(CreateTestRequest{
+		Name:                "Exact Manual Reservation",
+		Duration:            "5m",
+		ScriptID:            "script-preflight-reserved",
+		VUsers:              1,
+		ReserveLaunchWindow: true,
+		ScheduledStartAt:    &exact,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest exact returned error: %v", err)
+	}
+	if exactRun.ScheduledStartAt == nil || !exactRun.ScheduledStartAt.Equal(exact) {
+		t.Fatalf("exact reserved start = %v, want %s", exactRun.ScheduledStartAt, exact)
+	}
+}
+
+func TestCreateReservedLaunchWindowBlocksOverlappingReservation(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	storePreflightScript(runner, "script-preflight-reserved-overlap", "")
+	settings := runner.GetSystemSettings()
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 1
+	settings.CapacityPlanning.Generator.MaxVUsers = 10000
+	settings.CapacityPlanning.HeadroomPct = 0
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	base := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Hour)
+	firstStart := base.Add(7 * time.Minute)
+	if _, err := runner.CreateTest(CreateTestRequest{
+		Name:                "Reserved A",
+		Duration:            "10m",
+		ScriptID:            "script-preflight-reserved-overlap",
+		VUsers:              1,
+		ReserveLaunchWindow: true,
+		ScheduledStartAt:    &firstStart,
+	}); err != nil {
+		t.Fatalf("CreateTest(first) returned error: %v", err)
+	}
+
+	secondStart := base.Add(8 * time.Minute)
+	_, err := runner.CreateTest(CreateTestRequest{
+		Name:                "Reserved B",
+		Duration:            "10m",
+		ScriptID:            "script-preflight-reserved-overlap",
+		VUsers:              1,
+		ReserveLaunchWindow: true,
+		ScheduledStartAt:    &secondStart,
+	})
+	if err == nil || !strings.Contains(err.Error(), "launch window conflict") {
+		t.Fatalf("CreateTest(second) error = %v, want launch window conflict", err)
+	}
+}
+
+func TestScenarioSchedulerIgnoresReservedManualStartRun(t *testing.T) {
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner := NewTestRunner(10, NewHub(), nil)
+	runner.setExecutionBackend(backend)
+	storePreflightScript(runner, "script-preflight-reserved-scheduler", "")
+	now := time.Date(2026, time.June, 10, 15, 0, 0, 0, time.UTC)
+	reservedAt := now.Add(-time.Hour)
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:                "Reserved Manual Run",
+		Duration:            "1m",
+		ScriptID:            "script-preflight-reserved-scheduler",
+		VUsers:              1,
+		ReserveLaunchWindow: true,
+		ScheduledStartAt:    &reservedAt,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+	select {
+	case startedID := <-backend.started:
+		t.Fatalf("reserved run was auto-started by scheduler: %s", startedID)
+	default:
+	}
+	current, ok := runner.GetTest(testRun.ID)
+	if !ok || current.Status != "RESERVED" {
+		t.Fatalf("reserved run status = %#v, want RESERVED", current)
+	}
+}
+
+func TestStartTestStartsReservedManualRun(t *testing.T) {
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner := NewTestRunner(10, NewHub(), nil)
+	runner.setExecutionBackend(backend)
+	storePreflightScript(runner, "script-preflight-reserved-start", "")
+	reservedAt := time.Now().UTC().Add(24 * time.Hour).Truncate(15 * time.Minute)
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:                "Reserved Start",
+		Duration:            "1m",
+		ScriptID:            "script-preflight-reserved-start",
+		VUsers:              1,
+		ReserveLaunchWindow: true,
+		ScheduledStartAt:    &reservedAt,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTestWithOptions(testRun.ID, StartTestOptions{SkipLaunchWindowPreflight: true}); err != nil {
+		t.Fatalf("StartTestWithOptions returned error: %v", err)
+	}
+	select {
+	case startedID := <-backend.started:
+		if startedID != testRun.ID {
+			t.Fatalf("started id = %s, want %s", startedID, testRun.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for reserved run to start")
 	}
 }
 

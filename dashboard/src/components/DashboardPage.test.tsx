@@ -15,6 +15,7 @@ const apiMock = {
   getTestArchiveAnalysis: vi.fn(),
   downloadReleaseTrend: vi.fn(),
   getReleaseTrend: vi.fn(),
+  getLoadComparison: vi.fn(),
 }
 
 vi.mock('../utils/fileUtils', () => ({
@@ -238,6 +239,26 @@ describe('DashboardPage', () => {
       points: [],
       summary: { latest_regressed: false, avg_response_trend_pct: 0, error_pct_trend: 0 },
     })
+    apiMock.getLoadComparison.mockResolvedValue({
+      application_id: 'app-1',
+      scope: 'transaction',
+      selected_key: 'Checkout Flow',
+      options: [
+        { key: 'Checkout Flow', label: 'Checkout Flow', scope: 'transaction', source_kind: 'source_transaction', release_count: 2, run_count: 2, transaction_count: 80, sample_count: 4 },
+      ],
+      load_levels: [
+        { id: 'vusers-5', label: '5 VUsers', min_vusers: 5, max_vusers: 5, exact: true, sample_count: 2 },
+      ],
+      releases: [
+        {
+          release_id: 'rel-1',
+          release_name: 'Sprint 24',
+          run_count: 1,
+          transaction_count: 40,
+          points: [{ load_level_id: 'vusers-5', load_label: '5 VUsers', tps: 8, avg_response_ms: 120, transactions: 40, errors: 0, error_pct: 0, run_count: 1, sample_count: 2 }],
+        },
+      ],
+    })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -301,15 +322,24 @@ describe('DashboardPage', () => {
     expect(container.textContent).toContain('Payments Failure Drill')
 
     clickButtonByText('Performance Trend')
+    await flushDashboard()
     expect(getTabByText('Performance Trend').getAttribute('aria-selected')).toBe('true')
-    expect(container.textContent).toContain('SLA Breaches')
-    expect(container.textContent).toContain('Avg Completeness')
-    expect(container.textContent).toContain('88%')
-    expect(container.textContent).toContain('Max CPU')
-    expect(container.textContent).toContain('64.2%')
-    expect(container.textContent).toContain('Max Memory')
-    expect(container.textContent).toContain('512 MB')
-    expect(container.textContent).toContain('Telemetry Breaches')
+    const performancePanelText = container.querySelector('.dash-performance-trend')?.textContent || ''
+    expect(performancePanelText).toContain('Graph Releases')
+    expect(performancePanelText).toContain('Graph Runs')
+    expect(performancePanelText).toContain('Load Levels')
+    expect(performancePanelText).toContain('Transactions')
+    expect(performancePanelText).toContain('Peak TPS')
+    expect(performancePanelText).toContain('Avg ART')
+    expect(performancePanelText).toContain('Errors')
+    expect(performancePanelText).toContain('40')
+    expect(performancePanelText).toContain('8.0')
+    expect(performancePanelText).toContain('120 ms')
+    expect(performancePanelText).not.toContain('SLA Breaches')
+    expect(performancePanelText).not.toContain('Avg Completeness')
+    expect(performancePanelText).not.toContain('Max CPU')
+    expect(performancePanelText).not.toContain('Max Memory')
+    expect(performancePanelText).not.toContain('Telemetry Breaches')
     expect(container.textContent).toContain('Breached')
     expect(container.textContent).toContain('Export CSV')
     expect(container.textContent).toContain('View Results')
@@ -467,6 +497,27 @@ describe('DashboardPage', () => {
     expect(dashboardControlCss).toContain('var(--accent-border)')
     expect(dashboardControlCss).not.toContain('rgba(14, 165, 233')
     expect(dashboardControlCss).not.toContain('rgba(125, 211, 252')
+  })
+
+  it('defines a solarized-safe segmented control for load comparison scope', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const stylesheet = readFileSync(`${cwd}/src/components/DashboardPage.css`, 'utf8') as string
+    const scopeToggleCss = [
+      stylesheet.match(/\.load-comparison-scope-toggle \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.load-comparison-scope-toggle \.btn-chip \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.load-comparison-scope-toggle \.btn-chip\.active,\n\.load-comparison-scope-toggle \.btn-chip\[aria-pressed='true'\] \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/:root\[data-theme='solarized-dark'\] \.load-comparison-scope-toggle \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/:root\[data-theme='solarized-dark'\] \.load-comparison-scope-toggle \.btn-chip\.active,\n:root\[data-theme='solarized-dark'\] \.load-comparison-scope-toggle \.btn-chip\[aria-pressed='true'\] \{[\s\S]*?\n\}/)?.[0] ?? '',
+    ].join('\n')
+
+    expect(scopeToggleCss).toContain('border-radius: 999px')
+    expect(scopeToggleCss).toContain('color-mix(in srgb, var(--border)')
+    expect(scopeToggleCss).toContain('var(--accent-contrast)')
+    expect(scopeToggleCss).toContain("data-theme='solarized-dark'")
+    expect(scopeToggleCss).toContain('var(--theme-toggle-active-bg)')
+    expect(scopeToggleCss).toContain('var(--theme-toggle-active-text)')
   })
 
   it('keeps the dashboard snapshot in a right-side panel layout', async () => {

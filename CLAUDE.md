@@ -63,6 +63,10 @@ and browser (replay + canary diagnostics).
 ## Script DSL
 JSON-based. Template variables: `{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`, `{{fn.uuid()}}`.
 Sections: config, data_sources, init, actions, teardown.
+The per-action-type contract is declared in the action catalog (`pkg/dsl/catalog*.go`) — the
+single source of truth for validation, the dashboard editor, `GET /api/v1/dsl/actions`, and the
+generated artifacts `docs/dsl.schema.json` + `docs/DSL_ACTION_REFERENCE.md`. After changing the
+catalog, regenerate with `go generate ./pkg/dsl` (freshness is test-enforced in `pkg/dsl/schemagen`).
 
 ## REST API
 The controller binary serves a REST API on `:8080` (configurable via `APEXLOAD_ADDR`).
@@ -119,6 +123,7 @@ GET    /api/v1/fleet/provisioner     — Active generator provisioner (static fl
 GET    /api/v1/fleet/load-zones      — Named self-hosted load zones with capacity envelopes
 GET    /api/v1/correlations/rules    — Correlation detection rule catalog
 POST   /api/v1/correlations/diagnose — Replay-failure detection + ranked repair suggestions
+GET    /api/v1/dsl/actions           — DSL action-type catalog (fields/enums/docs; ?protocol= filter)
 GET    /api/v1/system/health         — Health check
 GET    /api/v1/system/version        — Controller version info
 GET    /api/v1/system/services       — Service health detail

@@ -91,6 +91,14 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
     default_retention_days: 90,
     policies: [],
   },
+  schedule_defaults: {
+    approval_policy: 'auto',
+    missed_run_policy: 'skip',
+    blackout_start_time: '',
+    blackout_end_time: '',
+    availability_start_time: '',
+    availability_end_time: '',
+  },
   notifications: {
     webhooks: [],
   },
@@ -373,6 +381,14 @@ function formatAuthStatusSummary(authStatus?: DashboardAuthStatus): string {
   return 'Authenticated'
 }
 
+function formatSchedulePolicyLabel(value: string): string {
+  return value
+    .split('_')
+    .filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
 function formatRoleScope(scope: string): string {
   switch (scope) {
     case 'global':
@@ -582,6 +598,23 @@ function validateOptionalPositiveInteger(label: string, value: string): string {
   return ''
 }
 
+function isClockTime(value: string): boolean {
+  if (!value.trim()) return true
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value.trim())
+}
+
+function validateScheduleWindowPair(label: string, start?: string, end?: string): string {
+  const startValue = (start || '').trim()
+  const endValue = (end || '').trim()
+  if (Boolean(startValue) !== Boolean(endValue)) {
+    return `${label} window requires both start and end times.`
+  }
+  if (!isClockTime(startValue) || !isClockTime(endValue)) {
+    return `${label} window times must use HH:MM.`
+  }
+  return ''
+}
+
 function validateSettings(settings: DashboardSystemSettings): string[] {
   const errors: string[] = []
   if (!settings.general.api_endpoint.trim()) {
@@ -657,6 +690,10 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
   if (!Number.isInteger(settings.archive_retention.default_retention_days) || settings.archive_retention.default_retention_days < 1) {
     errors.push('Archive retention default days must be an integer >= 1.')
   }
+  const blackoutWindowError = validateScheduleWindowPair('Blackout', settings.schedule_defaults.blackout_start_time, settings.schedule_defaults.blackout_end_time)
+  if (blackoutWindowError) errors.push(blackoutWindowError)
+  const availabilityWindowError = validateScheduleWindowPair('Availability', settings.schedule_defaults.availability_start_time, settings.schedule_defaults.availability_end_time)
+  if (availabilityWindowError) errors.push(availabilityWindowError)
   if (settings.auth.mode !== 'dev' && settings.auth.mode !== 'disabled' && settings.auth.mode !== 'trusted_headers' && settings.auth.mode !== 'oidc') {
     errors.push('Access control mode must be Dev Bypass, Trusted Headers, or Native OIDC.')
   }
@@ -765,6 +802,10 @@ function normalizeDashboardSystemSettings(settings: DashboardSystemSettings): Da
       ...DEFAULT_SETTINGS.archive_retention,
       ...settings.archive_retention,
       policies: settings.archive_retention?.policies ? [...settings.archive_retention.policies] : [],
+    },
+    schedule_defaults: {
+      ...DEFAULT_SETTINGS.schedule_defaults,
+      ...settings.schedule_defaults,
     },
     notifications: {
       webhooks: (settings.notifications?.webhooks || []).map(webhook => ({
@@ -1627,6 +1668,18 @@ export default function SettingsPage({
           ...prev.capacity_planning.availability,
           [key]: key === 'source' ? value : Math.max(0, Number(value) || 0),
         },
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const updateScheduleDefaults = (key: keyof DashboardSystemSettings['schedule_defaults'], value: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      schedule_defaults: {
+        ...prev.schedule_defaults,
+        [key]: value,
       },
     }))
     setSaveMessage('')
@@ -3195,6 +3248,91 @@ export default function SettingsPage({
               hidden={activeGeneralSubsection !== 'governance'}
             >
               <div className="settings-group">
+              {canManageSystem && (
+                <div className="settings-subsection">
+                  <div className="settings-manager-summary">
+                    <div>
+                      <span className="setting-label">Scenario Schedule Defaults</span>
+                      <span className="setting-desc">Administrator-owned governance and calendar-window defaults applied when new recurring schedules are created.</span>
+                    </div>
+                    <strong>{formatSchedulePolicyLabel(settings.schedule_defaults.approval_policy || 'auto')}</strong>
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Approval Policy</span>
+                      <span className="setting-desc">Default review policy used by New Test schedules before each recurring run materializes.</span>
+                    </div>
+                    <select
+                      className="settings-input"
+                      value={settings.schedule_defaults.approval_policy || 'auto'}
+                      onChange={(e) => updateScheduleDefaults('approval_policy', e.target.value)}
+                    >
+                      <option value="auto">Auto approve</option>
+                      <option value="manual_review">Manual review</option>
+                      <option value="high_cost">High cost</option>
+                      <option value="off_hours">Off hours</option>
+                      <option value="production">Production</option>
+                      <option value="quota_burst">Quota burst</option>
+                    </select>
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Missed Run Policy</span>
+                      <span className="setting-desc">Default reconciliation behavior when the scheduler starts after one or more cron windows were missed.</span>
+                    </div>
+                    <select
+                      className="settings-input"
+                      value={settings.schedule_defaults.missed_run_policy || 'skip'}
+                      onChange={(e) => updateScheduleDefaults('missed_run_policy', e.target.value)}
+                    >
+                      <option value="skip">Skip missed runs</option>
+                      <option value="catch_up_once">Catch up once</option>
+                      <option value="catch_up_all">Catch up all</option>
+                      <option value="require_operator_decision">Require operator decision</option>
+                    </select>
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Blackout Window</span>
+                      <span className="setting-desc">Optional default daily no-run range. Schedules apply it in their selected timezone.</span>
+                    </div>
+                    <div className="inline-create-row">
+                      <input
+                        className="settings-input"
+                        value={settings.schedule_defaults.blackout_start_time || ''}
+                        onChange={(e) => updateScheduleDefaults('blackout_start_time', e.target.value)}
+                        placeholder="00:00"
+                      />
+                      <input
+                        className="settings-input"
+                        value={settings.schedule_defaults.blackout_end_time || ''}
+                        onChange={(e) => updateScheduleDefaults('blackout_end_time', e.target.value)}
+                        placeholder="06:00"
+                      />
+                    </div>
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Availability Window</span>
+                      <span className="setting-desc">Optional default weekday allowed-run range. Leave blank to allow all weekdays.</span>
+                    </div>
+                    <div className="inline-create-row">
+                      <input
+                        className="settings-input"
+                        value={settings.schedule_defaults.availability_start_time || ''}
+                        onChange={(e) => updateScheduleDefaults('availability_start_time', e.target.value)}
+                        placeholder="09:00"
+                      />
+                      <input
+                        className="settings-input"
+                        value={settings.schedule_defaults.availability_end_time || ''}
+                        onChange={(e) => updateScheduleDefaults('availability_end_time', e.target.value)}
+                        placeholder="17:00"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="settings-subsection">
                 <div className="settings-manager-summary">
                   <div>

@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { TopbarContributionProvider } from '../hooks/TopbarContributionProvider'
 import TestHub from './TestHub'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -90,6 +91,51 @@ describe('TestHub', () => {
     await act(async () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+  }
+
+  const wizardStepButton = (text: string) => (
+    Array.from(container.querySelectorAll('.scenario-wizard-step')).find(item => item.textContent?.includes(text))
+  )
+
+  const wizardStepMarker = (text: string) => (
+    wizardStepButton(text)?.querySelector('.scenario-wizard-step-marker')?.textContent || ''
+  )
+
+  const wizardStepComplete = (text: string) => (
+    wizardStepButton(text)?.classList.contains('complete') || false
+  )
+
+  const chooseLibraryScriptForGroup = async (scriptName = 'Checkout Flow', groupIndex = 0) => {
+    const groupCard = Array.from(container.querySelectorAll('.scenario-script-group-list-spacious .scenario-script-group-card'))[groupIndex]
+      || Array.from(container.querySelectorAll('.scenario-script-group-card'))[groupIndex]
+    expect(groupCard).toBeDefined()
+    if (!groupCard) return
+
+    const groupNumber = groupIndex + 1
+    const pickerButton = Array.from(groupCard.querySelectorAll('button')).find(button => (
+      button.getAttribute('aria-label')?.includes(`Group ${groupNumber}`)
+        || button.textContent?.includes('Add Script')
+        || button.textContent?.includes(scriptName)
+    ))
+    expect(pickerButton).toBeDefined()
+    if (!pickerButton) return
+
+    await act(async () => {
+      pickerButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushTimeouts()
+
+    const useButton = Array.from(container.querySelectorAll('.scenario-existing-script-library button')).find(button => (
+      button.textContent?.includes(`Use for Group ${groupNumber}`)
+        && button.closest('tr')?.textContent?.includes(scriptName)
+    ))
+    expect(useButton).toBeDefined()
+    if (!useButton) return
+
+    await act(async () => {
+      useButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushTimeouts()
   }
 
   beforeEach(() => {
@@ -285,6 +331,7 @@ describe('TestHub', () => {
       setInputValue(nameInput, 'Checkout Scenario')
     })
 
+    await chooseLibraryScriptForGroup()
     await clickWizardStep('Run Settings')
     const loadGroupCard = container.querySelector('.scenario-script-group-card')
     const vusersInput = loadGroupCard ? Array.from(loadGroupCard.querySelectorAll('input')).find(input => input.getAttribute('type') === 'number') : undefined
@@ -334,6 +381,135 @@ describe('TestHub', () => {
     })
   })
 
+  it('selects a group script from the searchable sortable script library', async () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
+    apiMock.listScripts.mockResolvedValue({
+      scripts: [
+        {
+          id: '',
+          name: 'Legacy Empty Id Script',
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-01T12:00:00Z',
+          scenario_count: 0,
+          associated_scenarios: [],
+          associated_releases: [],
+        },
+        {
+          id: 'script-1',
+          name: 'Checkout Flow',
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-12T12:00:00Z',
+          scenario_count: 0,
+          associated_scenarios: [],
+          associated_releases: [],
+        },
+        {
+          id: 'script-2',
+          name: 'Payments Flow',
+          protocol: 'grpc',
+          version: '2.0.0',
+          created_at: '2026-05-15T12:00:00Z',
+          last_run_at: '2026-05-20T15:30:00Z',
+          scenario_count: 2,
+          associated_scenarios: [{ id: 'scenario-payments', name: 'Payments Peak' }],
+          associated_releases: [{ id: 'release-30', name: 'PI30', application_id: 'app-1' }],
+        },
+      ],
+      count: 2,
+    })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+
+    await flushPromises()
+    await clickWizardStep('Scripts')
+
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
+
+    await act(async () => {
+      setInputValue(nameInput, 'Payments Scenario')
+    })
+
+    const firstGroup = container.querySelector('.scenario-script-group-card')
+    const chooseScriptButton = Array.from(firstGroup?.querySelectorAll('button') || [])
+      .find(button => button.textContent?.includes('Add Script'))
+    expect(chooseScriptButton).toBeDefined()
+    if (!chooseScriptButton) return
+    expect(firstGroup?.textContent).not.toContain('Checkout Flow')
+    expect(firstGroup?.textContent).not.toContain('Legacy Empty Id Script')
+
+    await act(async () => {
+      chooseScriptButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushTimeouts()
+
+    const searchInput = container.querySelector('.scenario-existing-script-library input[type="search"]') as HTMLInputElement | null
+    expect(searchInput).toBeDefined()
+    expect(document.activeElement).toBe(searchInput)
+    expect(scrollIntoView).toHaveBeenCalled()
+    expect(container.textContent).toContain('Choosing for Group 1')
+    expect(container.textContent).toContain('Payments Peak')
+    expect(container.textContent).toContain('PI30')
+    expect(container.textContent).toContain('grpc')
+    expect(container.textContent).toContain('May 15, 2026')
+    expect(container.textContent).toContain('May 20, 2026')
+    if (!searchInput) return
+
+    await act(async () => {
+      setInputValue(searchInput, 'Payments Peak')
+    })
+    const filteredRows = Array.from(container.querySelectorAll('.scenario-existing-script-library tbody tr'))
+    expect(filteredRows).toHaveLength(1)
+    expect(filteredRows[0].textContent).toContain('Payments Flow')
+
+    await act(async () => {
+      setInputValue(searchInput, '')
+    })
+    const createdHeader = Array.from(container.querySelectorAll('.scenario-existing-script-library th'))
+      .find(header => header.textContent?.includes('Created'))
+    expect(createdHeader).toBeDefined()
+    if (!createdHeader) return
+    await act(async () => {
+      createdHeader.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const firstSortedRow = container.querySelector('.scenario-existing-script-library tbody tr')
+    expect(firstSortedRow?.textContent).toContain('Payments Flow')
+
+    const usePaymentsButton = Array.from(container.querySelectorAll('.scenario-existing-script-library button'))
+      .find(button => button.textContent?.includes('Use for Group 1') && button.closest('tr')?.textContent?.includes('Payments Flow'))
+    expect(usePaymentsButton).toBeDefined()
+    if (!usePaymentsButton) return
+
+    await act(async () => {
+      usePaymentsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushTimeouts()
+
+    expect(container.querySelector('.scenario-script-group-card')?.textContent).toContain('Payments Flow')
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Payments Scenario',
+      groups: [expect.objectContaining({
+        script_id: 'script-2',
+      })],
+    }))
+  })
+
   it('opens directly to the scenario builder when requested', async () => {
     await act(async () => {
       root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
@@ -346,6 +522,75 @@ describe('TestHub', () => {
     const builderToggle = Array.from(container.querySelectorAll('.scenario-page-toggle button'))
       .find(button => button.textContent === 'Scenario Builder')
     expect(builderToggle?.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('hides the duplicate builder page title when the static topbar owns it', async () => {
+    await act(async () => {
+      root.render(
+        <TopbarContributionProvider>
+          <TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />
+        </TopbarContributionProvider>,
+      )
+    })
+
+    await flushPromises()
+
+    expect(container.querySelector('.scenario-builder')).toBeTruthy()
+    expect(container.querySelector('.page-header')).toBeNull()
+    expect(container.querySelector('.scenario-builder .section-title')).toBeNull()
+  })
+
+  it('does not mark skipped mandatory wizard steps as complete', async () => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+
+    await flushPromises()
+    await clickWizardStep('Scripts')
+
+    expect(wizardStepMarker('Start')).toBe('1')
+    expect(wizardStepMarker('Shape / Source')).toBe('2')
+    expect(wizardStepMarker('Scripts')).toBe('3')
+    expect(wizardStepComplete('Start')).toBe(false)
+    expect(wizardStepComplete('Shape / Source')).toBe(false)
+    expect(wizardStepComplete('Scripts')).toBe(false)
+  })
+
+  it('replaces wizard step numbers with checkmarks only when required fields are complete', async () => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    await clickButton('Build from Workload Shape')
+    expect(wizardStepMarker('Start')).toBe('✓')
+    expect(wizardStepComplete('Start')).toBe(true)
+    expect(wizardStepMarker('Shape / Source')).toBe('2')
+    expect(wizardStepComplete('Shape / Source')).toBe(false)
+
+    await clickButton('Use Manual Shape')
+    expect(wizardStepMarker('Shape / Source')).toBe('✓')
+    expect(wizardStepComplete('Shape / Source')).toBe(true)
+    expect(wizardStepMarker('Scripts')).toBe('3')
+    expect(wizardStepComplete('Scripts')).toBe(false)
+
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
+
+    await act(async () => {
+      setInputValue(nameInput, 'Completion Marker Scenario')
+    })
+    await chooseLibraryScriptForGroup()
+
+    expect(wizardStepMarker('Scripts')).toBe('✓')
+    expect(wizardStepComplete('Scripts')).toBe(true)
+    expect(wizardStepMarker('Run Settings')).toBe('4')
+
+    await clickWizardStep('Run Settings')
+    expect(wizardStepMarker('Run Settings')).toBe('✓')
+    expect(wizardStepComplete('Run Settings')).toBe(true)
   })
 
   it('shows saved assignment defaults in the scenario library', async () => {
@@ -789,6 +1034,7 @@ describe('TestHub', () => {
       setInputValue(nameInput, 'Mobile Browser Scenario')
     })
 
+    await chooseLibraryScriptForGroup('Mobile Checkout')
     await clickWizardStep('Run Settings')
 
     expect(container.textContent).toContain('Browser Runtime')
@@ -901,6 +1147,7 @@ describe('TestHub', () => {
       templateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    await chooseLibraryScriptForGroup()
     await clickWizardStep('Run Settings')
     const rampUpField = getDurationFieldByLabel(container, 'Ramp Up')
 
@@ -964,6 +1211,7 @@ describe('TestHub', () => {
       setInputValue(nameInput, 'Chaos Checkout Scenario')
     })
 
+    await chooseLibraryScriptForGroup()
     await clickWizardStep('Run Settings')
 
     expect(getDurationFieldByLabel(container, 'Duration')?.input.value).toBe('18')
@@ -1104,13 +1352,18 @@ describe('TestHub', () => {
     await flushPromises()
     await clickWizardStep('Scripts')
 
-    await clickButton('+ Add Script Group')
-    await clickButton('+ Add Script Group')
-    await clickButton('+ Add Script Group')
+    await clickButton('Add Group')
+    await clickButton('Add Group')
+    await clickButton('Add Group')
 
     const groupList = container.querySelector('.scenario-script-group-list.scenario-script-group-list-spacious')
     expect(groupList).toBeDefined()
     expect(groupList?.querySelectorAll('.scenario-script-group-card')).toHaveLength(4)
+    Array.from(groupList?.querySelectorAll('.scenario-script-group-card') || []).forEach(groupCard => {
+      expect(groupCard.textContent).toContain('Add Script')
+      expect(groupCard.textContent).not.toContain('Checkout Flow')
+    })
+    expect(groupList?.querySelector('.scenario-add-group-card')?.textContent).toContain('Add Group')
   })
 
   it('saves from review and opens a new test run for the saved scenario', async () => {
@@ -1134,6 +1387,7 @@ describe('TestHub', () => {
       setInputValue(nameInput, 'Review Handoff Scenario')
     })
 
+    await chooseLibraryScriptForGroup()
     await clickWizardStep('Review')
 
     const saveAndCreateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save & Create Test Run'))
@@ -1170,6 +1424,7 @@ describe('TestHub', () => {
       setInputValue(nameInput, 'Staged Checkout Scenario')
     })
 
+    await chooseLibraryScriptForGroup()
     await clickWizardStep('Run Settings')
 
     const enableStagesButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Enable Stages'))
@@ -1275,6 +1530,7 @@ describe('TestHub', () => {
 
     expect(initializationSelect.value).toBe('at_once')
 
+    await chooseLibraryScriptForGroup()
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
@@ -1373,6 +1629,7 @@ describe('TestHub', () => {
     await flushPromises()
 
     await clickWizardStep('Scripts')
+    await chooseLibraryScriptForGroup()
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save Scenario')
     expect(saveButton).toBeDefined()
@@ -1408,6 +1665,12 @@ async function flushPromises() {
   await act(async () => {
     await Promise.resolve()
     await Promise.resolve()
+  })
+}
+
+async function flushTimeouts() {
+  await act(async () => {
+    await new Promise(resolve => window.setTimeout(resolve, 0))
   })
 }
 

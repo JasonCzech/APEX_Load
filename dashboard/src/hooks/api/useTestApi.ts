@@ -101,6 +101,7 @@ type TestCreateRequest = {
   scenario_id?: string
   project_id?: string
   folder_id?: string | null
+  reserve_launch_window?: boolean
   scheduled_start_at?: string
   scenario_mode?: ScenarioMode
   script_shakeout?: boolean

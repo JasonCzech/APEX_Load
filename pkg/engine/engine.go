@@ -104,7 +104,6 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, e.duration)
 	e.cancel = cancel
 	defer cancel()
-	executionGoals := NewExecutionGoalLimiter(e.script.Config.RunLogic, cancel)
 
 	proto, err := protocol.Get(e.script.Protocol)
 	if err != nil {
@@ -126,6 +125,18 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	}
 	if isOpenWorkload(e.script) {
 		return e.runOpenWorkload(ctx, protoConfig)
+	}
+
+	// Execution goals cancel only loopCtx so VUsers stop claiming new
+	// iterations; iterations already holding a reservation finish under ctx
+	// (hard stop: duration timeout or Stop) and record their transactions.
+	loopCtx := ctx
+	var executionGoals *ExecutionGoalLimiter
+	if hasExecutionGoals(e.script.Config.RunLogic) {
+		var goalCancel context.CancelFunc
+		loopCtx, goalCancel = context.WithCancel(ctx)
+		defer goalCancel()
+		executionGoals = NewExecutionGoalLimiter(e.script.Config.RunLogic, goalCancel)
 	}
 
 	start := time.Now()

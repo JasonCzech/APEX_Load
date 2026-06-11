@@ -46,6 +46,9 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if initial.ArchiveRetention.DefaultRetentionDays != 90 || initial.ArchiveRetention.Enabled {
 		t.Fatalf("initial archive retention = %#v, want disabled 90-day default", initial.ArchiveRetention)
 	}
+	if initial.ScheduleDefaults.ApprovalPolicy != "auto" || initial.ScheduleDefaults.MissedRunPolicy != "skip" {
+		t.Fatalf("initial schedule defaults = %#v, want auto/skip", initial.ScheduleDefaults)
+	}
 	if len(initial.Notifications.Webhooks) != 0 {
 		t.Fatalf("initial notifications = %#v, want none", initial.Notifications.Webhooks)
 	}
@@ -117,6 +120,14 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 				Reason:          "failed_run_short_retention",
 				RetentionDays:   7,
 			}},
+		},
+		ScheduleDefaults: ScheduleDefaultsSettings{
+			ApprovalPolicy:        "production",
+			MissedRunPolicy:       "catch_up_once",
+			BlackoutStartTime:     "00:00",
+			BlackoutEndTime:       "06:00",
+			AvailabilityStartTime: "09:00",
+			AvailabilityEndTime:   "17:00",
 		},
 		Notifications: NotificationsSettings{
 			Webhooks: []NotificationWebhookSettings{{
@@ -212,6 +223,12 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if len(updated.ArchiveRetention.Policies) != 1 || updated.ArchiveRetention.Policies[0].RunStatus != "FAILED" || updated.ArchiveRetention.Policies[0].RetentionDays != 7 || updated.ArchiveRetention.Policies[0].ComplianceClass != "regulated" || updated.ArchiveRetention.Policies[0].Reason != "failed_run_short_retention" {
 		t.Fatalf("archive retention policies = %#v, want normalized failed-checkout policy", updated.ArchiveRetention.Policies)
 	}
+	if updated.ScheduleDefaults.ApprovalPolicy != "production" || updated.ScheduleDefaults.MissedRunPolicy != "catch_up_once" {
+		t.Fatalf("schedule governance defaults = %#v, want production/catch_up_once", updated.ScheduleDefaults)
+	}
+	if updated.ScheduleDefaults.BlackoutStartTime != "00:00" || updated.ScheduleDefaults.BlackoutEndTime != "06:00" || updated.ScheduleDefaults.AvailabilityStartTime != "09:00" || updated.ScheduleDefaults.AvailabilityEndTime != "17:00" {
+		t.Fatalf("schedule calendar defaults = %#v, want persisted windows", updated.ScheduleDefaults)
+	}
 	if len(updated.Notifications.Webhooks) != 1 {
 		t.Fatalf("notification webhooks = %d, want 1", len(updated.Notifications.Webhooks))
 	}
@@ -253,6 +270,9 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	}
 	if len(persisted.Notifications.Webhooks) != 1 || persisted.Notifications.Webhooks[0].URL != "https://hooks.slack.test/services/T000/B000/abc123" {
 		t.Fatalf("persisted notifications = %#v, want webhook URL", persisted.Notifications.Webhooks)
+	}
+	if persisted.ScheduleDefaults.ApprovalPolicy != "production" || persisted.ScheduleDefaults.BlackoutEndTime != "06:00" {
+		t.Fatalf("persisted schedule defaults = %#v, want saved governance and window settings", persisted.ScheduleDefaults)
 	}
 	if persisted.Auth.ProjectRolesHeader != "X-Test-Project-Roles" {
 		t.Fatalf("persisted project roles header = %q, want X-Test-Project-Roles", persisted.Auth.ProjectRolesHeader)
@@ -337,6 +357,20 @@ func TestSystemSettingsValidationRejectsInvalidUsageSnapshotCadence(t *testing.T
 	}
 	if got := err.Error(); got != "general.usage_snapshot_interval_seconds must be >= 0" {
 		t.Fatalf("validation error = %q, want usage snapshot cadence error", got)
+	}
+}
+
+func TestSystemSettingsValidationRejectsInvalidScheduleDefaults(t *testing.T) {
+	settings := defaultSystemSettings(2)
+	settings.ScheduleDefaults.BlackoutStartTime = "24:00"
+	settings.ScheduleDefaults.BlackoutEndTime = "06:00"
+
+	err := validateSystemSettings(settings)
+	if err == nil {
+		t.Fatal("expected invalid schedule defaults to fail validation")
+	}
+	if got := err.Error(); got != "schedule_defaults.blackout_start_time must use HH:MM" {
+		t.Fatalf("validation error = %q, want schedule default time error", got)
 	}
 }
 

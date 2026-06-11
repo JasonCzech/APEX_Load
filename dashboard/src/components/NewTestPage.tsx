@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Application, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, LaunchConflict, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario, SystemInventoryGenerator } from '../types'
+import { Application, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, LaunchConflict, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario, SystemInventoryGenerator } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
@@ -69,6 +69,15 @@ type ScheduleDraft = {
   availability_end_time: string
 }
 
+const DEFAULT_SCHEDULE_DEFAULTS: Required<DashboardScheduleDefaultsSettings> = {
+  approval_policy: 'auto',
+  missed_run_policy: 'skip',
+  blackout_start_time: '',
+  blackout_end_time: '',
+  availability_start_time: '',
+  availability_end_time: '',
+}
+
 type SortDirection = 'asc' | 'desc'
 type ScenarioSortField = 'name' | 'releases' | 'last_run_at' | 'vusers' | 'duration' | 'groups'
 const NO_RELEASE_FILTER = '__no_release__'
@@ -94,6 +103,7 @@ type GroupEditChanges = {
 }
 
 const LOAD_PROFILE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2']
+const RESERVATION_INCREMENT_MINUTES = 15
 
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
@@ -117,10 +127,40 @@ function formatLaunchWindow(preflight?: LaunchPreflightResponse | null) {
   return `${formatLaunchTimestamp(window.start_at)} - ${formatLaunchTimestamp(window.end_at)}`
 }
 
+function ceilDateToReservationIncrement(value: Date) {
+  const rounded = new Date(value)
+  const atBoundary = rounded.getMinutes() % RESERVATION_INCREMENT_MINUTES === 0 && rounded.getSeconds() === 0 && rounded.getMilliseconds() === 0
+  if (atBoundary) return rounded
+  const nextMinute = Math.floor(rounded.getMinutes() / RESERVATION_INCREMENT_MINUTES) * RESERVATION_INCREMENT_MINUTES + RESERVATION_INCREMENT_MINUTES
+  rounded.setSeconds(0, 0)
+  if (nextMinute >= 60) {
+    rounded.setHours(rounded.getHours() + 1, 0, 0, 0)
+  } else {
+    rounded.setMinutes(nextMinute)
+  }
+  return rounded
+}
+
+function reservationStartISO(preflight?: LaunchPreflightResponse | null) {
+  const candidate = preflight?.candidate_window?.start_at
+  const candidateDate = candidate ? new Date(candidate) : new Date()
+  const sourceDate = Number.isFinite(candidateDate.getTime()) ? candidateDate : new Date()
+  return ceilDateToReservationIncrement(sourceDate).toISOString()
+}
+
+function formatReservationWindow(preflight?: LaunchPreflightResponse | null) {
+  const window = preflight?.candidate_window
+  if (!window) return 'Pending preflight'
+  const startISO = reservationStartISO(preflight)
+  const start = new Date(startISO)
+  const end = new Date(start.getTime() + window.duration_seconds * 1000)
+  return `${formatLaunchTimestamp(startISO)} - ${formatLaunchTimestamp(end.toISOString())}`
+}
+
 function formatLaunchDecision(preflight?: LaunchPreflightResponse | null, loading = false) {
   if (loading) return 'Checking'
   if (!preflight) return 'Pending preflight'
-  if (preflight.start_now_allowed) return 'Start now'
+  if (preflight.start_now_allowed) return 'Reserve'
   if (preflight.queue_allowed) return 'Queue'
   if (preflight.schedule_allowed) return 'Schedule'
   return 'Blocked'
@@ -363,7 +403,19 @@ function scenarioMatchesReleaseFilter(scenario: StoredScenario, releaseFilter: s
   return associatedReleases.some(release => release.id === releaseFilter || release.name === releaseFilter)
 }
 
-function buildDefaultScheduleDraft(scenario?: StoredScenario | null, releaseId?: string) {
+function normalizeScheduleDefaults(defaults?: DashboardScheduleDefaultsSettings | null): Required<DashboardScheduleDefaultsSettings> {
+  return {
+    ...DEFAULT_SCHEDULE_DEFAULTS,
+    ...(defaults || {}),
+  }
+}
+
+function buildDefaultScheduleDraft(
+  scenario?: StoredScenario | null,
+  releaseId?: string,
+  defaults?: DashboardScheduleDefaultsSettings | null,
+): ScheduleDraft {
+  const scheduleDefaults = normalizeScheduleDefaults(defaults)
   return {
     name: scenario ? `${scenario.name} Schedule` : '',
     cron_expr: '0 9 * * 1-5',
@@ -371,12 +423,12 @@ function buildDefaultScheduleDraft(scenario?: StoredScenario | null, releaseId?:
     release_id: releaseId || '',
     run_name_template: scenario?.name || '',
     enabled: true,
-    approval_policy: 'auto',
-    missed_run_policy: 'skip',
-    blackout_start_time: '',
-    blackout_end_time: '',
-    availability_start_time: '',
-    availability_end_time: '',
+    approval_policy: scheduleDefaults.approval_policy || 'auto',
+    missed_run_policy: scheduleDefaults.missed_run_policy || 'skip',
+    blackout_start_time: scheduleDefaults.blackout_start_time || '',
+    blackout_end_time: scheduleDefaults.blackout_end_time || '',
+    availability_start_time: scheduleDefaults.availability_start_time || '',
+    availability_end_time: scheduleDefaults.availability_end_time || '',
   }
 }
 
@@ -449,6 +501,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [expandedScheduleId, setExpandedScheduleId] = useState<string | null>(null)
   const [scheduleOccurrenceLoading, setScheduleOccurrenceLoading] = useState<string | null>(null)
   const [scheduleOccurrences, setScheduleOccurrences] = useState<Record<string, ScenarioScheduleOccurrence[]>>({})
+  const [scheduleDefaults, setScheduleDefaults] = useState<DashboardScheduleDefaultsSettings>(DEFAULT_SCHEDULE_DEFAULTS)
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>(buildDefaultScheduleDraft())
   const [runName, setRunName] = useState('')
   const [newReleaseName, setNewReleaseName] = useState('')
@@ -536,6 +589,25 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       cancelled = true
     }
   }, [activeProject?.id, api])
+  useEffect(() => {
+    let cancelled = false
+    const loadScheduleDefaults = async () => {
+      try {
+        const response = await api.getSystemSettings()
+        if (!cancelled) {
+          setScheduleDefaults(normalizeScheduleDefaults(response.schedule_defaults))
+        }
+      } catch {
+        if (!cancelled) {
+          setScheduleDefaults(DEFAULT_SCHEDULE_DEFAULTS)
+        }
+      }
+    }
+    loadScheduleDefaults()
+    return () => {
+      cancelled = true
+    }
+  }, [api])
   useEffect(() => {
     let cancelled = false
     const loadInventory = async () => {
@@ -704,8 +776,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       { label: 'Shared Data Pools', value: dataPoolValue },
       { label: 'Capacity', value: capacityValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
       { label: 'Bottleneck', value: bottleneckValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
-      { label: 'Launch Decision', value: formatLaunchDecision(immediatePreflight, immediatePreflightLoading), tone: launchBlocked ? 'warning' : 'normal' },
-      { label: 'Projected Window', value: formatLaunchWindow(immediatePreflight) },
+      { label: 'Reservation Decision', value: formatLaunchDecision(immediatePreflight, immediatePreflightLoading), tone: launchBlocked ? 'warning' : 'normal' },
+      { label: 'Reserved Window', value: formatReservationWindow(immediatePreflight) },
       { label: 'Conflicts', value: launchConflict ? launchConflict.message : 'None', tone: launchConflict ? 'warning' : 'normal' },
       { label: 'Next Blocking Event', value: formatNextBlockingEvent(immediatePreflight), tone: launchBlocked ? 'warning' : 'normal' },
     ]
@@ -753,9 +825,9 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   }, [refreshSchedules, scenarioId])
   useEffect(() => {
     if (!editingScheduleId) {
-      setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId))
+      setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
     }
-  }, [editingScheduleId, releaseId, scenario])
+  }, [editingScheduleId, releaseId, scenario, scheduleDefaults])
 
   useEffect(() => {
     if (!runCreatePayload) {
@@ -846,9 +918,9 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     setScenarioSortDirection(field === 'last_run_at' || field === 'vusers' ? 'desc' : 'asc')
   }
 
-  const createRun = async (intent: 'start_now' | 'queue' | 'schedule') => {
+  const createRun = async (intent: 'reserve' | 'queue' | 'schedule') => {
     if (!canManageTests) {
-      setError('Current session cannot create or start test runs for this project.')
+      setError('Current session cannot create, reserve, or start test runs for this project.')
       return
     }
     if (!scenario || !releaseId || !activeApplication || !runCreatePayload) {
@@ -864,9 +936,15 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     try {
       const payload = intent === 'schedule'
         ? { ...runCreatePayload, release_id: releaseId, scheduled_start_at: scheduledStartISO }
-        : { ...runCreatePayload, release_id: releaseId }
+        : intent === 'reserve'
+          ? { ...runCreatePayload, release_id: releaseId, reserve_launch_window: true, scheduled_start_at: reservationStartISO(immediatePreflight) }
+          : { ...runCreatePayload, release_id: releaseId }
       const test = await api.createTest(payload)
-      if (intent === 'start_now' || intent === 'queue') {
+      if (intent === 'reserve') {
+        ;(onOpenCommandCenter || onSelectTest)(test.id)
+        return
+      }
+      if (intent === 'queue') {
         await api.startTest(test.id)
         ;(onOpenCommandCenter || onSelectTest)(test.id)
         return
@@ -1230,7 +1308,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	    await api.createScenarioSchedule(scenario.id, payload)
 	  }
 	  setEditingScheduleId(null)
-	  setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId))
+	  setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
 	  await refreshSchedules(scenario.id)
 	} catch (err: unknown) {
 	  setError(getErrorMessage(err, 'Unable to save schedule'))
@@ -1295,7 +1373,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	  await api.deleteScenarioSchedule(scenario.id, scheduleId)
 	  if (editingScheduleId === scheduleId) {
 	    setEditingScheduleId(null)
-	    setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId))
+	    setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
 	  }
 	  await refreshSchedules(scenario.id)
 	} catch (err: unknown) {
@@ -1395,9 +1473,26 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
             <section className="new-test-step">
               <div className="new-test-step-header">
                 <span className="new-test-step-index">1</span>
-                <div>
+                <div className="new-test-step-header-content">
                   <h3>Scenario Schedule</h3>
                   <p>Bind a recurring cron expression to a reusable scenario.</p>
+                </div>
+                <div className="new-test-step-header-actions">
+                  {editingScheduleId && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        setEditingScheduleId(null)
+                        setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
+                      }}
+                    >
+                      Cancel Edit
+                    </button>
+                  )}
+                  <button type="button" className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting || !canManageTests}>
+                    {editingScheduleId ? 'Update Schedule' : 'Save Schedule'}
+                  </button>
                 </div>
               </div>
               <div className="settings-group">
@@ -1431,7 +1526,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                 <div className="setting-row">
                   <div className="setting-info">
                     <span className="setting-label">Timezone</span>
-                    <span className="setting-desc">IANA timezone used for cron and calendar windows</span>
+                    <span className="setting-desc">IANA timezone used for cron evaluation</span>
                     <span className="setting-desc schedule-current-utc">Current UTC: {formatUtcScheduleClock(scheduleClock)} UTC</span>
                   </div>
                   <select className="settings-input" value={scheduleDraft.timezone} onChange={(event) => setScheduleDraft(prev => ({ ...prev, timezone: event.target.value }))}>
@@ -1455,58 +1550,6 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                   </div>
                   <input className="settings-input" value={scheduleDraft.run_name_template} onChange={(event) => setScheduleDraft(prev => ({ ...prev, run_name_template: event.target.value }))} placeholder={scenario?.name || 'Scheduled run'} />
                 </div>
-                <details className="new-test-disclosure" open>
-                  <summary>Governance</summary>
-                  <div className="setting-row">
-                    <div className="setting-info">
-                      <span className="setting-label">Approval Policy</span>
-                      <span className="setting-desc">Require approval before materialization for governed schedules.</span>
-                    </div>
-                    <select className="settings-input" value={scheduleDraft.approval_policy} onChange={(event) => setScheduleDraft(prev => ({ ...prev, approval_policy: event.target.value }))}>
-                      <option value="auto">Auto approve</option>
-                      <option value="manual_review">Manual review</option>
-                      <option value="high_cost">High cost</option>
-                      <option value="off_hours">Off hours</option>
-                      <option value="production">Production</option>
-                      <option value="quota_burst">Quota burst</option>
-                    </select>
-                  </div>
-                  <div className="setting-row">
-                    <div className="setting-info">
-                      <span className="setting-label">Missed Run Policy</span>
-                      <span className="setting-desc">Choose how restart reconciliation handles missed cron windows.</span>
-                    </div>
-                    <select className="settings-input" value={scheduleDraft.missed_run_policy} onChange={(event) => setScheduleDraft(prev => ({ ...prev, missed_run_policy: event.target.value }))}>
-                      <option value="skip">Skip missed runs</option>
-                      <option value="catch_up_once">Catch up once</option>
-                      <option value="catch_up_all">Catch up all</option>
-                      <option value="require_operator_decision">Require operator decision</option>
-                    </select>
-                  </div>
-                </details>
-                <details className="new-test-disclosure">
-                  <summary>Calendar Windows</summary>
-                  <div className="setting-row">
-                    <div className="setting-info">
-                      <span className="setting-label">Blackout Window</span>
-                      <span className="setting-desc">Optional daily no-run range in the schedule timezone</span>
-                    </div>
-                    <div className="inline-create-row">
-                      <input className="settings-input" value={scheduleDraft.blackout_start_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, blackout_start_time: event.target.value }))} placeholder="00:00" />
-                      <input className="settings-input" value={scheduleDraft.blackout_end_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, blackout_end_time: event.target.value }))} placeholder="06:00" />
-                    </div>
-                  </div>
-                  <div className="setting-row">
-                    <div className="setting-info">
-                      <span className="setting-label">Availability Window</span>
-                      <span className="setting-desc">Optional weekday allowed-run range in the schedule timezone</span>
-                    </div>
-                    <div className="inline-create-row">
-                      <input className="settings-input" value={scheduleDraft.availability_start_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, availability_start_time: event.target.value }))} placeholder="09:00" />
-                      <input className="settings-input" value={scheduleDraft.availability_end_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, availability_end_time: event.target.value }))} placeholder="17:00" />
-                    </div>
-                  </div>
-                </details>
                 <label className="setting-row" style={{ alignItems: 'center', gap: 12 }}>
                   <input type="checkbox" checked={scheduleDraft.enabled} onChange={(event) => setScheduleDraft(prev => ({ ...prev, enabled: event.target.checked }))} />
                   <div className="setting-info">
@@ -1514,10 +1557,6 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                     <span className="setting-desc">Disabled schedules stay saved but do not trigger</span>
                   </div>
                 </label>
-                <div className="new-test-form-actions">
-                  <button className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting || !canManageTests}>{editingScheduleId ? 'Update Schedule' : 'Save Schedule'}</button>
-                  {editingScheduleId && <button className="btn btn-secondary" onClick={() => { setEditingScheduleId(null); setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId)) }}>Cancel Edit</button>}
-                </div>
               </div>
             </section>
 
@@ -2000,7 +2039,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 
         <aside className="new-test-sidebar-column">
           <section className="new-test-summary">
-            <h3>Launch Summary</h3>
+            <h3>Run Summary</h3>
             <dl className="new-test-summary-list" aria-label="Run settings summary">
               {launchSummaryItems.map(item => (
                 <div key={item.label} className={item.tone === 'warning' ? 'warning' : undefined}>
@@ -2011,10 +2050,10 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
             </dl>
             <div className="new-test-launch-actions">
               {immediatePreflightLoading && !immediatePreflight && (
-                <button className="btn btn-secondary" disabled>Checking Launch</button>
+                <button className="btn btn-secondary" disabled>Checking Reservation</button>
               )}
               {showStartNow && (
-                <button className="btn btn-primary" onClick={() => createRun('start_now')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed}>Start Now</button>
+                <button className="btn btn-primary" onClick={() => createRun('reserve')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed}>Reserve Timeslot</button>
               )}
               {showQueueRun && (
                 <button className="btn btn-secondary" onClick={() => createRun('queue')} disabled={!canLaunch || immediatePreflightLoading}>Create Queued Run</button>

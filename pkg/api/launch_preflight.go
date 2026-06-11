@@ -321,7 +321,7 @@ func (tr *TestRunner) launchCapacityEventForTestLocked(test *ManagedTest, now ti
 		return launchCapacityEvent{}, false
 	}
 	start := calendarTestStart(test)
-	if test.Status == "SCHEDULED" {
+	if test.Status == "SCHEDULED" || test.Status == "RESERVED" {
 		if test.ScheduledStartAt == nil {
 			return launchCapacityEvent{}, false
 		}
@@ -330,7 +330,7 @@ func (tr *TestRunner) launchCapacityEventForTestLocked(test *ManagedTest, now ti
 		return launchCapacityEvent{}, false
 	}
 	end := calendarTestEnd(test, start, now)
-	if test.Status == "SCHEDULED" {
+	if test.Status == "SCHEDULED" || test.Status == "RESERVED" {
 		window := launchWindowForTest(test, start)
 		end = window.EndAt
 	}

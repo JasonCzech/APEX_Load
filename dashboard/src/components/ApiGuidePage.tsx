@@ -88,6 +88,7 @@ const endpointGroups = [
       { method: 'GET', path: '/api/v1/applications/{id}', operations: ['view_applications'] },
       { method: 'PUT', path: '/api/v1/applications/{id}', operations: ['manage_applications'] },
       { method: 'DELETE', path: '/api/v1/applications/{id}', operations: ['manage_applications'] },
+      { method: 'GET', path: '/api/v1/applications/{id}/load-comparison?scope=transaction|group&key=<name>&test_id=<run>', operations: ['view_applications'] },
       { method: 'GET', path: '/api/v1/applications/{id}/releases', operations: ['view_applications'] },
       { method: 'POST', path: '/api/v1/applications/{id}/releases', operations: ['manage_applications', 'manage_repository_releases'] },
       { method: 'GET', path: '/api/v1/releases/{id}', operations: ['view_applications'] },

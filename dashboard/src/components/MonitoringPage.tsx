@@ -1636,7 +1636,7 @@ function runCalendarEventClass(event: RunCalendarEvent) {
 }
 
 function isRunCalendarActiveStatus(status: string) {
-  return ['QUEUED', 'PENDING', 'INITIALIZING', 'RUNNING', 'STOPPING', 'PAUSED'].includes(status.toUpperCase())
+  return ['QUEUED', 'PENDING', 'RESERVED', 'INITIALIZING', 'RUNNING', 'STOPPING', 'PAUSED'].includes(status.toUpperCase())
 }
 
 function isRunCalendarProblemStatus(status: string) {

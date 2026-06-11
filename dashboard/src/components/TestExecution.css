@@ -1317,6 +1317,14 @@
   min-width: 0;
 }
 
+.chart-rendering-options {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .chart-table-row-toggle {
   display: inline-flex;
   align-items: center;

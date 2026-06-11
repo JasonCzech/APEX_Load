@@ -22,6 +22,7 @@ const apiMock = {
   preflightTest: vi.fn(),
   startTest: vi.fn(),
   getAuthEffectiveAccess: vi.fn(),
+  getSystemSettings: vi.fn(),
   getSystemInventory: vi.fn(),
 }
 
@@ -126,6 +127,16 @@ describe('NewTestPage', () => {
           ],
         },
       ],
+    })
+    apiMock.getSystemSettings.mockResolvedValue({
+      schedule_defaults: {
+        approval_policy: 'auto',
+        missed_run_policy: 'skip',
+        blackout_start_time: '',
+        blackout_end_time: '',
+        availability_start_time: '',
+        availability_end_time: '',
+      },
     })
     apiMock.getSystemInventory.mockResolvedValue({
       execution_mode: 'distributed',
@@ -300,6 +311,17 @@ describe('NewTestPage', () => {
   })
 
   it('creates a scenario schedule from the schedules view', async () => {
+    apiMock.getSystemSettings.mockResolvedValueOnce({
+      schedule_defaults: {
+        approval_policy: 'production',
+        missed_run_policy: 'catch_up_once',
+        blackout_start_time: '00:00',
+        blackout_end_time: '06:00',
+        availability_start_time: '09:00',
+        availability_end_time: '17:00',
+      },
+    })
+
     await act(async () => {
       root.render(
         <NewTestPage
@@ -329,6 +351,9 @@ describe('NewTestPage', () => {
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Save Schedule')
     expect(saveButton).toBeTruthy()
+    expect(saveButton?.closest('.new-test-step-header')).toBeTruthy()
+    expect(container.textContent).not.toContain('Calendar Windows')
+    expect(container.textContent).not.toContain('Missed Run Policy')
 
     await act(async () => {
       saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -341,8 +366,10 @@ describe('NewTestPage', () => {
       cron_expr: '0 9 * * 1-5',
       timezone: 'UTC',
       enabled: true,
-      approval_policy: 'auto',
-      missed_run_policy: 'skip',
+      approval_policy: 'production',
+      missed_run_policy: 'catch_up_once',
+      blackout_windows: [expect.objectContaining({ start_time: '00:00', end_time: '06:00', timezone: 'UTC' })],
+      availability_windows: [expect.objectContaining({ start_time: '09:00', end_time: '17:00', timezone: 'UTC' })],
     }))
   })
 
@@ -551,7 +578,7 @@ describe('NewTestPage', () => {
     expect(readinessCard).toBeTruthy()
     expect(profileCard).toBeTruthy()
     if (!readinessCard || !profileCard) return
-    expect(readinessCard.textContent).toContain('Launch Summary')
+    expect(readinessCard.textContent).toContain('Run Summary')
     expect(readinessCard.querySelector('.readiness-list')).toBeNull()
     expect(readinessCard.querySelector('.new-test-summary-grid')).toBeNull()
     const summaryList = readinessCard.querySelector('.new-test-summary-list')
@@ -625,7 +652,7 @@ describe('NewTestPage', () => {
     expect(overriddenLogLevelCard?.textContent).toContain('Run override')
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start Now')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Reserve Timeslot')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -635,6 +662,8 @@ describe('NewTestPage', () => {
       name: 'Checkout Smoke',
       duration: '10m',
       scenario_id: 'scenario-1',
+      reserve_launch_window: true,
+      scheduled_start_at: '2026-05-12T20:00:00.000Z',
       runtime_settings: {
         log_level: 'extended',
         auto_transactions: 'per_iteration',
@@ -644,6 +673,7 @@ describe('NewTestPage', () => {
         },
       },
     }))
+    expect(apiMock.startTest).not.toHaveBeenCalled()
     expect(selectTest).toHaveBeenCalledWith('test-1')
   })
 
@@ -754,7 +784,7 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('Run override')
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start Now')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Reserve Timeslot')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -762,6 +792,8 @@ describe('NewTestPage', () => {
 
     expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
       scenario_id: 'scenario-1',
+      reserve_launch_window: true,
+      scheduled_start_at: '2026-05-12T20:00:00.000Z',
       groups: [expect.objectContaining({
         name: 'Checkout',
         script_id: 'script-1',
@@ -775,6 +807,7 @@ describe('NewTestPage', () => {
         },
       })],
     }))
+    expect(apiMock.startTest).not.toHaveBeenCalled()
   })
 
   it('saves per-group host sharding as a run-only assignment override', async () => {
@@ -854,7 +887,7 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('1 sharded group')
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start Now')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Reserve Timeslot')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -862,6 +895,8 @@ describe('NewTestPage', () => {
 
     expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
       scenario_id: 'scenario-1',
+      reserve_launch_window: true,
+      scheduled_start_at: '2026-05-12T20:00:00.000Z',
       groups: [expect.objectContaining({
         name: 'Checkout',
         script_id: 'script-1',
@@ -874,6 +909,7 @@ describe('NewTestPage', () => {
         },
       })],
     }))
+    expect(apiMock.startTest).not.toHaveBeenCalled()
   })
 
   it('surfaces governed schedule policies and approval actions', async () => {
@@ -1061,7 +1097,7 @@ describe('NewTestPage', () => {
     await flushPromises()
     await flushDebouncedPreflight()
 
-    const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start Now') as HTMLButtonElement | undefined
+    const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Reserve Timeslot') as HTMLButtonElement | undefined
     expect(startNowButton).toBeTruthy()
     expect(startNowButton?.disabled).toBe(true)
     const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
@@ -1079,6 +1115,56 @@ describe('NewTestPage', () => {
     expect(apiMock.startTest).toHaveBeenCalledWith('test-1')
     expect(openCommandCenter).toHaveBeenCalledWith('test-1')
     expect(selectTest).not.toHaveBeenCalled()
+  })
+
+  it('reserves the next 15-minute timeslot without starting the run', async () => {
+    const openCommandCenter = vi.fn()
+    apiMock.preflightTest.mockResolvedValue({
+      decision: 'start_now',
+      start_now_allowed: true,
+      schedule_allowed: false,
+      queue_allowed: false,
+      candidate_window: {
+        start_at: '2026-05-12T20:07:30Z',
+        end_at: '2026-05-12T20:17:30Z',
+        duration_seconds: 600,
+      },
+      blocking_conflicts: [],
+      warnings: [],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onOpenCommandCenter={openCommandCenter}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+    await flushDebouncedPreflight()
+
+    expect(container.textContent).toContain('Reserve Timeslot')
+    expect(container.textContent).toContain('Reserved Window')
+
+    const reserveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Reserve Timeslot')
+    await act(async () => {
+      reserveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      scenario_id: 'scenario-1',
+      reserve_launch_window: true,
+      scheduled_start_at: '2026-05-12T20:15:00.000Z',
+    }))
+    expect(apiMock.startTest).not.toHaveBeenCalled()
+    expect(openCommandCenter).toHaveBeenCalledWith('test-1')
   })
 
   it('sends scheduled_start_at when one-time scheduled preflight is allowed', async () => {
@@ -1189,7 +1275,7 @@ describe('NewTestPage', () => {
     await flushPromises()
 
     await flushDebouncedPreflight()
-    const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start Now') as HTMLButtonElement | undefined
+    const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Reserve Timeslot') as HTMLButtonElement | undefined
     const scheduleButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedule Run') as HTMLButtonElement | undefined
     expect(startNowButton?.disabled).toBe(true)
     expect(scheduleButton?.disabled).toBe(true)

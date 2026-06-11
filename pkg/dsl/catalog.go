@@ -1,0 +1,233 @@
+//go:generate go run ../../cmd/dslschema -schema ../../docs/dsl.schema.json -reference ../../docs/DSL_ACTION_REFERENCE.md
+
+package dsl
+
+import (
+	"sort"
+	"strings"
+	"sync"
+)
+
+// FieldKind classifies a declared action field for schema generation and
+// editor tooling. It mirrors JSON value kinds plus "enum" for closed string
+// sets and "any" for fields whose type depends on the action.
+type FieldKind string
+
+const (
+	FieldKindString FieldKind = "string"
+	FieldKindInt    FieldKind = "int"
+	FieldKindFloat  FieldKind = "float"
+	FieldKindBool   FieldKind = "bool"
+	FieldKindEnum   FieldKind = "enum"
+	FieldKindObject FieldKind = "object"
+	FieldKindArray  FieldKind = "array"
+	FieldKindAny    FieldKind = "any"
+)
+
+// FieldSpec declares one field an action type understands. Name is either a
+// top-level Action JSON field ("selector") or a dotted params path
+// ("params.max_messages"). Required marks fields the action cannot run
+// without; one-of-several constraints are expressed in Doc and enforced by
+// the owning ActionSpec.Validate function.
+type FieldSpec struct {
+	Name     string    `json:"name"`
+	Required bool      `json:"required,omitempty"`
+	Kind     FieldKind `json:"kind"`
+	Enum     []string  `json:"enum,omitempty"`
+	Doc      string    `json:"doc,omitempty"`
+}
+
+// ActionSpec is the declarative contract for one DSL action type: which
+// protocols may use it, which fields it understands, and the residual
+// cross-field validation rules that field metadata alone cannot express.
+// The catalog built from these specs is the single source of truth consumed
+// by the validator, the generated JSON Schema, the action reference doc, and
+// the dashboard editor.
+type ActionSpec struct {
+	Type      string      `json:"type"`
+	Aliases   []string    `json:"aliases,omitempty"`
+	Protocols []string    `json:"protocols"`
+	Summary   string      `json:"summary"`
+	Fields    []FieldSpec `json:"fields,omitempty"`
+	// RequireOneOf lists alternative-field groups: for each group, at least
+	// one of the named fields (top-level or params.* path) must be set.
+	// Groups mirror the one-of rules the Validate funcs enforce, expressed
+	// as data so the generated schema (anyOf) and editor can consume them.
+	RequireOneOf [][]string `json:"require_one_of,omitempty"`
+	// Validate holds residual per-type rules. Issues are labelled with the
+	// "actions[<index>]" prefix convention used across validate.go.
+	Validate func(index int, action Action) []string `json:"-"`
+}
+
+// EngineAction reports whether the spec describes an engine-level action
+// that is valid inside any protocol script (Protocols contains "*").
+func (s ActionSpec) EngineAction() bool {
+	for _, protocol := range s.Protocols {
+		if protocol == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// ProtocolFamily maps a script protocol string to the catalog family used
+// for action membership, collapsing provider-suffixed protocols (e.g.
+// "jms-solace", "jms-ibmmq") onto their family ("jms").
+func ProtocolFamily(protocol string) string {
+	trimmed := strings.TrimSpace(protocol)
+	if strings.HasPrefix(trimmed, "jms-") {
+		return "jms"
+	}
+	return trimmed
+}
+
+var (
+	catalogOnce    sync.Once
+	catalogByType  map[string]*ActionSpec
+	catalogOrdered []*ActionSpec
+)
+
+// actionCatalogSeeds assembles every per-protocol spec list. Seed files live
+// one per protocol (catalog_browser.go, catalog_grpc.go, ...) mirroring the
+// protocol package layout.
+func actionCatalogSeeds() []ActionSpec {
+	var seeds []ActionSpec
+	seeds = append(seeds, engineActionSpecs()...)
+	seeds = append(seeds, httpActionSpecs()...)
+	seeds = append(seeds, browserActionSpecs()...)
+	seeds = append(seeds, websocketActionSpecs()...)
+	seeds = append(seeds, grpcActionSpecs()...)
+	seeds = append(seeds, databaseActionSpecs()...)
+	seeds = append(seeds, networkActionSpecs()...)
+	seeds = append(seeds, jmsActionSpecs()...)
+	seeds = append(seeds, kafkaActionSpecs()...)
+	return seeds
+}
+
+func buildActionCatalog() {
+	seeds := actionCatalogSeeds()
+	catalogByType = make(map[string]*ActionSpec, len(seeds)*2)
+	catalogOrdered = make([]*ActionSpec, 0, len(seeds))
+	for i := range seeds {
+		spec := &seeds[i]
+		catalogOrdered = append(catalogOrdered, spec)
+		catalogByType[spec.Type] = spec
+		for _, alias := range spec.Aliases {
+			catalogByType[alias] = spec
+		}
+	}
+}
+
+func actionCatalogIndex() map[string]*ActionSpec {
+	catalogOnce.Do(buildActionCatalog)
+	return catalogByType
+}
+
+func actionCatalogList() []*ActionSpec {
+	catalogOnce.Do(buildActionCatalog)
+	return catalogOrdered
+}
+
+// SpecForActionType resolves an action type (or registered alias) to its
+// catalog spec. Legacy "loadrunner_*" engine types are canonicalized first.
+// Lookup is exact-match; protocols that accept case-insensitive types
+// (database, network) normalize before calling.
+func SpecForActionType(actionType string) (ActionSpec, bool) {
+	spec, ok := actionCatalogIndex()[CanonicalActionType(actionType)]
+	if !ok {
+		return ActionSpec{}, false
+	}
+	return *spec, true
+}
+
+// protocolActionSpec resolves an action type within one protocol family,
+// matching only specs that list the family explicitly. Engine ("*") specs
+// are intentionally excluded: the validator intercepts engine actions before
+// protocol dispatch, so protocol validators must keep rejecting them.
+func protocolActionSpec(family, actionType string) (*ActionSpec, bool) {
+	spec, ok := actionCatalogIndex()[actionType]
+	if !ok {
+		return nil, false
+	}
+	for _, protocol := range spec.Protocols {
+		if protocol == family {
+			return spec, true
+		}
+	}
+	return nil, false
+}
+
+// AllActionSpecs returns every catalog spec sorted by canonical type.
+func AllActionSpecs() []ActionSpec {
+	list := actionCatalogList()
+	specs := make([]ActionSpec, 0, len(list))
+	for _, spec := range list {
+		specs = append(specs, *spec)
+	}
+	sort.Slice(specs, func(i, j int) bool { return specs[i].Type < specs[j].Type })
+	return specs
+}
+
+// ActionSpecsForProtocol returns the specs usable in scripts of the given
+// protocol, sorted by canonical type. Engine actions are included for every
+// family except jms and kafka, whose script validators accept only their own
+// action types.
+func ActionSpecsForProtocol(protocol string) []ActionSpec {
+	family := ProtocolFamily(protocol)
+	allowEngine := family != "jms" && family != "kafka"
+	var specs []ActionSpec
+	for _, spec := range actionCatalogList() {
+		if spec.EngineAction() {
+			if allowEngine {
+				specs = append(specs, *spec)
+			}
+			continue
+		}
+		for _, candidate := range spec.Protocols {
+			if candidate == family {
+				specs = append(specs, *spec)
+				break
+			}
+		}
+	}
+	sort.Slice(specs, func(i, j int) bool { return specs[i].Type < specs[j].Type })
+	return specs
+}
+
+// CatalogProtocolFamilies returns every protocol family that owns at least
+// one non-engine action spec, sorted alphabetically.
+func CatalogProtocolFamilies() []string {
+	seen := make(map[string]struct{})
+	for _, spec := range actionCatalogList() {
+		for _, protocol := range spec.Protocols {
+			if protocol == "*" {
+				continue
+			}
+			seen[protocol] = struct{}{}
+		}
+	}
+	families := make([]string, 0, len(seen))
+	for family := range seen {
+		families = append(families, family)
+	}
+	sort.Strings(families)
+	return families
+}
+
+// CommonActionFields lists the fields every action understands regardless of
+// type. Per-type specs declare only their type-specific fields on top of
+// these.
+func CommonActionFields() []FieldSpec {
+	return []FieldSpec{
+		{Name: "name", Required: true, Kind: FieldKindString, Doc: "Unique step name; used in transaction reporting and issue labels."},
+		{Name: "type", Required: true, Kind: FieldKindString, Doc: "Action type discriminator; see the per-protocol action catalog."},
+		{Name: "think_time", Kind: FieldKindObject, Doc: "Per-action think-time override (type, mean_ms, ...)."},
+		{Name: "think_time_after", Kind: FieldKindBool, Doc: "Apply think time after this action completes."},
+		{Name: "extractors", Kind: FieldKindArray, Doc: "Response extractors: {name, source, type, expression}."},
+		{Name: "assertions", Kind: FieldKindArray, Doc: "Response assertions: {type, expected, value, max}."},
+		{Name: "metadata", Kind: FieldKindObject, Doc: "Free-form metadata; importers preserve source details here."},
+		{Name: "timeout_ms", Kind: FieldKindInt, Doc: "Per-action timeout override in milliseconds."},
+		{Name: "max_redirects", Kind: FieldKindInt, Doc: "Per-action redirect-policy override (-1 disables)."},
+		{Name: "auth", Kind: FieldKindObject, Doc: "Per-action auth override: {type, username, password, token, domain}."},
+	}
+}
