@@ -259,3 +259,125 @@ func containsWSDLDiagnostic(result *ConvertResult, element string) bool {
 	}
 	return false
 }
+
+func TestConvertWSDLRendersSOAPHeaderBindings(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `<?xml version="1.0"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+             xmlns:tns="urn:orders"
+             name="OrderService" targetNamespace="urn:orders">
+  <types>
+    <xsd:schema targetNamespace="urn:orders">
+      <xsd:element name="SessionHeader">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="sessionId" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="PlaceOrder">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="orderDate" type="xsd:dateTime"/>
+            <xsd:element name="sku" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </types>
+  <message name="PlaceOrderRequest">
+    <part name="parameters" element="tns:PlaceOrder"/>
+  </message>
+  <message name="SessionHeaderMessage">
+    <part name="header" element="tns:SessionHeader"/>
+  </message>
+  <portType name="OrderPort">
+    <operation name="PlaceOrder">
+      <input message="tns:PlaceOrderRequest"/>
+    </operation>
+  </portType>
+  <binding name="OrderBinding" type="tns:OrderPort">
+    <operation name="PlaceOrder">
+      <soap:operation soapAction="urn:orders/PlaceOrder"/>
+      <input>
+        <soap:header message="tns:SessionHeaderMessage" part="header"/>
+      </input>
+    </operation>
+  </binding>
+  <service name="OrderService">
+    <port name="OrderPort" binding="tns:OrderBinding">
+      <soap:address location="https://orders.example.test/soap"/>
+    </port>
+  </service>
+</definitions>`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %d, want 1", len(result.Script.Actions))
+	}
+	body := result.Script.Actions[0].Body
+
+	// The bound soap:header must be rendered into the envelope header.
+	if !strings.Contains(body, "<soapenv:Header>") || !strings.Contains(body, "<tns:SessionHeader>") {
+		t.Fatalf("envelope missing rendered SOAP header:\n%s", body)
+	}
+	if !strings.Contains(body, "<tns:sessionId>") {
+		t.Fatalf("envelope header missing nested sessionId field:\n%s", body)
+	}
+
+	// dateTime placeholders must use the runtime-supported timestamp function.
+	if strings.Contains(body, "{{fn.now()}}") {
+		t.Fatalf("envelope uses unsupported fn.now() placeholder:\n%s", body)
+	}
+	if !strings.Contains(body, "{{fn.timestamp.iso8601}}") {
+		t.Fatalf("envelope missing iso8601 timestamp placeholder for dateTime field:\n%s", body)
+	}
+}
+
+func TestConvertWSDLUnresolvedHeaderBindingWarns(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `<?xml version="1.0"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="urn:simple"
+             name="SimpleService" targetNamespace="urn:simple">
+  <message name="DoItRequest">
+    <part name="parameters" type="xsd:string"/>
+  </message>
+  <portType name="SimplePort">
+    <operation name="DoIt">
+      <input message="tns:DoItRequest"/>
+    </operation>
+  </portType>
+  <binding name="SimpleBinding" type="tns:SimplePort">
+    <operation name="DoIt">
+      <soap:operation soapAction="urn:simple/DoIt"/>
+      <input>
+        <soap:header message="tns:MissingHeaderMessage" part="header"/>
+      </input>
+    </operation>
+  </binding>
+  <service name="SimpleService">
+    <port name="SimplePort" binding="tns:SimpleBinding">
+      <soap:address location="https://simple.example.test/soap"/>
+    </port>
+  </service>
+</definitions>`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	found := false
+	for _, diagnostic := range result.Unsupported {
+		if strings.Contains(diagnostic.Element, "SOAP header") && strings.Contains(diagnostic.Detail, "could not be resolved") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected unresolved soap:header warning, got %+v", result.Unsupported)
+	}
+}

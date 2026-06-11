@@ -1,0 +1,231 @@
+.paramize-review {
+  min-width: 0;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.paramize-review-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.paramize-review-header h4 {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.paramize-review-header p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.paramize-applied-badge {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.paramize-review-error,
+.paramize-review-blocked {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.paramize-review-error {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+.paramize-review-blocked {
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  color: var(--warning);
+}
+
+.paramize-group,
+.paramize-diffs {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.paramize-group summary,
+.paramize-diffs summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.paramize-group summary small,
+.paramize-diffs summary small {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.paramize-group-secret summary {
+  color: var(--warning);
+}
+
+.paramize-list,
+.paramize-diffs ul {
+  margin: 0;
+  padding: 0 12px 12px;
+  list-style: none;
+}
+
+.paramize-diffs ul {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.paramize-item {
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.paramize-item:first-child {
+  border-top: 0;
+}
+
+.paramize-item-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.paramize-item-preapplied .paramize-item-main {
+  cursor: default;
+}
+
+.paramize-preapplied-mark {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.paramize-item-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.paramize-item-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.paramize-item-change code,
+.paramize-diffs code {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.paramize-before {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--text-secondary);
+}
+
+.paramize-after {
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+  color: var(--success);
+}
+
+.paramize-arrow {
+  color: var(--text-muted);
+}
+
+.paramize-confidence {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.paramize-confidence-high {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+}
+
+.paramize-confidence-medium {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+
+.paramize-confidence-low {
+  background: color-mix(in srgb, var(--text-muted) 14%, transparent);
+  color: var(--text-muted);
+}
+
+.paramize-high-risk {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.paramize-script-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--info, var(--text-muted)) 12%, transparent);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.paramize-rationale {
+  margin: 4px 0 0 26px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.paramize-locations {
+  margin: 2px 0 0 26px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .paramize-review-header {
+    flex-direction: column;
+  }
+}

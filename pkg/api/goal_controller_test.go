@@ -286,3 +286,168 @@ func TestApplyRuntimeGoalTargetsToLiveMetricsOverlaysAggregateAndGroupTargets(t 
 		t.Fatal("expected buyers target gap to be marked missed")
 	}
 }
+
+func TestEvaluateGoalControllerStopsOnWebVitalsSLABreach(t *testing.T) {
+	maxLCPMs := 2500.0
+	maxINPMs := 200.0
+	maxCLS := 0.1
+	now := time.Date(2026, time.June, 11, 12, 0, 45, 0, time.UTC)
+	breachStarted := now.Add(-31 * time.Second)
+
+	tests := []struct {
+		name       string
+		browser    *BrowserLiveMetrics
+		config     GoalConfig
+		wantStop   bool
+		wantReason string
+		wantLCP    bool
+		wantINP    bool
+		wantCLS    bool
+	}{
+		{
+			name:       "LCP breach stops the run",
+			browser:    &BrowserLiveMetrics{Samples: 12, AvgLCPMs: 3900},
+			config:     GoalConfig{MaxLCPMs: &maxLCPMs, StopOnSLABreach: true, SLABreachWindow: "30s"},
+			wantStop:   true,
+			wantReason: "LCP experience SLA breached",
+			wantLCP:    true,
+		},
+		{
+			name:       "INP breach stops the run",
+			browser:    &BrowserLiveMetrics{Samples: 12, AvgINPMs: 450},
+			config:     GoalConfig{MaxINPMs: &maxINPMs, StopOnSLABreach: true, SLABreachWindow: "30s"},
+			wantStop:   true,
+			wantReason: "INP experience SLA breached",
+			wantINP:    true,
+		},
+		{
+			name:       "CLS breach stops the run",
+			browser:    &BrowserLiveMetrics{Samples: 12, AvgCLSScore: 0.31},
+			config:     GoalConfig{MaxCLS: &maxCLS, StopOnSLABreach: true, SLABreachWindow: "30s"},
+			wantStop:   true,
+			wantReason: "CLS experience SLA breached",
+			wantCLS:    true,
+		},
+		{
+			name:     "vitals within budget do not breach",
+			browser:  &BrowserLiveMetrics{Samples: 12, AvgLCPMs: 1800, AvgINPMs: 120, AvgCLSScore: 0.04},
+			config:   GoalConfig{MaxLCPMs: &maxLCPMs, MaxINPMs: &maxINPMs, MaxCLS: &maxCLS, StopOnSLABreach: true, SLABreachWindow: "30s"},
+			wantStop: false,
+		},
+		{
+			name:     "no browser samples means thresholds do not bind",
+			browser:  nil,
+			config:   GoalConfig{MaxLCPMs: &maxLCPMs, StopOnSLABreach: true, SLABreachWindow: "30s"},
+			wantStop: false,
+		},
+		{
+			name:     "zero samples means thresholds do not bind",
+			browser:  &BrowserLiveMetrics{Samples: 0, AvgLCPMs: 9000},
+			config:   GoalConfig{MaxLCPMs: &maxLCPMs, StopOnSLABreach: true, SLABreachWindow: "30s"},
+			wantStop: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := &goalControllerState{breachStartedAt: &breachStarted}
+			update := evaluateGoalController(now, 5, &LiveMetrics{TPS: 4, Browser: tt.browser}, &tt.config, state)
+			if update.ShouldStop != tt.wantStop {
+				t.Fatalf("ShouldStop = %v, want %v (status %#v)", update.ShouldStop, tt.wantStop, update.Status)
+			}
+			if tt.wantReason != "" && update.StopReason != tt.wantReason {
+				t.Errorf("StopReason = %q, want %q", update.StopReason, tt.wantReason)
+			}
+			if update.Status.LCPBreached != tt.wantLCP || update.Status.INPBreached != tt.wantINP || update.Status.CLSBreached != tt.wantCLS {
+				t.Errorf("breach flags lcp=%v inp=%v cls=%v, want %v/%v/%v",
+					update.Status.LCPBreached, update.Status.INPBreached, update.Status.CLSBreached, tt.wantLCP, tt.wantINP, tt.wantCLS)
+			}
+		})
+	}
+}
+
+func TestCloneGoalConfigCopiesVitalsThresholds(t *testing.T) {
+	lcp, inp, cls := 2500.0, 200.0, 0.1
+	original := &GoalConfig{MaxLCPMs: &lcp, MaxINPMs: &inp, MaxCLS: &cls}
+	clone := cloneGoalConfig(original)
+	*clone.MaxLCPMs = 1
+	*clone.MaxINPMs = 1
+	*clone.MaxCLS = 1
+	if *original.MaxLCPMs != 2500 || *original.MaxINPMs != 200 || *original.MaxCLS != 0.1 {
+		t.Fatalf("clone aliased vitals pointers: %#v", original)
+	}
+	if !hasGoalConfig(&GoalConfig{MaxLCPMs: &lcp}) || !hasGoalConfig(&GoalConfig{MaxINPMs: &inp}) || !hasGoalConfig(&GoalConfig{MaxCLS: &cls}) {
+		t.Fatal("hasGoalConfig must recognize vitals thresholds")
+	}
+}
+
+func TestNormalizeGroupRole(t *testing.T) {
+	tests := []struct {
+		name     string
+		role     string
+		protocol string
+		want     string
+		wantErr  bool
+	}{
+		{name: "empty defaults to load", role: "", protocol: "http", want: GroupRoleLoad},
+		{name: "load passes", role: "load", protocol: "kafka", want: GroupRoleLoad},
+		{name: "observer with browser", role: "observer", protocol: "browser", want: GroupRoleObserver},
+		{name: "canary alias", role: "Canary", protocol: "browser", want: GroupRoleObserver},
+		{name: "observer requires browser", role: "observer", protocol: "http", wantErr: true},
+		{name: "unknown role rejected", role: "spectator", protocol: "browser", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeGroupRole(tt.role, tt.protocol, 0)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got role %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("role = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDistributeTargetVUsersForGoalPinsObservers(t *testing.T) {
+	groups := []TestGroup{
+		{Name: "buyers", Role: GroupRoleLoad},
+		{Name: "admins", Role: GroupRoleLoad},
+		{Name: "ux-canary", Role: GroupRoleObserver, VUsers: 2},
+	}
+	current := map[string]int{"buyers": 40, "admins": 20, "ux-canary": 2}
+
+	targets := distributeTargetVUsersForGoal(groups, current, 92, nil)
+	if targets["ux-canary"] != 2 {
+		t.Errorf("observer scaled to %d, must stay pinned at 2", targets["ux-canary"])
+	}
+	loadTotal := targets["buyers"] + targets["admins"]
+	if loadTotal != 90 {
+		t.Errorf("load groups received %d, want 90 (target total minus pinned observers)", loadTotal)
+	}
+	if targets["buyers"] <= targets["admins"] {
+		t.Errorf("proportional distribution lost: buyers=%d admins=%d", targets["buyers"], targets["admins"])
+	}
+
+	// Scaling down also leaves the canary alone.
+	down := distributeTargetVUsersForGoal(groups, current, 12, nil)
+	if down["ux-canary"] != 2 {
+		t.Errorf("observer scaled down to %d, must stay pinned", down["ux-canary"])
+	}
+	if down["buyers"]+down["admins"] != 10 {
+		t.Errorf("load total after scale-down = %d, want 10", down["buyers"]+down["admins"])
+	}
+}
+
+func TestDistributeTargetVUsersForGoalObserverOnly(t *testing.T) {
+	groups := []TestGroup{{Name: "ux-canary", Role: GroupRoleObserver, VUsers: 3}}
+	targets := distributeTargetVUsersForGoal(groups, map[string]int{"ux-canary": 3}, 50, nil)
+	if targets["ux-canary"] != 3 {
+		t.Errorf("observer-only distribution = %v, want pinned 3", targets)
+	}
+}

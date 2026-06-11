@@ -24,9 +24,13 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 			return nil, failBrowserAction(result, "browser_click requires selector or target")
 		}
 		if b.touchMode {
-			return b.dispatchTap(ctx, selector), false
+			return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
+				return b.dispatchTap(ctx, s)
+			}), false
 		}
-		return b.clickAction(ctx, action, selector), false
+		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
+			return b.clickAction(ctx, action, s)
+		}), false
 	case "browser_tap":
 		selector := b.actionSelector(action)
 		if selector == "" {
@@ -56,7 +60,9 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		if action.Value == "" {
 			return nil, failBrowserAction(result, "browser_fill requires value")
 		}
-		return b.fillAction(ctx, action, selector, action.Value), false
+		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
+			return b.fillAction(ctx, action, s, action.Value)
+		}), false
 	case "browser_select":
 		selector := b.actionSelector(action)
 		if selector == "" {
@@ -65,19 +71,25 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		if action.Value == "" {
 			return nil, failBrowserAction(result, "browser_select requires value")
 		}
-		return b.selectAction(ctx, action, selector, action.Value), false
+		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
+			return b.selectAction(ctx, action, s, action.Value)
+		}), false
 	case "browser_dblclick":
 		selector := b.actionSelector(action)
 		if selector == "" {
 			return nil, failBrowserAction(result, "browser_dblclick requires selector or target")
 		}
-		return b.dblclickAction(action, selector), false
+		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
+			return b.dblclickAction(action, s)
+		}), false
 	case "browser_hover":
 		selector := b.actionSelector(action)
 		if selector == "" {
 			return nil, failBrowserAction(result, "browser_hover requires selector or target")
 		}
-		return b.hoverAction(action, selector), false
+		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
+			return b.hoverAction(action, s)
+		}), false
 	case "browser_drag_and_drop":
 		source := b.actionSelector(action)
 		target := actionParamString(action.Params, "target", "")

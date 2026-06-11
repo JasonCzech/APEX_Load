@@ -494,6 +494,11 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
     }
   }
 
+  const handleParameterizationApplied = (parameterizedScript: ScriptDefinition) => {
+    if (!result) return
+    convertTask.setValue({ ...result, script: parameterizedScript })
+  }
+
   return (
     <div className="sample-import">
       <div className="sample-import-header">
@@ -716,6 +721,8 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
             warnings={result.warnings}
             unsupportedElements={result.unsupported_elements}
             reviewSections={result.review_sections}
+            parameterization={result.parameterization}
+            onParameterizationApplied={handleParameterizationApplied}
             saving={saving}
             onSave={handleSave}
             onEdit={onEdit ? () => onEdit(reviewedScript) : undefined}
@@ -729,21 +736,6 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
               <div className="sample-stat"><span className="sample-stat-value">{result.stats.correlations_detected}</span><span className="sample-stat-label">Correlations</span></div>
               {typeof result.stats.filtered_assets === 'number' && result.stats.filtered_assets > 0 && <div className="sample-stat"><span className="sample-stat-value">{result.stats.filtered_assets}</span><span className="sample-stat-label">Filtered assets</span></div>}
             </div>
-
-            {result.correlations.length > 0 && (
-              <div className="sample-import-correlations">
-                <h4>Correlation Suggestions</h4>
-                <div className="sample-import-correlation-list">
-                  {result.correlations.map((correlation) => (
-                    <div key={correlation.name} className="sample-correlation-card">
-                      <strong>{correlation.name}</strong>
-                      <span>{correlation.source} via {correlation.expression}</span>
-                      <span>Step {correlation.found_in_step}{' -> '}{correlation.used_in_steps.join(', ')}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </ScriptImportReview>
         </div>
       )}

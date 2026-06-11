@@ -1,0 +1,162 @@
+package selector
+
+import (
+	"strings"
+	"testing"
+)
+
+func candidateValues(candidates []Candidate) []string {
+	values := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		values = append(values, candidate.Kind+":"+candidate.Value)
+	}
+	return values
+}
+
+func TestCandidates(t *testing.T) {
+	tests := []struct {
+		name      string
+		meta      ElementMetadata
+		want      []string // kind:value in expected rank order
+		wantEmpty bool
+	}{
+		{
+			name:      "empty metadata yields no candidates",
+			meta:      ElementMetadata{},
+			wantEmpty: true,
+		},
+		{
+			name: "full ladder ranks test hook first",
+			meta: ElementMetadata{
+				Tag:        "button",
+				ID:         "submit",
+				DataTestID: "submit-btn",
+				Attributes: map[string]string{"data-testid": "submit-btn"},
+				AriaLabel:  "Submit order",
+				Role:       "button",
+				Text:       "Submit",
+				CSSPath:    "form > button:nth-of-type(1)",
+				XPath:      "//form/button[1]",
+			},
+			want: []string{
+				`css:[data-testid="submit-btn"]`,
+				"css:#submit",
+				`css:button[aria-label="Submit order"]`,
+				`role:role=button[name="Submit order"]`,
+				"css:form > button:nth-of-type(1)",
+				`text:text="Submit"`,
+				"xpath://form/button[1]",
+			},
+		},
+		{
+			name: "id with special characters uses attribute form",
+			meta: ElementMetadata{Tag: "input", ID: "user:email"},
+			want: []string{`css:[id="user:email"]`},
+		},
+		{
+			name: "id with whitespace dropped",
+			meta: ElementMetadata{Tag: "input", ID: "bad id", Name: "email"},
+			want: []string{`css:input[name="email"]`},
+		},
+		{
+			name: "shadow DOM suppresses xpath",
+			meta: ElementMetadata{
+				Tag:         "input",
+				Name:        "q",
+				CSSPath:     "search-box input",
+				XPath:       "//search-box//input",
+				InShadowDOM: true,
+			},
+			want: []string{
+				`css:input[name="q"]`,
+				"css:search-box input",
+			},
+		},
+		{
+			name:      "role without accessible name skipped",
+			meta:      ElementMetadata{Tag: "div", Role: "dialog"},
+			wantEmpty: true,
+		},
+		{
+			name: "role uses text when no aria label",
+			meta: ElementMetadata{Tag: "a", Role: "link", Text: "Read more"},
+			want: []string{
+				`role:role=link[name="Read more"]`,
+				`text:text="Read more"`,
+			},
+		},
+		{
+			name:      "long text suppressed",
+			meta:      ElementMetadata{Tag: "p", Text: strings.Repeat("very long content ", 10)},
+			wantEmpty: true,
+		},
+		{
+			name: "placeholder candidate",
+			meta: ElementMetadata{Tag: "input", Placeholder: "Search products"},
+			want: []string{`css:input[placeholder="Search products"]`},
+		},
+		{
+			name: "alternate test hook attribute name preserved",
+			meta: ElementMetadata{
+				Tag:        "button",
+				DataTestID: "checkout",
+				Attributes: map[string]string{"data-cy": "checkout"},
+			},
+			want: []string{`css:[data-cy="checkout"]`},
+		},
+		{
+			name: "text collapses internal whitespace",
+			meta: ElementMetadata{Tag: "span", Text: "  Sign \n\t in  "},
+			want: []string{`text:text="Sign in"`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Candidates(tt.meta)
+			if tt.wantEmpty {
+				if len(got) != 0 {
+					t.Fatalf("Candidates() = %v, want empty", candidateValues(got))
+				}
+				return
+			}
+			gotValues := candidateValues(got)
+			if len(gotValues) != len(tt.want) {
+				t.Fatalf("Candidates() = %v, want %v", gotValues, tt.want)
+			}
+			for i := range tt.want {
+				if gotValues[i] != tt.want[i] {
+					t.Errorf("Candidates()[%d] = %q, want %q (full: %v)", i, gotValues[i], tt.want[i], gotValues)
+				}
+			}
+		})
+	}
+}
+
+func TestCandidatesConfidenceMonotonic(t *testing.T) {
+	meta := ElementMetadata{
+		Tag:         "button",
+		ID:          "go",
+		DataTestID:  "go-btn",
+		AriaLabel:   "Go now",
+		Name:        "go",
+		Role:        "button",
+		Placeholder: "type here",
+		Text:        "Go",
+		CSSPath:     "main > button",
+		XPath:       "//main/button",
+	}
+	candidates := Candidates(meta)
+	if len(candidates) < 5 {
+		t.Fatalf("expected a full candidate set, got %d", len(candidates))
+	}
+	for i := 1; i < len(candidates); i++ {
+		if candidates[i].Confidence > candidates[i-1].Confidence {
+			t.Errorf("candidates out of order at %d: %d > %d", i, candidates[i].Confidence, candidates[i-1].Confidence)
+		}
+	}
+	for _, candidate := range candidates {
+		if candidate.Reason == "" {
+			t.Errorf("candidate %s:%s missing reason", candidate.Kind, candidate.Value)
+		}
+	}
+}

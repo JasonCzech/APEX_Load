@@ -371,6 +371,10 @@ export default function TestExecutionStatusPanels({
               <span className="goal-status-value">{formatBrowserMetric(metrics.browser.avg_fcp_ms, ' ms')}</span>
             </div>
             <div className="goal-status-metric">
+              <span className="goal-status-label">Avg TTFB</span>
+              <span className="goal-status-value">{formatBrowserMetric(metrics.browser.avg_ttfb_ms, ' ms')}</span>
+            </div>
+            <div className="goal-status-metric">
               <span className="goal-status-label">Avg LCP</span>
               <span className="goal-status-value">{formatBrowserMetric(metrics.browser.avg_lcp_ms, ' ms')}</span>
             </div>
@@ -413,6 +417,7 @@ export default function TestExecutionStatusPanels({
                     <span className="browser-device-tier">{formatDevicePlatformLabel(deviceMetrics.device_platform)} · {formatBrowserEngineLabel(deviceMetrics.browser_engine)} · {deviceMetrics.device_tier || 'unknown'} tier</span>
                   </div>
                   <div className="browser-device-stats">
+                    <span>TTFB {formatBrowserMetric(deviceMetrics.avg_ttfb_ms, ' ms')}</span>
                     <span>FCP {formatBrowserMetric(deviceMetrics.avg_fcp_ms, ' ms')}</span>
                     <span>LCP {formatBrowserMetric(deviceMetrics.avg_lcp_ms, ' ms')}</span>
                     <span>CLS {formatBrowserScore(deviceMetrics.avg_cls_score)}</span>

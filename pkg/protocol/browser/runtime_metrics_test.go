@@ -66,6 +66,7 @@ func TestApplyBrowserPageMetrics(t *testing.T) {
 		LCPMs:                 34.5,
 		CLSScore:              0.04,
 		INPMs:                 56.5,
+		TTFBMs:                18.25,
 		DOMContentLoadedMs:    78.5,
 		DOMCompleteMs:         90.5,
 		LoadEventMs:           101.5,
@@ -75,8 +76,8 @@ func TestApplyBrowserPageMetrics(t *testing.T) {
 		LongTaskCount:         3,
 	}, &metrics)
 
-	if metrics.FCPMs != 12.5 || metrics.LCPMs != 34.5 || metrics.CLSScore != 0.04 || metrics.INPMs != 56.5 {
-		t.Fatalf("paint/interactivity metrics = %v/%v/%v/%v", metrics.FCPMs, metrics.LCPMs, metrics.CLSScore, metrics.INPMs)
+	if metrics.FCPMs != 12.5 || metrics.LCPMs != 34.5 || metrics.CLSScore != 0.04 || metrics.INPMs != 56.5 || metrics.TTFBMs != 18.25 {
+		t.Fatalf("paint/interactivity metrics = %v/%v/%v/%v/%v", metrics.FCPMs, metrics.LCPMs, metrics.CLSScore, metrics.INPMs, metrics.TTFBMs)
 	}
 	if metrics.DOMContentLoadedMs != 78.5 || metrics.DOMCompleteMs != 90.5 || metrics.LoadEventMs != 101.5 {
 		t.Fatalf("navigation metrics = %v/%v/%v", metrics.DOMContentLoadedMs, metrics.DOMCompleteMs, metrics.LoadEventMs)

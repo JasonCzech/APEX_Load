@@ -15,6 +15,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
+	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -476,6 +477,97 @@ func TestHandleImportSample(t *testing.T) {
 	}
 }
 
+func TestHandleImportSamplePreservedSourceReviewRedactsSecrets(t *testing.T) {
+	const (
+		authValue     = "Basic dXNlcjpodW50ZXIyc2VjcmV0"
+		passwordValue = "hunter2-secret"
+	)
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name":   "Login Flow",
+		"format": "har",
+		"content": `{
+			"log": {
+				"entries": [
+					{
+						"startedDateTime": "2026-01-01T00:00:00.000Z",
+						"request": {
+							"method": "POST",
+							"url": "https://api.example.com/v1/login",
+							"headers": [
+								{"name": "Content-Type", "value": "application/json"},
+								{"name": "Authorization", "value": "` + authValue + `"}
+							],
+							"postData": {
+								"mimeType": "application/json",
+								"text": "{\"username\":\"alice\",\"password\":\"` + passwordValue + `\"}"
+							}
+						},
+						"response": {
+							"status": 200,
+							"headers": [],
+							"content": {"mimeType": "application/json", "text": "{}"}
+						}
+					}
+				]
+			}
+		}`,
+		"options": map[string]any{"sanitize_sensitive": false},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Actions []struct {
+				Headers map[string]string `json:"headers"`
+				Body    string            `json:"body"`
+			} `json:"actions"`
+			Metadata struct {
+				Import struct {
+					Preserved map[string]json.RawMessage `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+	}
+	if got := result.Script.Actions[0].Headers["Authorization"]; got != authValue {
+		t.Fatalf("authorization header = %q, want raw value preserved when sanitize_sensitive=false", got)
+	}
+	if !strings.Contains(result.Script.Actions[0].Body, passwordValue) {
+		t.Fatalf("body = %q, want raw password preserved when sanitize_sensitive=false", result.Script.Actions[0].Body)
+	}
+
+	preservedReview, ok := result.Script.Metadata.Import.Preserved["source_review"]
+	if !ok || len(preservedReview) == 0 {
+		t.Fatalf("script metadata missing preserved source_review: %#v", result.Script.Metadata.Import.Preserved)
+	}
+	if strings.Contains(string(preservedReview), "dXNlcjpodW50ZXIyc2VjcmV0") {
+		t.Fatalf("preserved source_review leaked Authorization value: %s", preservedReview)
+	}
+	if strings.Contains(string(preservedReview), passwordValue) {
+		t.Fatalf("preserved source_review leaked password: %s", preservedReview)
+	}
+}
+
 func TestHandleImportSampleBadRequest(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", bytes.NewBufferString(`{"format":"curl","content":""}`))
@@ -669,6 +761,74 @@ func TestHandleImportHARHonorsIncludeStaticAssetsOption(t *testing.T) {
 	}
 }
 
+func TestHandleImportHARPairReturnsDiffAndGovernance(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name":              "Checkout Pair",
+		"content":           apiDynamicHAR("cart-111111"),
+		"secondary_content": apiDynamicHAR("cart-222222"),
+		"options": map[string]any{
+			"retention_days": 3,
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Summary struct {
+			ArtifactMode        string `json:"artifact_mode"`
+			ArtifactSensitivity string `json:"artifact_sensitivity"`
+			RetentionDays       int    `json:"retention_days"`
+			HARDiff             struct {
+				Compared          bool `json:"compared"`
+				DynamicCandidates int  `json:"dynamic_candidates"`
+				StaticCandidates  int  `json:"static_candidates"`
+				Classifications   []struct {
+					Classification string  `json:"classification"`
+					DiffConfidence float64 `json:"diff_confidence"`
+				} `json:"classifications"`
+			} `json:"har_diff"`
+		} `json:"summary"`
+		ReviewSections []struct {
+			Key string `json:"key"`
+		} `json:"review_sections"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Summary.ArtifactMode != har.ArtifactModeDesignHARPair {
+		t.Fatalf("artifact mode = %q, want %q", result.Summary.ArtifactMode, har.ArtifactModeDesignHARPair)
+	}
+	if result.Summary.ArtifactSensitivity != "scrubbed" || result.Summary.RetentionDays != 3 {
+		t.Fatalf("summary governance = %#v, want scrubbed 3-day retention", result.Summary)
+	}
+	if !result.Summary.HARDiff.Compared || result.Summary.HARDiff.DynamicCandidates != 1 || result.Summary.HARDiff.StaticCandidates != 0 {
+		t.Fatalf("HAR diff = %#v, want one dynamic candidate", result.Summary.HARDiff)
+	}
+	if len(result.Summary.HARDiff.Classifications) == 0 || result.Summary.HARDiff.Classifications[0].Classification != "dynamic" || result.Summary.HARDiff.Classifications[0].DiffConfidence < 0.9 {
+		t.Fatalf("classifications = %#v, want high-confidence dynamic", result.Summary.HARDiff.Classifications)
+	}
+	keys := map[string]bool{}
+	for _, section := range result.ReviewSections {
+		keys[section.Key] = true
+	}
+	if !keys["har_governance"] || !keys["har_pair_diff"] {
+		t.Fatalf("review section keys = %#v, want governance and pair diff", keys)
+	}
+}
+
 func TestHandleImportEnterpriseArchiveReturnsStandardizedEnvelope(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
@@ -839,6 +999,27 @@ UpdateValueOn=Each Iteration
 	if result.ProtocolCompat.SourceFormat != "Enterprise Script Archive" || result.ProtocolCompat.CanonicalProtocol != "web_http_html" || result.ProtocolCompat.ImportMode != "executable" || result.ProtocolCompat.MappedSteps == 0 {
 		t.Fatalf("protocol_compat_report = %#v", result.ProtocolCompat)
 	}
+}
+
+func apiDynamicHAR(cartID string) string {
+	return `{
+  "log": {
+    "entries": [
+      {
+        "startedDateTime": "2026-01-01T00:00:00Z",
+        "time": 100,
+        "request": {"method": "POST", "url": "https://shop.example.test/cart", "headers": []},
+        "response": {"status": 201, "content": {"mimeType": "application/json", "text": "{\"cartId\":\"` + cartID + `\"}"}}
+      },
+      {
+        "startedDateTime": "2026-01-01T00:00:01Z",
+        "time": 50,
+        "request": {"method": "POST", "url": "https://shop.example.test/cart/` + cartID + `/checkout", "headers": []},
+        "response": {"status": 200, "content": {"mimeType": "application/json", "text": "{\"ok\":true}"}}
+      }
+    ]
+  }
+}`
 }
 
 func TestHandleValidateEnterpriseArchiveImportReturnsSalesforceNativePreview(t *testing.T) {

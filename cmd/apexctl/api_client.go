@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -78,33 +76,46 @@ func (c *ApiClient) RunPreparedTest(scriptName string, scriptBody []byte, vusers
 }
 
 func (c *ApiClient) uploadScript(scriptName string, scriptBody []byte) (string, error) {
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("file", filepath.Base(scriptName))
+	return c.UploadScriptWithProject(scriptName, scriptBody, "")
+}
+
+// UploadScriptWithProject uploads a script JSON document via the controller's
+// JSON wrapper contract ({project_id, script}), optionally scoping it to a
+// project. Returns the created script ID.
+func (c *ApiClient) UploadScriptWithProject(scriptName string, scriptBody []byte, projectID string) (string, error) {
+	var script map[string]any
+	if err := json.Unmarshal(scriptBody, &script); err != nil {
+		return "", fmt.Errorf("script %s is not valid JSON: %w", scriptName, err)
+	}
+	wrapper := map[string]any{"script": script}
+	if projectID != "" {
+		wrapper["project_id"] = projectID
+	}
+	b, err := json.Marshal(wrapper)
 	if err != nil {
 		return "", err
 	}
-	if _, err := part.Write(scriptBody); err != nil {
-		return "", err
-	}
-	writer.Close()
 
-	req, _ := http.NewRequest("POST", c.BaseURL+"/api/v1/scripts", body)
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-
-	resp, err := c.Client.Do(req)
+	resp, err := c.Client.Post(c.BaseURL+"/api/v1/scripts", "application/json", bytes.NewReader(b))
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("bad status: %s", resp.Status)
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("bad status: %s: %s", resp.Status, strings.TrimSpace(string(detail)))
 	}
 
 	var m map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&m)
-	return m["id"].(string), nil
+	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+		return "", fmt.Errorf("decode upload response: %w", err)
+	}
+	id, _ := m["id"].(string)
+	if id == "" {
+		return "", fmt.Errorf("upload response missing script id")
+	}
+	return id, nil
 }
 
 func (c *ApiClient) createTest(scriptID string, vusers int, duration, rampUp string, goalConfig *api.GoalConfig) (string, error) {

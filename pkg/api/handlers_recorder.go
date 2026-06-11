@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/recorder"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
@@ -224,12 +225,27 @@ func (s *Server) handleExportRecording(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Raw HAR-with-bodies is needed for correlation analysis; scrub=true
+	// applies scrub-on-write for exports that leave the design workstation.
+	// Either way the response is labeled so downstream tooling can tell.
+	sensitivity := scrub.SensitivityRaw
+	if r.URL.Query().Get("scrub") == "true" {
+		scrubbed, err := scrub.HAR(data, scrub.Policy{})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to scrub HAR: "+err.Error())
+			return
+		}
+		data = scrubbed
+		sensitivity = scrub.SensitivityScrubbed
+	}
+
 	filename := sanitizeDownloadName(session.Name)
 	if filename == "" {
 		filename = "recording"
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.har"`, filename))
+	w.Header().Set("X-APEXLoad-Sensitivity", sensitivity)
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
 }

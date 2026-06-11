@@ -3847,6 +3847,18 @@
         "engine": {
           "type": "string"
         },
+        "experience_canary": {
+          "type": "boolean"
+        },
+        "har_capture": {
+          "type": "string"
+        },
+        "har_capture_policy": {
+          "type": "string"
+        },
+        "har_sla_threshold_ms": {
+          "type": "integer"
+        },
         "headless": {
           "type": "boolean"
         },
@@ -3863,6 +3875,9 @@
           "type": "integer"
         },
         "touch_mode": {
+          "type": "boolean"
+        },
+        "traceparent": {
           "type": "boolean"
         },
         "user_agent": {

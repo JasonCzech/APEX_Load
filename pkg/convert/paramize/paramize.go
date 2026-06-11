@@ -1,0 +1,302 @@
+// Package paramize provides a shared post-conversion parameterization pass for
+// every script importer. It inspects a converted DSL script (plus optional
+// request/response observations) and returns structured suggestions for three
+// classes of parameterization:
+//
+//   - correlation: dynamic values extracted from a response and reused in later
+//     requests (delegates detection to pkg/convert/correlate)
+//   - data_param: literal values that should come from a data source (user ids,
+//     emails, SKUs, ...) so each VUser gets distinct data
+//   - secret: credentials that should be externalized to {{env.KEY}} instead of
+//     being hardcoded in the script
+//
+// Suggest never mutates the script: applying a suggestion is a separate,
+// human-approved step handled by ApplySuggestions.
+package paramize
+
+import (
+	"fmt"
+	"hash/fnv"
+	"sort"
+	"strings"
+
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/dsl"
+)
+
+type Kind string
+
+const (
+	KindCorrelation Kind = "correlation"
+	KindDataParam   Kind = "data_param"
+	KindSecret      Kind = "secret"
+)
+
+// autoApplyConfidence mirrors correlate.HighConfidence: suggestions at or above
+// this confidence arrive pre-selected in the review UI (still requires save).
+const autoApplyConfidence = 0.8
+
+// Location pins one occurrence of a literal value inside the script and the
+// exact text substitution that parameterizes it. SearchText carries enough
+// surrounding context (e.g. `user_id=12345` or `"user_id": "12345"`) to make
+// the replacement unambiguous within the field.
+type Location struct {
+	Section     string `json:"section"`      // "init", "actions", or "teardown"
+	ActionIndex int    `json:"action_index"` // 0-based index within the section
+	ActionName  string `json:"action_name,omitempty"`
+	Field       string `json:"field"` // "target", "body", "value", or "headers.<Name>"
+	SearchText  string `json:"search_text"`
+	ReplaceText string `json:"replace_text"`
+}
+
+// Suggestion is one proposed parameterization. It is advice only: nothing in
+// the script changes until ApplySuggestions runs with this ID selected.
+type Suggestion struct {
+	ID   string `json:"id"`
+	Kind Kind   `json:"kind"`
+	// ScriptName scopes the suggestion when an import produced multiple
+	// scripts (JMeter thread groups); empty for single-script imports.
+	ScriptName   string     `json:"script_name,omitempty"`
+	VarName      string     `json:"var_name"`
+	Replacement  string     `json:"replacement"`   // display template, e.g. {{var.x}} / {{env.KEY}}
+	LiteralValue string     `json:"literal_value"` // the raw value being replaced
+	SampleValue  string     `json:"sample_value"`  // truncated display copy of LiteralValue
+	Locations    []Location `json:"locations"`
+	Confidence   float64    `json:"confidence"`
+	RuleID       string     `json:"rule_id"`
+	Rationale    string     `json:"rationale"`
+	AutoApply    bool       `json:"auto_apply"`
+	HighRisk     bool       `json:"high_risk"`
+	// PreApplied marks correlations the converter already wired into the script
+	// (sample/HAR apply high-confidence correlations in-converter). These are
+	// informational: the review UI shows them without a checkbox and
+	// ApplySuggestions skips them.
+	PreApplied bool `json:"pre_applied,omitempty"`
+	// Correlation-only: the extractor to add at the source action.
+	Extractor     *dsl.Extractor `json:"extractor,omitempty"`
+	FoundInAction *Location      `json:"found_in_action,omitempty"`
+	// DataParam-only: the parameter to materialize on apply. Its DataSource
+	// reference is finalized by ApplySuggestions when the consolidated data
+	// source is created.
+	Parameter *dsl.Parameter `json:"parameter,omitempty"`
+}
+
+type Summary struct {
+	Total           int          `json:"total"`
+	ByKind          map[Kind]int `json:"by_kind"`
+	AutoApplyCount  int          `json:"auto_apply_count"`
+	ReviewCount     int          `json:"review_count"`
+	HighRiskCount   int          `json:"high_risk_count"`
+	PreAppliedCount int          `json:"pre_applied_count"`
+}
+
+type Result struct {
+	Suggestions []Suggestion `json:"suggestions"`
+	Summary     Summary      `json:"summary"`
+}
+
+// PreAppliedCorrelation describes a correlation a converter already applied to
+// the generated script (extractor added, literals replaced with {{var.X}}).
+type PreAppliedCorrelation struct {
+	Name        string
+	Source      string
+	Expression  string
+	ExtractType string
+	SampleValue string
+	FoundInStep int
+	UsedInSteps []int
+}
+
+// Options gates which suggestion classes run. Importers without response data
+// leave Observations empty, which makes the correlation pass a no-op.
+type Options struct {
+	// Observations feed the correlation pass. Observation IDs are 1-based
+	// indexes into script.Actions (the convention used by the sample importer).
+	Observations []correlate.Observation
+	// PreApplied lists correlations the converter already wired into the
+	// script; they surface as informational pre_applied suggestions.
+	PreApplied        []PreAppliedCorrelation
+	EnableCorrelation bool
+	EnableDataParams  bool
+	EnableSecrets     bool
+}
+
+// Suggest inspects a converted script and returns parameterization advice.
+// It does not mutate the script and produces deterministic ordering.
+func Suggest(script *dsl.Script, opts Options) Result {
+	result := Result{Suggestions: []Suggestion{}}
+	if script == nil {
+		result.Summary = buildSummary(result.Suggestions)
+		return result
+	}
+
+	names := newNameRegistry(script)
+	suggestions := make([]Suggestion, 0)
+
+	if opts.EnableCorrelation {
+		suggestions = append(suggestions, correlationSuggestions(script, opts.Observations, names)...)
+	}
+	suggestions = append(suggestions, preAppliedSuggestions(opts.PreApplied)...)
+	if opts.EnableSecrets {
+		suggestions = append(suggestions, secretSuggestions(script)...)
+	}
+	if opts.EnableDataParams {
+		suggestions = append(suggestions, dataParamSuggestions(script, names, claimedValues(suggestions))...)
+	}
+
+	sortSuggestions(suggestions)
+	for i := range suggestions {
+		suggestions[i].ID = suggestionID(suggestions[i])
+		suggestions[i].AutoApply = suggestions[i].Confidence >= autoApplyConfidence &&
+			!suggestions[i].HighRisk && !suggestions[i].PreApplied
+	}
+
+	result.Suggestions = suggestions
+	result.Summary = buildSummary(suggestions)
+	return result
+}
+
+func buildSummary(suggestions []Suggestion) Summary {
+	summary := Summary{
+		Total:  len(suggestions),
+		ByKind: map[Kind]int{},
+	}
+	for _, s := range suggestions {
+		summary.ByKind[s.Kind]++
+		switch {
+		case s.PreApplied:
+			summary.PreAppliedCount++
+		case s.AutoApply:
+			summary.AutoApplyCount++
+		default:
+			summary.ReviewCount++
+		}
+		if s.HighRisk {
+			summary.HighRiskCount++
+		}
+	}
+	return summary
+}
+
+var kindOrder = map[Kind]int{KindCorrelation: 0, KindDataParam: 1, KindSecret: 2}
+
+func sortSuggestions(suggestions []Suggestion) {
+	sort.SliceStable(suggestions, func(i, j int) bool {
+		if kindOrder[suggestions[i].Kind] != kindOrder[suggestions[j].Kind] {
+			return kindOrder[suggestions[i].Kind] < kindOrder[suggestions[j].Kind]
+		}
+		if suggestions[i].Confidence != suggestions[j].Confidence {
+			return suggestions[i].Confidence > suggestions[j].Confidence
+		}
+		return suggestions[i].VarName < suggestions[j].VarName
+	})
+}
+
+func suggestionID(s Suggestion) string {
+	h := fnv.New32a()
+	fmt.Fprintf(h, "%s|%s|%s", s.Kind, s.VarName, s.LiteralValue)
+	return fmt.Sprintf("pz_%08x", h.Sum32())
+}
+
+// claimedValues returns the literal values already covered by earlier passes so
+// the data-param pass does not double-suggest a value the correlation or
+// secret pass already owns.
+func claimedValues(suggestions []Suggestion) map[string]bool {
+	claimed := make(map[string]bool, len(suggestions))
+	for _, s := range suggestions {
+		if s.LiteralValue != "" {
+			claimed[s.LiteralValue] = true
+		}
+	}
+	return claimed
+}
+
+// nameRegistry hands out unique variable names, seeded with identifiers the
+// script already uses so suggestions never collide with existing parameters,
+// data sources, or extractors.
+type nameRegistry struct {
+	taken map[string]bool
+}
+
+func newNameRegistry(script *dsl.Script) *nameRegistry {
+	registry := &nameRegistry{taken: map[string]bool{}}
+	if script == nil {
+		return registry
+	}
+	for _, param := range script.Parameters {
+		registry.taken[param.Name] = true
+	}
+	for _, source := range script.DataSources {
+		registry.taken[source.Name] = true
+	}
+	forEachAction(script, func(_ string, _ int, action *dsl.Action) {
+		for _, extractor := range action.Extractors {
+			registry.taken[extractor.Name] = true
+		}
+	})
+	return registry
+}
+
+func (r *nameRegistry) claim(base string) string {
+	name := correlate.Slug(base)
+	if name == "" {
+		name = "value"
+	}
+	if !r.taken[name] {
+		r.taken[name] = true
+		return name
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s_%d", name, i)
+		if !r.taken[candidate] {
+			r.taken[candidate] = true
+			return candidate
+		}
+	}
+}
+
+// forEachAction visits the top-level actions of every section. Nested
+// control-flow bodies (control_if / control_loop steps) are intentionally not
+// visited in this pass; their fields stay untouched by suggestions.
+func forEachAction(script *dsl.Script, visit func(section string, index int, action *dsl.Action)) {
+	if script == nil {
+		return
+	}
+	for i := range script.Init {
+		visit("init", i, &script.Init[i])
+	}
+	for i := range script.Actions {
+		visit("actions", i, &script.Actions[i])
+	}
+	for i := range script.Teardown {
+		visit("teardown", i, &script.Teardown[i])
+	}
+}
+
+func actionAt(script *dsl.Script, section string, index int) *dsl.Action {
+	var actions []dsl.Action
+	switch section {
+	case "init":
+		actions = script.Init
+	case "actions":
+		actions = script.Actions
+	case "teardown":
+		actions = script.Teardown
+	default:
+		return nil
+	}
+	if index < 0 || index >= len(actions) {
+		return nil
+	}
+	return &actions[index]
+}
+
+func truncateValue(value string) string {
+	return correlate.Truncate(value, 80)
+}
+
+// isTemplated reports whether a value already contains template syntax and
+// therefore must not be re-parameterized.
+func isTemplated(value string) bool {
+	return strings.Contains(value, "{{")
+}

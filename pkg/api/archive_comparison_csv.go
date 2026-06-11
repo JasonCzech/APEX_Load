@@ -45,6 +45,7 @@ func writeArchiveComparisonCSV(writer io.Writer, breakdown string, action string
 		"browser_engine",
 		"device_tier",
 		"samples",
+		"avg_ttfb_ms",
 		"avg_lcp_ms",
 		"avg_cls_score",
 		"avg_inp_ms",
@@ -139,6 +140,7 @@ func archiveComparisonActionCSVRow(run archiveComparisonRun, action string) []st
 		"",
 		"",
 		"",
+		"",
 		formatCSVInt(stats.Transactions),
 		formatCSVFloat(stats.ErrorPct),
 		formatCSVFloat(stats.AvgResponseMs),
@@ -153,11 +155,13 @@ func archiveComparisonActionCSVRow(run archiveComparisonRun, action string) []st
 
 func archiveComparisonCSVRow(run archiveComparisonRun, breakdown string, segmentKey string, platform string, engine string, tier string, browser *BrowserLiveMetrics) []string {
 	samples := int64(0)
+	ttfb := ""
 	lcp := ""
 	cls := ""
 	inp := ""
 	if browser != nil {
 		samples = browser.Samples
+		ttfb = formatCSVFloat(browser.AvgTTFBMs)
 		lcp = formatCSVFloat(browser.AvgLCPMs)
 		cls = formatCSVFloat(browser.AvgCLSScore)
 		inp = formatCSVFloat(browser.AvgINPMs)
@@ -171,6 +175,7 @@ func archiveComparisonCSVRow(run archiveComparisonRun, breakdown string, segment
 		engine,
 		tier,
 		formatCSVInt(samples),
+		ttfb,
 		lcp,
 		cls,
 		inp,
@@ -205,6 +210,7 @@ func browserLiveMetricsFromDevice(metrics *BrowserDeviceLiveMetrics) *BrowserLiv
 		AvgLCPMs:             metrics.AvgLCPMs,
 		AvgCLSScore:          metrics.AvgCLSScore,
 		AvgINPMs:             metrics.AvgINPMs,
+		AvgTTFBMs:            metrics.AvgTTFBMs,
 		AvgBlockingResources: metrics.AvgBlockingResources,
 		AvgLongTaskCount:     metrics.AvgLongTaskCount,
 		AvgJSHeapUsedMB:      metrics.AvgJSHeapUsedMB,
@@ -223,6 +229,7 @@ func browserLiveMetricsFromPlatform(metrics *BrowserPlatformLiveMetrics) *Browse
 		AvgLCPMs:             metrics.AvgLCPMs,
 		AvgCLSScore:          metrics.AvgCLSScore,
 		AvgINPMs:             metrics.AvgINPMs,
+		AvgTTFBMs:            metrics.AvgTTFBMs,
 		AvgBlockingResources: metrics.AvgBlockingResources,
 		AvgLongTaskCount:     metrics.AvgLongTaskCount,
 		AvgJSHeapUsedMB:      metrics.AvgJSHeapUsedMB,
@@ -241,6 +248,7 @@ func browserLiveMetricsFromEngine(metrics *BrowserEngineLiveMetrics) *BrowserLiv
 		AvgLCPMs:             metrics.AvgLCPMs,
 		AvgCLSScore:          metrics.AvgCLSScore,
 		AvgINPMs:             metrics.AvgINPMs,
+		AvgTTFBMs:            metrics.AvgTTFBMs,
 		AvgBlockingResources: metrics.AvgBlockingResources,
 		AvgLongTaskCount:     metrics.AvgLongTaskCount,
 		AvgJSHeapUsedMB:      metrics.AvgJSHeapUsedMB,

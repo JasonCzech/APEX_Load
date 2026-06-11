@@ -4,6 +4,7 @@ import { summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImpor
 import { type JMeterImportResult as ImportResult, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import ParameterizationReview from './ParameterizationReview'
 import ScriptImportReview from './ScriptImportReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScripts } from './importSaveUtils'
@@ -62,6 +63,7 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
   const extractorSummary = summarizeImportExtractors(result?.scripts || [])
   const primaryScript = getPrimaryScript(result)
   const sourceReview = sourceReviewForJMeter(result, primaryScript)
+  const parameterization = result?.parameterization
 
   useEffect(() => {
     let cancelled = false
@@ -148,6 +150,15 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
     } finally {
       setWorkingMode(null)
     }
+  }
+
+  const handleParameterizationApplied = (scriptName: string) => (parameterizedScript: ScriptDefinition) => {
+    setResult(prev => {
+      if (!prev) return prev
+      const scripts = (prev.scripts || []).map(script => (script.name === scriptName ? parameterizedScript : script))
+      const primary = prev.script?.name === scriptName ? parameterizedScript : prev.script
+      return { ...prev, scripts, script: primary }
+    })
   }
 
   const handleSaveConverted = async () => {
@@ -323,6 +334,16 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
                 <ul>{result.assumptions.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul>
               </div>
             )}
+
+            {parameterization && parameterization.suggestions.length > 0 && (result.scripts || []).map(script => (
+              <ParameterizationReview
+                key={`paramize-${script.name}`}
+                parameterization={parameterization}
+                script={script}
+                scriptName={script.name}
+                onApplied={handleParameterizationApplied(script.name)}
+              />
+            ))}
 
             {extractorSummary.length > 0 && (
               <div className="lr-warnings">

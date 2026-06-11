@@ -23,6 +23,16 @@
       "runtimeExecutable": "./bin/controller",
       "runtimeArgs": [],
       "port": 8080
+    },
+    {
+      "name": "controller-preview",
+      "runtimeExecutable": "./bin/controller",
+      "runtimeArgs": [],
+      "port": 8099,
+      "autoPort": false,
+      "env": {
+        "APEXLOAD_ADDR": ":8099"
+      }
     }
   ]
 }

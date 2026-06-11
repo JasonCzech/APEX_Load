@@ -650,6 +650,9 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 				TouchMode:          &touchMode,
 				Orientation:        "portrait",
 				ClientMetrics:      &clientMetrics,
+				ExperienceCanary:   true,
+				HARCapturePolicy:   "on_sla_breach",
+				HARSLAThresholdMs:  1800,
 				CaptureScreenshots: "per_action",
 				Viewport: dsl.BrowserViewport{
 					Width:  1440,
@@ -726,6 +729,15 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 	}
 	if cfg["browser_client_metrics"] != true {
 		t.Errorf("browser_client_metrics = %v, want true", cfg["browser_client_metrics"])
+	}
+	if cfg["browser_experience_canary"] != true {
+		t.Errorf("browser_experience_canary = %v, want true", cfg["browser_experience_canary"])
+	}
+	if cfg["browser_har_capture_policy"] != "on_sla_breach" {
+		t.Errorf("browser_har_capture_policy = %v, want on_sla_breach", cfg["browser_har_capture_policy"])
+	}
+	if cfg["browser_har_sla_breach_ms"] != float64(1800) {
+		t.Errorf("browser_har_sla_breach_ms = %v, want 1800", cfg["browser_har_sla_breach_ms"])
 	}
 	if cfg["browser_viewport_width"] != float64(1440) {
 		t.Errorf("browser_viewport_width = %v, want 1440", cfg["browser_viewport_width"])

@@ -5,6 +5,7 @@ import { BrowserConfig, PacingConfig, ThinkTimeConfig } from '../types/scripts'
 export type ScenarioGroupPayload = {
   name?: string
   script_id: string
+  role?: 'load' | 'observer'
   vusers: number
   ramp_up?: string
   ramp_down?: string
@@ -97,6 +98,10 @@ export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): Scenar
 
     if (group.name) {
       payload.name = group.name
+    }
+
+    if (group.role && group.role !== 'load') {
+      payload.role = group.role
     }
 
     if (group.rampUp) {

@@ -1,6 +1,10 @@
 package api
 
-import "reflect"
+import (
+	"reflect"
+
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
+)
 
 type scriptImportResponseOptions struct {
 	Result              any
@@ -20,6 +24,7 @@ type scriptImportResponseOptions struct {
 	SourceReview        any
 	TrueClient2Compat   any
 	ProtocolCompat      any
+	Parameterization    *paramize.Result
 }
 
 type scriptImportReviewSection struct {
@@ -84,6 +89,10 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	if summary == nil {
 		summary = map[string]any{}
 	}
+	parameterization := opts.Parameterization
+	if parameterization == nil {
+		parameterization = &paramize.Result{Suggestions: []paramize.Suggestion{}}
+	}
 
 	response := map[string]any{
 		"scripts":                   scripts,
@@ -102,6 +111,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"source_review":             opts.SourceReview,
 		"trueclient2_compat_report": opts.TrueClient2Compat,
 		"protocol_compat_report":    opts.ProtocolCompat,
+		"parameterization":          parameterization,
 	}
 	if opts.Result != nil {
 		response["result"] = opts.Result

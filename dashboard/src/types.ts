@@ -7,6 +7,8 @@ export interface TestGroup {
   script_id: string
   script_name: string
   protocol: string
+  /** "load" (default) or "observer" — small browser experience canaries pinned during goal scaling. */
+  role?: 'load' | 'observer'
   vusers: number
   ramp_up?: string
   ramp_down?: string
@@ -239,6 +241,10 @@ export interface GoalConfig {
   max_error_count?: number
   min_vusers?: number
   max_vusers?: number
+  /** Web Vitals experience thresholds, evaluated against browser canary metrics. */
+  max_lcp_ms?: number
+  max_inp_ms?: number
+  max_cls?: number
   stop_on_sla_breach?: boolean
   stop_on_max_errors?: boolean
   sla_breach_window?: string
@@ -771,6 +777,7 @@ export interface ClientMetrics {
   lcp_ms?: number
   cls_score?: number
   inp_ms?: number
+  ttfb_ms?: number
   dom_content_loaded_ms?: number
   dom_complete_ms?: number
   load_event_ms?: number
@@ -1268,6 +1275,8 @@ export interface BrowserPlatformLiveMetrics extends BrowserLiveMetrics {
 export interface ScenarioDraftGroup {
   name: string
   scriptId: string
+  /** "load" (default) or "observer" — browser experience canary, pinned during goal scaling. */
+  role?: 'load' | 'observer'
   vusers: number
   rampUp: string
   rampDown: string
@@ -1574,6 +1583,7 @@ export interface BrowserLiveMetrics {
   avg_lcp_ms?: number
   avg_cls_score?: number
   avg_inp_ms?: number
+  avg_ttfb_ms?: number
   avg_blocking_resources?: number
   avg_long_task_count?: number
   avg_js_heap_used_mb?: number
@@ -1967,6 +1977,7 @@ export interface StoredScenario {
     script_id: string
     script_name?: string
     protocol?: string
+    role?: 'load' | 'observer'
     vusers: number
     ramp_up?: string
     ramp_down?: string
@@ -2035,6 +2046,8 @@ export interface ReplayRuntimeProfile {
   device_profile?: string
   headless?: boolean
   failure_policy?: string
+  experience_canary?: boolean
+  har_capture_policy?: string
 }
 
 export interface ReplayArtifactManifest {

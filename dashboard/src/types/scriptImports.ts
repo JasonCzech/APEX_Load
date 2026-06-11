@@ -28,6 +28,72 @@ export interface ImportRepairSuggestion {
   selector_signals?: string[]
 }
 
+export type ParameterizationKind = 'correlation' | 'data_param' | 'secret'
+
+export interface ParameterizationLocation {
+  section: string
+  action_index: number
+  action_name?: string
+  field: string
+  search_text: string
+  replace_text: string
+}
+
+export interface ParameterizationSuggestion {
+  id: string
+  kind: ParameterizationKind | string
+  script_name?: string
+  var_name: string
+  replacement: string
+  literal_value: string
+  sample_value: string
+  locations?: ParameterizationLocation[]
+  confidence: number
+  rule_id: string
+  rationale: string
+  auto_apply: boolean
+  high_risk: boolean
+  pre_applied?: boolean
+}
+
+export interface ParameterizationSummary {
+  total: number
+  by_kind: Record<string, number>
+  auto_apply_count: number
+  review_count: number
+  high_risk_count: number
+  pre_applied_count: number
+}
+
+export interface Parameterization {
+  suggestions: ParameterizationSuggestion[]
+  summary: ParameterizationSummary
+}
+
+export interface ParameterizationDiff {
+  suggestion_id?: string
+  kind: string
+  path: string
+  before?: string
+  after?: string
+}
+
+export interface ApplyParameterizationRequest {
+  script: ScriptDefinition
+  suggestions: ParameterizationSuggestion[]
+  selected_ids: string[]
+  confirm_high_risk?: boolean
+}
+
+export interface ApplyParameterizationResponse {
+  script: ScriptDefinition
+  diffs: ParameterizationDiff[]
+  applied_count: number
+  blocked?: boolean
+  blocked_reason?: string
+  warnings?: string[]
+}
+
 export interface ScriptImportResult<
   TStats = Record<string, unknown>,
   TCorrelation = unknown,
@@ -50,6 +116,7 @@ export interface ScriptImportResult<
   review_artifact?: EnterpriseArchiveReviewArtifact
   source_review?: SourceReview
   trueclient2_compat_report?: TrueClient2CompatReport
+  parameterization?: Parameterization
 }
 
 export interface DetectedSourceProtocol {
@@ -306,6 +373,57 @@ export interface DevWebImportStats {
 
 export type HARImportStats = SampleImportStats
 
+export type HARArtifactMode = 'design_har' | 'design_har_pair' | 'runtime_canary_har'
+
+export interface HARArtifactGovernance {
+  artifact_mode: HARArtifactMode | string
+  sensitivity: string
+  retention_days: number
+  redaction_enabled: boolean
+  body_capture_required: boolean
+  scope: string
+  warnings?: string[]
+}
+
+export interface HARDiffClassification {
+  name: string
+  source?: string
+  expression?: string
+  extract_type?: string
+  sample_value?: string
+  baseline_value?: string
+  comparison_value?: string
+  found_in_step?: number
+  used_in_steps?: number[]
+  classification: 'dynamic' | 'static' | 'candidate' | string
+  diff_confidence: number
+  reason: string
+}
+
+export interface HARDiffReport {
+  artifact_mode: HARArtifactMode | string
+  compared: boolean
+  baseline_correlations: number
+  comparison_correlations: number
+  dynamic_candidates: number
+  static_candidates: number
+  unmatched_candidates: number
+  classifications?: HARDiffClassification[]
+  warnings?: string[]
+}
+
+export interface HARImportSummary {
+  artifact_mode: HARArtifactMode | string
+  artifact_sensitivity?: string
+  retention_days?: number
+  governance?: HARArtifactGovernance
+  har_diff?: HARDiffReport
+  generation_mode?: string
+  protocol_scope?: string
+  llm_role?: string
+  non_http_protocols?: string[]
+}
+
 export interface OpenAPIImportStats {
   format: string
   openapi_version?: string
@@ -384,12 +502,21 @@ export type EnterpriseArchiveImportResult = ScriptImportResult<EnterpriseArchive
 export type JMeterImportResult = ScriptImportResult<JMeterConvertStats, unknown, ScriptDefinition, JMeterScenarioDraft, JMeterImportSummary>
 export type SampleImportResult = ScriptImportResult<SampleImportStats, SampleCorrelation>
 export type DevWebImportResult = ScriptImportResult<DevWebImportStats, unknown>
-export type HARImportResult = ScriptImportResult<HARImportStats, SampleCorrelation>
+export type HARImportResult = ScriptImportResult<HARImportStats, SampleCorrelation, ScriptDefinition, unknown, HARImportSummary>
 export type OpenAPIImportResult = ScriptImportResult<OpenAPIImportStats, unknown>
 export type PostmanImportResult = ScriptImportResult<PostmanImportStats, unknown>
 export type WSDLImportResult = ScriptImportResult<WSDLImportStats, unknown>
 export type AsyncAPIImportResult = ScriptImportResult<AsyncAPIImportStats, unknown>
 export type RecorderImportResult = ScriptImportResult<Record<string, unknown>, RecorderCorrelation>
+
+export interface BrowserRecordingImportStats {
+  format: string
+  total_steps: number
+  converted_actions: number
+  skipped_steps: number
+}
+
+export type BrowserRecordingImportResult = ScriptImportResult<BrowserRecordingImportStats, unknown>
 
 export interface JMeterSupportMatrixResponse {
   support_matrix?: SupportMatrix

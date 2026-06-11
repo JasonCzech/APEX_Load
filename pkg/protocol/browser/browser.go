@@ -39,6 +39,15 @@ type Browser struct {
 	userAgent                  string
 	captureScreenshots         string
 	clientMetricsEnabled       bool
+	experienceCanary           bool
+	traceparentEnabled         bool
+	harCapturePolicy           string
+	harDir                     string
+	harWorkingPath             string
+	harErrorSeen               bool
+	harSLABreachSeen           bool
+	harSLABreachThreshold      time.Duration
+	lastHARArtifactPath        string
 	mobile                     bool
 	touchMode                  bool
 	orientation                string
@@ -95,6 +104,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	actionCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	processBefore, _ := b.captureBrowserProcessSnapshot(actionCtx)
+	b.applyActionTraceparent(actionCtx, result)
 
 	actionErr, terminal := b.dispatchAction(actionCtx, action, result)
 	if terminal {
@@ -108,6 +118,12 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		actionErr = b.afterActionDelay(actionCtx)
 	}
 	b.finalizeActionResult(actionCtx, action, result, actionErr, consoleStart, networkStart, processBefore)
+	if b.harSLABreachThreshold > 0 && result.Duration > b.harSLABreachThreshold {
+		b.noteHARSLABreach()
+	}
+	if result.ErrorMessage != "" {
+		b.noteHARError()
+	}
 	return result, nil
 }
 

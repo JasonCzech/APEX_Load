@@ -105,6 +105,90 @@ func TestConvertHARSurfacesSampleDiagnostics(t *testing.T) {
 	}
 }
 
+func TestConvertHARScrubsGovernedSourceReview(t *testing.T) {
+	result, err := Convert([]byte(`{
+  "log": {
+    "entries": [{
+      "request": {
+        "method": "POST",
+        "url": "https://api.example.test/login?access_token=super-secret-token",
+        "headers": [
+          {"name": "Authorization", "value": "Bearer super-secret-token"},
+          {"name": "Content-Type", "value": "application/json"}
+        ],
+        "cookies": [{"name": "sid", "value": "cookie-secret"}],
+        "postData": {"text": "{\"password\":\"secret\",\"email\":\"ada@example.test\"}"}
+      },
+      "response": {
+        "status": 200,
+        "headers": [{"name": "Set-Cookie", "value": "sid=cookie-secret"}],
+        "content": {"text": "{\"ok\":true}"}
+      }
+    }]
+  }
+}`), ConvertOptions{ScriptName: "Scrubbed HAR"})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if result.Governance == nil || !result.Governance.RedactionEnabled || result.Governance.Sensitivity != "scrubbed" {
+		t.Fatalf("governance = %#v, want scrubbed redaction", result.Governance)
+	}
+	if result.Governance.RetentionDays != DefaultRetentionDays {
+		t.Fatalf("retention days = %d, want %d", result.Governance.RetentionDays, DefaultRetentionDays)
+	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 {
+		t.Fatalf("source review = %#v, want scrubbed HAR source", result.SourceReview)
+	}
+	source := result.SourceReview.SourceFiles[0].Content
+	for _, secret := range []string{"super-secret-token", "cookie-secret", "\"password\":\"secret\""} {
+		if strings.Contains(source, secret) {
+			t.Fatalf("source review leaked %q in %s", secret, source)
+		}
+	}
+}
+
+func TestDiffClassifiesDynamicHARCorrelations(t *testing.T) {
+	baseline := []byte(dynamicHAR("cart-111111"))
+	comparison := []byte(dynamicHAR("cart-222222"))
+	report, err := Diff(baseline, comparison, ConvertOptions{ScriptName: "Checkout Pair"})
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+	if !report.Compared || report.ArtifactMode != ArtifactModeDesignHARPair {
+		t.Fatalf("report = %#v, want design HAR pair", report)
+	}
+	if report.DynamicCandidates != 1 || report.StaticCandidates != 0 {
+		t.Fatalf("candidate counts = dynamic %d static %d, want 1/0", report.DynamicCandidates, report.StaticCandidates)
+	}
+	if len(report.Classifications) == 0 || report.Classifications[0].Classification != DiffClassificationDynamic {
+		t.Fatalf("classifications = %#v, want dynamic first", report.Classifications)
+	}
+	if report.Classifications[0].DiffConfidence < 0.9 {
+		t.Fatalf("confidence = %f, want high confidence", report.Classifications[0].DiffConfidence)
+	}
+}
+
 func boolPtr(value bool) *bool {
 	return &value
+}
+
+func dynamicHAR(cartID string) string {
+	return `{
+  "log": {
+    "entries": [
+      {
+        "startedDateTime": "2026-01-01T00:00:00Z",
+        "time": 100,
+        "request": {"method": "POST", "url": "https://shop.example.test/cart", "headers": []},
+        "response": {"status": 201, "content": {"mimeType": "application/json", "text": "{\"cartId\":\"` + cartID + `\"}"}}
+      },
+      {
+        "startedDateTime": "2026-01-01T00:00:01Z",
+        "time": 50,
+        "request": {"method": "POST", "url": "https://shop.example.test/cart/` + cartID + `/checkout", "headers": []},
+        "response": {"status": 200, "content": {"mimeType": "application/json", "text": "{\"ok\":true}"}}
+      }
+    ]
+  }
+}`
 }

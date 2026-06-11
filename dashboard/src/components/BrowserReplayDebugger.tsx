@@ -99,6 +99,7 @@ function timelineConsoleSummary(event: BrowserReplayEvent): string {
 function timelineVitalsSummary(metrics?: ClientMetrics): string {
   if (!metrics) return 'Core Web Vitals n/a'
   const parts = [
+    `TTFB ${formatWholeMs(metrics.ttfb_ms)}`,
     `LCP ${formatWholeMs(metrics.lcp_ms)}`,
     `INP ${formatWholeMs(metrics.inp_ms)}`,
     typeof metrics.cls_score === 'number' ? `CLS ${metrics.cls_score.toFixed(3)}` : 'CLS n/a',

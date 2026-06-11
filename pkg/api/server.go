@@ -354,6 +354,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/correlations/rules", cors(log(auth(http.HandlerFunc(s.handleListCorrelationRules)))))
 	s.mux.Handle("GET /api/v1/dsl/actions", cors(log(auth(http.HandlerFunc(s.handleListDSLActions)))))
 	s.mux.Handle("POST /api/v1/correlations/diagnose", cors(log(auth(http.HandlerFunc(s.handleDiagnoseCorrelations)))))
+	s.mux.Handle("POST /api/v1/correlations/diff", cors(log(auth(http.HandlerFunc(s.handleDiffCorrelations)))))
+	s.mux.Handle("POST /api/v1/selectors/diagnose", cors(log(auth(http.HandlerFunc(s.handleDiagnoseSelectors)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/validate", cors(log(auth(http.HandlerFunc(s.handleValidateScript)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/replay", cors(log(auth(http.HandlerFunc(s.handleReplayScript)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/replay/sessions", cors(log(auth(http.HandlerFunc(s.handleStartReplaySessionScript)))))
@@ -379,11 +381,13 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scripts/import/oracle-ebusiness/support-matrix", cors(log(auth(http.HandlerFunc(s.handleOracleEBusinessSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/oracle-ebusiness/review", cors(log(auth(http.HandlerFunc(s.handleReviewOracleEBusinessImport)))))
 	s.mux.Handle("POST /api/v1/scripts/import/har", cors(log(auth(http.HandlerFunc(s.handleImportHAR)))))
+	s.mux.Handle("POST /api/v1/scripts/import/recorder", cors(log(auth(http.HandlerFunc(s.handleImportRecorder)))))
 	s.mux.Handle("POST /api/v1/scripts/import/openapi", cors(log(auth(http.HandlerFunc(s.handleImportOpenAPI)))))
 	s.mux.Handle("POST /api/v1/scripts/import/postman", cors(log(auth(http.HandlerFunc(s.handleImportPostman)))))
 	s.mux.Handle("POST /api/v1/scripts/import/wsdl", cors(log(auth(http.HandlerFunc(s.handleImportWSDL)))))
 	s.mux.Handle("POST /api/v1/scripts/import/asyncapi", cors(log(auth(http.HandlerFunc(s.handleImportAsyncAPI)))))
 	s.mux.Handle("GET /api/v1/scripts/import/asyncapi/support-matrix", cors(log(auth(http.HandlerFunc(s.handleAsyncAPISupportMatrix)))))
+	s.mux.Handle("POST /api/v1/scripts/import/parameterize/apply", cors(log(auth(http.HandlerFunc(s.handleApplyImportParameterization)))))
 
 	// Governed AI-assisted authoring, repair, explanation, and analysis.
 	s.mux.Handle("GET /api/v1/ai/authoring/contract", cors(log(auth(http.HandlerFunc(s.handleAIAuthoringContract)))))

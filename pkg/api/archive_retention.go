@@ -8,11 +8,13 @@ import (
 )
 
 type ArchiveRetentionPlanResponse struct {
-	GeneratedAt time.Time                  `json:"generated_at"`
-	DryRun      bool                       `json:"dry_run"`
-	Candidates  []ArchivePruneCandidate    `json:"candidates"`
-	Results     []ArchiveRetentionResult   `json:"results,omitempty"`
-	Summary     ArchiveRetentionRunSummary `json:"summary"`
+	GeneratedAt   time.Time                    `json:"generated_at"`
+	DryRun        bool                         `json:"dry_run"`
+	Candidates    []ArchivePruneCandidate      `json:"candidates"`
+	Results       []ArchiveRetentionResult     `json:"results,omitempty"`
+	HARCandidates []HARArtifactPruneCandidate  `json:"har_candidates,omitempty"`
+	HARResults    []HARArtifactRetentionResult `json:"har_results,omitempty"`
+	Summary       ArchiveRetentionRunSummary   `json:"summary"`
 }
 
 type ArchiveRetentionResult struct {
@@ -25,9 +27,12 @@ type ArchiveRetentionResult struct {
 }
 
 type ArchiveRetentionRunSummary struct {
-	CandidateCount int `json:"candidate_count"`
-	PrunedCount    int `json:"pruned_count"`
-	FailedCount    int `json:"failed_count"`
+	CandidateCount    int `json:"candidate_count"`
+	PrunedCount       int `json:"pruned_count"`
+	FailedCount       int `json:"failed_count"`
+	HARCandidateCount int `json:"har_candidate_count,omitempty"`
+	HARPrunedCount    int `json:"har_pruned_count,omitempty"`
+	HARFailedCount    int `json:"har_failed_count,omitempty"`
 }
 
 type ArchivePruneCandidate struct {
@@ -134,20 +139,25 @@ func archiveRetentionPolicyMatches(policy ArchiveRetentionPolicy, test *ManagedT
 
 func (s *Server) handlePlanArchiveRetention(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
-	candidates := planArchiveRetentionPrune(now, s.runner.GetSystemSettings().ArchiveRetention, s.runner.ListTests())
+	settings := s.runner.GetSystemSettings().ArchiveRetention
+	candidates := planArchiveRetentionPrune(now, settings, s.runner.ListTests())
+	harCandidates := planHARArtifactRetention(now, settings)
 	writeJSON(w, http.StatusOK, ArchiveRetentionPlanResponse{
-		GeneratedAt: now,
-		DryRun:      true,
-		Candidates:  candidates,
+		GeneratedAt:   now,
+		DryRun:        true,
+		Candidates:    candidates,
+		HARCandidates: harCandidates,
 		Summary: ArchiveRetentionRunSummary{
-			CandidateCount: len(candidates),
+			CandidateCount:    len(candidates),
+			HARCandidateCount: len(harCandidates),
 		},
 	})
 }
 
 func (s *Server) handleApplyArchiveRetention(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
-	candidates := planArchiveRetentionPrune(now, s.runner.GetSystemSettings().ArchiveRetention, s.runner.ListTests())
+	settings := s.runner.GetSystemSettings().ArchiveRetention
+	candidates := planArchiveRetentionPrune(now, settings, s.runner.ListTests())
 	results := make([]ArchiveRetentionResult, 0, len(candidates))
 	summary := ArchiveRetentionRunSummary{CandidateCount: len(candidates)}
 	for _, candidate := range candidates {
@@ -169,12 +179,30 @@ func (s *Server) handleApplyArchiveRetention(w http.ResponseWriter, r *http.Requ
 		}
 		results = append(results, result)
 	}
+
+	harCandidates := planHARArtifactRetention(now, settings)
+	harResults, harPruned, harFailed := applyHARArtifactRetention(harCandidates)
+	summary.HARCandidateCount = len(harCandidates)
+	summary.HARPrunedCount = harPruned
+	summary.HARFailedCount = harFailed
+	for i, harResult := range harResults {
+		s.recordAuditEvent(r, "archive.retention.har_prune", harResult.Status, "har_artifact", harCandidates[i].Path, "", map[string]any{
+			"path":           harCandidates[i].Path,
+			"sensitivity":    harCandidates[i].Sensitivity,
+			"retention_days": harCandidates[i].RetentionDays,
+			"expired_at":     harCandidates[i].ExpiredAt,
+			"status":         harResult.Status,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, ArchiveRetentionPlanResponse{
-		GeneratedAt: now,
-		DryRun:      false,
-		Candidates:  candidates,
-		Results:     results,
-		Summary:     summary,
+		GeneratedAt:   now,
+		DryRun:        false,
+		Candidates:    candidates,
+		Results:       results,
+		HARCandidates: harCandidates,
+		HARResults:    harResults,
+		Summary:       summary,
 	})
 }
 

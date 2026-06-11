@@ -13,6 +13,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/selector"
 )
 
 type ConvertOptions struct {
@@ -894,32 +895,13 @@ func rankedSelectorCandidates(step truXMLStep, descriptors []ObjectDescriptor) (
 // are preserved in metadata for review but are not promoted automatically because they
 // are not unambiguous selector strings.
 func playwrightSelectorFromCandidates(candidates []SelectorCandidate) string {
-	for _, candidate := range candidates {
-		switch strings.ToLower(strings.TrimSpace(candidate.Kind)) {
-		case "css":
-			if value := strings.TrimSpace(candidate.Value); value != "" {
-				return value
-			}
-		case "xpath":
-			if value := normalizeXPathSelector(candidate.Value); value != "" {
-				return value
-			}
-		}
-	}
-	return ""
+	return selector.PlaywrightSelector(candidates)
 }
 
 // normalizeXPathSelector prefixes a bare XPath expression with the explicit Playwright
 // "xpath=" engine prefix so it is never mistaken for a CSS selector.
 func normalizeXPathSelector(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	if strings.HasPrefix(strings.ToLower(value), "xpath=") {
-		return value
-	}
-	return "xpath=" + value
+	return selector.NormalizeXPath(value)
 }
 
 func normalizeScrollDirection(value string) string {

@@ -70,6 +70,7 @@ type BrowserMetricsSummaryRecord struct {
 	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
 	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
 	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgTTFBMs            float64 `json:"avg_ttfb_ms,omitempty"`
 	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
@@ -87,6 +88,7 @@ type BrowserDeviceMetricsRecord struct {
 	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
 	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
 	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgTTFBMs            float64 `json:"avg_ttfb_ms,omitempty"`
 	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
@@ -540,6 +542,7 @@ func (s *SQLiteStore) init() error {
 			ramp_down TEXT,
 			stages_json TEXT,
 			initialization TEXT,
+			role TEXT,
 			PRIMARY KEY (scenario_id, sort_order),
 			FOREIGN KEY(scenario_id) REFERENCES scenarios(id),
 			FOREIGN KEY(script_id) REFERENCES scripts(id)
@@ -939,6 +942,7 @@ func (s *SQLiteStore) init() error {
 		{name: "tests.started_by_subject", query: `ALTER TABLE tests ADD COLUMN started_by_subject TEXT`},
 		{name: "tests.started_by_display_name", query: `ALTER TABLE tests ADD COLUMN started_by_display_name TEXT`},
 		{name: "scenario_scripts.stages_json", query: `ALTER TABLE scenario_scripts ADD COLUMN stages_json TEXT`},
+		{name: "scenario_scripts.role", query: `ALTER TABLE scenario_scripts ADD COLUMN role TEXT`},
 		{name: "scenario_schedules.project_id", query: `ALTER TABLE scenario_schedules ADD COLUMN project_id TEXT`},
 		{name: "scenario_schedules.owner_subject", query: `ALTER TABLE scenario_schedules ADD COLUMN owner_subject TEXT`},
 		{name: "scenario_schedules.owner_display_name", query: `ALTER TABLE scenario_schedules ADD COLUMN owner_display_name TEXT`},
@@ -1248,6 +1252,7 @@ func (s *SQLiteStore) insertLegacyScenarioScripts(scenarioID string, groupsJSON 
 		RampDown       string      `json:"ramp_down"`
 		Stages         []LoadStage `json:"stages"`
 		Initialization string      `json:"initialization"`
+		Role           string      `json:"role"`
 	}
 	if err := json.Unmarshal([]byte(groupsJSON), &groups); err != nil {
 		return nil
@@ -1257,8 +1262,8 @@ func (s *SQLiteStore) insertLegacyScenarioScripts(scenarioID string, groupsJSON 
 			continue
 		}
 		stagesJSON, _ := json.Marshal(group.Stages)
-		if _, err := s.db.Exec(`INSERT OR IGNORE INTO scenario_scripts (scenario_id, sort_order, name, script_id, vusers, ramp_up, ramp_down, stages_json, initialization)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, scenarioID, i, group.Name, group.ScriptID, group.VUsers, group.RampUp, group.RampDown, string(stagesJSON), group.Initialization); err != nil {
+		if _, err := s.db.Exec(`INSERT OR IGNORE INTO scenario_scripts (scenario_id, sort_order, name, script_id, vusers, ramp_up, ramp_down, stages_json, initialization, role)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, scenarioID, i, group.Name, group.ScriptID, group.VUsers, group.RampUp, group.RampDown, string(stagesJSON), group.Initialization, group.Role); err != nil {
 			return err
 		}
 	}
@@ -1686,8 +1691,8 @@ func (s *SQLiteStore) SaveScenario(scenario *Scenario, scripts []ScenarioScript)
 			script.ScenarioID = scenario.ID
 		}
 		stagesJSON, _ := json.Marshal(script.Stages)
-		if _, err := tx.Exec(`INSERT INTO scenario_scripts (scenario_id, sort_order, name, script_id, vusers, ramp_up, ramp_down, stages_json, initialization)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, script.ScenarioID, script.Order, script.Name, script.ScriptID, script.VUsers, script.RampUp, script.RampDown, string(stagesJSON), script.Initialization); err != nil {
+		if _, err := tx.Exec(`INSERT INTO scenario_scripts (scenario_id, sort_order, name, script_id, vusers, ramp_up, ramp_down, stages_json, initialization, role)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, script.ScenarioID, script.Order, script.Name, script.ScriptID, script.VUsers, script.RampUp, script.RampDown, string(stagesJSON), script.Initialization, script.Role); err != nil {
 			return err
 		}
 	}
@@ -1992,7 +1997,7 @@ func (s *SQLiteStore) ListScenarios() ([]*Scenario, error) {
 }
 
 func (s *SQLiteStore) listScenarioScripts(scenarioID string) ([]ScenarioScript, error) {
-	rows, err := s.db.Query(`SELECT scenario_id, sort_order, COALESCE(name, ''), script_id, COALESCE(vusers, 0), COALESCE(ramp_up, ''), COALESCE(ramp_down, ''), COALESCE(stages_json, ''), COALESCE(initialization, '') FROM scenario_scripts WHERE scenario_id = ? ORDER BY sort_order ASC`, scenarioID)
+	rows, err := s.db.Query(`SELECT scenario_id, sort_order, COALESCE(name, ''), script_id, COALESCE(vusers, 0), COALESCE(ramp_up, ''), COALESCE(ramp_down, ''), COALESCE(stages_json, ''), COALESCE(initialization, ''), COALESCE(role, '') FROM scenario_scripts WHERE scenario_id = ? ORDER BY sort_order ASC`, scenarioID)
 	if err != nil {
 		return nil, err
 	}
@@ -2001,7 +2006,7 @@ func (s *SQLiteStore) listScenarioScripts(scenarioID string) ([]ScenarioScript, 
 	for rows.Next() {
 		var script ScenarioScript
 		var stagesJSON string
-		if err := rows.Scan(&script.ScenarioID, &script.Order, &script.Name, &script.ScriptID, &script.VUsers, &script.RampUp, &script.RampDown, &stagesJSON, &script.Initialization); err != nil {
+		if err := rows.Scan(&script.ScenarioID, &script.Order, &script.Name, &script.ScriptID, &script.VUsers, &script.RampUp, &script.RampDown, &stagesJSON, &script.Initialization, &script.Role); err != nil {
 			return nil, err
 		}
 		if strings.TrimSpace(stagesJSON) != "" {
@@ -3301,6 +3306,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
 		AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
 		AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+		AvgTTFBMs            float64 `json:"avg_ttfb_ms,omitempty"`
 		AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 		AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 		AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
@@ -3317,6 +3323,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
 		AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
 		AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+		AvgTTFBMs            float64 `json:"avg_ttfb_ms,omitempty"`
 		AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 		AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 		AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
@@ -3384,6 +3391,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 			AvgLCPMs:             summary.Browser.AvgLCPMs,
 			AvgCLSScore:          summary.Browser.AvgCLSScore,
 			AvgINPMs:             summary.Browser.AvgINPMs,
+			AvgTTFBMs:            summary.Browser.AvgTTFBMs,
 			AvgBlockingResources: summary.Browser.AvgBlockingResources,
 			AvgLongTaskCount:     summary.Browser.AvgLongTaskCount,
 			AvgJSHeapUsedMB:      summary.Browser.AvgJSHeapUsedMB,
@@ -3407,6 +3415,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 				AvgLCPMs:             metrics.AvgLCPMs,
 				AvgCLSScore:          metrics.AvgCLSScore,
 				AvgINPMs:             metrics.AvgINPMs,
+				AvgTTFBMs:            metrics.AvgTTFBMs,
 				AvgBlockingResources: metrics.AvgBlockingResources,
 				AvgLongTaskCount:     metrics.AvgLongTaskCount,
 				AvgJSHeapUsedMB:      metrics.AvgJSHeapUsedMB,

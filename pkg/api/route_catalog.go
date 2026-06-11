@@ -54,6 +54,8 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/correlations/rules", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/dsl/actions", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/correlations/diagnose", accessRequirement{AuthenticatedOnly: true}),
+	routeAuth(http.MethodPost, "/api/v1/correlations/diff", accessRequirement{AuthenticatedOnly: true}),
+	routeAuth(http.MethodPost, "/api/v1/selectors/diagnose", accessRequirement{AuthenticatedOnly: true}),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/asyncapi", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveImportProjectIDFromJSONOrForm, MaxBodyBytes: webAPIImportMaxBodyBytes}),
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/asyncapi/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/fleet/alerts", viewerGlobalAccess()),

@@ -103,6 +103,42 @@ export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange 
             placeholder="e.g. 300"
           />
         </label>
+        <label>
+          <span>Max LCP (ms)</span>
+          <input
+            type="number"
+            min={1}
+            step="1"
+            value={goalConfig.max_lcp_ms || ''}
+            onChange={(event) => onGoalConfigChange('max_lcp_ms', event.target.value ? Number(event.target.value) : undefined)}
+            placeholder="e.g. 2500"
+            title="Largest Contentful Paint ceiling, evaluated against browser canary metrics."
+          />
+        </label>
+        <label>
+          <span>Max INP (ms)</span>
+          <input
+            type="number"
+            min={1}
+            step="1"
+            value={goalConfig.max_inp_ms || ''}
+            onChange={(event) => onGoalConfigChange('max_inp_ms', event.target.value ? Number(event.target.value) : undefined)}
+            placeholder="e.g. 200"
+            title="Interaction to Next Paint ceiling, evaluated against browser canary metrics."
+          />
+        </label>
+        <label>
+          <span>Max CLS</span>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={goalConfig.max_cls || ''}
+            onChange={(event) => onGoalConfigChange('max_cls', event.target.value ? Number(event.target.value) : undefined)}
+            placeholder="e.g. 0.1"
+            title="Cumulative Layout Shift ceiling, evaluated against browser canary metrics."
+          />
+        </label>
         <DurationField
           label="SLA Breach Window"
           value={goalConfig.sla_breach_window || ''}

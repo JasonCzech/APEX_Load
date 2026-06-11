@@ -177,6 +177,18 @@ type binding struct {
 type bindingOperation struct {
 	Name           string          `xml:"name,attr"`
 	SOAPOperations []soapOperation `xml:"operation"`
+	Input          *bindingMessage `xml:"input"`
+}
+
+type bindingMessage struct {
+	Headers []soapHeaderBinding `xml:"header"`
+}
+
+// soapHeaderBinding is a soap:header declaration inside a binding input,
+// pointing at the message/part that must travel in the SOAP envelope header.
+type soapHeaderBinding struct {
+	Message string `xml:"message,attr"`
+	Part    string `xml:"part,attr"`
 }
 
 type soapOperation struct {
@@ -322,6 +334,7 @@ type operationInfo struct {
 	Name         string
 	SOAPAction   string
 	InputMessage string
+	Headers      []soapHeaderBinding
 }
 
 func collectOperations(doc definitions, filter []string) []operationInfo {
@@ -352,6 +365,9 @@ func collectOperations(doc definitions, filter []string) []operationInfo {
 					info.SOAPAction = strings.TrimSpace(soapOp.SOAPAction)
 					break
 				}
+			}
+			if bindingOp.Input != nil {
+				info.Headers = append(info.Headers, bindingOp.Input.Headers...)
 			}
 			operationMap[name] = info
 		}
@@ -434,14 +450,76 @@ func soapEnvelope(doc definitions, op operationInfo, diagnostics *diag.Collector
 	if !ok {
 		children = "      <!-- Review request elements from the WSDL/XSD and replace placeholders before replay. -->"
 	}
+	header := soapHeaderSkeleton(doc, op, diagnostics)
 	return fmt.Sprintf(`<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="%s">
-  <soapenv:Header/>
+%s
   <soapenv:Body>
     <tns:%s>
 %s
     </tns:%s>
   </soapenv:Body>
-</soapenv:Envelope>`, namespace, bodyName, children, bodyName)
+</soapenv:Envelope>`, namespace, header, bodyName, children, bodyName)
+}
+
+// soapHeaderSkeleton renders the soap:header parts declared on the binding's
+// input message into the envelope header, so required headers (sessions,
+// credentials, routing) are visible and editable instead of silently dropped.
+func soapHeaderSkeleton(doc definitions, op operationInfo, diagnostics *diag.Collector) string {
+	if len(op.Headers) == 0 {
+		return "  <soapenv:Header/>"
+	}
+	location := "operation " + op.Name
+	lines := make([]string, 0, len(op.Headers))
+	for _, headerBinding := range op.Headers {
+		part, ok := messagePartByName(doc, headerBinding.Message, headerBinding.Part)
+		if !ok {
+			diagnostics.Add(diag.Warning, "WSDL SOAP header", location,
+				"soap:header part "+firstNonEmpty(headerBinding.Part, headerBinding.Message)+" could not be resolved; add the header manually before replay")
+			continue
+		}
+		headerName := localName(firstNonEmpty(part.Element, part.Name))
+		if headerName == "" {
+			continue
+		}
+		if element, found := findXSDElement(doc, headerName); found {
+			if fields, ok := xsdFieldsForElement(doc, element); ok {
+				lines = append(lines, "    <tns:"+headerName+">")
+				lines = append(lines, renderXSDFieldSet(doc, fields, diagnostics, location, 3))
+				lines = append(lines, "    </tns:"+headerName+">")
+				diagnostics.Add(diag.Info, "WSDL SOAP header", location, "soap:header "+headerName+" was rendered into the envelope header")
+				continue
+			}
+		}
+		lines = append(lines, "    <tns:"+headerName+">"+placeholderForXSDType(part.Type, headerName)+"</tns:"+headerName+">")
+		diagnostics.Add(diag.Info, "WSDL SOAP header", location, "soap:header "+headerName+" was rendered with a placeholder value")
+	}
+	if len(lines) == 0 {
+		return "  <soapenv:Header/>"
+	}
+	return "  <soapenv:Header>\n" + strings.Join(lines, "\n") + "\n  </soapenv:Header>"
+}
+
+// messagePartByName resolves a message part referenced by a soap:header
+// binding. An empty part name selects the message's first part.
+func messagePartByName(doc definitions, messageRef, partName string) (messagePart, bool) {
+	name := localName(messageRef)
+	if name == "" {
+		return messagePart{}, false
+	}
+	for _, msg := range doc.Messages {
+		if msg.Name != name || len(msg.Parts) == 0 {
+			continue
+		}
+		if strings.TrimSpace(partName) == "" {
+			return msg.Parts[0], true
+		}
+		for _, part := range msg.Parts {
+			if part.Name == partName {
+				return part, true
+			}
+		}
+	}
+	return messagePart{}, false
 }
 
 func soapBodySkeleton(doc definitions, op operationInfo, diagnostics *diag.Collector) (string, string, bool) {
@@ -650,7 +728,9 @@ func placeholderForXSDType(typeName string, fieldName string) string {
 	case "boolean":
 		return "true"
 	case "datetime", "date":
-		return "{{fn.now()}}"
+		// fn.timestamp.iso8601 is the runtime-supported timestamp function;
+		// fn.now() does not exist in the engine.
+		return "{{fn.timestamp.iso8601}}"
 	default:
 		return "{{data.wsdl." + sanitizeName(fieldName) + "}}"
 	}

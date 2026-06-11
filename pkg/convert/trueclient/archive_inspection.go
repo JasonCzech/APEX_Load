@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/selector"
 )
 
 type ArchiveInspection struct {
@@ -78,12 +80,9 @@ type ObjectDescriptor struct {
 	SelectorCandidates []SelectorCandidate `json:"selector_candidates,omitempty"`
 }
 
-type SelectorCandidate struct {
-	Kind       string `json:"kind"`
-	Value      string `json:"value"`
-	Confidence int    `json:"confidence"`
-	Reason     string `json:"reason"`
-}
+// SelectorCandidate is an alias for the shared ranked-selector model so archive
+// inspection output, the embedded recorder, and replay self-heal interoperate.
+type SelectorCandidate = selector.Candidate
 
 type ReplayDiagnostic struct {
 	Code     string `json:"code"`
@@ -737,9 +736,7 @@ func selectorCandidatesFromDescriptor(descriptor ObjectDescriptor) []SelectorCan
 }
 
 func cssAttributeSelector(name string, value string) string {
-	escaped := strings.ReplaceAll(value, `\`, `\\`)
-	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
-	return fmt.Sprintf(`[%s="%s"]`, name, escaped)
+	return selector.CSSAttributeSelector(name, value)
 }
 
 func matchObjectDescriptor(descriptors []ObjectDescriptor, descriptorID string, step truXMLStep) *ObjectDescriptor {
@@ -773,27 +770,7 @@ func uniqueObjectDescriptors(descriptors []ObjectDescriptor) []ObjectDescriptor 
 }
 
 func uniqueSelectorCandidates(candidates []SelectorCandidate) []SelectorCandidate {
-	seen := make(map[string]struct{})
-	out := make([]SelectorCandidate, 0, len(candidates))
-	for _, candidate := range candidates {
-		candidate.Value = strings.TrimSpace(candidate.Value)
-		if candidate.Value == "" {
-			continue
-		}
-		key := strings.ToLower(candidate.Kind) + "\x00" + candidate.Value
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, candidate)
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Confidence == out[j].Confidence {
-			return out[i].Value < out[j].Value
-		}
-		return out[i].Confidence > out[j].Confidence
-	})
-	return out
+	return selector.Unique(candidates)
 }
 
 func firstProperty(props map[string]string, keys ...string) string {

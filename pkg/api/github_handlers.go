@@ -250,8 +250,9 @@ func (s *Server) handleImportGitHub(w http.ResponseWriter, r *http.Request) {
 		"owner": req.Owner, "repo": req.Repo, "path": contents.File.Path,
 	})
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
-		Script:   script,
-		Warnings: warnings,
+		Script:           script,
+		Warnings:         warnings,
+		Parameterization: buildImportParameterization(script, nil),
 		Summary: map[string]any{
 			"owner":             req.Owner,
 			"repo":              req.Repo,

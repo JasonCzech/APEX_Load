@@ -27,7 +27,7 @@ import {
 } from '../../types'
 import { type AuthoringTemplate } from '../../types'
 import { type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
-import { type AsyncAPIImportResult, type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -61,6 +61,7 @@ type ScenarioResultsResponse = {
 type ScenarioGroupPayload = {
   name?: string
   script_id: string
+  role?: 'load' | 'observer'
   vusers: number
   ramp_up?: string
   ramp_down?: string
@@ -552,13 +553,26 @@ export function useScriptApi() {
   )
 
   const importHAR = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; project_id?: string; include_static_assets?: boolean }): Promise<HARImportResult> => {
+    async (file: File, options?: {
+      name?: string
+      base_url?: string
+      project_id?: string
+      include_static_assets?: boolean
+      secondary_file?: File
+      artifact_mode?: string
+      retention_days?: number
+      redact_sensitive?: boolean
+    }): Promise<HARImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
       if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_static_assets) formData.append('include_static_assets', 'true')
+      if (options?.secondary_file) formData.append('secondary_file', options.secondary_file)
+      if (options?.artifact_mode) formData.append('artifact_mode', options.artifact_mode)
+      if (typeof options?.retention_days === 'number') formData.append('retention_days', String(options.retention_days))
+      if (typeof options?.redact_sensitive === 'boolean') formData.append('redact_sensitive', options.redact_sensitive ? 'true' : 'false')
 
       const res = await apiFetch('/scripts/import/har', { method: 'POST', body: formData })
       if (!res.ok) {
@@ -566,6 +580,24 @@ export function useScriptApi() {
         throw new Error(body.error || res.statusText)
       }
       return res.json() as Promise<HARImportResult>
+    },
+    [],
+  )
+
+  const importBrowserRecording = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<BrowserRecordingImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+
+      const res = await apiFetch('/scripts/import/recorder', { method: 'POST', body: formData })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json() as Promise<BrowserRecordingImportResult>
     },
     [],
   )
@@ -639,6 +671,12 @@ export function useScriptApi() {
       }
       return res.json() as Promise<AsyncAPIImportResult>
     },
+    [],
+  )
+
+  const applyImportParameterization = useCallback(
+    (payload: ApplyParameterizationRequest) =>
+      request<ApplyParameterizationResponse>('/scripts/import/parameterize/apply', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
 
@@ -759,10 +797,12 @@ export function useScriptApi() {
       importSample,
       importDevWeb,
       importHAR,
+      importBrowserRecording,
       importOpenAPI,
       importPostman,
       importWSDL,
       importAsyncAPI,
+      applyImportParameterization,
       listScenarios,
       createScenario,
       getScenario,
@@ -825,10 +865,12 @@ export function useScriptApi() {
       importSample,
       importDevWeb,
       importHAR,
+      importBrowserRecording,
       importOpenAPI,
       importPostman,
       importWSDL,
       importAsyncAPI,
+      applyImportParameterization,
       listScenarios,
       createScenario,
       getScenario,

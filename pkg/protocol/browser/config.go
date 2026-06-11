@@ -45,6 +45,7 @@ func (b *Browser) applyDefaultConfig() {
 	b.userAgent = ""
 	b.captureScreenshots = ""
 	b.clientMetricsEnabled = false
+	b.experienceCanary = false
 	b.mobile = false
 	b.touchMode = false
 	b.orientation = "landscape"
@@ -52,6 +53,8 @@ func (b *Browser) applyDefaultConfig() {
 	b.cpuThrottleRate = 1
 	b.viewportW = 1440
 	b.viewportH = 900
+	b.harCapturePolicy = HARCaptureOff
+	b.harSLABreachThreshold = 0
 	b.resourceValidators = make(map[string]string)
 }
 
@@ -115,6 +118,28 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	}
 	if clientMetrics, ok := config["browser_client_metrics"].(bool); ok {
 		b.clientMetricsEnabled = clientMetrics
+	}
+	if experienceCanary, ok := config["browser_experience_canary"].(bool); ok {
+		b.experienceCanary = experienceCanary
+		if experienceCanary {
+			b.clientMetricsEnabled = true
+			b.traceparentEnabled = true
+		}
+	}
+	if traceparent, ok := config["browser_traceparent"].(bool); ok {
+		b.traceparentEnabled = traceparent
+	}
+	if harCapture, ok := config["browser_har_capture"].(string); ok {
+		b.harCapturePolicy = normalizeHARCapturePolicy(harCapture)
+	}
+	if harCapture, ok := config["browser_har_capture_policy"].(string); ok {
+		b.harCapturePolicy = normalizeHARCapturePolicy(harCapture)
+	}
+	if slaMs := configInt(config, "browser_har_sla_breach_ms"); slaMs > 0 {
+		b.harSLABreachThreshold = time.Duration(slaMs) * time.Millisecond
+	}
+	if harDir, ok := config["browser_har_dir"].(string); ok && strings.TrimSpace(harDir) != "" {
+		b.harDir = strings.TrimSpace(harDir)
 	}
 	if captureScreenshots, ok := config["browser_capture_screenshots"].(string); ok {
 		b.captureScreenshots = captureScreenshots

@@ -65,6 +65,7 @@ export default function ScriptsAuthoringShell({
         onOpenJMeterImport={createOptionActions.openJMeterImport}
         onOpenDevWebImport={createOptionActions.openDevWebImport}
         onOpenHARImport={createOptionActions.openHARImport}
+        onOpenBrowserRecordingImport={createOptionActions.openBrowserRecordingImport}
         onOpenOpenAPIImport={createOptionActions.openOpenAPIImport}
         onOpenPostmanImport={createOptionActions.openPostmanImport}
         onOpenWSDLImport={createOptionActions.openWSDLImport}

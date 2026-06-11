@@ -179,6 +179,7 @@ function formatBrowserResourceURL(value?: string): string {
 
 function formatClientMetricsBlock(metrics: NonNullable<TransactionEvent['client_metrics']>): string {
   const lines: string[] = []
+  if (metrics.ttfb_ms !== undefined) lines.push(`TTFB: ${formatBrowserMetric(metrics.ttfb_ms, ' ms')}`)
   if (metrics.fcp_ms !== undefined) lines.push(`FCP: ${formatBrowserMetric(metrics.fcp_ms, ' ms')}`)
   if (metrics.lcp_ms !== undefined) lines.push(`LCP: ${formatBrowserMetric(metrics.lcp_ms, ' ms')}`)
   if (metrics.cls_score !== undefined) lines.push(`CLS: ${formatBrowserScore(metrics.cls_score)}`)
@@ -550,6 +551,10 @@ function renderBrowserSummary(
           <span className="scenario-script-detail-value">{formatBrowserMetric(summary.avg_fcp_ms, ' ms')}</span>
         </div>
         <div className="scenario-script-detail-card">
+          <span className="scenario-script-detail-label">Avg TTFB</span>
+          <span className="scenario-script-detail-value">{formatBrowserMetric(summary.avg_ttfb_ms, ' ms')}</span>
+        </div>
+        <div className="scenario-script-detail-card">
           <span className="scenario-script-detail-label">Avg LCP</span>
           <span className="scenario-script-detail-value">{formatBrowserMetric(summary.avg_lcp_ms, ' ms')}</span>
         </div>
@@ -634,6 +639,7 @@ function renderBrowserSummary(
                   <span className="browser-device-tier">{metrics.samples} samples</span>
                 </div>
                 <div className="browser-device-stats">
+                  <span>TTFB {formatBrowserMetric(metrics.avg_ttfb_ms, ' ms')}</span>
                   <span>FCP {formatBrowserMetric(metrics.avg_fcp_ms, ' ms')}</span>
                   <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
                   <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
@@ -656,6 +662,7 @@ function renderBrowserSummary(
                   <span className="browser-device-tier">{formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.samples} samples</span>
                 </div>
                 <div className="browser-device-stats">
+                  <span>TTFB {formatBrowserMetric(metrics.avg_ttfb_ms, ' ms')}</span>
                   <span>FCP {formatBrowserMetric(metrics.avg_fcp_ms, ' ms')}</span>
                   <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
                   <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
@@ -678,6 +685,7 @@ function renderBrowserSummary(
                   <span className="browser-device-tier">{formatDevicePlatformLabel(metrics.device_platform)} · {formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
                 </div>
                 <div className="browser-device-stats">
+                  <span>TTFB {formatBrowserMetric(metrics.avg_ttfb_ms, ' ms')}</span>
                   <span>FCP {formatBrowserMetric(metrics.avg_fcp_ms, ' ms')}</span>
                   <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
                   <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>

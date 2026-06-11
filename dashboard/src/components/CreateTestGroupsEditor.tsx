@@ -10,6 +10,10 @@ interface Props {
   onRemoveGroup: (index: number) => void
 }
 
+function isBrowserScript(scripts: StoredScript[], scriptId: string): boolean {
+  return scripts.some((script) => script.id === scriptId && script.protocol === 'browser')
+}
+
 export default function CreateTestGroupsEditor({
   scenarioMode,
   groups,
@@ -105,6 +109,19 @@ export default function CreateTestGroupsEditor({
               >
                 <option value="at_runtime">At Runtime</option>
                 <option value="at_once">At Once</option>
+              </select>
+            </label>
+            <label className="medium">
+              <span>Role</span>
+              <select
+                value={group.role || 'load'}
+                onChange={(event) => onUpdateGroup(idx, { role: event.target.value as ScenarioDraftGroup['role'] })}
+                title="Observer canaries are small browser groups that continuously report Web Vitals and stay pinned during goal-based scaling."
+              >
+                <option value="load">Load</option>
+                <option value="observer" disabled={!isBrowserScript(scripts, group.scriptId)}>
+                  Observer Canary{!isBrowserScript(scripts, group.scriptId) ? ' (browser scripts only)' : ''}
+                </option>
               </select>
             </label>
             {groups.length > 1 && (

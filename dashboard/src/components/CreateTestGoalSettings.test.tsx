@@ -84,4 +84,49 @@ describe('CreateTestGoalSettings', () => {
     expect(onGoalConfigChange).toHaveBeenCalledWith('max_error_count', 15)
     expect(onGoalConfigChange).toHaveBeenCalledWith('stop_on_max_errors', true)
   })
+
+  it('renders Web Vitals thresholds and dispatches updates', async () => {
+    const onGoalConfigChange = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <CreateTestGoalSettings
+          goalConfig={{ max_lcp_ms: 2500, max_cls: 0.1 }}
+          onGoalConfigChange={onGoalConfigChange}
+        />,
+      )
+    })
+
+    const lcpInput = container.querySelector('input[placeholder="e.g. 2500"]') as HTMLInputElement | null
+    const inpInput = container.querySelector('input[placeholder="e.g. 200"]') as HTMLInputElement | null
+    const clsInput = container.querySelector('input[placeholder="e.g. 0.1"]') as HTMLInputElement | null
+    expect(lcpInput).not.toBeNull()
+    expect(inpInput).not.toBeNull()
+    expect(clsInput).not.toBeNull()
+    expect(lcpInput?.value).toBe('2500')
+    expect(clsInput?.value).toBe('0.1')
+    if (!lcpInput || !inpInput || !clsInput) return
+
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      valueSetter?.call(inpInput, '200')
+      inpInput.dispatchEvent(new Event('input', { bubbles: true }))
+      inpInput.dispatchEvent(new Event('change', { bubbles: true }))
+      valueSetter?.call(clsInput, '0.25')
+      clsInput.dispatchEvent(new Event('input', { bubbles: true }))
+      clsInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(onGoalConfigChange).toHaveBeenCalledWith('max_inp_ms', 200)
+    expect(onGoalConfigChange).toHaveBeenCalledWith('max_cls', 0.25)
+
+    // Clearing a vitals threshold removes it.
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      valueSetter?.call(lcpInput, '')
+      lcpInput.dispatchEvent(new Event('input', { bubbles: true }))
+      lcpInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onGoalConfigChange).toHaveBeenCalledWith('max_lcp_ms', undefined)
+  })
 })

@@ -1,0 +1,70 @@
+.import-runtime-options {
+  margin: 14px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.import-runtime-options summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.import-runtime-options summary small {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.import-runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 4px 12px 10px;
+}
+
+.import-runtime-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.import-runtime-grid label > span {
+  font-weight: 600;
+}
+
+.import-runtime-grid input[type="number"],
+.import-runtime-grid select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary, transparent);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.import-runtime-toggle {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+  align-self: end;
+  padding-bottom: 6px;
+}
+
+.import-runtime-note {
+  margin: 0;
+  padding: 0 12px 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}

@@ -546,3 +546,121 @@ func containsOpenAPIDiagnostic(result *ConvertResult, element string) bool {
 	}
 	return false
 }
+
+func TestConvertOpenAPIResponseSchemaBodyAssertions(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "openapi": "3.0.3",
+  "info": {"title": "Orders", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "components": {
+    "schemas": {
+      "Order": {
+        "type": "object",
+        "required": ["id", "status", "total", "internal_note"],
+        "properties": {
+          "id": {"type": "string"},
+          "status": {"type": "string"},
+          "total": {"type": "number"},
+          "created_at": {"type": "string"}
+        }
+      }
+    }
+  },
+  "paths": {
+    "/orders/{orderId}": {
+      "get": {
+        "operationId": "getOrder",
+        "parameters": [{"name": "orderId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Order"}}}
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "responses": {"200": {"description": "no schema declared"}}
+      }
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+
+	var orderAction, healthAction *dsl.Action
+	for i := range result.Script.Actions {
+		switch result.Script.Actions[i].Name {
+		case "getOrder":
+			orderAction = &result.Script.Actions[i]
+		case "health":
+			healthAction = &result.Script.Actions[i]
+		}
+	}
+	if orderAction == nil || healthAction == nil {
+		t.Fatalf("expected getOrder and health actions, got %+v", result.Script.Actions)
+	}
+
+	// Status assertion plus body_contains for required+declared properties,
+	// capped at 3 and excluding required names without a declared property.
+	if len(orderAction.Assertions) != 4 {
+		t.Fatalf("getOrder assertions = %+v, want status + 3 body_contains", orderAction.Assertions)
+	}
+	if orderAction.Assertions[0].Type != "status_code" {
+		t.Fatalf("first assertion = %+v, want status_code", orderAction.Assertions[0])
+	}
+	wantValues := map[string]bool{`"id"`: true, `"status"`: true, `"total"`: true}
+	for _, assertion := range orderAction.Assertions[1:] {
+		if assertion.Type != "body_contains" {
+			t.Fatalf("assertion type = %q, want body_contains", assertion.Type)
+		}
+		if !wantValues[assertion.Value] {
+			t.Fatalf("unexpected body_contains value %q (internal_note must be skipped: no declared property)", assertion.Value)
+		}
+		delete(wantValues, assertion.Value)
+	}
+
+	// No declared schema means status assertion only.
+	if len(healthAction.Assertions) != 1 || healthAction.Assertions[0].Type != "status_code" {
+		t.Fatalf("health assertions = %+v, want status_code only", healthAction.Assertions)
+	}
+}
+
+func TestConvertOpenAPIQueryAndDocLevelSecurity(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "openapi": "3.0.3",
+  "info": {"title": "Keyed", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "security": [{"queryKey": []}],
+  "components": {
+    "securitySchemes": {
+      "queryKey": {"type": "apiKey", "in": "query", "name": "api_key"}
+    }
+  },
+  "paths": {
+    "/things": {
+      "get": {
+        "operationId": "listThings",
+        "responses": {"200": {"description": "ok"}}
+      }
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %d, want 1", len(result.Script.Actions))
+	}
+	target := result.Script.Actions[0].Target
+	if !strings.Contains(target, "api_key={{env.API_KEY}}") {
+		t.Fatalf("target = %q, want doc-level query api key appended", target)
+	}
+}

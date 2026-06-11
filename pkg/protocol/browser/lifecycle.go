@@ -10,9 +10,10 @@ func (b *Browser) close() {
 		b.pwPage = nil
 	}
 	if b.pwContext != nil {
-		_ = b.pwContext.Close()
+		_ = b.pwContext.Close() // flushes the context HAR recording
 		b.pwContext = nil
 	}
+	b.lastHARArtifactPath = b.finalizeHARCapture()
 	b.currentURL = ""
 	b.slowMo = 0
 	b.userAgent = ""

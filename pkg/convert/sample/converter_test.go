@@ -646,3 +646,92 @@ func containsSampleDiagnostic(result *ConvertResult, element string) bool {
 	}
 	return false
 }
+
+func TestConvertSourceReviewRedactsSecretsWhenSanitizeDisabled(t *testing.T) {
+	const (
+		authValue     = "Basic dXNlcjpodW50ZXIyc2VjcmV0"
+		passwordValue = "hunter2-secret"
+	)
+	tests := []struct {
+		name    string
+		format  string
+		content string
+	}{
+		{
+			name:   "har",
+			format: "har",
+			content: `{
+				"log": {
+					"entries": [
+						{
+							"startedDateTime": "2026-01-01T00:00:00.000Z",
+							"request": {
+								"method": "POST",
+								"url": "https://api.example.com/v1/login",
+								"headers": [
+									{"name": "Content-Type", "value": "application/json"},
+									{"name": "Authorization", "value": "` + authValue + `"}
+								],
+								"postData": {
+									"mimeType": "application/json",
+									"text": "{\"username\":\"alice\",\"password\":\"` + passwordValue + `\"}"
+								}
+							},
+							"response": {
+								"status": 200,
+								"headers": [],
+								"content": {"mimeType": "application/json", "text": "{}"}
+							}
+						}
+					]
+				}
+			}`,
+		},
+		{
+			name:    "raw_http",
+			format:  "raw_http",
+			content: "POST /v1/login HTTP/1.1\nHost: api.example.com\nContent-Type: application/json\nAuthorization: " + authValue + "\n\n{\"username\":\"alice\",\"password\":\"" + passwordValue + "\"}",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sanitizeSensitive := false
+			result, err := Convert(ImportRequest{
+				Format:  tc.format,
+				Content: tc.content,
+				Options: ConvertOptions{SanitizeSensitive: &sanitizeSensitive},
+			})
+			if err != nil {
+				t.Fatalf("Convert returned error: %v", err)
+			}
+			if len(result.Script.Actions) != 1 {
+				t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+			}
+			action := result.Script.Actions[0]
+			if action.Headers["Authorization"] != authValue {
+				t.Fatalf("authorization header = %q, want raw value preserved when sanitize is off", action.Headers["Authorization"])
+			}
+			if !strings.Contains(action.Body, passwordValue) {
+				t.Fatalf("body = %q, want raw password preserved when sanitize is off", action.Body)
+			}
+			if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 {
+				t.Fatalf("source review = %#v, want files", result.SourceReview)
+			}
+			redactedFiles := 0
+			for _, file := range result.SourceReview.SourceFiles {
+				if strings.Contains(file.Content, "dXNlcjpodW50ZXIyc2VjcmV0") {
+					t.Fatalf("source review file %s leaked Authorization value: %s", file.Path, file.Content)
+				}
+				if strings.Contains(file.Content, passwordValue) {
+					t.Fatalf("source review file %s leaked password: %s", file.Path, file.Content)
+				}
+				if file.Redacted {
+					redactedFiles++
+				}
+			}
+			if redactedFiles == 0 {
+				t.Fatal("expected at least one source review file to be flagged as redacted")
+			}
+		})
+	}
+}

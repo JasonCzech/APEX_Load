@@ -182,8 +182,19 @@ type kafkaOp struct {
 	replyTopic     string
 	payload        schema
 	hasCorrelation bool
-	schemaFormat   string
-	channelName    string
+	// correlationLocation is the AsyncAPI runtime expression for the message's
+	// correlation id (e.g. $message.payload#/correlationId), used to wire
+	// produce-side uniqueness and consume-side extraction automatically.
+	correlationLocation string
+	schemaFormat        string
+	channelName         string
+}
+
+func correlationLocationOf(msg messageDef) string {
+	if msg.CorrelationID == nil {
+		return ""
+	}
+	return strings.TrimSpace(msg.CorrelationID.Location)
 }
 
 func Convert(req ImportRequest) (*ConvertResult, error) {
@@ -403,14 +414,15 @@ func collectOperations(doc *document, opts ConvertOptions, diagnostics *diag.Col
 				}
 			}
 			ops = append(ops, kafkaOp{
-				name:           firstNonEmpty(opName, op.Title, op.Summary),
-				kind:           kind,
-				topic:          topic,
-				replyTopic:     replyTopic,
-				payload:        resolvePayload(doc, msg),
-				hasCorrelation: msg.CorrelationID != nil,
-				schemaFormat:   msg.SchemaFormat,
-				channelName:    chName,
+				name:                firstNonEmpty(opName, op.Title, op.Summary),
+				kind:                kind,
+				topic:               topic,
+				replyTopic:          replyTopic,
+				payload:             resolvePayload(doc, msg),
+				hasCorrelation:      msg.CorrelationID != nil,
+				correlationLocation: correlationLocationOf(msg),
+				schemaFormat:        msg.SchemaFormat,
+				channelName:         chName,
 			})
 		}
 		return ops, sortedKeysFromSet(schemaFormats), warnings
@@ -429,26 +441,28 @@ func collectOperations(doc *document, opts ConvertOptions, diagnostics *diag.Col
 			msg := derefMessage(doc, messageOf(ch.Publish))
 			recordFormat(msg)
 			ops = append(ops, kafkaOp{
-				name:           firstNonEmpty(ch.Publish.OperationID, ch.Publish.Summary, chName+"_produce"),
-				kind:           "produce",
-				topic:          topicWithBinding(topic, ch.Publish.Bindings),
-				payload:        resolvePayload(doc, msg),
-				hasCorrelation: msg.CorrelationID != nil,
-				schemaFormat:   msg.SchemaFormat,
-				channelName:    chName,
+				name:                firstNonEmpty(ch.Publish.OperationID, ch.Publish.Summary, chName+"_produce"),
+				kind:                "produce",
+				topic:               topicWithBinding(topic, ch.Publish.Bindings),
+				payload:             resolvePayload(doc, msg),
+				hasCorrelation:      msg.CorrelationID != nil,
+				correlationLocation: correlationLocationOf(msg),
+				schemaFormat:        msg.SchemaFormat,
+				channelName:         chName,
 			})
 		}
 		if ch.Subscribe != nil {
 			msg := derefMessage(doc, messageOf(ch.Subscribe))
 			recordFormat(msg)
 			ops = append(ops, kafkaOp{
-				name:           firstNonEmpty(ch.Subscribe.OperationID, ch.Subscribe.Summary, chName+"_consume"),
-				kind:           "consume",
-				topic:          topicWithBinding(topic, ch.Subscribe.Bindings),
-				payload:        resolvePayload(doc, msg),
-				hasCorrelation: msg.CorrelationID != nil,
-				schemaFormat:   msg.SchemaFormat,
-				channelName:    chName,
+				name:                firstNonEmpty(ch.Subscribe.OperationID, ch.Subscribe.Summary, chName+"_consume"),
+				kind:                "consume",
+				topic:               topicWithBinding(topic, ch.Subscribe.Bindings),
+				payload:             resolvePayload(doc, msg),
+				hasCorrelation:      msg.CorrelationID != nil,
+				correlationLocation: correlationLocationOf(msg),
+				schemaFormat:        msg.SchemaFormat,
+				channelName:         chName,
 			})
 		}
 		if ch.Publish == nil && ch.Subscribe == nil {
@@ -479,6 +493,7 @@ func buildAction(op kafkaOp, includeAssertion bool) (dsl.Action, []string) {
 	default:
 		action.Type = "kafka_consume"
 	}
+	columns = applyCorrelationID(&action, op, columns)
 	if includeAssertion {
 		switch op.kind {
 		case "produce":
@@ -488,6 +503,140 @@ func buildAction(op kafkaOp, includeAssertion bool) (dsl.Action, []string) {
 		}
 	}
 	return action, columns
+}
+
+// applyCorrelationID wires the message's declared correlation id into the
+// generated action: produced messages send a unique {{fn.uuid()}} value at the
+// declared location, and consumed messages extract the value into
+// {{var.<name>}} so later actions can reuse it. Returns the data columns with
+// the correlation field removed (it must not come from a shared CSV row).
+func applyCorrelationID(action *dsl.Action, op kafkaOp, columns []string) []string {
+	location := op.correlationLocation
+	if location == "" {
+		return columns
+	}
+	source, path, ok := parseCorrelationLocation(location)
+	if !ok {
+		return columns
+	}
+	switch op.kind {
+	case "produce", "request_reply":
+		if source == "payload" && action.Body != "" {
+			if updated, ok := setJSONPointerValue(action.Body, path, "{{fn.uuid()}}"); ok {
+				action.Body = updated
+				action.Metadata["asyncapi_correlation_id"] = location
+				return removeColumn(columns, sanitizeColumnName(lastPathSegment(path)))
+			}
+		}
+		if source == "header" {
+			if action.Params == nil {
+				action.Params = map[string]any{}
+			}
+			headers, _ := action.Params["headers"].(map[string]any)
+			if headers == nil {
+				headers = map[string]any{}
+			}
+			headers[lastPathSegment(path)] = "{{fn.uuid()}}"
+			action.Params["headers"] = headers
+			action.Metadata["asyncapi_correlation_id"] = location
+		}
+	case "consume":
+		extractorName := sanitizeName(op.name) + "_correlation_id"
+		extractor := dsl.Extractor{Name: extractorName}
+		if source == "payload" {
+			extractor.Source = "body"
+			extractor.Type = "jsonpath"
+			extractor.Expression = "$." + strings.Join(splitPointerPath(path), ".")
+		} else {
+			extractor.Source = "header"
+			extractor.Type = "header"
+			extractor.Expression = lastPathSegment(path)
+		}
+		action.Extractors = append(action.Extractors, extractor)
+		action.Metadata["asyncapi_correlation_id"] = location
+	}
+	return columns
+}
+
+// parseCorrelationLocation decodes AsyncAPI runtime expressions of the form
+// $message.payload#/correlationId or $message.header#/correlationId.
+func parseCorrelationLocation(location string) (source string, path string, ok bool) {
+	trimmed := strings.TrimSpace(location)
+	for _, candidate := range []string{"$message.payload#/", "$message.header#/"} {
+		if strings.HasPrefix(trimmed, candidate) {
+			path = strings.TrimPrefix(trimmed, candidate)
+			if path == "" {
+				return "", "", false
+			}
+			if strings.Contains(candidate, "payload") {
+				return "payload", path, true
+			}
+			return "header", path, true
+		}
+	}
+	return "", "", false
+}
+
+func splitPointerPath(path string) []string {
+	segments := strings.Split(path, "/")
+	out := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			continue
+		}
+		out = append(out, segment)
+	}
+	return out
+}
+
+func lastPathSegment(path string) string {
+	segments := splitPointerPath(path)
+	if len(segments) == 0 {
+		return path
+	}
+	return segments[len(segments)-1]
+}
+
+// setJSONPointerValue sets a nested field of a JSON document to value,
+// following the given slash-separated pointer path. Returns ok=false when the
+// document is not an object or the path's parents are missing.
+func setJSONPointerValue(document string, path string, value string) (string, bool) {
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(document), &parsed); err != nil {
+		return document, false
+	}
+	segments := splitPointerPath(path)
+	if len(segments) == 0 {
+		return document, false
+	}
+	current := parsed
+	for _, segment := range segments[:len(segments)-1] {
+		next, ok := current[segment].(map[string]any)
+		if !ok {
+			return document, false
+		}
+		current = next
+	}
+	// Overwrites the sampled value, or adds the field when the schema sample
+	// omitted it, so the produced message always carries the correlation id.
+	current[segments[len(segments)-1]] = value
+	encoded, err := json.MarshalIndent(parsed, "", "  ")
+	if err != nil {
+		return document, false
+	}
+	return string(encoded), true
+}
+
+func removeColumn(columns []string, name string) []string {
+	out := make([]string, 0, len(columns))
+	for _, column := range columns {
+		if column == name {
+			continue
+		}
+		out = append(out, column)
+	}
+	return out
 }
 
 // --- schema sampling ---

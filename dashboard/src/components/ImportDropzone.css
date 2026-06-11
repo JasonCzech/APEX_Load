@@ -1,0 +1,69 @@
+.import-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  padding: 14px;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.import-dropzone:hover,
+.import-dropzone.drag-over {
+  border-color: var(--primary, var(--success));
+  background: color-mix(in srgb, var(--primary, var(--success)) 5%, transparent);
+}
+
+.import-dropzone.has-file {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--success) 50%, var(--border));
+}
+
+.import-dropzone-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.import-dropzone-empty p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.import-dropzone-hint {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.import-dropzone-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.import-dropzone-name {
+  display: block;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.import-dropzone-size {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.import-dropzone-file > div {
+  flex: 1;
+  min-width: 0;
+}

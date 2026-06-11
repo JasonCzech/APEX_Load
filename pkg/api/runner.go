@@ -252,6 +252,7 @@ type TestGroup struct {
 	ScriptID        string                       `json:"script_id"`
 	ScriptName      string                       `json:"script_name"`
 	Protocol        string                       `json:"protocol"`
+	Role            string                       `json:"role,omitempty"`
 	VUsers          int                          `json:"vusers"`
 	RampUp          string                       `json:"ramp_up,omitempty"`
 	RampDown        string                       `json:"ramp_down,omitempty"`
@@ -349,6 +350,7 @@ type BrowserLiveMetrics struct {
 	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
 	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
 	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgTTFBMs            float64 `json:"avg_ttfb_ms,omitempty"`
 	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
@@ -366,6 +368,7 @@ type BrowserDeviceLiveMetrics struct {
 	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
 	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
 	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgTTFBMs            float64 `json:"avg_ttfb_ms,omitempty"`
 	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
@@ -469,6 +472,9 @@ type GoalStatus struct {
 	ServerProcessingBreached bool       `json:"server_processing_breached,omitempty"`
 	TransferBreached         bool       `json:"transfer_breached,omitempty"`
 	ErrorCountBreached       bool       `json:"error_count_breached,omitempty"`
+	LCPBreached              bool       `json:"lcp_breached,omitempty"`
+	INPBreached              bool       `json:"inp_breached,omitempty"`
+	CLSBreached              bool       `json:"cls_breached,omitempty"`
 	BreachActive             bool       `json:"breach_active,omitempty"`
 	BreachDurationSec        int        `json:"breach_duration_sec,omitempty"`
 	StopTriggered            bool       `json:"stop_triggered,omitempty"`
@@ -685,6 +691,7 @@ type ScenarioScriptRef struct {
 	ScriptID       string              `json:"script_id"`
 	ScriptName     string              `json:"script_name,omitempty"`
 	Protocol       string              `json:"protocol,omitempty"`
+	Role           string              `json:"role,omitempty"`
 	VUsers         int                 `json:"vusers"`
 	RampUp         string              `json:"ramp_up,omitempty"`
 	RampDown       string              `json:"ramp_down,omitempty"`
@@ -885,6 +892,7 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 			Order:          script.Order,
 			Name:           script.Name,
 			ScriptID:       script.ScriptID,
+			Role:           script.Role,
 			VUsers:         script.VUsers,
 			RampUp:         script.RampUp,
 			RampDown:       script.RampDown,
@@ -1439,6 +1447,7 @@ func storedScenarioRefsToStorage(stored *StoredScenario) []storage.ScenarioScrip
 			Order:          ref.Order,
 			Name:           ref.Name,
 			ScriptID:       ref.ScriptID,
+			Role:           ref.Role,
 			VUsers:         ref.VUsers,
 			RampUp:         ref.RampUp,
 			RampDown:       ref.RampDown,
@@ -1510,6 +1519,7 @@ func browserSummaryRecordToLiveMetrics(record *storage.BrowserMetricsSummaryReco
 		AvgLCPMs:             record.AvgLCPMs,
 		AvgCLSScore:          record.AvgCLSScore,
 		AvgINPMs:             record.AvgINPMs,
+		AvgTTFBMs:            record.AvgTTFBMs,
 		AvgBlockingResources: record.AvgBlockingResources,
 		AvgLongTaskCount:     record.AvgLongTaskCount,
 		AvgJSHeapUsedMB:      record.AvgJSHeapUsedMB,
@@ -1537,6 +1547,7 @@ func browserDeviceSummaryRecordToLiveMetrics(records map[string]*storage.Browser
 			AvgLCPMs:             record.AvgLCPMs,
 			AvgCLSScore:          record.AvgCLSScore,
 			AvgINPMs:             record.AvgINPMs,
+			AvgTTFBMs:            record.AvgTTFBMs,
 			AvgBlockingResources: record.AvgBlockingResources,
 			AvgLongTaskCount:     record.AvgLongTaskCount,
 			AvgJSHeapUsedMB:      record.AvgJSHeapUsedMB,
@@ -1829,11 +1840,14 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 	}
 	scripts := make([]storage.ScenarioScript, 0, len(groups))
 	for i, group := range groups {
+		// compileManagedTestGroupsLocked validated and normalized the role
+		// (e.g. the "canary" alias), so persist the normalized value.
 		scripts = append(scripts, storage.ScenarioScript{
 			ScenarioID:     id,
 			Order:          i,
 			Name:           group.Name,
 			ScriptID:       group.ScriptID,
+			Role:           testGroups[i].Role,
 			VUsers:         group.VUsers,
 			RampUp:         group.RampUp,
 			RampDown:       group.RampDown,
@@ -2338,9 +2352,15 @@ type GoalConfig struct {
 	MaxErrorCount            *int     `json:"max_error_count,omitempty"`
 	MinVUsers                *int     `json:"min_vusers,omitempty"`
 	MaxVUsers                *int     `json:"max_vusers,omitempty"`
-	StopOnSLABreach          bool     `json:"stop_on_sla_breach,omitempty"`
-	StopOnMaxErrors          bool     `json:"stop_on_max_errors,omitempty"`
-	SLABreachWindow          string   `json:"sla_breach_window,omitempty"`
+	// Web Vitals experience thresholds, evaluated against the aggregated
+	// browser metrics emitted by browser VUsers and experience canaries.
+	MaxLCPMs *float64 `json:"max_lcp_ms,omitempty"`
+	MaxINPMs *float64 `json:"max_inp_ms,omitempty"`
+	MaxCLS   *float64 `json:"max_cls,omitempty"`
+
+	StopOnSLABreach bool   `json:"stop_on_sla_breach,omitempty"`
+	StopOnMaxErrors bool   `json:"stop_on_max_errors,omitempty"`
+	SLABreachWindow string `json:"sla_breach_window,omitempty"`
 }
 
 // RuntimeSettingsOverride allows overriding script-level runtime settings at test time,
@@ -2376,6 +2396,12 @@ type CreateGroupEntry struct {
 	RuntimeSettings *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
 	Assignment      *GeneratorAssignmentSettings `json:"assignment,omitempty"`
 	InitStrategy    string                       `json:"initialization,omitempty"` // "at_runtime", "at_once"
+	// Role distinguishes load-bearing groups ("load", default) from experience
+	// canaries ("observer", alias "canary"): small browser groups that emit
+	// Web Vitals continuously, are pinned during goal-based scaling, and stay
+	// within the diagnostic canary density envelope. Use the group Assignment
+	// to place observers on dedicated capacity or a specific load zone.
+	Role string `json:"role,omitempty"`
 }
 
 type StartTestOptions struct {
@@ -2911,6 +2937,7 @@ func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenar
 			req.Groups = append(req.Groups, CreateGroupEntry{
 				Name:         script.Name,
 				ScriptID:     script.ScriptID,
+				Role:         script.Role,
 				VUsers:       script.VUsers,
 				RampUp:       script.RampUp,
 				RampDown:     script.RampDown,
@@ -3037,6 +3064,11 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: script not found: %s", index, group.ScriptID)
 	}
 
+	role, err := normalizeGroupRole(group.Role, script.Protocol, index)
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, err
+	}
+
 	vusers := group.VUsers
 	derivedRampUp, derivedRampDown, derivedVUsers, err := loadStageCompatibility(group.Stages, index)
 	if err != nil {
@@ -3047,6 +3079,14 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 	}
 	if vusers <= 0 {
 		vusers = 10
+		if role == GroupRoleObserver {
+			vusers = observerDefaultVUsers
+		}
+	}
+	if role == GroupRoleObserver && vusers > observerMaxVUsers {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf(
+			"group[%d]: observer groups are diagnostic experience canaries capped at %d VUsers (got %d); use a load-role group for browser load",
+			index, observerMaxVUsers, vusers)
 	}
 	rampUpValue := firstNonEmpty(group.RampUp, derivedRampUp)
 	rampDownValue := firstNonEmpty(group.RampDown, derivedRampDown)
@@ -3110,6 +3150,7 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 		ScriptID:        group.ScriptID,
 		ScriptName:      script.Name,
 		Protocol:        script.Protocol,
+		Role:            role,
 		VUsers:          vusers,
 		RampUp:          rampUpValue,
 		RampDown:        rampDownValue,
@@ -5151,6 +5192,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 			AvgLCPMs:             snap.Browser.AvgLCPMs,
 			AvgCLSScore:          snap.Browser.AvgCLSScore,
 			AvgINPMs:             snap.Browser.AvgINPMs,
+			AvgTTFBMs:            snap.Browser.AvgTTFBMs,
 			AvgBlockingResources: snap.Browser.AvgBlockingResources,
 			AvgLongTaskCount:     snap.Browser.AvgLongTaskCount,
 			AvgJSHeapUsedMB:      snap.Browser.AvgJSHeapUsedMB,
@@ -5171,6 +5213,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 				AvgLCPMs:             metrics.AvgLCPMs,
 				AvgCLSScore:          metrics.AvgCLSScore,
 				AvgINPMs:             metrics.AvgINPMs,
+				AvgTTFBMs:            metrics.AvgTTFBMs,
 				AvgBlockingResources: metrics.AvgBlockingResources,
 				AvgLongTaskCount:     metrics.AvgLongTaskCount,
 				AvgJSHeapUsedMB:      metrics.AvgJSHeapUsedMB,

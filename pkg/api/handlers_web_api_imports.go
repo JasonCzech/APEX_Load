@@ -81,6 +81,7 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      appendImportDiagnosticReviewSections(buildOpenAPIReviewSections(result), result.Unsupported),
 		SourceReview:        result.SourceReview,
+		Parameterization:    buildImportParameterization(result.Script, nil),
 	}))
 }
 
@@ -115,6 +116,7 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      appendImportDiagnosticReviewSections(buildWSDLReviewSections(result), result.Unsupported),
 		SourceReview:        result.SourceReview,
+		Parameterization:    buildImportParameterization(result.Script, nil),
 	}))
 }
 
@@ -149,6 +151,7 @@ func (s *Server) handleImportPostman(w http.ResponseWriter, r *http.Request) {
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      appendImportDiagnosticReviewSections(buildPostmanReviewSections(result), result.Unsupported),
 		SourceReview:        result.SourceReview,
+		Parameterization:    buildImportParameterization(result.Script, nil),
 	}))
 }
 
@@ -190,6 +193,7 @@ func (s *Server) handleImportAsyncAPI(w http.ResponseWriter, r *http.Request) {
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      appendImportDiagnosticReviewSections(buildAsyncAPIReviewSections(result), result.Unsupported),
 		SourceReview:        result.SourceReview,
+		Parameterization:    buildImportParameterization(result.Script, nil),
 	}))
 }
 

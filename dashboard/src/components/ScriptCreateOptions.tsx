@@ -27,6 +27,7 @@ interface Props {
   onOpenJMeterImport: () => void
   onOpenDevWebImport: () => void
   onOpenHARImport: () => void
+  onOpenBrowserRecordingImport: () => void
   onOpenOpenAPIImport: () => void
   onOpenPostmanImport: () => void
   onOpenWSDLImport: () => void
@@ -155,6 +156,7 @@ export default function ScriptCreateOptions({
   onOpenJMeterImport,
   onOpenDevWebImport,
   onOpenHARImport,
+  onOpenBrowserRecordingImport,
   onOpenOpenAPIImport,
   onOpenPostmanImport,
   onOpenWSDLImport,
@@ -711,6 +713,11 @@ export default function ScriptCreateOptions({
                   <span className="script-create-type-badge import">HAR</span>
                   <h3>HAR Traffic</h3>
                   <p>Convert captured browser API traffic into HTTP actions with reviewable correlation and data-source suggestions.</p>
+                </button>
+                <button className="script-create-option" onClick={onOpenBrowserRecordingImport}>
+                  <span className="script-create-type-badge import">REC</span>
+                  <h3>Browser Recording</h3>
+                  <p>Convert a Chrome DevTools Recorder export or Playwright codegen script into a browser script with ranked selector candidates.</p>
                 </button>
                 <button className="script-create-option" onClick={onOpenSampleImport}>
                   <span className="script-create-type-badge">API</span>

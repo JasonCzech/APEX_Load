@@ -457,6 +457,21 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	if browserCfg.ClientMetrics != nil {
 		cfg["browser_client_metrics"] = *browserCfg.ClientMetrics
 	}
+	if browserCfg.ExperienceCanary {
+		cfg["browser_experience_canary"] = true
+	}
+	if browserCfg.Traceparent != nil {
+		cfg["browser_traceparent"] = *browserCfg.Traceparent
+	}
+	if browserCfg.HARCapture != "" {
+		cfg["browser_har_capture"] = browserCfg.HARCapture
+	}
+	if browserCfg.HARCapturePolicy != "" {
+		cfg["browser_har_capture_policy"] = browserCfg.HARCapturePolicy
+	}
+	if browserCfg.HARSLAThresholdMs > 0 {
+		cfg["browser_har_sla_breach_ms"] = float64(browserCfg.HARSLAThresholdMs)
+	}
 	if browserCfg.CaptureScreenshots != "" {
 		cfg["browser_capture_screenshots"] = browserCfg.CaptureScreenshots
 	}

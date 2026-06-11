@@ -60,6 +60,7 @@ interface ScenarioFormState {
 interface ScenarioFormGroup {
   name: string
   script_id: string
+  role?: 'load' | 'observer'
   vusers: number
   ramp_up: string
   ramp_down: string
@@ -146,6 +147,7 @@ function normalizeGroupForPayload(group: ScenarioFormGroup) {
   return {
     name: group.name,
     scriptId: group.script_id,
+    role: group.role,
     vusers: maxStageVUsers(group.stages) || Number(group.vusers) || 10,
     rampUp: group.ramp_up,
     rampDown: group.ramp_down,
@@ -158,6 +160,7 @@ function scenarioFormGroupFromStored(group: StoredScenario['scripts'][number], f
   return {
     name: group.name || '',
     script_id: group.script_id || fallbackScriptId,
+    role: group.role,
     vusers: group.vusers || 10,
     ramp_up: group.ramp_up || '',
     ramp_down: group.ramp_down || '',
@@ -1998,6 +2001,20 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
                       <select className="settings-input" value={group.initialization} onChange={event => updateScenarioGroup(index, { initialization: event.target.value as ScenarioFormGroup['initialization'] })}>
                         <option value="at_runtime">Init/teardown per VUser</option>
                         <option value="at_once">Init/teardown once per group</option>
+                      </select>
+                    </label>
+                    <label className="scenario-field">
+                      <span>Role</span>
+                      <select
+                        className="settings-input"
+                        value={group.role || 'load'}
+                        onChange={event => updateScenarioGroup(index, { role: event.target.value as ScenarioFormGroup['role'] })}
+                        title="Observer canaries are small browser groups that continuously report Web Vitals and stay pinned during goal-based scaling."
+                      >
+                        <option value="load">Load</option>
+                        <option value="observer" disabled={selectedScript?.protocol !== 'browser'}>
+                          Observer Canary{selectedScript?.protocol !== 'browser' ? ' (browser scripts only)' : ''}
+                        </option>
                       </select>
                     </label>
                   </div>

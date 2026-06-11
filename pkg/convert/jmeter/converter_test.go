@@ -953,3 +953,91 @@ func containsJMeterMapping(mappings []sourceview.Mapping, function string, targe
 	}
 	return false
 }
+
+func TestConvertJMXMapsSimpleWhileControllerToConditionLoop(t *testing.T) {
+	const whileJMX = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Polling Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <WhileController testname="Poll Until Done" enabled="true">
+          <stringProp name="WhileController.condition">${jobStatus} != done</stringProp>
+        </WhileController>
+        <hashTree>
+          <HTTPSamplerProxy testname="Check Status" enabled="true">
+            <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+            <stringProp name="HTTPSampler.protocol">https</stringProp>
+            <stringProp name="HTTPSampler.path">/jobs/status</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+          </HTTPSamplerProxy>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(whileJMX), ConvertOptions{FileName: "while.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	if len(result.Scripts[0].Actions) != 1 || result.Scripts[0].Actions[0].Type != "control_loop" {
+		t.Fatalf("actions = %#v, want one control_loop", result.Scripts[0].Actions)
+	}
+	control := result.Scripts[0].Actions[0].Control
+	if control == nil || control.Condition == nil {
+		t.Fatalf("control = %#v, want condition-driven loop", control)
+	}
+	if control.Condition.Left != "{{var.jobStatus}}" || control.Condition.Op != "ne" || control.Condition.Right != "done" {
+		t.Fatalf("condition = %#v, want jobStatus ne done", control.Condition)
+	}
+	if control.Count != 0 {
+		t.Fatalf("count = %d, want 0 (condition-driven)", control.Count)
+	}
+	if control.MaxIterations != jmeterWhileLoopSafetyCap {
+		t.Fatalf("max iterations = %d, want safety cap %d", control.MaxIterations, jmeterWhileLoopSafetyCap)
+	}
+	if len(control.Steps) != 1 || control.Steps[0].Target != "/jobs/status" {
+		t.Fatalf("steps = %#v, want one nested status request", control.Steps)
+	}
+}
+
+func TestConvertJMXFlattensDynamicWhileCondition(t *testing.T) {
+	const dynamicWhileJMX = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <WhileController testname="Scripted While" enabled="true">
+          <stringProp name="WhileController.condition">${__javaScript(${count} &lt; 5)}</stringProp>
+        </WhileController>
+        <hashTree>
+          <HTTPSamplerProxy testname="Step" enabled="true">
+            <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+            <stringProp name="HTTPSampler.protocol">https</stringProp>
+            <stringProp name="HTTPSampler.path">/step</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+          </HTTPSamplerProxy>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(dynamicWhileJMX), ConvertOptions{FileName: "dynamic-while.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	// Untranslatable condition: children flattened in source order with a warning.
+	if len(result.Scripts[0].Actions) != 1 || result.Scripts[0].Actions[0].Type == "control_loop" {
+		t.Fatalf("actions = %#v, want one flattened request (no control_loop)", result.Scripts[0].Actions)
+	}
+	if !containsJMeterDiagnostic(result, "JMeter WhileController") {
+		t.Fatalf("diagnostics = %#v, want WhileController flattening warning", result.Unsupported)
+	}
+}

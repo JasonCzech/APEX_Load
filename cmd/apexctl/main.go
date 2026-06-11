@@ -338,7 +338,7 @@ Commands:
   script    Validate or explain a JSON DSL script
   status    Print a test's current status + SLA verdict (exits 1 on breach/failure)
 	  wait      Block until a started test finishes, then report SLA verdict
-	  record    Record a new browser script using Playwright
+	  record    Record a browser script with the embedded recorder (ranked selectors + side-car HAR)
 	  github    Inspect and run GitHub Enterprise sync/check workflows
 	  version   Print version information
   help      Show this help

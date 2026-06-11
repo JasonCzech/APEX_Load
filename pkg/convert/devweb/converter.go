@@ -48,9 +48,20 @@ type ConvertStats struct {
 type ConvertResult struct {
 	Script       *dsl.Script        `json:"script"`
 	Warnings     []string           `json:"warnings,omitempty"`
+	Assumptions  []string           `json:"assumptions,omitempty"`
 	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
 	Stats        ConvertStats       `json:"stats"`
 	SourceReview *sourceview.Review `json:"source_review,omitempty"`
+}
+
+// standingAssumptions are the import-mode caveats every DevWeb conversion
+// carries: the importer extracts SDK calls statically and never executes the
+// script's JavaScript.
+func standingAssumptions() []string {
+	return []string{
+		"APEX Load converts DevWeb SDK calls statically and does not execute the script's JavaScript; dynamic URLs, control flow, and custom helper logic are not replayed.",
+		"Review extracted requests, WebSocket flows, and parameter templates against the original script before promoting this draft to load execution.",
+	}
 }
 
 type parsedStep struct {
@@ -153,6 +164,7 @@ func convertSource(name string, sourceFileName string, content string, opts Conv
 
 func convertSourceWithContext(name string, sourceFileName string, content string, opts ConvertOptions, ctx convertContext) (*ConvertResult, error) {
 	result := &ConvertResult{
+		Assumptions: standingAssumptions(),
 		Script: &dsl.Script{
 			Name:          sanitizeName(name),
 			Version:       "1.0.0",

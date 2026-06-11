@@ -469,3 +469,30 @@ func writeDevWebZipFile(t *testing.T, zw *zip.Writer, name string, content strin
 	}
 	_, _ = file.Write([]byte(content))
 }
+
+func TestConvertDevWebCarriesStandingAssumptions(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Name: "Sample",
+		Content: `load.action("Ping", async function() {
+  new load.WebRequest({
+    url: "https://api.example.test/ping",
+    method: "GET"
+  }).sendSync();
+});`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Assumptions) == 0 {
+		t.Fatal("expected standing assumptions on every DevWeb conversion")
+	}
+	foundJSCaveat := false
+	for _, assumption := range result.Assumptions {
+		if strings.Contains(assumption, "does not execute the script's JavaScript") {
+			foundJSCaveat = true
+		}
+	}
+	if !foundJSCaveat {
+		t.Fatalf("assumptions missing JS-not-executed caveat: %v", result.Assumptions)
+	}
+}

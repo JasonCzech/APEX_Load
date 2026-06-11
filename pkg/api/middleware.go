@@ -1482,6 +1482,23 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}, true
 	}
 
+	if path == "/api/v1/scripts/import/recorder" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveImportProjectIDFromJSONOrForm,
+			MaxBodyBytes:  recorderImportMaxBodyBytes,
+		}, true
+	}
+
+	if path == "/api/v1/scripts/import/parameterize/apply" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveParameterizeApplyProjectID,
+		}, true
+	}
+
 	if (path == "/api/v1/scripts/import/devweb" || path == "/api/v1/scripts/import/har" || path == "/api/v1/scripts/import/k6" || path == "/api/v1/scripts/import/openapi" || path == "/api/v1/scripts/import/postman" || path == "/api/v1/scripts/import/wsdl") && method == http.MethodPost {
 		return accessRequirement{
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -2430,6 +2447,23 @@ func resolveK6ExportProjectID(r *http.Request, _ storage.Store) (string, int, st
 	return "", http.StatusBadRequest, "project_id or script.project_id is required for project-scoped export access"
 }
 
+// resolveParameterizeApplyProjectID scopes the import parameterization apply
+// endpoint to the project of the draft script in the request body.
+func resolveParameterizeApplyProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	var req struct {
+		Script *struct {
+			ProjectID string `json:"project_id,omitempty"`
+		} `json:"script,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if req.Script == nil || strings.TrimSpace(req.Script.ProjectID) == "" {
+		return "", http.StatusBadRequest, "script.project_id is required for project-scoped parameterization access"
+	}
+	return normalizeProjectID(req.Script.ProjectID), 0, ""
+}
+
 func resolveAIAssistanceProjectID(r *http.Request, store storage.Store) (string, int, string) {
 	var req struct {
 		ProjectID        string `json:"project_id,omitempty"`
@@ -2568,6 +2602,7 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 // while handlers that decode the body without any limit are still bounded.
 const (
 	k6ImportMaxBodyBytes                int64 = 10 << 20
+	recorderImportMaxBodyBytes          int64 = 10 << 20
 	oracleReviewImportMaxBodyBytes      int64 = 10 << 20
 	webAPIImportMaxBodyBytes            int64 = 20 << 20
 	harImportMaxBodyBytes               int64 = 50 << 20

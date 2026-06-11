@@ -236,6 +236,7 @@ FILE_IMPORTERS = {
     "jmeter": "/scripts/import/jmeter",
     "devweb": "/scripts/import/devweb",
     "har": "/scripts/import/har",
+    "recorder": "/scripts/import/recorder",
     "openapi": "/scripts/import/openapi",
     "wsdl": "/scripts/import/wsdl",
 }

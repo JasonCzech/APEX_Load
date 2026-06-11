@@ -163,6 +163,7 @@ type schema struct {
 	Type          string            `json:"type,omitempty" yaml:"type,omitempty"`
 	Format        string            `json:"format,omitempty" yaml:"format,omitempty"`
 	Properties    map[string]schema `json:"properties,omitempty" yaml:"properties,omitempty"`
+	Required      []string          `json:"required,omitempty" yaml:"required,omitempty"`
 	Items         *schema           `json:"items,omitempty" yaml:"items,omitempty"`
 	Example       any               `json:"example,omitempty" yaml:"example,omitempty"`
 	Enum          []any             `json:"enum,omitempty" yaml:"enum,omitempty"`
@@ -170,6 +171,14 @@ type schema struct {
 	AnyOf         []schema          `json:"anyOf,omitempty" yaml:"anyOf,omitempty"`
 	AllOf         []schema          `json:"allOf,omitempty" yaml:"allOf,omitempty"`
 	Discriminator map[string]any    `json:"discriminator,omitempty" yaml:"discriminator,omitempty"`
+}
+
+// responseObject is the subset of an OpenAPI response we inspect when deriving
+// body assertions. Swagger 2 puts the schema at the top level; OpenAPI 3 nests
+// it under content -> media type.
+type responseObject struct {
+	Content map[string]mediaType `json:"content,omitempty" yaml:"content,omitempty"`
+	Schema  *schema              `json:"schema,omitempty" yaml:"schema,omitempty"`
 }
 
 var supportedMethods = map[string]bool{
@@ -644,14 +653,74 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 			"openapi_tags":         op.Tags,
 		},
 	}
-	applyOperationSecurity(&action, op.Security, res.doc.Components.SecuritySchemes, res, location)
+	securityRequirements := op.Security
+	if securityRequirements == nil {
+		// Operations without their own security requirement inherit the
+		// document-level requirement (OpenAPI semantics).
+		securityRequirements = res.doc.Security
+	}
+	applyOperationSecurity(&action, securityRequirements, res.doc.Components.SecuritySchemes, res, location)
 	if includeAssertion {
 		if status, ok := firstSuccessStatus(op.Responses); ok {
 			action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: status}}
+			action.Assertions = append(action.Assertions, responseBodyAssertions(op.Responses, status, res, location)...)
 			return action, uniqueSorted(append(bodyColumns, paramColumns...)), true
 		}
 	}
 	return action, uniqueSorted(append(bodyColumns, paramColumns...)), false
+}
+
+// responseBodyAssertions derives body_contains assertions from the declared
+// success-response schema: each required top-level property of a JSON response
+// must appear (as a quoted key) in the body. Capped to keep assertion noise low.
+func responseBodyAssertions(responses map[string]any, status int, res resolver, location string) []dsl.Assertion {
+	const maxBodyAssertions = 3
+	raw, ok := responses[fmt.Sprintf("%d", status)]
+	if !ok {
+		raw, ok = responses["default"]
+	}
+	if !ok || raw == nil {
+		return nil
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var response responseObject
+	if err := json.Unmarshal(encoded, &response); err != nil {
+		return nil
+	}
+	responseSchema := response.Schema
+	if responseSchema == nil {
+		contentTypes := sortedMapKeys(response.Content)
+		preferred := preferredContentType(contentTypes)
+		if !strings.Contains(strings.ToLower(preferred), "json") {
+			return nil
+		}
+		media := response.Content[preferred]
+		responseSchema = &media.Schema
+	}
+	resolved := res.resolveSchema(*responseSchema, location+" response", nil)
+	required := resolved.Required
+	if len(required) == 0 {
+		return nil
+	}
+	sort.Strings(required)
+	assertions := make([]dsl.Assertion, 0, maxBodyAssertions)
+	for _, property := range required {
+		property = strings.TrimSpace(property)
+		if property == "" {
+			continue
+		}
+		if _, declared := resolved.Properties[property]; !declared {
+			continue
+		}
+		assertions = append(assertions, dsl.Assertion{Type: "body_contains", Value: `"` + property + `"`})
+		if len(assertions) == maxBodyAssertions {
+			break
+		}
+	}
+	return assertions
 }
 
 func requestBodyExample(body *requestBody, res resolver, location string) (string, string, []string) {
@@ -1100,6 +1169,22 @@ func applyOperationSecurity(action *dsl.Action, requirements []map[string][]stri
 						action.Headers = map[string]string{}
 					}
 					action.Headers[scheme.Name] = "{{env.API_KEY}}"
+					return
+				}
+				if strings.EqualFold(scheme.In, "query") && scheme.Name != "" {
+					separator := "?"
+					if strings.Contains(action.Target, "?") {
+						separator = "&"
+					}
+					action.Target += separator + escapeQueryKey(scheme.Name) + "={{env.API_KEY}}"
+					return
+				}
+				if strings.EqualFold(scheme.In, "cookie") && scheme.Name != "" {
+					if action.Headers == nil {
+						action.Headers = map[string]string{}
+					}
+					action.Headers["Cookie"] = scheme.Name + "={{env.API_KEY}}"
+					res.add(diag.Info, "OpenAPI security", location, "cookie API key "+scheme.Name+" was represented as a Cookie header placeholder")
 					return
 				}
 			case "oauth2", "openidconnect":

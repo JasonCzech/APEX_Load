@@ -16,6 +16,7 @@ type browserPageMetrics struct {
 	LCPMs                 float64 `json:"lcp_ms"`
 	CLSScore              float64 `json:"cls_score"`
 	INPMs                 float64 `json:"inp_ms"`
+	TTFBMs                float64 `json:"ttfb_ms"`
 	DOMContentLoadedMs    float64 `json:"dom_content_loaded_ms"`
 	DOMCompleteMs         float64 `json:"dom_complete_ms"`
 	LoadEventMs           float64 `json:"load_event_ms"`
@@ -76,6 +77,7 @@ func (b *Browser) capturePageMetrics(ctx context.Context, metrics *protocol.Clie
 			lcp_ms: observerMetrics.lcp || lcp,
 			cls_score: observerMetrics.cls || cls,
 			inp_ms: observerMetrics.inp || inp,
+			ttfb_ms: nav.responseStart && nav.requestStart ? Math.max(0, nav.responseStart - nav.requestStart) : 0,
 			dom_content_loaded_ms: nav.domContentLoadedEventEnd || 0,
 			dom_complete_ms: nav.domComplete || 0,
 			load_event_ms: nav.loadEventEnd || 0,
@@ -97,6 +99,7 @@ func applyBrowserPageMetrics(snapshot browserPageMetrics, metrics *protocol.Clie
 	metrics.LCPMs = snapshot.LCPMs
 	metrics.CLSScore = snapshot.CLSScore
 	metrics.INPMs = snapshot.INPMs
+	metrics.TTFBMs = snapshot.TTFBMs
 	metrics.DOMContentLoadedMs = snapshot.DOMContentLoadedMs
 	metrics.DOMCompleteMs = snapshot.DOMCompleteMs
 	metrics.LoadEventMs = snapshot.LoadEventMs

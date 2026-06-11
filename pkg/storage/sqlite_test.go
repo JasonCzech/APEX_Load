@@ -823,6 +823,7 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 	groups := []ScenarioScript{{
 		Order:          0,
 		ScriptID:       script.ID,
+		Role:           "observer",
 		VUsers:         25,
 		Initialization: "at_runtime",
 		Stages: []LoadStage{
@@ -845,6 +846,9 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 	}
 	if len(scripts[0].Stages) != 2 || scripts[0].Stages[0].Type != "ramp_up" || scripts[0].Stages[0].TargetVUsers != 25 {
 		t.Fatalf("scenario stages = %#v, want persisted staged load model", scripts[0].Stages)
+	}
+	if scripts[0].Role != "observer" {
+		t.Fatalf("scenario script role = %q, want observer round-tripped", scripts[0].Role)
 	}
 
 	record := &TestRecord{

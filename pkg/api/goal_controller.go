@@ -1,9 +1,43 @@
 package api
 
 import (
+	"fmt"
 	"math"
+	"strings"
 	"time"
 )
+
+// Group roles. Load groups generate protocol traffic and participate in
+// goal-based scaling; observer groups are small browser experience canaries
+// that continuously report Web Vitals and are pinned during scaling.
+const (
+	GroupRoleLoad     = "load"
+	GroupRoleObserver = "observer"
+)
+
+const (
+	// observerDefaultVUsers matches the recommended diagnostic canary density
+	// per generator (see BrowserBenchmarkDensityEnvelope).
+	observerDefaultVUsers = 2
+	// observerMaxVUsers caps an observer group at the diagnostic envelope —
+	// beyond this it is a browser load group and must carry the load role
+	// (and its benchmark-evidence obligations).
+	observerMaxVUsers = 10
+)
+
+func normalizeGroupRole(role string, protocol string, index int) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "", GroupRoleLoad:
+		return GroupRoleLoad, nil
+	case GroupRoleObserver, "canary":
+		if protocol != "browser" {
+			return "", fmt.Errorf("group[%d]: observer groups require a browser-protocol script (got %s); experience canaries observe through a real browser", index, protocol)
+		}
+		return GroupRoleObserver, nil
+	default:
+		return "", fmt.Errorf("group[%d]: role must be load or observer", index)
+	}
+}
 
 func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 	if config == nil {
@@ -42,6 +76,18 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 		value := *config.MaxVUsers
 		clone.MaxVUsers = &value
 	}
+	if config.MaxLCPMs != nil {
+		value := *config.MaxLCPMs
+		clone.MaxLCPMs = &value
+	}
+	if config.MaxINPMs != nil {
+		value := *config.MaxINPMs
+		clone.MaxINPMs = &value
+	}
+	if config.MaxCLS != nil {
+		value := *config.MaxCLS
+		clone.MaxCLS = &value
+	}
 	return &clone
 }
 
@@ -64,6 +110,9 @@ func hasGoalConfig(config *GoalConfig) bool {
 		config.MaxErrorCount != nil ||
 		config.MinVUsers != nil ||
 		config.MaxVUsers != nil ||
+		config.MaxLCPMs != nil ||
+		config.MaxINPMs != nil ||
+		config.MaxCLS != nil ||
 		config.StopOnSLABreach ||
 		config.StopOnMaxErrors ||
 		config.SLABreachWindow != ""
@@ -86,21 +135,30 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		status.LastScaleReason = state.lastScaleReason
 	}
 
-	latencyBreached := config.P95LatencyMs != nil && live.P95Ms > *config.P95LatencyMs
-	errorBreached := config.MaxErrorPct != nil && live.ErrorPct > *config.MaxErrorPct
-	serverProcessingBreached := hasServerTelemetryBreach(live, config.MaxAvgServerProcessingMs, func(summary *ServerTelemetrySummary) float64 {
-		return summary.AvgServerProcessingMs
-	})
-	transferBreached := hasServerTelemetryBreach(live, config.MaxAvgTransferMs, func(summary *ServerTelemetrySummary) float64 {
-		return summary.AvgTransferMs
-	})
-	errorCountBreached := config.MaxErrorCount != nil && live.TotalErrors > int64(*config.MaxErrorCount)
-	status.LatencyBreached = latencyBreached
-	status.ErrorBreached = errorBreached
-	status.ServerProcessingBreached = serverProcessingBreached
-	status.TransferBreached = transferBreached
-	status.ErrorCountBreached = errorCountBreached
-	status.BreachActive = latencyBreached || errorBreached || serverProcessingBreached || transferBreached
+	breaches := goalBreachSet{
+		latency: config.P95LatencyMs != nil && live.P95Ms > *config.P95LatencyMs,
+		errors:  config.MaxErrorPct != nil && live.ErrorPct > *config.MaxErrorPct,
+		serverProcessing: hasServerTelemetryBreach(live, config.MaxAvgServerProcessingMs, func(summary *ServerTelemetrySummary) float64 {
+			return summary.AvgServerProcessingMs
+		}),
+		transfer: hasServerTelemetryBreach(live, config.MaxAvgTransferMs, func(summary *ServerTelemetrySummary) float64 {
+			return summary.AvgTransferMs
+		}),
+		errorCount: config.MaxErrorCount != nil && live.TotalErrors > int64(*config.MaxErrorCount),
+		lcp:        hasBrowserVitalsBreach(live, config.MaxLCPMs, func(browser *BrowserLiveMetrics) float64 { return browser.AvgLCPMs }),
+		inp:        hasBrowserVitalsBreach(live, config.MaxINPMs, func(browser *BrowserLiveMetrics) float64 { return browser.AvgINPMs }),
+		cls:        hasBrowserVitalsBreach(live, config.MaxCLS, func(browser *BrowserLiveMetrics) float64 { return browser.AvgCLSScore }),
+	}
+	status.LatencyBreached = breaches.latency
+	status.ErrorBreached = breaches.errors
+	status.ServerProcessingBreached = breaches.serverProcessing
+	status.TransferBreached = breaches.transfer
+	status.ErrorCountBreached = breaches.errorCount
+	status.LCPBreached = breaches.lcp
+	status.INPBreached = breaches.inp
+	status.CLSBreached = breaches.cls
+	status.BreachActive = breaches.latency || breaches.errors || breaches.serverProcessing || breaches.transfer ||
+		breaches.lcp || breaches.inp || breaches.cls
 
 	if status.BreachActive {
 		if state != nil && state.breachStartedAt == nil {
@@ -114,9 +172,9 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		state.breachStartedAt = nil
 	}
 
-	if config.StopOnMaxErrors && errorCountBreached {
+	if config.StopOnMaxErrors && breaches.errorCount {
 		status.StopTriggered = true
-		status.StopReason = goalStopReason(latencyBreached, errorBreached, serverProcessingBreached, transferBreached, errorCountBreached)
+		status.StopReason = goalStopReason(breaches)
 		return goalControllerUpdate{
 			Status:     status,
 			ShouldStop: true,
@@ -128,7 +186,7 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		window := goalBreachWindow(config)
 		if time.Duration(status.BreachDurationSec)*time.Second >= window {
 			status.StopTriggered = true
-			status.StopReason = goalStopReason(latencyBreached, errorBreached, serverProcessingBreached, transferBreached, errorCountBreached)
+			status.StopReason = goalStopReason(breaches)
 			return goalControllerUpdate{
 				Status:     status,
 				ShouldStop: true,
@@ -408,22 +466,55 @@ func goalBreachWindow(config *GoalConfig) time.Duration {
 	return window
 }
 
-func goalStopReason(latencyBreached bool, errorBreached bool, serverProcessingBreached bool, transferBreached bool, errorCountBreached bool) string {
+// goalBreachSet captures which SLA thresholds are currently exceeded so stop
+// decisions and reason strings derive from one evaluation pass.
+type goalBreachSet struct {
+	latency          bool
+	errors           bool
+	serverProcessing bool
+	transfer         bool
+	errorCount       bool
+	lcp              bool
+	inp              bool
+	cls              bool
+}
+
+func (b goalBreachSet) vitals() bool {
+	return b.lcp || b.inp || b.cls
+}
+
+// hasBrowserVitalsBreach evaluates one Web Vitals threshold against the
+// aggregated browser metrics. No browser samples means no breach — vitals
+// thresholds only bind once browser VUsers or canaries report data.
+func hasBrowserVitalsBreach(live *LiveMetrics, threshold *float64, pickValue func(browser *BrowserLiveMetrics) float64) bool {
+	if live == nil || threshold == nil || live.Browser == nil || live.Browser.Samples == 0 {
+		return false
+	}
+	return pickValue(live.Browser) > *threshold
+}
+
+func goalStopReason(breaches goalBreachSet) string {
 	switch {
-	case errorCountBreached:
+	case breaches.errorCount:
 		return "max error count reached"
-	case latencyBreached && errorBreached:
+	case breaches.latency && breaches.errors:
 		return "latency and error SLA breached"
-	case serverProcessingBreached && transferBreached:
+	case breaches.serverProcessing && breaches.transfer:
 		return "server processing and transfer SLA breached"
-	case latencyBreached:
+	case breaches.latency:
 		return "p95 latency SLA breached"
-	case errorBreached:
+	case breaches.errors:
 		return "error rate SLA breached"
-	case serverProcessingBreached:
+	case breaches.serverProcessing:
 		return "server processing SLA breached"
-	case transferBreached:
+	case breaches.transfer:
 		return "transfer SLA breached"
+	case breaches.lcp:
+		return "LCP experience SLA breached"
+	case breaches.inp:
+		return "INP experience SLA breached"
+	case breaches.cls:
+		return "CLS experience SLA breached"
 	default:
 		return "SLA breached"
 	}
@@ -498,11 +589,49 @@ func distributeTargetVUsers(groups []TestGroup, current map[string]int, desiredT
 }
 
 func distributeTargetVUsersForGoal(groups []TestGroup, current map[string]int, desiredTotal int, goalTargets map[string]GoalTargetStatus) map[string]int {
-	weighted := distributeTargetVUsersByWeights(groups, desiredTotal, goalTargets)
-	if len(weighted) > 0 {
-		return weighted
+	loadGroups, observerTargets := splitObserverGroups(groups, current)
+	loadTotal := desiredTotal
+	for _, vusers := range observerTargets {
+		loadTotal -= vusers
 	}
-	return distributeTargetVUsers(groups, current, desiredTotal)
+	if loadTotal < 0 {
+		loadTotal = 0
+	}
+
+	targets := distributeTargetVUsersByWeights(loadGroups, loadTotal, goalTargets)
+	if len(targets) == 0 {
+		targets = distributeTargetVUsers(loadGroups, current, loadTotal)
+	}
+	if len(observerTargets) == 0 {
+		return targets
+	}
+	if targets == nil {
+		targets = make(map[string]int, len(observerTargets))
+	}
+	for name, vusers := range observerTargets {
+		targets[name] = vusers
+	}
+	return targets
+}
+
+// splitObserverGroups separates load groups from observer canaries. Observers
+// are pinned at their current allocation: scaling the load up or down must not
+// multiply diagnostic browser sessions or starve experience monitoring.
+func splitObserverGroups(groups []TestGroup, current map[string]int) ([]TestGroup, map[string]int) {
+	loadGroups := make([]TestGroup, 0, len(groups))
+	observerTargets := make(map[string]int)
+	for _, group := range groups {
+		if group.Role == GroupRoleObserver {
+			pinned := current[group.Name]
+			if pinned <= 0 {
+				pinned = group.VUsers
+			}
+			observerTargets[group.Name] = pinned
+			continue
+		}
+		loadGroups = append(loadGroups, group)
+	}
+	return loadGroups, observerTargets
 }
 
 func distributeTargetVUsersByWeights(groups []TestGroup, desiredTotal int, goalTargets map[string]GoalTargetStatus) map[string]int {

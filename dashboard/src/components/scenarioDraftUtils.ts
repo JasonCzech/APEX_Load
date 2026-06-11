@@ -70,6 +70,7 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
     ? test.groups.map((group) => ({
       name: group.name,
       scriptId: group.script_id,
+      role: group.role,
       vusers: group.vusers,
       rampUp: group.ramp_up || '',
       rampDown: group.ramp_down || '',

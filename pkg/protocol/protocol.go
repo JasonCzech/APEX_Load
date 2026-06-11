@@ -136,6 +136,7 @@ type ClientMetrics struct {
 	LCPMs                 float64 `json:"lcp_ms,omitempty"`
 	CLSScore              float64 `json:"cls_score,omitempty"`
 	INPMs                 float64 `json:"inp_ms,omitempty"`
+	TTFBMs                float64 `json:"ttfb_ms,omitempty"`
 	DOMContentLoadedMs    float64 `json:"dom_content_loaded_ms,omitempty"`
 	DOMCompleteMs         float64 `json:"dom_complete_ms,omitempty"`
 	LoadEventMs           float64 `json:"load_event_ms,omitempty"`

@@ -51,6 +51,7 @@ func (b *Browser) browserContextOptions() playwright.BrowserNewContextOptions {
 	if b.userAgent != "" {
 		contextOptions.UserAgent = playwright.String(b.userAgent)
 	}
+	b.applyHARCaptureOptions(&contextOptions)
 	return contextOptions
 }
 

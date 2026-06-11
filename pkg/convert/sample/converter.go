@@ -1,6 +1,7 @@
 package sample
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -14,8 +15,10 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 type ImportRequest struct {
@@ -84,14 +87,8 @@ type response struct {
 	Body    string
 }
 
-var sensitiveHeaders = map[string]bool{
-	"authorization":       true,
-	"proxy-authorization": true,
-	"cookie":              true,
-	"set-cookie":          true,
-	"x-api-key":           true,
-	"api-key":             true,
-}
+// Sensitive header detection is shared with the paramize package so every
+// importer agrees on which headers carry credentials (see paramize.SensitiveHeaderKey).
 
 const (
 	rawHTTPRequestDelimiter  = "\n\n### APEXLOAD REQUEST ###\n\n"
@@ -202,6 +199,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		},
 	}
 	sourceFiles := sampleSourceFiles(format, req.Content, req.ResponseContent)
+	redactedSourceFiles := redactSourceReviewSecrets(sourceFiles, exchanges)
 	sourceLocations := sampleSourceLocations(format, req.Content, req.ResponseContent, exchanges)
 	sourceMappings := make([]sourceview.Mapping, 0, len(exchanges))
 
@@ -320,6 +318,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	result.Unsupported = diagnostics.Items()
 	result.Stats.CorrelationsDetected = len(correlations)
 	result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
+	if result.SourceReview != nil {
+		for index := range result.SourceReview.SourceFiles {
+			if redactedSourceFiles[result.SourceReview.SourceFiles[index].Path] {
+				result.SourceReview.SourceFiles[index].Redacted = true
+			}
+		}
+	}
 	return result, nil
 }
 
@@ -1581,7 +1586,7 @@ func sanitizeHeaders(input map[string]string) map[string]string {
 		return input
 	}
 	for key := range input {
-		if sensitiveHeaders[strings.ToLower(key)] {
+		if paramize.SensitiveHeaderKey(key) {
 			input[key] = "{{secret." + sanitizeIdentifier(strings.ToLower(key)) + "}}"
 		}
 	}
@@ -1589,27 +1594,98 @@ func sanitizeHeaders(input map[string]string) map[string]string {
 }
 
 func sanitizeBody(body string) string {
-	trimmed := strings.TrimSpace(body)
-	if trimmed == "" {
-		return body
+	return paramize.SanitizeBodySecrets(body)
+}
+
+// redactSourceReviewSecrets scrubs credentials from the preserved source text
+// shown in the Source Comparison panel. This runs regardless of the
+// sanitize_sensitive option: that option controls whether the generated
+// actions keep raw values, not whether secrets persist in script metadata.
+// Returns the set of file names whose content was redacted.
+func redactSourceReviewSecrets(files map[string]string, exchanges []exchange) map[string]bool {
+	redacted := make(map[string]bool, len(files))
+	for name, content := range files {
+		next, changed := redactExchangeSecrets(content, exchanges)
+		if strings.HasSuffix(strings.ToLower(name), ".har") {
+			if scrubbed, err := scrub.HAR([]byte(next), scrub.Policy{}); err == nil {
+				next = string(scrubbed)
+				changed = true
+			}
+		}
+		if changed {
+			files[name] = next
+			redacted[name] = true
+		}
 	}
-	jsonSensitive := regexp.MustCompile(`(?i)("(?:password|token|access_token|refresh_token|api_key)"\s*:\s*")([^"]+)(")`)
-	formSensitive := regexp.MustCompile(`(?i)((?:^|[&\s])(?:password|token|access_token|refresh_token|api_key)=)([^&\s]+)`)
-	result := jsonSensitive.ReplaceAllStringFunc(body, func(segment string) string {
-		match := jsonSensitive.FindStringSubmatch(segment)
-		if len(match) < 4 || strings.Contains(match[2], "{{") {
-			return segment
+	return redacted
+}
+
+func redactExchangeSecrets(content string, exchanges []exchange) (string, bool) {
+	original := content
+	for _, ex := range exchanges {
+		content = redactSensitiveHeaderValues(content, ex.Headers)
+		if ex.BodyEncoding == "" {
+			content = redactBodySecrets(content, ex.Body)
 		}
-		return match[1] + "{{secret.redacted}}" + match[3]
-	})
-	result = formSensitive.ReplaceAllStringFunc(result, func(segment string) string {
-		match := formSensitive.FindStringSubmatch(segment)
-		if len(match) < 3 || strings.Contains(match[2], "{{") {
-			return segment
+		if ex.Response != nil {
+			content = redactSensitiveHeaderValues(content, ex.Response.Headers)
+			content = redactBodySecrets(content, ex.Response.Body)
 		}
-		return match[1] + "{{secret.redacted}}"
-	})
-	return result
+	}
+	// Catch-all for secret fields that did not round-trip through a parsed
+	// exchange verbatim (re-serialized bodies, query strings, ...).
+	content = paramize.SanitizeBodySecrets(content)
+	return content, content != original
+}
+
+func redactSensitiveHeaderValues(content string, headers map[string]string) string {
+	for key, value := range headers {
+		if !paramize.SensitiveHeaderKey(key) || strings.TrimSpace(value) == "" {
+			continue
+		}
+		content = replaceRawAndJSONEscaped(content, value, "[REDACTED]")
+	}
+	return content
+}
+
+func redactBodySecrets(content string, body string) string {
+	if strings.TrimSpace(body) == "" {
+		return content
+	}
+	sanitized := paramize.SanitizeBodySecrets(body)
+	if sanitized == body {
+		return content
+	}
+	return replaceRawAndJSONEscaped(content, body, sanitized)
+}
+
+// replaceRawAndJSONEscaped replaces both the literal value and its
+// JSON-string-escaped form, so redaction reaches secrets embedded inside JSON
+// containers such as HAR header entries and postData text.
+func replaceRawAndJSONEscaped(content string, value string, replacement string) string {
+	content = strings.ReplaceAll(content, value, replacement)
+	escapedValue := jsonEscapeString(value)
+	if escapedValue != "" && escapedValue != value {
+		content = strings.ReplaceAll(content, escapedValue, jsonEscapeString(replacement))
+	}
+	return content
+}
+
+// jsonEscapeString returns the JSON string encoding of value without the
+// surrounding quotes and without HTML escaping, matching how HAR files embed
+// string values.
+func jsonEscapeString(value string) string {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return ""
+	}
+	encoded := strings.TrimRight(buf.String(), "\n")
+	if len(encoded) < 2 {
+		return ""
+	}
+	return encoded[1 : len(encoded)-1]
 }
 
 func applyCorrelationVars(value string, vars map[string]string) string {

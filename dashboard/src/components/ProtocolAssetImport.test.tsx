@@ -11,6 +11,7 @@ import ProtocolAssetImport from './ProtocolAssetImport'
 const apiMock = {
   importDevWeb: vi.fn(),
   importHAR: vi.fn(),
+  importBrowserRecording: vi.fn(),
   importOpenAPI: vi.fn(),
   importPostman: vi.fn(),
   importWSDL: vi.fn(),
@@ -113,11 +114,73 @@ describe('ProtocolAssetImport', () => {
         extractors: 0,
         correlations_detected: 0,
       },
-      summary: {},
+      summary: {
+        artifact_mode: 'design_har_pair',
+        artifact_sensitivity: 'scrubbed',
+        retention_days: 7,
+        governance: {
+          artifact_mode: 'design_har_pair',
+          sensitivity: 'scrubbed',
+          retention_days: 7,
+          redaction_enabled: true,
+          body_capture_required: true,
+          scope: 'http_family_only',
+        },
+        har_diff: {
+          artifact_mode: 'design_har_pair',
+          compared: true,
+          baseline_correlations: 1,
+          comparison_correlations: 1,
+          dynamic_candidates: 1,
+          static_candidates: 0,
+          unmatched_candidates: 0,
+          classifications: [
+            { name: 'corr_cartid', classification: 'dynamic', diff_confidence: 0.95, reason: 'changed between recordings' },
+          ],
+        },
+      },
       source_review: {
         source_files: [{ path: 'sample.har', language: 'json', content: '{"log":{"entries":[]}}' }],
         mappings: [{ id: 'har-entry', source_file: 'sample.har', start_line: 1, function: 'har_entry', target_path: 'actions[0]', target_name: 'GET api orders', target_kind: 'action', status: 'converted' }],
       },
+    })
+    apiMock.importBrowserRecording.mockResolvedValue({
+      scripts: [],
+      script: {
+        name: 'Imported Chrome Recording',
+        version: '1.0',
+        protocol: 'browser',
+        config: { base_url: 'https://shop.example.test' },
+        actions: [
+          { name: 'Navigate to /login', type: 'browser_navigate', target: '/login' },
+          {
+            name: 'Click Sign in',
+            type: 'browser_click',
+            selector: "[data-testid='login-btn']",
+            target: "[data-testid='login-btn']",
+            metadata: {
+              source_selector_candidates: [
+                { kind: 'css', value: "[data-testid='login-btn']", confidence: 95, reason: 'Chrome Recorder CSS selector.' },
+                { kind: 'role', value: 'role=button[name="Sign in"]', confidence: 72, reason: 'Chrome Recorder ARIA selector with explicit role.' },
+              ],
+              source_selector_confidence: 95,
+            },
+          },
+        ],
+      },
+      warnings: [],
+      unsupported_elements: ['chrome_recorder_step:scroll (step 4) [warning]: not convertible'],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: {
+        format: 'chrome_devtools_recorder',
+        total_steps: 4,
+        converted_actions: 2,
+        skipped_steps: 1,
+      },
+      summary: { import_mode: 'chrome_devtools_recorder', execution_mode: 'apexload_browser' },
     })
     apiMock.importWSDL.mockResolvedValue({
       scripts: [],
@@ -242,12 +305,25 @@ describe('ProtocolAssetImport', () => {
     if (!fileInput) return
 
     const file = new File(['{"log":{"entries":[]}}'], 'capture.har', { type: 'application/json' })
+    const comparisonFile = new File(['{"log":{"entries":[]}}'], 'capture-2.har', { type: 'application/json' })
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
         value: [file],
       })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const fileInputs = container.querySelectorAll('input[type="file"]')
+    const comparisonInput = fileInputs[1] as HTMLInputElement | undefined
+    expect(comparisonInput).toBeDefined()
+    if (!comparisonInput) return
+    await act(async () => {
+      Object.defineProperty(comparisonInput, 'files', {
+        configurable: true,
+        value: [comparisonFile],
+      })
+      comparisonInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
     const includeStatic = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('Include static assets')) as HTMLInputElement | undefined
@@ -270,8 +346,52 @@ describe('ProtocolAssetImport', () => {
     expect(apiMock.importHAR).toHaveBeenCalledWith(file, expect.objectContaining({
       project_id: 'project-1',
       include_static_assets: true,
+      secondary_file: comparisonFile,
+      artifact_mode: 'design_har_pair',
+      retention_days: 7,
+      redact_sensitive: true,
     }))
     expect(container.textContent).toContain('filtered assets')
+    expect(container.textContent).toContain('HAR Artifact Review')
+    expect(container.textContent).toContain('dynamic candidates')
+  })
+
+  it('converts browser recordings and renders ranked selector candidates', async () => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="recorder-export" projectId="project-1" />)
+    })
+
+    expect(container.textContent).toContain('Import Browser Recording')
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+
+    const file = new File(['{"title":"Login","steps":[]}'], 'login.json', { type: 'application/json' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Recording'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importBrowserRecording).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
+    expect(container.textContent).toContain('Review Generated Script')
+    expect(container.textContent).toContain('Selector Candidates')
+    expect(container.textContent).toContain("[data-testid='login-btn']")
+    expect(container.textContent).toContain('role=button[name="Sign in"]')
+    expect(container.textContent).toContain('95')
+    expect(container.textContent).toContain('chrome_recorder_step:scroll')
   })
 
   it('converts WSDL files with SOAP-specific options and renders the SOAP review', async () => {

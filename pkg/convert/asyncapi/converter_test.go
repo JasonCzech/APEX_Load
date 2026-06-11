@@ -287,3 +287,106 @@ func TestSupportMatrix(t *testing.T) {
 		t.Fatal("support matrix notes should not be empty")
 	}
 }
+
+func TestConvertAsyncAPIWiresCorrelationIDs(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "asyncapi": "2.6.0",
+  "info": {"title": "Orders", "version": "1.0.0"},
+  "servers": {"prod": {"url": "broker:9092", "protocol": "kafka"}},
+  "channels": {
+    "order.requests": {
+      "publish": {
+        "operationId": "sendOrderRequest",
+        "message": {
+          "correlationId": {"location": "$message.payload#/correlationId"},
+          "payload": {
+            "type": "object",
+            "properties": {
+              "correlationId": {"type": "string"},
+              "sku": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "order.replies": {
+      "subscribe": {
+        "operationId": "receiveOrderReply",
+        "message": {
+          "correlationId": {"location": "$message.payload#/correlationId"},
+          "payload": {
+            "type": "object",
+            "properties": {
+              "correlationId": {"type": "string"},
+              "status": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+
+	var produce, consume *dsl.Action
+	for i := range result.Script.Actions {
+		switch result.Script.Actions[i].Type {
+		case "kafka_produce":
+			produce = &result.Script.Actions[i]
+		case "kafka_consume":
+			consume = &result.Script.Actions[i]
+		}
+	}
+	if produce == nil || consume == nil {
+		t.Fatalf("expected produce + consume actions, got %+v", result.Script.Actions)
+	}
+
+	// Produce side: the declared correlation field sends a unique uuid, not a
+	// shared CSV column.
+	if !strings.Contains(produce.Body, `"correlationId": "{{fn.uuid()}}"`) {
+		t.Fatalf("produce body missing fn.uuid correlation value:\n%s", produce.Body)
+	}
+	if strings.Contains(produce.Body, "{{data.asyncapi.correlationid}}") {
+		t.Fatalf("produce correlation field still bound to data column:\n%s", produce.Body)
+	}
+
+	// Consume side: an extractor captures the correlation id for reuse.
+	if len(consume.Extractors) != 1 {
+		t.Fatalf("consume extractors = %+v, want 1", consume.Extractors)
+	}
+	extractor := consume.Extractors[0]
+	if extractor.Source != "body" || extractor.Type != "jsonpath" || extractor.Expression != "$.correlationId" {
+		t.Fatalf("consume extractor = %+v", extractor)
+	}
+
+	if result.Stats.MessagesWithCorrelation != 2 {
+		t.Fatalf("messages_with_correlation = %d, want 2", result.Stats.MessagesWithCorrelation)
+	}
+}
+
+func TestParseCorrelationLocation(t *testing.T) {
+	tests := []struct {
+		location string
+		source   string
+		path     string
+		ok       bool
+	}{
+		{"$message.payload#/correlationId", "payload", "correlationId", true},
+		{"$message.payload#/meta/requestId", "payload", "meta/requestId", true},
+		{"$message.header#/x-correlation-id", "header", "x-correlation-id", true},
+		{"$message.payload#/", "", "", false},
+		{"unknown", "", "", false},
+		{"", "", "", false},
+	}
+	for _, tt := range tests {
+		source, path, ok := parseCorrelationLocation(tt.location)
+		if source != tt.source || path != tt.path || ok != tt.ok {
+			t.Errorf("parseCorrelationLocation(%q) = (%q, %q, %v), want (%q, %q, %v)",
+				tt.location, source, path, ok, tt.source, tt.path, tt.ok)
+		}
+	}
+}

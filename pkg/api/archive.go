@@ -387,6 +387,7 @@ type BrowserEngineLiveMetrics struct {
 	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
 	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
 	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgTTFBMs            float64 `json:"avg_ttfb_ms,omitempty"`
 	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
@@ -402,6 +403,7 @@ type BrowserPlatformLiveMetrics struct {
 	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
 	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
 	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgTTFBMs            float64 `json:"avg_ttfb_ms,omitempty"`
 	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
@@ -3091,6 +3093,7 @@ func mergeReportBrowserMetrics(summary *BrowserLiveMetrics, metrics *protocol.Cl
 	summary.AvgLCPMs += metrics.LCPMs
 	summary.AvgCLSScore += metrics.CLSScore
 	summary.AvgINPMs += metrics.INPMs
+	summary.AvgTTFBMs += metrics.TTFBMs
 	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
@@ -3107,6 +3110,7 @@ func finalizeReportBrowserMetrics(summary *BrowserLiveMetrics) {
 	summary.AvgLCPMs /= divisor
 	summary.AvgCLSScore /= divisor
 	summary.AvgINPMs /= divisor
+	summary.AvgTTFBMs /= divisor
 	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
@@ -3129,6 +3133,7 @@ func mergeReportBrowserDeviceMetrics(summary *BrowserDeviceLiveMetrics, metrics 
 	summary.AvgLCPMs += metrics.LCPMs
 	summary.AvgCLSScore += metrics.CLSScore
 	summary.AvgINPMs += metrics.INPMs
+	summary.AvgTTFBMs += metrics.TTFBMs
 	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
@@ -3150,6 +3155,7 @@ func mergeReportBrowserPlatformMetrics(summary *BrowserPlatformLiveMetrics, metr
 	summary.AvgLCPMs += metrics.LCPMs
 	summary.AvgCLSScore += metrics.CLSScore
 	summary.AvgINPMs += metrics.INPMs
+	summary.AvgTTFBMs += metrics.TTFBMs
 	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
@@ -3166,6 +3172,7 @@ func mergeReportBrowserEngineMetrics(summary *BrowserEngineLiveMetrics, metrics 
 	summary.AvgLCPMs += metrics.LCPMs
 	summary.AvgCLSScore += metrics.CLSScore
 	summary.AvgINPMs += metrics.INPMs
+	summary.AvgTTFBMs += metrics.TTFBMs
 	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
@@ -3182,6 +3189,7 @@ func finalizeReportBrowserEngineMetrics(summary *BrowserEngineLiveMetrics) {
 	summary.AvgLCPMs /= divisor
 	summary.AvgCLSScore /= divisor
 	summary.AvgINPMs /= divisor
+	summary.AvgTTFBMs /= divisor
 	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
@@ -3198,6 +3206,7 @@ func finalizeReportBrowserPlatformMetrics(summary *BrowserPlatformLiveMetrics) {
 	summary.AvgLCPMs /= divisor
 	summary.AvgCLSScore /= divisor
 	summary.AvgINPMs /= divisor
+	summary.AvgTTFBMs /= divisor
 	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
@@ -3214,6 +3223,7 @@ func finalizeReportBrowserDeviceMetrics(summary *BrowserDeviceLiveMetrics) {
 	summary.AvgLCPMs /= divisor
 	summary.AvgCLSScore /= divisor
 	summary.AvgINPMs /= divisor
+	summary.AvgTTFBMs /= divisor
 	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor

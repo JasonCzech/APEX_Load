@@ -498,6 +498,10 @@ type ScenarioScript struct {
 	Stages         []LoadStage `json:"stages,omitempty"`
 	Iterations     *int        `json:"iterations,omitempty"`
 	Initialization string      `json:"initialization,omitempty"`
+	// Role distinguishes load groups ("load", default) from browser experience
+	// canaries ("observer"); validated against the script protocol at test
+	// creation.
+	Role string `json:"role,omitempty"`
 }
 
 type LoadStage struct {

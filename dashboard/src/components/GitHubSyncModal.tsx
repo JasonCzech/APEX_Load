@@ -10,8 +10,10 @@ import {
   GitHubScriptStatus,
   StoredScript,
 } from '../types'
+import { type Parameterization } from '../types/scriptImports'
 import { ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import ParameterizationReview from './ParameterizationReview'
 
 type GitHubSyncModalProps = {
   mode: 'push' | 'import'
@@ -55,6 +57,9 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
   // Import-only browse state.
   const [browsePath, setBrowsePath] = useState('')
   const [entries, setEntries] = useState<GitHubContentEntry[]>([])
+  // Import-only review state: a fetched draft pending parameterization review.
+  const [importDraft, setImportDraft] = useState<ScriptDefinition | null>(null)
+  const [importParameterization, setImportParameterization] = useState<Parameterization | null>(null)
 
   // Push-only status.
   const [status, setStatus] = useState<GitHubScriptStatus | null>(null)
@@ -155,6 +160,12 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
     }
   }
 
+  async function saveImportDraft(draft: ScriptDefinition) {
+    const saved = await scriptApi.createScript(draft, projectId)
+    onImported?.(saved)
+    onClose()
+  }
+
   async function doImport() {
     if (!selectedRepo || !path.trim()) {
       setError('Select a script file to import.')
@@ -175,11 +186,29 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
         setError('GitHub returned no importable script.')
         return
       }
-      const saved = await scriptApi.createScript(draft, projectId)
-      onImported?.(saved)
-      onClose()
+      const parameterization = result.parameterization
+      if (parameterization && parameterization.suggestions.length > 0) {
+        // Pause before saving so the user can review parameterization advice.
+        setImportDraft(draft)
+        setImportParameterization(parameterization)
+        return
+      }
+      await saveImportDraft(draft)
     } catch (err) {
       setError(getErrorMessage(err, 'Import failed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function doSaveReviewedImport() {
+    if (!importDraft) return
+    setLoading(true)
+    setError('')
+    try {
+      await saveImportDraft(importDraft)
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to save imported script'))
     } finally {
       setLoading(false)
     }
@@ -246,6 +275,12 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
                 <label><input type="radio" name="gh-strategy" checked={strategy === 'pr'} onChange={() => setStrategy('pr')} /> Pull request</label>
               </div>
             </>
+          ) : importDraft && importParameterization ? (
+            <ParameterizationReview
+              parameterization={importParameterization}
+              script={importDraft}
+              onApplied={parameterizedScript => setImportDraft(parameterizedScript)}
+            />
           ) : (
             <div className="settings-release-list" style={{ maxHeight: 240, overflow: 'auto' }}>
               {browsePath && (
@@ -278,6 +313,10 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
             {mode === 'push' ? (
               <button className="btn btn-primary" type="button" onClick={() => void doPush()} disabled={loading || !selectedRepo}>
                 {loading ? 'Pushing…' : strategy === 'pr' ? 'Open Pull Request' : 'Commit'}
+              </button>
+            ) : importDraft ? (
+              <button className="btn btn-primary" type="button" onClick={() => void doSaveReviewedImport()} disabled={loading}>
+                {loading ? 'Saving…' : 'Save Script'}
               </button>
             ) : (
               <button className="btn btn-primary" type="button" onClick={() => void doImport()} disabled={loading || !path.trim()}>

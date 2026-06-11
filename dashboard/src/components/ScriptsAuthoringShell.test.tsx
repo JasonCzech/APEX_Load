@@ -108,6 +108,7 @@ function createActions(overrides: Partial<ScriptsCreateOptionActions> = {}): Scr
     openJavaHttpImport: vi.fn(),
     openDevWebImport: vi.fn(),
     openHARImport: vi.fn(),
+    openBrowserRecordingImport: vi.fn(),
     openOpenAPIImport: vi.fn(),
     openPostmanImport: vi.fn(),
     openWSDLImport: vi.fn(),

@@ -96,6 +96,7 @@ GET    /api/v1/scripts/{id}/download — Download script as JSON file
 POST   /api/v1/scripts/import/enterprise-script-archive — Upload LR .zip, get converted DSL
 POST   /api/v1/scripts/import/asyncapi — Upload AsyncAPI 2.x/3.x spec, get converted Kafka DSL
 GET    /api/v1/scripts/import/asyncapi/support-matrix — AsyncAPI import coverage matrix
+POST   /api/v1/scripts/import/parameterize/apply — Apply approved parameterization suggestions to an import draft
 POST   /api/v1/scripts/import/github — Pull a script JSON file from GitHub (GHES), get import-review draft
 POST   /api/v1/scripts/{id}/github/push — Push a script to GitHub (direct commit or PR); idempotent via link
 GET    /api/v1/scripts/{id}/github/status — GitHub link + drift status (local hash vs remote sha)

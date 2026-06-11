@@ -52,6 +52,9 @@ func TestBrowserApplyConfigOverrides(t *testing.T) {
 		"browser_touch_mode":                    true,
 		"browser_orientation":                   " portrait ",
 		"browser_client_metrics":                true,
+		"browser_experience_canary":             true,
+		"browser_har_capture_policy":            "on_sla_breach",
+		"browser_har_sla_breach_ms":             float64(1750),
 		"browser_capture_screenshots":           "per_action",
 		"browser_viewport_width":                800,
 		"browser_viewport_height":               600,
@@ -81,6 +84,9 @@ func TestBrowserApplyConfigOverrides(t *testing.T) {
 	}
 	if !b.touchMode || b.orientation != "portrait" || !b.clientMetricsEnabled || b.captureScreenshots != "per_action" {
 		t.Fatalf("interaction config = touch:%v orientation:%q metrics:%v screenshots:%q", b.touchMode, b.orientation, b.clientMetricsEnabled, b.captureScreenshots)
+	}
+	if !b.experienceCanary || !b.traceparentEnabled || b.harCapturePolicy != HARCaptureOnSLABreach || b.harSLABreachThreshold != 1750*time.Millisecond {
+		t.Fatalf("canary config = canary:%v traceparent:%v har:%q threshold:%v", b.experienceCanary, b.traceparentEnabled, b.harCapturePolicy, b.harSLABreachThreshold)
 	}
 	if b.viewportW != 800 || b.viewportH != 600 || b.deviceScaleFactor != 2.5 || b.cpuThrottleRate != 3 {
 		t.Fatalf("viewport/perf config = %dx%d scale %v cpu %v", b.viewportW, b.viewportH, b.deviceScaleFactor, b.cpuThrottleRate)

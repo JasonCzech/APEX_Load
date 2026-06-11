@@ -124,14 +124,16 @@ type ReplayActionEvent struct {
 }
 
 type ReplayRuntimeProfile struct {
-	Name            string `json:"name,omitempty"`
-	CaptureMode     string `json:"capture_mode,omitempty"`
-	LogLevel        string `json:"log_level,omitempty"`
-	IgnoreThinkTime bool   `json:"ignore_think_time,omitempty"`
-	BrowserEngine   string `json:"browser_engine,omitempty"`
-	DeviceProfile   string `json:"device_profile,omitempty"`
-	Headless        *bool  `json:"headless,omitempty"`
-	FailurePolicy   string `json:"failure_policy,omitempty"`
+	Name             string `json:"name,omitempty"`
+	CaptureMode      string `json:"capture_mode,omitempty"`
+	LogLevel         string `json:"log_level,omitempty"`
+	IgnoreThinkTime  bool   `json:"ignore_think_time,omitempty"`
+	BrowserEngine    string `json:"browser_engine,omitempty"`
+	DeviceProfile    string `json:"device_profile,omitempty"`
+	Headless         *bool  `json:"headless,omitempty"`
+	FailurePolicy    string `json:"failure_policy,omitempty"`
+	ExperienceCanary bool   `json:"experience_canary,omitempty"`
+	HARCapturePolicy string `json:"har_capture_policy,omitempty"`
 }
 
 type ReplayArtifactManifest struct {
@@ -604,8 +606,23 @@ func buildReplayRuntimeProfile(script *dsl.Script, opts ReplayOptions) ReplayRun
 				profile.FailurePolicy = "stop_on_error"
 			}
 		}
+		if !profile.ExperienceCanary {
+			profile.ExperienceCanary = script.Config.Browser.ExperienceCanary
+		}
+		if strings.TrimSpace(profile.HARCapturePolicy) == "" {
+			profile.HARCapturePolicy = firstNonEmpty(script.Config.Browser.HARCapturePolicy, script.Config.Browser.HARCapture)
+		}
 	}
 	return profile
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func buildReplayArtifactManifest(

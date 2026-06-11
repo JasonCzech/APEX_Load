@@ -11,6 +11,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -739,26 +740,9 @@ func isStaticBrowserResource(resourceType string, rawURL string) bool {
 }
 
 func looksDynamicValue(key string, value string) bool {
-	lowerKey := strings.ToLower(key)
-	if strings.Contains(lowerKey, "token") || strings.Contains(lowerKey, "session") || strings.Contains(lowerKey, "csrf") || strings.Contains(lowerKey, "nonce") {
-		return true
-	}
-	value = strings.TrimSpace(value)
-	if len(value) >= 24 {
-		return true
-	}
-	if strings.Count(value, "-") >= 4 {
-		return true
-	}
-	return false
+	return paramize.LooksDynamicValue(key, value)
 }
 
 func looksParameterName(key string) bool {
-	lower := strings.ToLower(strings.TrimSpace(key))
-	for _, marker := range []string{"id", "user", "customer", "account", "order", "sku", "email", "zip"} {
-		if lower == marker || strings.HasSuffix(lower, "_"+marker) || strings.Contains(lower, marker+"_") {
-			return true
-		}
-	}
-	return false
+	return paramize.LooksParameterName(key)
 }

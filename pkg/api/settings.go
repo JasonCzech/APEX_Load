@@ -250,6 +250,13 @@ type ArchiveRetentionSettings struct {
 	Enabled              bool                     `json:"enabled"`
 	DefaultRetentionDays int                      `json:"default_retention_days"`
 	Policies             []ArchiveRetentionPolicy `json:"policies,omitempty"`
+	// HARRetentionDays governs scrubbed browser HAR diagnostic artifacts
+	// (har_capture policies). HAR-with-bodies is the most sensitive artifact
+	// class, so it defaults shorter than run archives (7 days).
+	HARRetentionDays int `json:"har_retention_days,omitempty"`
+	// HARArtifactDir is where runtime HAR artifacts are swept from. Empty uses
+	// the OS temp directory, the browser protocol's default artifact location.
+	HARArtifactDir string `json:"har_artifact_dir,omitempty"`
 }
 
 type ArchiveRetentionPolicy struct {

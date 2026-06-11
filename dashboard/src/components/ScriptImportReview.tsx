@@ -1,7 +1,8 @@
 import { type ReactNode } from 'react'
 
-import { type ImportReviewSection } from '../types/scriptImports'
+import { type ImportReviewSection, type Parameterization, type ParameterizationDiff } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
+import ParameterizationReview from './ParameterizationReview'
 import './ScriptImportReview.css'
 
 const severityRank: Record<string, number> = {
@@ -19,6 +20,8 @@ interface Props {
   warningsTitle?: string
   unsupportedElements?: string[]
   reviewSections?: ImportReviewSection[]
+  parameterization?: Parameterization
+  onParameterizationApplied?: (script: ScriptDefinition, diffs: ParameterizationDiff[]) => void
   saving?: boolean
   saveDisabled?: boolean
   saveLabel?: string
@@ -39,6 +42,8 @@ export default function ScriptImportReview({
   warningsTitle = 'Warnings',
   unsupportedElements = [],
   reviewSections = [],
+  parameterization,
+  onParameterizationApplied,
   saving = false,
   saveDisabled = false,
   saveLabel = 'Save To Script Library',
@@ -78,6 +83,14 @@ export default function ScriptImportReview({
       </div>
 
       {children}
+
+      {parameterization && onParameterizationApplied && (parameterization.suggestions?.length ?? 0) > 0 && (
+        <ParameterizationReview
+          parameterization={parameterization}
+          script={script}
+          onApplied={onParameterizationApplied}
+        />
+      )}
 
       {unsupportedElements.length > 0 && (
         <div className="script-import-review-unsupported">

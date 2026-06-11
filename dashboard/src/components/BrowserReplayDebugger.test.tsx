@@ -41,7 +41,7 @@ describe('BrowserReplayDebugger', () => {
         screenshot_base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0nQAAAAASUVORK5CYII=',
         console_entries: [{ level: 'info', text: 'Catalog loaded' }],
         network_entries: [{ method: 'GET', url: 'https://shop.example.com/api/catalog', status_code: 200, duration_ms: 23 }],
-        client_metrics: { lcp_ms: 240, inp_ms: 55, cls_score: 0.03, browser_engine: 'chromium', device_profile: 'desktop_1080p' },
+        client_metrics: { ttfb_ms: 42, lcp_ms: 240, inp_ms: 55, cls_score: 0.03, browser_engine: 'chromium', device_profile: 'desktop_1080p' },
         html: '<html><body>Catalog</body></html>',
       },
       {
@@ -96,7 +96,7 @@ describe('BrowserReplayDebugger', () => {
     expect(container.textContent).toContain('Action Timeline')
     expect(container.textContent).toContain('Network waterfall, console, screenshots, Core Web Vitals, and DOM snapshots')
     expect(container.textContent).toContain('Network 1 / 23.0ms')
-    expect(container.textContent).toContain('LCP 240ms / INP 55ms / CLS 0.030')
+    expect(container.textContent).toContain('TTFB 42ms / LCP 240ms / INP 55ms / CLS 0.030')
     expect(container.textContent).toContain('Screenshot + DOM')
     expect(container.textContent).toContain('DOM complete / 2 lines')
     expect(container.textContent).toContain('SubmitSearch')
@@ -173,7 +173,7 @@ describe('BrowserReplayDebugger', () => {
     expect(container.textContent).toContain('complete')
     expect(container.textContent).toContain('HTML Capture')
     expect(container.textContent).toContain('Core Web Vitals')
-    expect(container.textContent).toContain('LCP 240ms / INP 55ms / CLS 0.030')
+    expect(container.textContent).toContain('TTFB 42ms / LCP 240ms / INP 55ms / CLS 0.030')
     expect(container.textContent).toContain('View full size')
     expect(container.textContent).not.toContain('<html><body>Catalog</body></html>')
     expect(container.textContent).not.toContain('GET 200 https://shop.example.com/api/catalog 23.0 ms')
@@ -280,7 +280,7 @@ describe('BrowserReplayDebugger', () => {
       'Visible Text Lines: 2',
       'Console Entries: 1',
       'Network Entries: 1',
-      'Core Web Vitals: LCP 240ms / INP 55ms / CLS 0.030',
+      'Core Web Vitals: TTFB 42ms / LCP 240ms / INP 55ms / CLS 0.030',
       'HTML Capture: Captured',
       'Error: None',
     ].join('\n'))

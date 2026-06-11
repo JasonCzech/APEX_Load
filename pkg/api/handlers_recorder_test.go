@@ -221,3 +221,67 @@ func TestHandleRecorderStatusIncludesPersistentCAPath(t *testing.T) {
 		t.Fatalf("ca_cert_path = %q, want %q", got, want)
 	}
 }
+
+func TestHandleExportRecordingHARScrubOption(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	session, err := server.recorder.StartSession("rec-scrub", "Login HAR", recorder.SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.Requests = append(session.Requests, recorder.RecordedRequest{
+		Seq:    1,
+		Method: http.MethodPost,
+		URL:    "https://shop.example.com/login",
+		Path:   "/login",
+		HeadersMulti: map[string][]string{
+			"Authorization": {"Bearer top-secret-token"},
+			"Content-Type":  {"application/json"},
+		},
+		Body:                 `{"password":"hunter2","user":"jason"}`,
+		StatusCode:           http.StatusOK,
+		ResponseHeadersMulti: map[string][]string{"Set-Cookie": {"sid=cookie-secret"}},
+		ResponseBody:         `{"ok":true}`,
+	})
+
+	// Default export stays raw (correlation analysis needs real values) but is labeled.
+	rawReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub/export?format=har", nil)
+	rawResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(rawResp, rawReq)
+	if rawResp.Code != http.StatusOK {
+		t.Fatalf("raw status = %d body=%s", rawResp.Code, rawResp.Body.String())
+	}
+	if got := rawResp.Header().Get("X-APEXLoad-Sensitivity"); got != "raw_contains_secrets" {
+		t.Errorf("raw sensitivity header = %q", got)
+	}
+	if !strings.Contains(rawResp.Body.String(), "top-secret-token") {
+		t.Error("raw export should preserve values for correlation analysis")
+	}
+
+	// scrub=true applies scrub-on-write.
+	scrubReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub/export?format=har&scrub=true", nil)
+	scrubResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(scrubResp, scrubReq)
+	if scrubResp.Code != http.StatusOK {
+		t.Fatalf("scrub status = %d body=%s", scrubResp.Code, scrubResp.Body.String())
+	}
+	if got := scrubResp.Header().Get("X-APEXLoad-Sensitivity"); got != "scrubbed" {
+		t.Errorf("scrubbed sensitivity header = %q", got)
+	}
+	body := scrubResp.Body.String()
+	for _, secret := range []string{"top-secret-token", "hunter2", "cookie-secret"} {
+		if strings.Contains(body, secret) {
+			t.Errorf("scrubbed export still contains %q", secret)
+		}
+	}
+	var payload struct {
+		Log struct {
+			Entries []json.RawMessage `json:"entries"`
+		} `json:"log"`
+	}
+	if err := json.Unmarshal(scrubResp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("scrubbed export is not valid JSON: %v", err)
+	}
+	if len(payload.Log.Entries) != 1 {
+		t.Fatalf("scrubbed entry count = %d, want 1", len(payload.Log.Entries))
+	}
+}

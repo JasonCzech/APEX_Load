@@ -218,14 +218,26 @@ type KafkaTLSConfig struct {
 }
 
 type BrowserConfig struct {
-	Engine             string              `json:"engine,omitempty"`
-	Headless           *bool               `json:"headless,omitempty"`
-	SlowMoMs           int                 `json:"slow_mo_ms,omitempty"`
-	UserAgent          string              `json:"user_agent,omitempty"`
-	DeviceProfile      string              `json:"device_profile,omitempty"`
-	TouchMode          *bool               `json:"touch_mode,omitempty"`
-	Orientation        string              `json:"orientation,omitempty"`
-	ClientMetrics      *bool               `json:"client_metrics,omitempty"`
+	Engine           string `json:"engine,omitempty"`
+	Headless         *bool  `json:"headless,omitempty"`
+	SlowMoMs         int    `json:"slow_mo_ms,omitempty"`
+	UserAgent        string `json:"user_agent,omitempty"`
+	DeviceProfile    string `json:"device_profile,omitempty"`
+	TouchMode        *bool  `json:"touch_mode,omitempty"`
+	Orientation      string `json:"orientation,omitempty"`
+	ClientMetrics    *bool  `json:"client_metrics,omitempty"`
+	ExperienceCanary bool   `json:"experience_canary,omitempty"`
+	// Traceparent injects a fresh W3C traceparent header per action into
+	// browser-originated requests so waterfall entries correlate with backend
+	// traces. Opt-in: the extra header can introduce CORS preflights real user
+	// traffic would not have.
+	Traceparent *bool `json:"traceparent,omitempty"`
+	// HARCapture controls session network capture for diagnostics:
+	// "off" (default), "on_error", "on_sla_breach", "manual", or "always".
+	// Captured HARs pass through scrub-on-write before persistence.
+	HARCapture         string              `json:"har_capture,omitempty"`
+	HARCapturePolicy   string              `json:"har_capture_policy,omitempty"`
+	HARSLAThresholdMs  int                 `json:"har_sla_threshold_ms,omitempty"`
 	CaptureScreenshots string              `json:"capture_screenshots,omitempty"`
 	CacheEnabled       *bool               `json:"cache_enabled,omitempty"`
 	CacheContentURLs   *bool               `json:"cache_content_urls,omitempty"`

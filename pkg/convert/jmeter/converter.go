@@ -463,7 +463,35 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				}
 			}
 			continue
-		case "WhileController", "ForeachController", "ForEachController", "InterleaveControl", "RandomController", "ThroughputController":
+		case "WhileController":
+			condition := prop(child.Element, "WhileController.condition")
+			if cond, ok := simpleJMeterCondition(condition); ok {
+				steps := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
+				actionIndex := len(script.Actions)
+				script.Actions = append(script.Actions, dsl.Action{
+					Name: strings.TrimSpace(firstNonEmpty(attrOr(child.Element, "testname", ""), "While")),
+					Type: "control_loop",
+					Control: &dsl.ControlFlow{
+						Condition: &cond,
+						Steps:     steps,
+						// JMeter while loops have no intrinsic bound; cap the
+						// converted loop so a stale condition cannot hang VUsers.
+						MaxIterations: jmeterWhileLoopSafetyCap,
+					},
+					Metadata: map[string]any{
+						"source":             "jmeter",
+						"source_type":        "WhileController",
+						"source_condition":   condition,
+						"condition_original": condition,
+					},
+				})
+				diagnostics.Add(diag.Info, "JMeter WhileController", jmeterElementLocation(child.Element), fmt.Sprintf("while loop was mapped to a condition-driven control_loop with a %d-iteration safety cap", jmeterWhileLoopSafetyCap))
+				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, fmt.Sprintf("actions[%d]", actionIndex), jmeterElementLocation(child.Element), "controller", "converted", "JMeter WhileController was mapped to a condition-driven control_loop."))
+				continue
+			}
+			diagnostics.Add(diag.Warning, "JMeter WhileController", jmeterElementLocation(child.Element), fmt.Sprintf("while condition could not be translated statically; children were flattened (condition was: %s)", condition))
+			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", fmt.Sprintf("JMeter WhileController was flattened; original condition: %s", condition)))
+		case "ForeachController", "ForEachController", "InterleaveControl", "RandomController", "ThroughputController":
 			diagnostics.Add(diag.Warning, "JMeter "+child.Element.Name, jmeterElementLocation(child.Element), "controller logic was flattened; child requests are imported in source order without original conditions or transaction semantics")
 			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", "JMeter controller logic was flattened; child requests are imported in source order without original conditions."))
 		case "DebugSampler":
@@ -1106,6 +1134,11 @@ func parseHTMLExtractor(node *xmlNode) dsl.Extractor {
 		Expression: expression,
 	}
 }
+
+// jmeterWhileLoopSafetyCap bounds converted WhileController loops: JMeter
+// whiles are unbounded, but a replayed loop whose exit condition never fires
+// must not hang a VUser.
+const jmeterWhileLoopSafetyCap = 100
 
 const xpathFragmentExpressionPrefix = "__apexload_xpath_fragment__:"
 
