@@ -198,6 +198,14 @@
   flex-wrap: wrap;
 }
 
+.rec-certificate-format-toggle {
+  flex: 0 0 auto;
+}
+
+.rec-certificate-format-toggle .mode-chip {
+  min-width: 84px;
+}
+
 .rec-download-alt {
   background: none;
   border: 1px solid var(--border);

@@ -95,6 +95,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const api = useApi()
   const [sessions, setSessions] = useState<RecordingSession[]>([])
   const [activeSession, setActiveSession] = useState<RecordingSession | null>(null)
+  const [certificateFormatView, setCertificateFormatView] = useState<'crt' | 'pem'>('crt')
   const [proxyPlatformView, setProxyPlatformView] = useState<'macos' | 'windows'>('macos')
   const [proxyAddr, setProxyAddr] = useState('')
   const [caCertPath, setCaCertPath] = useState('')
@@ -452,23 +453,37 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
                   </div>
                 </div>
                 <div className="rec-download-row">
-                  <button className="rec-download-btn" onClick={() => handleDownloadCA('crt')}>
+                  <PageViewToggle
+                    value={certificateFormatView}
+                    ariaLabel="Certificate format"
+                    className="rec-certificate-format-toggle script-page-toggle"
+                    onChange={value => setCertificateFormatView(value)}
+                    options={[
+                      { value: 'crt', label: 'CRT' },
+                      { value: 'pem', label: 'PEM' },
+                    ]}
+                  />
+                  <button className="rec-download-btn" onClick={() => handleDownloadCA(certificateFormatView)}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                       <polyline points="7 10 12 15 17 10" />
                       <line x1="12" y1="15" x2="12" y2="3" />
                     </svg>
-                    Download CA Certificate (.crt)
-                  </button>
-                  <button className="rec-download-alt" onClick={() => handleDownloadCA('pem')}>
-                    PEM format (Firefox / Linux)
+                    {certificateFormatView === 'crt' ? 'Download CA Certificate (.crt)' : 'Download CA Certificate (.pem)'}
                   </button>
                 </div>
                 <div className="rec-os-instructions">
-                  <div><span className="rec-os-label">macOS Chrome, Edge, Safari:</span> Download .crt &rarr; open Keychain Access &rarr; import into the System keychain &rarr; open &ldquo;APEX Load Recording Proxy CA&rdquo; &rarr; expand Trust &rarr; set &ldquo;When using this certificate&rdquo; or &ldquo;Secure Sockets Layer (SSL)&rdquo; to Always Trust &rarr; close the window, enter your password, and restart the browser.</div>
-                  <div><span className="rec-os-label">Windows Chrome, Edge:</span> Download .crt &rarr; Install Certificate &rarr; Local Machine &rarr; place it in &ldquo;Trusted Root Certification Authorities&rdquo; &rarr; finish the wizard and restart the browser.</div>
-                  <div><span className="rec-os-label">Firefox:</span> Download PEM format &rarr; Settings &rarr; Privacy &amp; Security &rarr; Certificates &rarr; View Certificates &rarr; Authorities &rarr; Import &rarr; enable &ldquo;Trust this CA to identify websites&rdquo; &rarr; restart Firefox. If Firefox is configured to use system roots, restart after trusting the OS root instead.</div>
-                  <div><span className="rec-os-label">Linux:</span> Download PEM format and add it to the browser or distro trust store used by your browser, then restart the browser.</div>
+                  {certificateFormatView === 'crt' ? (
+                    <>
+                      <div><span className="rec-os-label">macOS Chrome, Edge, Safari:</span> Download .crt &rarr; open Keychain Access &rarr; import into the System keychain &rarr; open &ldquo;APEX Load Recording Proxy CA&rdquo; &rarr; expand Trust &rarr; set &ldquo;When using this certificate&rdquo; or &ldquo;Secure Sockets Layer (SSL)&rdquo; to Always Trust &rarr; close the window, enter your password, and restart the browser.</div>
+                      <div><span className="rec-os-label">Windows Chrome, Edge:</span> Download .crt &rarr; Install Certificate &rarr; Local Machine &rarr; place it in &ldquo;Trusted Root Certification Authorities&rdquo; &rarr; finish the wizard and restart the browser.</div>
+                    </>
+                  ) : (
+                    <>
+                      <div><span className="rec-os-label">Firefox:</span> Download PEM format &rarr; Settings &rarr; Privacy &amp; Security &rarr; Certificates &rarr; View Certificates &rarr; Authorities &rarr; Import &rarr; enable &ldquo;Trust this CA to identify websites&rdquo; &rarr; restart Firefox. If Firefox is configured to use system roots, restart after trusting the OS root instead.</div>
+                      <div><span className="rec-os-label">Linux:</span> Download PEM format and add it to the browser or distro trust store used by your browser, then restart the browser.</div>
+                    </>
+                  )}
                   <div><span className="rec-os-label">Cleanup:</span> Remove older &ldquo;APEX Load Recording Proxy CA&rdquo; entries if more than one exists, then trust the current CA shown above.</div>
                 </div>
               </div>

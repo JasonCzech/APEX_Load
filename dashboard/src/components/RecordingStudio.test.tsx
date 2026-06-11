@@ -15,6 +15,11 @@ import {
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+const { apiFetchMock, downloadBlobMock } = vi.hoisted(() => ({
+  apiFetchMock: vi.fn(),
+  downloadBlobMock: vi.fn(),
+}))
+
 const apiMock = {
   listRecordings: vi.fn(),
   getRecorderStatus: vi.fn(),
@@ -36,6 +41,14 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
+vi.mock('../hooks/apiClient', () => ({
+  apiFetch: apiFetchMock,
+}))
+
+vi.mock('../utils/fileUtils', () => ({
+  downloadBlob: downloadBlobMock,
+}))
+
 describe('RecordingStudio', () => {
   let container: HTMLDivElement
   let root: Root
@@ -44,6 +57,12 @@ describe('RecordingStudio', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    apiFetchMock.mockReset()
+    apiFetchMock.mockResolvedValue({
+      ok: true,
+      blob: vi.fn().mockResolvedValue(new Blob(['certificate'])),
+    })
+    downloadBlobMock.mockReset()
     clipboardWriteMock.mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -196,12 +215,100 @@ describe('RecordingStudio', () => {
 
     expect(container.textContent).toContain('Install and trust the APEX Load CA certificate for SSL/TLS')
     expect(container.textContent).toContain('ERR_CERT_AUTHORITY_INVALID')
+    expect(container.textContent).toContain('Download CA Certificate (.crt)')
+    expect(container.textContent).not.toContain('Download CA Certificate (.pem)')
     expect(container.textContent).toContain('import into the System keychain')
     expect(container.textContent).toContain('Secure Sockets Layer (SSL)')
     expect(container.textContent).toContain('Always Trust')
     expect(container.textContent).toContain('Trusted Root Certification Authorities')
-    expect(container.textContent).toContain('Trust this CA to identify websites')
+    expect(container.textContent).not.toContain('Trust this CA to identify websites')
+    expect(container.textContent).not.toContain('browser or distro trust store')
     expect(container.textContent).toContain('Remove older')
+
+    const formatToggle = container.querySelector('.rec-certificate-format-toggle')
+    expect(formatToggle).toBeDefined()
+    const crtButton = Array.from(formatToggle?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'CRT')
+    const pemButton = Array.from(formatToggle?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'PEM')
+    expect(crtButton?.getAttribute('aria-pressed')).toBe('true')
+    expect(pemButton?.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('switches Step 1 certificate guidance to PEM format', async () => {
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    const formatToggle = container.querySelector('.rec-certificate-format-toggle')
+    const crtButton = Array.from(formatToggle?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'CRT')
+    const pemButton = Array.from(formatToggle?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'PEM')
+    expect(crtButton).toBeDefined()
+    expect(pemButton).toBeDefined()
+    if (!pemButton) return
+
+    await act(async () => {
+      pemButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(crtButton?.getAttribute('aria-pressed')).toBe('false')
+    expect(pemButton.getAttribute('aria-pressed')).toBe('true')
+    expect(container.textContent).toContain('Download CA Certificate (.pem)')
+    expect(container.textContent).not.toContain('Download CA Certificate (.crt)')
+    expect(container.textContent).toContain('Trust this CA to identify websites')
+    expect(container.textContent).toContain('browser or distro trust store')
+    expect(container.textContent).not.toContain('import into the System keychain')
+    expect(container.textContent).not.toContain('Trusted Root Certification Authorities')
+    expect(container.textContent).toContain('Remove older')
+  })
+
+  it('downloads the selected Step 1 certificate format', async () => {
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    const crtDownload = Array.from(container.querySelectorAll('button')).find(
+      button => button.textContent?.trim() === 'Download CA Certificate (.crt)',
+    )
+    expect(crtDownload).toBeDefined()
+    if (!crtDownload) return
+
+    await act(async () => {
+      crtDownload.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiFetchMock).toHaveBeenCalledTimes(1)
+    expect(apiFetchMock).toHaveBeenLastCalledWith('/recorder/ca.pem')
+    expect(downloadBlobMock).toHaveBeenCalledTimes(1)
+    expect(downloadBlobMock).toHaveBeenLastCalledWith(expect.any(Blob), 'apexload-ca.crt')
+
+    const formatToggle = container.querySelector('.rec-certificate-format-toggle')
+    const pemButton = Array.from(formatToggle?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'PEM')
+    expect(pemButton).toBeDefined()
+    if (!pemButton) return
+
+    await act(async () => {
+      pemButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const pemDownload = Array.from(container.querySelectorAll('button')).find(
+      button => button.textContent?.trim() === 'Download CA Certificate (.pem)',
+    )
+    expect(pemDownload).toBeDefined()
+    if (!pemDownload) return
+
+    await act(async () => {
+      pemDownload.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiFetchMock).toHaveBeenCalledTimes(2)
+    expect(apiFetchMock).toHaveBeenLastCalledWith('/recorder/ca.pem?format=pem')
+    expect(downloadBlobMock).toHaveBeenCalledTimes(2)
+    expect(downloadBlobMock).toHaveBeenLastCalledWith(expect.any(Blob), 'apexload-ca.pem')
   })
 
   it('reviews a recording conversion and saves it through the shared script flow', async () => {
