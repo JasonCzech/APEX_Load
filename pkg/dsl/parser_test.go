@@ -3,6 +3,7 @@ package dsl
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -492,6 +493,57 @@ func TestParseFile(t *testing.T) {
 	}
 	if script.Name != "file-test" {
 		t.Errorf("name = %q, want %q", script.Name, "file-test")
+	}
+}
+
+func TestParseFileResolvesBodyFile(t *testing.T) {
+	dir := t.TempDir()
+	payload := "{\n  \"sku\": \"APEX-1\"\n}\n"
+	if err := os.WriteFile(filepath.Join(dir, "order.json"), []byte(payload), 0o644); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+	content := `{"script":{"name":"body-file","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"create","type":"POST","target":"/orders","body_file":"order.json"}]}}`
+	path := filepath.Join(dir, "script.json")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	script, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	if got := script.Actions[0].Body; got != payload {
+		t.Fatalf("body = %q, want %q", got, payload)
+	}
+	if script.Actions[0].BodyFile != "" {
+		t.Fatalf("body_file = %q, want cleared", script.Actions[0].BodyFile)
+	}
+}
+
+func TestParseFileBodyFileExample(t *testing.T) {
+	script, err := ParseFile(filepath.Join("..", "..", "examples", "bodyrefs", "body-file-http.json"))
+	if err != nil {
+		t.Fatalf("ParseFile example: %v", err)
+	}
+	if len(script.Actions) != 1 {
+		t.Fatalf("actions count = %d, want 1", len(script.Actions))
+	}
+	if !strings.Contains(script.Actions[0].Body, "APEX-LOAD-001") {
+		t.Fatalf("body = %q, want resolved example payload", script.Actions[0].Body)
+	}
+	if script.Actions[0].BodyFile != "" {
+		t.Fatalf("body_file = %q, want cleared", script.Actions[0].BodyFile)
+	}
+}
+
+func TestParseRejectsBodyFileWithoutLocalBaseDir(t *testing.T) {
+	input := `{"script":{"name":"upload-body-file","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"create","type":"POST","target":"/orders","body_file":"order.json"}]}}`
+	_, err := Parse([]byte(input))
+	if err == nil {
+		t.Fatal("expected body_file validation error")
+	}
+	if !strings.Contains(err.Error(), "body_file is only supported when loading scripts from a local file") {
+		t.Fatalf("error = %q, want body_file upload-context message", err.Error())
 	}
 }
 

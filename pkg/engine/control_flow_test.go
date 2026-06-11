@@ -64,11 +64,13 @@ func click(name string) dsl.Action {
 
 func TestVUser_EvalCondition(t *testing.T) {
 	vu := &VUser{Variables: map[string]string{
-		"role":   "admin",
-		"count":  "3",
-		"empty":  "",
-		"status": "active",
+		"role":     "admin",
+		"count":    "3",
+		"empty":    "",
+		"status":   "active",
+		"users.id": "42",
 	}}
+	t.Setenv("APEXLOAD_CEL_CONDITION", "enabled")
 	tests := []struct {
 		name string
 		cond *dsl.Condition
@@ -88,6 +90,12 @@ func TestVUser_EvalCondition(t *testing.T) {
 		{"not_exists on empty", &dsl.Condition{Left: "{{var.empty}}", Op: "not_exists"}, true},
 		{"numeric op non-numeric operand is false", &dsl.Condition{Left: "{{var.role}}", Op: "gt", Right: "2"}, false},
 		{"unknown op is false", &dsl.Condition{Left: "a", Op: "wat", Right: "b"}, false},
+		{"cel string comparison", &dsl.Condition{Expr: `var.role == "admin"`}, true},
+		{"cel numeric comparison", &dsl.Condition{Expr: `int(var.count) > 2`}, true},
+		{"cel membership", &dsl.Condition{Expr: `var.role in ["admin", "owner"]`}, true},
+		{"cel data namespace", &dsl.Condition{Expr: `data.users.id == "42"`}, true},
+		{"cel env namespace", &dsl.Condition{Expr: `env.APEXLOAD_CEL_CONDITION == "enabled"`}, true},
+		{"cel false branch", &dsl.Condition{Expr: `var.role == "guest"`}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -95,6 +103,43 @@ func TestVUser_EvalCondition(t *testing.T) {
 				t.Fatalf("evalCondition(%#v) = %v, want %v", tt.cond, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestVUser_Run_ControlIfUsesCELExpression(t *testing.T) {
+	proto := &captureProtocol{}
+	vu := newControlFlowVUser(proto, map[string]string{"role": "admin"}, []dsl.Action{
+		{
+			Name: "RoleBranch",
+			Type: "control_if",
+			Control: &dsl.ControlFlow{
+				Condition: &dsl.Condition{Expr: `var.role == "admin"`},
+				Steps:     []dsl.Action{click("AdminPanel")},
+				Else:      []dsl.Action{click("GuestHome")},
+			},
+		},
+	})
+	vu.Run(context.Background())
+	if len(proto.names) != 1 || proto.names[0] != "AdminPanel" {
+		t.Fatalf("executed %v, want [AdminPanel]", proto.names)
+	}
+}
+
+func TestVUser_Run_ControlLoopUsesCELExpression(t *testing.T) {
+	proto := &captureProtocol{counterKey: "counter"}
+	vu := newControlFlowVUser(proto, map[string]string{"counter": "0"}, []dsl.Action{
+		{
+			Name: "While",
+			Type: "control_loop",
+			Control: &dsl.ControlFlow{
+				Condition: &dsl.Condition{Expr: `int(var.counter) < 3`},
+				Steps:     []dsl.Action{click("Step")},
+			},
+		},
+	})
+	vu.Run(context.Background())
+	if len(proto.names) != 3 {
+		t.Fatalf("condition loop executed %d actions, want 3: %v", len(proto.names), proto.names)
 	}
 }
 
@@ -230,5 +275,20 @@ func TestVUser_RunLifecycleBlock_ControlFlow(t *testing.T) {
 	}
 	if len(proto.names) != 2 || proto.names[0] != "LifecycleStep" || proto.names[1] != "LifecycleStep" {
 		t.Fatalf("lifecycle control flow executed %v, want two LifecycleStep actions", proto.names)
+	}
+}
+
+func BenchmarkVUser_EvalConditionCELCached(b *testing.B) {
+	vu := &VUser{Variables: map[string]string{"count": "42", "role": "admin"}}
+	cond := &dsl.Condition{Expr: `int(var.count) > 10 && var.role in ["admin", "owner"]`}
+	if !vu.evalCondition(cond) {
+		b.Fatal("condition should be true")
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if !vu.evalCondition(cond) {
+			b.Fatal("condition should stay true")
+		}
 	}
 }

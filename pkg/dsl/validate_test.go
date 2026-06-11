@@ -1,6 +1,9 @@
 package dsl
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidateScriptIssues_RendezvousValidation(t *testing.T) {
 	script := &Script{
@@ -162,6 +165,34 @@ func TestValidateScriptIssues_BrowserRuntimeActionParity(t *testing.T) {
 	assertIssue(t, issues, `actions[0].control.steps[0] "bad hover": missing target or selector`)
 }
 
+func TestValidateScriptIssues_ControlConditionCELExpr(t *testing.T) {
+	script := &Script{
+		Name:     "cel-control",
+		Protocol: "http",
+		Config:   ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []Action{{
+			Name: "branch",
+			Type: "control_if",
+			Control: &ControlFlow{
+				Condition: &Condition{Expr: `var.role == "admin" && int(var.count) >= 2`},
+				Steps:     []Action{{Name: "home", Type: "GET", Target: "/"}},
+			},
+		}},
+	}
+	if issues := ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+
+	script.Actions[0].Control.Condition = &Condition{Expr: `var.role ==`}
+	issues := ValidateScriptIssues(script)
+	assertIssueContains(t, issues, `actions[0] "branch": condition expr is invalid`)
+
+	script.Actions[0].Control.Condition = &Condition{Expr: `var.role`}
+	issues = ValidateScriptIssues(script)
+	assertIssueContains(t, issues, `actions[0] "branch": condition expr is invalid`)
+	assertIssueContains(t, issues, `expression must return bool`)
+}
+
 func TestValidateScriptIssues_ControlFlowLifecyclePaths(t *testing.T) {
 	script := &Script{
 		Name:     "browser-lifecycle-control",
@@ -215,6 +246,27 @@ func TestValidateScriptIssues_RunLogicGlobalGoals(t *testing.T) {
 	issues := ValidateScriptIssues(script)
 	assertIssue(t, issues, "config.run_logic.global_iterations must be zero or greater")
 	assertIssue(t, issues, "config.run_logic.max_transactions must be zero or greater")
+}
+
+func TestValidateScriptIssues_BodyFileRequiresLocalFileLoad(t *testing.T) {
+	script := &Script{
+		Name:     "body-file-upload",
+		Protocol: "http",
+		Config:   ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []Action{{
+			Name:     "create",
+			Type:     "POST",
+			Target:   "/orders",
+			BodyFile: "payloads/order.json",
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, `actions[0] "create": body_file is only supported when loading scripts from a local file; inline body is required for API uploads`)
+
+	script.Actions[0].Body = "{}"
+	issues = ValidateScriptIssues(script)
+	assertIssue(t, issues, `actions[0] "create": body and body_file cannot both be set`)
 }
 
 func TestValidateScriptIssues_SOAPValidation(t *testing.T) {
@@ -906,4 +958,14 @@ func assertIssue(t *testing.T, issues []string, want string) {
 		}
 	}
 	t.Fatalf("issues = %v, want %q", issues, want)
+}
+
+func assertIssueContains(t *testing.T, issues []string, want string) {
+	t.Helper()
+	for _, issue := range issues {
+		if strings.Contains(issue, want) {
+			return
+		}
+	}
+	t.Fatalf("issues = %v, want issue containing %q", issues, want)
 }

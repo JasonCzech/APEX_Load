@@ -11,6 +11,7 @@ func grpcActionSpecs() []ActionSpec {
 	fields := []FieldSpec{
 		{Name: "target", Required: true, Kind: FieldKindString, Doc: "Fully-qualified service/method, e.g. pkg.Service/Method."},
 		{Name: "body", Kind: FieldKindString, Doc: "Request message as JSON; template variables are expanded."},
+		{Name: "body_file", Kind: FieldKindString, Doc: "Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there."},
 		{Name: "headers", Kind: FieldKindObject, Doc: "Per-call gRPC metadata merged over config.grpc.metadata."},
 		{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Per-call deadline in milliseconds; zero or greater."},
 		{Name: "params.max_messages", Kind: FieldKindInt, Doc: "Cap on streamed messages; zero or greater."},

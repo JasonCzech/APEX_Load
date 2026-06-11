@@ -618,6 +618,18 @@ func (s *Server) buildAIDraftScript(req AIDraftRequest, provider string, project
 	if req.Name == "" {
 		req.Name = "AI " + strings.ReplaceAll(sourceType, "_", " ") + " draft"
 	}
+	draftAction := dsl.SkeletonAction(method)
+	draftAction.Name = actionName
+	draftAction.Method = method
+	draftAction.Target = target
+	draftAction.Headers = map[string]string{
+		"Accept": "application/json",
+	}
+	draftAction.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+	draftAction.Metadata = map[string]any{
+		"ai_source_type": sourceType,
+		"review_hint":    "Verify path, auth, body examples, and data source bindings before replay.",
+	}
 	draft := &dsl.Script{
 		ID:            uuid.New().String(),
 		Name:          strings.TrimSpace(req.Name),
@@ -629,22 +641,7 @@ func (s *Server) buildAIDraftScript(req AIDraftRequest, provider string, project
 		Config: dsl.ScriptConfig{
 			BaseURL: baseURL,
 		},
-		Actions: []dsl.Action{
-			{
-				Name:   actionName,
-				Type:   "request",
-				Method: method,
-				Target: target,
-				Headers: map[string]string{
-					"Accept": "application/json",
-				},
-				Assertions: []dsl.Assertion{{Type: "status_code", Expected: 200}},
-				Metadata: map[string]any{
-					"ai_source_type": sourceType,
-					"review_hint":    "Verify path, auth, body examples, and data source bindings before replay.",
-				},
-			},
-		},
+		Actions: []dsl.Action{draftAction},
 		DataSources: []dsl.DataSource{
 			{
 				Name:           "ai_seed_data",
@@ -963,7 +960,7 @@ func buildAIRepairSuggestions(script *dsl.Script, validation scriptValidationRes
 	if script != nil {
 		for index, action := range script.Actions {
 			path := fmt.Sprintf("actions[%d]", index)
-			if len(action.Assertions) == 0 && action.Type != "rendezvous" {
+			if len(action.Assertions) == 0 && actionAcceptsResponseAssertions(action) {
 				add("assertions", "warning", "Add response assertion", "Action "+action.Name+" has no response assertion.", "Add at least one status_code or content assertion so replay can prove expected behavior.", []string{path + ".assertions"}, path+".assertions")
 			}
 			if actionNeedsCorrelation(action) {
@@ -1002,7 +999,7 @@ func applyAIRepairPreview(script *dsl.Script, suggestions []AIRepairSuggestion) 
 	preview := cloneScriptDefinition(script)
 	for index := range preview.Actions {
 		action := &preview.Actions[index]
-		if len(action.Assertions) == 0 && action.Type != "rendezvous" {
+		if len(action.Assertions) == 0 && actionAcceptsResponseAssertions(*action) {
 			action.Assertions = append(action.Assertions, dsl.Assertion{Type: "status_code", Expected: 200})
 		}
 		if preview.Protocol == "browser" && action.WaitFor == nil && strings.TrimSpace(action.Selector) != "" {
@@ -1373,6 +1370,14 @@ func repairSeverityRank(severity string) int {
 	default:
 		return 1
 	}
+}
+
+func actionAcceptsResponseAssertions(action dsl.Action) bool {
+	spec, ok := dsl.SpecForActionType(action.Type)
+	if !ok {
+		return true
+	}
+	return !spec.EngineAction()
 }
 
 func isHTTPMethod(method string) bool {

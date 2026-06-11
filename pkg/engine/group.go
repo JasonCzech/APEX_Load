@@ -62,6 +62,7 @@ type MultiGroupEngine struct {
 	targetDuration time.Duration
 	stopVUsers     context.CancelFunc
 	baseCtx        context.Context
+	loopCtx        context.Context
 }
 
 type GroupResult struct {
@@ -126,9 +127,12 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 
 	// Create a base context for VUsers that only cancels on hard stop/abort
 	baseCtx, baseCancel := context.WithCancel(ctx)
+	loopCtx, loopCancel := context.WithCancel(baseCtx)
 	mge.baseCtx = baseCtx
+	mge.loopCtx = loopCtx
+	mge.cancel = baseCancel
 	for i := range mge.groups {
-		mge.groups[i].executionGoals = NewExecutionGoalLimiter(mge.groups[i].Script.Config.RunLogic, baseCancel)
+		mge.groups[i].executionGoals = NewExecutionGoalLimiter(mge.groups[i].Script.Config.RunLogic, loopCancel)
 		if !isOpenWorkload(mge.groups[i].Script) {
 			mge.groups[i].rendezvous = NewRendezvousCoordinator()
 		}
@@ -137,6 +141,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	mge.mu.Unlock()
 
 	defer baseCancel()
+	defer loopCancel()
 
 	start := time.Now()
 	var wg sync.WaitGroup
@@ -205,7 +210,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 			wg.Add(1)
 			go func(group GroupConfig, protoConfig map[string]any, totalArrivals int) {
 				defer wg.Done()
-				runArrivalScheduler(mge.baseCtx, group.Script.Config.Pacing.TPS, totalArrivals, mge.WaitIfPaused, func(int) {
+				runArrivalScheduler(mge.loopCtx, group.Script.Config.Pacing.TPS, totalArrivals, mge.WaitIfPaused, func(int) {
 					vuserID := mge.allocateVUserID()
 					mge.spawnOpenWorker(vuserID, group, protoConfig, &wg)
 				})
@@ -229,7 +234,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		}
 
 		for i := 0; i < group.VUsers; i++ {
-			if mge.baseCtx.Err() != nil {
+			if mge.loopCtx.Err() != nil {
 				break
 			}
 
@@ -313,7 +318,11 @@ func waitForBaselineWindow(ctx context.Context, duration time.Duration) error {
 }
 
 func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoConfig map[string]any, rampDownDelay time.Duration, rampIdx int, wg *sync.WaitGroup) {
-	vuCtx, vuCancel := context.WithCancel(mge.baseCtx)
+	parentCtx := mge.loopCtx
+	if parentCtx == nil {
+		parentCtx = mge.baseCtx
+	}
+	vuCtx, vuCancel := context.WithCancel(parentCtx)
 
 	mge.mu.Lock()
 	mge.vuserCancels[vuserID] = vuCancel
@@ -373,6 +382,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 			IterationRateLimiter: group.rateLimiter,
 			Rendezvous:           group.rendezvous,
 			ExecutionGoals:       group.executionGoals,
+			HardStopCtx:          mge.baseCtx,
 			SkipInit:             groupLifecycleAtOnce(group),
 			SkipTeardown:         groupLifecycleAtOnce(group),
 		}
@@ -393,7 +403,11 @@ func (mge *MultiGroupEngine) allocateVUserID() int {
 }
 
 func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup) {
-	vuCtx, vuCancel := context.WithCancel(mge.baseCtx)
+	parentCtx := mge.loopCtx
+	if parentCtx == nil {
+		parentCtx = mge.baseCtx
+	}
+	vuCtx, vuCancel := context.WithCancel(parentCtx)
 
 	mge.mu.Lock()
 	mge.vuserCancels[vuserID] = vuCancel
@@ -446,6 +460,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 			RedactionConfig: group.RedactionConfig,
 			PauseControl:    mge,
 			ExecutionGoals:  group.executionGoals,
+			HardStopCtx:     mge.baseCtx,
 			SkipInit:        groupLifecycleAtOnce(group),
 			SkipTeardown:    groupLifecycleAtOnce(group),
 		}

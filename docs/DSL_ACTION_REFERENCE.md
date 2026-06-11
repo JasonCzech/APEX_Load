@@ -32,7 +32,7 @@ Conditional block: runs control.steps when the condition holds, control.else oth
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `control` | object | yes | Branch body: {condition, steps, else}. Requires steps or else. |
+| `control` | object | yes | Branch body: {condition, steps, else}. condition may use legacy left/op/right or CEL expr over var/data/env. Requires steps or else. |
 
 ### `control_loop`
 
@@ -40,7 +40,7 @@ Loop block: repeats control.steps for a fixed count or while a condition holds.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `control` | object | yes | Loop body: {condition, steps, count, max_iterations}. Requires a positive count or a condition. |
+| `control` | object | yes | Loop body: {condition, steps, count, max_iterations}. condition may use legacy left/op/right or CEL expr over var/data/env. Requires a positive count or a condition. |
 
 ### `custom_call`
 
@@ -443,12 +443,13 @@ Executes a SQL statement without reading rows (DML/DDL).
 
 Aliases: `database_exec`, `exec`, `execute`, `insert`, `update`, `delete`
 
-Requires one of: `target`, `body`
+Requires one of: `target`, `body`, `body_file`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string |  | SQL statement; target or body is required. |
 | `body` | string |  | SQL statement alternative to target (useful for multiline SQL). |
+| `body_file` | string |  | Local file containing the SQL statement. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `params.args` | array |  | Positional bind arguments; template variables are expanded. |
 | `params.max_rows` | int |  | Row cap override; zero or greater. |
 
@@ -464,12 +465,13 @@ Calls a stored procedure.
 
 Aliases: `stored_procedure`
 
-Requires one of: `target`, `body`
+Requires one of: `target`, `body`, `body_file`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string |  | SQL statement; target or body is required. |
 | `body` | string |  | SQL statement alternative to target (useful for multiline SQL). |
+| `body_file` | string |  | Local file containing the SQL statement. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `params.args` | array |  | Positional bind arguments; template variables are expanded. |
 | `params.max_rows` | int |  | Row cap override; zero or greater. |
 
@@ -479,12 +481,13 @@ Runs a SQL query and reads the result rows.
 
 Aliases: `database_query`, `query`, `select`
 
-Requires one of: `target`, `body`
+Requires one of: `target`, `body`, `body_file`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string |  | SQL statement; target or body is required. |
 | `body` | string |  | SQL statement alternative to target (useful for multiline SQL). |
+| `body_file` | string |  | Local file containing the SQL statement. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `params.args` | array |  | Positional bind arguments; template variables are expanded. |
 | `params.max_rows` | int |  | Row cap override; zero or greater. |
 
@@ -504,6 +507,7 @@ Bidirectional-streaming gRPC call.
 |-------|------|----------|-------------|
 | `target` | string | yes | Fully-qualified service/method, e.g. pkg.Service/Method. |
 | `body` | string |  | Request message as JSON; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Per-call gRPC metadata merged over config.grpc.metadata. |
 | `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero or greater. |
 | `params.max_messages` | int |  | Cap on streamed messages; zero or greater. |
@@ -516,6 +520,7 @@ Client-streaming gRPC call.
 |-------|------|----------|-------------|
 | `target` | string | yes | Fully-qualified service/method, e.g. pkg.Service/Method. |
 | `body` | string |  | Request message as JSON; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Per-call gRPC metadata merged over config.grpc.metadata. |
 | `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero or greater. |
 | `params.max_messages` | int |  | Cap on streamed messages; zero or greater. |
@@ -528,6 +533,7 @@ Server-streaming gRPC call; reads until the stream ends or max_messages.
 |-------|------|----------|-------------|
 | `target` | string | yes | Fully-qualified service/method, e.g. pkg.Service/Method. |
 | `body` | string |  | Request message as JSON; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Per-call gRPC metadata merged over config.grpc.metadata. |
 | `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero or greater. |
 | `params.max_messages` | int |  | Cap on streamed messages; zero or greater. |
@@ -540,6 +546,7 @@ Unary gRPC call.
 |-------|------|----------|-------------|
 | `target` | string | yes | Fully-qualified service/method, e.g. pkg.Service/Method. |
 | `body` | string |  | Request message as JSON; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Per-call gRPC metadata merged over config.grpc.metadata. |
 | `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero or greater. |
 | `params.max_messages` | int |  | Cap on streamed messages; zero or greater. |
@@ -558,6 +565,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -574,6 +582,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -590,6 +599,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -606,6 +616,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -622,6 +633,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -638,6 +650,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -654,6 +667,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -680,6 +694,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -696,6 +711,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -712,6 +728,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -728,6 +745,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -744,6 +762,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -760,6 +779,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -776,6 +796,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -807,6 +828,7 @@ Publishes a message to a queue or topic.
 |-------|------|----------|-------------|
 | `target` | string |  | Destination queue/topic; falls back to config.jms.destination. |
 | `body` | string |  | Message payload; template variables are expanded. |
+| `body_file` | string |  | Local file containing the message payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Message properties/headers. |
 
 ### `jms_request_reply`
@@ -817,6 +839,7 @@ Sends a request message and waits for the correlated reply.
 |-------|------|----------|-------------|
 | `target` | string |  | Request destination; falls back to config.jms.destination. |
 | `body` | string |  | Request payload; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `params.reply_to` | string |  | Reply destination; required unless config.jms.reply_to is set. |
 | `params.timeout_ms` | int |  | Reply timeout in milliseconds. |
 
@@ -848,6 +871,7 @@ Produces a record to a topic.
 |-------|------|----------|-------------|
 | `target` | string |  | Topic; falls back to config.kafka.topic or params.topic. |
 | `body` | string |  | Record value; template variables are expanded. |
+| `body_file` | string |  | Local file containing the record value. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Record headers. |
 | `params.topic` | string |  | Topic alternative to target. |
 | `params.key` | string |  | Record key (drives key-hash partitioning). |
@@ -861,6 +885,7 @@ Produces a request record and waits for the correlated reply record.
 |-------|------|----------|-------------|
 | `target` | string |  | Request topic; falls back to config.kafka.topic or params.topic. |
 | `body` | string |  | Request record value. |
+| `body_file` | string |  | Local file containing the request record value. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `params.reply_to` | string | yes | Reply topic. |
 | `params.timeout_ms` | int |  | Reply timeout in milliseconds. |
 
@@ -1016,6 +1041,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1032,6 +1058,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1048,6 +1075,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1064,6 +1092,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1080,6 +1109,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1096,6 +1126,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1112,6 +1143,7 @@ Protocols: http, soap, java_http
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `headers` | object |  | Request headers merged over config.http.default_headers. |
 | `body` | string |  | Request body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1147,8 +1179,11 @@ Waits for the next inbound message.
 
 Sends a message over the open connection.
 
+Requires one of: `body`, `body_file`
+
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `body` | string | yes | Message payload; template variables are expanded. |
+| `body` | string |  | Message payload; template variables are expanded. |
+| `body_file` | string |  | Local file containing the message payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `params.type` | enum: text\|binary |  | Message frame type; defaults to text. |
 

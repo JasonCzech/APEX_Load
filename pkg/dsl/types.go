@@ -479,6 +479,7 @@ type Action struct {
 	Value          string                 `json:"value,omitempty"`
 	Headers        map[string]string      `json:"headers,omitempty"`
 	Body           string                 `json:"body,omitempty"`
+	BodyFile       string                 `json:"body_file,omitempty"`
 	BodyEncoding   string                 `json:"body_encoding,omitempty"`
 	Params         map[string]any         `json:"params,omitempty"`
 	WaitFor        *WaitCondition         `json:"wait_for,omitempty"`
@@ -513,6 +514,7 @@ type ControlFlow struct {
 // e.g. {Left: "{{var.status}}", Op: "eq", Right: "active"}. Both operands are
 // interpolated against VUser variables/parameters before comparison.
 type Condition struct {
+	Expr  string `json:"expr,omitempty"`  // CEL expression; takes precedence over left/op/right when set.
 	Left  string `json:"left,omitempty"`  // left operand (template-expanded)
 	Op    string `json:"op,omitempty"`    // eq|ne|contains|not_contains|gt|lt|gte|lte|exists|not_exists
 	Right string `json:"right,omitempty"` // right operand (template-expanded)

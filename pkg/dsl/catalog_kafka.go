@@ -12,6 +12,7 @@ func kafkaActionSpecs() []ActionSpec {
 			Fields: []FieldSpec{
 				{Name: "target", Kind: FieldKindString, Doc: "Topic; falls back to config.kafka.topic or params.topic."},
 				{Name: "body", Kind: FieldKindString, Doc: "Record value; template variables are expanded."},
+				{Name: "body_file", Kind: FieldKindString, Doc: "Local file containing the record value. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there."},
 				{Name: "headers", Kind: FieldKindObject, Doc: "Record headers."},
 				{Name: "params.topic", Kind: FieldKindString, Doc: "Topic alternative to target."},
 				{Name: "params.key", Kind: FieldKindString, Doc: "Record key (drives key-hash partitioning)."},
@@ -35,6 +36,7 @@ func kafkaActionSpecs() []ActionSpec {
 			Fields: []FieldSpec{
 				{Name: "target", Kind: FieldKindString, Doc: "Request topic; falls back to config.kafka.topic or params.topic."},
 				{Name: "body", Kind: FieldKindString, Doc: "Request record value."},
+				{Name: "body_file", Kind: FieldKindString, Doc: "Local file containing the request record value. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there."},
 				{Name: "params.reply_to", Required: true, Kind: FieldKindString, Doc: "Reply topic."},
 				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Reply timeout in milliseconds."},
 			},

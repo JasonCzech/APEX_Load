@@ -278,6 +278,42 @@ func TestHandleCreateScriptRejectsMissingBaseURL(t *testing.T) {
 	}
 }
 
+func TestHandleCreateScriptRejectsBodyFile(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"script": map[string]any{
+			"name":     "Body File Upload",
+			"protocol": "http",
+			"config": map[string]any{
+				"base_url": "https://example.test",
+			},
+			"actions": []map[string]any{{
+				"name":      "Create",
+				"type":      "POST",
+				"target":    "/orders",
+				"body_file": "payloads/order.json",
+			}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "body_file is only supported when loading scripts from a local file") {
+		t.Fatalf("body = %q, want body_file upload-context validation error", resp.Body.String())
+	}
+}
+
 func TestHandleUpdateScriptRejectsInvalidScript(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	stored := server.runner.StoreScript(&dsl.Script{

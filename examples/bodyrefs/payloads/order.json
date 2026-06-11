@@ -1,0 +1,9 @@
+{
+  "customer_id": "cust-123",
+  "line_items": [
+    {
+      "sku": "APEX-LOAD-001",
+      "quantity": 2
+    }
+  ]
+}

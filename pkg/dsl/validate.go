@@ -205,6 +205,7 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	if strings.TrimSpace(action.Name) == "" {
 		issues = append(issues, fmt.Sprintf("%s: missing name", path))
 	}
+	issues = append(issues, validateBodyFileIssues(path, action)...)
 	if strings.TrimSpace(action.Type) == "" {
 		return append(issues, fmt.Sprintf("%s: missing type", actionLabel(path, action)))
 	}
@@ -232,6 +233,19 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	if action.Target == "" {
 		issues = append(issues, fmt.Sprintf("%s: missing target", actionLabel(path, action)))
 	}
+	return issues
+}
+
+func validateBodyFileIssues(path string, action Action) []string {
+	if strings.TrimSpace(action.BodyFile) == "" {
+		return nil
+	}
+	label := actionLabel(path, action)
+	issues := make([]string, 0, 2)
+	if strings.TrimSpace(action.Body) != "" {
+		issues = append(issues, fmt.Sprintf("%s: body and body_file cannot both be set", label))
+	}
+	issues = append(issues, fmt.Sprintf("%s: body_file is only supported when loading scripts from a local file; inline body is required for API uploads", label))
 	return issues
 }
 
@@ -289,6 +303,12 @@ func validateControlFlowIssues(protocol string, path string, action Action) []st
 
 func validateConditionIssues(label string, condition *Condition) []string {
 	if condition == nil {
+		return nil
+	}
+	if expr := strings.TrimSpace(condition.Expr); expr != "" {
+		if err := ValidateConditionExpression(expr); err != nil {
+			return []string{fmt.Sprintf("%s: condition expr is invalid: %v", label, err)}
+		}
 		return nil
 	}
 	op := strings.ToLower(strings.TrimSpace(condition.Op))
@@ -598,6 +618,7 @@ func validateJMSScriptIssues(script *Script) []string {
 		if strings.TrimSpace(action.Name) == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d]: missing name", i))
 		}
+		issues = append(issues, validateBodyFileIssues(fmt.Sprintf("actions[%d]", i), action)...)
 		if action.Type == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing type", i, action.Name))
 		} else if _, ok := protocolActionSpec("jms", action.Type); !ok {
@@ -665,6 +686,7 @@ func validateKafkaScriptIssues(script *Script) []string {
 		if strings.TrimSpace(action.Name) == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d]: missing name", i))
 		}
+		issues = append(issues, validateBodyFileIssues(fmt.Sprintf("actions[%d]", i), action)...)
 		if action.Type == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing type", i, action.Name))
 		} else if _, ok := protocolActionSpec("kafka", action.Type); !ok {

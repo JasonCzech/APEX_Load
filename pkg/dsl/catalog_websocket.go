@@ -28,9 +28,11 @@ func websocketActionSpecs() []ActionSpec {
 			Protocols: []string{"websocket"},
 			Summary:   "Sends a message over the open connection.",
 			Fields: []FieldSpec{
-				{Name: "body", Required: true, Kind: FieldKindString, Doc: "Message payload; template variables are expanded."},
+				{Name: "body", Kind: FieldKindString, Doc: "Message payload; template variables are expanded."},
+				{Name: "body_file", Kind: FieldKindString, Doc: "Local file containing the message payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there."},
 				{Name: "params.type", Kind: FieldKindEnum, Enum: []string{"text", "binary"}, Doc: "Message frame type; defaults to text."},
 			},
+			RequireOneOf: [][]string{{"body", "body_file"}},
 			Validate: func(index int, action Action) []string {
 				label := fmt.Sprintf("actions[%d] %q", index, action.Name)
 				var issues []string

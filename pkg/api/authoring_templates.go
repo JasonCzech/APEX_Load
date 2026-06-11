@@ -69,8 +69,12 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false},
 				},
 				Actions: []dsl.Action{
-					{Name: "Health Check", Type: "request", Method: "GET", Target: "/health", Assertions: []dsl.Assertion{{Type: "status_code", Expected: 200}}},
-					{Name: "Business Transaction", Type: "request", Method: "GET", Target: "/api/orders", Assertions: []dsl.Assertion{{Type: "status_code", Expected: 200}}},
+					httpTemplateAction("GET", "Health Check", "/health", func(action *dsl.Action) {
+						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+					}),
+					httpTemplateAction("GET", "Business Transaction", "/api/orders", func(action *dsl.Action) {
+						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+					}),
 				},
 			},
 			RecommendedScenario: AuthoringTemplateScenario{Duration: "2m", VUsers: 5, RampUp: "30s", Iterations: 1},
@@ -97,9 +101,17 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 					RunLogic:  dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
 				},
 				Actions: []dsl.Action{
-					{Name: "Open Home", Type: "browser_navigate", Target: "/", Capture: &dsl.BrowserCaptureOptions{Screenshot: true}},
-					{Name: "Wait For App Ready", Type: "browser_wait", WaitFor: &dsl.WaitCondition{Type: "selector", Value: "[data-testid='app-ready']"}},
-					{Name: "Open Checkout", Type: "browser_click", Selector: "[data-testid='checkout']"},
+					templateAction("browser_navigate", "Open Home", func(action *dsl.Action) {
+						action.Target = "/"
+						action.Capture = &dsl.BrowserCaptureOptions{Screenshot: true}
+					}),
+					templateAction("browser_wait", "Wait For App Ready", func(action *dsl.Action) {
+						action.WaitFor = &dsl.WaitCondition{Type: "selector", Value: "[data-testid='app-ready']"}
+					}),
+					templateAction("browser_click", "Open Checkout", func(action *dsl.Action) {
+						action.Target = ""
+						action.Selector = "[data-testid='checkout']"
+					}),
 				},
 			},
 			RecommendedScenario: AuthoringTemplateScenario{Duration: "5m", VUsers: 3, RampUp: "1m", Iterations: 1},
@@ -135,9 +147,16 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 					Columns:        []string{"username", "password"},
 				}},
 				Actions: []dsl.Action{
-					{Name: "Open Imported Start URL", Type: "browser_navigate", Target: "{{env.START_PATH}}", Capture: &dsl.BrowserCaptureOptions{Screenshot: true}},
-					{Name: "Wait For App Ready", Type: "browser_wait", WaitFor: &dsl.WaitCondition{Type: "selector", Value: "[data-testid='app-ready']", TimeoutMs: 10000}},
-					{Name: "Replay Checkpoint", Type: "browser_screenshot", Capture: &dsl.BrowserCaptureOptions{Screenshot: true, FullPage: true}},
+					templateAction("browser_navigate", "Open Imported Start URL", func(action *dsl.Action) {
+						action.Target = "{{env.START_PATH}}"
+						action.Capture = &dsl.BrowserCaptureOptions{Screenshot: true}
+					}),
+					templateAction("browser_wait", "Wait For App Ready", func(action *dsl.Action) {
+						action.WaitFor = &dsl.WaitCondition{Type: "selector", Value: "[data-testid='app-ready']", TimeoutMs: 10000}
+					}),
+					templateAction("browser_screenshot", "Replay Checkpoint", func(action *dsl.Action) {
+						action.Capture = &dsl.BrowserCaptureOptions{Screenshot: true, FullPage: true}
+					}),
 				},
 			},
 			RecommendedScenario: AuthoringTemplateScenario{Duration: "5m", VUsers: 1, RampUp: "30s", Iterations: 1},
@@ -164,19 +183,15 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 					RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
 				},
 				Actions: []dsl.Action{
-					{
-						Name:    "Get Account",
-						Type:    "request",
-						Method:  "POST",
-						Target:  "/services/account",
-						Headers: map[string]string{"Content-Type": "text/xml", "SOAPAction": "GetAccount"},
-						Body:    `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><GetAccount><accountId>{{env.ACCOUNT_ID}}</accountId></GetAccount></soapenv:Body></soapenv:Envelope>`,
-						SOAP:    &dsl.SOAPActionConfig{Action: "GetAccount", Operation: "GetAccount", BodyMode: "raw_xml"},
-						Assertions: []dsl.Assertion{
+					httpTemplateAction("POST", "Get Account", "/services/account", func(action *dsl.Action) {
+						action.Headers = map[string]string{"Content-Type": "text/xml", "SOAPAction": "GetAccount"}
+						action.Body = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><GetAccount><accountId>{{env.ACCOUNT_ID}}</accountId></GetAccount></soapenv:Body></soapenv:Envelope>`
+						action.SOAP = &dsl.SOAPActionConfig{Action: "GetAccount", Operation: "GetAccount", BodyMode: "raw_xml"}
+						action.Assertions = []dsl.Assertion{
 							{Type: "status_code", Expected: 200},
 							{Type: "body_not_contains", Value: "Fault"},
-						},
-					},
+						}
+					}),
 				},
 			},
 			RecommendedScenario: AuthoringTemplateScenario{Duration: "2m", VUsers: 3, RampUp: "30s", Iterations: 1},
@@ -201,17 +216,13 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 					},
 					RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
 				},
-				Actions: []dsl.Action{{
-					Name:   "Invoke Serialized Operation",
-					Type:   "request",
-					Method: "POST",
-					Target: "/rpc/checkout",
-					Headers: map[string]string{
+				Actions: []dsl.Action{httpTemplateAction("POST", "Invoke Serialized Operation", "/rpc/checkout", func(action *dsl.Action) {
+					action.Headers = map[string]string{
 						"Content-Type": "application/x-java-serialized-object",
-					},
-					Body:       "{{env.JAVA_SERIALIZED_REQUEST_BASE64}}",
-					Assertions: []dsl.Assertion{{Type: "status_code", Expected: 200}},
-				}},
+					}
+					action.Body = "{{env.JAVA_SERIALIZED_REQUEST_BASE64}}"
+					action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+				})},
 			},
 			RecommendedScenario: AuthoringTemplateScenario{Duration: "3m", VUsers: 5, RampUp: "45s", Iterations: 1},
 		},
@@ -236,11 +247,18 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 					RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
 				},
 				Actions: []dsl.Action{
-					{Name: "Connect", Type: "ws_connect", Target: "/ws"},
-					{Name: "Subscribe", Type: "ws_send", Body: `{"type":"subscribe","channel":"orders"}`, Params: map[string]any{"type": "text"}},
-					{Name: "Receive Event", Type: "ws_receive", Params: map[string]any{"timeout_ms": 1000}},
-					{Name: "Ping", Type: "ws_ping"},
-					{Name: "Close", Type: "ws_close"},
+					templateAction("ws_connect", "Connect", func(action *dsl.Action) {
+						action.Target = "/ws"
+					}),
+					templateAction("ws_send", "Subscribe", func(action *dsl.Action) {
+						action.Body = `{"type":"subscribe","channel":"orders"}`
+						action.Params = map[string]any{"type": "text"}
+					}),
+					templateAction("ws_receive", "Receive Event", func(action *dsl.Action) {
+						action.Params = map[string]any{"timeout_ms": 1000}
+					}),
+					templateAction("ws_ping", "Ping", nil),
+					templateAction("ws_close", "Close", nil),
 				},
 			},
 			RecommendedScenario: AuthoringTemplateScenario{Duration: "5m", VUsers: 25, RampUp: "1m", Iterations: 1},
@@ -266,13 +284,11 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 					},
 					RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
 				},
-				Actions: []dsl.Action{{
-					Name:   "Authorize Payment",
-					Type:   "grpc_unary",
-					Target: "payments.v1.PaymentService/Authorize",
-					Body:   `{"account_id":"{{env.ACCOUNT_ID}}","amount_cents":100}`,
-					Params: map[string]any{"timeout_ms": 1000},
-				}},
+				Actions: []dsl.Action{templateAction("grpc_unary", "Authorize Payment", func(action *dsl.Action) {
+					action.Target = "payments.v1.PaymentService/Authorize"
+					action.Body = `{"account_id":"{{env.ACCOUNT_ID}}","amount_cents":100}`
+					action.Params = map[string]any{"timeout_ms": 1000}
+				})},
 			},
 			RecommendedScenario: AuthoringTemplateScenario{Duration: "3m", VUsers: 10, RampUp: "45s", Iterations: 1},
 		},
@@ -299,20 +315,18 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 					RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
 				},
 				Actions: []dsl.Action{
-					{Name: "Database Health", Type: "db_health"},
-					{
-						Name:   "Lookup Customer",
-						Type:   "db_query",
-						Target: "select id, name from customers where id = ?",
-						Params: map[string]any{"binds": []any{"{{data.customers.id}}"}, "max_rows": 10},
-						Extractors: []dsl.Extractor{{
+					templateAction("db_health", "Database Health", nil),
+					templateAction("db_query", "Lookup Customer", func(action *dsl.Action) {
+						action.Target = "select id, name from customers where id = ?"
+						action.Params = map[string]any{"binds": []any{"{{data.customers.id}}"}, "max_rows": 10}
+						action.Extractors = []dsl.Extractor{{
 							Name:       "customer_name",
 							Source:     "body",
 							Type:       "jsonpath",
 							Expression: "$.rows[0].name",
-						}},
-						Assertions: []dsl.Assertion{{Type: "row_count", Expected: 1}},
-					},
+						}}
+						action.Assertions = []dsl.Assertion{{Type: "row_count", Expected: 1}}
+					}),
 				},
 				DataSources: []dsl.DataSource{{
 					Name:           "customers",
@@ -345,22 +359,18 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 					RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
 				},
 				Actions: []dsl.Action{
-					{
-						Name:       "Resolve Host",
-						Type:       "dns_query",
-						Target:     "{{env.NETWORK_HOST}}",
-						Params:     map[string]any{"record_type": "A"},
-						Extractors: []dsl.Extractor{{Name: "resolved_ip", Source: "body", Type: "jsonpath", Expression: "$.records[0]"}},
-						Assertions: []dsl.Assertion{{Type: "record_count", Expected: 1}},
-					},
-					{
-						Name:       "TCP Probe",
-						Type:       "tcp_request",
-						Target:     "{{env.NETWORK_TCP_TARGET}}",
-						Body:       "ping",
-						Params:     map[string]any{"read": true, "read_bytes": 1024},
-						Assertions: []dsl.Assertion{{Type: "messages_received", Expected: 1}},
-					},
+					templateAction("dns_query", "Resolve Host", func(action *dsl.Action) {
+						action.Target = "{{env.NETWORK_HOST}}"
+						action.Params = map[string]any{"record_type": "A"}
+						action.Extractors = []dsl.Extractor{{Name: "resolved_ip", Source: "body", Type: "jsonpath", Expression: "$.records[0]"}}
+						action.Assertions = []dsl.Assertion{{Type: "record_count", Expected: 1}}
+					}),
+					templateAction("tcp_request", "TCP Probe", func(action *dsl.Action) {
+						action.Target = "{{env.NETWORK_TCP_TARGET}}"
+						action.Body = "ping"
+						action.Params = map[string]any{"read": true, "read_bytes": 1024}
+						action.Assertions = []dsl.Assertion{{Type: "messages_received", Expected: 1}}
+					}),
 				},
 			},
 			RecommendedScenario: AuthoringTemplateScenario{Duration: "2m", VUsers: 5, RampUp: "30s", Iterations: 1},
@@ -389,8 +399,12 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 					RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
 				},
 				Actions: []dsl.Action{
-					{Name: "Publish Order", Type: "jms_publish", Body: `{"order_id":"{{fn.uuid()}}","sku":"ABC-123"}`},
-					{Name: "Request Confirmation", Type: "jms_request_reply", Body: `{"order_id":"{{var.order_id}}"}`},
+					templateAction("jms_publish", "Publish Order", func(action *dsl.Action) {
+						action.Body = `{"order_id":"{{fn.uuid()}}","sku":"ABC-123"}`
+					}),
+					templateAction("jms_request_reply", "Request Confirmation", func(action *dsl.Action) {
+						action.Body = `{"order_id":"{{var.order_id}}"}`
+					}),
 				},
 			},
 			RecommendedScenario: AuthoringTemplateScenario{Duration: "3m", VUsers: 5, RampUp: "45s", Iterations: 1},
@@ -444,14 +458,29 @@ func importedHTTPTemplateScript(name string, source string, actionName string) d
 			BaseURL:  "{{env.BASE_URL}}",
 			RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
 		},
-		Actions: []dsl.Action{{
-			Name:       actionName,
-			Type:       "request",
-			Method:     "GET",
-			Target:     "/api/example",
-			Assertions: []dsl.Assertion{{Type: "status_code", Expected: 200}},
-		}},
+		Actions: []dsl.Action{httpTemplateAction("GET", actionName, "/api/example", func(action *dsl.Action) {
+			action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+		})},
 	}
+}
+
+func templateAction(actionType string, name string, mutate func(*dsl.Action)) dsl.Action {
+	action := dsl.SkeletonAction(actionType)
+	action.Name = name
+	if mutate != nil {
+		mutate(&action)
+	}
+	return action
+}
+
+func httpTemplateAction(method string, name string, target string, mutate func(*dsl.Action)) dsl.Action {
+	action := templateAction(method, name, nil)
+	action.Method = method
+	action.Target = target
+	if mutate != nil {
+		mutate(&action)
+	}
+	return action
 }
 
 func boolPtr(value bool) *bool {

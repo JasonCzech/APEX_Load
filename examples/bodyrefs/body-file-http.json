@@ -1,0 +1,21 @@
+{
+  "script": {
+    "name": "body-file-http",
+    "version": "1.0.0",
+    "protocol": "http",
+    "config": {
+      "base_url": "https://api.example.test"
+    },
+    "actions": [
+      {
+        "name": "Create Order",
+        "type": "POST",
+        "target": "/orders",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_file": "payloads/order.json"
+      }
+    ]
+  }
+}

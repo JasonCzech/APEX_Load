@@ -146,7 +146,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	rampDelay := e.rampDelay()
 
 	for i := 0; i < e.vusers; i++ {
-		if ctx.Err() != nil {
+		if loopCtx.Err() != nil {
 			break
 		}
 
@@ -184,8 +184,9 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 				IterationRateLimiter: iterationRateLimiter,
 				Rendezvous:           rendezvous,
 				ExecutionGoals:       executionGoals,
+				HardStopCtx:          ctx,
 			}
-			vu.Run(ctx)
+			vu.Run(loopCtx)
 		}()
 	}
 
@@ -224,7 +225,14 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 	start := time.Now()
 	iterationScript := cloneSingleIterationScript(e.script)
 	arrivals, bounded := boundedArrivalLimit(e.script, e.vusers)
-	executionGoals := NewExecutionGoalLimiter(e.script.Config.RunLogic, e.cancel)
+	loopCtx := ctx
+	var executionGoals *ExecutionGoalLimiter
+	if hasExecutionGoals(e.script.Config.RunLogic) {
+		var goalCancel context.CancelFunc
+		loopCtx, goalCancel = context.WithCancel(ctx)
+		defer goalCancel()
+		executionGoals = NewExecutionGoalLimiter(e.script.Config.RunLogic, goalCancel)
+	}
 
 	var wg sync.WaitGroup
 	var activeWorkers atomic.Int64
@@ -232,7 +240,7 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 		e.metrics.SetActiveVUsers(activeWorkers.Add(delta))
 	}
 
-	runArrivalScheduler(ctx, e.script.Config.Pacing.TPS, func() int {
+	runArrivalScheduler(loopCtx, e.script.Config.Pacing.TPS, func() int {
 		if bounded {
 			return arrivals
 		}
@@ -262,8 +270,9 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 				Script:         iterationScript,
 				Metrics:        e.metrics,
 				ExecutionGoals: executionGoals,
+				HardStopCtx:    ctx,
 			}
-			vu.Run(ctx)
+			vu.Run(loopCtx)
 		}(arrival)
 	})
 

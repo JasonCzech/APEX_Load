@@ -11,6 +11,7 @@ func httpActionSpecs() []ActionSpec {
 		{Name: "method", Kind: FieldKindString, Doc: "Explicit HTTP method override; defaults to the action type."},
 		{Name: "headers", Kind: FieldKindObject, Doc: "Request headers merged over config.http.default_headers."},
 		{Name: "body", Kind: FieldKindString, Doc: "Request body; template variables are expanded."},
+		{Name: "body_file", Kind: FieldKindString, Doc: "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there."},
 		{Name: "body_encoding", Kind: FieldKindString, Doc: "Body encoding hint, e.g. base64 for binary payloads."},
 		{Name: "params", Kind: FieldKindObject, Doc: "Protocol-specific request options."},
 		{Name: "soap", Kind: FieldKindObject, Doc: "SOAP-only: {action, operation, body_mode (raw_xml|generated)}."},

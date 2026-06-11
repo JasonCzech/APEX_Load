@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 type scriptWrapper struct {
@@ -15,10 +16,32 @@ func ParseFile(path string) (*Script, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read script file: %w", err)
 	}
-	return Parse(data)
+	script, err := parseScript(data)
+	if err != nil {
+		return nil, err
+	}
+	if err := ResolveBodyRefs(script, filepath.Dir(path)); err != nil {
+		return nil, err
+	}
+	if err := ValidateScriptError(script); err != nil {
+		return nil, err
+	}
+	return script, nil
 }
 
 func Parse(data []byte) (*Script, error) {
+	script, err := parseScript(data)
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateScriptError(script); err != nil {
+		return nil, err
+	}
+
+	return script, nil
+}
+
+func parseScript(data []byte) (*Script, error) {
 	var wrapper scriptWrapper
 	if err := json.Unmarshal(data, &wrapper); err != nil {
 		return nil, fmt.Errorf("parse script JSON: %w", err)
@@ -31,9 +54,6 @@ func Parse(data []byte) (*Script, error) {
 			return nil, fmt.Errorf("parse script JSON: %w", err)
 		}
 		script = &direct
-	}
-	if err := ValidateScriptError(script); err != nil {
-		return nil, err
 	}
 
 	return script, nil

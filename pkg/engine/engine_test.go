@@ -278,6 +278,112 @@ func TestEngine_RunStopsAtGlobalTransactionGoal(t *testing.T) {
 	}
 }
 
+func TestEngine_RunRecordsReservedIterationAfterGoalHit(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "reserved-iteration-goal",
+		Protocol: "slow-stub",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{MaxTransactions: 4},
+		},
+		Actions: []dsl.Action{{Name: "checkout", Type: "request", Target: "/checkout"}},
+	}
+	e, err := New(Config{Script: script, VUsers: 6, Duration: 3 * time.Second})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	result, err := e.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.TotalTransactions != 4 {
+		t.Fatalf("total transactions = %d, want all 4 reserved transactions recorded", result.TotalTransactions)
+	}
+}
+
+func TestEngine_RunOpenWorkloadStopsAtGlobalTransactionGoal(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "open-workload-transaction-goal",
+		Protocol: "stub",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{WorkloadModel: "open", MaxTransactions: 4},
+			Pacing:   dsl.PacingConfig{Type: "tps", TPS: 1000},
+		},
+		Actions: []dsl.Action{{Name: "homepage", Type: "request", Target: "/"}},
+	}
+	e, err := New(Config{Script: script, VUsers: 1, Duration: time.Second})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	result, err := e.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.TotalTransactions != 4 {
+		t.Fatalf("total transactions = %d, want 4 from open workload transaction goal", result.TotalTransactions)
+	}
+}
+
+func TestMultiGroup_RunStopsAtGlobalTransactionGoal(t *testing.T) {
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name: "buyers",
+			Script: &dsl.Script{
+				Name:     "multi-group-transaction-goal",
+				Protocol: "stub",
+				Config: dsl.ScriptConfig{
+					RunLogic: dsl.RunLogicConfig{MaxTransactions: 4},
+				},
+				Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
+			},
+			VUsers: 6,
+		}},
+		Duration: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	result, err := mge.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.TotalTransactions != 4 {
+		t.Fatalf("total transactions = %d, want 4 from multi-group transaction goal", result.TotalTransactions)
+	}
+}
+
+func TestMultiGroup_RunOpenWorkloadStopsAtGlobalTransactionGoal(t *testing.T) {
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name: "open-group",
+			Script: &dsl.Script{
+				Name:     "multi-group-open-transaction-goal",
+				Protocol: "stub",
+				Config: dsl.ScriptConfig{
+					RunLogic: dsl.RunLogicConfig{WorkloadModel: "open", MaxTransactions: 4},
+					Pacing:   dsl.PacingConfig{Type: "tps", TPS: 1000},
+				},
+				Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
+			},
+			VUsers: 1,
+		}},
+		Duration: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	result, err := mge.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.TotalTransactions != 4 {
+		t.Fatalf("total transactions = %d, want 4 from multi-group open workload transaction goal", result.TotalTransactions)
+	}
+}
+
 func TestMultiGroupRunExecutesAtOnceLifecycleOncePerGroup(t *testing.T) {
 	resetLifecycleCountingProtocol()
 	script := &dsl.Script{

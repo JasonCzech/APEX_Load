@@ -27,6 +27,10 @@
                 "description": "Body encoding hint, e.g. base64 for binary payloads.",
                 "type": "string"
               },
+              "body_file": {
+                "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
+                "type": "string"
+              },
               "headers": {
                 "description": "Request headers merged over config.http.default_headers.",
                 "type": "object"
@@ -75,6 +79,10 @@
               },
               "body_encoding": {
                 "description": "Body encoding hint, e.g. base64 for binary payloads.",
+                "type": "string"
+              },
+              "body_file": {
+                "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
               "headers": {
@@ -127,6 +135,10 @@
                 "description": "Body encoding hint, e.g. base64 for binary payloads.",
                 "type": "string"
               },
+              "body_file": {
+                "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
+                "type": "string"
+              },
               "headers": {
                 "description": "Request headers merged over config.http.default_headers.",
                 "type": "object"
@@ -175,6 +187,10 @@
               },
               "body_encoding": {
                 "description": "Body encoding hint, e.g. base64 for binary payloads.",
+                "type": "string"
+              },
+              "body_file": {
+                "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
               "headers": {
@@ -227,6 +243,10 @@
                 "description": "Body encoding hint, e.g. base64 for binary payloads.",
                 "type": "string"
               },
+              "body_file": {
+                "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
+                "type": "string"
+              },
               "headers": {
                 "description": "Request headers merged over config.http.default_headers.",
                 "type": "object"
@@ -277,6 +297,10 @@
                 "description": "Body encoding hint, e.g. base64 for binary payloads.",
                 "type": "string"
               },
+              "body_file": {
+                "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
+                "type": "string"
+              },
               "headers": {
                 "description": "Request headers merged over config.http.default_headers.",
                 "type": "object"
@@ -325,6 +349,10 @@
               },
               "body_encoding": {
                 "description": "Body encoding hint, e.g. base64 for binary payloads.",
+                "type": "string"
+              },
+              "body_file": {
+                "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
               "headers": {
@@ -1385,7 +1413,7 @@
             "description": "Conditional block: runs control.steps when the condition holds, control.else otherwise.",
             "properties": {
               "control": {
-                "description": "Branch body: {condition, steps, else}. Requires steps or else.",
+                "description": "Branch body: {condition, steps, else}. condition may use legacy left/op/right or CEL expr over var/data/env. Requires steps or else.",
                 "type": "object"
               }
             },
@@ -1411,7 +1439,7 @@
             "description": "Loop block: repeats control.steps for a fixed count or while a condition holds.",
             "properties": {
               "control": {
-                "description": "Loop body: {condition, steps, count, max_iterations}. Requires a positive count or a condition.",
+                "description": "Loop body: {condition, steps, count, max_iterations}. condition may use legacy left/op/right or CEL expr over var/data/env. Requires a positive count or a condition.",
                 "type": "object"
               }
             },
@@ -1522,6 +1550,11 @@
                     "required": [
                       "body"
                     ]
+                  },
+                  {
+                    "required": [
+                      "body_file"
+                    ]
                   }
                 ]
               }
@@ -1530,6 +1563,10 @@
             "properties": {
               "body": {
                 "description": "SQL statement alternative to target (useful for multiline SQL).",
+                "type": "string"
+              },
+              "body_file": {
+                "description": "Local file containing the SQL statement. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
               "params": {
@@ -1598,6 +1635,11 @@
                     "required": [
                       "body"
                     ]
+                  },
+                  {
+                    "required": [
+                      "body_file"
+                    ]
                   }
                 ]
               }
@@ -1606,6 +1648,10 @@
             "properties": {
               "body": {
                 "description": "SQL statement alternative to target (useful for multiline SQL).",
+                "type": "string"
+              },
+              "body_file": {
+                "description": "Local file containing the SQL statement. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
               "params": {
@@ -1657,6 +1703,11 @@
                     "required": [
                       "body"
                     ]
+                  },
+                  {
+                    "required": [
+                      "body_file"
+                    ]
                   }
                 ]
               }
@@ -1665,6 +1716,10 @@
             "properties": {
               "body": {
                 "description": "SQL statement alternative to target (useful for multiline SQL).",
+                "type": "string"
+              },
+              "body_file": {
+                "description": "Local file containing the SQL statement. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
               "params": {
@@ -1985,6 +2040,10 @@
                 "description": "Request message as JSON; template variables are expanded.",
                 "type": "string"
               },
+              "body_file": {
+                "description": "Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
+                "type": "string"
+              },
               "headers": {
                 "description": "Per-call gRPC metadata merged over config.grpc.metadata.",
                 "type": "object"
@@ -2030,6 +2089,10 @@
             "properties": {
               "body": {
                 "description": "Request message as JSON; template variables are expanded.",
+                "type": "string"
+              },
+              "body_file": {
+                "description": "Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
               "headers": {
@@ -2079,6 +2142,10 @@
                 "description": "Request message as JSON; template variables are expanded.",
                 "type": "string"
               },
+              "body_file": {
+                "description": "Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
+                "type": "string"
+              },
               "headers": {
                 "description": "Per-call gRPC metadata merged over config.grpc.metadata.",
                 "type": "object"
@@ -2124,6 +2191,10 @@
             "properties": {
               "body": {
                 "description": "Request message as JSON; template variables are expanded.",
+                "type": "string"
+              },
+              "body_file": {
+                "description": "Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
               "headers": {
@@ -2325,6 +2396,10 @@
                 "description": "Message payload; template variables are expanded.",
                 "type": "string"
               },
+              "body_file": {
+                "description": "Local file containing the message payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
+                "type": "string"
+              },
               "headers": {
                 "description": "Message properties/headers.",
                 "type": "object"
@@ -2354,6 +2429,10 @@
             "properties": {
               "body": {
                 "description": "Request payload; template variables are expanded.",
+                "type": "string"
+              },
+              "body_file": {
+                "description": "Local file containing the request payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
               "params": {
@@ -2466,6 +2545,10 @@
                 "description": "Record value; template variables are expanded.",
                 "type": "string"
               },
+              "body_file": {
+                "description": "Local file containing the record value. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
+                "type": "string"
+              },
               "headers": {
                 "description": "Record headers.",
                 "type": "object"
@@ -2512,6 +2595,10 @@
             "properties": {
               "body": {
                 "description": "Request record value.",
+                "type": "string"
+              },
+              "body_file": {
+                "description": "Local file containing the request record value. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
               "params": {
@@ -3429,10 +3516,30 @@
             ]
           },
           "then": {
+            "allOf": [
+              {
+                "anyOf": [
+                  {
+                    "required": [
+                      "body"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "body_file"
+                    ]
+                  }
+                ]
+              }
+            ],
             "description": "Sends a message over the open connection.",
             "properties": {
               "body": {
                 "description": "Message payload; template variables are expanded.",
+                "type": "string"
+              },
+              "body_file": {
+                "description": "Local file containing the message payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
               "params": {
@@ -3448,10 +3555,7 @@
                 },
                 "type": "object"
               }
-            },
-            "required": [
-              "body"
-            ]
+            }
           }
         }
       ],
@@ -3469,6 +3573,9 @@
           "type": "string"
         },
         "body_encoding": {
+          "type": "string"
+        },
+        "body_file": {
           "type": "string"
         },
         "capture": {
@@ -3812,6 +3919,9 @@
     "Condition": {
       "additionalProperties": false,
       "properties": {
+        "expr": {
+          "type": "string"
+        },
         "left": {
           "type": "string"
         },

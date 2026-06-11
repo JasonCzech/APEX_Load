@@ -32,6 +32,9 @@ func (vu *VUser) evalCondition(cond *dsl.Condition) bool {
 	if cond == nil {
 		return true
 	}
+	if expr := strings.TrimSpace(cond.Expr); expr != "" {
+		return vu.evalConditionExpr(expr)
+	}
 	left := vu.interpolate(cond.Left)
 	right := vu.interpolate(cond.Right)
 	switch strings.ToLower(strings.TrimSpace(cond.Op)) {
