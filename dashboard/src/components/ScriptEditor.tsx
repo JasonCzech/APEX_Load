@@ -42,6 +42,7 @@ import {
   type ReplayPreflight,
 } from '../types/scripts'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
+import PageViewToggle from './PageViewToggle'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import { buildLocalReplayPreflight, replayPreflightStatusLabel } from './replayPreflightUtils'
 import SourceMappingReview from './SourceMappingReview'
@@ -5817,29 +5818,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       },
     ],
     controls: (
-      <div className="topbar-segmented-control script-mode-switcher" role="tablist" aria-label="Script workspace">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={workspaceTab === 'author'}
-          aria-pressed={workspaceTab === 'author'}
-          className={workspaceTab === 'author' ? 'active' : ''}
-          onClick={() => activateWorkspaceTab('author')}
-        >
-          Author
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={workspaceTab === 'debug'}
-          aria-pressed={workspaceTab === 'debug'}
-          className={workspaceTab === 'debug' ? 'active' : ''}
-          title={debugWorkspaceStatusLabel || undefined}
-          onClick={() => activateWorkspaceTab('debug')}
-        >
-          {debugWorkspaceStatusLabel ? `Debug ${debugWorkspaceStatusLabel}` : 'Debug'}
-        </button>
-      </div>
+      <PageViewToggle
+        value={workspaceTab}
+        ariaLabel="Script workspace"
+        className="script-mode-switcher script-page-toggle topbar-page-section-toggle"
+        onChange={value => activateWorkspaceTab(value)}
+        options={[
+          { value: 'author', label: 'Author' },
+          { value: 'debug', label: 'Debug', title: debugWorkspaceStatusLabel || undefined },
+        ]}
+      />
     ),
     secondaryActions: [
       {
@@ -6033,7 +6021,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         />
         <AutoParameterizationSection
           onApplyAutoParameterization={applyAutoParameterization}
-          onScanForAutoParameters={scanForAutoParameters}
           onUpdateParameterCandidate={updateCandidate}
           parameterCandidates={parameterCandidates}
         />
@@ -9296,28 +9283,35 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     </button>
                   </div>
                   {!outlineParameterListCollapsed && (
-                    <div className="parameter-outline-list">
-                      {(script.parameters || []).map((parameter, index) => {
-                        const parameterName = parameter.name || `Parameter ${index + 1}`
-                        const referenceCount = parameter.name ? parameterReferenceCounts.get(parameter.name) || 0 : 0
-                        const selected = selectedOutlineParameterName === parameter.name
-                        return (
-                          <button
-                            key={`${parameter.name || 'parameter'}-${index}`}
-                            type="button"
-                            className={`parameter-outline-item ${selected ? 'selected' : ''}`}
-                            onClick={() => parameter.name && selectOutlineParameter(parameter.name)}
-                            disabled={!parameter.name}
-                          >
-                            <strong>{parameterName}</strong>
-                            <span>{parameter.type || 'list'} · {referenceCount} ref{referenceCount === 1 ? '' : 's'}</span>
-                          </button>
-                        )
-                      })}
-                      {(script.parameters || []).length === 0 && (
-                        <div className="action-empty parameter-outline-empty">No parameters defined yet.</div>
-                      )}
-                    </div>
+                    <>
+                      <div className="parameter-outline-list">
+                        {(script.parameters || []).map((parameter, index) => {
+                          const parameterName = parameter.name || `Parameter ${index + 1}`
+                          const referenceCount = parameter.name ? parameterReferenceCounts.get(parameter.name) || 0 : 0
+                          const selected = selectedOutlineParameterName === parameter.name
+                          return (
+                            <button
+                              key={`${parameter.name || 'parameter'}-${index}`}
+                              type="button"
+                              className={`parameter-outline-item ${selected ? 'selected' : ''}`}
+                              onClick={() => parameter.name && selectOutlineParameter(parameter.name)}
+                              disabled={!parameter.name}
+                            >
+                              <strong>{parameterName}</strong>
+                              <span>{parameter.type || 'list'} · {referenceCount} ref{referenceCount === 1 ? '' : 's'}</span>
+                            </button>
+                          )
+                        })}
+                        {(script.parameters || []).length === 0 && (
+                          <div className="action-empty parameter-outline-empty">No parameters defined yet.</div>
+                        )}
+                      </div>
+                      <div className="parameter-outline-actions">
+                        <button type="button" className="btn btn-sm btn-ghost" onClick={scanForAutoParameters}>
+                          Auto Parameterization
+                        </button>
+                      </div>
+                    </>
                   )}
                 </section>
                 <div className="starter-blocks-panel">
@@ -11007,17 +11001,19 @@ function ParameterDraftPanel({
 
 interface AutoParameterizationSectionProps {
   onApplyAutoParameterization: () => void
-  onScanForAutoParameters: () => void
   onUpdateParameterCandidate: (id: string, patch: Partial<ParameterCandidate>) => void
   parameterCandidates: ParameterCandidate[]
 }
 
 function AutoParameterizationSection({
   onApplyAutoParameterization,
-  onScanForAutoParameters,
   onUpdateParameterCandidate,
   parameterCandidates,
 }: AutoParameterizationSectionProps) {
+  if (parameterCandidates.length === 0) {
+    return null
+  }
+
   return (
     <div className="auto-parameter-section">
       <div className="panel-title-row" style={{ marginBottom: 0 }}>
@@ -11025,52 +11021,49 @@ function AutoParameterizationSection({
           <strong style={{ display: 'block', marginBottom: 4 }}>Auto Parameterization</strong>
           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Scan targets, headers, and body fields for values that can become reusable parameter data.</span>
         </div>
-        <button className="btn btn-sm btn-ghost" onClick={onScanForAutoParameters}>Auto Parameterization</button>
       </div>
-      {parameterCandidates.length > 0 && (
-        <div className="auto-parameter-panel">
-          <div className="auto-parameter-header">
-            <h4>Review Candidates</h4>
-            <button className="btn btn-sm btn-accent" onClick={onApplyAutoParameterization}>Apply Selected</button>
-          </div>
-          <div className="auto-parameter-table-wrap">
-            <table className="auto-parameter-table">
-              <thead>
-                <tr>
-                  <th>Use</th>
-                  <th>Field Hint</th>
-                  <th>Current Value</th>
-                  <th>Variable Name</th>
-                  <th>Hits</th>
-                </tr>
-              </thead>
-              <tbody>
-                {parameterCandidates.map(candidate => (
-                  <tr key={candidate.id}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={candidate.selected}
-                        onChange={e => onUpdateParameterCandidate(candidate.id, { selected: e.target.checked })}
-                      />
-                    </td>
-                    <td className="cell-mono">{candidate.keyHint}</td>
-                    <td className="cell-mono">{candidate.value}</td>
-                    <td>
-                      <input
-                        value={candidate.varName}
-                        onChange={e => onUpdateParameterCandidate(candidate.id, { varName: sanitizeVarName(e.target.value) })}
-                        placeholder="parameter_name"
-                      />
-                    </td>
-                    <td>{candidate.occurrences.length}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <div className="auto-parameter-panel">
+        <div className="auto-parameter-header">
+          <h4>Review Candidates</h4>
+          <button className="btn btn-sm btn-accent" onClick={onApplyAutoParameterization}>Apply Selected</button>
         </div>
-      )}
+        <div className="auto-parameter-table-wrap">
+          <table className="auto-parameter-table">
+            <thead>
+              <tr>
+                <th>Use</th>
+                <th>Field Hint</th>
+                <th>Current Value</th>
+                <th>Variable Name</th>
+                <th>Hits</th>
+              </tr>
+            </thead>
+            <tbody>
+              {parameterCandidates.map(candidate => (
+                <tr key={candidate.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={candidate.selected}
+                      onChange={e => onUpdateParameterCandidate(candidate.id, { selected: e.target.checked })}
+                    />
+                  </td>
+                  <td className="cell-mono">{candidate.keyHint}</td>
+                  <td className="cell-mono">{candidate.value}</td>
+                  <td>
+                    <input
+                      value={candidate.varName}
+                      onChange={e => onUpdateParameterCandidate(candidate.id, { varName: sanitizeVarName(e.target.value) })}
+                      placeholder="parameter_name"
+                    />
+                  </td>
+                  <td>{candidate.occurrences.length}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }

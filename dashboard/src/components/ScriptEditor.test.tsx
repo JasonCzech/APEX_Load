@@ -592,9 +592,14 @@ describe('ScriptEditor', () => {
 
     const topbar = container.querySelector('[data-testid="topbar-contribution"]')
     const nameInput = topbar?.querySelector<HTMLInputElement>('input[placeholder="My_Test_Script"]')
+    const workspaceToggle = topbar?.querySelector('.page-view-toggle.script-page-toggle.script-mode-switcher')
+    const workspaceButtons = Array.from(workspaceToggle?.querySelectorAll<HTMLButtonElement>('.mode-chip') || [])
     expect(nameInput?.value).toBe('Checkout Flow')
     expect(topbar?.textContent).toContain('Author')
     expect(topbar?.textContent).toContain('Debug')
+    expect(workspaceToggle).not.toBeNull()
+    expect(workspaceButtons.map(button => button.textContent?.trim())).toEqual(['Author', 'Debug'])
+    expect(workspaceButtons[0]?.classList.contains('active')).toBe(true)
     expect(topbar?.textContent).toContain('Validate Draft')
     expect(topbar?.textContent).toContain('Save Script')
     expect(container.querySelector('.script-editor-local-action-proxy')).toBeNull()
@@ -861,6 +866,29 @@ describe('ScriptEditor', () => {
     expect(gridScrollRule).toContain('max-height: min(440px, 45vh);')
     expect(gridHeaderRule).toContain('position: sticky;')
     expect(gridHeaderRule).toContain('top: 0;')
+  })
+
+  it('lets the author center workbench fill the desktop editor frame', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const editorCss = readFileSync(`${cwd}/src/components/ScriptEditor.css`, 'utf8') as string
+    const mainContentRule = cssRule(editorCss, '.main-content:has(.editor-body.workspace-author)')
+    const topbarRule = cssRule(editorCss, '.main-content:has(.editor-body.workspace-author) > .main-topbar')
+    const editorBodyRule = cssRule(editorCss, '.editor-body.workspace-author')
+    const actionsLayoutRule = cssRule(editorCss, '.editor-body.workspace-author .actions-layout')
+    const authorCenterRule = cssRule(editorCss, '.editor-body.workspace-author .author-code-center')
+
+    expect(editorCss).toContain('@media (min-width: 901px)')
+    expect(mainContentRule).toContain('display: flex;')
+    expect(mainContentRule).toContain('overflow-y: hidden;')
+    expect(topbarRule).toContain('margin-bottom: 20px;')
+    expect(editorBodyRule).toContain('flex: 1;')
+    expect(editorBodyRule).toContain('min-height: 0;')
+    expect(actionsLayoutRule).toContain('flex: 1;')
+    expect(actionsLayoutRule).toContain('min-height: 0;')
+    expect(actionsLayoutRule).toContain('margin: 0 -36px;')
+    expect(authorCenterRule).toContain('max-height: none;')
   })
 
   it('keeps the landing editor focused on script name while support tools live in the outline', async () => {
@@ -2163,10 +2191,14 @@ describe('ScriptEditor', () => {
 
     expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
 
+    const parameterSection = Array.from(container.querySelectorAll('.outline-section'))
+      .find(section => section.textContent?.includes('Parameter List'))
     const activePanel = container.querySelector('.center-tab-panel.active') as HTMLDivElement | null
-    const autoButton = Array.from(activePanel?.querySelectorAll('button') || []).find(button =>
+    const autoButton = Array.from(parameterSection?.querySelectorAll('button') || []).find(button =>
       button.textContent?.trim() === 'Auto Parameterization',
     )
+    expect(activePanel?.textContent).not.toContain('Auto Parameterization')
+    expect(parameterSection?.contains(autoButton || null)).toBe(true)
     expect(autoButton).toBeDefined()
     if (!autoButton) {
       return

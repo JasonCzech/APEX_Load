@@ -4045,6 +4045,15 @@
 .parameter-outline-empty {
   padding-block: 18px;
 }
+.parameter-outline-actions {
+  display: flex;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--border);
+}
+.parameter-outline-actions .btn {
+  width: 100%;
+  justify-content: center;
+}
 .starter-blocks-panel {
   border-top: 1px solid var(--border);
   padding: 12px 16px;
@@ -4966,15 +4975,10 @@
 }
 .script-ide-debugger {
   display: none;
-  min-height: min(760px, calc(100vh - 230px));
-  max-height: calc(100vh - 210px);
   overflow: hidden;
 }
 .script-ide-debugger.open {
   display: flex;
-}
-.editor-body.workspace-debug .script-ide-debugger {
-  min-height: calc(100vh - 220px);
 }
 .script-ide-debugger.maximized.open {
   position: fixed;
@@ -4983,6 +4987,96 @@
   max-height: none;
   min-height: 0;
   box-shadow: 0 24px 54px rgba(15, 23, 42, 0.34);
+}
+/* Debug mode fills the content frame: the page stops scrolling, every wrapper
+   between .main-content and the debugger grows, and the panel bleeds into the
+   .main-content padding (20px 36px 28px) so it runs sidebar-edge to window-edge. */
+.main-content:has(.editor-body.workspace-debug) {
+  display: flex;
+  flex-direction: column;
+  overflow-y: hidden;
+  padding-bottom: 0;
+}
+.main-content:has(.editor-body.workspace-debug) > .main-topbar {
+  flex-shrink: 0;
+  margin-bottom: 20px;
+}
+.main-content:has(.editor-body.workspace-debug) .page,
+.main-content:has(.editor-body.workspace-debug) .script-editor {
+  flex: 1;
+  min-height: 0;
+}
+.editor-body.workspace-debug {
+  flex: 1;
+  min-height: 0;
+  margin-top: 0;
+}
+.editor-body.workspace-debug .script-ide-debugger.open {
+  flex: 1;
+  min-height: 0;
+  margin: 0 -36px;
+  border: none;
+  border-radius: 0;
+}
+@media (min-width: 901px) {
+  .main-content:has(.editor-body.workspace-author) {
+    display: flex;
+    flex-direction: column;
+    overflow-y: hidden;
+    padding-bottom: 0;
+  }
+  .main-content:has(.editor-body.workspace-author) > .main-topbar {
+    flex-shrink: 0;
+    margin-bottom: 20px;
+  }
+  .main-content:has(.editor-body.workspace-author) .page,
+  .main-content:has(.editor-body.workspace-author) .script-editor {
+    flex: 1;
+    min-height: 0;
+  }
+  .editor-body.workspace-author {
+    flex: 1;
+    min-height: 0;
+    margin-top: 0;
+  }
+  .editor-body.workspace-author .actions-layout {
+    flex: 1;
+    min-height: 0;
+    margin: 0 -36px;
+    border: none;
+    border-radius: 0;
+  }
+  .editor-body.workspace-author .actions-content-grid,
+  .editor-body.workspace-author .author-code-center,
+  .editor-body.workspace-author .actions-sidebar,
+  .editor-body.workspace-author .editor-utility-sidebar {
+    min-height: 0;
+  }
+  .editor-body.workspace-author .actions-content-grid {
+    height: 100%;
+  }
+  .editor-body.workspace-author .author-code-center {
+    max-height: none;
+  }
+  .editor-body.workspace-author .actions-sidebar,
+  .editor-body.workspace-author .editor-utility-sidebar:not(.context-source-map) {
+    overflow-y: auto;
+  }
+  .editor-body.workspace-author .editor-utility-sidebar,
+  .editor-body.workspace-author .editor-utility-sidebar.context-source-map {
+    height: auto;
+    max-height: none;
+  }
+  .editor-body.workspace-author .actions-sidebar.collapsed,
+  .editor-body.workspace-author .editor-utility-sidebar.collapsed {
+    overflow: hidden;
+  }
+}
+@media (max-width: 768px) {
+  /* .main-content gutter narrows to 16px at this breakpoint */
+  .editor-body.workspace-debug .script-ide-debugger.open {
+    margin: 0 -16px;
+  }
 }
 
 /* Toolbar */
