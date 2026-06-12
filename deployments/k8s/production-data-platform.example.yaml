@@ -5,7 +5,9 @@ metadata:
 type: Opaque
 stringData:
   APEXLOAD_DATABASE_URL: postgres://apexload:change-me@postgresql.apexload.svc:5432/apexload?sslmode=require
-  APEXLOAD_REDIS_URL: redis://apexload-redis.apexload.svc:6379/0
+  # Always set a Redis/Valkey password (ha/redis-valkey.example.yaml enforces
+  # requirepass); prefer rediss:// (TLS, e.g. port 6380) when the cache supports it.
+  APEXLOAD_REDIS_URL: redis://:change-me@apexload-redis.apexload.svc:6379/0
   APEXLOAD_PROMETHEUS_REMOTE_WRITE_URL: https://mimir.example.com/api/v1/push
   APEXLOAD_PROMETHEUS_TENANT_ID: apexload
 ---

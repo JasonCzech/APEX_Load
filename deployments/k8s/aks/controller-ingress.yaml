@@ -1,0 +1,38 @@
+# Exposes the controller API + dashboard through AKS Web Application Routing
+# (the managed NGINX ingress add-on; enable with `--enable-app-routing` or the
+# Terraform `web_app_routing` block). For AGIC or a self-managed NGINX, change
+# ingressClassName and keep the WebSocket timeout annotations.
+#
+# The dashboard streams live metrics over WebSockets (/api/v1/ws and
+# /api/v1/tests/{id}/stream) — the long read/send timeouts below prevent the
+# proxy from severing streams mid-test.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: apexload-controller
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: ingress
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: 64m
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  # TLS: create the secret with cert-manager or upload your certificate, then
+  # uncomment. Production deployments should not serve the dashboard over HTTP.
+  # tls:
+  #   - hosts:
+  #       - apexload.example.com
+  #     secretName: apexload-tls
+  rules:
+    - host: apexload.example.com # CHANGE-ME: your DNS name
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller
+                port:
+                  name: http

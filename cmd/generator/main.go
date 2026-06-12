@@ -45,7 +45,17 @@ func main() {
 	}
 	defer listener.Close()
 
-	grpcServer := grpc.NewServer()
+	serverOptions, err := generatorrpc.ServerOptionsFromEnv()
+	if err != nil {
+		slog.Error("invalid gRPC transport configuration", "err", err)
+		os.Exit(1)
+	}
+	security := generatorrpc.TransportSecurityFromEnv()
+	if security.Insecure() && os.Getenv("APEXLOAD_ENV") == "production" {
+		slog.Warn("generator gRPC is plaintext and unauthenticated in production; set APEXLOAD_GRPC_TLS_* and/or APEXLOAD_GRPC_AUTH_TOKEN")
+	}
+
+	grpcServer := grpc.NewServer(serverOptions...)
 	pb.RegisterGeneratorControlServer(grpcServer, generatorrpc.NewService(generatorID, cfg.MaxVUsers, generatorrpc.WithExecution()))
 
 	errCh := make(chan error, 1)
@@ -53,7 +63,7 @@ func main() {
 		errCh <- grpcServer.Serve(listener)
 	}()
 
-	slog.Info("apexload generator starting", "addr", cfg.ListenAddr, "generator_id", generatorID, "max_vusers", cfg.MaxVUsers)
+	slog.Info("apexload generator starting", "addr", cfg.ListenAddr, "generator_id", generatorID, "max_vusers", cfg.MaxVUsers, "grpc_transport", security.String())
 
 	select {
 	case <-ctx.Done():

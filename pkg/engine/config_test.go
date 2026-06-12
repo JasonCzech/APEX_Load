@@ -321,7 +321,7 @@ func TestAzureKeyVaultSecretResolver_Resolve(t *testing.T) {
 
 	resolver := &azureKeyVaultSecretResolver{
 		baseURL:    server.URL,
-		token:      "test-token",
+		tokens:     staticAzureTokenSource("test-token"),
 		apiVersion: "7.4",
 		client:     server.Client(),
 	}

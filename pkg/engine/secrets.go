@@ -1,13 +1,17 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 )
 
 type SecretResolver interface {
@@ -104,7 +108,7 @@ func (envSecretResolver) Resolve(name string) (string, bool) {
 
 type azureKeyVaultSecretResolver struct {
 	baseURL    string
-	token      string
+	tokens     azureTokenSource
 	apiVersion string
 	client     *http.Client
 }
@@ -118,11 +122,8 @@ func newAzureKeyVaultSecretResolverFromEnv() SecretResolver {
 	if baseURL == "" {
 		return nil
 	}
-	token := strings.TrimSpace(os.Getenv("APEXLOAD_AZURE_KEY_VAULT_TOKEN"))
-	if token == "" {
-		token = strings.TrimSpace(os.Getenv("AZURE_KEY_VAULT_TOKEN"))
-	}
-	if token == "" {
+	tokens := azureKeyVaultTokenSourceFromEnv()
+	if tokens == nil {
 		return nil
 	}
 	apiVersion := strings.TrimSpace(os.Getenv("APEXLOAD_AZURE_KEY_VAULT_API_VERSION"))
@@ -131,10 +132,58 @@ func newAzureKeyVaultSecretResolverFromEnv() SecretResolver {
 	}
 	return &azureKeyVaultSecretResolver{
 		baseURL:    baseURL,
-		token:      token,
+		tokens:     tokens,
 		apiVersion: apiVersion,
 		client:     &http.Client{Timeout: 5 * time.Second},
 	}
+}
+
+// azureKeyVaultTokenSourceFromEnv picks the Key Vault auth mode:
+//
+//	APEXLOAD_AZURE_KEY_VAULT_AUTH=token          — static bearer token from env (legacy)
+//	APEXLOAD_AZURE_KEY_VAULT_AUTH=azure_identity — DefaultAzureCredential (AKS workload
+//	                                               identity, managed identity, env, CLI)
+//	unset/auto                                   — static token when present, otherwise
+//	                                               DefaultAzureCredential
+//
+// The token scope defaults to the public-cloud vault audience and can be
+// overridden for sovereign clouds via APEXLOAD_AZURE_KEY_VAULT_SCOPE.
+func azureKeyVaultTokenSourceFromEnv() azureTokenSource {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("APEXLOAD_AZURE_KEY_VAULT_AUTH")))
+	staticToken := strings.TrimSpace(os.Getenv("APEXLOAD_AZURE_KEY_VAULT_TOKEN"))
+	if staticToken == "" {
+		staticToken = strings.TrimSpace(os.Getenv("AZURE_KEY_VAULT_TOKEN"))
+	}
+	switch mode {
+	case "token":
+		if staticToken == "" {
+			return nil
+		}
+		return staticAzureTokenSource(staticToken)
+	case "azure_identity":
+		return newAzureIdentityKeyVaultTokenSource()
+	case "", "auto":
+		if staticToken != "" {
+			return staticAzureTokenSource(staticToken)
+		}
+		return newAzureIdentityKeyVaultTokenSource()
+	default:
+		slog.Warn("unknown APEXLOAD_AZURE_KEY_VAULT_AUTH mode, expected token|azure_identity|auto", "mode", mode)
+		return nil
+	}
+}
+
+func newAzureIdentityKeyVaultTokenSource() azureTokenSource {
+	scope := strings.TrimSpace(os.Getenv("APEXLOAD_AZURE_KEY_VAULT_SCOPE"))
+	if scope == "" {
+		scope = "https://vault.azure.net/.default"
+	}
+	credential, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		slog.Warn("azure key vault resolver disabled: DefaultAzureCredential init failed", "error", err)
+		return nil
+	}
+	return newAzureCredentialTokenSource(credential, scope)
 }
 
 func (r *azureKeyVaultSecretResolver) Resolve(name string) (string, bool) {
@@ -149,11 +198,19 @@ func (r *azureKeyVaultSecretResolver) Resolve(name string) (string, bool) {
 	query.Set("api-version", r.apiVersion)
 	endpoint.RawQuery = query.Encode()
 
-	req, err := http.NewRequest(http.MethodGet, endpoint.String(), nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	token, err := r.tokens.Token(ctx)
+	if err != nil {
+		slog.Warn("azure key vault token acquisition failed", "error", err)
+		return "", false
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
 		return "", false
 	}
-	req.Header.Set("Authorization", "Bearer "+r.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := r.client.Do(req)
 	if err != nil {

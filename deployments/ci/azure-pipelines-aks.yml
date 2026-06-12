@@ -1,0 +1,102 @@
+# Build APEX Load images, push to ACR, deploy to AKS, smoke test.
+#
+# Pipeline variables (Library or pipeline settings):
+#   AZURE_SERVICE_CONNECTION — ARM service connection with AcrPush on the
+#                              registry and Azure Kubernetes Service RBAC
+#                              Writer on the cluster
+#   ACR_NAME                 — registry name (without .azurecr.io)
+#   AKS_RESOURCE_GROUP       — resource group of the cluster
+#   AKS_CLUSTER_NAME         — cluster name
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  imageTag: $(Build.SourceVersion)
+
+stages:
+  - stage: Build
+    displayName: Build & push images
+    jobs:
+      - job: build_push
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: AzureCLI@2
+            displayName: az acr build (controller + generator)
+            inputs:
+              azureSubscription: $(AZURE_SERVICE_CONNECTION)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                COMMIT=$(Build.SourceVersion)
+                BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+                for binary in controller generator; do
+                  az acr build --registry $(ACR_NAME) \
+                    --image apexload-${binary}:$(imageTag) \
+                    --image apexload-${binary}:latest \
+                    --build-arg BINARY=${binary} \
+                    --build-arg VERSION=$(imageTag) \
+                    --build-arg COMMIT=${COMMIT} \
+                    --build-arg BUILD_TIME=${BUILD_TIME} \
+                    --file Dockerfile .
+                done
+
+  - stage: Deploy
+    displayName: Deploy to AKS
+    dependsOn: Build
+    jobs:
+      - deployment: deploy_aks
+        environment: apexload-aks
+        pool:
+          vmImage: ubuntu-latest
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: AzureCLI@2
+                  displayName: kustomize set images + kubectl apply
+                  inputs:
+                    azureSubscription: $(AZURE_SERVICE_CONNECTION)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      az aks get-credentials \
+                        --resource-group $(AKS_RESOURCE_GROUP) \
+                        --name $(AKS_CLUSTER_NAME) --overwrite-existing
+                      ACR_SERVER=$(az acr show --name $(ACR_NAME) --query loginServer -o tsv)
+                      cd deployments/k8s/aks
+                      kubectl kustomize . >/dev/null  # fail fast on manifest errors
+                      kustomize edit set image \
+                        apexload-controller=${ACR_SERVER}/apexload-controller:$(imageTag) \
+                        apexload-generator=${ACR_SERVER}/apexload-generator:$(imageTag)
+                      kubectl apply -k .
+                      kubectl -n apexload rollout status deployment/apexload-controller --timeout=300s
+                      kubectl -n apexload rollout status statefulset/apexload-generator --timeout=300s
+
+  - stage: Smoke
+    displayName: Smoke test
+    dependsOn: Deploy
+    jobs:
+      - job: smoke
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: AzureCLI@2
+            displayName: Health + readiness probes via kubectl
+            inputs:
+              azureSubscription: $(AZURE_SERVICE_CONNECTION)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az aks get-credentials \
+                  --resource-group $(AKS_RESOURCE_GROUP) \
+                  --name $(AKS_CLUSTER_NAME) --overwrite-existing
+                kubectl -n apexload run smoke --rm -i --restart=Never \
+                  --image=curlimages/curl:8.10.1 -- \
+                  curl -fsS http://apexload-controller:8080/api/v1/system/health

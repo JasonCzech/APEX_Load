@@ -1,0 +1,27 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: apexload-controller
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: controller
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-controller
+---
+# Generators run active load; voluntary disruptions (node upgrades) should
+# drain them gradually rather than evicting half the fleet at once.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: apexload-generator
+  labels:
+    app.kubernetes.io/name: apexload-generator
+    app.kubernetes.io/component: generator
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-generator

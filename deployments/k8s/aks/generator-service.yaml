@@ -1,0 +1,22 @@
+# Headless service. The controller discovers the fleet by re-resolving this
+# service's DNS (APEXLOAD_GENERATORS=dns://apexload-generator...:9090), which
+# returns one A record per ready generator pod — including pods added or
+# removed by the KEDA ScaledObject.
+apiVersion: v1
+kind: Service
+metadata:
+  name: apexload-generator
+  labels:
+    app.kubernetes.io/name: apexload-generator
+    app.kubernetes.io/component: generator
+spec:
+  clusterIP: None
+  # Only advertise ready pods: the controller must not shard load onto
+  # generators that are still starting.
+  publishNotReadyAddresses: false
+  selector:
+    app.kubernetes.io/name: apexload-generator
+  ports:
+    - name: grpc
+      port: 9090
+      targetPort: grpc

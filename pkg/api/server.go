@@ -24,41 +24,49 @@ var StaticFS embed.FS
 var dashboardAssetRefPattern = regexp.MustCompile(`(?:href|src)="/(assets/[^"]+\.(?:css|js))"`)
 
 type Server struct {
-	httpServer     *http.Server
-	hub            *Hub
-	runner         *TestRunner
-	scheduler      *scenarioScheduler
-	browserReplay  *BrowserReplayManager
-	scriptDebug    *ScriptDebugManager
-	recorder       *recorder.Recorder
-	store          storage.Store
-	cache          CacheBackend
-	controllerID   string
-	authoringMu    sync.Mutex
-	authoring      map[string]*storage.AuthoringSession
-	libraryMu      sync.Mutex
-	libraryRemotes map[string]*LibraryRemote
-	libraryLinks   map[string]*librarySyncLink
-	libraryCreds   LibraryCredentialStore
-	c4Mu           sync.Mutex
-	slaWaivers     map[string][]*storage.ReleaseSLAWaiver
-	resultImports  map[string]*storage.ExternalResultImport
-	githubMu       sync.Mutex
-	githubTokens   map[string]githubCachedToken
-	mux            *http.ServeMux
-	usageCancel    context.CancelFunc
-	fanoutCancel   context.CancelFunc
-	fanoutSub      FanoutSubscription
-	desktopMode    bool
-	desktopAppData string
-	desktopLogPath string
-	boundAddr      string
-	boundAddrMu    sync.RWMutex
+	httpServer         *http.Server
+	hub                *Hub
+	runner             *TestRunner
+	scheduler          *scenarioScheduler
+	browserReplay      *BrowserReplayManager
+	scriptDebug        *ScriptDebugManager
+	recorder           *recorder.Recorder
+	store              storage.Store
+	cache              CacheBackend
+	controllerID       string
+	authoringMu        sync.Mutex
+	authoring          map[string]*storage.AuthoringSession
+	libraryMu          sync.Mutex
+	libraryRemotes     map[string]*LibraryRemote
+	libraryLinks       map[string]*librarySyncLink
+	libraryCreds       LibraryCredentialStore
+	c4Mu               sync.Mutex
+	slaWaivers         map[string][]*storage.ReleaseSLAWaiver
+	resultImports      map[string]*storage.ExternalResultImport
+	githubMu           sync.Mutex
+	githubTokens       map[string]githubCachedToken
+	mux                *http.ServeMux
+	usageCancel        context.CancelFunc
+	fanoutCancel       context.CancelFunc
+	fanoutSub          FanoutSubscription
+	generatorDiscovery *generatorDiscovery
+	discoveryCancel    context.CancelFunc
+	metricsAddr        string
+	metricsServer      *http.Server
+	metricsBoundAddr   string
+	desktopMode        bool
+	desktopAppData     string
+	desktopLogPath     string
+	boundAddr          string
+	boundAddrMu        sync.RWMutex
 }
 
 // ServerConfig configures API server startup behavior and integrations.
 type ServerConfig struct {
-	Addr               string
+	Addr string
+	// MetricsAddr, when set (e.g. ":9091"), serves GET /metrics on its own
+	// listener instead of the API port.
+	MetricsAddr        string
 	ProxyAddr          string
 	MaxConcurrent      int
 	AllowedOrigins     []string
@@ -96,10 +104,16 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store)
 	runner.setLiveStateStore(cache)
-	if len(cfg.GeneratorTargets) > 0 {
-		backend := newDistributedExecutionBackend(cfg.GeneratorTargets, cfg.GeneratorTimeout, nil)
-		backend.ApplyGeneratorDrainStates(loadGeneratorDrainStates(cfg.Store))
-		runner.setExecutionBackend(backend)
+	staticTargets, discoverySpecs := splitGeneratorTargets(cfg.GeneratorTargets)
+	var distributedBackend *distributedExecutionBackend
+	var discovery *generatorDiscovery
+	if len(staticTargets) > 0 || len(discoverySpecs) > 0 {
+		distributedBackend = newDistributedExecutionBackend(staticTargets, cfg.GeneratorTimeout, nil)
+		distributedBackend.ApplyGeneratorDrainStates(loadGeneratorDrainStates(cfg.Store))
+		runner.setExecutionBackend(distributedBackend)
+		if len(discoverySpecs) > 0 {
+			discovery = newGeneratorDiscovery(staticTargets, discoverySpecs, distributedBackend)
+		}
 	}
 	rec := recorder.New(cfg.ProxyAddr)
 
@@ -124,6 +138,9 @@ func NewServer(cfg ServerConfig) *Server {
 		desktopMode:    cfg.DesktopMode,
 		desktopAppData: cfg.DesktopAppDataPath,
 		desktopLogPath: cfg.DesktopLogPath,
+
+		generatorDiscovery: discovery,
+		metricsAddr:        strings.TrimSpace(cfg.MetricsAddr),
 	}
 
 	s.loadLibraryState()
@@ -459,7 +476,12 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/system/health", cors(log(http.HandlerFunc(s.handleHealthCheck))))
 	s.mux.Handle("GET /api/v1/system/version", cors(log(http.HandlerFunc(s.handleSystemVersion))))
 	s.mux.Handle("GET /api/v1/system/readiness", cors(log(http.HandlerFunc(s.handleSystemReadiness))))
-	s.mux.Handle("GET /metrics", log(http.HandlerFunc(s.handlePrometheusMetrics)))
+	// With a dedicated metrics listener (APEXLOAD_METRICS_ADDR) the scrape
+	// endpoint moves off the API port entirely, so NetworkPolicy can grant the
+	// monitoring namespace metrics access without exposing the API surface.
+	if s.metricsAddr == "" {
+		s.mux.Handle("GET /metrics", log(http.HandlerFunc(s.handlePrometheusMetrics)))
+	}
 	s.mux.Handle("GET /api/v1/system/inventory", cors(log(auth(http.HandlerFunc(s.handleGetSystemInventory)))))
 	s.mux.Handle("GET /api/v1/system/services", cors(log(auth(http.HandlerFunc(s.handleGetSystemServices)))))
 	s.mux.Handle("GET /api/v1/system/usage", cors(log(auth(http.HandlerFunc(s.handleGetUsageAccounting)))))
@@ -634,11 +656,16 @@ func (s *Server) Start() error {
 	// Start websocket broadcast loop before serving HTTP requests.
 	go s.hub.Run()
 	s.startCacheFanout()
+	s.startGeneratorDiscovery()
 
 	if err := s.recorder.StartProxy(); err != nil {
 		return fmt.Errorf("starting recording proxy: %w", err)
 	}
 	s.startUsageAccountingSnapshotCadence()
+
+	if err := s.startMetricsListener(); err != nil {
+		return err
+	}
 
 	listener, err := net.Listen("tcp", s.httpServer.Addr)
 	if err != nil {
@@ -650,6 +677,47 @@ func (s *Server) Start() error {
 		return err
 	}
 	return nil
+}
+
+// startMetricsListener serves GET /metrics on its own listener when
+// MetricsAddr is configured, keeping the scrape surface off the API port.
+func (s *Server) startMetricsListener() error {
+	if s.metricsAddr == "" {
+		return nil
+	}
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("GET /metrics", loggingMiddleware(http.HandlerFunc(s.handlePrometheusMetrics)))
+	s.metricsServer = &http.Server{
+		Addr:         s.metricsAddr,
+		Handler:      metricsMux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+	listener, err := net.Listen("tcp", s.metricsAddr)
+	if err != nil {
+		return fmt.Errorf("metrics listener %s: %w", s.metricsAddr, err)
+	}
+	s.boundAddrMu.Lock()
+	s.metricsBoundAddr = listener.Addr().String()
+	s.boundAddrMu.Unlock()
+	slog.Info("metrics listener started", "addr", s.metricsAddr)
+	go func() {
+		if err := s.metricsServer.Serve(listener); err != nil && err != http.ErrServerClosed {
+			slog.Error("metrics listener error", "err", err)
+		}
+	}()
+	return nil
+}
+
+// MetricsBoundAddr reports the dedicated metrics listener address, if any.
+func (s *Server) MetricsBoundAddr() string {
+	if s == nil {
+		return ""
+	}
+	s.boundAddrMu.RLock()
+	defer s.boundAddrMu.RUnlock()
+	return s.metricsBoundAddr
 }
 
 func (s *Server) setBoundAddr(addr string) {
@@ -694,6 +762,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.fanoutCancel()
 		s.fanoutCancel = nil
 	}
+	if s.discoveryCancel != nil {
+		s.discoveryCancel()
+		s.discoveryCancel = nil
+	}
 	if s.fanoutSub != nil {
 		_ = s.fanoutSub.Close()
 		s.fanoutSub = nil
@@ -702,6 +774,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.recorder.StopProxy()
 	if s.cache != nil {
 		_ = s.cache.Close()
+	}
+	if s.metricsServer != nil {
+		_ = s.metricsServer.Shutdown(ctx)
+		s.metricsServer = nil
 	}
 	return s.httpServer.Shutdown(ctx)
 }

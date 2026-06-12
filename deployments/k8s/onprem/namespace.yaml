@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apexload
+  labels:
+    app.kubernetes.io/name: apexload
+    # Pod Security Admission: every pod in this set satisfies the restricted
+    # profile (non-root, seccomp RuntimeDefault, no added capabilities).
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted

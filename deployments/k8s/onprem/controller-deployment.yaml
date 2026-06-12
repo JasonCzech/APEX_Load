@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apexload-controller
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: controller
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: apexload-controller
+        app.kubernetes.io/component: controller
+    spec:
+      serviceAccountName: apexload-controller
+      terminationGracePeriodSeconds: 45
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: apexload-controller
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: controller
+          image: apexload-controller:0.1.0 # rewritten to your registry by kustomization.yaml
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: metrics
+              containerPort: 9091
+          env:
+            # Fail closed: refuse to start in a bypass (unauthenticated) auth
+            # mode, force Secure cookies, and warn on insecure gRPC transport.
+            - name: APEXLOAD_ENV
+              value: production
+            - name: APEXLOAD_ADDR
+              value: ":8080"
+            # Local staging/scratch only; durable state lives in PostgreSQL,
+            # object storage, and Redis — pods are fully disposable.
+            - name: APEXLOAD_ARCHIVE_DIR
+              value: /var/lib/apexload/archives
+            - name: APEXLOAD_EXPORT_DIR
+              value: /var/lib/apexload/exports
+          envFrom:
+            - configMapRef:
+                name: apexload-data-platform
+            - secretRef:
+                name: apexload-data-platform
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: data
+              mountPath: /var/lib/apexload
+            - name: grpc-tls
+              mountPath: /etc/apexload/grpc-tls
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /api/v1/system/readiness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/system/health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 1Gi
+              ephemeral-storage: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+              ephemeral-storage: 14Gi
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: data
+          emptyDir:
+            sizeLimit: 10Gi
+        # Client certificate + CA for mTLS to generators. See
+        # certificates.example.yaml for cert-manager issuance.
+        - name: grpc-tls
+          secret:
+            secretName: apexload-controller-grpc-tls

@@ -120,6 +120,10 @@ If `APEXLOAD_GENERATORS` is configured, the controller uses the distributed back
 5. Live controls such as stop, abort, pause, resume, duration adjustment, and per-group VUser scale are routed to the owning generator.
 6. On completion, generators expose archive artifacts and the controller stages/merges them into the run archive.
 
+Generator targets are static `host:port` entries, or `dns://host:port` entries that the controller re-resolves on an interval (`APEXLOAD_GENERATOR_DISCOVERY_INTERVAL`, default 15s) — in Kubernetes this points at the generator headless service, so pods added or removed by KEDA/HPA autoscaling join and leave the fleet automatically.
+
+The gRPC channel supports TLS/mTLS plus shared-token auth via `APEXLOAD_GRPC_TLS_*` and `APEXLOAD_GRPC_AUTH_TOKEN` (certificates are re-read per handshake/dial, so cert-manager rotation needs no restart). Unconfigured, the channel is plaintext and unauthenticated — both binaries log a warning in `APEXLOAD_ENV=production` — so production deployments should enable at least token auth rather than relying on NetworkPolicy alone.
+
 The public REST and WebSocket contracts are the same in local and distributed mode.
 
 ## Load Engine
@@ -153,6 +157,7 @@ Protocols implement the compiled-in `pkg/protocol.Protocol` interface and are re
 - WebSocket
 - gRPC
 - JMS Solace and IBM MQ
+- Kafka (produce/consume/request-reply; in-memory mock broker by default, real franz-go adapter via `-tags kafka_real`)
 - database and network protocol import/runtime paths where supported
 - browser replay and browser canary diagnostics
 
@@ -221,6 +226,10 @@ Production reference deployment uses:
 - readiness probes on `/api/v1/system/readiness`
 
 Examples live under `deployments/k8s/`, including production data-platform settings, monitoring manifests, HA controller deployment, and Redis/Valkey reference manifests.
+
+For production on-prem clusters, `deployments/k8s/onprem/` is a hardened manifest set: gRPC mTLS + token auth, TLS ingress, a dedicated metrics port scoped to the monitoring namespace, Pod Security Admission `restricted`, scoped network policies with opt-in egress templates, ephemeral-storage bounds, and PDBs — see its README for the CNI-enforcement verification step.
+
+For Azure, `deployments/k8s/aks/` is a complete production manifest set (workload-identity service accounts, KEDA ScaledObject, managed-NGINX ingress, Azure data-platform ConfigMap) and `deployments/azure/terraform/` provisions the matching infrastructure (AKS with OIDC issuer + workload identity + managed KEDA, ACR, PostgreSQL Flexible Server, Azure Cache for Redis, Blob Storage, Key Vault, federated identity credentials). The on-prem → AKS migration runbook is `deployments/k8s/aks/README.md`.
 
 ## Performance Targets
 

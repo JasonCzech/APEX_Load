@@ -19,6 +19,7 @@ The current controller can run in either local or distributed mode without chang
 - Local mode: no generator targets configured; the controller executes tests in-process.
 - Distributed mode: set `APEXLOAD_GENERATORS=host1:9090,host2:9090,...`; the controller distributes groups across configured generators, aggregates their metrics into one live test view, and stages merged run archives back into the controller archive directory.
 - Region-tagged generators: append `|region=<name>` to a configured generator target, for example `APEXLOAD_GENERATORS=us-east-1.example:9090|region=us-east,eu-west-1.example:9090|region=eu-west`.
+- Dynamic fleet discovery: a `dns://host:port` entry (e.g. `APEXLOAD_GENERATORS=dns://apexload-generator.apexload.svc.cluster.local:9090`) makes the controller re-resolve the host on an interval (`APEXLOAD_GENERATOR_DISCOVERY_INTERVAL`, default `15s`) and track one generator per resolved address — generators added or removed by autoscaling (KEDA/HPA) join and leave the fleet without a controller restart. Static and `dns://` entries can be mixed, and metadata suffixes like `|region=...` on a `dns://` entry apply to every generator it discovers.
 - Region-weighted placement: test and scenario requests can set `assignment.mode` to `region_weighted` with an `assignment.region_weights` map such as `{ "us-east": 2, "eu-west": 1 }`; the controller applies those weights when placing groups across tagged generators while still preferring healthy capacity.
 - Runtime controls: distributed runs support stop, pause, resume, duration adjustment, and per-group VUser scaling through the same `/api/v1/tests/...` endpoints used for local runs.
 - Archive behavior: generators produce manifest, JSONL, and parquet artifacts locally; the controller downloads and merges those artifacts so the existing archive/report endpoints continue to work unchanged.
@@ -27,7 +28,7 @@ The current controller can run in either local or distributed mode without chang
 
 - **Goroutine-based VUsers**: 1 VUser = 1 goroutine (~2–4 KB stack) for extreme concurrency
 - **Zero-lock metrics**: Buffered channels (cap 10,000) in hot path; metrics aggregated downstream
-- **Protocol plugins**: HTTP/1.1, HTTP/2, SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), WebSocket, gRPC, JMS (Solace, IBM MQ), database (SQL), network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), browser (replay + canary diagnostics) — compiled-in, not runtime-loadable
+- **Protocol plugins**: HTTP/1.1, HTTP/2, SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), WebSocket, gRPC, JMS (Solace, IBM MQ), Kafka (produce/consume/request-reply; in-memory mock broker by default, real franz-go adapter via `-tags kafka_real`), database (SQL), network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), browser (replay + canary diagnostics) — compiled-in, not runtime-loadable
 - **JSON DSL**: Human-readable test scripts with template variables and data sources
 - **Vendor-neutral telemetry**: OpenTelemetry native; exportable to Prometheus, Dynatrace, ELK
 - **Streaming percentiles**: T-digest for accurate p95/p99 computation without storing all samples
@@ -40,12 +41,13 @@ The current controller can run in either local or distributed mode without chang
 | `cmd/apexctl` | CLI for direct script execution (no controller needed) |
 | `cmd/generator` | Distributed load generator (Kubernetes StatefulSet pod) |
 | `pkg/engine` | VUser goroutine engine, pacing, metrics, lifecycle |
-| `pkg/protocol` | Protocol interface; HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, database, network, browser implementations |
+| `pkg/protocol` | Protocol interface; HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, Kafka, database, network, browser implementations |
 | `pkg/dsl` | Script parser and runtime structures |
 | `pkg/api` | REST handlers, WebSocket hub, test runner |
+| `pkg/convert` | Multi-format import hub (LR archive, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient) |
 | `dashboard` | React 18 + TypeScript + Recharts SPA (compiles to `pkg/api/static/`) |
 | `pkg/config` | Configuration types and validation |
-| `pkg/storage` | SQLite persistence layer |
+| `pkg/storage` | SQLite (default) / PostgreSQL persistence layer |
 
 ## Documentation
 
@@ -168,8 +170,15 @@ Controller runtime configuration:
 - `APEXLOAD_DB`: SQLite DB path (default `apexload.db`)
 - `APEXLOAD_DATABASE_URL`: PostgreSQL connection URL when `APEXLOAD_STORE=postgres`
 - `APEXLOAD_DATABASE_MAX_OPEN_CONNS`, `APEXLOAD_DATABASE_MAX_IDLE_CONNS`, `APEXLOAD_DATABASE_CONN_MAX_LIFETIME`: production PostgreSQL pool tuning
-- `APEXLOAD_GENERATORS`: comma-separated generator gRPC targets; when set, the controller uses the distributed backend
+- `APEXLOAD_GENERATORS`: comma-separated generator gRPC targets; when set, the controller uses the distributed backend. `dns://host:port` entries enable dynamic discovery of a Kubernetes headless service
+- `APEXLOAD_GENERATOR_DISCOVERY_INTERVAL`: re-resolve interval for `dns://` generator entries (default `15s`)
 - `APEXLOAD_GENERATOR_TIMEOUT`: timeout for controller-to-generator RPCs (default `10s`)
+- `APEXLOAD_GRPC_TLS_CERT`/`APEXLOAD_GRPC_TLS_KEY`/`APEXLOAD_GRPC_TLS_CA`: TLS/mTLS for the controller↔generator gRPC channel (symmetric contract: cert/key = this process's identity, CA = trust for the peer; setting the CA on the generator requires verified client certs). `APEXLOAD_GRPC_TLS_SERVER_NAME` overrides certificate verification when targets are pod IPs from `dns://` discovery
+- `APEXLOAD_GRPC_AUTH_TOKEN`: shared bearer token required on every generator RPC — application-layer auth that holds even when the CNI does not enforce NetworkPolicies
+- `APEXLOAD_METRICS_ADDR`: when set (e.g. `:9091`), serves `GET /metrics` on a dedicated listener instead of the API port, so network policy can scope Prometheus access separately from API access
+- `APEXLOAD_BROWSER_EXECUTABLE`: path to a system Chromium/Chrome for browser-protocol runs (set to `/usr/bin/google-chrome` in the generator image, where Playwright's managed glibc Chromium cannot run on musl)
+- `APEXLOAD_BROWSER_SANDBOX`: set `true` to drop `--no-sandbox` and use Chromium's own sandbox where the environment supports it (unprivileged user namespaces); default keeps `--no-sandbox` because hardened pod securityContexts cannot start the sandbox
+- `APEXLOAD_AZURE_KEY_VAULT_URL`: Azure Key Vault for `{{secret.*}}` resolution; `APEXLOAD_AZURE_KEY_VAULT_AUTH` selects `token` (static `APEXLOAD_AZURE_KEY_VAULT_TOKEN`), `azure_identity` (workload/managed identity via DefaultAzureCredential), or `auto` (default); `APEXLOAD_AZURE_KEY_VAULT_SCOPE` overrides the token audience for sovereign clouds
 - `APEXLOAD_ARCHIVE_BACKEND`: archive backend: `filesystem`, `s3`, `azure_blob`, or `gcs` (default `filesystem`)
 - `APEXLOAD_ARCHIVE_DIR`: archive root for local runs and staged remote archives (default `artifacts/archives`)
 - `APEXLOAD_ARCHIVE_BUCKET`, `APEXLOAD_ARCHIVE_CONTAINER`, `APEXLOAD_ARCHIVE_PREFIX`, `APEXLOAD_ARCHIVE_REGION`, `APEXLOAD_ARCHIVE_ENDPOINT`: object archive target metadata for enterprise deployments
@@ -451,18 +460,25 @@ See [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) for complete DSL syntax
 ```
 cmd/
   controller/         # Main API server + dashboard
-  apexctl/          # CLI tool
+  apexctl/           # CLI tool
   generator/         # Distributed load generator
+  dslschema/         # Generates docs/dsl.schema.json + DSL_ACTION_REFERENCE.md
 
 pkg/
   engine/            # Core VUser engine, pacing, metrics
-  protocol/          # Protocol interface + HTTP/SOAP/Java-over-HTTP/WebSocket/gRPC/JMS/database/network/browser implementations
-  dsl/              # Script parser and types
-  api/              # REST handlers, WebSocket, test runner
-  controller/       # Test orchestration logic
-  storage/          # SQLite persistence
-  recorder/         # HTTP recording + HAR conversion
-  config/           # Configuration
+  protocol/          # Protocol interface + HTTP/SOAP/Java-over-HTTP/WebSocket/gRPC/JMS/Kafka/database/network/browser implementations
+  dsl/               # Script parser, types, action catalog
+  api/               # REST handlers, WebSocket, test runner
+  controller/        # Test orchestration logic
+  distributed/       # Generator-side gRPC worker
+  storage/           # SQLite (default) / PostgreSQL persistence
+  recorder/          # HTTP recording + HAR conversion + browser recording
+  convert/           # Multi-format import hub (LR, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient)
+  selector/          # Shared element-selector model + replay self-heal
+  scrub/             # PII/credential redaction for artifacts and HAR exports
+  refkey/            # Human-readable reference keys
+  buildinfo/         # Build metadata (version/commit/build-time)
+  config/            # Configuration
 
 dashboard/           # React 18 + TypeScript frontend
   src/
@@ -473,6 +489,8 @@ dashboard/           # React 18 + TypeScript frontend
   vite.config.ts
   package.json
 
+desktop/             # Wails native client shell (embeds controller API + dashboard)
+mcp/                 # Python MCP server exposing the REST API as agent tools
 deployments/         # Kubernetes manifests, Helm charts
 examples/            # Sample scripts and HAR files
 ```

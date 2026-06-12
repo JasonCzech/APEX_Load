@@ -1,0 +1,103 @@
+# Supply-chain hardened build for on-prem/private registries (Harbor, Nexus,
+# GitLab registry, ...). Copy into .github/workflows/ to activate.
+#
+# Pipeline: build → SBOM (syft) → vulnerability scan (trivy, fails on
+# HIGH/CRITICAL) → push → sign (cosign keyless) → emit the immutable digest
+# for deployment. Deploy by digest, not by tag.
+#
+# Repo configuration:
+#   Variables: REGISTRY (e.g. registry.example.internal/apexload)
+#   Secrets:   REGISTRY_USERNAME, REGISTRY_PASSWORD
+name: Build, scan, sign, push (on-prem registry)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # cosign keyless signing via the GitHub OIDC token
+
+jobs:
+  build-scan-sign-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        binary: [controller, generator]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build image (local, for scanning)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: apexload-${{ matrix.binary }}:scan
+          build-args: |
+            BINARY=${{ matrix.binary }}
+            VERSION=${{ github.sha }}
+            COMMIT=${{ github.sha }}
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: apexload-${{ matrix.binary }}:scan
+          format: spdx-json
+          output-file: sbom-apexload-${{ matrix.binary }}.spdx.json
+
+      - name: Vulnerability scan (fail on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: apexload-${{ matrix.binary }}:scan
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      - name: Push image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ vars.REGISTRY }}/apexload-${{ matrix.binary }}:${{ github.sha }}
+          build-args: |
+            BINARY=${{ matrix.binary }}
+            VERSION=${{ github.sha }}
+            COMMIT=${{ github.sha }}
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image + attach SBOM attestation (keyless)
+        env:
+          IMAGE: ${{ vars.REGISTRY }}/apexload-${{ matrix.binary }}@${{ steps.push.outputs.digest }}
+        run: |
+          cosign sign --yes "${IMAGE}"
+          cosign attest --yes --predicate "sbom-apexload-${{ matrix.binary }}.spdx.json" \
+            --type spdxjson "${IMAGE}"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-apexload-${{ matrix.binary }}
+          path: sbom-apexload-${{ matrix.binary }}.spdx.json
+
+      - name: Emit deployable digest
+        run: |
+          echo "Deploy ${{ matrix.binary }} by digest:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "kustomize edit set image apexload-${{ matrix.binary }}=${{ vars.REGISTRY }}/apexload-${{ matrix.binary }}@${{ steps.push.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

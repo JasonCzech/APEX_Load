@@ -1,0 +1,23 @@
+# Copy to terraform.tfvars and adjust. Everything has a sane default; the
+# common overrides are listed here.
+
+prefix      = "apexload"
+environment = "prod"
+location    = "eastus2"
+
+# Lock down the AKS API server to your network egress.
+# authorized_ip_ranges = ["203.0.113.0/24"]
+
+# Allow your workstation/CI through the PostgreSQL firewall during migration.
+# postgres_allowed_cidrs = {
+#   office = "203.0.113.0/24"
+# }
+
+# Generator capacity: ~4 generator pods per Standard_D4s_v5 node at the
+# default pod requests (1 vCPU / 2 Gi). 13 nodes ≈ headroom for 50 pods.
+# generator_node_vm_size   = "Standard_D4s_v5"
+# generator_node_max_count = 13
+
+tags = {
+  owner = "performance-engineering"
+}

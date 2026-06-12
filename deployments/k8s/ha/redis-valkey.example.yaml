@@ -1,9 +1,22 @@
+# In-cluster Valkey (Redis-compatible) for HA controller state + WS fanout.
+#
+# Hardening notes:
+# - AUTH is REQUIRED here (--requirepass from the apexload-redis-auth secret).
+#   Create it first and use the same password in APEXLOAD_REDIS_URL:
+#     kubectl -n apexload create secret generic apexload-redis-auth \
+#       --from-literal=password="$(openssl rand -hex 24)"
+#     APEXLOAD_REDIS_URL=redis://:<password>@apexload-redis.apexload.svc:6379/0
+# - The NetworkPolicy below admits only controller pods; it must be deployed
+#   in the same namespace as the default-deny policy set, and only takes
+#   effect on a NetworkPolicy-enforcing CNI.
+# - For TLS in transit (rediss://), front Valkey with --tls-port and a cert,
+#   or use your platform's managed Redis.
 apiVersion: v1
 kind: Service
 metadata:
   name: apexload-redis
   labels:
-    app.kubernetes.io/name: apexload
+    app.kubernetes.io/name: apexload-redis
     app.kubernetes.io/component: cache
 spec:
   ports:
@@ -11,7 +24,7 @@ spec:
       port: 6379
       targetPort: redis
   selector:
-    app.kubernetes.io/name: apexload
+    app.kubernetes.io/name: apexload-redis
     app.kubernetes.io/component: cache
 ---
 apiVersion: apps/v1
@@ -19,31 +32,42 @@ kind: StatefulSet
 metadata:
   name: apexload-redis
   labels:
-    app.kubernetes.io/name: apexload
+    app.kubernetes.io/name: apexload-redis
     app.kubernetes.io/component: cache
 spec:
   serviceName: apexload-redis
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: apexload
+      app.kubernetes.io/name: apexload-redis
       app.kubernetes.io/component: cache
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: apexload
+        app.kubernetes.io/name: apexload-redis
         app.kubernetes.io/component: cache
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: valkey
           image: valkey/valkey:8-alpine
-          args:
-            - valkey-server
-            - --appendonly
-            - "yes"
-            - --save
-            - "60"
-            - "1000"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - sh
+            - -c
+            - exec valkey-server --appendonly yes --save 60 1000 --requirepass "$(cat /etc/valkey-auth/password)"
           ports:
             - name: redis
               containerPort: 6379
@@ -67,6 +91,13 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: auth
+              mountPath: /etc/valkey-auth
+              readOnly: true
+      volumes:
+        - name: auth
+          secret:
+            secretName: apexload-redis-auth
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -75,3 +106,26 @@ spec:
         resources:
           requests:
             storage: 10Gi
+---
+# Admit only controller pods to the cache.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-redis-ingress
+  labels:
+    app.kubernetes.io/name: apexload-redis
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apexload-controller
+      ports:
+        - protocol: TCP
+          port: 6379

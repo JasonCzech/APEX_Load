@@ -59,6 +59,7 @@ type generatorTargetSpec struct {
 }
 
 type distributedExecutionBackend struct {
+	targetsMu   sync.RWMutex
 	targets     []generatorTargetSpec
 	timeout     time.Duration
 	dial        generatorDial
@@ -93,8 +94,9 @@ func newDistributedExecutionBackend(targets []string, timeout time.Duration, dia
 }
 
 func (b *distributedExecutionBackend) configuredTargets() []string {
-	targets := make([]string, 0, len(b.targets))
-	for _, target := range b.targets {
+	specs := b.configuredTargetSpecs()
+	targets := make([]string, 0, len(specs))
+	for _, target := range specs {
 		if b.generatorDrainState(target.Address) != "active" {
 			continue
 		}
@@ -104,7 +106,27 @@ func (b *distributedExecutionBackend) configuredTargets() []string {
 }
 
 func (b *distributedExecutionBackend) configuredTargetSpecs() []generatorTargetSpec {
+	b.targetsMu.RLock()
+	defer b.targetsMu.RUnlock()
 	return append([]generatorTargetSpec(nil), b.targets...)
+}
+
+// SetTargets replaces the generator fleet with the provided raw target entries
+// (same syntax as APEXLOAD_GENERATORS). Used by dynamic discovery (e.g. dns://
+// headless-service entries) to track generators as autoscaling adds or removes
+// pods. Drain states keyed by address are preserved across updates.
+func (b *distributedExecutionBackend) SetTargets(targets []string) {
+	specs := make([]generatorTargetSpec, 0, len(targets))
+	for _, target := range targets {
+		spec := parseGeneratorTargetSpec(target)
+		if spec.Address == "" {
+			continue
+		}
+		specs = append(specs, spec)
+	}
+	b.targetsMu.Lock()
+	b.targets = specs
+	b.targetsMu.Unlock()
 }
 
 func (b *distributedExecutionBackend) SetGeneratorDrainState(target string, state string) error {
@@ -118,7 +140,7 @@ func (b *distributedExecutionBackend) SetGeneratorDrainState(target string, stat
 		return fmt.Errorf("unsupported drain_state %q", state)
 	}
 	found := false
-	for _, configured := range b.targets {
+	for _, configured := range b.configuredTargetSpecs() {
 		if configured.Address == target {
 			found = true
 			break
@@ -175,8 +197,9 @@ func (b *distributedExecutionBackend) generatorDrainState(target string) string 
 }
 
 func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []GeneratorInventoryEntry {
-	entries := make([]GeneratorInventoryEntry, 0, len(b.targets))
-	for _, target := range b.targets {
+	specs := b.configuredTargetSpecs()
+	entries := make([]GeneratorInventoryEntry, 0, len(specs))
+	for _, target := range specs {
 		entry := GeneratorInventoryEntry{
 			Target:              target.Address,
 			GeneratorID:         target.Address,
@@ -239,8 +262,9 @@ func (b *distributedExecutionBackend) allowedTargetsForTest(test *ManagedTest) (
 	if assignment == nil || assignment.Mode != generatorAssignmentModeSpecificHosts {
 		return b.configuredTargets(), nil
 	}
-	configured := make(map[string]struct{}, len(b.targets))
-	for _, target := range b.targets {
+	specs := b.configuredTargetSpecs()
+	configured := make(map[string]struct{}, len(specs))
+	for _, target := range specs {
 		configured[target.Address] = struct{}{}
 	}
 	allowed := make([]string, 0, len(assignment.SelectedTargets))
@@ -266,7 +290,8 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		return
 	}
 	test.Assignment = assignment
-	if len(b.targets) == 0 {
+	targetSpecs := b.configuredTargetSpecs()
+	if len(targetSpecs) == 0 {
 		tr.failTestBeforeRun(test, "no generator targets configured")
 		return
 	}
@@ -304,7 +329,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		tr.failTestBeforeRun(test, "no reachable generator targets configured")
 		return
 	}
-	groupShards := planDistributedGroupShards(test.Groups, loadByTarget, allowedTargets, assignment, b.targets)
+	groupShards := planDistributedGroupShards(test.Groups, loadByTarget, allowedTargets, assignment, targetSpecs)
 	for _, group := range test.Groups {
 		if group.script == nil {
 			cleanup()
@@ -315,7 +340,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		shards := groupShards[group.Name]
 		if len(shards) == 0 {
 			cleanup()
-			tr.failTestBeforeRun(test, generatorPlacementRejectionMessage(group, loadByTarget, b.targets))
+			tr.failTestBeforeRun(test, generatorPlacementRejectionMessage(group, loadByTarget, targetSpecs))
 			return
 		}
 
@@ -1993,7 +2018,7 @@ func (b *distributedExecutionBackend) buildGeneratorResourceSnapshots(test *Mana
 }
 
 func (b *distributedExecutionBackend) regionForTarget(target string) string {
-	for _, spec := range b.targets {
+	for _, spec := range b.configuredTargetSpecs() {
 		if spec.Address == target {
 			return spec.Region
 		}

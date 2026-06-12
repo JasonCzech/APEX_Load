@@ -1,0 +1,76 @@
+# EXAMPLE — cert-manager issuance for the controller<->generator mTLS pair.
+# Not in kustomization.yaml; requires cert-manager and an issuer. Any PKI
+# works as long as the mounted secrets contain tls.crt / tls.key / ca.crt:
+#   apexload-generator-grpc-tls   (server cert, DNS SAN = headless service)
+#   apexload-controller-grpc-tls  (client cert)
+#
+# Self-signed in-namespace CA (simplest fully-internal setup):
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: apexload-selfsigned
+  namespace: apexload
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apexload-grpc-ca
+  namespace: apexload
+spec:
+  isCA: true
+  commonName: apexload-grpc-ca
+  secretName: apexload-grpc-ca
+  duration: 8760h # 1 year
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: apexload-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: apexload-grpc-ca
+  namespace: apexload
+spec:
+  ca:
+    secretName: apexload-grpc-ca
+---
+# Generator server certificate. The DNS SAN matches
+# APEXLOAD_GRPC_TLS_SERVER_NAME so the controller can verify it even though
+# dns:// discovery dials pod IPs.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apexload-generator-grpc-tls
+  namespace: apexload
+spec:
+  secretName: apexload-generator-grpc-tls
+  duration: 2160h # 90 days; cert-manager renews and pods re-read on dial
+  dnsNames:
+    - apexload-generator.apexload.svc.cluster.local
+    - apexload-generator.apexload.svc
+  usages:
+    - server auth
+  issuerRef:
+    name: apexload-grpc-ca
+    kind: Issuer
+---
+# Controller client certificate (mTLS identity).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apexload-controller-grpc-tls
+  namespace: apexload
+spec:
+  secretName: apexload-controller-grpc-tls
+  duration: 2160h
+  commonName: apexload-controller
+  usages:
+    - client auth
+  issuerRef:
+    name: apexload-grpc-ca
+    kind: Issuer
