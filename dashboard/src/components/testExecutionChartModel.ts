@@ -1,7 +1,7 @@
 import { type ComponentProps } from 'react'
 import { LineChart, YAxis } from 'recharts'
 
-import type { MetricsHistoryPoint } from '../types'
+import type { MetricsHistoryPoint, PrometheusGraph } from '../types'
 import {
   isRouteLatencyTotalSeriesKey,
   routeLatencyDetailSeriesKey,
@@ -14,7 +14,7 @@ export type ChartDomain = ComponentProps<typeof YAxis>['domain']
 export interface ChartConfig {
   id: string
   title: string
-  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'line-io' | 'line-network' | 'line-impact' | 'line-load-impact' | 'line-load-impact-percentiles' | 'load-impact-heatmap'
+  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'line-io' | 'line-network' | 'line-impact' | 'line-prometheus' | 'line-load-impact' | 'line-load-impact-percentiles' | 'load-impact-heatmap'
   dataKey?: string
   color?: string
   totalKey?: string
@@ -22,6 +22,7 @@ export interface ChartConfig {
   domain?: ChartDomain
   defaultMetricKeys?: string[]
   loadImpactMetric?: LoadImpactMetric
+  prometheusGraph?: PrometheusGraph
 }
 
 export type ChartMetricRowKind = 'transaction' | 'percentile' | 'other'
@@ -66,6 +67,7 @@ const SMOOTHED_GRAPH_METRIC_SUFFIX = '__smoothed'
 export const LOAD_IMPACT_VISIBLE_CHARTS_STORAGE_KEY = 'apexload.execution.visibleLoadImpactCharts'
 export const DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS = ['avgMs', 'p95', 'tps', 'errorPct', 'cpuProcess', 'memProcess']
 const LOAD_IMPACT_GRAPH_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
+const PROMETHEUS_GRAPH_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)', 'var(--accent)', 'var(--warning)']
 const MIN_GRAPH_SMOOTHING_RADIUS = 2
 const MAX_GRAPH_SMOOTHING_RADIUS = 6
 const DEFAULT_DOWNSAMPLED_GRAPH_POINTS = 420
@@ -142,6 +144,10 @@ export function isLoadImpactPercentilesChart(chart: ChartConfig) {
   return chart.type === 'line-load-impact-percentiles' || chart.id === LOAD_IMPACT_PERCENTILES_CHART_ID
 }
 
+export function isPrometheusChart(chart: ChartConfig) {
+  return chart.type === 'line-prometheus' && Boolean(chart.prometheusGraph)
+}
+
 export function hasLoadImpactPercentileRows(rows: LoadImpactRow[]) {
   return LOAD_IMPACT_PERCENTILE_KEYS.some(key => rows.some(row => row.metric.id === key))
 }
@@ -155,6 +161,54 @@ export function buildLoadImpactCharts(rows: LoadImpactRow[]): ChartConfig[] {
     defaultMetricKeys: ['average'],
     loadImpactMetric: row.metric,
   }))
+}
+
+export function buildPrometheusCharts(graphs: PrometheusGraph[]): ChartConfig[] {
+  return graphs.map(graph => ({
+    id: graph.id,
+    title: graph.title,
+    type: 'line-prometheus',
+    defaultMetricKeys: graph.series.map(series => series.key),
+    prometheusGraph: graph,
+  }))
+}
+
+function prometheusPointTimestampMs(timestamp: string | undefined, timestampMs: number | undefined) {
+  if (typeof timestampMs === 'number' && Number.isFinite(timestampMs)) return timestampMs
+  const parsed = timestamp ? Date.parse(timestamp) : Number.NaN
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function formatPrometheusPointTime(timestampMs: number) {
+  return new Date(timestampMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+}
+
+export function prometheusChartData(graph: PrometheusGraph | undefined): MetricsHistoryPoint[] {
+  if (!graph) return []
+  const rowsByTimestamp = new Map<number, MetricsHistoryPoint>()
+  graph.series.forEach(series => {
+    series.values.forEach(point => {
+      const timestampMs = prometheusPointTimestampMs(point.timestamp, point.timestamp_ms)
+      if (timestampMs === undefined || typeof point.value !== 'number' || !Number.isFinite(point.value)) return
+      const existing = rowsByTimestamp.get(timestampMs)
+      const row = existing ?? {
+        time: formatPrometheusPointTime(timestampMs),
+        timestampMs,
+        vusers: 0,
+        tps: 0,
+        avgMs: 0,
+        errorPct: 0,
+        p50: 0,
+        p90: 0,
+        p99: 0,
+      }
+      row[series.key] = point.value
+      rowsByTimestamp.set(timestampMs, row)
+    })
+  })
+  return Array.from(rowsByTimestamp.entries())
+    .sort(([left], [right]) => left - right)
+    .map(([, row]) => row)
 }
 
 export const routeLatencyModes: Array<{ id: RouteLatencyMode; label: string }> = [
@@ -207,6 +261,9 @@ export const overlayMetricMenuLabels: Record<OverlayMetricKey, string> = {
 }
 
 export function isOverlayMetricAvailable(chart: ChartConfig, key: OverlayMetricKey) {
+  if (isPrometheusChart(chart)) {
+    return false
+  }
   if (isLoadImpactPercentilesChart(chart)) {
     return key !== 'vusers'
   }
@@ -250,6 +307,10 @@ export function chartPrimaryYAxisLabel(chart: ChartConfig) {
     case LOAD_IMPACT_PERCENTILES_CHART_ID:
       return 'Response time (ms)'
     default:
+      if (isPrometheusChart(chart)) {
+        const unit = chart.prometheusGraph?.unit?.trim()
+        return unit || chart.title
+      }
       if (isLoadImpactChart(chart)) {
         const metric = chart.loadImpactMetric!
         return metric.unit ? `${metric.label} (${metric.unit})` : metric.label
@@ -746,6 +807,9 @@ export function chartMetricKeys(
   if (isLoadImpactHeatmapChart(chart)) {
     return []
   }
+  if (isPrometheusChart(chart)) {
+    return chart.prometheusGraph?.series.map(series => series.key) ?? []
+  }
   if (isLoadImpactPercentilesChart(chart)) {
     keys = loadImpactPercentileMetricRows.map(row => row.key)
     const overlays = normalizeOverlayMetricKeys(chart, includeVuserOverlay, overlayMetricKeys)
@@ -810,6 +874,15 @@ export function chartMetricRows(
   let rows: ChartMetricRow[]
   if (isLoadImpactHeatmapChart(chart)) {
     return []
+  }
+  if (isPrometheusChart(chart)) {
+    const unit = chart.prometheusGraph?.unit
+    return chart.prometheusGraph?.series.map((series, index) => ({
+      key: series.key,
+      label: series.label || series.key,
+      color: PROMETHEUS_GRAPH_COLORS[index % PROMETHEUS_GRAPH_COLORS.length],
+      unit,
+    })) ?? []
   }
   if (isLoadImpactPercentilesChart(chart)) {
     rows = loadImpactPercentileMetricRows

@@ -28,6 +28,7 @@ import {
   HealthResponse,
   InfrastructureMonitorPacksResponse,
   ParityStatusResponse,
+  PrometheusGraphsResponse,
   ReleaseSLAGovernanceResponse,
   ReportProfilesResponse,
   SystemInventoryResponse,
@@ -121,6 +122,11 @@ export function useSystemApi() {
   const getBrowserBenchmarks = useCallback(() => request<BrowserBenchmarkEvidenceResponse>('/system/browser-benchmarks'), [])
   const getAPMIntegrationProfiles = useCallback(() => request<APMIntegrationProfilesResponse>('/integrations/apm/profiles'), [])
   const getInfrastructureMonitorPacks = useCallback(() => request<InfrastructureMonitorPacksResponse>('/monitoring/packs'), [])
+  const getPrometheusGraphs = useCallback(
+    (params: { start: string; end: string; step_seconds: number }) =>
+      request<PrometheusGraphsResponse>(`/monitoring/prometheus/graphs${buildQuery(params)}`),
+    [],
+  )
   const getReportProfiles = useCallback(() => request<ReportProfilesResponse>('/reports/profiles'), [])
   const getReleaseSLAGovernance = useCallback((releaseId: string) => request<ReleaseSLAGovernanceResponse>(`/releases/${encodeURIComponent(releaseId)}/sla-governance`), [])
   const createReleaseSLAWaiver = useCallback(
@@ -185,6 +191,7 @@ export function useSystemApi() {
       getBrowserBenchmarks,
       getAPMIntegrationProfiles,
       getInfrastructureMonitorPacks,
+      getPrometheusGraphs,
       getReportProfiles,
       getReleaseSLAGovernance,
       createReleaseSLAWaiver,
@@ -202,6 +209,6 @@ export function useSystemApi() {
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getSystemInventory, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getSystemInventory, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
   )
 }

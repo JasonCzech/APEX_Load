@@ -70,6 +70,20 @@ The current controller can run in either local or distributed mode without chang
 
 ## Quick Start
 
+### Docker Compose with Prometheus
+
+For a local containerized controller plus Prometheus:
+
+```bash
+make docker-local-up
+```
+
+Open the dashboard at `http://127.0.0.1:8080` and Prometheus at
+`http://127.0.0.1:9090`. Prometheus scrapes the controller's dedicated metrics
+listener at `http://127.0.0.1:9091/metrics`. See
+`deployments/docker/README.md` for target checks, PromQL examples, and the
+host-controller variant.
+
 ### 1. Start the controller API and dashboard
 
 ```bash
@@ -195,6 +209,8 @@ make build       # builds generator/controller/apexctl into ./bin
 make test        # runs Go tests with race detector
 make test-cover  # race + coverage report (coverage.out / coverage.html)
 make lint        # runs golangci-lint (if installed)
+make docker-local-up                 # runs controller + Prometheus locally
+make docker-local-prometheus-check   # validates the local Prometheus config
 ```
 
 ### Frontend checks

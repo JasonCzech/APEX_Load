@@ -142,6 +142,11 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
     default_branch: 'main',
     path_template: 'apexload/scripts/{project}/{ref_key}.json',
   },
+  prometheus: {
+    enabled: false,
+    base_url: '',
+    timeout_seconds: 5,
+  },
 }
 
 const GENERATOR_PRESETS = [
@@ -746,6 +751,22 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
       }
     })
   }
+  if (settings.prometheus.enabled && !settings.prometheus.base_url.trim()) {
+    errors.push('Prometheus server URL is required when Prometheus graphs are enabled.')
+  }
+  if (settings.prometheus.base_url.trim()) {
+    try {
+      const parsed = new URL(settings.prometheus.base_url)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        errors.push('Prometheus server URL must use http or https.')
+      }
+    } catch {
+      errors.push('Prometheus server URL must be a valid absolute URL.')
+    }
+  }
+  if (!Number.isInteger(settings.prometheus.timeout_seconds) || settings.prometheus.timeout_seconds < 1 || settings.prometheus.timeout_seconds > 60) {
+    errors.push('Prometheus timeout must be an integer between 1 and 60 seconds.')
+  }
   settings.notifications.webhooks.forEach((webhook, index) => {
     const label = `Notification webhook ${index + 1}`
     if (!webhook.url.trim()) {
@@ -825,6 +846,13 @@ function normalizeDashboardSystemSettings(settings: DashboardSystemSettings): Da
       scopes: settings.github?.scopes ? [...settings.github.scopes] : [...DEFAULT_SETTINGS.github.scopes],
       app_id: Number(settings.github?.app_id || 0),
       checks_enabled: Boolean(settings.github?.checks_enabled),
+    },
+    prometheus: {
+      ...DEFAULT_SETTINGS.prometheus,
+      ...settings.prometheus,
+      enabled: Boolean(settings.prometheus?.enabled),
+      base_url: settings.prometheus?.base_url || '',
+      timeout_seconds: Number(settings.prometheus?.timeout_seconds || DEFAULT_SETTINGS.prometheus.timeout_seconds),
     },
   }
 }
@@ -1448,8 +1476,9 @@ export default function SettingsPage({
   const integrationSubsectionSummaries = useMemo<Record<IntegrationSettingsSubsectionId, string>>(() => ({
     library: activeProject?.name || 'Project scoped',
     github: settings.github.enabled ? 'Enabled' : 'Disabled',
+    prometheus: settings.prometheus.enabled ? 'Enabled' : 'Disabled',
     notifications: `${notificationWebhookCount} webhook${notificationWebhookCount === 1 ? '' : 's'}`,
-  }), [activeProject?.name, notificationWebhookCount, settings.github.enabled])
+  }), [activeProject?.name, notificationWebhookCount, settings.github.enabled, settings.prometheus.enabled])
 
   useEffect(() => {
     setSectionOrder(prev => mergeSettingsOrder(prev))
@@ -2366,6 +2395,18 @@ export default function SettingsPage({
       notifications: {
         ...current.notifications,
         webhooks: current.notifications.webhooks.filter((_, webhookIndex) => webhookIndex !== index),
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const updatePrometheus = (updates: Partial<DashboardSystemSettings['prometheus']>) => {
+    setSettings(current => ({
+      ...current,
+      prometheus: {
+        ...current.prometheus,
+        ...updates,
       },
     }))
     setSaveMessage('')
@@ -4886,6 +4927,67 @@ export default function SettingsPage({
                 setRequestError('')
               }}
             />
+              </div>
+            </section>
+
+            <section
+              id="settings-integrations-panel-prometheus"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-integrations-tab-prometheus"
+              hidden={activeIntegrationSubsection !== 'prometheus'}
+            >
+              <div className="settings-group">
+                <div className="settings-subsection">
+                  <div className="settings-manager-summary">
+                    <div>
+                      <span className="setting-label">Prometheus Graphs</span>
+                      <span className="setting-desc">Proxy the configured Prometheus server through the backend for the curated APEX runtime graph pack.</span>
+                    </div>
+                    <strong>{settings.prometheus.enabled ? 'Enabled' : 'Disabled'}</strong>
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Enable Prometheus Graphs</span>
+                      <span className="setting-desc">Shows the Prometheus graph category when the server URL is configured.</span>
+                    </div>
+                    <label className="settings-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={settings.prometheus.enabled}
+                        onChange={event => updatePrometheus({ enabled: event.target.checked })}
+                      />
+                      <span>Enabled</span>
+                    </label>
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Server URL</span>
+                      <span className="setting-desc">Backend-only Prometheus HTTP API base URL.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.prometheus.base_url}
+                      onChange={event => updatePrometheus({ base_url: event.target.value })}
+                      placeholder="http://prometheus:9090"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Timeout (seconds)</span>
+                      <span className="setting-desc">Maximum backend wait for each Prometheus query.</span>
+                    </div>
+                    <input
+                      className="settings-input settings-input-number"
+                      type="number"
+                      min={1}
+                      max={60}
+                      step={1}
+                      value={settings.prometheus.timeout_seconds}
+                      onChange={event => updatePrometheus({ timeout_seconds: Number(event.target.value) })}
+                    />
+                  </div>
+                </div>
               </div>
             </section>
 

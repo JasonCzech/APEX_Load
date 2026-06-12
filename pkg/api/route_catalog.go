@@ -71,6 +71,7 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/integrations/github/connection", accessRequirement{AuthenticatedOnly: true}),
 	routeAuth(http.MethodDelete, "/api/v1/integrations/github/connection", accessRequirement{AuthenticatedOnly: true}),
 	routeAuth(http.MethodGet, "/api/v1/monitoring/packs", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/monitoring/prometheus/graphs", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/reports/profiles", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/results/imports", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/library/capabilities", viewerGlobalAccess()),

@@ -50,6 +50,7 @@ const PROJECT_SETTINGS_SUBSECTION_IDS = PROJECT_SETTINGS_SUBSECTIONS.map(section
 export const INTEGRATION_SETTINGS_SUBSECTIONS = [
   { id: 'library', title: 'Library Federation' },
   { id: 'github', title: 'GitHub' },
+  { id: 'prometheus', title: 'Prometheus' },
   { id: 'notifications', title: 'Notifications' },
 ] as const
 

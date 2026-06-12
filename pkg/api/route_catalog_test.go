@@ -39,6 +39,16 @@ func TestAccessRequirementFromRouteCatalogDistinguishesMethod(t *testing.T) {
 	}
 }
 
+func TestPrometheusGraphsRouteUsesViewerAccess(t *testing.T) {
+	requirement, ok := accessRequirementFromRouteCatalog(http.MethodGet, "/api/v1/monitoring/prometheus/graphs")
+	if !ok {
+		t.Fatal("GET /api/v1/monitoring/prometheus/graphs did not match catalog")
+	}
+	if len(requirement.GlobalRoles) != 4 || requirement.GlobalRoles[0] != RoleViewer {
+		t.Fatalf("GlobalRoles = %#v, want viewer/editor/project/system roles", requirement.GlobalRoles)
+	}
+}
+
 func TestGenericAuthAPIRoutesDeclareAccessRequirement(t *testing.T) {
 	routes := registeredServerRoutes(t)
 	for _, route := range routes {

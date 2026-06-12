@@ -14,7 +14,7 @@ import {
   YAxis,
 } from 'recharts'
 
-import { LatencyTarget, LiveMetrics, MetricsHistoryPoint, NetworkLatency } from '../types'
+import { LatencyTarget, LiveMetrics, MetricsHistoryPoint, NetworkLatency, PrometheusGraph } from '../types'
 import { buildGeneratorImpactView, type GeneratorImpactVerdict } from './generatorImpact'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
 import {
@@ -28,6 +28,7 @@ import {
   LOAD_IMPACT_VISIBLE_CHARTS_STORAGE_KEY,
   buildArtStdDevBandData,
   buildLoadImpactCharts,
+  buildPrometheusCharts,
   hasLoadImpactPercentileRows,
   buildSmoothedGraphData,
   chartMetricLinePresentation,
@@ -49,6 +50,7 @@ import {
   isLoadImpactHeatmapChart,
   isLoadImpactPercentilesChart,
   isOverlayMetricAvailable,
+  isPrometheusChart,
   latestRouteLatencyValues,
   loadImpactHeatmapChart,
   loadImpactPercentilesChart,
@@ -58,6 +60,7 @@ import {
   normalizedChartOrder,
   overlayMetricMenuLabels,
   overlayMetricRows,
+  prometheusChartData,
   rateOverlayAxisLabel,
   responseTimeDataWithoutNetworkLatency,
   routeLatencyModes,
@@ -120,6 +123,9 @@ interface Props {
   loadImpactData?: MetricsHistoryPoint[]
   loadImpactLoading?: boolean
   loadImpactError?: string
+  prometheusGraphs?: PrometheusGraph[]
+  prometheusLoading?: boolean
+  prometheusError?: string
   latestLatency?: NetworkLatency
   latestMetrics?: LiveMetrics
   surface?: 'execution' | 'command-center'
@@ -136,7 +142,7 @@ interface Props {
 }
 
 type ChartDropPosition = 'before' | 'after'
-export type GraphGroupTabId = 'test_results' | 'under_load' | 'infrastructure'
+export type GraphGroupTabId = 'test_results' | 'under_load' | 'infrastructure' | 'prometheus'
 export type UnderLoadDisplayMode = 'graphs' | 'heatmap'
 type ChartCardSize = { width: number; height: number }
 type ChartCardElement = HTMLElement | null
@@ -148,6 +154,8 @@ type AxisInteractionEvent = {
   preventDefault?: () => void
   stopPropagation?: () => void
 }
+
+const EMPTY_PROMETHEUS_GRAPHS: PrometheusGraph[] = []
 
 export interface GraphCursorState {
   label?: string | number
@@ -163,6 +171,7 @@ const graphGroupTabs: Array<{ id: GraphGroupTabId; label: string }> = [
   { id: 'test_results', label: 'Test Results' },
   { id: 'under_load', label: 'Under Load' },
   { id: 'infrastructure', label: 'Infrastructure' },
+  { id: 'prometheus', label: 'Prometheus' },
 ]
 
 const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'generator_impact', 'network_latency'])
@@ -175,6 +184,7 @@ function displayWindowSliderPercent(value: number) {
 }
 
 function graphGroupForChart(chart: ChartConfig): GraphGroupTabId {
+  if (isPrometheusChart(chart)) return 'prometheus'
   if (isLoadImpactChart(chart) || isLoadImpactHeatmapChart(chart) || isLoadImpactPercentilesChart(chart)) return 'under_load'
   if (infrastructureChartIds.has(chart.id)) return 'infrastructure'
   return 'test_results'
@@ -401,6 +411,9 @@ export default function TestExecutionCharts({
   loadImpactData = [],
   loadImpactLoading = false,
   loadImpactError = '',
+  prometheusGraphs = EMPTY_PROMETHEUS_GRAPHS,
+  prometheusLoading = false,
+  prometheusError = '',
   latestLatency,
   latestMetrics,
   surface = 'execution',
@@ -475,6 +488,11 @@ export default function TestExecutionCharts({
   const hasLoadImpactPercentiles = useMemo(() => hasLoadImpactPercentileRows(loadImpactRows), [loadImpactRows])
   const loadImpactPercentileData = useMemo(() => loadImpactPercentileChartData(loadImpactRows), [loadImpactRows])
   const loadImpactCharts = useMemo(() => buildLoadImpactCharts(loadImpactRows), [loadImpactRows])
+  const prometheusGraphCharts = useMemo(() => buildPrometheusCharts(prometheusGraphs), [prometheusGraphs])
+  const prometheusChartDataById = useMemo(
+    () => new Map(prometheusGraphCharts.map(chart => [chart.id, prometheusChartData(chart.prometheusGraph)])),
+    [prometheusGraphCharts],
+  )
   const loadImpactGraphCharts = useMemo(() => (
     loadImpactRows.length > 0
       ? [
@@ -493,7 +511,7 @@ export default function TestExecutionCharts({
       )
     ))
     .map(chart => chart.id), [loadImpactGraphCharts])
-  const allChartConfigs = useMemo(() => [...chartConfigs, ...loadImpactGraphCharts], [loadImpactGraphCharts])
+  const allChartConfigs = useMemo(() => [...chartConfigs, ...prometheusGraphCharts, ...loadImpactGraphCharts], [loadImpactGraphCharts, prometheusGraphCharts])
   const allChartIds = useMemo(() => allChartConfigs.map(chart => chart.id), [allChartConfigs])
   const allChartIdSignature = allChartIds.join('|')
   const visibleLoadImpactChartIdSignature = visibleLoadImpactChartIds.join('|')
@@ -704,6 +722,10 @@ export default function TestExecutionCharts({
   }, [latencyKeys, selectedRouteLatencyKey])
 
   const latest = filteredData[filteredData.length - 1] || loadImpactSourceData[loadImpactSourceData.length - 1] || {}
+  const showPrometheusTab = prometheusGraphCharts.length > 0 || prometheusLoading || Boolean(prometheusError)
+  const visibleGraphGroupTabs = showPrometheusTab
+    ? graphGroupTabs
+    : graphGroupTabs.filter(tab => tab.id !== 'prometheus')
   const activeGraphGroupTab = activeGraphGroupTabProp ?? localActiveGraphGroupTab
   const updateActiveGraphGroupTab = (tab: GraphGroupTabId) => {
     if (activeGraphGroupTabProp === undefined) {
@@ -711,6 +733,11 @@ export default function TestExecutionCharts({
     }
     onActiveGraphGroupTabChange?.(tab)
   }
+  useEffect(() => {
+    if (!enableGraphGroupTabs) return
+    if (visibleGraphGroupTabs.some(tab => tab.id === activeGraphGroupTab)) return
+    updateActiveGraphGroupTab('test_results')
+  }, [activeGraphGroupTab, enableGraphGroupTabs, visibleGraphGroupTabs])
   const visibleCharts = orderedCharts.filter(chart => !hiddenChartIds.includes(chart.id))
   const tabbedCharts = enableGraphGroupTabs
     ? visibleCharts.filter(chart => graphGroupForChart(chart) === activeGraphGroupTab)
@@ -760,12 +787,12 @@ export default function TestExecutionCharts({
     return () => observer.disconnect()
   }, [displayedChartIdSignature])
 
-  if (filteredData.length <= 1 && loadImpactCharts.length === 0 && !loadImpactLoading && !loadImpactError) {
+  if (filteredData.length <= 1 && loadImpactCharts.length === 0 && prometheusGraphCharts.length === 0 && !loadImpactLoading && !loadImpactError && !prometheusLoading && !prometheusError) {
     return null
   }
 
   const contextChart = chartMenu ? displayModeCharts.find(chart => chart.id === chartMenu.chartId) : undefined
-  const graphGroupCounts: Record<GraphGroupTabId, number> = { test_results: 0, under_load: 0, infrastructure: 0 }
+  const graphGroupCounts: Record<GraphGroupTabId, number> = { test_results: 0, under_load: 0, infrastructure: 0, prometheus: 0 }
   visibleCharts.forEach(chart => {
     graphGroupCounts[graphGroupForChart(chart)] += 1
   })
@@ -778,6 +805,9 @@ export default function TestExecutionCharts({
     }
     if (isLoadImpactChart(chart)) {
       return loadImpactChartDataForRow(loadImpactRowsByChartId.get(chart.id), loadImpactRows)
+    }
+    if (isPrometheusChart(chart)) {
+      return prometheusChartDataById.get(chart.id) ?? []
     }
     return chart.id === 'latency' ? responseTimeChartData : filteredData
   }
@@ -1887,7 +1917,7 @@ export default function TestExecutionCharts({
         <div className="charts-toolbar-actions">
           {enableGraphGroupTabs && (
             <div className="graph-group-tabs" role="tablist" aria-label="Graph groups">
-              {graphGroupTabs.map(tab => (
+              {visibleGraphGroupTabs.map(tab => (
                 <button
                   key={tab.id}
                   type="button"
@@ -1908,15 +1938,24 @@ export default function TestExecutionCharts({
             <span className="archive-chip">{timeAxisMode === 'relative' ? 'Relative time' : 'Clock time'}</span>
             {loadImpactLoading && <span className="archive-chip">Loading load metrics</span>}
             {!loadImpactLoading && loadImpactCharts.length > 0 && <span className="archive-chip">{loadImpactCharts.length} load metrics</span>}
+            {prometheusLoading && <span className="archive-chip">Loading Prometheus</span>}
+            {!prometheusLoading && prometheusGraphCharts.length > 0 && <span className="archive-chip">{prometheusGraphCharts.length} Prometheus graphs</span>}
           </div>
         </div>
       </div>
 
       {loadImpactError && <p className="scenario-script-status error">{loadImpactError}</p>}
+      {prometheusError && <p className="scenario-script-status error">{prometheusError}</p>}
 
       {displayModeCharts.length === 0 ? (
         <div className="charts-empty">
-          <span>{visibleCharts.length === 0 ? 'All graphs are hidden' : 'No graphs visible in this group'}</span>
+          <span>{
+            activeGraphGroupTab === 'prometheus' && prometheusLoading
+              ? 'Loading Prometheus graphs'
+              : activeGraphGroupTab === 'prometheus' && prometheusError
+                ? 'Prometheus metrics unavailable'
+                : visibleCharts.length === 0 ? 'All graphs are hidden' : 'No graphs visible in this group'
+          }</span>
           <button className="btn btn-secondary btn-sm" type="button" onClick={resetCharts}>Reset Graphs</button>
         </div>
       ) : (
@@ -2194,6 +2233,35 @@ export default function TestExecutionCharts({
                     )
                   })}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
+              </ComposedChart>
+            ) : chart.type === 'line-prometheus' ? (
+              <ComposedChart
+                data={displayChartData}
+                margin={chartMargin}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                {renderTimeAxis()}
+                {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
+                {renderTooltip(chart.id)}
+                {renderSharedCursor(displayChartData, metricAxisIdForChart)}
+                {metricRows.length > 1 && <Legend verticalAlign="bottom" height={36} />}
+                {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
+                {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
+                {metricRows.map(row => showMetric(row.key) && (
+                  <Line
+                    key={row.key}
+                    yAxisId={metricAxisIdForChart}
+                    type="monotone"
+                    dataKey={displayMetricKey(row.key)}
+                    name={row.label}
+                    stroke={row.color}
+                    dot={false}
+                    strokeWidth={2}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
+                ))}
               </ComposedChart>
             ) : chart.type === 'line-multi' ? (
               <ComposedChart

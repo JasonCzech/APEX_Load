@@ -3383,6 +3383,12 @@ export interface DashboardGitHubSettings {
   path_template: string
 }
 
+export interface DashboardPrometheusSettings {
+  enabled: boolean
+  base_url: string
+  timeout_seconds: number
+}
+
 export interface DashboardSystemSettings {
   general: DashboardGeneralSettings
   thresholds: DashboardThresholdSettings
@@ -3392,6 +3398,37 @@ export interface DashboardSystemSettings {
   notifications: DashboardNotificationsSettings
   auth: DashboardAuthSettings
   github: DashboardGitHubSettings
+  prometheus: DashboardPrometheusSettings
+}
+
+export interface PrometheusPoint {
+  timestamp: string
+  timestamp_ms: number
+  value: number
+}
+
+export interface PrometheusSeries {
+  key: string
+  label: string
+  labels?: Record<string, string>
+  values: PrometheusPoint[]
+}
+
+export interface PrometheusGraph {
+  id: string
+  title: string
+  unit?: string
+  series: PrometheusSeries[]
+}
+
+export interface PrometheusGraphsResponse {
+  enabled: boolean
+  configured: boolean
+  generated_at: string
+  start?: string
+  end?: string
+  step_seconds?: number
+  graphs: PrometheusGraph[]
 }
 
 // --- GitHub script sync (per-user connection + browse/import/push) ---

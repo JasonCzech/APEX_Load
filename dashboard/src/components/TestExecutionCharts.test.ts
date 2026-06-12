@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import type { MetricsHistoryPoint } from '../types'
+import type { MetricsHistoryPoint, PrometheusGraph } from '../types'
 import {
   ART_STD_DEV_BAND_KEY,
   ART_STD_DEV_VALUE_KEY,
   buildArtStdDevBandData,
+  buildPrometheusCharts,
   buildSmoothedGraphData,
   chartMetricLinePresentation,
   chartMetricKeys,
@@ -18,10 +19,12 @@ import {
   formatRelativeRunTime,
   graphCsvForChart,
   hasLoadImpactPercentileRows,
+  isOverlayMetricAvailable,
   latestRouteLatencyValues,
   loadImpactHeatmapChart,
   loadImpactPercentileChartData,
   loadImpactPercentilesChart,
+  prometheusChartData,
   rawGraphMetricKey,
   responseTimeDataWithoutNetworkLatency,
   rollingArtStdDevWindowForRadius,
@@ -114,6 +117,60 @@ describe('chartStateForMonitorPreset', () => {
 
     expect(chartMetricKeys(chart, [], [], true)).toEqual(['tps', 'vusers'])
     expect(csv).toBe('time,tps,vusers\n10:00:00,4,12')
+  })
+
+  it('builds Prometheus graph rows, chart data, CSV, and disables runtime overlays', () => {
+    const graph: PrometheusGraph = {
+      id: 'prometheus_scaling_vusers',
+      title: 'Scaling VUsers',
+      unit: 'VUsers',
+      series: [
+        {
+          key: 'prometheus_scaling_vusers_state_active',
+          label: 'active',
+          labels: { state: 'active' },
+          values: [
+            { timestamp: '2026-06-12T14:00:00Z', timestamp_ms: 1781272800000, value: 12 },
+            { timestamp: '2026-06-12T14:00:15Z', timestamp_ms: 1781272815000, value: 18 },
+          ],
+        },
+        {
+          key: 'prometheus_scaling_vusers_state_pending',
+          label: 'pending',
+          labels: { state: 'pending' },
+          values: [
+            { timestamp: '2026-06-12T14:00:00Z', timestamp_ms: 1781272800000, value: 3 },
+          ],
+        },
+      ],
+    }
+    const [chart] = buildPrometheusCharts([graph])
+    const data = prometheusChartData(graph)
+
+    expect(chart).toMatchObject({
+      id: 'prometheus_scaling_vusers',
+      title: 'Scaling VUsers',
+      type: 'line-prometheus',
+      defaultMetricKeys: ['prometheus_scaling_vusers_state_active', 'prometheus_scaling_vusers_state_pending'],
+    })
+    expect(chartMetricKeys(chart, [], [])).toEqual(['prometheus_scaling_vusers_state_active', 'prometheus_scaling_vusers_state_pending'])
+    expect(chartMetricRows(chart, [], [], [])).toEqual([
+      { key: 'prometheus_scaling_vusers_state_active', label: 'active', color: 'var(--chart-1)', unit: 'VUsers' },
+      { key: 'prometheus_scaling_vusers_state_pending', label: 'pending', color: 'var(--chart-2)', unit: 'VUsers' },
+    ])
+    expect(data).toEqual([
+      expect.objectContaining({
+        timestampMs: 1781272800000,
+        prometheus_scaling_vusers_state_active: 12,
+        prometheus_scaling_vusers_state_pending: 3,
+      }),
+      expect.objectContaining({
+        timestampMs: 1781272815000,
+        prometheus_scaling_vusers_state_active: 18,
+      }),
+    ])
+    expect(graphCsvForChart(chart, data, [], [])).toContain('time,prometheus_scaling_vusers_state_active,prometheus_scaling_vusers_state_pending')
+    expect(isOverlayMetricAvailable(chart, 'vusers')).toBe(false)
   })
 
   it('builds metric table rows for grouped charts and overlays', () => {

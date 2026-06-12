@@ -36,6 +36,7 @@ import DashboardWorkspace, {
 } from './DashboardWorkspace'
 import { buildWorkspaceContextTokens } from './dashboardWorkspaceModel'
 import { useExecutionChartModel } from './useExecutionChartModel'
+import { usePrometheusGraphs } from './usePrometheusGraphs'
 import { useExecutionScenarioPreviewModel } from './useExecutionScenarioPreviewModel'
 import { useExecutionTestManifest } from './useExecutionTestManifest'
 import './TestExecution.css'
@@ -151,6 +152,11 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
     localMetricsHistory,
     archiveResourceHistory,
   })
+  const {
+    prometheusGraphs,
+    prometheusLoading,
+    prometheusError,
+  } = usePrometheusGraphs(test, filteredData)
   const {
     controlFeedback,
     showControlFeedback,
@@ -656,6 +662,10 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
           loadImpactData={archiveLoadImpactData.length > 0 ? archiveLoadImpactData : filteredData}
           loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
           loadImpactError={archiveLoadImpactError}
+          prometheusGraphs={prometheusGraphs}
+          prometheusLoading={prometheusLoading}
+          prometheusError={prometheusError}
+          enableGraphGroupTabs={prometheusGraphs.length > 0 || prometheusLoading || Boolean(prometheusError)}
           latestLatency={latestMetrics?.latency ?? test?.live_metrics?.latency}
           latestMetrics={latestMetrics ?? test?.live_metrics}
         />

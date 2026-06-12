@@ -883,7 +883,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
-	if (path == "/api/v1/integrations/apm/profiles" || path == "/api/v1/monitoring/packs" || path == "/api/v1/reports/profiles" || path == "/api/v1/results/imports") && method == http.MethodGet {
+	if (path == "/api/v1/integrations/apm/profiles" || path == "/api/v1/monitoring/packs" || path == "/api/v1/monitoring/prometheus/graphs" || path == "/api/v1/reports/profiles" || path == "/api/v1/results/imports") && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 

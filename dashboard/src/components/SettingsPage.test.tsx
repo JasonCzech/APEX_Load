@@ -294,6 +294,11 @@ describe('SettingsPage', () => {
         default_branch: 'main',
         path_template: 'apexload/scripts/{project}/{ref_key}.json',
       },
+      prometheus: {
+        enabled: false,
+        base_url: '',
+        timeout_seconds: 5,
+      },
     })
     apiMock.getAuthRoleCatalog.mockResolvedValue({
       provider_model: 'upstream_gateway',
@@ -832,6 +837,54 @@ describe('SettingsPage', () => {
     await selectSettingsSubnav(integrationsSection, 'Notifications')
     expect(integrationsSection.querySelector('#settings-integrations-panel-library')?.hasAttribute('hidden')).toBe(true)
     expect(integrationsSection.querySelector('#settings-integrations-panel-notifications')?.hasAttribute('hidden')).toBe(false)
+    await selectSettingsSubnav(integrationsSection, 'Prometheus')
+    expect(integrationsSection.querySelector('#settings-integrations-panel-prometheus')?.hasAttribute('hidden')).toBe(false)
+  })
+
+  it('edits Prometheus integration settings', async () => {
+    apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Integrations')
+    const integrationsSection = container.querySelector('#settings-section-integrations')
+    expect(integrationsSection).toBeTruthy()
+    if (!integrationsSection) return
+
+    await selectSettingsSubnav(integrationsSection, 'Prometheus')
+    expect(integrationsSection.textContent).toContain('Prometheus Graphs')
+
+    const enabledInput = findSettingInput(integrationsSection, 'Enable Prometheus Graphs')
+    const urlInput = findSettingInput(integrationsSection, 'Server URL')
+    const timeoutInput = findSettingInput(integrationsSection, 'Timeout (seconds)')
+    expect(enabledInput).toBeTruthy()
+    expect(urlInput).toBeTruthy()
+    expect(timeoutInput).toBeTruthy()
+    if (!enabledInput || !urlInput || !timeoutInput) return
+
+    await act(async () => {
+      enabledInput.click()
+    })
+    await setFieldValue(urlInput, 'http://prometheus:9090')
+    await setFieldValue(timeoutInput, '12')
+
+    await act(async () => {
+      findButton('Save Changes')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.updateSystemSettings).toHaveBeenCalled()
+    const calls = apiMock.updateSystemSettings.mock.calls
+    const submitted = calls[calls.length - 1]?.[0]
+    expect(submitted.prometheus).toEqual({
+      enabled: true,
+      base_url: 'http://prometheus:9090',
+      timeout_seconds: 12,
+    })
   })
 
   it('creates a domain from the top-level Domains settings section and selects it', async () => {

@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 5s
+  scrape_timeout: 3s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: apexload-controller
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - controller:9091
+        labels:
+          environment: local

@@ -640,6 +640,84 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.hiddenCharts')).toContain('load_impact_heatmap')
   })
 
+  it('shows Prometheus graphs as a graph group and supports metric row filtering', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', timestampMs: 1781272800000, vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130 },
+            { time: '10:00:15', timestampMs: 1781272815000, vusers: 4, tps: 2, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p99: 135 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+          showLoadImpact={false}
+          enableGraphGroupTabs
+          prometheusGraphs={[
+            {
+              id: 'prometheus_scaling_vusers',
+              title: 'Scaling VUsers',
+              unit: 'VUsers',
+              series: [
+                {
+                  key: 'prometheus_scaling_vusers_state_active',
+                  label: 'active',
+                  values: [
+                    { timestamp: '2026-06-12T14:00:00Z', timestamp_ms: 1781272800000, value: 12 },
+                    { timestamp: '2026-06-12T14:00:15Z', timestamp_ms: 1781272815000, value: 18 },
+                  ],
+                },
+                {
+                  key: 'prometheus_scaling_vusers_state_pending',
+                  label: 'pending',
+                  values: [
+                    { timestamp: '2026-06-12T14:00:00Z', timestamp_ms: 1781272800000, value: 3 },
+                    { timestamp: '2026-06-12T14:00:15Z', timestamp_ms: 1781272815000, value: 1 },
+                  ],
+                },
+              ],
+            },
+          ]}
+        />,
+      )
+    })
+
+    const prometheusTab = Array.from(container.querySelectorAll('button[role="tab"]')).find(button => button.textContent?.includes('Prometheus'))
+    expect(prometheusTab?.textContent).toContain('1')
+
+    await act(async () => {
+      prometheusTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(chartTitles()).toEqual(['Scaling VUsers'])
+    const prometheusCard = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Scaling VUsers'))
+    expect(prometheusCard?.querySelector('path[data-testid="mock-line"][data-key="prometheus_scaling_vusers_state_active"][data-name="active"]')).not.toBeNull()
+    expect(prometheusCard?.querySelector('path[data-testid="mock-line"][data-key="prometheus_scaling_vusers_state_pending"][data-name="pending"]')).not.toBeNull()
+
+    const pendingToggle = Array.from(prometheusCard?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [])
+      .find(input => input.getAttribute('aria-label') === 'Show pending')
+    expect(pendingToggle).not.toBeUndefined()
+
+    await act(async () => {
+      pendingToggle?.click()
+    })
+
+    expect(prometheusCard?.querySelector('path[data-testid="mock-line"][data-key="prometheus_scaling_vusers_state_active"][data-name="active"]')).not.toBeNull()
+    expect(prometheusCard?.querySelector('path[data-testid="mock-line"][data-key="prometheus_scaling_vusers_state_pending"][data-name="pending"]')).toBeNull()
+    expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"prometheus_scaling_vusers":["prometheus_scaling_vusers_state_active"]')
+  })
+
   it('uses dedicated Under Load heatmap mode with map controls and detail rows', async () => {
     const data = [
       { time: '10:00:00', vusers: 5, tps: 2.5, avgMs: 115, errorPct: 0, p50: 105, p90: 132, p95: 145, p99: 180 },

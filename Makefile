@@ -1,4 +1,4 @@
-.PHONY: all build test clean generator controller apexctl proto lint docker-generator docker-controller docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-onprem-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
+.PHONY: all build test clean generator controller apexctl proto lint docker-generator docker-controller docker-local-up docker-local-down docker-local-logs docker-local-prometheus-check docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-onprem-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
 
 VERSION    ?= 0.1.0
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null)
@@ -41,6 +41,18 @@ docker-generator:
 
 docker-controller:
 	docker build --build-arg BINARY=controller --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) -t apexload-controller:$(VERSION) -f Dockerfile .
+
+docker-local-up:
+	docker compose up --build -d
+
+docker-local-down:
+	docker compose down
+
+docker-local-logs:
+	docker compose logs -f controller prometheus
+
+docker-local-prometheus-check:
+	docker run --rm --entrypoint promtool -v "$(CURDIR)/deployments/docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" prom/prometheus:v3.12.0 check config /etc/prometheus/prometheus.yml
 
 # Build and push both images to any registry. Usage:
 #   make docker-push REGISTRY=registry.example.internal/apexload

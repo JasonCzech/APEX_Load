@@ -27,6 +27,7 @@ type SystemSettings struct {
 	Notifications    NotificationsSettings    `json:"notifications"`
 	Auth             AuthSettings             `json:"auth"`
 	GitHub           GitHubSettings           `json:"github"`
+	Prometheus       PrometheusSettings       `json:"prometheus"`
 }
 
 // GitHubSettings is the global (admin-owned) configuration for the GitHub script
@@ -56,6 +57,12 @@ type GitHubSettings struct {
 	PathTemplate          string   `json:"path_template,omitempty"`
 }
 
+type PrometheusSettings struct {
+	Enabled        bool   `json:"enabled"`
+	BaseURL        string `json:"base_url,omitempty"`
+	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
+}
+
 const (
 	defaultGitHubAPIBaseURL = "https://api.github.com"
 	defaultGitHubWebBaseURL = "https://github.com"
@@ -75,6 +82,39 @@ func defaultGitHubSettings() GitHubSettings {
 		DefaultBranch:  defaultGitHubBranch,
 		PathTemplate:   defaultGitHubPathTmpl,
 	}
+}
+
+func defaultPrometheusSettings() PrometheusSettings {
+	baseURL := strings.TrimRight(strings.TrimSpace(envValue("APEXLOAD_PROMETHEUS_URL")), "/")
+	return PrometheusSettings{
+		Enabled:        baseURL != "",
+		BaseURL:        baseURL,
+		TimeoutSeconds: 5,
+	}
+}
+
+func normalizePrometheusSettings(in PrometheusSettings) PrometheusSettings {
+	defaults := defaultPrometheusSettings()
+	out := in
+	out.BaseURL = strings.TrimRight(strings.TrimSpace(out.BaseURL), "/")
+	if out.BaseURL == "" && defaults.BaseURL != "" {
+		out.BaseURL = defaults.BaseURL
+	}
+	if !out.Enabled && in.BaseURL == "" && in.TimeoutSeconds == 0 && defaults.Enabled {
+		out.Enabled = true
+	}
+	if out.TimeoutSeconds == 0 {
+		out.TimeoutSeconds = defaults.TimeoutSeconds
+	}
+	return out
+}
+
+func (p PrometheusSettings) allowlistHosts() []string {
+	parsed, err := url.Parse(strings.TrimSpace(p.BaseURL))
+	if err != nil || parsed.Hostname() == "" {
+		return nil
+	}
+	return []string{parsed.Hostname()}
 }
 
 func normalizeGitHubSettings(in GitHubSettings) GitHubSettings {
@@ -436,6 +476,7 @@ func defaultSystemSettings(maxConcurrent int) SystemSettings {
 		Notifications:    NotificationsSettings{},
 		Auth:             defaultAuthSettings(),
 		GitHub:           defaultGitHubSettings(),
+		Prometheus:       defaultPrometheusSettings(),
 	}
 }
 
@@ -493,6 +534,7 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 	if in.GitHub.Scopes != nil {
 		out.GitHub.Scopes = append([]string(nil), in.GitHub.Scopes...)
 	}
+	out.Prometheus = in.Prometheus
 	return out
 }
 
@@ -537,6 +579,7 @@ func normalizeLoadedSystemSettings(in SystemSettings, defaultMaxConcurrent int) 
 	out.Notifications = cloneNotificationsSettings(out.Notifications)
 	out.Auth = normalizeAuthSettings(out.Auth)
 	out.GitHub = normalizeGitHubSettings(out.GitHub)
+	out.Prometheus = normalizePrometheusSettings(out.Prometheus)
 
 	return out
 }
@@ -649,6 +692,36 @@ func validateSystemSettings(settings SystemSettings) error {
 	}
 	if err := validateGitHubSettings(settings.GitHub); err != nil {
 		return err
+	}
+	if err := validatePrometheusSettings(settings.Prometheus); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validatePrometheusSettings(settings PrometheusSettings) error {
+	normalized := normalizePrometheusSettings(settings)
+	if normalized.TimeoutSeconds <= 0 {
+		return fmt.Errorf("prometheus.timeout_seconds must be > 0")
+	}
+	if normalized.TimeoutSeconds > 60 {
+		return fmt.Errorf("prometheus.timeout_seconds must be <= 60")
+	}
+	if !normalized.Enabled && strings.TrimSpace(normalized.BaseURL) == "" {
+		return nil
+	}
+	if strings.TrimSpace(normalized.BaseURL) == "" {
+		if normalized.Enabled {
+			return fmt.Errorf("prometheus.base_url is required when prometheus is enabled")
+		}
+		return nil
+	}
+	allow := map[string]struct{}{}
+	for _, host := range normalized.allowlistHosts() {
+		allow[strings.ToLower(host)] = struct{}{}
+	}
+	if err := validateOutboundURLAllowingHosts(normalized.BaseURL, allow); err != nil {
+		return fmt.Errorf("prometheus.base_url %w", err)
 	}
 	return nil
 }
@@ -1098,6 +1171,7 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 	normalized.Thresholds = normalizeThresholdSettings(normalized.Thresholds)
 	normalized.ArchiveRetention = normalizeArchiveRetentionSettings(normalized.ArchiveRetention)
 	normalized.Auth = normalizeAuthSettings(normalized.Auth)
+	normalized.Prometheus = normalizePrometheusSettings(normalized.Prometheus)
 	if err := validateSystemSettings(normalized); err != nil {
 		return SystemSettings{}, err
 	}
