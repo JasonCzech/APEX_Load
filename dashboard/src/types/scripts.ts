@@ -288,6 +288,7 @@ export interface JMSConfig {
   client_id?: string
   destination?: string
   destination_type?: string
+  subscription?: string
   reply_to?: string
   acknowledgement?: string
   delivery_mode?: string

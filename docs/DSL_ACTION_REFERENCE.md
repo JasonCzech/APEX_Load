@@ -831,6 +831,7 @@ Consumes the next message from a queue or topic.
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string |  | Source queue/topic; falls back to config.jms.destination. |
+| `params.subscription` | string |  | Azure Service Bus topic subscription; falls back to config.jms.subscription. |
 | `params.timeout_ms` | int |  | Consume timeout in milliseconds; falls back to config.jms.timeout_ms. |
 
 ### `jms_publish`
@@ -854,6 +855,7 @@ Sends a request message and waits for the correlated reply.
 | `body` | string |  | Request payload; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `params.reply_to` | string |  | Reply destination; required unless config.jms.reply_to is set. |
+| `params.subscription` | string |  | Azure Service Bus topic subscription for consuming replies from a topic; falls back to config.jms.subscription. |
 | `params.timeout_ms` | int |  | Reply timeout in milliseconds. |
 
 ### `jms_rollback`

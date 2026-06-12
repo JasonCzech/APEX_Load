@@ -203,6 +203,7 @@ type JMSConfig struct {
 	ClientID        string            `json:"client_id,omitempty"`        // durable client identifier
 	Destination     string            `json:"destination,omitempty"`      // default queue/topic
 	DestinationType string            `json:"destination_type,omitempty"` // "queue" or "topic"
+	Subscription    string            `json:"subscription,omitempty"`     // Service Bus topic subscription
 	ReplyTo         string            `json:"reply_to,omitempty"`         // default reply destination
 	Acknowledgement string            `json:"acknowledgement,omitempty"`  // "auto", "client", "transacted"
 	DeliveryMode    string            `json:"delivery_mode,omitempty"`    // "persistent", "non_persistent"

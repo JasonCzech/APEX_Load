@@ -425,6 +425,7 @@ func TestParse_JMSConfigAndActions(t *testing.T) {
 					"provider": "solace",
 					"broker_url": "tcp://broker:55555",
 					"destination": "orders.in",
+					"subscription": "orders-sub",
 					"reply_to": "orders.reply",
 					"timeout_ms": 2500,
 					"mock": true
@@ -446,6 +447,9 @@ func TestParse_JMSConfigAndActions(t *testing.T) {
 	}
 	if script.Config.JMS.TimeoutMs != 2500 {
 		t.Fatalf("timeout_ms = %d, want 2500", script.Config.JMS.TimeoutMs)
+	}
+	if script.Config.JMS.Subscription != "orders-sub" {
+		t.Fatalf("subscription = %q, want orders-sub", script.Config.JMS.Subscription)
 	}
 	if !script.Config.JMS.Mock {
 		t.Fatal("mock = false, want true")

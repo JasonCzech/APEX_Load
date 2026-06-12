@@ -840,6 +840,7 @@ func TestBuildProtoConfig_JMS(t *testing.T) {
 				ClientID:        "apexload-vu",
 				Destination:     "orders.in",
 				DestinationType: "queue",
+				Subscription:    "orders-sub",
 				ReplyTo:         "orders.reply",
 				Acknowledgement: "client",
 				DeliveryMode:    "persistent",
@@ -863,6 +864,9 @@ func TestBuildProtoConfig_JMS(t *testing.T) {
 	}
 	if cfg["jms_destination"] != "orders.in" {
 		t.Errorf("jms_destination = %v, want orders.in", cfg["jms_destination"])
+	}
+	if cfg["jms_subscription"] != "orders-sub" {
+		t.Errorf("jms_subscription = %v, want orders-sub", cfg["jms_subscription"])
 	}
 	if cfg["jms_reply_to"] != "orders.reply" {
 		t.Errorf("jms_reply_to = %v, want orders.reply", cfg["jms_reply_to"])

@@ -70,7 +70,8 @@ deployments/
 All protocols implement `pkg/protocol.Protocol`. Register new protocols in `pkg/protocol/registry.go`.
 Bundled and compiled into every binary (see the `_` imports in `cmd/*/main.go`): HTTP (http/1.1,
 http/2), SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), WebSocket, gRPC, JMS Solace,
-JMS IBM MQ, Kafka (produce/consume/request-reply; in-memory mock broker by default, real
+JMS IBM MQ, JMS Azure Service Bus (real adapter opt-in via `-tags jms_servicebus_real`),
+Kafka (produce/consume/request-reply; in-memory mock broker by default, real
 franz-go network adapter opt-in via `-tags kafka_real`), database (SQL query/exec/transactions),
 network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP),
 and browser (replay + canary diagnostics).

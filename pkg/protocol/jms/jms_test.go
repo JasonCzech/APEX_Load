@@ -12,19 +12,14 @@ import (
 )
 
 func TestJMSProtocolsAreRegistered(t *testing.T) {
-	p, err := protocol.Get("jms-solace")
-	if err != nil {
-		t.Fatalf("protocol.Get(jms-solace) returned error: %v", err)
-	}
-	if p.Name() != "jms-solace" {
-		t.Fatalf("Name() = %q, want jms-solace", p.Name())
-	}
-	p2, err := protocol.Get("jms-ibmmq")
-	if err != nil {
-		t.Fatalf("protocol.Get(jms-ibmmq) returned error: %v", err)
-	}
-	if p2.Name() != "jms-ibmmq" {
-		t.Fatalf("Name() = %q, want jms-ibmmq", p2.Name())
+	for _, name := range []string{"jms-solace", "jms-ibmmq", "jms-servicebus"} {
+		p, err := protocol.Get(name)
+		if err != nil {
+			t.Fatalf("protocol.Get(%s) returned error: %v", name, err)
+		}
+		if p.Name() != name {
+			t.Fatalf("Name() = %q, want %s", p.Name(), name)
+		}
 	}
 }
 
@@ -330,6 +325,103 @@ func TestJMSRequestReplyEchoesResponse(t *testing.T) {
 	}
 	if result.ServerTelemetry.ConsumerLagMs < 0 {
 		t.Fatalf("ConsumerLagMs = %v, want non-negative", result.ServerTelemetry.ConsumerLagMs)
+	}
+}
+
+func TestJMSServiceBusMockPublishConsumeRequestReply(t *testing.T) {
+	ctx := context.Background()
+	p := &JMS{name: "jms-servicebus", provider: "servicebus"}
+	if err := p.Init(ctx, map[string]any{
+		"jms_destination": "orders.sb.queue",
+		"jms_reply_to":    "orders.sb.reply",
+		"jms_provider":    "servicebus",
+		"jms_mock":        true,
+		"jms_timeout_ms":  float64(250),
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	published, err := p.Execute(ctx, &protocol.Action{
+		Name: "publish-servicebus",
+		Type: "jms_publish",
+		Body: []byte(`{"orderId":"SB-100"}`),
+	})
+	if err != nil {
+		t.Fatalf("publish returned error: %v", err)
+	}
+	if !published.Success {
+		t.Fatalf("publish success = false: %s", published.ErrorMessage)
+	}
+
+	consumed, err := p.Execute(ctx, &protocol.Action{
+		Name: "consume-servicebus",
+		Type: "jms_consume",
+		Assertions: []protocol.Assertion{
+			{Type: "message_received"},
+			{Type: "body_contains", Value: "SB-100"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("consume returned error: %v", err)
+	}
+	if !consumed.Success {
+		t.Fatalf("consume success = false: %s", consumed.ErrorMessage)
+	}
+
+	reply, err := p.Execute(ctx, &protocol.Action{
+		Name: "request-reply-servicebus",
+		Type: "jms_request_reply",
+		Body: []byte(`{"orderId":"SB-200"}`),
+	})
+	if err != nil {
+		t.Fatalf("request_reply returned error: %v", err)
+	}
+	if !reply.Success {
+		t.Fatalf("request_reply success = false: %s", reply.ErrorMessage)
+	}
+	if reply.Extractions["jms_correlation_id"] == "" {
+		t.Fatal("request_reply correlation extraction is empty")
+	}
+}
+
+func TestJMSServiceBusMockConsumesTopicSubscriptionDestination(t *testing.T) {
+	ctx := context.Background()
+	topic := "orders.sb.topic"
+	subscription := "perf-sub"
+	composed := topic + "/subscriptions/" + subscription
+	p := &JMS{name: "jms-servicebus", provider: "servicebus"}
+	if err := p.Init(ctx, map[string]any{
+		"jms_destination":      topic,
+		"jms_destination_type": "topic",
+		"jms_subscription":     subscription,
+		"jms_provider":         "servicebus",
+		"jms_mock":             true,
+		"jms_timeout_ms":       float64(250),
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	broker.publish(composed, message{
+		ID:          "msg-servicebus-topic",
+		Destination: composed,
+		Body:        []byte(`{"orderId":"SB-TOPIC"}`),
+		CreatedAt:   time.Now(),
+	})
+
+	consumed, err := p.Execute(ctx, &protocol.Action{
+		Name: "consume-servicebus-topic",
+		Type: "jms_consume",
+	})
+	if err != nil {
+		t.Fatalf("consume returned error: %v", err)
+	}
+	if !consumed.Success {
+		t.Fatalf("consume success = false: %s", consumed.ErrorMessage)
+	}
+	if consumed.DependencyTarget != composed {
+		t.Fatalf("DependencyTarget = %q, want %q", consumed.DependencyTarget, composed)
+	}
+	if consumed.Extractions["jms_destination"] != composed {
+		t.Fatalf("jms_destination = %q, want %q", consumed.Extractions["jms_destination"], composed)
 	}
 }
 

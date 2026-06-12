@@ -58,7 +58,7 @@ func inferEvidenceProtocol(action *Action, result *Result) string {
 	case strings.HasPrefix(dependency, "network_") || strings.HasPrefix(dependency, "network") || strings.HasPrefix(actionType, "dns_") || strings.HasPrefix(actionType, "tcp_") || strings.HasPrefix(actionType, "udp_") || strings.HasPrefix(actionType, "ftp_") || strings.HasPrefix(actionType, "smtp_") || strings.HasPrefix(actionType, "pop3_") || strings.HasPrefix(actionType, "imap_") || strings.HasPrefix(actionType, "ldap_") || strings.HasPrefix(actionType, "winsock_"):
 		return "network"
 	case strings.HasPrefix(dependency, "jms") || strings.HasPrefix(actionType, "jms_"):
-		return "jms-solace"
+		return "jms"
 	case strings.HasPrefix(dependency, "kafka") || strings.HasPrefix(actionType, "kafka_"):
 		return "kafka"
 	default:

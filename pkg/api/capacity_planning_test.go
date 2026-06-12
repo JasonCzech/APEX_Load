@@ -331,6 +331,14 @@ func TestEstimateCapacityAdvisoryUsesProtocolDensityEnvelopes(t *testing.T) {
 	}
 }
 
+func TestCanonicalCapacityProtocolTreatsServiceBusAsJMS(t *testing.T) {
+	for _, protocol := range []string{"jms-servicebus", "jms_servicebus", "servicebus", "azure service bus"} {
+		if got := canonicalCapacityProtocol(TestGroup{Protocol: protocol}); got != "jms" {
+			t.Fatalf("canonicalCapacityProtocol(%q) = %q, want jms", protocol, got)
+		}
+	}
+}
+
 func TestEstimateCapacityAdvisoryCombinesMixedProtocolDensityEnvelopes(t *testing.T) {
 	settings := defaultSystemSettings(5)
 	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 4

@@ -532,6 +532,9 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	if jmsCfg.DestinationType != "" {
 		cfg["jms_destination_type"] = jmsCfg.DestinationType
 	}
+	if jmsCfg.Subscription != "" {
+		cfg["jms_subscription"] = jmsCfg.Subscription
+	}
 	if jmsCfg.ReplyTo != "" {
 		cfg["jms_reply_to"] = jmsCfg.ReplyTo
 	}

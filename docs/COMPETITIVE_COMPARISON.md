@@ -89,7 +89,7 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 | REST / OpenAPI | Supported | Supported | Supported | `/api/v1/scripts/import/openapi` | Dashboard guided create flow. |
 | SOAP / WSDL | Supported | Via HTTP scripting | Supported | `pkg/protocol/soap`, `pkg/convert/wsdl` | Complex XSD generation is scaffolded. |
 | Java-over-HTTP | Supported | Not primary | Enterprise coverage | `pkg/protocol/java_http` | Enterprise fixtures on demand. |
-| JMS / broker | Partial | Extensions | Enterprise | `pkg/protocol/jms` | Real broker execution requires adapter. |
+| JMS / broker | Partial (Solace and Azure Service Bus real adapters opt-in) | Extensions | Enterprise | `pkg/protocol/jms` | IBM MQ real adapter remains review-only; Service Bus requires `-tags jms_servicebus_real`. |
 | Kafka / event streaming | Supported (mock default; real adapter opt-in) | Extensions | Enterprise | `pkg/protocol/kafka`, `pkg/convert/asyncapi` | Mock broker + AsyncAPI import; live execution via `-tags kafka_real`. |
 | WebSocket | Supported | Supported | Supported | `pkg/protocol/websocket` | More subscription-protocol fixtures. |
 | gRPC | Supported | Supported | Varies | `pkg/protocol/grpc` | Service-specific proto fixtures. |
@@ -560,7 +560,7 @@ Bundles correspond to OpenText LoadRunner Enterprise protocol-bundle groups.
 | **Web / API** | HTTP/HTTPS, WebSocket, gRPC | Supported | Go generator (Linux) |
 | **Web / API** | SOAP/WSDL | Supported | Go generator (Linux) |
 | **Web / API** | Java-over-HTTP | Supported (bounded codec) | Go generator (Linux) |
-| **Web / API** | JMS (Solace, IBM MQ) | Partial | Go generator (Linux) |
+| **Web / API** | JMS (Solace, IBM MQ, Azure Service Bus) | Partial (Service Bus real adapter opt-in via `-tags jms_servicebus_real`; transactions/no-op ack parity documented) | Go generator (Linux) |
 | **Web / API** | Kafka (event streaming) | Supported (mock default; real adapter opt-in via `-tags kafka_real`) | Go generator (Linux) |
 | **Database (DB1)** | SQL / ODBC-style (database/sql) | Supported | Go generator (Linux) |
 | **Database (DB1)** | Oracle-2 Tier | External-runner required | Governed Oracle client runner |

@@ -2411,6 +2411,10 @@
             "properties": {
               "params": {
                 "properties": {
+                  "subscription": {
+                    "description": "Azure Service Bus topic subscription; falls back to config.jms.subscription.",
+                    "type": "string"
+                  },
                   "timeout_ms": {
                     "description": "Consume timeout in milliseconds; falls back to config.jms.timeout_ms.",
                     "type": "integer"
@@ -2488,6 +2492,10 @@
                 "properties": {
                   "reply_to": {
                     "description": "Reply destination; required unless config.jms.reply_to is set.",
+                    "type": "string"
+                  },
+                  "subscription": {
+                    "description": "Azure Service Bus topic subscription for consuming replies from a topic; falls back to config.jms.subscription.",
                     "type": "string"
                   },
                   "timeout_ms": {
@@ -5072,6 +5080,9 @@
           "type": "string"
         },
         "reply_to": {
+          "type": "string"
+        },
+        "subscription": {
           "type": "string"
         },
         "timeout_ms": {

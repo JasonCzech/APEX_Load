@@ -23,6 +23,9 @@ func init() {
 	protocol.Register("jms-ibmmq", func() protocol.Protocol {
 		return &JMS{name: "jms-ibmmq", provider: "ibmmq"}
 	})
+	protocol.Register("jms-servicebus", func() protocol.Protocol {
+		return &JMS{name: "jms-servicebus", provider: "servicebus"}
+	})
 }
 
 type JMS struct {
@@ -41,6 +44,7 @@ type config struct {
 	ClientID               string            `json:"client_id,omitempty"`
 	Destination            string            `json:"destination,omitempty"`
 	DestinationType        string            `json:"destination_type,omitempty"`
+	Subscription           string            `json:"subscription,omitempty"`
 	DeadLetterDestinations []string          `json:"dead_letter_destinations,omitempty"`
 	ReplyTo                string            `json:"reply_to,omitempty"`
 	Acknowledgement        string            `json:"acknowledgement,omitempty"`
@@ -121,6 +125,7 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 		ClientID:               stringValue(cfg, "jms_client_id"),
 		Destination:            stringValue(cfg, "jms_destination"),
 		DestinationType:        stringValue(cfg, "jms_destination_type"),
+		Subscription:           stringValue(cfg, "jms_subscription"),
 		DeadLetterDestinations: stringSliceValue(cfg, "jms_dead_letter_destinations"),
 		ReplyTo:                stringValue(cfg, "jms_reply_to"),
 		Acknowledgement:        stringValue(cfg, "jms_acknowledgement"),
@@ -154,6 +159,8 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 	} else {
 		if j.provider == "ibmmq" {
 			j.adapter = unavailableIbmMqAdapter{cfg: j.cfg}
+		} else if j.provider == "servicebus" {
+			j.adapter = newServiceBusAdapter(j.cfg)
 		} else if sidecarCommand := strings.TrimSpace(j.cfg.Properties["sidecar_command"]); strings.EqualFold(strings.TrimSpace(j.cfg.Properties["adapter"]), "sidecar") && sidecarCommand != "" {
 			j.adapter = sidecarAdapter{command: sidecarCommand, cfg: j.cfg}
 		} else {
@@ -254,10 +261,11 @@ func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *prot
 }
 
 func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, error) {
-	destination := j.destination(action)
+	destination := j.consumeDestination(action)
 	if destination == "" {
 		return message{}, fmt.Errorf("JMS destination is required")
 	}
+	result.DependencyTarget = destination
 	msg, err := j.adapter.Consume(ctx, destination, j.timeout(action))
 	if err != nil {
 		result.StatusCode = 204
@@ -278,6 +286,7 @@ func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result 
 		return message{}, message{}, fmt.Errorf("JMS request destination is required")
 	}
 	replyDestination := paramString(action.Params, "reply_to", j.cfg.ReplyTo)
+	replyDestination = j.serviceBusConsumeDestination(action, replyDestination)
 	if replyDestination == "" {
 		return message{}, message{}, fmt.Errorf("JMS reply_to destination is required")
 	}
@@ -616,6 +625,37 @@ func (a unavailableIbmMqAdapter) err() error {
 	return fmt.Errorf("real IBM MQ adapter is not available in this build; enable mock mode for local replay")
 }
 
+type unavailableServiceBusAdapter struct {
+	cfg config
+}
+
+func (a unavailableServiceBusAdapter) Publish(context.Context, string, message) (message, error) {
+	return message{}, a.err()
+}
+
+func (a unavailableServiceBusAdapter) Consume(context.Context, string, time.Duration) (message, error) {
+	return message{}, a.err()
+}
+
+func (a unavailableServiceBusAdapter) RequestReply(context.Context, string, string, message, time.Duration) (message, message, error) {
+	return message{}, message{}, a.err()
+}
+
+func (a unavailableServiceBusAdapter) HealthCheck(context.Context) error {
+	if a.cfg.BrokerURL == "" {
+		return fmt.Errorf("jms broker_url is not configured")
+	}
+	return a.err()
+}
+
+func (a unavailableServiceBusAdapter) Teardown(context.Context) error {
+	return nil
+}
+
+func (a unavailableServiceBusAdapter) err() error {
+	return fmt.Errorf("real Azure Service Bus adapter is not available in this build; enable mock mode or build with -tags jms_servicebus_real")
+}
+
 func (j *JMS) buildMessage(action *protocol.Action, destination string) message {
 	correlationID := paramString(action.Params, "correlation_id", "")
 	properties := cloneStringMap(j.cfg.Properties)
@@ -637,6 +677,19 @@ func (j *JMS) buildMessage(action *protocol.Action, destination string) message 
 
 func (j *JMS) destination(action *protocol.Action) string {
 	return paramString(action.Params, "destination", firstNonEmpty(action.Target, j.cfg.Destination))
+}
+
+func (j *JMS) consumeDestination(action *protocol.Action) string {
+	return j.serviceBusConsumeDestination(action, j.destination(action))
+}
+
+func (j *JMS) serviceBusConsumeDestination(action *protocol.Action, destination string) string {
+	if !strings.EqualFold(strings.TrimSpace(j.provider), "servicebus") {
+		return destination
+	}
+	destinationType := paramString(action.Params, "destination_type", j.cfg.DestinationType)
+	subscription := paramString(action.Params, "subscription", j.cfg.Subscription)
+	return serviceBusConsumeDestination(destination, destinationType, subscription)
 }
 
 func addMessageExtractions(result *protocol.Result, msg message) {

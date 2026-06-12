@@ -623,7 +623,7 @@ func canonicalCapacityProtocol(group TestGroup) string {
 		return "java_http"
 	case "java_vuser", "java-vuser", "java vuser":
 		return "java_vuser"
-	case "jms", "jms-solace", "jms_solace", "solace", "ibm-mq", "ibm_mq", "mq":
+	case "jms", "jms-solace", "jms_solace", "solace", "ibm-mq", "ibm_mq", "mq", "jms-servicebus", "jms_servicebus", "servicebus", "service-bus", "azure-servicebus", "azure_servicebus", "azure service bus":
 		return "jms"
 	case "sapgui", "sap_gui", "sap-gui", "sap gui":
 		return "sap_gui"

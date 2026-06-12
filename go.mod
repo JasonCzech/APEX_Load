@@ -3,6 +3,8 @@ module github.com/jasonczech/apexload
 go 1.26.4
 
 require (
+	github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus v1.10.0
+	github.com/Azure/go-amqp v1.7.0
 	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/andybalholm/brotli v1.2.1
@@ -36,7 +38,6 @@ require (
 )
 
 require (
-	github.com/Azure/go-amqp v1.7.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect

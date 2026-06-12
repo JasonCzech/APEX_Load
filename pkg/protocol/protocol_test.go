@@ -23,3 +23,14 @@ func TestClassifyPayloadSize(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildProtocolEvidenceLabelsJMSGenerically(t *testing.T) {
+	evidence := BuildProtocolEvidence(&Action{Type: "jms_publish", Target: "orders"}, &Result{
+		Success:          true,
+		DependencyType:   "jms_queue",
+		DependencyTarget: "orders",
+	})
+	if evidence["protocol"] != "jms" {
+		t.Fatalf("protocol evidence = %#v, want provider-neutral jms", evidence)
+	}
+}

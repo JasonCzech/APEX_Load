@@ -654,15 +654,19 @@ func validateJMSScriptIssues(script *Script) []string {
 	}
 
 	jms := script.Config.JMS
+	serviceBus := isServiceBusJMSScript(script)
 	if !jms.Mock {
 		if jms.BrokerURL == "" {
 			issues = append(issues, "config.jms.broker_url is required when mock mode is disabled")
 		}
-		if jms.MessageVPN == "" {
+		if jms.MessageVPN == "" && !serviceBus {
 			issues = append(issues, "config.jms.message_vpn is recommended when mock mode is disabled")
 		}
 		if strings.TrimSpace(script.Protocol) == "jms-solace" && !SolaceJMSRealAdapterAvailable() {
 			issues = append(issues, "real Solace JMS adapter is not available in this build; enable config.jms.mock for replay or build with -tags jms_solace_real")
+		}
+		if serviceBus && !ServiceBusJMSRealAdapterAvailable() {
+			issues = append(issues, "real Azure Service Bus JMS adapter is not available in this build; enable config.jms.mock for replay or build with -tags jms_servicebus_real")
 		}
 	}
 	if jms.Destination == "" {
@@ -701,9 +705,65 @@ func validateJMSScriptIssues(script *Script) []string {
 				issues = append(issues, fmt.Sprintf("actions[%d] %q: missing reply_to destination", i, action.Name))
 			}
 		}
+		if serviceBus && (action.Type == "jms_consume" || action.Type == "jms_request_reply") && jmsActionUsesServiceBusTopicWithoutSubscription(jms, action) {
+			issues = append(issues, fmt.Sprintf("actions[%d] %q: subscription required to consume from a Service Bus topic", i, action.Name))
+		}
 	}
 
 	return issues
+}
+
+func isServiceBusJMSScript(script *Script) bool {
+	if strings.EqualFold(strings.TrimSpace(script.Protocol), "jms-servicebus") {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(script.Config.JMS.Provider), "servicebus")
+}
+
+func jmsActionUsesServiceBusTopicWithoutSubscription(jms JMSConfig, action Action) bool {
+	destinationType, ok := actionParamStringValue(action.Params, "destination_type")
+	if !ok {
+		destinationType = jms.DestinationType
+	}
+	if !strings.EqualFold(strings.TrimSpace(destinationType), "topic") {
+		return false
+	}
+	destination := jmsActionConsumeDestination(jms, action)
+	if jmsDestinationIncludesServiceBusSubscription(destination) {
+		return false
+	}
+	subscription, ok := actionParamStringValue(action.Params, "subscription")
+	if !ok {
+		subscription = jms.Subscription
+	}
+	return strings.TrimSpace(subscription) == ""
+}
+
+func jmsActionConsumeDestination(jms JMSConfig, action Action) string {
+	if action.Type == "jms_request_reply" {
+		if replyTo, ok := actionParamStringValue(action.Params, "reply_to"); ok {
+			return replyTo
+		}
+		return jms.ReplyTo
+	}
+	if destination, ok := actionParamStringValue(action.Params, "destination"); ok {
+		return destination
+	}
+	if strings.TrimSpace(action.Target) != "" {
+		return action.Target
+	}
+	return jms.Destination
+}
+
+func jmsDestinationIncludesServiceBusSubscription(destination string) bool {
+	trimmed := strings.Trim(strings.TrimSpace(destination), "/")
+	lower := strings.ToLower(trimmed)
+	const marker = "/subscriptions/"
+	idx := strings.Index(lower, marker)
+	if idx < 0 {
+		return false
+	}
+	return strings.Trim(trimmed[:idx], "/") != "" && strings.Trim(trimmed[idx+len(marker):], "/") != ""
 }
 
 func validateSAPGUIScriptIssues(script *Script) []string {
