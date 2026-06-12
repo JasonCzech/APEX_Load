@@ -81,6 +81,38 @@ snapshot without blocking.
 | Azure DevOps | [`../azure-pipelines-task.yml`](../azure-pipelines-task.yml) | Legacy variant that exports the JSON result as a pipeline variable. |
 | Jenkins | [`ci/jenkins/Jenkinsfile.example`](../ci/jenkins/Jenkinsfile.example) | Declarative pipeline; gates + `junit` publishing. |
 
+## Deployment pipelines
+
+These pipelines build and deploy the controller itself (not `apexctl` perf gates).
+
+| System | File | Target | Notes |
+| --- | --- | --- | --- |
+| GitHub Actions | [`deployments/ci/github-actions-aks.yml`](../deployments/ci/github-actions-aks.yml) | AKS | OIDC auth; `az acr build` + `kubectl apply -k`. Copy to `.github/workflows/` to activate. |
+| Azure Pipelines | [`deployments/ci/azure-pipelines-aks.yml`](../deployments/ci/azure-pipelines-aks.yml) | AKS | Mirrors the GitHub Actions AKS pipeline. |
+| GitHub Actions | [`deployments/ci/github-actions-appservice.yml`](../deployments/ci/github-actions-appservice.yml) | Azure App Service | Builds dashboard → linux/amd64 controller binary → runs launcher tests → zip-deploys the Node.js launcher package. Needs repo vars `APPSERVICE_NAME` + `APPSERVICE_RESOURCE_GROUP`. |
+| Azure Pipelines | [`deployments/ci/azure-pipelines-appservice.yml`](../deployments/ci/azure-pipelines-appservice.yml) | Azure App Service | Mirrors the GitHub Actions App Service pipeline. |
+| GitHub Actions | [`deployments/ci/github-actions-onprem-registry.yml`](../deployments/ci/github-actions-onprem-registry.yml) | On-prem registry | SBOM, scan, and sign flow for air-gapped registries. |
+
+### App Service deployment notes
+
+The controller binary is pure Go (`CGO_ENABLED=0`), so the CI pipeline cross-compiles a static `linux/amd64` binary and bundles it with a zero-dependency Node.js launcher (`deployments/azure/appservice/launcher.js`). The launcher:
+
+- Maps App Service's `$PORT` → `APEXLOAD_ADDR` so the Go process binds the port directly (no Node reverse proxy).
+- Materializes Key Vault PEM references (`APEXLOAD_GRPC_TLS_*_PEM` app settings) into temp files before spawning the binary, since the gRPC transport accepts file paths only.
+- Forwards `SIGTERM`/`SIGINT` to the controller for graceful shutdown.
+
+Required app settings beyond the standard controller env vars:
+
+| App setting | Value |
+| --- | --- |
+| `APEXLOAD_STORE` | `postgres` (SQLite file locking is unsafe on the CIFS-backed `/home` share) |
+| `APEXLOAD_DATABASE_URL` | Key Vault reference → Terraform output `apexload_database_url` |
+| `APEXLOAD_GENERATORS` | Static comma-separated `ip:9090` list of internal-LB generator endpoints |
+| `APEXLOAD_GRPC_AUTH_TOKEN` | Key Vault reference (same value as the AKS secret) |
+| `SCM_DO_BUILD_DURING_DEPLOYMENT` | `false` (prebuilt zip; Oryx must not re-run npm/go) |
+
+WebSockets must be enabled on the App Service plan (dashboard uses `WS /api/v1/ws` and per-test streams). Always On must be enabled so the 30-second schedule poller keeps running. Pin to one instance unless the Redis HA path (`APEXLOAD_REDIS_URL`) is wired up.
+
 All templates default to building `apexctl` from source (`go run ./cmd/apexctl`).
 For consumers outside this repo, install a released `apexctl` binary and point
 the template at it (the GitHub action accepts `apexctl-bin`).

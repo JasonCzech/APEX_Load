@@ -1,0 +1,124 @@
+# Build the APEX Load controller, assemble the Node.js launcher package,
+# zip-deploy to Azure App Service for Linux.
+#
+# Pipeline variables (Library or pipeline settings):
+#   AZURE_SERVICE_CONNECTION  — ARM service connection with Website Contributor
+#                               on the App Service
+#   APPSERVICE_NAME           — App Service name (without .azurewebsites.net)
+#   APPSERVICE_RESOURCE_GROUP — resource group of the App Service
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  buildCommit: $(Build.SourceVersion)
+
+stages:
+  - stage: Build
+    displayName: Build controller + dashboard
+    jobs:
+      - job: build
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          # Build the React dashboard first so go:embed picks up fresh assets.
+          - task: NodeTool@0
+            displayName: Use Node 22
+            inputs:
+              versionSpec: "22.x"
+
+          - script: |
+              set -euo pipefail
+              cd dashboard
+              npm ci
+              npm run build
+            displayName: Build dashboard
+
+          - task: GoTool@0
+            displayName: Use Go from go.mod
+            inputs:
+              version: "1.26"
+
+          - script: |
+              set -euo pipefail
+              BI=github.com/jasonczech/apexload/pkg/buildinfo
+              BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+              CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+                go build -trimpath \
+                  -ldflags "-s -w -X ${BI}.Version=$(buildCommit) -X ${BI}.Commit=$(buildCommit) -X ${BI}.BuildTime=${BUILD_TIME}" \
+                  -o deployments/azure/appservice/bin/controller \
+                  ./cmd/controller
+            displayName: Build controller (linux/amd64)
+
+          - script: node --test deployments/azure/appservice/launcher.test.js
+            displayName: Test launcher
+
+          - script: |
+              set -euo pipefail
+              mkdir -p staging/bin
+              cp deployments/azure/appservice/package.json staging/
+              cp deployments/azure/appservice/launcher.js  staging/
+              cp deployments/azure/appservice/bin/controller staging/bin/controller
+              cd staging && zip -r $(Build.ArtifactStagingDirectory)/apexload-appservice.zip .
+            displayName: Assemble deployment package
+
+          - task: PublishBuildArtifacts@1
+            displayName: Publish zip artifact
+            inputs:
+              PathtoPublish: $(Build.ArtifactStagingDirectory)/apexload-appservice.zip
+              ArtifactName: appservice-package
+
+  - stage: Deploy
+    displayName: Deploy to App Service
+    dependsOn: Build
+    jobs:
+      - deployment: deploy_appservice
+        environment: apexload-appservice
+        pool:
+          vmImage: ubuntu-latest
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadBuildArtifacts@1
+                  inputs:
+                    buildType: current
+                    artifactName: appservice-package
+                    downloadPath: $(Pipeline.Workspace)
+
+                - task: AzureCLI@2
+                  displayName: az webapp deploy
+                  inputs:
+                    azureSubscription: $(AZURE_SERVICE_CONNECTION)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      az webapp deploy \
+                        --resource-group $(APPSERVICE_RESOURCE_GROUP) \
+                        --name $(APPSERVICE_NAME) \
+                        --src-path "$(Pipeline.Workspace)/appservice-package/apexload-appservice.zip" \
+                        --type zip
+
+  - stage: Smoke
+    displayName: Smoke test
+    dependsOn: Deploy
+    jobs:
+      - job: smoke
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - script: |
+              set -euo pipefail
+              URL="https://$(APPSERVICE_NAME).azurewebsites.net/api/v1/system/health"
+              for i in $(seq 1 12); do
+                if curl -fsS "$URL"; then
+                  echo "Health check passed."
+                  exit 0
+                fi
+                echo "Attempt ${i}/12 — waiting 10s..."
+                sleep 10
+              done
+              echo "Health check timed out." && exit 1
+            displayName: Health check
