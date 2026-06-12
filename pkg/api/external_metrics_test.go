@@ -84,6 +84,30 @@ app_queue_depth{queue="orders"} 42
 	}
 }
 
+func TestExternalMetricTargetsDeduplicateOracleMetricPackEntries(t *testing.T) {
+	metric := dsl.ExternalMetricConfig{
+		Name:       "oracle.db.wait_time_ms",
+		URL:        "https://metrics.example.test/metrics",
+		Format:     "prometheus",
+		MetricName: "oracle_db_wait_time_ms",
+		Labels:     map[string]string{"service_name": "checkout"},
+	}
+	testRun := &ManagedTest{
+		Groups: []TestGroup{{
+			script: &dsl.Script{Config: dsl.ScriptConfig{Observability: dsl.ObservabilityConfig{ExternalMetrics: []dsl.ExternalMetricConfig{metric}}}},
+		}, {
+			script: &dsl.Script{Config: dsl.ScriptConfig{Observability: dsl.ObservabilityConfig{ExternalMetrics: []dsl.ExternalMetricConfig{metric}}}},
+		}},
+	}
+	targets := externalMetricTargetsForTest(testRun)
+	if len(targets) != 1 {
+		t.Fatalf("targets len = %d, want deduplicated Oracle metric target", len(targets))
+	}
+	if targets[0].Name != "oracle.db.wait_time_ms" || targets[0].MetricName != "oracle_db_wait_time_ms" {
+		t.Fatalf("target = %#v, want canonical Oracle wait metric", targets[0])
+	}
+}
+
 func TestAttachExternalMetricsCreatesResourceSnapshot(t *testing.T) {
 	resources := attachExternalMetrics(nil, map[string]float64{"target.cpu_pct": 81.5})
 	if resources == nil || resources.External["target.cpu_pct"] != 81.5 {

@@ -14,11 +14,13 @@ vi.mock('./LinkedCodePane', () => ({
     ariaLabel,
     activeRange,
     semanticMode,
+    maxHeight,
   }: {
     value: string
     ariaLabel?: string
     activeRange?: { startLine: number; endLine: number } | null
     semanticMode?: string
+    maxHeight?: string
   }) => {
     const activeText = activeRange
       ? value.split('\n').slice(activeRange.startLine - 1, activeRange.endLine).join('\n')
@@ -27,6 +29,7 @@ vi.mock('./LinkedCodePane', () => ({
       <pre
         aria-label={ariaLabel}
         data-active-range={activeRange ? `${activeRange.startLine}-${activeRange.endLine}` : ''}
+        data-max-height={maxHeight || ''}
         data-semantic-mode={semanticMode || ''}
       >
         {activeText || value}
@@ -165,7 +168,9 @@ describe('SourceMappingReview', () => {
     const sourcePane = container.querySelector('pre[aria-label="Action.c source"]') as HTMLPreElement | null
     const dslPane = generatedDslPane(container)
 
+    expect(sourcePane?.dataset.maxHeight).toBe('100%')
     expect(sourcePane?.dataset.semanticMode).toBe('')
+    expect(dslPane.dataset.maxHeight).toBe('100%')
     expect(dslPane.dataset.semanticMode).toBe('apex-dsl')
   })
 

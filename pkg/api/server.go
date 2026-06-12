@@ -495,6 +495,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/protocol-bundles/support-matrix", cors(log(auth(http.HandlerFunc(s.handleProtocolBundleSupportMatrix)))))
 	s.mux.Handle("GET /api/v1/protocols/native-support-matrix", cors(log(auth(http.HandlerFunc(s.handleNativeProtocolSupportMatrix)))))
 	s.mux.Handle("GET /api/v1/integrations/apm/profiles", cors(log(auth(http.HandlerFunc(s.handleListAPMIntegrationProfiles)))))
+	s.mux.Handle("POST /api/v1/integrations/dynatrace/dry-run", cors(log(auth(http.HandlerFunc(s.handleDynatraceDryRun)))))
 	s.mux.Handle("GET /api/v1/integrations/github/config", cors(log(auth(http.HandlerFunc(s.handleGitHubConfig)))))
 	s.mux.Handle("GET /api/v1/integrations/github/diagnostics", cors(log(auth(http.HandlerFunc(s.handleGitHubDiagnostics)))))
 	s.mux.Handle("GET /api/v1/integrations/github/installations", cors(log(auth(http.HandlerFunc(s.handleGitHubInstallations)))))

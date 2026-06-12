@@ -113,6 +113,7 @@ export interface ScriptImportResult<
   stats: TStats
   summary: TSummary
   detected_protocol?: DetectedSourceProtocol
+  fidelity_report?: EnterpriseArchiveFidelityReport
   review_artifact?: EnterpriseArchiveReviewArtifact
   source_review?: SourceReview
   trueclient2_compat_report?: TrueClient2CompatReport
@@ -147,6 +148,28 @@ export interface EnterpriseArchiveReviewArtifact {
   metadata?: Record<string, unknown>
 }
 
+export interface EnterpriseArchiveFidelitySourceFile {
+  path: string
+  phase?: string
+  language?: string
+  role?: string
+  bytes?: number
+}
+
+export interface EnterpriseArchiveFidelityReport {
+  source_files?: EnterpriseArchiveFidelitySourceFile[]
+  expected_functions?: number
+  converted_functions?: number
+  converted_actions?: number
+  dropped_bodies?: number
+  secret_gated?: number
+  runtime_parity?: Record<string, number>
+  parameter_parity?: Record<string, number>
+  promotion_status?: string
+  blockers?: string[]
+  warnings?: string[]
+}
+
 export interface EnterpriseArchiveConvertStats {
   total_functions: number
   converted_actions: number
@@ -172,6 +195,7 @@ export interface EnterpriseArchiveImportSummary {
   runtime_settings_status_counts?: Record<string, number>
   migration_readiness?: EnterpriseArchiveMigrationReadiness
   detected_protocol?: DetectedSourceProtocol
+  fidelity_report?: EnterpriseArchiveFidelityReport
   review_artifact?: EnterpriseArchiveReviewArtifact
   source_review?: SourceReview
   salesforce_review?: SalesforceReview

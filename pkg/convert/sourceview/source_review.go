@@ -247,6 +247,7 @@ type sourceRedactor struct {
 }
 
 var sourceRedactors = []sourceRedactor{
+	{regexp.MustCompile(`(?i)(lr_unmask\(\s*")([^"]+)("\s*\))`), `${1}[REDACTED]${3}`},
 	{regexp.MustCompile(`(?i)("(?:password|passwd|pwd|token|access_token|refresh_token|id_token|api[_-]?key|secret|authorization|cookie|set-cookie)"\s*:\s*")([^"]+)(")`), `${1}[REDACTED]${3}`},
 	{regexp.MustCompile(`(?i)("Name=(?:password|passwd|pwd|token|access_token|refresh_token|id_token|api[_-]?key|secret)"\s*,\s*"Value=)([^"]+)(")`), `${1}[REDACTED]${3}`},
 	{regexp.MustCompile(`(?i)((?:password|passwd|pwd|token|access_token|refresh_token|id_token|api[_-]?key|secret)\s*=\s*)([^&\s",;]+)`), `${1}[REDACTED]`},

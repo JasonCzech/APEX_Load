@@ -248,6 +248,7 @@ type RunArchiveReport struct {
 	BrowserByDevice     map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
 	BrowserResources    []BrowserResourceTiming                `json:"browser_resources,omitempty"`
 	Web2Migration       *RunArchiveWeb2MigrationEvidence       `json:"web2_migration,omitempty"`
+	OracleDB            *RunArchiveOracleDBEvidence            `json:"oracle_db,omitempty"`
 	ResourcePeaks       RunArchiveResourcePeaks                `json:"resource_peaks"`
 }
 
@@ -1819,6 +1820,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			report.Overview.PeakActiveVUsers = sample.ActiveVUsers
 		}
 	}
+	report.OracleDB = buildRunArchiveOracleDBEvidence(resources, summaries)
 
 	report.Overview.IntervalSummaries = int64(len(summaries))
 	if len(summaries) > 0 {
@@ -2355,6 +2357,7 @@ func buildRunArchiveEvidenceTiers(manifest *RunArchiveManifest, report *RunArchi
 		return nil
 	}
 	externalMetricSamples := countExternalMetricSamples(resources)
+	oracleDBMetricSamples := countOracleDBMetricSamples(resources)
 	tiers := []RunArchiveEvidenceTier{
 		evidenceTier("summary", "Summary", report.Overview.Transactions+report.Overview.IntervalSummaries+report.Overview.ResourceSamples, "Aggregated run totals, response-time range, resource peaks, and headline telemetry."),
 		evidenceTier("intervals", "Intervals", int64(len(summaries)), "Per-interval live metric summaries used for timelines, throughput evidence, and telemetry SLA review."),
@@ -2363,6 +2366,7 @@ func buildRunArchiveEvidenceTiers(manifest *RunArchiveManifest, report *RunArchi
 		evidenceTier("browser_artifacts", "Browser Artifacts", countBrowserArtifacts(transactions), "Browser screenshots, HTML captures, DOM summaries, console entries, network entries, Core Web Vitals, and Web 2.0 source-step labels."),
 		evidenceTier("provenance", "Provenance", provenanceEvidenceCount(manifest), "Execution inputs, scenario shape, runtime settings, controller environment, and generator inventory."),
 		evidenceTier("external_metrics", "External Metrics", externalMetricSamples, "Target-side or imported resource metrics carried on resource samples."),
+		evidenceTier("oracle_db_metrics", "Oracle DB Metrics", oracleDBMetricSamples, "Canonical oracle.db.* target-side metrics prepared for Oracle Database correlation."),
 	}
 	for index := range tiers {
 		if tiers[index].Count > 0 {
@@ -2398,6 +2402,8 @@ func evidenceMissingReason(tier string) string {
 		return "Archive manifest does not contain execution provenance."
 	case "external_metrics":
 		return "No external resource metrics were attached to archived resource samples."
+	case "oracle_db_metrics":
+		return "No oracle.db.* external metrics were attached to archived resource samples."
 	default:
 		return "No evidence was archived for this tier."
 	}

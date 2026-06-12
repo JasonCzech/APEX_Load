@@ -5450,6 +5450,7 @@
 
 .new-test-step,
 .new-test-summary,
+.new-test-launch-card,
 .new-test-profile-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -5558,7 +5559,8 @@
 }
 
 .new-test-step-header h3,
-.new-test-summary h3 {
+.new-test-summary h3,
+.new-test-launch-card h3 {
   margin: 0;
   font-size: 15px;
 }
@@ -6347,6 +6349,10 @@
   align-self: start;
   max-height: calc(100vh - 80px);
   overflow-y: auto;
+}
+
+.new-test-launch-card {
+  padding: 18px;
 }
 
 .new-test-summary-grid {

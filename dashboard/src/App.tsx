@@ -8,7 +8,7 @@ import { MetricsHistoryPoint, TelemetryDiagnostic, TelemetryDiagnosticEntry, WSM
 import Sidebar, { type NavPage } from './components/Sidebar'
 import DashboardPage, { type DashboardSnapshotAudience } from './components/DashboardPage'
 import TablePaginationManager from './components/TablePaginationManager'
-import { type AppView, parseAppViewFromHash, viewToLocationHash } from './appRouting'
+import { type AppView, parseAppViewFromHash, type TestWorkspaceTabID, viewToLocationHash } from './appRouting'
 import { appendTelemetryDiagnostic } from './components/monitoringTelemetryDiagnostics'
 import { mapExecutionMetricToHistoryPoint } from './components/testExecutionMetricsModel'
 import AuthGate from './components/AuthGate'
@@ -223,8 +223,13 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const canManageRepository = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_application_repository', false)
   const snapshotAudience = dashboardSnapshotAudience(authStatus, devViewMode, activeProject?.id)
 
-  const navigateToTest = (id: string) => setView({ page: 'test', testId: id })
-  const navigateToCommandCenter = (id?: string) => setView(id ? { page: 'command-center', testId: id } : { page: 'command-center' })
+  const navigateToTest = useCallback((id: string, tab?: TestWorkspaceTabID) => {
+    setView(tab ? { page: 'test', testId: id, tab } : { page: 'test', testId: id })
+  }, [])
+  const navigateToTestArchive = useCallback((id: string) => navigateToTest(id, 'archive'), [navigateToTest])
+  const navigateToCommandCenter = useCallback((id?: string) => {
+    setView(id ? { page: 'command-center', testId: id } : { page: 'command-center' })
+  }, [])
   const activePage: NavPage = view.page === 'test' ? 'tests' : view.page === 'swagger' || view.page === 'repository-guide' ? 'docs' : view.page
 
   const navigateToScriptEdit = (scriptId: string) => setView({ page: 'scripts', mode: 'edit', scriptId })
@@ -271,6 +276,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       setView({ page: fallbackPage })
     }
   }, [])
+  const navigateBackToTests = useCallback(() => navigateBack('tests'), [navigateBack])
 
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
@@ -649,6 +655,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               metricsHistory={metricsHistory}
               connectionState={connectionState}
               onSelectTest={navigateToTest}
+              onOpenTestArchive={navigateToTestArchive}
               onOpenCommandCenter={navigateToCommandCenter}
               onNavigate={handleNavigate}
               snapshotAudience={snapshotAudience}
@@ -660,6 +667,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               history={view.testId ? metricsHistory[view.testId] || [] : []}
               statusOverride={view.testId ? testStatuses[view.testId] : undefined}
               onOpenExecution={navigateToTest}
+              onOpenArchive={navigateToTestArchive}
               onOpenResults={() => handleNavigate('results')}
             />
           )}
@@ -690,7 +698,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             <TestExecution
               testId={view.testId}
               history={metricsHistory[view.testId] || []}
-              onBack={() => navigateBack('tests')}
+              initialWorkspaceTabId={view.tab}
+              onBack={navigateBackToTests}
               onEditScript={navigateToScriptEdit}
               onSelectTest={navigateToTest}
               onOpenCommandCenter={navigateToCommandCenter}
@@ -710,7 +719,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             <ResultsPage
               testStatuses={testStatuses}
               onSelectTest={navigateToTest}
-              onOpenCommandCenter={navigateToCommandCenter}
+              onOpenTestArchive={navigateToTestArchive}
               onNavigate={handleNavigate}
               activeApplication={activeApplication}
               activeRelease={activeRelease}

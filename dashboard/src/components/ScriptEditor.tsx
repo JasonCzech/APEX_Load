@@ -128,6 +128,14 @@ type ScriptPhaseActionRow = {
   globalIndex: number
   action: Action
 }
+type ImportedParameterFileMapping = {
+  section: {
+    file: string
+    name: string
+    values: Record<string, string>
+  }
+  sourceName: string | null
+}
 type ValidationEvidence = Pick<ScriptValidationResponse, 'data_source_fit' | 'ai_guardrails' | 'authoring_health'>
 
 type ReplaySnapshot = BrowserReplaySnapshot
@@ -2946,6 +2954,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [debugRawSearch, setDebugRawSearch] = useState('')
   const [debugRawAutoScroll, setDebugRawAutoScroll] = useState(true)
   const [debugRawClearedAt, setDebugRawClearedAt] = useState(0)
+  const [showImportedParameterMappingsDialog, setShowImportedParameterMappingsDialog] = useState(false)
   const [sourceMappingFocus, setSourceMappingFocus] = useState<{ mappingId: string; requestId: number }>({ mappingId: '', requestId: 0 })
   const debugRawOutputRef = useRef<HTMLDivElement | null>(null)
   const [debugRailFilter, setDebugRailFilter] = useState('')
@@ -3060,13 +3069,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const runtimeSettingReadinessSummary = importSummary.runtimeSettingReadiness
     ? importSummary.runtimeSettingReadiness.summary || `${importSummary.runtimeSettingReadiness.score_pct}% readiness`
     : ''
-  const importedParameterFileMappings = importSummary.parameterFileSections.map((section) => {
+  const importedParameterFileMappings: ImportedParameterFileMapping[] = importSummary.parameterFileSections.map((section) => {
     const sourceIndex = findImportedParameterMappingDataSourceIndex(script.data_sources, section.values)
     return {
       section,
       sourceName: sourceIndex !== null ? script.data_sources?.[sourceIndex]?.name || null : null,
     }
   })
+  useEffect(() => {
+    if (importedParameterFileMappings.length > 0) return
+    setShowImportedParameterMappingsDialog(false)
+  }, [importedParameterFileMappings.length])
   const importedDataSourceSummaries = (script.data_sources || []).map((source, index) => {
     const summary = summarizeInlineData(source)
     const columnDetails = source.first_row_header === false
@@ -6654,6 +6667,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   return (
     <div className="script-editor">
+      {showImportedParameterMappingsDialog && importedParameterFileMappings.length > 0 && (
+        <ImportedParameterMappingsDialog
+          mappings={importedParameterFileMappings}
+          onClose={() => setShowImportedParameterMappingsDialog(false)}
+          onOpenMappedDataSource={openImportedDataSourceReview}
+        />
+      )}
       {parameterizeChoice && (
         <ParameterizeDialog
           draft={parameterizeChoice}
@@ -9578,20 +9598,37 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     </>
                   )}
                 </section>
-                <div className="starter-blocks-panel">
-                  <div className="starter-blocks-header">
-                    <strong>Starter Blocks</strong>
-                    <span>{starterTemplates.length}</span>
+                {importedParameterFileMappings.length > 0 ? (
+                  <div className="starter-blocks-panel parameter-mappings-launcher">
+                    <div className="starter-blocks-header">
+                      <strong>Parameter File Mappings</strong>
+                      <span>{importedParameterFileMappings.length}</span>
+                    </div>
+                    <p>Open the preserved import mapping list without taking space away from the source and DSL comparison panes.</p>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-secondary parameter-mappings-launcher-button"
+                      onClick={() => setShowImportedParameterMappingsDialog(true)}
+                    >
+                      Open Mapping List
+                    </button>
                   </div>
-                  <div className="starter-blocks-list">
-                    {starterTemplates.map((template) => (
-                      <button key={template.key} type="button" className="starter-block-card" onClick={() => addActionTemplate(template.key)}>
-                        <strong>{template.label}</strong>
-                        <span>{template.description}</span>
-                      </button>
-                    ))}
+                ) : (
+                  <div className="starter-blocks-panel">
+                    <div className="starter-blocks-header">
+                      <strong>Starter Blocks</strong>
+                      <span>{starterTemplates.length}</span>
+                    </div>
+                    <div className="starter-blocks-list">
+                      {starterTemplates.map((template) => (
+                        <button key={template.key} type="button" className="starter-block-card" onClick={() => addActionTemplate(template.key)}>
+                          <strong>{template.label}</strong>
+                          <span>{template.description}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
                 </>
                 )}
               </div>
@@ -9619,29 +9656,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           script={script}
                           title="Source Mapping"
                         />
-                      )}
-
-                      {importSummary.parameterFileSections.length > 0 && (
-                        <div className="import-correlation-section">
-                          <h4>Parameter File Mappings</h4>
-                          <p>These preserved source parameter definitions show how the importer mapped file-backed data into APEX Load data sources.</p>
-                          <div className="import-correlation-list">
-                            {importedParameterFileMappings.map(({ section, sourceName }) => (
-                              <div key={`${section.file}:${section.name}`} className="import-correlation-card">
-                                <strong>{section.file}: {section.name}</strong>
-                                <span>{formatImportParameterMapping(section.values)}</span>
-                                {sourceName && <span>Generated source: {sourceName}</span>}
-                                {sourceName && (
-                                  <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-                                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => openImportedDataSourceReview(sourceName)}>
-                                      Open Mapped Data Source
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
                       )}
 
                       <div className="import-metadata-grid">
@@ -10395,6 +10409,66 @@ function formatImportParameterMapping(values: Record<string, string>) {
   if (values.SelectNextRow) details.push(values.SelectNextRow)
   if (values.UpdateValueOn) details.push(values.UpdateValueOn)
   return details.join(' • ') || 'No preserved mapping details'
+}
+
+interface ImportedParameterMappingsDialogProps {
+  mappings: ImportedParameterFileMapping[]
+  onClose: () => void
+  onOpenMappedDataSource: (sourceName?: string | null) => void
+}
+
+function ImportedParameterMappingsDialog({
+  mappings,
+  onClose,
+  onOpenMappedDataSource,
+}: ImportedParameterMappingsDialogProps) {
+  return (
+    <div className="editor-dialog-backdrop" onClick={onClose}>
+      <div
+        className="editor-dialog imported-parameter-mappings-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Parameter File Mappings"
+        onClick={event => event.stopPropagation()}
+      >
+        <div className="editor-dialog-header">
+          <div>
+            <h3 className="panel-title">Parameter File Mappings</h3>
+            <p className="editor-dialog-subtitle">
+              Review the preserved source parameter definitions without shrinking the source and DSL mapping workspace.
+            </p>
+          </div>
+          <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+        </div>
+        <div className="editor-dialog-body imported-parameter-mappings-dialog-body">
+          <p>These preserved source parameter definitions show how the importer mapped file-backed data into APEX Load data sources.</p>
+          <div className="import-correlation-list">
+            {mappings.map(({ section, sourceName }) => (
+              <div key={`${section.file}:${section.name}`} className="import-correlation-card">
+                <strong>{section.file}: {section.name}</strong>
+                <span>{formatImportParameterMapping(section.values)}</span>
+                {sourceName && <span>Generated source: {sourceName}</span>}
+                {sourceName && (
+                  <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      type="button"
+                      onClick={() => {
+                        onOpenMappedDataSource(sourceName)
+                        onClose()
+                      }}
+                    >
+                      Open Mapped Data Source
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 interface ReplayScreenshotDialogProps {

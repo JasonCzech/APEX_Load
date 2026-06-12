@@ -185,6 +185,13 @@ describe('TestExecution workspace layout', () => {
     expect(container.textContent).toContain('Archive Empty Content transactions')
   })
 
+  it('opens the requested archive workspace tab without changing the default layout', async () => {
+    await renderExecution({ initialWorkspaceTabId: 'archive' })
+
+    expect(selectedTabLabel()).toBe('Archive')
+    expect(container.textContent).toContain('Archive Empty Content report')
+  })
+
   it('publishes queued and active run controls to the contextual topbar', async () => {
     await renderExecution()
 
@@ -513,7 +520,7 @@ describe('TestExecution workspace layout', () => {
     expect(container.textContent).toContain('Live Summary Content')
   })
 
-  async function renderExecution() {
+  async function renderExecution(props: Partial<Parameters<typeof TestExecution>[0]> = {}) {
     await act(async () => {
       root.render(
         <TopbarContributionProvider>
@@ -524,6 +531,7 @@ describe('TestExecution workspace layout', () => {
             onBack={vi.fn()}
             onEditScript={vi.fn()}
             onSelectTest={vi.fn()}
+            {...props}
           />
         </TopbarContributionProvider>,
       )

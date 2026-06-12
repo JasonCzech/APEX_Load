@@ -879,6 +879,30 @@ func TestVUser_Run_SourceUtilityActionsStayInEngine(t *testing.T) {
 	}
 }
 
+func TestVUser_HandleWebConvertParamAction(t *testing.T) {
+	vu := &VUser{
+		ID:        1,
+		Variables: map[string]string{"auratoken": "a&amp;b c"},
+	}
+	action := dsl.Action{
+		Name: "ConvertAuraToken",
+		Type: "source_parameter",
+		Params: map[string]any{
+			"function":        "web_convert_param",
+			"save_param":      "AuraToken_URL",
+			"source_string":   "{{var.auratoken}}",
+			"source_encoding": "HTML",
+			"target_encoding": "URL",
+		},
+	}
+
+	vu.handleSourceParameterAction("web_convert_param", action)
+
+	if got := vu.Variables["auratoken_url"]; got != "a%26b+c" {
+		t.Fatalf("auratoken_url = %q, want URL-encoded HTML-decoded value", got)
+	}
+}
+
 type rendezvousTestProtocol struct {
 	executeTimes chan time.Time
 }

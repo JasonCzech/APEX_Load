@@ -13,8 +13,8 @@ import {
 import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
 import { useApi } from '../hooks/useApi'
-import { parseDurationToSeconds } from '../utils/timeUtils'
-import type { BrowserReplaySnapshot, GroupLiveMetrics, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, TestGroup, TestStatus, TestSummary, TransactionEvent } from '../types'
+import { isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
+import type { BrowserReplaySnapshot, GroupLiveMetrics, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, TestGroup, TestStatus, TestSummary, TransactionEvent, VUserRampStatus } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
 import type { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
@@ -34,6 +34,7 @@ import './CommandCenterPrototype.css'
 type VariantId = 'ops' | 'grafana'
 type CommandTableTab = 'scenario' | 'errors' | 'infrastructure'
 type SortDirection = 'asc' | 'desc'
+type TargetTransitionMode = 'immediate' | 'gradual'
 
 interface CommandCenterPrototypeProps {
   testId?: string
@@ -41,6 +42,7 @@ interface CommandCenterPrototypeProps {
   statusOverride?: string
   initialTest?: TestSummary
   onOpenExecution?: (testId: string) => void
+  onOpenArchive?: (testId: string) => void
   onOpenResults?: () => void
   prototypeMode?: boolean
 }
@@ -59,6 +61,7 @@ export interface CommandGroup {
   suggestedVusers?: number
   minVusers?: number
   maxVusers?: number
+  activeVuserRamp?: VUserRampStatus
   tps: number
   art: number
   errorPct: number
@@ -91,6 +94,8 @@ interface ErrorPattern {
 interface CommandCenterState {
   runStatus: TestStatus
   vuserTargets: Record<string, number>
+  targetTransitionMode: TargetTransitionMode
+  targetRampDuration: string
   selectedErrorId: string
   feedback: string
 }
@@ -819,7 +824,8 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
   return (test.groups || []).map((group, index) => {
     const metrics = test.live_metrics?.groups?.[group.name]
     const aggregateFallback = !metrics && test.groups.length === 1 ? test.live_metrics : undefined
-    const liveTargetVusers = test.vuser_ramps?.[group.name]?.target_vusers ?? group.vusers
+    const activeVuserRamp = test.vuser_ramps?.[group.name]
+    const liveTargetVusers = activeVuserRamp?.target_vusers ?? group.vusers
     const liveTarget = targetMode === 'tps' ? goalTargets[group.name] : liveTargetVusers
     const target = targetDrafts[group.name] ?? liveTarget
     const current = metrics?.vusers ?? aggregateFallback?.active_vusers ?? group.vusers
@@ -838,6 +844,7 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
       suggestedVusers: targetMode === 'tps' ? suggestedGroupVusers(test, group.name, current) : undefined,
       minVusers: test.live_metrics?.goal_status?.min_vusers ?? test.goal_config?.min_vusers,
       maxVusers: test.live_metrics?.goal_status?.max_vusers ?? test.goal_config?.max_vusers,
+      activeVuserRamp,
       tps: metrics?.tps ?? aggregateFallback?.tps ?? 0,
       art: metrics?.avg_response_ms ?? aggregateFallback?.avg_response_ms ?? 0,
       errorPct: metrics ? groupErrorPercent(metrics) : aggregateFallback?.error_pct ?? 0,
@@ -895,6 +902,7 @@ export default function CommandCenterPrototype({
   statusOverride,
   initialTest,
   onOpenExecution,
+  onOpenArchive,
   onOpenResults,
   prototypeMode = false,
 }: CommandCenterPrototypeProps = {}) {
@@ -917,6 +925,8 @@ export default function CommandCenterPrototype({
   const [state, setState] = useState<CommandCenterState>(() => ({
     runStatus: 'RUNNING',
     vuserTargets: buildInitialTargets(),
+    targetTransitionMode: 'immediate',
+    targetRampDuration: '2m',
     selectedErrorId: ERROR_PATTERNS[0].id,
     feedback: DEFAULT_PROTOTYPE_FEEDBACK,
   }))
@@ -1323,11 +1333,37 @@ export default function CommandCenterPrototype({
     }))
   }
 
+  const changeTargetTransitionMode = (value: TargetTransitionMode) => {
+    setState(prev => ({
+      ...prev,
+      targetTransitionMode: value,
+      feedback: value === 'gradual'
+        ? `Group load changes will ramp over ${prev.targetRampDuration.trim() || '2m'}.`
+        : 'Group load changes will apply immediately.',
+    }))
+  }
+
+  const changeTargetRampDuration = (value: string) => {
+    setState(prev => ({
+      ...prev,
+      targetRampDuration: value,
+      feedback: isValidDurationInput(value)
+        ? `Group load ramp duration set to ${value}.`
+        : 'Enter a valid ramp duration before applying gradual load changes.',
+    }))
+  }
+
   const applyTarget = async (groupName: string, value: number) => {
     const targetMode = isGoalOrientedRun(displayTest) ? 'tps' : 'vusers'
     const target = targetMode === 'tps' ? clampTpsTarget(value) : clampTarget(value)
     if (targetMode === 'tps' && target <= 0) {
       setState(prev => ({ ...prev, feedback: `${groupName} target TPS must be greater than zero.` }))
+      return
+    }
+    const rampDuration = state.targetRampDuration.trim()
+    const useGradualVuserChange = targetMode === 'vusers' && state.targetTransitionMode === 'gradual'
+    if (useGradualVuserChange && !isValidDurationInput(rampDuration)) {
+      setState(prev => ({ ...prev, feedback: 'Enter a valid ramp duration before applying gradual load changes.' }))
       return
     }
     if (liveMode && testId) {
@@ -1349,11 +1385,16 @@ export default function CommandCenterPrototype({
           }))
           return
         }
-        await api.scaleVUsers(testId, groupName, target, { action: 'run' })
+        const scaleOptions = useGradualVuserChange
+          ? { action: 'run' as const, ramp_duration: rampDuration }
+          : { action: 'run' as const }
+        await api.scaleVUsers(testId, groupName, target, scaleOptions)
         setState(prev => ({
           ...prev,
           vuserTargets: { ...prev.vuserTargets, [groupName]: target },
-          feedback: `${groupName} VUser target applied at ${target.toLocaleString()}.`,
+          feedback: useGradualVuserChange
+            ? `Ramping ${groupName} to ${target.toLocaleString()} VUsers over ${rampDuration}.`
+            : `${groupName} VUser target applied at ${target.toLocaleString()}.`,
         }))
       } catch (error: unknown) {
         setState(prev => ({ ...prev, feedback: getErrorMessage(error, targetMode === 'tps' ? 'Unable to update goal target' : 'Unable to scale VUsers') }))
@@ -1363,7 +1404,9 @@ export default function CommandCenterPrototype({
     setState(prev => ({
       ...prev,
       vuserTargets: { ...prev.vuserTargets, [groupName]: target },
-      feedback: `${groupName} target staged at ${formatTargetValue(target, targetMode)}.`,
+      feedback: useGradualVuserChange
+        ? `${groupName} target staged at ${formatTargetValue(target, targetMode)} over ${rampDuration}.`
+        : `${groupName} target staged at ${formatTargetValue(target, targetMode)}.`,
     }))
   }
 
@@ -1424,7 +1467,7 @@ export default function CommandCenterPrototype({
         <CommandCenterHistoricalBanner
           status={runStatus}
           archiveReady={Boolean(displayTest.archive)}
-          onOpenArchive={testId && onOpenExecution ? () => onOpenExecution(testId) : undefined}
+          onOpenArchive={testId && (onOpenArchive || onOpenExecution) ? () => (onOpenArchive || onOpenExecution)?.(testId) : undefined}
           onOpenResults={onOpenResults}
         />
       )}
@@ -1448,6 +1491,10 @@ export default function CommandCenterPrototype({
           totalDurationSeconds={totalDurationSeconds}
           remainingSeconds={remainingSeconds}
           readOnly={historicalRun}
+          targetTransitionMode={state.targetTransitionMode}
+          targetRampDuration={state.targetRampDuration}
+          onTargetTransitionModeChange={changeTargetTransitionMode}
+          onTargetRampDurationChange={changeTargetRampDuration}
           onTargetChange={changeTarget}
           onApplyTarget={applyTarget}
           onErrorSelect={selectError}
@@ -1634,7 +1681,7 @@ function CommandCenterHistoricalBanner({
       </div>
       <div className="command-history-actions">
         {archiveReady && onOpenArchive && (
-          <button type="button" className="btn btn-sm btn-secondary" onClick={onOpenArchive}>
+          <button type="button" className="btn btn-sm btn-primary command-open-archive-action" onClick={onOpenArchive}>
             Open Results Archive
           </button>
         )}
@@ -1704,6 +1751,10 @@ interface OpsCockpitViewProps {
   totalDurationSeconds: number
   remainingSeconds: number
   readOnly?: boolean
+  targetTransitionMode: TargetTransitionMode
+  targetRampDuration: string
+  onTargetTransitionModeChange: (value: TargetTransitionMode) => void
+  onTargetRampDurationChange: (value: string) => void
   onTargetChange: (groupName: string, value: number) => void
   onApplyTarget: (groupName: string, value: number) => void
   onErrorSelect: (errorId: string) => void
@@ -1735,6 +1786,10 @@ function OpsCockpitView({
   totalDurationSeconds,
   remainingSeconds,
   readOnly = false,
+  targetTransitionMode,
+  targetRampDuration,
+  onTargetTransitionModeChange,
+  onTargetRampDurationChange,
   onTargetChange,
   onApplyTarget,
   onErrorSelect,
@@ -1744,7 +1799,18 @@ function OpsCockpitView({
       <div className="command-primary-column">
         <HeroMetricStrip groups={groups} metrics={metrics} />
         <div className="command-load-model-row">
-          <GroupLoadTable groups={groups} onTargetChange={onTargetChange} onApplyTarget={onApplyTarget} compact={false} paired readOnly={readOnly} />
+          <GroupLoadTable
+            groups={groups}
+            onTargetChange={onTargetChange}
+            onApplyTarget={onApplyTarget}
+            compact={false}
+            paired
+            readOnly={readOnly}
+            targetTransitionMode={targetTransitionMode}
+            targetRampDuration={targetRampDuration}
+            onTargetTransitionModeChange={onTargetTransitionModeChange}
+            onTargetRampDurationChange={onTargetRampDurationChange}
+          />
           <LoadModelPanel
             groups={groups}
             runStatus={runStatus}
@@ -3255,6 +3321,10 @@ function GroupLoadTable({
   compact,
   paired = false,
   readOnly = false,
+  targetTransitionMode,
+  targetRampDuration,
+  onTargetTransitionModeChange,
+  onTargetRampDurationChange,
   onTargetChange,
   onApplyTarget,
 }: {
@@ -3262,11 +3332,20 @@ function GroupLoadTable({
   compact: boolean
   paired?: boolean
   readOnly?: boolean
+  targetTransitionMode: TargetTransitionMode
+  targetRampDuration: string
+  onTargetTransitionModeChange: (value: TargetTransitionMode) => void
+  onTargetRampDurationChange: (value: string) => void
   onTargetChange: (groupName: string, value: number) => void
   onApplyTarget: (groupName: string, value: number) => void
 }) {
   const targetMode = groups[0]?.targetMode ?? 'vusers'
   const targetHeader = targetMode === 'tps' ? 'Target TPS' : 'Target'
+  const showTransitionControls = !readOnly && targetMode === 'vusers' && groups.length > 0
+  const rampDurationValid = isValidDurationInput(targetRampDuration)
+  const sharedVuserSliderMax = targetMode === 'vusers'
+    ? Math.max(1, Math.ceil(maxVisibleVuserLoad(groups) * 1.5))
+    : 1
   return (
     <section className={`command-panel command-group-panel ${compact ? 'compact' : ''} ${paired ? 'paired' : ''}`} aria-label="Group load and health">
       <div className="command-panel-header">
@@ -3274,6 +3353,39 @@ function GroupLoadTable({
           <h3>Group Load</h3>
           <p>{targetMode === 'tps' ? 'Goal targets, current VUsers, suggested load, TPS, ART, and error rate by group.' : 'Current load, staged target, TPS, ART, and error rate by group.'}</p>
         </div>
+        {showTransitionControls && (
+          <div className="command-group-transition-controls" aria-label="Group load transition controls">
+            <div className="command-segmented-control" role="group" aria-label="Load transition mode">
+              <button
+                type="button"
+                className={targetTransitionMode === 'immediate' ? 'active' : ''}
+                aria-pressed={targetTransitionMode === 'immediate'}
+                onClick={() => onTargetTransitionModeChange('immediate')}
+              >
+                Immediate
+              </button>
+              <button
+                type="button"
+                className={targetTransitionMode === 'gradual' ? 'active' : ''}
+                aria-pressed={targetTransitionMode === 'gradual'}
+                onClick={() => onTargetTransitionModeChange('gradual')}
+              >
+                Gradual
+              </button>
+            </div>
+            <label className={`command-ramp-duration-control ${targetTransitionMode === 'gradual' && !rampDurationValid ? 'invalid' : ''}`}>
+              <span>Ramp</span>
+              <input
+                type="text"
+                value={targetRampDuration}
+                disabled={targetTransitionMode !== 'gradual'}
+                aria-invalid={targetTransitionMode === 'gradual' && !rampDurationValid}
+                aria-label="Group load ramp duration"
+                onChange={(event) => onTargetRampDurationChange(event.target.value)}
+              />
+            </label>
+          </div>
+        )}
       </div>
       <div className="command-group-table" role="table">
         <div className="command-group-row header" role="row">
@@ -3286,7 +3398,13 @@ function GroupLoadTable({
         </div>
         {groups.map(group => {
           const isGoalTarget = group.targetMode === 'tps'
-          const sliderMax = isGoalTarget ? Math.max(100, Math.ceil(group.target * 2)) : 1800
+          const indicatorCurrent = isGoalTarget ? group.tps : group.current
+          const committedTarget = isGoalTarget ? group.targetTps ?? group.target : group.targetVusers
+          const sliderMax = isGoalTarget
+            ? Math.max(100, Math.ceil(Math.max(group.target, indicatorCurrent, committedTarget) * 2))
+            : sharedVuserSliderMax
+          const sliderMin = isGoalTarget ? 0.1 : 0
+          const applyDisabled = (isGoalTarget && group.target <= 0) || (!isGoalTarget && targetTransitionMode === 'gradual' && !rampDurationValid)
           const guardrail = isGoalTarget && (group.minVusers !== undefined || group.maxVusers !== undefined)
             ? `guardrail ${group.minVusers ?? 0}-${group.maxVusers ?? 'unbounded'} VU`
             : ''
@@ -3313,23 +3431,34 @@ function GroupLoadTable({
                   <>
                     <input
                       type="number"
-                      min={isGoalTarget ? 0.1 : 0}
+                      min={sliderMin}
                       max={isGoalTarget ? 100000 : 2400}
                       step={isGoalTarget ? 0.1 : 1}
                       aria-label={`${group.name} target ${isGoalTarget ? 'TPS' : 'VUsers'}`}
                       value={group.target}
                       onChange={(event) => onTargetChange(group.name, Number(event.target.value))}
                     />
-                    <input
-                      type="range"
-                      min={isGoalTarget ? 0.1 : 0}
-                      max={sliderMax}
-                      step={isGoalTarget ? 0.1 : 1}
-                      aria-label={`${group.name} target ${isGoalTarget ? 'TPS' : 'VUser'} slider`}
-                      value={group.target}
-                      onChange={(event) => onTargetChange(group.name, Number(event.target.value))}
-                    />
-                    <button type="button" className="btn btn-sm btn-accent" disabled={isGoalTarget && group.target <= 0} onClick={() => onApplyTarget(group.name, group.target)}>
+                    <div className="command-target-slider-stack">
+                      <input
+                        type="range"
+                        min={sliderMin}
+                        max={sliderMax}
+                        step={isGoalTarget ? 0.1 : 1}
+                        aria-label={`${group.name} target ${isGoalTarget ? 'TPS' : 'VUser'} slider`}
+                        value={group.target}
+                        onChange={(event) => onTargetChange(group.name, Number(event.target.value))}
+                      />
+                      <CommandTargetIndicator
+                        mode={group.targetMode}
+                        min={sliderMin}
+                        max={sliderMax}
+                        currentValue={indicatorCurrent}
+                        targetValue={group.target}
+                        committedValue={committedTarget}
+                        activeRamp={group.activeVuserRamp}
+                      />
+                    </div>
+                    <button type="button" className="btn btn-sm btn-accent" disabled={applyDisabled} onClick={() => onApplyTarget(group.name, group.target)}>
                       Apply
                     </button>
                   </>
@@ -3349,6 +3478,76 @@ function GroupLoadTable({
       </div>
     </section>
   )
+}
+
+function CommandTargetIndicator({
+  mode,
+  min,
+  max,
+  currentValue,
+  targetValue,
+  committedValue,
+  activeRamp,
+}: {
+  mode: CommandGroup['targetMode']
+  min: number
+  max: number
+  currentValue: number
+  targetValue: number
+  committedValue: number
+  activeRamp?: VUserRampStatus
+}) {
+  const currentPct = loadIndicatorPercent(currentValue, min, max)
+  const targetPct = loadIndicatorPercent(targetValue, min, max)
+  const leftPct = Math.min(currentPct, targetPct)
+  const widthPct = Math.abs(targetPct - currentPct)
+  const showCommittedTarget = mode === 'vusers' && committedValue !== targetValue
+  return (
+    <div
+      className="command-target-indicator"
+      aria-label={`Current ${formatTargetValue(currentValue, mode)}, target ${formatTargetValue(targetValue, mode)}`}
+      data-current-load={currentValue}
+      data-target-load={targetValue}
+      data-committed-load={committedValue}
+      data-scale-min={min}
+      data-scale-max={max}
+    >
+      <div className="command-target-rail" aria-hidden="true">
+        <span className="command-target-segment" style={{ left: `${leftPct}%`, width: `${widthPct}%` }} />
+        <span className="command-target-marker current" style={{ left: `${currentPct}%` }} />
+        <span className="command-target-marker target" style={{ left: `${targetPct}%` }} />
+      </div>
+      <div className="command-target-legend">
+        <span>Current <strong>{formatTargetValue(currentValue, mode)}</strong></span>
+        <span>Target <strong>{formatTargetValue(targetValue, mode)}</strong></span>
+        {activeRamp && (
+          <span>Ramp <strong>{formatTargetValue(activeRamp.target_vusers, 'vusers')}</strong></span>
+        )}
+        {!activeRamp && showCommittedTarget && (
+          <span>Committed <strong>{formatTargetValue(committedValue, mode)}</strong></span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function loadIndicatorPercent(value: number, min: number, max: number) {
+  if (max <= min) return 0
+  return clampPercent((value - min) / (max - min) * 100)
+}
+
+function maxVisibleVuserLoad(groups: CommandGroup[]) {
+  return groups.reduce((maxValue, group) => Math.max(
+    maxValue,
+    finiteLoadValue(group.current),
+    finiteLoadValue(group.target),
+    finiteLoadValue(group.targetVusers),
+    finiteLoadValue(group.activeVuserRamp?.target_vusers),
+  ), 0)
+}
+
+function finiteLoadValue(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
 }
 
 function ErrorDrilldown({

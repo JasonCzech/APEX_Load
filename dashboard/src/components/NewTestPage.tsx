@@ -2038,16 +2038,116 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
         </div>
 
         <aside className="new-test-sidebar-column">
-          <section className="new-test-summary">
-            <h3>Run Summary</h3>
-            <dl className="new-test-summary-list" aria-label="Run settings summary">
-              {launchSummaryItems.map(item => (
-                <div key={item.label} className={item.tone === 'warning' ? 'warning' : undefined}>
-                  <dt>{item.label}</dt>
-                  <dd>{item.value}</dd>
+          <section className="new-test-profile-card" aria-label="Modeled Load Profile">
+            <div className="new-test-profile-header">
+              <div>
+                <h3>Modeled Load Profile</h3>
+                <p>Planned VUsers for this run.</p>
+              </div>
+              <div className="new-test-profile-stat">
+                <strong>{runLoadProfilePreview.peakVUsers}</strong>
+                <span>peak</span>
+              </div>
+            </div>
+            {runLoadProfilePreview.points.length > 0 ? (
+              <>
+                <div className="new-test-profile-chart">
+                  <ResponsiveContainer width="100%" height={210}>
+                    <AreaChart data={runLoadProfilePreview.points} margin={{ top: 10, right: 12, left: 20, bottom: 14 }}>
+                      <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                      <XAxis
+                        dataKey="second"
+                        tickFormatter={(value) => formatTimeCompact(Number(value))}
+                        stroke="var(--text-muted)"
+                        fontSize={10}
+                        height={38}
+                        tickLine={false}
+                        label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 10 }}
+                      />
+                      <YAxis
+                        stroke="var(--text-muted)"
+                        fontSize={10}
+                        width={66}
+                        tickLine={false}
+                        allowDecimals={false}
+                        label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 10 }}
+                      />
+                      <Tooltip
+                        labelFormatter={(value) => `Time: ${formatTimeCompact(Number(value))}`}
+                        contentStyle={{ ...chartTooltipContentStyle, borderRadius: 8, fontSize: '12px' }}
+                        labelStyle={chartTooltipLabelStyle}
+                        formatter={(value: number, name: string) => [value, name === 'total' ? 'Total VUsers' : name]}
+                      />
+                      {effectiveScenarioGroups.map((group, index) => (
+                        <Area
+                          key={`${group.order}-${group.script_id}`}
+                          type="monotone"
+                          dataKey={`group${index}`}
+                          name={group.name || group.script_name || `Group ${index + 1}`}
+                          stackId="run-profile"
+                          stroke={LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length]}
+                          fill={LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length]}
+                          fillOpacity={0.28}
+                          isAnimationActive={false}
+                        />
+                      ))}
+                      <Line
+                        type="monotone"
+                        dataKey="total"
+                        name="Total"
+                        stroke="var(--text-primary)"
+                        strokeWidth={2}
+                        dot={false}
+                        isAnimationActive={false}
+                      />
+                      <ReferenceArea
+                        x1={runLoadProfilePreview.preBaselineSeconds}
+                        x2={runLoadProfilePreview.preBaselineSeconds + runLoadProfilePreview.steadySeconds}
+                        fill="var(--accent)"
+                        fillOpacity={0.05}
+                        strokeOpacity={0}
+                      />
+                      {runLoadProfilePreview.preBaselineSeconds > 0 && (
+                        <ReferenceArea
+                          x1={0}
+                          x2={runLoadProfilePreview.preBaselineSeconds}
+                          fill="var(--warning)"
+                          fillOpacity={0.05}
+                          strokeOpacity={0}
+                        />
+                      )}
+                      {runLoadProfilePreview.postBaselineSeconds > 0 && (
+                        <ReferenceArea
+                          x1={runLoadProfilePreview.totalSeconds - runLoadProfilePreview.postBaselineSeconds}
+                          x2={runLoadProfilePreview.totalSeconds}
+                          fill="var(--warning)"
+                          fillOpacity={0.05}
+                          strokeOpacity={0}
+                        />
+                      )}
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
-              ))}
-            </dl>
+                <div className="new-test-profile-legend">
+                  {effectiveScenarioGroups.map((group, index) => (
+                    <span key={`${group.order}-${group.script_id}`}>
+                      <i style={{ background: LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length] }} />
+                      {group.name || group.script_name || `Group ${index + 1}`}
+                    </span>
+                  ))}
+                </div>
+                <div className="new-test-profile-meta">
+                  <span>{formatTimeCompact(runLoadProfilePreview.totalSeconds)} total</span>
+                  <span>{formatTimeCompact(runLoadProfilePreview.steadySeconds)} steady</span>
+                </div>
+              </>
+            ) : (
+              <div className="new-test-empty compact">Select a runnable scenario to preview the load profile.</div>
+            )}
+          </section>
+
+          <section className="new-test-launch-card" aria-label="Reserve Timeslot or Schedule Run">
+            <h3>Reserve Timeslot / Schedule Run</h3>
             <div className="new-test-launch-actions">
               {immediatePreflightLoading && !immediatePreflight && (
                 <button className="btn btn-secondary" disabled>Checking Reservation</button>
@@ -2085,115 +2185,18 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
               </div>
             </div>
           </section>
-          {scenario && (
-            <section className="new-test-profile-card" aria-label="Modeled Load Profile">
-              <div className="new-test-profile-header">
-                <div>
-                  <h3>Modeled Load Profile</h3>
-                  <p>Planned VUsers for this run.</p>
+
+          <section className="new-test-summary">
+            <h3>Run Summary</h3>
+            <dl className="new-test-summary-list" aria-label="Run settings summary">
+              {launchSummaryItems.map(item => (
+                <div key={item.label} className={item.tone === 'warning' ? 'warning' : undefined}>
+                  <dt>{item.label}</dt>
+                  <dd>{item.value}</dd>
                 </div>
-                <div className="new-test-profile-stat">
-                  <strong>{runLoadProfilePreview.peakVUsers}</strong>
-                  <span>peak</span>
-                </div>
-              </div>
-              {runLoadProfilePreview.points.length > 0 ? (
-                <>
-                  <div className="new-test-profile-chart">
-                    <ResponsiveContainer width="100%" height={210}>
-                      <AreaChart data={runLoadProfilePreview.points} margin={{ top: 10, right: 12, left: 20, bottom: 14 }}>
-                        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-                        <XAxis
-                          dataKey="second"
-                          tickFormatter={(value) => formatTimeCompact(Number(value))}
-                          stroke="var(--text-muted)"
-                          fontSize={10}
-                          height={38}
-                          tickLine={false}
-                          label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 10 }}
-                        />
-                        <YAxis
-                          stroke="var(--text-muted)"
-                          fontSize={10}
-                          width={66}
-                          tickLine={false}
-                          allowDecimals={false}
-                          label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 10 }}
-                        />
-                        <Tooltip
-                          labelFormatter={(value) => `Time: ${formatTimeCompact(Number(value))}`}
-                          contentStyle={{ ...chartTooltipContentStyle, borderRadius: 8, fontSize: '12px' }}
-                          labelStyle={chartTooltipLabelStyle}
-                          formatter={(value: number, name: string) => [value, name === 'total' ? 'Total VUsers' : name]}
-                        />
-                        {effectiveScenarioGroups.map((group, index) => (
-                          <Area
-                            key={`${group.order}-${group.script_id}`}
-                            type="monotone"
-                            dataKey={`group${index}`}
-                            name={group.name || group.script_name || `Group ${index + 1}`}
-                            stackId="run-profile"
-                            stroke={LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length]}
-                            fill={LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length]}
-                            fillOpacity={0.28}
-                            isAnimationActive={false}
-                          />
-                        ))}
-                        <Line
-                          type="monotone"
-                          dataKey="total"
-                          name="Total"
-                          stroke="var(--text-primary)"
-                          strokeWidth={2}
-                          dot={false}
-                          isAnimationActive={false}
-                        />
-                        <ReferenceArea
-                          x1={runLoadProfilePreview.preBaselineSeconds}
-                          x2={runLoadProfilePreview.preBaselineSeconds + runLoadProfilePreview.steadySeconds}
-                          fill="var(--accent)"
-                          fillOpacity={0.05}
-                          strokeOpacity={0}
-                        />
-                        {runLoadProfilePreview.preBaselineSeconds > 0 && (
-                          <ReferenceArea
-                            x1={0}
-                            x2={runLoadProfilePreview.preBaselineSeconds}
-                            fill="var(--warning)"
-                            fillOpacity={0.05}
-                            strokeOpacity={0}
-                          />
-                        )}
-                        {runLoadProfilePreview.postBaselineSeconds > 0 && (
-                          <ReferenceArea
-                            x1={runLoadProfilePreview.totalSeconds - runLoadProfilePreview.postBaselineSeconds}
-                            x2={runLoadProfilePreview.totalSeconds}
-                            fill="var(--warning)"
-                            fillOpacity={0.05}
-                            strokeOpacity={0}
-                          />
-                        )}
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="new-test-profile-legend">
-                    {effectiveScenarioGroups.map((group, index) => (
-                      <span key={`${group.order}-${group.script_id}`}>
-                        <i style={{ background: LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length] }} />
-                        {group.name || group.script_name || `Group ${index + 1}`}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="new-test-profile-meta">
-                    <span>{formatTimeCompact(runLoadProfilePreview.totalSeconds)} total</span>
-                    <span>{formatTimeCompact(runLoadProfilePreview.steadySeconds)} steady</span>
-                  </div>
-                </>
-              ) : (
-                <div className="new-test-empty compact">Select a runnable scenario to preview the load profile.</div>
-              )}
-            </section>
-          )}
+              ))}
+            </dl>
+          </section>
         </aside>
       </div>
       )}

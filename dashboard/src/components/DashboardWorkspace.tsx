@@ -30,6 +30,7 @@ interface DashboardWorkspaceProps {
   context?: DashboardWorkspaceContext
   defaultCardInsertions?: DashboardWorkspaceDefaultCardInsertion[]
   defaultProfile: DashboardWorkspaceProfile
+  initialActiveTabId?: string
   storageKey: string
 }
 
@@ -213,10 +214,11 @@ export default function DashboardWorkspace({
   context,
   defaultCardInsertions,
   defaultProfile,
+  initialActiveTabId,
   storageKey,
 }: DashboardWorkspaceProps) {
-  const cardIds = useMemo(() => cards.map(card => card.id), [cards])
-  const cardIdSignature = useMemo(() => cardIds.join('|'), [cardIds])
+  const cardIdSignature = useMemo(() => cards.map(card => card.id).join('|'), [cards])
+  const cardIds = useMemo(() => cardIdSignature ? cardIdSignature.split('|') : [], [cardIdSignature])
   const defaultCardInsertionSignature = useMemo(
     () => (defaultCardInsertions || []).map(insertion => `${insertion.key}:${insertion.profileId}:${insertion.tabId}:${insertion.cardId}:${insertion.afterCardId || ''}`).join('|'),
     [defaultCardInsertions],
@@ -238,9 +240,15 @@ export default function DashboardWorkspace({
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
   const [cardLibraryCollapsed, setCardLibraryCollapsed] = useState(() => readStoredJSON<boolean>(cardLibraryStorageKey, false))
+  const [activeTabOverride, setActiveTabOverride] = useState<string | null>(() => initialActiveTabId || null)
   const [collapsedLibraryCategories, setCollapsedLibraryCategories] = useState<Record<string, boolean>>({})
   const [newTabName, setNewTabName] = useState('')
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null)
+
+  useEffect(() => {
+    const nextActiveTabOverride = initialActiveTabId || null
+    setActiveTabOverride(current => current === nextActiveTabOverride ? current : nextActiveTabOverride)
+  }, [initialActiveTabId])
 
   useEffect(() => {
     setProfiles(previous => applyDefaultCardInsertions(normalizeWorkspaceProfiles(previous, defaultProfile, cardIds), defaultCardInsertions))
@@ -282,7 +290,9 @@ export default function DashboardWorkspace({
       || profiles[0]
   }, [activeState.autoApply, activeState.profileId, context, defaultProfile.id, profiles])
 
-  const activeTab = selectedProfile.tabs.find(tab => tab.id === selectedProfile.activeTabId) || selectedProfile.tabs[0]
+  const activeTab = (activeTabOverride ? selectedProfile.tabs.find(tab => tab.id === activeTabOverride) : undefined)
+    || selectedProfile.tabs.find(tab => tab.id === selectedProfile.activeTabId)
+    || selectedProfile.tabs[0]
   const contextMenuTab = tabContextMenu
     ? selectedProfile.tabs.find(tab => tab.id === tabContextMenu.tabId)
     : null
@@ -306,10 +316,12 @@ export default function DashboardWorkspace({
   }
 
   const selectProfile = (profileId: string) => {
+    setActiveTabOverride(null)
     setActiveState({ profileId, autoApply: false })
   }
 
   const selectTab = (tabId: string) => {
+    setActiveTabOverride(null)
     updateProfile(selectedProfile.id, profile => ({ ...profile, activeTabId: tabId }))
   }
 
@@ -317,6 +329,7 @@ export default function DashboardWorkspace({
     const name = `Layout ${profiles.length + 1}`
     const next = createProfileCopy(defaultProfile, profiles.map(profile => profile.id), name)
     setProfiles(previous => [...previous, next])
+    setActiveTabOverride(null)
     setActiveState({ profileId: next.id, autoApply: false })
   }
 
@@ -324,6 +337,7 @@ export default function DashboardWorkspace({
     const name = `${selectedProfile.name} Copy`
     const next = createProfileCopy(selectedProfile, profiles.map(profile => profile.id), name)
     setProfiles(previous => [...previous, next])
+    setActiveTabOverride(null)
     setActiveState({ profileId: next.id, autoApply: false })
   }
 
@@ -331,6 +345,7 @@ export default function DashboardWorkspace({
     if (profiles.length <= 1) return
     const nextProfiles = profiles.filter(profile => profile.id !== selectedProfile.id)
     setProfiles(nextProfiles)
+    setActiveTabOverride(null)
     setActiveState({ profileId: nextProfiles[0]?.id || defaultProfile.id, autoApply: false })
   }
 
@@ -348,6 +363,7 @@ export default function DashboardWorkspace({
   const restoreDefaults = () => {
     const next = normalizeWorkspaceProfiles([defaultProfile], defaultProfile, cardIds)
     setProfiles(next)
+    setActiveTabOverride(null)
     setActiveState({ profileId: defaultProfile.id, autoApply: true })
   }
 

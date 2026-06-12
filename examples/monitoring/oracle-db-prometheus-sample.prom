@@ -1,0 +1,21 @@
+# HELP oracle_db_cpu_pct Oracle database CPU utilization percentage.
+# TYPE oracle_db_cpu_pct gauge
+oracle_db_cpu_pct{db_name="APEXDB",service_name="checkout",instance="apexdb1"} 72.5
+# HELP oracle_db_session_active Active foreground sessions.
+# TYPE oracle_db_session_active gauge
+oracle_db_session_active{db_name="APEXDB",service_name="checkout",instance="apexdb1"} 34
+# HELP oracle_db_wait_time_ms Oracle database wait time in milliseconds.
+# TYPE oracle_db_wait_time_ms gauge
+oracle_db_wait_time_ms{db_name="APEXDB",service_name="checkout",instance="apexdb1"} 185
+# HELP oracle_db_lock_waits Oracle lock waits.
+# TYPE oracle_db_lock_waits gauge
+oracle_db_lock_waits{db_name="APEXDB",service_name="checkout",instance="apexdb1"} 3
+# HELP oracle_db_parse_rate SQL parses per second.
+# TYPE oracle_db_parse_rate gauge
+oracle_db_parse_rate{db_name="APEXDB",service_name="checkout",instance="apexdb1"} 42
+# HELP oracle_db_physical_reads Physical reads per second.
+# TYPE oracle_db_physical_reads gauge
+oracle_db_physical_reads{db_name="APEXDB",service_name="checkout",instance="apexdb1",tablespace="USERS"} 128
+# HELP oracle_db_redo_mb_s Redo generation throughput in MB/s.
+# TYPE oracle_db_redo_mb_s gauge
+oracle_db_redo_mb_s{db_name="APEXDB",service_name="checkout",instance="apexdb1"} 18.5

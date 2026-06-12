@@ -10,7 +10,7 @@ export type AppView =
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
   | { page: 'swagger' }
   | { page: 'repository-guide' }
-  | { page: 'test'; testId: string }
+  | { page: 'test'; testId: string; tab?: TestWorkspaceTabID }
 
 const NAV_PAGES: NavPage[] = [
   'dashboard',
@@ -28,6 +28,9 @@ const NAV_PAGES: NavPage[] = [
 
 const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
 const SCENARIO_VIEWS = ['library', 'builder'] as const
+const TEST_WORKSPACE_TABS = ['overview', 'control', 'graphs', 'diagnostics', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
+
+export type TestWorkspaceTabID = typeof TEST_WORKSPACE_TABS[number]
 
 function cleanSegment(value: string | undefined) {
   if (!value) return ''
@@ -50,6 +53,10 @@ function isScenarioView(value: string | null): value is NonNullable<Extract<AppV
   return SCENARIO_VIEWS.includes(value as NonNullable<Extract<AppView, { page: 'tests' }>['scenarioView']>)
 }
 
+function isTestWorkspaceTab(value: string | null): value is TestWorkspaceTabID {
+  return TEST_WORKSPACE_TABS.includes(value as TestWorkspaceTabID)
+}
+
 export function parseAppViewFromHash(hash: string): AppView {
   const route = hash.replace(/^#/, '').replace(/^\/+/, '')
   const [pathPart, queryString = ''] = route.split('?')
@@ -58,7 +65,12 @@ export function parseAppViewFromHash(hash: string): AppView {
   const params = new URLSearchParams(queryString)
 
   if (page === 'test' && segments[1]) {
-    return { page: 'test', testId: segments[1] }
+    const tab = params.get('tab')
+    return {
+      page: 'test',
+      testId: segments[1],
+      ...(isTestWorkspaceTab(tab) ? { tab } : {}),
+    }
   }
 
   if (page === 'new-test') {
@@ -110,7 +122,10 @@ export function parseAppViewFromHash(hash: string): AppView {
 
 export function viewToLocationHash(view: AppView): string {
   if (view.page === 'test') {
-    return `#/test/${encodeURIComponent(view.testId)}`
+    const params = new URLSearchParams()
+    if (view.tab) params.set('tab', view.tab)
+    const query = params.toString()
+    return query ? `#/test/${encodeURIComponent(view.testId)}?${query}` : `#/test/${encodeURIComponent(view.testId)}`
   }
 
   if (view.page === 'new-test') {

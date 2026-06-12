@@ -40,6 +40,7 @@ type APMIntegrationProfile struct {
 	SupportedSignals  []string `json:"supported_signals"`
 	CorrelationFields []string `json:"correlation_fields"`
 	RequiredSettings  []string `json:"required_settings,omitempty"`
+	DryRunEndpoint    string   `json:"dry_run_endpoint,omitempty"`
 	Evidence          []string `json:"evidence,omitempty"`
 	SetupActions      []string `json:"setup_actions,omitempty"`
 }
@@ -58,14 +59,15 @@ type InfrastructureMonitorPacksResponse struct {
 }
 
 type InfrastructureMonitorPack struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Status       string   `json:"status"`
-	Source       string   `json:"source"`
-	ResourceType string   `json:"resource_type"`
-	Signals      []string `json:"signals"`
-	Evidence     []string `json:"evidence,omitempty"`
-	SetupActions []string `json:"setup_actions,omitempty"`
+	ID           string                       `json:"id"`
+	Name         string                       `json:"name"`
+	Status       string                       `json:"status"`
+	Source       string                       `json:"source"`
+	ResourceType string                       `json:"resource_type"`
+	Signals      []string                     `json:"signals"`
+	Profiles     []MonitoringReadinessProfile `json:"profiles,omitempty"`
+	Evidence     []string                     `json:"evidence,omitempty"`
+	SetupActions []string                     `json:"setup_actions,omitempty"`
 }
 
 type ReportProfilesResponse struct {
@@ -222,12 +224,13 @@ func buildAPMIntegrationProfiles(settings SystemSettings) []APMIntegrationProfil
 			ID:                "dynatrace",
 			Name:              "Dynatrace",
 			Status:            statusFor("dynatrace"),
-			Capabilities:      append([]string{"problem_event_webhook", "entity_selector"}, baseCapabilities...),
+			Capabilities:      append([]string{"problem_event_webhook", "entity_selector", "dry_run_payload_export"}, baseCapabilities...),
 			SupportedSignals:  baseSignals,
 			CorrelationFields: baseFields,
 			RequiredSettings:  []string{"notifications.webhooks[].format=dynatrace", "notifications.webhooks[].api_token", "notifications.webhooks[].entity_selector"},
+			DryRunEndpoint:    "/api/v1/integrations/dynatrace/dry-run",
 			Evidence:          []string{"pkg/api/notifications.go", "docs/COMPETITIVE_COMPARISON.md#gap-analysis"},
-			SetupActions:      []string{"Enable a Dynatrace notification webhook in system settings.", "Pass W3C trace-context headers from scripts to the service under test."},
+			SetupActions:      []string{"Preview Dynatrace Events API v2 payloads with the dry-run endpoint before enabling delivery.", "Enable a Dynatrace notification webhook in system settings.", "Pass W3C trace-context headers from scripts to the service under test."},
 		},
 		{
 			ID:                "datadog",
@@ -304,9 +307,10 @@ func (s *Server) handleListInfrastructureMonitorPacks(w http.ResponseWriter, r *
 				Status:       "integration_contract",
 				Source:       "external metrics and dependency telemetry",
 				ResourceType: "database",
-				Signals:      []string{"query latency", "connection pool saturation", "lock waits", "deadlocks", "replica lag"},
+				Signals:      []string{"query latency", "connection pool saturation", "lock waits", "deadlocks", "replica lag", "Oracle wait and session metrics"},
+				Profiles:     []MonitoringReadinessProfile{oracleDBMonitoringProfile()},
 				Evidence:     []string{"pkg/api/archive.go", "/api/v1/tests/{id}/archive/root-cause"},
-				SetupActions: []string{"Map database dependency targets and publish db.* external metrics."},
+				SetupActions: []string{"Map database dependency targets and publish db.* external metrics.", "For Oracle Database, publish the oracle.db.* canonical metric contract through a Prometheus-format endpoint before connecting SaaS monitoring."},
 			},
 			{
 				ID:           "web-server",
@@ -419,6 +423,19 @@ func buildRunRootCauseSummary(testID string, report *RunArchiveReport) RunRootCa
 		}
 		addSignal("Generator CPU", "saturated", fmt.Sprintf("%.1f%% process CPU", report.ResourcePeaks.CPUProcessPct), severity, report.ResourcePeaks.CPUProcessPct)
 		addFinding("resource", severity, "Generator resource saturation detected", fmt.Sprintf("Peak generator process CPU reached %.1f%%.", report.ResourcePeaks.CPUProcessPct), []string{"resource_peaks.cpu_process_pct"}, report.ResourcePeaks.CPUProcessPct)
+	}
+	if oracle := report.OracleDB; oracle != nil && oracle.Samples > 0 {
+		severity := oracleDBSignalSeverity(oracle)
+		status := oracle.Status
+		if severity == "critical" {
+			status = "saturated"
+		} else if severity == "warning" && status == "ready" {
+			status = "degraded"
+		}
+		addSignal("Oracle DB", status, fmt.Sprintf("%d resource sample(s), %d metric(s)", oracle.Samples, len(oracle.MetricStats)), severity, 55)
+		if findingSeverity, title, detail, score, ok := oracleDBRootCauseFinding(oracle); ok {
+			addFinding("oracle_db", findingSeverity, title, detail, []string{"oracle_db", "resource_samples.external_metrics", "summary_timeline"}, score)
+		}
 	}
 	if report.Overview.ThroughputMissedIntervals > 0 {
 		addSignal("Load model", "missed_target", fmt.Sprintf("%d interval(s)", report.Overview.ThroughputMissedIntervals), "warning", 55)
@@ -562,6 +579,9 @@ func rootCauseNextActions(categories map[string]struct{}) []string {
 	}
 	if _, ok := categories["resource"]; ok {
 		actions = append(actions, "Compare generator CPU and memory peaks against the fleet capacity envelope for this protocol mix.")
+	}
+	if _, ok := categories["oracle_db"]; ok {
+		actions = append(actions, "Review Oracle wait, lock, session, and IO metrics beside transaction P95 latency before assigning the bottleneck.")
 	}
 	if _, ok := categories["load_model"]; ok {
 		actions = append(actions, "Compare achieved throughput against configured staged-ramp and arrival-rate goals.")

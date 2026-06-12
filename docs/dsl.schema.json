@@ -3952,6 +3952,9 @@
     "ContentCheckConfig": {
       "additionalProperties": false,
       "properties": {
+        "case_insensitive": {
+          "type": "boolean"
+        },
         "fail_if_found": {
           "type": "boolean"
         },
@@ -4672,6 +4675,9 @@
     "Parameter": {
       "additionalProperties": false,
       "properties": {
+        "block_size": {
+          "type": "integer"
+        },
         "charset": {
           "type": "string"
         },
@@ -4723,6 +4729,9 @@
         "start": {
           "type": "integer"
         },
+        "start_row": {
+          "type": "integer"
+        },
         "step": {
           "type": "integer"
         },
@@ -4734,6 +4743,9 @@
         },
         "update": {
           "type": "string"
+        },
+        "value_for_each_vuser": {
+          "type": "boolean"
         },
         "values": {
           "items": {

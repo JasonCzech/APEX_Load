@@ -798,7 +798,7 @@ func validateParameterIssues(script *Script) []string {
 			issues = append(issues, fmt.Sprintf("%s %q: type is required", label, name))
 			continue
 		}
-		if !isAllowedValue(paramType, "file", "list", "random_number", "date_time", "timestamp", "counter", "current_iteration", "host", "time", "uuid", "random_string") {
+		if !isAllowedValue(paramType, "file", "list", "random_number", "date_time", "timestamp", "counter", "current_iteration", "vuser_id", "host", "time", "uuid", "random_string") {
 			issues = append(issues, fmt.Sprintf("%s %q: unsupported type %q", label, name, param.Type))
 		}
 

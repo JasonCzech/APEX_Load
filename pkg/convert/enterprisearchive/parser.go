@@ -56,16 +56,25 @@ type ParsedAction struct {
 	Functions []ParsedFunction
 }
 
+// SourceActionFile records a lifecycle/action source file declared by the .usr
+// project, including language and source phase.
+type SourceActionFile struct {
+	Name     string `json:"name"`
+	Phase    string `json:"phase,omitempty"`
+	Language string `json:"language,omitempty"`
+}
+
 // ProjectConfig holds parsed .usr file settings.
 type ProjectConfig struct {
-	ScriptType   string // e.g. "Web"
-	ActiveTypes  []string
-	ActionFiles  []string
-	RuntimeFile  string
-	ParamFiles   []string
-	BaseURL      string
-	ThinkTimeMin float64
-	ThinkTimeMax float64
+	ScriptType        string // e.g. "Web"
+	ActiveTypes       []string
+	ActionFiles       []string
+	SourceActionFiles []SourceActionFile
+	RuntimeFile       string
+	ParamFiles        []string
+	BaseURL           string
+	ThinkTimeMin      float64
+	ThinkTimeMax      float64
 }
 
 // regex patterns for enterprise C/VUser source function parsing.
@@ -552,6 +561,7 @@ func parseWebCustomRequest(fn *ParsedFunction, inner string) {
 	if fn.Args["Body"] != "" {
 		fn.Body = fn.Args["Body"]
 	}
+	applyMaskedBodyReference(fn)
 }
 
 func parseWebREST(fn *ParsedFunction, inner string) {
@@ -576,6 +586,7 @@ func parseWebREST(fn *ParsedFunction, inner string) {
 	} else if m := reBodyArg.FindStringSubmatch(inner); len(m) > 1 {
 		fn.Body = m[1]
 	}
+	applyMaskedBodyReference(fn)
 	extractWebRESTHeaders(fn)
 }
 
@@ -822,8 +833,9 @@ func ParseConfigSections(content string) map[string]map[string]string {
 // ParseUSRFile parses a source .usr project configuration file.
 func ParseUSRFile(content string) (*ProjectConfig, error) {
 	cfg := &ProjectConfig{
-		ActionFiles: make([]string, 0),
-		ParamFiles:  make([]string, 0),
+		ActionFiles:       make([]string, 0),
+		SourceActionFiles: make([]SourceActionFile, 0),
+		ParamFiles:        make([]string, 0),
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader(content))
@@ -862,14 +874,28 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 				cfg.ActiveTypes = appendUnique(cfg.ActiveTypes, splitConfigList(value)...)
 			}
 		case "Actions":
-			if strings.HasSuffix(value, ".c") {
+			if isSupportedLifecycleSourceFile(value) {
+				cfg.SourceActionFiles = append(cfg.SourceActionFiles, SourceActionFile{
+					Name:     value,
+					Phase:    sourceActionPhaseFromUSRKey(key, value),
+					Language: sourceActionLanguage(value),
+				})
+			}
+			if strings.HasSuffix(strings.ToLower(value), ".c") {
 				cfg.ActionFiles = append(cfg.ActionFiles, value)
 			}
 		case "RunLogicFiles":
 			if key == "RunAction" || key == "Actions" {
 				for _, f := range strings.Split(value, ",") {
 					f = strings.TrimSpace(f)
-					if f != "" && strings.HasSuffix(f, ".c") {
+					if f != "" && isSupportedLifecycleSourceFile(f) {
+						cfg.SourceActionFiles = append(cfg.SourceActionFiles, SourceActionFile{
+							Name:     f,
+							Phase:    sourceActionPhaseFromUSRKey(key, f),
+							Language: sourceActionLanguage(f),
+						})
+					}
+					if f != "" && strings.HasSuffix(strings.ToLower(f), ".c") {
 						cfg.ActionFiles = append(cfg.ActionFiles, f)
 					}
 				}
@@ -881,8 +907,54 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 	if len(cfg.ActionFiles) == 0 {
 		cfg.ActionFiles = []string{"Action.c"}
 	}
+	if len(cfg.SourceActionFiles) == 0 {
+		cfg.SourceActionFiles = []SourceActionFile{{Name: "Action.c", Phase: "action", Language: "c"}}
+	}
 
 	return cfg, nil
+}
+
+func isSupportedLifecycleSourceFile(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	return strings.HasSuffix(lower, ".c") || strings.HasSuffix(lower, ".java")
+}
+
+func sourceActionLanguage(value string) string {
+	switch strings.ToLower(strings.TrimPrefix(filepathExt(value), ".")) {
+	case "java":
+		return "java"
+	case "c":
+		return "c"
+	default:
+		return ""
+	}
+}
+
+func sourceActionPhaseFromUSRKey(key, fileName string) string {
+	lowerKey := strings.ToLower(strings.TrimSpace(key))
+	if strings.Contains(lowerKey, "init") {
+		return "init"
+	}
+	if strings.Contains(lowerKey, "end") || strings.Contains(lowerKey, "teardown") {
+		return "teardown"
+	}
+	base := strings.ToLower(strings.TrimSpace(fileName))
+	if strings.Contains(base, "vuser_init") {
+		return "init"
+	}
+	if strings.Contains(base, "vuser_end") {
+		return "teardown"
+	}
+	return "action"
+}
+
+func filepathExt(value string) string {
+	value = strings.TrimSpace(value)
+	index := strings.LastIndex(value, ".")
+	if index < 0 {
+		return ""
+	}
+	return value[index:]
 }
 
 func splitConfigList(value string) []string {

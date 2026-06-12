@@ -1345,6 +1345,19 @@
   font-weight: 700;
 }
 
+.trend-row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 190px;
+}
+
+.trend-row-actions .btn {
+  margin: 0;
+  white-space: nowrap;
+}
+
 .trend-run-name,
 .dash-source-link,
 .trend-run-meta {

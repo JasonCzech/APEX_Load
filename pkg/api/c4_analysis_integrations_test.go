@@ -28,6 +28,13 @@ func TestC4ProfileCatalogEndpoints(t *testing.T) {
 	if len(apmPayload.Profiles) < 5 {
 		t.Fatalf("profiles len = %d, want named APM integrations", len(apmPayload.Profiles))
 	}
+	apmProfiles := map[string]APMIntegrationProfile{}
+	for _, profile := range apmPayload.Profiles {
+		apmProfiles[profile.ID] = profile
+	}
+	if apmProfiles["dynatrace"].DryRunEndpoint != "/api/v1/integrations/dynatrace/dry-run" || !stringSliceContains(apmProfiles["dynatrace"].Capabilities, "dry_run_payload_export") {
+		t.Fatalf("dynatrace profile = %#v, want dry-run capability and endpoint", apmProfiles["dynatrace"])
+	}
 	if apmPayload.GenericCorrelation.Status != "supported" || len(apmPayload.GenericCorrelation.CorrelationFields) == 0 {
 		t.Fatalf("generic correlation = %#v, want supported trace fields", apmPayload.GenericCorrelation)
 	}
@@ -50,6 +57,19 @@ func TestC4ProfileCatalogEndpoints(t *testing.T) {
 		if packs[id].ID == "" {
 			t.Fatalf("missing monitor pack %q in %#v", id, packPayload.Packs)
 		}
+	}
+	databasePack := packs["database"]
+	if len(databasePack.Profiles) == 0 || databasePack.Profiles[0].ID != "oracle-database" {
+		t.Fatalf("database pack profiles = %#v, want Oracle child profile", databasePack.Profiles)
+	}
+	oracleProfile := databasePack.Profiles[0]
+	for _, metric := range []string{"oracle.db.cpu_pct", "oracle.db.session_active", "oracle.db.wait_time_ms", "oracle.db.lock_waits", "oracle.db.parse_rate", "oracle.db.physical_reads", "oracle.db.redo_mb_s"} {
+		if !stringSliceContains(oracleProfile.RequiredMetrics, metric) || !stringSliceContains(oracleProfile.MissingMetrics, metric) {
+			t.Fatalf("oracle profile metrics = required %#v missing %#v, want %q", oracleProfile.RequiredMetrics, oracleProfile.MissingMetrics, metric)
+		}
+	}
+	if len(oracleProfile.ExampleExternalMetrics) == 0 || oracleProfile.ExampleExternalMetrics[0].Format != "prometheus" {
+		t.Fatalf("oracle examples = %#v, want Prometheus external metric examples", oracleProfile.ExampleExternalMetrics)
 	}
 
 	profilesReq := httptest.NewRequest(http.MethodGet, "/api/v1/reports/profiles", nil)
