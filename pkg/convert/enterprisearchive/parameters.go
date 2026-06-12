@@ -41,14 +41,20 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 
 		selectNextRow := lower["selectnextrow"]
 		param := dsl.Parameter{
-			Name:         name,
-			Update:       mapParameterUpdate(firstNonEmpty(lower["updatevalueon"], lower["generatenewval"])),
-			Selection:    mapParameterSelection(selectNextRow),
-			OnExhaustion: mapParameterExhaustion(firstNonEmpty(lower["outofvalues"], lower["whenoutofvalues"], lower["outofrangepolicy"])),
-			SameLineAs:   parseParameterSameLineAs(selectNextRow),
+			Name:              name,
+			Update:            mapParameterUpdate(firstNonEmpty(lower["updatevalueon"], lower["generatenewval"])),
+			Selection:         mapParameterSelection(selectNextRow),
+			OnExhaustion:      mapParameterExhaustion(firstNonEmpty(lower["outofvalues"], lower["whenoutofvalues"], lower["outofrangepolicy"])),
+			SameLineAs:        parseParameterSameLineAs(selectNextRow),
+			StartRow:          atoiDefault(firstNonEmpty(lower["startrow"], lower["start_row"]), 0),
+			BlockSize:         atoiDefault(firstNonEmpty(lower["auto_allocate_block_size"], lower["autoallocateblocksize"], lower["blocksize"], lower["block_size"]), 0),
+			ValueForEachVUser: parseBool(firstNonEmpty(lower["value_for_each_vuser"], lower["valueforeachvuser"])),
 		}
 		rawType := strings.ToLower(firstNonEmpty(lower["type"], lower["valuetype"], lower["datatype"], lower["paramtype"]))
 		switch {
+		case isSourceVUserIDType(rawType):
+			param.Type = "vuser_id"
+			param.Update = "once"
 		case isSourceCurrentIterationType(rawType):
 			param.Type = "current_iteration"
 			param.Update = "each_iteration"
@@ -476,6 +482,11 @@ func atoiDefault(value string, fallback int) int {
 func isSourceCurrentIterationType(rawType string) bool {
 	normalized := normalizeParameterType(rawType)
 	return normalized == "currentiteration" || normalized == "currentiterationnumber"
+}
+
+func isSourceVUserIDType(rawType string) bool {
+	normalized := normalizeParameterType(rawType)
+	return normalized == "userid" || normalized == "vuserid" || normalized == "vuser" || normalized == "vusernumber"
 }
 
 func isSourceHostType(rawType string) bool {

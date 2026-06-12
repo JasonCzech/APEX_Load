@@ -5,7 +5,7 @@ import {
   TestSummary,
 } from '../types'
 import { topbarRunStatusLabel } from '../appTopbar'
-import { useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
+import { useTopbarContribution, type TopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
 import { formatTimeCompact, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import TestExecutionArchive from './TestExecutionArchive'
 import { useExecutionActionBridge } from './useExecutionActionBridge'
@@ -92,13 +92,14 @@ function computeRunRemainingSeconds(test: TestSummary) {
 interface Props {
   testId: string
   history: MetricsHistoryPoint[]
+  initialWorkspaceTabId?: string
   onBack: () => void
   onEditScript: (scriptId: string) => void
   onSelectTest: (testId: string) => void
   onOpenCommandCenter?: (testId: string) => void
 }
 
-export default function TestExecution({ testId, history, onBack, onEditScript, onSelectTest, onOpenCommandCenter }: Props) {
+export default function TestExecution({ testId, history, initialWorkspaceTabId, onBack, onEditScript, onSelectTest, onOpenCommandCenter }: Props) {
   const { test, setTest, error } = useExecutionTestPolling(testId)
   const [showScenarioEditor, setShowScenarioEditor] = useState(false)
   const [showGenerateReport, setShowGenerateReport] = useState(false)
@@ -269,7 +270,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     : test ? computeRunRemainingSeconds(test) : 0
   const groupCount = (test?.groups || []).length
 
-  useTopbarContribution(test ? {
+  const testTopbarContribution = useMemo<TopbarContribution | null>(() => test ? ({
     id: 'test-execution',
     priority: 90,
     title: 'Test Run',
@@ -364,7 +365,25 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         onClick: () => { void onAbort() },
       },
     ],
-  } : null)
+  }) : null, [
+    currentVUsers,
+    executionStatusTone,
+    groupCount,
+    hasActiveVUsers,
+    isMultiGroup,
+    isPaused,
+    isRunning,
+    isStopping,
+    onBack,
+    rampInputMissing,
+    remainingSeconds,
+    showArchiveDownload,
+    showLiveControls,
+    targetVUsers,
+    test,
+  ])
+
+  useTopbarContribution(testTopbarContribution)
 
   if (error) {
     return (
@@ -833,6 +852,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         defaultCardInsertions={EXECUTION_WORKSPACE_CARD_INSERTIONS}
         cards={executionWorkspaceCards}
         context={executionWorkspaceContext}
+        initialActiveTabId={initialWorkspaceTabId}
       />
     </div>
   )

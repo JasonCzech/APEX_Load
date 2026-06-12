@@ -961,3 +961,78 @@ func TestRunArchiveWriterPersistsEnhancedResourceFields(t *testing.T) {
 		t.Fatalf("old resources = %#v, want old record read with missing enhanced fields zero-valued", oldResources)
 	}
 }
+
+func TestRunArchiveReportSummarizesOracleDBExternalMetrics(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	writer, err := newRunArchiveWriter(&ManagedTest{ID: "test-oracle-db", Name: "Oracle DB Evidence"}, RunArchiveProvenance{})
+	if err != nil {
+		t.Fatalf("newRunArchiveWriter returned error: %v", err)
+	}
+	start := time.Date(2026, time.June, 8, 10, 0, 0, 0, time.UTC)
+	waits := []float64{80, 220, 480}
+	p95s := []float64{180, 420, 820}
+	for i := range waits {
+		ts := start.Add(time.Duration(i) * time.Minute)
+		if err := writer.RecordResourceSample(ts, int64(20+i), &engine.SystemResources{
+			External: map[string]float64{
+				"oracle.db.wait_time_ms": waits[i],
+				"oracle.db.lock_waits":   float64(i + 1),
+				"oracle.db.cpu_pct":      70 + float64(i*8),
+			},
+		}); err != nil {
+			t.Fatalf("RecordResourceSample[%d] returned error: %v", i, err)
+		}
+		if err := writer.RecordIntervalSummary(&LiveMetrics{
+			Timestamp:     ts,
+			ActiveVUsers:  int64(20 + i),
+			TPS:           25,
+			AvgResponseMs: p95s[i] / 2,
+			P95Ms:         p95s[i],
+			TotalTx:       int64(100 + i),
+		}); err != nil {
+			t.Fatalf("RecordIntervalSummary[%d] returned error: %v", i, err)
+		}
+	}
+	record, err := writer.Finalize("COMPLETE", start.Add(3*time.Minute), "", false, nil)
+	if err != nil {
+		t.Fatalf("Finalize returned error: %v", err)
+	}
+
+	report, err := buildRunArchiveReport(record)
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	if report.OracleDB == nil {
+		t.Fatal("OracleDB evidence = nil, want oracle.db.* summary")
+	}
+	if report.OracleDB.Status != "partial" || report.OracleDB.Samples != 3 {
+		t.Fatalf("OracleDB evidence = %#v, want partial evidence with three samples", report.OracleDB)
+	}
+	if got := report.OracleDB.MetricStats["oracle.db.wait_time_ms"].Peak; got != 480 {
+		t.Fatalf("oracle wait peak = %v, want 480", got)
+	}
+	if len(report.OracleDB.Correlations) == 0 || report.OracleDB.Correlations[0].Strength != "strong" {
+		t.Fatalf("OracleDB correlations = %#v, want strong P95 correlation", report.OracleDB.Correlations)
+	}
+	evidence := map[string]RunArchiveEvidenceTier{}
+	for _, tier := range report.EvidenceTiers {
+		evidence[tier.Tier] = tier
+	}
+	if evidence["oracle_db_metrics"].Status != "present" || evidence["oracle_db_metrics"].Count != 3 {
+		t.Fatalf("oracle evidence tier = %#v, want present with three samples", evidence["oracle_db_metrics"])
+	}
+
+	root := buildRunRootCauseSummary("test-oracle-db", report)
+	foundOracle := false
+	for _, finding := range root.TopFindings {
+		if finding.Category == "oracle_db" {
+			foundOracle = true
+			if finding.Severity != "warning" || !strings.Contains(finding.Detail, "wait time peaked") {
+				t.Fatalf("oracle finding = %#v, want wait-time warning", finding)
+			}
+		}
+	}
+	if !foundOracle {
+		t.Fatalf("root cause findings = %#v, want oracle_db finding", root.TopFindings)
+	}
+}

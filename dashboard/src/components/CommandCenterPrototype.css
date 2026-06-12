@@ -106,6 +106,13 @@
   gap: 8px;
 }
 
+.command-history-actions .command-open-archive-action {
+  min-height: 34px;
+  padding-inline: 14px;
+  font-weight: 800;
+  box-shadow: var(--glow-sm);
+}
+
 .command-run-identity {
   min-width: 0;
   display: flex;
@@ -499,6 +506,81 @@
   font-size: 14px;
 }
 
+.command-group-transition-controls {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.command-segmented-control {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--control-bg);
+}
+
+.command-segmented-control button {
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.command-segmented-control button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.command-ramp-duration-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.command-ramp-duration-control span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.command-ramp-duration-control input {
+  width: 58px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--control-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding: 5px 7px;
+}
+
+.command-ramp-duration-control input:disabled {
+  color: var(--text-muted);
+  opacity: 0.72;
+}
+
+.command-ramp-duration-control.invalid input {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
 .command-group-table {
   display: grid;
   gap: 6px;
@@ -594,6 +676,85 @@
   accent-color: var(--accent);
 }
 
+.command-target-slider-stack {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.command-target-slider-stack input[type='range'] {
+  display: block;
+  height: 16px;
+}
+
+.command-target-indicator {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.command-target-rail {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--text-muted) 22%, transparent), color-mix(in srgb, var(--text-muted) 10%, transparent)),
+    var(--bg-primary);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+
+.command-target-segment,
+.command-target-marker {
+  position: absolute;
+  top: 50%;
+  display: block;
+}
+
+.command-target-segment {
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 68%, transparent);
+  transform: translateY(-50%);
+}
+
+.command-target-marker {
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--bg-card);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px var(--border);
+  transform: translate(-50%, -50%);
+}
+
+.command-target-marker.current {
+  background: var(--chart-2);
+}
+
+.command-target-marker.target {
+  background: var(--accent);
+}
+
+.command-target-legend {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 9px;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.15;
+}
+
+.command-target-legend span {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.command-target-legend strong {
+  color: var(--text-secondary);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
 .command-target-readout {
   grid-column: 1 / -1;
   display: flex;
@@ -660,7 +821,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.command-group-panel.compact .command-target-cell input[type='range'],
+.command-group-panel.compact .command-target-slider-stack,
 .command-group-panel.compact .command-panel-header p {
   display: none;
 }
@@ -1667,6 +1828,10 @@
     align-items: stretch;
   }
 
+  .command-group-transition-controls {
+    justify-content: flex-start;
+  }
+
   .command-control-shelf {
     position: static;
   }
@@ -1707,4 +1872,24 @@
     flex-direction: column;
   }
 
+}
+
+@media (max-width: 560px) {
+  .command-target-cell {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .command-target-cell input[type='number'] {
+    grid-column: 1;
+  }
+
+  .command-target-slider-stack {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .command-target-cell .btn {
+    grid-column: 2;
+    grid-row: 1;
+  }
 }

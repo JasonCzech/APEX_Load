@@ -505,6 +505,7 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
                 activeRange={sourceActiveRange}
                 onLineClick={handleSourceLineClick}
                 ariaLabel={`${selectedFile.path} source`}
+                maxHeight="100%"
               />
             </Suspense>
           ) : (
@@ -535,6 +536,7 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
                 activeRange={dslActiveRange}
                 onLineClick={handleDslLineClick}
                 ariaLabel="Generated DSL"
+                maxHeight="100%"
               />
             </Suspense>
           ) : (

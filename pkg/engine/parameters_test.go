@@ -103,6 +103,66 @@ func TestParameterRuntime_DataSourceParameter(t *testing.T) {
 	}
 }
 
+func TestParameterRuntime_SourceStartRowAndVUserAllocation(t *testing.T) {
+	provider, err := NewDataProvider([]dsl.DataSource{{
+		Name:           "subs",
+		Type:           "csv",
+		InlineData:     "sub\n100\n200\n300\n400\n500\n",
+		FirstRowHeader: true,
+	}})
+	if err != nil {
+		t.Fatalf("NewDataProvider: %v", err)
+	}
+
+	vuser0 := NewParameterRuntime([]dsl.Parameter{{
+		Name:       "sub",
+		Type:       "file",
+		DataSource: "subs",
+		Column:     "sub",
+		Selection:  "sequential",
+		Update:     "each_iteration",
+		StartRow:   2,
+		BlockSize:  2,
+	}}, provider, 0)
+	vuser0.Prime()
+	if got, _ := vuser0.ResolveNamed("sub"); got != "200" {
+		t.Fatalf("vuser0 initial sub = %q, want StartRow row 2", got)
+	}
+	vuser0.RefreshIteration()
+	if got, _ := vuser0.ResolveNamed("sub"); got != "300" {
+		t.Fatalf("vuser0 second sub = %q, want second row in allocated block", got)
+	}
+
+	vuser1 := NewParameterRuntime([]dsl.Parameter{{
+		Name:              "sub",
+		Type:              "file",
+		DataSource:        "subs",
+		Column:            "sub",
+		Selection:         "sequential",
+		Update:            "each_iteration",
+		StartRow:          2,
+		ValueForEachVUser: true,
+		OnExhaustion:      "wrap",
+	}}, provider, 1)
+	vuser1.Prime()
+	if got, _ := vuser1.ResolveNamed("sub"); got != "300" {
+		t.Fatalf("vuser1 sub = %q, want stable value after StartRow offset", got)
+	}
+}
+
+func TestParameterRuntime_VUserIDParameter(t *testing.T) {
+	runtime := NewParameterRuntime([]dsl.Parameter{{
+		Name:   "vuser",
+		Type:   "vuser_id",
+		Update: "once",
+	}}, nil, 4)
+	runtime.Prime()
+
+	if got, _ := runtime.ResolveNamed("vuser"); got != "5" {
+		t.Fatalf("vuser = %q, want 1-based VUser ID", got)
+	}
+}
+
 func TestParameterRuntime_OnExhaustionLastKeepsFinalValue(t *testing.T) {
 	provider, err := NewDataProvider([]dsl.DataSource{{
 		Name:           "users",

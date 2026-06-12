@@ -2,9 +2,11 @@
 package jms
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
@@ -32,20 +34,20 @@ type JMS struct {
 }
 
 type config struct {
-	BrokerURL              string
-	MessageVPN             string
-	Username               string
-	Password               string
-	ClientID               string
-	Destination            string
-	DestinationType        string
-	DeadLetterDestinations []string
-	ReplyTo                string
-	Acknowledgement        string
-	DeliveryMode           string
-	Timeout                time.Duration
-	Properties             map[string]string
-	Mock                   bool
+	BrokerURL              string            `json:"broker_url,omitempty"`
+	MessageVPN             string            `json:"message_vpn,omitempty"`
+	Username               string            `json:"username,omitempty"`
+	Password               string            `json:"password,omitempty"`
+	ClientID               string            `json:"client_id,omitempty"`
+	Destination            string            `json:"destination,omitempty"`
+	DestinationType        string            `json:"destination_type,omitempty"`
+	DeadLetterDestinations []string          `json:"dead_letter_destinations,omitempty"`
+	ReplyTo                string            `json:"reply_to,omitempty"`
+	Acknowledgement        string            `json:"acknowledgement,omitempty"`
+	DeliveryMode           string            `json:"delivery_mode,omitempty"`
+	Timeout                time.Duration     `json:"timeout,omitempty"`
+	Properties             map[string]string `json:"properties,omitempty"`
+	Mock                   bool              `json:"mock,omitempty"`
 }
 
 type brokerAdapter interface {
@@ -57,13 +59,13 @@ type brokerAdapter interface {
 }
 
 type message struct {
-	ID            string
-	CorrelationID string
-	Destination   string
-	Headers       map[string]string
-	Properties    map[string]string
-	Body          []byte
-	CreatedAt     time.Time
+	ID            string            `json:"id,omitempty"`
+	CorrelationID string            `json:"correlation_id,omitempty"`
+	Destination   string            `json:"destination,omitempty"`
+	Headers       map[string]string `json:"headers,omitempty"`
+	Properties    map[string]string `json:"properties,omitempty"`
+	Body          []byte            `json:"body,omitempty"`
+	CreatedAt     time.Time         `json:"created_at,omitempty"`
 }
 
 var broker = &memoryBroker{queues: make(map[string][]message)}
@@ -140,6 +142,8 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 	} else {
 		if j.provider == "ibmmq" {
 			j.adapter = unavailableIbmMqAdapter{cfg: j.cfg}
+		} else if sidecarCommand := strings.TrimSpace(j.cfg.Properties["sidecar_command"]); strings.EqualFold(strings.TrimSpace(j.cfg.Properties["adapter"]), "sidecar") && sidecarCommand != "" {
+			j.adapter = sidecarAdapter{command: sidecarCommand, cfg: j.cfg}
 		} else {
 			j.adapter = unavailableSolaceAdapter{cfg: j.cfg}
 		}
@@ -351,6 +355,191 @@ func (a memoryAdapter) HealthCheck(context.Context) error {
 
 func (a memoryAdapter) Teardown(context.Context) error {
 	return nil
+}
+
+type sidecarAdapter struct {
+	command string
+	cfg     config
+}
+
+type sidecarRequest struct {
+	Operation        string         `json:"operation"`
+	Provider         string         `json:"provider,omitempty"`
+	Config           config         `json:"config,omitempty"`
+	Destination      string         `json:"destination,omitempty"`
+	ReplyDestination string         `json:"reply_destination,omitempty"`
+	TimeoutMs        int64          `json:"timeout_ms,omitempty"`
+	Message          message        `json:"message,omitempty"`
+	Messages         []message      `json:"messages,omitempty"`
+	Metadata         map[string]any `json:"metadata,omitempty"`
+}
+
+type sidecarResponse struct {
+	Message  message `json:"message,omitempty"`
+	Request  message `json:"request,omitempty"`
+	Response message `json:"response,omitempty"`
+	Error    string  `json:"error,omitempty"`
+}
+
+func (a sidecarAdapter) Publish(ctx context.Context, destination string, msg message) (message, error) {
+	resp, err := a.run(ctx, sidecarRequest{
+		Operation:   "publish",
+		Provider:    "solace",
+		Config:      a.cfg,
+		Destination: destination,
+		TimeoutMs:   durationMilliseconds(a.cfg.Timeout),
+		Message:     msg,
+	}, a.cfg.Timeout)
+	if err != nil {
+		return message{}, err
+	}
+	if resp.Message.ID == "" && len(resp.Message.Body) == 0 {
+		return msg, nil
+	}
+	return normalizeSidecarMessage(resp.Message, msg), nil
+}
+
+func (a sidecarAdapter) Consume(ctx context.Context, destination string, timeout time.Duration) (message, error) {
+	resp, err := a.run(ctx, sidecarRequest{
+		Operation:   "consume",
+		Provider:    "solace",
+		Config:      a.cfg,
+		Destination: destination,
+		TimeoutMs:   durationMilliseconds(timeout),
+	}, timeout)
+	if err != nil {
+		return message{}, err
+	}
+	if resp.Message.ID == "" && len(resp.Message.Body) == 0 {
+		return message{}, fmt.Errorf("jms sidecar consume returned no message")
+	}
+	return normalizeSidecarMessage(resp.Message, message{Destination: destination, CreatedAt: time.Now()}), nil
+}
+
+func (a sidecarAdapter) RequestReply(ctx context.Context, requestDestination string, replyDestination string, request message, timeout time.Duration) (message, message, error) {
+	resp, err := a.run(ctx, sidecarRequest{
+		Operation:        "request_reply",
+		Provider:         "solace",
+		Config:           a.cfg,
+		Destination:      requestDestination,
+		ReplyDestination: replyDestination,
+		TimeoutMs:        durationMilliseconds(timeout),
+		Message:          request,
+	}, timeout)
+	if err != nil {
+		return message{}, message{}, err
+	}
+	sent := resp.Request
+	if sent.ID == "" && len(sent.Body) == 0 {
+		sent = request
+	}
+	response := resp.Response
+	if response.ID == "" && len(response.Body) == 0 {
+		response = resp.Message
+	}
+	if response.ID == "" && len(response.Body) == 0 {
+		return message{}, message{}, fmt.Errorf("jms sidecar request_reply returned no response message")
+	}
+	return normalizeSidecarMessage(sent, request), normalizeSidecarMessage(response, message{
+		CorrelationID: request.CorrelationID,
+		Destination:   replyDestination,
+		CreatedAt:     time.Now(),
+	}), nil
+}
+
+func (a sidecarAdapter) HealthCheck(ctx context.Context) error {
+	_, err := a.run(ctx, sidecarRequest{
+		Operation: "health",
+		Provider:  "solace",
+		Config:    a.cfg,
+		TimeoutMs: durationMilliseconds(a.cfg.Timeout),
+	}, a.cfg.Timeout)
+	return err
+}
+
+func (a sidecarAdapter) Teardown(ctx context.Context) error {
+	_, err := a.run(ctx, sidecarRequest{
+		Operation: "teardown",
+		Provider:  "solace",
+		Config:    a.cfg,
+		TimeoutMs: durationMilliseconds(a.cfg.Timeout),
+	}, a.cfg.Timeout)
+	return err
+}
+
+func (a sidecarAdapter) run(ctx context.Context, req sidecarRequest, timeout time.Duration) (sidecarResponse, error) {
+	fields := strings.Fields(a.command)
+	if len(fields) == 0 {
+		return sidecarResponse{}, fmt.Errorf("jms sidecar command is not configured")
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	runCtx, cancel := context.WithTimeout(ctx, timeout+time.Second)
+	defer cancel()
+
+	payload, err := json.Marshal(req)
+	if err != nil {
+		return sidecarResponse{}, fmt.Errorf("marshal jms sidecar request: %w", err)
+	}
+	cmd := exec.CommandContext(runCtx, fields[0], fields[1:]...)
+	cmd.Stdin = bytes.NewReader(payload)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		if runCtx.Err() != nil {
+			return sidecarResponse{}, fmt.Errorf("jms sidecar %s timed out: %w", req.Operation, runCtx.Err())
+		}
+		return sidecarResponse{}, fmt.Errorf("jms sidecar %s failed: %w", req.Operation, err)
+	}
+	if len(bytes.TrimSpace(out)) == 0 {
+		return sidecarResponse{}, nil
+	}
+	var resp sidecarResponse
+	if err := json.Unmarshal(out, &resp); err != nil {
+		return sidecarResponse{}, fmt.Errorf("decode jms sidecar %s response: %w", req.Operation, err)
+	}
+	if strings.TrimSpace(resp.Error) != "" {
+		return sidecarResponse{}, fmt.Errorf("jms sidecar %s rejected request: %s", req.Operation, resp.Error)
+	}
+	return resp, nil
+}
+
+func normalizeSidecarMessage(msg message, fallback message) message {
+	if msg.ID == "" {
+		msg.ID = fallback.ID
+	}
+	if msg.CorrelationID == "" {
+		msg.CorrelationID = fallback.CorrelationID
+	}
+	if msg.Destination == "" {
+		msg.Destination = fallback.Destination
+	}
+	if msg.Headers == nil {
+		msg.Headers = cloneStringMap(fallback.Headers)
+	}
+	if msg.Properties == nil {
+		msg.Properties = cloneStringMap(fallback.Properties)
+	}
+	if len(msg.Body) == 0 {
+		msg.Body = fallback.Body
+	}
+	if msg.CreatedAt.IsZero() {
+		if fallback.CreatedAt.IsZero() {
+			msg.CreatedAt = time.Now()
+		} else {
+			msg.CreatedAt = fallback.CreatedAt
+		}
+	}
+	return msg
+}
+
+func durationMilliseconds(duration time.Duration) int64 {
+	if duration <= 0 {
+		return 0
+	}
+	return duration.Milliseconds()
 }
 
 type unavailableSolaceAdapter struct {

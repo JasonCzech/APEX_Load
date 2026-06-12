@@ -12,7 +12,10 @@ import (
 // understands quoted arguments, so those payloads vanish silently unless the
 // constants are inlined back into the call sites before parsing.
 
-var sourceStringConstantDeclRe = regexp.MustCompile(`const\s+char\s*\*\s*(?:const\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=`)
+var (
+	sourceStringConstantDeclRe = regexp.MustCompile(`const\s+char\s*\*\s*(?:const\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=`)
+	sourceScalarConstantDeclRe = regexp.MustCompile(`(?m)\b(?:const\s+)?(?:int|long|short|double|float)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*;`)
+)
 
 // collectSourceStringConstants scans every C/header file in the archive for
 // string-constant declarations and returns each constant name mapped to a
@@ -32,6 +35,12 @@ func collectSourceStringConstants(files map[string]string) map[string]string {
 				continue
 			}
 			constants[constName] = literal
+		}
+		for _, match := range sourceScalarConstantDeclRe.FindAllStringSubmatch(content, -1) {
+			if len(match) != 3 {
+				continue
+			}
+			constants[match[1]] = match[2]
 		}
 	}
 	return constants

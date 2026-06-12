@@ -943,9 +943,8 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
-    const reportLink = container.querySelector('a[href="/api/v1/tests/run-a/report"]') as HTMLAnchorElement | null
-    expect(reportLink).toBeTruthy()
-    expect(reportLink?.textContent).toBe('Download Report')
+    expect(container.querySelector('a[href="/api/v1/tests/run-a/report"]')).toBeNull()
+    expect(container.textContent).not.toContain('Download Report')
 
     const rowCheckboxes = Array.from(container.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[]
     expect(rowCheckboxes).toHaveLength(2)
@@ -1117,16 +1116,16 @@ describe('ResultsPage', () => {
     expect(container.textContent).not.toContain('Loading comparison...')
   })
 
-  it('keeps Open on the archive route and adds Run Dashboard for completed rows', async () => {
+  it('opens selected results on the run dashboard and exposes the run archive action', async () => {
     const onSelectTest = vi.fn()
-    const onOpenCommandCenter = vi.fn()
+    const onOpenTestArchive = vi.fn()
 
     await act(async () => {
       root.render(
         <ResultsPage
           testStatuses={{}}
           onSelectTest={onSelectTest}
-          onOpenCommandCenter={onOpenCommandCenter}
+          onOpenTestArchive={onOpenTestArchive}
           activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
           activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
         />,
@@ -1138,24 +1137,39 @@ describe('ResultsPage', () => {
     const row = Array.from(container.querySelectorAll('tbody tr')).find(candidate => candidate.textContent?.includes('iPhone Checkout'))
     expect(row).toBeDefined()
     const rowButtons = Array.from(row?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
-    const openButton = rowButtons.find(button => button.textContent?.trim() === 'Open')
     const runDashboardButton = rowButtons.find(button => button.textContent?.trim() === 'Run Dashboard')
-    expect(openButton).toBeDefined()
+    const runArchiveButton = rowButtons.find(button => button.textContent?.trim() === 'Run Archive')
+    const rowText = row?.textContent ?? ''
     expect(runDashboardButton).toBeDefined()
+    expect(runArchiveButton).toBeDefined()
+    expect(rowButtons.some(button => button.textContent?.trim() === 'Archive')).toBe(false)
+    expect(rowText).not.toContain('Download Archive')
+    expect(rowText).not.toContain('Download Report')
+    expect(rowText).not.toContain('Root Cause')
+    expect(rowText).not.toContain('Command Center')
 
     await act(async () => {
-      openButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      row?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(onSelectTest).toHaveBeenCalledWith('run-a')
-    expect(onOpenCommandCenter).not.toHaveBeenCalled()
+    expect(onOpenTestArchive).not.toHaveBeenCalled()
+    onSelectTest.mockClear()
 
     await act(async () => {
       runDashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(onOpenCommandCenter).toHaveBeenCalledWith('run-a')
-    expect(onSelectTest).toHaveBeenCalledTimes(1)
+    expect(onSelectTest).toHaveBeenCalledWith('run-a')
+    expect(onOpenTestArchive).not.toHaveBeenCalled()
+    onSelectTest.mockClear()
+
+    await act(async () => {
+      runArchiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onOpenTestArchive).toHaveBeenCalledWith('run-a')
+    expect(onSelectTest).not.toHaveBeenCalled()
   })
 
   it('opens results directly on filters, library sources, and row actions', async () => {
@@ -1206,9 +1220,8 @@ describe('ResultsPage', () => {
     expect(container.querySelector('.results-selection-bar')).toBeNull()
     await changeInput(inputByPlaceholder(container, 'Find releases or results...'), '')
 
-    const rootCauseLink = container.querySelector('a[href="/api/v1/tests/run-a/archive/root-cause"]') as HTMLAnchorElement | null
-    expect(rootCauseLink).toBeTruthy()
-    expect(rootCauseLink?.textContent).toBe('Root Cause')
+    expect(container.querySelector('a[href="/api/v1/tests/run-a/archive/root-cause"]')).toBeNull()
+    expect(sourceRowNamed(container, 'iPhone Checkout').textContent).not.toContain('Root Cause')
   })
 
   it('filters unified local and remote result sources by active release and exposes remote actions', async () => {

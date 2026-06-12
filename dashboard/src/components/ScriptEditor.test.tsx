@@ -2659,18 +2659,14 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Open Logging Settings')
     expect(container.textContent).toContain('Parameter Files')
     expect(container.textContent).toContain('LoginUsers.prm')
-    expect(container.textContent).toContain('Parameter File Mappings')
-    expect(container.textContent).toContain('LoginUsers.prm: LoginUser')
-    expect(container.textContent).toContain('column username')
-    expect(container.textContent).toContain('table Users.dat')
-    expect(container.textContent).toContain('Generated source: users')
-    expect(container.textContent).toContain('Open Mapped Data Source')
+    expect(container.querySelector('.parameter-mappings-launcher')?.textContent).toContain('Parameter File Mappings')
+    expect(container.querySelector('.parameter-mappings-launcher')?.textContent).toContain('Open Mapping List')
+    expect(container.querySelector('.parameter-mappings-launcher')?.textContent).not.toContain('Starter Blocks')
     expect(container.textContent).toContain('Generated Data Sources')
     expect(container.textContent).toContain('users')
     expect(container.textContent).toContain('2 rows')
     expect(container.textContent).toContain('Open In Parameter Data')
     expect(container.textContent).toContain('Source Mapping')
-    expect(pageText.indexOf('Source Mapping')).toBeLessThan(pageText.indexOf('Parameter File Mappings'))
     expect(pageText.indexOf('Source Mapping')).toBeLessThan(pageText.indexOf('Source Script'))
     expect(container.textContent).toContain('Action.c:3')
     expect(container.textContent).toContain('web_url')
@@ -2693,6 +2689,18 @@ describe('ScriptEditor', () => {
     expect(metadataSection?.classList.contains('editor-support-dialog')).toBe(false)
     expect(metadataSection?.getAttribute('role')).toBeNull()
     expect(container.querySelector('.support-dialog-import')).toBeNull()
+    expect(metadataSection?.textContent).not.toContain('Parameter File Mappings')
+    expect(container.querySelector('.imported-parameter-mappings-dialog')).toBeNull()
+    const openMappingsButton = findButtonByText(container, 'Open Mapping List')
+    expect(openMappingsButton).toBeDefined()
+    await act(async () => {
+      openMappingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('LoginUsers.prm: LoginUser')
+    expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('column username')
+    expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('table Users.dat')
+    expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('Generated source: users')
+    expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('Open Mapped Data Source')
     expect(container.textContent).toContain('Correlation Suggestions')
     expect(container.textContent).toContain('session_id')
     expect(container.textContent).toContain('response via $.sessionId')
@@ -2810,7 +2818,25 @@ describe('ScriptEditor', () => {
 
     expect(container.textContent).toContain('Parameter substitution')
 
-    const openMappedDataSourceButton = Array.from(container.querySelectorAll('button')).find(button =>
+    const openMappingListButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Open Mapping List',
+    )
+    expect(openMappingListButton).toBeDefined()
+    if (!openMappingListButton) {
+      return
+    }
+
+    await act(async () => {
+      openMappingListButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const parameterMappingsDialog = container.querySelector('.imported-parameter-mappings-dialog')
+    expect(parameterMappingsDialog?.textContent).toContain('LoginUsers.prm: LoginUser')
+    expect(parameterMappingsDialog?.textContent).toContain('column username')
+    expect(parameterMappingsDialog?.textContent).toContain('table Users.dat')
+    expect(parameterMappingsDialog?.textContent).toContain('Generated source: users')
+
+    const openMappedDataSourceButton = Array.from(parameterMappingsDialog?.querySelectorAll('button') || []).find(button =>
       button.textContent?.trim() === 'Open Mapped Data Source',
     )
     expect(openMappedDataSourceButton).toBeDefined()
@@ -2822,6 +2848,7 @@ describe('ScriptEditor', () => {
       openMappedDataSourceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    expect(container.querySelector('.imported-parameter-mappings-dialog')).toBeNull()
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
     expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter: username')
     expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('{{param.username}}')
@@ -7225,7 +7252,17 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.textContent).toContain('Outline')
-    expect(container.textContent).toContain('Starter Blocks')
+    expect(container.textContent).toContain('Parameter File Mappings')
+    expect(container.textContent).toContain('Open Mapping List')
+    expect(container.textContent).not.toContain('Starter Blocks')
+    const openMappingsButton = findButtonByText(container, 'Open Mapping List')
+    expect(openMappingsButton).toBeDefined()
+    await act(async () => {
+      openMappingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('Users.prm: LoginUser')
+    expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('column username')
+    expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('table users.csv')
     expect(container.textContent).toContain('Convergence Checklist')
     expect(container.textContent).toContain('Guided History')
     expect(container.textContent).toContain('Flow Assembly')
@@ -7235,6 +7272,22 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Correlation Inspector')
     expect(container.textContent).toContain('Parameter Source Inspector')
     expect(container.textContent).toContain('0 errors • 2 warnings')
+
+    const openMappingListButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Open Mapping List',
+    )
+    expect(openMappingListButton).toBeDefined()
+    if (!openMappingListButton) {
+      return
+    }
+
+    await act(async () => {
+      openMappingListButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('Users.prm: LoginUser')
+    expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('column username')
+    expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('table users.csv')
   })
 
   it('applies migration assistant fixes and starter blocks from the utility sidebar', async () => {

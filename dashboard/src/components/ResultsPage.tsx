@@ -42,7 +42,7 @@ import type { LibraryCatalogItem } from '../types/library'
 interface Props {
   testStatuses: Record<string, string>
   onSelectTest: (id: string) => void
-  onOpenCommandCenter?: (id: string) => void
+  onOpenTestArchive?: (id: string) => void
   onNavigate?: (page: NavPage) => void
   activeApplication?: Application | null
   activeRelease?: Release | null
@@ -271,10 +271,6 @@ function isCompletedStatus(status?: string) {
   return isCompletedTestStatus(status)
 }
 
-function buildTestReportHref(testId: string) {
-  return `/api/v1/tests/${encodeURIComponent(testId)}/report`
-}
-
 function formatShortRunId(id: string) {
   return id.length > 12 ? id.slice(0, 8) : id
 }
@@ -359,7 +355,7 @@ function SortIcon({ active, direction }: { active: boolean; direction: 'asc' | '
   return <span className="sort-icon active">{direction === 'asc' ? '↑' : '↓'}</span>
 }
 
-function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNavigate, activeApplication, activeRelease }: Props) {
+function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onNavigate, activeApplication, activeRelease }: Props) {
   const api = useApi()
   const [tests, setTests] = useState<TestSummary[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -926,14 +922,6 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     }
     setSelectedIds(new Set())
     await refresh()
-  }
-
-  const downloadArchive = async (test: TestSummary, event: React.MouseEvent) => {
-    event.stopPropagation()
-    if (!test.archive) return
-    const blob = await api.downloadTestArchive(test.id)
-    const filename = `${(test.name || 'run').replace(/\s+/g, '-').toLowerCase()}-${test.id}.zip`
-    downloadBlob(blob, filename)
   }
 
   const applyUpdatedTest = useCallback((updated: TestSummary) => {
@@ -1521,25 +1509,16 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
                                 </button>
                                 {test.archive && (
                                   <>
-                                    <button className="btn btn-sm btn-secondary" onClick={event => downloadArchive(test, event)}>
-                                      Archive
-                                    </button>
-                                    <a className="btn btn-sm btn-ghost" href={buildTestReportHref(test.id)} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>
-                                      Download Report
-                                    </a>
-                                    <a className="btn btn-sm btn-ghost" href={`/api/v1/tests/${encodeURIComponent(test.id)}/archive/root-cause`} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>
-                                      Root Cause
-                                    </a>
+                                    {onOpenTestArchive && (
+                                      <button className="btn btn-sm btn-secondary" onClick={event => { event.stopPropagation(); onOpenTestArchive(test.id) }}>
+                                        Run Archive
+                                      </button>
+                                    )}
                                   </>
                                 )}
-                                <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); onSelectTest(test.id) }}>
-                                  Open
+                                <button className="btn btn-sm btn-primary" onClick={event => { event.stopPropagation(); onSelectTest(test.id) }}>
+                                  Run Dashboard
                                 </button>
-                                {onOpenCommandCenter && (
-                                  <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); onOpenCommandCenter(test.id) }}>
-                                    Run Dashboard
-                                  </button>
-                                )}
                                 <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)}>
                                   Delete
                                 </button>

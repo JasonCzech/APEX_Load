@@ -8,9 +8,10 @@ import (
 )
 
 type contentCheck struct {
-	Text        string
-	Scope       string
-	FailIfFound bool
+	Text            string
+	Scope           string
+	FailIfFound     bool
+	CaseInsensitive bool
 }
 
 func evaluate(a protocol.Assertion, result *protocol.Result, body []byte) error {
@@ -105,10 +106,15 @@ func parseContentCheckMaps(items []map[string]any) []contentCheck {
 		if value, ok := item["fail_if_found"].(bool); ok {
 			failIfFound = value
 		}
+		caseInsensitive := false
+		if value, ok := item["case_insensitive"].(bool); ok {
+			caseInsensitive = value
+		}
 		checks = append(checks, contentCheck{
-			Text:        text,
-			Scope:       scope,
-			FailIfFound: failIfFound,
+			Text:            text,
+			Scope:           scope,
+			FailIfFound:     failIfFound,
+			CaseInsensitive: caseInsensitive,
 		})
 	}
 	return checks
@@ -129,7 +135,13 @@ func evaluateContentChecks(checks []contentCheck, result *protocol.Result, body 
 		if check.Scope == "resource" {
 			continue
 		}
-		contains := strings.Contains(bodyText, check.Text)
+		haystack := bodyText
+		needle := check.Text
+		if check.CaseInsensitive {
+			haystack = strings.ToLower(haystack)
+			needle = strings.ToLower(needle)
+		}
+		contains := strings.Contains(haystack, needle)
 		if check.FailIfFound && contains {
 			return fmt.Errorf("content check (%s) matched forbidden text %q", check.Scope, check.Text)
 		}

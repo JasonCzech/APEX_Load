@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -127,6 +128,46 @@ func TestBuildTelemetryNotificationPayloadIncludesDiagnosticContext(t *testing.T
 	}
 	if properties["apexload.conditions"] != "collector_drops,websocket_drops" {
 		t.Fatalf("dynatrace conditions = %#v", properties["apexload.conditions"])
+	}
+}
+
+func TestDynatraceDryRunBuildsPayloadWithoutDelivery(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body := bytes.NewBufferString(`{
+		"test_id":"test-dt-dry-run",
+		"event_type":"telemetry_breached",
+		"status":"breached",
+		"severity":"warning",
+		"summary":"oracle wait time moved with P95 latency",
+		"conditions":["oracle_db_waits","p95_latency_regression"],
+		"entity_selector":"type(SERVICE),entityName.equals(CheckoutService)",
+		"timeout_minutes":45
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/integrations/dynatrace/dry-run", body)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("dry-run status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var payload DynatraceDryRunResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode dry-run response: %v", err)
+	}
+	if !payload.DeliveryDisabled {
+		t.Fatalf("DeliveryDisabled = false, want true")
+	}
+	if payload.Payload["eventType"] != "ERROR_EVENT" || payload.Payload["entitySelector"] != "type(SERVICE),entityName.equals(CheckoutService)" || payload.Payload["timeout"] != float64(45) {
+		t.Fatalf("dry-run payload = %#v, want Dynatrace telemetry breach event", payload.Payload)
+	}
+	properties, ok := payload.Payload["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("properties = %#v, want object", payload.Payload["properties"])
+	}
+	if properties["apexload.conditions"] != "oracle_db_waits,p95_latency_regression" || properties["apexload.summary"] != "oracle wait time moved with P95 latency" {
+		t.Fatalf("properties = %#v, want diagnostic context", properties)
+	}
+	if payload.CorrelationManifest.SchemaVersion != dynatraceCorrelationManifestSchemaVersion || payload.CorrelationManifest.TestID != "test-dt-dry-run" {
+		t.Fatalf("correlation manifest = %#v, want offline manifest for test", payload.CorrelationManifest)
 	}
 }
 

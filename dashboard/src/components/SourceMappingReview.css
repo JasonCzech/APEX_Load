@@ -1,7 +1,9 @@
 .source-map-review {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 14px;
+  min-height: 0;
   padding: 16px 20px;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
@@ -228,11 +230,14 @@
 
 .source-map-panels {
   display: flex;
+  flex: 1 1 auto;
   gap: 12px;
+  min-height: 0;
 }
 
 .source-map-panel {
   min-width: 0;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-primary);
@@ -377,11 +382,16 @@
 }
 
 .linked-code-pane {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
   min-width: 0;
 }
 
 .linked-code-pane .cm-editor {
   background: var(--bg-primary);
+  height: 100%;
+  min-height: 0;
 }
 
 .linked-code-pane .cm-editor.cm-focused {
@@ -390,6 +400,7 @@
 
 .linked-code-pane .cm-scroller {
   overflow: auto;
+  min-height: 0;
 }
 
 .apex-search-match {

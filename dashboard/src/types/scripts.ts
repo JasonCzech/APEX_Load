@@ -198,6 +198,7 @@ export interface ContentCheckConfig {
   text?: string
   scope?: string
   fail_if_found?: boolean
+  case_insensitive?: boolean
 }
 
 export interface NetworkSimulationConfig {
@@ -462,6 +463,9 @@ export interface ScriptParameterDefinition {
   same_line_as?: string
   data_source?: string
   column?: string
+  start_row?: number
+  block_size?: number
+  value_for_each_vuser?: boolean
   format?: string
   timezone?: string
   offset_seconds?: number

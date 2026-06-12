@@ -270,9 +270,10 @@ type DownloadFiltersConfig struct {
 }
 
 type ContentCheckConfig struct {
-	Text        string `json:"text,omitempty"`
-	Scope       string `json:"scope,omitempty"`
-	FailIfFound *bool  `json:"fail_if_found,omitempty"`
+	Text            string `json:"text,omitempty"`
+	Scope           string `json:"scope,omitempty"`
+	FailIfFound     *bool  `json:"fail_if_found,omitempty"`
+	CaseInsensitive bool   `json:"case_insensitive,omitempty"`
 }
 
 type NetworkSimulationConfig struct {
@@ -458,28 +459,31 @@ type DataSource struct {
 }
 
 type Parameter struct {
-	Name          string   `json:"name"`
-	Type          string   `json:"type"` // "file", "list", "random_number", "date_time", "timestamp", "counter", "current_iteration", "host", "time", "uuid", "random_string"
-	Update        string   `json:"update,omitempty"`
-	Selection     string   `json:"selection,omitempty"`
-	OnExhaustion  string   `json:"on_exhaustion,omitempty"`
-	SameLineAs    string   `json:"same_line_as,omitempty"`
-	DataSource    string   `json:"data_source,omitempty"`
-	Column        string   `json:"column,omitempty"`
-	Format        string   `json:"format,omitempty"`
-	Timezone      string   `json:"timezone,omitempty"`
-	OffsetSeconds int      `json:"offset_seconds,omitempty"`
-	Min           int      `json:"min,omitempty"`
-	Max           int      `json:"max,omitempty"`
-	Start         int      `json:"start,omitempty"`
-	End           int      `json:"end,omitempty"`
-	Step          int      `json:"step,omitempty"`
-	Length        int      `json:"length,omitempty"`
-	Charset       string   `json:"charset,omitempty"`
-	PadWidth      int      `json:"pad_width,omitempty"`
-	PadChar       string   `json:"pad_char,omitempty"`
-	Values        []string `json:"values,omitempty"`
-	Seed          *int64   `json:"seed,omitempty"`
+	Name              string   `json:"name"`
+	Type              string   `json:"type"` // "file", "list", "random_number", "date_time", "timestamp", "counter", "current_iteration", "vuser_id", "host", "time", "uuid", "random_string"
+	Update            string   `json:"update,omitempty"`
+	Selection         string   `json:"selection,omitempty"`
+	OnExhaustion      string   `json:"on_exhaustion,omitempty"`
+	SameLineAs        string   `json:"same_line_as,omitempty"`
+	DataSource        string   `json:"data_source,omitempty"`
+	Column            string   `json:"column,omitempty"`
+	StartRow          int      `json:"start_row,omitempty"`
+	BlockSize         int      `json:"block_size,omitempty"`
+	ValueForEachVUser bool     `json:"value_for_each_vuser,omitempty"`
+	Format            string   `json:"format,omitempty"`
+	Timezone          string   `json:"timezone,omitempty"`
+	OffsetSeconds     int      `json:"offset_seconds,omitempty"`
+	Min               int      `json:"min,omitempty"`
+	Max               int      `json:"max,omitempty"`
+	Start             int      `json:"start,omitempty"`
+	End               int      `json:"end,omitempty"`
+	Step              int      `json:"step,omitempty"`
+	Length            int      `json:"length,omitempty"`
+	Charset           string   `json:"charset,omitempty"`
+	PadWidth          int      `json:"pad_width,omitempty"`
+	PadChar           string   `json:"pad_char,omitempty"`
+	Values            []string `json:"values,omitempty"`
+	Seed              *int64   `json:"seed,omitempty"`
 }
 
 type Action struct {

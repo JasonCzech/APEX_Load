@@ -1,0 +1,74 @@
+{
+  "name": "oracle-db-readiness-pack",
+  "description": "Offline Oracle Database monitoring readiness pack. Point url at a local or internal Prometheus-format endpoint before connecting Oracle, Prometheus remote write, or Dynatrace SaaS.",
+  "expected_labels": ["db_name", "service_name", "instance", "tablespace"],
+  "config": {
+    "observability": {
+      "external_metrics": [
+        {
+          "name": "oracle.db.cpu_pct",
+          "url": "http://127.0.0.1:9100/metrics",
+          "format": "prometheus",
+          "metric_name": "oracle_db_cpu_pct",
+          "labels": {
+            "service_name": "checkout"
+          }
+        },
+        {
+          "name": "oracle.db.session_active",
+          "url": "http://127.0.0.1:9100/metrics",
+          "format": "prometheus",
+          "metric_name": "oracle_db_session_active",
+          "labels": {
+            "service_name": "checkout"
+          }
+        },
+        {
+          "name": "oracle.db.wait_time_ms",
+          "url": "http://127.0.0.1:9100/metrics",
+          "format": "prometheus",
+          "metric_name": "oracle_db_wait_time_ms",
+          "labels": {
+            "service_name": "checkout"
+          }
+        },
+        {
+          "name": "oracle.db.lock_waits",
+          "url": "http://127.0.0.1:9100/metrics",
+          "format": "prometheus",
+          "metric_name": "oracle_db_lock_waits",
+          "labels": {
+            "service_name": "checkout"
+          }
+        },
+        {
+          "name": "oracle.db.parse_rate",
+          "url": "http://127.0.0.1:9100/metrics",
+          "format": "prometheus",
+          "metric_name": "oracle_db_parse_rate",
+          "labels": {
+            "service_name": "checkout"
+          }
+        },
+        {
+          "name": "oracle.db.physical_reads",
+          "url": "http://127.0.0.1:9100/metrics",
+          "format": "prometheus",
+          "metric_name": "oracle_db_physical_reads",
+          "labels": {
+            "service_name": "checkout"
+          }
+        },
+        {
+          "name": "oracle.db.redo_mb_s",
+          "url": "http://127.0.0.1:9100/metrics",
+          "format": "prometheus",
+          "metric_name": "oracle_db_redo_mb_s",
+          "labels": {
+            "service_name": "checkout"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -78,6 +78,7 @@ type enterpriseArchiveImportSummary struct {
 	TrueClient2CompatReport     *trueClient2CompatReport                            `json:"trueclient2_compat_report,omitempty"`
 	SalesforceReview            *salesforce.Review                                  `json:"salesforce_review,omitempty"`
 	DetectedProtocol            *enterprisearchive.DetectedProtocol                 `json:"detected_protocol,omitempty"`
+	FidelityReport              *enterprisearchive.ImportFidelityReport             `json:"fidelity_report,omitempty"`
 	ReviewArtifact              *enterprisearchive.ReviewArtifact                   `json:"review_artifact,omitempty"`
 	SourceReview                *enterprisearchive.SourceReview                     `json:"source_review,omitempty"`
 	ImportMode                  string                                              `json:"import_mode,omitempty"`
@@ -315,6 +316,14 @@ func (s *Server) handleEnterpriseArchiveSupportMatrix(w http.ResponseWriter, r *
 		"web2_profile_capabilities": trueclient.Web2ProfileCapabilityScopes(),
 		"web2_fixture_contract":     trueclient.Web2FixtureContracts(),
 		"protocol_support_matrix":   protocolBundleSupportMatrix(),
+		"source_protocol_matrix": []map[string]any{{
+			"canonical_source_protocol": "java_jms_solace",
+			"display_name":              "Java JMS/Solace",
+			"apexload_protocol":         "jms-solace",
+			"status":                    "blocked",
+			"promotion_gate":            "approved Solace JMS adapter or governed sidecar runner policy",
+			"notes":                     "Archives convert to JMS DSL for review, but executable promotion is blocked in this build unless real Solace replay policy and runtime credentials/truststore are configured.",
+		}},
 	})
 }
 
@@ -1062,6 +1071,7 @@ func writeEnterpriseArchiveImportResponse(w http.ResponseWriter, status int, res
 		RepairSuggestions:   repairSuggestions,
 		Summary:             summary,
 		DetectedProtocol:    result.DetectedProtocol,
+		FidelityReport:      summary.FidelityReport,
 		ReviewArtifact:      result.ReviewArtifact,
 		SourceReview:        summary.SourceReview,
 		TrueClient2Compat:   summary.TrueClient2CompatReport,
@@ -2033,6 +2043,20 @@ func buildEnterpriseArchiveImportReviewSections(warnings []string, result *enter
 		})
 	}
 
+	if summary.FidelityReport != nil {
+		severity := "info"
+		if summary.FidelityReport.PromotionStatus == enterprisearchive.ImportPromotionBlocked || len(summary.FidelityReport.Blockers) > 0 {
+			severity = "blocker"
+		}
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "import_fidelity",
+			Title:    "Import Fidelity",
+			Severity: severity,
+			Summary:  enterpriseArchiveFidelitySummary(summary.FidelityReport),
+			Items:    enterpriseArchiveFidelityItems(summary.FidelityReport),
+		})
+	}
+
 	if len(warnings) > 0 {
 		sections = append(sections, scriptImportReviewSection{
 			Key:      "warnings",
@@ -2150,6 +2174,45 @@ func buildEnterpriseArchiveImportReviewSections(warnings []string, result *enter
 	return sections
 }
 
+func enterpriseArchiveFidelitySummary(report *enterprisearchive.ImportFidelityReport) string {
+	if report == nil {
+		return ""
+	}
+	status := firstNonEmpty(report.PromotionStatus, "unknown")
+	return fmt.Sprintf("Promotion status: %s; converted %d of %d detected source function(s), with %d dropped body/bodies and %d secret-gated payload(s).", status, report.ConvertedFunctions, report.ExpectedFunctions, report.DroppedBodies, report.SecretGated)
+}
+
+func enterpriseArchiveFidelityItems(report *enterprisearchive.ImportFidelityReport) []string {
+	if report == nil {
+		return nil
+	}
+	items := []string{
+		fmt.Sprintf("Source files inventoried: %d", len(report.SourceFiles)),
+		fmt.Sprintf("Converted actions: %d", report.ConvertedActions),
+		fmt.Sprintf("Dropped request bodies: %d", report.DroppedBodies),
+		fmt.Sprintf("Secret-gated payloads: %d", report.SecretGated),
+	}
+	if len(report.ParameterParity) > 0 {
+		items = append(items, fmt.Sprintf("Parameter parity: expected=%d converted=%d data_sources=%d", report.ParameterParity["expected_parameters"], report.ParameterParity["converted_parameters"], report.ParameterParity["converted_data_sources"]))
+	}
+	runtimeStatuses := make([]string, 0, len(report.RuntimeParity))
+	for status := range report.RuntimeParity {
+		runtimeStatuses = append(runtimeStatuses, status)
+	}
+	sort.Strings(runtimeStatuses)
+	for _, status := range runtimeStatuses {
+		count := report.RuntimeParity[status]
+		items = append(items, fmt.Sprintf("Runtime parity %s: %d", status, count))
+	}
+	for _, blocker := range report.Blockers {
+		items = append(items, "Blocker: "+blocker)
+	}
+	for _, warning := range report.Warnings {
+		items = append(items, "Warning: "+warning)
+	}
+	return items
+}
+
 func salesforceReviewSummary(review *salesforce.Review) string {
 	if review == nil {
 		return ""
@@ -2217,6 +2280,9 @@ func buildEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResult
 	if result != nil && result.SourceReview != nil {
 		summary.SourceReview = result.SourceReview
 	}
+	if result != nil && result.FidelityReport != nil {
+		summary.FidelityReport = result.FidelityReport
+	}
 
 	if result == nil || result.Script == nil || result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
 		return summary
@@ -2249,6 +2315,9 @@ func buildEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResult
 		summary.TrueClient2CompatReport = buildTrueClient2CompatReport(result, summary)
 	}
 	summary.SalesforceReview = salesforceReviewValue(preserved["salesforce_review"])
+	if summary.FidelityReport == nil {
+		summary.FidelityReport = fidelityReportValue(preserved["fidelity_report"])
+	}
 
 	return summary
 }
@@ -2275,6 +2344,27 @@ func persistEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResu
 	if summary.SourceReview != nil {
 		result.Script.Metadata.Import.Preserved["source_review"] = summary.SourceReview
 	}
+	if summary.FidelityReport != nil {
+		result.Script.Metadata.Import.Preserved["fidelity_report"] = summary.FidelityReport
+	}
+}
+
+func fidelityReportValue(value any) *enterprisearchive.ImportFidelityReport {
+	if value == nil {
+		return nil
+	}
+	if report, ok := value.(*enterprisearchive.ImportFidelityReport); ok {
+		return report
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var report enterprisearchive.ImportFidelityReport
+	if err := json.Unmarshal(payload, &report); err != nil {
+		return nil
+	}
+	return &report
 }
 
 func salesforceReviewValue(value any) *salesforce.Review {

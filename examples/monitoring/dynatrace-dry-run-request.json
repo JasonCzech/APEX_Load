@@ -1,0 +1,10 @@
+{
+  "test_id": "replace-with-run-id",
+  "event_type": "telemetry_breached",
+  "status": "breached",
+  "severity": "warning",
+  "summary": "Offline validation of Dynatrace Events API v2 payload and correlation manifest.",
+  "conditions": ["oracle_db_waits", "p95_latency_regression"],
+  "entity_selector": "type(SERVICE),entityName.equals(CheckoutService)",
+  "timeout_minutes": 45
+}

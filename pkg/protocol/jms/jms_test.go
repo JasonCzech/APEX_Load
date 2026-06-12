@@ -2,6 +2,9 @@ package jms
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -157,6 +160,75 @@ func TestJMSRealSolaceModeRequiresLinkedAdapter(t *testing.T) {
 	}
 	if result.ErrorMessage == "" {
 		t.Fatal("ErrorMessage is empty, want unavailable adapter message")
+	}
+}
+
+func TestJMSSolaceSidecarAdapterPublishesViaGovernedCommand(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	requestPath := filepath.Join(dir, "sidecar-request.json")
+	sidecarPath := filepath.Join(dir, "sidecar.sh")
+	script := `#!/bin/sh
+cat > "$1"
+printf '{}'
+`
+	if err := os.WriteFile(sidecarPath, []byte(script), 0o700); err != nil {
+		t.Fatalf("WriteFile(sidecar) returned error: %v", err)
+	}
+
+	p := &JMS{name: "jms-solace", provider: "solace"}
+	if err := p.Init(ctx, map[string]any{
+		"broker_url":      "tcps://broker.example.com:55443",
+		"jms_message_vpn": "perf",
+		"jms_destination": "queue/orders",
+		"jms_mock":        false,
+		"jms_properties": map[string]string{
+			"adapter":         "sidecar",
+			"sidecar_command": sidecarPath + " " + requestPath,
+		},
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	if err := p.HealthCheck(ctx); err != nil {
+		t.Fatalf("HealthCheck returned error: %v", err)
+	}
+
+	result, err := p.Execute(ctx, &protocol.Action{
+		Name:   "publish",
+		Type:   "jms_publish",
+		Target: "queue/orders",
+		Body:   []byte("hello"),
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Execute success = false: %s", result.ErrorMessage)
+	}
+	if result.BytesSent != int64(len("hello")) {
+		t.Fatalf("BytesSent = %d, want %d", result.BytesSent, len("hello"))
+	}
+
+	rawRequest, err := os.ReadFile(requestPath)
+	if err != nil {
+		t.Fatalf("ReadFile(sidecar request) returned error: %v", err)
+	}
+	var req sidecarRequest
+	if err := json.Unmarshal(rawRequest, &req); err != nil {
+		t.Fatalf("Unmarshal(sidecar request) returned error: %v", err)
+	}
+	if req.Operation != "publish" {
+		t.Fatalf("Operation = %q, want publish", req.Operation)
+	}
+	if req.Destination != "queue/orders" {
+		t.Fatalf("Destination = %q, want queue/orders", req.Destination)
+	}
+	if string(req.Message.Body) != "hello" {
+		t.Fatalf("Message.Body = %q, want hello", string(req.Message.Body))
+	}
+	if req.Config.BrokerURL != "tcps://broker.example.com:55443" {
+		t.Fatalf("Config.BrokerURL = %q, want configured broker", req.Config.BrokerURL)
 	}
 }
 

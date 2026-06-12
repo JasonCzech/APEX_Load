@@ -15,14 +15,15 @@ import (
 
 // ConvertResult holds the output of an enterprise script archive to APEX Load DSL conversion.
 type ConvertResult struct {
-	Script                       *dsl.Script       `json:"script"`
-	Warnings                     []string          `json:"warnings,omitempty"`
-	Stats                        ConvertStats      `json:"stats"`
-	DetectedProtocol             *DetectedProtocol `json:"detected_protocol,omitempty"`
-	ReviewArtifact               *ReviewArtifact   `json:"review_artifact,omitempty"`
-	SourceReview                 *SourceReview     `json:"source_review,omitempty"`
-	RecordedResourceURLs         []string          `json:"recorded_resource_urls,omitempty"`
-	RecordedResourceURLsCaptured bool              `json:"recorded_resource_urls_captured,omitempty"`
+	Script                       *dsl.Script           `json:"script"`
+	Warnings                     []string              `json:"warnings,omitempty"`
+	Stats                        ConvertStats          `json:"stats"`
+	DetectedProtocol             *DetectedProtocol     `json:"detected_protocol,omitempty"`
+	FidelityReport               *ImportFidelityReport `json:"fidelity_report,omitempty"`
+	ReviewArtifact               *ReviewArtifact       `json:"review_artifact,omitempty"`
+	SourceReview                 *SourceReview         `json:"source_review,omitempty"`
+	RecordedResourceURLs         []string              `json:"recorded_resource_urls,omitempty"`
+	RecordedResourceURLsCaptured bool                  `json:"recorded_resource_urls_captured,omitempty"`
 
 	// flowWarned deduplicates control-flow translation warnings per distinct
 	// condition/loop source text during one conversion.
@@ -341,6 +342,10 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.http.auth", firstNonEmpty(stringMapValue(details, "username", ""), fn.Name), "config", "converted", "Mapped from source web_set_user authentication.", SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+
+		case "web_convert_param":
+			action := convertWebConvertParamAction(fn)
+			appendSourceAction(result, fn, action, SourceFunctionSupportExecutable, "Converted to an executable source parameter transform.")
 
 		case "web_set_max_html_param_len":
 			value := firstSourceControlArg(fn)
@@ -911,12 +916,7 @@ func sourceControlArgs(fn ParsedFunction) []string {
 }
 
 func isSourceMetadataOnlyContributor(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "web_convert_param":
-		return true
-	default:
-		return false
-	}
+	return false
 }
 
 func parseSourceBool(value string) (bool, bool) {
@@ -1279,6 +1279,12 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		// Convert source parameter syntax {ParamName} to template syntax.
 		// Known .prm-backed parameters are rewritten from var to param after all archive files are parsed.
 		action.Body = convertParamReferences(action.Body)
+	}
+	if secretName := fn.Args[maskedBodySecretArgKey]; secretName != "" {
+		action.Metadata["source_secret_ref"] = secretName
+		action.Metadata["source_secret_function"] = firstNonEmpty(fn.Args[maskedBodyFuncArgKey], "lr_unmask")
+		action.Metadata["source_secret_hash"] = fn.Args[maskedBodyHashArgKey]
+		action.Metadata["body_gated_by_secret"] = true
 	}
 
 	// Convert parameter references in URL/target too
@@ -1859,7 +1865,7 @@ func encodeBoundaryExpression(left, right string, ordinal int, caseInsensitive b
 }
 
 func convertGlobalVerification(fn ParsedFunction) (*dsl.ContentCheckConfig, string) {
-	text := firstNonEmptyArg(fn, "Text")
+	text, flags := sourceFlaggedArgument(fn, "Text")
 	if text == "" {
 		text = fn.StepName
 	}
@@ -1872,9 +1878,10 @@ func convertGlobalVerification(fn ParsedFunction) (*dsl.ContentCheckConfig, stri
 		failIfFound = true
 	}
 	return &dsl.ContentCheckConfig{
-		Text:        convertParamReferences(text),
-		Scope:       normalizeSourceContentCheckScope(firstNonEmpty(firstNonEmptyArg(fn, "Search"), firstNonEmptyArg(fn, "Scope"), "any_response")),
-		FailIfFound: &failIfFound,
+		Text:            convertParamReferences(text),
+		Scope:           normalizeSourceContentCheckScope(firstNonEmpty(firstNonEmptyArg(fn, "Search"), firstNonEmptyArg(fn, "Scope"), "any_response")),
+		FailIfFound:     &failIfFound,
+		CaseInsensitive: sourceFlagsInclude(flags, "IC"),
 	}, ""
 }
 
@@ -1990,6 +1997,41 @@ func firstNonEmptyArg(fn ParsedFunction, key string) string {
 	}
 
 	return ""
+}
+
+func sourceFlaggedArgument(fn ParsedFunction, key string) (string, []string) {
+	if value := firstNonEmptyArg(fn, key); value != "" {
+		return value, nil
+	}
+	for name, value := range fn.Args {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		base, flags, hasFlags := strings.Cut(name, "/")
+		if !hasFlags || !strings.EqualFold(base, key) {
+			continue
+		}
+		return value, strings.Split(flags, "/")
+	}
+	prefix := strings.ToLower(key) + "/"
+	for _, raw := range fn.RawArgs {
+		argKey, value, ok := strings.Cut(raw, "=")
+		if !ok || !strings.HasPrefix(strings.ToLower(argKey), prefix) {
+			continue
+		}
+		_, flags, _ := strings.Cut(argKey, "/")
+		return value, strings.Split(flags, "/")
+	}
+	return "", nil
+}
+
+func sourceFlagsInclude(flags []string, expected string) bool {
+	for _, flag := range flags {
+		if strings.EqualFold(strings.TrimSpace(flag), expected) {
+			return true
+		}
+	}
+	return false
 }
 
 // detectBaseURL finds the common base URL from all web_ function calls.
@@ -2319,8 +2361,12 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	rc.AuthPass = strings.TrimSpace(authSection["Password"])
 
 	runLogicSection := findSection(sections, "Run Logic", "RunLogic")
+	generalSection := findSection(sections, "General")
 	rc.Iterations = parseInt(firstNonBlank(runLogicSection["Iterations"], runLogicSection["NumberOfIterations"]))
 	rc.AutoTransactions = normalizeEnum(runLogicSection["AutoTransactions"])
+	if rc.AutoTransactions == "" && parseBool(firstNonBlank(generalSection["AutomaticTransactions"], generalSection["AutoTransactions"])) {
+		rc.AutoTransactions = "per_action"
+	}
 	rc.BlockScheduling = normalizeEnum(runLogicSection["BlockScheduling"])
 	rc.ActionSequence = splitList(firstNonBlank(runLogicSection["ActionSequence"], runLogicSection["Sequence"]))
 
@@ -2356,8 +2402,9 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	}
 
 	miscSection := findSection(sections, "Misc", "Miscellaneous")
-	rc.ContinueOnError = parseBool(firstNonBlank(miscSection["ContinueOnError"], miscSection["ErrorContinue"]))
-	rc.SnapshotOnError = parseBool(firstNonBlank(miscSection["SnapshotOnError"], miscSection["GenerateSnapshotOnError"]))
+	webSection := findSection(sections, "WEB", "Web")
+	rc.ContinueOnError = parseBool(firstNonBlank(miscSection["ContinueOnError"], miscSection["ErrorContinue"], generalSection["ContinueOnError"]))
+	rc.SnapshotOnError = parseBool(firstNonBlank(miscSection["SnapshotOnError"], miscSection["GenerateSnapshotOnError"], webSection["SnapshotOnErrorActive"]))
 
 	attrsSection := findSection(sections, "Additional Attributes", "Attributes")
 	for key, value := range attrsSection {

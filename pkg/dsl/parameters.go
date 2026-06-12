@@ -31,6 +31,8 @@ func CanonicalParameterType(paramType string) string {
 		return "counter"
 	case "currentiteration", "currentiterationnumber":
 		return "current_iteration"
+	case "userid", "vuserid", "vuser", "vusernum", "vusernumber":
+		return "vuser_id"
 	case "host", "hostname", "loadgenerator", "loadgeneratorname":
 		return "host"
 	case "time":

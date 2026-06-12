@@ -137,6 +137,9 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 	parameterFileNames := findParameterFiles(files, projectConfig)
+	if isJavaProtocolsProject(projectConfig) {
+		return convertJavaJMSZip(files, opts, projectConfig, projectFileName, projectSections, runtimeFileName, parameterFileNames)
+	}
 	if trueClientScope != nil {
 		trueClientResult, err := trueclient.ConvertArchive(files, trueclient.ConvertOptions{
 			ScriptName:           opts.ScriptName,
@@ -193,6 +196,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		applyParameterizedBaseURL(result.Script)
 		result.SourceReview = BuildSourceReview(files, sourceReviewMappings(result))
 		attachSourceMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, trueClientInspection)
+		attachImportFidelityReport(result, files, projectConfig, nil)
 		return result, nil
 	}
 
@@ -295,12 +299,19 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	applyParameterizedBaseURL(result.Script)
 	result.SourceReview = BuildSourceReview(files, sourceReviewMappings(result))
 	attachSourceMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, nil)
+	attachImportFidelityReport(result, files, projectConfig, parsedActions)
 	return result, nil
 }
 
 func orderedSourceActionFiles(projectConfig *ProjectConfig, files map[string]string) []string {
 	candidates := []string{"vuser_init.c"}
-	if projectConfig != nil && len(projectConfig.ActionFiles) > 0 {
+	if projectConfig != nil && len(projectConfig.SourceActionFiles) > 0 {
+		for _, sourceFile := range projectConfig.SourceActionFiles {
+			if strings.EqualFold(sourceFile.Language, "c") || strings.HasSuffix(strings.ToLower(sourceFile.Name), ".c") {
+				candidates = append(candidates, sourceFile.Name)
+			}
+		}
+	} else if projectConfig != nil && len(projectConfig.ActionFiles) > 0 {
 		candidates = append(candidates, projectConfig.ActionFiles...)
 	} else {
 		candidates = append(candidates, "Action.c")
@@ -339,9 +350,9 @@ func orderedSourceActionFiles(projectConfig *ProjectConfig, files map[string]str
 func sourceActionPhase(fileName string) string {
 	base := strings.ToLower(filepath.Base(strings.TrimSpace(fileName)))
 	switch base {
-	case "vuser_init.c":
+	case "vuser_init.c", "vuser_init.java":
 		return "init"
-	case "vuser_end.c":
+	case "vuser_end.c", "vuser_end.java":
 		return "teardown"
 	default:
 		return "action"
@@ -380,6 +391,7 @@ func newEnterpriseArchiveReviewResult(detected DetectedProtocol, files map[strin
 		result.Warnings = append(result.Warnings, "Import was classified as "+string(detected.ImportMode)+"; no executable APEX Load script was generated.")
 	}
 	result.Warnings = uniqueSortedStrings(result.Warnings)
+	attachImportFidelityReport(result, files, nil, actions)
 	return result
 }
 
@@ -507,6 +519,7 @@ func convertDevWebZipViaEnterpriseArchiveImport(zipData []byte, opts ConvertOpti
 	if len(result.Stats.UnsupportedFuncs) > 0 {
 		result.Warnings = append(result.Warnings, "DevWeb archive imported through the enterprise script archive endpoint has review-gated JavaScript or helper constructs.")
 	}
+	attachImportFidelityReport(result, files, projectConfig, nil)
 	return result, nil
 }
 

@@ -21,6 +21,7 @@ interface Props {
   metricsHistory: Record<string, MetricsHistoryPoint[]>
   connectionState: WebSocketConnectionState
   onSelectTest: (id: string) => void
+  onOpenTestArchive?: (id: string) => void
   onOpenCommandCenter?: (id: string) => void
   onNavigate: (page: NavPage) => void
   snapshotAudience?: DashboardSnapshotAudience
@@ -530,7 +531,7 @@ function ReleaseSnapshotPanel({
   )
 }
 
-export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onOpenCommandCenter, onNavigate, snapshotAudience = 'admin' }: Props) {
+export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onOpenTestArchive, onOpenCommandCenter, onNavigate, snapshotAudience = 'admin' }: Props) {
   const api = useApi()
   const { activeApplication, activeRelease, releases, setActiveRelease } = useApplication()
   const { activeProject } = useProject()
@@ -1113,7 +1114,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                         {renderPerformanceSortHeader('errors', 'Errors', 'num')}
                         {renderPerformanceSortHeader('sla', 'SLA', 'num')}
                         {renderPerformanceSortHeader('complete', 'Complete', 'num')}
-                        {onOpenCommandCenter && <th>Actions</th>}
+                        {onOpenTestArchive && <th>Actions</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -1160,18 +1161,30 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                             {report.manifest?.sla_breached ? 'Breached' : 'Passed'}
                           </td>
                           <td className="num">{formatOptionalNumber(report.completeness?.score_pct, 0)}%</td>
-                          {onOpenCommandCenter && (
+                          {onOpenTestArchive && (
                             <td>
-                              <button
-                                type="button"
-                                className="btn btn-sm btn-ghost"
-                                onClick={event => {
-                                  event.stopPropagation()
-                                  onOpenCommandCenter(test.id)
-                                }}
-                              >
-                                Run Dashboard
-                              </button>
+                              <div className="trend-row-actions">
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-primary"
+                                  onClick={event => {
+                                    event.stopPropagation()
+                                    onSelectTest(test.id)
+                                  }}
+                                >
+                                  Run Dashboard
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-secondary"
+                                  onClick={event => {
+                                    event.stopPropagation()
+                                    onOpenTestArchive(test.id)
+                                  }}
+                                >
+                                  Run Archive
+                                </button>
+                              </div>
                             </td>
                           )}
                         </tr>
@@ -1384,7 +1397,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                                   onOpenCommandCenter(test.id)
                                 }}
                               >
-                                Run Dashboard
+                                Command Center
                               </button>
                             </td>
                           )}

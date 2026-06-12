@@ -129,6 +129,7 @@ var protocolTypeAliases = map[string]protocolProfile{
 	"c++ .net":                      templateProfile("cpp_dotnet_vuser", "C++ .NET Vuser"),
 	"c# .net":                       templateProfile("csharp_dotnet_vuser", "C# .NET Vuser"),
 	"java vuser":                    templateProfile("java_vuser", "Java Vuser"),
+	"java protocols":                javaJMSSolaceProfile(),
 	"vb .net":                       templateProfile("vb_dotnet_vuser", "VB .NET Vuser"),
 	"devweb":                        reviewProfile("devweb", "DevWeb", "Templates Protocol Bundle", "Use the native DevWeb importer for executable conversion."),
 	"jmeter":                        reviewProfile("jmeter", "JMeter", "Templates Protocol Bundle", "Use the native JMeter importer for executable conversion."),
@@ -220,6 +221,8 @@ func profileForType(scriptType string) (protocolProfile, bool) {
 		return sapWebProfile(), true
 	case strings.Contains(key, "sap") && strings.Contains(key, "gui"):
 		return externalProfile("sap_gui", "SAP GUI", "Foundation Entitlement", "SAP GUI requires an external SAP GUI runner bridge."), true
+	case strings.Contains(key, "java") && (strings.Contains(key, "protocol") || strings.Contains(key, "jms") || strings.Contains(key, "solace")):
+		return javaJMSSolaceProfile(), true
 	case strings.Contains(key, "odbc") || strings.Contains(key, "database"):
 		return databaseProfile(), true
 	case strings.Contains(key, "web service") || strings.Contains(key, "soap"):
@@ -342,6 +345,10 @@ func profileFromContent(files map[string]string, actions []*ParsedAction) (*prot
 	case strings.Contains(archiveText, "soapaction") || strings.Contains(archiveText, "<soap") || strings.Contains(archiveText, ":envelope"):
 		profile := soapProfile()
 		return &profile, []string{"SOAP envelope evidence"}
+	case strings.Contains(archiveText, "com.solacesystems.jms") ||
+		(strings.Contains(archiveText, "initialcontext") && strings.Contains(archiveText, "connectionfactory") && strings.Contains(archiveText, "textmessage")):
+		profile := javaJMSSolaceProfile()
+		return &profile, []string{"Java JMS/Solace source evidence"}
 	}
 	return nil, signals
 }
@@ -666,6 +673,22 @@ func sapWebProfile() protocolProfile {
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"SAP Web async/correlation review", "Replay validation evidence"},
 		Warnings:    []string{"SAP Web imports execute through the HTTP runtime; SAP-specific async helpers remain review-gated."},
+	}
+}
+
+func javaJMSSolaceProfile() protocolProfile {
+	return protocolProfile{
+		Canonical:   "java_jms_solace",
+		DisplayName: "Java JMS/Solace",
+		APEXLoad:    "jms-solace",
+		Bundle:      "Enterprise Messaging Protocol Bundle",
+		Mode:        ImportModeExecutable,
+		Evidence: []string{
+			"Approved Solace JMS adapter or governed sidecar runner policy",
+			"Runtime Solace credentials and truststore",
+			"Replay validation evidence against the target VPN/destination",
+		},
+		Warnings: []string{"Java JMS/Solace imports are generated as JMS DSL but promotion is blocked until a real Solace adapter or governed sidecar runner is configured."},
 	}
 }
 

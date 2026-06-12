@@ -816,17 +816,25 @@
   border-radius: var(--radius);
   padding: 16px 20px;
 }
+.conversion-mapping-panel,
 .imported-metadata-section {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   gap: 16px;
   scroll-margin-top: 92px;
 }
 .import-metadata-body {
-  display: grid;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   gap: 18px;
+  min-height: 0;
 }
+.conversion-mapping-panel .source-map-review,
 .imported-metadata-section .source-map-review {
+  flex: 1 1 auto;
+  min-height: min(720px, calc(100vh - 260px));
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -4243,6 +4251,19 @@
   border-color: rgba(99, 102, 241, 0.28);
   background: rgba(99, 102, 241, 0.05);
 }
+.parameter-mappings-launcher {
+  align-items: flex-start;
+}
+.parameter-mappings-launcher p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.parameter-mappings-launcher-button {
+  width: 100%;
+  justify-content: center;
+}
 
 .side-pane-header {
   display: flex;
@@ -4624,6 +4645,15 @@
   gap: 16px;
   padding: 20px;
   overflow: auto;
+}
+.imported-parameter-mappings-dialog {
+  width: min(920px, calc(100vw - 48px));
+}
+.imported-parameter-mappings-dialog-body > p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
 }
 .parameter-draft-panel {
   display: flex;

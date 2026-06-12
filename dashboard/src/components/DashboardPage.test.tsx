@@ -652,7 +652,8 @@ describe('DashboardPage', () => {
     expect(container.querySelectorAll('.dash-performance-trend tbody .trend-table-checkbox input[type="checkbox"]')).toHaveLength(2)
   })
 
-  it('adds Run Dashboard actions without changing dashboard archive navigation', async () => {
+  it('adds explicit dashboard and archive actions without changing row default navigation', async () => {
+    const onOpenTestArchive = vi.fn()
     const onOpenCommandCenter = vi.fn()
 
     await act(async () => {
@@ -666,6 +667,7 @@ describe('DashboardPage', () => {
           }}
           connectionState="connected"
           onSelectTest={onSelectTest}
+          onOpenTestArchive={onOpenTestArchive}
           onOpenCommandCenter={onOpenCommandCenter}
           onNavigate={onNavigate}
         />,
@@ -675,13 +677,13 @@ describe('DashboardPage', () => {
     await flushDashboard()
 
     const recentRow = tableRowContaining('Release Smoke')
-    expect(recentRow.textContent).toContain('Run Dashboard')
+    expect(recentRow.textContent).toContain('Command Center')
 
     clickButtonInRow(recentRow, 'Release Smoke')
     expect(onSelectTest).toHaveBeenCalledWith('test-complete')
     onSelectTest.mockClear()
 
-    clickButtonInRow(recentRow, 'Run Dashboard')
+    clickButtonInRow(recentRow, 'Command Center')
     expect(onOpenCommandCenter).toHaveBeenCalledWith('test-complete')
     expect(onSelectTest).not.toHaveBeenCalled()
 
@@ -690,9 +692,15 @@ describe('DashboardPage', () => {
 
     const performanceRow = tableRowContaining('Checkout Archive')
     expect(performanceRow.textContent).toContain('Run Dashboard')
+    expect(performanceRow.textContent).toContain('Run Archive')
 
     clickButtonInRow(performanceRow, 'Run Dashboard')
-    expect(onOpenCommandCenter).toHaveBeenCalledWith('test-complete-2')
+    expect(onSelectTest).toHaveBeenCalledWith('test-complete-2')
+    expect(onOpenTestArchive).not.toHaveBeenCalled()
+    onSelectTest.mockClear()
+
+    clickButtonInRow(performanceRow, 'Run Archive')
+    expect(onOpenTestArchive).toHaveBeenCalledWith('test-complete-2')
     expect(onSelectTest).not.toHaveBeenCalled()
 
     clickButtonInRow(performanceRow, 'Checkout Archive')

@@ -248,6 +248,8 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState,
 			iterationParam.Step = 1
 		}
 		return generateCounterValue(iterationParam, state)
+	case "vuser_id":
+		return strconv.Itoa(pr.vuserID + 1), true
 	case "host":
 		return generateHostValue(param)
 	case "uuid":
@@ -469,7 +471,7 @@ func (pr *ParameterRuntime) valuesForParameter(param dsl.Parameter, state *param
 		return state.values, len(state.values) > 0
 	}
 	if len(param.Values) > 0 {
-		state.values = normalizeParameterValues(param.Values)
+		state.values = pr.applyParameterRowAllocation(normalizeParameterValues(param.Values), param)
 		state.loaded = true
 		return state.values, true
 	}
@@ -480,9 +482,57 @@ func (pr *ParameterRuntime) valuesForParameter(param dsl.Parameter, state *param
 	if !ok {
 		return nil, false
 	}
-	state.values = values
+	state.values = pr.applyParameterRowAllocation(normalizeParameterValues(values), param)
 	state.loaded = true
 	return state.values, true
+}
+
+func (pr *ParameterRuntime) applyParameterRowAllocation(values []string, param dsl.Parameter) []string {
+	if len(values) == 0 {
+		return values
+	}
+	start := 0
+	if param.StartRow > 1 {
+		start = param.StartRow - 1
+	}
+	if start >= len(values) {
+		if effectiveOnExhaustion(param) == "wrap" {
+			start = start % len(values)
+		} else {
+			return nil
+		}
+	}
+	values = values[start:]
+	if len(values) == 0 {
+		return values
+	}
+	if param.BlockSize > 0 {
+		blockStart := pr.vuserID * param.BlockSize
+		if blockStart >= len(values) {
+			if effectiveOnExhaustion(param) == "wrap" {
+				blockStart = blockStart % len(values)
+			} else {
+				return nil
+			}
+		}
+		blockEnd := blockStart + param.BlockSize
+		if blockEnd > len(values) {
+			blockEnd = len(values)
+		}
+		values = values[blockStart:blockEnd]
+	}
+	if param.ValueForEachVUser && param.BlockSize == 0 {
+		index := pr.vuserID
+		if index >= len(values) {
+			if effectiveOnExhaustion(param) == "wrap" {
+				index = index % len(values)
+			} else {
+				return nil
+			}
+		}
+		return []string{values[index]}
+	}
+	return values
 }
 
 func normalizeParameterValues(values []string) []string {

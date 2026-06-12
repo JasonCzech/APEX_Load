@@ -37,8 +37,8 @@ const char * const broken = concat("a", "b");
 	if got := constants["plain_ptr"]; got != `"Body=plain"` {
 		t.Errorf("plain_ptr = %q", got)
 	}
-	if _, ok := constants["not_a_string"]; ok {
-		t.Error("non-string constant should be skipped")
+	if got := constants["not_a_string"]; got != "42" {
+		t.Errorf("not_a_string = %q, want numeric scalar constant", got)
 	}
 	if _, ok := constants["broken"]; ok {
 		t.Error("non-literal initializer should be skipped")

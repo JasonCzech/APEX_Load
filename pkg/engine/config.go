@@ -663,6 +663,9 @@ func flattenContentChecks(checks []dsl.ContentCheckConfig) []map[string]any {
 		if check.FailIfFound != nil {
 			item["fail_if_found"] = *check.FailIfFound
 		}
+		if check.CaseInsensitive {
+			item["case_insensitive"] = true
+		}
 		flattened = append(flattened, item)
 	}
 	return flattened

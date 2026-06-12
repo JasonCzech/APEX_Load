@@ -368,6 +368,161 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('2,270 VU')
   })
 
+  it('stages slider targets and updates the current target indicator without calling the API', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    await renderPrototype()
+
+    const checkoutSlider = inputByLabel('Checkout API target VUser slider')
+    await changeNumberInput(checkoutSlider, '1330')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Checkout API target staged at 1,330 VUsers.')
+    const indicator = container.querySelector('[aria-label="Current 860 VUsers, target 1,330 VUsers"]')
+    expect(indicator).not.toBeNull()
+    expect(indicator?.getAttribute('data-current-load')).toBe('860')
+    expect(indicator?.getAttribute('data-target-load')).toBe('1330')
+  })
+
+  it('uses a shared VUser slider scale that grows from staged targets', async () => {
+    await renderPrototype()
+
+    const checkoutSlider = inputByLabel('Checkout API target VUser slider')
+    const browseSlider = inputByLabel('Browse Web target VUser slider')
+    const searchSlider = inputByLabel('Search Solace target VUser slider')
+
+    expect(checkoutSlider.max).toBe('1800')
+    expect(browseSlider.max).toBe('1800')
+    expect(searchSlider.max).toBe('1800')
+    expect(container.querySelector('[aria-label="Current 320 VUsers, target 420 VUsers"]')?.getAttribute('data-scale-max')).toBe('1800')
+
+    await changeNumberInput(inputByLabel('Checkout API target VUsers'), '1330')
+
+    expect(checkoutSlider.max).toBe('1995')
+    expect(browseSlider.max).toBe('1995')
+    expect(searchSlider.max).toBe('1995')
+    expect(container.querySelector('[aria-label="Current 320 VUsers, target 420 VUsers"]')?.getAttribute('data-scale-max')).toBe('1995')
+  })
+
+  it('does not force lower-load VUser sliders onto the old 1800 max', async () => {
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={buildLiveVuserTest()} history={[]} />)
+    })
+
+    const liveSlider = inputByLabel('Live Checkout target VUser slider')
+    const indicator = container.querySelector('[aria-label="Current 42 VUsers, target 50 VUsers"]')
+
+    expect(liveSlider.max).toBe('75')
+    expect(indicator?.getAttribute('data-scale-max')).toBe('75')
+  })
+
+  it('applies live VUser targets immediately without a ramp duration', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      test_id: 'live-vuser-1',
+      group: 'Live Checkout',
+      action: 'run',
+      target_vusers: 60,
+      status: 'scaled',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={buildLiveVuserTest()} history={[]} />)
+    })
+
+    await changeNumberInput(inputByLabel('Live Checkout target VUsers'), '60')
+    await click(buttonNamed('Apply'))
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/tests/live-vuser-1/vusers'),
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ group: 'Live Checkout', target_vusers: 60, action: 'run' }),
+      }),
+    )
+    expect(container.textContent).toContain('Live Checkout VUser target applied at 60.')
+  })
+
+  it('applies live VUser targets gradually with the card ramp duration', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      test_id: 'live-vuser-1',
+      group: 'Live Checkout',
+      action: 'run',
+      target_vusers: 60,
+      ramp_duration: '2m',
+      status: 'ramping',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={buildLiveVuserTest()} history={[]} />)
+    })
+
+    await click(buttonNamed('Gradual'))
+    await changeNumberInput(inputByLabel('Live Checkout target VUsers'), '60')
+    await click(buttonNamed('Apply'))
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/tests/live-vuser-1/vusers'),
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ group: 'Live Checkout', target_vusers: 60, action: 'run', ramp_duration: '2m' }),
+      }),
+    )
+    expect(container.textContent).toContain('Ramping Live Checkout to 60 VUsers over 2m.')
+  })
+
+  it('disables gradual VUser apply when the ramp duration is invalid', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={buildLiveVuserTest()} history={[]} />)
+    })
+
+    await click(buttonNamed('Gradual'))
+    await changeTextInput(inputByLabel('Group load ramp duration'), 'soon')
+
+    const applyButton = buttonNamed('Apply')
+    expect(applyButton.disabled).toBe(true)
+    await click(applyButton)
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Enter a valid ramp duration before applying gradual load changes.')
+  })
+
+  it('shows active VUser ramp targets as committed load indicators', async () => {
+    await act(async () => {
+      root.render(<CommandCenterPrototype
+        testId="live-vuser-1"
+        initialTest={{
+          ...buildLiveVuserTest(),
+          groups: [{ ...buildLiveVuserTest().groups[0], vusers: 50 }],
+          vuser_ramps: {
+            'Live Checkout': {
+              group: 'Live Checkout',
+              start_vusers: 42,
+              target_vusers: 80,
+              started_at: '2026-06-08T13:10:00Z',
+              ramp_duration: '2m',
+              ramp_duration_seconds: 120,
+            },
+          },
+        }}
+        history={[]}
+      />)
+    })
+
+    const indicator = container.querySelector('[aria-label="Current 42 VUsers, target 80 VUsers"]')
+    expect(indicator).not.toBeNull()
+    expect(indicator?.getAttribute('data-committed-load')).toBe('80')
+    expect(inputByLabel('Live Checkout target VUser slider').max).toBe('120')
+    expect(indicator?.getAttribute('data-scale-max')).toBe('120')
+    expect(container.textContent).toContain('Ramp 80 VUsers')
+  })
+
   it('renders OPS tables while Graph Wall keeps configurable runtime graphs', async () => {
     await renderPrototype()
 
@@ -566,6 +721,7 @@ describe('CommandCenterPrototype', () => {
 
   it('renders terminal runs as historical read-only snapshots with archive navigation', async () => {
     const openExecution = vi.fn()
+    const openArchive = vi.fn()
     const completedTest: TestSummary = {
       id: 'completed-run-1',
       ref_key: 'RUN-COMPLETE',
@@ -629,6 +785,7 @@ describe('CommandCenterPrototype', () => {
           history={[]}
           statusOverride="RUNNING"
           onOpenExecution={openExecution}
+          onOpenArchive={openArchive}
         />,
       )
     })
@@ -644,9 +801,13 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('50 VUsers')
     expect(container.querySelector('[aria-label="Command center run tables"]')).not.toBeNull()
 
-    await click(buttonNamed('Open Results Archive'))
+    const archiveButton = buttonNamed('Open Results Archive')
+    expect(archiveButton.className).toContain('btn-primary')
 
-    expect(openExecution).toHaveBeenCalledWith('completed-run-1')
+    await click(archiveButton)
+
+    expect(openArchive).toHaveBeenCalledWith('completed-run-1')
+    expect(openExecution).not.toHaveBeenCalled()
   })
 
   it('points historical runs without archive snapshots to the Results folder', async () => {
@@ -787,12 +948,16 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('Target TPS')
     expect(container.textContent).toContain('suggested 56 VU')
     expect(container.textContent).toContain('guardrail 10-200 VU')
+    expect(container.querySelector('[aria-label="Group load transition controls"]')).toBeNull()
 
     const targetInput = inputByLabel('Live Checkout target TPS')
+    const targetSlider = inputByLabel('Live Checkout target TPS slider')
     expect(targetInput.value).toBe('90')
+    expect(targetSlider.max).toBe('180')
 
     await changeNumberInput(targetInput, '120')
     expect(container.textContent).toContain('Live Checkout target staged at 120.0 TPS.')
+    expect(targetSlider.max).toBe('240')
 
     await click(buttonNamed('Apply'))
 
@@ -860,6 +1025,53 @@ describe('CommandCenterPrototype', () => {
 
   async function changeTextInput(input: HTMLInputElement, value: string) {
     await changeNumberInput(input, value)
+  }
+
+  function buildLiveVuserTest(): TestSummary {
+    return {
+      id: 'live-vuser-1',
+      ref_key: 'RUN-20260608-VUSER',
+      name: 'Live VUser Checkout',
+      status: 'RUNNING',
+      total_vusers: 50,
+      duration: '10m',
+      created_at: '2026-06-08T13:00:00Z',
+      started_at: '2026-06-08T13:05:00Z',
+      groups: [{
+        name: 'Live Checkout',
+        protocol: 'http',
+        script_id: 'script-live',
+        script_name: 'Live Checkout Script',
+        vusers: 50,
+      }],
+      live_metrics: {
+        timestamp: '2026-06-08T13:10:00Z',
+        active_vusers: 42,
+        tps: 75.4,
+        target_tps: 90,
+        avg_response_ms: 134,
+        error_pct: 0.5,
+        total_transactions: 1200,
+        total_errors: 6,
+        p50_ms: 82,
+        p90_ms: 210,
+        p95_ms: 260,
+        p99_ms: 410,
+        groups: {
+          'Live Checkout': {
+            name: 'Live Checkout',
+            vusers: 42,
+            transactions: 1200,
+            errors: 6,
+            tps: 75.4,
+            avg_response_ms: 134,
+            p50_ms: 82,
+            p90_ms: 210,
+            p99_ms: 410,
+          },
+        },
+      },
+    }
   }
 
   function commandGroup(name: string, targetVusers: number): CommandGroup {

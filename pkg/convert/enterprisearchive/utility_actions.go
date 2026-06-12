@@ -163,6 +163,48 @@ func convertSourceMessageAction(fn ParsedFunction, def SourceFunctionDefinition)
 	return action
 }
 
+func convertWebConvertParamAction(fn ParsedFunction) dsl.Action {
+	args := sourceControlArgs(fn)
+	saveParam := ""
+	if len(args) > 0 {
+		saveParam = args[0]
+	}
+	params := map[string]any{
+		"function":     "web_convert_param",
+		"family":       "parameter",
+		"support_mode": string(SourceFunctionSupportExecutable),
+		"args":         sourceActionArgs(fn),
+	}
+	if saveParam != "" {
+		params["save_param"] = saveParam
+	}
+	for _, arg := range args[1:] {
+		key, value, ok := strings.Cut(arg, "=")
+		if !ok {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "sourcestring":
+			params["source_string"] = convertSourceMessageExpression(value)
+		case "sourceencoding":
+			params["source_encoding"] = cleanConfigValue(value)
+		case "targetencoding":
+			params["target_encoding"] = cleanConfigValue(value)
+		}
+	}
+	if _, ok := params["source_string"]; !ok && saveParam != "" {
+		params["source_string"] = "{{var." + canonicalSourceParameterName(saveParam) + "}}"
+	}
+	action := dsl.Action{
+		Name:     sourceActionName(fn),
+		Type:     "source_parameter",
+		Metadata: sourceFunctionMetadata(fn),
+		Params:   params,
+	}
+	action.Metadata["support_mode"] = string(SourceFunctionSupportExecutable)
+	return action
+}
+
 func convertGenericSourceAction(fn ParsedFunction, actionType string, def SourceFunctionDefinition) dsl.Action {
 	action := dsl.Action{
 		Name:     sourceActionName(fn),

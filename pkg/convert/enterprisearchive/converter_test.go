@@ -1824,9 +1824,255 @@ vuser_end()
 	if result.SourceReview == nil {
 		t.Fatal("source review missing")
 	}
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_custom_request", "init[0]", "converted")
+	convertParam := findActionByName(t, result.Script.Init, "PKCEVerifier")
+	if convertParam.Type != "source_parameter" || convertParam.Params["function"] != "web_convert_param" {
+		t.Fatalf("web_convert_param action = %#v, want executable source_parameter", convertParam)
+	}
+	if convertParam.Params["source_string"] != "{{var.pkceverifier}}" || convertParam.Params["target_encoding"] != "URL" {
+		t.Fatalf("web_convert_param params = %#v, want source string and URL target encoding", convertParam.Params)
+	}
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_custom_request", "init[1]", "converted")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_submit_data", "actions[0].params.requests[0]", "converted")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "teardown[0]", "converted")
+}
+
+func TestConvertZipJavaProtocolsSolaceJMS(t *testing.T) {
+	archive := buildSourceZip(t, map[string]string{
+		"DataSetup.usr": `[General]
+Type=Java_protocols
+ScriptLanguage=JAVA
+[Actions]
+vuser_init=vuser_init.java
+Action=Actions.java
+vuser_end=vuser_end.java
+[Files]
+Params=DataSetup.prm
+`,
+		"vuser_init.java": `import lrapi.lr;
+public int init() { lr.output_message("init"); return 0; }`,
+		"Actions.java": `import lrapi.lr;
+import com.solacesystems.jms.SolConnectionFactory;
+public class Actions {
+  public int action() throws Exception {
+    lr.start_transaction("publish");
+    String inputXML = readFile("GDDN15_Request.xml");
+    inputXML = inputXML.replaceAll("xxxdatexxx", lr.eval_string("{date}"));
+    inputXML = inputXML.replaceAll("xxxtimexxx", lr.eval_string("{time}"));
+    TextMessage msg = session.createTextMessage(inputXML);
+    msg.setStringProperty("subscriberNumber", lr.eval_string("{ctn}"));
+    msg.setStringProperty("container", lr.eval_string("{containerName}"));
+    msg.setStringProperty("scheduledStartTime", lr.eval_string("{scheduledStartTime}"));
+    msg.setStringProperty("guid", lr.eval_string("{guid}"));
+    msg.setBooleanProperty("Solace_JMS_PROP_ISXML", true);
+    producer.send(msg);
+    lr.end_transaction("publish", lr.AUTO);
+    return 0;
+  }
+}`,
+		"vuser_end.java": `import lrapi.lr;
+public int end() { lr.output_message("end"); return 0; }`,
+		"GDDN15_Request.xml":         `<request><date>xxxdatexxx</date><time>xxxtimexxx</time><ctn>{ctn}</ctn></request>`,
+		"gddnsolace.perf.truststore": "sanitized truststore bytes",
+		"DataSetup.prm": `[parameter:serverURL]
+ParamName=serverURL
+Table=serverURL.dat
+ColumnName=serverURL
+SelectNextRow=Sequential
+UpdateValueOn=Once
+
+[parameter:initialContext]
+ParamName=initialContext
+ValueList=com.solacesystems.jndi.SolJNDIInitialContextFactory
+
+[parameter:connectionFactoryJNDI]
+ParamName=connectionFactoryJNDI
+ValueList=/jms/cf/default
+
+[parameter:userNameJNDI]
+ParamName=userNameJNDI
+ValueList=perf_user
+
+[parameter:userPasswordJNDI]
+ParamName=userPasswordJNDI
+ValueList=sanitized
+
+[parameter:vpnName]
+ParamName=vpnName
+ValueList=perf_vpn
+
+[parameter:requestQueueName]
+ParamName=requestQueueName
+ValueList=queue/perf/request
+
+[parameter:ctn]
+ParamName=ctn
+Table=ctn.dat
+ColumnName=ctn
+
+[parameter:containerName]
+ParamName=containerName
+ValueList=container
+
+[parameter:scheduledStartTime]
+ParamName=scheduledStartTime
+ValueList=2026-01-01T00:00:00Z
+
+[parameter:guid]
+ParamName=guid
+ValueList=00000000-0000-0000-0000-000000000000
+
+[parameter:date]
+ParamName=date
+Type=Date
+Format=%Y-%m-%d
+
+[parameter:time]
+ParamName=time
+Type=Time
+Format=%H:%M:%S
+`,
+		"serverURL.dat": "serverURL\ntcp://solace.example.test:55555\n",
+		"ctn.dat":       "ctn\n5550001111\n",
+	})
+
+	result, err := ConvertZip(archive, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script.Protocol != "jms-solace" {
+		t.Fatalf("protocol = %q, want jms-solace", result.Script.Protocol)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_jms_solace" || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired {
+		t.Fatalf("detected protocol = %#v, want blocked Java JMS/Solace", result.DetectedProtocol)
+	}
+	if result.ReviewArtifact == nil {
+		t.Fatal("review artifact missing for Java JMS/Solace promotion gate")
+	}
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "jms_publish" {
+		t.Fatalf("actions = %#v, want one jms_publish", result.Script.Actions)
+	}
+	action := result.Script.Actions[0]
+	if !strings.Contains(action.Body, "{{param.date}}") || !strings.Contains(action.Body, "{{param.ctn}}") {
+		t.Fatalf("JMS body = %q, want XML sidecar with parameter references", action.Body)
+	}
+	if action.Metadata["subscriberNumber"] != "{{param.ctn}}" || action.Metadata["guid"] != "{{param.guid}}" {
+		t.Fatalf("JMS metadata = %#v, want message properties", action.Metadata)
+	}
+	if result.Script.Config.JMS.Properties["truststore"] != "gddnsolace.perf.truststore" {
+		t.Fatalf("JMS properties = %#v, want truststore metadata", result.Script.Config.JMS.Properties)
+	}
+	if len(result.Script.Parameters) != 13 {
+		t.Fatalf("parameters = %d, want 13", len(result.Script.Parameters))
+	}
+	if result.FidelityReport == nil || result.FidelityReport.PromotionStatus != ImportPromotionBlocked {
+		t.Fatalf("fidelity report = %#v, want blocked promotion", result.FidelityReport)
+	}
+}
+
+func TestConvertZipNestedLRUnmaskRESTBodyIsSecretReference(t *testing.T) {
+	archive := buildSourceZip(t, map[string]string{
+		"AddTracking.usr": `[General]
+Type=Multi
+ActiveTypes=QTWeb
+[Actions]
+Action=Action.c
+[Files]
+Params=AddTracking.prm
+`,
+		"Action.c": `Action()
+{
+	web_set_sockets_option("SSL_VERSION", "TLS1.2");
+	lr_start_transaction("AddTracking");
+	web_rest("Add Tracking",
+		"URL=https://csi-perf-t3.test.att.com:38443/services/UpdateSubscriberProfile.jws",
+		"Method=POST",
+		"EncType=raw",
+		lr_unmask("6a2cMASKEDPAYLOAD"),
+		HEADERS,
+		"Name=Content-Type", "Value=application/xml", ENDHEADER,
+		LAST);
+	lr_end_transaction("AddTracking", LR_AUTO);
+	return 0;
+}`,
+		"AddTracking.prm": `[parameter:Sub]
+ParamName=Sub
+Table=Sub.dat
+ColumnName=Sub
+SelectNextRow=Unique
+StartRow=2
+auto_allocate_block_size=3
+value_for_each_vuser=1
+OutOfRangePolicy=AbortVuser
+
+[parameter:Date]
+ParamName=Date
+Type=Date
+UpdateValueOn=Each occurrence
+Format=%Y-%m-%d
+`,
+		"Sub.dat": "Sub\n100\n200\n300\n400\n",
+	})
+
+	result, err := ConvertZip(archive, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %#v, want one REST action", result.Script.Actions)
+	}
+	action := result.Script.Actions[0]
+	if !strings.HasPrefix(action.Body, "{{secret.lr_unmask_") {
+		t.Fatalf("body = %q, want governed lr_unmask secret reference", action.Body)
+	}
+	if got := action.Headers["Content-Type"]; got != "application/xml" {
+		t.Fatalf("content type = %q, want application/xml", got)
+	}
+	if result.Script.Config.HTTP.TLS.MinVersion != "1.2" {
+		t.Fatalf("TLS min version = %q, want 1.2", result.Script.Config.HTTP.TLS.MinVersion)
+	}
+	params := map[string]dsl.Parameter{}
+	for _, parameter := range result.Script.Parameters {
+		params[parameter.Name] = parameter
+	}
+	if params["sub"].Selection != "unique" || params["sub"].StartRow != 2 || params["sub"].BlockSize != 3 || !params["sub"].ValueForEachVUser {
+		t.Fatalf("Sub parameter = %#v, want unique StartRow/block/value_for_each_vuser", params["sub"])
+	}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("Marshal result: %v", err)
+	}
+	if strings.Contains(string(payload), "6a2cMASKEDPAYLOAD") {
+		t.Fatalf("masked lr_unmask payload leaked into import JSON: %s", payload)
+	}
+	if result.FidelityReport == nil || result.FidelityReport.SecretGated != 1 || result.FidelityReport.DroppedBodies != 0 || result.FidelityReport.PromotionStatus != ImportPromotionBlocked {
+		t.Fatalf("fidelity report = %#v, want one secret gate and no dropped body", result.FidelityReport)
+	}
+}
+
+func TestConvertZipGlobalVerificationTextIC(t *testing.T) {
+	archive := buildSourceZip(t, map[string]string{
+		"Verify.usr": `[General]
+Type=Multi
+ActiveTypes=QTWeb
+[Actions]
+Action=Action.c
+`,
+		"Action.c": `Action()
+{
+	web_global_verification("Text/IC=\"state\":\"E", "Fail=Found", "Search=All", LAST);
+	web_url("Home", "URL=https://example.test/", LAST);
+	return 0;
+}`,
+	})
+
+	result, err := ConvertZip(archive, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	checks := result.Script.Config.WebRuntime.ContentChecks
+	if len(checks) != 1 || checks[0].Text != `"state":"E` || !checks[0].CaseInsensitive {
+		t.Fatalf("content checks = %#v, want case-insensitive Text/IC check", checks)
+	}
 }
 
 func TestBuildSourceReviewRedactsSecrets(t *testing.T) {
@@ -2071,13 +2317,19 @@ MinValue="11111"
 OriginalValue="10001"
 ParamName="SIM"
 Type="Random"
+
+[parameter:vuser]
+Format="%s"
+OriginalValue="Vuser"
+ParamName="vuser"
+Type="Userid"
 `, nil)
 
 	if len(parsed.Warnings) != 0 {
 		t.Fatalf("warnings = %#v, want none", parsed.Warnings)
 	}
-	if len(parsed.Parameters) != 6 {
-		t.Fatalf("parameters = %#v, want six built-in parameters", parsed.Parameters)
+	if len(parsed.Parameters) != 7 {
+		t.Fatalf("parameters = %#v, want seven built-in parameters", parsed.Parameters)
 	}
 	params := map[string]dsl.Parameter{}
 	for _, parameter := range parsed.Parameters {
@@ -2100,6 +2352,9 @@ Type="Random"
 	}
 	if got := params["sim"]; got.Type != "random_number" || got.Min != 11111 || got.Max != 99999 || got.Update != "each_occurrence" || got.PadWidth != 5 {
 		t.Fatalf("SIM = %#v, want source Random mapped to numeric parameter", got)
+	}
+	if got := params["vuser"]; got.Type != "vuser_id" || got.Update != "once" {
+		t.Fatalf("vuser = %#v, want native vuser_id parameter", got)
 	}
 }
 

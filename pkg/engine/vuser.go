@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -928,11 +930,65 @@ func (vu *VUser) handleSourceParameterAction(function string, action dsl.Action)
 		}
 	case "lr_get_vuser_ip":
 		vu.setSourceVariable(firstEngineValue("vuser_ip", args...), "127.0.0.1")
+	case "web_convert_param":
+		vu.handleWebConvertParamAction(action, args)
 	default:
 		if saveName := saveParamNameFromAction(action); saveName != "" {
 			vu.setSourceVariable(saveName, firstEngineValue("", args...))
 		}
 	}
+}
+
+func (vu *VUser) handleWebConvertParamAction(action dsl.Action, args []string) {
+	saveName := ""
+	if value, ok := actionParamString(action.Params, "save_param"); ok {
+		saveName = value
+	} else if len(args) > 0 {
+		saveName = args[0]
+	}
+	if strings.TrimSpace(saveName) == "" {
+		return
+	}
+	source := ""
+	if value, ok := actionParamString(action.Params, "source_string"); ok {
+		source = value
+	} else {
+		for _, arg := range args[1:] {
+			key, value, ok := strings.Cut(arg, "=")
+			if ok && strings.EqualFold(strings.TrimSpace(key), "SourceString") {
+				source = value
+				break
+			}
+		}
+	}
+	sourceEncoding := sourceActionParamString(action, "source_encoding", args)
+	targetEncoding := sourceActionParamString(action, "target_encoding", args)
+	value := vu.interpolate(source)
+	switch strings.ToLower(strings.TrimSpace(sourceEncoding)) {
+	case "html":
+		value = html.UnescapeString(value)
+	}
+	switch strings.ToLower(strings.TrimSpace(targetEncoding)) {
+	case "url":
+		value = url.QueryEscape(value)
+	case "html":
+		value = html.EscapeString(value)
+	}
+	vu.setSourceVariable(saveName, value)
+}
+
+func sourceActionParamString(action dsl.Action, name string, args []string) string {
+	if value, ok := actionParamString(action.Params, name); ok {
+		return value
+	}
+	sourceKey := strings.ReplaceAll(name, "_", "")
+	for _, arg := range args {
+		key, value, ok := strings.Cut(arg, "=")
+		if ok && strings.EqualFold(strings.ReplaceAll(strings.TrimSpace(key), "_", ""), sourceKey) {
+			return value
+		}
+	}
+	return ""
 }
 
 func (vu *VUser) handleSourceDocumentAction(function string, action dsl.Action) {

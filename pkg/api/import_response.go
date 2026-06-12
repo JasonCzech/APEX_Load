@@ -20,6 +20,7 @@ type scriptImportResponseOptions struct {
 	ScenarioDraft       any
 	Summary             any
 	DetectedProtocol    any
+	FidelityReport      any
 	ReviewArtifact      any
 	SourceReview        any
 	TrueClient2Compat   any
@@ -107,6 +108,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"scenario_draft":            opts.ScenarioDraft,
 		"summary":                   summary,
 		"detected_protocol":         opts.DetectedProtocol,
+		"fidelity_report":           opts.FidelityReport,
 		"review_artifact":           opts.ReviewArtifact,
 		"source_review":             opts.SourceReview,
 		"trueclient2_compat_report": opts.TrueClient2Compat,
