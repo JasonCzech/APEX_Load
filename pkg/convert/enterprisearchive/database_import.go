@@ -66,6 +66,10 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 		return result, nil
 	}
 
+	// Structure recognized source control flow (and strip the internal flow
+	// tags) just like the HTTP converter.
+	structureSourceControlFlow(result)
+
 	if opts.RuntimeSettings != nil {
 		mergeScriptConfig(&result.Script.Config, opts.RuntimeSettings)
 	}

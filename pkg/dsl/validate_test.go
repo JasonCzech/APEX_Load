@@ -969,3 +969,61 @@ func assertIssueContains(t *testing.T, issues []string, want string) {
 	}
 	t.Fatalf("issues = %v, want issue containing %q", issues, want)
 }
+
+func TestValidateExtractorIssuesInSequenceChildren(t *testing.T) {
+	script := &Script{
+		Name:     "seq-child-extractors",
+		Protocol: "http",
+		Config:   ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []Action{{
+			Name:   "seq",
+			Type:   "http_sequence",
+			Method: "SEQUENCE",
+			Target: "/a",
+			Params: map[string]any{"requests": []any{
+				map[string]any{
+					"name": "child", "type": "GET", "method": "GET", "target": "/a",
+					"extractors": []any{map[string]any{
+						"name": "tok", "source": "body", "type": "boundary", "expression": "a|||b",
+						"on_miss": "error", "mode": "ALL", "convert": "url-encode",
+					}},
+				},
+			}},
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	var onMiss, mode, convert bool
+	for _, issue := range issues {
+		if strings.Contains(issue, "on_miss") {
+			onMiss = true
+		}
+		if strings.Contains(issue, "mode must be") {
+			mode = true
+		}
+		if strings.Contains(issue, "convert must be") {
+			convert = true
+		}
+	}
+	if !onMiss || !mode || !convert {
+		t.Errorf("sequence-child extractor typos must fail validation; issues = %v", issues)
+	}
+}
+
+func TestValidateExtractorIssuesAcceptsNewEnums(t *testing.T) {
+	script := &Script{
+		Name:     "extractor-enums",
+		Protocol: "http",
+		Config:   ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []Action{{
+			Name: "a", Type: "GET", Method: "GET", Target: "/a",
+			Extractors: []Extractor{
+				{Name: "x", Source: "body", Type: "boundary", Expression: "a|||b", OnMiss: "empty", Convert: "html_url_encode"},
+				{Name: "y", Source: "body", Type: "regex", Expression: "v=(.+?);", Mode: "all", OnMiss: "fail"},
+			},
+		}},
+	}
+	if issues := ValidateScriptIssues(script); len(issues) > 0 {
+		t.Errorf("valid enum values rejected: %v", issues)
+	}
+}

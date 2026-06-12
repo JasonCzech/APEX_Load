@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: apexload-controller
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: controller
+spec:
+  selector:
+    app.kubernetes.io/name: apexload-controller
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    # Dedicated scrape port — never routed by the ingress; NetworkPolicy
+    # grants it to the monitoring namespace only.
+    - name: metrics
+      port: 9091
+      targetPort: metrics

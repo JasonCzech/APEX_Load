@@ -1,0 +1,12 @@
+{
+  "name": "apexload-appservice-launcher",
+  "private": true,
+  "description": "Thin Node.js launcher for the APEX Load controller on Azure App Service for Linux.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node launcher.js",
+    "test": "node --test launcher.test.js"
+  }
+}

@@ -10,22 +10,26 @@ import (
 
 // ParsedFunction represents a single C/VUser source function call extracted from a script.
 type ParsedFunction struct {
-	Name       string            // e.g. "web_url", "web_submit_data", "lr_think_time"
-	StepName   string            // The first string argument (step name)
-	Args       map[string]string // Named key-value arguments extracted from ITEMDATA/LAST pairs
-	RawArgs    []string          // Raw string arguments in order
-	CallArgs   []ParsedArgument  // Structured top-level C call arguments in order
-	Headers    map[string]string // Extracted header key-value pairs
-	Body       string            // Request body if present
-	Method     string            // HTTP method (for web_custom_request)
-	URL        string            // Target URL
-	Action     string            // Action/target URL for form submissions
-	Cookies    []ParsedCookie    // Cookies added through web_add_cookie
-	Phase      string            // init, action, or teardown
-	LineNumber int               // Source line number for diagnostics
-	Filename   string            // Source file containing the function
-	EndLine    int               // Source line where the function call ends
-	RawBlock   string            // Original source block for source review
+	Name         string            // e.g. "web_url", "web_submit_data", "lr_think_time"
+	StepName     string            // The first string argument (step name)
+	Args         map[string]string // Named key-value arguments extracted from ITEMDATA/LAST pairs
+	RawArgs      []string          // Raw string arguments in order
+	CallArgs     []ParsedArgument  // Structured top-level C call arguments in order
+	Headers      map[string]string // Extracted header key-value pairs
+	Body         string            // Request body if present
+	Method       string            // HTTP method (for web_custom_request)
+	URL          string            // Target URL
+	Action       string            // Action/target URL for form submissions
+	Cookies      []ParsedCookie    // Cookies added through web_add_cookie
+	Phase        string            // init, action, or teardown
+	LineNumber   int               // Source line number for diagnostics
+	Filename     string            // Source file containing the function
+	EndLine      int               // Source line where the function call ends
+	RawBlock     string            // Original source block for source review
+	Conditions   []string          // Enclosing if/else conditions (raw C, outermost first; else pre-negated as !(...))
+	ConditionIDs []string          // Stable per-construct identities (source positions) parallel to Conditions
+	Loops        []string          // Enclosing loop headers (raw C, outermost first)
+	LoopIDs      []string          // Stable per-construct identities (source positions) parallel to Loops
 }
 
 type ParsedCookie struct {

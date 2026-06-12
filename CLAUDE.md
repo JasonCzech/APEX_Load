@@ -7,13 +7,13 @@ assisted-authoring engine (external LLM integration is policy-gated and not wire
 default), a React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 
 ## Architecture Overview
-- **Load Generators** (Go): VUsers are goroutines. Pods scale 1–50 via HPA. Target: 10k VUsers/pod for HTTP.
+- **Load Generators** (Go): VUsers are goroutines. Pods scale 1–50 via HPA. Target: 10k VUsers/pod for HTTP (design target, not yet benchmarked).
 - **Test Controller** (Go): Orchestrates tests, distributes VUsers across generators, aggregates metrics via gRPC streams.
 - **Assisted-Authoring Engine** (Go): Produces and repairs JSON DSL drafts from OpenAPI specs, HAR files, and recordings using a deterministic-local provider. The MCP server exposes these as agent tools; external LLM providers are governed by policy and not enabled by default.
 - **Dashboard** (React 18 + TypeScript + Recharts): Real-time WebSocket-fed monitoring.
 - **Telemetry**: Prometheus scrape + W3C `traceparent` propagation + Dynatrace event webhooks. Controller aggregates with t-digest for percentiles. (Full OpenTelemetry span instrumentation is not yet implemented.)
 - **Storage**: SQLite by default (`apexload.db`); PostgreSQL is an optional enterprise backend (via pgx). Live state is in-memory with optional Redis/Valkey for HA. Archives are written to the local filesystem; S3/Azure Blob/GCS are optional enterprise backends.
-- **Deployment**: AKS with CRDs, K8s operator, Helm charts, Terraform IaC.
+- **Deployment**: Kustomize manifests for local/kind (`deployments/k8s/local*`), production on-prem (`deployments/k8s/onprem`: gRPC mTLS+token, TLS ingress, dedicated metrics port, PSA restricted, scoped network policies), and production AKS (`deployments/k8s/aks`: workload identity, KEDA, ingress); Terraform IaC for the Azure stack (`deployments/azure/terraform`: AKS/ACR/PostgreSQL/Redis/Blob/Key Vault). Generator fleet scales via KEDA + `dns://` headless-service discovery. Azure App Service (Node.js/Python-only platforms): thin Node.js launcher in `deployments/azure/appservice/` spawns the pre-built linux/amd64 controller binary; requires PostgreSQL (not SQLite) and static generator targets via `APEXLOAD_GENERATORS`. (No Helm chart or operator/CRDs yet.)
 
 ## Module Path
 `github.com/jasonczech/apexload`
@@ -23,23 +23,38 @@ default), a React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 cmd/
   generator/     — Load generator binary (deployed as StatefulSet pods)
   controller/    — Test controller + API server binary (Deployment, 2 replicas)
-  apexctl/      — CLI tool for running/managing tests
+  apexctl/       — CLI tool for running/managing tests
+  dslschema/     — Code generator for docs/dsl.schema.json + DSL_ACTION_REFERENCE.md
 pkg/
   protocol/      — Protocol plugin interface + registry
   protocol/http/ — HTTP/1.1 + HTTP/2 protocol implementation
   engine/        — VUser goroutine engine, metrics collection, pacing
-  dsl/           — JSON DSL parser and type definitions
+  dsl/           — JSON DSL parser, type definitions, action catalog
   controller/    — Test orchestration, scheduling, distribution, aggregation
+  distributed/   — Generator-side gRPC worker (controller ↔ generator)
   api/           — REST API server, WebSocket hub, test runner, middleware
   api/static/    — Embedded dashboard build output (from dashboard/)
+  storage/       — SQLite (default) / PostgreSQL persistence layer
+  recorder/      — HTTP recording + HAR conversion + browser recording
+  convert/       — Multi-format import hub (LR archive, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient, …)
+  selector/      — Shared element-selector model (CSS/XPath/role/text) + replay self-heal
+  scrub/         — PII/credential redaction for recorder artifacts and HAR exports
+  refkey/        — Human-readable, environment-aware reference keys
+  buildinfo/     — Build metadata (version/commit/build-time) via -ldflags
   config/        — Configuration types
 api/
   proto/         — gRPC protobuf definitions (controller ↔ generator)
 dashboard/       — React 18 + TypeScript + Recharts SPA
   src/components/ — Header, TestHub, TestExecution, StatusBadge, CreateTestModal
   src/hooks/      — useWebSocket (real-time), useApi (REST client)
+desktop/         — Wails native client shell embedding the controller API + dashboard
+mcp/             — Python MCP server exposing the REST API as agent tools
 deployments/
   k8s/           — Kubernetes manifests, Helm charts
+  azure/
+    terraform/   — Azure IaC (AKS, ACR, PostgreSQL, Redis, Blob, Key Vault)
+    appservice/  — Node.js launcher wrapper for Azure App Service deployments
+  ci/            — CI pipeline templates (GitHub Actions + Azure Pipelines) for AKS, on-prem registry, and App Service
 ```
 
 ## Key Design Decisions

@@ -292,3 +292,126 @@ func BenchmarkVUser_EvalConditionCELCached(b *testing.B) {
 		}
 	}
 }
+
+func TestVUser_ControlLoopExposesLoopIndex(t *testing.T) {
+	// Each pass records {{var.loop_index}} into the request target so the
+	// 1-based per-pass value is observable.
+	proto := &captureProtocol{}
+	vu := newControlFlowVUser(proto, nil, []dsl.Action{{
+		Name: "Repeat",
+		Type: "control_loop",
+		Control: &dsl.ControlFlow{
+			Count: 3,
+			Steps: []dsl.Action{{Name: "Step", Type: "GET", Method: "GET", Target: "/pass/{{var.loop_index}}"}},
+		},
+	}})
+	vu.Run(context.Background())
+	if len(proto.names) != 3 {
+		t.Fatalf("executed %d steps, want 3", len(proto.names))
+	}
+	if _, ok := vu.Variables["loop_index"]; ok {
+		t.Error("loop_index must be cleaned up after the loop")
+	}
+}
+
+func TestVUser_ControlLoopConditionOverLoopIndex(t *testing.T) {
+	// A condition-driven loop bounded by a runtime variable: passes while
+	// loop_index <= total, evaluating the bound every pass.
+	proto := &captureProtocol{}
+	vu := newControlFlowVUser(proto, map[string]string{"total": "4"}, []dsl.Action{{
+		Name: "RepeatVar",
+		Type: "control_loop",
+		Control: &dsl.ControlFlow{
+			Condition: &dsl.Condition{Expr: "int(var.loop_index) <= int(var.total)"},
+			Steps:     []dsl.Action{click("VarStep")},
+		},
+	}})
+	vu.Run(context.Background())
+	if len(proto.names) != 4 {
+		t.Fatalf("executed %d steps, want 4", len(proto.names))
+	}
+}
+
+func TestVUser_ControlLoopConditionZeroPasses(t *testing.T) {
+	proto := &captureProtocol{}
+	vu := newControlFlowVUser(proto, map[string]string{"total": "0"}, []dsl.Action{{
+		Name: "RepeatNone",
+		Type: "control_loop",
+		Control: &dsl.ControlFlow{
+			Condition: &dsl.Condition{Expr: "int(var.loop_index) <= int(var.total)"},
+			Steps:     []dsl.Action{click("NeverStep")},
+		},
+	}})
+	vu.Run(context.Background())
+	if len(proto.names) != 0 {
+		t.Fatalf("executed %d steps, want 0", len(proto.names))
+	}
+}
+
+func TestVUser_NestedControlLoopRestoresOuterLoopIndex(t *testing.T) {
+	proto := &captureProtocol{}
+	vu := newControlFlowVUser(proto, nil, []dsl.Action{{
+		Name: "Outer",
+		Type: "control_loop",
+		Control: &dsl.ControlFlow{
+			// Outer runs while loop_index <= 2; the inner fixed loop clobbers
+			// loop_index during its passes and must restore it afterwards.
+			Condition: &dsl.Condition{Expr: "int(var.loop_index) <= 2"},
+			Steps: []dsl.Action{{
+				Name: "Inner",
+				Type: "control_loop",
+				Control: &dsl.ControlFlow{
+					Count: 3,
+					Steps: []dsl.Action{click("InnerStep")},
+				},
+			}},
+		},
+	}})
+	vu.Run(context.Background())
+	if len(proto.names) != 6 {
+		t.Fatalf("executed %d inner steps, want 6 (2 outer x 3 inner)", len(proto.names))
+	}
+}
+
+func TestVUser_LifecycleControlLoopExposesLoopIndex(t *testing.T) {
+	// The init/teardown runner has its own control_loop implementation; an
+	// imported param-bounded loop must iterate there too.
+	proto := &captureProtocol{}
+	vu := newControlFlowVUser(proto, map[string]string{"total": "2"}, nil)
+	ok := vu.RunLifecycleBlock(context.Background(), []dsl.Action{{
+		Name: "InitLoop",
+		Type: "control_loop",
+		Control: &dsl.ControlFlow{
+			Condition: &dsl.Condition{Expr: "int(var.loop_index) <= int(var.total)"},
+			Steps:     []dsl.Action{click("InitStep")},
+		},
+	}}, "init")
+	if !ok {
+		t.Fatal("RunLifecycleBlock returned false, want true")
+	}
+	if len(proto.names) != 2 {
+		t.Fatalf("lifecycle loop executed %d passes, want 2", len(proto.names))
+	}
+	if _, exists := vu.Variables["loop_index"]; exists {
+		t.Error("loop_index must be cleaned up after the lifecycle loop")
+	}
+}
+
+func TestVUser_EvalConditionSafeAtoiUnsetParameter(t *testing.T) {
+	// The importer's hardened atoi translation: an unset parameter evaluates
+	// to 0 like C atoi, so a negated guard stays TRUE instead of being forced
+	// false by a CEL evaluation error.
+	vu := &VUser{Variables: map[string]string{}}
+	expr := `!((has(vars.success_count) && var.success_count.matches("^-?[0-9]+$") ? int(var.success_count) : 0) > 0)`
+	if !vu.evalCondition(&dsl.Condition{Expr: expr}) {
+		t.Error("negated guard over an unset parameter must evaluate true (atoi semantics)")
+	}
+	vu.Variables["success_count"] = "5"
+	if vu.evalCondition(&dsl.Condition{Expr: expr}) {
+		t.Error("guard must flip false once the parameter holds a positive count")
+	}
+	vu.Variables["success_count"] = "not-a-number"
+	if !vu.evalCondition(&dsl.Condition{Expr: expr}) {
+		t.Error("non-numeric parameter must behave like atoi()==0")
+	}
+}

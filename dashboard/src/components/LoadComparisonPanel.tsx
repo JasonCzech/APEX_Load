@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import type { LoadComparisonOption, LoadComparisonRequestOptions, LoadComparisonResponse, LoadComparisonScope } from '../types'
@@ -18,6 +18,7 @@ interface LoadComparisonPanelProps {
   applicationId?: string
   getLoadComparison: (applicationId: string, scope?: LoadComparisonScope, key?: string, options?: LoadComparisonRequestOptions) => Promise<LoadComparisonResponse>
   testOptions?: LoadComparisonTestOption[]
+  selectedTestIds?: string[]
 }
 
 type LoadComparisonMetric = 'tps' | 'avg_response_ms'
@@ -73,58 +74,6 @@ function emptyLoadComparison(applicationId: string, scope: LoadComparisonScope, 
     load_levels: [],
     releases: [],
   }
-}
-
-function setEquals(left: Set<string>, right: Set<string>): boolean {
-  if (left.size !== right.size) return false
-  for (const value of left) {
-    if (!right.has(value)) return false
-  }
-  return true
-}
-
-function initialSelectedTestIds(testOptions: LoadComparisonTestOption[]): Set<string> {
-  return new Set(testOptions.map(option => option.id).filter(Boolean))
-}
-
-function releaseFilterKey(option: LoadComparisonTestOption): string {
-  return option.releaseId || option.releaseName || 'unassigned'
-}
-
-function releaseFilterLabel(option: LoadComparisonTestOption): string {
-  return option.releaseName || option.releaseId || 'Unassigned release'
-}
-
-function formatRunDate(value?: string): string {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
-
-function formatRunOptionMeta(option: LoadComparisonTestOption): string {
-  const bits = [releaseFilterLabel(option)]
-  const completedAt = formatRunDate(option.completedAt)
-  if (completedAt) bits.push(completedAt)
-  if (typeof option.vusers === 'number' && Number.isFinite(option.vusers)) {
-    bits.push(`${formatCompactCount(option.vusers)} VUsers`)
-  }
-  if (typeof option.transactionCount === 'number' && Number.isFinite(option.transactionCount)) {
-    bits.push(`${formatCompactCount(option.transactionCount)} tx`)
-  }
-  return bits.join(' · ')
-}
-
-function testOptionMatchesQuery(option: LoadComparisonTestOption, query: string): boolean {
-  if (!query) return true
-  const haystack = [
-    option.name,
-    option.id,
-    option.releaseId,
-    option.releaseName,
-    formatRunOptionMeta(option),
-  ].filter(Boolean).join(' ').toLowerCase()
-  return haystack.includes(query)
 }
 
 function chartRows(comparison: LoadComparisonResponse, metric: LoadComparisonMetric): ChartRow[] {
@@ -221,81 +170,27 @@ function LoadComparisonChart({ comparison, metric, title }: { comparison: LoadCo
   )
 }
 
-export function LoadComparisonPanel({ applicationId, getLoadComparison, testOptions = [] }: LoadComparisonPanelProps) {
+export function LoadComparisonPanel({ applicationId, getLoadComparison, testOptions = [], selectedTestIds }: LoadComparisonPanelProps) {
   const [scope, setScope] = useState<LoadComparisonScope>('transaction')
   const [selectedKeys, setSelectedKeys] = useState<Record<LoadComparisonScope, string>>({ transaction: '', group: '' })
-  const [selectedTestIds, setSelectedTestIds] = useState<Set<string>>(() => initialSelectedTestIds(testOptions))
-  const [runQuery, setRunQuery] = useState('')
-  const [releaseFilter, setReleaseFilter] = useState('all')
   const [comparison, setComparison] = useState<LoadComparisonResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const selectVisibleRef = useRef<HTMLInputElement | null>(null)
-  const previousTestIdsRef = useRef<string[]>([])
   const requestedKey = selectedKeys[scope]
-  const testOptionIdsKey = useMemo(() => testOptions.map(option => option.id).join('\u001f'), [testOptions])
-
-  useEffect(() => {
-    const validIds = testOptionIdsKey ? testOptionIdsKey.split('\u001f').filter(Boolean) : []
-    setSelectedTestIds(current => {
-      if (validIds.length === 0) {
-        return current.size === 0 ? current : new Set()
-      }
-      const previousIds = previousTestIdsRef.current
-      const valid = new Set(validIds)
-      const retained = new Set(Array.from(current).filter(id => valid.has(id)))
-      const hadNoPreviousIds = previousIds.length === 0
-      const hadAllPreviousIds = previousIds.length > 0 && previousIds.every(id => current.has(id))
-      const next = hadNoPreviousIds || hadAllPreviousIds ? valid : retained
-      return setEquals(current, next) ? current : next
-    })
-    previousTestIdsRef.current = validIds
-  }, [testOptionIdsKey])
-
-  const releaseOptions = useMemo(() => {
-    const byKey = new Map<string, string>()
-    testOptions.forEach(option => {
-      const key = releaseFilterKey(option)
-      if (!byKey.has(key)) byKey.set(key, releaseFilterLabel(option))
-    })
-    return Array.from(byKey.entries())
-      .map(([key, label]) => ({ key, label }))
-      .sort((left, right) => left.label.localeCompare(right.label))
-  }, [testOptions])
-
-  useEffect(() => {
-    if (releaseFilter === 'all') return
-    if (!releaseOptions.some(option => option.key === releaseFilter)) {
-      setReleaseFilter('all')
-    }
-  }, [releaseFilter, releaseOptions])
-
-  const filteredTestOptions = useMemo(() => {
-    const query = runQuery.trim().toLowerCase()
-    return testOptions.filter(option => (
-      (releaseFilter === 'all' || releaseFilterKey(option) === releaseFilter)
-      && testOptionMatchesQuery(option, query)
-    ))
-  }, [releaseFilter, runQuery, testOptions])
-
-  const visibleTestIds = useMemo(() => filteredTestOptions.map(option => option.id), [filteredTestOptions])
+  const hasSelectedTestIdsProp = selectedTestIds !== undefined
+  const selectedTestIdsKey = useMemo(() => selectedTestIds?.join('\u001f') ?? '', [selectedTestIds])
   const consideredTestIdList = useMemo(() => {
     if (testOptions.length === 0) return undefined
-    return filteredTestOptions.map(option => option.id).filter(id => selectedTestIds.has(id))
-  }, [filteredTestOptions, selectedTestIds, testOptions.length])
+    const validIds = new Set(testOptions.map(option => option.id).filter(Boolean))
+    if (!hasSelectedTestIdsProp) {
+      return Array.from(validIds)
+    }
+    if (!selectedTestIdsKey) return []
+    return selectedTestIdsKey.split('\u001f').filter(id => validIds.has(id))
+  }, [hasSelectedTestIdsProp, selectedTestIdsKey, testOptions])
   const consideredTestIdsKey = consideredTestIdList?.join('\u001f') ?? ''
-  const visibleSelectedCount = visibleTestIds.filter(id => selectedTestIds.has(id)).length
-  const allVisibleSelected = visibleTestIds.length > 0 && visibleSelectedCount === visibleTestIds.length
-  const hasPartialVisibleSelection = visibleSelectedCount > 0 && visibleSelectedCount < visibleTestIds.length
   const hasRunSelectionControls = testOptions.length > 0
   const noSelectedRuns = hasRunSelectionControls && consideredTestIdList?.length === 0
-  const filtersActive = releaseFilter !== 'all' || runQuery.trim() !== ''
-
-  useEffect(() => {
-    if (selectVisibleRef.current) {
-      selectVisibleRef.current.indeterminate = hasPartialVisibleSelection
-    }
-  }, [hasPartialVisibleSelection])
 
   const load = useCallback(async () => {
     if (!applicationId) {
@@ -376,36 +271,8 @@ export function LoadComparisonPanel({ applicationId, getLoadComparison, testOpti
     setSelectedKeys(current => ({ ...current, [scope]: key }))
   }
 
-  const setTestSelected = (testId: string, checked: boolean) => {
-    setSelectedTestIds(current => {
-      const next = new Set(current)
-      if (checked) {
-        next.add(testId)
-      } else {
-        next.delete(testId)
-      }
-      return setEquals(current, next) ? current : next
-    })
-  }
-
-  const setVisibleTestsSelected = (checked: boolean) => {
-    setSelectedTestIds(current => {
-      const next = new Set(current)
-      visibleTestIds.forEach(testId => {
-        if (checked) {
-          next.add(testId)
-        } else {
-          next.delete(testId)
-        }
-      })
-      return setEquals(current, next) ? current : next
-    })
-  }
-
   const selectedRunCount = consideredTestIdList?.length ?? 0
-  const selectedRunCountLabel = filtersActive
-    ? `${selectedRunCount} of ${filteredTestOptions.length} filtered runs selected`
-    : `${selectedRunCount} of ${testOptions.length} runs selected`
+  const selectedRunCountLabel = `${selectedRunCount} of ${testOptions.length} runs selected`
 
   return (
     <section className="load-comparison-panel" data-testid="load-comparison-panel">
@@ -450,6 +317,7 @@ export function LoadComparisonPanel({ applicationId, getLoadComparison, testOpti
           </select>
         </label>
         {selectedOption && <span className="load-comparison-meta">{optionMeta(selectedOption)}</span>}
+        {hasRunSelectionControls && <span className="load-comparison-run-count">{selectedRunCountLabel}</span>}
         {error && (
           <button type="button" className="btn btn-secondary btn-sm" onClick={load}>
             Retry
@@ -457,82 +325,13 @@ export function LoadComparisonPanel({ applicationId, getLoadComparison, testOpti
         )}
       </div>
 
-      {hasRunSelectionControls && (
-        <div className="load-comparison-run-filter" aria-label="Load comparison run filters">
-          <div className="load-comparison-run-filter-row">
-            <label className="load-comparison-filter-field">
-              <span>Release</span>
-              <select
-                value={releaseFilter}
-                onChange={event => setReleaseFilter(event.currentTarget.value)}
-                aria-label="Filter comparison runs by release"
-              >
-                <option value="all">All releases</option>
-                {releaseOptions.map(option => (
-                  <option key={option.key} value={option.key}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="load-comparison-filter-field grow">
-              <span>Run filter</span>
-              <input
-                type="search"
-                value={runQuery}
-                onChange={event => setRunQuery(event.currentTarget.value)}
-                placeholder="Search runs"
-                aria-label="Filter comparison runs by name"
-              />
-            </label>
-            <span className="load-comparison-run-count">
-              {selectedRunCountLabel}
-            </span>
-          </div>
-
-          <div className="load-comparison-run-select-row">
-            <label className="load-comparison-checkbox">
-              <input
-                ref={selectVisibleRef}
-                type="checkbox"
-                checked={allVisibleSelected}
-                disabled={visibleTestIds.length === 0}
-                onChange={event => setVisibleTestsSelected(event.currentTarget.checked)}
-              />
-              <span>Select visible</span>
-            </label>
-            <span>
-              {filteredTestOptions.length} visible
-            </span>
-          </div>
-
-          {filteredTestOptions.length === 0 ? (
-            <div className="load-comparison-run-empty">No runs match the current filters</div>
-          ) : (
-            <div className="load-comparison-run-list">
-              {filteredTestOptions.map(option => (
-                <label className="load-comparison-run-option" key={option.id}>
-                  <input
-                    type="checkbox"
-                    checked={selectedTestIds.has(option.id)}
-                    onChange={event => setTestSelected(option.id, event.currentTarget.checked)}
-                  />
-                  <span className="load-comparison-run-copy">
-                    <span className="load-comparison-run-name">{option.name}</span>
-                    <span className="load-comparison-run-meta">{formatRunOptionMeta(option)}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {loading && !comparison ? (
         <div className="dash-empty small">
           <span>Loading load comparison...</span>
         </div>
       ) : noSelectedRuns ? (
         <div className="dash-empty small">
-          <span>{filteredTestOptions.length === 0 ? 'No archived runs match the current filters' : 'Select at least one archived run to compare'}</span>
+          <span>Select at least one archived run to compare</span>
         </div>
       ) : error ? (
         <div className="dash-empty small">

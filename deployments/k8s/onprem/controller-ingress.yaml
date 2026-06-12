@@ -1,0 +1,38 @@
+# TLS-terminating ingress for the controller API + dashboard (ingress-nginx).
+# Production deployments must not serve the dashboard over plain HTTP: session
+# cookies are marked Secure in production mode and APIs carry bearer tokens.
+#
+# The dashboard streams live metrics over WebSockets (/api/v1/ws and
+# /api/v1/tests/{id}/stream) — the long timeouts prevent the proxy from
+# severing streams mid-test.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: apexload-controller
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: ingress
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: 64m
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # With cert-manager installed, uncomment to issue the certificate:
+    # cert-manager.io/cluster-issuer: your-cluster-issuer
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - apexload.example.internal # CHANGE-ME: your DNS name
+      secretName: apexload-tls # CHANGE-ME: cert-manager-issued or uploaded
+  rules:
+    - host: apexload.example.internal # CHANGE-ME
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller
+                port:
+                  name: http

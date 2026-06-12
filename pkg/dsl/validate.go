@@ -1,6 +1,7 @@
 package dsl
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -91,6 +92,14 @@ func validateHTTPSequenceActionIssues(index int, action Action) []string {
 			}
 			issues = append(issues, validateHTTPSequenceRequestIssues(label, requestIndex, request)...)
 		}
+	case []map[string]any:
+		// In-memory form produced by importers before JSON serialization.
+		if len(typed) == 0 {
+			issues = append(issues, fmt.Sprintf("%s: http_sequence requires at least one child request", label))
+		}
+		for requestIndex, request := range typed {
+			issues = append(issues, validateHTTPSequenceRequestIssues(label, requestIndex, request)...)
+		}
 	default:
 		issues = append(issues, fmt.Sprintf("%s: http_sequence params.requests must be an array", label))
 	}
@@ -110,6 +119,19 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 	}
 	if strings.TrimSpace(target) == "" {
 		issues = append(issues, fmt.Sprintf("%s: missing target", childLabel))
+	}
+	// Child requests carry full extractor objects (the importer's primary
+	// output shape); run the same field checks as top-level actions so typos
+	// fail validation instead of silently misbehaving at runtime. The JSON
+	// round-trip uniformly handles the wire form ([]any of maps) and the
+	// importer's in-memory form ([]Extractor).
+	if raw, ok := request["extractors"]; ok && raw != nil {
+		if payload, err := json.Marshal(raw); err == nil {
+			var extractors []Extractor
+			if json.Unmarshal(payload, &extractors) == nil {
+				issues = append(issues, validateExtractorIssues(childLabel, Action{Extractors: extractors})...)
+			}
+		}
 	}
 	return issues
 }
@@ -206,6 +228,7 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 		issues = append(issues, fmt.Sprintf("%s: missing name", path))
 	}
 	issues = append(issues, validateBodyFileIssues(path, action)...)
+	issues = append(issues, validateExtractorIssues(path, action)...)
 	if strings.TrimSpace(action.Type) == "" {
 		return append(issues, fmt.Sprintf("%s: missing type", actionLabel(path, action)))
 	}
@@ -246,6 +269,37 @@ func validateBodyFileIssues(path string, action Action) []string {
 		issues = append(issues, fmt.Sprintf("%s: body and body_file cannot both be set", label))
 	}
 	issues = append(issues, fmt.Sprintf("%s: body_file is only supported when loading scripts from a local file; inline body is required for API uploads", label))
+	return issues
+}
+
+// validateExtractorIssues checks the optional extractor behavior fields so
+// typos fail validation instead of silently misbehaving at runtime.
+func validateExtractorIssues(path string, action Action) []string {
+	var issues []string
+	label := actionLabel(path, action)
+	for i, ext := range action.Extractors {
+		switch ext.OnMiss {
+		case "", "ignore", "fail", "empty":
+		default:
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] on_miss must be \"\", \"ignore\", \"empty\", or \"fail\" (got %q)", label, i, ext.OnMiss))
+		}
+		switch ext.Mode {
+		case "", "all":
+		default:
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] mode must be \"\" or \"all\" (got %q)", label, i, ext.Mode))
+		}
+		switch ext.Convert {
+		case "", "url_encode", "html_decode", "html_url_encode":
+		default:
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] convert must be \"\", \"url_encode\", \"html_decode\", or \"html_url_encode\" (got %q)", label, i, ext.Convert))
+		}
+		if ext.SaveOffset < 0 {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] save_offset must be zero or greater", label, i))
+		}
+		if ext.SaveLength < 0 {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] save_length must be zero or greater", label, i))
+		}
+	}
 	return issues
 }
 

@@ -1,0 +1,92 @@
+# Production ingress segmentation. REQUIRES a NetworkPolicy-enforcing CNI
+# (Calico, Cilium, Antrea, …). On a non-enforcing CNI (e.g. plain flannel)
+# these objects are accepted and silently do NOTHING — verify enforcement
+# with the test in the README before relying on them. The gRPC port is also
+# protected by mTLS + token auth (APEXLOAD_GRPC_*), so a non-enforcing CNI
+# degrades defense in depth rather than removing the only barrier.
+#
+# Egress is intentionally not restricted here: generators must reach the
+# systems under test. Opt-in egress templates (protecting kube-system, the
+# apiserver, and node CIDRs) are in egress-policies.example.yaml.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-default-deny-ingress
+  labels:
+    app.kubernetes.io/name: apexload
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress: []
+---
+# Controller API: only from the ingress controller's namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-controller-ingress
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-controller
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx # CHANGE-ME if different
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Metrics: only Prometheus, only the dedicated metrics port. The API port is
+# never opened to the monitoring namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-controller-metrics
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-controller
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring # CHANGE-ME if different
+      ports:
+        - protocol: TCP
+          port: 9091
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-generator-ingress
+  labels:
+    app.kubernetes.io/name: apexload-generator
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-generator
+  policyTypes:
+    - Ingress
+  ingress:
+    # Accept gRPC only from the controller (plus mTLS/token at the app layer).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apexload-controller
+      ports:
+        - protocol: TCP
+          port: 9090

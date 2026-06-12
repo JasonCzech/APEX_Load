@@ -543,6 +543,23 @@ type Extractor struct {
 	Source     string `json:"source"`
 	Type       string `json:"type"`
 	Expression string `json:"expression"`
+	// OnMiss controls what happens when the expression finds no match:
+	// "" or "ignore" leaves the variable unset and the request unaffected;
+	// "fail" marks the request failed so correlation misses surface
+	// immediately instead of cascading into later requests.
+	OnMiss string `json:"on_miss,omitempty"`
+	// Mode "" extracts a single value into {{var.name}}. Mode "all" saves every
+	// match as {{var.name_1}}..{{var.name_N}} plus {{var.name_count}}; zero
+	// matches count as a miss for OnMiss purposes.
+	Mode string `json:"mode,omitempty"`
+	// SaveOffset skips that many leading bytes of each matched value, and
+	// SaveLength then truncates it to at most that many bytes (0 = entire
+	// remainder). Both are clamped to the value's bounds.
+	SaveOffset int `json:"save_offset,omitempty"`
+	SaveLength int `json:"save_length,omitempty"`
+	// Convert post-processes each matched value: "url_encode" percent-encodes
+	// it for safe reuse in URLs/bodies; "html_decode" decodes HTML entities.
+	Convert string `json:"convert,omitempty"`
 }
 
 type Assertion struct {

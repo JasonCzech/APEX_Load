@@ -199,6 +199,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	// Parse each lifecycle/action file once. Some .usr [Actions] blocks include
 	// vuser_init.c and vuser_end.c, so a naive "parse init, parse [Actions],
 	// parse end" sequence duplicates setup and cleanup requests.
+	sourceConstants := collectSourceStringConstants(files)
 	var parsedActions []*ParsedAction
 	var parseErrors []string
 	for _, actionFile := range orderedSourceActionFiles(projectConfig, files) {
@@ -214,7 +215,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			}
 		}
 		if ok {
-			parsed, err := ParseActionFile(actionFile, content)
+			parsed, err := ParseActionFile(actionFile, inlineSourceStringConstants(content, sourceConstants))
 			if err == nil {
 				parsed.Phase = sourceActionPhase(actionFile)
 				for index := range parsed.Functions {

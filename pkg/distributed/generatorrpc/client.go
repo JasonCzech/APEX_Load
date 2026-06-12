@@ -3,11 +3,11 @@ package generatorrpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type DataFile struct {
@@ -218,7 +218,12 @@ type MetricsStream struct {
 }
 
 func Dial(ctx context.Context, target string, opts ...grpc.DialOption) (*Client, error) {
-	dialOptions := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	// Transport security (TLS/mTLS/bearer token) comes from the APEXLOAD_GRPC_*
+	// env contract; plaintext without a token is the unconfigured fallback.
+	dialOptions, err := DialOptionsFromEnv()
+	if err != nil {
+		return nil, fmt.Errorf("generator transport config: %w", err)
+	}
 	dialOptions = append(dialOptions, opts...)
 
 	conn, err := grpc.DialContext(ctx, target, dialOptions...)

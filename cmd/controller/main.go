@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	_ "github.com/jasonczech/apexload/pkg/protocol/browser"
 	_ "github.com/jasonczech/apexload/pkg/protocol/database"
 	_ "github.com/jasonczech/apexload/pkg/protocol/grpc"
@@ -43,11 +44,16 @@ func main() {
 	generatorTimeout := parseGeneratorTimeout(os.Getenv("APEXLOAD_GENERATOR_TIMEOUT"))
 	recorderProxyAddr := recorderProxyAddrFromEnv()
 	if len(generatorTargets) > 0 {
-		slog.Info("distributed execution enabled", "generators", generatorTargets, "timeout", generatorTimeout)
+		security := generatorrpc.TransportSecurityFromEnv()
+		slog.Info("distributed execution enabled", "generators", generatorTargets, "timeout", generatorTimeout, "grpc_transport", security.String())
+		if security.Insecure() && os.Getenv("APEXLOAD_ENV") == "production" {
+			slog.Warn("generator gRPC is plaintext and unauthenticated in production; set APEXLOAD_GRPC_TLS_* and/or APEXLOAD_GRPC_AUTH_TOKEN")
+		}
 	}
 
 	server := api.NewServer(api.ServerConfig{
 		Addr:             addr,
+		MetricsAddr:      strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_ADDR")),
 		ProxyAddr:        recorderProxyAddr,
 		MaxConcurrent:    10,
 		Store:            store,

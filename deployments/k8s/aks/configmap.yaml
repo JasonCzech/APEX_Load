@@ -1,0 +1,56 @@
+# Non-secret data-platform configuration for AKS. Secrets (database DSN,
+# Redis connection string) live in the apexload-data-platform Secret — see
+# secret.example.yaml, or sync them from Key Vault with the CSI driver.
+#
+# Values marked CHANGE-ME come from the Terraform outputs in
+# deployments/azure/terraform (see its README for the mapping).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apexload-data-platform
+  labels:
+    app.kubernetes.io/name: apexload
+    app.kubernetes.io/component: data-platform
+data:
+  # --- Persistence: Azure Database for PostgreSQL Flexible Server ---
+  APEXLOAD_STORE: postgres
+  APEXLOAD_DATABASE_MAX_OPEN_CONNS: "25"
+  APEXLOAD_DATABASE_MAX_IDLE_CONNS: "10"
+  APEXLOAD_DATABASE_CONN_MAX_LIFETIME: 30m
+  APEXLOAD_TIMESCALEDB: "false"
+
+  # --- Run-evidence archives: Azure Blob Storage ---
+  # Authentication uses DefaultAzureCredential (workload identity) when no
+  # AZURE_STORAGE_KEY / AZURE_STORAGE_SAS_TOKEN is present.
+  APEXLOAD_ARCHIVE_BACKEND: azure_blob
+  APEXLOAD_ARCHIVE_CONTAINER: apexload-archives
+  APEXLOAD_ARCHIVE_PREFIX: production/run-evidence
+  AZURE_STORAGE_ACCOUNT: changemestorageaccount # CHANGE-ME: terraform output storage_account_name
+
+  # --- Live state / HA fanout: Azure Cache for Redis ---
+  APEXLOAD_CACHE_BACKEND: redis
+  APEXLOAD_REDIS_KEY_PREFIX: apexload:prod
+  APEXLOAD_REDIS_TIMEOUT: 2s
+  APEXLOAD_REDIS_FANOUT_CHANNEL: telemetry:fanout
+
+  # --- Script secrets: Azure Key Vault via workload identity ---
+  # No static token required: with APEXLOAD_AZURE_KEY_VAULT_AUTH=azure_identity
+  # the pod's federated identity is exchanged for Key Vault tokens automatically.
+  APEXLOAD_AZURE_KEY_VAULT_URL: https://change-me.vault.azure.net # CHANGE-ME: terraform output key_vault_url
+  APEXLOAD_AZURE_KEY_VAULT_AUTH: azure_identity
+
+  # --- Generator fleet: DNS discovery against the headless service ---
+  # The dns:// scheme makes the controller re-resolve the headless service on
+  # an interval, so generators added/removed by KEDA are tracked automatically.
+  APEXLOAD_GENERATORS: dns://apexload-generator.apexload.svc.cluster.local:9090
+  APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: 15s
+  APEXLOAD_GENERATOR_TIMEOUT: 10s
+
+  # --- Observability: metrics on a dedicated port ---
+  # Keeps the scrape surface off the API port so NetworkPolicy can grant the
+  # monitoring namespace metrics access without exposing the API.
+  APEXLOAD_METRICS_ADDR: ":9091"
+
+  # --- Governance / hardening ---
+  APEXLOAD_API_KEY_RATE_LIMIT_PER_MINUTE: "600"
+  APEXLOAD_IDEMPOTENCY_KEY_TTL: 15m

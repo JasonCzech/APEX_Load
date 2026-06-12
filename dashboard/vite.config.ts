@@ -31,7 +31,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3000,
+    port: Number(process.env.PORT) || 3000,
     proxy: {
       '/api': {
         target: process.env.APEXLOAD_API_PROXY || 'http://localhost:8080',

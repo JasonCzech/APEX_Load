@@ -264,10 +264,24 @@ func (vu *VUser) Run(ctx context.Context) {
 				loop := action.Control
 				maxPasses := controlLoopMaxPasses(loop)
 				fixed := loop.Count > 0
+				// Expose a 1-based {{var.loop_index}} to the loop body and the
+				// condition (set before evaluation so per-pass bounds like
+				// "int(var.loop_index) <= int(var.total)" work). The outer
+				// value is restored afterwards so nested loops compose.
+				outerLoopIndex, hadOuterLoopIndex := vu.Variables["loop_index"]
+				restoreLoopIndex := func() {
+					if hadOuterLoopIndex {
+						vu.Variables["loop_index"] = outerLoopIndex
+					} else {
+						delete(vu.Variables, "loop_index")
+					}
+				}
 				for pass := 0; ; pass++ {
 					if iterCtx.Err() != nil {
+						restoreLoopIndex()
 						return flowTeardown
 					}
+					vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
 					if fixed {
 						if pass >= loop.Count || pass >= maxPasses {
 							break
@@ -276,9 +290,11 @@ func (vu *VUser) Run(ctx context.Context) {
 						break
 					}
 					if runActions(loop.Steps, depth+1) == flowTeardown {
+						restoreLoopIndex()
 						return flowTeardown
 					}
 				}
+				restoreLoopIndex()
 				applyActionThinkTime(action)
 				return flowNext
 			}
@@ -463,10 +479,23 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 			loop := action.Control
 			maxPasses := controlLoopMaxPasses(loop)
 			fixed := loop.Count > 0
+			// Mirror the main iteration loop: expose a 1-based
+			// {{var.loop_index}} to the body and the per-pass condition,
+			// restoring any outer value afterwards.
+			outerLoopIndex, hadOuterLoopIndex := vu.Variables["loop_index"]
+			restoreLoopIndex := func() {
+				if hadOuterLoopIndex {
+					vu.Variables["loop_index"] = outerLoopIndex
+				} else {
+					delete(vu.Variables, "loop_index")
+				}
+			}
 			for pass := 0; ; pass++ {
 				if ctx.Err() != nil {
+					restoreLoopIndex()
 					return false
 				}
+				vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
 				if fixed {
 					if pass >= loop.Count || pass >= maxPasses {
 						break
@@ -475,9 +504,11 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 					break
 				}
 				if !runActions(loop.Steps, depth+1) {
+					restoreLoopIndex()
 					return false
 				}
 			}
+			restoreLoopIndex()
 			return true
 		}
 		if handled, err := vu.handleEngineAction(ctx, action); handled {
@@ -2028,6 +2059,11 @@ func toProtocolExtractors(exts []dsl.Extractor) []protocol.Extractor {
 			Source:     e.Source,
 			Type:       e.Type,
 			Expression: e.Expression,
+			OnMiss:     e.OnMiss,
+			Mode:       e.Mode,
+			SaveOffset: e.SaveOffset,
+			SaveLength: e.SaveLength,
+			Convert:    e.Convert,
 		}
 	}
 	return out

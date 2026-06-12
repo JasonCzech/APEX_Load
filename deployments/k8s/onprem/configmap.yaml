@@ -1,0 +1,57 @@
+# Non-secret data-platform configuration for production on-prem Kubernetes.
+# Secrets (database DSN, Redis URL, gRPC auth token) live in the
+# apexload-data-platform Secret — see secret.example.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apexload-data-platform
+  labels:
+    app.kubernetes.io/name: apexload
+    app.kubernetes.io/component: data-platform
+data:
+  # --- Persistence: PostgreSQL 16+ (SQLite is not suitable for HA) ---
+  APEXLOAD_STORE: postgres
+  APEXLOAD_DATABASE_MAX_OPEN_CONNS: "25"
+  APEXLOAD_DATABASE_MAX_IDLE_CONNS: "10"
+  APEXLOAD_DATABASE_CONN_MAX_LIFETIME: 30m
+
+  # --- Run-evidence archives ---
+  # On-prem object storage (MinIO/Ceph RGW) via the s3 backend keeps
+  # controller pods disposable. APEXLOAD_ARCHIVE_BACKEND=filesystem with a
+  # shared RWX volume also works; avoid node-local paths in HA.
+  APEXLOAD_ARCHIVE_BACKEND: s3
+  APEXLOAD_ARCHIVE_BUCKET: apexload-archives
+  APEXLOAD_ARCHIVE_PREFIX: production/run-evidence
+  APEXLOAD_ARCHIVE_ENDPOINT: https://minio.storage.svc:9000 # CHANGE-ME
+  APEXLOAD_ARCHIVE_REGION: us-east-1
+
+  # --- Live state / HA fanout: Redis or Valkey ---
+  APEXLOAD_CACHE_BACKEND: redis
+  APEXLOAD_REDIS_KEY_PREFIX: apexload:prod
+  APEXLOAD_REDIS_TIMEOUT: 2s
+  APEXLOAD_REDIS_FANOUT_CHANNEL: telemetry:fanout
+
+  # --- Generator fleet: DNS discovery against the headless service ---
+  APEXLOAD_GENERATORS: dns://apexload-generator.apexload.svc.cluster.local:9090
+  APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: 15s
+  APEXLOAD_GENERATOR_TIMEOUT: 10s
+
+  # --- Controller<->generator gRPC transport security ---
+  # Certificates are mounted from the apexload-grpc-tls secrets (see
+  # certificates.example.yaml for a cert-manager issuance example). The shared
+  # auth token lives in the apexload-data-platform Secret. The server-name
+  # override lets the controller verify the generator cert's DNS SAN even
+  # though dns:// discovery dials pod IPs.
+  APEXLOAD_GRPC_TLS_CERT: /etc/apexload/grpc-tls/tls.crt
+  APEXLOAD_GRPC_TLS_KEY: /etc/apexload/grpc-tls/tls.key
+  APEXLOAD_GRPC_TLS_CA: /etc/apexload/grpc-tls/ca.crt
+  APEXLOAD_GRPC_TLS_SERVER_NAME: apexload-generator.apexload.svc.cluster.local
+
+  # --- Observability: metrics on a dedicated port ---
+  # Keeps the scrape surface off the API port so NetworkPolicy can grant the
+  # monitoring namespace metrics access without exposing the API.
+  APEXLOAD_METRICS_ADDR: ":9091"
+
+  # --- Governance / hardening ---
+  APEXLOAD_API_KEY_RATE_LIMIT_PER_MINUTE: "600"
+  APEXLOAD_IDEMPOTENCY_KEY_TTL: 15m

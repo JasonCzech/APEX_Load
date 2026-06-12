@@ -48,6 +48,14 @@ func compactSourceHTTPActions(result *ConvertResult) {
 }
 
 func compactSourceHTTPPhase(actions []dsl.Action, phase string) sourcePhaseCompaction {
+	return compactSourceHTTPList(actions, func(i int) string { return sourceReviewActionPath(phase, i) })
+}
+
+// compactSourceHTTPList collapses consecutive same-transaction requests in one
+// action list. pathFor maps a list index to its source-review path, which lets
+// the compaction recurse into control_if / control_loop bodies produced by the
+// control-flow structuring pass.
+func compactSourceHTTPList(actions []dsl.Action, pathFor func(int) string) sourcePhaseCompaction {
 	out := make([]dsl.Action, 0, len(actions))
 	pathMap := make(map[string]string, len(actions))
 	collapsed := 0
@@ -57,8 +65,13 @@ func compactSourceHTTPPhase(actions []dsl.Action, phase string) sourcePhaseCompa
 		transaction := actionTransactionName(action)
 		if transaction == "" || !isHTTPProtocolAction(action) {
 			newIndex := len(out)
+			oldPath := pathFor(i)
+			newPath := pathFor(newIndex)
+			pathMap[oldPath] = newPath
+			if action.Control != nil && (action.Type == "control_if" || action.Type == "control_loop") {
+				action = compactSourceControlAction(action, oldPath, newPath, pathMap, &collapsed, &sequences)
+			}
 			out = append(out, action)
-			pathMap[sourceReviewActionPath(phase, i)] = sourceReviewActionPath(phase, newIndex)
 			i++
 			continue
 		}
@@ -74,15 +87,15 @@ func compactSourceHTTPPhase(actions []dsl.Action, phase string) sourcePhaseCompa
 		newIndex := len(out)
 		if len(group) == 1 {
 			out = append(out, group[0])
-			pathMap[sourceReviewActionPath(phase, start)] = sourceReviewActionPath(phase, newIndex)
+			pathMap[pathFor(start)] = pathFor(newIndex)
 			continue
 		}
 
 		sequence := buildSourceHTTPSequence(transaction, group)
 		out = append(out, sequence)
-		sequencePath := sourceReviewActionPath(phase, newIndex)
+		sequencePath := pathFor(newIndex)
 		for offset := range group {
-			oldPath := sourceReviewActionPath(phase, start+offset)
+			oldPath := pathFor(start + offset)
 			pathMap[oldPath] = fmt.Sprintf("%s.params.requests[%d]", sequencePath, offset)
 		}
 		collapsed += len(group) - 1
@@ -93,6 +106,43 @@ func compactSourceHTTPPhase(actions []dsl.Action, phase string) sourcePhaseCompa
 		pathMap:           pathMap,
 		collapsedRequests: collapsed,
 		sequenceActions:   sequences,
+	}
+}
+
+// compactSourceControlAction compacts the request runs nested inside a control
+// block's steps/else bodies, composing review paths through the block.
+func compactSourceControlAction(action dsl.Action, oldPath, newPath string, pathMap map[string]string, collapsed *int, sequences *int) dsl.Action {
+	control := *action.Control
+	if len(control.Steps) > 0 {
+		inner := compactSourceHTTPList(control.Steps, func(i int) string {
+			return fmt.Sprintf("%s.control.steps[%d]", oldPath, i)
+		})
+		control.Steps = inner.actions
+		rebaseCompactionPathMap(pathMap, inner.pathMap, oldPath, newPath)
+		*collapsed += inner.collapsedRequests
+		*sequences += inner.sequenceActions
+	}
+	if len(control.Else) > 0 {
+		inner := compactSourceHTTPList(control.Else, func(i int) string {
+			return fmt.Sprintf("%s.control.else[%d]", oldPath, i)
+		})
+		control.Else = inner.actions
+		rebaseCompactionPathMap(pathMap, inner.pathMap, oldPath, newPath)
+		*collapsed += inner.collapsedRequests
+		*sequences += inner.sequenceActions
+	}
+	action.Control = &control
+	return action
+}
+
+// rebaseCompactionPathMap merges a nested compaction's path map, rewriting the
+// new-path side onto the parent's final position.
+func rebaseCompactionPathMap(target map[string]string, nested map[string]string, oldBase, newBase string) {
+	for from, to := range nested {
+		if oldBase != newBase && strings.HasPrefix(to, oldBase) {
+			to = newBase + strings.TrimPrefix(to, oldBase)
+		}
+		target[from] = to
 	}
 }
 

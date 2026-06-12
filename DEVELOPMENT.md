@@ -7,19 +7,27 @@ apexload/
 ├── cmd/                     # Executable entry points
 │   ├── controller/          # REST API + dashboard server (port 8080)
 │   ├── generator/           # Distributed load generator (Kubernetes pod)
-│   └── apexctl/           # CLI for local script execution
+│   ├── apexctl/             # CLI for local script execution
+│   └── dslschema/           # Generates docs/dsl.schema.json + DSL_ACTION_REFERENCE.md
 ├── pkg/                    # Reusable packages
 │   ├── engine/            # Core VUser engine, pacing, metrics
-│   ├── protocol/          # Protocol interface + implementations (HTTP, JMS)
-│   ├── dsl/              # Script parser and types
+│   ├── protocol/          # Protocol interface + implementations (HTTP, SOAP, WebSocket, gRPC, JMS, Kafka, database, network, browser)
+│   ├── dsl/              # Script parser, types, action catalog
 │   ├── api/              # REST handlers, WebSocket, test runner
 │   ├── config/           # Configuration types
 │   ├── controller/       # Test orchestration logic
-│   ├── storage/          # SQLite persistence
-│   ├── recorder/         # HTTP recording and HAR conversion
-│   └── convert/          # LoadRunner migration tools
+│   ├── distributed/      # Generator-side gRPC worker
+│   ├── storage/          # SQLite (default) / PostgreSQL persistence
+│   ├── recorder/         # HTTP recording, HAR conversion, browser recording
+│   ├── convert/          # Multi-format import hub (LR, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient)
+│   ├── selector/         # Shared element-selector model + replay self-heal
+│   ├── scrub/            # PII/credential redaction for artifacts and HAR exports
+│   ├── refkey/           # Human-readable reference keys
+│   └── buildinfo/        # Build metadata (version/commit/build-time)
 ├── api/proto/            # Protocol Buffer definitions (gRPC)
 ├── dashboard/            # React 18 + TypeScript SPA
+├── desktop/             # Wails native client shell (embeds controller API + dashboard)
+├── mcp/                 # Python MCP server exposing the REST API as agent tools
 ├── deployments/          # Kubernetes manifests, Helm charts
 └── examples/            # Sample scripts, HAR files
 ```
@@ -69,12 +77,21 @@ type Protocol interface {
 }
 ```
 
-**Bundled Protocols:**
+**Bundled Protocols** (registered via `init()` when their package is imported in a binary's `main.go`):
 - **HTTP**: Supports HTTP/1.1 and HTTP/2; handles redirects, cookies, extractors, assertions
 - **SOAP**: Reuses the HTTP transport with SOAP-specific defaults, namespaces, and fault-handling semantics
-- **Java over HTTP**: Reuses the HTTP transport with the bounded `java_serialized_object_base64` codec for opaque serialized payloads
-- **JMS (Solace)**: Message queue protocol
-- **JMS (IBM MQ)**: Message queue protocol (Phase 5)
+- **Java over HTTP** (`java_http`): Reuses the HTTP transport with the bounded `java_serialized_object_base64` codec for opaque serialized payloads
+- **WebSocket**: Connect, send/receive, configurable timeouts and max message size
+- **gRPC**: Reflection-based dynamic protobuf marshaling, TLS, metadata, streaming
+- **JMS (Solace)** (`jms-solace`): Message queue protocol
+- **JMS (IBM MQ)** (`jms-ibmmq`): Message queue protocol
+- **Kafka**: produce/consume/request-reply; in-memory mock broker by default, real franz-go network adapter opt-in via `-tags kafka_real`
+- **database**: SQL query/exec/transactions
+- **network**: DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP
+- **browser**: Playwright replay + canary diagnostics (FCP/LCP/CLS/INP/TTFB)
+
+The controller and generator binaries bundle all of the above; `apexctl` bundles the same set except
+`database`, `java_http`, and `network`.
 
 **Adding a New Protocol:**
 1. Create `pkg/protocol/myproto/` package

@@ -1,0 +1,90 @@
+# Ingress hardening for APEX Load on AKS (requires a network-policy-capable
+# dataplane: Azure CNI with network policy "azure", Calico, or Cilium —
+# enabled by the Terraform config). Egress is intentionally NOT restricted:
+# load generators must reach arbitrary targets under test, and the controller
+# must reach PostgreSQL, Redis, Blob Storage, Key Vault, and OIDC endpoints.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-default-deny-ingress
+  labels:
+    app.kubernetes.io/name: apexload
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress: []
+---
+# Controller HTTP only from the managed ingress (Web Application Routing runs
+# in the app-routing-system namespace). Widen `from` if you also expose the
+# API to in-cluster CI runners or other namespaces.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-controller-ingress
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-controller
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: app-routing-system
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Metrics: only Prometheus, only the dedicated metrics port. Without this
+# rule the bundled ServiceMonitor cannot scrape and KEDA never sees the
+# scaling metrics — the fleet stays pinned at minReplicaCount.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-controller-metrics
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-controller
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring # CHANGE-ME if different
+      ports:
+        - protocol: TCP
+          port: 9091
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-generator-ingress
+  labels:
+    app.kubernetes.io/name: apexload-generator
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-generator
+  policyTypes:
+    - Ingress
+  ingress:
+    # Accept gRPC only from the controller.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apexload-controller
+      ports:
+        - protocol: TCP
+          port: 9090

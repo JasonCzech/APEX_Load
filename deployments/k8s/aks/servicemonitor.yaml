@@ -1,0 +1,24 @@
+# Prometheus Operator scrape config for the controller (kube-prometheus-stack).
+# If you use Azure Monitor managed Prometheus instead, the ama-metrics agent
+# discovers pods via its own ConfigMap-based scrape config — see
+# deployments/k8s/aks/README.md.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: apexload-controller
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: monitoring
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-controller
+  endpoints:
+    # Scrapes the dedicated metrics port (APEXLOAD_METRICS_ADDR), which the
+    # NetworkPolicy opens to the monitoring namespace — the API port stays
+    # restricted to the ingress.
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s

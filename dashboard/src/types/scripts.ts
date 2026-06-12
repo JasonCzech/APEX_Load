@@ -22,6 +22,16 @@ export interface ScriptExtractorDefinition {
   source: string
   type: string
   expression: string
+  /** "" / "ignore": leave the variable unset on no match; "empty": assign ""; "fail": fail the request. */
+  on_miss?: string
+  /** "" extracts one value; "all" saves every match as name_1..name_N plus name_count. */
+  mode?: string
+  /** Skip this many leading bytes of each matched value. */
+  save_offset?: number
+  /** Truncate each matched value to at most this many bytes (0 = entire remainder). */
+  save_length?: number
+  /** Post-process each value: "url_encode" | "html_decode" | "html_url_encode". */
+  convert?: string
 }
 
 export interface ScriptAssertionDefinition {
@@ -58,6 +68,8 @@ export interface ScriptActionDefinition {
 }
 
 export interface ScriptCondition {
+  /** CEL expression over var/data/env; takes precedence over left/op/right. */
+  expr?: string
   left?: string
   op?: string
   right?: string

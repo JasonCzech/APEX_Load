@@ -1,0 +1,112 @@
+# OPT-IN egress templates — not included in kustomization.yaml because the
+# CIDRs are cluster-specific and a wrong egress policy breaks load tests.
+# Fill in the CHANGE-ME values, verify with a canary test, then add to the
+# kustomization.
+#
+# Why: without these, a misconfigured script can point a multi-thousand-VUser
+# distributed test at kube-dns, the apiserver, or another tenant's service —
+# a self-inflicted control-plane DoS on a shared cluster. And the controller
+# (the component that parses untrusted uploads: LR archives, HAR, OpenAPI)
+# gets unrestricted lateral movement if compromised, despite having a small,
+# enumerable destination set.
+---
+# Generators: allow everything EXCEPT cluster infrastructure.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-generator-egress
+  namespace: apexload
+  labels:
+    app.kubernetes.io/name: apexload-generator
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-generator
+  policyTypes:
+    - Egress
+  egress:
+    # DNS — kube-dns only.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Everything else, EXCEPT cluster infrastructure ranges. Adjust the
+    # except list to your cluster:
+    #   - apiserver/service CIDR (kubernetes.default backend IPs)
+    #   - node CIDR (kubelet :10250)
+    #   - pod CIDR of kube-system, if distinct
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.96.0.0/12 # CHANGE-ME: service CIDR
+              - 192.168.0.0/16 # CHANGE-ME: node CIDR
+---
+# Controller: small, enumerable destination set.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-controller-egress
+  namespace: apexload
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-controller
+  policyTypes:
+    - Egress
+  egress:
+    # DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Generators (gRPC).
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apexload-generator
+      ports:
+        - protocol: TCP
+          port: 9090
+    # Data platform: PostgreSQL, Redis/Valkey, object storage. Tighten the
+    # ipBlocks/ports to your endpoints.
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8 # CHANGE-ME: data-platform network
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 6380
+        - protocol: TCP
+          port: 9000
+    # HTTPS for OIDC, webhooks (Slack/Teams/Dynatrace), GHES, remote write.
+    # Narrow to corporate CIDRs if your endpoints allow it.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443

@@ -1,4 +1,4 @@
-.PHONY: all build test clean generator controller apexctl proto lint docker-generator docker-controller k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-smoke-test
+.PHONY: all build test clean generator controller apexctl proto lint docker-generator docker-controller docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-onprem-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
 
 VERSION    ?= 0.1.0
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null)
@@ -41,6 +41,41 @@ docker-generator:
 
 docker-controller:
 	docker build --build-arg BINARY=controller --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) -t apexload-controller:$(VERSION) -f Dockerfile .
+
+# Build and push both images to any registry. Usage:
+#   make docker-push REGISTRY=registry.example.internal/apexload
+# For supply-chain controls (SBOM, scan, sign), use the CI pipeline in
+# deployments/ci/github-actions-onprem-registry.yml instead.
+docker-push: docker-controller docker-generator
+	test -n "$(REGISTRY)" || (echo "REGISTRY is required, e.g. make docker-push REGISTRY=registry.example.internal/apexload" && exit 1)
+	docker tag apexload-controller:$(VERSION) $(REGISTRY)/apexload-controller:$(VERSION)
+	docker tag apexload-generator:$(VERSION) $(REGISTRY)/apexload-generator:$(VERSION)
+	docker push $(REGISTRY)/apexload-controller:$(VERSION)
+	docker push $(REGISTRY)/apexload-generator:$(VERSION)
+
+k8s-onprem-apply:
+	kubectl apply -k deployments/k8s/onprem
+
+k8s-onprem-status:
+	kubectl -n apexload get pods,svc,ingress,scaledobject,networkpolicy
+
+k8s-onprem-delete:
+	kubectl delete -k deployments/k8s/onprem --ignore-not-found=true
+
+# Build in ACR and tag for AKS. Usage: make docker-push-acr ACR_NAME=myregistry
+docker-push-acr:
+	test -n "$(ACR_NAME)" || (echo "ACR_NAME is required, e.g. make docker-push-acr ACR_NAME=myregistry" && exit 1)
+	az acr build --registry $(ACR_NAME) --image apexload-controller:$(VERSION) --build-arg BINARY=controller --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) --file Dockerfile .
+	az acr build --registry $(ACR_NAME) --image apexload-generator:$(VERSION) --build-arg BINARY=generator --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) --file Dockerfile .
+
+k8s-aks-apply:
+	kubectl apply -k deployments/k8s/aks
+
+k8s-aks-status:
+	kubectl -n apexload get pods,svc,ingress,scaledobject
+
+k8s-aks-delete:
+	kubectl delete -k deployments/k8s/aks --ignore-not-found=true
 
 k8s-local-preflight:
 	./deployments/k8s/local/preflight.sh

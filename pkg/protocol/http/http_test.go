@@ -1201,3 +1201,192 @@ func TestParseTLSVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestHTTP_Execute_ExtractorOnMissFail(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"unrelated":"payload"}`))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "miss-fail",
+		Method: "GET",
+		Target: "/page",
+		Extractors: []protocol.Extractor{
+			{Name: "token", Source: "body", Type: "jsonpath", Expression: "$.access_token", OnMiss: "fail"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Success {
+		t.Fatal("request should fail when an on_miss=fail extractor finds no match")
+	}
+	if !strings.Contains(result.ErrorMessage, `"token"`) {
+		t.Errorf("error message should name the extractor: %q", result.ErrorMessage)
+	}
+}
+
+func TestHTTP_Execute_ExtractorOnMissDefaultIgnores(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"unrelated":"payload"}`))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "miss-ignore",
+		Method: "GET",
+		Target: "/page",
+		Extractors: []protocol.Extractor{
+			{Name: "token", Source: "body", Type: "jsonpath", Expression: "$.access_token"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("request should stay successful without on_miss=fail: %s", result.ErrorMessage)
+	}
+	if _, ok := result.Extractions["token"]; ok {
+		t.Error("missed extraction should leave the variable unset")
+	}
+}
+
+func TestHTTP_Execute_ExtractorOnMissFailKeepsLaterExtractions(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"present":"yes"}`))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "miss-then-hit",
+		Method: "GET",
+		Target: "/page",
+		Extractors: []protocol.Extractor{
+			{Name: "absent", Source: "body", Type: "jsonpath", Expression: "$.absent", OnMiss: "fail"},
+			{Name: "present", Source: "body", Type: "jsonpath", Expression: "$.present"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Success {
+		t.Fatal("request should fail on the missed extractor")
+	}
+	if result.Extractions["present"] != "yes" {
+		t.Errorf("later extractors should still run; got %v", result.Extractions)
+	}
+}
+
+func TestHTTP_Execute_SaveAllExtractor(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`item=a; item=b; item=c;`))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "save-all",
+		Method: "GET",
+		Target: "/page",
+		Extractors: []protocol.Extractor{
+			{Name: "items", Source: "body", Type: "boundary", Expression: "item=|||;", Mode: "all"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	want := map[string]string{"items_1": "a", "items_2": "b", "items_3": "c", "items_count": "3"}
+	for k, v := range want {
+		if result.Extractions[k] != v {
+			t.Errorf("Extractions[%q] = %q, want %q", k, result.Extractions[k], v)
+		}
+	}
+	if _, ok := result.Extractions["items"]; ok {
+		t.Error("save-all must not define the bare name")
+	}
+}
+
+func TestHTTP_Execute_SaveAllZeroMatchesLenient(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`nothing here`))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "save-all-empty",
+		Method: "GET",
+		Target: "/page",
+		Extractors: []protocol.Extractor{
+			{Name: "items", Source: "body", Type: "boundary", Expression: "item=|||;", Mode: "all"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("lenient zero-match must not fail: %s", result.ErrorMessage)
+	}
+	if result.Extractions["items_count"] != "0" {
+		t.Errorf("items_count = %q, want 0", result.Extractions["items_count"])
+	}
+}
+
+func TestHTTP_Execute_SaveAllZeroMatchesFail(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`nothing here`))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "save-all-miss",
+		Method: "GET",
+		Target: "/page",
+		Extractors: []protocol.Extractor{
+			{Name: "items", Source: "body", Type: "boundary", Expression: "item=|||;", Mode: "all", OnMiss: "fail"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Success {
+		t.Fatal("zero matches with on_miss=fail must fail the request")
+	}
+	if _, ok := result.Extractions["items_count"]; ok {
+		t.Error("failed save-all must not publish a count")
+	}
+}
+
+func TestHTTP_Execute_ExtractorOnMissEmptyAssignsEmptyString(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`no match here`))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "miss-empty",
+		Method: "GET",
+		Target: "/page",
+		Extractors: []protocol.Extractor{
+			{Name: "token", Source: "body", Type: "boundary", Expression: "token=|||;", OnMiss: "empty"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("on_miss=empty must not fail: %s", result.ErrorMessage)
+	}
+	if val, ok := result.Extractions["token"]; !ok || val != "" {
+		t.Errorf("Extractions[token] = %q (present=%v), want empty string", val, ok)
+	}
+}

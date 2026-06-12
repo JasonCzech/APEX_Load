@@ -490,14 +490,19 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 ```
 pkg/
   engine/          # VUser execution, pacing, metrics
-  protocol/        # HTTP, JMS protocol implementations
-  dsl/            # Script parsing
+  protocol/        # HTTP, SOAP, WebSocket, gRPC, JMS, Kafka, database, network, browser
+  dsl/            # Script parsing, action catalog
   api/            # REST handlers, WebSocket
   config/         # Configuration types
-  storage/        # SQLite
+  storage/        # SQLite (default) / PostgreSQL
   controller/     # Test orchestration
-  recorder/       # HTTP recording
-  convert/        # LoadRunner conversion
+  distributed/    # Generator-side gRPC worker
+  recorder/       # HTTP recording + HAR + browser recording
+  convert/        # Multi-format import hub (LR, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient)
+  selector/       # Element-selector model + replay self-heal
+  scrub/          # PII/credential redaction
+  refkey/         # Human-readable reference keys
+  buildinfo/      # Build metadata
 ```
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed package documentation.

@@ -837,12 +837,19 @@ describe('ScriptEditor', () => {
       groupedAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action Details')
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Address_Search_Aura')
+    expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Checkout_Aura')
+
+    const mapTab = Array.from(container.querySelectorAll('.script-json-sidebar-tab')).find(button => button.textContent?.trim() === 'Map')
+    expect(mapTab).toBeDefined()
+    await act(async () => {
+      mapTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
-    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
-    expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).not.toBeNull()
     expect(container.querySelectorAll('.json-source-map-line.active-block').length).toBeGreaterThan(0)
-    expect(container.textContent).toContain('Address_Search_Aura')
-    expect(container.textContent).toContain('Checkout_Aura')
     expect(container.querySelector('.action-list')?.textContent).toContain('R2')
     expect(container.querySelector('.action-list')?.textContent).toContain('E1')
   })
@@ -1427,7 +1434,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-variables-collapsed')).toBe(true)
   })
 
-  it('keeps the source map active and highlights an action block when selecting an action from Script JSON', async () => {
+  it('opens action details in the Script JSON right sidebar and keeps the map available', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
@@ -1448,9 +1455,22 @@ describe('ScriptEditor', () => {
 
     expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('collapsed')).toBe(false)
+    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-inspector')).toBe(true)
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action Details')
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
+    expect(Array.from(container.querySelectorAll('.script-json-sidebar-tab')).map(button => button.textContent?.trim())).toEqual([
+      'Map',
+      'Auto Params',
+      'Details',
+    ])
+
+    const mapTab = Array.from(container.querySelectorAll('.script-json-sidebar-tab')).find(button => button.textContent?.trim() === 'Map')
+    await act(async () => {
+      mapTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
     expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-source-map')).toBe(true)
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
-    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
     expect(container.querySelectorAll('.json-source-map-line.active-block').length).toBeGreaterThan(0)
   })
 
@@ -2208,11 +2228,43 @@ describe('ScriptEditor', () => {
       autoButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('Review Candidates')
-    expect(container.textContent).toContain('username')
-    expect(container.textContent).toContain('demo')
+    const utilitySidebar = container.querySelector('.editor-utility-sidebar') as HTMLDivElement | null
+    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(utilitySidebar?.classList.contains('context-auto-parameterization')).toBe(true)
+    expect(utilitySidebar?.querySelector('.side-pane-header')?.textContent).toContain('Auto Parameterization')
+    expect(activePanel?.textContent).not.toContain('Review Candidates')
+    expect(utilitySidebar?.textContent).toContain('Suggested Fields')
+    expect(utilitySidebar?.textContent).toContain('username')
+    expect(utilitySidebar?.textContent).toContain('demo')
 
-    const applyButton = Array.from(activePanel?.querySelectorAll('button') || []).find(button =>
+    const mapTab = Array.from(utilitySidebar?.querySelectorAll('.script-json-sidebar-tab') || []).find(button => button.textContent?.trim() === 'Map')
+    expect(mapTab).toBeDefined()
+    await act(async () => {
+      mapTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-source-map')).toBe(true)
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
+    expect(container.querySelector('.editor-utility-sidebar')?.textContent).not.toContain('Suggested Fields')
+
+    const autoParamsTab = Array.from(container.querySelectorAll('.script-json-sidebar-tab')).find(button => button.textContent?.trim() === 'Auto Params')
+    expect(autoParamsTab).toBeDefined()
+    await act(async () => {
+      autoParamsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-auto-parameterization')).toBe(true)
+    expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Suggested Fields')
+
+    const nameInput = utilitySidebar?.querySelector<HTMLInputElement>('.auto-parameter-candidate.active .auto-parameter-name-field input')
+    expect(nameInput?.value).toBe('username')
+    if (!nameInput) {
+      return
+    }
+
+    await act(async () => {
+      changeInputValue(nameInput, 'login_user')
+    })
+
+    const applyButton = Array.from(utilitySidebar?.querySelectorAll('button') || []).find(button =>
       button.textContent?.trim() === 'Apply Selected',
     )
     expect(applyButton).toBeDefined()
@@ -2226,6 +2278,92 @@ describe('ScriptEditor', () => {
 
     expect(container.textContent).toContain('Applied auto-parameterization for 1 candidate.')
     expect(container.textContent).toContain('auto_params')
+    expect((container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null)?.value).toContain('{{data.auto_params.login_user}}')
+  })
+
+  it('navigates auto parameterization suggestions across target, header, and body locations', async () => {
+    const multiFieldScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [
+        {
+          ...initialScript.actions[0],
+          target: '/login?username=demo&username=demo',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Customer': 'customer_12345',
+          },
+          body: '{"cart_id":"cart_12345"}',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={multiFieldScript} />)
+    })
+
+    const autoButton = Array.from(container.querySelectorAll('.parameter-outline-actions button')).find(button =>
+      button.textContent?.trim() === 'Auto Parameterization',
+    )
+    expect(autoButton).toBeDefined()
+    if (!autoButton) {
+      return
+    }
+
+    await act(async () => {
+      autoButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const utilitySidebar = container.querySelector('.editor-utility-sidebar') as HTMLDivElement | null
+    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(utilitySidebar?.querySelector('.auto-parameter-location')?.textContent).toContain('1 / 2')
+    expect(utilitySidebar?.querySelector('.auto-parameter-location')?.textContent).toContain('Action 1 / target')
+
+    const nextButton = Array.from(utilitySidebar?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'Next')
+    expect(nextButton).toBeDefined()
+    if (!nextButton) {
+      return
+    }
+
+    await act(async () => {
+      nextButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(utilitySidebar?.querySelector('.auto-parameter-location')?.textContent).toContain('2 / 2')
+    expect(utilitySidebar?.querySelector('.auto-parameter-location')?.textContent).toContain('Action 1 / target')
+
+    const backButton = Array.from(utilitySidebar?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'Back')
+    expect(backButton).toBeDefined()
+    if (!backButton) {
+      return
+    }
+
+    await act(async () => {
+      backButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(utilitySidebar?.querySelector('.auto-parameter-location')?.textContent).toContain('1 / 2')
+
+    const customerCandidate = Array.from(utilitySidebar?.querySelectorAll<HTMLButtonElement>('.auto-parameter-candidate-select') || [])
+      .find(button => button.textContent?.includes('X-Customer'))
+    expect(customerCandidate).toBeDefined()
+    if (!customerCandidate) {
+      return
+    }
+
+    await act(async () => {
+      customerCandidate.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(utilitySidebar?.querySelector('.auto-parameter-location')?.textContent).toContain('Action 1 / header X-Customer')
+
+    const bodyCandidate = Array.from(utilitySidebar?.querySelectorAll<HTMLButtonElement>('.auto-parameter-candidate-select') || [])
+      .find(button => button.textContent?.includes('cart_id'))
+    expect(bodyCandidate).toBeDefined()
+    if (!bodyCandidate) {
+      return
+    }
+
+    await act(async () => {
+      bodyCandidate.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(utilitySidebar?.querySelector('.auto-parameter-location')?.textContent).toContain('Action 1 / body')
   })
 
   it('renders jitter and packet loss inputs for network emulation', async () => {
@@ -2582,7 +2720,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
-    expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
     expect(container.querySelectorAll('.json-source-map-line.active-block').length).toBeGreaterThan(0)
     const activeSidebarAction = container.querySelector('.action-item.active') as HTMLDivElement | null
     expect(activeSidebarAction?.textContent).toContain('Complete Checkout')
@@ -5349,9 +5487,17 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.action-detail')).toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-inspector')).toBe(true)
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action Details')
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
+
+    const mapTab = Array.from(container.querySelectorAll('.script-json-sidebar-tab')).find(button => button.textContent?.trim() === 'Map')
+    await act(async () => {
+      mapTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
     expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-source-map')).toBe(true)
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
-    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
     expect(container.querySelectorAll('.json-source-map-line.active-block').length).toBeGreaterThan(0)
   })
 

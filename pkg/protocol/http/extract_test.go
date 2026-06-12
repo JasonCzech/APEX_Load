@@ -3,7 +3,9 @@ package http
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -331,6 +333,75 @@ func TestExtractBoundary_InvalidFormat(t *testing.T) {
 	}
 }
 
+func TestExtractBoundary_ConfigOrdinal(t *testing.T) {
+	body := []byte(`id="first" id="second" id="third"`)
+
+	tests := []struct {
+		ordinal int
+		want    string
+	}{
+		{0, "first"},
+		{1, "first"},
+		{2, "second"},
+		{3, "third"},
+	}
+	for _, tc := range tests {
+		expr := boundaryExpressionConfigPrefix + fmt.Sprintf(`{"left":"id=\"","right":"\"","ordinal":%d}`, tc.ordinal)
+		val, err := extractBoundary(expr, body)
+		if err != nil {
+			t.Fatalf("ordinal %d: %v", tc.ordinal, err)
+		}
+		if val != tc.want {
+			t.Errorf("ordinal %d = %q, want %q", tc.ordinal, val, tc.want)
+		}
+	}
+}
+
+func TestExtractBoundary_ConfigOrdinalOutOfRange(t *testing.T) {
+	body := []byte(`id="first" id="second"`)
+	expr := boundaryExpressionConfigPrefix + `{"left":"id=\"","right":"\"","ordinal":5}`
+	_, err := extractBoundary(expr, body)
+	if err == nil {
+		t.Fatal("expected error for out-of-range ordinal")
+	}
+	if !strings.Contains(err.Error(), "ordinal 5") {
+		t.Errorf("error should mention requested ordinal: %v", err)
+	}
+}
+
+func TestExtractBoundary_ConfigCaseInsensitive(t *testing.T) {
+	body := []byte(`SessionID=ABC123;`)
+	expr := boundaryExpressionConfigPrefix + `{"left":"sessionid=","right":";","case_insensitive":true}`
+	val, err := extractBoundary(expr, body)
+	if err != nil {
+		t.Fatalf("extractBoundary: %v", err)
+	}
+	if val != "ABC123" {
+		t.Errorf("got %q, want ABC123 (original casing preserved)", val)
+	}
+}
+
+func TestExtractBoundary_ConfigSeparatorCollision(t *testing.T) {
+	body := []byte(`x=a|||b;`)
+	expr := boundaryExpressionConfigPrefix + `{"left":"x=","right":";"}`
+	val, err := extractBoundary(expr, body)
+	if err != nil {
+		t.Fatalf("extractBoundary: %v", err)
+	}
+	if val != "a|||b" {
+		t.Errorf("got %q, want a|||b", val)
+	}
+}
+
+func TestExtractBoundary_ConfigInvalid(t *testing.T) {
+	if _, err := extractBoundary(boundaryExpressionConfigPrefix+`{not-json`, []byte(`x`)); err == nil {
+		t.Fatal("expected error for invalid config payload")
+	}
+	if _, err := extractBoundary(boundaryExpressionConfigPrefix+`{}`, []byte(`x`)); err == nil {
+		t.Fatal("expected error for empty boundaries")
+	}
+}
+
 func TestExtract_FromHeader(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("X-Request-Id", "req-12345")
@@ -416,5 +487,196 @@ func TestExtract_UnsupportedBodyType(t *testing.T) {
 	_, err := extractFromBody(protocol.Extractor{Type: "graphql"}, []byte(`<xml/>`))
 	if err == nil {
 		t.Fatal("expected error for unsupported extraction type")
+	}
+}
+
+func TestExtractBoundary_EmptyRightTakesRestOfBody(t *testing.T) {
+	val, err := extractBoundary(`token=|||`, []byte(`prefix token=abc123`))
+	if err != nil {
+		t.Fatalf("extractBoundary: %v", err)
+	}
+	if val != "abc123" {
+		t.Errorf("got %q, want abc123 (rest of body)", val)
+	}
+}
+
+func TestExtractBoundary_EmptyLeftStartsAtBeginning(t *testing.T) {
+	val, err := extractBoundary(`|||;`, []byte(`abc;def`))
+	if err != nil {
+		t.Fatalf("extractBoundary: %v", err)
+	}
+	if val != "abc" {
+		t.Errorf("got %q, want abc", val)
+	}
+}
+
+func TestExtractAll_Regex(t *testing.T) {
+	body := []byte(`id="a" id="b" id="c"`)
+	vals, err := extractAll(protocol.Extractor{Source: "body", Type: "regex", Expression: `id="([a-z])"`, Mode: "all"}, nil, body)
+	if err != nil {
+		t.Fatalf("extractAll: %v", err)
+	}
+	if len(vals) != 3 || vals[0] != "a" || vals[2] != "c" {
+		t.Errorf("vals = %v, want [a b c]", vals)
+	}
+}
+
+func TestExtractAll_BoundaryWithConfig(t *testing.T) {
+	body := []byte(`ID=x1; id=x2; Id=x3;`)
+	expr := boundaryExpressionConfigPrefix + `{"left":"id=","right":";","case_insensitive":true}`
+	vals, err := extractAll(protocol.Extractor{Source: "body", Type: "boundary", Expression: expr, Mode: "all"}, nil, body)
+	if err != nil {
+		t.Fatalf("extractAll: %v", err)
+	}
+	if len(vals) != 3 || vals[0] != "x1" || vals[1] != "x2" || vals[2] != "x3" {
+		t.Errorf("vals = %v, want [x1 x2 x3] with original casing", vals)
+	}
+}
+
+func TestExtractAll_BoundaryPlain(t *testing.T) {
+	vals, err := extractAll(protocol.Extractor{Source: "body", Type: "boundary", Expression: "k=|||;", Mode: "all"}, nil, []byte(`k=1; k=2;`))
+	if err != nil {
+		t.Fatalf("extractAll: %v", err)
+	}
+	if len(vals) != 2 || vals[0] != "1" || vals[1] != "2" {
+		t.Errorf("vals = %v, want [1 2]", vals)
+	}
+}
+
+func TestExtractAll_JSONPathArray(t *testing.T) {
+	body := []byte(`{"items":["alpha","beta"]}`)
+	vals, err := extractAll(protocol.Extractor{Source: "body", Type: "jsonpath", Expression: "$.items", Mode: "all"}, nil, body)
+	if err != nil {
+		t.Fatalf("extractAll: %v", err)
+	}
+	if len(vals) != 2 || vals[0] != "alpha" || vals[1] != "beta" {
+		t.Errorf("vals = %v, want [alpha beta]", vals)
+	}
+}
+
+func TestExtractAll_XPathMultiple(t *testing.T) {
+	body := []byte(`<r><v>one</v><v>two</v></r>`)
+	vals, err := extractAll(protocol.Extractor{Source: "body", Type: "xpath", Expression: "//v", Mode: "all"}, nil, body)
+	if err != nil {
+		t.Fatalf("extractAll: %v", err)
+	}
+	if len(vals) != 2 || vals[0] != "one" || vals[1] != "two" {
+		t.Errorf("vals = %v, want [one two]", vals)
+	}
+}
+
+func TestExtractAll_ZeroMatches(t *testing.T) {
+	vals, err := extractAll(protocol.Extractor{Source: "body", Type: "regex", Expression: `nope=(\d+)`, Mode: "all"}, nil, []byte(`body`))
+	if err != nil {
+		t.Fatalf("extractAll: %v", err)
+	}
+	if len(vals) != 0 {
+		t.Errorf("vals = %v, want empty", vals)
+	}
+}
+
+func TestPostProcessExtractedValue(t *testing.T) {
+	tests := []struct {
+		name string
+		ext  protocol.Extractor
+		in   string
+		want string
+	}{
+		{"offset", protocol.Extractor{SaveOffset: 2}, "abcdef", "cdef"},
+		{"offset beyond end", protocol.Extractor{SaveOffset: 10}, "abc", ""},
+		{"length", protocol.Extractor{SaveLength: 3}, "abcdef", "abc"},
+		{"offset then length", protocol.Extractor{SaveOffset: 1, SaveLength: 2}, "abcdef", "bc"},
+		{"length beyond end", protocol.Extractor{SaveLength: 10}, "abc", "abc"},
+		{"url encode", protocol.Extractor{Convert: "url_encode"}, "a b&c", "a+b%26c"},
+		{"html decode", protocol.Extractor{Convert: "html_decode"}, "a &amp; b &lt;ok&gt;", "a & b <ok>"},
+		{"combined", protocol.Extractor{SaveOffset: 4, Convert: "url_encode"}, "val=x y", "x+y"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := postProcessExtractedValue(tc.ext, tc.in)
+			if err != nil {
+				t.Fatalf("postProcess: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPostProcessExtractedValue_UnknownConvert(t *testing.T) {
+	if _, err := postProcessExtractedValue(protocol.Extractor{Convert: "rot13"}, "x"); err == nil {
+		t.Fatal("expected error for unknown convert mode")
+	}
+}
+
+func TestExtract_AppliesPostProcessing(t *testing.T) {
+	val, err := extract(protocol.Extractor{Source: "body", Type: "boundary", Expression: "t=|||;", SaveOffset: 1, SaveLength: 2}, nil, []byte(`t=abcdef;`))
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if val != "bc" {
+		t.Errorf("got %q, want bc", val)
+	}
+}
+
+func TestExtractBoundary_CaseInsensitiveUnicodePreservesIndices(t *testing.T) {
+	// U+212A KELVIN SIGN is 3 bytes but lowercases to 1-byte "k"; Unicode-aware
+	// folding would shift match offsets and corrupt the extracted value.
+	body := []byte("KK token=abc;done")
+	expr := boundaryExpressionConfigPrefix + `{"left":"TOKEN=","right":";","case_insensitive":true}`
+	val, err := extractBoundary(expr, body)
+	if err != nil {
+		t.Fatalf("extractBoundary: %v", err)
+	}
+	if val != "abc" {
+		t.Errorf("got %q, want abc", val)
+	}
+}
+
+func TestExtractBoundary_CaseInsensitiveExpandingRuneNoPanic(t *testing.T) {
+	// U+023A grows from 2 to 3 bytes under Unicode lowercasing; with an empty
+	// right boundary this used to compute indices past the original body and
+	// panic, killing the load-generator process.
+	body := []byte("Ⱥ token=abc")
+	expr := boundaryExpressionConfigPrefix + `{"left":"TOKEN=","right":"","case_insensitive":true}`
+	val, err := extractBoundary(expr, body)
+	if err != nil {
+		t.Fatalf("extractBoundary: %v", err)
+	}
+	if val != "abc" {
+		t.Errorf("got %q, want abc", val)
+	}
+}
+
+func TestExtractAllBoundary_CaseInsensitiveUnicode(t *testing.T) {
+	body := []byte("K id=a; ID=b;")
+	expr := boundaryExpressionConfigPrefix + `{"left":"id=","right":";","case_insensitive":true}`
+	vals, err := extractAll(protocol.Extractor{Source: "body", Type: "boundary", Expression: expr, Mode: "all"}, nil, body)
+	if err != nil {
+		t.Fatalf("extractAll: %v", err)
+	}
+	if len(vals) != 2 || vals[0] != "a" || vals[1] != "b" {
+		t.Errorf("vals = %v, want [a b]", vals)
+	}
+}
+
+func TestExtractAllBoundary_EmptyRightSingleMatch(t *testing.T) {
+	vals, err := extractAll(protocol.Extractor{Source: "body", Type: "boundary", Expression: "k=|||", Mode: "all"}, nil, []byte(`k=rest of body`))
+	if err != nil {
+		t.Fatalf("extractAll: %v", err)
+	}
+	if len(vals) != 1 || vals[0] != "rest of body" {
+		t.Errorf("vals = %v, want single rest-of-body match (no phantom empties)", vals)
+	}
+}
+
+func TestPostProcessExtractedValue_HTMLURLEncode(t *testing.T) {
+	got, err := postProcessExtractedValue(protocol.Extractor{Convert: "html_url_encode"}, "a &amp; b")
+	if err != nil {
+		t.Fatalf("postProcess: %v", err)
+	}
+	if got != "a%20%26%20b" {
+		t.Errorf("got %q, want a%%20%%26%%20b (entity-decoded, %%20 spaces)", got)
 	}
 }

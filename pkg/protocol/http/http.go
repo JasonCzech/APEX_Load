@@ -256,9 +256,45 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	respBody = formattedBody
 	result.ResponseBody = string(respBody)
 	for _, ext := range action.Extractors {
+		if ext.Mode == "all" {
+			values, err := extractAll(ext, resp.Header, respBody)
+			if err == nil && len(values) > 0 {
+				for i, value := range values {
+					result.Extractions[fmt.Sprintf("%s_%d", ext.Name, i+1)] = value
+				}
+				result.Extractions[ext.Name+"_count"] = fmt.Sprintf("%d", len(values))
+				continue
+			}
+			if ext.OnMiss == "fail" {
+				if result.Success {
+					result.Success = false
+					if err == nil {
+						err = fmt.Errorf("no matches")
+					}
+					result.ErrorMessage = fmt.Sprintf("extractor %q found no match: %v", ext.Name, err)
+				}
+				continue
+			}
+			// A lenient miss still publishes the count so loops over
+			// {{var.name_count}} behave.
+			result.Extractions[ext.Name+"_count"] = "0"
+			continue
+		}
 		val, err := extract(ext, resp.Header, respBody)
 		if err == nil {
 			result.Extractions[ext.Name] = val
+			continue
+		}
+		switch ext.OnMiss {
+		case "fail":
+			if result.Success {
+				result.Success = false
+				result.ErrorMessage = fmt.Sprintf("extractor %q found no match: %v", ext.Name, err)
+			}
+		case "empty":
+			// Source-tool NotFound=warning/empty semantics: the variable is
+			// assigned an empty string so later templates expand to "".
+			result.Extractions[ext.Name] = ""
 		}
 	}
 

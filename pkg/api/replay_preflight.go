@@ -207,20 +207,81 @@ func replayMissingVariables(script *dsl.Script, variables map[string]string) []s
 			available[trimmed] = struct{}{}
 		}
 	}
+	// Save-all extractors publish derived keys (name_1..name_N, name_count)
+	// rather than the bare name.
+	saveAllPrefixes := make(map[string]struct{})
+	satisfied := func(ref string) bool {
+		if _, ok := available[ref]; ok {
+			return true
+		}
+		for prefix := range saveAllPrefixes {
+			if ref == prefix+"_count" {
+				return true
+			}
+			if rest, ok := strings.CutPrefix(ref, prefix+"_"); ok && rest != "" && strings.Trim(rest, "0123456789") == "" {
+				return true
+			}
+		}
+		return false
+	}
+
+	register := func(extractors []dsl.Extractor) {
+		for _, extractor := range extractors {
+			trimmed := strings.TrimSpace(extractor.Name)
+			if trimmed == "" {
+				continue
+			}
+			if extractor.Mode == "all" {
+				saveAllPrefixes[trimmed] = struct{}{}
+				continue
+			}
+			available[trimmed] = struct{}{}
+		}
+	}
+
 	missing := make(map[string]struct{})
 	for _, action := range replayOrderedActions(script) {
+		// http_sequence children execute sequentially and publish their
+		// extractions for later children and later actions; register them
+		// before checking the sequence's own refs so intra-sequence
+		// correlation does not flag false misses.
+		if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
+			register(replaySequenceChildExtractors(action))
+		}
 		for _, ref := range replayTemplateRefs(action, "var") {
-			if _, ok := available[ref]; !ok {
+			if !satisfied(ref) {
 				missing[ref] = struct{}{}
 			}
 		}
-		for _, extractor := range action.Extractors {
-			if trimmed := strings.TrimSpace(extractor.Name); trimmed != "" {
-				available[trimmed] = struct{}{}
-			}
-		}
+		register(action.Extractors)
 	}
 	return sortedSetKeys(missing)
+}
+
+// replaySequenceChildExtractors decodes the extractors declared on
+// http_sequence child requests (params.requests[].extractors). The JSON
+// round-trip uniformly handles both the wire form ([]any of maps) and the
+// importer's in-memory form ([]map[string]any holding []dsl.Extractor).
+func replaySequenceChildExtractors(action dsl.Action) []dsl.Extractor {
+	raw, ok := action.Params["requests"]
+	if !ok || raw == nil {
+		return nil
+	}
+	payload, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var children []struct {
+		Extractors []dsl.Extractor `json:"extractors"`
+	}
+	if err := json.Unmarshal(payload, &children); err != nil {
+		return nil
+	}
+	var extractors []dsl.Extractor
+	for _, child := range children {
+		extractors = append(extractors, child.Extractors...)
+	}
+	return extractors
 }
 
 func replaySecretRefs(script *dsl.Script) ([]string, []string) {

@@ -123,7 +123,7 @@ describe('LoadComparisonPanel', () => {
     ])
   })
 
-  it('limits comparison requests to selected and filtered test runs', async () => {
+  it('limits comparison requests to the selected test runs', async () => {
     const testOptions = loadComparisonTestOptions()
     const getLoadComparison = vi.fn().mockResolvedValue(transactionComparison())
 
@@ -133,6 +133,7 @@ describe('LoadComparisonPanel', () => {
           applicationId="app-1"
           getLoadComparison={getLoadComparison}
           testOptions={testOptions}
+          selectedTestIds={['run-a', 'run-b']}
         />,
       )
     })
@@ -140,30 +141,18 @@ describe('LoadComparisonPanel', () => {
 
     expect(getLoadComparison).toHaveBeenLastCalledWith('app-1', 'transaction', '', { testIds: ['run-a', 'run-b'] })
     expect(container.textContent).toContain('2 of 2 runs selected')
-
-    const releaseSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Filter comparison runs by release"]')
-    await act(async () => {
-      if (releaseSelect) {
-        releaseSelect.value = 'rel-2'
-        releaseSelect.dispatchEvent(new Event('change', { bubbles: true }))
-      }
-    })
-    await flush()
-
-    expect(runOptionNames()).toEqual(['Checkout Load B'])
-    expect(container.textContent).toContain('1 of 1 filtered runs selected')
-    expect(getLoadComparison).toHaveBeenLastCalledWith('app-1', 'transaction', '', { testIds: ['run-b'] })
+    expect(container.querySelector('.load-comparison-run-list')).toBeNull()
+    expect(container.querySelector('.load-comparison-checkbox')).toBeNull()
 
     await act(async () => {
-      if (releaseSelect) {
-        releaseSelect.value = 'all'
-        releaseSelect.dispatchEvent(new Event('change', { bubbles: true }))
-      }
-    })
-    await flush()
-
-    await act(async () => {
-      setChecked(runOptionCheckbox('Checkout Load A'), false)
+      root.render(
+        <LoadComparisonPanel
+          applicationId="app-1"
+          getLoadComparison={getLoadComparison}
+          testOptions={testOptions}
+          selectedTestIds={['run-b']}
+        />,
+      )
     })
     await flush()
 
@@ -171,27 +160,19 @@ describe('LoadComparisonPanel', () => {
     expect(container.textContent).toContain('1 of 2 runs selected')
 
     await act(async () => {
-      if (releaseSelect) {
-        releaseSelect.value = 'rel-2'
-        releaseSelect.dispatchEvent(new Event('change', { bubbles: true }))
-      }
-    })
-
-    expect(runOptionNames()).toEqual(['Checkout Load B'])
-
-    await act(async () => {
-      setChecked(selectVisibleCheckbox(), false)
+      root.render(
+        <LoadComparisonPanel
+          applicationId="app-1"
+          getLoadComparison={getLoadComparison}
+          testOptions={testOptions}
+          selectedTestIds={[]}
+        />,
+      )
     })
     await flush()
 
     expect(container.textContent).toContain('Select at least one archived run to compare')
-
-    await act(async () => {
-      setChecked(selectVisibleCheckbox(), true)
-    })
-    await flush()
-
-    expect(getLoadComparison).toHaveBeenLastCalledWith('app-1', 'transaction', '', { testIds: ['run-b'] })
+    expect(getLoadComparison).toHaveBeenCalledTimes(2)
   })
 
   it('does not reload when parent polling preserves the same selected run ids', async () => {
@@ -325,27 +306,6 @@ function loadComparisonTestOptions(): LoadComparisonTestOption[] {
 
 function buttonByText(label: string) {
   return Array.from(container.querySelectorAll('button')).find(button => button.textContent === label)
-}
-
-function setChecked(checkbox: HTMLInputElement | null, checked: boolean) {
-  if (!checkbox) throw new Error('checkbox not found')
-  if (checkbox.checked !== checked) {
-    checkbox.click()
-  }
-}
-
-function runOptionCheckbox(name: string): HTMLInputElement | null {
-  const option = Array.from(container.querySelectorAll('.load-comparison-run-option'))
-    .find(row => row.textContent?.includes(name))
-  return option?.querySelector<HTMLInputElement>('input[type="checkbox"]') ?? null
-}
-
-function selectVisibleCheckbox(): HTMLInputElement | null {
-  return container.querySelector<HTMLInputElement>('.load-comparison-checkbox input[type="checkbox"]')
-}
-
-function runOptionNames(): string[] {
-  return Array.from(container.querySelectorAll('.load-comparison-run-name')).map(node => node.textContent?.trim() || '')
 }
 
 function summaryCardRows() {
