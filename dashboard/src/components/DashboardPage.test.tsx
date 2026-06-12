@@ -628,6 +628,30 @@ describe('DashboardPage', () => {
     expect(onSelectTest).toHaveBeenCalledWith('test-complete')
   })
 
+  it('places load comparison checkboxes alongside performance trend rows', async () => {
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+
+    await flushDashboard()
+
+    clickButtonByText('Performance Trend')
+    await flushDashboard()
+
+    expect(apiMock.getLoadComparison).toHaveBeenLastCalledWith('app-1', 'transaction', '', { testIds: ['test-complete', 'test-complete-2'] })
+    expect(container.querySelector('[data-testid="load-comparison-panel"] .load-comparison-run-list')).toBeNull()
+    expect(container.querySelector('[data-testid="load-comparison-panel"] .load-comparison-checkbox')).toBeNull()
+    expect(container.querySelectorAll('.dash-performance-trend tbody .trend-table-checkbox input[type="checkbox"]')).toHaveLength(2)
+  })
+
   it('adds Run Dashboard actions without changing dashboard archive navigation', async () => {
     const onOpenCommandCenter = vi.fn()
 

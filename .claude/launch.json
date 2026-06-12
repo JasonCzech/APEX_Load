@@ -13,6 +13,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000,
+      "autoPort": true,
       "cwd": "dashboard",
       "env": {
         "APEXLOAD_API_PROXY": "http://localhost:8099"

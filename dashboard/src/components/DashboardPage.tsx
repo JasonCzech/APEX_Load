@@ -252,6 +252,24 @@ function compareValues(left: string | number, right: string | number, direction:
   return 0
 }
 
+function setEquals(left: Set<string>, right: Set<string>): boolean {
+  if (left.size !== right.size) return false
+  for (const value of left) {
+    if (!right.has(value)) return false
+  }
+  return true
+}
+
+function deriveSelectedIds(current: Set<string>, previousIds: string[], validIds: string[]): Set<string> {
+  if (validIds.length === 0) return new Set()
+  const valid = new Set(validIds)
+  const retained = new Set(Array.from(current).filter(id => valid.has(id)))
+  const hadNoPreviousIds = previousIds.length === 0
+  const hadAllPreviousIds = previousIds.length > 0 && previousIds.every(id => current.has(id))
+  const hasOverlap = previousIds.some(id => valid.has(id))
+  return hadNoPreviousIds || hadAllPreviousIds || !hasOverlap ? valid : retained
+}
+
 function SortIcon({ active, direction }: { active: boolean; direction: SortDirection }) {
   if (!active) return <span className="sort-icon">↕</span>
   return <span className="sort-icon active">{direction === 'asc' ? '↑' : '↓'}</span>
@@ -527,6 +545,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const [performanceSort, setPerformanceSort] = useState<{ field: PerformanceSortField; direction: SortDirection }>({ field: 'completed', direction: 'desc' })
   const [activitySort, setActivitySort] = useState<{ field: ActivitySortField; direction: SortDirection }>({ field: 'date', direction: 'desc' })
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
+  const [selectedPerformanceTestIds, setSelectedPerformanceTestIds] = useState<Set<string>>(new Set())
+  const performanceSelectAllRef = useRef<HTMLInputElement | null>(null)
+  const previousPerformanceTestIdsRef = useRef<string[]>([])
 
   useEffect(() => {
     if (!dashboardScopeReady) {
@@ -705,6 +726,20 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     })),
     [performanceTrend, releaseNameById],
   )
+  const loadComparisonTestOptionIdsKey = useMemo(
+    () => loadComparisonTestOptions.map(option => option.id).join('\u001f'),
+    [loadComparisonTestOptions],
+  )
+
+  useLayoutEffect(() => {
+    const validIds = loadComparisonTestOptionIdsKey ? loadComparisonTestOptionIdsKey.split('\u001f').filter(Boolean) : []
+    setSelectedPerformanceTestIds(current => {
+      const previousIds = previousPerformanceTestIdsRef.current
+      const next = deriveSelectedIds(current, previousIds, validIds)
+      return setEquals(current, next) ? current : next
+    })
+    previousPerformanceTestIdsRef.current = validIds
+  }, [loadComparisonTestOptionIdsKey])
 
   const sortedPerformanceTrend = useMemo(() => {
     return [...performanceTrend].sort((left, right) => {
@@ -745,6 +780,63 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       return compared || compareValues(completionTime(left.test), completionTime(right.test), 'desc')
     })
   }, [performanceSort, performanceTrend])
+  const effectiveSelectedPerformanceTestIds = useMemo(() => {
+    const validIds = loadComparisonTestOptionIdsKey ? loadComparisonTestOptionIdsKey.split('\u001f').filter(Boolean) : []
+    const previousIds = previousPerformanceTestIdsRef.current
+    const previousIdsKey = previousIds.join('\u001f')
+    if (previousIdsKey === loadComparisonTestOptionIdsKey) {
+      return selectedPerformanceTestIds
+    }
+    return deriveSelectedIds(selectedPerformanceTestIds, previousIds, validIds)
+  }, [loadComparisonTestOptionIdsKey, selectedPerformanceTestIds])
+  const selectedPerformanceTestIdList = useMemo(
+    () => loadComparisonTestOptions.map(option => option.id).filter(id => effectiveSelectedPerformanceTestIds.has(id)),
+    [effectiveSelectedPerformanceTestIds, loadComparisonTestOptions],
+  )
+  const visiblePerformanceTestIds = useMemo(
+    () => sortedPerformanceTrend.map(({ test }) => test.id),
+    [sortedPerformanceTrend],
+  )
+  const selectedVisiblePerformanceTestCount = useMemo(
+    () => visiblePerformanceTestIds.filter(id => effectiveSelectedPerformanceTestIds.has(id)).length,
+    [effectiveSelectedPerformanceTestIds, visiblePerformanceTestIds],
+  )
+  const allVisiblePerformanceTestsSelected = visiblePerformanceTestIds.length > 0
+    && selectedVisiblePerformanceTestCount === visiblePerformanceTestIds.length
+  const hasPartialVisiblePerformanceSelection = selectedVisiblePerformanceTestCount > 0
+    && selectedVisiblePerformanceTestCount < visiblePerformanceTestIds.length
+
+  useEffect(() => {
+    if (performanceSelectAllRef.current) {
+      performanceSelectAllRef.current.indeterminate = hasPartialVisiblePerformanceSelection
+    }
+  }, [hasPartialVisiblePerformanceSelection])
+
+  const setPerformanceTestSelected = (testId: string, checked: boolean) => {
+    setSelectedPerformanceTestIds(current => {
+      const next = new Set(current)
+      if (checked) {
+        next.add(testId)
+      } else {
+        next.delete(testId)
+      }
+      return setEquals(current, next) ? current : next
+    })
+  }
+
+  const setVisiblePerformanceTestsSelected = (checked: boolean) => {
+    setSelectedPerformanceTestIds(current => {
+      const next = new Set(current)
+      visiblePerformanceTestIds.forEach(testId => {
+        if (checked) {
+          next.add(testId)
+        } else {
+          next.delete(testId)
+        }
+      })
+      return setEquals(current, next) ? current : next
+    })
+  }
 
   const releaseTrendStats = useMemo(() => buildReleaseTrendStats(performanceTrend), [performanceTrend])
 
@@ -995,12 +1087,25 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     applicationId={activeApplicationId}
                     getLoadComparison={api.getLoadComparison}
                     testOptions={loadComparisonTestOptions}
+                    selectedTestIds={selectedPerformanceTestIdList}
                   />
                 )}
                 <div className="trend-table-wrap" ref={performanceTableBounds.ref} style={performanceTableBounds.style}>
                   <table className="trend-table">
                     <thead>
                       <tr>
+                        <th className="trend-table-checkbox-col">
+                          <label className="trend-table-checkbox">
+                            <input
+                              ref={performanceSelectAllRef}
+                              type="checkbox"
+                              aria-label="Select all visible runs for load comparison"
+                              checked={allVisiblePerformanceTestsSelected}
+                              disabled={visiblePerformanceTestIds.length === 0}
+                              onChange={event => setVisiblePerformanceTestsSelected(event.currentTarget.checked)}
+                            />
+                          </label>
+                        </th>
                         {renderPerformanceSortHeader('run', 'Run')}
                         {renderPerformanceSortHeader('completed', 'Completed')}
                         {renderPerformanceSortHeader('peak_tps', 'Peak TPS', 'num')}
@@ -1013,7 +1118,24 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     </thead>
                     <tbody>
                       {sortedPerformanceTrend.map(({ test, report, runtimeSummary }) => (
-                        <tr key={test.id} onClick={() => onSelectTest(test.id)}>
+                        <tr
+                          key={test.id}
+                          onClick={event => {
+                            const target = event.target as HTMLElement
+                            if (target.closest('.trend-table-checkbox')) return
+                            onSelectTest(test.id)
+                          }}
+                        >
+                          <td className="trend-table-checkbox-col">
+                            <label className="trend-table-checkbox">
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${test.name} for load comparison`}
+                                checked={effectiveSelectedPerformanceTestIds.has(test.id)}
+                                onChange={event => setPerformanceTestSelected(test.id, event.currentTarget.checked)}
+                              />
+                            </label>
+                          </td>
                           <td>
                             <button
                               type="button"

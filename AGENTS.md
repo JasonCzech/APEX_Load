@@ -23,21 +23,31 @@ default), a React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 cmd/
   generator/     — Load generator binary (deployed as StatefulSet pods)
   controller/    — Test controller + API server binary (Deployment, 2 replicas)
-  apexctl/      — CLI tool for running/managing tests
+  apexctl/       — CLI tool for running/managing tests
+  dslschema/     — Code generator for docs/dsl.schema.json + DSL_ACTION_REFERENCE.md
 pkg/
   protocol/      — Protocol plugin interface + registry
   protocol/http/ — HTTP/1.1 + HTTP/2 protocol implementation
   engine/        — VUser goroutine engine, metrics collection, pacing
-  dsl/           — JSON DSL parser and type definitions
+  dsl/           — JSON DSL parser, type definitions, action catalog
   controller/    — Test orchestration, scheduling, distribution, aggregation
+  distributed/   — Generator-side gRPC worker (controller ↔ generator)
   api/           — REST API server, WebSocket hub, test runner, middleware
   api/static/    — Embedded dashboard build output (from dashboard/)
+  storage/       — SQLite (default) / PostgreSQL persistence layer
+  recorder/      — HTTP recording + HAR conversion + browser recording
+  convert/       — Multi-format import hub (LR, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient)
+  selector/      — Shared element-selector model + replay self-heal
+  scrub/         — PII/credential redaction for artifacts and HAR exports
+  refkey/        — Human-readable, environment-aware reference keys
+  buildinfo/     — Build metadata (version/commit/build-time)
   config/        — Configuration types
 api/
   proto/         — gRPC protobuf definitions (controller ↔ generator)
 dashboard/       — React 18 + TypeScript + Recharts SPA
   src/components/ — Header, TestHub, TestExecution, StatusBadge, CreateTestModal
   src/hooks/      — useWebSocket (real-time), useApi (REST client)
+desktop/         — Wails native client shell (embeds controller API + dashboard)
 deployments/
   k8s/           — Kubernetes manifests, Helm charts
 mcp/
@@ -59,10 +69,12 @@ mcp/
 
 ## Protocol Interface
 All protocols implement `pkg/protocol.Protocol`. Register new protocols in `pkg/protocol/registry.go`.
-Bundled and compiled into every binary (see the `_` imports in `cmd/*/main.go`): HTTP (http/1.1,
-http/2), SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), WebSocket, gRPC, JMS Solace,
-JMS IBM MQ, database (SQL query/exec/transactions), network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP),
-and browser (replay + canary diagnostics).
+Bundled and compiled into the controller/generator binaries (see the `_` imports in `cmd/*/main.go`):
+HTTP (http/1.1, http/2), SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), WebSocket, gRPC,
+JMS Solace, JMS IBM MQ, Kafka (produce/consume/request-reply; in-memory mock broker by default, real
+franz-go network adapter opt-in via `-tags kafka_real`), database (SQL query/exec/transactions),
+network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), and browser (replay + canary diagnostics). `apexctl`
+bundles the same set except database, java_http, and network.
 
 ## Script DSL
 JSON-based. Template variables: `{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`, `{{fn.uuid()}}`.
