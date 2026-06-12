@@ -98,12 +98,12 @@ var scriptTypeScopes = []ScriptTypeScope{
 	{
 		CanonicalName:    "truclient2_web",
 		DisplayName:      "TruClient 2.0 - Web",
-		Status:           ScopeReviewOnly,
+		Status:           ScopeSupported,
 		APEXLoadShape:    "web2_browser_profile browser profile",
 		SupportedInputs:  []string{"Enterprise Script Archive ZIP", ".usr project metadata", "default.xml", "object repository files", "parameter files", "runtime settings"},
-		RequiredEvidence: []string{"fixture-backed parser coverage", "object identification summary", "runtime settings parity", "browser replay evidence", "promotion review artifact", "browser-to-http conversion evidence"},
+		RequiredEvidence: []string{"fixture-backed parser coverage", "object identification summary", "runtime settings parity", "browser replay evidence", "promotion review artifact"},
 		ReviewSections:   []string{"web2_profile_summary", "object_identification", "runtime_settings_parity", "browser_replay_evidence", "promotion_review", "conversion_readiness"},
-		Notes:            "Review-only Web 2.0 browser-profile import scope; supported step shapes produce a browser draft, but selector identity, waits, runtime parity, replay evidence, and the saved promotion review artifact must be reviewed before production promotion.",
+		Notes:            "Executable Web 2.0 browser-profile import scope; supported step shapes produce a browser draft, while selector identity, waits, runtime parity, replay evidence, JavaScript review gates, and the saved promotion review artifact still govern production promotion.",
 	},
 	{
 		CanonicalName:    "truclient_web",
@@ -211,6 +211,27 @@ var stepScopes = []StepScope{
 		Status:        ScopeSupported,
 		APEXLoadShape: "browser_press_key",
 		Notes:         "Keyboard steps map to selector-scoped browser_press_key actions when object identification is available, with focused-page keypress replay as a fallback.",
+	},
+	{
+		CanonicalName: "control_if",
+		DisplayName:   "If / Else / Else If",
+		Status:        ScopeSupported,
+		APEXLoadShape: "control_if",
+		Notes:         "Recognized TruClient branch conditions map to DSL control_if blocks; unrecognized conditions preserve branch bodies behind review-gated always-true wrappers.",
+	},
+	{
+		CanonicalName: "control_loop",
+		DisplayName:   "Loop / Repeat / While",
+		Status:        ScopeSupported,
+		APEXLoadShape: "control_loop",
+		Notes:         "Count loops and recognized while conditions map to DSL control_loop blocks with max-iteration caps; unrecognized loop bounds preserve one-pass review-gated blocks.",
+	},
+	{
+		CanonicalName: "control_transfer",
+		DisplayName:   "Break / Continue",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review",
+		Notes:         "Break and continue require review because the DSL control-flow runtime does not expose non-local branch transfer statements.",
 	},
 }
 
@@ -371,6 +392,12 @@ func LookupStepScope(stepName string) (StepScope, bool) {
 		normalized = "click"
 	case "set", "type":
 		normalized = "set_type"
+	case "if", "if_block", "if_exists", "if_object_exists", "if_element_exists", "else", "else_if", "elseif":
+		normalized = "control_if"
+	case "for", "loop", "repeat", "repeat_loop", "for_loop", "while", "do_while":
+		normalized = "control_loop"
+	case "break", "continue":
+		normalized = "control_transfer"
 	}
 	for _, scope := range stepScopes {
 		if scope.CanonicalName == normalized {

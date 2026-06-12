@@ -801,6 +801,19 @@ Protocols: http, soap, java_http
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
+## Protocol: java_vuser
+
+### `java_vuser_run`
+
+Runs a LoadRunner Java Vuser lifecycle through the governed JVM sidecar runner.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | Java class name to load, usually Actions. |
+| `params.method` | enum: init\|action\|end\|full_lifecycle |  | Lifecycle method or full lifecycle sequence to invoke. |
+| `params.source_archive_ref` | string |  | Preserved source archive or authoring artifact reference. |
+| `params.timeout_ms` | int |  | Per-run timeout in milliseconds; falls back to config.java_vuser.action_timeout_ms. |
+
 ## Protocol: jms
 
 ### `jms_ack`
@@ -1026,6 +1039,142 @@ Aliases: `udp_send`, `winsock_udp`
 | `body` | string |  | Bytes to send; template variables are expanded. |
 | `params.read_bytes` | int |  | Bytes to read back; zero or greater. |
 | `params.timeout_ms` | int |  | Socket timeout in milliseconds; zero or greater. |
+
+## Protocol: sap_gui
+
+### `sapgui_call`
+
+Preserves a raw SAP GUI scripting call for review-gated replay.
+
+Requires one of: `target`, `params.method`
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Control ID or raw receiver path. |
+| `params.method` | string |  | Raw SAP GUI scripting method/property. |
+| `params.args` | array |  | Raw argument list. |
+
+### `sapgui_connect`
+
+Connects to a SAP GUI application server or connection entry.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Connection string or SAP GUI connection entry. |
+| `params.system` | string |  | Optional SAP system identifier. |
+
+### `sapgui_grid`
+
+Executes a SAP GUI grid operation.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | Full SAP GUI control ID. |
+| `value` | string |  | Operation value, when applicable. |
+| `params.method` | enum: select_row\|select_cell\|double_click_cell\|press_toolbar_button\|set_cell\|sort\|filter |  | Typed operation. |
+| `params.row` | int |  | Row index. |
+| `params.column` | string |  | Column name or ID. |
+
+### `sapgui_logon`
+
+Logs on to a SAP GUI session.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.client` | string |  | SAP client number. |
+| `params.user` | string |  | Recorded username or template. |
+| `params.password` | string |  | Password secret template. |
+| `params.language` | string |  | SAP logon language. |
+
+### `sapgui_press`
+
+Presses a button or sends a virtual key.
+
+Requires one of: `target`, `params.vkey`
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Button/control ID when pressing a control. |
+| `params.vkey` | int |  | SAP GUI virtual key code. |
+| `params.description` | string |  | Recorded control description. |
+
+### `sapgui_select`
+
+Selects an item by text, index, or ID.
+
+Requires one of: `value`, `params.text`, `params.index`, `params.id`
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | Full SAP GUI control ID. |
+| `value` | string |  | Selected text/value. |
+| `params.text` | string |  | Selected text. |
+| `params.index` | int |  | Selected zero-based index. |
+| `params.id` | string |  | Selected SAP item ID. |
+
+### `sapgui_set`
+
+Sets a value on a SAP GUI control.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | Full SAP GUI control ID. |
+| `value` | string | yes | Value to set. |
+| `params.control` | enum: text\|combo\|checkbox\|radio\|button\|grid\|table\|tree\|menu\|shell\|unknown |  | Recorded control family. |
+| `params.description` | string |  | Recorded control description. |
+
+### `sapgui_sync`
+
+Waits for SAP GUI status, screen change, or session-idle synchronization.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Optional control/status target. |
+| `params.wait_for` | enum: status_bar\|screen_change\|session_idle |  | Synchronization mode. |
+| `params.timeout_ms` | int |  | Timeout in milliseconds. |
+
+### `sapgui_table`
+
+Executes a SAP GUI table operation.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | Full SAP GUI control ID. |
+| `value` | string |  | Operation value, when applicable. |
+| `params.method` | enum: select_row\|set_cell\|get_cell\|press_cell\|scroll |  | Typed operation. |
+| `params.row` | int |  | Row index. |
+| `params.column` | string |  | Column name or ID. |
+
+### `sapgui_tree`
+
+Executes a SAP GUI tree operation.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | Full SAP GUI control ID. |
+| `value` | string |  | Operation value, when applicable. |
+| `params.method` | enum: select_node\|expand_node\|collapse_node\|double_click_node |  | Typed operation. |
+| `params.row` | int |  | Row index. |
+| `params.column` | string |  | Column name or ID. |
+
+### `sapgui_verify`
+
+Verifies a SAP GUI control value or status text.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | Control or status bar ID. |
+| `value` | string | yes | Expected value/text. |
+| `params.method` | enum: equals\|contains\|matches |  | Comparison method. |
+
+### `sapgui_window`
+
+Activates, maximizes, resizes, or closes a SAP GUI window.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | Window ID such as wnd[0]. |
+| `params.method` | enum: activate\|maximize\|resize\|close |  | Window operation. |
 
 ## Protocol: soap
 

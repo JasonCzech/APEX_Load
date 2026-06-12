@@ -28,7 +28,7 @@ The current controller can run in either local or distributed mode without chang
 
 - **Goroutine-based VUsers**: 1 VUser = 1 goroutine (~2–4 KB stack) for extreme concurrency
 - **Zero-lock metrics**: Buffered channels (cap 10,000) in hot path; metrics aggregated downstream
-- **Protocol plugins**: HTTP/1.1, HTTP/2, SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), WebSocket, gRPC, JMS (Solace, IBM MQ), Kafka (produce/consume/request-reply; in-memory mock broker by default, real franz-go adapter via `-tags kafka_real`), database (SQL), network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), browser (replay + canary diagnostics) — compiled-in, not runtime-loadable
+- **Protocol plugins**: HTTP/1.1, HTTP/2, SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), Java Vuser sidecar bridge (governed and disabled unless runner config enables it), WebSocket, gRPC, JMS (Solace, IBM MQ; real Solace AMQP adapter via `-tags jms_solace_real`), Kafka (produce/consume/request-reply; in-memory mock broker by default, real franz-go adapter via `-tags kafka_real`), database (SQL), network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), browser (replay + canary diagnostics) — compiled-in, not runtime-loadable
 - **JSON DSL**: Human-readable test scripts with template variables and data sources
 - **Vendor-neutral telemetry**: OpenTelemetry native; exportable to Prometheus, Dynatrace, ELK
 - **Streaming percentiles**: T-digest for accurate p95/p99 computation without storing all samples
@@ -44,7 +44,7 @@ The current controller can run in either local or distributed mode without chang
 | `pkg/protocol` | Protocol interface; HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, Kafka, database, network, browser implementations |
 | `pkg/dsl` | Script parser and runtime structures |
 | `pkg/api` | REST handlers, WebSocket hub, test runner |
-| `pkg/convert` | Multi-format import hub (LR archive, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient) |
+| `pkg/convert` | Multi-format import hub (LR/enterprise archives, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient, SAP GUI, Java-family imports) |
 | `dashboard` | React 18 + TypeScript + Recharts SPA (compiles to `pkg/api/static/`) |
 | `pkg/config` | Configuration types and validation |
 | `pkg/storage` | SQLite (default) / PostgreSQL persistence layer |
@@ -330,7 +330,7 @@ POST   /api/v1/scripts/{id}/export      — Export script JSON to disk
 GET    /api/v1/scripts/{id}/download    — Download script JSON
 POST   /api/v1/scripts/import/sample    — Build a script from raw HTTP, cURL, REST JSON, or HAR samples
 GET    /api/v1/scripts/web-api/support-matrix — Get Web/API support, diagnostics, envelopes, and sample projects
-POST   /api/v1/scripts/import/enterprise-script-archive — Detect and route an enterprise script archive ZIP to executable script or review artifact
+POST   /api/v1/scripts/import/enterprise-script-archive — Detect and route an enterprise script archive ZIP to executable script, review artifact, or external-runner-required draft
 POST   /api/v1/scripts/import/enterprise-script-archive/validate — Validate an enterprise script archive draft without saving
 POST   /api/v1/scripts/import/jmeter    — Convert a JMeter plan to DSL
 POST   /api/v1/scripts/import/jmeter/save — Save a reviewed JMeter import draft
@@ -489,7 +489,7 @@ pkg/
   distributed/       # Generator-side gRPC worker
   storage/           # SQLite (default) / PostgreSQL persistence
   recorder/          # HTTP recording + HAR conversion + browser recording
-  convert/           # Multi-format import hub (LR, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient)
+  convert/           # Multi-format import hub (LR, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient, SAP GUI, Java-family imports)
   selector/          # Shared element-selector model + replay self-heal
   scrub/             # PII/credential redaction for artifacts and HAR exports
   refkey/            # Human-readable reference keys

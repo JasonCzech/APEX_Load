@@ -57,10 +57,12 @@ type ScriptConfig struct {
 	WebSocket     WebSocketConfig     `json:"websocket,omitempty"`
 	GRPC          GRPCConfig          `json:"grpc,omitempty"`
 	JavaHTTP      JavaHTTPConfig      `json:"java_http,omitempty"`
+	JavaVuser     JavaVuserConfig     `json:"java_vuser,omitempty"`
 	SOAP          SOAPConfig          `json:"soap,omitempty"`
 	Database      DatabaseConfig      `json:"database,omitempty"`
 	Network       NetworkConfig       `json:"network,omitempty"`
 	Browser       BrowserConfig       `json:"browser,omitempty"`
+	SAPGUI        SAPGUIConfig        `json:"sapgui,omitempty"`
 	JMS           JMSConfig           `json:"jms,omitempty"`
 	Kafka         KafkaConfig         `json:"kafka,omitempty"`
 	ErrorHandling ErrorHandlingConfig `json:"error_handling,omitempty"`
@@ -92,6 +94,17 @@ type JavaHTTPConfig struct {
 	ResponseMapping      map[string]string `json:"response_mapping,omitempty"`
 	ExtractorType        string            `json:"extractor_type,omitempty"`
 	PreserveBinaryResult bool              `json:"preserve_binary_result,omitempty"`
+}
+
+type JavaVuserConfig struct {
+	Enabled          bool     `json:"enabled,omitempty"`
+	RunnerCommand    string   `json:"runner_command,omitempty"`
+	HarnessJar       string   `json:"harness_jar,omitempty"`
+	Classpath        []string `json:"classpath,omitempty"`
+	WorkDir          string   `json:"work_dir,omitempty"`
+	MaxProcesses     int      `json:"max_processes,omitempty"`
+	StartupTimeoutMs int      `json:"startup_timeout_ms,omitempty"`
+	ActionTimeoutMs  int      `json:"action_timeout_ms,omitempty"`
 }
 
 type WebSocketConfig struct {
@@ -169,6 +182,17 @@ type NetworkConfig struct {
 	BaseDN      string   `json:"base_dn,omitempty"`
 }
 
+type SAPGUIConfig struct {
+	ConnectionString string `json:"connection_string,omitempty"`
+	Client           string `json:"client,omitempty"`
+	Language         string `json:"language,omitempty"`
+	Username         string `json:"username,omitempty"`
+	Password         string `json:"password,omitempty"`
+	AutoLogon        bool   `json:"auto_logon,omitempty"`
+	SessionBehavior  string `json:"session_behavior,omitempty"`
+	SyncTimeoutMs    int    `json:"sync_timeout_ms,omitempty"`
+}
+
 // JMSConfig holds broker, destination, and reliability settings for JMS scripts.
 type JMSConfig struct {
 	Provider        string            `json:"provider,omitempty"`         // "solace"
@@ -184,7 +208,14 @@ type JMSConfig struct {
 	DeliveryMode    string            `json:"delivery_mode,omitempty"`    // "persistent", "non_persistent"
 	TimeoutMs       int               `json:"timeout_ms,omitempty"`       // default consume/request timeout
 	Properties      map[string]string `json:"properties,omitempty"`       // provider-specific connection properties
+	TLS             *JMSTLSConfig     `json:"tls,omitempty"`              // TLS material for real broker adapters
 	Mock            bool              `json:"mock,omitempty"`             // use in-memory broker for local shakeout
+}
+
+type JMSTLSConfig struct {
+	CACertSecret       string `json:"ca_cert_secret,omitempty"`
+	TrustStoreRef      string `json:"trust_store_ref,omitempty"`
+	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"`
 }
 
 // KafkaConfig holds broker, security, and producer/consumer settings for Kafka scripts.

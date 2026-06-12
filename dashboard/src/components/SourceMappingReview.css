@@ -143,6 +143,11 @@
   text-transform: capitalize;
 }
 
+.source-map-support-mode.external-required {
+  color: var(--warning);
+  font-weight: 700;
+}
+
 .source-map-toolbar {
   align-items: flex-end;
   justify-content: flex-start;

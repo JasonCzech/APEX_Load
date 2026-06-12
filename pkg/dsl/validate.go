@@ -54,11 +54,17 @@ func ValidateScriptIssues(script *Script) []string {
 	if script.Protocol == "java_http" {
 		issues = append(issues, validateJavaHTTPScriptIssues(script)...)
 	}
+	if script.Protocol == "java_vuser" {
+		issues = append(issues, validateJavaVuserScriptIssues(script)...)
+	}
 	if script.Protocol == "database" {
 		issues = append(issues, validateDatabaseScriptIssues(script)...)
 	}
 	if script.Protocol == "network" {
 		issues = append(issues, validateNetworkScriptIssues(script)...)
+	}
+	if script.Protocol == "sap_gui" {
+		issues = append(issues, validateSAPGUIScriptIssues(script)...)
 	}
 
 	issues = append(issues, validateParameterIssues(script)...)
@@ -156,7 +162,7 @@ func firstNonEmptyString(values ...string) string {
 
 func protocolAllowsEmptyBaseURL(protocolName string) bool {
 	switch strings.TrimSpace(protocolName) {
-	case "browser", "database", "network", "kafka":
+	case "browser", "database", "network", "kafka", "sap_gui", "java_vuser":
 		return true
 	default:
 		return false
@@ -249,6 +255,10 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 		return append(issues, rebased(validateDatabaseActionIssues(index, action))...)
 	case "network":
 		return append(issues, rebased(validateNetworkActionIssues(index, action))...)
+	case "sap_gui":
+		return append(issues, rebased(validateSAPGUIActionIssues(index, action))...)
+	case "java_vuser":
+		return append(issues, rebased(validateJavaVuserActionIssues(index, action))...)
 	}
 	if action.Type == "http_sequence" {
 		return append(issues, rebased(validateHTTPSequenceActionIssues(index, action))...)
@@ -651,7 +661,9 @@ func validateJMSScriptIssues(script *Script) []string {
 		if jms.MessageVPN == "" {
 			issues = append(issues, "config.jms.message_vpn is recommended when mock mode is disabled")
 		}
-		issues = append(issues, "real Solace JMS adapter is not available in this build; enable config.jms.mock for replay")
+		if strings.TrimSpace(script.Protocol) == "jms-solace" && !SolaceJMSRealAdapterAvailable() {
+			issues = append(issues, "real Solace JMS adapter is not available in this build; enable config.jms.mock for replay or build with -tags jms_solace_real")
+		}
 	}
 	if jms.Destination == "" {
 		usesActionDestinations := true
@@ -675,6 +687,8 @@ func validateJMSScriptIssues(script *Script) []string {
 		issues = append(issues, validateBodyFileIssues(fmt.Sprintf("actions[%d]", i), action)...)
 		if action.Type == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing type", i, action.Name))
+		} else if isEngineActionType(action.Type) {
+			issues = append(issues, validateEngineActionIssues(script.Protocol, fmt.Sprintf("actions[%d]", i), i, action)...)
 		} else if _, ok := protocolActionSpec("jms", action.Type); !ok {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: unsupported JMS action type %q", i, action.Name, action.Type))
 		}
@@ -690,6 +704,32 @@ func validateJMSScriptIssues(script *Script) []string {
 	}
 
 	return issues
+}
+
+func validateSAPGUIScriptIssues(script *Script) []string {
+	var issues []string
+	cfg := script.Config.SAPGUI
+	if cfg.SyncTimeoutMs < 0 {
+		issues = append(issues, "config.sapgui.sync_timeout_ms must be zero or greater")
+	}
+	if cfg.SessionBehavior != "" && !isAllowedValue(cfg.SessionBehavior, "attach", "new_session", "reuse") {
+		issues = append(issues, "config.sapgui.session_behavior must be attach, new_session, or reuse")
+	}
+	if cfg.Password != "" && !strings.HasPrefix(cfg.Password, "{{secret.") {
+		issues = append(issues, "config.sapgui.password must be a secret template")
+	}
+	return issues
+}
+
+func validateSAPGUIActionIssues(index int, action Action) []string {
+	spec, ok := protocolActionSpec("sap_gui", action.Type)
+	if !ok {
+		return []string{fmt.Sprintf("actions[%d] %q: unsupported SAP GUI action type %q", index, action.Name, action.Type)}
+	}
+	if spec.Validate != nil {
+		return spec.Validate(index, action)
+	}
+	return nil
 }
 
 func validateKafkaScriptIssues(script *Script) []string {
@@ -760,6 +800,32 @@ func validateKafkaScriptIssues(script *Script) []string {
 	}
 
 	return issues
+}
+
+func validateJavaVuserScriptIssues(script *Script) []string {
+	var issues []string
+	cfg := script.Config.JavaVuser
+	if cfg.MaxProcesses < 0 {
+		issues = append(issues, "config.java_vuser.max_processes must be zero or greater")
+	}
+	if cfg.StartupTimeoutMs < 0 {
+		issues = append(issues, "config.java_vuser.startup_timeout_ms must be zero or greater")
+	}
+	if cfg.ActionTimeoutMs < 0 {
+		issues = append(issues, "config.java_vuser.action_timeout_ms must be zero or greater")
+	}
+	return issues
+}
+
+func validateJavaVuserActionIssues(index int, action Action) []string {
+	spec, ok := protocolActionSpec("java_vuser", action.Type)
+	if !ok {
+		return []string{fmt.Sprintf("actions[%d] %q: unsupported Java Vuser action type %q", index, action.Name, action.Type)}
+	}
+	if spec.Validate != nil {
+		return spec.Validate(index, action)
+	}
+	return nil
 }
 
 func validateParameterIssues(script *Script) []string {

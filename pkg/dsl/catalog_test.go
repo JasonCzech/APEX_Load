@@ -179,6 +179,16 @@ func TestProtocolActionTypeMembership(t *testing.T) {
 			rejected: []string{"kafka_unknown", "jms_publish"},
 		},
 		{
+			family:   "sap_gui",
+			accepted: []string{"sapgui_connect", "sapgui_logon", "sapgui_set", "sapgui_press", "sapgui_grid", "sapgui_sync", "sapgui_call"},
+			rejected: []string{"sapgui_unknown", "GET"},
+		},
+		{
+			family:   "java_vuser",
+			accepted: []string{"java_vuser_run"},
+			rejected: []string{"java_vuser_unknown", "jms_publish"},
+		},
+		{
 			family:   "http",
 			accepted: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "http_sequence"},
 			rejected: []string{"browser_click"},
@@ -275,7 +285,7 @@ func TestActionSpecsForProtocol(t *testing.T) {
 // TestCatalogProtocolFamilies pins the family list the API and docs expose.
 func TestCatalogProtocolFamilies(t *testing.T) {
 	got := CatalogProtocolFamilies()
-	want := []string{"browser", "database", "grpc", "http", "java_http", "jms", "kafka", "network", "soap", "websocket"}
+	want := []string{"browser", "database", "grpc", "http", "java_http", "java_vuser", "jms", "kafka", "network", "sap_gui", "soap", "websocket"}
 	if len(got) != len(want) {
 		t.Fatalf("CatalogProtocolFamilies() = %v, want %v", got, want)
 	}

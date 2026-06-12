@@ -300,6 +300,11 @@ func metadataString(metadata map[string]any, key string) string {
 	return strings.TrimSpace(value)
 }
 
+func metadataBool(metadata map[string]any, key string) bool {
+	value, _ := metadata[key].(bool)
+	return value
+}
+
 func cloneSourceStringMap(in map[string]string) map[string]string {
 	if len(in) == 0 {
 		return nil

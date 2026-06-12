@@ -173,39 +173,50 @@ func inspectDefaultXML(name string, content string, descriptors []ObjectDescript
 	}
 	steps := make([]StepInspection, 0)
 	fragments := make([]SourceFragment, 0)
-	for _, step := range executionSteps(doc.Steps) {
-		action := strings.TrimSpace(step.Action)
-		if action == "" {
-			continue
+	var inspectSequence func([]truXMLStep)
+	inspectSequence = func(stepsToInspect []truXMLStep) {
+		for _, step := range stepsToInspect {
+			inspectStepForInventory(step, descriptors, &inventory, &steps, &fragments)
+			if len(step.Steps) > 0 {
+				inspectSequence(step.Steps)
+			}
 		}
-		inventory.Total++
-		scope, ok := LookupStepScope(action)
-		if !ok {
-			inventory.Unsupported[action]++
-			stepInspection := inspectStep(step, ScopeOutOfScope, "", descriptors)
-			steps = append(steps, stepInspection)
-			fragments = append(fragments, sourceFragment(stepInspection, "Unsupported TruClient step action is not mapped to a APEX Load browser action."))
-			continue
-		}
-		switch scope.Status {
-		case ScopeSupported:
-			inventory.Supported[scope.CanonicalName]++
-		case ScopeReviewOnly:
-			inventory.ReviewOnly[scope.CanonicalName]++
-			stepInspection := inspectStep(step, scope.Status, scope.CanonicalName, descriptors)
-			steps = append(steps, stepInspection)
-			fragments = append(fragments, sourceFragment(stepInspection, "Review-only TruClient step requires replay or guided repair before approval."))
-			continue
-		default:
-			inventory.Unsupported[scope.CanonicalName]++
-			stepInspection := inspectStep(step, scope.Status, scope.CanonicalName, descriptors)
-			steps = append(steps, stepInspection)
-			fragments = append(fragments, sourceFragment(stepInspection, "TruClient step scope is not executable in the current browser draft importer."))
-			continue
-		}
-		steps = append(steps, inspectStep(step, scope.Status, scope.CanonicalName, descriptors))
 	}
+	inspectSequence(executionSteps(doc.Steps))
 	return inventory, steps, fragments, nil
+}
+
+func inspectStepForInventory(step truXMLStep, descriptors []ObjectDescriptor, inventory *StepInventory, steps *[]StepInspection, fragments *[]SourceFragment) {
+	action := strings.TrimSpace(step.Action)
+	if action == "" {
+		return
+	}
+	inventory.Total++
+	scope, ok := LookupStepScope(action)
+	if !ok {
+		inventory.Unsupported[action]++
+		stepInspection := inspectStep(step, ScopeOutOfScope, "", descriptors)
+		*steps = append(*steps, stepInspection)
+		*fragments = append(*fragments, sourceFragment(stepInspection, "Unsupported TruClient step action is not mapped to a APEX Load browser action."))
+		return
+	}
+	switch scope.Status {
+	case ScopeSupported:
+		inventory.Supported[scope.CanonicalName]++
+	case ScopeReviewOnly:
+		inventory.ReviewOnly[scope.CanonicalName]++
+		stepInspection := inspectStep(step, scope.Status, scope.CanonicalName, descriptors)
+		*steps = append(*steps, stepInspection)
+		*fragments = append(*fragments, sourceFragment(stepInspection, "Review-only TruClient step requires replay or guided repair before approval."))
+		return
+	default:
+		inventory.Unsupported[scope.CanonicalName]++
+		stepInspection := inspectStep(step, scope.Status, scope.CanonicalName, descriptors)
+		*steps = append(*steps, stepInspection)
+		*fragments = append(*fragments, sourceFragment(stepInspection, "TruClient step scope is not executable in the current browser draft importer."))
+		return
+	}
+	*steps = append(*steps, inspectStep(step, scope.Status, scope.CanonicalName, descriptors))
 }
 
 func archiveFileSummary(path string, content string) ArchiveFileSummary {
@@ -876,18 +887,27 @@ func replayDiagnosticsForStep(step StepInspection) []ReplayDiagnostic {
 		})
 	}
 	if step.FrameContext != "" {
-		diagnostics = append(diagnostics, ReplayDiagnostic{
-			Code:     "frame_mismatch_risk",
-			Severity: "info",
-			Summary:  "The imported step carries iframe/frame context.",
-			Action:   "Replay the step and confirm the selector is scoped to the expected frame.",
-		})
+		if normalizeTruClientFrameSelector(step.FrameContext) != "" {
+			diagnostics = append(diagnostics, ReplayDiagnostic{
+				Code:     "frame_context_resolved",
+				Severity: "info",
+				Summary:  "The imported step carries iframe/frame context that can be mapped to a frame selector.",
+				Action:   "Replay the step and confirm the selector is scoped to the expected frame.",
+			})
+		} else {
+			diagnostics = append(diagnostics, ReplayDiagnostic{
+				Code:     "frame_mismatch_risk",
+				Severity: "warning",
+				Summary:  "The imported step carries iframe/frame context that could not be resolved.",
+				Action:   "Choose a frame selector from replay DOM evidence before approving the imported step.",
+			})
+		}
 	}
 	if step.WindowContext != "" {
 		diagnostics = append(diagnostics, ReplayDiagnostic{
-			Code:     "window_context_risk",
+			Code:     "window_context_resolved",
 			Severity: "info",
-			Summary:  "The imported step carries window or tab context.",
+			Summary:  "The imported step carries window or tab context that can be mapped to a switch-window action.",
 			Action:   "Replay the flow and confirm the active page matches the original source window context.",
 		})
 	}

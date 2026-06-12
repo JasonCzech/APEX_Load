@@ -137,9 +137,6 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 	parameterFileNames := findParameterFiles(files, projectConfig)
-	if isJavaProtocolsProject(projectConfig) {
-		return convertJavaJMSZip(files, opts, projectConfig, projectFileName, projectSections, runtimeFileName, parameterFileNames)
-	}
 	if trueClientScope != nil {
 		trueClientResult, err := trueclient.ConvertArchive(files, trueclient.ConvertOptions{
 			ScriptName:           opts.ScriptName,
@@ -172,31 +169,35 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		if trueClientScope.Status == trueclient.ScopeReviewOnly {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.", trueClientScope.DisplayName))
 		}
-		parameterSections := make(map[string]map[string]map[string]string)
-		for _, parameterFileName := range parameterFileNames {
-			content, ok := findFile(files, parameterFileName)
-			if !ok {
-				continue
-			}
-			parsed := ParseParameterFile(parameterFileName, content, files)
-			if len(parsed.Parameters) > 0 {
-				result.Script.Parameters = append(result.Script.Parameters, parsed.Parameters...)
-			}
-			if len(parsed.DataSources) > 0 {
-				result.Script.DataSources = append(result.Script.DataSources, parsed.DataSources...)
-			}
-			if len(parsed.Warnings) > 0 {
-				result.Warnings = append(result.Warnings, parsed.Warnings...)
-			}
-			if len(parsed.Sections) > 0 {
-				parameterSections[filepath.Base(parameterFileName)] = parsed.Sections
-			}
+		finalizeEnterpriseArchiveImportResult(result, archiveFinalizationContext{
+			Files:                files,
+			ProjectFileName:      projectFileName,
+			ProjectSections:      projectSections,
+			ProjectConfig:        projectConfig,
+			RuntimeFileName:      runtimeFileName,
+			ParameterFileNames:   parameterFileNames,
+			TrueClientInspection: trueClientInspection,
+		})
+		return result, nil
+	}
+	if isJavaProtocolsProject(projectConfig) || isJavaVuserArchive(files, projectConfig) {
+		detected := DetectProtocol(files, projectConfig, nil)
+		result, err := ConvertJava(files, opts, detected)
+		if err != nil {
+			return nil, err
 		}
-		applyKnownParameterReferences(result.Script)
-		applyParameterizedBaseURL(result.Script)
-		result.SourceReview = BuildSourceReview(files, sourceReviewMappings(result))
-		attachSourceMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, trueClientInspection)
-		attachImportFidelityReport(result, files, projectConfig, nil)
+		if opts.RuntimeSettings != nil && result.Script != nil {
+			mergeScriptConfig(&result.Script.Config, opts.RuntimeSettings)
+		}
+		finalizeEnterpriseArchiveImportResult(result, archiveFinalizationContext{
+			Files:              files,
+			ProjectFileName:    projectFileName,
+			ProjectSections:    projectSections,
+			ProjectConfig:      projectConfig,
+			RuntimeFileName:    runtimeFileName,
+			ParameterFileNames: parameterFileNames,
+			ParsedActions:      javaSourcesAsParsedActions(orderedJavaSourceActionFiles(projectConfig, files), files),
+		})
 		return result, nil
 	}
 
@@ -234,6 +235,9 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 
 	if len(parsedActions) == 0 {
 		detected := DetectProtocol(files, projectConfig, nil)
+		if isSAPGUIProject(projectConfig) || detected.CanonicalSourceProtocol == "sap_gui" {
+			return sapGUINoParseReview(files, detected), nil
+		}
 		metadata := map[string]any{"reason": "no_parseable_c_actions"}
 		if len(parseErrors) > 0 {
 			metadata["parse_errors"] = parseErrors
@@ -249,6 +253,25 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 
 	detected := DetectProtocol(files, projectConfig, parsedActions)
+	if isSAPGUIProtocolDetected(detected) || hasSAPGUIFunctions(parsedActions) {
+		result, err := ConvertSAPGUI(parsedActions, opts, detected, files)
+		if err != nil {
+			return nil, err
+		}
+		if opts.RuntimeSettings != nil && result.Script != nil {
+			mergeScriptConfig(&result.Script.Config, opts.RuntimeSettings)
+		}
+		finalizeEnterpriseArchiveImportResult(result, archiveFinalizationContext{
+			Files:              files,
+			ProjectFileName:    projectFileName,
+			ProjectSections:    projectSections,
+			ProjectConfig:      projectConfig,
+			RuntimeFileName:    runtimeFileName,
+			ParameterFileNames: parameterFileNames,
+		})
+		attachImportFidelityReport(result, files, projectConfig, parsedActions)
+		return result, nil
+	}
 	var result *ConvertResult
 	var convertErr error
 	switch {
@@ -259,6 +282,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	case detected.APEXLoadProtocol == "network":
 		result, convertErr = ConvertNetwork(parsedActions, opts, detected)
 	case detected.APEXLoadProtocol == "http" || detected.APEXLoadProtocol == "soap":
+		opts.UseMaskedBodySecretReferences = true
 		result, convertErr = Convert(parsedActions, opts)
 		if result != nil {
 			result.DetectedProtocol = &detected
@@ -274,33 +298,87 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if convertErr != nil {
 		return nil, convertErr
 	}
+	finalizeEnterpriseArchiveImportResult(result, archiveFinalizationContext{
+		Files:              files,
+		ProjectFileName:    projectFileName,
+		ProjectSections:    projectSections,
+		ProjectConfig:      projectConfig,
+		RuntimeFileName:    runtimeFileName,
+		ParameterFileNames: parameterFileNames,
+		ParsedActions:      parsedActions,
+	})
+	return result, nil
+}
+
+type archiveFinalizationContext struct {
+	Files                map[string]string
+	ProjectFileName      string
+	ProjectSections      map[string]map[string]string
+	ProjectConfig        *ProjectConfig
+	RuntimeFileName      string
+	ParameterFileNames   []string
+	TrueClientInspection *trueclient.ArchiveInspection
+	ParsedActions        []*ParsedAction
+}
+
+func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFinalizationContext) {
+	if result == nil {
+		return
+	}
 	parameterSections := make(map[string]map[string]map[string]string)
-	for _, parameterFileName := range parameterFileNames {
-		content, ok := findFile(files, parameterFileName)
-		if !ok {
-			continue
+	if result.Script != nil {
+		for _, parameterFileName := range ctx.ParameterFileNames {
+			content, ok := findFile(ctx.Files, parameterFileName)
+			if !ok {
+				continue
+			}
+			parsed := ParseParameterFile(parameterFileName, content, ctx.Files)
+			if len(parsed.Parameters) > 0 {
+				result.Script.Parameters = append(result.Script.Parameters, parsed.Parameters...)
+			}
+			if len(parsed.DataSources) > 0 {
+				result.Script.DataSources = append(result.Script.DataSources, parsed.DataSources...)
+			}
+			if len(parsed.Warnings) > 0 {
+				result.Warnings = append(result.Warnings, parsed.Warnings...)
+			}
+			if len(parsed.Sections) > 0 {
+				parameterSections[filepath.Base(parameterFileName)] = parsed.Sections
+			}
 		}
-		parsed := ParseParameterFile(parameterFileName, content, files)
-		if len(parsed.Parameters) > 0 {
-			result.Script.Parameters = append(result.Script.Parameters, parsed.Parameters...)
-		}
-		if len(parsed.DataSources) > 0 {
-			result.Script.DataSources = append(result.Script.DataSources, parsed.DataSources...)
-		}
-		if len(parsed.Warnings) > 0 {
-			result.Warnings = append(result.Warnings, parsed.Warnings...)
-		}
-		if len(parsed.Sections) > 0 {
-			parameterSections[filepath.Base(parameterFileName)] = parsed.Sections
+		applyKnownParameterReferences(result.Script)
+		applyParameterizedBaseURL(result.Script)
+	}
+	result.SourceReview = BuildSourceReview(ctx.Files, sourceReviewMappings(result))
+	redactArchiveMaskedBodyMetadata(result.Script)
+	attachSourceMetadata(result.Script, result, ctx.ProjectFileName, ctx.ProjectSections, ctx.ProjectConfig, ctx.Files, ctx.RuntimeFileName, parameterSections, ctx.ParameterFileNames, ctx.TrueClientInspection)
+	attachImportFidelityReport(result, ctx.Files, ctx.ProjectConfig, ctx.ParsedActions)
+}
+
+func redactArchiveMaskedBodyMetadata(script *dsl.Script) {
+	if script == nil {
+		return
+	}
+	var redactActions func([]dsl.Action)
+	redactActions = func(actions []dsl.Action) {
+		for i := range actions {
+			if actions[i].Metadata != nil {
+				if _, ok := actions[i].Metadata["masked_body_raw"]; ok {
+					actions[i].Metadata["masked_body_raw"] = "lr_unmask(\"[REDACTED]\")"
+				}
+				if _, ok := actions[i].Metadata["masked_body_calls"]; ok {
+					actions[i].Metadata["masked_body_calls"] = []string{"lr_unmask(\"[REDACTED]\")"}
+				}
+			}
+			if actions[i].Control != nil {
+				redactActions(actions[i].Control.Steps)
+				redactActions(actions[i].Control.Else)
+			}
 		}
 	}
-
-	applyKnownParameterReferences(result.Script)
-	applyParameterizedBaseURL(result.Script)
-	result.SourceReview = BuildSourceReview(files, sourceReviewMappings(result))
-	attachSourceMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, nil)
-	attachImportFidelityReport(result, files, projectConfig, parsedActions)
-	return result, nil
+	redactActions(script.Init)
+	redactActions(script.Actions)
+	redactActions(script.Teardown)
 }
 
 func orderedSourceActionFiles(projectConfig *ProjectConfig, files map[string]string) []string {
@@ -471,6 +549,29 @@ func findParameterFiles(files map[string]string, projectConfig *ProjectConfig) [
 func sourceZipHasDevWebMain(files map[string]string) bool {
 	for name, content := range files {
 		if strings.EqualFold(filepath.Base(name), "main.js") && strings.Contains(content, "load.") {
+			return true
+		}
+	}
+	return false
+}
+
+func isJavaVuserArchive(files map[string]string, projectConfig *ProjectConfig) bool {
+	if projectConfig != nil {
+		if strings.Contains(strings.ToLower(projectConfig.ScriptLanguage), "java") || strings.Contains(strings.ToLower(projectConfig.RunType), "java") {
+			return true
+		}
+		for _, actionFile := range projectConfig.ActionFiles {
+			if strings.HasSuffix(strings.ToLower(actionFile), ".java") {
+				return true
+			}
+		}
+	}
+	for name, content := range files {
+		base := strings.ToLower(filepath.Base(name))
+		if base == "actions.java" || base == "vuser_init.java" || base == "vuser_end.java" {
+			return true
+		}
+		if strings.HasSuffix(base, ".java") && strings.Contains(strings.ToLower(content), "lrapi") {
 			return true
 		}
 	}

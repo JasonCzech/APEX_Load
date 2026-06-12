@@ -115,6 +115,12 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 	if conflict := browserDensityGovernanceLaunchConflict(preview.CapacityAdvisory); conflict != nil {
 		blocking = append(blocking, *conflict)
 	}
+	if conflicts := externalRunnerLaunchConflicts(preview.Groups); len(conflicts) > 0 {
+		blocking = append(blocking, conflicts...)
+	}
+	if conflicts := javaVuserRunnerLaunchConflicts(preview.Groups); len(conflicts) > 0 {
+		blocking = append(blocking, conflicts...)
+	}
 
 	if conflicts := tr.launchWindowConflictsLocked(preview, window, now, ""); len(conflicts) > 0 {
 		blocking = append(blocking, conflicts...)

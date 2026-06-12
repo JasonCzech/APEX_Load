@@ -2170,10 +2170,12 @@ paths:
   /api/v1/scripts/authoring/capabilities:
     get:
       summary: Authoring Capabilities
-      description: '**Handler:** `handleAuthoringCapabilities`
+      description: |
+        Returns the code-owned authoring contract, including source capability flags for Enterprise Script Archive, TruClient 2 Web, SAP GUI external-runner drafts, Java-family imports, templates, manual authoring, and AI-assisted workflows.
 
+        **Handler:** `handleAuthoringCapabilities`
 
-        **Access Control:** Requires Authentication (Role based on specific entity)'
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleAuthoringCapabilities
       responses:
         '200':
@@ -2550,39 +2552,113 @@ paths:
       - Scripts
   /api/v1/scripts/import/enterprise-script-archive:
     post:
-      summary: Import Load Runner
-      description: '**Handler:** `handleImportEnterpriseArchive`
+      summary: Import Enterprise Script Archive
+      description: |
+        Imports an enterprise script archive ZIP with protocol auto-detection. The shared import response may contain executable scripts, review-only artifacts, or external-runner-required drafts. TruClient 2 Web imports produce browser drafts with replay and selector review sections. SAP GUI imports produce `sap_gui` review drafts requiring `windows_sap_gui_runner`. Java-family imports prefer deterministic JMS mapping; `allow_java_vuser_runner=true` enables the governed Java Vuser sidecar fallback requiring `java_vuser_jvm_runner`.
 
+        **Handler:** `handleImportEnterpriseArchive`
 
-        **Access Control:** Requires Authentication (Role based on specific entity)'
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleImportEnterpriseArchive
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Enterprise script archive ZIP.
+                name:
+                  type: string
+                  description: Optional script name override.
+                base_url:
+                  type: string
+                  description: Optional base URL override.
+                include_assertions:
+                  type: boolean
+                  description: Add default status_code assertions.
+                preserve_transactions:
+                  type: boolean
+                  description: Preserve source transaction names in generated actions.
+                migration_block_statuses:
+                  type: string
+                  description: Comma-separated runtime-setting statuses that should block migration readiness.
+                salesforce_native:
+                  type: boolean
+                  description: Build the Salesforce native preview when source signals qualify.
+                allow_java_vuser_runner:
+                  type: boolean
+                  description: Opt in to Java Vuser external-runner fallback for unmapped Java archives.
       responses:
         '200':
-          description: Successful operation
+          description: Import review envelope with script(s), warnings, stats, review_sections, repair_suggestions, detected_protocol, protocol_compat_report, fidelity_report, source_review, review_artifact, trueclient2_compat_report, and parameterization.
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
       - Scripts
   /api/v1/scripts/import/enterprise-script-archive/validate:
     post:
-      summary: Validate Load Runner Import
-      description: '**Handler:** `handleValidateEnterpriseArchiveImport`
+      summary: Validate Enterprise Script Archive Import
+      description: |
+        Dry-runs enterprise script archive import without saving. Uses the same protocol detection, fidelity report, runtime-setting parity, review artifact, and external-runner posture as conversion.
 
+        **Handler:** `handleValidateEnterpriseArchiveImport`
 
-        **Access Control:** Requires Authentication (Role based on specific entity)'
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleValidateEnterpriseArchiveImport
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Enterprise script archive ZIP.
+                name:
+                  type: string
+                  description: Optional script name override.
+                base_url:
+                  type: string
+                  description: Optional base URL override.
+                include_assertions:
+                  type: boolean
+                  description: Add default status_code assertions.
+                preserve_transactions:
+                  type: boolean
+                  description: Preserve source transaction names in generated actions.
+                migration_block_statuses:
+                  type: string
+                  description: Comma-separated runtime-setting statuses that should block migration readiness.
+                salesforce_native:
+                  type: boolean
+                  description: Build the Salesforce native preview when source signals qualify.
+                allow_java_vuser_runner:
+                  type: boolean
+                  description: Opt in to Java Vuser external-runner fallback for unmapped Java archives.
       responses:
         '200':
-          description: Successful operation
+          description: Import review envelope without saving generated assets.
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
       - Scripts
   /api/v1/scripts/import/enterprise-script-archive/support-matrix:
     get:
-      summary: Load Runner Support Matrix
-      description: '**Handler:** `handleEnterpriseArchiveSupportMatrix`
+      summary: Enterprise Script Archive Support Matrix
+      description: |
+        Returns enterprise archive routing support, including executable, review-only, and external-runner-required protocols; TruClient script-type support; Web 2.0 fixture expectations; runtime-setting parity; and migration readiness policy metadata.
 
+        **Handler:** `handleEnterpriseArchiveSupportMatrix`
 
-        **Access Control:** Requires Authentication (Role based on specific entity)'
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleEnterpriseArchiveSupportMatrix
       responses:
         '200':
@@ -3162,12 +3238,12 @@ paths:
       - Script-debug
   /api/v1/replay/sessions/{session_id}:
     get:
-      summary: Get Script Debug Session
+      summary: Get Replay Session
       description: '**Handler:** `handleGetScriptDebugSession`
 
 
         **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
-      operationId: handleGetScriptDebugSession
+      operationId: handleGetReplaySession
       responses:
         '200':
           description: Successful operation
@@ -3182,12 +3258,12 @@ paths:
       - Replay
   /api/v1/replay/sessions/{session_id}/export:
     get:
-      summary: Export Script Debug Session
+      summary: Export Replay Session
       description: '**Handler:** `handleExportScriptDebugSession`
 
 
         **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
-      operationId: handleExportScriptDebugSession
+      operationId: handleExportReplaySession
       responses:
         '200':
           description: Successful operation
@@ -3202,12 +3278,12 @@ paths:
       - Replay
   /api/v1/replay/sessions/{session_id}/pause:
     post:
-      summary: Pause Script Debug Session
+      summary: Pause Replay Session
       description: '**Handler:** `handlePauseScriptDebugSession`
 
 
         **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
-      operationId: handlePauseScriptDebugSession
+      operationId: handlePauseReplaySession
       responses:
         '200':
           description: Successful operation
@@ -3222,12 +3298,12 @@ paths:
       - Replay
   /api/v1/replay/sessions/{session_id}/resume:
     post:
-      summary: Resume Script Debug Session
+      summary: Resume Replay Session
       description: '**Handler:** `handleResumeScriptDebugSession`
 
 
         **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
-      operationId: handleResumeScriptDebugSession
+      operationId: handleResumeReplaySession
       responses:
         '200':
           description: Successful operation
@@ -3242,12 +3318,12 @@ paths:
       - Replay
   /api/v1/replay/sessions/{session_id}/step:
     post:
-      summary: Step Script Debug Session
+      summary: Step Replay Session
       description: '**Handler:** `handleStepScriptDebugSession`
 
 
         **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
-      operationId: handleStepScriptDebugSession
+      operationId: handleStepReplaySession
       responses:
         '200':
           description: Successful operation
@@ -3262,12 +3338,12 @@ paths:
       - Replay
   /api/v1/replay/sessions/{session_id}/stop:
     post:
-      summary: Stop Script Debug Session
+      summary: Stop Replay Session
       description: '**Handler:** `handleStopScriptDebugSession`
 
 
         **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
-      operationId: handleStopScriptDebugSession
+      operationId: handleStopReplaySession
       responses:
         '200':
           description: Successful operation
@@ -3282,12 +3358,12 @@ paths:
       - Replay
   /api/v1/replay/sessions/{session_id}/breakpoints:
     patch:
-      summary: Update Script Debug Breakpoints
+      summary: Update Replay Breakpoints
       description: '**Handler:** `handleUpdateScriptDebugBreakpoints`
 
 
         **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
-      operationId: handleUpdateScriptDebugBreakpoints
+      operationId: handleUpdateReplayBreakpoints
       responses:
         '200':
           description: Successful operation
@@ -4115,10 +4191,12 @@ paths:
   /api/v1/protocol-bundles/support-matrix:
     get:
       summary: Protocol Bundle Support Matrix
-      description: '**Handler:** `handleProtocolBundleSupportMatrix`
+      description: |
+        Returns protocol-bundle posture, runner requirements, entitlements, density envelopes, and governance notes. External-runner entries include `sap_gui` with `windows_sap_gui_runner` and `java_vuser` with `java_vuser_jvm_runner`; launch preflight uses these requirements to block runs until the matching runner capability is configured.
 
+        **Handler:** `handleProtocolBundleSupportMatrix`
 
-        **Access Control:** Requires Authentication (Role based on specific entity)'
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleProtocolBundleSupportMatrix
       responses:
         '200':
@@ -4907,10 +4985,12 @@ paths:
   /api/v1/tests/preflight:
     post:
       summary: Preflight Test
-      description: '**Handler:** `handlePreflightTest`
+      description: |
+        Performs capacity and governance checks for a proposed test without creating it. Responses include blocking and warning conflicts; external-runner-required scripts emit conflicts such as `external_runner_required` or `java_vuser_runner_required` until the appropriate runner capability is enabled.
 
+        **Handler:** `handlePreflightTest`
 
-        **Access Control:** Requires Authentication (Role based on specific entity)'
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handlePreflightTest
       responses:
         '200':

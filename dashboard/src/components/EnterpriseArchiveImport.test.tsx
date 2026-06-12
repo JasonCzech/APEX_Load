@@ -810,16 +810,115 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('alpha')
   })
 
-  it('shows protocol review artifacts instead of executable save for external-runner imports', async () => {
+  it('shows gated draft review and saves a review artifact for external-runner imports', async () => {
+    const sapSourceReview = {
+      source_files: [
+        {
+          path: 'Action.c',
+          language: 'c',
+          content: 'Action()\n{\n  sapgui_set_text("wnd[0]/usr/txtRSYST-BNAME", "APEXUSER", LAST);\n}',
+        },
+      ],
+      mappings: [
+        {
+          id: 'sapgui-set-user',
+          source_file: 'Action.c',
+          start_line: 3,
+          end_line: 3,
+          function: 'sapgui_set_text',
+          target_path: 'actions[1]',
+          target_name: 'Set User',
+          target_kind: 'action',
+          status: 'review_only',
+          support_mode: 'external_required',
+          notes: 'Requires the SAP GUI external runner bridge.',
+        },
+      ],
+    }
     apiMock.importEnterpriseArchive.mockResolvedValueOnce({
-      scripts: [],
-      script: null,
+      scripts: [
+        {
+          name: 'SAP GUI Draft',
+          version: '1.0.0',
+          protocol: 'sap_gui',
+          config: {
+            base_url: '',
+            sapgui: {
+              connection_string: 'ASHOST=sap.example.test SYSNR=00',
+              client: '100',
+              username: 'APEXUSER',
+              password: '{{secret.sapgui_password}}',
+              session_behavior: 'reuse',
+            },
+          },
+          actions: [
+            {
+              name: 'Connect',
+              type: 'sapgui_connect',
+              target: 'ASHOST=sap.example.test SYSNR=00',
+            },
+            {
+              name: 'Set User',
+              type: 'sapgui_set',
+              target: 'wnd[0]/usr/txtRSYST-BNAME',
+              value: 'APEXUSER',
+            },
+          ],
+          metadata: {
+            import: {
+              source: 'enterprise_script_archive',
+              source_script_name: 'SAPGUI.usr',
+              preserved: {
+                source_review: sapSourceReview,
+              },
+            },
+          },
+        },
+      ],
+      script: {
+        name: 'SAP GUI Draft',
+        version: '1.0.0',
+        protocol: 'sap_gui',
+        config: {
+          base_url: '',
+          sapgui: {
+            connection_string: 'ASHOST=sap.example.test SYSNR=00',
+            client: '100',
+            username: 'APEXUSER',
+            password: '{{secret.sapgui_password}}',
+            session_behavior: 'reuse',
+          },
+        },
+        actions: [
+          {
+            name: 'Connect',
+            type: 'sapgui_connect',
+            target: 'ASHOST=sap.example.test SYSNR=00',
+          },
+          {
+            name: 'Set User',
+            type: 'sapgui_set',
+            target: 'wnd[0]/usr/txtRSYST-BNAME',
+            value: 'APEXUSER',
+          },
+        ],
+        metadata: {
+          import: {
+            source: 'enterprise_script_archive',
+            source_script_name: 'SAPGUI.usr',
+            preserved: {
+              source_review: sapSourceReview,
+            },
+          },
+        },
+      },
       detected_protocol: {
         canonical_source_protocol: 'sap_gui',
         display_name: 'SAP GUI',
         import_mode: 'external_runner_required',
         confidence: 'high',
         bundle: 'Foundation Entitlement',
+        runner_requirement: 'windows_sap_gui_runner',
         required_evidence: ['External runner bridge approval'],
         signals: ['.usr [General] Type=SAP GUI'],
       },
@@ -832,12 +931,13 @@ describe('EnterpriseArchiveImport', () => {
           display_name: 'SAP GUI',
           import_mode: 'external_runner_required',
           confidence: 'high',
+          runner_requirement: 'windows_sap_gui_runner',
         },
         summary: 'SAP GUI requires an external SAP GUI runner bridge.',
         required_evidence: ['External runner bridge approval'],
         next_actions: ['Attach external runner approval.'],
       },
-      warnings: ['Import was classified as external_runner_required; no executable APEX Load script was generated.'],
+      warnings: ['Import was classified as external_runner_required; generated draft requires an approved external runner.'],
       unsupported_elements: [],
       assumptions: [],
       review_sections: [
@@ -852,15 +952,16 @@ describe('EnterpriseArchiveImport', () => {
       repair_suggestions: [],
       summary: {
         import_mode: 'external_runner_required',
+        source_review: sapSourceReview,
         unsupported_function_count: 0,
       },
       stats: {
         total_functions: 1,
-        converted_actions: 0,
+        converted_actions: 2,
         extractors: 0,
         think_times: 0,
         transactions: 0,
-        skipped: 1,
+        skipped: 0,
       },
     })
 
@@ -892,11 +993,16 @@ describe('EnterpriseArchiveImport', () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
+    await flushPromises()
 
-    expect(container.textContent).not.toContain('Detected Protocol')
+    expect(container.textContent).toContain('Conversion Complete')
     expect(container.textContent).toContain('SAP GUI')
+    expect(container.textContent).toContain('External Runner Required')
     expect(container.textContent).toContain('external_runner_required')
+    expect(container.textContent).toContain('Runner: windows_sap_gui_runner')
     expect(container.textContent).toContain('SAP GUI review artifact')
+    expect(container.textContent).toContain('sapgui_set')
+    expect(container.textContent).toContain('external required')
     expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))).toBeUndefined()
 
     const saveArtifactButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Review Artifact'))
@@ -915,7 +1021,14 @@ describe('EnterpriseArchiveImport', () => {
       review_state: expect.objectContaining({
         review_artifact: expect.objectContaining({ id: 'lr-review-sap' }),
       }),
+      draft: expect.objectContaining({
+        protocol: 'sap_gui',
+        actions: expect.arrayContaining([
+          expect.objectContaining({ type: 'sapgui_set' }),
+        ]),
+      }),
     }))
+    expect(apiMock.createScript).not.toHaveBeenCalled()
   })
 
 

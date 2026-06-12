@@ -36,6 +36,7 @@ require (
 )
 
 require (
+	github.com/Azure/go-amqp v1.7.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect

@@ -139,6 +139,7 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 
 	httpCfg := script.Config.HTTP
 	javaHTTPCfg := script.Config.JavaHTTP
+	javaVuserCfg := script.Config.JavaVuser
 	webSocketCfg := script.Config.WebSocket
 	grpcCfg := script.Config.GRPC
 	soapCfg := script.Config.SOAP
@@ -318,6 +319,30 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	}
 	if javaHTTPCfg.PreserveBinaryResult {
 		cfg["java_http_preserve_binary_result"] = true
+	}
+	if javaVuserCfg.Enabled {
+		cfg["java_vuser_enabled"] = true
+	}
+	if javaVuserCfg.RunnerCommand != "" {
+		cfg["java_vuser_runner_command"] = javaVuserCfg.RunnerCommand
+	}
+	if javaVuserCfg.HarnessJar != "" {
+		cfg["java_vuser_harness_jar"] = javaVuserCfg.HarnessJar
+	}
+	if len(javaVuserCfg.Classpath) > 0 {
+		cfg["java_vuser_classpath"] = javaVuserCfg.Classpath
+	}
+	if javaVuserCfg.WorkDir != "" {
+		cfg["java_vuser_work_dir"] = javaVuserCfg.WorkDir
+	}
+	if javaVuserCfg.MaxProcesses > 0 {
+		cfg["java_vuser_max_processes"] = float64(javaVuserCfg.MaxProcesses)
+	}
+	if javaVuserCfg.StartupTimeoutMs > 0 {
+		cfg["java_vuser_startup_timeout_ms"] = float64(javaVuserCfg.StartupTimeoutMs)
+	}
+	if javaVuserCfg.ActionTimeoutMs > 0 {
+		cfg["java_vuser_action_timeout_ms"] = float64(javaVuserCfg.ActionTimeoutMs)
 	}
 	if soapCfg.Version != "" {
 		cfg["soap_version"] = soapCfg.Version
@@ -521,6 +546,17 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	}
 	if len(jmsCfg.Properties) > 0 {
 		cfg["jms_properties"] = jmsCfg.Properties
+	}
+	if jmsCfg.TLS != nil {
+		if jmsCfg.TLS.CACertSecret != "" {
+			cfg["jms_tls_ca_cert_secret"] = jmsCfg.TLS.CACertSecret
+		}
+		if jmsCfg.TLS.TrustStoreRef != "" {
+			cfg["jms_tls_trust_store_ref"] = jmsCfg.TLS.TrustStoreRef
+		}
+		if jmsCfg.TLS.InsecureSkipVerify {
+			cfg["jms_tls_insecure_skip_verify"] = true
+		}
 	}
 	if jmsCfg.Mock {
 		cfg["jms_mock"] = true

@@ -121,6 +121,105 @@ func TestConvertArchiveMapsClickLikeWeb2Steps(t *testing.T) {
 	}
 }
 
+func TestConvertArchivePreservesIfElseControlFlow(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="control" action="If" index="1" arguments="{&quot;Condition&quot;:{&quot;value&quot;:&quot;\&quot;{role} == 'admin'\&quot;&quot;}}">
+      <step type="testObject" action="Click" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#admin\&quot;&quot;}}" />
+    </step>
+    <step type="control" action="Else" index="3">
+      <step type="testObject" action="Click" index="4" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#guest\&quot;&quot;}}" />
+    </step>
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Control Flow"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %#v, want one control_if wrapper", result.Script.Actions)
+	}
+	action := result.Script.Actions[0]
+	if action.Type != "control_if" || action.Control == nil || action.Control.Condition == nil {
+		t.Fatalf("action = %#v, want control_if with condition", action)
+	}
+	if action.Control.Condition.Left != "{{var.role}}" || action.Control.Condition.Op != "eq" || action.Control.Condition.Right != "admin" {
+		t.Fatalf("condition = %#v, want role eq admin", action.Control.Condition)
+	}
+	if len(action.Control.Steps) != 1 || action.Control.Steps[0].Type != "browser_click" || action.Control.Steps[0].Selector != "#admin" {
+		t.Fatalf("then steps = %#v, want admin click", action.Control.Steps)
+	}
+	if len(action.Control.Else) != 1 || action.Control.Else[0].Type != "browser_click" || action.Control.Else[0].Selector != "#guest" {
+		t.Fatalf("else steps = %#v, want guest click", action.Control.Else)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("ValidateScriptIssues returned %v, want no issues", issues)
+	}
+}
+
+func TestConvertArchivePreservesCountLoopControlFlow(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="control" action="Loop" index="1" arguments="{&quot;Count&quot;:{&quot;value&quot;:&quot;3&quot;}}">
+      <step type="testObject" action="Click" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#retry\&quot;&quot;}}" />
+    </step>
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Loop Flow"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %#v, want one control_loop wrapper", result.Script.Actions)
+	}
+	action := result.Script.Actions[0]
+	if action.Type != "control_loop" || action.Control == nil || action.Control.Count != 3 || action.Control.MaxIterations != 3 {
+		t.Fatalf("action = %#v, want count=3 control_loop", action)
+	}
+	if len(action.Control.Steps) != 1 || action.Control.Steps[0].Type != "browser_click" || action.Control.Steps[0].Selector != "#retry" {
+		t.Fatalf("loop steps = %#v, want nested retry click", action.Control.Steps)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("ValidateScriptIssues returned %v, want no issues", issues)
+	}
+}
+
+func TestConvertArchiveReviewGatesUnrecognizedIfConditionWithoutFlattening(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="control" action="If" index="1" arguments="{&quot;Condition&quot;:{&quot;value&quot;:&quot;\&quot;document.querySelector('#x').offsetWidth > 0\&quot;&quot;}}">
+      <step type="testObject" action="Click" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#then\&quot;&quot;}}" />
+    </step>
+    <step type="control" action="Else" index="3">
+      <step type="testObject" action="Click" index="4" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#else\&quot;&quot;}}" />
+    </step>
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Unrecognized Control"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "control_if" {
+		t.Fatalf("actions = %#v, want one review-gated control_if wrapper", result.Script.Actions)
+	}
+	action := result.Script.Actions[0]
+	if action.Metadata["review_required"] != true || action.Control.Condition != nil {
+		t.Fatalf("action = %#v, want always-true review-gated wrapper", action)
+	}
+	if len(action.Control.Steps) != 2 || action.Control.Steps[0].Selector != "#then" || action.Control.Steps[1].Selector != "#else" {
+		t.Fatalf("steps = %#v, want old flattened execution order preserved inside wrapper", action.Control.Steps)
+	}
+	if len(action.Control.Else) != 0 {
+		t.Fatalf("else = %#v, want fallback branch merged into review-gated steps", action.Control.Else)
+	}
+}
+
 func TestConvertArchiveMapsJQueryAttrAndTriggerJavaScript(t *testing.T) {
 	result, err := ConvertArchive(map[string]string{
 		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
@@ -1200,25 +1299,49 @@ func TestConvertArchiveWeb2IframeWindowFixture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConvertArchive returned error: %v", err)
 	}
-	click := result.Script.Actions[1]
+	var click dsl.Action
+	var foundClick bool
+	var foundSwitch bool
+	for _, action := range result.Script.Actions {
+		switch action.Type {
+		case "browser_switch_window":
+			foundSwitch = true
+		case "browser_click":
+			click = action
+			foundClick = true
+		}
+	}
+	if !foundSwitch {
+		t.Fatalf("actions = %#v, want browser_switch_window before window-scoped click", result.Script.Actions)
+	}
+	if !foundClick {
+		t.Fatalf("actions = %#v, want browser_click", result.Script.Actions)
+	}
 	if click.Metadata["source_frame_context"] != "checkout-frame" || click.Metadata["source_window_context"] != "primary-tab" {
 		t.Fatalf("click metadata = %#v, want preserved frame/window context", click.Metadata)
+	}
+	if click.Params["frame_selector"] != `iframe[name="checkout-frame"], iframe[id="checkout-frame"], iframe[title="checkout-frame"]` {
+		t.Fatalf("click params = %#v, want promoted frame_selector", click.Params)
 	}
 
 	inspection, err := InspectArchive(files, "TruClient 2.0 - Web")
 	if err != nil {
 		t.Fatalf("InspectArchive returned error: %v", err)
 	}
-	foundFrameRisk := false
+	foundFrameResolved := false
+	foundWindowResolved := false
 	for _, step := range inspection.Steps {
 		for _, diagnostic := range step.ReplayDiagnostics {
-			if diagnostic.Code == "frame_mismatch_risk" {
-				foundFrameRisk = true
+			if diagnostic.Code == "frame_context_resolved" {
+				foundFrameResolved = true
+			}
+			if diagnostic.Code == "window_context_resolved" {
+				foundWindowResolved = true
 			}
 		}
 	}
-	if !foundFrameRisk {
-		t.Fatalf("inspection steps = %#v, want a frame_mismatch_risk replay diagnostic gating the iframe step", inspection.Steps)
+	if !foundFrameResolved || !foundWindowResolved {
+		t.Fatalf("inspection steps = %#v, want resolved frame/window diagnostics for the context-scoped step", inspection.Steps)
 	}
 }
 

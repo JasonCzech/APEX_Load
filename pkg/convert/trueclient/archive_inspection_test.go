@@ -17,8 +17,8 @@ func TestInspectArchivePreservesWeb2MetadataInputs(t *testing.T) {
 		t.Fatalf("InspectArchive returned error: %v", err)
 	}
 
-	if inspection.ScriptTypeScope == nil || inspection.ScriptTypeScope.CanonicalName != "truclient2_web" || inspection.ScriptTypeScope.Status != ScopeReviewOnly {
-		t.Fatalf("script type scope = %#v, want review-only TruClient 2.0 Web scope", inspection.ScriptTypeScope)
+	if inspection.ScriptTypeScope == nil || inspection.ScriptTypeScope.CanonicalName != "truclient2_web" || inspection.ScriptTypeScope.Status != ScopeSupported {
+		t.Fatalf("script type scope = %#v, want supported TruClient 2.0 Web scope", inspection.ScriptTypeScope)
 	}
 	if inspection.DefaultXML == nil || inspection.DefaultXML.Path != "Web2/default.xml" || inspection.DefaultXML.Kind != "default_xml" {
 		t.Fatalf("default_xml = %#v, want Web2/default.xml summary", inspection.DefaultXML)
@@ -71,8 +71,8 @@ func TestInspectArchivePreservesWeb2MetadataInputs(t *testing.T) {
 	if !containsString(inspection.Steps[1].ParameterRefs, "username") || !containsString(inspection.Steps[1].SnapshotRefs, "snapshots/search.png") {
 		t.Fatalf("steps[1] refs = params %#v snapshots %#v, want username and snapshots/search.png", inspection.Steps[1].ParameterRefs, inspection.Steps[1].SnapshotRefs)
 	}
-	if !containsReplayDiagnostic(inspection.Steps[1].ReplayDiagnostics, "frame_mismatch_risk") || !containsReplayDiagnostic(inspection.Steps[1].ReplayDiagnostics, "ambiguous_match_risk") {
-		t.Fatalf("steps[1] diagnostics = %#v, want frame and ambiguous-match diagnostics", inspection.Steps[1].ReplayDiagnostics)
+	if !containsReplayDiagnostic(inspection.Steps[1].ReplayDiagnostics, "frame_context_resolved") || !containsReplayDiagnostic(inspection.Steps[1].ReplayDiagnostics, "window_context_resolved") || !containsReplayDiagnostic(inspection.Steps[1].ReplayDiagnostics, "ambiguous_match_risk") {
+		t.Fatalf("steps[1] diagnostics = %#v, want resolved frame/window and ambiguous-match diagnostics", inspection.Steps[1].ReplayDiagnostics)
 	}
 	if !containsSelectorCandidate(inspection.Steps[3].SelectorCandidates, "text", "Results", 55) {
 		t.Fatalf("steps[3] = %#v, want text selector candidate", inspection.Steps[3])

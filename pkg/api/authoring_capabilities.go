@@ -180,7 +180,7 @@ func authoringCapabilityResponse() AuthoringCapabilityResponse {
 		{
 			Source:      "trueclient2_web",
 			DisplayName: "TruClient 2.0 - Web",
-			Status:      "review_only",
+			Status:      "active",
 			Acquisition: []string{"enterprise_archive_zip_upload", "validate_only", "starter_template"},
 			Features: AuthoringFeatures{
 				DraftValidation:       true,
@@ -196,12 +196,12 @@ func authoringCapabilityResponse() AuthoringCapabilityResponse {
 				ApprovalGateCandidate: true,
 			},
 			HealthInputs: []string{"web2_profile_summary", "object_identification", "unsupported_fragments", "browser_replay_readiness", "runtime_parity"},
-			Notes:        []string{"Web 2.0 browser-profile archives produce review-only browser drafts until replay evidence and selector review are complete."},
+			Notes:        []string{"Web 2.0 browser-profile archives produce executable browser drafts; replay evidence, JavaScript gates, runtime parity, and selector review govern promotion."},
 		},
 		{
 			Source:      "web2_browser_profile",
 			DisplayName: "Web 2.0 Browser Profile",
-			Status:      "review_only",
+			Status:      "active",
 			Acquisition: []string{"enterprise_archive_zip_upload", "validate_only", "starter_template", "browser_to_http_preview"},
 			Features: AuthoringFeatures{
 				DraftValidation:       true,
@@ -217,7 +217,7 @@ func authoringCapabilityResponse() AuthoringCapabilityResponse {
 				ApprovalGateCandidate: true,
 			},
 			HealthInputs: []string{"web2_profile_summary", "object_identification", "browser_replay_readiness", "runtime_parity", "http_conversion_readiness"},
-			Notes:        []string{"Canonical APEX Load profile for TruClient 2.0 - Web imports and browser-to-HTTP conversion review."},
+			Notes:        []string{"Canonical APEX Load profile for executable TruClient 2.0 - Web imports and governed browser-to-HTTP conversion review."},
 		},
 		{
 			Source:      "jmeter",

@@ -24,7 +24,10 @@ type SourceFunctionDefinition struct {
 //go:embed testdata/source_c_functions_26_1.txt
 var sourceFunctionRegistryText string
 
-var sourceFunctionRegistry = parseSourceFunctionRegistry(sourceFunctionRegistryText)
+//go:embed testdata/sapgui_functions_26_1.txt
+var sapGUIFunctionRegistryText string
+
+var sourceFunctionRegistry = parseSourceFunctionRegistry(sourceFunctionRegistryText + "\n" + sapGUIFunctionRegistryText)
 
 func lookupSourceFunction(name string) (SourceFunctionDefinition, bool) {
 	def, ok := sourceFunctionRegistry[strings.ToLower(strings.TrimSpace(name))]

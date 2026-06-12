@@ -537,6 +537,42 @@ func TestBuildProtoConfig_JavaHTTPSidecarHelperMode(t *testing.T) {
 	}
 }
 
+func TestBuildProtoConfig_JavaVuser(t *testing.T) {
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			JavaVuser: dsl.JavaVuserConfig{
+				Enabled:          true,
+				RunnerCommand:    "/opt/apexload/bin/java-vuser-runner",
+				HarnessJar:       "/opt/apexload/java/apexload-java-vuser-runner.jar",
+				Classpath:        []string{"/scripts", "/deps/app.jar"},
+				WorkDir:          "/work/script",
+				MaxProcesses:     25,
+				StartupTimeoutMs: 3000,
+				ActionTimeoutMs:  45000,
+			},
+		},
+	}
+
+	cfg := buildProtoConfig(script)
+
+	if cfg["java_vuser_enabled"] != true {
+		t.Errorf("java_vuser_enabled = %v, want true", cfg["java_vuser_enabled"])
+	}
+	if cfg["java_vuser_runner_command"] != "/opt/apexload/bin/java-vuser-runner" {
+		t.Errorf("java_vuser_runner_command = %v", cfg["java_vuser_runner_command"])
+	}
+	if cfg["java_vuser_harness_jar"] != "/opt/apexload/java/apexload-java-vuser-runner.jar" {
+		t.Errorf("java_vuser_harness_jar = %v", cfg["java_vuser_harness_jar"])
+	}
+	classpath, ok := cfg["java_vuser_classpath"].([]string)
+	if !ok || len(classpath) != 2 || classpath[0] != "/scripts" {
+		t.Errorf("java_vuser_classpath = %#v, want two entries", cfg["java_vuser_classpath"])
+	}
+	if cfg["java_vuser_max_processes"] != float64(25) || cfg["java_vuser_action_timeout_ms"] != float64(45000) {
+		t.Errorf("java_vuser sizing/timeouts = %v / %v", cfg["java_vuser_max_processes"], cfg["java_vuser_action_timeout_ms"])
+	}
+}
+
 func TestBuildProtoConfig_Database(t *testing.T) {
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{

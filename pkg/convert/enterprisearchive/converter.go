@@ -57,6 +57,14 @@ type ConvertOptions struct {
 	DefaultThinkTimeMs   float64 // Default think time if none in script (0 = no default)
 	IncludeAssertions    bool    // Add default status_code assertions
 	PreserveTransactions bool    // Wrap actions in transaction markers (as comments in name)
+	// Render lr_unmask(...) request bodies as governed secret references. Archive
+	// imports enable this so payload bytes never leak while operators get a
+	// re-provisioning handle; lower-level conversions keep opaque bodies empty.
+	UseMaskedBodySecretReferences bool
+	// AllowJavaVuserRunner emits a governed java_vuser sidecar-runner draft for
+	// unmappable Java archives. It is intentionally opt-in because Java replay
+	// executes arbitrary source code inside a generator-java runner boundary.
+	AllowJavaVuserRunner bool
 
 	// HTTP runtime settings mapped from source runtime config.
 	HTTPConfig      *dsl.HTTPConfig   // Pre-built HTTP config to embed in script
@@ -423,7 +431,15 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 				actionIndex := actionCountForPhase(result.Script, fn.Phase)
 				targetPath := sourceReviewActionPath(fn.Phase, actionIndex)
-				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, targetPath, action.Name, "action", "converted", "Converted to a generated APEX Load action.", SourceFunctionSupportExecutable))
+				mappingStatus := "converted"
+				mappingNotes := "Converted to a generated APEX Load action."
+				mappingMode := SourceFunctionSupportExecutable
+				if metadataBool(action.Metadata, "masked_body") {
+					mappingStatus = "review_only"
+					mappingNotes = fmt.Sprintf("Request argument is produced by %s(...); the masked payload is bound to the recording machine's key and cannot be recovered at import time — the action requires manual review.", metadataString(action.Metadata, "masked_body_function"))
+					mappingMode = SourceFunctionSupportReviewOnly
+				}
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, targetPath, action.Name, "action", mappingStatus, mappingNotes, mappingMode))
 				// Contributors (extractors, assertions, headers) were collected in source
 				// order ahead of this request, so the Nth extractor/assertion mapping lines
 				// up with the Nth attached extractor/assertion.
@@ -451,7 +467,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				appendActionForPhase(result.Script, fn.Phase, *action)
 				result.Stats.ConvertedActions++
 				result.Stats.RawRequestActions++
-				recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+				recordSourceFunctionSupport(result, mappingMode)
 			}
 			result.Warnings = append(result.Warnings, warnings...)
 
@@ -1281,16 +1297,107 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		action.Body = convertParamReferences(action.Body)
 	}
 	if secretName := fn.Args[maskedBodySecretArgKey]; secretName != "" {
+		if opts.UseMaskedBodySecretReferences {
+			action.Body = maskedBodySecretReference(secretName)
+		}
 		action.Metadata["source_secret_ref"] = secretName
 		action.Metadata["source_secret_function"] = firstNonEmpty(fn.Args[maskedBodyFuncArgKey], "lr_unmask")
 		action.Metadata["source_secret_hash"] = fn.Args[maskedBodyHashArgKey]
 		action.Metadata["body_gated_by_secret"] = true
 	}
 
+	warnings = append(warnings, annotateOpaqueTransformArgs(action, fn)...)
+	if opts.UseMaskedBodySecretReferences {
+		redactOpaqueTransformMetadata(action)
+	}
+
 	// Convert parameter references in URL/target too
 	action.Target = convertParamReferences(action.Target)
 
 	return action, warnings
+}
+
+// reOpaqueSourceTransformCall matches request arguments produced by opaque
+// source transforms: LR masking/encryption (lr_unmask / lr_decrypt /
+// lr_decrypt_ex) is bound to the recording machine's key, so the plaintext is
+// unrecoverable at import time. lr_decrypt_ex precedes lr_decrypt so the
+// longer name wins the alternation.
+var reOpaqueSourceTransformCall = regexp.MustCompile(`\b(lr_unmask|lr_decrypt_ex|lr_decrypt)\s*\(`)
+
+// annotateOpaqueTransformArgs flags request arguments built from opaque
+// transform calls so they never import as a silently empty body. The body is
+// deliberately left empty — replaying machine-key-bound ciphertext would send
+// garbage — and the original call text (including the masked hex) is preserved
+// in metadata.masked_body_raw so the payload can be re-entered or re-masked
+// externally.
+func annotateOpaqueTransformArgs(action *dsl.Action, fn ParsedFunction) []string {
+	var names []string
+	var raws []string
+	for _, arg := range fn.CallArgs {
+		// Only call-shaped arguments count: a quoted string literal that
+		// mentions the function name is data, not a call.
+		if arg.Kind != "nested_call" && arg.Kind != "expression" {
+			continue
+		}
+		match := reOpaqueSourceTransformCall.FindStringSubmatch(arg.Raw)
+		if len(match) < 2 {
+			continue
+		}
+		names = append(names, match[1])
+		raws = append(raws, arg.Raw)
+	}
+	if len(names) == 0 {
+		return nil
+	}
+
+	action.Metadata["masked_body"] = true
+	action.Metadata["masked_body_function"] = names[0]
+	action.Metadata["masked_body_raw"] = raws[0]
+	if len(raws) > 1 {
+		action.Metadata["masked_body_calls"] = raws
+	}
+	action.Metadata["review_required"] = true
+
+	bodyNote := "the request body was left empty"
+	if action.Body != "" {
+		bodyNote = "the converted body may be incomplete"
+	}
+	return []string{fmt.Sprintf(
+		"%s line %d: %s '%s' passes %s(...) as a request argument; the masked value is bound to the recording machine's key and cannot be recovered at import time — %s and the action requires manual review (original call preserved in metadata.masked_body_raw)",
+		fn.Filename, fn.LineNumber, fn.Name, fn.StepName, strings.Join(uniqueSourceStrings(names), ", "), bodyNote)}
+}
+
+func redactOpaqueTransformMetadata(action *dsl.Action) {
+	if action == nil || action.Metadata == nil {
+		return
+	}
+	functionName := metadataString(action.Metadata, "masked_body_function")
+	if functionName == "" {
+		functionName = metadataString(action.Metadata, "source_secret_function")
+	}
+	if functionName == "" {
+		return
+	}
+	redacted := functionName + `("[REDACTED]")`
+	if _, ok := action.Metadata["masked_body_raw"]; ok {
+		action.Metadata["masked_body_raw"] = redacted
+	}
+	if _, ok := action.Metadata["masked_body_calls"]; ok {
+		action.Metadata["masked_body_calls"] = []string{redacted}
+	}
+}
+
+func uniqueSourceStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func sourceRequestContextURL(fn ParsedFunction, previousRequestURL string) string {

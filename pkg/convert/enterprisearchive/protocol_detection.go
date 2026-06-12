@@ -130,6 +130,9 @@ var protocolTypeAliases = map[string]protocolProfile{
 	"c# .net":                       templateProfile("csharp_dotnet_vuser", "C# .NET Vuser"),
 	"java vuser":                    templateProfile("java_vuser", "Java Vuser"),
 	"java protocols":                javaJMSSolaceProfile(),
+	"java record replay":            templateProfile("java_vuser", "Java Vuser"),
+	"java record/replay":            templateProfile("java_vuser", "Java Vuser"),
+	"java over http":                templateProfile("java_vuser", "Java Vuser"),
 	"vb .net":                       templateProfile("vb_dotnet_vuser", "VB .NET Vuser"),
 	"devweb":                        reviewProfile("devweb", "DevWeb", "Templates Protocol Bundle", "Use the native DevWeb importer for executable conversion."),
 	"jmeter":                        reviewProfile("jmeter", "JMeter", "Templates Protocol Bundle", "Use the native JMeter importer for executable conversion."),
@@ -227,6 +230,8 @@ func profileForType(scriptType string) (protocolProfile, bool) {
 		return databaseProfile(), true
 	case strings.Contains(key, "web service") || strings.Contains(key, "soap"):
 		return soapProfile(), true
+	case strings.Contains(key, "java"):
+		return templateProfile("java_vuser", "Java Vuser"), true
 	case strings.Contains(key, "web"):
 		return webHTTPProfile(), true
 	default:
@@ -257,7 +262,24 @@ func profileForProjectConfig(cfg *ProjectConfig) (protocolProfile, []string, boo
 			return profile, signals, true
 		}
 	}
+	if javaSignals, ok := javaProjectConfigSignals(cfg); ok {
+		return templateProfile("java_vuser", "Java Vuser"), append(signals, javaSignals...), true
+	}
 	return protocolProfile{}, signals, false
+}
+
+// javaProjectConfigSignals recognizes Java VUser projects from .usr [General]
+// settings beyond Type/ActiveTypes — VuGen writes ScriptLanguage=JAVA and
+// RunType=Java-Interpreter for every Java-family protocol.
+func javaProjectConfigSignals(cfg *ProjectConfig) ([]string, bool) {
+	signals := make([]string, 0, 2)
+	if strings.Contains(strings.ToLower(cfg.ScriptLanguage), "java") {
+		signals = append(signals, fmt.Sprintf(".usr [General] ScriptLanguage=%s", strings.TrimSpace(cfg.ScriptLanguage)))
+	}
+	if strings.Contains(strings.ToLower(cfg.RunType), "java") {
+		signals = append(signals, fmt.Sprintf(".usr [General] RunType=%s", strings.TrimSpace(cfg.RunType)))
+	}
+	return signals, len(signals) > 0
 }
 
 func profileFromContent(files map[string]string, actions []*ParsedAction) (*protocolProfile, []string) {
@@ -311,6 +333,14 @@ func profileFromContent(files map[string]string, actions []*ParsedAction) (*prot
 	}
 
 	archiveText := strings.ToLower(joinArchiveText(files))
+	if javaSignals, ok := javaVuserContentSignals(files); ok {
+		profile := templateProfile("java_vuser", "Java Vuser")
+		if javaArchiveLooksLikeJMS(archiveText) {
+			profile = javaJMSSolaceProfile()
+		}
+		return &profile, javaSignals
+	}
+
 	switch {
 	case strings.Contains(archiveText, "sapgui_"):
 		profile := externalProfile("sap_gui", "SAP GUI", "Foundation Entitlement", "SAP GUI source evidence requires an external runner bridge.")
@@ -346,11 +376,49 @@ func profileFromContent(files map[string]string, actions []*ParsedAction) (*prot
 		profile := soapProfile()
 		return &profile, []string{"SOAP envelope evidence"}
 	case strings.Contains(archiveText, "com.solacesystems.jms") ||
-		(strings.Contains(archiveText, "initialcontext") && strings.Contains(archiveText, "connectionfactory") && strings.Contains(archiveText, "textmessage")):
+		javaArchiveLooksLikeJMS(archiveText):
 		profile := javaJMSSolaceProfile()
 		return &profile, []string{"Java JMS/Solace source evidence"}
 	}
 	return nil, signals
+}
+
+// javaVuserContentSignals recognizes Java VUser archives from their source
+// files: VuGen Java protocols ship vuser_init.java/Actions.java/vuser_end.java
+// importing lrapi.lr instead of .c action files. A JMS API import is reported
+// as an extra signal so review guidance can point at the native jms protocol.
+func javaVuserContentSignals(files map[string]string) ([]string, bool) {
+	signals := make([]string, 0, 2)
+	jms := false
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if !strings.HasSuffix(strings.ToLower(name), ".java") {
+			continue
+		}
+		content := strings.ToLower(files[name])
+		base := strings.ToLower(filepath.Base(name))
+		switch {
+		case strings.Contains(content, "lrapi"),
+			base == "actions.java", base == "vuser_init.java", base == "vuser_end.java":
+			signals = append(signals, fmt.Sprintf("Java Vuser source file %s", filepath.Base(name)))
+		default:
+			continue
+		}
+		if strings.Contains(content, "javax.jms") || strings.Contains(content, "jakarta.jms") {
+			jms = true
+		}
+	}
+	if len(signals) == 0 {
+		return nil, false
+	}
+	if jms {
+		signals = append(signals, "javax.jms API usage in Java Vuser source")
+	}
+	return signals, true
 }
 
 func NewReviewArtifact(detected DetectedProtocol, files map[string]string, actions []*ParsedAction, metadata map[string]any) *ReviewArtifact {
@@ -420,6 +488,14 @@ func reviewArtifactNextActions(detected DetectedProtocol) []string {
 	if len(detected.RequiredEvidence) > 0 {
 		actions = append(actions, "Collect required evidence: "+strings.Join(detected.RequiredEvidence, "; "))
 	}
+	if detected.CanonicalSourceProtocol == "java_vuser" {
+		for _, signal := range detected.Signals {
+			if strings.Contains(strings.ToLower(signal), "javax.jms") {
+				actions = append(actions, "Java source uses JMS APIs; APEX Load's native jms protocol actions are a candidate target for mapping the messaging calls.")
+				break
+			}
+		}
+	}
 	return actions
 }
 
@@ -435,6 +511,9 @@ func compatibleProfiles(a, b protocolProfile) bool {
 	if a.Canonical == b.Canonical {
 		return true
 	}
+	if isJavaCompatibleProfile(a.Canonical) && isJavaCompatibleProfile(b.Canonical) {
+		return true
+	}
 	if a.Canonical == "web_http_html" && b.Canonical == "soap" {
 		return true
 	}
@@ -448,6 +527,22 @@ func compatibleProfiles(a, b protocolProfile) bool {
 		return true
 	}
 	return false
+}
+
+func javaArchiveLooksLikeJMS(archiveText string) bool {
+	return strings.Contains(archiveText, "javax.jms") ||
+		strings.Contains(archiveText, "jakarta.jms") ||
+		strings.Contains(archiveText, "com.solacesystems.jms") ||
+		(strings.Contains(archiveText, "initialcontext") && strings.Contains(archiveText, "connectionfactory") && strings.Contains(archiveText, "textmessage"))
+}
+
+func isJavaCompatibleProfile(canonical string) bool {
+	switch canonical {
+	case "java_vuser", "java_jms_solace":
+		return true
+	default:
+		return false
+	}
 }
 
 func isHarmlessSOAPConflict(selected protocolProfile, contentProfile *protocolProfile) bool {
@@ -599,8 +694,8 @@ func trueClientWeb2Profile() protocolProfile {
 		DisplayName: "TruClient 2.0 Web",
 		APEXLoad:    "browser",
 		Bundle:      "Foundation Entitlement",
-		Mode:        ImportModeReviewOnly,
-		Evidence:    []string{"Selector review", "Browser replay evidence", "Runtime settings parity review"},
+		Mode:        ImportModeExecutable,
+		Evidence:    []string{"Selector review", "Browser replay evidence", "Runtime settings parity review", "Promotion review artifact"},
 	}
 }
 

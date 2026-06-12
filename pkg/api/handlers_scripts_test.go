@@ -1543,8 +1543,16 @@ func TestHandleImportEnterpriseArchiveReturnsReviewArtifactForExternalRunnerProt
 	}
 
 	var result struct {
-		Scripts          []json.RawMessage `json:"scripts"`
-		Script           *json.RawMessage  `json:"script"`
+		Scripts []json.RawMessage `json:"scripts"`
+		Script  *struct {
+			Protocol string `json:"protocol"`
+			Config   struct {
+				SAPGUI struct {
+					ConnectionString string `json:"connection_string"`
+					Password         string `json:"password"`
+				} `json:"sapgui"`
+			} `json:"config"`
+		} `json:"script"`
 		DetectedProtocol struct {
 			Canonical string `json:"canonical_source_protocol"`
 			Mode      string `json:"import_mode"`
@@ -1572,8 +1580,11 @@ func TestHandleImportEnterpriseArchiveReturnsReviewArtifactForExternalRunnerProt
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
-	if len(result.Scripts) != 0 || result.Script != nil {
-		t.Fatalf("scripts/script = %d/%#v, want no executable script", len(result.Scripts), result.Script)
+	if len(result.Scripts) != 1 || result.Script == nil || result.Script.Protocol != "sap_gui" {
+		t.Fatalf("scripts/script = %d/%#v, want SAP GUI external-runner draft", len(result.Scripts), result.Script)
+	}
+	if result.Script.Config.SAPGUI.ConnectionString != "ASHOST=server" || result.Script.Config.SAPGUI.Password != "{{secret.sapgui_password}}" {
+		t.Fatalf("sapgui config = %#v, want source connection string and governed password", result.Script.Config.SAPGUI)
 	}
 	if result.DetectedProtocol.Canonical != "sap_gui" || result.DetectedProtocol.Mode != "external_runner_required" {
 		t.Fatalf("detected_protocol = %#v, want SAP GUI external runner", result.DetectedProtocol)
@@ -1584,8 +1595,8 @@ func TestHandleImportEnterpriseArchiveReturnsReviewArtifactForExternalRunnerProt
 	if result.ProtocolCompat.CanonicalProtocol != "sap_gui" || result.ProtocolCompat.ImportMode != "external_runner_required" || result.ProtocolCompat.PromotionStatus != "external_runner_required" {
 		t.Fatalf("protocol_compat_report = %#v, want external-runner SAP GUI classification", result.ProtocolCompat)
 	}
-	if result.ProtocolCompat.MappedSteps != 0 || len(result.ProtocolCompat.NextActions) == 0 {
-		t.Fatalf("protocol_compat_report = %#v, want no mapped steps and next actions", result.ProtocolCompat)
+	if result.ProtocolCompat.MappedSteps == 0 || len(result.ProtocolCompat.NextActions) == 0 {
+		t.Fatalf("protocol_compat_report = %#v, want mapped SAP GUI draft steps and next actions", result.ProtocolCompat)
 	}
 	if result.ProtocolCompat.ReviewGatedSteps == 0 || !containsString(result.ProtocolCompat.UnsupportedFragments, "sapgui_logon") {
 		t.Fatalf("protocol_compat_report = %#v, want preserved SAP GUI function inventory", result.ProtocolCompat)
@@ -1844,8 +1855,8 @@ RuntimeSettings=default.cfg
 	if result.Script.Actions[2].Type != "browser_evaluate_js" || result.Script.Actions[2].Metadata["review_required"] != true {
 		t.Fatalf("action[2] = %#v, want review-gated browser_evaluate_js", result.Script.Actions[2])
 	}
-	if !containsString(result.Warnings, "TruClient 2.0 - Web import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.") {
-		t.Fatalf("warnings = %#v, want review-only warning", result.Warnings)
+	if containsString(result.Warnings, "TruClient 2.0 - Web import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.") {
+		t.Fatalf("warnings = %#v, did not expect legacy review-only warning for executable Web 2.0 import", result.Warnings)
 	}
 	assertReviewSection(t, result.ReviewSections, "web2_profile_summary", "warning", "Source script type: TruClient 2.0 - Web")
 	assertReviewSection(t, result.ReviewSections, "web2_unsupported_source_fragments", "warning", "Evaluate JavaScript #3: Review-only TruClient step requires replay or guided repair before approval.")
@@ -2932,8 +2943,8 @@ func TestHandleEnterpriseArchiveSupportMatrix(t *testing.T) {
 	if !containsEnterpriseArchiveTrueClientScriptType(result.TrueClientScriptTypes, "truclient_mobile_web", "supported") {
 		t.Fatalf("trueclient_script_types = %#v, want active Mobile Web row", result.TrueClientScriptTypes)
 	}
-	if !containsEnterpriseArchiveTrueClientScriptType(result.TrueClientScriptTypes, "truclient2_web", "review_only") {
-		t.Fatalf("trueclient_script_types = %#v, want review-only Web 2.0 row", result.TrueClientScriptTypes)
+	if !containsEnterpriseArchiveTrueClientScriptType(result.TrueClientScriptTypes, "truclient2_web", "supported") {
+		t.Fatalf("trueclient_script_types = %#v, want supported Web 2.0 row", result.TrueClientScriptTypes)
 	}
 	if !containsEnterpriseArchiveTrueClientCapability(result.Web2ProfileCapabilities, "object_identification", "review_only") {
 		t.Fatalf("web2_profile_capabilities = %#v, want review-only object identification capability", result.Web2ProfileCapabilities)
@@ -2989,10 +3000,10 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 		t.Fatal("expected trueclient2_web source map entry")
 	}
 	if !web2.BrowserReplay || !web2.ApprovalGateCandidate {
-		t.Fatalf("trueclient2_web features = %#v, want review-only browser replay gated profile", web2)
+		t.Fatalf("trueclient2_web features = %#v, want browser replay gated executable profile", web2)
 	}
-	if !containsAuthoringSourceStatus(payload.Sources, "trueclient2_web", "review_only") {
-		t.Fatalf("sources = %#v, want trueclient2_web review_only source", payload.Sources)
+	if !containsAuthoringSourceStatus(payload.Sources, "trueclient2_web", "active") {
+		t.Fatalf("sources = %#v, want trueclient2_web active source", payload.Sources)
 	}
 	web2Profile, ok := payload.SourceMap["web2_browser_profile"]
 	if !ok {
@@ -3001,8 +3012,8 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 	if !web2Profile.BrowserReplay || !web2Profile.ScenarioDraft || !web2Profile.ApprovalGateCandidate {
 		t.Fatalf("web2_browser_profile features = %#v, want replay, scenario draft, and approval-gated profile", web2Profile)
 	}
-	if !containsAuthoringSourceStatus(payload.Sources, "web2_browser_profile", "review_only") {
-		t.Fatalf("sources = %#v, want web2_browser_profile review_only source", payload.Sources)
+	if !containsAuthoringSourceStatus(payload.Sources, "web2_browser_profile", "active") {
+		t.Fatalf("sources = %#v, want web2_browser_profile active source", payload.Sources)
 	}
 }
 

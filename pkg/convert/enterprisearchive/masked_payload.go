@@ -27,7 +27,6 @@ func applyMaskedBodyReference(fn *ParsedFunction) {
 		return
 	}
 	if secretName, hash, ok := findLRUnmaskPayload(fn); ok {
-		fn.Body = maskedBodySecretReference(secretName)
 		if fn.Args == nil {
 			fn.Args = make(map[string]string)
 		}

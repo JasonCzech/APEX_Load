@@ -1,4 +1,4 @@
-.PHONY: all build test clean generator controller apexctl proto lint docker-generator docker-controller docker-local-up docker-local-down docker-local-logs docker-local-prometheus-check docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-onprem-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
+.PHONY: all build test test-jms-solace-real clean generator controller apexctl java-vuser-runner proto lint docker-generator docker-controller docker-local-up docker-local-down docker-local-logs docker-local-prometheus-check docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-onprem-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
 
 VERSION    ?= 0.1.0
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null)
@@ -20,8 +20,16 @@ controller:
 apexctl:
 	go build $(GOFLAGS) $(LDFLAGS) -o bin/apexctl ./cmd/apexctl
 
+java-vuser-runner:
+	mkdir -p bin/java_vuser
+	javac -d bin/java_vuser/classes runners/java_vuser/lrapi/lr.java runners/java_vuser/Harness.java
+	jar --create --file bin/java_vuser/apexload-java-vuser-runner.jar -C bin/java_vuser/classes .
+
 test:
 	go test -race -count=1 ./...
+
+test-jms-solace-real:
+	go test -tags jms_solace_real ./pkg/protocol/jms
 
 test-cover:
 	go test -race -coverprofile=coverage.out ./...

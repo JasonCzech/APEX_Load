@@ -47,7 +47,14 @@ type config struct {
 	DeliveryMode           string            `json:"delivery_mode,omitempty"`
 	Timeout                time.Duration     `json:"timeout,omitempty"`
 	Properties             map[string]string `json:"properties,omitempty"`
+	TLS                    jmsTLSConfig      `json:"tls,omitempty"`
 	Mock                   bool              `json:"mock,omitempty"`
+}
+
+type jmsTLSConfig struct {
+	CACertSecret       string
+	TrustStoreRef      string
+	InsecureSkipVerify bool
 }
 
 type brokerAdapter interface {
@@ -120,7 +127,12 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 		DeliveryMode:           stringValue(cfg, "jms_delivery_mode"),
 		Timeout:                durationValue(cfg, "jms_timeout_ms", 5*time.Second),
 		Properties:             stringMapValue(cfg, "jms_properties"),
-		Mock:                   boolValue(cfg, "jms_mock"),
+		TLS: jmsTLSConfig{
+			CACertSecret:       stringValue(cfg, "jms_tls_ca_cert_secret"),
+			TrustStoreRef:      stringValue(cfg, "jms_tls_trust_store_ref"),
+			InsecureSkipVerify: boolValue(cfg, "jms_tls_insecure_skip_verify"),
+		},
+		Mock: boolValue(cfg, "jms_mock"),
 	}
 	if provider := stringValue(cfg, "jms_provider"); provider != "" {
 		j.provider = provider
@@ -145,7 +157,7 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 		} else if sidecarCommand := strings.TrimSpace(j.cfg.Properties["sidecar_command"]); strings.EqualFold(strings.TrimSpace(j.cfg.Properties["adapter"]), "sidecar") && sidecarCommand != "" {
 			j.adapter = sidecarAdapter{command: sidecarCommand, cfg: j.cfg}
 		} else {
-			j.adapter = unavailableSolaceAdapter{cfg: j.cfg}
+			j.adapter = newSolaceAdapter(j.cfg)
 		}
 	}
 	j.initialized = true

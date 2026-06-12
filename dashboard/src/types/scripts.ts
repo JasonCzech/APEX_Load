@@ -268,6 +268,17 @@ export interface JavaHTTPConfig {
   preserve_binary_result?: boolean
 }
 
+export interface JavaVuserConfig {
+  enabled?: boolean
+  runner_command?: string
+  harness_jar?: string
+  classpath?: string[]
+  work_dir?: string
+  max_processes?: number
+  startup_timeout_ms?: number
+  action_timeout_ms?: number
+}
+
 export interface JMSConfig {
   provider?: string
   broker_url?: string
@@ -283,6 +294,17 @@ export interface JMSConfig {
   timeout_ms?: number
   properties?: Record<string, string>
   mock?: boolean
+}
+
+export interface SAPGUIConfig {
+  connection_string?: string
+  client?: string
+  language?: string
+  username?: string
+  password?: string
+  auto_logon?: boolean
+  session_behavior?: string
+  sync_timeout_ms?: number
 }
 
 export interface KafkaTLSConfig {
@@ -412,6 +434,7 @@ export interface ScriptConfig {
   http?: HTTPConfig
   web_runtime?: WebRuntimeConfig
   java_http?: JavaHTTPConfig
+  java_vuser?: JavaVuserConfig
   soap?: SOAPConfig
   websocket?: WebSocketConfig
   grpc?: GRPCConfig
@@ -419,6 +442,7 @@ export interface ScriptConfig {
   network?: NetworkConfig
   browser?: BrowserConfig
   jms?: JMSConfig
+  sapgui?: SAPGUIConfig
   kafka?: KafkaConfig
   observability?: ObservabilityConfig
 }

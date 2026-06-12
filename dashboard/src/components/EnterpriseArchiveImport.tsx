@@ -610,6 +610,19 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
   const hasPendingMigrationPolicyChanges = reviewedMigrationPolicy !== null && !sameMigrationBlockPolicy(options, reviewedMigrationPolicy)
   const saveBlockedByMigrationPolicy = Boolean(migrationReadiness?.blocked)
   const saveBlockedByProtocolGate = Boolean(detectedProtocol && detectedProtocol.import_mode !== 'executable')
+  const externalRunnerGate = detectedProtocol?.import_mode === 'external_runner_required'
+  const protocolGateName = detectedProtocol?.display_name || detectedProtocol?.canonical_source_protocol || 'This protocol'
+  const protocolGateRunnerRequirement = detectedProtocol?.runner_requirement || reviewArtifact?.protocol?.runner_requirement || ''
+  const protocolGateRequiredEvidence = Array.from(new Set([
+    ...(reviewArtifact?.required_evidence || []),
+    ...(detectedProtocol?.required_evidence || []),
+  ]))
+  const protocolGateDetails = [
+    protocolGateRunnerRequirement ? `Runner: ${protocolGateRunnerRequirement}` : '',
+    reviewArtifact?.title ? `Review artifact: ${reviewArtifact.title}` : '',
+    ...protocolGateRequiredEvidence.map(evidence => `Required evidence: ${evidence}`),
+    ...(detectedProtocol?.signals || []).slice(0, 3).map(signal => `Signal: ${signal}`),
+  ].filter(Boolean)
   const browserImport = isBrowserImport(importedScript)
   const browserReplayStatus = replayValidationSession?.status || null
   const browserReplayEvidence = useMemo(
@@ -624,8 +637,11 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
   const browserReplayInProgress = browserImport && (browserReplayStarting || browserReplayStatus === 'queued' || browserReplayStatus === 'running' || browserReplayStatus === 'paused')
   const browserReplayNeedsRerun = browserImport && !browserReplayInProgress && (replayValidationSession === null || browserReplayStatus === 'failed' || browserReplayStatus === 'stopped')
   const saveRequiresBrowserReplay = executableImport && browserReplayNeedsRerun
+  const primarySaveDisabled = saveBlockedByProtocolGate
+    ? (!reviewArtifact || reviewArtifactSaving)
+    : (saveBlockedByMigrationPolicy || replayValidationLoading || browserReplayInProgress)
   const saveActionLabel = saveBlockedByProtocolGate
-    ? 'Save Review Artifact Instead'
+    ? (reviewArtifactSaving ? 'Saving Review Artifact...' : 'Save Review Artifact Instead')
     : (browserReplayInProgress
     ? 'Draft Browser Replay In Progress'
     : (saveRequiresBrowserReplay
@@ -647,7 +663,9 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
         : (browserReplayInProgress
         ? 'This preview came from the dry-run validator. Wait for the draft browser replay to finish before saving it to the library.'
             : (saveBlockedByProtocolGate
-          ? 'Save Review Artifact Before Script Promotion'
+          ? (externalRunnerGate
+              ? `This preview came from the dry-run validator. ${protocolGateName} execution requires ${protocolGateRunnerRequirement || 'an approved external runner'}; save the review artifact before promotion.`
+              : 'This preview came from the dry-run validator. Save the review artifact before script promotion.')
               : (saveRequiresBrowserReplay
           ? `This preview came from the dry-run validator. ${browserReplayWasStarted ? 'Rerun' : 'Run'} a draft browser replay before saving it to the library.`
                 : 'This preview came from the dry-run validator. You can still save the reviewed script if the output looks correct.'))))
@@ -656,7 +674,9 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
         : (browserReplayInProgress
         ? 'Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving it to the library.'
             : (saveBlockedByProtocolGate
-          ? 'Review the protocol classification and save the review artifact; this import is not executable yet.'
+          ? (externalRunnerGate
+              ? `Review the generated ${protocolGateName} draft and save the review artifact; execution requires ${protocolGateRunnerRequirement || 'an approved external runner'}.`
+              : 'Review the protocol classification and save the review artifact; this import is not executable yet.')
               : (saveRequiresBrowserReplay
           ? `Review the generated script, preserved metadata, and warnings. ${browserReplayWasStarted ? 'Rerun' : 'Run'} a draft browser replay before saving it to the library.`
                 : 'Review the generated script, preserved metadata, and warnings before saving.'))))
@@ -1517,12 +1537,34 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
             script={importedScript}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
-            saveDisabled={saveBlockedByProtocolGate || saveBlockedByMigrationPolicy || replayValidationLoading || browserReplayInProgress}
+            saving={saveBlockedByProtocolGate ? reviewArtifactSaving : false}
+            saveDisabled={primarySaveDisabled}
             saveLabel={saveActionLabel}
-            onSave={handleSaveConverted}
+            onSave={saveBlockedByProtocolGate && reviewArtifact ? handleSaveReviewArtifact : handleSaveConverted}
             onEdit={onEdit ? () => openImportedScriptInEditor() : undefined}
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} /> : undefined}
           >
+
+            {saveBlockedByProtocolGate && detectedProtocol && (
+              <div className="lr-warnings lr-protocol-gate">
+                <div className="lr-review-section">
+                  <div className="lr-review-section-header">
+                    <strong>{externalRunnerGate ? 'External Runner Required' : 'Protocol Promotion Gate'}</strong>
+                    <span>{detectedProtocol.import_mode}</span>
+                  </div>
+                  <p>
+                    {externalRunnerGate
+                      ? `${protocolGateName} draft conversion is visible for review, but execution is blocked until the required runner is approved and configured.`
+                      : `${protocolGateName} draft conversion is visible for review, but executable promotion is blocked by the protocol classification.`}
+                  </p>
+                  {protocolGateDetails.length > 0 && (
+                    <ul>
+                      {protocolGateDetails.map((detail, index) => <li key={`protocol-gate-${index}`}>{detail}</li>)}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
 
             {trueClient2CompatReport && (
               <div className="lr-warnings lr-trueclient2-compat">

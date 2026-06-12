@@ -183,6 +183,9 @@ func countDroppedRequestBodies(actions []*ParsedAction) int {
 				continue
 			}
 			sourceMentionsBody := strings.Contains(strings.ToLower(fn.RawBlock), "body=") || strings.Contains(strings.ToLower(fn.RawBlock), "lr_unmask(")
+			if sourceMentionsBody && strings.TrimSpace(fn.Args[maskedBodySecretArgKey]) != "" {
+				continue
+			}
 			if sourceMentionsBody && strings.TrimSpace(fn.Body) == "" {
 				count++
 			}

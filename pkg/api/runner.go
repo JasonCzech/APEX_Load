@@ -2902,6 +2902,14 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		test.ScriptID = testGroups[0].ScriptID
 		test.ScriptName = testGroups[0].ScriptName
 	}
+	if status != "DRAFT" {
+		if conflict := externalRunnerLaunchConflict(test.Groups); conflict != nil {
+			return nil, fmt.Errorf("%s: %s", conflict.Code, conflict.Message)
+		}
+		if conflict := javaVuserRunnerLaunchConflict(test.Groups); conflict != nil {
+			return nil, fmt.Errorf("%s: %s", conflict.Code, conflict.Message)
+		}
+	}
 
 	return test, nil
 }

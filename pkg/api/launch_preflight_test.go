@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	_ "github.com/jasonczech/apexload/pkg/protocol/java_vuser"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -39,6 +40,42 @@ func storePreflightBrowserScript(runner *TestRunner, id string, projectID string
 	})
 }
 
+func storePreflightSAPGUIScript(runner *TestRunner, id string, projectID string) {
+	runner.StoreScript(&dsl.Script{
+		ID:        id,
+		Name:      id,
+		Protocol:  "sap_gui",
+		Version:   "1.0.0",
+		ProjectID: projectID,
+		Config: dsl.ScriptConfig{
+			SAPGUI: dsl.SAPGUIConfig{
+				ConnectionString: "SAP_SYSTEM",
+				Password:         "{{secret.sapgui_password}}",
+			},
+		},
+		Actions: []dsl.Action{{Name: "SetUser", Type: "sapgui_set", Target: "wnd[0]/usr/txtRSYST-BNAME", Value: "perfuser"}},
+	})
+}
+
+func storePreflightJavaVuserScript(runner *TestRunner, id string, projectID string, enabled bool) {
+	runner.StoreScript(&dsl.Script{
+		ID:        id,
+		Name:      id,
+		Protocol:  "java_vuser",
+		Version:   "1.0.0",
+		ProjectID: projectID,
+		Config: dsl.ScriptConfig{
+			JavaVuser: dsl.JavaVuserConfig{
+				Enabled:         enabled,
+				HarnessJar:      "runners/java_vuser/apexload-java-vuser-runner.jar",
+				MaxProcesses:    25,
+				ActionTimeoutMs: 30000,
+			},
+		},
+		Actions: []dsl.Action{{Name: "Run Java", Type: "java_vuser_run", Target: "Actions", Params: map[string]any{"method": "full_lifecycle"}}},
+	})
+}
+
 func TestPreflightLaunchAllowsImmediateStartWhenCapacityAvailable(t *testing.T) {
 	runner := NewTestRunner(10, NewHub(), nil)
 	storePreflightScript(runner, "script-preflight-start", "")
@@ -56,6 +93,108 @@ func TestPreflightLaunchAllowsImmediateStartWhenCapacityAvailable(t *testing.T) 
 	}
 	if !preflight.StartNowAllowed || preflight.QueueAllowed || preflight.Decision != "start_now" {
 		t.Fatalf("preflight = %#v, want start-now decision", preflight)
+	}
+}
+
+func TestPreflightLaunchBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	storePreflightJavaVuserScript(runner, "script-preflight-java-vuser", "", false)
+
+	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
+		CreateTestRequest: CreateTestRequest{
+			Name:     "Java Vuser",
+			Duration: "5m",
+			ScriptID: "script-preflight-java-vuser",
+			VUsers:   1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	if preflight.Decision != "blocked" || preflight.StartNowAllowed {
+		t.Fatalf("preflight = %#v, want blocked Java Vuser runner decision", preflight)
+	}
+	if len(preflight.BlockingConflicts) != 1 || preflight.BlockingConflicts[0].Code != "java_vuser_runner_required" {
+		t.Fatalf("blocking conflicts = %#v, want Java Vuser runner conflict", preflight.BlockingConflicts)
+	}
+	if !strings.Contains(preflight.BlockingConflicts[0].Message, "java_vuser_jvm_runner") {
+		t.Fatalf("conflict message = %q, want JVM runner guidance", preflight.BlockingConflicts[0].Message)
+	}
+}
+
+func TestCreateTestBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	storePreflightJavaVuserScript(runner, "script-create-java-vuser", "", false)
+
+	_, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Java Vuser",
+		Duration: "5m",
+		ScriptID: "script-create-java-vuser",
+		VUsers:   1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "java_vuser_runner_required") {
+		t.Fatalf("CreateTest error = %v, want Java Vuser runner required", err)
+	}
+}
+
+func TestPreflightLaunchAllowsJavaVuserWithRunnerCapability(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	storePreflightJavaVuserScript(runner, "script-preflight-java-vuser-enabled", "", true)
+
+	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
+		CreateTestRequest: CreateTestRequest{
+			Name:     "Java Vuser",
+			Duration: "5m",
+			ScriptID: "script-preflight-java-vuser-enabled",
+			VUsers:   1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	if !preflight.StartNowAllowed || preflight.Decision != "start_now" {
+		t.Fatalf("preflight = %#v, want start_now when runner capability is enabled", preflight)
+	}
+}
+
+func TestPreflightLaunchBlocksSAPGUIExternalRunner(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	storePreflightSAPGUIScript(runner, "script-preflight-sapgui", "")
+
+	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
+		CreateTestRequest: CreateTestRequest{
+			Name:     "SAP GUI",
+			Duration: "5m",
+			ScriptID: "script-preflight-sapgui",
+			VUsers:   1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	if preflight.Decision != "blocked" || preflight.StartNowAllowed {
+		t.Fatalf("preflight = %#v, want blocked external runner decision", preflight)
+	}
+	if len(preflight.BlockingConflicts) != 1 || preflight.BlockingConflicts[0].Code != "external_runner_required" {
+		t.Fatalf("blocking conflicts = %#v, want external runner conflict", preflight.BlockingConflicts)
+	}
+	if !strings.Contains(preflight.BlockingConflicts[0].Message, "windows_sap_gui_runner") {
+		t.Fatalf("conflict message = %q, want windows runner guidance", preflight.BlockingConflicts[0].Message)
+	}
+}
+
+func TestCreateTestBlocksSAPGUIExternalRunner(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	storePreflightSAPGUIScript(runner, "script-create-sapgui", "")
+
+	_, err := runner.CreateTest(CreateTestRequest{
+		Name:     "SAP GUI",
+		Duration: "5m",
+		ScriptID: "script-create-sapgui",
+		VUsers:   1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "external_runner_required") {
+		t.Fatalf("CreateTest error = %v, want external runner required", err)
 	}
 }
 

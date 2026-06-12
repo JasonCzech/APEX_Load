@@ -88,6 +88,15 @@ function formatSupportModeLabel(mode?: string) {
   return (mode || '').replace(/_/g, ' ')
 }
 
+function supportModeClass(mode?: string) {
+  switch ((mode || '').trim().toLowerCase()) {
+    case 'external_required':
+      return 'external-required'
+    default:
+      return ''
+  }
+}
+
 function formatSourceRange(mapping?: SourceReviewMapping | null) {
   if (!mapping) return 'No mapping selected'
   if (!mapping.start_line) return mapping.source_file || 'Source'
@@ -458,7 +467,11 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
                     <span className={`source-map-status ${approvedMappingIds.has(mapping.id) ? 'converted' : CATEGORY_CLASS[statusCategory(mapping.status)]}`}>
                       {approvedMappingIds.has(mapping.id) ? 'Approved' : formatStatusLabel(mapping.status)}
                     </span>
-                    {mapping.support_mode && <span className="source-map-support-mode">{formatSupportModeLabel(mapping.support_mode)}</span>}
+                    {mapping.support_mode && (
+                      <span className={`source-map-support-mode ${supportModeClass(mapping.support_mode)}`.trim()}>
+                        {formatSupportModeLabel(mapping.support_mode)}
+                      </span>
+                    )}
                     {isNeedsReview(mapping) && (
                       <button 
                         type="button" 

@@ -991,6 +991,157 @@ func TestConvertWebRESTAndXPathExtractors(t *testing.T) {
 	}
 }
 
+func TestConvertOpaqueMaskedBodyArgumentsRequireReview(t *testing.T) {
+	parsed, err := ParseActionFile("Action.c", `Action()
+{
+	web_rest("POST: SubmitOrder",
+		"URL=https://api.example.test/orders",
+		"Method=POST",
+		"EncType=raw",
+		lr_unmask("6a2c27c0f5925d3f80e5cc3a44ab4f2e"),
+		HEADERS,
+		"Name=Content-Type", "Value=application/xml", ENDHEADER,
+		LAST);
+
+	web_custom_request("SubmitPayment",
+		"URL=https://api.example.test/payments",
+		"Method=POST",
+		lr_decrypt("3f80e5cc3a44ab4f"),
+		LAST);
+
+	web_rest("GET: Health",
+		"URL=https://api.example.test/health",
+		"Method=GET",
+		LAST);
+}`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("action count = %d, want 3", len(result.Script.Actions))
+	}
+
+	cases := []struct {
+		actionIndex int
+		sourceFunc  string
+		stepName    string
+		maskFunc    string
+		maskedHex   string
+	}{
+		{0, "web_rest", "POST: SubmitOrder", "lr_unmask", "6a2c27c0f5925d3f80e5cc3a44ab4f2e"},
+		{1, "web_custom_request", "SubmitPayment", "lr_decrypt", "3f80e5cc3a44ab4f"},
+	}
+	if len(result.Warnings) != len(cases) {
+		t.Fatalf("warnings = %#v, want %d masked-body warnings", result.Warnings, len(cases))
+	}
+	for _, tc := range cases {
+		action := result.Script.Actions[tc.actionIndex]
+		if action.Body != "" {
+			t.Errorf("%s: body = %q, want empty (masked payload must not import as a literal body)", tc.stepName, action.Body)
+		}
+		if !metadataBool(action.Metadata, "masked_body") {
+			t.Errorf("%s: metadata masked_body = %#v, want true", tc.stepName, action.Metadata["masked_body"])
+		}
+		if !metadataBool(action.Metadata, "review_required") {
+			t.Errorf("%s: metadata review_required = %#v, want true", tc.stepName, action.Metadata["review_required"])
+		}
+		if got := metadataString(action.Metadata, "masked_body_function"); got != tc.maskFunc {
+			t.Errorf("%s: metadata masked_body_function = %q, want %q", tc.stepName, got, tc.maskFunc)
+		}
+		if raw := metadataString(action.Metadata, "masked_body_raw"); !strings.Contains(raw, tc.maskedHex) {
+			t.Errorf("%s: metadata masked_body_raw = %q, want preserved hex %q", tc.stepName, raw, tc.maskedHex)
+		}
+
+		warning := result.Warnings[tc.actionIndex]
+		for _, fragment := range []string{"Action.c line ", tc.sourceFunc, tc.stepName, tc.maskFunc, "cannot be recovered"} {
+			if !strings.Contains(warning, fragment) {
+				t.Errorf("%s: warning = %q, want it to contain %q", tc.stepName, warning, fragment)
+			}
+		}
+
+		mapping := findSourceReviewMappingByTarget(t, result, action.Name)
+		if mapping.Status != "review_only" {
+			t.Errorf("%s: mapping status = %q, want review_only", tc.stepName, mapping.Status)
+		}
+		if mapping.SupportMode != string(SourceFunctionSupportReviewOnly) {
+			t.Errorf("%s: mapping support mode = %q, want review_only", tc.stepName, mapping.SupportMode)
+		}
+	}
+
+	healthy := result.Script.Actions[2]
+	if metadataBool(healthy.Metadata, "masked_body") || metadataBool(healthy.Metadata, "review_required") {
+		t.Errorf("unmasked request metadata = %#v, want no masked-body flags", healthy.Metadata)
+	}
+	if mapping := findSourceReviewMappingByTarget(t, result, healthy.Name); mapping.Status != "converted" {
+		t.Errorf("unmasked request mapping status = %q, want converted", mapping.Status)
+	}
+
+	if result.Stats.ReviewOnlyFunctions != 2 {
+		t.Errorf("Stats.ReviewOnlyFunctions = %d, want 2", result.Stats.ReviewOnlyFunctions)
+	}
+	if result.Stats.NativeFunctions != 1 {
+		t.Errorf("Stats.NativeFunctions = %d, want 1 (only the unmasked request)", result.Stats.NativeFunctions)
+	}
+}
+
+func TestConvertMaskedBodyWithLiteralBodyKeepsBodyButFlagsReview(t *testing.T) {
+	parsed, err := ParseActionFile("Action.c", `Action()
+{
+	web_custom_request("MixedBody",
+		"URL=https://api.example.test/orders",
+		"Method=POST",
+		"Body=plain-part",
+		lr_decrypt_ex("3f80e5cc", "extra"),
+		LAST);
+}`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+	}
+	action := result.Script.Actions[0]
+	if action.Body != "plain-part" {
+		t.Fatalf("body = %q, want the literal Body argument preserved", action.Body)
+	}
+	if !metadataBool(action.Metadata, "masked_body") {
+		t.Fatalf("metadata masked_body = %#v, want true", action.Metadata["masked_body"])
+	}
+	if got := metadataString(action.Metadata, "masked_body_function"); got != "lr_decrypt_ex" {
+		t.Fatalf("metadata masked_body_function = %q, want lr_decrypt_ex", got)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "may be incomplete") {
+		t.Fatalf("warnings = %#v, want one warning noting the body may be incomplete", result.Warnings)
+	}
+	if result.Stats.ReviewOnlyFunctions != 1 {
+		t.Fatalf("Stats.ReviewOnlyFunctions = %d, want 1", result.Stats.ReviewOnlyFunctions)
+	}
+}
+
+func findSourceReviewMappingByTarget(t *testing.T, result *ConvertResult, targetName string) SourceReviewMapping {
+	t.Helper()
+	if result.SourceReview == nil {
+		t.Fatalf("source review is nil")
+	}
+	for _, mapping := range result.SourceReview.Mappings {
+		if mapping.TargetKind == "action" && mapping.TargetName == targetName {
+			return mapping
+		}
+	}
+	t.Fatalf("no action mapping found for target %q in %#v", targetName, result.SourceReview.Mappings)
+	return SourceReviewMapping{}
+}
+
 func TestConvertZipRoutesDevWebMainJSArchive(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -1942,30 +2093,36 @@ Format=%H:%M:%S
 	if result.Script.Protocol != "jms-solace" {
 		t.Fatalf("protocol = %q, want jms-solace", result.Script.Protocol)
 	}
-	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_jms_solace" || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired {
-		t.Fatalf("detected protocol = %#v, want blocked Java JMS/Solace", result.DetectedProtocol)
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_vuser" || result.DetectedProtocol.ImportMode != ImportModeExecutable || result.DetectedProtocol.APEXLoadProtocol != "jms" {
+		t.Fatalf("detected protocol = %#v, want executable Java JMS/Solace draft", result.DetectedProtocol)
 	}
-	if result.ReviewArtifact == nil {
-		t.Fatal("review artifact missing for Java JMS/Solace promotion gate")
+	if result.ReviewArtifact != nil {
+		t.Fatalf("review artifact = %#v, want nil for fully mapped Java JMS/Solace import", result.ReviewArtifact)
 	}
-	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "jms_publish" {
-		t.Fatalf("actions = %#v, want one jms_publish", result.Script.Actions)
+	var publish *dsl.Action
+	for i := range result.Script.Actions {
+		if result.Script.Actions[i].Type == "jms_publish" {
+			publish = &result.Script.Actions[i]
+			break
+		}
 	}
-	action := result.Script.Actions[0]
-	if !strings.Contains(action.Body, "{{param.date}}") || !strings.Contains(action.Body, "{{param.ctn}}") {
-		t.Fatalf("JMS body = %q, want XML sidecar with parameter references", action.Body)
+	if publish == nil {
+		t.Fatalf("actions = %#v, want jms_publish", result.Script.Actions)
 	}
-	if action.Metadata["subscriberNumber"] != "{{param.ctn}}" || action.Metadata["guid"] != "{{param.guid}}" {
-		t.Fatalf("JMS metadata = %#v, want message properties", action.Metadata)
+	if !strings.Contains(publish.Body, "{{param.date}}") || !strings.Contains(publish.Body, "{{param.time}}") || !strings.Contains(publish.Body, "{{param.ctn}}") {
+		t.Fatalf("JMS body = %q, want XML sidecar with parameter references", publish.Body)
 	}
-	if result.Script.Config.JMS.Properties["truststore"] != "gddnsolace.perf.truststore" {
-		t.Fatalf("JMS properties = %#v, want truststore metadata", result.Script.Config.JMS.Properties)
+	if publish.Headers["subscriberNumber"] != "{{param.ctn}}" || publish.Headers["guid"] != "{{param.guid}}" {
+		t.Fatalf("JMS headers = %#v, want message properties", publish.Headers)
+	}
+	if result.Script.Config.JMS.TLS == nil || result.Script.Config.JMS.TLS.TrustStoreRef != "gddnsolace.perf.truststore" {
+		t.Fatalf("JMS TLS = %#v, want truststore metadata", result.Script.Config.JMS.TLS)
 	}
 	if len(result.Script.Parameters) != 13 {
 		t.Fatalf("parameters = %d, want 13", len(result.Script.Parameters))
 	}
-	if result.FidelityReport == nil || result.FidelityReport.PromotionStatus != ImportPromotionBlocked {
-		t.Fatalf("fidelity report = %#v, want blocked promotion", result.FidelityReport)
+	if result.FidelityReport == nil || result.FidelityReport.PromotionStatus != ImportPromotionPromotable {
+		t.Fatalf("fidelity report = %#v, want promotable Java JMS mapping", result.FidelityReport)
 	}
 }
 
@@ -3845,8 +4002,8 @@ Type=TruClient 2.0 - Web
 	if result.Script.Actions[1].Metadata["source_step_index"] != "2" || result.Script.Actions[1].Metadata["source_action"] != "Click" {
 		t.Fatalf("second action metadata = %#v, want TruClient source step metadata", result.Script.Actions[1].Metadata)
 	}
-	if !containsString(result.Warnings, "TruClient 2.0 - Web import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.") {
-		t.Fatalf("warnings = %#v, want review-only warning", result.Warnings)
+	if containsString(result.Warnings, "TruClient 2.0 - Web import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.") {
+		t.Fatalf("warnings = %#v, did not expect review-only warning for executable TruClient 2.0 Web import", result.Warnings)
 	}
 	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
 		t.Fatal("expected import metadata to be populated")
@@ -3861,6 +4018,176 @@ Type=TruClient 2.0 - Web
 	}
 	if inspection.StepInventory.Total != 3 || len(inspection.ObjectRepositories) != 1 || len(inspection.ParameterFiles) != 1 || len(inspection.RuntimeFiles) != 1 {
 		t.Fatalf("inspection = %#v, want step/object/parameter/runtime inventory", inspection)
+	}
+}
+
+func TestConvertZipMapsJavaSolaceJMSArchive(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	files := map[string]string{
+		"JavaJMS/JavaJMS.usr": `[General]
+Type=Java Vuser
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+[ManuallyExtraFiles]
+File1=request.xml
+`,
+		"JavaJMS/Actions.java": `import lrapi.lr;
+import javax.jms.*;
+import javax.naming.Context;
+import java.util.Hashtable;
+
+public class Actions {
+  public int init() throws Throwable {
+    Hashtable env = new Hashtable();
+    env.put(Context.PROVIDER_URL, "smf://broker.example.test:55555");
+    env.put(Context.SECURITY_PRINCIPAL, "perfuser@ordersvpn");
+    env.put(Context.SECURITY_CREDENTIALS, "secret");
+    return 0;
+  }
+
+  public int action() throws Throwable {
+    lr.start_transaction("PublishOrder");
+    Queue queue = session.createQueue("ORDERS.IN");
+    String body = readFile("request.xml");
+    body = body.replaceAll("xxxdatexxx", lr.eval_string("{date}"));
+    TextMessage msg = session.createTextMessage(body);
+    msg.setStringProperty("eventType", "order");
+    producer.send(queue, msg);
+    lr.end_transaction("PublishOrder", lr.AUTO);
+    return 0;
+  }
+}
+`,
+		"JavaJMS/request.xml": `<order><date>xxxdatexxx</date></order>`,
+	}
+	for name, content := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%s): %v", name, err)
+		}
+		if _, err := w.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%s): %v", name, err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("Close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "jms-solace" {
+		t.Fatalf("script = %#v, want jms-solace script", result.Script)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.ImportMode != ImportModeExecutable || result.DetectedProtocol.APEXLoadProtocol != "jms" {
+		t.Fatalf("detected = %#v, want executable Java JMS mapping", result.DetectedProtocol)
+	}
+	if result.Script.Config.JMS.BrokerURL != "smf://broker.example.test:55555" ||
+		result.Script.Config.JMS.Username != "{{secret.jms_username}}" ||
+		result.Script.Config.JMS.Password != "{{secret.jms_password}}" ||
+		result.Script.Config.JMS.MessageVPN != "ordersvpn" ||
+		result.Script.Config.JMS.Properties["recorded_username"] != "perfuser" {
+		t.Fatalf("jms config = %#v, want broker/user/vpn mapped", result.Script.Config.JMS)
+	}
+	var publish *dsl.Action
+	for i := range result.Script.Actions {
+		if result.Script.Actions[i].Type == "jms_publish" {
+			publish = &result.Script.Actions[i]
+			break
+		}
+	}
+	if publish == nil {
+		t.Fatalf("actions = %#v, want jms_publish", result.Script.Actions)
+	}
+	if publish.Target != "ORDERS.IN" || !strings.Contains(publish.Body, "{{var.date}}") || publish.Headers["eventType"] != "order" {
+		t.Fatalf("publish = %#v, want mapped destination/body/property", publish)
+	}
+	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 {
+		t.Fatalf("source review = %#v, want Java mappings", result.SourceReview)
+	}
+}
+
+func TestConvertZipMapsSAPGUIDraftWithExternalRunnerGate(t *testing.T) {
+	archive := buildSourceZip(t, map[string]string{
+		"SAPLogin.usr": `[General]
+Type=SAP GUI
+[Actions]
+Action=Action.c
+[Files]
+Runtime=default.cfg
+Params=SAPLogin.prm
+`,
+		"default.cfg": `[SAPGUI]
+ConnectionString=SAP_SYSTEM
+Client=001
+Language=EN
+AutoLogon=1
+`,
+		"SAPLogin.prm": `[parameter:User]
+ParamName=User
+ValueList=perfuser
+`,
+		"Action.c": `Action()
+{
+    sapgui_open_connection("SAP_SYSTEM", LAST);
+    sapgui_logon("001", "{User}", "recorded-password", "EN", LAST);
+    sapgui_set_text("wnd[0]/usr/txtRSYST-BNAME", "{User}", LAST);
+    sapgui_set_password("wnd[0]/usr/pwdRSYST-BCODE", "recorded-password", LAST);
+    sapgui_press_button("wnd[0]/tbar[0]/btn[0]", LAST);
+    sapgui_grid_set_cell_data("wnd[0]/usr/cntlGRID/shellcont/shell", "0", "CARRID", "AA", LAST);
+    sapgui_wait_for_session_idle(LAST);
+    return 0;
+}`,
+	})
+
+	result, err := ConvertZip(archive, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "sap_gui" {
+		t.Fatalf("script = %#v, want SAP GUI draft", result.Script)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "sap_gui" || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired {
+		t.Fatalf("detected protocol = %#v, want external-runner SAP GUI", result.DetectedProtocol)
+	}
+	if result.ReviewArtifact == nil {
+		t.Fatal("review artifact = nil, want SAP GUI external-runner review artifact")
+	}
+	if result.Script.Config.SAPGUI.Password != "{{secret.sapgui_password}}" || result.Script.Config.SAPGUI.Client != "001" {
+		t.Fatalf("sapgui config = %#v, want secret password and client", result.Script.Config.SAPGUI)
+	}
+	var sawSet, sawPress, sawGrid, sawSync bool
+	for _, action := range result.Script.Actions {
+		switch action.Type {
+		case "sapgui_set":
+			if action.Target == "wnd[0]/usr/txtRSYST-BNAME" && action.Value == "{{param.user}}" {
+				sawSet = true
+			}
+			if action.Target == "wnd[0]/usr/pwdRSYST-BCODE" && action.Value != "{{secret.sapgui_password}}" {
+				t.Fatalf("password action = %#v, want secret replacement", action)
+			}
+		case "sapgui_press":
+			sawPress = true
+		case "sapgui_grid":
+			if action.Target == "wnd[0]/usr/cntlGRID/shellcont/shell" && action.Params["row"] == 0 && action.Params["column"] == "CARRID" {
+				sawGrid = true
+			}
+		case "sapgui_sync":
+			sawSync = true
+		}
+	}
+	if !sawSet || !sawPress || !sawGrid || !sawSync {
+		t.Fatalf("actions = %#v, want set/press/grid/sync", result.Script.Actions)
+	}
+	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 {
+		t.Fatalf("source review = %#v, want SAP GUI mappings", result.SourceReview)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) > 0 {
+		t.Fatalf("SAP GUI draft validation issues = %v", issues)
 	}
 }
 

@@ -68,10 +68,13 @@ type SourceActionFile struct {
 type ProjectConfig struct {
 	ScriptType        string // e.g. "Web"
 	ActiveTypes       []string
+	ScriptLanguage    string // e.g. "JAVA", "C"
+	RunType           string // e.g. "Java-Interpreter"
 	ActionFiles       []string
 	SourceActionFiles []SourceActionFile
 	RuntimeFile       string
 	ParamFiles        []string
+	ExtraFiles        []string
 	BaseURL           string
 	ThinkTimeMin      float64
 	ThinkTimeMax      float64
@@ -836,6 +839,7 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 		ActionFiles:       make([]string, 0),
 		SourceActionFiles: make([]SourceActionFile, 0),
 		ParamFiles:        make([]string, 0),
+		ExtraFiles:        make([]string, 0),
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader(content))
@@ -872,6 +876,10 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 				cfg.ScriptType = value
 			case "ActiveTypes", "AdditionalTypes", "GenerateTypes":
 				cfg.ActiveTypes = appendUnique(cfg.ActiveTypes, splitConfigList(value)...)
+			case "ScriptLanguage":
+				cfg.ScriptLanguage = value
+			case "RunType":
+				cfg.RunType = value
 			}
 		case "Actions":
 			if isSupportedLifecycleSourceFile(value) {
@@ -881,7 +889,7 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 					Language: sourceActionLanguage(value),
 				})
 			}
-			if strings.HasSuffix(strings.ToLower(value), ".c") {
+			if strings.HasSuffix(strings.ToLower(value), ".c") || strings.HasSuffix(strings.ToLower(value), ".java") {
 				cfg.ActionFiles = append(cfg.ActionFiles, value)
 			}
 		case "RunLogicFiles":
@@ -895,10 +903,15 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 							Language: sourceActionLanguage(f),
 						})
 					}
-					if f != "" && strings.HasSuffix(strings.ToLower(f), ".c") {
+					lower := strings.ToLower(f)
+					if f != "" && (strings.HasSuffix(lower, ".c") || strings.HasSuffix(lower, ".java")) {
 						cfg.ActionFiles = append(cfg.ActionFiles, f)
 					}
 				}
+			}
+		case "ManuallyExtraFiles", "ExtraFiles":
+			if strings.TrimSpace(value) != "" {
+				cfg.ExtraFiles = append(cfg.ExtraFiles, value)
 			}
 		}
 	}

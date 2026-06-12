@@ -3,6 +3,7 @@ package enterprisearchive
 import (
 	"archive/zip"
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -18,7 +19,7 @@ func TestDetectProtocolFromUSRType(t *testing.T) {
 		{name: "soap", scriptType: "Web Services", canonical: "soap", storm: "soap", mode: ImportModeExecutable},
 		{name: "mobile", scriptType: "TruClientMobileWeb", canonical: "truclient_mobile_web", storm: "browser", mode: ImportModeExecutable},
 		{name: "mobile web2 ui", scriptType: "Web2UIMob", canonical: "truclient_mobile_web", storm: "browser", mode: ImportModeExecutable},
-		{name: "web2", scriptType: "TruClient 2.0 - Web", canonical: "truclient2_web", storm: "browser", mode: ImportModeReviewOnly},
+		{name: "web2", scriptType: "TruClient 2.0 - Web", canonical: "truclient2_web", storm: "browser", mode: ImportModeExecutable},
 		{name: "truclient web", scriptType: "TruClientWeb", canonical: "truclient_web", storm: "browser", mode: ImportModeReviewOnly},
 		{name: "database", scriptType: "ODBC", canonical: "database", storm: "database", mode: ImportModeExecutable},
 		{name: "dns", scriptType: "DNS", canonical: "dns", storm: "network", mode: ImportModeExecutable},
@@ -41,6 +42,10 @@ func TestDetectProtocolFromUSRType(t *testing.T) {
 		{name: "native mobile", scriptType: "TC4Mobile", canonical: "truclient_native_mobile", storm: "", mode: ImportModeExternalRunnerRequired},
 		{name: "native mobile 2.0 alias", scriptType: "TruClient 2.0 - Native Mobile", canonical: "truclient_native_mobile", storm: "", mode: ImportModeExternalRunnerRequired},
 		{name: "template", scriptType: "C Vuser", canonical: "c_vuser", storm: "", mode: ImportModeReviewOnly},
+		{name: "java vuser", scriptType: "Java Vuser", canonical: "java_vuser", storm: "", mode: ImportModeReviewOnly},
+		{name: "java protocols", scriptType: "Java_protocols", canonical: "java_jms_solace", storm: "jms-solace", mode: ImportModeExecutable},
+		{name: "java record replay", scriptType: "Java Record Replay", canonical: "java_vuser", storm: "", mode: ImportModeReviewOnly},
+		{name: "java over http", scriptType: "Java over HTTP", canonical: "java_vuser", storm: "", mode: ImportModeReviewOnly},
 	}
 
 	for _, tt := range tests {
@@ -270,14 +275,108 @@ func TestConvertZipReturnsReviewArtifactForExternalRunnerProtocol(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if result.Script != nil {
-		t.Fatalf("script = %#v, want nil for SAP GUI external runner", result.Script)
+	if result.Script == nil || result.Script.Protocol != "sap_gui" {
+		t.Fatalf("script = %#v, want SAP GUI draft with external runner gate", result.Script)
+	}
+	if result.Script.Config.SAPGUI.Password != "{{secret.sapgui_password}}" {
+		t.Fatalf("sapgui password = %q, want governed secret reference", result.Script.Config.SAPGUI.Password)
+	}
+	if result.Script.Config.SAPGUI.ConnectionString != "ASHOST=server" {
+		t.Fatalf("connection_string = %q, want source SAP GUI connection string", result.Script.Config.SAPGUI.ConnectionString)
 	}
 	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "sap_gui" || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired {
 		t.Fatalf("detected protocol = %#v, want SAP GUI external-runner classification", result.DetectedProtocol)
 	}
 	if result.ReviewArtifact == nil || len(result.ReviewArtifact.RequiredEvidence) == 0 {
 		t.Fatalf("review artifact = %#v, want required evidence", result.ReviewArtifact)
+	}
+}
+
+func TestConvertZipReturnsExecutableDraftForMappedJavaVuser(t *testing.T) {
+	actionsJava := `import lrapi.lr;
+import javax.jms.ConnectionFactory;
+import javax.jms.TextMessage;
+import javax.naming.InitialContext;
+
+public class Actions
+{
+    public int action() throws Throwable {
+        InitialContext ctx = new InitialContext();
+        ConnectionFactory factory = (ConnectionFactory) ctx.lookup("/jms/cf/orders");
+        lr.start_transaction("publish_order");
+        TextMessage message = session.createTextMessage("{\"order\":1}");
+        producer.send(message);
+        lr.end_transaction("publish_order", lr.AUTO);
+        return 0;
+    }
+}
+`
+	result, err := ConvertZip(buildSourceZip(t, map[string]string{
+		"SolacePublisher.usr": `[General]
+Type=Java_protocols
+ActiveTypes=Java_protocols
+RunType=Java-Interpreter
+ScriptLanguage=JAVA
+[Actions]
+vuser_init=vuser_init.java
+Actions=Actions.java
+vuser_end=vuser_end.java
+`,
+		"vuser_init.java": "import lrapi.lr;\n\npublic class vuser_init\n{\n    public int init() throws Throwable {\n        return 0;\n    }\n}\n",
+		"Actions.java":    actionsJava,
+		"vuser_end.java":  "import lrapi.lr;\n\npublic class vuser_end\n{\n    public int end() throws Throwable {\n        return 0;\n    }\n}\n",
+	}), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "jms-solace" {
+		t.Fatalf("script = %#v, want executable Java JMS draft", result.Script)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_vuser" || result.DetectedProtocol.ImportMode != ImportModeExecutable || result.DetectedProtocol.APEXLoadProtocol != "jms" {
+		t.Fatalf("detected protocol = %#v, want executable Java Vuser JMS mapping", result.DetectedProtocol)
+	}
+	if result.ReviewArtifact != nil {
+		t.Fatalf("review artifact = %#v, want nil for fully mapped Java Vuser", result.ReviewArtifact)
+	}
+	var sawPublish bool
+	for _, action := range result.Script.Actions {
+		if action.Type == "jms_publish" && action.Body == `{"order":1}` {
+			sawPublish = true
+			break
+		}
+	}
+	if !sawPublish {
+		t.Fatalf("actions = %#v, want mapped jms_publish action", result.Script.Actions)
+	}
+}
+
+func TestDetectProtocolJavaVuserFromScriptLanguageAndRunType(t *testing.T) {
+	detected := DetectProtocol(nil, &ProjectConfig{
+		ScriptType:     "SomeFutureJVMProtocol",
+		ScriptLanguage: "JAVA",
+		RunType:        "Java-Interpreter",
+	}, nil)
+	if detected.CanonicalSourceProtocol != "java_vuser" || detected.ImportMode != ImportModeReviewOnly {
+		t.Fatalf("detected = %#v, want java_vuser review_only from ScriptLanguage/RunType signals", detected)
+	}
+	foundSignal := false
+	for _, signal := range detected.Signals {
+		if strings.Contains(signal, "ScriptLanguage=JAVA") {
+			foundSignal = true
+			break
+		}
+	}
+	if !foundSignal {
+		t.Fatalf("signals = %v, want ScriptLanguage=JAVA signal", detected.Signals)
+	}
+}
+
+func TestDetectProtocolJavaVuserFromJavaSourcesWithoutMetadata(t *testing.T) {
+	detected := DetectProtocol(map[string]string{
+		"Actions.java": "import lrapi.lr;\npublic class Actions { public int action() { return 0; } }\n",
+	}, nil, nil)
+	if detected.CanonicalSourceProtocol != "java_vuser" || detected.ImportMode != ImportModeReviewOnly {
+		t.Fatalf("detected = %#v, want java_vuser review_only from .java content evidence", detected)
 	}
 }
 

@@ -1019,6 +1019,7 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 			BaseURL:              r.FormValue("base_url"),
 			IncludeAssertions:    r.FormValue("include_assertions") == "true",
 			PreserveTransactions: parseBoolDefault(r.FormValue("preserve_transactions"), true),
+			AllowJavaVuserRunner: parseBoolDefault(firstNonEmpty(r.FormValue("allow_java_vuser_runner"), r.URL.Query().Get("allow_java_vuser_runner")), false),
 		},
 		ReadinessPolicy: enterprisearchive.ParseRuntimeSettingMigrationPolicy(r.FormValue("migration_block_statuses")),
 	}, true
@@ -1076,6 +1077,7 @@ func writeEnterpriseArchiveImportResponse(w http.ResponseWriter, status int, res
 		SourceReview:        summary.SourceReview,
 		TrueClient2Compat:   summary.TrueClient2CompatReport,
 		ProtocolCompat:      protocolCompat,
+		Parameterization:    buildImportParameterization(result.Script, nil),
 	}))
 }
 

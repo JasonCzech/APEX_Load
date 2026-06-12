@@ -99,6 +99,8 @@ func actionCatalogSeeds() []ActionSpec {
 	seeds = append(seeds, grpcActionSpecs()...)
 	seeds = append(seeds, databaseActionSpecs()...)
 	seeds = append(seeds, networkActionSpecs()...)
+	seeds = append(seeds, sapGUIActionSpecs()...)
+	seeds = append(seeds, javaVuserActionSpecs()...)
 	seeds = append(seeds, jmsActionSpecs()...)
 	seeds = append(seeds, kafkaActionSpecs()...)
 	return seeds

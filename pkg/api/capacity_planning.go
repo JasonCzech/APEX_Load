@@ -621,8 +621,12 @@ func canonicalCapacityProtocol(group TestGroup) string {
 		return "http"
 	case "java-http", "java_http", "java over http", "java-over-http":
 		return "java_http"
+	case "java_vuser", "java-vuser", "java vuser":
+		return "java_vuser"
 	case "jms", "jms-solace", "jms_solace", "solace", "ibm-mq", "ibm_mq", "mq":
 		return "jms"
+	case "sapgui", "sap_gui", "sap-gui", "sap gui":
+		return "sap_gui"
 	case "ws", "websocket":
 		return "websocket"
 	default:
@@ -663,8 +667,12 @@ func protocolDensityEnvelope(protocol string) ProtocolDensityEnvelope {
 		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "soap", MaxVUsersPerGenerator: 5000, CPUCoresPerVUser: 0.00040, MemoryMBPerVUser: 0.65, NetworkMbpsPerVUser: 0.12, CompatibilityConfidence: "calibrated_model"}, "soap_5k_xml_2kb_4vcpu_8gb")
 	case "java_http":
 		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "java_http", MaxVUsersPerGenerator: 7000, CPUCoresPerVUser: 0.00032, MemoryMBPerVUser: 0.45, NetworkMbpsPerVUser: 0.09, CompatibilityConfidence: "calibrated_model"}, "java_http_7k_client_runtime_4vcpu_8gb")
+	case "java_vuser":
+		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "java_vuser", MaxVUsersPerGenerator: 25, CPUCoresPerVUser: 0.02000, MemoryMBPerVUser: 96.0, NetworkMbpsPerVUser: 0.04, CompatibilityConfidence: "external_runner_required"}, "java_vuser_jvm_process_pool")
 	case "jms":
 		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "jms", MaxVUsersPerGenerator: 3000, CPUCoresPerVUser: 0.00050, MemoryMBPerVUser: 0.80, NetworkMbpsPerVUser: 0.05, CompatibilityConfidence: "calibrated_model"}, "jms_3k_session_send_4vcpu_8gb")
+	case "sap_gui":
+		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "sap_gui", MaxVUsersPerGenerator: 25, CPUCoresPerVUser: 0.02000, MemoryMBPerVUser: 80.0, NetworkMbpsPerVUser: 0.02, CompatibilityConfidence: "external_runner_required"}, "sap_gui_desktop_session_capacity")
 	default:
 		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "unknown", MaxVUsersPerGenerator: 4000, CPUCoresPerVUser: 0.00045, MemoryMBPerVUser: 0.75, NetworkMbpsPerVUser: 0.10, CompatibilityConfidence: "conservative"}, "unknown_conservative_4vcpu_8gb")
 	}

@@ -16,6 +16,7 @@ import (
 	_ "github.com/jasonczech/apexload/pkg/protocol/grpc"
 	_ "github.com/jasonczech/apexload/pkg/protocol/http"
 	_ "github.com/jasonczech/apexload/pkg/protocol/java_http"
+	_ "github.com/jasonczech/apexload/pkg/protocol/java_vuser"
 	_ "github.com/jasonczech/apexload/pkg/protocol/jms"
 	_ "github.com/jasonczech/apexload/pkg/protocol/kafka"
 	_ "github.com/jasonczech/apexload/pkg/protocol/network"

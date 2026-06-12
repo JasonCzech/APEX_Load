@@ -399,6 +399,28 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 		},
 		matchers: []runtimeSettingMatcher{matcher([]string{"Data Formatting", "DataFormatting"}, []string{"Chain", "DFEChain"})},
 	},
+	{
+		entry: RuntimeSettingSupportEntry{
+			ID:      "sapgui_runtime",
+			Area:    "SAP GUI",
+			Concept: "SAP GUI runtime and session options",
+			Fields:  []string{"config.sapgui"},
+			Status:  RuntimeSettingStatusCompatibilityOnly,
+			Notes:   "SAP GUI runtime settings are preserved in the DSL draft; execution requires the Windows SAP GUI runner bridge.",
+		},
+		matchers: []runtimeSettingMatcher{matcher([]string{"SAPGUI", "SAP GUI"}, []string{"ConnectionString", "Client", "Language", "SessionBehavior", "SyncTimeoutMs", "ScriptingEnabled"})},
+	},
+	{
+		entry: RuntimeSettingSupportEntry{
+			ID:      "sapgui_auto_logon",
+			Area:    "SAP GUI",
+			Concept: "Auto logon credentials",
+			Fields:  []string{"config.sapgui.auto_logon", "config.sapgui.username", "config.sapgui.password"},
+			Status:  RuntimeSettingStatusCompatibilityOnly,
+			Notes:   "SAP GUI credential settings are preserved with password secret templates; runner-side secret provisioning is required.",
+		},
+		matchers: []runtimeSettingMatcher{matcher([]string{"SAPGUI", "SAP GUI", "AutoLogon"}, []string{"AutoLogon", "User", "Username", "Password", "Client", "Language"})},
+	},
 }
 
 var sourceRTSSupportMatrixNotes = []string{

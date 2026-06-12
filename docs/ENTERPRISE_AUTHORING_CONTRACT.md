@@ -44,12 +44,17 @@ Web/API source acquisition also uses the shared import review envelope:
 
 | Endpoint | Purpose |
 | --- | --- |
+| `POST /api/v1/scripts/import/enterprise-script-archive` | Convert enterprise script archive ZIPs into executable scripts, review artifacts, or external-runner-required drafts. The response includes `detected_protocol`, `protocol_compat_report`, fidelity/source review, repair suggestions, and optional `review_artifact`. |
+| `POST /api/v1/scripts/import/enterprise-script-archive/validate` | Dry-run the same enterprise archive conversion and review envelope without saving. |
+| `GET /api/v1/scripts/import/enterprise-script-archive/support-matrix` | Publish source protocol routing, TruClient script-type coverage, Web 2.0 fixture expectations, runtime-setting parity, and external-runner requirements. |
 | `GET /api/v1/scripts/web-api/support-matrix` | Publish Web/API protocol/import support, benchmark envelopes, diagnostics, and sample projects. |
 | `POST /api/v1/scripts/import/openapi` | Convert OpenAPI 3.x or Swagger 2.0 JSON/YAML into an HTTP draft with auth hints, data-source seeds, request body templates, assertions, and review sections. |
 | `POST /api/v1/scripts/import/wsdl` | Convert WSDL into a SOAP draft with operation discovery, SOAPAction preservation, namespace mapping, sample envelopes, and payload-review sections. |
 | `GET /api/v1/scripts/import/devweb/support-matrix` | Publish construct-by-construct DevWeb import support and review requirements. |
 
-Web 2.0 browser-profile archives are tracked as a planned browser-profile authoring source in `docs/COMPETITIVE_COMPARISON.md#web-20-browser-profile`. They use Enterprise Script Archive acquisition, preserve source browser-profile metadata, map executable browser steps to APEX Load browser DSL, and add profile-specific replay, repair, runtime, and optional browser-to-HTTP conversion review.
+Web 2.0 browser-profile archives are active through Enterprise Script Archive acquisition. They preserve source browser-profile metadata, map executable browser steps to APEX Load browser DSL, and add profile-specific replay, repair, runtime, and optional browser-to-HTTP conversion review.
+
+Java-family and SAP GUI imports use the same envelope but separate execution posture from import success. Deterministic Java/JMS mapping emits native JMS drafts when possible. The `allow_java_vuser_runner=true` multipart field enables an explicit Java Vuser sidecar fallback; fallback scripts return `import_mode: "external_runner_required"` and require `java_vuser_jvm_runner`. SAP GUI imports preserve SAP GUI scripting calls and source identity as `sap_gui` drafts that require `windows_sap_gui_runner`.
 
 AI-assisted authoring now has a dedicated governed workflow envelope:
 
@@ -79,7 +84,10 @@ The matrix covers:
 | --- | --- | --- |
 | Enterprise Script Archive | Active | ZIP acquisition, validate-only review, runtime parity, repair suggestions, replay, browser replay where applicable, save handoff |
 | Mobile browser profile | Active | Enterprise Script Archive acquisition, browser replay readiness, unsupported-step review, repair suggestions |
-| Web 2.0 browser profile | Planned | Enterprise Script Archive acquisition, browser-profile import, object descriptor review, step outline creation, browser replay evidence, optional browser-to-HTTP conversion |
+| Web 2.0 browser profile | Active | Enterprise Script Archive acquisition, executable browser draft import, object descriptor review, step outline creation, browser replay evidence, optional browser-to-HTTP conversion |
+| SAP GUI | Active, external runner required | Enterprise Script Archive acquisition, SAP GUI call preservation, source mapping, review artifact save, Windows SAP GUI runner gate |
+| Java Vuser fallback | Active, external runner required | Enterprise Script Archive acquisition, explicit `allow_java_vuser_runner` opt-in, Java source preservation, isolated JVM runner gate |
+| Java/JMS mapping | Active | Enterprise Script Archive acquisition, deterministic JNDI/JMS idiom mapping, native JMS draft generation, Solace real-adapter build-tag posture |
 | JMeter | Active | JMX acquisition, validate-only review, multi-script output, scenario draft generation |
 | DevWeb | Active | JavaScript/ZIP/JSON acquisition, protocol coverage review |
 | HAR | Active | HAR/JSON acquisition, correlation and base URL readiness |

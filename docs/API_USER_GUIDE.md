@@ -242,9 +242,9 @@ Import endpoints:
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/v1/scripts/import/enterprise-script-archive` | Import an enterprise script archive ZIP with protocol auto-detection. |
-| `POST` | `/api/v1/scripts/import/enterprise-script-archive/validate` | Validate an enterprise script archive without saving. |
-| `GET` | `/api/v1/scripts/import/enterprise-script-archive/support-matrix` | Enterprise script archive protocol import support. |
+| `POST` | `/api/v1/scripts/import/enterprise-script-archive` | Import an enterprise script archive ZIP with protocol auto-detection. Returns executable scripts, review artifacts, or external-runner-required drafts depending on source protocol. |
+| `POST` | `/api/v1/scripts/import/enterprise-script-archive/validate` | Validate an enterprise script archive without saving. Uses the same detection, fidelity, and review envelope as conversion. |
+| `GET` | `/api/v1/scripts/import/enterprise-script-archive/support-matrix` | Enterprise script archive protocol import support, including TruClient 2 Web, Java-family, SAP GUI, and external-runner routes. |
 | `POST` | `/api/v1/scripts/import/jmeter` | Import a JMeter test plan. |
 | `POST` | `/api/v1/scripts/import/jmeter/save` | Save a reviewed JMeter import draft. |
 | `POST` | `/api/v1/scripts/import/jmeter/validate` | Validate a JMeter archive or plan without saving. |
@@ -262,6 +262,10 @@ Import endpoints:
 | `POST` | `/api/v1/scripts/import/oracle-ebusiness/review` | Review Oracle E-Business, Siebel, or Oracle NCA source for supported routes. |
 | `POST` | `/api/v1/scripts/import/sample` | Import raw HTTP, cURL, REST sample requests. |
 | `GET` | `/api/v1/scripts/web-api/support-matrix` | Web API execution support matrix. |
+
+Enterprise Script Archive requests are multipart form uploads. Common fields are `file` (`.zip`), `name`, `base_url`, `include_assertions`, `preserve_transactions`, `migration_block_statuses`, `salesforce_native`, and `allow_java_vuser_runner`. `allow_java_vuser_runner=true` is intentionally opt-in: deterministic Java/JMS mapping is preferred, and unmapped Java Vuser fallback drafts return `import_mode: "external_runner_required"` with `runner_requirement: "java_vuser_jvm_runner"`.
+
+The import response uses the shared import review envelope: `script`/`scripts`, `warnings`, `stats`, `review_sections`, `repair_suggestions`, `source_review`, `fidelity_report`, `detected_protocol`, `protocol_compat_report`, `review_artifact`, `trueclient2_compat_report`, and `parameterization`. `detected_protocol.mode` and `protocol_compat_report.import_mode` may be `review_then_executable`, `review_only`, or `external_runner_required`. SAP GUI archives are preserved as `sap_gui` external-runner drafts for a Windows SAP GUI runner. TruClient 2 Web archives now produce executable browser drafts with replay, object-identification, runtime, and optional browser-to-HTTP review sections.
 
 ### 3. Sync Scripts With GitHub Enterprise And CI
 
@@ -407,7 +411,7 @@ Control endpoints:
 | --- | --- | --- |
 | `GET` | `/api/v1/tests` | List runs. |
 | `POST` | `/api/v1/tests/estimate` | Estimate capacity for a proposed run. |
-| `POST` | `/api/v1/tests/preflight` | Pre-flight capacity and governance policy check for a proposed run without creating it. |
+| `POST` | `/api/v1/tests/preflight` | Pre-flight capacity and governance policy check for a proposed run without creating it. Blocks external-runner-required drafts until the matching runner capability is enabled. |
 | `GET` | `/api/v1/tests/{id}` | Get run status and live summary. |
 | `GET` | `/api/v1/tests/{id}/manifest` | Generator assignment manifest for a run (which generators host which groups). |
 | `POST` | `/api/v1/tests/{id}/start` | Start a queued or reserved run. |
@@ -792,6 +796,8 @@ Useful recorder and replay endpoints:
 | `GET` / `PUT` | `/api/v1/system/settings` |
 | `GET` | `/api/v1/ws` |
 | `GET` | `/metrics` |
+
+`GET /api/v1/protocol-bundles/support-matrix` publishes the governed runner and entitlement metadata used by import and launch preflight decisions. Current external-runner entries include `sap_gui` (`windows_sap_gui_runner`) and `java_vuser` (`java_vuser_jvm_runner`). Launch preflight and `POST /api/v1/tests` return blocking conflicts such as `external_runner_required` or `java_vuser_runner_required` when a draft is saved before the required runner pool is configured.
 
 ### Library Federation
 

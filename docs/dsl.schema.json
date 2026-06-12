@@ -2315,6 +2315,55 @@
             "properties": {
               "type": {
                 "enum": [
+                  "java_vuser_run"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Runs a LoadRunner Java Vuser lifecycle through the governed JVM sidecar runner.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "method": {
+                    "description": "Lifecycle method or full lifecycle sequence to invoke.",
+                    "enum": [
+                      "init",
+                      "action",
+                      "end",
+                      "full_lifecycle"
+                    ],
+                    "type": "string"
+                  },
+                  "source_archive_ref": {
+                    "description": "Preserved source archive or authoring artifact reference.",
+                    "type": "string"
+                  },
+                  "timeout_ms": {
+                    "description": "Per-run timeout in milliseconds; falls back to config.java_vuser.action_timeout_ms.",
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Java class name to load, usually Actions.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "jms_ack"
                 ]
               }
@@ -2841,6 +2890,637 @@
                 "type": "object"
               }
             }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "sapgui_call"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "allOf": [
+              {
+                "anyOf": [
+                  {
+                    "required": [
+                      "target"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "params": {
+                        "required": [
+                          "method"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "params"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "description": "Preserves a raw SAP GUI scripting call for review-gated replay.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "args": {
+                    "description": "Raw argument list.",
+                    "type": "array"
+                  },
+                  "method": {
+                    "description": "Raw SAP GUI scripting method/property.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Control ID or raw receiver path.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "sapgui_connect"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Connects to a SAP GUI application server or connection entry.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "system": {
+                    "description": "Optional SAP system identifier.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Connection string or SAP GUI connection entry.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "sapgui_grid"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Executes a SAP GUI grid operation.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "column": {
+                    "description": "Column name or ID.",
+                    "type": "string"
+                  },
+                  "method": {
+                    "description": "Typed operation.",
+                    "enum": [
+                      "select_row",
+                      "select_cell",
+                      "double_click_cell",
+                      "press_toolbar_button",
+                      "set_cell",
+                      "sort",
+                      "filter"
+                    ],
+                    "type": "string"
+                  },
+                  "row": {
+                    "description": "Row index.",
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Full SAP GUI control ID.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Operation value, when applicable.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "sapgui_logon"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Logs on to a SAP GUI session.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "client": {
+                    "description": "SAP client number.",
+                    "type": "string"
+                  },
+                  "language": {
+                    "description": "SAP logon language.",
+                    "type": "string"
+                  },
+                  "password": {
+                    "description": "Password secret template.",
+                    "type": "string"
+                  },
+                  "user": {
+                    "description": "Recorded username or template.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "sapgui_press"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "allOf": [
+              {
+                "anyOf": [
+                  {
+                    "required": [
+                      "target"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "params": {
+                        "required": [
+                          "vkey"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "params"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "description": "Presses a button or sends a virtual key.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "description": {
+                    "description": "Recorded control description.",
+                    "type": "string"
+                  },
+                  "vkey": {
+                    "description": "SAP GUI virtual key code.",
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Button/control ID when pressing a control.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "sapgui_select"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "allOf": [
+              {
+                "anyOf": [
+                  {
+                    "required": [
+                      "value"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "params": {
+                        "required": [
+                          "text"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "params"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "params": {
+                        "required": [
+                          "index"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "params"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "params": {
+                        "required": [
+                          "id"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "params"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "description": "Selects an item by text, index, or ID.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "id": {
+                    "description": "Selected SAP item ID.",
+                    "type": "string"
+                  },
+                  "index": {
+                    "description": "Selected zero-based index.",
+                    "type": "integer"
+                  },
+                  "text": {
+                    "description": "Selected text.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Full SAP GUI control ID.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Selected text/value.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "sapgui_set"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Sets a value on a SAP GUI control.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "control": {
+                    "description": "Recorded control family.",
+                    "enum": [
+                      "text",
+                      "combo",
+                      "checkbox",
+                      "radio",
+                      "button",
+                      "grid",
+                      "table",
+                      "tree",
+                      "menu",
+                      "shell",
+                      "unknown"
+                    ],
+                    "type": "string"
+                  },
+                  "description": {
+                    "description": "Recorded control description.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Full SAP GUI control ID.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Value to set.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target",
+              "value"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "sapgui_sync"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Waits for SAP GUI status, screen change, or session-idle synchronization.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "timeout_ms": {
+                    "description": "Timeout in milliseconds.",
+                    "type": "integer"
+                  },
+                  "wait_for": {
+                    "description": "Synchronization mode.",
+                    "enum": [
+                      "status_bar",
+                      "screen_change",
+                      "session_idle"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Optional control/status target.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "sapgui_table"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Executes a SAP GUI table operation.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "column": {
+                    "description": "Column name or ID.",
+                    "type": "string"
+                  },
+                  "method": {
+                    "description": "Typed operation.",
+                    "enum": [
+                      "select_row",
+                      "set_cell",
+                      "get_cell",
+                      "press_cell",
+                      "scroll"
+                    ],
+                    "type": "string"
+                  },
+                  "row": {
+                    "description": "Row index.",
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Full SAP GUI control ID.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Operation value, when applicable.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "sapgui_tree"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Executes a SAP GUI tree operation.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "column": {
+                    "description": "Column name or ID.",
+                    "type": "string"
+                  },
+                  "method": {
+                    "description": "Typed operation.",
+                    "enum": [
+                      "select_node",
+                      "expand_node",
+                      "collapse_node",
+                      "double_click_node"
+                    ],
+                    "type": "string"
+                  },
+                  "row": {
+                    "description": "Row index.",
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Full SAP GUI control ID.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Operation value, when applicable.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "sapgui_verify"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Verifies a SAP GUI control value or status text.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "method": {
+                    "description": "Comparison method.",
+                    "enum": [
+                      "equals",
+                      "contains",
+                      "matches"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Control or status bar ID.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Expected value/text.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target",
+              "value"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "sapgui_window"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Activates, maximizes, resizes, or closes a SAP GUI window.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "method": {
+                    "description": "Window operation.",
+                    "enum": [
+                      "activate",
+                      "maximize",
+                      "resize",
+                      "close"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Window ID such as wnd[0].",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target"
+            ]
           }
         },
         {
@@ -3693,6 +4373,7 @@
             "http_sequence",
             "imap_command",
             "insert",
+            "java_vuser_run",
             "jms_ack",
             "jms_commit",
             "jms_consume",
@@ -3725,6 +4406,18 @@
             "rendezvous",
             "review_required",
             "rollback",
+            "sapgui_call",
+            "sapgui_connect",
+            "sapgui_grid",
+            "sapgui_logon",
+            "sapgui_press",
+            "sapgui_select",
+            "sapgui_set",
+            "sapgui_sync",
+            "sapgui_table",
+            "sapgui_tree",
+            "sapgui_verify",
+            "sapgui_window",
             "select",
             "smtp_send",
             "source_database",
@@ -4384,7 +5077,25 @@
         "timeout_ms": {
           "type": "integer"
         },
+        "tls": {
+          "$ref": "#/$defs/JMSTLSConfig"
+        },
         "username": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "JMSTLSConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "ca_cert_secret": {
+          "type": "string"
+        },
+        "insecure_skip_verify": {
+          "type": "boolean"
+        },
+        "trust_store_ref": {
           "type": "string"
         }
       },
@@ -4428,6 +5139,39 @@
             "type": "string"
           },
           "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "JavaVuserConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "action_timeout_ms": {
+          "type": "integer"
+        },
+        "classpath": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "harness_jar": {
+          "type": "string"
+        },
+        "max_processes": {
+          "type": "integer"
+        },
+        "runner_command": {
+          "type": "string"
+        },
+        "startup_timeout_ms": {
+          "type": "integer"
+        },
+        "work_dir": {
+          "type": "string"
         }
       },
       "type": "object"
@@ -4807,6 +5551,36 @@
       },
       "type": "object"
     },
+    "SAPGUIConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "auto_logon": {
+          "type": "boolean"
+        },
+        "client": {
+          "type": "string"
+        },
+        "connection_string": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "session_behavior": {
+          "type": "string"
+        },
+        "sync_timeout_ms": {
+          "type": "integer"
+        },
+        "username": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "SOAPActionConfig": {
       "additionalProperties": false,
       "properties": {
@@ -5003,6 +5777,9 @@
         "java_http": {
           "$ref": "#/$defs/JavaHTTPConfig"
         },
+        "java_vuser": {
+          "$ref": "#/$defs/JavaVuserConfig"
+        },
         "jms": {
           "$ref": "#/$defs/JMSConfig"
         },
@@ -5023,6 +5800,9 @@
         },
         "run_logic": {
           "$ref": "#/$defs/RunLogicConfig"
+        },
+        "sapgui": {
+          "$ref": "#/$defs/SAPGUIConfig"
         },
         "soap": {
           "$ref": "#/$defs/SOAPConfig"

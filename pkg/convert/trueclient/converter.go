@@ -156,73 +156,18 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 
 	descriptors := uniqueObjectDescriptors(append(collectObjectDescriptors(files), embeddedObjectDescriptorsFromDocument(xmlName, doc)...))
 	baseURL := strings.TrimSpace(opts.BaseURL)
-	currentTransaction := ""
-	for _, step := range executionSteps(doc.Steps) {
-		result.Stats.TotalSteps++
-
-		if started, transactionName, err := parseTransactionBoundary(step); err != nil {
-			return nil, err
-		} else if transactionName != "" {
-			if started {
-				currentTransaction = transactionName
-				result.Stats.Transactions++
-			} else {
-				currentTransaction = ""
-			}
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(step.Action), "Verify") {
-			assertion, ok, err := convertVerifyStep(step)
-			if err != nil {
-				return nil, err
-			}
-			if !ok {
-				result.Warnings = append(result.Warnings, "TruClient step \"Verify\" could not be mapped to an assertion and was skipped")
-				result.Stats.UnsupportedSteps = appendIfMissing(result.Stats.UnsupportedSteps, "Verify")
-				continue
-			}
-			if len(result.Script.Actions) > 0 {
-				result.Script.Actions[len(result.Script.Actions)-1].Assertions = append(result.Script.Actions[len(result.Script.Actions)-1].Assertions, assertion)
-			} else {
-				result.Warnings = append(result.Warnings, "TruClient Verify step could not be attached because no preceding browser action was imported")
-			}
-			continue
-		}
-
-		actions, warnings, unsupported, err := convertStep(step, descriptors)
-		if err != nil {
-			return nil, err
-		}
-		if len(warnings) > 0 {
-			result.Warnings = append(result.Warnings, warnings...)
-			if !unsupported && strings.EqualFold(strings.TrimSpace(step.Action), "Evaluate JavaScript") {
-				result.Stats.Skipped++
-				result.Stats.UnsupportedSteps = appendIfMissing(result.Stats.UnsupportedSteps, "Evaluate JavaScript")
-			}
-		}
-		if unsupported {
-			result.Stats.Skipped++
-			if actionName := strings.TrimSpace(step.Action); actionName != "" {
-				result.Stats.UnsupportedSteps = appendIfMissing(result.Stats.UnsupportedSteps, actionName)
-			}
-			continue
-		}
-		if len(actions) == 0 {
-			continue
-		}
-
-		for _, action := range actions {
-			if opts.PreserveTransactions && currentTransaction != "" {
-				action.Name = sanitizeTransactionActionName(currentTransaction, action.Name)
-			}
-			attachSourceStepMetadata(&action, step, currentTransaction, descriptors)
-			if baseURL == "" && action.Type == "browser_navigate" {
-				baseURL = detectBaseURL(action.Target)
-			}
-			result.Script.Actions = append(result.Script.Actions, action)
-			result.Stats.ConvertedActions++
-		}
+	state := truConvertState{
+		opts:                 opts,
+		descriptors:          descriptors,
+		baseURL:              baseURL,
+		currentWindowContext: "",
 	}
+	actions, err := convertStepSequence(executionSteps(doc.Steps), result, &state)
+	if err != nil {
+		return nil, err
+	}
+	result.Script.Actions = append(result.Script.Actions, actions...)
+	baseURL = state.baseURL
 
 	if len(result.Script.Actions) == 0 {
 		return nil, fmt.Errorf("no supported TruClient steps found in %s", filepath.Base(xmlName))
@@ -331,9 +276,22 @@ func flattenExecutableSteps(step truXMLStep, definitions map[string]truXMLStep, 
 	flattened := make([]truXMLStep, 0)
 	action := strings.TrimSpace(step.Action)
 	if action != "" && !isStructuralAction(action) {
+		if isControlAction(action) {
+			copy := step
+			copy.Steps = flattenExecutableChildren(step.Steps, definitions, stack)
+			return []truXMLStep{copy}
+		}
 		flattened = append(flattened, step)
 	}
 	for _, child := range step.Steps {
+		flattened = append(flattened, flattenExecutableSteps(child, definitions, stack)...)
+	}
+	return flattened
+}
+
+func flattenExecutableChildren(steps []truXMLStep, definitions map[string]truXMLStep, stack map[string]bool) []truXMLStep {
+	flattened := make([]truXMLStep, 0)
+	for _, child := range steps {
 		flattened = append(flattened, flattenExecutableSteps(child, definitions, stack)...)
 	}
 	return flattened
@@ -384,6 +342,12 @@ func flattenCandidateSteps(steps []truXMLStep) []truXMLStep {
 	visit = func(step truXMLStep) {
 		action := strings.TrimSpace(step.Action)
 		if action != "" && !isStructuralAction(action) {
+			if isControlAction(action) {
+				copy := step
+				copy.Steps = flattenCandidateSteps(step.Steps)
+				flattened = append(flattened, copy)
+				return
+			}
 			flattened = append(flattened, step)
 		}
 		for _, child := range step.Steps {
@@ -403,6 +367,554 @@ func isStructuralAction(action string) bool {
 	default:
 		return false
 	}
+}
+
+type truConvertState struct {
+	opts                 ConvertOptions
+	descriptors          []ObjectDescriptor
+	baseURL              string
+	currentTransaction   string
+	currentWindowContext string
+}
+
+type truControlKind string
+
+const (
+	truControlNone     truControlKind = ""
+	truControlIf       truControlKind = "if"
+	truControlElse     truControlKind = "else"
+	truControlElseIf   truControlKind = "else_if"
+	truControlLoop     truControlKind = "loop"
+	truControlBreak    truControlKind = "break"
+	truControlContinue truControlKind = "continue"
+)
+
+var (
+	truParamComparisonRe = regexp.MustCompile(`^\s*\{([A-Za-z_][A-Za-z0-9_.-]*)\}\s*(==|!=|>=|<=|>|<|=|eq|ne|gt|lt|gte|lte|contains|not_contains)\s*(.+?)\s*$`)
+	truLRGetParamRe      = regexp.MustCompile(`(?i)\bLR\.getParam(?:eter)?\(\s*["']([A-Za-z_][A-Za-z0-9_.-]*)["']\s*\)`)
+)
+
+func convertStepSequence(steps []truXMLStep, result *ConvertResult, state *truConvertState) ([]dsl.Action, error) {
+	actions := make([]dsl.Action, 0, len(steps))
+	for i := 0; i < len(steps); i++ {
+		step := steps[i]
+		actionName := strings.TrimSpace(step.Action)
+		if actionName == "" {
+			continue
+		}
+		result.Stats.TotalSteps++
+		switch controlKind(actionName) {
+		case truControlIf:
+			thenSteps, childElseSteps := splitControlElseChildren(step.Steps)
+			elseSteps := childElseSteps
+			consumeNextElse := false
+			if len(elseSteps) == 0 && i+1 < len(steps) {
+				nextKind := controlKind(steps[i+1].Action)
+				if nextKind == truControlElse || nextKind == truControlElseIf {
+					elseStep := steps[i+1]
+					if nextKind == truControlElseIf {
+						elseStep.Action = "If"
+						elseSteps = []truXMLStep{elseStep}
+					} else {
+						elseSteps = append([]truXMLStep(nil), elseStep.Steps...)
+					}
+					consumeNextElse = true
+				}
+			}
+			action, err := convertControlIfStep(step, thenSteps, elseSteps, result, state)
+			if err != nil {
+				return nil, err
+			}
+			actions = append(actions, action)
+			result.Stats.ConvertedActions++
+			if consumeNextElse {
+				i++
+			}
+		case truControlElse, truControlElseIf:
+			action, err := convertDanglingElseStep(step, result, state)
+			if err != nil {
+				return nil, err
+			}
+			actions = append(actions, action)
+			result.Stats.ConvertedActions++
+		case truControlLoop:
+			action, err := convertControlLoopStep(step, result, state)
+			if err != nil {
+				return nil, err
+			}
+			actions = append(actions, action)
+			result.Stats.ConvertedActions++
+		case truControlBreak, truControlContinue:
+			actions = append(actions, reviewGatedControlTransferAction(step))
+			result.Warnings = append(result.Warnings, fmt.Sprintf("TruClient %s step %q requires manual review because APEX Load control blocks do not support break/continue.", actionName, stepDisplayName(step, actionName)))
+			result.Stats.Skipped++
+			result.Stats.UnsupportedSteps = appendIfMissing(result.Stats.UnsupportedSteps, actionName)
+		default:
+			converted, err := convertExecutableStep(step, result, state, len(actions) > 0, &actions)
+			if err != nil {
+				return nil, err
+			}
+			if converted != nil {
+				actions = append(actions, converted...)
+			}
+		}
+	}
+	if state.currentWindowContext != "" {
+		actions = append(actions, switchWindowAction("", "Switch back to primary window"))
+		state.currentWindowContext = ""
+	}
+	return actions, nil
+}
+
+func convertExecutableStep(step truXMLStep, result *ConvertResult, state *truConvertState, hasPriorAction bool, sequence *[]dsl.Action) ([]dsl.Action, error) {
+	if started, transactionName, err := parseTransactionBoundary(step); err != nil {
+		return nil, err
+	} else if transactionName != "" {
+		if started {
+			state.currentTransaction = transactionName
+			result.Stats.Transactions++
+		} else {
+			state.currentTransaction = ""
+		}
+		return nil, nil
+	}
+	if strings.EqualFold(strings.TrimSpace(step.Action), "Verify") {
+		assertion, ok, err := convertVerifyStep(step)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			result.Warnings = append(result.Warnings, "TruClient step \"Verify\" could not be mapped to an assertion and was skipped")
+			result.Stats.UnsupportedSteps = appendIfMissing(result.Stats.UnsupportedSteps, "Verify")
+			return nil, nil
+		}
+		if sequence != nil && len(*sequence) > 0 {
+			last := len(*sequence) - 1
+			(*sequence)[last].Assertions = append((*sequence)[last].Assertions, assertion)
+		} else if hasPriorAction {
+			result.Warnings = append(result.Warnings, "TruClient Verify step could not be attached inside its control block because no preceding browser action was imported")
+		} else {
+			result.Warnings = append(result.Warnings, "TruClient Verify step could not be attached because no preceding browser action was imported")
+		}
+		return nil, nil
+	}
+
+	actions, warnings, unsupported, err := convertStep(step, state.descriptors)
+	if err != nil {
+		return nil, err
+	}
+	if len(warnings) > 0 {
+		result.Warnings = append(result.Warnings, warnings...)
+		if !unsupported && strings.EqualFold(strings.TrimSpace(step.Action), "Evaluate JavaScript") {
+			result.Stats.Skipped++
+			result.Stats.UnsupportedSteps = appendIfMissing(result.Stats.UnsupportedSteps, "Evaluate JavaScript")
+		}
+	}
+	if unsupported {
+		result.Stats.Skipped++
+		if actionName := strings.TrimSpace(step.Action); actionName != "" {
+			result.Stats.UnsupportedSteps = appendIfMissing(result.Stats.UnsupportedSteps, actionName)
+		}
+		return nil, nil
+	}
+	if len(actions) == 0 {
+		return nil, nil
+	}
+
+	out := make([]dsl.Action, 0, len(actions)+1)
+	for _, action := range actions {
+		if state.opts.PreserveTransactions && state.currentTransaction != "" {
+			action.Name = sanitizeTransactionActionName(state.currentTransaction, action.Name)
+		}
+		attachSourceStepMetadata(&action, step, state.currentTransaction, state.descriptors)
+		promoteFrameContext(&action)
+		if switchAction, ok := switchWindowForAction(&action, state); ok {
+			out = append(out, switchAction)
+			result.Stats.ConvertedActions++
+		}
+		if state.baseURL == "" && action.Type == "browser_navigate" {
+			state.baseURL = detectBaseURL(action.Target)
+		}
+		out = append(out, action)
+		result.Stats.ConvertedActions++
+	}
+	return out, nil
+}
+
+func convertControlIfStep(step truXMLStep, thenSteps []truXMLStep, elseSteps []truXMLStep, result *ConvertResult, state *truConvertState) (dsl.Action, error) {
+	thenState := *state
+	thenActions, err := convertStepSequence(thenSteps, result, &thenState)
+	if err != nil {
+		return dsl.Action{}, err
+	}
+	state.baseURL = firstNonEmptyString(state.baseURL, thenState.baseURL)
+	condition, recognized, source := truConditionFromStep(step)
+	metadata := controlMetadata(step, "truclient_control_if", source)
+	if !recognized {
+		metadata["review_required"] = true
+		metadata["promotion_blocker"] = true
+		metadata["review_reason"] = "TruClient control condition could not be translated deterministically; branch contents are preserved in source order and require review."
+		result.Warnings = append(result.Warnings, fmt.Sprintf("TruClient If step %q condition %q could not be translated; preserved as a review-gated always-true control block.", stepDisplayName(step, "If"), firstNonEmptyString(source, step.Arguments)))
+		if len(elseSteps) > 0 {
+			fallbackState := *state
+			elseActions, err := convertStepSequence(elseSteps, result, &fallbackState)
+			if err != nil {
+				return dsl.Action{}, err
+			}
+			thenActions = append(thenActions, elseActions...)
+			state.baseURL = firstNonEmptyString(state.baseURL, fallbackState.baseURL)
+			elseSteps = nil
+		}
+		condition = nil
+	}
+	wrapper := dsl.Action{
+		Name:     stepDisplayName(step, "If"),
+		Type:     "control_if",
+		Metadata: metadata,
+		Control: &dsl.ControlFlow{
+			Condition: condition,
+			Steps:     thenActions,
+		},
+	}
+	if recognized && len(elseSteps) > 0 {
+		elseState := *state
+		elseActions, err := convertStepSequence(elseSteps, result, &elseState)
+		if err != nil {
+			return dsl.Action{}, err
+		}
+		wrapper.Control.Else = elseActions
+		state.baseURL = firstNonEmptyString(state.baseURL, elseState.baseURL)
+	}
+	if len(wrapper.Control.Steps) == 0 && len(wrapper.Control.Else) == 0 {
+		wrapper.Control.Steps = []dsl.Action{reviewGatedEmptyControlAction(step)}
+	}
+	return wrapper, nil
+}
+
+func convertDanglingElseStep(step truXMLStep, result *ConvertResult, state *truConvertState) (dsl.Action, error) {
+	children := step.Steps
+	if controlKind(step.Action) == truControlElseIf {
+		step.Action = "If"
+		return convertControlIfStep(step, children, nil, result, state)
+	}
+	childState := *state
+	actions, err := convertStepSequence(children, result, &childState)
+	if err != nil {
+		return dsl.Action{}, err
+	}
+	state.baseURL = firstNonEmptyString(state.baseURL, childState.baseURL)
+	metadata := controlMetadata(step, "truclient_dangling_else", "")
+	metadata["review_required"] = true
+	metadata["review_reason"] = "Else step was not adjacent to a recognized If step; preserved as a review-gated always-true block."
+	result.Warnings = append(result.Warnings, fmt.Sprintf("TruClient Else step %q was not attached to a preceding If and requires review.", stepDisplayName(step, "Else")))
+	return dsl.Action{
+		Name:     stepDisplayName(step, "Else"),
+		Type:     "control_if",
+		Metadata: metadata,
+		Control: &dsl.ControlFlow{
+			Steps: actions,
+		},
+	}, nil
+}
+
+func convertControlLoopStep(step truXMLStep, result *ConvertResult, state *truConvertState) (dsl.Action, error) {
+	childState := *state
+	actions, err := convertStepSequence(step.Steps, result, &childState)
+	if err != nil {
+		return dsl.Action{}, err
+	}
+	state.baseURL = firstNonEmptyString(state.baseURL, childState.baseURL)
+	count, countOK := truLoopCount(step)
+	condition, condOK, source := truConditionFromStep(step)
+	metadata := controlMetadata(step, "truclient_control_loop", source)
+	control := &dsl.ControlFlow{Steps: actions}
+	switch {
+	case countOK:
+		control.Count = count
+		control.MaxIterations = count
+	case condOK:
+		control.Condition = condition
+		control.MaxIterations = 1000
+	default:
+		control.Count = 1
+		control.MaxIterations = 1
+		metadata["review_required"] = true
+		metadata["promotion_blocker"] = true
+		metadata["review_reason"] = "TruClient loop bound or condition could not be translated deterministically; body runs once and requires review."
+		result.Warnings = append(result.Warnings, fmt.Sprintf("TruClient loop step %q condition/count %q could not be translated; preserved as a review-gated one-pass control block.", stepDisplayName(step, "Loop"), firstNonEmptyString(source, step.Arguments)))
+	}
+	if len(control.Steps) == 0 {
+		control.Steps = []dsl.Action{reviewGatedEmptyControlAction(step)}
+	}
+	return dsl.Action{
+		Name:     stepDisplayName(step, "Loop"),
+		Type:     "control_loop",
+		Metadata: metadata,
+		Control:  control,
+	}, nil
+}
+
+func controlKind(action string) truControlKind {
+	normalized := normalizeControlAction(action)
+	switch normalized {
+	case "if", "if block", "if exists", "if object exists", "if element exists":
+		return truControlIf
+	case "else":
+		return truControlElse
+	case "else if", "elseif":
+		return truControlElseIf
+	case "for", "loop", "repeat", "repeat loop", "for loop", "while", "do while":
+		return truControlLoop
+	case "break":
+		return truControlBreak
+	case "continue":
+		return truControlContinue
+	default:
+		return truControlNone
+	}
+}
+
+func isControlAction(action string) bool {
+	return controlKind(action) != truControlNone
+}
+
+func normalizeControlAction(action string) string {
+	action = strings.ToLower(strings.TrimSpace(action))
+	action = strings.ReplaceAll(action, "_", " ")
+	action = strings.ReplaceAll(action, "-", " ")
+	return strings.Join(strings.Fields(action), " ")
+}
+
+func splitControlElseChildren(children []truXMLStep) ([]truXMLStep, []truXMLStep) {
+	thenSteps := make([]truXMLStep, 0, len(children))
+	for index, child := range children {
+		kind := controlKind(child.Action)
+		if kind == truControlElse || kind == truControlElseIf {
+			if kind == truControlElseIf {
+				child.Action = "If"
+				return thenSteps, []truXMLStep{child}
+			}
+			return thenSteps, append([]truXMLStep(nil), children[index].Steps...)
+		}
+		thenSteps = append(thenSteps, child)
+	}
+	return thenSteps, nil
+}
+
+func controlMetadata(step truXMLStep, source string, sourceCondition string) map[string]any {
+	metadata := map[string]any{
+		"source":        source,
+		"source_action": strings.TrimSpace(step.Action),
+	}
+	if id := strings.TrimSpace(step.StepID); id != "" {
+		metadata["source_step_id"] = id
+	}
+	if index := strings.TrimSpace(step.Index); index != "" {
+		metadata["source_step_index"] = index
+	}
+	if sourceCondition != "" {
+		metadata["source_condition"] = sourceCondition
+	}
+	return metadata
+}
+
+func truConditionFromStep(step truXMLStep) (*dsl.Condition, bool, string) {
+	source := truControlExpression(step)
+	if source == "" {
+		switch controlKind(step.Action) {
+		case truControlIf:
+			return nil, true, ""
+		default:
+			return nil, false, ""
+		}
+	}
+	if condition, ok := simpleTruParamCondition(source); ok {
+		return condition, true, source
+	}
+	if expr, ok := restrictedTruJavaScriptCondition(source); ok {
+		return &dsl.Condition{Expr: expr}, true, source
+	}
+	return nil, false, source
+}
+
+func truControlExpression(step truXMLStep) string {
+	value, err := parseFirstArgumentValue(step.Arguments,
+		"Condition", "condition", "Expression", "expression", "If Condition", "if_condition",
+		"While Condition", "while_condition", "JavaScript", "javascript", "Code", "code",
+		"Object Exists", "object_exists", "Value", "value")
+	if err != nil {
+		return ""
+	}
+	return trimQuotedValue(value)
+}
+
+func simpleTruParamCondition(source string) (*dsl.Condition, bool) {
+	matches := truParamComparisonRe.FindStringSubmatch(strings.TrimSpace(source))
+	if len(matches) != 4 {
+		return nil, false
+	}
+	op := normalizeTruConditionOp(matches[2])
+	if op == "" {
+		return nil, false
+	}
+	return &dsl.Condition{
+		Left:  "{{var." + matches[1] + "}}",
+		Op:    op,
+		Right: strings.Trim(strings.TrimSpace(matches[3]), `"'`),
+	}, true
+}
+
+func normalizeTruConditionOp(op string) string {
+	switch strings.ToLower(strings.TrimSpace(op)) {
+	case "=", "==", "eq":
+		return "eq"
+	case "!=", "ne":
+		return "ne"
+	case ">", "gt":
+		return "gt"
+	case "<", "lt":
+		return "lt"
+	case ">=", "gte":
+		return "gte"
+	case "<=", "lte":
+		return "lte"
+	case "contains":
+		return "contains"
+	case "not_contains":
+		return "not_contains"
+	default:
+		return ""
+	}
+}
+
+func restrictedTruJavaScriptCondition(source string) (string, bool) {
+	expr := strings.TrimSpace(source)
+	if expr == "" {
+		return "", false
+	}
+	expr = strings.TrimSuffix(expr, ";")
+	expr = strings.ReplaceAll(expr, "===", "==")
+	expr = strings.ReplaceAll(expr, "!==", "!=")
+	expr = truLRGetParamRe.ReplaceAllString(expr, "var.$1")
+	if strings.Contains(expr, "LR.") || strings.Contains(expr, "lr.") {
+		return "", false
+	}
+	if strings.ContainsAny(expr, "{};") {
+		return "", false
+	}
+	expr = strings.ReplaceAll(expr, "&&", "&&")
+	expr = strings.ReplaceAll(expr, "||", "||")
+	if dsl.ValidateConditionExpression(expr) != nil {
+		return "", false
+	}
+	return expr, true
+}
+
+func truLoopCount(step truXMLStep) (int, bool) {
+	value, err := parseFirstArgumentValue(step.Arguments, "Count", "count", "Iterations", "iterations", "Loop Count", "loop_count", "Times", "times")
+	if err != nil {
+		return 0, false
+	}
+	value = trimQuotedValue(value)
+	if value == "" {
+		return 0, false
+	}
+	count, err := strconv.Atoi(value)
+	if err != nil || count < 0 {
+		return 0, false
+	}
+	return count, true
+}
+
+func reviewGatedControlTransferAction(step truXMLStep) dsl.Action {
+	actionName := strings.TrimSpace(step.Action)
+	return dsl.Action{
+		Name: stepDisplayName(step, actionName),
+		Type: "source_review",
+		Params: map[string]any{
+			"function": actionName,
+			"args":     []any{step.Arguments},
+		},
+		Metadata: controlMetadata(step, "truclient_control_transfer", ""),
+	}
+}
+
+func reviewGatedEmptyControlAction(step truXMLStep) dsl.Action {
+	return dsl.Action{
+		Name: stepDisplayName(step, "Review control block"),
+		Type: "source_review",
+		Params: map[string]any{
+			"function": strings.TrimSpace(step.Action),
+			"args":     []any{step.Arguments},
+		},
+		Metadata: map[string]any{
+			"source":          "truclient_empty_control_block",
+			"review_required": true,
+		},
+	}
+}
+
+func promoteFrameContext(action *dsl.Action) {
+	if action == nil || action.Metadata == nil {
+		return
+	}
+	frame := firstNonEmptyString(stringFromAny(action.Metadata["source_frame_context"]), stringFromAny(action.Metadata["frame_context"]))
+	selector := normalizeTruClientFrameSelector(frame)
+	if selector == "" {
+		return
+	}
+	if action.Params == nil {
+		action.Params = map[string]any{}
+	}
+	action.Params["frame_selector"] = selector
+	action.Metadata["frame_selector"] = selector
+}
+
+func switchWindowForAction(action *dsl.Action, state *truConvertState) (dsl.Action, bool) {
+	if action == nil || state == nil || action.Metadata == nil {
+		return dsl.Action{}, false
+	}
+	context := firstNonEmptyString(stringFromAny(action.Metadata["source_window_context"]), stringFromAny(action.Metadata["window_context"]))
+	if context == state.currentWindowContext {
+		return dsl.Action{}, false
+	}
+	state.currentWindowContext = context
+	return switchWindowAction(context, "Switch window"), true
+}
+
+func switchWindowAction(context string, name string) dsl.Action {
+	action := dsl.Action{
+		Name: name,
+		Type: "browser_switch_window",
+		Metadata: map[string]any{
+			"source": "truclient_window_context",
+		},
+	}
+	context = strings.TrimSpace(context)
+	if context == "" {
+		action.Params = map[string]any{"index": 0}
+		return action
+	}
+	if index, err := strconv.Atoi(context); err == nil {
+		action.Params = map[string]any{"index": index}
+		return action
+	}
+	action.Target = context
+	action.Params = map[string]any{"target": context}
+	return action
+}
+
+func normalizeTruClientFrameSelector(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	lower := strings.ToLower(value)
+	if strings.HasPrefix(lower, "iframe") || strings.HasPrefix(value, "#") || strings.HasPrefix(value, "[") || strings.HasPrefix(lower, "css=") || strings.HasPrefix(lower, "xpath=") || strings.HasPrefix(value, "//") {
+		return value
+	}
+	escaped := strings.ReplaceAll(strings.ReplaceAll(value, `\`, `\\`), `"`, `\"`)
+	return fmt.Sprintf(`iframe[name="%s"], iframe[id="%s"], iframe[title="%s"]`, escaped, escaped, escaped)
 }
 
 func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action, []string, bool, error) {
