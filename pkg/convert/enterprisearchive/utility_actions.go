@@ -11,6 +11,7 @@ func appendSourceAction(result *ConvertResult, fn ParsedFunction, action dsl.Act
 	if result == nil || result.Script == nil {
 		return
 	}
+	tagSourceFlowMetadata(result, fn, &action)
 	actionIndex := actionCountForPhase(result.Script, fn.Phase)
 	mapping := sourceReviewMappingForFunction(fn, sourceReviewActionPath(fn.Phase, actionIndex), action.Name, "action", statusForSupportMode(mode), notes)
 	mapping.SupportMode = string(mode)

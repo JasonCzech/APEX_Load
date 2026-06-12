@@ -4,7 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -23,6 +25,8 @@ const xpathExpressionConfigPrefix = "__apexload_xpath_config__:"
 
 const regexOrdinalExpressionConfigPrefix = "__apexload_regex_ordinal__:"
 
+const boundaryExpressionConfigPrefix = "__apexload_boundary_config__:"
+
 type xpathExpressionConfig struct {
 	Expression string            `json:"expression"`
 	Fragment   bool              `json:"fragment,omitempty"`
@@ -34,7 +38,22 @@ type regexOrdinalExpressionConfig struct {
 	Ordinal    int    `json:"ordinal"`
 }
 
+type boundaryExpressionConfig struct {
+	Left            string `json:"left"`
+	Right           string `json:"right"`
+	Ordinal         int    `json:"ordinal,omitempty"`
+	CaseInsensitive bool   `json:"case_insensitive,omitempty"`
+}
+
 func extract(ext protocol.Extractor, headers http.Header, body []byte) (string, error) {
+	value, err := extractRaw(ext, headers, body)
+	if err != nil {
+		return "", err
+	}
+	return postProcessExtractedValue(ext, value)
+}
+
+func extractRaw(ext protocol.Extractor, headers http.Header, body []byte) (string, error) {
 	switch ext.Source {
 	case "body":
 		return extractFromBody(ext, body)
@@ -42,6 +61,76 @@ func extract(ext protocol.Extractor, headers http.Header, body []byte) (string, 
 		return extractFromHeaders(ext, headers)
 	default:
 		return "", fmt.Errorf("unsupported extraction source: %s", ext.Source)
+	}
+}
+
+// extractAll returns every match for a save-all (mode "all") extractor, with
+// per-value post-processing applied. Zero matches return an empty slice and no
+// error; the caller decides whether that counts as a miss.
+func extractAll(ext protocol.Extractor, headers http.Header, body []byte) ([]string, error) {
+	content := body
+	switch ext.Source {
+	case "", "body":
+	case "header":
+		content = []byte(flattenHeaders(headers))
+	default:
+		return nil, fmt.Errorf("unsupported extraction source: %s", ext.Source)
+	}
+
+	var values []string
+	var err error
+	switch ext.Type {
+	case "regex":
+		values, err = extractAllRegex(ext.Expression, content)
+	case "boundary":
+		values, err = extractAllBoundary(ext.Expression, content)
+	case "jsonpath":
+		values, err = extractAllJSONPath(ext.Expression, content)
+	case "xpath":
+		values, err = extractAllXPath(ext.Expression, content)
+	default:
+		return nil, fmt.Errorf("extraction type %q does not support mode \"all\"", ext.Type)
+	}
+	if err != nil {
+		return nil, err
+	}
+	for i, value := range values {
+		processed, err := postProcessExtractedValue(ext, value)
+		if err != nil {
+			return nil, err
+		}
+		values[i] = processed
+	}
+	return values, nil
+}
+
+// postProcessExtractedValue applies the optional save_offset / save_length /
+// convert transforms to one matched value.
+func postProcessExtractedValue(ext protocol.Extractor, value string) (string, error) {
+	if ext.SaveOffset > 0 {
+		if ext.SaveOffset >= len(value) {
+			value = ""
+		} else {
+			value = value[ext.SaveOffset:]
+		}
+	}
+	if ext.SaveLength > 0 && ext.SaveLength < len(value) {
+		value = value[:ext.SaveLength]
+	}
+	switch ext.Convert {
+	case "":
+		return value, nil
+	case "url_encode":
+		return url.QueryEscape(value), nil
+	case "html_decode":
+		return html.UnescapeString(value), nil
+	case "html_url_encode":
+		// HTML-format data to URL format: decode entities first, then
+		// percent-encode with %20 (not form-style '+') for spaces.
+		encoded := url.QueryEscape(html.UnescapeString(value))
+		return strings.ReplaceAll(encoded, "+", "%20"), nil
+	default:
+		return "", fmt.Errorf("unsupported extractor convert mode: %s", ext.Convert)
 	}
 }
 
@@ -213,13 +302,21 @@ func splitCSSExpression(expr string) (selector string, attribute string) {
 }
 
 func extractJSONPath(expr string, body []byte) (string, error) {
+	current, err := extractJSONPathValue(expr, body)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%v", current), nil
+}
+
+func extractJSONPathValue(expr string, body []byte) (any, error) {
 	// Simple JSONPath: supports $.field and $.field.nested and $.array[N].field
 	expr = strings.TrimPrefix(expr, "$.")
 	parts := strings.Split(expr, ".")
 
 	var current any
 	if err := json.Unmarshal(body, &current); err != nil {
-		return "", fmt.Errorf("invalid JSON body: %w", err)
+		return nil, fmt.Errorf("invalid JSON body: %w", err)
 	}
 
 	for _, part := range parts {
@@ -232,26 +329,43 @@ func extractJSONPath(expr string, body []byte) (string, error) {
 
 		obj, ok := current.(map[string]any)
 		if !ok {
-			return "", fmt.Errorf("expected object at %q", part)
+			return nil, fmt.Errorf("expected object at %q", part)
 		}
 		current, ok = obj[part]
 		if !ok {
-			return "", fmt.Errorf("field %q not found", part)
+			return nil, fmt.Errorf("field %q not found", part)
 		}
 
 		if idx >= 0 {
 			arr, ok := current.([]any)
 			if !ok {
-				return "", fmt.Errorf("expected array at %q", part)
+				return nil, fmt.Errorf("expected array at %q", part)
 			}
 			if idx >= len(arr) {
-				return "", fmt.Errorf("index %d out of range for %q", idx, part)
+				return nil, fmt.Errorf("index %d out of range for %q", idx, part)
 			}
 			current = arr[idx]
 		}
 	}
 
-	return fmt.Sprintf("%v", current), nil
+	return current, nil
+}
+
+// stringifyJSONLeaf renders one JSON value as a variable string: scalars use
+// their plain form, composites round-trip through JSON encoding.
+func stringifyJSONLeaf(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case []any, map[string]any:
+		encoded, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("%v", v)
+		}
+		return string(encoded)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }
 
 func extractJMESPath(expr string, body []byte) (string, error) {
@@ -340,21 +454,210 @@ func decodeRegexOrdinalExpression(expr string) (regexOrdinalExpressionConfig, er
 	return config, nil
 }
 
+// asciiLowerFold lowercases ASCII letters only, preserving byte length so
+// indices computed on the folded string remain valid on the original.
+// Unicode-aware folding (strings.ToLower) can change byte length — U+212A
+// "K" shrinks, U+023A "Ⱥ" grows — which would corrupt extracted slices.
+func asciiLowerFold(s string) string {
+	hasUpper := false
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 'A' && s[i] <= 'Z' {
+			hasUpper = true
+			break
+		}
+	}
+	if !hasUpper {
+		return s
+	}
+	b := []byte(s)
+	for i := range b {
+		if b[i] >= 'A' && b[i] <= 'Z' {
+			b[i] += 'a' - 'A'
+		}
+	}
+	return string(b)
+}
+
 func extractBoundary(expr string, body []byte) (string, error) {
+	config, err := decodeBoundaryExpression(expr)
+	if err != nil {
+		return "", err
+	}
+
+	s := string(body)
+	haystack := s
+	left, right := config.Left, config.Right
+	if config.CaseInsensitive {
+		haystack = asciiLowerFold(s)
+		left = asciiLowerFold(left)
+		right = asciiLowerFold(right)
+	}
+
+	ordinal := config.Ordinal
+	if ordinal <= 0 {
+		ordinal = 1
+	}
+
+	pos := 0
+	for occurrence := 1; ; occurrence++ {
+		li := strings.Index(haystack[pos:], left)
+		if li < 0 {
+			if occurrence == 1 {
+				return "", fmt.Errorf("left boundary %q not found", config.Left)
+			}
+			return "", fmt.Errorf("boundary match ordinal %d not found (only %d occurrences)", ordinal, occurrence-1)
+		}
+		start := pos + li + len(left)
+		// An empty right boundary extends the match to the end of the content.
+		ri := len(haystack) - start
+		if right != "" {
+			ri = strings.Index(haystack[start:], right)
+		}
+		if ri < 0 {
+			if occurrence == 1 {
+				return "", fmt.Errorf("right boundary %q not found", config.Right)
+			}
+			return "", fmt.Errorf("boundary match ordinal %d not found (only %d occurrences)", ordinal, occurrence-1)
+		}
+		if occurrence == ordinal {
+			return s[start : start+ri], nil
+		}
+		pos = start + ri + len(right)
+	}
+}
+
+func extractAllRegex(expr string, body []byte) ([]string, error) {
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regex: %w", err)
+	}
+	matches := re.FindAllSubmatch(body, -1)
+	values := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		values = append(values, string(match[1]))
+	}
+	return values, nil
+}
+
+func extractAllBoundary(expr string, body []byte) ([]string, error) {
+	config, err := decodeBoundaryExpression(expr)
+	if err != nil {
+		return nil, err
+	}
+	s := string(body)
+	haystack := s
+	left, right := config.Left, config.Right
+	if config.CaseInsensitive {
+		haystack = asciiLowerFold(s)
+		left = asciiLowerFold(left)
+		right = asciiLowerFold(right)
+	}
+
+	var values []string
+	pos := 0
+	for pos <= len(haystack) {
+		li := strings.Index(haystack[pos:], left)
+		if li < 0 {
+			break
+		}
+		start := pos + li + len(left)
+		ri := len(haystack) - start
+		if right != "" {
+			ri = strings.Index(haystack[start:], right)
+			if ri < 0 {
+				break
+			}
+		}
+		values = append(values, s[start:start+ri])
+		if right == "" {
+			// An empty right boundary consumes the remainder; only one match
+			// is possible.
+			break
+		}
+		next := start + ri + len(right)
+		if next <= pos {
+			break
+		}
+		pos = next
+	}
+	return values, nil
+}
+
+func extractAllJSONPath(expr string, body []byte) ([]string, error) {
+	value, err := extractJSONPathValue(expr, body)
+	if err != nil {
+		return nil, err
+	}
+	if arr, ok := value.([]any); ok {
+		values := make([]string, 0, len(arr))
+		for _, item := range arr {
+			values = append(values, stringifyJSONLeaf(item))
+		}
+		return values, nil
+	}
+	return []string{stringifyJSONLeaf(value)}, nil
+}
+
+func extractAllXPath(expr string, body []byte) ([]string, error) {
+	expr, fragment, namespaces, err := decodeXPathExpression(expr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid encoded XPath expression: %w", err)
+	}
+	if expr == "" {
+		return nil, fmt.Errorf("xpath expression is required")
+	}
+	selector, err := compileXPathSelector(expr, namespaces)
+	if err != nil {
+		return nil, fmt.Errorf("invalid XPath expression: %w", err)
+	}
+
+	if doc, err := xmlquery.Parse(strings.NewReader(string(body))); err == nil {
+		nodes := xmlquery.QuerySelectorAll(doc, selector)
+		values := make([]string, 0, len(nodes))
+		for _, node := range nodes {
+			if fragment {
+				values = append(values, node.OutputXMLWithOptions(xmlquery.WithOutputSelf(), xmlquery.WithoutPreserveSpace()))
+			} else {
+				values = append(values, node.InnerText())
+			}
+		}
+		return values, nil
+	}
+
+	doc, err := htmlquery.Parse(strings.NewReader(string(body)))
+	if err != nil {
+		return nil, fmt.Errorf("invalid HTML/XML body: %w", err)
+	}
+	nodes := htmlquery.QuerySelectorAll(doc, selector)
+	values := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		if fragment {
+			values = append(values, htmlquery.OutputHTML(node, true))
+		} else {
+			values = append(values, htmlquery.InnerText(node))
+		}
+	}
+	return values, nil
+}
+
+func decodeBoundaryExpression(expr string) (boundaryExpressionConfig, error) {
+	if strings.HasPrefix(expr, boundaryExpressionConfigPrefix) {
+		var config boundaryExpressionConfig
+		payload := strings.TrimPrefix(expr, boundaryExpressionConfigPrefix)
+		if err := json.Unmarshal([]byte(payload), &config); err != nil {
+			return config, fmt.Errorf("invalid boundary config: %w", err)
+		}
+		if config.Left == "" && config.Right == "" {
+			return config, fmt.Errorf("boundary config requires a left or right boundary")
+		}
+		return config, nil
+	}
 	parts := strings.SplitN(expr, "|||", 2)
 	if len(parts) != 2 {
-		return "", fmt.Errorf("boundary expression must use ||| separator: left|||right")
+		return boundaryExpressionConfig{}, fmt.Errorf("boundary expression must use ||| separator: left|||right")
 	}
-	left, right := parts[0], parts[1]
-	s := string(body)
-	li := strings.Index(s, left)
-	if li < 0 {
-		return "", fmt.Errorf("left boundary %q not found", left)
-	}
-	start := li + len(left)
-	ri := strings.Index(s[start:], right)
-	if ri < 0 {
-		return "", fmt.Errorf("right boundary %q not found", right)
-	}
-	return s[start : start+ri], nil
+	return boundaryExpressionConfig{Left: parts[0], Right: parts[1], Ordinal: 1}, nil
 }

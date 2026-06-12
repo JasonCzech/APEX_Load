@@ -23,6 +23,10 @@ type ConvertResult struct {
 	SourceReview                 *SourceReview     `json:"source_review,omitempty"`
 	RecordedResourceURLs         []string          `json:"recorded_resource_urls,omitempty"`
 	RecordedResourceURLsCaptured bool              `json:"recorded_resource_urls_captured,omitempty"`
+
+	// flowWarned deduplicates control-flow translation warnings per distinct
+	// condition/loop source text during one conversion.
+	flowWarned map[string]bool
 }
 
 // ConvertStats provides conversion statistics for reporting.
@@ -63,6 +67,15 @@ const regexOrdinalExpressionConfigPrefix = "__apexload_regex_ordinal__:"
 type regexOrdinalExpressionConfig struct {
 	Expression string `json:"expression"`
 	Ordinal    int    `json:"ordinal"`
+}
+
+const boundaryExpressionConfigPrefix = "__apexload_boundary_config__:"
+
+type boundaryExpressionConfig struct {
+	Left            string `json:"left"`
+	Right           string `json:"right"`
+	Ordinal         int    `json:"ordinal,omitempty"`
+	CaseInsensitive bool   `json:"case_insensitive,omitempty"`
 }
 
 var sourceReplayOrdinalSuffix = regexp.MustCompile(`_\d+$`)
@@ -140,7 +153,8 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	for _, fn := range allFunctions {
 		switch fn.Name {
 		case "web_reg_save_param", "web_reg_save_param_regexp", "web_reg_save_param_json", "web_reg_save_param_xpath", "web_reg_save_param_ex":
-			ext := convertExtractor(fn)
+			ext, extractorWarnings := convertExtractor(fn)
+			result.Warnings = append(result.Warnings, extractorWarnings...)
 			if ext != nil {
 				pendingExtractors = append(pendingExtractors, *ext)
 				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", ext.Name, "extractor", "contributor", "Applied to the next converted request action.", SourceFunctionSupportExecutable))
@@ -428,6 +442,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				}
 				pendingSourceMappings = nil
 
+				tagSourceFlowMetadata(result, fn, action)
 				appendActionForPhase(result.Script, fn.Phase, *action)
 				result.Stats.ConvertedActions++
 				result.Stats.RawRequestActions++
@@ -458,6 +473,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		}
 	}
 
+	structureSourceControlFlow(result)
 	compactSourceHTTPActions(result)
 
 	// Configure think time from collected lr_think_time values
@@ -482,6 +498,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		if i < len(result.Script.Actions)-1 {
 			result.Script.Actions[i].ThinkTimeAfter = true
 		}
+		applyControlFlowThinkTime(&result.Script.Actions[i])
 	}
 
 	if len(result.Script.Init)+len(result.Script.Actions)+len(result.Script.Teardown) == 0 {
@@ -1582,106 +1599,263 @@ func stripURLQueryAndFragment(value string) string {
 	return value
 }
 
-// convertExtractor converts a web_reg_save_param to a DSL Extractor.
-func convertExtractor(fn ParsedFunction) *dsl.Extractor {
+// convertExtractor converts a dynamic-value registration function
+// (web_reg_save_param and variants) to a DSL Extractor, plus warnings for
+// modifiers that cannot be reproduced exactly.
+func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 	paramName := canonicalSourceParameterName(firstNonEmpty(firstNonEmptyArg(fn, "ParamName"), fn.StepName))
 	if paramName == "" {
-		return nil
+		return nil, nil
 	}
+
+	warnings := extractorModifierWarnings(fn, paramName)
+	ordinal, saveAll := sourceExtractorOrdinal(fn)
+	mode := ""
+	if saveAll || strings.EqualFold(strings.TrimSpace(firstNonEmptyArg(fn, "SelectAll")), "yes") {
+		// ORD=All / Ordinal=All / SelectAll=Yes save every match into
+		// {{var.name_1}}..{{var.name_N}} plus {{var.name_count}}.
+		mode = "all"
+		ordinal = 0
+	}
+	onMiss := sourceExtractorOnMiss(fn)
+	saveOffset, saveLength, convert, postWarnings := sourceExtractorPostProcessing(fn, paramName)
+	warnings = append(warnings, postWarnings...)
 
 	if fn.Name == "web_reg_save_param_regexp" {
 		expression := firstNonEmptyArg(fn, "RegExp")
 		if expression == "" {
-			return nil
+			return nil, warnings
 		}
 		ext := &dsl.Extractor{
 			Name:       paramName,
 			Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
 			Type:       "regex",
 			Expression: unescapeSourceCString(expression),
+			OnMiss:     onMiss,
+			Mode:       mode,
+			SaveOffset: saveOffset,
+			SaveLength: saveLength,
+			Convert:    convert,
 		}
-		if ordinal := parsePositiveInt(firstNonEmptyArg(fn, "Ordinal")); ordinal > 1 {
+		if mode == "" && ordinal > 1 {
 			ext.Type = "regex_ordinal"
 			ext.Expression = encodeRegexOrdinalExpression(ext.Expression, ordinal)
 		}
-		return ext
+		return ext, warnings
 	}
 
 	if fn.Name == "web_reg_save_param_json" {
-		expression := firstNonEmptyArg(fn, "QueryString")
+		expression := firstNonEmpty(firstNonEmptyArg(fn, "QueryString"), firstNonEmptyArg(fn, "JSONPath"), firstNonEmptyArg(fn, "Query"))
 		if expression == "" {
-			expression = firstNonEmptyArg(fn, "JSONPath")
-		}
-		if expression == "" {
-			expression = firstNonEmptyArg(fn, "Query")
-		}
-		if expression == "" {
-			return nil
+			return nil, warnings
 		}
 		return &dsl.Extractor{
 			Name:       paramName,
 			Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
 			Type:       "jsonpath",
 			Expression: unescapeSourceCString(expression),
-		}
+			OnMiss:     onMiss,
+			Mode:       mode,
+			SaveOffset: saveOffset,
+			SaveLength: saveLength,
+			Convert:    convert,
+		}, warnings
 	}
 
 	if fn.Name == "web_reg_save_param_xpath" {
-		expression := firstNonEmptyArg(fn, "QueryString")
+		expression := firstNonEmpty(firstNonEmptyArg(fn, "QueryString"), firstNonEmptyArg(fn, "XPath"), firstNonEmptyArg(fn, "Query"))
 		if expression == "" {
-			expression = firstNonEmptyArg(fn, "XPath")
-		}
-		if expression == "" {
-			expression = firstNonEmptyArg(fn, "Query")
-		}
-		if expression == "" {
-			return nil
+			return nil, warnings
 		}
 		return &dsl.Extractor{
 			Name:       paramName,
 			Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
 			Type:       "xpath",
 			Expression: unescapeSourceCString(expression),
-		}
+			OnMiss:     onMiss,
+			Mode:       mode,
+			SaveOffset: saveOffset,
+			SaveLength: saveLength,
+			Convert:    convert,
+		}, warnings
 	}
 
-	lb := fn.Args["LB"]
-	rb := fn.Args["RB"]
-
-	if lb == "" && rb == "" {
-		// Try positional args: web_reg_save_param("Name", "LB=...", "RB=...", ...)
-		for _, raw := range fn.RawArgs {
-			if strings.HasPrefix(raw, "LB=") {
-				lb = strings.TrimPrefix(raw, "LB=")
-			}
-			if strings.HasPrefix(raw, "RB=") {
-				rb = strings.TrimPrefix(raw, "RB=")
-			}
-		}
-	}
+	lb, rb, caseInsensitive, flagWarnings := sourceBoundaryArguments(fn)
+	warnings = append(warnings, flagWarnings...)
 	lb = unescapeSourceCString(lb)
 	rb = unescapeSourceCString(rb)
 
 	ext := &dsl.Extractor{
-		Name:   paramName,
-		Source: sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
+		Name:       paramName,
+		Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
+		OnMiss:     onMiss,
+		Mode:       mode,
+		SaveOffset: saveOffset,
+		SaveLength: saveLength,
+		Convert:    convert,
 	}
 
-	if fn.Name == "web_reg_save_param_ex" && (lb != "" || rb != "") {
-		ext.Type = "boundary"
-		ext.Expression = lb + "|||" + rb
-	} else if strings.Contains(lb, "\"") && strings.Contains(rb, "\"") {
+	switch {
+	case lb == "" && rb == "":
+		// Empty boundaries on both sides save the entire response.
+		ext.Type = "regex"
+		ext.Expression = "(?s)^(.*)$"
+	case fn.Name != "web_reg_save_param_ex" && strings.Contains(lb, "\"") && strings.Contains(rb, "\"") && !caseInsensitive:
+		// Quoted-markup boundaries historically convert to an anchored regex.
 		ext.Type = "regex"
 		ext.Expression = regexp.QuoteMeta(lb) + "(.+?)" + regexp.QuoteMeta(rb)
-	} else if lb != "" || rb != "" {
+		if mode == "" && ordinal > 1 {
+			ext.Type = "regex_ordinal"
+			ext.Expression = encodeRegexOrdinalExpression(regexp.QuoteMeta(lb)+"(.+?)"+regexp.QuoteMeta(rb), ordinal)
+		}
+	default:
 		ext.Type = "boundary"
-		ext.Expression = lb + "|||" + rb
-	} else {
-		ext.Type = "regex"
-		ext.Expression = "(.+?)"
+		ext.Expression = encodeBoundaryExpression(lb, rb, ordinal, caseInsensitive)
 	}
 
-	return ext
+	return ext, warnings
+}
+
+// sourceExtractorPostProcessing maps the SaveOffset=/SaveLen=/Convert=
+// registration attributes onto the DSL extractor post-processing fields.
+func sourceExtractorPostProcessing(fn ParsedFunction, paramName string) (saveOffset, saveLength int, convert string, warnings []string) {
+	saveOffset = parsePositiveInt(firstNonEmptyArg(fn, "SaveOffset"))
+	saveLength = parsePositiveInt(firstNonEmptyArg(fn, "SaveLen"))
+	if raw := strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "SaveLen"))); raw != "" {
+		// SaveLen=0 saves an empty string in the source tool, but the DSL's
+		// save_length zero value means "entire remainder" — surface the
+		// inversion instead of importing it silently. (-1 = entire, faithful.)
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed == 0 {
+			warnings = append(warnings, fmt.Sprintf("line %d: parameter %q uses SaveLen=0 (the source saves an empty string); the DSL cannot express zero-length truncation, so the full value is saved", fn.LineNumber, paramName))
+		}
+	}
+
+	switch normalizeEnum(firstNonEmptyArg(fn, "Convert")) {
+	case "":
+	case "html_to_url":
+		// HTML-format to URL-format: entity-decode, then percent-encode.
+		convert = "html_url_encode"
+	case "html_to_text":
+		convert = "html_decode"
+	default:
+		warnings = append(warnings, fmt.Sprintf("line %d: parameter %q uses Convert=%s, which has no DSL equivalent; the value is saved unconverted", fn.LineNumber, paramName, cleanConfigValue(firstNonEmptyArg(fn, "Convert"))))
+	}
+	return saveOffset, saveLength, convert, warnings
+}
+
+// sourceExtractorOnMiss maps the NotFound= registration attribute to the DSL
+// extractor on_miss behavior. The source default fails the iteration when a
+// registered extraction finds no match; the lenient forms (warning, and its
+// older name empty) assign an empty string to the parameter and continue, so
+// they map to on_miss "empty" rather than leaving the variable unset.
+func sourceExtractorOnMiss(fn ParsedFunction) string {
+	switch strings.ToLower(strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "NotFound")))) {
+	case "warning", "warn", "empty":
+		return "empty"
+	default:
+		return "fail"
+	}
+}
+
+// sourceExtractorOrdinal reads the match-instance selector (ORD= or Ordinal=)
+// from a registration function. saveAll reports the "All" form, which saves
+// every match into indexed parameters.
+func sourceExtractorOrdinal(fn ParsedFunction) (ordinal int, saveAll bool) {
+	value := firstNonEmpty(firstNonEmptyArg(fn, "ORD"), firstNonEmptyArg(fn, "Ordinal"))
+	if strings.EqualFold(strings.TrimSpace(cleanConfigValue(value)), "all") {
+		return 0, true
+	}
+	return parsePositiveInt(value), false
+}
+
+// sourceBoundaryArguments resolves LB=/RB= boundary values, including
+// modifier-flag forms such as LB/IC= (case-insensitive). Unsupported modifier
+// flags produce warnings instead of being dropped silently.
+func sourceBoundaryArguments(fn ParsedFunction) (lb, rb string, caseInsensitive bool, warnings []string) {
+	resolve := func(base string) (string, []string) {
+		if value := fn.Args[base]; value != "" {
+			return value, nil
+		}
+		for name, value := range fn.Args {
+			if value == "" {
+				continue
+			}
+			key, flags, hasFlags := strings.Cut(name, "/")
+			if !strings.EqualFold(key, base) {
+				continue
+			}
+			if hasFlags {
+				return value, strings.Split(flags, "/")
+			}
+			return value, nil
+		}
+		for _, raw := range fn.RawArgs {
+			key, value, ok := strings.Cut(raw, "=")
+			if !ok || value == "" {
+				continue
+			}
+			base2, flags, hasFlags := strings.Cut(key, "/")
+			if !strings.EqualFold(base2, base) {
+				continue
+			}
+			if hasFlags {
+				return value, strings.Split(flags, "/")
+			}
+			return value, nil
+		}
+		return "", nil
+	}
+
+	apply := func(side string, flags []string) {
+		for _, flag := range flags {
+			switch strings.ToUpper(strings.TrimSpace(flag)) {
+			case "IC":
+				caseInsensitive = true
+			case "":
+				continue
+			default:
+				warnings = append(warnings, fmt.Sprintf("line %d: boundary modifier %s/%s is not supported; the boundary text is matched literally", fn.LineNumber, side, strings.TrimSpace(flag)))
+			}
+		}
+	}
+
+	var lbFlags, rbFlags []string
+	lb, lbFlags = resolve("LB")
+	rb, rbFlags = resolve("RB")
+	apply("LB", lbFlags)
+	apply("RB", rbFlags)
+	return lb, rb, caseInsensitive, warnings
+}
+
+// extractorModifierWarnings surfaces registration modifiers that the DSL has
+// no equivalent for, so fidelity loss is visible instead of silent.
+func extractorModifierWarnings(fn ParsedFunction, paramName string) []string {
+	var warnings []string
+	for _, modifier := range []string{"RelFrameId"} {
+		if value := firstNonEmptyArg(fn, modifier); value != "" {
+			warnings = append(warnings, fmt.Sprintf("line %d: parameter %q uses %s=%s, which has no DSL equivalent; the full match is extracted unmodified", fn.LineNumber, paramName, modifier, cleanConfigValue(value)))
+		}
+	}
+	return warnings
+}
+
+// encodeBoundaryExpression renders a boundary extractor expression. The
+// simple left|||right form is kept whenever it round-trips safely; the
+// structured config form carries ordinals, case-insensitive matching, and
+// boundary text containing the legacy separator.
+func encodeBoundaryExpression(left, right string, ordinal int, caseInsensitive bool) string {
+	if ordinal <= 1 && !caseInsensitive && !strings.Contains(left, "|||") && !strings.Contains(right, "|||") {
+		return left + "|||" + right
+	}
+	config := boundaryExpressionConfig{Left: left, Right: right, CaseInsensitive: caseInsensitive}
+	if ordinal > 1 {
+		config.Ordinal = ordinal
+	}
+	payload, err := json.Marshal(config)
+	if err != nil {
+		return left + "|||" + right
+	}
+	return boundaryExpressionConfigPrefix + string(payload)
 }
 
 func convertGlobalVerification(fn ParsedFunction) (*dsl.ContentCheckConfig, string) {
@@ -1796,10 +1970,22 @@ func firstNonEmptyArg(fn ParsedFunction, key string) string {
 		return value
 	}
 
+	// Source scripts are inconsistent about attribute-key casing (SaveCount vs
+	// Savecount, NotFound=Warning vs warning), so fall back to a
+	// case-insensitive scan before giving up.
+	for name, value := range fn.Args {
+		if value != "" && strings.EqualFold(name, key) {
+			return value
+		}
+	}
+
 	prefix := key + "="
 	for _, raw := range fn.RawArgs {
 		if strings.HasPrefix(raw, prefix) {
 			return strings.TrimPrefix(raw, prefix)
+		}
+		if len(raw) >= len(prefix) && strings.EqualFold(raw[:len(prefix)], prefix) {
+			return raw[len(prefix):]
 		}
 	}
 

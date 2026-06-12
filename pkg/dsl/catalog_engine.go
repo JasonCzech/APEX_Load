@@ -27,7 +27,7 @@ func engineActionSpecs() []ActionSpec {
 			Protocols: []string{"*"},
 			Summary:   "Loop block: repeats control.steps for a fixed count or while a condition holds.",
 			Fields: []FieldSpec{
-				{Name: "control", Required: true, Kind: FieldKindObject, Doc: "Loop body: {condition, steps, count, max_iterations}. condition may use legacy left/op/right or CEL expr over var/data/env. Requires a positive count or a condition."},
+				{Name: "control", Required: true, Kind: FieldKindObject, Doc: "Loop body: {condition, steps, count, max_iterations}. condition may use legacy left/op/right or CEL expr over var/data/env. Requires a positive count or a condition. Each pass exposes a 1-based {{var.loop_index}} to the body and the condition (e.g. expr \"int(var.loop_index) <= int(var.total)\")."},
 			},
 		},
 		{

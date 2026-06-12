@@ -78,6 +78,10 @@ func ConvertNetwork(actions []*ParsedAction, opts ConvertOptions, detected Detec
 		return result, nil
 	}
 
+	// Structure recognized source control flow (and strip the internal flow
+	// tags) just like the HTTP converter.
+	structureSourceControlFlow(result)
+
 	if opts.RuntimeSettings != nil {
 		mergeScriptConfig(&result.Script.Config, opts.RuntimeSettings)
 	}
