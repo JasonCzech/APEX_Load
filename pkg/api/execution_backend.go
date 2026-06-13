@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"log/slog"
 	"time"
 
@@ -241,16 +242,16 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 		archiveRecord.RefKey = test.RefKey
 	}
 	if archiveErr != nil {
-		return archiveRecord, "FAILED", appendRunError(finalError, "archive finalize failed", archiveErr)
+		return archiveRecord, "FAILED", testexec.AppendRunError(finalError, "archive finalize failed", archiveErr)
 	}
 	if a.runner != nil && archiveRecord != nil {
 		if err := a.runner.persistTestManifestArtifact(test, archiveRecord); err != nil {
-			return archiveRecord, "FAILED", appendRunError(finalError, "test manifest archive failed", err)
+			return archiveRecord, "FAILED", testexec.AppendRunError(finalError, "test manifest archive failed", err)
 		}
 	}
 	if a.saveRecord != nil {
 		if err := a.saveRecord(archiveRecord); err != nil {
-			return archiveRecord, "FAILED", appendRunError(finalError, "archive metadata save failed", err)
+			return archiveRecord, "FAILED", testexec.AppendRunError(finalError, "archive metadata save failed", err)
 		}
 	}
 	return archiveRecord, finalStatus, finalError

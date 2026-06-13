@@ -8,6 +8,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"log/slog"
 	"math"
 	"strings"
@@ -65,8 +66,8 @@ func (tr *TestRunner) preflightStartBlocksLocked(id string, opts StartTestOption
 	if !ok {
 		return false, fmt.Errorf("test not found: %s", id)
 	}
-	if !isStartableTestStatus(test.Status) {
-		return false, startableTestStatusError(test.Status)
+	if !testexec.IsStartableTestStatus(test.Status) {
+		return false, testexec.StartableTestStatusError(test.Status)
 	}
 
 	tr.refreshCapacityAdvisoryLocked(test)
@@ -94,19 +95,6 @@ func (tr *TestRunner) preflightStartBlocksLocked(id string, opts StartTestOption
 	return false, nil
 }
 
-func isStartableTestStatus(status string) bool {
-	switch status {
-	case "QUEUED", "PENDING", "RESERVED", "SCHEDULED", "SHAKEOUT_REVIEW":
-		return true
-	default:
-		return false
-	}
-}
-
-func startableTestStatusError(status string) error {
-	return fmt.Errorf("test is %s, must be QUEUED, PENDING, RESERVED, SCHEDULED, or SHAKEOUT_REVIEW to start", status)
-}
-
 func (tr *TestRunner) beginScriptShakeoutIfNeeded(id string, opts StartTestOptions) (*ManagedTest, error) {
 	if opts.OverrideScriptShakeoutError {
 		return nil, nil
@@ -121,8 +109,8 @@ func (tr *TestRunner) beginScriptShakeoutIfNeeded(id string, opts StartTestOptio
 	if !test.ScriptShakeout {
 		return nil, nil
 	}
-	if !isStartableTestStatus(test.Status) {
-		return nil, startableTestStatusError(test.Status)
+	if !testexec.IsStartableTestStatus(test.Status) {
+		return nil, testexec.StartableTestStatusError(test.Status)
 	}
 
 	test.Status = "SHAKEOUT"
@@ -176,8 +164,8 @@ func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
-	if !isStartableTestStatus(test.Status) {
-		return nil, startableTestStatusError(test.Status)
+	if !testexec.IsStartableTestStatus(test.Status) {
+		return nil, testexec.StartableTestStatusError(test.Status)
 	}
 
 	tr.refreshCapacityAdvisoryLocked(test)
@@ -454,7 +442,7 @@ func (tr *TestRunner) runVUserScaleRamp(ctx context.Context, ramp *vuserScaleRam
 	defer tr.finishVUserScaleRamp(id, groupName, ramp)
 
 	delta := targetVUsers - currentVUsers
-	steps := absInt(delta)
+	steps := testexec.AbsInt(delta)
 	if steps == 0 {
 		return
 	}
@@ -651,13 +639,6 @@ func testGroupVUsers(test *ManagedTest, groupName string) (int, bool) {
 	return 0, false
 }
 
-func absInt(value int) int {
-	if value < 0 {
-		return -value
-	}
-	return value
-}
-
 func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error {
 	tr.mu.RLock()
 	id = tr.resolveRefKeyLocked(id)
@@ -791,42 +772,14 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 }
 
 func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.ResultSink) (*engine.MultiGroupEngine, error) {
-	preBaseline, postBaseline := resourceBaselineWindows(test.ResourceBaseline)
-	preBaseline += startDelayWindow(test.StartDelay)
+	preBaseline, postBaseline := testexec.ResourceBaselineWindows(test.ResourceBaseline)
+	preBaseline += testexec.StartDelayWindow(test.StartDelay)
 	return engine.NewMultiGroup(engine.MultiGroupConfig{
-		Groups:       cloneGroupSpecsWithResultSink(test.groupSpecs, resultSink),
+		Groups:       testexec.CloneGroupSpecsWithResultSink(test.groupSpecs, resultSink),
 		Duration:     test.Duration,
 		PreBaseline:  preBaseline,
 		PostBaseline: postBaseline,
 	})
-}
-
-func cloneGroupSpecsWithResultSink(groupSpecs []engine.GroupConfig, resultSink engine.ResultSink) []engine.GroupConfig {
-	cloned := make([]engine.GroupConfig, len(groupSpecs))
-	copy(cloned, groupSpecs)
-	for i := range cloned {
-		cloned[i].ResultSink = resultSink
-	}
-	return cloned
-}
-
-func resourceBaselineWindows(enabled bool) (time.Duration, time.Duration) {
-	if !enabled {
-		return 0, 0
-	}
-	const baselineWindow = 5 * time.Minute
-	return baselineWindow, baselineWindow
-}
-
-func startDelayWindow(raw string) time.Duration {
-	if raw == "" {
-		return 0
-	}
-	duration, err := time.ParseDuration(raw)
-	if err != nil || duration <= 0 {
-		return 0
-	}
-	return duration
 }
 
 func applyGoalControllerUpdate(test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int, update goalControllerUpdate, scaleVUsers func(groupName string, target int) error) {
@@ -1043,17 +996,6 @@ func (tr *TestRunner) nextPromotablePendingTestLocked() *ManagedTest {
 		return test
 	}
 	return nil
-}
-
-func appendRunError(existing string, prefix string, err error) string {
-	if err == nil {
-		return existing
-	}
-	message := prefix + ": " + err.Error()
-	if existing == "" {
-		return message
-	}
-	return existing + "; " + message
 }
 
 func (tr *TestRunner) runScriptShakeoutReport(test *ManagedTest) ScriptShakeoutReport {

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"log/slog"
 	"math"
 	"os"
@@ -883,13 +884,13 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner, test *ManagedTest, finalStatus string, finalError string) {
 	if finalStatus == "FAILED" {
 		if err := b.stopRemainingRemoteTargets(test); err != nil {
-			finalError = appendRunError(finalError, "stop remote targets", err)
+			finalError = testexec.AppendRunError(finalError, "stop remote targets", err)
 		}
 	}
 	archiveRecord, archiveErr := b.stageRemoteArchive(test, finalStatus == "COMPLETE")
 	if archiveErr != nil {
 		finalStatus = "FAILED"
-		finalError = appendRunError(finalError, "remote archive stage failed", archiveErr)
+		finalError = testexec.AppendRunError(finalError, "remote archive stage failed", archiveErr)
 	}
 	b.closeRemoteResources(test)
 	if test.cancel != nil {
@@ -898,7 +899,7 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 	if archiveRecord != nil {
 		if err := tr.saveRunArchiveRecord(archiveRecord); err != nil {
 			finalStatus = "FAILED"
-			finalError = appendRunError(finalError, "archive metadata save failed", err)
+			finalError = testexec.AppendRunError(finalError, "archive metadata save failed", err)
 			archiveRecord = nil
 		}
 	}
