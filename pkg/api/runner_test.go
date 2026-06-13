@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -43,6 +44,7 @@ type metricsStoreSpy struct {
 	approvalsByID         map[string]*storage.ScenarioScheduleApproval
 	leasesByName          map[string]*storage.SchedulerLease
 	auditEvents           []*storage.AuditEvent
+	usageMu               sync.Mutex
 	usageSnapshots        []*storage.UsageAccountingSnapshot
 	settings              map[string]string
 	statusUpdates         []testStatusUpdate
@@ -479,9 +481,19 @@ func (s *metricsStoreSpy) ListAuditEvents(filter storage.AuditEventFilter) ([]*s
 func (s *metricsStoreSpy) SaveUsageAccountingSnapshot(snapshot *storage.UsageAccountingSnapshot) error {
 	if snapshot != nil {
 		clone := *snapshot
+		s.usageMu.Lock()
 		s.usageSnapshots = append(s.usageSnapshots, &clone)
+		s.usageMu.Unlock()
 	}
 	return nil
+}
+
+// usageSnapshotCount returns the number of saved usage snapshots under the lock,
+// for tests polling the cadence goroutine without racing its appends.
+func (s *metricsStoreSpy) usageSnapshotCount() int {
+	s.usageMu.Lock()
+	defer s.usageMu.Unlock()
+	return len(s.usageSnapshots)
 }
 func (s *metricsStoreSpy) ListUsageAccountingSnapshots(projectID string, limit int, offset int) ([]*storage.UsageAccountingSnapshot, error) {
 	return nil, nil
@@ -5840,7 +5852,7 @@ func TestRunnerCapturesUsageSnapshotOnCadenceTick(t *testing.T) {
 	ticks <- time.Now()
 
 	deadline := time.Now().Add(time.Second)
-	for len(store.usageSnapshots) == 0 && time.Now().Before(deadline) {
+	for store.usageSnapshotCount() == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	cancel()
