@@ -215,11 +215,15 @@ func (tr *TestRunner) StopTest(id string) error {
 	tr.mu.RLock()
 	id = tr.resolveRefKeyLocked(id)
 	test, ok := tr.tests[id]
+	status := ""
+	if ok {
+		status = test.Status
+	}
 	tr.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("test not found: %s", id)
 	}
-	if test.Status == "QUEUED" || test.Status == "PENDING" || test.Status == "RESERVED" || test.Status == "SHAKEOUT" || test.Status == "SHAKEOUT_REVIEW" {
+	if status == "QUEUED" || status == "PENDING" || status == "RESERVED" || status == "SHAKEOUT" || status == "SHAKEOUT_REVIEW" {
 		tr.mu.Lock()
 		if current, ok := tr.tests[id]; ok {
 			now := time.Now().UTC()
@@ -256,10 +260,13 @@ func (tr *TestRunner) StopTest(id string) error {
 	if test.cancel != nil {
 		test.cancel()
 	}
+	tr.mu.Lock()
 	if test.Status == "COMPLETE" || test.Status == "FAILED" {
+		tr.mu.Unlock()
 		return nil
 	}
 	test.Status = "STOPPING"
+	tr.mu.Unlock()
 	tr.broadcastEvent("test_stopping", test)
 	return nil
 }
@@ -643,12 +650,16 @@ func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error
 	tr.mu.RLock()
 	id = tr.resolveRefKeyLocked(id)
 	test, ok := tr.tests[id]
+	status := ""
+	if ok {
+		status = test.Status
+	}
 	tr.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("test not found: %s", id)
 	}
-	if test.Status != "RUNNING" {
-		return fmt.Errorf("test is %s, must be RUNNING to adjust duration", test.Status)
+	if status != "RUNNING" {
+		return fmt.Errorf("test is %s, must be RUNNING to adjust duration", status)
 	}
 	if test.multiEngine == nil {
 		backend := test.executionBackend
@@ -688,12 +699,16 @@ func (tr *TestRunner) PauseTest(id string) error {
 	tr.mu.RLock()
 	id = tr.resolveRefKeyLocked(id)
 	test, ok := tr.tests[id]
+	status := ""
+	if ok {
+		status = test.Status
+	}
 	tr.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("test not found: %s", id)
 	}
-	if test.Status != "RUNNING" {
-		return fmt.Errorf("test is %s, must be RUNNING to pause", test.Status)
+	if status != "RUNNING" {
+		return fmt.Errorf("test is %s, must be RUNNING to pause", status)
 	}
 	if test.multiEngine == nil {
 		backend := test.executionBackend
@@ -726,12 +741,16 @@ func (tr *TestRunner) ResumeTest(id string) error {
 	tr.mu.RLock()
 	id = tr.resolveRefKeyLocked(id)
 	test, ok := tr.tests[id]
+	status := ""
+	if ok {
+		status = test.Status
+	}
 	tr.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("test not found: %s", id)
 	}
-	if test.Status != "PAUSED" {
-		return fmt.Errorf("test is %s, must be PAUSED to resume", test.Status)
+	if status != "PAUSED" {
+		return fmt.Errorf("test is %s, must be PAUSED to resume", status)
 	}
 	if test.multiEngine == nil {
 		backend := test.executionBackend
