@@ -24,13 +24,36 @@ const (
 	StepSetFiles     = "set_files"
 	StepAssert       = "assert"
 	StepSwitchWindow = "switch_window"
+	// StepHandleDialog is appended Go-side from a page dialog (alert/confirm/
+	// prompt), not from the capture script.
+	StepHandleDialog = "handle_dialog"
 )
+
+// Recording sections map to the DSL script's init/actions/teardown blocks.
+// Empty Section is treated as SectionActions.
+const (
+	SectionInit     = "init"
+	SectionActions  = "actions"
+	SectionTeardown = "teardown"
+)
+
+func normalizeSection(section string) string {
+	switch strings.ToLower(strings.TrimSpace(section)) {
+	case SectionInit:
+		return SectionInit
+	case SectionTeardown:
+		return SectionTeardown
+	default:
+		return SectionActions
+	}
+}
 
 // capturedEvent is the JSON payload reported by the injected capture script
 // through the exposed binding. Field names match the script's payload keys.
 type capturedEvent struct {
 	Kind          string                    `json:"kind"`
 	Value         string                    `json:"value,omitempty"`
+	Masked        bool                      `json:"masked,omitempty"`
 	TimestampMs   int64                     `json:"ts"`
 	URL           string                    `json:"url,omitempty"`
 	Title         string                    `json:"title,omitempty"`
@@ -39,17 +62,110 @@ type capturedEvent struct {
 }
 
 // Step is one recorded user interaction with everything replay needs: the
-// ranked selector candidates, frame context, page URL, and timing.
+// ranked selector candidates, frame context, page URL, and timing. Masked
+// marks fills whose value was withheld at capture (password inputs).
 type Step struct {
 	Seq           int                       `json:"seq"`
 	Kind          string                    `json:"kind"`
 	Value         string                    `json:"value,omitempty"`
+	Masked        bool                      `json:"masked,omitempty"`
 	Timestamp     time.Time                 `json:"timestamp"`
 	URL           string                    `json:"url,omitempty"`
 	Title         string                    `json:"title,omitempty"`
 	FrameSelector string                    `json:"frame_selector,omitempty"`
 	Element       *selector.ElementMetadata `json:"element,omitempty"`
 	Candidates    []selector.Candidate      `json:"candidates,omitempty"`
+	// Section routes the converted action into the DSL init/actions/teardown
+	// block. Empty means actions.
+	Section string `json:"section,omitempty"`
+	// Excluded steps are kept for review but skipped during conversion;
+	// Deleted steps are tombstoned (delete-last-step) and also skipped.
+	Excluded bool `json:"excluded,omitempty"`
+	Deleted  bool `json:"deleted,omitempty"`
+	// Thumbnail is an optional size-capped data:image/jpeg;base64 preview of
+	// the page at capture time (per-step screenshots, opt-in).
+	Thumbnail string `json:"thumbnail,omitempty"`
+	// DialogType/DialogMessage describe a captured native dialog for
+	// StepHandleDialog steps (alert|confirm|prompt).
+	DialogType    string `json:"dialog_type,omitempty"`
+	DialogMessage string `json:"dialog_message,omitempty"`
+	// MarkSecret/MarkParam flag a fill the user marked (via the picker) as a
+	// runtime secret or data parameter; conversion feeds these to paramize.
+	MarkSecret bool `json:"mark_secret,omitempty"`
+	MarkParam  bool `json:"mark_param,omitempty"`
+}
+
+func (s Step) skipForConvert() bool { return s.Excluded || s.Deleted }
+
+// Event types delivered to Options.OnEvent observers.
+const (
+	EventStep       = "step"
+	EventNavigation = "navigation"
+	EventWarning    = "warning"
+	EventPauseState = "pause_state"
+	EventMarker     = "marker"
+	// EventPickState reports the in-page element-picker (assert) mode toggling.
+	EventPickState = "pick_state"
+	// EventAnnotation reports a console error or failed request captured live.
+	EventAnnotation = "annotation"
+	// EventSection reports the active recording section changing.
+	EventSection = "section"
+	// EventStepUpdate reports an in-place step change (exclude/delete) so the
+	// live feed can refresh without re-fetching the whole session.
+	EventStepUpdate = "step_update"
+)
+
+// Event notifies a live observer (e.g. the API control-panel manager) of
+// recording activity as it happens. Exactly one payload field is set per type
+// (Paused accompanies EventPauseState; Picking accompanies EventPickState).
+type Event struct {
+	Type       string
+	Step       *Step
+	Nav        *NavEvent
+	Warning    string
+	Paused     bool
+	Picking    bool
+	Marker     *Marker
+	Annotation *Annotation
+	Section    string
+}
+
+// Annotation is a non-interaction diagnostic captured during recording: a page
+// console error or a failed network request, tied to the nearest step.
+type Annotation struct {
+	Kind      string    `json:"kind"` // "console_error" | "request_failed"
+	Text      string    `json:"text"`
+	URL       string    `json:"url,omitempty"`
+	Status    int       `json:"status,omitempty"`
+	NearStep  int       `json:"near_step,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// Marker kinds inserted from the control panel (or in-page toolbar).
+const (
+	MarkerTransactionStart = "transaction_start"
+	MarkerTransactionEnd   = "transaction_end"
+	MarkerNote             = "note"
+)
+
+// Marker is a user-inserted annotation in the recording timeline: transaction
+// boundaries convert to source_transaction actions, notes attach to the next
+// converted action's metadata.
+type Marker struct {
+	Kind      string    `json:"kind"`
+	Name      string    `json:"name,omitempty"` // transaction name
+	Text      string    `json:"text,omitempty"` // note text
+	Timestamp time.Time `json:"timestamp"`
+	// Auto marks markers the recorder inserted itself (open transactions
+	// closed at stop).
+	Auto bool `json:"auto,omitempty"`
+}
+
+// PauseInterval records one server-side pause window. To is zero while the
+// pause is still open; Stop closes any open interval.
+type PauseInterval struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to,omitempty"`
 }
 
 // NavEvent is a main-frame navigation observed during recording.
@@ -64,6 +180,31 @@ type WebSocketSummary struct {
 	OpenedAt       time.Time `json:"opened_at"`
 	FramesSent     int       `json:"frames_sent"`
 	FramesReceived int       `json:"frames_received"`
+	// Frames holds size-capped, scrubbed frame payloads when payload capture is
+	// opted in (off by default); otherwise only the counts above are recorded.
+	Frames []WebSocketFrame `json:"frames,omitempty"`
+}
+
+// WebSocketFrame is one captured WebSocket frame payload (opt-in).
+type WebSocketFrame struct {
+	Direction string    `json:"direction"` // "sent" | "received"
+	Payload   string    `json:"payload,omitempty"`
+	Encoding  string    `json:"encoding,omitempty"` // "text" | "base64"
+	SizeBytes int       `json:"size_bytes"`
+	Truncated bool      `json:"truncated,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// HARFilters narrows the side-car HAR by request host before export/convert,
+// mirroring the proxy recorder's include/exclude host semantics (substring
+// match). Empty filters keep everything.
+type HARFilters struct {
+	IncludeHosts []string `json:"include_hosts,omitempty"`
+	ExcludeHosts []string `json:"exclude_hosts,omitempty"`
+}
+
+func (f HARFilters) empty() bool {
+	return len(f.IncludeHosts) == 0 && len(f.ExcludeHosts) == 0
 }
 
 // Session is the complete artifact of one recording run.
@@ -76,9 +217,24 @@ type Session struct {
 	NavEvents     []NavEvent         `json:"nav_events,omitempty"`
 	NetworkEvents []time.Time        `json:"network_events,omitempty"`
 	WebSockets    []WebSocketSummary `json:"websockets,omitempty"`
-	HARPath       string             `json:"har_path,omitempty"`
-	HAR           []byte             `json:"-"`
-	Warnings      []string           `json:"warnings,omitempty"`
+	Markers       []Marker           `json:"markers,omitempty"`
+	// OpenTransactions tracks started-but-not-ended transaction names in
+	// start order (nesting allowed; ends must match an open name).
+	OpenTransactions []string `json:"open_transactions,omitempty"`
+	// PauseIntervals are server-side pause windows; conversion subtracts them
+	// from recorded think times so a pause never becomes a giant think time.
+	PauseIntervals []PauseInterval `json:"pause_intervals,omitempty"`
+	// Annotations are console errors and failed requests observed during the
+	// recording, tied to the nearest step.
+	Annotations []Annotation `json:"annotations,omitempty"`
+	// DeviceProfile is the emulated device preset applied at launch, if any.
+	DeviceProfile string `json:"device_profile,omitempty"`
+	HARPath       string `json:"har_path,omitempty"`
+	HAR           []byte `json:"-"`
+	// StorageState is the Playwright storage state (cookies/localStorage)
+	// exported at stop, available for login reuse on a later recording.
+	StorageState []byte   `json:"-"`
+	Warnings     []string `json:"warnings,omitempty"`
 }
 
 var validStepKinds = map[string]bool{
@@ -106,6 +262,7 @@ func stepFromEvent(payload string) (Step, error) {
 	step := Step{
 		Kind:          kind,
 		Value:         event.Value,
+		Masked:        event.Masked,
 		Timestamp:     time.UnixMilli(event.TimestampMs),
 		URL:           strings.TrimSpace(event.URL),
 		Title:         strings.TrimSpace(event.Title),
@@ -123,18 +280,115 @@ func stepFromEvent(payload string) (Step, error) {
 
 // appendStep adds a step to the session, assigning the sequence number and
 // collapsing consecutive duplicate fills on the same element (the capture
-// script can report a fill on both Enter and the subsequent blur).
-func (s *Session) appendStep(step Step) {
+// script can report a fill on both Enter and the subsequent blur). It returns
+// the step as recorded so observers see the merged result.
+func (s *Session) appendStep(step Step) Step {
 	if len(s.Steps) > 0 && step.Kind == StepFill {
 		last := &s.Steps[len(s.Steps)-1]
 		if last.Kind == StepFill && sameElement(last.Element, step.Element) {
 			last.Value = step.Value
+			last.Masked = step.Masked
 			last.Timestamp = step.Timestamp
-			return
+			return *last
 		}
 	}
 	step.Seq = len(s.Steps) + 1
 	s.Steps = append(s.Steps, step)
+	return step
+}
+
+// clone deep-copies the session's slices so callers can read a stable snapshot
+// while recording continues. Element/candidate pointers are shared but treated
+// as immutable after capture.
+func (s *Session) clone() *Session {
+	clone := *s
+	clone.Steps = append([]Step(nil), s.Steps...)
+	clone.NavEvents = append([]NavEvent(nil), s.NavEvents...)
+	clone.NetworkEvents = append([]time.Time(nil), s.NetworkEvents...)
+	clone.WebSockets = append([]WebSocketSummary(nil), s.WebSockets...)
+	clone.Markers = append([]Marker(nil), s.Markers...)
+	clone.OpenTransactions = append([]string(nil), s.OpenTransactions...)
+	clone.PauseIntervals = append([]PauseInterval(nil), s.PauseIntervals...)
+	clone.Annotations = append([]Annotation(nil), s.Annotations...)
+	clone.Warnings = append([]string(nil), s.Warnings...)
+	if len(s.HAR) > 0 {
+		clone.HAR = append([]byte(nil), s.HAR...)
+	}
+	return &clone
+}
+
+// deleteLastStep tombstones the most recent non-deleted step and returns it.
+// Callers hold the recorder mutex.
+func (s *Session) deleteLastStep() (*Step, bool) {
+	for i := len(s.Steps) - 1; i >= 0; i-- {
+		if !s.Steps[i].Deleted {
+			s.Steps[i].Deleted = true
+			step := s.Steps[i]
+			return &step, true
+		}
+	}
+	return nil, false
+}
+
+// setStepExcluded toggles the exclude flag on the step with the given seq.
+func (s *Session) setStepExcluded(seq int, excluded bool) (*Step, bool) {
+	for i := range s.Steps {
+		if s.Steps[i].Seq == seq {
+			if s.Steps[i].Deleted {
+				return nil, false
+			}
+			s.Steps[i].Excluded = excluded
+			step := s.Steps[i]
+			return &step, true
+		}
+	}
+	return nil, false
+}
+
+// AddMarker validates and appends a marker, maintaining open-transaction
+// state. Not goroutine-safe: the Recorder calls it under its mutex; other
+// callers (test fakes) must synchronize themselves.
+func (s *Session) AddMarker(marker Marker) (Marker, error) {
+	switch marker.Kind {
+	case MarkerTransactionStart:
+		if marker.Name == "" {
+			return Marker{}, fmt.Errorf("transaction name is required")
+		}
+		for _, open := range s.OpenTransactions {
+			if open == marker.Name {
+				return Marker{}, fmt.Errorf("transaction %q is already open", marker.Name)
+			}
+		}
+		s.OpenTransactions = append(s.OpenTransactions, marker.Name)
+	case MarkerTransactionEnd:
+		if len(s.OpenTransactions) == 0 {
+			return Marker{}, fmt.Errorf("no transaction is open")
+		}
+		if marker.Name == "" {
+			marker.Name = s.OpenTransactions[len(s.OpenTransactions)-1]
+		}
+		index := -1
+		for i, open := range s.OpenTransactions {
+			if open == marker.Name {
+				index = i
+			}
+		}
+		if index < 0 {
+			return Marker{}, fmt.Errorf("transaction %q is not open", marker.Name)
+		}
+		s.OpenTransactions = append(s.OpenTransactions[:index], s.OpenTransactions[index+1:]...)
+	case MarkerNote:
+		if strings.TrimSpace(marker.Text) == "" {
+			return Marker{}, fmt.Errorf("note text is required")
+		}
+	default:
+		return Marker{}, fmt.Errorf("unsupported marker kind %q", marker.Kind)
+	}
+	if marker.Timestamp.IsZero() {
+		marker.Timestamp = time.Now()
+	}
+	s.Markers = append(s.Markers, marker)
+	return marker, nil
 }
 
 func sameElement(a, b *selector.ElementMetadata) bool {

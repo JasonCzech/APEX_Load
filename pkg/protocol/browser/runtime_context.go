@@ -74,7 +74,20 @@ func (b *Browser) installBrowserContextHandlers(browserContext playwright.Browse
 		})
 	})
 	browserContext.OnDialog(func(dialog playwright.Dialog) {
-		_ = dialog.Dismiss()
+		// A browser_handle_dialog action arms a one-shot policy for the next
+		// dialog; without one we dismiss so the page never hangs.
+		b.dialogMu.Lock()
+		policy := b.pendingDialog
+		b.pendingDialog = nil
+		b.dialogMu.Unlock()
+		switch {
+		case policy == nil, policy.action == "dismiss":
+			_ = dialog.Dismiss()
+		case policy.promptText != "":
+			_ = dialog.Accept(policy.promptText)
+		default:
+			_ = dialog.Accept()
+		}
 	})
 	browserContext.OnResponse(func(response playwright.Response) {
 		b.rememberResourceValidator(response.URL(), response.Headers())

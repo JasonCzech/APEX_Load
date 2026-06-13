@@ -57,5 +57,12 @@ describe('appRouting', () => {
     expect(viewToLocationHash({ page: 'test', testId: 'run/123', tab: 'archive' })).toBe('#/test/run%2F123?tab=archive')
     expect(viewToLocationHash({ page: 'command-center', testId: 'run/123' })).toBe('#/command-center/run%2F123')
     expect(parseAppViewFromHash(viewToLocationHash({ page: 'repository-guide' }))).toEqual({ page: 'repository-guide' })
+    expect(viewToLocationHash({ page: 'recorder-panel', sessionId: 'brec/1' })).toBe('#/recorder-panel?session=brec%2F1')
+    expect(parseAppViewFromHash('#/recorder-panel?session=brec-1')).toEqual({ page: 'recorder-panel', sessionId: 'brec-1' })
+    expect(parseAppViewFromHash(viewToLocationHash({ page: 'recorder-panel', sessionId: 'brec/1' }))).toEqual({
+      page: 'recorder-panel',
+      sessionId: 'brec/1',
+    })
+    expect(parseAppViewFromHash('#/recorder-panel')).toEqual({ page: 'recorder-panel' })
   })
 })

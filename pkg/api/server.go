@@ -30,6 +30,8 @@ type Server struct {
 	scheduler          *scenarioScheduler
 	browserReplay      *BrowserReplayManager
 	scriptDebug        *ScriptDebugManager
+	browserRecording   *BrowserRecordingManager
+	browserInstall     *browserInstallState
 	recorder           *recorder.Recorder
 	store              storage.Store
 	cache              CacheBackend
@@ -118,26 +120,28 @@ func NewServer(cfg ServerConfig) *Server {
 	rec := recorder.New(cfg.ProxyAddr)
 
 	s := &Server{
-		hub:            hub,
-		runner:         runner,
-		scheduler:      newScenarioScheduler(runner),
-		browserReplay:  NewBrowserReplayManager(hub),
-		scriptDebug:    NewScriptDebugManager(hub),
-		recorder:       rec,
-		store:          cfg.Store,
-		cache:          cache,
-		controllerID:   controllerID,
-		authoring:      make(map[string]*storage.AuthoringSession),
-		libraryRemotes: make(map[string]*LibraryRemote),
-		libraryLinks:   make(map[string]*librarySyncLink),
-		libraryCreds:   cfg.LibraryCredentials,
-		slaWaivers:     make(map[string][]*storage.ReleaseSLAWaiver),
-		resultImports:  make(map[string]*storage.ExternalResultImport),
-		githubTokens:   make(map[string]githubCachedToken),
-		mux:            http.NewServeMux(),
-		desktopMode:    cfg.DesktopMode,
-		desktopAppData: cfg.DesktopAppDataPath,
-		desktopLogPath: cfg.DesktopLogPath,
+		hub:              hub,
+		runner:           runner,
+		scheduler:        newScenarioScheduler(runner),
+		browserReplay:    NewBrowserReplayManager(hub),
+		scriptDebug:      NewScriptDebugManager(hub),
+		browserRecording: NewBrowserRecordingManager(hub),
+		browserInstall:   newBrowserInstallState(),
+		recorder:         rec,
+		store:            cfg.Store,
+		cache:            cache,
+		controllerID:     controllerID,
+		authoring:        make(map[string]*storage.AuthoringSession),
+		libraryRemotes:   make(map[string]*LibraryRemote),
+		libraryLinks:     make(map[string]*librarySyncLink),
+		libraryCreds:     cfg.LibraryCredentials,
+		slaWaivers:       make(map[string][]*storage.ReleaseSLAWaiver),
+		resultImports:    make(map[string]*storage.ExternalResultImport),
+		githubTokens:     make(map[string]githubCachedToken),
+		mux:              http.NewServeMux(),
+		desktopMode:      cfg.DesktopMode,
+		desktopAppData:   cfg.DesktopAppDataPath,
+		desktopLogPath:   cfg.DesktopLogPath,
 
 		generatorDiscovery: discovery,
 		metricsAddr:        strings.TrimSpace(cfg.MetricsAddr),
@@ -225,6 +229,30 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveScriptDebugSessionProjectID(s.scriptDebug),
+	)
+	browserRecordingCreateAuth := projectScopedAuthMiddleware(
+		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.store,
+		s.cache,
+		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		[]string{RoleEditor, RoleProjectAdmin},
+		resolveRecorderCreateProjectID,
+	)
+	browserRecordingSessionViewAuth := projectScopedAuthMiddleware(
+		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.store,
+		s.cache,
+		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
+		resolveBrowserRecordingSessionProjectID(s.browserRecording),
+	)
+	browserRecordingSessionEditAuth := projectScopedAuthMiddleware(
+		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.store,
+		s.cache,
+		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		[]string{RoleEditor, RoleProjectAdmin},
+		resolveBrowserRecordingSessionProjectID(s.browserRecording),
 	)
 
 	// Test lifecycle and archive endpoints.
@@ -446,6 +474,32 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/recorder/{id}/export", cors(log(recorderSessionViewAuth(http.HandlerFunc(s.handleExportRecording)))))
 	s.mux.Handle("GET /api/v1/recorder/status", cors(log(auth(http.HandlerFunc(s.handleRecorderStatus)))))
 	s.mux.Handle("GET /api/v1/recorder/ca.pem", cors(log(auth(http.HandlerFunc(s.handleRecorderCACert)))))
+
+	// Headed browser recording (local/desktop controllers): lifecycle control,
+	// conversion to the script library, and side-car HAR export.
+	s.mux.Handle("POST /api/v1/browser-recorder/sessions", cors(log(browserRecordingCreateAuth(http.HandlerFunc(s.handleStartBrowserRecording)))))
+	s.mux.Handle("GET /api/v1/browser-recorder/sessions/{id}", cors(log(browserRecordingSessionViewAuth(http.HandlerFunc(s.handleGetBrowserRecording)))))
+	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/stop", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleStopBrowserRecording)))))
+	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/pause", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handlePauseBrowserRecording)))))
+	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/resume", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleResumeBrowserRecording)))))
+	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/navigate", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleNavigateBrowserRecording)))))
+	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/focus", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleFocusBrowserRecording)))))
+	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/transactions/start", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleStartBrowserRecordingTransaction)))))
+	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/transactions/end", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleEndBrowserRecordingTransaction)))))
+	s.mux.Handle("GET /api/v1/browser-recorder/sessions/{id}/transactions/suggestions", cors(log(browserRecordingSessionViewAuth(http.HandlerFunc(s.handleSuggestBrowserRecordingTransactions)))))
+	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/notes", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleAddBrowserRecordingNote)))))
+	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/section", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleSetBrowserRecordingSection)))))
+	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/pick-mode", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleSetBrowserRecordingPickMode)))))
+	s.mux.Handle("DELETE /api/v1/browser-recorder/sessions/{id}/steps/last", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleDeleteLastBrowserRecordingStep)))))
+	s.mux.Handle("PATCH /api/v1/browser-recorder/sessions/{id}/steps/{seq}", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleUpdateBrowserRecordingStep)))))
+	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/verify", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleVerifyBrowserRecording)))))
+	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/convert/preview", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handlePreviewBrowserRecordingConversion)))))
+	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/convert", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleConvertBrowserRecording)))))
+	s.mux.Handle("GET /api/v1/browser-recorder/sessions/{id}/export", cors(log(browserRecordingSessionViewAuth(http.HandlerFunc(s.handleExportBrowserRecording)))))
+	s.mux.Handle("GET /api/v1/browser-recorder/sessions/{id}/storage-state", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleExportBrowserRecordingStorageState)))))
+	s.mux.Handle("GET /api/v1/browser-recorder/devices", cors(log(auth(http.HandlerFunc(s.handleListBrowserRecorderDevices)))))
+	s.mux.Handle("POST /api/v1/browser-recorder/install", cors(log(auth(http.HandlerFunc(s.handleBrowserRecorderInstall)))))
+	s.mux.Handle("GET /api/v1/browser-recorder/install", cors(log(auth(http.HandlerFunc(s.handleGetBrowserRecorderInstall)))))
 
 	// System endpoints for health and global settings.
 	s.mux.Handle("GET /api/v1/auth/login", cors(log(http.HandlerFunc(s.handleOIDCLogin))))

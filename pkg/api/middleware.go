@@ -2361,6 +2361,19 @@ func resolveRecorderSessionProjectID(rec *recorder.Recorder) requestProjectLooku
 	}
 }
 
+func resolveBrowserRecordingSessionProjectID(manager *BrowserRecordingManager) requestProjectLookup {
+	return func(r *http.Request) (string, int, string) {
+		if manager == nil {
+			return "", http.StatusServiceUnavailable, "browser recorder is not configured"
+		}
+		session, ok := manager.Get(r.PathValue("id"))
+		if !ok {
+			return "", http.StatusNotFound, "browser recording session not found"
+		}
+		return normalizeProjectID(session.ProjectID), 0, ""
+	}
+}
+
 func resolveBrowserReplaySessionProjectID(manager *BrowserReplayManager) requestProjectLookup {
 	return func(r *http.Request) (string, int, string) {
 		if manager == nil {

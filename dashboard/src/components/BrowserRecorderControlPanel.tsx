@@ -1,0 +1,724 @@
+import { useState, useEffect, useCallback } from 'react'
+
+import { useApi } from '../hooks/useApi'
+import { apiFetch } from '../hooks/apiClient'
+import { downloadBlob } from '../utils/fileUtils'
+import {
+  type BrowserRecorderSession,
+  type BrowserRecorderStep,
+  type BrowserRecorderTransactionSuggestion,
+} from '../hooks/api/useBrowserRecorderApi'
+import { type StoredScript } from '../types'
+import { type RecorderImportResult } from '../types/scriptImports'
+import { type ScriptDefinition } from '../types/scripts'
+import { type ImportedSaveResult } from './useScriptsAuthoringState'
+import BrowserReplayProgress from './BrowserReplayProgress'
+import './RecordingStudio.css'
+
+const SECTIONS: { value: string; label: string }[] = [
+  { value: 'init', label: 'Init' },
+  { value: 'actions', label: 'Main' },
+  { value: 'teardown', label: 'Teardown' },
+]
+
+// selectorQuality buckets a step's best selector confidence (0–100 ladder) into
+// a badge tone, mirroring ParameterizationReview's banding.
+function selectorQuality(step: BrowserRecorderStep): { tone: 'high' | 'medium' | 'low'; score: number } | null {
+  const top = step.candidates?.[0]
+  if (!top) return null
+  const score = top.confidence
+  if (score >= 82) return { tone: 'high', score }
+  if (score >= 68) return { tone: 'medium', score }
+  return { tone: 'low', score }
+}
+
+const INTERACTION_KINDS = new Set(['click', 'fill', 'select', 'press_key', 'set_files'])
+
+const LIVE_STATUSES = new Set(['recording', 'paused', 'stopping'])
+const CONTROLLABLE_STATUSES = new Set(['recording', 'paused'])
+
+const STEP_KIND_LABELS: Record<string, string> = {
+  navigate: 'Navigate',
+  click: 'Click',
+  fill: 'Fill',
+  select: 'Select',
+  press_key: 'Key',
+  set_files: 'Upload',
+  assert: 'Verify',
+  switch_window: 'Window',
+}
+
+function stepDetail(step: BrowserRecorderStep): string {
+  if (step.masked) return '•••••• (masked)'
+  if (step.value) return step.value
+  if (step.title) return step.title
+  if (step.url) return step.url
+  return ''
+}
+
+function statusLabel(session: BrowserRecorderSession): string {
+  switch (session.status) {
+    case 'recording':
+      return 'Recording'
+    case 'paused':
+      return 'Paused'
+    case 'stopping':
+      return 'Stopping…'
+    case 'stopped':
+      return session.stop_reason === 'browser_closed' ? 'Stopped (browser closed)' : 'Stopped'
+    case 'failed':
+      return 'Failed'
+    default:
+      return session.status
+  }
+}
+
+export interface BrowserRecorderControlPanelProps {
+  sessionId: string
+  /** Rendered as its own chrome-less page (popup window route). */
+  standalone?: boolean
+  onImported?: (result: ImportedSaveResult) => void
+  onEdit?: (script: ScriptDefinition) => void
+  /** Docked mode: remove the panel from the studio after the user is done. */
+  onDismiss?: () => void
+}
+
+export default function BrowserRecorderControlPanel({
+  sessionId,
+  standalone = false,
+  onImported,
+  onEdit,
+  onDismiss,
+}: BrowserRecorderControlPanelProps) {
+  const api = useApi()
+  const [session, setSession] = useState<BrowserRecorderSession | null>(null)
+  const [loadError, setLoadError] = useState('')
+  const [scriptName, setScriptName] = useState('')
+  const [preview, setPreview] = useState<RecorderImportResult | null>(null)
+  const [savedScript, setSavedScript] = useState<StoredScript | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [feedback, setFeedback] = useState('')
+  const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('success')
+  const [navigateURL, setNavigateURL] = useState('')
+  const [transactionName, setTransactionName] = useState('')
+  const [noteText, setNoteText] = useState('')
+  const [splitAtTransactions, setSplitAtTransactions] = useState(false)
+  const [alsoCreateHTTP, setAlsoCreateHTTP] = useState(false)
+  const [suggestions, setSuggestions] = useState<BrowserRecorderTransactionSuggestion[]>([])
+  const [replaySessionId, setReplaySessionId] = useState<string | null>(null)
+
+  const showFeedback = (msg: string, type: 'success' | 'error' = 'success') => {
+    setFeedback(msg)
+    setFeedbackType(type)
+    setTimeout(() => setFeedback(''), 4000)
+  }
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await api.getBrowserRecording(sessionId)
+      setSession(res.session)
+      setLoadError('')
+    } catch (e: any) {
+      setLoadError(e.message || 'Failed to load browser recording session')
+    }
+  }, [api, sessionId])
+
+  const loadSuggestions = useCallback(async () => {
+    try {
+      const res = await api.suggestBrowserRecordingTransactions(sessionId)
+      setSuggestions(res.suggestions || [])
+    } catch {
+      /* suggestions are best-effort */
+    }
+  }, [api, sessionId])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  const live = !!session && LIVE_STATUSES.has(session.status)
+
+  // The recorder broadcasts browser_recording_* WebSocket events; the panel
+  // polls instead so the standalone popup needs no socket plumbing — the
+  // 1.5s cadence keeps the live feed within the dashboard's 2s freshness bar.
+  useEffect(() => {
+    if (!live) return
+    const interval = setInterval(refresh, 1500)
+    return () => clearInterval(interval)
+  }, [live, refresh])
+
+  useEffect(() => {
+    if (session && !scriptName) {
+      setScriptName(session.name)
+    }
+    // Seed the script name once from the session; later renames stay manual.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.name])
+
+  useEffect(() => {
+    if (standalone && session) {
+      document.title = `Recording — ${session.name}`
+    }
+  }, [standalone, session])
+
+  // Refresh auto-transaction suggestions as navigations accumulate.
+  useEffect(() => {
+    if (session && (session.navigation_count || 0) > 0) {
+      loadSuggestions()
+    }
+  }, [session?.navigation_count, loadSuggestions])
+
+  const handleStop = async () => {
+    setBusy(true)
+    try {
+      const res = await api.stopBrowserRecording(sessionId)
+      setSession(res.session)
+      showFeedback(`Recording stopped — ${res.session.step_count} steps captured`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handlePauseResume = async () => {
+    if (!session) return
+    setBusy(true)
+    try {
+      const res = session.status === 'paused'
+        ? await api.resumeBrowserRecording(sessionId)
+        : await api.pauseBrowserRecording(sessionId)
+      setSession(res.session)
+      showFeedback(res.session.status === 'paused'
+        ? 'Recording paused — interactions and think time are not captured'
+        : 'Recording resumed')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleFocus = async () => {
+    try {
+      await api.focusBrowserRecording(sessionId)
+      showFeedback('Recording browser brought to the front')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleNavigate = async () => {
+    const url = navigateURL.trim()
+    if (!/^https?:\/\//i.test(url)) {
+      showFeedback('Enter an absolute http(s) URL to navigate to', 'error')
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await api.navigateBrowserRecording(sessionId, url)
+      setSession(res.session)
+      setNavigateURL('')
+      showFeedback(`Recording browser navigated to ${url}`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleStartTransaction = async () => {
+    const name = transactionName.trim()
+    if (!name) {
+      showFeedback('Enter a transaction name', 'error')
+      return
+    }
+    try {
+      const res = await api.startBrowserRecordingTransaction(sessionId, name)
+      setSession(res.session)
+      setTransactionName('')
+      showFeedback(`Transaction "${name}" started`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleEndTransaction = async (name: string) => {
+    try {
+      const res = await api.endBrowserRecordingTransaction(sessionId, name)
+      setSession(res.session)
+      showFeedback(`Transaction "${res.marker.name || name}" ended`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleAddNote = async () => {
+    const text = noteText.trim()
+    if (!text) {
+      showFeedback('Enter a note', 'error')
+      return
+    }
+    try {
+      const res = await api.addBrowserRecordingNote(sessionId, text)
+      setSession(res.session)
+      setNoteText('')
+      showFeedback('Note added — it will attach to the next recorded action')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const convertRequest = () => ({
+    name: scriptName || undefined,
+    split_at_transactions: splitAtTransactions,
+    also_create_http_script: alsoCreateHTTP,
+  })
+
+  const handlePreview = async () => {
+    setBusy(true)
+    try {
+      const result = await api.previewBrowserRecordingConversion(sessionId, convertRequest())
+      setPreview(result)
+      const suggestions = result.parameterization?.summary?.total ?? 0
+      showFeedback(`Preview generated with ${result.script?.actions?.length || 0} actions and ${suggestions} parameterization suggestions`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleSave = async () => {
+    setBusy(true)
+    try {
+      const result = await api.convertBrowserRecording(sessionId, convertRequest())
+      const stored = result.script as unknown as StoredScript | undefined
+      if (stored) {
+        setSavedScript(stored)
+        onImported?.({ scripts: [stored] })
+      }
+      const httpNote = result.http_script ? ` (plus HTTP script "${result.http_script.name}")` : ''
+      showFeedback(`Script "${stored?.name || scriptName}" saved to the script library${httpNote}`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleSection = async (section: string) => {
+    try {
+      const res = await api.setBrowserRecordingSection(sessionId, section)
+      setSession(res.session)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleTogglePick = async () => {
+    if (!session) return
+    try {
+      const res = await api.setBrowserRecordingPickMode(sessionId, !session.picking)
+      setSession(res.session)
+      showFeedback(res.session.picking
+        ? 'Pick mode on — click an element in the recording browser to add a verification'
+        : 'Pick mode off')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleDeleteLastStep = async () => {
+    try {
+      const res = await api.deleteLastBrowserRecordingStep(sessionId)
+      setSession(res.session)
+      showFeedback('Last step removed')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleToggleStepExcluded = async (seq: number, excluded: boolean) => {
+    try {
+      const res = await api.updateBrowserRecordingStep(sessionId, seq, { excluded })
+      setSession(res.session)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleMarkStep = async (seq: number, kind: 'secret' | 'param') => {
+    try {
+      const res = await api.updateBrowserRecordingStep(sessionId, seq, kind === 'secret' ? { mark_secret: true } : { mark_param: true })
+      setSession(res.session)
+      showFeedback(`Step #${seq} marked as ${kind === 'secret' ? 'a secret' : 'a data parameter'}`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleAcceptSuggestion = async (name: string) => {
+    try {
+      const res = await api.startBrowserRecordingTransaction(sessionId, name)
+      setSession(res.session)
+      setSuggestions(prev => prev.filter(s => s.name !== name))
+      showFeedback(`Transaction "${name}" started`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleVerify = async () => {
+    setBusy(true)
+    try {
+      const res = await api.verifyBrowserRecording(sessionId)
+      setReplaySessionId(res.replay_session_id)
+      showFeedback('Verifying — replaying the recorded script')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const editableScript = (preview?.script as ScriptDefinition | undefined) || savedScript?.script
+
+  const handleOpenEditor = () => {
+    if (editableScript) {
+      onEdit?.(editableScript)
+    }
+  }
+
+  const handleDownloadHAR = async () => {
+    try {
+      const res = await apiFetch(`/browser-recorder/sessions/${sessionId}/export?format=har`)
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({ error: 'Failed to export HAR' }))
+        throw new Error(payload.error || 'Failed to export HAR')
+      }
+      const blob = await res.blob()
+      const safeName = (session?.name || 'browser-recording').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      downloadBlob(blob, `${safeName || 'browser-recording'}.har`)
+      showFeedback('Side-car HAR downloaded')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  if (loadError && !session) {
+    return (
+      <div className={`brp-panel ${standalone ? 'brp-standalone' : ''}`}>
+        <div className="rec-feedback error">{loadError}</div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return (
+      <div className={`brp-panel ${standalone ? 'brp-standalone' : ''}`}>
+        <div className="brp-loading">Loading recording session…</div>
+      </div>
+    )
+  }
+
+  const steps = session.steps || []
+  const recentSteps = [...steps].reverse().slice(0, 25)
+  const stopped = session.status === 'stopped'
+  const controllable = CONTROLLABLE_STATUSES.has(session.status)
+  const openTransactions = session.open_transactions || []
+
+  return (
+    <div className={`brp-panel ${standalone ? 'brp-standalone' : ''}`} data-testid="browser-recorder-panel">
+      <div className="brp-header">
+        <div className="brp-title">
+          {live && <span className="rec-live-dot" />}
+          <span className="brp-name">{session.name}</span>
+          <span className={`brp-status brp-status-${session.status}`}>{statusLabel(session)}</span>
+        </div>
+        {onDismiss && !live && (
+          <button type="button" className="rec-inline-action" onClick={onDismiss}>Dismiss</button>
+        )}
+      </div>
+
+      {feedback && <div className={`rec-feedback ${feedbackType}`}>{feedback}</div>}
+      {session.error && <div className="rec-feedback error">{session.error}</div>}
+
+      {session.current_url && (
+        <div className="brp-url" title={session.current_url}>
+          <span className="brp-url-label">Current URL</span>
+          <code>{session.current_url}</code>
+        </div>
+      )}
+
+      <div className="rec-active-stats brp-stats">
+        <div className="rec-stat">
+          <span className="rec-stat-value">{session.step_count}</span>
+          <span className="rec-stat-label">Steps</span>
+        </div>
+        <div className="rec-stat">
+          <span className="rec-stat-value">{session.navigation_count}</span>
+          <span className="rec-stat-label">Pages</span>
+        </div>
+        <div className="rec-stat">
+          <span className="rec-stat-value">{session.network_request_count}</span>
+          <span className="rec-stat-label">Requests</span>
+        </div>
+        <div className="rec-stat">
+          <span className="rec-stat-value">{session.websocket_count}</span>
+          <span className="rec-stat-label">WebSockets</span>
+        </div>
+        <div className="rec-stat">
+          <span className="rec-stat-value">{session.har_available ? 'Ready' : session.capture_har ? 'Capturing' : 'Off'}</span>
+          <span className="rec-stat-label">HAR</span>
+        </div>
+      </div>
+
+      <div className="brp-actions">
+        {live && (
+          <button className="btn btn-danger" onClick={handleStop} disabled={busy}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
+            Stop Recording
+          </button>
+        )}
+        {controllable && (
+          <button className="btn btn-secondary" onClick={handlePauseResume} disabled={busy}>
+            {session.status === 'paused' ? 'Resume Recording' : 'Pause Recording'}
+          </button>
+        )}
+        {controllable && (
+          <button className="btn btn-secondary" onClick={handleFocus} disabled={busy}>Focus Browser</button>
+        )}
+        {controllable && (
+          <button
+            className={`btn btn-secondary ${session.picking ? 'brp-pick-active' : ''}`}
+            onClick={handleTogglePick}
+            disabled={busy}
+            data-testid="pick-mode-toggle"
+          >
+            {session.picking ? 'Picking… (click an element)' : 'Pick Verification'}
+          </button>
+        )}
+        {session.har_available && (
+          <button className="btn btn-secondary" onClick={handleDownloadHAR} disabled={busy}>Download HAR</button>
+        )}
+      </div>
+
+      {controllable && (
+        <div className="brp-section-row">
+          <span className="brp-section-label">Recording into</span>
+          {SECTIONS.map(sec => (
+            <button
+              key={sec.value}
+              type="button"
+              className={`brp-section-btn ${(session.section || 'actions') === sec.value ? 'active' : ''}`}
+              data-testid={`section-${sec.value}`}
+              onClick={() => handleSection(sec.value)}
+            >
+              {sec.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {controllable && (
+        <div className="brp-row">
+          <input
+            className="rec-input"
+            aria-label="Navigate the recording browser"
+            value={navigateURL}
+            onChange={e => setNavigateURL(e.target.value)}
+            placeholder="https://… navigate the recording browser"
+          />
+          <button className="btn btn-secondary btn-sm" onClick={handleNavigate} disabled={busy}>Go</button>
+        </div>
+      )}
+
+      {controllable && suggestions.length > 0 && (
+        <div className="brp-suggestions" data-testid="transaction-suggestions">
+          <div className="brp-suggestions-title">Suggested transactions</div>
+          {suggestions.map(s => (
+            <div key={s.name + s.at_step_seq} className="brp-suggestion">
+              <span className="brp-suggestion-name">{s.name}</span>
+              <span className="brp-suggestion-detail">at step #{s.at_step_seq}</span>
+              <button type="button" className="rec-inline-action" onClick={() => handleAcceptSuggestion(s.name)}>Add</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {controllable && (
+        <div className="brp-markers">
+          <div className="brp-row">
+            <input
+              className="rec-input"
+              aria-label="Transaction name"
+              value={transactionName}
+              onChange={e => setTransactionName(e.target.value)}
+              placeholder="Transaction name, e.g. Checkout"
+            />
+            <button className="btn btn-secondary btn-sm" onClick={handleStartTransaction}>Start Transaction</button>
+          </div>
+          {openTransactions.length > 0 && (
+            <div className="brp-txn-chips">
+              {openTransactions.map(name => (
+                <span key={name} className="brp-txn-chip" data-testid="open-transaction">
+                  {name}
+                  <button type="button" className="brp-txn-end" onClick={() => handleEndTransaction(name)}>End</button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="brp-row">
+            <input
+              className="rec-input"
+              aria-label="Note"
+              value={noteText}
+              onChange={e => setNoteText(e.target.value)}
+              placeholder="Add a note for the next action…"
+            />
+            <button className="btn btn-secondary btn-sm" onClick={handleAddNote}>Add Note</button>
+          </div>
+        </div>
+      )}
+
+      {live && (
+        <div className="brp-hint">
+          {session.status === 'paused'
+            ? 'Capture is paused — interactions, navigations, and elapsed think time are not recorded until you resume.'
+            : 'Interact with the recording browser window — every click, fill, and navigation is captured here. Use the in-page toolbar to pause capture or pick verification elements.'}
+        </div>
+      )}
+
+      {recentSteps.length > 0 && (
+        <div className="rec-live-feed brp-feed">
+          <div className="rec-feed-header">
+            <span>{live ? 'Live Steps' : 'Recorded Steps'}</span>
+            <span className="rec-feed-count">{session.step_count}</span>
+          </div>
+          <div className="rec-feed-list">
+            {recentSteps.map(step => {
+              const quality = selectorQuality(step)
+              return (
+                <div key={step.seq} className={`rec-feed-item brp-step ${step.excluded ? 'brp-step-excluded' : ''}`}>
+                  {step.thumbnail && <img className="brp-step-thumbnail" src={step.thumbnail} alt="" />}
+                  <span className="brp-step-seq">#{step.seq}</span>
+                  <span className={`brp-step-kind brp-step-kind-${step.kind}`}>{STEP_KIND_LABELS[step.kind] || step.kind}</span>
+                  <span className="rec-path" title={stepDetail(step)}>{stepDetail(step)}</span>
+                  {step.masked && <span className="brp-masked" title="Value masked at capture">masked</span>}
+                  {step.mark_secret && <span className="brp-masked" title="Marked as a runtime secret">secret</span>}
+                  {step.mark_param && <span className="brp-masked" title="Marked as a data parameter">param</span>}
+                  {quality && (
+                    <span className={`brp-quality-badge brp-quality-${quality.tone}`} title={`Selector confidence ${quality.score}/100 (${step.candidates?.[0]?.kind})`}>
+                      {quality.score}
+                    </span>
+                  )}
+                  {controllable && INTERACTION_KINDS.has(step.kind) && (
+                    <span className="brp-step-actions">
+                      <button type="button" className="brp-step-action" title={step.excluded ? 'Include' : 'Exclude'} onClick={() => handleToggleStepExcluded(step.seq, !step.excluded)}>
+                        {step.excluded ? '+' : '−'}
+                      </button>
+                      {step.kind === 'fill' && !step.mark_secret && (
+                        <button type="button" className="brp-step-action" title="Mark as secret" onClick={() => handleMarkStep(step.seq, 'secret')}>🔒</button>
+                      )}
+                      {step.kind === 'fill' && !step.mark_param && (
+                        <button type="button" className="brp-step-action" title="Mark as data parameter" onClick={() => handleMarkStep(step.seq, 'param')}>≈</button>
+                      )}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {controllable && session.step_count > 0 && (
+            <button type="button" className="rec-inline-action brp-delete-last" onClick={handleDeleteLastStep}>Delete last step</button>
+          )}
+        </div>
+      )}
+
+      {(session.annotations?.length ?? 0) > 0 && (
+        <div className="brp-warnings" data-testid="recording-annotations">
+          <div className="brp-warnings-title">Console & network issues ({session.annotation_count ?? session.annotations!.length})</div>
+          {session.annotations!.slice(-6).map((ann, idx) => (
+            <div key={idx} className="brp-warning">[{ann.kind === 'console_error' ? 'console' : 'request'}] {ann.text}</div>
+          ))}
+        </div>
+      )}
+
+      {(session.warnings?.length ?? 0) > 0 && (
+        <div className="brp-warnings">
+          <div className="brp-warnings-title">Warnings</div>
+          {session.warnings!.map((warning, idx) => (
+            <div key={idx} className="brp-warning">{warning}</div>
+          ))}
+        </div>
+      )}
+
+      {stopped && replaySessionId && (
+        <BrowserReplayProgress
+          replaySessionId={replaySessionId}
+          projectId={session.project_id}
+          onDismiss={() => setReplaySessionId(null)}
+        />
+      )}
+
+      {stopped && (
+        <div className="brp-convert">
+          <div className="brp-convert-title">Save as Script</div>
+          <div className="rec-form-row">
+            <label className="rec-label">Script Name</label>
+            <input
+              className="rec-input"
+              value={scriptName}
+              onChange={e => setScriptName(e.target.value)}
+              placeholder="e.g. Login & Checkout Flow"
+            />
+          </div>
+          <label className="rec-checkbox-row">
+            <input type="checkbox" checked={splitAtTransactions} onChange={e => setSplitAtTransactions(e.target.checked)} />
+            <span>Split into one script per transaction</span>
+          </label>
+          {session.har_available && (
+            <label className="rec-checkbox-row">
+              <input type="checkbox" checked={alsoCreateHTTP} onChange={e => setAlsoCreateHTTP(e.target.checked)} />
+              <span>Also create a protocol-level HTTP script from the recorded HAR</span>
+            </label>
+          )}
+          <div className="brp-actions">
+            {!replaySessionId && (
+              <button className="btn btn-secondary" onClick={handleVerify} disabled={busy} data-testid="verify-recording">Verify Recording</button>
+            )}
+            <button className="btn btn-secondary" onClick={handlePreview} disabled={busy}>Preview Conversion</button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={busy}>Save to Script Library</button>
+            {onEdit && (
+              <button className="btn btn-secondary" onClick={handleOpenEditor} disabled={busy || !editableScript}>
+                Open in Visual Editor
+              </button>
+            )}
+          </div>
+          {preview && (
+            <div className="brp-preview-summary">
+              <div>
+                Preview: {preview.script?.actions?.length || 0} actions
+                {(preview.parameterization?.summary?.total ?? 0) > 0 &&
+                  ` · ${preview.parameterization!.summary.total} parameterization suggestions`}
+              </div>
+              {(preview.warnings?.length ?? 0) > 0 && (
+                <div className="brp-warnings">
+                  {preview.warnings.map((warning, idx) => (
+                    <div key={idx} className="brp-warning">{warning}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {savedScript && (
+            <div className="brp-saved-note">
+              Saved as “{savedScript.name}”{standalone ? ' — find it in the Script Library.' : '.'}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

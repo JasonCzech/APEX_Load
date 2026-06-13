@@ -14,6 +14,21 @@
   let assertMode = false;
   let toolbarHost = null;
 
+  // The Go recorder owns the authoritative pause state (it also gates events
+  // server-side); this setter keeps the local gate and toolbar in sync.
+  window.__apexloadRecorderSetPaused = (value) => {
+    paused = !!value;
+    if (paused) assertMode = false;
+    refreshToolbar();
+  };
+
+  // The Go recorder owns the authoritative element-picker (assert) state too,
+  // so the control panel and the in-page toolbar never diverge.
+  window.__apexloadRecorderSetAssertMode = (value) => {
+    assertMode = !!value && !paused;
+    refreshToolbar();
+  };
+
   const TEST_ATTRS = ['data-testid', 'data-test-id', 'data-test', 'data-cy', 'data-qa'];
   const SAFE_IDENT = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 
@@ -156,16 +171,29 @@
     }
   }
 
-  function record(kind, el, value) {
+  function record(kind, el, value, masked) {
     send({
       kind: kind,
       value: value || '',
+      masked: !!masked,
       ts: Date.now(),
       url: location.href,
       title: document.title,
       frame_selector: frameSelector(),
       element: el ? metaFor(el) : null
     });
+  }
+
+  // Password values never leave the page: the fill is recorded with an empty
+  // value and masked=true so conversion emits a {{env.*}} placeholder instead.
+  function isPasswordInput(el) {
+    return el.tagName && el.tagName.toLowerCase() === 'input' &&
+      (el.getAttribute('type') || 'text').toLowerCase() === 'password';
+  }
+
+  function recordFill(el) {
+    const masked = isPasswordInput(el);
+    record('fill', el, masked ? '' : el.value, masked);
   }
 
   function targetOf(ev) {
@@ -234,10 +262,10 @@
         record('set_files', el, names);
         return;
       }
-      record('fill', el, el.value);
+      recordFill(el);
       return;
     }
-    if (tag === 'textarea') record('fill', el, el.value);
+    if (tag === 'textarea') recordFill(el);
   }, true);
 
   window.addEventListener('keydown', (ev) => {
@@ -249,7 +277,7 @@
     if (ev.key === 'Enter' && (tag === 'input' || tag === 'textarea')) {
       // The change event fires on blur, after navigation may have started —
       // capture the pending value now so Enter-submits keep their fill.
-      record('fill', el, el.value);
+      recordFill(el);
     }
     record('press_key', el, ev.key);
   }, true);
@@ -289,15 +317,16 @@
     };
     pauseBtn.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      paused = !paused;
-      if (paused) assertMode = false;
-      refreshToolbar();
+      // Round-trip through Go: the recorder flips its authoritative state and
+      // pushes it back into every page (so the control panel agrees).
+      send({ kind: 'pause_toggle', ts: Date.now() });
     });
     assertBtn.addEventListener('click', (ev) => {
       ev.stopPropagation();
       if (paused) return;
-      assertMode = !assertMode;
-      refreshToolbar();
+      // Round-trip through Go so the control panel and every page agree on the
+      // picker state (the recorder pushes it back via the setter below).
+      send({ kind: 'pick_toggle', ts: Date.now() });
     });
     document.body.appendChild(toolbarHost);
   }

@@ -109,6 +109,23 @@ DELETE /api/v1/scripts/{id}          — Delete a script
 POST   /api/v1/scripts/{id}/validate — Dry-run validation
 POST   /api/v1/scripts/{id}/export   — Export script JSON to disk
 GET    /api/v1/scripts/{id}/download — Download script as JSON file
+POST   /api/v1/browser-recorder/sessions — Launch a headed-Chromium recording (local/desktop controllers; fail-closed in production)
+GET    /api/v1/browser-recorder/sessions/{id} — Recording snapshot (steps, markers, counts)
+POST   /api/v1/browser-recorder/sessions/{id}/stop · /pause · /resume — Lifecycle control (pause windows are subtracted from think times)
+POST   /api/v1/browser-recorder/sessions/{id}/navigate · /focus — Drive the recording browser (http/https only)
+POST   /api/v1/browser-recorder/sessions/{id}/transactions/start · /transactions/end — Transaction markers → source_transaction actions
+GET    /api/v1/browser-recorder/sessions/{id}/transactions/suggestions — Auto-transaction boundary suggestions from navigations
+POST   /api/v1/browser-recorder/sessions/{id}/notes — Note attached to the next recorded action's metadata
+POST   /api/v1/browser-recorder/sessions/{id}/section — Switch capture into init/actions/teardown
+POST   /api/v1/browser-recorder/sessions/{id}/pick-mode — Toggle the in-page verification element picker
+DELETE /api/v1/browser-recorder/sessions/{id}/steps/last — Delete-last-step (mistake recovery)
+PATCH  /api/v1/browser-recorder/sessions/{id}/steps/{seq} — Exclude/include or mark a step secret/param
+POST   /api/v1/browser-recorder/sessions/{id}/verify — Convert + replay immediately (per-step pass/fail + self-heal)
+POST   /api/v1/browser-recorder/sessions/{id}/convert[/preview] — Convert to browser DSL (import envelope + parameterization; trim/split/dual-HTTP options)
+GET    /api/v1/browser-recorder/sessions/{id}/export — Side-car HAR (scrub=true for scrub-on-write)
+GET    /api/v1/browser-recorder/sessions/{id}/storage-state — Exported Playwright storage state (login reuse)
+GET    /api/v1/browser-recorder/devices — Device presets for emulated recording
+POST   /api/v1/browser-recorder/install · GET — Provision Playwright/Chromium with status
 POST   /api/v1/scripts/import/enterprise-script-archive — Upload LR .zip, get converted DSL
 POST   /api/v1/scripts/import/asyncapi — Upload AsyncAPI 2.x/3.x spec, get converted Kafka DSL
 GET    /api/v1/scripts/import/asyncapi/support-matrix — AsyncAPI import coverage matrix
@@ -148,7 +165,11 @@ WS     /api/v1/ws                    — Global WebSocket (all test events)
 ```
 
 WebSocket messages are JSON with `type` field: `metrics_update`, `test_created`,
-`test_started`, `test_complete`, `test_failed`, `test_stopping`.
+`test_started`, `test_complete`, `test_failed`, `test_stopping`, plus the
+`browser_recording_*` family (started/step/step_update/navigation/warning/paused/
+resumed/marker/pick/section/annotation/stopped/failed/converted) emitted by the
+headed browser recorder. The recorder also emits the `browser_handle_dialog` DSL
+action (alert/confirm/prompt accept/dismiss; replayed in pkg/protocol/browser).
 
 ## Testing Policy
 Every new feature, bug fix, or refactor **must** include corresponding tests. This is a default

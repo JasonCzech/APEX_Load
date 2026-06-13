@@ -291,5 +291,10 @@ func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
 		"proxy_addr":   s.recorder.ProxyAddr(),
 		"ca_cert_path": s.recorder.CACertPath(),
 		"active":       activeInfo,
+		"browser": map[string]any{
+			"availability": s.browserRecordingAvailability(),
+			"active":       s.browserRecording.Active(),
+			"install":      s.browserInstall.snapshot(),
+		},
 	})
 }

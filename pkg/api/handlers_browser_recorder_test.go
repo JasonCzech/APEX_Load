@@ -1,0 +1,738 @@
+package api
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"runtime"
+	"strings"
+	"testing"
+
+	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
+	"github.com/jasonczech/apexload/pkg/scrub"
+)
+
+func newBrowserRecorderTestServer(t *testing.T, fake *fakeBrowserRecorderBackend) *Server {
+	t.Helper()
+	if runtime.GOOS == "linux" {
+		t.Setenv("DISPLAY", ":0") // satisfy the headed-display availability probe in CI
+	}
+	server := NewServer(ServerConfig{})
+	fake.install(server.browserRecording)
+	return server
+}
+
+func startBrowserRecordingViaAPI(t *testing.T, server *Server) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions",
+		bytes.NewBufferString(`{"name":"Checkout","start_url":"https://shop.example/login","project_id":"proj-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("start status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var payload struct {
+		Session BrowserRecordingSession `json:"session"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal start response: %v", err)
+	}
+	return payload.Session.ID
+}
+
+func TestHandleStartBrowserRecording(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+
+	id := startBrowserRecordingViaAPI(t, server)
+	if id == "" {
+		t.Fatal("start response missing session id")
+	}
+	if !fake.started {
+		t.Error("backend not started")
+	}
+
+	// Second start conflicts while the first is live.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions",
+		bytes.NewBufferString(`{"name":"Second","start_url":"https://shop.example/","project_id":"proj-1"}`))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Errorf("conflicting start status = %d, want 409", resp.Code)
+	}
+}
+
+func TestHandleStartBrowserRecordingRejectsNonHTTPSchemes(t *testing.T) {
+	server := newBrowserRecorderTestServer(t, newFakeBrowserRecorder(nil))
+	for _, startURL := range []string{"file:///etc/passwd", "javascript:alert(1)", "chrome://settings", "not a url", ""} {
+		body, _ := json.Marshal(map[string]string{"name": "X", "start_url": startURL, "project_id": "proj-1"})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions", bytes.NewReader(body))
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusBadRequest {
+			t.Errorf("start_url %q status = %d, want 400", startURL, resp.Code)
+		}
+	}
+}
+
+func TestHandleStartBrowserRecordingRejectsStorageStateTraversal(t *testing.T) {
+	server := newBrowserRecorderTestServer(t, newFakeBrowserRecorder(nil))
+	for _, path := range []string{"/etc/passwd", "../../../etc/passwd", "../secrets.json"} {
+		body, _ := json.Marshal(map[string]any{
+			"name": "X", "start_url": "https://shop.example/", "project_id": "proj-1", "storage_state_path": path,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions", bytes.NewReader(body))
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusBadRequest {
+			t.Errorf("storage_state_path %q status = %d, want 400", path, resp.Code)
+		}
+	}
+}
+
+func TestHandleStartBrowserRecordingUnavailableFailsClosed(t *testing.T) {
+	t.Setenv("APEXLOAD_BROWSER_RECORDER", "off")
+	server := newBrowserRecorderTestServer(t, newFakeBrowserRecorder(nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions",
+		bytes.NewBufferString(`{"name":"X","start_url":"https://shop.example/","project_id":"proj-1"}`))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestBrowserRecordingAvailabilityRules(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Setenv("DISPLAY", ":0")
+	}
+	server := NewServer(ServerConfig{})
+
+	t.Run("default development mode is available", func(t *testing.T) {
+		t.Setenv("APEXLOAD_ENV", "")
+		t.Setenv("APEXLOAD_BROWSER_RECORDER", "")
+		if got := server.browserRecordingAvailability(); !got.Available {
+			t.Errorf("availability = %+v, want available", got)
+		}
+	})
+
+	t.Run("production mode is off by default", func(t *testing.T) {
+		t.Setenv("APEXLOAD_ENV", "production")
+		t.Setenv("APEXLOAD_BROWSER_RECORDER", "")
+		got := server.browserRecordingAvailability()
+		if got.Available || !strings.Contains(got.Reason, "production") {
+			t.Errorf("availability = %+v, want unavailable with production reason", got)
+		}
+	})
+
+	t.Run("explicit opt-in overrides production", func(t *testing.T) {
+		t.Setenv("APEXLOAD_ENV", "production")
+		t.Setenv("APEXLOAD_BROWSER_RECORDER", "on")
+		if got := server.browserRecordingAvailability(); !got.Available {
+			t.Errorf("availability = %+v, want available", got)
+		}
+	})
+
+	t.Run("desktop mode stays available in production posture", func(t *testing.T) {
+		t.Setenv("APEXLOAD_ENV", "production")
+		t.Setenv("APEXLOAD_BROWSER_RECORDER", "")
+		desktop := NewServer(ServerConfig{DesktopMode: true})
+		if got := desktop.browserRecordingAvailability(); !got.Available {
+			t.Errorf("availability = %+v, want available in desktop mode", got)
+		}
+	})
+
+	t.Run("kill switch wins everywhere", func(t *testing.T) {
+		t.Setenv("APEXLOAD_ENV", "")
+		t.Setenv("APEXLOAD_BROWSER_RECORDER", "off")
+		if got := server.browserRecordingAvailability(); got.Available {
+			t.Errorf("availability = %+v, want unavailable", got)
+		}
+	})
+}
+
+func TestHandleGetAndStopBrowserRecording(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+id, nil)
+	getResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("get status = %d body=%s", getResp.Code, getResp.Body.String())
+	}
+	var getPayload struct {
+		Session BrowserRecordingSession `json:"session"`
+	}
+	if err := json.Unmarshal(getResp.Body.Bytes(), &getPayload); err != nil {
+		t.Fatal(err)
+	}
+	if len(getPayload.Session.Steps) != 2 || getPayload.Session.StepCount != 2 {
+		t.Errorf("get session steps = %d count=%d, want 2", len(getPayload.Session.Steps), getPayload.Session.StepCount)
+	}
+
+	stopReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/stop", nil)
+	stopResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(stopResp, stopReq)
+	if stopResp.Code != http.StatusOK {
+		t.Fatalf("stop status = %d body=%s", stopResp.Code, stopResp.Body.String())
+	}
+	var stopPayload struct {
+		Session BrowserRecordingSession `json:"session"`
+	}
+	if err := json.Unmarshal(stopResp.Body.Bytes(), &stopPayload); err != nil {
+		t.Fatal(err)
+	}
+	if stopPayload.Session.Status != BrowserRecordingStopped || stopPayload.Session.StopReason != browserRecordingStopRequested {
+		t.Errorf("stop session = %+v", &stopPayload.Session)
+	}
+
+	missing := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/nope", nil)
+	missingResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(missingResp, missing)
+	if missingResp.Code != http.StatusNotFound {
+		t.Errorf("missing session status = %d, want 404", missingResp.Code)
+	}
+}
+
+func TestHandlePreviewBrowserRecordingConversion(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert/preview",
+		bytes.NewBufferString(`{"name":"Checkout Preview"}`))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("preview status = %d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var payload struct {
+		Script struct {
+			Name     string `json:"name"`
+			Protocol string `json:"protocol"`
+			Actions  []struct {
+				Type  string `json:"type"`
+				Value string `json:"value"`
+			} `json:"actions"`
+		} `json:"script"`
+		Warnings         []string `json:"warnings"`
+		Parameterization *struct {
+			Suggestions []map[string]any `json:"suggestions"`
+		} `json:"parameterization"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Script.Name != "Checkout Preview" || payload.Script.Protocol != "browser" {
+		t.Errorf("script = %+v", payload.Script)
+	}
+	if payload.Parameterization == nil {
+		t.Error("preview response missing parameterization envelope")
+	}
+
+	// The masked password fill converts to an env placeholder, never a value.
+	foundMaskedFill := false
+	for _, action := range payload.Script.Actions {
+		if action.Type == "browser_fill" && strings.HasPrefix(action.Value, "{{env.") {
+			foundMaskedFill = true
+		}
+	}
+	if !foundMaskedFill {
+		t.Errorf("actions = %+v, want masked fill with env placeholder", payload.Script.Actions)
+	}
+
+	if got := len(server.runner.ListScripts()); got != 0 {
+		t.Fatalf("preview stored %d scripts, want 0", got)
+	}
+}
+
+func TestHandleConvertBrowserRecordingRequiresStop(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert",
+		bytes.NewBufferString(`{"name":"Checkout"}`))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("convert-while-recording status = %d, want 409 body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestHandleConvertBrowserRecordingStoresScript(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	stopReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/stop", nil)
+	server.mux.ServeHTTP(httptest.NewRecorder(), stopReq)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert",
+		bytes.NewBufferString(`{"name":"Checkout Saved"}`))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("convert status = %d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var payload struct {
+		Script struct {
+			ID     string `json:"id"`
+			Name   string `json:"name"`
+			Script struct {
+				ProjectID string `json:"project_id"`
+			} `json:"script"`
+		} `json:"script"`
+		Parameterization any `json:"parameterization"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Script.ID == "" || payload.Script.Name != "Checkout Saved" {
+		t.Errorf("stored script = %+v", payload.Script)
+	}
+	if payload.Script.Script.ProjectID != "proj-1" {
+		t.Errorf("stored script project = %q, want proj-1", payload.Script.Script.ProjectID)
+	}
+	if payload.Parameterization == nil {
+		t.Error("convert response missing parameterization envelope")
+	}
+	if got := len(server.runner.ListScripts()); got != 1 {
+		t.Fatalf("stored scripts = %d, want 1", got)
+	}
+}
+
+func TestHandleExportBrowserRecordingHAR(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+	server.mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/stop", nil))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+id+"/export?format=har", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("export status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityRaw {
+		t.Errorf("default sensitivity = %q, want %q", got, scrub.SensitivityRaw)
+	}
+	if disposition := resp.Header().Get("Content-Disposition"); !strings.Contains(disposition, ".har") {
+		t.Errorf("content-disposition = %q", disposition)
+	}
+
+	scrubReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+id+"/export?scrub=true", nil)
+	scrubResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(scrubResp, scrubReq)
+	if scrubResp.Code != http.StatusOK {
+		t.Fatalf("scrubbed export status = %d body=%s", scrubResp.Code, scrubResp.Body.String())
+	}
+	if got := scrubResp.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityScrubbed {
+		t.Errorf("scrubbed sensitivity = %q, want %q", got, scrub.SensitivityScrubbed)
+	}
+}
+
+func TestHandleExportBrowserRecordingWithoutHAR(t *testing.T) {
+	artifact := recordedBrowserArtifact()
+	artifact.HAR = nil
+	fake := newFakeBrowserRecorder(artifact)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+id+"/export", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Errorf("export-without-HAR status = %d, want 409", resp.Code)
+	}
+}
+
+func postBrowserRecorderControl(t *testing.T, server *Server, id, action, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	var reader *bytes.Buffer
+	if body == "" {
+		reader = bytes.NewBufferString("{}")
+	} else {
+		reader = bytes.NewBufferString(body)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/"+action, reader)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	return resp
+}
+
+func TestHandlePauseResumeBrowserRecording(t *testing.T) {
+	fake := newFakeBrowserRecorder(nil)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	pauseResp := postBrowserRecorderControl(t, server, id, "pause", "")
+	if pauseResp.Code != http.StatusOK {
+		t.Fatalf("pause status = %d body=%s", pauseResp.Code, pauseResp.Body.String())
+	}
+	var payload struct {
+		Session BrowserRecordingSession `json:"session"`
+	}
+	if err := json.Unmarshal(pauseResp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Session.Status != BrowserRecordingPaused {
+		t.Errorf("status after pause = %q", payload.Session.Status)
+	}
+
+	resumeResp := postBrowserRecorderControl(t, server, id, "resume", "")
+	if resumeResp.Code != http.StatusOK {
+		t.Fatalf("resume status = %d body=%s", resumeResp.Code, resumeResp.Body.String())
+	}
+	if err := json.Unmarshal(resumeResp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Session.Status != BrowserRecordingActive {
+		t.Errorf("status after resume = %q", payload.Session.Status)
+	}
+
+	// Controls 409 once the session is stopped.
+	postBrowserRecorderControl(t, server, id, "stop", "")
+	conflict := postBrowserRecorderControl(t, server, id, "pause", "")
+	if conflict.Code != http.StatusConflict {
+		t.Errorf("pause-after-stop status = %d, want 409", conflict.Code)
+	}
+}
+
+func TestHandleNavigateBrowserRecording(t *testing.T) {
+	fake := newFakeBrowserRecorder(nil)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	good := postBrowserRecorderControl(t, server, id, "navigate", `{"url":"https://shop.example/cart"}`)
+	if good.Code != http.StatusOK {
+		t.Fatalf("navigate status = %d body=%s", good.Code, good.Body.String())
+	}
+	if len(fake.navigatedTo) != 1 || fake.navigatedTo[0] != "https://shop.example/cart" {
+		t.Errorf("navigatedTo = %v", fake.navigatedTo)
+	}
+
+	for _, url := range []string{"file:///etc/passwd", "javascript:alert(1)", ""} {
+		bad := postBrowserRecorderControl(t, server, id, "navigate", `{"url":"`+url+`"}`)
+		if bad.Code != http.StatusBadRequest {
+			t.Errorf("navigate %q status = %d, want 400", url, bad.Code)
+		}
+	}
+	if len(fake.navigatedTo) != 1 {
+		t.Errorf("blocked navigations reached the backend: %v", fake.navigatedTo)
+	}
+}
+
+func TestHandleFocusBrowserRecording(t *testing.T) {
+	fake := newFakeBrowserRecorder(nil)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	resp := postBrowserRecorderControl(t, server, id, "focus", "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("focus status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if fake.focusCalls != 1 {
+		t.Errorf("focus calls = %d", fake.focusCalls)
+	}
+
+	missing := postBrowserRecorderControl(t, server, "nope", "focus", "")
+	if missing.Code != http.StatusNotFound {
+		t.Errorf("focus unknown session status = %d, want 404", missing.Code)
+	}
+}
+
+func TestHandleBrowserRecordingTransactionsAndNotes(t *testing.T) {
+	fake := newFakeBrowserRecorder(nil)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	start := postBrowserRecorderControl(t, server, id, "transactions/start", `{"name":"Checkout"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("transaction start status = %d body=%s", start.Code, start.Body.String())
+	}
+	var payload struct {
+		Session BrowserRecordingSession `json:"session"`
+		Marker  struct {
+			Kind string `json:"kind"`
+			Name string `json:"name"`
+		} `json:"marker"`
+	}
+	if err := json.Unmarshal(start.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Marker.Kind != "transaction_start" || payload.Marker.Name != "Checkout" {
+		t.Errorf("marker = %+v", payload.Marker)
+	}
+	if len(payload.Session.OpenTransactions) != 1 {
+		t.Errorf("open transactions = %v", payload.Session.OpenTransactions)
+	}
+
+	dup := postBrowserRecorderControl(t, server, id, "transactions/start", `{"name":"Checkout"}`)
+	if dup.Code != http.StatusBadRequest {
+		t.Errorf("duplicate transaction start status = %d, want 400", dup.Code)
+	}
+
+	note := postBrowserRecorderControl(t, server, id, "notes", `{"text":"watch the cart badge"}`)
+	if note.Code != http.StatusOK {
+		t.Fatalf("note status = %d body=%s", note.Code, note.Body.String())
+	}
+	emptyNote := postBrowserRecorderControl(t, server, id, "notes", `{"text":"  "}`)
+	if emptyNote.Code != http.StatusBadRequest {
+		t.Errorf("empty note status = %d, want 400", emptyNote.Code)
+	}
+
+	end := postBrowserRecorderControl(t, server, id, "transactions/end", `{}`)
+	if end.Code != http.StatusOK {
+		t.Fatalf("transaction end status = %d body=%s", end.Code, end.Body.String())
+	}
+	var endPayload struct {
+		Session BrowserRecordingSession `json:"session"`
+		Marker  struct {
+			Name string `json:"name"`
+		} `json:"marker"`
+	}
+	if err := json.Unmarshal(end.Body.Bytes(), &endPayload); err != nil {
+		t.Fatal(err)
+	}
+	if endPayload.Marker.Name != "Checkout" {
+		t.Errorf("default end closed %q, want Checkout", endPayload.Marker.Name)
+	}
+	if len(endPayload.Session.OpenTransactions) != 0 {
+		t.Errorf("open transactions after end = %v", endPayload.Session.OpenTransactions)
+	}
+
+	ghostEnd := postBrowserRecorderControl(t, server, id, "transactions/end", `{"name":"Ghost"}`)
+	if ghostEnd.Code != http.StatusBadRequest {
+		t.Errorf("unmatched transaction end status = %d, want 400", ghostEnd.Code)
+	}
+}
+
+func TestHandleSetBrowserRecordingSection(t *testing.T) {
+	fake := newFakeBrowserRecorder(nil)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	resp := postBrowserRecorderControl(t, server, id, "section", `{"section":"teardown"}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("section status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var payload struct {
+		Session BrowserRecordingSession `json:"session"`
+	}
+	json.Unmarshal(resp.Body.Bytes(), &payload)
+	if payload.Session.Section != "teardown" {
+		t.Errorf("section = %q, want teardown", payload.Session.Section)
+	}
+}
+
+func TestHandleSetBrowserRecordingPickMode(t *testing.T) {
+	fake := newFakeBrowserRecorder(nil)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	resp := postBrowserRecorderControl(t, server, id, "pick-mode", `{"on":true}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("pick-mode status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if !fake.assertMode {
+		t.Error("assert mode not enabled on backend")
+	}
+}
+
+func TestHandleBrowserRecordingStepMutations(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	// Exclude step 2 via PATCH.
+	patch := func(seq, body string) int {
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/browser-recorder/sessions/"+id+"/steps/"+seq, bytes.NewBufferString(body))
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		return resp.Code
+	}
+	if code := patch("2", `{"excluded":true}`); code != http.StatusOK {
+		t.Errorf("exclude step status = %d", code)
+	}
+	if !fake.session.Steps[1].Excluded {
+		t.Error("step 2 not excluded on backend")
+	}
+	// Mark step 1 (a fill) as a secret.
+	if code := patch("1", `{"mark_secret":true}`); code != http.StatusOK {
+		t.Errorf("mark step status = %d", code)
+	}
+	if !fake.session.Steps[0].MarkSecret {
+		t.Error("step 1 not marked secret")
+	}
+	// Delete last step.
+	delReq := httptest.NewRequest(http.MethodDelete, "/api/v1/browser-recorder/sessions/"+id+"/steps/last", nil)
+	delResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(delResp, delReq)
+	if delResp.Code != http.StatusOK {
+		t.Errorf("delete-last status = %d body=%s", delResp.Code, delResp.Body.String())
+	}
+}
+
+func TestHandleSuggestBrowserRecordingTransactions(t *testing.T) {
+	artifact := recordedBrowserArtifact()
+	artifact.NavEvents = []recbrowser.NavEvent{{URL: "https://shop.example/cart"}}
+	fake := newFakeBrowserRecorder(artifact)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+id+"/transactions/suggestions", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("suggestions status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var payload struct {
+		Suggestions []recbrowser.TransactionSuggestion `json:"suggestions"`
+	}
+	json.Unmarshal(resp.Body.Bytes(), &payload)
+	if len(payload.Suggestions) == 0 || payload.Suggestions[0].Name != "Cart" {
+		t.Errorf("suggestions = %+v", payload.Suggestions)
+	}
+}
+
+func TestHandleListBrowserRecorderDevices(t *testing.T) {
+	server := newBrowserRecorderTestServer(t, newFakeBrowserRecorder(nil))
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/devices", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("devices status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var payload struct {
+		Devices []map[string]any `json:"devices"`
+	}
+	json.Unmarshal(resp.Body.Bytes(), &payload)
+	if len(payload.Devices) == 0 {
+		t.Error("no devices returned")
+	}
+}
+
+func TestHandleConvertBrowserRecordingDualHTTP(t *testing.T) {
+	artifact := recordedBrowserArtifact()
+	artifact.HAR = []byte(`{"log":{"version":"1.2","entries":[{"startedDateTime":"2026-05-12T20:00:00Z","time":12,"request":{"method":"GET","url":"https://shop.example/api/cart","httpVersion":"HTTP/1.1","headers":[],"queryString":[],"cookies":[],"headersSize":-1,"bodySize":0},"response":{"status":200,"statusText":"OK","httpVersion":"HTTP/1.1","headers":[{"name":"Content-Type","value":"application/json"}],"cookies":[],"content":{"size":2,"mimeType":"application/json","text":"{}"},"redirectURL":"","headersSize":-1,"bodySize":2},"cache":{},"timings":{"send":1,"wait":10,"receive":1}}]}}`)
+	fake := newFakeBrowserRecorder(artifact)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+	server.mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/stop", nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert",
+		bytes.NewBufferString(`{"name":"Checkout","also_create_http_script":true}`))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("dual convert status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var payload struct {
+		HTTPScript *struct {
+			ID       string `json:"id"`
+			Protocol string `json:"protocol"`
+		} `json:"http_script"`
+	}
+	json.Unmarshal(resp.Body.Bytes(), &payload)
+	if payload.HTTPScript == nil || payload.HTTPScript.Protocol != "http" {
+		t.Errorf("http_script = %+v, want an HTTP script", payload.HTTPScript)
+	}
+	if got := len(server.runner.ListScripts()); got != 2 {
+		t.Errorf("stored scripts = %d, want 2 (browser + HTTP)", got)
+	}
+}
+
+func TestHandleConvertBrowserRecordingStampsProvenance(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+	server.mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/stop", nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewBufferString(`{"name":"Checkout"}`))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("convert status = %d", resp.Code)
+	}
+	stored := server.runner.ListScripts()
+	if len(stored) != 1 {
+		t.Fatalf("scripts = %d", len(stored))
+	}
+	meta := stored[0].Script.Metadata
+	if meta == nil || meta.Import == nil || meta.Import.Source != "browser_recorder" {
+		t.Fatalf("provenance metadata = %+v", meta)
+	}
+	if meta.Import.Preserved["recorder_session_id"] == nil {
+		t.Errorf("missing recorder_session_id provenance: %+v", meta.Import.Preserved)
+	}
+}
+
+func TestHandleVerifyBrowserRecordingRequiresStop(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	// While still recording, verify is a 409.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/verify", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Errorf("verify-while-recording status = %d, want 409", resp.Code)
+	}
+}
+
+func TestHandleExportBrowserRecordingStorageState(t *testing.T) {
+	t.Setenv("APEXLOAD_EXPORT_DIR", t.TempDir()) // confine the persisted copy to a temp dir
+	artifact := recordedBrowserArtifact()
+	artifact.StorageState = []byte(`{"cookies":[],"origins":[]}`)
+	fake := newFakeBrowserRecorder(artifact)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+	server.mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/stop", nil))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+id+"/storage-state", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("storage-state status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "cookies") {
+		t.Errorf("storage state body = %s", resp.Body.String())
+	}
+}
+
+func TestRecorderStatusIncludesBrowserAvailability(t *testing.T) {
+	fake := newFakeBrowserRecorder(nil)
+	server := newBrowserRecorderTestServer(t, fake)
+	startBrowserRecordingViaAPI(t, server)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var payload struct {
+		Browser struct {
+			Availability browserRecordingAvailability `json:"availability"`
+			Active       *BrowserRecordingSession     `json:"active"`
+		} `json:"browser"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Browser.Availability.Available {
+		t.Errorf("availability = %+v, want available", payload.Browser.Availability)
+	}
+	if payload.Browser.Active == nil || payload.Browser.Active.Name != "Checkout" {
+		t.Errorf("active = %+v, want the live recording summary", payload.Browser.Active)
+	}
+}

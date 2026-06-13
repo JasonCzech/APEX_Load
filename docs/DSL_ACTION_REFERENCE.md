@@ -260,6 +260,19 @@ Requires one of: `target`, `selector`
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
+### `browser_handle_dialog`
+
+Handles the next native dialog (alert/confirm/prompt) by accepting or dismissing it.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.action` | enum: accept\|dismiss |  | How to respond: accept or dismiss (required). |
+| `params.dialog_type` | enum: alert\|confirm\|prompt\|beforeunload |  | Expected dialog kind for documentation/validation. |
+| `params.expected_message` | string |  | If set, the captured dialog message must contain this text. |
+| `params.prompt_text` | string |  | Text entered into a prompt dialog when accepting. |
+| `params.wait_ms` | int |  | How long to wait for the dialog to appear (default 5000). |
+| `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
+
 ### `browser_hover`
 
 Hovers the pointer over an element.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -119,12 +120,31 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		return b.dispatchSwitchFrame(action), false
 	case "browser_switch_window":
 		return b.dispatchSwitchWindow(action), false
+	case "browser_handle_dialog":
+		return b.dispatchHandleDialog(action, result)
 	case "browser_screenshot":
 		// Capture is handled with the rest of the page state below.
 		return nil, false
 	default:
 		return nil, failBrowserAction(result, fmt.Sprintf("unsupported browser action type: %s", action.Type))
 	}
+}
+
+// dispatchHandleDialog arms a one-shot dialog policy consumed by the next
+// dialog the page raises (the action that triggers it follows this one).
+func (b *Browser) dispatchHandleDialog(action *protocol.Action, result *protocol.Result) (error, bool) {
+	policy := strings.ToLower(strings.TrimSpace(actionParamString(action.Params, "action", "accept")))
+	if policy != "accept" && policy != "dismiss" {
+		return nil, failBrowserAction(result, fmt.Sprintf("browser_handle_dialog params.action must be accept or dismiss, got %q", policy))
+	}
+	b.dialogMu.Lock()
+	b.pendingDialog = &dialogPolicy{
+		action:          policy,
+		expectedMessage: actionParamString(action.Params, "expected_message", ""),
+		promptText:      actionParamString(action.Params, "prompt_text", ""),
+	}
+	b.dialogMu.Unlock()
+	return nil, false
 }
 
 func (b *Browser) dispatchEvaluateJS(ctx context.Context, action *protocol.Action, result *protocol.Result) (error, bool) {

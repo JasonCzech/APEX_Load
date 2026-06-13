@@ -56,6 +56,7 @@ const RepositoryGuidePage = lazy(() => import('./components/RepositoryGuidePage'
 const ApplicationRepositoryPage = lazy(() => import('./components/ApplicationRepositoryPage'))
 const AccessPage = lazy(() => import('./components/AccessPage'))
 const SettingsPage = lazy(() => import('./components/SettingsPage'))
+const BrowserRecorderControlPanel = lazy(() => import('./components/BrowserRecorderControlPanel'))
 
 type WailsDesktopBridge = {
   OpenInBrowser?: () => Promise<void>
@@ -230,7 +231,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const navigateToCommandCenter = useCallback((id?: string) => {
     setView(id ? { page: 'command-center', testId: id } : { page: 'command-center' })
   }, [])
-  const activePage: NavPage = view.page === 'test' ? 'tests' : view.page === 'swagger' || view.page === 'repository-guide' ? 'docs' : view.page
+  const activePage: NavPage = view.page === 'test' ? 'tests' : view.page === 'swagger' || view.page === 'repository-guide' ? 'docs' : view.page === 'recorder-panel' ? 'scripts' : view.page
 
   const navigateToScriptEdit = (scriptId: string) => setView({ page: 'scripts', mode: 'edit', scriptId })
   const navigateToScenarioBuilder = () => setView({ page: 'tests', scenarioView: 'builder' })
@@ -533,6 +534,16 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       window.clearInterval(interval)
     }
   }, [activeApplication?.id, activeProject?.id, testApi, testStatuses])
+
+  // The recorder control panel renders chrome-less so it works as a compact
+  // companion popup window next to the recording browser.
+  if (view.page === 'recorder-panel' && view.sessionId) {
+    return (
+      <Suspense fallback={<div className="page-loading">Loading…</div>}>
+        <BrowserRecorderControlPanel sessionId={view.sessionId} standalone />
+      </Suspense>
+    )
+  }
 
   return (
     <div className="app-layout">

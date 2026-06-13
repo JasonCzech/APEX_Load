@@ -66,6 +66,17 @@ type Browser struct {
 	networkEntries     []protocol.NetworkEntry
 	resourceValidators map[string]string
 	pages              []playwright.Page
+
+	dialogMu      sync.Mutex
+	pendingDialog *dialogPolicy
+}
+
+// dialogPolicy is armed by a browser_handle_dialog action and consumed by the
+// next native dialog the page raises.
+type dialogPolicy struct {
+	action          string // "accept" | "dismiss"
+	expectedMessage string
+	promptText      string
 }
 
 type browserProcessSnapshot struct {

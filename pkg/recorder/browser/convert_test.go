@@ -190,6 +190,340 @@ func TestConvertWarningsAndSkips(t *testing.T) {
 	}
 }
 
+func TestConvertMaskedFillEmitsEnvPlaceholder(t *testing.T) {
+	passwordInput := &selector.ElementMetadata{Tag: "input", Name: "user_password", Type: "password", CSSPath: "form > input"}
+	session := &Session{ID: "rec_pw", StartURL: "https://shop.example/login", StartedAt: ts(0)}
+	session.appendStep(Step{Kind: StepFill, Value: "", Masked: true, Timestamp: ts(1000), Element: passwordInput, Candidates: selector.Candidates(*passwordInput)})
+
+	result := Convert(session, ConvertOptions{})
+	if len(result.Script.Actions) != 2 { // navigate + fill
+		t.Fatalf("actions = %+v", actionTypes(result.Script.Actions))
+	}
+	fill := result.Script.Actions[1]
+	if fill.Type != "browser_fill" || fill.Value != "{{env.USER_PASSWORD}}" {
+		t.Errorf("masked fill = %+v, want {{env.USER_PASSWORD}} placeholder", fill)
+	}
+	if fill.Metadata["source_masked_secret"] != true {
+		t.Errorf("metadata = %+v, want source_masked_secret=true", fill.Metadata)
+	}
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "USER_PASSWORD") && strings.Contains(w, "masked") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v, want masked-secret guidance", result.Warnings)
+	}
+}
+
+func TestSecretEnvKey(t *testing.T) {
+	tests := []struct {
+		name string
+		step Step
+		want string
+	}{
+		{"name attribute", Step{Element: &selector.ElementMetadata{Name: "user_password"}}, "USER_PASSWORD"},
+		{"id fallback", Step{Element: &selector.ElementMetadata{ID: "loginPwd"}}, "LOGINPWD"},
+		{"placeholder with punctuation", Step{Element: &selector.ElementMetadata{Placeholder: "Your password!"}}, "YOUR_PASSWORD"},
+		{"digit prefix gets SECRET prefix", Step{Element: &selector.ElementMetadata{Name: "2fa-code"}}, "SECRET_2FA_CODE"},
+		{"no element falls back", Step{}, "PASSWORD"},
+		{"non-alphanumeric only falls back", Step{Element: &selector.ElementMetadata{Name: "----"}}, "PASSWORD"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := secretEnvKey(tt.step); got != tt.want {
+				t.Errorf("secretEnvKey() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConvertTransactionsAndNotes(t *testing.T) {
+	button := &selector.ElementMetadata{Tag: "button", ID: "go", CSSPath: "#go"}
+	session := &Session{ID: "rec_txn", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	session.Markers = append(session.Markers,
+		Marker{Kind: MarkerNote, Text: "login first", Timestamp: ts(500)},
+		Marker{Kind: MarkerTransactionStart, Name: "Checkout", Timestamp: ts(900)},
+		Marker{Kind: MarkerTransactionStart, Name: "Payment", Timestamp: ts(1500)},
+		Marker{Kind: MarkerTransactionEnd, Name: "Payment", Timestamp: ts(2500)},
+		Marker{Kind: MarkerTransactionEnd, Name: "Checkout", Timestamp: ts(3500)},
+		Marker{Kind: MarkerNote, Text: "trailing observation", Timestamp: ts(4000)},
+	)
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(1000), Element: button, Candidates: selector.Candidates(*button)})
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(2000), Element: button, Candidates: selector.Candidates(*button)})
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(3000), Element: button, Candidates: selector.Candidates(*button)})
+
+	result := Convert(session, ConvertOptions{})
+	types := actionTypes(result.Script.Actions)
+	// navigate, start(Checkout), click, start(Payment), click, end(Payment), click, end(Checkout)
+	want := []string{"browser_navigate", "source_transaction", "browser_click", "source_transaction", "browser_click", "source_transaction", "browser_click", "source_transaction"}
+	if len(types) != len(want) {
+		t.Fatalf("actions = %v, want %v", types, want)
+	}
+	for i, typ := range want {
+		if types[i] != typ {
+			t.Fatalf("action[%d] = %q, want %q (all: %v)", i, types[i], typ, types)
+		}
+	}
+
+	start := result.Script.Actions[1]
+	if start.Name != "Checkout" || start.Params["function"] != "lr_start_transaction" {
+		t.Errorf("start action = %+v", start)
+	}
+	if start.Metadata["note"] != "login first" {
+		t.Errorf("note metadata = %+v, want queued note on next action", start.Metadata)
+	}
+	end := result.Script.Actions[7]
+	if end.Name != "Checkout" || end.Params["function"] != "lr_end_transaction" {
+		t.Errorf("end action = %+v", end)
+	}
+
+	// Enclosed actions carry the innermost transaction tag.
+	if got := result.Script.Actions[2].Metadata["source_transaction"]; got != "Checkout" {
+		t.Errorf("click 1 transaction = %v, want Checkout", got)
+	}
+	if got := result.Script.Actions[4].Metadata["source_transaction"]; got != "Payment" {
+		t.Errorf("click 2 transaction = %v, want Payment (innermost)", got)
+	}
+	if got := result.Script.Actions[6].Metadata["source_transaction"]; got != "Checkout" {
+		t.Errorf("click 3 transaction = %v, want Checkout after Payment closed", got)
+	}
+
+	// The trailing note lands on the final action instead of disappearing.
+	if got := end.Metadata["note"]; got != "trailing observation" {
+		t.Errorf("trailing note = %v", got)
+	}
+
+	if result.Stats.Transactions != 2 || result.Stats.Notes != 2 {
+		t.Errorf("stats = %+v, want 2 transactions and 2 notes", result.Stats)
+	}
+}
+
+func TestConvertTransactionEndWithoutStartWarns(t *testing.T) {
+	session := &Session{ID: "rec_bad", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	session.Markers = append(session.Markers, Marker{Kind: MarkerTransactionEnd, Name: "Ghost", Timestamp: ts(100)})
+
+	result := Convert(session, ConvertOptions{})
+	if len(result.Script.Actions) != 1 { // navigate only
+		t.Fatalf("actions = %v", actionTypes(result.Script.Actions))
+	}
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "Ghost") && strings.Contains(w, "no matching start") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v", result.Warnings)
+	}
+}
+
+func TestConvertSubtractsPauseFromThinkTime(t *testing.T) {
+	button := &selector.ElementMetadata{Tag: "button", ID: "go", CSSPath: "#go"}
+	session := &Session{ID: "rec_pause", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(1000), Element: button, Candidates: selector.Candidates(*button)})
+	// 61s gap, of which a 60s pause window: real think time is ~1s.
+	session.PauseIntervals = []PauseInterval{{From: ts(1500), To: ts(61500)}}
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(62000), Element: button, Candidates: selector.Candidates(*button)})
+
+	result := Convert(session, ConvertOptions{})
+	first := result.Script.Actions[1]
+	if !first.ThinkTimeAfter {
+		t.Fatalf("first click missing think time: %+v", first)
+	}
+	if first.ThinkTime.MeanMs != 1000 {
+		t.Errorf("think time = %v ms, want 1000 (pause subtracted)", first.ThinkTime.MeanMs)
+	}
+}
+
+func TestConvertPauseSwallowsSubPerceptualGap(t *testing.T) {
+	button := &selector.ElementMetadata{Tag: "button", ID: "go", CSSPath: "#go"}
+	session := &Session{ID: "rec_pause2", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(1000), Element: button, Candidates: selector.Candidates(*button)})
+	// The entire 10s gap was paused: no think time should be emitted.
+	session.PauseIntervals = []PauseInterval{{From: ts(1100), To: ts(10900)}}
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(11000), Element: button, Candidates: selector.Candidates(*button)})
+
+	result := Convert(session, ConvertOptions{})
+	if result.Script.Actions[1].ThinkTimeAfter {
+		t.Errorf("think time emitted despite fully-paused gap: %+v", result.Script.Actions[1].ThinkTime)
+	}
+}
+
+func TestPausedDurationBetween(t *testing.T) {
+	tests := []struct {
+		name      string
+		intervals []PauseInterval
+		from, to  time.Time
+		want      time.Duration
+	}{
+		{"no intervals", nil, ts(0), ts(1000), 0},
+		{"fully inside", []PauseInterval{{From: ts(200), To: ts(700)}}, ts(0), ts(1000), 500 * time.Millisecond},
+		{"clamped both ends", []PauseInterval{{From: ts(0), To: ts(2000)}}, ts(500), ts(1500), time.Second},
+		{"outside window", []PauseInterval{{From: ts(2000), To: ts(3000)}}, ts(0), ts(1000), 0},
+		{"open interval clamps to window end", []PauseInterval{{From: ts(500)}}, ts(0), ts(1000), 500 * time.Millisecond},
+		{"multiple intervals sum", []PauseInterval{{From: ts(100), To: ts(200)}, {From: ts(300), To: ts(400)}}, ts(0), ts(1000), 200 * time.Millisecond},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := pausedDurationBetween(tt.intervals, tt.from, tt.to); got != tt.want {
+				t.Errorf("pausedDurationBetween() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConvertPartitionsSections(t *testing.T) {
+	btn := func(id string) *selector.ElementMetadata {
+		return &selector.ElementMetadata{Tag: "button", ID: id, CSSPath: "#" + id}
+	}
+	session := &Session{ID: "rec_sec", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	session.appendStep(Step{Kind: StepClick, Section: SectionInit, Timestamp: ts(1000), Element: btn("login"), Candidates: selector.Candidates(*btn("login"))})
+	session.appendStep(Step{Kind: StepClick, Section: SectionActions, Timestamp: ts(2000), Element: btn("buy"), Candidates: selector.Candidates(*btn("buy"))})
+	session.appendStep(Step{Kind: StepClick, Section: SectionTeardown, Timestamp: ts(3000), Element: btn("logout"), Candidates: selector.Candidates(*btn("logout"))})
+
+	result := Convert(session, ConvertOptions{})
+	script := result.Script
+	// initial navigate inherits the first step's section (init)
+	if len(script.Init) != 2 || script.Init[0].Type != "browser_navigate" || script.Init[1].Selector != "#login" {
+		t.Fatalf("init = %+v", actionTypes(script.Init))
+	}
+	if len(script.Actions) != 1 || script.Actions[0].Selector != "#buy" {
+		t.Fatalf("actions = %+v", actionTypes(script.Actions))
+	}
+	if len(script.Teardown) != 1 || script.Teardown[0].Selector != "#logout" {
+		t.Fatalf("teardown = %+v", actionTypes(script.Teardown))
+	}
+}
+
+func TestConvertSkipsExcludedAndDeleted(t *testing.T) {
+	btn := &selector.ElementMetadata{Tag: "button", ID: "go", CSSPath: "#go"}
+	session := &Session{ID: "rec_skip", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(1000), Element: btn, Candidates: selector.Candidates(*btn)})
+	session.appendStep(Step{Kind: StepClick, Excluded: true, Timestamp: ts(2000), Element: btn, Candidates: selector.Candidates(*btn)})
+	session.appendStep(Step{Kind: StepClick, Deleted: true, Timestamp: ts(3000), Element: btn, Candidates: selector.Candidates(*btn)})
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(4000), Element: btn, Candidates: selector.Candidates(*btn)})
+
+	result := Convert(session, ConvertOptions{})
+	// navigate + 2 surviving clicks
+	if got := actionTypes(result.Script.Actions); len(got) != 3 {
+		t.Fatalf("actions = %v, want navigate + 2 clicks", got)
+	}
+	// Think time folds the excluded/deleted dwell into the gap between the
+	// surviving clicks (1s -> 4s = 3s).
+	first := result.Script.Actions[1]
+	if !first.ThinkTimeAfter || first.ThinkTime.MeanMs != 3000 {
+		t.Errorf("think time = %+v, want 3000ms across skipped steps", first.ThinkTime)
+	}
+}
+
+func TestConvertTrimByStepRange(t *testing.T) {
+	btn := &selector.ElementMetadata{Tag: "button", ID: "go", CSSPath: "#go"}
+	session := &Session{ID: "rec_trim", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	for i := 1; i <= 5; i++ {
+		session.appendStep(Step{Kind: StepClick, Timestamp: ts(int64(i) * 1000), Element: btn, Candidates: selector.Candidates(*btn)})
+	}
+	result := Convert(session, ConvertOptions{StepRange: StepRange{StartSeq: 2, EndSeq: 4}})
+	// navigate + steps 2,3,4
+	if got := actionTypes(result.Script.Actions); len(got) != 4 {
+		t.Fatalf("actions = %v, want navigate + 3 clicks", got)
+	}
+}
+
+func TestConvertSplitAtTransactions(t *testing.T) {
+	btn := func(id string) *selector.ElementMetadata {
+		return &selector.ElementMetadata{Tag: "button", ID: id, CSSPath: "#" + id}
+	}
+	session := &Session{ID: "rec_split", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	session.Markers = append(session.Markers,
+		Marker{Kind: MarkerTransactionStart, Name: "Login", Timestamp: ts(500)},
+		Marker{Kind: MarkerTransactionEnd, Name: "Login", Timestamp: ts(1500)},
+		Marker{Kind: MarkerTransactionStart, Name: "Checkout", Timestamp: ts(2500)},
+		Marker{Kind: MarkerTransactionEnd, Name: "Checkout", Timestamp: ts(3500)},
+	)
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(1000), Element: btn("login"), Candidates: selector.Candidates(*btn("login"))})
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(3000), Element: btn("buy"), Candidates: selector.Candidates(*btn("buy"))})
+
+	result := Convert(session, ConvertOptions{SplitAtTransactions: true})
+	if len(result.Scripts) != 2 {
+		t.Fatalf("scripts = %d, want 2", len(result.Scripts))
+	}
+	// Each split script has the initial navigate + its one click; no
+	// source_transaction wrappers.
+	for _, sc := range result.Scripts {
+		for _, a := range sc.Actions {
+			if a.Type == "source_transaction" {
+				t.Errorf("split script %q still contains a source_transaction wrapper", sc.Name)
+			}
+		}
+	}
+	if !strings.Contains(result.Scripts[0].Name, "Login") || !strings.Contains(result.Scripts[1].Name, "Checkout") {
+		t.Errorf("split names = %q, %q", result.Scripts[0].Name, result.Scripts[1].Name)
+	}
+}
+
+func TestConvertDialogActionPlacedBeforeTrigger(t *testing.T) {
+	btn := &selector.ElementMetadata{Tag: "button", ID: "del", CSSPath: "#del"}
+	session := &Session{ID: "rec_dialog", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(1000), Element: btn, Candidates: selector.Candidates(*btn)})
+	session.appendStep(Step{Kind: StepHandleDialog, DialogType: "confirm", DialogMessage: "Delete item?", Timestamp: ts(1100)})
+
+	result := Convert(session, ConvertOptions{})
+	types := actionTypes(result.Script.Actions)
+	// navigate, handle_dialog (moved before its trigger), click
+	want := []string{"browser_navigate", "browser_handle_dialog", "browser_click"}
+	if len(types) != len(want) {
+		t.Fatalf("actions = %v, want %v", types, want)
+	}
+	for i := range want {
+		if types[i] != want[i] {
+			t.Fatalf("action[%d] = %q, want %q", i, types[i], want[i])
+		}
+	}
+	dlg := result.Script.Actions[1]
+	if dlg.Params["action"] != "accept" || dlg.Params["expected_message"] != "Delete item?" || dlg.Params["dialog_type"] != "confirm" {
+		t.Errorf("dialog params = %+v", dlg.Params)
+	}
+	if result.Stats.Dialogs != 1 {
+		t.Errorf("dialog stat = %d, want 1", result.Stats.Dialogs)
+	}
+}
+
+func TestSuggestTransactionsFromSession(t *testing.T) {
+	btn := &selector.ElementMetadata{Tag: "button", ID: "go", CSSPath: "#go"}
+	session := &Session{ID: "rec_suggest", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	session.NavEvents = []NavEvent{
+		{Timestamp: ts(500), URL: "https://shop.example/cart"},
+		{Timestamp: ts(2500), URL: "https://shop.example/checkout-page"},
+	}
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(1000), Element: btn, Candidates: selector.Candidates(*btn)})
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(3000), Element: btn, Candidates: selector.Candidates(*btn)})
+
+	suggestions := SuggestTransactionsFromSession(session)
+	if len(suggestions) != 2 {
+		t.Fatalf("suggestions = %+v, want 2", suggestions)
+	}
+	if suggestions[0].Name != "Cart" || suggestions[0].AtStepSeq != 1 {
+		t.Errorf("suggestion 0 = %+v", suggestions[0])
+	}
+	if suggestions[1].Name != "Checkout Page" || suggestions[1].AtStepSeq != 2 {
+		t.Errorf("suggestion 1 = %+v", suggestions[1])
+	}
+}
+
+func TestConvertMarkSecretFill(t *testing.T) {
+	input := &selector.ElementMetadata{Tag: "input", Name: "api_token", CSSPath: "form > input"}
+	session := &Session{ID: "rec_mark", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	session.appendStep(Step{Kind: StepFill, Value: "abc123", MarkSecret: true, Timestamp: ts(1000), Element: input, Candidates: selector.Candidates(*input)})
+
+	result := Convert(session, ConvertOptions{})
+	fill := result.Script.Actions[1]
+	if fill.Value != "{{env.API_TOKEN}}" {
+		t.Errorf("marked-secret fill = %q, want {{env.API_TOKEN}}", fill.Value)
+	}
+}
+
 func TestConvertEmptySession(t *testing.T) {
 	result := Convert(&Session{StartURL: "https://x.example/home"}, ConvertOptions{})
 	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "browser_navigate" {

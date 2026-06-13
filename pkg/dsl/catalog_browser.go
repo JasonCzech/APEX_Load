@@ -207,6 +207,33 @@ func browserActionSpecs() []ActionSpec {
 			},
 			Validate: browserValidator(nil, nil),
 		},
+		{
+			Type:      "browser_handle_dialog",
+			Protocols: []string{"browser"},
+			Summary:   "Handles the next native dialog (alert/confirm/prompt) by accepting or dismissing it.",
+			Fields: []FieldSpec{
+				{Name: "params.action", Kind: FieldKindEnum, Enum: []string{"accept", "dismiss"}, Doc: "How to respond: accept or dismiss (required)."},
+				{Name: "params.dialog_type", Kind: FieldKindEnum, Enum: []string{"alert", "confirm", "prompt", "beforeunload"}, Doc: "Expected dialog kind for documentation/validation."},
+				{Name: "params.expected_message", Kind: FieldKindString, Doc: "If set, the captured dialog message must contain this text."},
+				{Name: "params.prompt_text", Kind: FieldKindString, Doc: "Text entered into a prompt dialog when accepting."},
+				{Name: "params.wait_ms", Kind: FieldKindInt, Doc: "How long to wait for the dialog to appear (default 5000)."},
+				fieldCapture,
+			},
+			Validate: browserValidator(nil, browserHandleDialogChecks),
+		},
+	}
+}
+
+func browserHandleDialogChecks(label string, action Action) []string {
+	raw, _ := actionParamStringValue(action.Params, "action")
+	value := strings.ToLower(strings.TrimSpace(raw))
+	switch value {
+	case "accept", "dismiss":
+		return nil
+	case "":
+		return []string{fmt.Sprintf("%s: browser_handle_dialog requires params.action (accept or dismiss)", label)}
+	default:
+		return []string{fmt.Sprintf("%s: browser_handle_dialog params.action must be accept or dismiss, got %q", label, value)}
 	}
 }
 

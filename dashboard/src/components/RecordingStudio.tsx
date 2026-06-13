@@ -7,6 +7,7 @@ import { Project } from '../types'
 import { type RecorderImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { withFallbackPersistedScript } from './importSaveUtils'
+import BrowserRecorderControlPanel from './BrowserRecorderControlPanel'
 import PageViewToggle from './PageViewToggle'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
@@ -83,6 +84,18 @@ interface RecorderStatus {
     request_count: number
     started_at: string
   } | null
+  browser?: {
+    availability: { available: boolean; reason?: string }
+    active?: { id: string; name: string; status: string } | null
+    install?: { status: string; error?: string }
+  }
+}
+
+// The desktop shell embeds the dashboard in a Wails WebView where window.open
+// escapes to the system browser, so the popup panel is web-only there.
+function isWailsShell(): boolean {
+  return typeof window !== 'undefined' &&
+    (window.location.protocol === 'wails:' || window.location.hostname === 'wails.localhost')
 }
 
 interface RecordingStudioProps {
@@ -117,6 +130,20 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   })
   const [showSetup, setShowSetup] = useState(true)
   const [parameterizeInputs, setParameterizeInputs] = useState(false)
+  const [browserAvailability, setBrowserAvailability] = useState<{ available: boolean; reason?: string } | null>(null)
+  const [browserPanelSessionId, setBrowserPanelSessionId] = useState<string | null>(null)
+  const [browserName, setBrowserName] = useState('')
+  const [browserStartURL, setBrowserStartURL] = useState('')
+  const [browserCaptureHAR, setBrowserCaptureHAR] = useState(true)
+  const [browserDevice, setBrowserDevice] = useState('')
+  const [browserDevices, setBrowserDevices] = useState<{ name: string; platform: string }[]>([])
+  const [browserScreenshots, setBrowserScreenshots] = useState(false)
+  const [browserWSPayloads, setBrowserWSPayloads] = useState(false)
+  const [browserStorageState, setBrowserStorageState] = useState('')
+  const [browserExcludeHosts, setBrowserExcludeHosts] = useState('')
+  const [browserOptionsOpen, setBrowserOptionsOpen] = useState(false)
+  const [installState, setInstallState] = useState<{ status: string; error?: string } | null>(null)
+  const [showProxyAdvanced, setShowProxyAdvanced] = useState(false)
   const convertTask = useAsyncTask<RecorderImportResult>()
 
   const proxyPort = recorderProxyPort(proxyAddr)
@@ -205,6 +232,15 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
       setSessions(listRes.sessions || [])
       setProxyAddr(recorderStatus.proxy_addr || '')
       setCaCertPath(recorderStatus.ca_cert_path || '')
+      setBrowserAvailability(recorderStatus.browser?.availability ?? null)
+      if (recorderStatus.browser?.install) {
+        setInstallState(recorderStatus.browser.install)
+      }
+      const liveBrowser = recorderStatus.browser?.active
+      if (liveBrowser?.id) {
+        // Adopt a recording started elsewhere (popup, another tab, reload).
+        setBrowserPanelSessionId(current => current ?? liveBrowser.id)
+      }
       if (recorderStatus.active) {
         const full = await api.getRecording(recorderStatus.active.id)
         setActiveSession(full)
@@ -230,6 +266,67 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
       excluded: !!selectedRequest.excluded,
     })
   }, [selectedRequest])
+
+  // Surface the proxy fallback when headed browser recording cannot run here.
+  useEffect(() => {
+    if (browserAvailability && !browserAvailability.available) {
+      setShowProxyAdvanced(true)
+    }
+  }, [browserAvailability])
+
+  // Load device presets once for the launcher.
+  useEffect(() => {
+    api.listBrowserRecorderDevices()
+      .then(res => setBrowserDevices(res.devices || []))
+      .catch(() => { /* devices are optional */ })
+  }, [api])
+
+  const handleInstallBrowsers = async () => {
+    try {
+      const res = await api.installBrowserRecorder()
+      setInstallState(res.install)
+      showFeedback('Installing the recording browser — this can take a few minutes')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleStartBrowserRecording = async () => {
+    const startURL = browserStartURL.trim()
+    if (!/^https?:\/\//i.test(startURL)) {
+      showFeedback('Enter an absolute http(s) URL to record', 'error')
+      return
+    }
+    try {
+      const res = await api.startBrowserRecording({
+        name: browserName.trim() || 'Browser Recording',
+        start_url: startURL,
+        project_id: activeProject?.id,
+        capture_har: browserCaptureHAR,
+        device_preset: browserDevice || undefined,
+        capture_screenshots: browserScreenshots,
+        capture_ws_payloads: browserWSPayloads,
+        storage_state_path: browserStorageState.trim() || undefined,
+        exclude_hosts: browserExcludeHosts.trim()
+          ? browserExcludeHosts.split(',').map(h => h.trim()).filter(Boolean)
+          : undefined,
+      })
+      const sessionId = res.session.id
+      setBrowserPanelSessionId(sessionId)
+      showFeedback('Recording browser launched — interact with the page, then stop from the control panel')
+      if (!isWailsShell()) {
+        // Companion popup next to the recording browser; the docked panel
+        // below stays as the fallback when the popup is blocked.
+        window.open(
+          `#/recorder-panel?session=${encodeURIComponent(sessionId)}`,
+          'apexload-browser-recorder',
+          'width=440,height=760',
+        )
+      }
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
 
   const handleStart = async () => {
     try {
@@ -402,13 +499,140 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
       <div className="page-header">
         <div>
           <h2>Recording Studio</h2>
-          <p className="page-subtitle">Record browser traffic and convert to test scripts</p>
+          <p className="page-subtitle">Record a browser session and convert it to a test script</p>
         </div>
       </div>
 
       {feedback && (
         <div className={`rec-feedback ${feedbackType}`}>{feedback}</div>
       )}
+
+      {/* Primary: headed browser recording on this controller */}
+      <div className="rec-controls-card rec-browser-launcher">
+        <h3 className="rec-section-title">Record Browser Session</h3>
+        {browserAvailability && !browserAvailability.available ? (
+          <div className="rec-browser-unavailable" data-testid="browser-recorder-unavailable">
+            Browser recording is not available on this controller
+            {browserAvailability.reason ? `: ${browserAvailability.reason}` : '.'}{' '}
+            Use the Advanced proxy recorder below instead.
+            {installState && installState.status !== 'idle' && (
+              <div className="rec-install-status">Recording browser install: {installState.status}{installState.error ? ` — ${installState.error}` : ''}</div>
+            )}
+            <button className="btn btn-secondary btn-sm" onClick={handleInstallBrowsers} disabled={installState?.status === 'installing'}>
+              {installState?.status === 'installing' ? 'Installing…' : 'Install Recording Browser'}
+            </button>
+          </div>
+        ) : (
+          <div className="rec-start-form">
+            <div className="rec-form-row">
+              <label className="rec-label">Start URL</label>
+              <input
+                className="rec-input"
+                value={browserStartURL}
+                onChange={e => setBrowserStartURL(e.target.value)}
+                placeholder="https://app.example.com/login"
+              />
+            </div>
+            <div className="rec-form-row">
+              <label className="rec-label">Session Name</label>
+              <input
+                className="rec-input"
+                value={browserName}
+                onChange={e => setBrowserName(e.target.value)}
+                placeholder="e.g. Login & Checkout Flow"
+              />
+            </div>
+            <div className="rec-form-row">
+              <label className="rec-label">Device</label>
+              <select className="rec-input" value={browserDevice} onChange={e => setBrowserDevice(e.target.value)} aria-label="Device preset">
+                <option value="">Desktop (default)</option>
+                {browserDevices.filter(d => d.name !== 'desktop_1080p').map(d => (
+                  <option key={d.name} value={d.name}>{d.name.replace(/_/g, ' ')} ({d.platform})</option>
+                ))}
+              </select>
+            </div>
+            <label className="rec-checkbox-row">
+              <input
+                type="checkbox"
+                checked={browserCaptureHAR}
+                onChange={e => setBrowserCaptureHAR(e.target.checked)}
+              />
+              <span>Capture side-car HAR (network traffic for protocol-level scripting)</span>
+            </label>
+
+            <button type="button" className="rec-inline-action" onClick={() => setBrowserOptionsOpen(v => !v)}>
+              {browserOptionsOpen ? 'Hide advanced options' : 'Advanced options'}
+            </button>
+            {browserOptionsOpen && (
+              <div className="rec-browser-options">
+                <label className="rec-checkbox-row">
+                  <input type="checkbox" checked={browserScreenshots} onChange={e => setBrowserScreenshots(e.target.checked)} />
+                  <span>Capture per-step screenshot thumbnails</span>
+                </label>
+                <label className="rec-checkbox-row">
+                  <input type="checkbox" checked={browserWSPayloads} onChange={e => setBrowserWSPayloads(e.target.checked)} />
+                  <span>Capture WebSocket frame payloads (scrubbed)</span>
+                </label>
+                <div className="rec-form-row">
+                  <label className="rec-label">Exclude hosts <span className="rec-hint">(comma-separated, HAR noise filter)</span></label>
+                  <input className="rec-input" value={browserExcludeHosts} onChange={e => setBrowserExcludeHosts(e.target.value)} placeholder="analytics.google.com, cdn.example.com" />
+                </div>
+                <div className="rec-form-row">
+                  <label className="rec-label">Reuse session state <span className="rec-hint">(saved storage-state path, skip login)</span></label>
+                  <input className="rec-input" value={browserStorageState} onChange={e => setBrowserStorageState(e.target.value)} placeholder="/path/to/state.json" />
+                </div>
+              </div>
+            )}
+
+            <button
+              className="btn btn-primary rec-start-btn"
+              onClick={handleStartBrowserRecording}
+              disabled={!!browserPanelSessionId}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" /></svg>
+              Record Browser
+            </button>
+            <div className="rec-browser-unavailable">
+              A Chromium window opens on this machine with an in-page recording toolbar (pause and verification picker).
+              Manage the session from the control panel docked below — it also opens as a compact popup window.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {browserPanelSessionId && (
+        <BrowserRecorderControlPanel
+          sessionId={browserPanelSessionId}
+          onImported={onImported}
+          onEdit={onEdit}
+          onDismiss={() => {
+            setBrowserPanelSessionId(null)
+            refresh()
+          }}
+        />
+      )}
+
+      {/* Advanced: network-level proxy/HAR recorder (works with remote controllers) */}
+      <div className="rec-advanced-section">
+        <div
+          className="rec-advanced-toggle"
+          data-testid="rec-advanced-toggle"
+          onClick={() => setShowProxyAdvanced(prev => !prev)}
+        >
+          <span>
+            Advanced: Proxy Recorder
+            <span className="rec-advanced-sub">network-level HTTP(S) capture through the local proxy</span>
+          </span>
+          <svg
+            className={`rec-chevron ${showProxyAdvanced ? 'open' : ''}`}
+            width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+        {showProxyAdvanced && (
+          <>
 
       {/* Proxy Setup */}
       <div className="rec-setup-section">
@@ -937,6 +1161,9 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
           )}
         </div>
       )}
+          </>
+        )}
+      </div>
     </div>
   )
 }

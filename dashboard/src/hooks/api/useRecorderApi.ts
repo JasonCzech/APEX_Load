@@ -85,6 +85,17 @@ type RecorderStatusResponse = {
   proxy_addr?: string
   ca_cert_path?: string
   active?: RecorderActiveStatus
+  browser?: {
+    availability: { available: boolean; reason?: string }
+    active?: {
+      id: string
+      name: string
+      status: string
+      start_url: string
+      step_count: number
+      started_at: string
+    } | null
+  }
 }
 
 export function useRecorderApi() {

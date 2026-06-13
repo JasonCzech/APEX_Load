@@ -10,6 +10,7 @@ export type AppView =
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
   | { page: 'swagger' }
   | { page: 'repository-guide' }
+  | { page: 'recorder-panel'; sessionId?: string }
   | { page: 'test'; testId: string; tab?: TestWorkspaceTabID }
 
 const NAV_PAGES: NavPage[] = [
@@ -117,6 +118,11 @@ export function parseAppViewFromHash(hash: string): AppView {
     return { page: 'repository-guide' }
   }
 
+  if (page === 'recorder-panel') {
+    const sessionId = params.get('session') || undefined
+    return sessionId ? { page: 'recorder-panel', sessionId } : { page: 'recorder-panel' }
+  }
+
   return isNavPage(page) ? { page } : { page: 'dashboard' }
 }
 
@@ -167,6 +173,12 @@ export function viewToLocationHash(view: AppView): string {
 
   if (view.page === 'repository-guide') {
     return '#/repository-guide'
+  }
+
+  if (view.page === 'recorder-panel') {
+    return view.sessionId
+      ? `#/recorder-panel?session=${encodeURIComponent(view.sessionId)}`
+      : '#/recorder-panel'
   }
 
   return `#/${view.page}`

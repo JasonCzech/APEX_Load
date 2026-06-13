@@ -646,6 +646,64 @@
             "properties": {
               "type": {
                 "enum": [
+                  "browser_handle_dialog"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Handles the next native dialog (alert/confirm/prompt) by accepting or dismissing it.",
+            "properties": {
+              "capture": {
+                "description": "Evidence capture: {screenshot, full_page, html}.",
+                "type": "object"
+              },
+              "params": {
+                "properties": {
+                  "action": {
+                    "description": "How to respond: accept or dismiss (required).",
+                    "enum": [
+                      "accept",
+                      "dismiss"
+                    ],
+                    "type": "string"
+                  },
+                  "dialog_type": {
+                    "description": "Expected dialog kind for documentation/validation.",
+                    "enum": [
+                      "alert",
+                      "confirm",
+                      "prompt",
+                      "beforeunload"
+                    ],
+                    "type": "string"
+                  },
+                  "expected_message": {
+                    "description": "If set, the captured dialog message must contain this text.",
+                    "type": "string"
+                  },
+                  "prompt_text": {
+                    "description": "Text entered into a prompt dialog when accepting.",
+                    "type": "string"
+                  },
+                  "wait_ms": {
+                    "description": "How long to wait for the dialog to appear (default 5000).",
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "browser_hover"
                 ]
               }
@@ -4336,6 +4394,7 @@
             "browser_drag_and_drop",
             "browser_evaluate_js",
             "browser_fill",
+            "browser_handle_dialog",
             "browser_hover",
             "browser_long_press",
             "browser_navigate",

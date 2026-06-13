@@ -33,6 +33,14 @@ const apiMock = {
   resumeRecording: vi.fn(),
   deleteRecording: vi.fn(),
   updateRecordedRequest: vi.fn(),
+  startBrowserRecording: vi.fn(),
+  getBrowserRecording: vi.fn(),
+  stopBrowserRecording: vi.fn(),
+  previewBrowserRecordingConversion: vi.fn(),
+  convertBrowserRecording: vi.fn(),
+  listBrowserRecorderDevices: vi.fn(),
+  installBrowserRecorder: vi.fn(),
+  suggestBrowserRecordingTransactions: vi.fn(),
 }
 
 const clipboardWriteMock = vi.fn()
@@ -162,6 +170,45 @@ describe('RecordingStudio', () => {
       version: script.version || '1.0.0',
       created_at: '2026-05-17T00:00:00Z',
     }))
+    apiMock.startBrowserRecording.mockResolvedValue({
+      session: {
+        id: 'brec-1',
+        name: 'Browser Recording',
+        status: 'recording',
+        start_url: 'https://app.example.com/login',
+        capture_har: true,
+        started_at: '2026-05-12T20:00:00Z',
+        step_count: 0,
+        navigation_count: 0,
+        network_request_count: 0,
+        websocket_count: 0,
+        warning_count: 0,
+        har_available: false,
+      },
+    })
+    apiMock.getBrowserRecording.mockResolvedValue({
+      session: {
+        id: 'brec-1',
+        name: 'Browser Recording',
+        status: 'recording',
+        start_url: 'https://app.example.com/login',
+        capture_har: true,
+        started_at: '2026-05-12T20:00:00Z',
+        step_count: 1,
+        navigation_count: 1,
+        network_request_count: 3,
+        websocket_count: 0,
+        warning_count: 0,
+        har_available: false,
+        steps: [
+          { seq: 1, kind: 'click', timestamp: '2026-05-12T20:00:02Z', url: 'https://app.example.com/login' },
+        ],
+      },
+    })
+    apiMock.listBrowserRecorderDevices.mockResolvedValue({ devices: [{ name: 'iphone_15_pro', platform: 'ios' }] })
+    apiMock.installBrowserRecorder.mockResolvedValue({ install: { status: 'installing' } })
+    apiMock.suggestBrowserRecordingTransactions.mockResolvedValue({ suggestions: [] })
+    vi.spyOn(window, 'open').mockImplementation(() => null)
   })
 
   afterEach(async () => {
@@ -212,6 +259,7 @@ describe('RecordingStudio', () => {
       root.render(<RecordingStudio />)
     })
     await flushPromises()
+    await openProxyAdvanced(container)
 
     expect(container.textContent).toContain('Install and trust the APEX Load CA certificate for SSL/TLS')
     expect(container.textContent).toContain('ERR_CERT_AUTHORITY_INVALID')
@@ -238,6 +286,7 @@ describe('RecordingStudio', () => {
       root.render(<RecordingStudio />)
     })
     await flushPromises()
+    await openProxyAdvanced(container)
 
     const formatToggle = container.querySelector('.rec-certificate-format-toggle')
     const crtButton = Array.from(formatToggle?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'CRT')
@@ -267,6 +316,7 @@ describe('RecordingStudio', () => {
       root.render(<RecordingStudio />)
     })
     await flushPromises()
+    await openProxyAdvanced(container)
 
     const crtDownload = Array.from(container.querySelectorAll('button')).find(
       button => button.textContent?.trim() === 'Download CA Certificate (.crt)',
@@ -320,6 +370,7 @@ describe('RecordingStudio', () => {
     })
 
     await flushPromises()
+    await openProxyAdvanced(container)
 
     expect(container.textContent).toContain('Recorded Sessions')
     expect(container.textContent).toContain('Checkout Capture')
@@ -409,6 +460,7 @@ describe('RecordingStudio', () => {
       root.render(<RecordingStudio />)
     })
     await flushPromises()
+    await openProxyAdvanced(container)
 
     const toggle = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(
       input => (input as HTMLInputElement).parentElement?.textContent?.includes('Parameterize input values'),
@@ -450,6 +502,7 @@ describe('RecordingStudio', () => {
       root.render(<RecordingStudio />)
     })
     await flushPromises()
+    await openProxyAdvanced(container)
 
     const captureToggle = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(
       input => (input as HTMLInputElement).parentElement?.textContent?.includes('Capture cookies'),
@@ -481,6 +534,7 @@ describe('RecordingStudio', () => {
       root.render(<RecordingStudio />)
     })
     await flushPromises()
+    await openProxyAdvanced(container)
 
     expect(container.textContent).not.toContain('Copy Windows Start Command')
     const serviceInput = container.querySelector('input[aria-label="macOS network service"]') as HTMLInputElement | null
@@ -518,6 +572,7 @@ describe('RecordingStudio', () => {
       root.render(<RecordingStudio />)
     })
     await flushPromises()
+    await openProxyAdvanced(container)
 
     const windowsToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Windows 11')
     expect(windowsToggle).toBeDefined()
@@ -556,6 +611,163 @@ describe('RecordingStudio', () => {
     expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining(`Restore-StringRegistryValue -Name ProxyServer`))
     expect(container.textContent).toContain('Windows restore proxy command copied')
   })
+
+  it('renders the browser launcher as the primary path with proxy tools collapsed', async () => {
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Record Browser Session')
+    expect(container.querySelector('[data-testid="rec-advanced-toggle"]')).not.toBeNull()
+    // Proxy setup stays hidden until the Advanced section is expanded.
+    expect(container.textContent).not.toContain('Download CA Certificate')
+  })
+
+  it('rejects non-http(s) start URLs before calling the API', async () => {
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    const urlInput = container.querySelector('input[placeholder="https://app.example.com/login"]') as HTMLInputElement
+    expect(urlInput).not.toBeNull()
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(urlInput, 'file:///etc/passwd')
+      urlInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const recordButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Record Browser'))
+    expect(recordButton).toBeDefined()
+    await act(async () => {
+      recordButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.startBrowserRecording).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Enter an absolute http(s) URL to record')
+  })
+
+  it('starts a browser recording and docks the control panel', async () => {
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: 'proj-1', name: 'Web' } as any} />)
+    })
+    await flushPromises()
+
+    const urlInput = container.querySelector('input[placeholder="https://app.example.com/login"]') as HTMLInputElement
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(urlInput, 'https://app.example.com/login')
+      urlInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const recordButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Record Browser'))
+    await act(async () => {
+      recordButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.startBrowserRecording).toHaveBeenCalledWith(expect.objectContaining({
+      start_url: 'https://app.example.com/login',
+      project_id: 'proj-1',
+      capture_har: true,
+    }))
+    // The companion popup opens (web shell) and the docked panel renders.
+    expect(window.open).toHaveBeenCalledWith(
+      expect.stringContaining('#/recorder-panel?session=brec-1'),
+      'apexload-browser-recorder',
+      expect.any(String),
+    )
+    expect(container.querySelector('[data-testid="browser-recorder-panel"]')).not.toBeNull()
+    expect(apiMock.getBrowserRecording).toHaveBeenCalledWith('brec-1')
+  })
+
+  it('falls back to the Advanced proxy recorder when browser recording is unavailable', async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+      browser: {
+        availability: { available: false, reason: 'browser recording is disabled in production mode' },
+        active: null,
+      },
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    expect(container.querySelector('[data-testid="browser-recorder-unavailable"]')).not.toBeNull()
+    expect(container.textContent).toContain('disabled in production mode')
+    // The Advanced proxy section auto-expands as the fallback path.
+    expect(container.textContent).toContain('Download CA Certificate')
+  })
+
+  it('adopts a live browser recording reported by the controller status', async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+      browser: {
+        availability: { available: true },
+        active: { id: 'brec-1', name: 'Browser Recording', status: 'recording' },
+      },
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    expect(container.querySelector('[data-testid="browser-recorder-panel"]')).not.toBeNull()
+    expect(apiMock.getBrowserRecording).toHaveBeenCalledWith('brec-1')
+  })
+
+  it('offers a device preset selector and threads it into start', async () => {
+    await act(async () => { root.render(<RecordingStudio activeProject={{ id: 'proj-1', name: 'Web' } as any} />) })
+    await flushPromises()
+
+    const deviceSelect = container.querySelector('select[aria-label="Device preset"]') as HTMLSelectElement
+    expect(deviceSelect).not.toBeNull()
+    expect(deviceSelect.textContent).toContain('iphone 15 pro')
+
+    const urlInput = container.querySelector('input[placeholder="https://app.example.com/login"]') as HTMLInputElement
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(urlInput, 'https://app.example.com/login')
+      urlInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!
+      setter.call(deviceSelect, 'iphone_15_pro')
+      deviceSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const recordButton = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Record Browser'))
+    await act(async () => { recordButton!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushPromises()
+
+    expect(apiMock.startBrowserRecording).toHaveBeenCalledWith(expect.objectContaining({ device_preset: 'iphone_15_pro' }))
+  })
+
+  it('offers an install affordance when browser recording is unavailable', async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+      browser: {
+        availability: { available: false, reason: 'no recording browser installed' },
+        active: null,
+      },
+    })
+    await act(async () => { root.render(<RecordingStudio />) })
+    await flushPromises()
+
+    const installBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Install Recording Browser'))
+    expect(installBtn).toBeDefined()
+    await act(async () => { installBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushPromises()
+    expect(apiMock.installBrowserRecorder).toHaveBeenCalled()
+  })
 })
 
 async function flushPromises() {
@@ -563,4 +775,15 @@ async function flushPromises() {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+// The proxy recorder now lives behind the Advanced toggle; expand it before
+// exercising proxy UI.
+async function openProxyAdvanced(container: HTMLElement) {
+  const toggle = container.querySelector('[data-testid="rec-advanced-toggle"]') as HTMLElement | null
+  expect(toggle).not.toBeNull()
+  await act(async () => {
+    toggle!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+  await flushPromises()
 }

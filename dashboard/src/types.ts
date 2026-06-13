@@ -2004,6 +2004,12 @@ export interface WSMessage {
   project_id?: string
   script_id?: string
   replay_session_id?: string
+  // browser_recording_* events: the live recording session this event is about,
+  // plus the recorded step payload on browser_recording_step messages.
+  recording_session_id?: string
+  step?: unknown
+  warning?: string
+  url?: string
   test_name?: string
   status?: string
   timestamp?: string

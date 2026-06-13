@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 
 import { ApiError } from './apiClient'
 import { useApplicationApi } from './api/useApplicationApi'
+import { useBrowserRecorderApi } from './api/useBrowserRecorderApi'
 import { useRecorderApi } from './api/useRecorderApi'
 import { useProjectApi } from './api/useProjectApi'
 import { useRepositoryApi } from './api/useRepositoryApi'
@@ -20,6 +21,7 @@ export function useApi() {
   const scripts = useScriptApi()
   const system = useSystemApi()
   const recorder = useRecorderApi()
+  const browserRecorder = useBrowserRecorderApi()
   const library = useLibraryApi()
 
   return useMemo(
@@ -31,8 +33,9 @@ export function useApi() {
       ...scripts,
       ...system,
       ...recorder,
+      ...browserRecorder,
       ...library,
     }),
-    [tests, applications, projects, repository, scripts, system, recorder, library],
+    [tests, applications, projects, repository, scripts, system, recorder, browserRecorder, library],
   )
 }
