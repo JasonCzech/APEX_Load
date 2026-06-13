@@ -555,21 +555,28 @@ func TestBuildProtoConfig_JavaVuser(t *testing.T) {
 
 	cfg := buildProtoConfig(script)
 
-	if cfg["java_vuser_enabled"] != true {
-		t.Errorf("java_vuser_enabled = %v, want true", cfg["java_vuser_enabled"])
+	// Enablement and the runner command/classpath/working-directory are
+	// operator-owned (resolved from APEXLOAD_JAVA_VUSER_* by the protocol).
+	// They must NOT be flattened from the uploaded script, otherwise a script
+	// author could enable and steer local process execution on the generator.
+	for _, key := range []string{
+		"java_vuser_enabled",
+		"java_vuser_runner_command",
+		"java_vuser_harness_jar",
+		"java_vuser_classpath",
+		"java_vuser_work_dir",
+		"java_vuser_max_processes",
+	} {
+		if _, present := cfg[key]; present {
+			t.Errorf("%s was flattened from script config (%v); it must be operator-owned and omitted", key, cfg[key])
+		}
 	}
-	if cfg["java_vuser_runner_command"] != "/opt/apexload/bin/java-vuser-runner" {
-		t.Errorf("java_vuser_runner_command = %v", cfg["java_vuser_runner_command"])
+	// Non-privileged per-action timeouts remain script-controlled.
+	if cfg["java_vuser_action_timeout_ms"] != float64(45000) {
+		t.Errorf("java_vuser_action_timeout_ms = %v, want 45000", cfg["java_vuser_action_timeout_ms"])
 	}
-	if cfg["java_vuser_harness_jar"] != "/opt/apexload/java/apexload-java-vuser-runner.jar" {
-		t.Errorf("java_vuser_harness_jar = %v", cfg["java_vuser_harness_jar"])
-	}
-	classpath, ok := cfg["java_vuser_classpath"].([]string)
-	if !ok || len(classpath) != 2 || classpath[0] != "/scripts" {
-		t.Errorf("java_vuser_classpath = %#v, want two entries", cfg["java_vuser_classpath"])
-	}
-	if cfg["java_vuser_max_processes"] != float64(25) || cfg["java_vuser_action_timeout_ms"] != float64(45000) {
-		t.Errorf("java_vuser sizing/timeouts = %v / %v", cfg["java_vuser_max_processes"], cfg["java_vuser_action_timeout_ms"])
+	if cfg["java_vuser_startup_timeout_ms"] != float64(3000) {
+		t.Errorf("java_vuser_startup_timeout_ms = %v, want 3000", cfg["java_vuser_startup_timeout_ms"])
 	}
 }
 

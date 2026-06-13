@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -678,5 +679,109 @@ func TestPostProcessExtractedValue_HTMLURLEncode(t *testing.T) {
 	}
 	if got != "a%20%26%20b" {
 		t.Errorf("got %q, want a%%20%%26%%20b (entity-decoded, %%20 spaces)", got)
+	}
+}
+
+func TestCompileRegexCached_ReusesInstance(t *testing.T) {
+	const expr = `compile-cache-reuse-([0-9]+)`
+
+	first, err := compileRegexCached(expr)
+	if err != nil {
+		t.Fatalf("compileRegexCached: %v", err)
+	}
+	second, err := compileRegexCached(expr)
+	if err != nil {
+		t.Fatalf("compileRegexCached (repeat): %v", err)
+	}
+	// The cache must hand back the exact same *regexp.Regexp, not a fresh
+	// recompilation, so repeated VUser requests share one compiled pattern.
+	if first != second {
+		t.Error("expected the cached compile to return the same *regexp.Regexp instance")
+	}
+}
+
+func TestCompileRegexCached_InvalidNotCached(t *testing.T) {
+	const expr = `[invalid-uncached`
+
+	if _, err := compileRegexCached(expr); err == nil {
+		t.Fatal("expected error for invalid regex")
+	}
+	// A failed compile must not be stored: the second call has to surface the
+	// same error rather than a nil cache hit.
+	if _, ok := compiledRegexCache.Load(expr); ok {
+		t.Error("invalid regex must not be cached")
+	}
+	if _, err := compileRegexCached(expr); err == nil {
+		t.Fatal("expected the invalid regex to keep erroring on repeat calls")
+	}
+}
+
+func TestExtractAllRegex_CachedMatchesStable(t *testing.T) {
+	// Caching must not change match semantics: the same extractor reused across
+	// many requests must produce identical extractions every time.
+	const expr = `id="([a-z]+)"`
+	body := []byte(`id="alpha" id="beta" id="gamma"`)
+	want := []string{"alpha", "beta", "gamma"}
+
+	for i := 0; i < 5; i++ {
+		got, err := extractAllRegex(expr, body)
+		if err != nil {
+			t.Fatalf("iteration %d: extractAllRegex: %v", i, err)
+		}
+		if len(got) != len(want) {
+			t.Fatalf("iteration %d: got %v, want %v", i, got, want)
+		}
+		for j := range want {
+			if got[j] != want[j] {
+				t.Fatalf("iteration %d: got %v, want %v", i, got, want)
+			}
+		}
+	}
+}
+
+func TestExtractRegex_CachedAndUncachedAgree(t *testing.T) {
+	// The cached path must yield exactly what an independent fresh compile does.
+	const expr = `token=([^&]+)`
+	body := []byte(`token=abc123&expires=3600`)
+
+	cached, err := extractRegex(expr, body)
+	if err != nil {
+		t.Fatalf("extractRegex: %v", err)
+	}
+	fresh := regexp.MustCompile(expr).FindSubmatch(body)
+	if len(fresh) < 2 {
+		t.Fatal("control compile found no match")
+	}
+	if cached != string(fresh[1]) {
+		t.Errorf("cached extract = %q, fresh compile = %q", cached, string(fresh[1]))
+	}
+}
+
+func BenchmarkExtractAllRegex(b *testing.B) {
+	// Reuses one static extractor expression across every iteration, mirroring a
+	// single extractor replayed by a VUser. With per-request regexp.Compile this
+	// allocated/compiled on every call; with the cache it compiles once.
+	const expr = `id="([a-z]+)"`
+	body := []byte(`id="alpha" id="beta" id="gamma" id="delta"`)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := extractAllRegex(expr, body); err != nil {
+			b.Fatalf("extractAllRegex: %v", err)
+		}
+	}
+}
+
+func BenchmarkExtractRegex(b *testing.B) {
+	const expr = `token=([^&]+)`
+	body := []byte(`token=abc123&expires=3600`)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := extractRegex(expr, body); err != nil {
+			b.Fatalf("extractRegex: %v", err)
+		}
 	}
 }

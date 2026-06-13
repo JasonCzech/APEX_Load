@@ -126,6 +126,21 @@ func (vu *VUser) Run(ctx context.Context) {
 	iterationTxMode := autoTx == "per_iteration" || (autoTx == "none" && !scriptHasExplicitTransactions(vu.Script))
 	maxIter := cfg.RunLogic.Iterations
 	continueOnError := cfg.ErrorHandling.ContinueOnError
+
+	// ctx (the value passed to Run) stops the loop from starting new iterations;
+	// it is cancelled when a shared execution goal exhausts (soft stop) and on
+	// per-VUser scale/ramp-down. iterCtx governs the body of an iteration once it
+	// holds a goal reservation: it is set to HardStopCtx so a claimed reservation
+	// always completes and is recorded on a goal-exhaustion soft stop, while
+	// still being interrupted on scale/ramp-down and hard stops. In the
+	// MultiGroupEngine, HardStopCtx is a per-VUser "shed" context that is a child
+	// of the engine base context (so hard stops cancel it) and is cancelled
+	// explicitly on scale/ramp-down — but NOT by goal exhaustion.
+	iterCtx := ctx
+	if vu.HardStopCtx != nil {
+		iterCtx = vu.HardStopCtx
+	}
+
 	applyActionThinkTime := func(action dsl.Action) {
 		if !action.ThinkTimeAfter {
 			return
@@ -153,18 +168,10 @@ func (vu *VUser) Run(ctx context.Context) {
 				thinkCfg.Ignore = true
 			}
 		}
-		applyThinkTime(thinkCfg)
+		applyThinkTimeCtx(iterCtx, thinkCfg)
 	}
 
 	// --- Main iteration loop ---
-	// ctx stops the loop from starting new iterations (it is cancelled when a
-	// shared execution goal exhausts); iterCtx governs the body of an
-	// iteration once it holds a goal reservation, so that reservation always
-	// completes and is recorded unless the run is hard-stopped.
-	iterCtx := ctx
-	if vu.HardStopCtx != nil {
-		iterCtx = vu.HardStopCtx
-	}
 	iteration := 0
 	for {
 		// Check iteration limit
@@ -414,8 +421,9 @@ func (vu *VUser) Run(ctx context.Context) {
 
 		iteration++
 
-		// Apply pacing between iterations
-		applyIterationPacing(pacingCfg, iterStart)
+		// Apply pacing between iterations (interruptible: a scale/ramp-down or
+		// hard stop cuts the pacing sleep short instead of holding load).
+		applyIterationPacingCtx(iterCtx, pacingCfg, iterStart)
 	}
 
 teardown:
@@ -2063,7 +2071,7 @@ func (vu *VUser) resolveTemplateValue(expr string) (string, bool) {
 		return value, ok
 	case strings.HasPrefix(expr, "env."):
 		key := strings.TrimSpace(strings.TrimPrefix(expr, "env."))
-		value, ok := os.LookupEnv(key)
+		value, ok := lookupScriptEnv(key)
 		return value, ok
 	case strings.HasPrefix(expr, "secret."):
 		key := strings.TrimSpace(strings.TrimPrefix(expr, "secret."))

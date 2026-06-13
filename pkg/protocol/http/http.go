@@ -278,6 +278,12 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			// A lenient miss still publishes the count so loops over
 			// {{var.name_count}} behave.
 			result.Extractions[ext.Name+"_count"] = "0"
+			if ext.OnMiss == "empty" {
+				// Mirror single-value "empty" semantics: assign the base
+				// variable an empty string so {{var.name}} expands to "" rather
+				// than leaking the literal template into later requests.
+				result.Extractions[ext.Name] = ""
+			}
 			continue
 		}
 		val, err := extract(ext, resp.Header, respBody)

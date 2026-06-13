@@ -76,6 +76,9 @@ spec:
               mountPath: /tmp
             - name: data
               mountPath: /var/lib/apexload
+            - name: grpc-tls
+              mountPath: /etc/apexload/grpc-tls
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /api/v1/system/readiness
@@ -105,3 +108,9 @@ spec:
         - name: data
           emptyDir:
             sizeLimit: 10Gi
+        # Client certificate + CA for mTLS to generators. Provision the
+        # apexload-controller-grpc-tls Secret via cert-manager or the Key Vault
+        # CSI driver (see onprem/certificates.example.yaml for issuance).
+        - name: grpc-tls
+          secret:
+            secretName: apexload-controller-grpc-tls

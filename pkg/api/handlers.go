@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -976,10 +977,22 @@ func (s *Server) handleGetSystemSettings(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Request) {
-	var settings SystemSettings
-	if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
+	}
+	var settings SystemSettings
+	if err := json.Unmarshal(body, &settings); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	// A PUT that omits the prometheus section must not wipe it — inherit the
+	// currently-stored value. When the section IS present, settings.Prometheus
+	// carries the admin's explicit choice (including an explicit disable), which
+	// the faithful normalizer in UpdateSystemSettings now preserves.
+	if !rawJSONHasKey(string(body), "prometheus") {
+		settings.Prometheus = s.runner.GetSystemSettings().Prometheus
 	}
 
 	updated, err := s.runner.UpdateSystemSettings(settings)

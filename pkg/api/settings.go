@@ -93,6 +93,13 @@ func defaultPrometheusSettings() PrometheusSettings {
 	}
 }
 
+// normalizePrometheusSettings fills in defaults for the base URL and timeout but
+// is FAITHFUL to the Enabled flag it is given — it never silently re-enables a
+// disabled section. The default-enable behavior when APEXLOAD_PROMETHEUS_URL is
+// set is applied only where presence can be determined: at fresh-install
+// defaults (defaultPrometheusSettings) and at legacy-store migration
+// (loadSystemSettings). This is what lets an admin persist Prometheus=disabled
+// even while the env URL is configured.
 func normalizePrometheusSettings(in PrometheusSettings) PrometheusSettings {
 	defaults := defaultPrometheusSettings()
 	out := in
@@ -100,13 +107,22 @@ func normalizePrometheusSettings(in PrometheusSettings) PrometheusSettings {
 	if out.BaseURL == "" && defaults.BaseURL != "" {
 		out.BaseURL = defaults.BaseURL
 	}
-	if !out.Enabled && in.BaseURL == "" && in.TimeoutSeconds == 0 && defaults.Enabled {
-		out.Enabled = true
-	}
 	if out.TimeoutSeconds == 0 {
 		out.TimeoutSeconds = defaults.TimeoutSeconds
 	}
 	return out
+}
+
+// rawJSONHasKey reports whether the top-level JSON object in raw contains key.
+// Used to distinguish an omitted section (inherit default) from an explicitly
+// provided one (respect as given, including an explicit disable).
+func rawJSONHasKey(raw string, key string) bool {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+		return false
+	}
+	_, ok := fields[key]
+	return ok
 }
 
 func (p PrometheusSettings) allowlistHosts() []string {
@@ -1128,6 +1144,15 @@ func (tr *TestRunner) loadSystemSettings(defaultMaxConcurrent int) {
 	if err := json.Unmarshal([]byte(raw), &loaded); err != nil {
 		tr.maxTests = tr.settings.General.MaxConcurrentTests
 		return
+	}
+	// Migration: a settings blob persisted before the Prometheus section existed
+	// has no "prometheus" key, so it unmarshals to the zero value. Seed it from
+	// the env-derived defaults (which default-enable when APEXLOAD_PROMETHEUS_URL
+	// is set) so legacy installs still light up the graph pack. A blob that DOES
+	// carry the section is taken as the admin's explicit choice — including an
+	// explicit disable.
+	if !rawJSONHasKey(raw, "prometheus") {
+		loaded.Prometheus = defaultPrometheusSettings()
 	}
 	loaded = normalizeLoadedSystemSettings(loaded, defaultMaxConcurrent)
 	if err := validateSystemSettings(loaded); err != nil {

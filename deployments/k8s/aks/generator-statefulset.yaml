@@ -58,17 +58,30 @@ spec:
               drop:
                 - ALL
           env:
+            # Fail closed: with APEXLOAD_ENV=production the generator refuses to
+            # start on a plaintext, tokenless gRPC channel (see cmd/generator).
+            # This guarantees a missing/misnamed token or TLS secret crashes the
+            # pod instead of silently serving insecure RPCs.
+            - name: APEXLOAD_ENV
+              value: production
+            # Server certificate + client-CA: requires mTLS from controllers.
+            # Mirrors deployments/k8s/onprem. The grpc-tls Secret is mounted
+            # below; provision it via cert-manager or workload-identity tooling.
+            - name: APEXLOAD_GRPC_TLS_CERT
+              value: /etc/apexload/grpc-tls/tls.crt
+            - name: APEXLOAD_GRPC_TLS_KEY
+              value: /etc/apexload/grpc-tls/tls.key
+            - name: APEXLOAD_GRPC_TLS_CA
+              value: /etc/apexload/grpc-tls/ca.crt
             # gRPC auth: controllers must present this token on every RPC.
             # Generate once and put it in the apexload-data-platform Secret
-            # (both controller and generator consume it). For full mTLS, add
-            # the APEXLOAD_GRPC_TLS_* cert wiring — see
-            # deployments/k8s/onprem for a complete example.
+            # (both controller and generator consume it). Required (not
+            # optional): a missing secret fails the pod, matching onprem.
             - name: APEXLOAD_GRPC_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: apexload-data-platform
                   key: APEXLOAD_GRPC_AUTH_TOKEN
-                  optional: true
             # Key Vault access for {{secret.*}} interpolation during runs.
             - name: APEXLOAD_AZURE_KEY_VAULT_URL
               valueFrom:
@@ -85,6 +98,9 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: grpc-tls
+              mountPath: /etc/apexload/grpc-tls
+              readOnly: true
           ports:
             - name: grpc
               containerPort: 9090
@@ -111,3 +127,6 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 4Gi
+        - name: grpc-tls
+          secret:
+            secretName: apexload-generator-grpc-tls

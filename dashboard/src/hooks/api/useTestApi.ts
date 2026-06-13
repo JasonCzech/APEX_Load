@@ -231,9 +231,13 @@ function buildQuery(params?: Record<string, string | number | boolean | string[]
   const query = new URLSearchParams()
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      query.set(key, Array.isArray(value) ? value.join(',') : String(value))
+    if (value === undefined) return
+    if (Array.isArray(value)) {
+      if (value.length === 0) return
+      query.set(key, value.join(','))
+      return
     }
+    query.set(key, String(value))
   })
 
   const suffix = query.toString()

@@ -368,6 +368,37 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('2,270 VU')
   })
 
+  it('keeps Abort available and enabled while a graceful stop is in progress', async () => {
+    await renderPrototype()
+
+    const runActions = () => container.querySelector('.command-run-actions') as HTMLElement
+    const shelfButton = (name: string) =>
+      Array.from(runActions().querySelectorAll('button')).find(
+        candidate => candidate.textContent?.trim() === name,
+      ) as HTMLButtonElement | undefined
+
+    // Sanity: while RUNNING, both Stop and Abort are present and enabled.
+    expect(shelfButton('Stop')).toBeDefined()
+    expect(shelfButton('Abort')).toBeDefined()
+    expect(shelfButton('Abort')?.disabled).toBe(false)
+
+    await click(buttonNamed('Stop'))
+
+    expect(container.textContent).toContain('STOPPING')
+    // Stop is no longer offered once the graceful stop is underway (canStop excludes STOPPING),
+    // but Abort must remain the escalation path.
+    expect(shelfButton('Stop')).toBeUndefined()
+    const abortDuringStopping = shelfButton('Abort')
+    expect(abortDuringStopping).toBeDefined()
+    expect(abortDuringStopping?.disabled).toBe(false)
+
+    await click(abortDuringStopping as HTMLButtonElement)
+
+    expect(container.textContent).toContain('ABORTED')
+    // Once fully terminal, Abort is no longer offered.
+    expect(shelfButton('Abort')).toBeUndefined()
+  })
+
   it('stages slider targets and updates the current target indicator without calling the API', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
     await renderPrototype()

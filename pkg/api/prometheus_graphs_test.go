@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -60,8 +61,13 @@ func TestPrometheusGraphsQueriesCuratedPack(t *testing.T) {
 	end := start.Add(30 * time.Second)
 	var queries []string
 	var handlerErrors []string
+	// The graph pack now issues its queries concurrently, so the stub serves
+	// requests from multiple goroutines — guard the recording slices.
+	var recordMu sync.Mutex
 
 	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		recordMu.Lock()
+		defer recordMu.Unlock()
 		if r.URL.Path != "/api/v1/query_range" {
 			handlerErrors = append(handlerErrors, fmt.Sprintf("path = %q, want /api/v1/query_range", r.URL.Path))
 			http.Error(w, "bad path", http.StatusBadRequest)
@@ -212,6 +218,93 @@ func TestPrometheusGraphsReturnsBadGatewayForTimeout(t *testing.T) {
 
 	if resp.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d body=%s, want 502", resp.Code, resp.Body.String())
+	}
+}
+
+func TestPrometheusGraphsDropsNonFiniteSamples(t *testing.T) {
+	t.Setenv("APEXLOAD_PROMETHEUS_URL", "")
+	start := time.Date(2026, time.June, 12, 14, 0, 0, 0, time.UTC)
+	mid := start.Add(15 * time.Second)
+	end := start.Add(30 * time.Second)
+	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// A series carrying NaN/+Inf/-Inf values alongside a finite one. These
+		// must be dropped (a finite point survives) — and crucially the whole
+		// response must still encode as valid JSON.
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"state":"active"},"values":[[` +
+			strconv.FormatInt(start.Unix(), 10) + `,"NaN"],[` +
+			strconv.FormatInt(mid.Unix(), 10) + `,"+Inf"],[` +
+			strconv.FormatInt(end.Unix(), 10) + `,"7"]]}]}}`))
+	}))
+	defer prom.Close()
+
+	server := prometheusGraphAPIServerForTest(t, prom.URL, 5)
+	req := prometheusGraphRequestForTest(start, end, 15)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s, want 200", resp.Code, resp.Body.String())
+	}
+	// The body must be valid JSON (NaN/Inf would have corrupted encoding).
+	var payload PrometheusGraphsResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("response is not valid JSON (non-finite values leaked into encoding): %v", err)
+	}
+	for _, graph := range payload.Graphs {
+		for _, series := range graph.Series {
+			if len(series.Values) != 1 || series.Values[0].Value != 7 {
+				t.Fatalf("graph %s series values = %#v, want only the finite sample (7)", graph.ID, series.Values)
+			}
+		}
+	}
+}
+
+func TestPrometheusGraphsRejectsOversizedRangeAndPointCount(t *testing.T) {
+	t.Setenv("APEXLOAD_PROMETHEUS_URL", "")
+	server := prometheusGraphAPIServerForTest(t, "http://prometheus:9090", 5)
+	start := time.Date(2026, time.June, 12, 0, 0, 0, 0, time.UTC)
+
+	// Range longer than the 7-day cap.
+	tooWide := prometheusGraphRequestForTest(start, start.Add(8*24*time.Hour), 3600)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, tooWide)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("oversized range status = %d, want 400", resp.Code)
+	}
+
+	// Within the range cap but too many points for the step (1s step over 6h).
+	tooManyPoints := prometheusGraphRequestForTest(start, start.Add(6*time.Hour), 1)
+	resp = httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, tooManyPoints)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("oversized point-count status = %d, want 400", resp.Code)
+	}
+}
+
+func TestPrometheusGraphsBoundsResponseBody(t *testing.T) {
+	t.Setenv("APEXLOAD_PROMETHEUS_URL", "")
+	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Stream more than the response cap; the handler must abort the read
+		// rather than buffering unbounded data.
+		w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[`))
+		chunk := strings.Repeat(" ", 1<<20)
+		for i := 0; i < maxPrometheusResponseBytes/len(chunk)+2; i++ {
+			if _, err := w.Write([]byte(chunk)); err != nil {
+				return
+			}
+		}
+	}))
+	defer prom.Close()
+
+	server := prometheusGraphAPIServerForTest(t, prom.URL, 5)
+	start := time.Date(2026, time.June, 12, 14, 0, 0, 0, time.UTC)
+	req := prometheusGraphRequestForTest(start, start.Add(time.Minute), 15)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 for oversized upstream body", resp.Code)
 	}
 }
 

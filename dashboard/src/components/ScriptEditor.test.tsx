@@ -2701,6 +2701,20 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('table Users.dat')
     expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('Generated source: users')
     expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('Open Mapped Data Source')
+
+    // Correlation suggestions live in the Imported Metadata companion panel. Drive the UI to
+    // that panel explicitly so the assertions below do not depend on the active center tab left
+    // over from a prior interaction.
+    const correlationMetadataTab = findCenterTab(container, 'Imported Metadata')
+    expect(correlationMetadataTab).toBeDefined()
+    await act(async () => {
+      correlationMetadataTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const correlationSection = Array.from(
+      container.querySelectorAll('#imported-metadata-section .import-correlation-section'),
+    ).find(section => section.querySelector('h4')?.textContent?.trim() === 'Correlation Suggestions')
+    expect(correlationSection).toBeDefined()
+    expect(correlationSection?.textContent).toContain('Correlation Suggestions')
     expect(container.textContent).toContain('Correlation Suggestions')
     expect(container.textContent).toContain('session_id')
     expect(container.textContent).toContain('response via $.sessionId')

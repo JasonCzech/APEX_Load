@@ -480,6 +480,20 @@ export default function TestExecutionCharts({
   const chartCardRefs = useRef<Record<string, ChartCardElement>>({})
   const chartMenuRef = useRef<HTMLDivElement | null>(null)
   const axisLabelPopoverRef = useRef<HTMLDivElement | null>(null)
+  // Per-chart memo cache for the expensive derived series (downsample + std-dev band + smoothing).
+  // These derivations are recomputed inside displayedCharts.map() on every render, but renders also
+  // fire on unrelated state changes (hover via setHoveredChartId, metrics ticks that leave a given
+  // chart's inputs untouched). Caching keyed on a per-chart input signature keeps the work off the
+  // hot path without restructuring this large component.
+  const derivedSeriesCacheRef = useRef<
+    Map<string, {
+      signature: string
+      sourceChartData: MetricsHistoryPoint[]
+      downsampledChartData: MetricsHistoryPoint[]
+      chartDataWithDisplayBands: MetricsHistoryPoint[]
+      displayChartData: MetricsHistoryPoint[]
+    }>
+  >(new Map())
   const commandCenterSurface = surface === 'command-center'
   const loadImpactSourceData = loadImpactData.length > 0 ? loadImpactData : filteredData
   const loadImpactModel = useMemo(() => buildLoadImpactModel(loadImpactSourceData), [loadImpactSourceData])
@@ -2005,26 +2019,57 @@ export default function TestExecutionCharts({
               visibleMetricCount: visibleMetricKeys.length,
               expanded: expandedChart === chart.id,
             }
-            const downsampledChartData = downsampleDenseCharts
-              ? downsampleGraphData(
-                  chartData,
-                  [...visibleMetricKeys, ...visibleOverlayKeysForTitle, 'targetTps'],
-                  downsampleTargetPointsForGraphDensity(density),
-                )
-              : chartData
-            const smoothingRadius = smoothingRadiusForGraphDensity(downsampledChartData.length, {
-              chartWidth: chartCardSize?.width,
-              chartHeight,
-              visibleMetricCount: visibleMetricKeys.length,
-              expanded: expandedChart === chart.id,
-            })
             const includeArtStdDevBand = shouldRenderArtStdDevBands(chart, visibleMetricKeys, artStdDevBandsEnabled)
-            const chartDataWithDisplayBands = includeArtStdDevBand
-              ? buildArtStdDevBandData(downsampledChartData, smoothingRadius)
-              : downsampledChartData
-            const displayChartData = smoothedMetricKeys.length > 0
-              ? buildSmoothedGraphData(chartDataWithDisplayBands, smoothedMetricKeys, smoothingRadius)
-              : chartDataWithDisplayBands
+            // The downsample/std-dev-band/smoothing pipeline is the expensive part of this map body.
+            // Recompute it only when this chart's actual inputs change; reuse the cached result on
+            // unrelated re-renders (hover, ticks that leave this chart's data untouched).
+            const derivedSignature = JSON.stringify({
+              downsampleDenseCharts,
+              targetPoints: downsampleTargetPointsForGraphDensity(density),
+              chartWidth: chartCardSize?.width ?? null,
+              chartHeight,
+              expanded: expandedChart === chart.id,
+              metricKeys: visibleMetricKeys,
+              overlayKeys: visibleOverlayKeysForTitle,
+              smoothedMetricKeys,
+              includeArtStdDevBand,
+            })
+            const cachedDerived = derivedSeriesCacheRef.current.get(chart.id)
+            let downsampledChartData: MetricsHistoryPoint[]
+            let chartDataWithDisplayBands: MetricsHistoryPoint[]
+            let displayChartData: MetricsHistoryPoint[]
+            if (cachedDerived && cachedDerived.signature === derivedSignature && cachedDerived.sourceChartData === chartData) {
+              downsampledChartData = cachedDerived.downsampledChartData
+              chartDataWithDisplayBands = cachedDerived.chartDataWithDisplayBands
+              displayChartData = cachedDerived.displayChartData
+            } else {
+              downsampledChartData = downsampleDenseCharts
+                ? downsampleGraphData(
+                    chartData,
+                    [...visibleMetricKeys, ...visibleOverlayKeysForTitle, 'targetTps'],
+                    downsampleTargetPointsForGraphDensity(density),
+                  )
+                : chartData
+              const smoothingRadiusForBuild = smoothingRadiusForGraphDensity(downsampledChartData.length, {
+                chartWidth: chartCardSize?.width,
+                chartHeight,
+                visibleMetricCount: visibleMetricKeys.length,
+                expanded: expandedChart === chart.id,
+              })
+              chartDataWithDisplayBands = includeArtStdDevBand
+                ? buildArtStdDevBandData(downsampledChartData, smoothingRadiusForBuild)
+                : downsampledChartData
+              displayChartData = smoothedMetricKeys.length > 0
+                ? buildSmoothedGraphData(chartDataWithDisplayBands, smoothedMetricKeys, smoothingRadiusForBuild)
+                : chartDataWithDisplayBands
+              derivedSeriesCacheRef.current.set(chart.id, {
+                signature: derivedSignature,
+                sourceChartData: chartData,
+                downsampledChartData,
+                chartDataWithDisplayBands,
+                displayChartData,
+              })
+            }
             const displayMetricKey = (key: string) => smoothedMetricKeySet.has(key) ? smoothedGraphMetricKey(key) : key
             const primaryMetricKeysForDomain = visibleMetricKeys.filter(key => (
               !visibleOverlayKeysForTitle.includes(key as OverlayMetricKey)

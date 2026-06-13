@@ -241,6 +241,40 @@ func TestTransport_MutualTLSRequiresClientCert(t *testing.T) {
 	}
 }
 
+func TestTransport_MustRefuseInsecure(t *testing.T) {
+	insecure := TransportSecurity{}             // plaintext + no token
+	tokenOnly := TransportSecurity{Token: true} // plaintext + token
+	tlsOnly := TransportSecurity{TLS: true}     // TLS + no token
+	mtls := TransportSecurity{TLS: true, MutualTLS: true, Token: true}
+
+	tests := []struct {
+		name     string
+		security TransportSecurity
+		env      string
+		want     bool
+	}{
+		// Fail-closed: insecure + production must refuse.
+		{"insecure+production refuses", insecure, "production", true},
+		{"insecure+production with surrounding whitespace refuses", insecure, "  production  ", true},
+		// Permissive everywhere outside production.
+		{"insecure+empty env allowed", insecure, "", false},
+		{"insecure+local env allowed", insecure, "local", false},
+		{"insecure+dev env allowed", insecure, "dev", false},
+		{"insecure+kind env allowed", insecure, "kind", false},
+		// Any secured channel is allowed even in production.
+		{"token-only+production allowed", tokenOnly, "production", false},
+		{"tls-only+production allowed", tlsOnly, "production", false},
+		{"mtls+production allowed", mtls, "production", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.security.MustRefuseInsecure(tc.env); got != tc.want {
+				t.Fatalf("MustRefuseInsecure(%q) for %s = %v, want %v", tc.env, tc.security.String(), got, tc.want)
+			}
+		})
+	}
+}
+
 func TestTransport_ConfigValidation(t *testing.T) {
 	clearTransportEnv(t)
 	t.Setenv(grpcTLSCertEnvVar, "/nonexistent/cert.pem")

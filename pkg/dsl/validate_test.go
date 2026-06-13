@@ -1010,6 +1010,69 @@ func TestValidateExtractorIssuesInSequenceChildren(t *testing.T) {
 	}
 }
 
+func TestValidateScriptIssues_SequenceChildBodyFile(t *testing.T) {
+	newScript := func(child map[string]any) *Script {
+		return &Script{
+			Name:     "seq-child-body-file",
+			Protocol: "http",
+			Config:   ScriptConfig{BaseURL: "https://example.test"},
+			Actions: []Action{{
+				Name:   "seq",
+				Type:   "http_sequence",
+				Method: "SEQUENCE",
+				Target: "/a",
+				Params: map[string]any{"requests": []any{child}},
+			}},
+		}
+	}
+
+	tests := []struct {
+		name  string
+		child map[string]any
+		want  string
+	}{
+		{
+			name:  "body_file alone is rejected for API uploads",
+			child: map[string]any{"name": "create", "type": "POST", "method": "POST", "target": "/orders", "body_file": "payloads/order.json"},
+			want:  `actions[0] "seq".params.requests[0] "create": body_file is only supported when loading scripts from a local file; inline body is required for API uploads`,
+		},
+		{
+			name:  "body and body_file conflict",
+			child: map[string]any{"name": "create", "type": "POST", "method": "POST", "target": "/orders", "body": "{}", "body_file": "payloads/order.json"},
+			want:  `actions[0] "seq".params.requests[0] "create": body and body_file cannot both be set`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			issues := ValidateScriptIssues(newScript(tc.child))
+			assertIssue(t, issues, tc.want)
+		})
+	}
+}
+
+func TestValidateScriptIssues_SequenceChildWithoutBodyFileValid(t *testing.T) {
+	script := &Script{
+		Name:     "seq-child-ok",
+		Protocol: "http",
+		Config:   ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []Action{{
+			Name:   "seq",
+			Type:   "http_sequence",
+			Method: "SEQUENCE",
+			Target: "/a",
+			Params: map[string]any{"requests": []any{
+				map[string]any{"name": "create", "type": "POST", "method": "POST", "target": "/orders", "body": "{}"},
+			}},
+		}},
+	}
+	for _, issue := range ValidateScriptIssues(script) {
+		if strings.Contains(issue, "body_file") {
+			t.Fatalf("unexpected body_file issue for inline-body child: %q", issue)
+		}
+	}
+}
+
 func TestValidateExtractorIssuesAcceptsNewEnums(t *testing.T) {
 	script := &Script{
 		Name:     "extractor-enums",

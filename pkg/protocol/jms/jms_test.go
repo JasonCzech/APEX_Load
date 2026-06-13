@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -171,6 +172,9 @@ printf '{}'
 		t.Fatalf("WriteFile(sidecar) returned error: %v", err)
 	}
 
+	// The sidecar command is operator-owned: it comes only from the env var.
+	t.Setenv(sidecarCommandEnv, sidecarPath+" "+requestPath)
+
 	p := &JMS{name: "jms-solace", provider: "solace"}
 	if err := p.Init(ctx, map[string]any{
 		"broker_url":      "tcps://broker.example.com:55443",
@@ -178,8 +182,7 @@ printf '{}'
 		"jms_destination": "queue/orders",
 		"jms_mock":        false,
 		"jms_properties": map[string]string{
-			"adapter":         "sidecar",
-			"sidecar_command": sidecarPath + " " + requestPath,
+			"adapter": "sidecar",
 		},
 	}); err != nil {
 		t.Fatalf("Init returned error: %v", err)
@@ -224,6 +227,136 @@ printf '{}'
 	}
 	if req.Config.BrokerURL != "tcps://broker.example.com:55443" {
 		t.Fatalf("Config.BrokerURL = %q, want configured broker", req.Config.BrokerURL)
+	}
+}
+
+func TestJMSSidecarCommandGovernance(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name           string
+		properties     map[string]string
+		operatorEnv    string // empty => env var unset
+		setEnv         bool
+		wantErr        bool
+		wantErrSubstr  string
+		wantAdapterCmd string // expected sidecarAdapter.command when no error
+	}{
+		{
+			name: "script-supplied sidecar_command is rejected",
+			properties: map[string]string{
+				"adapter":         "sidecar",
+				"sidecar_command": "/bin/evil --pwn",
+			},
+			wantErr:       true,
+			wantErrSubstr: "script-supplied sidecar_command is not allowed",
+		},
+		{
+			name: "script-supplied sidecar_command rejected even without adapter=sidecar",
+			properties: map[string]string{
+				"sidecar_command": "/bin/evil --pwn",
+			},
+			wantErr:       true,
+			wantErrSubstr: "script-supplied sidecar_command is not allowed",
+		},
+		{
+			name: "adapter=sidecar without operator env errors",
+			properties: map[string]string{
+				"adapter": "sidecar",
+			},
+			setEnv:        true,
+			operatorEnv:   "",
+			wantErr:       true,
+			wantErrSubstr: sidecarCommandEnv,
+		},
+		{
+			name: "adapter=sidecar with operator env selects sidecar adapter",
+			properties: map[string]string{
+				"adapter": "sidecar",
+			},
+			setEnv:         true,
+			operatorEnv:    "/opt/apexload/jms-sidecar --provider solace",
+			wantErr:        false,
+			wantAdapterCmd: "/opt/apexload/jms-sidecar --provider solace",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setEnv {
+				t.Setenv(sidecarCommandEnv, tc.operatorEnv)
+			} else {
+				// Ensure no ambient value leaks in; t.Setenv restores afterwards.
+				t.Setenv(sidecarCommandEnv, "")
+				os.Unsetenv(sidecarCommandEnv)
+			}
+
+			p := &JMS{name: "jms-solace", provider: "solace"}
+			err := p.Init(ctx, map[string]any{
+				"broker_url":      "amqps://broker.example.com:5671",
+				"jms_destination": "queue/orders",
+				"jms_mock":        false,
+				"jms_properties":  tc.properties,
+			})
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("Init returned nil error, want error containing %q", tc.wantErrSubstr)
+				}
+				if !strings.Contains(err.Error(), tc.wantErrSubstr) {
+					t.Fatalf("Init error = %q, want substring %q", err.Error(), tc.wantErrSubstr)
+				}
+				if p.adapter != nil {
+					t.Fatalf("adapter = %T, want nil on Init error (no silent fall-through)", p.adapter)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Init returned error: %v", err)
+			}
+			sc, ok := p.adapter.(sidecarAdapter)
+			if !ok {
+				t.Fatalf("adapter = %T, want sidecarAdapter", p.adapter)
+			}
+			if sc.command != tc.wantAdapterCmd {
+				t.Fatalf("sidecarAdapter.command = %q, want %q", sc.command, tc.wantAdapterCmd)
+			}
+		})
+	}
+}
+
+func TestJMSSidecarRequestMarshalsSnakeCaseTLSKeys(t *testing.T) {
+	req := sidecarRequest{
+		Operation: "publish",
+		Config: config{
+			BrokerURL: "amqps://broker.example.com:5671",
+			TLS: jmsTLSConfig{
+				CACertSecret:       "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+				TrustStoreRef:      "vault://truststore",
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+
+	raw, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+	got := string(raw)
+
+	wantKeys := []string{`"ca_cert_secret"`, `"trust_store_ref"`, `"insecure_skip_verify"`}
+	for _, key := range wantKeys {
+		if !strings.Contains(got, key) {
+			t.Fatalf("marshaled sidecar request missing snake_case TLS key %s: %s", key, got)
+		}
+	}
+
+	forbiddenKeys := []string{`"CACertSecret"`, `"TrustStoreRef"`, `"InsecureSkipVerify"`}
+	for _, key := range forbiddenKeys {
+		if strings.Contains(got, key) {
+			t.Fatalf("marshaled sidecar request leaked PascalCase TLS key %s: %s", key, got)
+		}
 	}
 }
 

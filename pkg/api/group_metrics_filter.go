@@ -33,7 +33,12 @@ func parseGroupFilterQuery(query url.Values) groupFilterQuery {
 			names = append(names, name)
 		}
 	}
-	return groupFilterQuery{Names: names, Explicit: true}
+	// A present-but-blank value (e.g. "groups=" or "groups=,") carries no group
+	// names and means "no filter / all groups" — NOT "filter to nothing".
+	// Treating it as an explicit empty filter would zero out all live metrics
+	// and make a healthy running test look dead. Only mark the filter explicit
+	// when at least one real group name was provided.
+	return groupFilterQuery{Names: names, Explicit: len(names) > 0}
 }
 
 func selectedGroupNameSet(names []string) map[string]struct{} {

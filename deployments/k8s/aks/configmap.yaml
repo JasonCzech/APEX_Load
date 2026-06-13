@@ -46,6 +46,19 @@ data:
   APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: 15s
   APEXLOAD_GENERATOR_TIMEOUT: 10s
 
+  # --- Controller<->generator gRPC transport security ---
+  # Generators run with APEXLOAD_ENV=production and refuse to start on a
+  # plaintext, tokenless channel, so the controller must dial them over mTLS.
+  # Certificates are mounted from the apexload-controller-grpc-tls Secret (see
+  # the onprem certificates.example.yaml for a cert-manager issuance example).
+  # The shared auth token lives in the apexload-data-platform Secret. The
+  # server-name override lets the controller verify the generator cert's DNS
+  # SAN even though dns:// discovery dials pod IPs.
+  APEXLOAD_GRPC_TLS_CERT: /etc/apexload/grpc-tls/tls.crt
+  APEXLOAD_GRPC_TLS_KEY: /etc/apexload/grpc-tls/tls.key
+  APEXLOAD_GRPC_TLS_CA: /etc/apexload/grpc-tls/ca.crt
+  APEXLOAD_GRPC_TLS_SERVER_NAME: apexload-generator.apexload.svc.cluster.local
+
   # --- Observability: metrics on a dedicated port ---
   # Keeps the scrape surface off the API port so NetworkPolicy can grant the
   # monitoring namespace metrics access without exposing the API.

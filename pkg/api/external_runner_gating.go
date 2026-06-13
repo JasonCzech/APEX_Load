@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -73,7 +74,14 @@ func externalRunnerLaunchConflict(groups []TestGroup) *LaunchConflict {
 }
 
 func javaVuserRunnerLaunchConflicts(groups []TestGroup) []LaunchConflict {
-	conflictsByProtocol := make(map[string]LaunchConflict)
+	// Enablement is operator-owned: the gate reflects whether an operator has
+	// enabled the Java Vuser runner on this controller/generator fleet via
+	// APEXLOAD_JAVA_VUSER_RUNNER_ENABLED. A script's config.java_vuser.enabled
+	// flag is inert and intentionally NOT consulted here — otherwise any script
+	// author could clear this blocking gate and drive local process execution.
+	if config.JavaVuserRunnerEnabled() {
+		return nil
+	}
 	for _, group := range groups {
 		protocolName := strings.ToLower(strings.TrimSpace(group.Protocol))
 		if protocolName == "" && group.script != nil {
@@ -82,30 +90,15 @@ func javaVuserRunnerLaunchConflicts(groups []TestGroup) []LaunchConflict {
 		if protocolName != "java_vuser" {
 			continue
 		}
-		if group.script != nil && group.script.Config.JavaVuser.Enabled {
-			continue
-		}
-		conflictsByProtocol[protocolName] = LaunchConflict{
+		return []LaunchConflict{{
 			Code:       "java_vuser_runner_required",
 			Severity:   "blocking",
 			Source:     "protocol_runtime",
 			ResourceID: protocolName,
 			Message:    javaVuserRunnerRequiredMessage(),
-		}
+		}}
 	}
-	if len(conflictsByProtocol) == 0 {
-		return nil
-	}
-	protocols := make([]string, 0, len(conflictsByProtocol))
-	for protocolName := range conflictsByProtocol {
-		protocols = append(protocols, protocolName)
-	}
-	sort.Strings(protocols)
-	conflicts := make([]LaunchConflict, 0, len(protocols))
-	for _, protocolName := range protocols {
-		conflicts = append(conflicts, conflictsByProtocol[protocolName])
-	}
-	return conflicts
+	return nil
 }
 
 func javaVuserRunnerLaunchConflict(groups []TestGroup) *LaunchConflict {
@@ -126,5 +119,5 @@ func externalRunnerRequiredMessage(protocolName string) string {
 }
 
 func javaVuserRunnerRequiredMessage() string {
-	return "Java Vuser scripts require a governed generator-java JVM sidecar pool; set config.java_vuser.enabled=true only on runners with the java_vuser_jvm_runner entitlement and isolated classpath."
+	return "Java Vuser scripts require a governed generator-java JVM runner pool. An operator must enable it on the runner fleet via APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true (with the runner command, classpath, and working directory configured through APEXLOAD_JAVA_VUSER_*). Script config cannot enable the runner."
 }

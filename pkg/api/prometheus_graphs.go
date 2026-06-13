@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,6 +19,18 @@ const (
 	defaultPrometheusGraphStepSeconds = 15
 	minPrometheusGraphStepSeconds     = 1
 	maxPrometheusGraphStepSeconds     = 3600
+	// maxPrometheusGraphRange bounds the lookback window a single request may
+	// ask for, so a caller cannot force an unbounded scan.
+	maxPrometheusGraphRange = 7 * 24 * time.Hour
+	// maxPrometheusGraphPoints caps the number of samples per series; this
+	// matches Prometheus's own default per-query resolution limit (11000) so an
+	// oversized range/step combination is rejected up front rather than relying
+	// on the upstream to error.
+	maxPrometheusGraphPoints = 11000
+	// maxPrometheusResponseBytes caps how much of an upstream response body we
+	// will read, protecting the controller from a misbehaving/compromised
+	// Prometheus that streams an unbounded body.
+	maxPrometheusResponseBytes = 16 << 20 // 16 MiB
 )
 
 type PrometheusGraphsResponse struct {
@@ -174,6 +189,12 @@ func parsePrometheusGraphRange(r *http.Request) (time.Time, time.Time, int, erro
 	if stepSeconds < minPrometheusGraphStepSeconds || stepSeconds > maxPrometheusGraphStepSeconds {
 		return time.Time{}, time.Time{}, 0, fmt.Errorf("step_seconds must be between %d and %d", minPrometheusGraphStepSeconds, maxPrometheusGraphStepSeconds)
 	}
+	if span := end.Sub(start); span > maxPrometheusGraphRange {
+		return time.Time{}, time.Time{}, 0, fmt.Errorf("requested range %s exceeds the maximum of %s", span, maxPrometheusGraphRange)
+	}
+	if points := int(end.Sub(start).Seconds())/stepSeconds + 1; points > maxPrometheusGraphPoints {
+		return time.Time{}, time.Time{}, 0, fmt.Errorf("range/step would produce %d points per series, exceeding the maximum of %d; widen step_seconds or narrow the range", points, maxPrometheusGraphPoints)
+	}
 	return start, end, stepSeconds, nil
 }
 
@@ -198,13 +219,37 @@ func queryPrometheusGraphPack(ctx context.Context, settings PrometheusSettings, 
 	defer cancel()
 
 	client := newHostAllowlistedHTTPClient(settings.allowlistHosts(), timeout)
-	graphs := make([]PrometheusGraph, 0, len(prometheusGraphDefinitions))
-	for _, definition := range prometheusGraphDefinitions {
-		graph, err := queryPrometheusGraph(ctx, client, settings, definition, start, end, stepSeconds)
+	// The allowlist (host/scheme posture) is invariant across the pack — it
+	// derives from settings.BaseURL, not the per-graph query — so build it once
+	// here instead of rebuilding it inside every queryPrometheusGraph call.
+	allow := make(map[string]struct{})
+	for _, host := range settings.allowlistHosts() {
+		allow[strings.ToLower(host)] = struct{}{}
+	}
+
+	// The graph queries are independent, so run them concurrently and reassemble
+	// in definition order. This keeps handler latency near the slowest single
+	// query rather than the sum of all six.
+	graphs := make([]PrometheusGraph, len(prometheusGraphDefinitions))
+	errs := make([]error, len(prometheusGraphDefinitions))
+	var wg sync.WaitGroup
+	for i, definition := range prometheusGraphDefinitions {
+		wg.Add(1)
+		go func(i int, definition prometheusGraphDefinition) {
+			defer wg.Done()
+			graph, err := queryPrometheusGraph(ctx, client, settings, allow, definition, start, end, stepSeconds)
+			if err != nil {
+				errs[i] = fmt.Errorf("%s: %w", definition.ID, err)
+				return
+			}
+			graphs[i] = graph
+		}(i, definition)
+	}
+	wg.Wait()
+	for _, err := range errs {
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", definition.ID, err)
+			return nil, err
 		}
-		graphs = append(graphs, graph)
 	}
 	return graphs, nil
 }
@@ -213,6 +258,7 @@ func queryPrometheusGraph(
 	ctx context.Context,
 	client *http.Client,
 	settings PrometheusSettings,
+	allow map[string]struct{},
 	definition prometheusGraphDefinition,
 	start time.Time,
 	end time.Time,
@@ -221,10 +267,6 @@ func queryPrometheusGraph(
 	endpoint, err := prometheusQueryRangeURL(settings.BaseURL, definition.Query, start, end, stepSeconds)
 	if err != nil {
 		return PrometheusGraph{}, err
-	}
-	allow := make(map[string]struct{})
-	for _, host := range settings.allowlistHosts() {
-		allow[strings.ToLower(host)] = struct{}{}
 	}
 	if err := validateOutboundURLAllowingHosts(endpoint, allow); err != nil {
 		return PrometheusGraph{}, err
@@ -242,8 +284,19 @@ func queryPrometheusGraph(
 		return PrometheusGraph{}, fmt.Errorf("status %d", resp.StatusCode)
 	}
 
+	// Bound the response body: a compromised/misbehaving upstream must not be
+	// able to stream an unbounded body into the controller.
+	limited := io.LimitReader(resp.Body, maxPrometheusResponseBytes+1)
+	body, err := io.ReadAll(limited)
+	if err != nil {
+		return PrometheusGraph{}, fmt.Errorf("read response: %w", err)
+	}
+	if int64(len(body)) > maxPrometheusResponseBytes {
+		return PrometheusGraph{}, fmt.Errorf("response exceeds %d bytes", maxPrometheusResponseBytes)
+	}
+
 	var payload prometheusQueryRangeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return PrometheusGraph{}, fmt.Errorf("decode response: %w", err)
 	}
 	if payload.Status != "success" {
@@ -311,6 +364,13 @@ func decodePrometheusPoint(raw json.RawMessage) (PrometheusPoint, bool) {
 	}
 	value, ok := decodePrometheusFloat(tuple[1])
 	if !ok {
+		return PrometheusPoint{}, false
+	}
+	// Prometheus legitimately returns non-finite sample values (e.g. "NaN" from
+	// 0/0, or ±Inf). encoding/json cannot marshal NaN/Inf and would fail the
+	// whole graphs response mid-stream after the 200 header is committed, so
+	// drop the point — a gap is the correct charting behavior.
+	if math.IsNaN(value) || math.IsInf(value, 0) || math.IsNaN(timestampSeconds) || math.IsInf(timestampSeconds, 0) {
 		return PrometheusPoint{}, false
 	}
 	timestamp := time.UnixMilli(int64(timestampSeconds * 1000)).UTC()

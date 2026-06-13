@@ -5,8 +5,10 @@ package jms
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -81,21 +83,51 @@ func (a *solaceAMQPAdapter) RequestReply(ctx context.Context, requestDestination
 	if err != nil {
 		return message{}, message{}, err
 	}
+
+	receiver, err := a.receiver(ctx, replyDestination)
+	if err != nil {
+		return sent, message{}, err
+	}
+
 	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	for {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
 			break
 		}
-		reply, err := a.Consume(ctx, replyDestination, remaining)
+		receiveCtx, cancel := context.WithTimeout(ctx, remaining)
+		amqpMsg, err := receiver.Receive(receiveCtx, nil)
+		cancel()
 		if err != nil {
-			return sent, message{}, err
+			// Timeout/cancellation: stop waiting and report no correlated reply.
+			if ctx.Err() != nil {
+				return sent, message{}, ctx.Err()
+			}
+			break
 		}
-		if request.CorrelationID == "" || reply.CorrelationID == "" || reply.CorrelationID == request.CorrelationID {
+		reply := fromAMQPMessage(replyDestination, amqpMsg)
+		if correlationMatches(request.CorrelationID, reply.CorrelationID) {
+			if err := receiver.AcceptMessage(ctx, amqpMsg); err != nil {
+				return sent, reply, fmt.Errorf("accept JMS reply from %q: %w", replyDestination, err)
+			}
 			return sent, reply, nil
+		}
+		// Not ours: requeue so the owning VUser can claim it, then keep waiting.
+		if err := receiver.ReleaseMessage(ctx, amqpMsg); err != nil {
+			return sent, message{}, fmt.Errorf("release uncorrelated JMS reply from %q: %w", replyDestination, err)
 		}
 	}
 	return sent, message{}, fmt.Errorf("no correlated JMS reply received from %q within %s", replyDestination, timeout)
+}
+
+// correlationMatches reports whether an observed reply correlation id satisfies a
+// request correlation id. When either side is empty the match is treated as
+// permissive (no correlation to enforce); otherwise an exact match is required.
+func correlationMatches(requestCorrelationID, replyCorrelationID string) bool {
+	if requestCorrelationID == "" || replyCorrelationID == "" {
+		return true
+	}
+	return requestCorrelationID == replyCorrelationID
 }
 
 func (a *solaceAMQPAdapter) HealthCheck(ctx context.Context) error {
@@ -192,10 +224,18 @@ func (a *solaceAMQPAdapter) handleLocked(ctx context.Context) (*amqp.Session, er
 		opts.ContainerID = a.cfg.ClientID
 	}
 	if strings.EqualFold(brokerURL.Scheme, "amqps") || strings.EqualFold(brokerURL.Scheme, "amqp+ssl") || a.cfg.TLS.InsecureSkipVerify {
-		opts.TLSConfig = &tls.Config{
+		tlsConfig := &tls.Config{
 			ServerName:         brokerURL.Hostname(),
 			InsecureSkipVerify: a.cfg.TLS.InsecureSkipVerify, //nolint:gosec // operator-controlled adapter knob
 		}
+		rootCAs, err := buildTLSRootCAs(a.cfg.TLS.CACertSecret, a.cfg.TLS.TrustStoreRef)
+		if err != nil {
+			return nil, err
+		}
+		if rootCAs != nil {
+			tlsConfig.RootCAs = rootCAs
+		}
+		opts.TLSConfig = tlsConfig
 	}
 	username := strings.TrimSpace(a.cfg.Username)
 	if username != "" && a.cfg.MessageVPN != "" && !strings.Contains(username, "@") {
@@ -237,6 +277,43 @@ func (a *solaceAMQPAdapter) normalizedBrokerURL() (*url.URL, error) {
 	return parsed, nil
 }
 
+// buildTLSRootCAs maps the operator-plumbed TLS trust configuration into a
+// custom root CA pool for the embedded AMQP adapter. It is pure with respect to
+// caCertSecret content (PEM string) but may read the filesystem when caCertSecret
+// is a path.
+//
+//   - caCertSecret containing "BEGIN CERTIFICATE" is treated as inline PEM content.
+//   - otherwise a non-empty caCertSecret is treated as a filesystem path to a PEM file.
+//   - if only trustStoreRef (a JKS reference) is set, a clear error is returned:
+//     JKS truststores are unsupported by the embedded AMQP adapter.
+//   - if neither is set, (nil, nil) is returned so the platform default roots apply.
+func buildTLSRootCAs(caCertSecret string, trustStoreRef string) (*x509.CertPool, error) {
+	caCertSecret = strings.TrimSpace(caCertSecret)
+	if caCertSecret == "" {
+		if strings.TrimSpace(trustStoreRef) != "" {
+			return nil, fmt.Errorf("JKS truststores (jms_tls_trust_store_ref) are unsupported by the embedded AMQP adapter; supply a PEM CA via jms_tls_ca_cert_secret instead")
+		}
+		return nil, nil
+	}
+
+	var pemBytes []byte
+	if strings.Contains(caCertSecret, "BEGIN CERTIFICATE") {
+		pemBytes = []byte(caCertSecret)
+	} else {
+		raw, err := os.ReadFile(caCertSecret)
+		if err != nil {
+			return nil, fmt.Errorf("read JMS TLS CA cert file %q: %w", caCertSecret, err)
+		}
+		pemBytes = raw
+	}
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		return nil, fmt.Errorf("JMS TLS CA cert (jms_tls_ca_cert_secret) contains no parseable PEM certificates")
+	}
+	return pool, nil
+}
+
 func toAMQPMessage(destination string, msg message) *amqp.Message {
 	id := firstNonEmpty(msg.ID, newJMSMessageID())
 	createdAt := msg.CreatedAt
@@ -253,6 +330,15 @@ func toAMQPMessage(destination string, msg message) *amqp.Message {
 	}
 	if contentType := firstMatchingString(msg.Headers, "Content-Type", "content-type"); contentType != "" {
 		properties.ContentType = &contentType
+	}
+	// Mirror any reply destination into the protocol-level ReplyTo property so
+	// brokers and standards-compliant consumers route replies correctly. The
+	// reply destination may arrive via headers or application properties; keep
+	// the application property too for adapters that only read app properties.
+	if replyTo := firstMatchingString(msg.Headers, "reply_to", "ReplyTo"); replyTo != "" {
+		properties.ReplyTo = &replyTo
+	} else if replyTo := firstMatchingString(msg.Properties, "reply_to", "ReplyTo"); replyTo != "" {
+		properties.ReplyTo = &replyTo
 	}
 	appProps := make(map[string]any, len(msg.Properties)+len(msg.Headers))
 	for k, v := range msg.Properties {

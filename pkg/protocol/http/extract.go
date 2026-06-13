@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/antchfx/htmlquery"
@@ -18,6 +19,31 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jmespath/go-jmespath"
 )
+
+// compiledRegexCache memoizes *regexp.Regexp keyed by the exact pattern string.
+// Extractor expressions are static for the life of a script, so without caching
+// each VUser would recompile the same pattern on every request — a measurable
+// CPU/allocation cost on the load-generator hot path. Only patterns derived from
+// the static extractor config (delimiters/expression) are cached here; nothing
+// keyed on per-request response bytes is ever stored, so the map stays bounded
+// by the number of distinct extractor patterns in the script.
+var compiledRegexCache sync.Map // map[string]*regexp.Regexp
+
+// compileRegexCached returns a shared compiled regexp for expr, compiling it on
+// the first request and reusing the result thereafter. Compile errors are not
+// cached: an invalid pattern surfaces the same error on every call, exactly as
+// regexp.Compile did before.
+func compileRegexCached(expr string) (*regexp.Regexp, error) {
+	if cached, ok := compiledRegexCache.Load(expr); ok {
+		return cached.(*regexp.Regexp), nil
+	}
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := compiledRegexCache.LoadOrStore(expr, re)
+	return actual.(*regexp.Regexp), nil
+}
 
 const xpathFragmentExpressionPrefix = "__apexload_xpath_fragment__:"
 
@@ -397,7 +423,7 @@ func extractJMESPath(expr string, body []byte) (string, error) {
 }
 
 func extractRegex(expr string, body []byte) (string, error) {
-	re, err := regexp.Compile(expr)
+	re, err := compileRegexCached(expr)
 	if err != nil {
 		return "", fmt.Errorf("invalid regex: %w", err)
 	}
@@ -409,7 +435,7 @@ func extractRegex(expr string, body []byte) (string, error) {
 }
 
 func extractRegexCount(expr string, body []byte) (string, error) {
-	re, err := regexp.Compile(expr)
+	re, err := compileRegexCached(expr)
 	if err != nil {
 		return "", fmt.Errorf("invalid regex: %w", err)
 	}
@@ -421,7 +447,7 @@ func extractRegexOrdinal(expr string, body []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	re, err := regexp.Compile(config.Expression)
+	re, err := compileRegexCached(config.Expression)
 	if err != nil {
 		return "", fmt.Errorf("invalid regex: %w", err)
 	}
@@ -527,7 +553,7 @@ func extractBoundary(expr string, body []byte) (string, error) {
 }
 
 func extractAllRegex(expr string, body []byte) ([]string, error) {
-	re, err := regexp.Compile(expr)
+	re, err := compileRegexCached(expr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid regex: %w", err)
 	}

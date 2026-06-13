@@ -35,9 +35,16 @@ func TestDefaultPrometheusSettingsSeedsBaseURLFromEnv(t *testing.T) {
 func TestNormalizePrometheusSettings(t *testing.T) {
 	t.Setenv("APEXLOAD_PROMETHEUS_URL", " http://prometheus:9090/ ")
 
+	// normalize is FAITHFUL to Enabled: it fills the base URL/timeout defaults
+	// but never silently re-enables. A zero (e.g. explicitly disabled) section
+	// stays disabled even while the env URL is set — the env-default-enable is
+	// applied only at the defaults/load layers where presence is known.
 	seeded := normalizePrometheusSettings(PrometheusSettings{})
-	if !seeded.Enabled || seeded.BaseURL != "http://prometheus:9090" || seeded.TimeoutSeconds != 5 {
-		t.Fatalf("zero prometheus settings normalized to %+v, want enabled env defaults", seeded)
+	if seeded.Enabled {
+		t.Fatalf("normalize must not auto-enable a disabled section: %+v", seeded)
+	}
+	if seeded.BaseURL != "http://prometheus:9090" || seeded.TimeoutSeconds != 5 {
+		t.Fatalf("zero prometheus settings normalized to %+v, want env base URL + default timeout", seeded)
 	}
 
 	disabled := normalizePrometheusSettings(PrometheusSettings{Enabled: false, TimeoutSeconds: 10})
@@ -51,6 +58,53 @@ func TestNormalizePrometheusSettings(t *testing.T) {
 	trimmed := normalizePrometheusSettings(PrometheusSettings{Enabled: true, BaseURL: " http://example.com:9090/ ", TimeoutSeconds: 7})
 	if trimmed.BaseURL != "http://example.com:9090" || trimmed.TimeoutSeconds != 7 {
 		t.Fatalf("prometheus settings were not trimmed/preserved: %+v", trimmed)
+	}
+}
+
+// TestPrometheusExplicitDisablePersists is the core regression for the
+// "can never disable while env URL is set" footgun: an admin disable must
+// survive UpdateSystemSettings + GetSystemSettings even with the env URL set.
+func TestPrometheusExplicitDisablePersists(t *testing.T) {
+	t.Setenv("APEXLOAD_PROMETHEUS_URL", "http://prometheus:9090")
+
+	server := NewServer(ServerConfig{})
+	settings := server.runner.GetSystemSettings()
+	if !settings.Prometheus.Enabled {
+		t.Fatalf("expected env-defaulted prometheus to start enabled, got %+v", settings.Prometheus)
+	}
+
+	settings.Prometheus = PrometheusSettings{Enabled: false}
+	updated, err := server.runner.UpdateSystemSettings(settings)
+	if err != nil {
+		t.Fatalf("UpdateSystemSettings: %v", err)
+	}
+	if updated.Prometheus.Enabled {
+		t.Fatalf("explicit disable was overridden on write: %+v", updated.Prometheus)
+	}
+	if got := server.runner.GetSystemSettings().Prometheus; got.Enabled {
+		t.Fatalf("explicit disable did not persist: %+v", got)
+	}
+}
+
+func TestRawJSONHasKey(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		key  string
+		want bool
+	}{
+		{name: "present", raw: `{"prometheus":{"enabled":false}}`, key: "prometheus", want: true},
+		{name: "present null", raw: `{"prometheus":null}`, key: "prometheus", want: true},
+		{name: "absent", raw: `{"github":{}}`, key: "prometheus", want: false},
+		{name: "invalid json", raw: `not json`, key: "prometheus", want: false},
+		{name: "empty object", raw: `{}`, key: "prometheus", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := rawJSONHasKey(tc.raw, tc.key); got != tc.want {
+				t.Fatalf("rawJSONHasKey(%q, %q) = %v, want %v", tc.raw, tc.key, got, tc.want)
+			}
+		})
 	}
 }
 
