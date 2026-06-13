@@ -801,14 +801,23 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 	})
 }
 
-func applyGoalControllerUpdate(test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int, update goalControllerUpdate, scaleVUsers func(groupName string, target int) error) {
+func applyGoalControllerUpdate(tr *TestRunner, test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int, update goalControllerUpdate, scaleVUsers func(groupName string, target int) error) {
 	live.GoalStatus = update.Status
 	if !update.ShouldScale {
 		return
 	}
 
-	targets := distributeTargetVUsersForGoal(test.Groups, groupVUsers, update.TargetTotal, currentGoalTargetStatuses(test, live.Timestamp))
-	for _, group := range test.Groups {
+	// Snapshot the group set + target statuses under the lock. The scaleVUsers
+	// engine call must run unlocked, and the resulting test.Groups/goalControl
+	// writes are re-taken under the lock because they share state with the API
+	// read paths that copy *ManagedTest (GetTest/ListTests/capacity scans).
+	tr.mu.RLock()
+	groups := append([]TestGroup(nil), test.Groups...)
+	targetStatuses := currentGoalTargetStatuses(test, live.Timestamp)
+	tr.mu.RUnlock()
+
+	targets := distributeTargetVUsersForGoal(groups, groupVUsers, update.TargetTotal, targetStatuses)
+	for _, group := range groups {
 		target, exists := targets[group.Name]
 		if !exists || groupVUsers[group.Name] == target {
 			continue
@@ -819,18 +828,22 @@ func applyGoalControllerUpdate(test *ManagedTest, live *LiveMetrics, groupVUsers
 			break
 		}
 		groupVUsers[group.Name] = target
+		tr.mu.Lock()
 		for i := range test.Groups {
 			if test.Groups[i].Name == group.Name {
 				test.Groups[i].VUsers = target
 				break
 			}
 		}
+		tr.mu.Unlock()
 	}
 
 	now := live.Timestamp
+	tr.mu.Lock()
 	test.goalControl.lastScaleAt = &now
 	test.goalControl.lastScaleDirection = update.ScaleDirection
 	test.goalControl.lastScaleReason = update.ScaleReason
+	tr.mu.Unlock()
 	live.GoalStatus.LastScaleAt = &now
 	live.GoalStatus.LastScaleDirection = update.ScaleDirection
 	live.GoalStatus.LastScaleReason = update.ScaleReason

@@ -3081,7 +3081,7 @@ func TestApplyGoalControllerUpdateScalesGroupsAndUpdatesStatus(t *testing.T) {
 		group  string
 		target int
 	}
-	applyGoalControllerUpdate(testRun, live, groupVUsers, update, func(groupName string, target int) error {
+	applyGoalControllerUpdate(&TestRunner{}, testRun, live, groupVUsers, update, func(groupName string, target int) error {
 		scaled = append(scaled, struct {
 			group  string
 			target int

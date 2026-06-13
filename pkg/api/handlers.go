@@ -36,8 +36,8 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	}
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	if actorType == "user" || actorType == "service_account" {
-		test.CreatedBySubject = actorSubject
-		test.CreatedByDisplayName = actorDisplayName
+		// AttributeTestCreated sets CreatedBySubject/CreatedByDisplayName under
+		// tr.mu; writing them here directly would race the run/read paths.
 		s.runner.AttributeTestCreated(test.ID, actorSubject, actorDisplayName)
 	}
 	s.recordAuditEvent(r, "test.create", "success", "test", test.ID, test.ProjectID, map[string]any{"name": test.Name, "status": test.Status})

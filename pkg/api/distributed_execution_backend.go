@@ -285,12 +285,15 @@ func (b *distributedExecutionBackend) allowedTargetsForTest(test *ManagedTest) (
 }
 
 func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
+	tr.mu.Lock()
 	assignment, err := normalizeGeneratorAssignmentSettings(test.Assignment)
 	if err != nil {
+		tr.mu.Unlock()
 		tr.failTestBeforeRun(test, err.Error())
 		return
 	}
 	test.Assignment = assignment
+	tr.mu.Unlock()
 	targetSpecs := b.configuredTargetSpecs()
 	if len(targetSpecs) == 0 {
 		tr.failTestBeforeRun(test, "no generator targets configured")
@@ -743,29 +746,38 @@ func testGroupCurrentShardVUsers(test *ManagedTest, groupName string) int {
 	return vusers
 }
 
-func (b *distributedExecutionBackend) closeRemoteResources(test *ManagedTest) {
-	if len(test.remoteMetricsStreamsByTarget) > 0 {
-		for _, stream := range test.remoteMetricsStreamsByTarget {
-			_ = stream.CloseSend()
-		}
-	} else if test.remoteMetricsStream != nil {
-		_ = test.remoteMetricsStream.CloseSend()
-	}
+func (b *distributedExecutionBackend) closeRemoteResources(tr *TestRunner, test *ManagedTest) {
+	// Snapshot the streams/clients and clear the fields under the lock, then do
+	// the blocking gRPC closes outside the lock (they must not be held under mu).
+	tr.mu.Lock()
+	streamsByTarget := test.remoteMetricsStreamsByTarget
+	singleStream := test.remoteMetricsStream
+	clientsByTarget := test.remoteClientsByTarget
+	singleClient := test.remoteClient
 	test.remoteMetricsStream = nil
 	test.remoteMetricsStreamsByTarget = nil
-	if len(test.remoteClientsByTarget) > 0 {
-		for _, client := range test.remoteClientsByTarget {
-			_ = client.Close()
-		}
-	} else if test.remoteClient != nil {
-		_ = test.remoteClient.Close()
-	}
 	test.remoteClient = nil
 	test.remoteClientsByTarget = nil
 	test.remoteGroupTargets = nil
 	test.remoteGroupShards = nil
 	test.remoteMetricsBatchesByTarget = nil
 	test.remoteTargetStates = nil
+	tr.mu.Unlock()
+
+	if len(streamsByTarget) > 0 {
+		for _, stream := range streamsByTarget {
+			_ = stream.CloseSend()
+		}
+	} else if singleStream != nil {
+		_ = singleStream.CloseSend()
+	}
+	if len(clientsByTarget) > 0 {
+		for _, client := range clientsByTarget {
+			_ = client.Close()
+		}
+	} else if singleClient != nil {
+		_ = singleClient.Close()
+	}
 }
 
 func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *TestRunner, test *ManagedTest, target string, stream *generatorrpc.MetricsStream) {
@@ -873,7 +885,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 		groupVUsers := liveGroupVUsers(test, live)
 		currentTotalVUsers := totalGroupVUsers(groupVUsers)
 		update := evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
-		applyGoalControllerUpdate(test, live, groupVUsers, update, func(groupName string, target int) error {
+		applyGoalControllerUpdate(tr, test, live, groupVUsers, update, func(groupName string, target int) error {
 			return b.ScaleVUsers(tr, test, groupName, target)
 		})
 	}
@@ -892,7 +904,7 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 		finalStatus = "FAILED"
 		finalError = testexec.AppendRunError(finalError, "remote archive stage failed", archiveErr)
 	}
-	b.closeRemoteResources(test)
+	b.closeRemoteResources(tr, test)
 	if test.cancel != nil {
 		test.cancel()
 	}

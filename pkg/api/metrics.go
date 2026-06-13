@@ -909,7 +909,7 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 			if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
 				currentTotalVUsers := totalGroupVUsers(groupVUsers)
 				update := evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
-				applyGoalControllerUpdate(test, live, groupVUsers, update, mge.ScaleVUsers)
+				applyGoalControllerUpdate(tr, test, live, groupVUsers, update, mge.ScaleVUsers)
 			}
 
 			// Throttle network latency pings to every 5 seconds
@@ -930,7 +930,7 @@ func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.Metr
 	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
 		currentTotalVUsers := totalGroupVUsers(groupVUsers)
 		update := evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
-		applyGoalControllerUpdate(test, live, groupVUsers, update, scaleVUsers)
+		applyGoalControllerUpdate(tr, test, live, groupVUsers, update, scaleVUsers)
 	}
 
 	tr.publishLiveMetrics(test, live, artifacts)
