@@ -817,87 +817,6 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return requirement, true
 	}
 
-	if path == "/api/v1/system/settings" {
-		if method == http.MethodGet {
-			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-		}
-		if method == http.MethodPut {
-			return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
-		}
-	}
-
-	if path == "/api/v1/auth/service-accounts" {
-		if method == http.MethodGet || method == http.MethodPost {
-			return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
-		}
-	}
-
-	if path == "/api/v1/auth/users" {
-		if method == http.MethodGet || method == http.MethodPost {
-			return accessRequirement{AuthenticatedOnly: true}, true
-		}
-	}
-
-	if path == "/api/v1/auth/user-activity" || path == "/api/v1/auth/user-activity/export" {
-		if method == http.MethodGet {
-			return accessRequirement{AuthenticatedOnly: true}, true
-		}
-	}
-
-	if path == "/api/v1/schedules/health" && method == http.MethodGet {
-		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-	}
-
-	if path == "/api/v1/run-calendar" && method == http.MethodGet {
-		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-	}
-
-	if strings.HasPrefix(path, "/api/v1/auth/service-accounts/") && method == http.MethodPatch {
-		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
-	}
-
-	if strings.HasSuffix(path, "/rotate") && strings.HasPrefix(path, "/api/v1/auth/service-accounts/") && method == http.MethodPost {
-		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
-	}
-
-	if strings.HasPrefix(path, "/api/v1/auth/service-accounts/") && method == http.MethodDelete {
-		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
-	}
-
-	if strings.HasPrefix(path, "/api/v1/auth/users/") {
-		switch method {
-		case http.MethodGet, http.MethodPatch, http.MethodPost, http.MethodDelete:
-			return accessRequirement{AuthenticatedOnly: true}, true
-		}
-	}
-
-	if path == "/api/v1/auth/audit-events" && method == http.MethodGet {
-		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
-	}
-
-	if path == "/api/v1/auth/audit-events/export" && method == http.MethodGet {
-		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
-	}
-
-	if (path == "/api/v1/system/inventory" || path == "/api/v1/system/services" || path == "/api/v1/system/usage" || path == "/api/v1/system/usage/export" || path == "/api/v1/system/usage/snapshots" || path == "/api/v1/system/parity-status" || path == "/api/v1/system/browser-benchmarks" || path == "/api/v1/desktop/status" || path == "/api/v1/runtime-settings/support-matrix" || path == "/api/v1/protocol-bundles/support-matrix" || path == "/api/v1/protocols/native-support-matrix" || path == "/api/v1/fleet/alerts" || path == "/api/v1/fleet/capacity" || path == "/api/v1/fleet/load-zones") && method == http.MethodGet {
-		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-	}
-
-	if (path == "/api/v1/integrations/apm/profiles" || path == "/api/v1/monitoring/packs" || path == "/api/v1/monitoring/prometheus/graphs" || path == "/api/v1/reports/profiles" || path == "/api/v1/results/imports") && method == http.MethodGet {
-		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-	}
-
-	if (path == "/api/v1/integrations/github/repos" || path == "/api/v1/integrations/github/branches" || path == "/api/v1/integrations/github/contents" || path == "/api/v1/integrations/github/diagnostics" || path == "/api/v1/integrations/github/installations" || path == "/api/v1/integrations/github/sync-jobs" || path == "/api/v1/integrations/github/webhooks" || path == "/api/v1/integrations/github/check-links") && method == http.MethodGet {
-		return accessRequirement{AuthenticatedOnly: true}, true
-	}
-	if strings.HasPrefix(path, "/api/v1/integrations/github/sync-jobs/") && method == http.MethodGet {
-		return accessRequirement{AuthenticatedOnly: true}, true
-	}
-
-	if path == "/api/v1/library/capabilities" && method == http.MethodGet {
-		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-	}
-
 	if path == "/api/v1/library/catalog" && method == http.MethodGet {
 		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
 			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
@@ -907,47 +826,6 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveProjectIDFromQuery,
 		}, true
-	}
-
-	if path == "/api/v1/library/export" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveLibraryTransferProjectID,
-		}, true
-	}
-
-	if path == "/api/v1/library/import" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveLibraryImportProjectID,
-		}, true
-	}
-
-	if path == "/api/v1/library/import/archive" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveProjectIDFromQuery,
-		}, true
-	}
-
-	if strings.HasPrefix(path, "/api/v1/library/results/") && strings.HasSuffix(path, "/archive") && method == http.MethodGet {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveLibraryResultArchiveProjectID,
-		}, true
-	}
-
-	if path == "/api/v1/library/remotes" {
-		if method == http.MethodGet {
-			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-		}
-		if method == http.MethodPost {
-			return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
-		}
 	}
 
 	if strings.HasPrefix(path, "/api/v1/library/remotes/") {
@@ -976,10 +854,6 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}
 	}
 
-	if path == "/api/v1/ai/authoring/contract" && method == http.MethodGet {
-		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-	}
-
 	if (path == "/api/v1/ai/policy" || path == "/api/v1/ai/review-queue") && method == http.MethodGet {
 		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
 			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
@@ -989,34 +863,6 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveProjectIDFromQuery,
 		}, true
-	}
-
-	if (path == "/api/v1/ai/drafts" || path == "/api/v1/ai/repairs" || path == "/api/v1/ai/explain") && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveAIAssistanceProjectID,
-		}, true
-	}
-
-	if path == "/api/v1/results/import" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveExternalResultImportProjectID,
-		}, true
-	}
-
-	if path == "/api/v1/system/usage/snapshots" && method == http.MethodPost {
-		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
-	}
-
-	if path == "/api/v1/system/generators/drain" && method == http.MethodPatch {
-		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
-	}
-
-	if (path == "/api/v1/archives/retention/plan" || path == "/api/v1/archives/retention/apply") && method == http.MethodPost {
-		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
 	}
 
 	if path == "/api/v1/recorder/status" && method == http.MethodGet {
@@ -1054,15 +900,6 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveProjectIDFromQuery,
 		}, true
-	}
-
-	if path == "/api/v1/domains" {
-		switch method {
-		case http.MethodGet:
-			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-		case http.MethodPost:
-			return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
-		}
 	}
 
 	if strings.HasPrefix(path, "/api/v1/domains/") {
@@ -1111,34 +948,6 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			}, true
 		case http.MethodPut, http.MethodDelete:
 			return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
-		}
-	}
-
-	if strings.HasPrefix(path, "/api/v1/application-repository/categories/") {
-		switch method {
-		case http.MethodPut, http.MethodDelete:
-			return accessRequirement{
-				GlobalRoles:      []string{RoleProjectAdmin, RoleSystemAdmin},
-				DomainRoles:      []string{RoleProjectAdmin},
-				DomainLookup:     resolveCategoryDomainID,
-				RepositoryRoles:  []string{RoleProjectAdmin},
-				RepositoryLookup: resolveCategoryRepositoryID,
-			}, true
-		}
-	}
-
-	if path == "/api/v1/projects" {
-		switch method {
-		case http.MethodGet:
-			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-		case http.MethodPost:
-			return accessRequirement{
-				GlobalRoles:      []string{RoleProjectAdmin, RoleSystemAdmin},
-				DomainRoles:      []string{RoleEditor, RoleProjectAdmin},
-				DomainLookup:     resolveProjectCreateDomainID,
-				RepositoryRoles:  []string{RoleEditor, RoleProjectAdmin},
-				RepositoryLookup: resolveProjectCreateRepositoryID,
-			}, true
 		}
 	}
 
@@ -1201,17 +1010,6 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 					},
 				}, true
 			}
-		}
-	}
-
-	if strings.HasPrefix(path, "/api/v1/folders/") {
-		switch method {
-		case http.MethodPut, http.MethodDelete:
-			return accessRequirement{
-				GlobalRoles:   []string{RoleProjectAdmin, RoleSystemAdmin},
-				ProjectRoles:  []string{RoleProjectAdmin},
-				ProjectLookup: resolveFolderProjectID,
-			}, true
 		}
 	}
 
@@ -1304,216 +1102,6 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 				ProjectLookup: resolveScriptCreateProjectID,
 			}, true
 		}
-	}
-
-	if path == "/api/v1/scripts/replay" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveDraftScriptProjectID,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/debug/sessions" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveDraftScriptProjectID,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/browser-replay/sessions" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveDraftScriptProjectID,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/import/jmeter/save" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveJMeterSaveProjectID,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/import/jmeter/support-matrix" && method == http.MethodGet {
-		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-	}
-
-	if path == "/api/v1/scripts/import/enterprise-script-archive/support-matrix" && method == http.MethodGet {
-		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-	}
-
-	if (path == "/api/v1/scripts/web-api/support-matrix" || path == "/api/v1/scripts/import/devweb/support-matrix" || path == "/api/v1/scripts/import/k6/support-matrix" || path == "/api/v1/scripts/import/oracle-ebusiness/support-matrix") && method == http.MethodGet {
-		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-	}
-
-	if (path == "/api/v1/scripts/authoring/capabilities" || path == "/api/v1/scripts/authoring/templates" || path == "/api/v1/scripts/authoring/components") && method == http.MethodGet {
-		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-	}
-
-	if path == "/api/v1/scripts/import/enterprise-script-archive" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveImportProjectIDFromForm,
-			MaxBodyBytes:  enterpriseArchiveImportMaxBodyBytes,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/import/enterprise-script-archive/validate" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveImportProjectIDFromForm,
-			MaxBodyBytes:  enterpriseArchiveImportMaxBodyBytes,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/import/jmeter" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveImportProjectIDFromForm,
-			MaxBodyBytes:  jmeterImportMaxBodyBytes,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/import/jmeter/validate" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveImportProjectIDFromForm,
-			MaxBodyBytes:  jmeterImportMaxBodyBytes,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/import/github" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveImportProjectIDFromJSON,
-		}, true
-	}
-
-	if path == "/api/v1/integrations/github/sync-jobs" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveImportProjectIDFromJSON,
-		}, true
-	}
-
-	if strings.HasPrefix(path, "/api/v1/projects/") && strings.HasSuffix(path, "/github/policy") {
-		if method == http.MethodGet {
-			return accessRequirement{
-				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
-				ProjectLookup: resolveProjectIDFromPath,
-			}, true
-		}
-		if method == http.MethodPut {
-			return accessRequirement{
-				GlobalRoles:   []string{RoleProjectAdmin, RoleSystemAdmin},
-				ProjectRoles:  []string{RoleProjectAdmin},
-				ProjectLookup: resolveProjectIDFromPath,
-			}, true
-		}
-	}
-
-	if strings.HasPrefix(path, "/api/v1/scripts/") && strings.HasSuffix(path, "/github/push") && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveScriptProjectID,
-		}, true
-	}
-
-	if strings.HasPrefix(path, "/api/v1/scripts/") && strings.HasSuffix(path, "/github/status") && method == http.MethodGet {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveScriptProjectID,
-		}, true
-	}
-
-	if strings.HasPrefix(path, "/api/v1/tests/") && strings.HasSuffix(path, "/github/check-run") && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveTestProjectID,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/import/sample" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveImportProjectIDFromJSON,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/import/oracle-ebusiness/review" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveImportProjectIDFromJSONOrForm,
-			MaxBodyBytes:  oracleReviewImportMaxBodyBytes,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/import/k6" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveImportProjectIDFromJSONOrForm,
-			MaxBodyBytes:  k6ImportMaxBodyBytes,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/import/har" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveImportProjectIDFromJSONOrForm,
-			MaxBodyBytes:  harImportMaxBodyBytes,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/import/recorder" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveImportProjectIDFromJSONOrForm,
-			MaxBodyBytes:  recorderImportMaxBodyBytes,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/import/parameterize/apply" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveParameterizeApplyProjectID,
-		}, true
-	}
-
-	if (path == "/api/v1/scripts/import/devweb" || path == "/api/v1/scripts/import/har" || path == "/api/v1/scripts/import/k6" || path == "/api/v1/scripts/import/openapi" || path == "/api/v1/scripts/import/postman" || path == "/api/v1/scripts/import/wsdl") && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveImportProjectIDFromJSONOrForm,
-			MaxBodyBytes:  webAPIImportMaxBodyBytes,
-		}, true
-	}
-
-	if path == "/api/v1/scripts/export/k6" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveK6ExportProjectID,
-		}, true
 	}
 
 	if path == "/api/v1/data-pools" {
@@ -1629,22 +1217,6 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 				ProjectLookup: resolveScenarioProjectID,
 			}, true
 		}
-	}
-
-	if path == "/api/v1/tests/estimate" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveTestCreateProjectID,
-		}, true
-	}
-
-	if path == "/api/v1/tests/preflight" && method == http.MethodPost {
-		return accessRequirement{
-			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveTestCreateProjectID,
-		}, true
 	}
 
 	if r.PathValue("id") != "" && strings.HasPrefix(path, "/api/v1/tests/") {

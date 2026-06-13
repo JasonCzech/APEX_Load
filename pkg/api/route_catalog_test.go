@@ -49,6 +49,45 @@ func TestPrometheusGraphsRouteUsesViewerAccess(t *testing.T) {
 	}
 }
 
+func TestRoutePathTemplateMatches(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		path     string
+		want     bool
+	}{
+		{"single placeholder matches one segment", "/api/v1/tests/{id}", "/api/v1/tests/t1", true},
+		{"placeholder does not match deeper path", "/api/v1/tests/{id}", "/api/v1/tests/t1/start", false},
+		{"placeholder does not match collection", "/api/v1/tests/{id}", "/api/v1/tests", false},
+		{"middle placeholder with literal suffix", "/api/v1/scripts/{id}/github/push", "/api/v1/scripts/s1/github/push", true},
+		{"literal suffix must match", "/api/v1/scripts/{id}/github/push", "/api/v1/scripts/s1/github/status", false},
+		{"two placeholders", "/api/v1/auth/users/{id}/bindings/{bid}", "/api/v1/auth/users/u1/bindings/b1", true},
+		{"empty segment rejected", "/api/v1/tests/{id}", "/api/v1/tests/", false},
+		{"exact-only template is skipped here", "/api/v1/tests", "/api/v1/tests", false},
+		{"literal prefix mismatch", "/api/v1/tests/{id}", "/api/v1/scripts/s1", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := routePathTemplateMatches(tc.template, tc.path); got != tc.want {
+				t.Errorf("routePathTemplateMatches(%q, %q) = %v, want %v", tc.template, tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRouteCatalogHasNoDuplicateRules guards against two rules claiming the same
+// (method, path), which would make access resolution order-dependent.
+func TestRouteCatalogHasNoDuplicateRules(t *testing.T) {
+	seen := map[string]bool{}
+	for _, rule := range routeCatalogAuthRules {
+		key := rule.Method + " " + rule.Path
+		if seen[key] {
+			t.Errorf("duplicate route catalog rule for %s", key)
+		}
+		seen[key] = true
+	}
+}
+
 func TestGenericAuthAPIRoutesDeclareAccessRequirement(t *testing.T) {
 	routes := registeredServerRoutes(t)
 	for _, route := range routes {

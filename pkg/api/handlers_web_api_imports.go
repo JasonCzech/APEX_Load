@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -244,9 +243,8 @@ func readAsyncAPIImportRequest(w http.ResponseWriter, r *http.Request) (*asyncAP
 	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "application/json") {
-		data, err := io.ReadAll(r.Body)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+		data, ok := readImportBody(w, r)
+		if !ok {
 			return nil, false
 		}
 		var req asyncapi.ImportRequest
@@ -265,31 +263,19 @@ func readAsyncAPIImportRequest(w http.ResponseWriter, r *http.Request) (*asyncAP
 		return &asyncAPIImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(webAPIImportMaxBodyBytes); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
-			return nil, false
-		}
-		file, header, err := r.FormFile("file")
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "file field is required")
-			return nil, false
-		}
-		defer file.Close()
-		data, err := io.ReadAll(file)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
+		if !ok {
 			return nil, false
 		}
 		return &asyncAPIImportRequest{
 			Data:      data,
 			ProjectID: r.FormValue("project_id"),
-			Name:      strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename)),
+			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
 			Opts:      asyncapi.ConvertOptions{ScriptName: r.FormValue("script_name")},
 		}, true
 	}
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+	data, ok := readImportBody(w, r)
+	if !ok {
 		return nil, false
 	}
 	filename := r.URL.Query().Get("filename")
@@ -305,9 +291,8 @@ func readOpenAPIImportRequest(w http.ResponseWriter, r *http.Request) (*openAPII
 	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "application/json") {
-		data, err := io.ReadAll(r.Body)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+		data, ok := readImportBody(w, r)
+		if !ok {
 			return nil, false
 		}
 		var req openapi.ImportRequest
@@ -329,34 +314,22 @@ func readOpenAPIImportRequest(w http.ResponseWriter, r *http.Request) (*openAPII
 		return &openAPIImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(webAPIImportMaxBodyBytes); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
-			return nil, false
-		}
-		file, header, err := r.FormFile("file")
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "file field is required")
-			return nil, false
-		}
-		defer file.Close()
-		data, err := io.ReadAll(file)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
+		if !ok {
 			return nil, false
 		}
 		return &openAPIImportRequest{
 			Data:      data,
 			ProjectID: r.FormValue("project_id"),
-			Name:      strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename)),
+			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
 			Opts: openapi.ConvertOptions{
 				BaseURL:    r.FormValue("base_url"),
 				ScriptName: r.FormValue("script_name"),
 			},
 		}, true
 	}
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+	data, ok := readImportBody(w, r)
+	if !ok {
 		return nil, false
 	}
 	filename := r.URL.Query().Get("filename")
@@ -383,25 +356,14 @@ func readWSDLImportRequest(w http.ResponseWriter, r *http.Request) (*wsdlImportR
 		return &wsdlImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(webAPIImportMaxBodyBytes); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
-			return nil, false
-		}
-		file, header, err := r.FormFile("file")
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "file field is required")
-			return nil, false
-		}
-		defer file.Close()
-		data, err := io.ReadAll(file)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
+		if !ok {
 			return nil, false
 		}
 		return &wsdlImportRequest{
 			Data:      data,
 			ProjectID: r.FormValue("project_id"),
-			Name:      strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename)),
+			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
 			Opts: wsdl.ConvertOptions{
 				BaseURL:     r.FormValue("base_url"),
 				ScriptName:  r.FormValue("script_name"),
@@ -409,9 +371,8 @@ func readWSDLImportRequest(w http.ResponseWriter, r *http.Request) (*wsdlImportR
 			},
 		}, true
 	}
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+	data, ok := readImportBody(w, r)
+	if !ok {
 		return nil, false
 	}
 	filename := r.URL.Query().Get("filename")
@@ -431,9 +392,8 @@ func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanI
 	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "application/json") {
-		data, err := io.ReadAll(r.Body)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+		data, ok := readImportBody(w, r)
+		if !ok {
 			return nil, false
 		}
 		var req postman.ImportRequest
@@ -455,34 +415,22 @@ func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanI
 		return &postmanImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(webAPIImportMaxBodyBytes); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
-			return nil, false
-		}
-		file, header, err := r.FormFile("file")
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "file field is required")
-			return nil, false
-		}
-		defer file.Close()
-		data, err := io.ReadAll(file)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
+		if !ok {
 			return nil, false
 		}
 		return &postmanImportRequest{
 			Data:      data,
 			ProjectID: r.FormValue("project_id"),
-			Name:      strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename)),
+			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
 			Opts: postman.ConvertOptions{
 				BaseURL:    r.FormValue("base_url"),
 				ScriptName: r.FormValue("script_name"),
 			},
 		}, true
 	}
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+	data, ok := readImportBody(w, r)
+	if !ok {
 		return nil, false
 	}
 	filename := r.URL.Query().Get("filename")

@@ -6,8 +6,8 @@ import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarMet
 import { useWebSocket } from '../hooks/useWebSocket'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
-import { EditorSelection, RangeSetBuilder, StateEffect, StateField, type Extension } from '@codemirror/state'
-import { Decoration, type DecorationSet, EditorView } from '@codemirror/view'
+import { EditorSelection, StateEffect, type Extension } from '@codemirror/state'
+import { EditorView } from '@codemirror/view'
 import { apexCodeMirrorTheme } from './codeMirrorTheme'
 import { apexDslSemanticHighlighting } from './apexDslSemanticHighlighting'
 import { buildDslAssistExtensions } from './dslEditorAssist'
@@ -66,6 +66,21 @@ import {
   type ScriptRepairSuggestion,
 } from './scriptAuthoringAssist'
 import { buildDslDocument, lineRangeForTargetPath, type LineRange } from './dslJsonPointers'
+import {
+  scriptCodeRangeField,
+  scriptCodeParameterMatchField,
+  scriptCodeCandidateMatchField,
+  setScriptCodeRange,
+  setScriptCodeParameterMatches,
+  setScriptCodeCandidateMatches,
+  type ScriptCodeMatchRange,
+} from './scriptCodeDecorations'
+import {
+  defaultAssertionForProtocol,
+  defaultExtractorForProtocol,
+  escapeRegExp,
+  sanitizeDownloadName,
+} from './scriptEditorHelpers'
 import {
   formatSnapshotRequestSection,
   formatSnapshotResponseSection,
@@ -282,102 +297,6 @@ const DEBUGGER_LAYOUT_LIMITS: Record<DebuggerResizeKind, { max: number; min: num
   bottom: { min: 140, max: 640, step: 24 },
 }
 
-const setScriptCodeRange = StateEffect.define<LineRange | null>()
-const setScriptCodeParameterMatches = StateEffect.define<ScriptCodeMatchRange[]>()
-const setScriptCodeCandidateMatches = StateEffect.define<ScriptCodeMatchRange[]>()
-
-interface ScriptCodeMatchRange {
-  from: number
-  to: number
-}
-
-function buildScriptCodeDecorations(state: EditorView['state'], range: LineRange | null): DecorationSet {
-  if (!range) return Decoration.none
-  const builder = new RangeSetBuilder<Decoration>()
-  const lineDeco = Decoration.line({ class: 'script-code-active-line' })
-  const start = Math.max(1, range.startLine)
-  const end = Math.min(state.doc.lines, range.endLine)
-  for (let lineNo = start; lineNo <= end; lineNo += 1) {
-    const line = state.doc.line(lineNo)
-    builder.add(line.from, line.from, lineDeco)
-  }
-  return builder.finish()
-}
-
-const scriptCodeRangeField = StateField.define<DecorationSet>({
-  create: () => Decoration.none,
-  update(decorations, tr) {
-    let next = decorations.map(tr.changes)
-    for (const effect of tr.effects) {
-      if (effect.is(setScriptCodeRange)) {
-        next = buildScriptCodeDecorations(tr.state, effect.value)
-      }
-    }
-    return next
-  },
-  provide: field => EditorView.decorations.from(field),
-})
-
-function buildScriptCodeParameterDecorations(state: EditorView['state'], ranges: ScriptCodeMatchRange[]): DecorationSet {
-  if (ranges.length === 0) return Decoration.none
-  const builder = new RangeSetBuilder<Decoration>()
-  const matchDeco = Decoration.mark({ class: 'script-code-parameter-match' })
-  const firstMatchDeco = Decoration.mark({ class: 'script-code-parameter-match first' })
-  ranges
-    .filter(range => range.from >= 0 && range.to > range.from && range.to <= state.doc.length)
-    .sort((left, right) => left.from - right.from || left.to - right.to)
-    .forEach((range, index) => {
-      builder.add(range.from, range.to, index === 0 ? firstMatchDeco : matchDeco)
-    })
-  return builder.finish()
-}
-
-const scriptCodeParameterMatchField = StateField.define<DecorationSet>({
-  create: () => Decoration.none,
-  update(decorations, tr) {
-    let next = decorations.map(tr.changes)
-    for (const effect of tr.effects) {
-      if (effect.is(setScriptCodeParameterMatches)) {
-        next = buildScriptCodeParameterDecorations(tr.state, effect.value)
-      }
-    }
-    return next
-  },
-  provide: field => EditorView.decorations.from(field),
-})
-
-function buildScriptCodeCandidateDecorations(state: EditorView['state'], ranges: ScriptCodeMatchRange[]): DecorationSet {
-  if (ranges.length === 0) return Decoration.none
-  const builder = new RangeSetBuilder<Decoration>()
-  const matchDeco = Decoration.mark({ class: 'script-code-auto-parameter-match' })
-  const firstMatchDeco = Decoration.mark({ class: 'script-code-auto-parameter-match first' })
-  ranges
-    .filter(range => range.from >= 0 && range.to > range.from && range.to <= state.doc.length)
-    .sort((left, right) => left.from - right.from || left.to - right.to)
-    .forEach((range, index) => {
-      builder.add(range.from, range.to, index === 0 ? firstMatchDeco : matchDeco)
-    })
-  return builder.finish()
-}
-
-const scriptCodeCandidateMatchField = StateField.define<DecorationSet>({
-  create: () => Decoration.none,
-  update(decorations, tr) {
-    let next = decorations.map(tr.changes)
-    for (const effect of tr.effects) {
-      if (effect.is(setScriptCodeCandidateMatches)) {
-        next = buildScriptCodeCandidateDecorations(tr.state, effect.value)
-      }
-    }
-    return next
-  },
-  provide: field => EditorView.decorations.from(field),
-})
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
 function findParameterReferencesInJson(text: string, parameterName: string): ScriptCodeMatchRange[] {
   const name = parameterName.trim()
   if (!name) return []
@@ -443,42 +362,6 @@ function buildScriptPhaseActionRows(script: ScriptData): ScriptPhaseActionRow[] 
   return rows
 }
 
-function defaultExtractorForProtocol(protocol: string) {
-  switch (protocol) {
-    case 'database':
-      return { name: '', source: 'body', type: 'jsonpath', expression: '$.rows[0].id' }
-    case 'network':
-      return { name: '', source: 'body', type: 'jsonpath', expression: '$.response' }
-    case 'grpc':
-      return { name: '', source: 'body', type: 'jsonpath', expression: '$.id' }
-    case 'jms-ibmmq':
-    case 'jms-solace':
-      return { name: '', source: 'body', type: 'jsonpath', expression: '$.id' }
-    case 'websocket':
-      return { name: '', source: 'body', type: 'jsonpath', expression: '$.id' }
-    default:
-      return { name: '', source: 'body', type: 'jsonpath', expression: '$.data.id' }
-  }
-}
-
-function defaultAssertionForProtocol(protocol: string) {
-  switch (protocol) {
-    case 'database':
-      return { type: 'row_count', expected: 1 }
-    case 'network':
-      return { type: 'body_contains', value: '' }
-    case 'grpc':
-      return { type: 'grpc_status', expected: 0 }
-    case 'jms-ibmmq':
-    case 'jms-solace':
-      return { type: 'message_received' }
-    case 'websocket':
-      return { type: 'message_received' }
-    default:
-      return { type: 'status_code', expected: 200 }
-  }
-}
-
 function formatProtocolEvidenceSummary(evidence?: ProtocolEvidence): string {
   if (!evidence) return ''
   const parts = [
@@ -496,15 +379,6 @@ function lookupBrowserDeviceProfile(name?: string) {
 
 function formatBrowserDeviceProfileLabel(profile: BrowserDeviceProfileOption) {
   return profile.engine === 'webkit' ? `${profile.name} (WebKit)` : profile.name
-}
-
-function sanitizeDownloadName(value: string | undefined, fallback: string) {
-  const normalized = (value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return normalized || fallback
 }
 
 interface JsonPaneSelectionRequest {

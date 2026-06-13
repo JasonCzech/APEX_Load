@@ -1,6 +1,11 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+	"strings"
+
+	"github.com/jasonczech/apexload/pkg/storage"
+)
 
 type apiRouteAuthRule struct {
 	Method      string
@@ -81,6 +86,110 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/ai/authoring/contract", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/archives/retention/plan", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
 	routeAuth(http.MethodPost, "/api/v1/archives/retention/apply", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
+
+	// Service-account lifecycle (system-admin only).
+	routeAuth(http.MethodPatch, "/api/v1/auth/service-accounts/{id}", systemAdminAccess()),
+	routeAuth(http.MethodPost, "/api/v1/auth/service-accounts/{id}/rotate", systemAdminAccess()),
+	routeAuth(http.MethodDelete, "/api/v1/auth/service-accounts/{id}", systemAdminAccess()),
+
+	// GitHub integration read endpoints (any authenticated user).
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/repos", accessRequirement{AuthenticatedOnly: true}),
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/branches", accessRequirement{AuthenticatedOnly: true}),
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/contents", accessRequirement{AuthenticatedOnly: true}),
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/diagnostics", accessRequirement{AuthenticatedOnly: true}),
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/installations", accessRequirement{AuthenticatedOnly: true}),
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/sync-jobs", accessRequirement{AuthenticatedOnly: true}),
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/sync-jobs/{id}", accessRequirement{AuthenticatedOnly: true}),
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/webhooks", accessRequirement{AuthenticatedOnly: true}),
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/check-links", accessRequirement{AuthenticatedOnly: true}),
+	routeAuth(http.MethodPost, "/api/v1/integrations/github/sync-jobs", editorProjectAccess(resolveImportProjectIDFromJSON)),
+
+	// Library transfer + remotes (flat endpoints).
+	routeAuth(http.MethodPost, "/api/v1/library/export", viewerProjectAccess(resolveLibraryTransferProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/library/import", editorProjectAccess(resolveLibraryImportProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/library/import/archive", editorProjectAccess(resolveProjectIDFromQuery)),
+	routeAuth(http.MethodGet, "/api/v1/library/results/{id}/archive", viewerProjectAccess(resolveLibraryResultArchiveProjectID)),
+	routeAuth(http.MethodGet, "/api/v1/library/remotes", viewerGlobalAccess()),
+	routeAuth(http.MethodPost, "/api/v1/library/remotes", systemAdminAccess()),
+
+	// Assisted-authoring drafts/repairs/explain + external result import.
+	routeAuth(http.MethodPost, "/api/v1/ai/drafts", editorProjectAccess(resolveAIAssistanceProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/ai/repairs", editorProjectAccess(resolveAIAssistanceProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/ai/explain", editorProjectAccess(resolveAIAssistanceProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/results/import", editorProjectAccess(resolveExternalResultImportProjectID)),
+
+	// Domains, application-repository categories, projects, folders (flat).
+	routeAuth(http.MethodGet, "/api/v1/domains", viewerGlobalAccess()),
+	routeAuth(http.MethodPost, "/api/v1/domains", systemAdminAccess()),
+	routeAuth(http.MethodPut, "/api/v1/application-repository/categories/{id}", accessRequirement{
+		GlobalRoles:      []string{RoleProjectAdmin, RoleSystemAdmin},
+		DomainRoles:      []string{RoleProjectAdmin},
+		DomainLookup:     resolveCategoryDomainID,
+		RepositoryRoles:  []string{RoleProjectAdmin},
+		RepositoryLookup: resolveCategoryRepositoryID,
+	}),
+	routeAuth(http.MethodDelete, "/api/v1/application-repository/categories/{id}", accessRequirement{
+		GlobalRoles:      []string{RoleProjectAdmin, RoleSystemAdmin},
+		DomainRoles:      []string{RoleProjectAdmin},
+		DomainLookup:     resolveCategoryDomainID,
+		RepositoryRoles:  []string{RoleProjectAdmin},
+		RepositoryLookup: resolveCategoryRepositoryID,
+	}),
+	routeAuth(http.MethodGet, "/api/v1/projects", viewerGlobalAccess()),
+	routeAuth(http.MethodPost, "/api/v1/projects", accessRequirement{
+		GlobalRoles:      []string{RoleProjectAdmin, RoleSystemAdmin},
+		DomainRoles:      []string{RoleEditor, RoleProjectAdmin},
+		DomainLookup:     resolveProjectCreateDomainID,
+		RepositoryRoles:  []string{RoleEditor, RoleProjectAdmin},
+		RepositoryLookup: resolveProjectCreateRepositoryID,
+	}),
+	routeAuth(http.MethodPut, "/api/v1/folders/{id}", projectAdminAccess(resolveFolderProjectID)),
+	routeAuth(http.MethodDelete, "/api/v1/folders/{id}", projectAdminAccess(resolveFolderProjectID)),
+
+	// Script draft/replay/debug sessions.
+	routeAuth(http.MethodPost, "/api/v1/scripts/replay", editorProjectAccess(resolveDraftScriptProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/debug/sessions", editorProjectAccess(resolveDraftScriptProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", editorProjectAccess(resolveDraftScriptProjectID)),
+
+	// Importer support matrices + authoring catalogs (read-level).
+	routeAuth(http.MethodGet, "/api/v1/scripts/import/jmeter/support-matrix", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/scripts/import/enterprise-script-archive/support-matrix", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/scripts/web-api/support-matrix", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/scripts/import/devweb/support-matrix", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/scripts/import/k6/support-matrix", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/scripts/import/oracle-ebusiness/support-matrix", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/scripts/authoring/capabilities", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/scripts/authoring/templates", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/scripts/authoring/components", viewerGlobalAccess()),
+
+	// Script importers (write-level, with per-format upload limits).
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/jmeter/save", editorProjectAccess(resolveJMeterSaveProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", editorImportAccess(resolveImportProjectIDFromForm, enterpriseArchiveImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", editorImportAccess(resolveImportProjectIDFromForm, enterpriseArchiveImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/jmeter", editorImportAccess(resolveImportProjectIDFromForm, jmeterImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/jmeter/validate", editorImportAccess(resolveImportProjectIDFromForm, jmeterImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/github", editorProjectAccess(resolveImportProjectIDFromJSON)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/sample", editorProjectAccess(resolveImportProjectIDFromJSON)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/oracle-ebusiness/review", editorImportAccess(resolveImportProjectIDFromJSONOrForm, oracleReviewImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/k6", editorImportAccess(resolveImportProjectIDFromJSONOrForm, k6ImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/har", editorImportAccess(resolveImportProjectIDFromJSONOrForm, harImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/recorder", editorImportAccess(resolveImportProjectIDFromJSONOrForm, recorderImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/parameterize/apply", editorProjectAccess(resolveParameterizeApplyProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/devweb", editorImportAccess(resolveImportProjectIDFromJSONOrForm, webAPIImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/openapi", editorImportAccess(resolveImportProjectIDFromJSONOrForm, webAPIImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/postman", editorImportAccess(resolveImportProjectIDFromJSONOrForm, webAPIImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/wsdl", editorImportAccess(resolveImportProjectIDFromJSONOrForm, webAPIImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/export/k6", editorProjectAccess(resolveK6ExportProjectID)),
+
+	// Per-resource GitHub links (project policy, script push/status, test check-run).
+	routeAuth(http.MethodGet, "/api/v1/projects/{id}/github/policy", viewerProjectAccess(resolveProjectIDFromPath)),
+	routeAuth(http.MethodPut, "/api/v1/projects/{id}/github/policy", projectAdminAccess(resolveProjectIDFromPath)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/github/push", editorProjectAccess(resolveScriptProjectID)),
+	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/github/status", viewerProjectAccess(resolveScriptProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/tests/{id}/github/check-run", editorProjectAccess(resolveTestProjectID)),
+
+	// Capacity estimate (write-level, project-scoped).
+	routeAuth(http.MethodPost, "/api/v1/tests/estimate", editorProjectAccess(resolveTestCreateProjectID)),
 }
 
 func routeAuth(method string, path string, requirement accessRequirement) apiRouteAuthRule {
@@ -91,11 +200,91 @@ func viewerGlobalAccess() accessRequirement {
 	return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}
 }
 
+func systemAdminAccess() accessRequirement {
+	return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}
+}
+
+// projectScopedLookup is the per-request resolver shape used to bind an access
+// requirement to a specific project/domain/repository for fine-grained checks.
+type projectScopedLookup = func(*http.Request, storage.Store) (string, int, string)
+
+// viewerProjectAccess grants read-level access globally and within a project.
+func viewerProjectAccess(lookup projectScopedLookup) accessRequirement {
+	return accessRequirement{
+		GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+		ProjectLookup: lookup,
+	}
+}
+
+// editorProjectAccess grants write-level access globally and within a project.
+func editorProjectAccess(lookup projectScopedLookup) accessRequirement {
+	return accessRequirement{
+		GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+		ProjectLookup: lookup,
+	}
+}
+
+// editorImportAccess is editorProjectAccess with an upload body-size limit.
+func editorImportAccess(lookup projectScopedLookup, maxBody int64) accessRequirement {
+	req := editorProjectAccess(lookup)
+	req.MaxBodyBytes = maxBody
+	return req
+}
+
+// projectAdminAccess grants project-admin-level write access within a project.
+func projectAdminAccess(lookup projectScopedLookup) accessRequirement {
+	return accessRequirement{
+		GlobalRoles:   []string{RoleProjectAdmin, RoleSystemAdmin},
+		ProjectRoles:  []string{RoleProjectAdmin},
+		ProjectLookup: lookup,
+	}
+}
+
 func accessRequirementFromRouteCatalog(method string, path string) (accessRequirement, bool) {
+	// Exact-literal rules take precedence so a concrete path (e.g.
+	// "/api/v1/scripts/replay") always wins over a template rule that could
+	// also match it (e.g. "/api/v1/scripts/{id}").
 	for _, rule := range routeCatalogAuthRules {
 		if rule.Method == method && rule.Path == path {
 			return rule.Requirement, true
 		}
 	}
+	// Then segment-wise template rules: a "{name}" segment matches exactly one
+	// non-empty path segment. This lets parameterized routes be declared
+	// declaratively instead of via hand-coded prefix/suffix checks.
+	for _, rule := range routeCatalogAuthRules {
+		if rule.Method == method && routePathTemplateMatches(rule.Path, path) {
+			return rule.Requirement, true
+		}
+	}
 	return accessRequirement{}, false
+}
+
+// routePathTemplateMatches reports whether path matches a "/a/{id}/b"-style
+// template. Each "{...}" segment matches exactly one non-empty path segment;
+// every other segment must match literally. Templates without a placeholder are
+// ignored here (they are handled by the exact-match pass).
+func routePathTemplateMatches(template string, path string) bool {
+	if !strings.Contains(template, "{") {
+		return false
+	}
+	tSeg := strings.Split(strings.Trim(template, "/"), "/")
+	pSeg := strings.Split(strings.Trim(path, "/"), "/")
+	if len(tSeg) != len(pSeg) {
+		return false
+	}
+	for i := range tSeg {
+		if strings.HasPrefix(tSeg[i], "{") && strings.HasSuffix(tSeg[i], "}") {
+			if pSeg[i] == "" {
+				return false
+			}
+			continue
+		}
+		if tSeg[i] != pSeg[i] {
+			return false
+		}
+	}
+	return true
 }
