@@ -39,6 +39,7 @@ interface Props {
 type ExistingScriptSortKey = 'name' | 'health' | 'usage' | 'associated_releases' | 'created_at' | 'last_run'
 type ExistingScriptSortDirection = 'asc' | 'desc'
 type StartNewCategory = 'templates' | 'editors' | 'blocks'
+type CreateWorkflow = 'existing' | 'start-new' | 'source'
 
 function formatScriptStatus(status?: string) {
   return status ? status.replace(/_/g, ' ') : 'not scored'
@@ -168,7 +169,7 @@ export default function ScriptCreateOptions({
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const [templates, setTemplates] = useState<AuthoringTemplate[]>([])
   const [components, setComponents] = useState<AuthoringComponent[]>([])
-  const [workflow, setWorkflow] = useState<'existing' | 'start-new' | 'source' | 'record'>('existing')
+  const [workflow, setWorkflow] = useState<CreateWorkflow>('existing')
   const [existingScriptQuery, setExistingScriptQuery] = useState('')
   const [existingScriptProtocol, setExistingScriptProtocol] = useState('all')
   const [existingScriptHealth, setExistingScriptHealth] = useState('all')
@@ -375,7 +376,7 @@ export default function ScriptCreateOptions({
           <strong>Start New Script</strong>
           <small>Use templates, reusable blocks, or blank protocol editors.</small>
         </button>
-        <button type="button" className={`script-workflow-card ${workflow === 'record' ? 'active' : ''}`} onClick={() => setWorkflow('record')}>
+        <button type="button" className="script-workflow-card" onClick={onOpenRecorder}>
           <span>3</span>
           <strong>Record Browser</strong>
           <small>Capture a user journey and review it before save.</small>
@@ -653,23 +654,6 @@ export default function ScriptCreateOptions({
               )}
             </div>
           </section>
-        )}
-
-        {workflow === 'record' && (
-        <section className="script-create-lane web full">
-          <div className="script-create-lane-header">
-            <span className="script-create-kicker">Browser capture</span>
-            <h3>Record Browser</h3>
-            <p>Capture a rendered browser flow, then review and edit the generated draft before promotion.</p>
-          </div>
-          <div className="script-create-grid">
-            <button className="script-create-option" onClick={onOpenRecorder}>
-              <span className="script-create-type-badge web">WEB</span>
-              <h3>Browser Recorder</h3>
-              <p>Capture a browser session and convert selected traffic into reusable Web/HTML script assets.</p>
-            </button>
-          </div>
-        </section>
         )}
 
         {workflow === 'source' && (

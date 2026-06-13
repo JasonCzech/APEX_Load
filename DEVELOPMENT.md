@@ -394,7 +394,14 @@ npm run test
 **Build Go binaries:**
 ```bash
 make build
-# Outputs to ./bin/controller, ./bin/generator, ./bin/apexctl
+# Outputs to ./bin/controller, ./bin/generator, ./bin/apexctl,
+# and ./bin/apexload-record-agent
+```
+
+**Package the production Recording Agent:**
+```bash
+make package-recording-agent
+# Outputs release archives to ./dist/recording-agent
 ```
 
 **Build dashboard for embedding:**

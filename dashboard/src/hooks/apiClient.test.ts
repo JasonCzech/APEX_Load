@@ -8,6 +8,7 @@ import {
   buildDevPreviewHeaders,
   readStoredDevViewMode,
   request,
+  requestFromOrigin,
   resolveApiOrigin,
   writeStoredDevViewMode,
 } from './apiClient'
@@ -106,6 +107,19 @@ describe('dev preview API headers', () => {
     const headers = init.headers as Headers
     expect(headers.get('X-APEXLoad-Dev-View')).toBe('admin')
     expect(headers.get('Content-Type')).toBe('application/json')
+  })
+
+  it('can send JSON requests to an alternate API origin', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"ok":true}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await requestFromOrigin<{ ok: boolean }>('http://127.0.0.1:49152', '/bridge/status')
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:49152/api/v1/bridge/status')
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect((init.headers as Headers).get('Content-Type')).toBe('application/json')
   })
 
   it('reports dashboard HTML fallbacks as unavailable API routes without echoing markup', async () => {

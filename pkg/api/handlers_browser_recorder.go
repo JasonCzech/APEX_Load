@@ -37,7 +37,7 @@ func (s *Server) browserRecordingAvailability() browserRecordingAvailability {
 	case "on", "enabled", "true", "1":
 		// Explicit opt-in overrides the production-mode default-off.
 	default:
-		if productionMode() && !s.desktopMode {
+		if productionMode() && !s.desktopMode && !s.bridgeMode {
 			return browserRecordingAvailability{Reason: "browser recording launches a headed browser on the controller host and is disabled in production mode (set APEXLOAD_BROWSER_RECORDER=on to override)"}
 		}
 	}
@@ -358,12 +358,36 @@ func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, 
 	json.NewDecoder(r.Body).Decode(&req)
 
 	result := s.convertBrowserRecording(artifact, info, req)
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	warnings := append([]string(nil), result.Warnings...)
+	scripts := make([]any, 0, len(result.Scripts)+1)
+	for _, sc := range result.Scripts {
+		if sc != nil {
+			scripts = append(scripts, sc)
+		}
+	}
+	var httpScript *dsl.Script
+	if req.AlsoCreateHTTPScript {
+		var httpWarnings []string
+		var err error
+		httpScript, httpWarnings, err = s.createHTTPScriptFromHAR(artifact, info, req.Name)
+		if err != nil {
+			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
+		} else if httpScript != nil {
+			scripts = append(scripts, httpScript)
+			warnings = append(warnings, httpWarnings...)
+		}
+	}
+	response := newScriptImportResponse(scriptImportResponseOptions{
 		Script:           result.Script,
-		Warnings:         result.Warnings,
+		Scripts:          scripts,
+		Warnings:         warnings,
 		Stats:            result.Stats,
 		Parameterization: buildImportParameterization(result.Script, nil),
-	}))
+	})
+	if httpScript != nil {
+		response["http_script"] = httpScript
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Request) {

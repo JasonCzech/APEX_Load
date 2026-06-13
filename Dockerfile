@@ -21,7 +21,7 @@ ARG BINARY=generator
 # to start with a mismatched driver.
 ARG PLAYWRIGHT_DRIVER_VERSION=1.57.0
 RUN apk add --no-cache ca-certificates \
-	&& if [ "$BINARY" = "generator" ]; then \
+	&& if [ "$BINARY" = "generator" ] || [ "$BINARY" = "controller" ]; then \
 		apk add --no-cache chromium nodejs nss freetype harfbuzz ttf-freefont; \
 		if [ -x /usr/bin/chromium-browser ]; then \
 			ln -sf /usr/bin/chromium-browser /usr/bin/google-chrome; \
@@ -40,7 +40,7 @@ RUN apk add --no-cache ca-certificates \
 		apk del .driver-build; \
 	fi
 COPY --from=builder /app /usr/local/bin/app
-# Browser runtime wiring (generator image; inert elsewhere):
+# Browser runtime wiring (controller and generator images; inert elsewhere):
 # - the driver lives at a fixed path readable by any uid (readOnlyRootFilesystem-safe)
 # - Playwright drives Alpine's musl-built Chromium instead of its own
 #   glibc-only managed build (APEXLOAD_BROWSER_EXECUTABLE override)

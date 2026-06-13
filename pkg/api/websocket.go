@@ -25,6 +25,7 @@ type Hub struct {
 	fanout            FanoutBus
 	fanoutChannel     string
 	fanoutOrigin      string
+	allowedOriginsMu  sync.RWMutex
 	allowedOrigins    []string
 }
 
@@ -35,6 +36,8 @@ func (h *Hub) SetAllowedOrigins(origins []string) {
 	if h == nil {
 		return
 	}
+	h.allowedOriginsMu.Lock()
+	defer h.allowedOriginsMu.Unlock()
 	h.allowedOrigins = append([]string(nil), origins...)
 }
 
@@ -43,7 +46,10 @@ func (h *Hub) upgrader() websocket.Upgrader {
 		ReadBufferSize:  1024,
 		WriteBufferSize: 4096,
 		CheckOrigin: func(r *http.Request) bool {
-			return originAllowed(h.allowedOrigins, r)
+			h.allowedOriginsMu.RLock()
+			allowedOrigins := append([]string(nil), h.allowedOrigins...)
+			h.allowedOriginsMu.RUnlock()
+			return originAllowed(allowedOrigins, r)
 		},
 	}
 }
