@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type MouseEvent } from 'react'
 import { downloadBlob } from '../utils/fileUtils'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
-import { apiFetch } from '../hooks/apiClient'
+import { API_ORIGIN, apiFetch, trimTrailingSlash } from '../hooks/apiClient'
 import { Project } from '../types'
 import { type RecorderImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
@@ -91,6 +91,172 @@ interface RecorderStatus {
   }
 }
 
+const MISSING_BROWSER_RECORDER_CAPABILITY = {
+  available: false,
+  reason: 'controller does not expose browser recording endpoints',
+}
+const DEFAULT_BRIDGE_ORIGIN = 'http://127.0.0.1:27777'
+const DEFAULT_RECORDING_AGENT_DOWNLOAD_PATH = '/api/v1/downloads/recording-agent/latest'
+const BRIDGE_PAIRING_TOKEN_BYTES = 24
+const RECORDING_AGENT_COMMAND = 'apexload-record-agent'
+
+function generateBridgePairingToken(): string {
+  const cryptoObj = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined
+  if (cryptoObj?.getRandomValues) {
+    const bytes = new Uint8Array(BRIDGE_PAIRING_TOKEN_BYTES)
+    cryptoObj.getRandomValues(bytes)
+    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+  }
+  if (cryptoObj?.randomUUID) {
+    return cryptoObj.randomUUID().replace(/-/g, '')
+  }
+  throw new Error('Secure browser crypto is required to generate a bridge pairing token')
+}
+
+function initialBridgePairingToken(): string {
+  try {
+    return generateBridgePairingToken()
+  } catch {
+    return ''
+  }
+}
+
+function browserRecorderInstallRetryable(reason: string, installState: { status: string; error?: string } | null): boolean {
+  if (!installState || installState.status === 'installed') {
+    return false
+  }
+  const normalizedReason = reason.toLowerCase()
+  return ![
+    'no display detected',
+    'production mode',
+    'disabled via',
+    'does not expose browser recording endpoints',
+  ].some(blockingReason => normalizedReason.includes(blockingReason))
+}
+
+function browserRecorderInstallTone(status: string): 'info' | 'success' | 'error' {
+  if (status === 'failed') return 'error'
+  if (status === 'installed') return 'success'
+  return 'info'
+}
+
+function browserRecorderInstallLabel(status: string): string {
+  switch (status) {
+    case 'failed':
+      return 'Recording browser install failed'
+    case 'installed':
+      return 'Recording browser install completed'
+    case 'installing':
+      return 'Recording browser install is running'
+    default:
+      return `Recording browser install: ${status}`
+  }
+}
+
+function currentDashboardOrigin(): string {
+  if (typeof window === 'undefined' || !window.location.origin || window.location.origin === 'null') {
+    return 'https://your-apexload-controller.example'
+  }
+  return window.location.origin
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function bridgeListenAddress(bridgeOrigin: string): string {
+  try {
+    const url = new URL(bridgeOrigin)
+    return url.host || DEFAULT_BRIDGE_ORIGIN.replace(/^https?:\/\//i, '')
+  } catch {
+    return bridgeOrigin.replace(/^https?:\/\//i, '').replace(/\/+$/, '').trim() || DEFAULT_BRIDGE_ORIGIN.replace(/^https?:\/\//i, '')
+  }
+}
+
+function bridgeRecordAgentCommand(bridgeOrigin: string, token: string): string {
+  const parts = [
+    RECORDING_AGENT_COMMAND,
+    '--addr',
+    bridgeListenAddress(bridgeOrigin),
+    '--allow-origin',
+    shellQuote(currentDashboardOrigin()),
+  ]
+  if (token) {
+    parts.splice(3, 0, '--token', token)
+  }
+  return parts.join(' ')
+}
+
+function recordingAgentDownloadConfig(): { url: string; managed: boolean } {
+  const env = import.meta.env?.VITE_APEXLOAD_RECORDING_AGENT_DOWNLOAD_URL
+  if (typeof env === 'string' && env.trim()) {
+    return { url: env.trim(), managed: false }
+  }
+  return {
+    url: `${trimTrailingSlash(API_ORIGIN)}${DEFAULT_RECORDING_AGENT_DOWNLOAD_PATH}`,
+    managed: true,
+  }
+}
+
+function downloadFilenameFromDisposition(disposition: string | null): string {
+  const match = disposition?.match(/filename="?([^";]+)"?/i)
+  return match?.[1] || 'apexload-recording-agent.tar.gz'
+}
+
+function bridgePairingErrorMessage(error: any, bridgeOrigin: string): string {
+  const message = error?.message || ''
+  if (error instanceof TypeError || /failed to fetch|networkerror/i.test(message)) {
+    return `Could not reach ${bridgeOrigin}. Confirm ${RECORDING_AGENT_COMMAND} is running; if this dashboard is served over HTTPS, the browser may also be blocking localhost private-network access.`
+  }
+  return message || 'Failed to pair with the local recording bridge'
+}
+
+function bridgeVerificationErrorMessage(error: any, bridgeOrigin: string): string {
+  const message = error?.message || ''
+  if (error instanceof TypeError || /failed to fetch|networkerror/i.test(message)) {
+    return `APEX Load Recording Agent is not reachable at ${bridgeOrigin}. Download and run the agent command, then verify again. If this dashboard is served over HTTPS, the browser may also be blocking localhost private-network access.`
+  }
+  return message || `APEX Load Recording Agent is not reachable at ${bridgeOrigin}`
+}
+
+function copyTextWithSelectionFallback(text: string): boolean {
+  if (typeof document === 'undefined' || !document.body) return false
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  try {
+    return document.execCommand?.('copy') === true
+  } catch {
+    return false
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
+async function writeClipboardText(text: string): Promise<void> {
+  let clipboardError: unknown
+  try {
+    const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+    if (clipboard?.writeText) {
+      await clipboard.writeText(text)
+      return
+    }
+  } catch (error) {
+    clipboardError = error
+  }
+  if (copyTextWithSelectionFallback(text)) return
+  if (clipboardError instanceof Error) {
+    throw new Error('Clipboard is blocked in this browser. Select the terminal command and press Cmd+C or Ctrl+C.')
+  }
+  throw new Error('Clipboard access is not available in this browser')
+}
+
 // The desktop shell embeds the dashboard in a Wails WebView where window.open
 // escapes to the system browser, so the popup panel is web-only there.
 function isWailsShell(): boolean {
@@ -128,7 +294,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
     think_time_ms: 0,
     excluded: false,
   })
-  const [showSetup, setShowSetup] = useState(true)
+  const [showSetup, setShowSetup] = useState(false)
   const [parameterizeInputs, setParameterizeInputs] = useState(false)
   const [browserAvailability, setBrowserAvailability] = useState<{ available: boolean; reason?: string } | null>(null)
   const [browserPanelSessionId, setBrowserPanelSessionId] = useState<string | null>(null)
@@ -143,7 +309,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const [browserExcludeHosts, setBrowserExcludeHosts] = useState('')
   const [browserOptionsOpen, setBrowserOptionsOpen] = useState(false)
   const [installState, setInstallState] = useState<{ status: string; error?: string } | null>(null)
-  const [showProxyAdvanced, setShowProxyAdvanced] = useState(false)
+  const [bridgeOrigin, setBridgeOrigin] = useState(DEFAULT_BRIDGE_ORIGIN)
+  const [bridgeToken, setBridgeToken] = useState(initialBridgePairingToken)
+  const [bridgePairing, setBridgePairing] = useState(false)
+  const [bridgeVerifying, setBridgeVerifying] = useState(false)
+  const [bridgeStatus, setBridgeStatus] = useState('')
+  const [bridgeStatusTone, setBridgeStatusTone] = useState<'info' | 'success' | 'error'>('info')
   const convertTask = useAsyncTask<RecorderImportResult>()
 
   const proxyPort = recorderProxyPort(proxyAddr)
@@ -174,15 +345,63 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
     }
   }
 
+  const handleDownloadRecordingAgent = async (event: MouseEvent<HTMLAnchorElement>, managedDownload: boolean) => {
+    if (!managedDownload) return
+    event.preventDefault()
+    try {
+      const res = await apiFetch('/downloads/recording-agent/latest')
+      const contentType = (res.headers.get('content-type') || '').toLowerCase()
+      if (!res.ok) throw new Error('Recording Agent package is not available from this controller')
+      if (contentType.includes('text/html')) {
+        throw new Error('Recording Agent download endpoint returned the dashboard instead of an agent archive. Restart the controller with the latest build and stage the agent packages.')
+      }
+      const blob = await res.blob()
+      downloadBlob(blob, downloadFilenameFromDisposition(res.headers.get('content-disposition')))
+      showFeedback('APEX Load Recording Agent download started')
+    } catch (e: any) {
+      showFeedback(e.message || 'Failed to download the APEX Load Recording Agent', 'error')
+    }
+  }
+
   const copyProxyCommand = async (command: string, successMessage: string, failureMessage: string) => {
     try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error('Clipboard access is not available in this browser')
-      }
-      await navigator.clipboard.writeText(command)
+      await writeClipboardText(command)
       showFeedback(successMessage)
     } catch (e: any) {
       showFeedback(e.message || failureMessage, 'error')
+    }
+  }
+
+  const ensureBridgeToken = (): string => {
+    if (bridgeToken) return bridgeToken
+    try {
+      const token = generateBridgePairingToken()
+      setBridgeToken(token)
+      return token
+    } catch (e: any) {
+      showFeedback(e.message || 'Failed to generate bridge pairing token', 'error')
+      return ''
+    }
+  }
+
+  const handleCopyBridgeCommand = async () => {
+    const token = ensureBridgeToken()
+    if (!token) return
+    await copyProxyCommand(
+      bridgeRecordAgentCommand(bridgeOrigin, token),
+      'Terminal command copied. Paste it into a local terminal, then click Pair Local Bridge.',
+      'Failed to copy local bridge command',
+    )
+  }
+
+  const handleRegenerateBridgeToken = () => {
+    try {
+      setBridgeToken(generateBridgePairingToken())
+      setBridgeStatus('')
+      setBridgeStatusTone('info')
+      showFeedback('New local bridge pairing token generated')
+    } catch (e: any) {
+      showFeedback(e.message || 'Failed to generate bridge pairing token', 'error')
     }
   }
 
@@ -232,11 +451,27 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
       setSessions(listRes.sessions || [])
       setProxyAddr(recorderStatus.proxy_addr || '')
       setCaCertPath(recorderStatus.ca_cert_path || '')
-      setBrowserAvailability(recorderStatus.browser?.availability ?? null)
-      if (recorderStatus.browser?.install) {
-        setInstallState(recorderStatus.browser.install)
+      let liveBrowser = recorderStatus.browser?.active
+      if (api.browserRecorderBridge) {
+        try {
+          const bridgeRes = await api.getBrowserRecorderBridgeStatus()
+          if (bridgeRes?.bridge) {
+            setBrowserAvailability(bridgeRes.bridge.availability)
+            setInstallState(null)
+            liveBrowser = bridgeRes.bridge.active || null
+            setBridgeStatus(`Connected to ${api.browserRecorderBridge.origin}`)
+          }
+        } catch (e: any) {
+          setBrowserAvailability({ available: false, reason: bridgePairingErrorMessage(e, api.browserRecorderBridge.origin) })
+          setBridgeStatus('Local recording bridge is not responding')
+        }
+      } else if (recorderStatus.browser) {
+        setBrowserAvailability(recorderStatus.browser.availability)
+        setInstallState(recorderStatus.browser.install ?? null)
+      } else {
+        setBrowserAvailability(MISSING_BROWSER_RECORDER_CAPABILITY)
+        setInstallState(null)
       }
-      const liveBrowser = recorderStatus.browser?.active
       if (liveBrowser?.id) {
         // Adopt a recording started elsewhere (popup, another tab, reload).
         setBrowserPanelSessionId(current => current ?? liveBrowser.id)
@@ -267,13 +502,6 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
     })
   }, [selectedRequest])
 
-  // Surface the proxy fallback when headed browser recording cannot run here.
-  useEffect(() => {
-    if (browserAvailability && !browserAvailability.available) {
-      setShowProxyAdvanced(true)
-    }
-  }, [browserAvailability])
-
   // Load device presets once for the launcher.
   useEffect(() => {
     api.listBrowserRecorderDevices()
@@ -289,6 +517,68 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
     } catch (e: any) {
       showFeedback(e.message, 'error')
     }
+  }
+
+  const handlePairBridge = async () => {
+    const origin = bridgeOrigin.trim().replace(/\/+$/, '')
+    if (!/^https?:\/\/.+/i.test(origin)) {
+      const message = `Enter the local bridge URL used by ${RECORDING_AGENT_COMMAND}`
+      setBridgeStatusTone('error')
+      setBridgeStatus(message)
+      showFeedback(message, 'error')
+      return
+    }
+    const token = ensureBridgeToken()
+    if (!token) return
+    setBridgePairing(true)
+    setBridgeStatusTone('info')
+    setBridgeStatus('')
+    try {
+      const paired = await api.pairBrowserRecorderBridge(origin, token)
+      setBridgeStatusTone('success')
+      setBridgeStatus(`Connected to ${origin}`)
+      setBrowserAvailability(paired.status.availability)
+      setInstallState(null)
+      showFeedback('Local browser recording bridge paired')
+    } catch (e: any) {
+      const message = bridgePairingErrorMessage(e, origin)
+      setBridgeStatusTone('error')
+      setBridgeStatus(message)
+      showFeedback(message, 'error')
+    } finally {
+      setBridgePairing(false)
+    }
+  }
+
+  const handleVerifyBridgeAgent = async () => {
+    const origin = bridgeOrigin.trim().replace(/\/+$/, '')
+    if (!/^https?:\/\/.+/i.test(origin)) {
+      setBridgeStatusTone('error')
+      setBridgeStatus(`Enter the local bridge URL used by ${RECORDING_AGENT_COMMAND}`)
+      return
+    }
+    setBridgeVerifying(true)
+    setBridgeStatusTone('info')
+    setBridgeStatus(`Checking APEX Load Recording Agent at ${origin}...`)
+    try {
+      await api.verifyBrowserRecorderBridgeAgent(origin)
+      setBridgeOrigin(origin)
+      setBridgeStatusTone('success')
+      setBridgeStatus(`APEX Load Recording Agent is running at ${origin}. Click Pair Local Bridge to connect.`)
+    } catch (e: any) {
+      setBridgeStatusTone('error')
+      setBridgeStatus(bridgeVerificationErrorMessage(e, origin))
+    } finally {
+      setBridgeVerifying(false)
+    }
+  }
+
+  const handleDisconnectBridge = () => {
+    api.clearBrowserRecorderBridge()
+    setBridgeStatusTone('info')
+    setBridgeStatus('')
+    showFeedback('Local recording bridge disconnected')
+    refresh()
   }
 
   const handleStartBrowserRecording = async () => {
@@ -493,6 +783,13 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const convertResult = convertTask.value
   const convertedScript = convertResult?.script
   const converting = convertTask.pending
+  const browserUnavailableReason = browserAvailability?.reason?.trim() || ''
+  const browserUnavailableDueToDisplay = browserUnavailableReason.toLowerCase().includes('no display detected')
+  const canRetryBrowserInstall = browserRecorderInstallRetryable(browserUnavailableReason, installState)
+  const installStatusTone = installState ? browserRecorderInstallTone(installState.status) : 'info'
+  const installStatusVisible = !!installState && installState.status !== 'idle'
+  const bridgeCommand = bridgeRecordAgentCommand(bridgeOrigin, bridgeToken)
+  const agentDownload = recordingAgentDownloadConfig()
 
   return (
     <div className="page recording-studio">
@@ -507,132 +804,211 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
         <div className={`rec-feedback ${feedbackType}`}>{feedback}</div>
       )}
 
-      {/* Primary: headed browser recording on this controller */}
-      <div className="rec-controls-card rec-browser-launcher">
-        <h3 className="rec-section-title">Record Browser Session</h3>
-        {browserAvailability && !browserAvailability.available ? (
-          <div className="rec-browser-unavailable" data-testid="browser-recorder-unavailable">
-            Browser recording is not available on this controller
-            {browserAvailability.reason ? `: ${browserAvailability.reason}` : '.'}{' '}
-            Use the Advanced proxy recorder below instead.
-            {installState && installState.status !== 'idle' && (
-              <div className="rec-install-status">Recording browser install: {installState.status}{installState.error ? ` — ${installState.error}` : ''}</div>
-            )}
-            <button className="btn btn-secondary btn-sm" onClick={handleInstallBrowsers} disabled={installState?.status === 'installing'}>
-              {installState?.status === 'installing' ? 'Installing…' : 'Install Recording Browser'}
-            </button>
+      <div className="rec-recorder-options-grid">
+        <div className="rec-controls-card rec-browser-launcher">
+          <div className="rec-option-heading">
+            <h3 className="rec-section-title">Record Browser Session</h3>
+            <p>Launch a controlled Chromium session from this controller and capture user actions directly.</p>
           </div>
-        ) : (
-          <div className="rec-start-form">
-            <div className="rec-form-row">
-              <label className="rec-label">Start URL</label>
-              <input
-                className="rec-input"
-                value={browserStartURL}
-                onChange={e => setBrowserStartURL(e.target.value)}
-                placeholder="https://app.example.com/login"
-              />
-            </div>
-            <div className="rec-form-row">
-              <label className="rec-label">Session Name</label>
-              <input
-                className="rec-input"
-                value={browserName}
-                onChange={e => setBrowserName(e.target.value)}
-                placeholder="e.g. Login & Checkout Flow"
-              />
-            </div>
-            <div className="rec-form-row">
-              <label className="rec-label">Device</label>
-              <select className="rec-input" value={browserDevice} onChange={e => setBrowserDevice(e.target.value)} aria-label="Device preset">
-                <option value="">Desktop (default)</option>
-                {browserDevices.filter(d => d.name !== 'desktop_1080p').map(d => (
-                  <option key={d.name} value={d.name}>{d.name.replace(/_/g, ' ')} ({d.platform})</option>
-                ))}
-              </select>
-            </div>
-            <label className="rec-checkbox-row">
-              <input
-                type="checkbox"
-                checked={browserCaptureHAR}
-                onChange={e => setBrowserCaptureHAR(e.target.checked)}
-              />
-              <span>Capture side-car HAR (network traffic for protocol-level scripting)</span>
-            </label>
-
-            <button type="button" className="rec-inline-action" onClick={() => setBrowserOptionsOpen(v => !v)}>
-              {browserOptionsOpen ? 'Hide advanced options' : 'Advanced options'}
-            </button>
-            {browserOptionsOpen && (
-              <div className="rec-browser-options">
-                <label className="rec-checkbox-row">
-                  <input type="checkbox" checked={browserScreenshots} onChange={e => setBrowserScreenshots(e.target.checked)} />
-                  <span>Capture per-step screenshot thumbnails</span>
-                </label>
-                <label className="rec-checkbox-row">
-                  <input type="checkbox" checked={browserWSPayloads} onChange={e => setBrowserWSPayloads(e.target.checked)} />
-                  <span>Capture WebSocket frame payloads (scrubbed)</span>
-                </label>
-                <div className="rec-form-row">
-                  <label className="rec-label">Exclude hosts <span className="rec-hint">(comma-separated, HAR noise filter)</span></label>
-                  <input className="rec-input" value={browserExcludeHosts} onChange={e => setBrowserExcludeHosts(e.target.value)} placeholder="analytics.google.com, cdn.example.com" />
-                </div>
-                <div className="rec-form-row">
-                  <label className="rec-label">Reuse session state <span className="rec-hint">(saved storage-state path, skip login)</span></label>
-                  <input className="rec-input" value={browserStorageState} onChange={e => setBrowserStorageState(e.target.value)} placeholder="/path/to/state.json" />
-                </div>
+          {!browserAvailability?.available ? (
+            <div className="rec-browser-unavailable" data-testid="browser-recorder-unavailable">
+              <div className="rec-browser-unavailable-title">Browser recording is not available on this controller</div>
+              <div>{browserUnavailableReason || 'Checking controller capability.'}</div>
+              <div>
+                {browserUnavailableDueToDisplay
+                  ? 'Install cannot add a display to this controller. Run the controller on a desktop host with DISPLAY or WAYLAND_DISPLAY, or use the proxy recorder option instead.'
+                  : 'Use the proxy recorder option instead.'}
               </div>
-            )}
-
-            <button
-              className="btn btn-primary rec-start-btn"
-              onClick={handleStartBrowserRecording}
-              disabled={!!browserPanelSessionId}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" /></svg>
-              Record Browser
-            </button>
-            <div className="rec-browser-unavailable">
-              A Chromium window opens on this machine with an in-page recording toolbar (pause and verification picker).
-              Manage the session from the control panel docked below — it also opens as a compact popup window.
+              {installStatusVisible && (
+                <div className={`rec-install-status ${installStatusTone}`} role={installState.status === 'failed' ? 'alert' : 'status'}>
+                  <strong>{browserRecorderInstallLabel(installState.status)}</strong>
+                  {installState.error && <span>{installState.error}</span>}
+                </div>
+              )}
+              {installState && canRetryBrowserInstall && (
+                <button className="btn btn-secondary btn-sm" onClick={handleInstallBrowsers} disabled={installState.status === 'installing'}>
+                  {installState.status === 'installing' ? 'Installing...' : 'Install Recording Browser'}
+                </button>
+              )}
+              <div className="rec-bridge-panel" data-testid="browser-recorder-bridge-panel">
+                <div className="rec-browser-unavailable-title">Use a local recording bridge</div>
+                <div className="rec-bridge-steps">
+                  <div className="rec-bridge-step">
+                    <div className="rec-bridge-step-number">1</div>
+                    <div className="rec-bridge-step-content">
+                      <div className="rec-bridge-step-title">Download the Recording Agent</div>
+                      <div className="rec-bridge-install-note">
+                        <a
+                          href={agentDownload.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={event => handleDownloadRecordingAgent(event, agentDownload.managed)}
+                        >
+                          Download the APEX Load Recording Agent
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rec-bridge-step">
+                    <div className="rec-bridge-step-number">2</div>
+                    <div className="rec-bridge-step-content">
+                      <div className="rec-bridge-step-title">Run the local command</div>
+                      <div className="rec-bridge-step-desc">Paste this command into Terminal or PowerShell on your workstation.</div>
+                      <div className="rec-bridge-terminal" data-testid="browser-recorder-bridge-terminal">
+                        <div className="rec-bridge-terminal-header">
+                          <span>Local terminal command</span>
+                          <span>Token included</span>
+                        </div>
+                        <div className="rec-bridge-command-row">
+                          <span className="rec-terminal-prompt">$</span>
+                          <code className="rec-command" data-testid="browser-recorder-bridge-command" tabIndex={0}>{bridgeCommand}</code>
+                        </div>
+                        <div className="rec-bridge-command-actions">
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={handleCopyBridgeCommand}>
+                            Copy Terminal Command
+                          </button>
+                          <button type="button" className="rec-inline-action" onClick={handleRegenerateBridgeToken}>
+                            Regenerate Token
+                          </button>
+                        </div>
+                      </div>
+                      <div className="rec-bridge-help">
+                        No separate token paste is needed. The generated token is already in the command as <code>--token</code>.
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rec-bridge-step">
+                    <div className="rec-bridge-step-number">3</div>
+                    <div className="rec-bridge-step-content">
+                      <div className="rec-bridge-step-title">Verify the agent</div>
+                      <div className="rec-form-row">
+                        <label className="rec-label">Bridge URL</label>
+                        <input
+                          className="rec-input"
+                          value={bridgeOrigin}
+                          onChange={e => setBridgeOrigin(e.target.value)}
+                          placeholder="http://127.0.0.1:49152"
+                        />
+                      </div>
+                      <button className="btn btn-secondary btn-sm" onClick={handleVerifyBridgeAgent} disabled={bridgeVerifying}>
+                        {bridgeVerifying ? 'Verifying...' : 'Verify Agent'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="rec-bridge-step">
+                    <div className="rec-bridge-step-number">4</div>
+                    <div className="rec-bridge-step-content">
+                      <div className="rec-bridge-step-title">Pair the local bridge</div>
+                      <button className="btn btn-secondary btn-sm" onClick={handlePairBridge} disabled={bridgePairing}>
+                        {bridgePairing ? 'Pairing...' : 'Pair Local Bridge'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {bridgeStatus && <div className={`rec-bridge-status ${bridgeStatusTone}`}>{bridgeStatus}</div>}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          ) : (
+            <div className="rec-start-form">
+              {api.browserRecorderBridge && (
+                <div className="rec-bridge-connected" data-testid="browser-recorder-bridge-connected">
+                  <span>Local bridge: {api.browserRecorderBridge.origin}</span>
+                  <button type="button" className="rec-inline-action" onClick={handleDisconnectBridge}>Disconnect</button>
+                </div>
+              )}
+              <div className="rec-form-row">
+                <label className="rec-label">Start URL</label>
+                <input
+                  className="rec-input"
+                  value={browserStartURL}
+                  onChange={e => setBrowserStartURL(e.target.value)}
+                  placeholder="https://app.example.com/login"
+                />
+              </div>
+              <div className="rec-form-row">
+                <label className="rec-label">Session Name</label>
+                <input
+                  className="rec-input"
+                  value={browserName}
+                  onChange={e => setBrowserName(e.target.value)}
+                  placeholder="e.g. Login & Checkout Flow"
+                />
+              </div>
+              <div className="rec-form-row">
+                <label className="rec-label">Device</label>
+                <select className="rec-input" value={browserDevice} onChange={e => setBrowserDevice(e.target.value)} aria-label="Device preset">
+                  <option value="">Desktop (default)</option>
+                  {browserDevices.filter(d => d.name !== 'desktop_1080p').map(d => (
+                    <option key={d.name} value={d.name}>{d.name.replace(/_/g, ' ')} ({d.platform})</option>
+                  ))}
+                </select>
+              </div>
+              <label className="rec-checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={browserCaptureHAR}
+                  onChange={e => setBrowserCaptureHAR(e.target.checked)}
+                />
+                <span>Capture side-car HAR (network traffic for protocol-level scripting)</span>
+              </label>
 
-      {browserPanelSessionId && (
-        <BrowserRecorderControlPanel
-          sessionId={browserPanelSessionId}
-          onImported={onImported}
-          onEdit={onEdit}
-          onDismiss={() => {
-            setBrowserPanelSessionId(null)
-            refresh()
-          }}
-        />
-      )}
+              <button type="button" className="rec-inline-action" onClick={() => setBrowserOptionsOpen(v => !v)}>
+                {browserOptionsOpen ? 'Hide advanced options' : 'Advanced options'}
+              </button>
+              {browserOptionsOpen && (
+                <div className="rec-browser-options">
+                  <label className="rec-checkbox-row">
+                    <input type="checkbox" checked={browserScreenshots} onChange={e => setBrowserScreenshots(e.target.checked)} />
+                    <span>Capture per-step screenshot thumbnails</span>
+                  </label>
+                  <label className="rec-checkbox-row">
+                    <input type="checkbox" checked={browserWSPayloads} onChange={e => setBrowserWSPayloads(e.target.checked)} />
+                    <span>Capture WebSocket frame payloads (scrubbed)</span>
+                  </label>
+                  <div className="rec-form-row">
+                    <label className="rec-label">Exclude hosts <span className="rec-hint">(comma-separated, HAR noise filter)</span></label>
+                    <input className="rec-input" value={browserExcludeHosts} onChange={e => setBrowserExcludeHosts(e.target.value)} placeholder="analytics.google.com, cdn.example.com" />
+                  </div>
+                  <div className="rec-form-row">
+                    <label className="rec-label">Reuse session state <span className="rec-hint">(saved storage-state path, skip login)</span></label>
+                    <input className="rec-input" value={browserStorageState} onChange={e => setBrowserStorageState(e.target.value)} placeholder="/path/to/state.json" />
+                  </div>
+                </div>
+              )}
 
-      {/* Advanced: network-level proxy/HAR recorder (works with remote controllers) */}
-      <div className="rec-advanced-section">
-        <div
-          className="rec-advanced-toggle"
-          data-testid="rec-advanced-toggle"
-          onClick={() => setShowProxyAdvanced(prev => !prev)}
-        >
-          <span>
-            Advanced: Proxy Recorder
-            <span className="rec-advanced-sub">network-level HTTP(S) capture through the local proxy</span>
-          </span>
-          <svg
-            className={`rec-chevron ${showProxyAdvanced ? 'open' : ''}`}
-            width="16" height="16" viewBox="0 0 24 24" fill="none"
-            stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+              <button
+                className="btn btn-primary rec-start-btn"
+                onClick={handleStartBrowserRecording}
+                disabled={!!browserPanelSessionId}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" /></svg>
+                Record Browser
+              </button>
+              <div className="rec-browser-unavailable">
+                A Chromium window opens on this machine with an in-page recording toolbar (pause and verification picker).
+                Manage the session from the control panel docked below — it also opens as a compact popup window.
+              </div>
+            </div>
+          )}
+
+          {browserPanelSessionId && (
+            <BrowserRecorderControlPanel
+              sessionId={browserPanelSessionId}
+              onImported={onImported}
+              onEdit={onEdit}
+              onDismiss={() => {
+                setBrowserPanelSessionId(null)
+                refresh()
+              }}
+            />
+          )}
         </div>
-        {showProxyAdvanced && (
-          <>
+
+        <div className="rec-controls-card rec-proxy-recorder-option" data-testid="rec-proxy-recorder-option">
+          <div className="rec-option-heading">
+            <h3 className="rec-section-title">Advanced Proxy Recorder</h3>
+            <p>Capture HTTP(S) traffic through the local proxy when headed browser recording is unavailable or remote-safe capture is preferred.</p>
+          </div>
 
       {/* Proxy Setup */}
       <div className="rec-setup-section">
@@ -803,8 +1179,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
         )}
       </div>
 
-      {/* Recording Controls */}
-      <div className="rec-controls-card">
+      <div className="rec-proxy-run-panel">
         <h3 className="rec-section-title">
           {activeSession ? (
             <>
@@ -910,6 +1285,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
             </button>
           </div>
         )}
+      </div>
+        </div>
       </div>
 
       {/* Previous Sessions */}
@@ -1161,9 +1538,6 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
           )}
         </div>
       )}
-          </>
-        )}
-      </div>
     </div>
   )
 }

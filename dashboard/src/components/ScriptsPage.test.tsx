@@ -470,6 +470,23 @@ describe('ScriptsPage', () => {
     expect(countImportOption('Import SOAP Assets')).toBe(0)
   })
 
+  it('opens the recording studio directly from the Record Browser workflow card', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Record Browser')
+    expect(container.textContent).not.toContain('Browser Recorder')
+
+    await clickButton('Record Browser')
+    await flushPromises()
+
+    expect(container.querySelector('[data-testid="recording-studio"]')).not.toBeNull()
+    expect(container.textContent).not.toContain('Browser Recorder')
+  })
+
   it('consolidates template and manual choices under Start New Script', async () => {
     await act(async () => {
       root.render(<ScriptsPage initialMode="create-options" />)

@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 
 import { useApi } from '../hooks/useApi'
-import { apiFetch } from '../hooks/apiClient'
 import { downloadBlob } from '../utils/fileUtils'
 import {
   type BrowserRecorderSession,
@@ -292,6 +291,21 @@ export default function BrowserRecorderControlPanel({
   const handleSave = async () => {
     setBusy(true)
     try {
+      if (api.browserRecorderBridge) {
+        const result = await api.previewBrowserRecordingConversion(sessionId, convertRequest())
+        const scripts = (result.scripts?.length ? result.scripts : result.script ? [result.script] : []) as ScriptDefinition[]
+        if (scripts.length === 0) {
+          throw new Error('Conversion produced no scripts to save')
+        }
+        const saved = await Promise.all(scripts.map(script => api.createScript(script, session?.project_id)))
+        const primary = saved[0]
+        setSavedScript(primary)
+        setPreview(result)
+        onImported?.({ scripts: saved })
+        showFeedback(`Saved ${saved.length === 1 ? `script "${primary.name}"` : `${saved.length} scripts`} to the remote script library`)
+        return
+      }
+
       const result = await api.convertBrowserRecording(sessionId, convertRequest())
       const stored = result.script as unknown as StoredScript | undefined
       if (stored) {
@@ -392,7 +406,7 @@ export default function BrowserRecorderControlPanel({
 
   const handleDownloadHAR = async () => {
     try {
-      const res = await apiFetch(`/browser-recorder/sessions/${sessionId}/export?format=har`)
+      const res = await api.exportBrowserRecording(sessionId, 'har')
       if (!res.ok) {
         const payload = await res.json().catch(() => ({ error: 'Failed to export HAR' }))
         throw new Error(payload.error || 'Failed to export HAR')
@@ -658,6 +672,7 @@ export default function BrowserRecorderControlPanel({
         <BrowserReplayProgress
           replaySessionId={replaySessionId}
           projectId={session.project_id}
+          bridge={api.browserRecorderBridge}
           onDismiss={() => setReplaySessionId(null)}
         />
       )}

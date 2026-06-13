@@ -1,7 +1,18 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { type RecorderImportResult } from '../../types/scriptImports'
-import { request } from '../apiClient'
+import { apiFetch, request } from '../apiClient'
+import {
+  bridgeFetch,
+  bridgeRequest,
+  clearBrowserRecorderBridge,
+  pairBrowserRecorderBridge,
+  readBrowserRecorderBridge,
+  subscribeBrowserRecorderBridgeChanges,
+  verifyBrowserRecorderBridgeAgent,
+  type BrowserRecorderBridgeConnection,
+  type BrowserRecorderBridgeStatusEnvelope,
+} from './browserRecorderBridge'
 
 export type BrowserRecorderStep = {
   seq: number
@@ -124,153 +135,208 @@ type BrowserRecorderMarkerEnvelope = {
 }
 
 export function useBrowserRecorderApi() {
+  const [browserRecorderBridge, setBrowserRecorderBridge] = useState<BrowserRecorderBridgeConnection | null>(() => readBrowserRecorderBridge())
+
+  useEffect(() => {
+    const refreshBridge = () => setBrowserRecorderBridge(readBrowserRecorderBridge())
+    return subscribeBrowserRecorderBridgeChanges(refreshBridge)
+  }, [])
+
+  const recorderRequest = useCallback(
+    <T,>(path: string, options?: RequestInit) =>
+      browserRecorderBridge
+        ? bridgeRequest<T>(browserRecorderBridge, path, options)
+        : request<T>(path, options),
+    [browserRecorderBridge],
+  )
+
   const startBrowserRecording = useCallback(
     (data: BrowserRecorderStartRequest) =>
-      request<BrowserRecorderSessionEnvelope>('/browser-recorder/sessions', { method: 'POST', body: JSON.stringify(data) }),
-    [],
+      recorderRequest<BrowserRecorderSessionEnvelope>('/browser-recorder/sessions', { method: 'POST', body: JSON.stringify(data) }),
+    [recorderRequest],
   )
 
   const getBrowserRecording = useCallback(
-    (id: string) => request<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}`),
-    [],
+    (id: string) => recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}`),
+    [recorderRequest],
   )
 
   const stopBrowserRecording = useCallback(
-    (id: string) => request<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/stop`, { method: 'POST' }),
-    [],
+    (id: string) => recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/stop`, { method: 'POST' }),
+    [recorderRequest],
   )
 
   const pauseBrowserRecording = useCallback(
-    (id: string) => request<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/pause`, { method: 'POST' }),
-    [],
+    (id: string) => recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/pause`, { method: 'POST' }),
+    [recorderRequest],
   )
 
   const resumeBrowserRecording = useCallback(
-    (id: string) => request<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/resume`, { method: 'POST' }),
-    [],
+    (id: string) => recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/resume`, { method: 'POST' }),
+    [recorderRequest],
   )
 
   const navigateBrowserRecording = useCallback(
     (id: string, url: string) =>
-      request<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/navigate`, {
+      recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/navigate`, {
         method: 'POST',
         body: JSON.stringify({ url }),
       }),
-    [],
+    [recorderRequest],
   )
 
   const focusBrowserRecording = useCallback(
-    (id: string) => request<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/focus`, { method: 'POST' }),
-    [],
+    (id: string) => recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/focus`, { method: 'POST' }),
+    [recorderRequest],
   )
 
   const startBrowserRecordingTransaction = useCallback(
     (id: string, name: string) =>
-      request<BrowserRecorderMarkerEnvelope>(`/browser-recorder/sessions/${id}/transactions/start`, {
+      recorderRequest<BrowserRecorderMarkerEnvelope>(`/browser-recorder/sessions/${id}/transactions/start`, {
         method: 'POST',
         body: JSON.stringify({ name }),
       }),
-    [],
+    [recorderRequest],
   )
 
   const endBrowserRecordingTransaction = useCallback(
     (id: string, name?: string) =>
-      request<BrowserRecorderMarkerEnvelope>(`/browser-recorder/sessions/${id}/transactions/end`, {
+      recorderRequest<BrowserRecorderMarkerEnvelope>(`/browser-recorder/sessions/${id}/transactions/end`, {
         method: 'POST',
         body: JSON.stringify({ name }),
       }),
-    [],
+    [recorderRequest],
   )
 
   const addBrowserRecordingNote = useCallback(
     (id: string, text: string) =>
-      request<BrowserRecorderMarkerEnvelope>(`/browser-recorder/sessions/${id}/notes`, {
+      recorderRequest<BrowserRecorderMarkerEnvelope>(`/browser-recorder/sessions/${id}/notes`, {
         method: 'POST',
         body: JSON.stringify({ text }),
       }),
-    [],
+    [recorderRequest],
   )
 
   const previewBrowserRecordingConversion = useCallback(
     (id: string, req: BrowserRecorderConvertRequest = {}) =>
-      request<RecorderImportResult>(`/browser-recorder/sessions/${id}/convert/preview`, {
+      recorderRequest<RecorderImportResult>(`/browser-recorder/sessions/${id}/convert/preview`, {
         method: 'POST',
         body: JSON.stringify(req),
       }),
-    [],
+    [recorderRequest],
   )
 
   const convertBrowserRecording = useCallback(
     (id: string, req: BrowserRecorderConvertRequest = {}) =>
-      request<RecorderImportResult & { http_script?: { id: string; name: string } }>(
+      recorderRequest<RecorderImportResult & { http_script?: { id: string; name: string } }>(
         `/browser-recorder/sessions/${id}/convert`,
         { method: 'POST', body: JSON.stringify(req) },
       ),
-    [],
+    [recorderRequest],
   )
 
   const setBrowserRecordingSection = useCallback(
     (id: string, section: string) =>
-      request<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/section`, {
+      recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/section`, {
         method: 'POST',
         body: JSON.stringify({ section }),
       }),
-    [],
+    [recorderRequest],
   )
 
   const setBrowserRecordingPickMode = useCallback(
     (id: string, on: boolean) =>
-      request<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/pick-mode`, {
+      recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/pick-mode`, {
         method: 'POST',
         body: JSON.stringify({ on }),
       }),
-    [],
+    [recorderRequest],
   )
 
   const deleteLastBrowserRecordingStep = useCallback(
     (id: string) =>
-      request<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/steps/last`, { method: 'DELETE' }),
-    [],
+      recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/steps/last`, { method: 'DELETE' }),
+    [recorderRequest],
   )
 
   const updateBrowserRecordingStep = useCallback(
     (id: string, seq: number, update: { excluded?: boolean; mark_secret?: boolean; mark_param?: boolean }) =>
-      request<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/steps/${seq}`, {
+      recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/steps/${seq}`, {
         method: 'PATCH',
         body: JSON.stringify(update),
       }),
-    [],
+    [recorderRequest],
   )
 
   const suggestBrowserRecordingTransactions = useCallback(
     (id: string) =>
-      request<{ suggestions: BrowserRecorderTransactionSuggestion[] }>(
+      recorderRequest<{ suggestions: BrowserRecorderTransactionSuggestion[] }>(
         `/browser-recorder/sessions/${id}/transactions/suggestions`,
       ),
-    [],
+    [recorderRequest],
   )
 
   const verifyBrowserRecording = useCallback(
     (id: string) =>
-      request<{ replay_session_id: string; replay_session: unknown; warnings: string[] }>(
+      recorderRequest<{ replay_session_id: string; replay_session: unknown; warnings: string[] }>(
         `/browser-recorder/sessions/${id}/verify`,
         { method: 'POST' },
       ),
-    [],
+    [recorderRequest],
   )
 
   const listBrowserRecorderDevices = useCallback(
-    () => request<{ devices: BrowserRecorderDevice[] }>('/browser-recorder/devices'),
-    [],
+    () => recorderRequest<{ devices: BrowserRecorderDevice[] }>('/browser-recorder/devices'),
+    [recorderRequest],
   )
 
   const installBrowserRecorder = useCallback(
-    () => request<{ install: { status: string; error?: string } }>('/browser-recorder/install', { method: 'POST' }),
+    () => recorderRequest<{ install: { status: string; error?: string } }>('/browser-recorder/install', { method: 'POST' }),
+    [recorderRequest],
+  )
+
+  const getBrowserRecorderBridgeStatus = useCallback(
+    () => browserRecorderBridge
+      ? bridgeRequest<BrowserRecorderBridgeStatusEnvelope>(browserRecorderBridge, '/bridge/status')
+      : Promise.resolve(null),
+    [browserRecorderBridge],
+  )
+
+  const pairBrowserRecorderBridgeTo = useCallback(
+    (origin: string, token: string) => pairBrowserRecorderBridge(origin, token),
     [],
+  )
+
+  const verifyBrowserRecorderBridgeAgentAt = useCallback(
+    (origin: string) => verifyBrowserRecorderBridgeAgent(origin),
+    [],
+  )
+
+  const clearBrowserRecorderBridgeConnection = useCallback(
+    () => {
+      clearBrowserRecorderBridge()
+      setBrowserRecorderBridge(null)
+    },
+    [],
+  )
+
+  const exportBrowserRecording = useCallback(
+    (id: string, format = 'har') => {
+      const path = `/browser-recorder/sessions/${id}/export?format=${encodeURIComponent(format)}`
+      return browserRecorderBridge
+        ? bridgeFetch(browserRecorderBridge, path)
+        : apiFetch(path)
+    },
+    [browserRecorderBridge],
   )
 
   return useMemo(
     () => ({
+      browserRecorderBridge,
+      getBrowserRecorderBridgeStatus,
+      pairBrowserRecorderBridge: pairBrowserRecorderBridgeTo,
+      verifyBrowserRecorderBridgeAgent: verifyBrowserRecorderBridgeAgentAt,
+      clearBrowserRecorderBridge: clearBrowserRecorderBridgeConnection,
       startBrowserRecording,
       getBrowserRecording,
       stopBrowserRecording,
@@ -291,8 +357,14 @@ export function useBrowserRecorderApi() {
       verifyBrowserRecording,
       listBrowserRecorderDevices,
       installBrowserRecorder,
+      exportBrowserRecording,
     }),
     [
+      browserRecorderBridge,
+      getBrowserRecorderBridgeStatus,
+      pairBrowserRecorderBridgeTo,
+      verifyBrowserRecorderBridgeAgentAt,
+      clearBrowserRecorderBridgeConnection,
       startBrowserRecording,
       getBrowserRecording,
       stopBrowserRecording,
@@ -313,6 +385,7 @@ export function useBrowserRecorderApi() {
       verifyBrowserRecording,
       listBrowserRecorderDevices,
       installBrowserRecorder,
+      exportBrowserRecording,
     ],
   )
 }

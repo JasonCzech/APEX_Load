@@ -193,9 +193,15 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('Import From Source')
     expect(container.textContent).not.toContain('Start From Source')
     expect(container.textContent).not.toContain('Import Existing')
+    expect(container.textContent).toContain('Record Browser')
+    expect(container.textContent).not.toContain('Browser Recorder')
 
     await clickButton('Checkout Model')
     expect(onStartExistingScript).toHaveBeenCalledWith(expect.objectContaining({ id: 'script-1' }))
+
+    await clickButton('Record Browser')
+    expect(actions.openRecorder).toHaveBeenCalled()
+    expect(container.textContent).not.toContain('Browser Recorder')
 
     await clickButton('Import From Source')
     expect(container.textContent).toContain('Contracts & Collections')

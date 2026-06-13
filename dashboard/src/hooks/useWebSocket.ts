@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { WSMessage } from '../types'
 import { wsUrl } from './apiClient'
+import { bridgeWsUrl, type BrowserRecorderBridgeConnection } from './api/browserRecorderBridge'
 
 export type WebSocketConnectionState = 'connecting' | 'connected' | 'disconnected'
 
@@ -9,6 +10,7 @@ interface UseWebSocketOptions {
   projectId?: string
   enabled?: boolean
   onMessage?: (msg: WSMessage) => void
+  bridge?: BrowserRecorderBridgeConnection | null
 }
 
 // Coalesce rapid (re)connect triggers — e.g. the projectId settling from
@@ -20,7 +22,7 @@ function pageVisible() {
   return typeof document === 'undefined' || document.visibilityState === 'visible'
 }
 
-export function useWebSocket({ testId, projectId, enabled = true, onMessage }: UseWebSocketOptions = {}) {
+export function useWebSocket({ testId, projectId, enabled = true, onMessage, bridge }: UseWebSocketOptions = {}) {
   const [connectionState, setConnectionState] = useState<WebSocketConnectionState>(
     enabled && pageVisible() ? 'connecting' : 'disconnected',
   )
@@ -42,7 +44,7 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage }: U
 
     const query = !testId && projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''
     const path = testId ? `/api/v1/tests/${testId}/stream` : `/api/v1/ws${query}`
-    const url = wsUrl(path)
+    const url = bridge && !testId ? bridgeWsUrl(bridge, path) : wsUrl(path)
 
     setConnectionState('connecting')
     const ws = new WebSocket(url)
@@ -79,7 +81,7 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage }: U
     ws.onerror = () => {
       ws.close()
     }
-  }, [enabled, projectId, testId])
+  }, [bridge, enabled, projectId, testId])
 
   useEffect(() => {
     shouldReconnectRef.current = true

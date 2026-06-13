@@ -31,6 +31,9 @@ const apiMock = {
   updateBrowserRecordingStep: vi.fn(),
   suggestBrowserRecordingTransactions: vi.fn(),
   verifyBrowserRecording: vi.fn(),
+  exportBrowserRecording: vi.fn(),
+  createScript: vi.fn(),
+  browserRecorderBridge: null as any,
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -116,6 +119,19 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.updateBrowserRecordingStep.mockResolvedValue({ session: recordingSession })
     apiMock.suggestBrowserRecordingTransactions.mockResolvedValue({ suggestions: [] })
     apiMock.verifyBrowserRecording.mockResolvedValue({ replay_session_id: 'replay-1', replay_session: {}, warnings: [] })
+    apiMock.exportBrowserRecording.mockResolvedValue({
+      ok: true,
+      blob: vi.fn().mockResolvedValue(new Blob(['{"log":{}}'])),
+    })
+    apiMock.createScript.mockResolvedValue({
+      id: 'script-remote-1',
+      name: 'Checkout Flow',
+      protocol: 'browser',
+      version: '1',
+      created_at: '2026-05-12T20:10:00Z',
+      script: { name: 'Checkout Flow', protocol: 'browser', actions: [] },
+    })
+    apiMock.browserRecorderBridge = null
   })
 
   afterEach(async () => {
@@ -208,7 +224,7 @@ describe('BrowserRecorderControlPanel', () => {
     await clickButton('Download HAR')
     await flushPromises()
 
-    expect(apiFetchMock).toHaveBeenCalledWith('/browser-recorder/sessions/brec-1/export?format=har')
+    expect(apiMock.exportBrowserRecording).toHaveBeenCalledWith('brec-1', 'har')
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'checkout-flow.har')
   })
 
@@ -447,6 +463,35 @@ describe('BrowserRecorderControlPanel', () => {
       split_at_transactions: true,
       also_create_http_script: true,
     }))
+  })
+
+  it('saves bridge recordings by previewing locally and creating scripts remotely', async () => {
+    const onImported = vi.fn()
+    apiMock.browserRecorderBridge = { origin: 'http://127.0.0.1:49152', token: 'tok', session_id: 'ws-1' }
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    apiMock.previewBrowserRecordingConversion.mockResolvedValue({
+      script: { name: 'Checkout Flow', protocol: 'browser', actions: [] },
+      scripts: [
+        { name: 'Checkout Flow', protocol: 'browser', actions: [] },
+        { name: 'Checkout Flow (HTTP)', protocol: 'http', actions: [] },
+      ],
+      warnings: [],
+      stats: {},
+      parameterization: { suggestions: [], summary: { total: 0 } },
+    })
+    apiMock.createScript
+      .mockResolvedValueOnce({ id: 'remote-browser', name: 'Checkout Flow', protocol: 'browser', script: { name: 'Checkout Flow', protocol: 'browser', actions: [] } })
+      .mockResolvedValueOnce({ id: 'remote-http', name: 'Checkout Flow (HTTP)', protocol: 'http', script: { name: 'Checkout Flow (HTTP)', protocol: 'http', actions: [] } })
+
+    await renderPanel({ onImported })
+    await clickButton('Save to Script Library')
+    await flushPromises()
+
+    expect(apiMock.convertBrowserRecording).not.toHaveBeenCalled()
+    expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledWith('brec-1', expect.objectContaining({ name: 'Checkout Flow' }))
+    expect(apiMock.createScript).toHaveBeenCalledTimes(2)
+    expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'remote-browser' }), expect.objectContaining({ id: 'remote-http' })] })
+    expect(container.textContent).toContain('Saved 2 scripts to the remote script library')
   })
 })
 

@@ -57,6 +57,8 @@ type Server struct {
 	metricsServer      *http.Server
 	metricsBoundAddr   string
 	desktopMode        bool
+	bridgeMode         bool
+	recordingBridge    *BrowserRecordingBridge
 	desktopAppData     string
 	desktopLogPath     string
 	boundAddr          string
@@ -78,6 +80,7 @@ type ServerConfig struct {
 	GeneratorTargets   []string
 	GeneratorTimeout   time.Duration
 	DesktopMode        bool
+	BridgeMode         bool
 	DesktopAppDataPath string
 	DesktopLogPath     string
 }
@@ -140,6 +143,7 @@ func NewServer(cfg ServerConfig) *Server {
 		githubTokens:     make(map[string]githubCachedToken),
 		mux:              http.NewServeMux(),
 		desktopMode:      cfg.DesktopMode,
+		bridgeMode:       cfg.BridgeMode,
 		desktopAppData:   cfg.DesktopAppDataPath,
 		desktopLogPath:   cfg.DesktopLogPath,
 
@@ -530,6 +534,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/system/health", cors(log(http.HandlerFunc(s.handleHealthCheck))))
 	s.mux.Handle("GET /api/v1/system/version", cors(log(http.HandlerFunc(s.handleSystemVersion))))
 	s.mux.Handle("GET /api/v1/system/readiness", cors(log(http.HandlerFunc(s.handleSystemReadiness))))
+	s.mux.Handle("GET /api/v1/downloads/recording-agent/latest", cors(log(http.HandlerFunc(s.handleDownloadRecordingAgent))))
 	// With a dedicated metrics listener (APEXLOAD_METRICS_ADDR) the scrape
 	// endpoint moves off the API port entirely, so NetworkPolicy can grant the
 	// monitoring namespace metrics access without exposing the API surface.
@@ -706,6 +711,9 @@ func (s *Server) enforceAuthPosture() error {
 }
 
 func (s *Server) Start() error {
+	if s.bridgeMode {
+		return s.startBridge()
+	}
 	if err := s.enforceAuthPosture(); err != nil {
 		return err
 	}
@@ -729,6 +737,20 @@ func (s *Server) Start() error {
 	}
 	s.setBoundAddr(listener.Addr().String())
 	slog.Info("apexload API server starting", "addr", s.httpServer.Addr, "bound_addr", s.BoundAddr())
+	if err := s.httpServer.Serve(listener); err != http.ErrServerClosed {
+		return err
+	}
+	return nil
+}
+
+func (s *Server) startBridge() error {
+	go s.hub.Run()
+	listener, err := net.Listen("tcp", s.httpServer.Addr)
+	if err != nil {
+		return err
+	}
+	s.setBoundAddr(listener.Addr().String())
+	slog.Info("apexload browser recording bridge starting", "addr", s.httpServer.Addr, "bound_addr", s.BoundAddr())
 	if err := s.httpServer.Serve(listener); err != http.ErrServerClosed {
 		return err
 	}
@@ -826,8 +848,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		_ = s.fanoutSub.Close()
 		s.fanoutSub = nil
 	}
-	s.hub.Stop()
-	s.recorder.StopProxy()
+	if s.hub != nil {
+		s.hub.Stop()
+	}
+	if s.recorder != nil {
+		s.recorder.StopProxy()
+	}
 	if s.cache != nil {
 		_ = s.cache.Close()
 	}

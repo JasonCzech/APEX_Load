@@ -39,6 +39,7 @@ The current controller can run in either local or distributed mode without chang
 |-----------|---------|
 | `cmd/controller` | HTTP API server + embedded React dashboard |
 | `cmd/apexctl` | CLI for direct script execution (no controller needed) |
+| `cmd/apexload-record-agent` | Production local browser recording bridge for remote dashboards |
 | `cmd/generator` | Distributed load generator (Kubernetes StatefulSet pod) |
 | `pkg/engine` | VUser goroutine engine, pacing, metrics, lifecycle |
 | `pkg/protocol` | Protocol interface; HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, Kafka, database, network, browser implementations |
@@ -60,6 +61,7 @@ The current controller can run in either local or distributed mode without chang
 - **[docs/COMPETITIVE_COMPARISON.md](docs/COMPETITIVE_COMPARISON.md)** — How APEX Load compares to LoadRunner/LRE, k6, NeoLoad, JMeter, and DevWeb; honest leads/matches/trails; migration and import reference (RTS mappings, protocol routing, bundle coverage)
 - **[docs/MOBILE_BROWSER_EMULATION_PLAN.md](docs/MOBILE_BROWSER_EMULATION_PLAN.md)** — Current browser engine and device profile support matrix plus conservative mobile-browser benchmark guidance
 - **[docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md](docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md)** — Self-hosted auth/RBAC operations, break-glass recovery, service-account handling, and audit export guidance
+- **[docs/recording-agent.md](docs/recording-agent.md)** — Production packaging and deployment guidance for the local browser Recording Agent
 - **[AGENTS.md](AGENTS.md)** — High-level platform overview, tech stack, release phases
 
 ## Requirements
@@ -205,7 +207,8 @@ Controller runtime configuration:
 Use Make targets from repo root:
 
 ```bash
-make build       # builds generator/controller/apexctl into ./bin
+make build       # builds generator/controller/apexctl/apexload-record-agent into ./bin
+make package-recording-agent  # builds cross-platform Recording Agent release archives
 make test        # runs Go tests with race detector
 make test-cover  # race + coverage report (coverage.out / coverage.html)
 make lint        # runs golangci-lint (if installed)
