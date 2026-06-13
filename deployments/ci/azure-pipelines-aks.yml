@@ -23,6 +23,9 @@ stages:
         pool:
           vmImage: ubuntu-latest
         steps:
+          - checkout: self
+            fetchDepth: 0
+
           - task: AzureCLI@2
             displayName: az acr build (controller + generator)
             inputs:
@@ -33,12 +36,13 @@ stages:
                 set -euo pipefail
                 COMMIT=$(Build.SourceVersion)
                 BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+                BUILD_VERSION=$(COMMIT="${COMMIT}" BUILD_TIME="${BUILD_TIME}" ./scripts/resolve-version.sh)
                 for binary in controller generator; do
                   az acr build --registry $(ACR_NAME) \
                     --image apexload-${binary}:$(imageTag) \
                     --image apexload-${binary}:latest \
                     --build-arg BINARY=${binary} \
-                    --build-arg VERSION=$(imageTag) \
+                    --build-arg VERSION=${BUILD_VERSION} \
                     --build-arg COMMIT=${COMMIT} \
                     --build-arg BUILD_TIME=${BUILD_TIME} \
                     --file Dockerfile .

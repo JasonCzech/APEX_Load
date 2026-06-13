@@ -27,6 +27,17 @@ jobs:
         binary: [controller, generator]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve friendly build version
+        id: version
+        run: |
+          set -euo pipefail
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          BUILD_VERSION=$(COMMIT="${GITHUB_SHA}" BUILD_TIME="${BUILD_TIME}" ./scripts/resolve-version.sh)
+          echo "version=${BUILD_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build_time=${BUILD_TIME}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -45,8 +56,9 @@ jobs:
           tags: apexload-${{ matrix.binary }}:scan
           build-args: |
             BINARY=${{ matrix.binary }}
-            VERSION=${{ github.sha }}
+            VERSION=${{ steps.version.outputs.version }}
             COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ steps.version.outputs.build_time }}
 
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
@@ -75,8 +87,9 @@ jobs:
             ${{ vars.REGISTRY }}/apexload-${{ matrix.binary }}:${{ github.sha }}
           build-args: |
             BINARY=${{ matrix.binary }}
-            VERSION=${{ github.sha }}
+            VERSION=${{ steps.version.outputs.version }}
             COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ steps.version.outputs.build_time }}
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3

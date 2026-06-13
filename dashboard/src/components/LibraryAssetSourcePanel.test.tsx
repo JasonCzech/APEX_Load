@@ -162,7 +162,7 @@ describe('LibraryAssetSourcePanel', () => {
     expect(container.textContent).toContain('host-script')
   })
 
-  it('lets pages route remote library status controls to configuration', async () => {
+  it('lets pages route Remote Workspace status controls to configuration', async () => {
     const onConfigureRemotes = vi.fn()
     await renderPanel(root, <LibraryAssetSourcePanel kind="script" projectId="project-1" onConfigureRemotes={onConfigureRemotes} />)
 

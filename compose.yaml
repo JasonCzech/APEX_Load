@@ -12,7 +12,7 @@ services:
     init: true
     restart: unless-stopped
     environment:
-      APEXLOAD_ADDR: ":8080"
+      APEXLOAD_ADDR: "0.0.0.0:8080"
       APEXLOAD_METRICS_ADDR: ":9091"
       APEXLOAD_DB: /data/apexload.db
       APEXLOAD_ARCHIVE_DIR: /data/archives

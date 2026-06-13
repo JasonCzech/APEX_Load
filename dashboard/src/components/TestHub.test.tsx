@@ -762,7 +762,7 @@ describe('TestHub', () => {
 
     await flushPromises()
 
-    const noRemoteButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('No Remote Library'))
+    const noRemoteButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('No Remote Workspace'))
     const credentialsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Credentials Missing'))
     expect(noRemoteButton).toBeDefined()
     expect(credentialsButton).toBeDefined()

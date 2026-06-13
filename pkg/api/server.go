@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -53,6 +54,10 @@ type Server struct {
 	fanoutSub          FanoutSubscription
 	generatorDiscovery *generatorDiscovery
 	discoveryCancel    context.CancelFunc
+	k8sRestart         K8sRestartSettings
+	kubeRestarter      KubeRestarter
+	restartMu          sync.Mutex
+	restartInFlight    map[string]struct{}
 	metricsAddr        string
 	metricsServer      *http.Server
 	metricsBoundAddr   string
@@ -61,6 +66,7 @@ type Server struct {
 	recordingBridge    *BrowserRecordingBridge
 	desktopAppData     string
 	desktopLogPath     string
+	bindScope          string
 	boundAddr          string
 	boundAddrMu        sync.RWMutex
 }
@@ -68,6 +74,9 @@ type Server struct {
 // ServerConfig configures API server startup behavior and integrations.
 type ServerConfig struct {
 	Addr string
+	// BindScope is "loopback" or "wide" for the API listener. When omitted it
+	// is inferred from Addr.
+	BindScope string
 	// MetricsAddr, when set (e.g. ":9091"), serves GET /metrics on its own
 	// listener instead of the API port.
 	MetricsAddr        string
@@ -79,6 +88,8 @@ type ServerConfig struct {
 	LibraryCredentials LibraryCredentialStore
 	GeneratorTargets   []string
 	GeneratorTimeout   time.Duration
+	K8sRestart         K8sRestartSettings
+	KubeRestarter      KubeRestarter
 	DesktopMode        bool
 	BridgeMode         bool
 	DesktopAppDataPath string
@@ -89,6 +100,10 @@ type ServerConfig struct {
 func NewServer(cfg ServerConfig) *Server {
 	if cfg.Addr == "" {
 		cfg.Addr = ":8080"
+	}
+	cfg.BindScope = strings.TrimSpace(cfg.BindScope)
+	if cfg.BindScope == "" {
+		cfg.BindScope = config.ClassifyBindScope(cfg.Addr)
 	}
 	if cfg.MaxConcurrent <= 0 {
 		cfg.MaxConcurrent = 10
@@ -146,8 +161,12 @@ func NewServer(cfg ServerConfig) *Server {
 		bridgeMode:       cfg.BridgeMode,
 		desktopAppData:   cfg.DesktopAppDataPath,
 		desktopLogPath:   cfg.DesktopLogPath,
+		bindScope:        cfg.BindScope,
 
 		generatorDiscovery: discovery,
+		k8sRestart:         normalizeK8sRestartSettings(cfg.K8sRestart),
+		kubeRestarter:      cfg.KubeRestarter,
+		restartInFlight:    make(map[string]struct{}),
 		metricsAddr:        strings.TrimSpace(cfg.MetricsAddr),
 	}
 
@@ -593,6 +612,13 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/library/remotes/{id}/pull", cors(log(auth(http.HandlerFunc(s.handleLibraryRemotePull)))))
 	s.mux.Handle("POST /api/v1/library/remotes/{id}/push", cors(log(auth(http.HandlerFunc(s.handleLibraryRemotePush)))))
 	s.mux.Handle("POST /api/v1/library/remotes/{id}/diff", cors(log(auth(http.HandlerFunc(s.handleLibraryRemoteDiff)))))
+	s.mux.Handle("POST /api/v1/remotes/{id}/runs", cors(log(auth(http.HandlerFunc(s.handleCreateRemoteRun)))))
+	s.mux.Handle("GET /api/v1/remotes/{id}/runs/{remote_test_id}", cors(log(auth(http.HandlerFunc(s.handleGetRemoteRun)))))
+	s.mux.Handle("POST /api/v1/remotes/{id}/runs/{remote_test_id}/start", cors(log(auth(s.handleRemoteRunAction("start")))))
+	s.mux.Handle("POST /api/v1/remotes/{id}/runs/{remote_test_id}/stop", cors(log(auth(s.handleRemoteRunAction("stop")))))
+	s.mux.Handle("POST /api/v1/remotes/{id}/runs/{remote_test_id}/abort", cors(log(auth(s.handleRemoteRunAction("abort")))))
+	s.mux.Handle("POST /api/v1/remotes/{id}/runs/{remote_test_id}/pause", cors(log(auth(s.handleRemoteRunAction("pause")))))
+	s.mux.Handle("POST /api/v1/remotes/{id}/runs/{remote_test_id}/resume", cors(log(auth(s.handleRemoteRunAction("resume")))))
 	s.mux.Handle("POST /api/v1/results/import", cors(log(auth(http.HandlerFunc(s.handleImportExternalResults)))))
 	s.mux.Handle("GET /api/v1/results/imports", cors(log(auth(http.HandlerFunc(s.handleListExternalResultImports)))))
 	s.mux.Handle("GET /api/v1/fleet/alerts", cors(log(auth(http.HandlerFunc(s.handleGetFleetAlerts)))))
@@ -600,6 +626,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/fleet/load-zones", cors(log(auth(http.HandlerFunc(s.handleGetFleetLoadZones)))))
 	s.mux.Handle("GET /api/v1/fleet/provisioner", cors(log(auth(http.HandlerFunc(s.handleGetFleetProvisioner)))))
 	s.mux.Handle("PATCH /api/v1/system/generators/drain", cors(log(auth(http.HandlerFunc(s.handleSetGeneratorDrainState)))))
+	s.mux.Handle("GET /api/v1/system/restarts/capabilities", cors(log(auth(http.HandlerFunc(s.handleGetSystemRestartCapabilities)))))
+	s.mux.Handle("POST /api/v1/system/restarts", cors(log(auth(http.HandlerFunc(s.handleSystemRestart)))))
 	s.mux.Handle("GET /api/v1/system/settings", cors(log(auth(http.HandlerFunc(s.handleGetSystemSettings)))))
 	s.mux.Handle("PUT /api/v1/system/settings", cors(log(auth(http.HandlerFunc(s.handleUpdateSystemSettings)))))
 
@@ -704,6 +732,13 @@ func (s *Server) enforceAuthPosture() error {
 	}
 	if productionMode() {
 		return fmt.Errorf("refusing to start: auth mode %q bypasses authentication but APEXLOAD_ENV=production; configure %q or %q auth", mode, authModeOIDC, authModeTrustedHeaders)
+	}
+	if s.bindScope == config.BindScopeWide {
+		slog.Warn("controller is wide-bound while auth is in a bypass mode; all reachable API endpoints are unauthenticated",
+			"auth_mode", mode,
+			"addr", s.httpServer.Addr,
+			"bind_scope", s.bindScope)
+		return nil
 	}
 	slog.Warn("auth is in a bypass mode — all API endpoints are unauthenticated; do not use this configuration in production",
 		"auth_mode", mode)

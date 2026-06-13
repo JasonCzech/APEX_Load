@@ -1553,7 +1553,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onNavigate
                                     Compare
                                   </button>
                                 )}
-                                {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>Open in Remote Library</a>}
+                                {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>Open in Remote Workspace</a>}
                               </>
                             ) : (
                               <span className="cell-muted">-</span>

@@ -35,6 +35,11 @@ headless service every `APEXLOAD_GENERATOR_DISCOVERY_INTERVAL` (default 15s),
 so generators that KEDA adds or removes join/leave the fleet automatically —
 no static pod list, no controller restart.
 
+Audited Kubernetes restart controls are available as an explicit opt-in via
+[restart-controls.example.yaml](restart-controls.example.yaml). They remain
+disabled and tokenless by default; see
+[Kubernetes restart controls](../../../docs/KUBERNETES_RESTART_CONTROLS.md).
+
 ## Fresh deployment
 
 1. **Provision** — `terraform apply` in `deployments/azure/terraform`, then

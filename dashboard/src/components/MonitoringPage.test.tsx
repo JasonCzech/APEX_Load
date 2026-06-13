@@ -14,11 +14,13 @@ const apiMock = {
   getFleetAlerts: vi.fn(),
   getFleetCapacity: vi.fn(),
   getFleetProvisioner: vi.fn(),
+  getRestartCapabilities: vi.fn(),
   getRunCalendar: vi.fn(),
   getScheduleHealth: vi.fn(),
   getSystemInventory: vi.fn(),
   getSystemReadiness: vi.fn(),
   getSystemServices: vi.fn(),
+  executeRestart: vi.fn(),
   listTests: vi.fn(),
 }
 
@@ -42,6 +44,20 @@ describe('MonitoringPage', () => {
     window.localStorage.clear()
     apiMock.getHealth.mockResolvedValue({ status: 'ok', version: 'dev', ws_clients: 2, test_count: 1 })
     apiMock.getFleetProvisioner.mockResolvedValue(null)
+    apiMock.getRestartCapabilities.mockResolvedValue({
+      enabled: true,
+      execution_mode: 'distributed',
+      namespace: 'apex',
+      controller_deployment: 'apexload-controller',
+      generator_stateful_set: 'apexload-generator',
+      allow_force: true,
+      supports: {
+        controller_workload: true,
+        generator_workload: true,
+        generator_pod: true,
+      },
+    })
+    apiMock.executeRestart.mockResolvedValue({ status: 'success', message: 'restart requested' })
     apiMock.getAPMIntegrationProfiles.mockResolvedValue({
       generated_at: '2026-05-18T12:00:00Z',
       configured_count: 1,
@@ -222,6 +238,136 @@ describe('MonitoringPage', () => {
     )
   }
 
+  it('does not load or show restart controls for non-admin monitoring sessions', async () => {
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: { id: 'controller-1', status: 'healthy', address: ':8080', version: 'dev', execution_mode: 'distributed' },
+      generators: [generatorInventoryFixture()],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    expect(apiMock.getRestartCapabilities).not.toHaveBeenCalled()
+
+    await clickMonitorTab('Fleet')
+    await openGeneratorInventoryModal()
+
+    expect(container.textContent).not.toContain('Restart Pod')
+    expect(container.textContent).not.toContain('Restart Generator Fleet')
+  })
+
+  it('hides restart controls when restart capability is disabled', async () => {
+    apiMock.getRestartCapabilities.mockResolvedValue({
+      enabled: false,
+      disabled_reason: 'Kubernetes restart controls are disabled.',
+      execution_mode: 'distributed',
+      allow_force: false,
+      supports: {
+        controller_workload: false,
+        generator_workload: false,
+        generator_pod: false,
+      },
+    })
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: { id: 'controller-1', status: 'healthy', address: ':8080', version: 'dev', execution_mode: 'distributed' },
+      generators: [generatorInventoryFixture()],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} canManageSystem />)
+    })
+
+    expect(apiMock.getRestartCapabilities).toHaveBeenCalled()
+
+    await clickMonitorTab('Fleet')
+    await openGeneratorInventoryModal()
+
+    expect(container.textContent).toContain('Kubernetes restart controls are disabled.')
+    expect(container.textContent).not.toContain('Restart Pod')
+    expect(container.textContent).not.toContain('Restart Generator Fleet')
+  })
+
+  it('submits a generator pod restart after reason and target confirmation', async () => {
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: { id: 'controller-1', status: 'healthy', address: ':8080', version: 'dev', execution_mode: 'distributed' },
+      generators: [generatorInventoryFixture()],
+    })
+    apiMock.executeRestart.mockResolvedValueOnce({ status: 'success', message: 'generator pod restart requested' })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} canManageSystem />)
+    })
+
+    await clickMonitorTab('Fleet')
+    await openGeneratorInventoryModal()
+    await clickButtonContaining('Restart Pod')
+
+    expect(container.textContent).toContain('Restart Generator Pod')
+    const modal = container.querySelector<HTMLElement>('.destructive-confirm-modal')
+    expect(modal).not.toBeNull()
+    const submit = Array.from(modal!.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Restart Pod'))
+    expect(submit).not.toBeUndefined()
+    expect(submit!.disabled).toBe(true)
+
+    await changeInputByPlaceholder('Operational reason', 'stuck worker')
+    await changeInputByPlaceholder('apexload-generator-0', 'apexload-generator-0')
+    expect(submit!.disabled).toBe(false)
+
+    await act(async () => {
+      submit!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(apiMock.executeRestart).toHaveBeenCalledWith({
+      target_type: 'generator',
+      scope: 'pod',
+      target: 'apexload-generator-0',
+      reason: 'stuck worker',
+      confirmation: 'apexload-generator-0',
+      force: false,
+    })
+    expect(container.textContent).toContain('generator pod restart requested')
+  })
+
+  it('shows blocked restart errors and allows force re-confirmation', async () => {
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: { id: 'controller-1', status: 'healthy', address: ':8080', version: 'dev', execution_mode: 'distributed' },
+      generators: [generatorInventoryFixture({ active_vusers: 12 })],
+    })
+    apiMock.executeRestart
+      .mockRejectedValueOnce({ message: 'Conflict', payload: { message: 'generator workload has active VUsers or active runs; force is required' } })
+      .mockResolvedValueOnce({ status: 'success', message: 'generator workload restart requested' })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} canManageSystem />)
+    })
+
+    await clickMonitorTab('Fleet')
+    await openGeneratorInventoryModal()
+    await clickButtonContaining('Restart Generator Fleet')
+
+    expect(container.textContent).toContain('Allows the rollout even when generators have active VUsers or runs are active.')
+    await changeInputByPlaceholder('Operational reason', 'roll stuck fleet')
+    await changeInputByPlaceholder('apexload-generator', 'apexload-generator')
+    await submitDestructiveModal('Restart Fleet')
+
+    expect(container.textContent).toContain('force is required')
+
+    const checkbox = container.querySelector<HTMLInputElement>('.destructive-confirm-modal input[type="checkbox"]')
+    expect(checkbox).not.toBeNull()
+    await act(async () => {
+      checkbox!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await submitDestructiveModal('Restart Fleet')
+
+    expect(apiMock.executeRestart).toHaveBeenLastCalledWith(expect.objectContaining({ force: true }))
+    expect(container.textContent).toContain('generator workload restart requested')
+  })
+
   it('publishes advisory warnings after the floating Monitoring section toggle', async () => {
     await act(async () => {
       root.render(
@@ -244,6 +390,64 @@ describe('MonitoringPage', () => {
     expect(container.textContent).not.toContain('Advisory Panel')
     expect(container.textContent).not.toContain('Customize Cards')
   })
+
+  async function openGeneratorInventoryModal() {
+    await clickButtonContaining('View details')
+  }
+
+  async function clickButtonContaining(label: string) {
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(candidate => candidate.textContent?.includes(label))
+    expect(button).not.toBeUndefined()
+    await act(async () => {
+      button!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
+  async function changeInputByPlaceholder(placeholder: string, value: string) {
+    const input = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
+      .find(candidate => candidate.placeholder === placeholder)
+    expect(input).not.toBeUndefined()
+    await act(async () => {
+      setInputValue(input!, value)
+      input!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
+
+  function setInputValue(input: HTMLInputElement, value: string) {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    setter?.call(input, value)
+  }
+
+  async function submitDestructiveModal(label: string) {
+    const modal = container.querySelector<HTMLElement>('.destructive-confirm-modal')
+    expect(modal).not.toBeNull()
+    const button = Array.from(modal!.querySelectorAll<HTMLButtonElement>('button'))
+      .find(candidate => candidate.textContent?.includes(label))
+    expect(button).not.toBeUndefined()
+    await act(async () => {
+      button!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
+  function generatorInventoryFixture(overrides: Record<string, unknown> = {}) {
+    return {
+      target: '10.0.0.1:9090',
+      generator_id: 'apexload-generator-0',
+      pod_name: 'apexload-generator-0',
+      restartable: true,
+      status: 'connected',
+      available_capacity: 9800,
+      active_vusers: 0,
+      cpu_percent: 12.3,
+      memory_bytes: 256 * 1024 * 1024,
+      goroutine_count: 512,
+      cpu_limit_cores: 2,
+      memory_limit_bytes: 2 * 1024 * 1024 * 1024,
+      max_vusers: 10000,
+      ...overrides,
+    }
+  }
 
   it('renders sampled telemetry diagnostics in the monitoring grid', async () => {
     await act(async () => {

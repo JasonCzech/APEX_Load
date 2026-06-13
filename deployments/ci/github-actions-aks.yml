@@ -22,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: azure/login@v2
         with:
@@ -33,12 +35,13 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          BUILD_VERSION=$(COMMIT="${GITHUB_SHA}" BUILD_TIME="${BUILD_TIME}" ./scripts/resolve-version.sh)
           for binary in controller generator; do
             az acr build --registry "${{ vars.ACR_NAME }}" \
               --image "apexload-${binary}:${GITHUB_SHA}" \
               --image "apexload-${binary}:latest" \
               --build-arg BINARY="${binary}" \
-              --build-arg VERSION="${GITHUB_SHA}" \
+              --build-arg VERSION="${BUILD_VERSION}" \
               --build-arg COMMIT="${GITHUB_SHA}" \
               --build-arg BUILD_TIME="${BUILD_TIME}" \
               --file Dockerfile .

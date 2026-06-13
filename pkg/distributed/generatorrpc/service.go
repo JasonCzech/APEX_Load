@@ -13,6 +13,7 @@ import (
 	"time"
 
 	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -483,7 +484,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			CpuLimitCores:      s.podResources.CPULimitCores,
 			MemoryLimitBytes:   s.podResources.MemoryLimitBytes,
 			MaxVusers:          s.podResources.MaxVUsers,
-			Version:            "0.1.0",
+			Version:            buildinfo.Get().Version,
 			SupportedProtocols: supportedProtocolNames(),
 			CompatibleFeatures: supportedProtocolNames(),
 		}); err != nil {

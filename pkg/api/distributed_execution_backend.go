@@ -1273,8 +1273,14 @@ func leadingVersionPart(version string) (string, bool) {
 	}
 	part, _, _ := strings.Cut(version, ".")
 	part = strings.TrimSpace(part)
+	part = strings.TrimLeft(part, "vV")
 	if part == "" {
 		return "", false
+	}
+	for _, r := range part {
+		if r < '0' || r > '9' {
+			return "", false
+		}
 	}
 	return part, true
 }

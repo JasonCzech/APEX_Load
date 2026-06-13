@@ -71,6 +71,8 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/fleet/load-zones", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/fleet/provisioner", viewerGlobalAccess()),
 	routeAuth(http.MethodPatch, "/api/v1/system/generators/drain", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
+	routeAuth(http.MethodGet, "/api/v1/system/restarts/capabilities", systemAdminAccess()),
+	routeAuth(http.MethodPost, "/api/v1/system/restarts", systemAdminAccess()),
 	routeAuth(http.MethodGet, "/api/v1/integrations/apm/profiles", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/integrations/dynatrace/dry-run", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/integrations/github/config", accessRequirement{AuthenticatedOnly: true}),
@@ -111,6 +113,13 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/library/results/{id}/archive", viewerProjectAccess(resolveLibraryResultArchiveProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/library/remotes", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/library/remotes", systemAdminAccess()),
+	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
+	routeAuth(http.MethodGet, "/api/v1/remotes/{id}/runs/{remote_test_id}", viewerGlobalAccess()),
+	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/start", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
+	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/stop", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
+	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/abort", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
+	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/pause", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
+	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/resume", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
 
 	// Assisted-authoring drafts/repairs/explain + external result import.
 	routeAuth(http.MethodPost, "/api/v1/ai/drafts", editorProjectAccess(resolveAIAssistanceProjectID)),

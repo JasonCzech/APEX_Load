@@ -2723,7 +2723,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
                           {item.local_item_id && (
                             <button className="btn btn-sm btn-ghost" onClick={() => void scenarioFederation.compareItems(item.local_item_id!, item)}>Compare</button>
                           )}
-                          {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer">Open in Remote Library</a>}
+                          {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer">Open in Remote Workspace</a>}
                         </>
                       ) : (
                         <span className="cell-muted">Read-only</span>

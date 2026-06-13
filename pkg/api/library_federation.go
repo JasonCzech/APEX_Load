@@ -1398,7 +1398,13 @@ func (s *Server) remoteJSONAccepted(ctx context.Context, remote LibraryRemote, m
 	if (resp.StatusCode < 200 || resp.StatusCode >= 300) && !accepted[resp.StatusCode] {
 		return resp.StatusCode, fmt.Errorf("remote library returned %s", resp.Status)
 	}
-	return resp.StatusCode, json.NewDecoder(resp.Body).Decode(out)
+	if out == nil {
+		return resp.StatusCode, nil
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil && err != io.EOF {
+		return resp.StatusCode, err
+	}
+	return resp.StatusCode, nil
 }
 
 func libraryRemoteJSONTimeout() time.Duration {

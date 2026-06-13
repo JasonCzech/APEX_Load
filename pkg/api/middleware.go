@@ -514,6 +514,12 @@ func requiredServiceAccountScope(r *http.Request) string {
 	if path == "/api/v1/system/generators/drain" && method == http.MethodPatch {
 		return "settings:manage"
 	}
+	if strings.HasPrefix(path, "/api/v1/system/restarts") {
+		if method == http.MethodGet {
+			return "settings:manage"
+		}
+		return "settings:manage"
+	}
 	if strings.HasPrefix(path, "/api/v1/system/") {
 		return "system:read"
 	}
@@ -540,6 +546,12 @@ func requiredServiceAccountScope(r *http.Request) string {
 			return requiredLibraryTransferServiceAccountScope(r)
 		}
 		return "write"
+	}
+	if strings.HasPrefix(path, "/api/v1/remotes/") {
+		if method == http.MethodGet || method == http.MethodHead {
+			return "results:read"
+		}
+		return "tests:run"
 	}
 	if strings.HasPrefix(path, "/api/v1/scripts") {
 		if method == http.MethodGet || method == http.MethodHead {

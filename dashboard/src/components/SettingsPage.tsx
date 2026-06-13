@@ -833,6 +833,18 @@ export default function SettingsPage({
     setRequestError('')
   }
 
+  const updateClientApp = (availability: DashboardSystemSettings['client_app']['availability']) => {
+    setSettings((prev) => ({
+      ...prev,
+      client_app: {
+        ...prev.client_app,
+        availability,
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
   const updateThreshold = (key: keyof DashboardSystemSettings['thresholds'], value: string) => {
     setSettings((prev) => ({
       ...prev,
@@ -1861,6 +1873,21 @@ export default function SettingsPage({
                 <option value="solarized-light">Solarized Light</option>
                 <option value="monokai-dimmed">Monokai Dimmed</option>
               </select>
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Desktop Client Promotion</span>
+                <span className="setting-desc">Controls whether the hosted browser UI promotes the optional desktop workspace. Authorized API access is still governed by RBAC.</span>
+              </div>
+              <label className="settings-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={settings.client_app.availability === 'enabled'}
+                  onChange={event => updateClientApp(event.target.checked ? 'enabled' : 'disabled')}
+                  disabled={!canManageSystem}
+                />
+                <span>{settings.client_app.availability === 'enabled' ? 'Enabled' : 'Disabled'}</span>
+              </label>
             </div>
               </div>
             </section>

@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -46,6 +47,9 @@ type GeneratorInventoryEntry struct {
 	CPULimitCores                     float64  `json:"cpu_limit_cores"`
 	MemoryLimitBytes                  int64    `json:"memory_limit_bytes"`
 	MaxVUsers                         int32    `json:"max_vusers"`
+	PodName                           string   `json:"pod_name,omitempty"`
+	Restartable                       bool     `json:"restartable,omitempty"`
+	RestartBlockedReason              string   `json:"restart_blocked_reason,omitempty"`
 	CPUUserPct                        float64  `json:"cpu_user_pct,omitempty"`
 	CPUSystemPct                      float64  `json:"cpu_system_pct,omitempty"`
 	CPUIOWaitPct                      float64  `json:"cpu_iowait_pct,omitempty"`
@@ -102,6 +106,7 @@ func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
 	for i := range entries {
 		entries[i] = normalizeGeneratorInventoryEntry(entries[i])
 	}
+	s.enrichGeneratorRestartability(ctx, entries)
 	s.cacheGeneratorInventory(ctx, entries)
 
 	return SystemInventoryResponse{
@@ -110,11 +115,31 @@ func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
 			ID:            controllerID,
 			Status:        "healthy",
 			Address:       s.httpServer.Addr,
-			Version:       "0.1.0",
+			Version:       buildinfo.Get().Version,
 			ExecutionMode: executionMode,
 		},
 		Generators:   entries,
 		DataPlatform: s.dataPlatformInventory(),
+	}
+}
+
+func (s *Server) enrichGeneratorRestartability(ctx context.Context, entries []GeneratorInventoryEntry) {
+	if s == nil || !s.k8sRestart.Enabled || s.kubeRestarter == nil || len(entries) == 0 {
+		return
+	}
+	pods, err := s.kubeRestarter.ListPods(ctx, s.k8sRestart.Namespace, s.k8sRestart.GeneratorSelector)
+	if err != nil {
+		for i := range entries {
+			entries[i].RestartBlockedReason = "Kubernetes pod inventory is unavailable."
+		}
+		return
+	}
+	for i := range entries {
+		pod := resolveGeneratorPodFromList(entries[i], pods, s.k8sRestart.GeneratorStatefulSet)
+		if pod.Name != "" {
+			entries[i].PodName = pod.Name
+		}
+		entries[i].Restartable, entries[i].RestartBlockedReason = generatorRestartability(entries[i], pod)
 	}
 }
 

@@ -367,7 +367,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Associated Release')
     expect(container.textContent).toContain('Search Release')
     expect(container.textContent).not.toContain('Asset Type')
-    expect(container.textContent).not.toContain('Select a remote library first.')
+    expect(container.textContent).not.toContain('Select a Remote Workspace first.')
 
     await clickButton('Script Builder')
 
@@ -646,7 +646,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    const noRemoteButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('No Remote Library'))
+    const noRemoteButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('No Remote Workspace'))
     const credentialsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Credentials Missing'))
     expect(noRemoteButton).toBeDefined()
     expect(credentialsButton).toBeDefined()

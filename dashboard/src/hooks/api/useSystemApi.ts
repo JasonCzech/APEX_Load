@@ -33,6 +33,9 @@ import {
   ReportProfilesResponse,
   SystemInventoryResponse,
   SystemReadinessResponse,
+  SystemRestartCapabilities,
+  SystemRestartRequest,
+  SystemRestartResult,
   SystemServicesResponse,
   UsageAccountingResponse,
   UsageAccountingSnapshot,
@@ -72,7 +75,7 @@ export function useSystemApi() {
     const query = q.toString()
     return request<DashboardAuthEffectiveAccess>(`/auth/effective-access${query ? `?${query}` : ''}`)
   }, [])
-	const getAuthAccessMatrix = useCallback(() => request<DashboardAuthAccessMatrix>('/auth/access-matrix'), [])
+  const getAuthAccessMatrix = useCallback(() => request<DashboardAuthAccessMatrix>('/auth/access-matrix'), [])
   const getAuthDiagnostics = useCallback(() => request<DashboardAuthDiagnostics>('/auth/diagnostics'), [])
   const getAuthRoleCatalog = useCallback(() => request<DashboardAuthRoleCatalog>('/auth/roles'), [])
   const listAuthServiceAccounts = useCallback(() => request<DashboardServiceAccountListResponse>('/auth/service-accounts'), [])
@@ -116,6 +119,11 @@ export function useSystemApi() {
   const getHealth = useCallback(() => request<HealthResponse>('/system/health'), [])
   const getVersion = useCallback(() => request<VersionResponse>('/system/version'), [])
   const getSystemInventory = useCallback(() => request<SystemInventoryResponse>('/system/inventory'), [])
+  const getRestartCapabilities = useCallback(() => request<SystemRestartCapabilities>('/system/restarts/capabilities'), [])
+  const executeRestart = useCallback(
+    (payload: SystemRestartRequest) => request<SystemRestartResult>('/system/restarts', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
   const getSystemReadiness = useCallback(() => request<SystemReadinessResponse>('/system/readiness'), [])
   const getSystemServices = useCallback(() => request<SystemServicesResponse>('/system/services'), [])
   const getParityStatus = useCallback(() => request<ParityStatusResponse>('/system/parity-status'), [])
@@ -162,8 +170,8 @@ export function useSystemApi() {
 
   return useMemo(
     () => ({
-		getAuthEffectiveAccess,
-		getAuthAccessMatrix,
+      getAuthEffectiveAccess,
+      getAuthAccessMatrix,
       getAuthDiagnostics,
       getAuthRoleCatalog,
       listAuthServiceAccounts,
@@ -185,6 +193,8 @@ export function useSystemApi() {
       getHealth,
       getVersion,
       getSystemInventory,
+      getRestartCapabilities,
+      executeRestart,
       getSystemReadiness,
       getSystemServices,
       getParityStatus,
@@ -209,6 +219,6 @@ export function useSystemApi() {
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getSystemInventory, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getSystemInventory, getRestartCapabilities, executeRestart, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
   )
 }

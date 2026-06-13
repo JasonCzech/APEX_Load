@@ -75,3 +75,57 @@ func TestLoadJavaVuserOperatorConfig(t *testing.T) {
 		}
 	})
 }
+
+func TestLoadK8sRestartOperatorConfig(t *testing.T) {
+	t.Run("defaults when unset", func(t *testing.T) {
+		clearK8sRestartEnv(t)
+
+		cfg := LoadK8sRestartOperatorConfig()
+		if cfg.Enabled {
+			t.Error("Enabled = true, want false when unset")
+		}
+		if cfg.ControllerDeployment != DefaultK8sControllerDeployment {
+			t.Errorf("ControllerDeployment = %q, want %q", cfg.ControllerDeployment, DefaultK8sControllerDeployment)
+		}
+		if cfg.GeneratorStatefulSet != DefaultK8sGeneratorStatefulSet {
+			t.Errorf("GeneratorStatefulSet = %q, want %q", cfg.GeneratorStatefulSet, DefaultK8sGeneratorStatefulSet)
+		}
+		if cfg.GeneratorSelector != DefaultK8sGeneratorSelector {
+			t.Errorf("GeneratorSelector = %q, want %q", cfg.GeneratorSelector, DefaultK8sGeneratorSelector)
+		}
+		if !cfg.AllowForce {
+			t.Error("AllowForce = false, want true by default")
+		}
+	})
+
+	t.Run("operator overrides", func(t *testing.T) {
+		clearK8sRestartEnv(t)
+		t.Setenv(EnvK8sRestartEnabled, "true")
+		t.Setenv(EnvK8sNamespace, "perf")
+		t.Setenv(EnvK8sControllerDeployment, "controller-prod")
+		t.Setenv(EnvK8sGeneratorStatefulSet, "generators-prod")
+		t.Setenv(EnvK8sGeneratorSelector, "app=generators")
+		t.Setenv(EnvK8sRestartAllowForce, "false")
+
+		cfg := LoadK8sRestartOperatorConfig()
+		if !cfg.Enabled {
+			t.Fatal("Enabled = false, want true")
+		}
+		if cfg.Namespace != "perf" || cfg.ControllerDeployment != "controller-prod" || cfg.GeneratorStatefulSet != "generators-prod" || cfg.GeneratorSelector != "app=generators" {
+			t.Fatalf("operator config = %#v, want overrides applied", cfg)
+		}
+		if cfg.AllowForce {
+			t.Fatal("AllowForce = true, want false")
+		}
+	})
+}
+
+func clearK8sRestartEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv(EnvK8sRestartEnabled, "")
+	t.Setenv(EnvK8sNamespace, "")
+	t.Setenv(EnvK8sControllerDeployment, "")
+	t.Setenv(EnvK8sGeneratorStatefulSet, "")
+	t.Setenv(EnvK8sGeneratorSelector, "")
+	t.Setenv(EnvK8sRestartAllowForce, "")
+}

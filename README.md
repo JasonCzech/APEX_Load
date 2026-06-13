@@ -6,8 +6,9 @@ Kubernetes-native performance testing platform replacing LoadRunner Enterprise. 
 
 APEX Load provides **three primary surfaces**:
 
-- **Controller API + Dashboard**: Web UI for authoring, scheduling, and monitoring tests with real-time WebSocket-fed metrics
-- **CLI (`apexctl`)**: Local script execution for testing during development or in CI/CD pipelines
+- **Hosted browser dashboard**: Zero-install web UI served same-origin by the controller for authoring, scheduling, running, monitoring, and reviewing tests
+- **Wails desktop workspace**: Optional installed local workspace with an embedded loopback controller, local SQLite/keyring storage, local runs, and Remote Workspace sync/remote execution
+- **CLI (`apexctl`)**: Local or controller-backed script execution for development, automation, and CI/CD pipelines
 - **Load Generator**: Kubernetes-native pods (StatefulSet) running goroutine-based virtual users, scalable 1–50 pods (~10k VUsers/pod is a design target, not yet benchmarked)
 
 The project is organized to support both direct local runs and controller-managed distributed execution across multiple pods.
@@ -61,6 +62,7 @@ The current controller can run in either local or distributed mode without chang
 - **[docs/COMPETITIVE_COMPARISON.md](docs/COMPETITIVE_COMPARISON.md)** — How APEX Load compares to LoadRunner/LRE, k6, NeoLoad, JMeter, and DevWeb; honest leads/matches/trails; migration and import reference (RTS mappings, protocol routing, bundle coverage)
 - **[docs/MOBILE_BROWSER_EMULATION_PLAN.md](docs/MOBILE_BROWSER_EMULATION_PLAN.md)** — Current browser engine and device profile support matrix plus conservative mobile-browser benchmark guidance
 - **[docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md](docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md)** — Self-hosted auth/RBAC operations, break-glass recovery, service-account handling, and audit export guidance
+- **[docs/ACCESS_SURFACES.md](docs/ACCESS_SURFACES.md)** — Hosted browser, desktop workspace, CLI, deployment identity, binding defaults, and desktop promotion governance
 - **[docs/recording-agent.md](docs/recording-agent.md)** — Production packaging and deployment guidance for the local browser Recording Agent
 - **[AGENTS.md](AGENTS.md)** — High-level platform overview, tech stack, release phases
 
@@ -71,6 +73,14 @@ The current controller can run in either local or distributed mode without chang
 - Windows local utility: Windows PowerShell `5.1+` or PowerShell `7+`
 
 ## Quick Start
+
+For end users, the normal zero-install path is the hosted browser dashboard served by the Kubernetes controller. The desktop app is optional when an admin makes it available, and `apexctl` remains the headless/CI path.
+
+### Hosted browser or desktop
+
+- Hosted browser: open the controller URL provided by your environment. The dashboard is served by the controller itself, so no desktop client is required.
+- Desktop workspace: install the Wails app when your admin offers it. It runs a local controller for local authoring/runs and can connect to Remote Workspaces for sync and remote execution.
+- CLI: use `apexctl` for CI, automation, or direct local script execution.
 
 ### Docker Compose with Prometheus
 
@@ -92,7 +102,7 @@ host-controller variant.
 go run ./cmd/controller
 ```
 
-By default the controller listens on `:8080`.
+By default a standalone local/dev controller listens on `127.0.0.1:8080`. Production/container deployments set or infer a wide bind (`:8080` or `0.0.0.0:8080`) so Services and port mappings are reachable.
 
 To enable distributed execution, point the controller at one or more generators:
 
@@ -181,7 +191,7 @@ Useful options:
 
 Controller runtime configuration:
 
-- `APEXLOAD_ADDR`: HTTP bind address (default `:8080`)
+- `APEXLOAD_ADDR`: HTTP bind address. When unset, local/dev defaults to `127.0.0.1:8080`; `APEXLOAD_ENV=production|prod` defaults to `:8080`; explicit values are honored exactly.
 - `APEXLOAD_STORE`: metadata store backend: `sqlite` or `postgres` (default `sqlite`)
 - `APEXLOAD_DB`: SQLite DB path (default `apexload.db`)
 - `APEXLOAD_DATABASE_URL`: PostgreSQL connection URL when `APEXLOAD_STORE=postgres`

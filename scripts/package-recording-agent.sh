@@ -2,9 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="${VERSION:-0.1.0}"
-COMMIT="${COMMIT:-$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)}"
+RAW_VERSION="${VERSION:-}"
+COMMIT="${COMMIT:-$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || echo unknown)}"
 BUILD_TIME="${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+VERSION="$(VERSION="$RAW_VERSION" COMMIT="$COMMIT" BUILD_TIME="$BUILD_TIME" "$ROOT_DIR/scripts/resolve-version.sh")"
 BI="github.com/jasonczech/apexload/pkg/buildinfo"
 DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist/recording-agent}"
 PLATFORMS="${PLATFORMS:-darwin/arm64 darwin/amd64 windows/amd64 linux/amd64 linux/arm64}"

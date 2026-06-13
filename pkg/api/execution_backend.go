@@ -3,10 +3,10 @@ package api
 import (
 	"context"
 	"fmt"
-	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"log/slog"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -34,6 +34,20 @@ type inventoryExecutionBackend interface {
 
 type drainableExecutionBackend interface {
 	SetGeneratorDrainState(target string, state string) error
+}
+
+type KubePodRef struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	IP        string `json:"ip,omitempty"`
+	Phase     string `json:"phase,omitempty"`
+}
+
+type KubeRestarter interface {
+	DeletePod(ctx context.Context, namespace string, name string) error
+	RolloutRestart(ctx context.Context, kind string, namespace string, name string) error
+	PodByIP(ctx context.Context, namespace string, selector string, ip string) (KubePodRef, error)
+	ListPods(ctx context.Context, namespace string, selector string) ([]KubePodRef, error)
 }
 
 type pausableExecutionBackend interface {

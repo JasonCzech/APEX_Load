@@ -109,6 +109,9 @@ export const DEFAULT_SETTINGS: DashboardSystemSettings = {
     base_url: '',
     timeout_seconds: 5,
   },
+  client_app: {
+    availability: 'disabled',
+  },
 }
 
 export const GENERATOR_PRESETS = [
@@ -393,6 +396,10 @@ export function validateSettings(settings: DashboardSystemSettings): string[] {
   if (!Number.isInteger(settings.prometheus.timeout_seconds) || settings.prometheus.timeout_seconds < 1 || settings.prometheus.timeout_seconds > 60) {
     errors.push('Prometheus timeout must be an integer between 1 and 60 seconds.')
   }
+  const clientAppAvailability = settings.client_app?.availability || 'disabled'
+  if (clientAppAvailability !== 'enabled' && clientAppAvailability !== 'disabled') {
+    errors.push('Desktop client availability must be enabled or disabled.')
+  }
   settings.notifications.webhooks.forEach((webhook, index) => {
     const label = `Notification webhook ${index + 1}`
     if (!webhook.url.trim()) {
@@ -480,6 +487,11 @@ export function normalizeDashboardSystemSettings(settings: DashboardSystemSettin
       base_url: settings.prometheus?.base_url || '',
       timeout_seconds: Number(settings.prometheus?.timeout_seconds || DEFAULT_SETTINGS.prometheus.timeout_seconds),
     },
+    client_app: {
+      ...DEFAULT_SETTINGS.client_app,
+      ...settings.client_app,
+      availability: settings.client_app?.availability === 'enabled' ? 'enabled' : 'disabled',
+    },
   }
 }
 
@@ -546,4 +558,3 @@ export function applyLiveGeneratorPresetToSettings(settings: DashboardSystemSett
     },
   }
 }
-

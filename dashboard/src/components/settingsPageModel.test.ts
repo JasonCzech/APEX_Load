@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_SETTINGS,
+  normalizeDashboardSystemSettings,
   splitListDraft,
   usesDefaultGeneratorCapacity,
   validateOptionalPositiveInteger,
@@ -31,6 +32,14 @@ describe('settingsPageModel', () => {
 
   it('validateSettings returns no errors for the default settings', () => {
     expect(validateSettings(DEFAULT_SETTINGS)).toEqual([])
+  })
+
+  it('normalizes missing client app settings to disabled promotion', () => {
+    const normalized = normalizeDashboardSystemSettings({
+      ...DEFAULT_SETTINGS,
+      client_app: undefined as unknown as typeof DEFAULT_SETTINGS.client_app,
+    })
+    expect(normalized.client_app.availability).toBe('disabled')
   })
 
   it('usesDefaultGeneratorCapacity is true for the defaults', () => {

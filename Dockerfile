@@ -48,5 +48,6 @@ COPY --from=builder /app /usr/local/bin/app
 ENV PLAYWRIGHT_DRIVER_PATH=/opt/playwright-driver \
 	PLAYWRIGHT_NODEJS_PATH=/usr/bin/node \
 	APEXLOAD_BROWSER_EXECUTABLE=/usr/bin/google-chrome \
+	APEXLOAD_ADDR=0.0.0.0:8080 \
 	HOME=/tmp
 ENTRYPOINT ["/usr/local/bin/app"]

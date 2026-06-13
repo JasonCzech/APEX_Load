@@ -21,6 +21,17 @@ const (
 	EnvJavaVuserClasspath     = "APEXLOAD_JAVA_VUSER_CLASSPATH"
 	EnvJavaVuserWorkDir       = "APEXLOAD_JAVA_VUSER_WORK_DIR"
 	EnvJavaVuserMaxProcesses  = "APEXLOAD_JAVA_VUSER_MAX_PROCESSES"
+
+	EnvK8sRestartEnabled           = "APEXLOAD_K8S_RESTART_ENABLED"
+	EnvK8sNamespace                = "APEXLOAD_K8S_NAMESPACE"
+	EnvK8sControllerDeployment     = "APEXLOAD_K8S_CONTROLLER_DEPLOYMENT"
+	EnvK8sGeneratorStatefulSet     = "APEXLOAD_K8S_GENERATOR_STATEFULSET"
+	EnvK8sGeneratorSelector        = "APEXLOAD_K8S_GENERATOR_SELECTOR"
+	EnvK8sRestartAllowForce        = "APEXLOAD_K8S_RESTART_ALLOW_FORCE"
+	DefaultK8sControllerDeployment = "apexload-controller"
+	DefaultK8sGeneratorStatefulSet = "apexload-generator"
+	DefaultK8sGeneratorSelector    = "app.kubernetes.io/name=apexload-generator"
+	ServiceAccountNamespaceFile    = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 )
 
 // DefaultJavaVuserRunnerCommand is used when the operator enables the runner
@@ -42,6 +53,18 @@ type JavaVuserOperatorConfig struct {
 	MaxProcesses  int
 }
 
+// K8sRestartOperatorConfig is operator-owned configuration for opt-in
+// Kubernetes restart controls. It is deliberately environment-only so uploaded
+// scripts or project settings cannot grant the controller cluster privileges.
+type K8sRestartOperatorConfig struct {
+	Enabled              bool
+	Namespace            string
+	ControllerDeployment string
+	GeneratorStatefulSet string
+	GeneratorSelector    string
+	AllowForce           bool
+}
+
 // LoadJavaVuserOperatorConfig resolves the Java Vuser runner configuration from
 // the operator environment. When the runner is not explicitly enabled the
 // returned config has Enabled=false and callers must refuse execution.
@@ -58,6 +81,20 @@ func LoadJavaVuserOperatorConfig() JavaVuserOperatorConfig {
 		cfg.MaxProcesses = DefaultJavaVuserMaxProcesses
 	}
 	return cfg
+}
+
+// LoadK8sRestartOperatorConfig resolves the opt-in Kubernetes restart settings.
+// Disabled is the default, and the namespace falls back to the in-cluster
+// service-account namespace file when the operator does not set it explicitly.
+func LoadK8sRestartOperatorConfig() K8sRestartOperatorConfig {
+	return K8sRestartOperatorConfig{
+		Enabled:              envBool(EnvK8sRestartEnabled),
+		Namespace:            firstNonEmptyEnv(EnvK8sNamespace, serviceAccountNamespace()),
+		ControllerDeployment: firstNonEmptyEnv(EnvK8sControllerDeployment, DefaultK8sControllerDeployment),
+		GeneratorStatefulSet: firstNonEmptyEnv(EnvK8sGeneratorStatefulSet, DefaultK8sGeneratorStatefulSet),
+		GeneratorSelector:    firstNonEmptyEnv(EnvK8sGeneratorSelector, DefaultK8sGeneratorSelector),
+		AllowForce:           envBoolDefault(EnvK8sRestartAllowForce, true),
+	}
 }
 
 // JavaVuserRunnerEnabled reports whether an operator has enabled the Java Vuser
@@ -79,6 +116,18 @@ func envBool(key string) bool {
 	return parsed
 }
 
+func envBoolDefault(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
 func envInt(key string, fallback int) int {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
@@ -96,6 +145,14 @@ func firstNonEmptyEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func serviceAccountNamespace() string {
+	raw, err := os.ReadFile(ServiceAccountNamespaceFile)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
 }
 
 func splitClasspath(raw string) []string {

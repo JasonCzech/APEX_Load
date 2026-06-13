@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/kubeops"
 	_ "github.com/jasonczech/apexload/pkg/protocol/browser"
 	_ "github.com/jasonczech/apexload/pkg/protocol/database"
 	_ "github.com/jasonczech/apexload/pkg/protocol/grpc"
@@ -29,10 +31,8 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	// Controller HTTP bind address (for API + embedded dashboard).
-	addr := os.Getenv("APEXLOAD_ADDR")
-	if addr == "" {
-		addr = ":8080"
-	}
+	addr, bindScope := config.ResolveControllerBindAddr(os.Getenv)
+	slog.Info("controller bind address resolved", "addr", addr, "bind_scope", bindScope)
 
 	store, err := storage.NewStoreFromEnv()
 	if err != nil {
@@ -44,6 +44,28 @@ func main() {
 	generatorTargets := parseGeneratorTargets(os.Getenv("APEXLOAD_GENERATORS"))
 	generatorTimeout := parseGeneratorTimeout(os.Getenv("APEXLOAD_GENERATOR_TIMEOUT"))
 	recorderProxyAddr := recorderProxyAddrFromEnv()
+	k8sRestartConfig := config.LoadK8sRestartOperatorConfig()
+	k8sRestartSettings := api.K8sRestartSettings{
+		Enabled:              k8sRestartConfig.Enabled,
+		Namespace:            k8sRestartConfig.Namespace,
+		ControllerDeployment: k8sRestartConfig.ControllerDeployment,
+		GeneratorStatefulSet: k8sRestartConfig.GeneratorStatefulSet,
+		GeneratorSelector:    k8sRestartConfig.GeneratorSelector,
+		AllowForce:           k8sRestartConfig.AllowForce,
+	}
+	var restarter api.KubeRestarter
+	if k8sRestartConfig.Enabled {
+		client, err := kubeops.NewInClusterClient(kubeops.Config{
+			Namespace:         k8sRestartConfig.Namespace,
+			GeneratorSelector: k8sRestartConfig.GeneratorSelector,
+		})
+		if err != nil {
+			slog.Warn("Kubernetes restart controls requested but unavailable", "err", err)
+		} else {
+			restarter = kubeRestarterAdapter{client: client}
+			slog.Info("Kubernetes restart controls enabled", "namespace", k8sRestartConfig.Namespace, "generator_selector", k8sRestartConfig.GeneratorSelector)
+		}
+	}
 	if len(generatorTargets) > 0 {
 		security := generatorrpc.TransportSecurityFromEnv()
 		slog.Info("distributed execution enabled", "generators", generatorTargets, "timeout", generatorTimeout, "grpc_transport", security.String())
@@ -54,12 +76,15 @@ func main() {
 
 	server := api.NewServer(api.ServerConfig{
 		Addr:             addr,
+		BindScope:        bindScope,
 		MetricsAddr:      strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_ADDR")),
 		ProxyAddr:        recorderProxyAddr,
 		MaxConcurrent:    10,
 		Store:            store,
 		GeneratorTargets: generatorTargets,
 		GeneratorTimeout: generatorTimeout,
+		K8sRestart:       k8sRestartSettings,
+		KubeRestarter:    restarter,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -122,4 +147,33 @@ func parseGeneratorTimeout(raw string) time.Duration {
 
 func recorderProxyAddrFromEnv() string {
 	return strings.TrimSpace(os.Getenv("APEXLOAD_RECORDER_PROXY_ADDR"))
+}
+
+type kubeRestarterAdapter struct {
+	client *kubeops.Client
+}
+
+func (a kubeRestarterAdapter) DeletePod(ctx context.Context, namespace string, name string) error {
+	return a.client.DeletePod(ctx, namespace, name)
+}
+
+func (a kubeRestarterAdapter) RolloutRestart(ctx context.Context, kind string, namespace string, name string) error {
+	return a.client.RolloutRestart(ctx, kind, namespace, name)
+}
+
+func (a kubeRestarterAdapter) PodByIP(ctx context.Context, namespace string, selector string, ip string) (api.KubePodRef, error) {
+	pod, err := a.client.PodByIP(ctx, namespace, selector, ip)
+	return api.KubePodRef{Name: pod.Name, Namespace: pod.Namespace, IP: pod.IP, Phase: pod.Phase}, err
+}
+
+func (a kubeRestarterAdapter) ListPods(ctx context.Context, namespace string, selector string) ([]api.KubePodRef, error) {
+	pods, err := a.client.ListPods(ctx, namespace, selector)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]api.KubePodRef, 0, len(pods))
+	for _, pod := range pods {
+		out = append(out, api.KubePodRef{Name: pod.Name, Namespace: pod.Namespace, IP: pod.IP, Phase: pod.Phase})
+	}
+	return out, nil
 }

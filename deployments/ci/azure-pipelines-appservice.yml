@@ -22,6 +22,9 @@ stages:
         pool:
           vmImage: ubuntu-latest
         steps:
+          - checkout: self
+            fetchDepth: 0
+
           # Build the React dashboard first so go:embed picks up fresh assets.
           - task: NodeTool@0
             displayName: Use Node 22
@@ -44,9 +47,10 @@ stages:
               set -euo pipefail
               BI=github.com/jasonczech/apexload/pkg/buildinfo
               BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+              BUILD_VERSION=$(COMMIT="$(buildCommit)" BUILD_TIME="${BUILD_TIME}" ./scripts/resolve-version.sh)
               CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
                 go build -trimpath \
-                  -ldflags "-s -w -X ${BI}.Version=$(buildCommit) -X ${BI}.Commit=$(buildCommit) -X ${BI}.BuildTime=${BUILD_TIME}" \
+                  -ldflags "-s -w -X ${BI}.Version=${BUILD_VERSION} -X ${BI}.Commit=$(buildCommit) -X ${BI}.BuildTime=${BUILD_TIME}" \
                   -o deployments/azure/appservice/bin/controller \
                   ./cmd/controller
             displayName: Build controller (linux/amd64)
