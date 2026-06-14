@@ -5169,3 +5169,778 @@ paths:
           type: string
       tags:
       - Tests
+  /api/v1/browser-recorder/sessions:
+    post:
+      summary: Start Browser Recording
+      description: '**Handler:** `handleStartBrowserRecording`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleStartBrowserRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}:
+    get:
+      summary: Get Browser Recording
+      description: '**Handler:** `handleGetBrowserRecording`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetBrowserRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/stop:
+    post:
+      summary: Stop Browser Recording
+      description: '**Handler:** `handleStopBrowserRecording`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleStopBrowserRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/pause:
+    post:
+      summary: Pause Browser Recording
+      description: '**Handler:** `handlePauseBrowserRecording`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handlePauseBrowserRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/resume:
+    post:
+      summary: Resume Browser Recording
+      description: '**Handler:** `handleResumeBrowserRecording`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleResumeBrowserRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/navigate:
+    post:
+      summary: Navigate Browser Recording
+      description: '**Handler:** `handleNavigateBrowserRecording`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleNavigateBrowserRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/focus:
+    post:
+      summary: Focus Browser Recording
+      description: '**Handler:** `handleFocusBrowserRecording`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleFocusBrowserRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/notes:
+    post:
+      summary: Add Browser Recording Note
+      description: '**Handler:** `handleAddBrowserRecordingNote`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleAddBrowserRecordingNote
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/section:
+    post:
+      summary: Set Browser Recording Section
+      description: '**Handler:** `handleSetBrowserRecordingSection`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleSetBrowserRecordingSection
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/pick-mode:
+    post:
+      summary: Set Browser Recording Pick Mode
+      description: '**Handler:** `handleSetBrowserRecordingPickMode`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleSetBrowserRecordingPickMode
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/verify:
+    post:
+      summary: Verify Browser Recording
+      description: '**Handler:** `handleVerifyBrowserRecording`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleVerifyBrowserRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/convert:
+    post:
+      summary: Convert Browser Recording
+      description: '**Handler:** `handleConvertBrowserRecording`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleConvertBrowserRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/convert/preview:
+    post:
+      summary: Preview Browser Recording Conversion
+      description: '**Handler:** `handlePreviewBrowserRecordingConversion`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handlePreviewBrowserRecordingConversion
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/transactions/start:
+    post:
+      summary: Start Browser Recording Transaction
+      description: '**Handler:** `handleStartBrowserRecordingTransaction`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleStartBrowserRecordingTransaction
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/transactions/end:
+    post:
+      summary: End Browser Recording Transaction
+      description: '**Handler:** `handleEndBrowserRecordingTransaction`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleEndBrowserRecordingTransaction
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/transactions/suggestions:
+    get:
+      summary: Suggest Browser Recording Transactions
+      description: '**Handler:** `handleSuggestBrowserRecordingTransactions`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleSuggestBrowserRecordingTransactions
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/export:
+    get:
+      summary: Export Browser Recording
+      description: '**Handler:** `handleExportBrowserRecording`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleExportBrowserRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/storage-state:
+    get:
+      summary: Export Browser Recording Storage State
+      description: '**Handler:** `handleExportBrowserRecordingStorageState`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleExportBrowserRecordingStorageState
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/steps/last:
+    delete:
+      summary: Delete Last Browser Recording Step
+      description: '**Handler:** `handleDeleteLastBrowserRecordingStep`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteLastBrowserRecordingStep
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/steps/{seq}:
+    patch:
+      summary: Update Browser Recording Step
+      description: '**Handler:** `handleUpdateBrowserRecordingStep`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateBrowserRecordingStep
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: seq
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/devices:
+    get:
+      summary: List Browser Recorder Devices
+      description: '**Handler:** `handleListBrowserRecorderDevices`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleListBrowserRecorderDevices
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+      - Browser Recorder
+  /api/v1/browser-recorder/install:
+    post:
+      summary: Browser Recorder Install
+      description: '**Handler:** `handleBrowserRecorderInstall`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleBrowserRecorderInstall
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      tags:
+      - Browser Recorder
+    get:
+      summary: Get Browser Recorder Install
+      description: '**Handler:** `handleGetBrowserRecorderInstall`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleGetBrowserRecorderInstall
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+      - Browser Recorder
+  /api/v1/remotes/{id}/runs:
+    post:
+      summary: Create Remote Run
+      description: '**Handler:** `handleCreateRemoteRun`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleCreateRemoteRun
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Distributed Runs
+  /api/v1/remotes/{id}/runs/{remote_test_id}:
+    get:
+      summary: Get Remote Run
+      description: '**Handler:** `handleGetRemoteRun`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleGetRemoteRun
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: remote_test_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Distributed Runs
+  /api/v1/remotes/{id}/runs/{remote_test_id}/start:
+    post:
+      summary: Start Remote Run
+      description: '**Handler:** `handleRemoteRunAction("start")`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: remoteRunStart
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: remote_test_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Distributed Runs
+  /api/v1/remotes/{id}/runs/{remote_test_id}/stop:
+    post:
+      summary: Stop Remote Run
+      description: '**Handler:** `handleRemoteRunAction("stop")`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: remoteRunStop
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: remote_test_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Distributed Runs
+  /api/v1/remotes/{id}/runs/{remote_test_id}/abort:
+    post:
+      summary: Abort Remote Run
+      description: '**Handler:** `handleRemoteRunAction("abort")`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: remoteRunAbort
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: remote_test_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Distributed Runs
+  /api/v1/remotes/{id}/runs/{remote_test_id}/pause:
+    post:
+      summary: Pause Remote Run
+      description: '**Handler:** `handleRemoteRunAction("pause")`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: remoteRunPause
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: remote_test_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Distributed Runs
+  /api/v1/remotes/{id}/runs/{remote_test_id}/resume:
+    post:
+      summary: Resume Remote Run
+      description: '**Handler:** `handleRemoteRunAction("resume")`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: remoteRunResume
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: remote_test_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Distributed Runs
+  /api/v1/downloads/recording-agent/latest:
+    get:
+      summary: Download Recording Agent
+      description: '**Handler:** `handleDownloadRecordingAgent`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleDownloadRecordingAgent
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+      - Recording Agent
+  /api/v1/downloads/recording-agent/latest/checksum:
+    get:
+      summary: Recording Agent Checksum
+      description: '**Handler:** `handleRecordingAgentChecksum`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleRecordingAgentChecksum
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+      - Recording Agent
+  /api/v1/system/restarts/capabilities:
+    get:
+      summary: Get System Restart Capabilities
+      description: '**Handler:** `handleGetSystemRestartCapabilities`
+
+
+        **Access Control:** Roles: SystemAdmin'
+      operationId: handleGetSystemRestartCapabilities
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      tags:
+      - System
+  /api/v1/system/restarts:
+    post:
+      summary: System Restart
+      description: '**Handler:** `handleSystemRestart`
+
+
+        **Access Control:** Roles: SystemAdmin'
+      operationId: handleSystemRestart
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      tags:
+      - System
+  /api/v1/correlations/diff:
+    post:
+      summary: Diff Correlations
+      description: '**Handler:** `handleDiffCorrelations`
+
+
+        **Access Control:** Requires Authentication'
+      operationId: handleDiffCorrelations
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication
+      tags:
+      - Correlations
+  /api/v1/selectors/diagnose:
+    post:
+      summary: Diagnose Selectors
+      description: '**Handler:** `handleDiagnoseSelectors`
+
+
+        **Access Control:** Requires Authentication'
+      operationId: handleDiagnoseSelectors
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication
+      tags:
+      - Selectors
+  /api/v1/scripts/import/recorder:
+    post:
+      summary: Import Recorder
+      description: '**Handler:** `handleImportRecorder`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleImportRecorder
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/integrations/dynatrace/dry-run:
+    post:
+      summary: Dynatrace Dry Run
+      description: '**Handler:** `handleDynatraceDryRun`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleDynatraceDryRun
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+      - Integrations
+  /api/v1/monitoring/prometheus/graphs:
+    get:
+      summary: Prometheus Graphs
+      description: '**Handler:** `handlePrometheusGraphs`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handlePrometheusGraphs
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+      - Monitoring
+  /api/v1/tests/{id}/report/annotations:
+    get:
+      summary: Get Report Annotations
+      description: '**Handler:** `handleGetReportAnnotations`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetReportAnnotations
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+    put:
+      summary: Save Report Annotations
+      description: '**Handler:** `handleSaveReportAnnotations`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleSaveReportAnnotations
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests

@@ -520,7 +520,7 @@ dashboard/           # React 18 + TypeScript frontend
 
 desktop/             # Wails native client shell (embeds controller API + dashboard)
 mcp/                 # Python MCP server exposing the REST API as agent tools
-deployments/         # Kubernetes manifests, Helm charts
+deployments/         # Kustomize manifests, Helm chart, Docker Compose, Azure Terraform/IaC, CI templates
 examples/            # Sample scripts and HAR files
 ```
 

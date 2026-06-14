@@ -9,7 +9,7 @@ The matching infrastructure lives in [`deployments/azure/terraform`](../../azure
 
 ```
                         ┌─ AKS (apexload namespace) ─────────────────────┐
-  users ── Ingress ──▶  │  controller ×2 (Deployment)                    │
+  users ── Ingress ──▶  │  controller ×1 active (Deployment)             │
   (web app routing)     │     │ gRPC, dns:// discovery of headless svc   │
                         │  generator ×2–50 (StatefulSet + KEDA)          │
                         │     └ dedicated "loadgen" node pool            │
@@ -26,8 +26,8 @@ The matching infrastructure lives in [`deployments/azure/terraform`](../../azure
 |---|---|---|
 | PostgreSQL Flexible Server | `APEXLOAD_STORE=postgres`, `APEXLOAD_DATABASE_URL` | password in Secret |
 | Azure Cache for Redis | `APEXLOAD_CACHE_BACKEND=redis`, `APEXLOAD_REDIS_URL` (rediss://, port 6380) | access key in Secret |
-| Blob Storage | `APEXLOAD_ARCHIVE_BACKEND=azure_blob`, `APEXLOAD_ARCHIVE_CONTAINER`, `AZURE_STORAGE_ACCOUNT` | workload identity |
-| Key Vault | `APEXLOAD_AZURE_KEY_VAULT_URL`, `APEXLOAD_AZURE_KEY_VAULT_AUTH=azure_identity` | workload identity |
+| Blob Storage | `APEXLOAD_ARCHIVE_BACKEND=azure_blob`, `APEXLOAD_ARCHIVE_CONTAINER`, `AZURE_STORAGE_ACCOUNT` | controller workload identity |
+| Key Vault | `APEXLOAD_AZURE_KEY_VAULT_URL`, `APEXLOAD_AZURE_KEY_VAULT_AUTH=azure_identity` | controller + generator workload identities |
 | AKS headless DNS | `APEXLOAD_GENERATORS=dns://apexload-generator.apexload.svc.cluster.local:9090` | n/a |
 
 The `dns://` scheme (also usable on-prem) makes the controller re-resolve the
@@ -56,17 +56,17 @@ disabled and tokenless by default; see
      --from-literal=APEXLOAD_DATABASE_URL="$(terraform output -raw apexload_database_url)" \
      --from-literal=APEXLOAD_REDIS_URL="$(terraform output -raw apexload_redis_url)"
    ```
-5. **Apply** —
+5. **Render + apply** —
    ```bash
-   export WORKLOAD_IDENTITY_CLIENT_ID=$(terraform output -raw workload_identity_client_id)
-   kubectl kustomize deployments/k8s/aks | envsubst '$WORKLOAD_IDENTITY_CLIENT_ID' | kubectl apply -f -
+   scripts/render-aks-manifests.sh --output /tmp/apexload-aks.yaml --image-tag "$(git rev-parse --short HEAD)"
+   kubectl apply -f /tmp/apexload-aks.yaml
    ```
 6. **Prometheus for KEDA** — the ScaledObject queries
    `http://prometheus-operated.monitoring.svc:9090`. Install
    kube-prometheus-stack (same as on-prem) and the bundled ServiceMonitor is
    picked up. To use Azure Monitor managed Prometheus instead, point
-   `serverAddress` at the workspace query endpoint and add a
-   `TriggerAuthentication` with `podIdentity.provider: azure-workload`.
+   the overlay in `deployments/k8s/aks-azure-monitor` at the workspace query
+   endpoint and apply it instead of the base AKS overlay.
 7. **Smoke test** —
    ```bash
    kubectl -n apexload port-forward svc/apexload-controller 18080:8080 &
@@ -153,6 +153,13 @@ database dump in the opposite direction if writes happened on AKS.
 
 - **Controller pods are disposable**: durable state is PostgreSQL + Blob +
   Redis; `/var/lib/apexload` is an emptyDir used for staging/exports only.
+- **Controller replicas**: the AKS default is one active controller until
+  scheduler/reconciler singleton loops are protected by PostgreSQL leases.
+  Multi-replica API scale-out should be treated as a dedicated HA change.
+- **mTLS certificates**: use cert-manager with
+  `certificates.cert-manager.yaml`, or sync `apexload-controller-grpc-tls` and
+  `apexload-generator-grpc-tls` from Key Vault CSI. The base overlay assumes
+  those Kubernetes Secrets exist before pods start.
 - **Generators run on a tainted node pool** (`apexload.io/node-pool=generators`)
   so load spikes never starve the controller; the cluster autoscaler grows the
   pool as KEDA adds pods. Remove the nodeSelector/toleration from

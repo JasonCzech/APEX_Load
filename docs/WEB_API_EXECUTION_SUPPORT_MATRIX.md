@@ -84,9 +84,9 @@ Complex XSD payload generation remains scaffolded for review. Authors must confi
 | Dynamic JavaScript runtime behavior | Review-only |
 | Custom correlation helpers | Partial; use APEX Load guided correlation repair before approval |
 
-## Benchmark Envelopes
+## Planning Envelopes
 
-The Web/API support endpoint mirrors the protocol density envelopes in `docs/ENTERPRISE_AUTOSCALING_SIGNALS.md`.
+The Web/API support endpoint mirrors the protocol density envelopes in `docs/ENTERPRISE_AUTOSCALING_SIGNALS.md`. These are design/planning targets, not measured benchmark results.
 
 | Protocol | Default envelope |
 | --- | ---: |

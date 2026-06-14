@@ -7,6 +7,10 @@
 #   ACR_NAME                 — registry name (without .azurecr.io)
 #   AKS_RESOURCE_GROUP       — resource group of the cluster
 #   AKS_CLUSTER_NAME         — cluster name
+#   Terraform state should be initialized for deployments, or provide
+#   APEXLOAD_ACR_LOGIN_SERVER, APEXLOAD_STORAGE_ACCOUNT_NAME,
+#   APEXLOAD_KEY_VAULT_URL, APEXLOAD_CONTROLLER_WORKLOAD_IDENTITY_CLIENT_ID,
+#   and APEXLOAD_GENERATOR_WORKLOAD_IDENTITY_CLIENT_ID as variables/env.
 trigger:
   branches:
     include:
@@ -52,7 +56,27 @@ stages:
     displayName: Deploy to AKS
     dependsOn: Build
     jobs:
+      - job: validate_deploy_artifacts
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+          - script: |
+              set -euo pipefail
+              terraform -chdir=deployments/azure/terraform fmt -check -diff
+              terraform -chdir=deployments/azure/terraform init -backend=false -input=false
+              terraform -chdir=deployments/azure/terraform validate
+              kubectl kustomize deployments/k8s/aks >/tmp/apexload-aks.yaml
+              helm lint deployments/helm/apexload \
+                --set workloadIdentity.controllerClientId=00000000-0000-0000-0000-000000000001 \
+                --set workloadIdentity.generatorClientId=00000000-0000-0000-0000-000000000002
+              helm template apexload deployments/helm/apexload --namespace apexload \
+                --set workloadIdentity.controllerClientId=00000000-0000-0000-0000-000000000001 \
+                --set workloadIdentity.generatorClientId=00000000-0000-0000-0000-000000000002 >/tmp/apexload-helm.yaml
+            displayName: Validate Terraform, Kustomize, and Helm
+
       - deployment: deploy_aks
+        dependsOn: validate_deploy_artifacts
         environment: apexload-aks
         pool:
           vmImage: ubuntu-latest
@@ -72,13 +96,9 @@ stages:
                       az aks get-credentials \
                         --resource-group $(AKS_RESOURCE_GROUP) \
                         --name $(AKS_CLUSTER_NAME) --overwrite-existing
-                      ACR_SERVER=$(az acr show --name $(ACR_NAME) --query loginServer -o tsv)
-                      cd deployments/k8s/aks
-                      kubectl kustomize . >/dev/null  # fail fast on manifest errors
-                      kustomize edit set image \
-                        apexload-controller=${ACR_SERVER}/apexload-controller:$(imageTag) \
-                        apexload-generator=${ACR_SERVER}/apexload-generator:$(imageTag)
-                      kubectl apply -k .
+                      terraform -chdir=deployments/azure/terraform init -input=false
+                      APEXLOAD_IMAGE_TAG="$(imageTag)" scripts/render-aks-manifests.sh --output /tmp/apexload-aks.yaml
+                      kubectl apply -f /tmp/apexload-aks.yaml
                       kubectl -n apexload rollout status deployment/apexload-controller --timeout=300s
                       kubectl -n apexload rollout status statefulset/apexload-generator --timeout=300s
 

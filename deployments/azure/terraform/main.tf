@@ -11,6 +11,7 @@ locals {
   k8s_namespace              = "apexload"
   controller_service_account = "apexload-controller"
   generator_service_account  = "apexload-generator"
+  private_network_enabled    = var.network_mode == "private"
 }
 
 data "azurerm_client_config" "current" {}

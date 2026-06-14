@@ -902,7 +902,7 @@ POST /api/v1/projects/proj-123/folders
 #### Rename folder
 
 ```
-PUT /api/v1/projects/proj-123/folders/folder-456
+PUT /api/v1/folders/folder-456
 
 {
   "name": "Checkout Tests - Updated"
@@ -912,7 +912,7 @@ PUT /api/v1/projects/proj-123/folders/folder-456
 #### Delete folder
 
 ```
-DELETE /api/v1/projects/proj-123/folders/folder-456
+DELETE /api/v1/folders/folder-456
 ```
 
 ### Recorder

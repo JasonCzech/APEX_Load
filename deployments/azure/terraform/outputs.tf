@@ -19,8 +19,22 @@ output "acr_login_server" {
 }
 
 output "workload_identity_client_id" {
-  description = "azure.workload.identity/client-id annotation on both service accounts."
+  description = "Backward-compatible alias for the controller workload identity client ID."
   value       = azurerm_user_assigned_identity.apexload.client_id
+}
+
+output "controller_workload_identity_client_id" {
+  description = "azure.workload.identity/client-id annotation on the controller service account."
+  value       = azurerm_user_assigned_identity.apexload.client_id
+}
+
+output "generator_workload_identity_client_id" {
+  description = "azure.workload.identity/client-id annotation on the generator service account."
+  value       = azurerm_user_assigned_identity.generator.client_id
+}
+
+output "network_mode" {
+  value = var.network_mode
 }
 
 output "postgres_fqdn" {

@@ -13,7 +13,7 @@ default), a React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 - **Dashboard** (React 18 + TypeScript + Recharts): Real-time WebSocket-fed monitoring.
 - **Telemetry**: Prometheus scrape + W3C `traceparent` propagation + Dynatrace event webhooks. Controller aggregates with t-digest for percentiles. (Full OpenTelemetry span instrumentation is not yet implemented.)
 - **Storage**: SQLite by default (`apexload.db`); PostgreSQL is an optional enterprise backend (via pgx). Live state is in-memory with optional Redis/Valkey for HA. Archives are written to the local filesystem; S3/Azure Blob/GCS are optional enterprise backends.
-- **Deployment**: Kustomize manifests for local/kind (`deployments/k8s/local*`), production on-prem (`deployments/k8s/onprem`: gRPC mTLS+token, TLS ingress, dedicated metrics port, PSA restricted, scoped network policies), and production AKS (`deployments/k8s/aks`: workload identity, KEDA, ingress); Terraform IaC for the Azure stack (`deployments/azure/terraform`: AKS/ACR/PostgreSQL/Redis/Blob/Key Vault). Generator fleet scales via KEDA + `dns://` headless-service discovery. Azure App Service (Node.js/Python-only platforms): thin Node.js launcher in `deployments/azure/appservice/` spawns the pre-built linux/amd64 controller binary; requires PostgreSQL (not SQLite) and static generator targets via `APEXLOAD_GENERATORS`. (No Helm chart or operator/CRDs yet.)
+- **Deployment**: Kustomize manifests for local/kind (`deployments/k8s/local*`), production on-prem (`deployments/k8s/onprem`: gRPC mTLS+token, TLS ingress, dedicated metrics port, PSA restricted, scoped network policies), and production AKS (`deployments/k8s/aks`: workload identity, KEDA, ingress); Terraform IaC for the Azure stack (`deployments/azure/terraform`: AKS/ACR/PostgreSQL/Redis/Blob/Key Vault). Generator fleet scales via KEDA + `dns://` headless-service discovery. Azure App Service (Node.js/Python-only platforms): thin Node.js launcher in `deployments/azure/appservice/` spawns the pre-built linux/amd64 controller binary; requires PostgreSQL (not SQLite) and static generator targets via `APEXLOAD_GENERATORS`. A Helm chart for Kubernetes/AKS enterprise installs lives in `deployments/helm/apexload`. (No operator/CRDs yet.)
 
 ## Module Path
 `github.com/jasonczech/apexload`
@@ -24,6 +24,7 @@ cmd/
   generator/     — Load generator binary (deployed as StatefulSet pods)
   controller/    — Test controller + API server binary (Deployment, 2 replicas)
   apexctl/       — CLI tool for running/managing tests
+  apexload-record-agent/ — Local browser-recording bridge agent (run on operator workstations)
   dslschema/     — Code generator for docs/dsl.schema.json + DSL_ACTION_REFERENCE.md
 pkg/
   protocol/      — Protocol plugin interface + registry
@@ -42,6 +43,8 @@ pkg/
   refkey/        — Human-readable, environment-aware reference keys
   buildinfo/     — Build metadata (version/commit/build-time) via -ldflags
   config/        — Configuration types
+  kubeops/       — In-cluster Kubernetes operations (generator pod restart/drain)
+  recordagent/   — Local recording-agent runtime (Playwright/Chromium provisioning + bridge)
 api/
   proto/         — gRPC protobuf definitions (controller ↔ generator)
 dashboard/       — React 18 + TypeScript + Recharts SPA
@@ -50,7 +53,9 @@ dashboard/       — React 18 + TypeScript + Recharts SPA
 desktop/         — Wails native client shell embedding the controller API + dashboard
 mcp/             — Python MCP server exposing the REST API as agent tools
 deployments/
-  k8s/           — Kubernetes manifests, Helm charts
+  k8s/           — Kubernetes manifests (Kustomize overlays: local/local-kind/onprem/aks)
+  helm/          — Helm chart (apexload) for Kubernetes/AKS enterprise installs
+  docker/        — docker-compose stack for local multi-service runs
   azure/
     terraform/   — Azure IaC (AKS, ACR, PostgreSQL, Redis, Blob, Key Vault)
     appservice/  — Node.js launcher wrapper for Azure App Service deployments
@@ -68,16 +73,23 @@ deployments/
 
 ## Protocol Interface
 All protocols implement `pkg/protocol.Protocol`. Register new protocols in `pkg/protocol/registry.go`.
-Bundled and compiled into every binary (see the `_` imports in `cmd/*/main.go`): HTTP (http/1.1,
-http/2), SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), WebSocket, gRPC, JMS Solace,
-JMS IBM MQ, JMS Azure Service Bus (real adapter opt-in via `-tags jms_servicebus_real`),
+Bundled and compiled into the controller and generator binaries (see the `_` imports in
+`cmd/*/main.go`): HTTP (http/1.1, http/2), SOAP (+ WSDL import), Java-over-HTTP (`java_http`,
+bounded codec MVP), Java Vuser sidecar bridge (`java_vuser`, external-runner; governed and
+disabled unless runner config enables it), WebSocket, gRPC, JMS Solace, JMS IBM MQ,
+JMS Azure Service Bus (real adapter opt-in via `-tags jms_servicebus_real`),
 Kafka (produce/consume/request-reply; in-memory mock broker by default, real
 franz-go network adapter opt-in via `-tags kafka_real`), database (SQL query/exec/transactions),
 network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP),
-and browser (replay + canary diagnostics).
+and browser (replay + canary diagnostics). `apexctl` bundles the same set except
+database, java_http, and network. (`sap_gui` actions are authorable/importable via the DSL
+catalog but have no registered runtime protocol — they cannot be executed.)
 
 ## Script DSL
-JSON-based. Template variables: `{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`, `{{fn.uuid()}}`.
+JSON-based. Template namespaces: `{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`,
+`{{param.name}}`, `{{secret.name}}`, plus built-in functions under `{{fn.*}}`/`{{fake.*}}`
+(e.g. `fn.uuid()`, `fn.timestamp.unix()`, `fn.timestamp.iso8601()`, `fn.random(min,max)`,
+`fn.random_string(n)`, `fake.email()`).
 Sections: config, data_sources, init, actions, teardown.
 The per-action-type contract is declared in the action catalog (`pkg/dsl/catalog*.go`) — the
 single source of truth for validation, the dashboard editor, `GET /api/v1/dsl/actions`, and the
@@ -164,12 +176,16 @@ GET    /api/v1/system/services       — Service health detail
 WS     /api/v1/ws                    — Global WebSocket (all test events)
 ```
 
-WebSocket messages are JSON with `type` field: `metrics_update`, `test_created`,
-`test_started`, `test_complete`, `test_failed`, `test_stopping`, plus the
-`browser_recording_*` family (started/step/step_update/navigation/warning/paused/
-resumed/marker/pick/section/annotation/stopped/failed/converted) emitted by the
-headed browser recorder. The recorder also emits the `browser_handle_dialog` DSL
-action (alert/confirm/prompt accept/dismiss; replayed in pkg/protocol/browser).
+WebSocket messages are JSON with a `type` field. Test lifecycle: `test_created`,
+`test_pending`, `test_started`, `test_stopping`, `test_complete`, `test_failed`,
+`test_aborted`, `test_paused`, `test_resumed`. Live updates: `metrics_update`,
+`latency_update`, `vusers_changed`, `duration_changed`, `goal_target_changed`.
+Pre-flight/shakeout: `script_shakeout_started`, `script_shakeout_passed`,
+`script_shakeout_failed`, `test_schedule_blocked`. Plus the `browser_recording_*`
+family (started/step/step_update/navigation/warning/paused/resumed/marker/pick/
+section/annotation/stopped/failed/converted) emitted by the headed browser recorder.
+The recorder also emits the `browser_handle_dialog` DSL action (alert/confirm/prompt
+accept/dismiss; replayed in pkg/protocol/browser).
 
 ## Testing Policy
 Every new feature, bug fix, or refactor **must** include corresponding tests. This is a default

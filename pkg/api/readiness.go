@@ -3,12 +3,14 @@ package api
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -48,6 +50,7 @@ func (s *Server) systemReadiness(ctx context.Context) SystemReadinessResponse {
 		s.generatorRPCReadiness(ctx),
 		s.telemetryFanoutReadiness(),
 		s.authModeReadiness(),
+		s.platformIntegrationsReadiness(),
 		s.githubReadiness(),
 		s.schedulerReadiness(),
 	}
@@ -224,6 +227,7 @@ func mergeReadinessDetails(base map[string]any, extra map[string]any) map[string
 
 func (s *Server) generatorRPCReadiness(ctx context.Context) SystemReadinessCheck {
 	inventory := s.systemInventory(ctx)
+	transport := generatorrpc.TransportSecurityFromEnv()
 	if inventory.ExecutionMode == "local" {
 		return SystemReadinessCheck{
 			Name:    "generator_rpc",
@@ -231,6 +235,7 @@ func (s *Server) generatorRPCReadiness(ctx context.Context) SystemReadinessCheck
 			Message: "local execution mode does not require generator RPC",
 			Details: map[string]any{
 				"execution_mode": inventory.ExecutionMode,
+				"grpc_transport": transport.String(),
 			},
 		}
 	}
@@ -254,6 +259,7 @@ func (s *Server) generatorRPCReadiness(ctx context.Context) SystemReadinessCheck
 				"execution_mode": inventory.ExecutionMode,
 				"generators":     len(inventory.Generators),
 				"unreachable":    unreachable,
+				"grpc_transport": transport.String(),
 			},
 		}
 	}
@@ -272,6 +278,7 @@ func (s *Server) generatorRPCReadiness(ctx context.Context) SystemReadinessCheck
 			"generators":     len(inventory.Generators),
 			"available":      available,
 			"unreachable":    unreachable,
+			"grpc_transport": transport.String(),
 		},
 	}
 }
@@ -319,6 +326,121 @@ func (s *Server) authModeReadiness() SystemReadinessCheck {
 			"mode": auth.Mode,
 		},
 	}
+}
+
+func (s *Server) platformIntegrationsReadiness() SystemReadinessCheck {
+	backend := currentArchiveBackend()
+	prometheus := normalizePrometheusSettings(s.runner.GetSystemSettings().Prometheus)
+	dashboard := dashboardStaticAssetsReadiness()
+	status := readinessStatusReady
+	message := "deployment integration surfaces are configured"
+	if dashboard["status"] != readinessStatusReady {
+		status = readinessStatusDegraded
+		message = "deployment integration surfaces are configured with dashboard asset warnings"
+	}
+	return SystemReadinessCheck{
+		Name:    "platform_integrations",
+		Status:  status,
+		Message: message,
+		Details: map[string]any{
+			"grpc_transport":            generatorrpc.TransportSecurityFromEnv().String(),
+			"secret_resolver":           secretResolverReadinessDetails(),
+			"object_archive":            objectArchiveReadinessDetails(backend),
+			"prometheus_scaling_source": prometheusScalingSourceDetails(prometheus),
+			"azure_identity":            azureIdentityReadinessDetails(),
+			"dashboard_static_assets":   dashboard,
+		},
+	}
+}
+
+func secretResolverReadinessDetails() map[string]any {
+	keyVaultURL := strings.TrimSpace(os.Getenv("APEXLOAD_AZURE_KEY_VAULT_URL"))
+	mode := strings.TrimSpace(os.Getenv("APEXLOAD_AZURE_KEY_VAULT_AUTH"))
+	if mode == "" {
+		mode = "auto"
+	}
+	details := map[string]any{
+		"env_secret_prefix_enabled":  true,
+		"azure_key_vault_configured": keyVaultURL != "",
+	}
+	if keyVaultURL != "" {
+		details["azure_key_vault_auth"] = mode
+	}
+	return details
+}
+
+func objectArchiveReadinessDetails(backend archiveBackendRuntime) map[string]any {
+	details := map[string]any{
+		"backend":        backend.Backend,
+		"object_backend": backend.Backend != archiveBackendFilesystem,
+		"staging_root":   backend.LocalRoot,
+	}
+	if backend.URIPrefix != "" {
+		details["uri_prefix"] = backend.URIPrefix
+	}
+	if backend.Container != "" {
+		details["container"] = backend.Container
+	}
+	if backend.Bucket != "" {
+		details["bucket"] = backend.Bucket
+	}
+	return details
+}
+
+func prometheusScalingSourceDetails(settings PrometheusSettings) map[string]any {
+	mode := strings.TrimSpace(os.Getenv("APEXLOAD_PROMETHEUS_SCALING_SOURCE"))
+	if mode == "" {
+		mode = "prometheus"
+	}
+	details := map[string]any{
+		"source":           mode,
+		"settings_enabled": settings.Enabled,
+	}
+	if settings.BaseURL != "" {
+		details["base_url"] = settings.BaseURL
+	}
+	if remoteWrite := strings.TrimSpace(os.Getenv("APEXLOAD_PROMETHEUS_REMOTE_WRITE_URL")); remoteWrite != "" {
+		details["remote_write_configured"] = true
+	}
+	return details
+}
+
+func azureIdentityReadinessDetails() map[string]any {
+	clientID := firstNonEmpty(
+		strings.TrimSpace(os.Getenv("AZURE_CLIENT_ID")),
+		strings.TrimSpace(os.Getenv("APEXLOAD_AZURE_CLIENT_ID")),
+	)
+	tokenFile := strings.TrimSpace(os.Getenv("AZURE_FEDERATED_TOKEN_FILE"))
+	return map[string]any{
+		"client_id_configured": clientID != "",
+		"federated_token_file": tokenFile != "",
+		"tenant_id_configured": strings.TrimSpace(os.Getenv("AZURE_TENANT_ID")) != "",
+		"authority_host_set":   strings.TrimSpace(os.Getenv("AZURE_AUTHORITY_HOST")) != "",
+	}
+}
+
+func dashboardStaticAssetsReadiness() map[string]any {
+	details := map[string]any{
+		"status": readinessStatusReady,
+	}
+	if _, err := fs.Stat(StaticFS, "static/index.html"); err != nil {
+		details["status"] = readinessStatusDegraded
+		details["index_html"] = false
+		details["error"] = err.Error()
+		return details
+	}
+	details["index_html"] = true
+	assets, err := fs.Glob(StaticFS, "static/assets/*")
+	if err != nil {
+		details["status"] = readinessStatusDegraded
+		details["error"] = err.Error()
+		return details
+	}
+	details["asset_count"] = len(assets)
+	if len(assets) == 0 {
+		details["status"] = readinessStatusDegraded
+	}
+	return details
 }
 
 func (s *Server) githubReadiness() SystemReadinessCheck {

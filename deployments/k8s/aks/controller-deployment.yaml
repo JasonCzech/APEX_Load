@@ -6,7 +6,10 @@ metadata:
     app.kubernetes.io/name: apexload-controller
     app.kubernetes.io/component: controller
 spec:
-  replicas: 2
+  # Keep one active controller until scheduler/reconciler singleton loops are
+  # PostgreSQL-lease guarded. Add API-only replicas only with an explicit HA
+  # runbook.
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: apexload-controller
