@@ -98,6 +98,10 @@ catalog, regenerate with `go generate ./pkg/dsl` (freshness is test-enforced in 
 
 ## REST API
 The controller binary serves a REST API on `:8080` (configurable via `APEXLOAD_ADDR`).
+The OpenAPI spec `docs/swagger.yaml` is generated from the controller routing layer
+(`pkg/api/server.go`) by `cmd/swaggergen` — do not hand-edit it. After changing routes,
+regenerate with `go generate ./pkg/api` (freshness is test-enforced by
+`TestSwaggerYAMLIsFresh`; roles are derived from the real `accessRequirementForRequest`).
 
 ```
 POST   /api/v1/tests                 — Create and queue a test

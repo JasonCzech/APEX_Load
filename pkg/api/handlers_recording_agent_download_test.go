@@ -56,7 +56,7 @@ func TestHandleDownloadRecordingAgentMissingPackageDoesNotServeDashboardShell(t 
 	}
 }
 
-func TestFindRelativeRecordingAgentDistDirSearchesParentDirectories(t *testing.T) {
+func TestFindRelativeDistDirSearchesParentDirectories(t *testing.T) {
 	root := t.TempDir()
 	distDir := filepath.Join(root, defaultRecordingAgentDistDir)
 	if err := os.MkdirAll(distDir, 0o755); err != nil {
@@ -67,12 +67,12 @@ func TestFindRelativeRecordingAgentDistDirSearchesParentDirectories(t *testing.T
 		t.Fatal(err)
 	}
 
-	got, ok := findRelativeRecordingAgentDistDir(defaultRecordingAgentDistDir, start)
+	got, ok := findRelativeDistDir(defaultRecordingAgentDistDir, start)
 	if !ok {
-		t.Fatalf("findRelativeRecordingAgentDistDir() ok = false, want true")
+		t.Fatalf("findRelativeDistDir() ok = false, want true")
 	}
 	if got != distDir {
-		t.Fatalf("findRelativeRecordingAgentDistDir() = %q, want %q", got, distDir)
+		t.Fatalf("findRelativeDistDir() = %q, want %q", got, distDir)
 	}
 }
 

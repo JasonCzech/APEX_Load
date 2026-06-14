@@ -845,6 +845,18 @@ export default function SettingsPage({
     setRequestError('')
   }
 
+  const updateClientDownloads = (enabled: boolean) => {
+    setSettings((prev) => ({
+      ...prev,
+      client_downloads: {
+        ...prev.client_downloads,
+        enabled,
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
   const updateThreshold = (key: keyof DashboardSystemSettings['thresholds'], value: string) => {
     setSettings((prev) => ({
       ...prev,
@@ -1887,6 +1899,21 @@ export default function SettingsPage({
                   disabled={!canManageSystem}
                 />
                 <span>{settings.client_app.availability === 'enabled' ? 'Enabled' : 'Disabled'}</span>
+              </label>
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Client Software Downloads</span>
+                <span className="setting-desc">Controls whether the dashboard offers the “Download client” menu (Recording Agent and desktop app). When disabled, the menu is hidden and the download endpoints are refused.</span>
+              </div>
+              <label className="settings-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={settings.client_downloads.enabled}
+                  onChange={event => updateClientDownloads(event.target.checked)}
+                  disabled={!canManageSystem}
+                />
+                <span>{settings.client_downloads.enabled ? 'Enabled' : 'Disabled'}</span>
               </label>
             </div>
               </div>

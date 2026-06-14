@@ -10,6 +10,8 @@ bin/
 /main
 # Compiled output of `go run ./cmd/dslschema`; the source lives in cmd/dslschema.
 /dslschema
+# Compiled output of `go run ./cmd/swaggergen`; the source lives in cmd/swaggergen.
+/swaggergen
 *.exe
 *.exe~
 *.dll
@@ -84,6 +86,9 @@ __pycache__/
 *.db-shm
 *.db-wal
 *.log
+# Local runtime artifacts (recorder CA material, legacy archive output). Run
+# archives now default outside the module tree (see config.DefaultArchiveDir);
+# this entry stays so any stray in-tree artifacts/ never gets committed.
 artifacts/
 
 # Imported script fixtures should not be committed from local import testing

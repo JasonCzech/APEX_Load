@@ -29,6 +29,7 @@ type SystemSettings struct {
 	GitHub           GitHubSettings           `json:"github"`
 	Prometheus       PrometheusSettings       `json:"prometheus"`
 	ClientApp        ClientAppSettings        `json:"client_app"`
+	ClientDownloads  ClientDownloadsSettings  `json:"client_downloads"`
 }
 
 // GitHubSettings is the global (admin-owned) configuration for the GitHub script
@@ -68,6 +69,15 @@ type ClientAppSettings struct {
 	Availability string `json:"availability"`
 }
 
+// ClientDownloadsSettings gates whether the dashboard offers downloadable client
+// software (the local Recording Agent and the desktop app). When disabled, the
+// header download button is hidden AND the download endpoints fail closed (403).
+// It defaults to enabled — admins opt out, mirroring the user-facing wording
+// "appears unless an admin has disabled it".
+type ClientDownloadsSettings struct {
+	Enabled bool `json:"enabled"`
+}
+
 const (
 	defaultGitHubAPIBaseURL = "https://api.github.com"
 	defaultGitHubWebBaseURL = "https://github.com"
@@ -102,6 +112,21 @@ func defaultPrometheusSettings() PrometheusSettings {
 
 func defaultClientAppSettings() ClientAppSettings {
 	return ClientAppSettings{Availability: clientAppDisabled}
+}
+
+func defaultClientDownloadsSettings() ClientDownloadsSettings {
+	return ClientDownloadsSettings{Enabled: true}
+}
+
+// normalizeClientDownloadsSettings is a no-op today (a bool has no invalid
+// states) but exists for symmetry with the other settings sections and to give
+// future fields a single normalization point.
+func normalizeClientDownloadsSettings(in ClientDownloadsSettings) ClientDownloadsSettings {
+	return in
+}
+
+func clientDownloadsEnabled(settings ClientDownloadsSettings) bool {
+	return settings.Enabled
 }
 
 func normalizeClientAppSettings(in ClientAppSettings) ClientAppSettings {
@@ -518,6 +543,7 @@ func defaultSystemSettings(maxConcurrent int) SystemSettings {
 		GitHub:           defaultGitHubSettings(),
 		Prometheus:       defaultPrometheusSettings(),
 		ClientApp:        defaultClientAppSettings(),
+		ClientDownloads:  defaultClientDownloadsSettings(),
 	}
 }
 
@@ -577,6 +603,7 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 	}
 	out.Prometheus = in.Prometheus
 	out.ClientApp = in.ClientApp
+	out.ClientDownloads = in.ClientDownloads
 	return out
 }
 
@@ -623,6 +650,7 @@ func normalizeLoadedSystemSettings(in SystemSettings, defaultMaxConcurrent int) 
 	out.GitHub = normalizeGitHubSettings(out.GitHub)
 	out.Prometheus = normalizePrometheusSettings(out.Prometheus)
 	out.ClientApp = normalizeClientAppSettings(out.ClientApp)
+	out.ClientDownloads = normalizeClientDownloadsSettings(out.ClientDownloads)
 
 	return out
 }
@@ -1193,6 +1221,13 @@ func (tr *TestRunner) loadSystemSettings(defaultMaxConcurrent int) {
 	if !rawJSONHasKey(raw, "prometheus") {
 		loaded.Prometheus = defaultPrometheusSettings()
 	}
+	// Migration: a blob persisted before client_downloads existed has no key, so
+	// it unmarshals to {Enabled:false}. Seed the enabled default so existing
+	// installs keep offering client software; a blob that carries the section is
+	// the admin's explicit choice (including an explicit disable).
+	if !rawJSONHasKey(raw, "client_downloads") {
+		loaded.ClientDownloads = defaultClientDownloadsSettings()
+	}
 	loaded = normalizeLoadedSystemSettings(loaded, defaultMaxConcurrent)
 	if err := validateSystemSettings(loaded); err != nil {
 		tr.maxTests = tr.settings.General.MaxConcurrentTests
@@ -1237,6 +1272,7 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 	normalized.Auth = normalizeAuthSettings(normalized.Auth)
 	normalized.Prometheus = normalizePrometheusSettings(normalized.Prometheus)
 	normalized.ClientApp = normalizeClientAppSettings(normalized.ClientApp)
+	normalized.ClientDownloads = normalizeClientDownloadsSettings(normalized.ClientDownloads)
 	if err := validateSystemSettings(normalized); err != nil {
 		return SystemSettings{}, err
 	}

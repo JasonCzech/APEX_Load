@@ -365,6 +365,9 @@ type ServerTelemetrySummary struct {
 	AvgResponsePayloadKB      float64          `json:"avg_response_payload_kb,omitempty"`
 	RequestPayloadHistogram   map[string]int64 `json:"request_payload_histogram,omitempty"`
 	ResponsePayloadHistogram  map[string]int64 `json:"response_payload_histogram,omitempty"`
+	AvgFirstEventMs           float64          `json:"avg_first_event_ms,omitempty"`
+	MaxFirstEventMs           float64          `json:"max_first_event_ms,omitempty"`
+	EventCount                int64            `json:"event_count,omitempty"`
 	AvgMessageLatencyMs       float64          `json:"avg_message_latency_ms,omitempty"`
 	MaxMessageLatencyMs       float64          `json:"max_message_latency_ms,omitempty"`
 	MessagesSent              int64            `json:"messages_sent,omitempty"`

@@ -2446,6 +2446,9 @@ func cloneEngineServerTelemetrySummary(summary *engine.ServerTelemetrySummary) *
 		AvgResponsePayloadKB:      summary.AvgResponsePayloadKB,
 		RequestPayloadHistogram:   cloneTelemetryClassCounts(summary.RequestPayloadHistogram),
 		ResponsePayloadHistogram:  cloneTelemetryClassCounts(summary.ResponsePayloadHistogram),
+		AvgFirstEventMs:           summary.AvgFirstEventMs,
+		MaxFirstEventMs:           summary.MaxFirstEventMs,
+		EventCount:                summary.EventCount,
 		AvgMessageLatencyMs:       summary.AvgMessageLatencyMs,
 		MaxMessageLatencyMs:       summary.MaxMessageLatencyMs,
 		MessagesSent:              summary.MessagesSent,
@@ -2475,6 +2478,11 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 	metrics.ServerTelemetry.AvgResponsePayloadKB += telemetry.ResponsePayloadKB
 	incrementTelemetryHistogramCount(&metrics.ServerTelemetry.RequestPayloadHistogram, telemetry.RequestPayloadKB)
 	incrementTelemetryHistogramCount(&metrics.ServerTelemetry.ResponsePayloadHistogram, telemetry.ResponsePayloadKB)
+	metrics.ServerTelemetry.AvgFirstEventMs += telemetry.FirstEventMs
+	if telemetry.FirstEventMs > metrics.ServerTelemetry.MaxFirstEventMs {
+		metrics.ServerTelemetry.MaxFirstEventMs = telemetry.FirstEventMs
+	}
+	metrics.ServerTelemetry.EventCount += int64(telemetry.EventCount)
 	metrics.ServerTelemetry.AvgMessageLatencyMs += telemetry.MessageLatencyMs
 	if telemetry.MessageLatencyMs > metrics.ServerTelemetry.MaxMessageLatencyMs {
 		metrics.ServerTelemetry.MaxMessageLatencyMs = telemetry.MessageLatencyMs
@@ -2503,6 +2511,7 @@ func finalizeAPIServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	summary.AvgTransferMs /= divisor
 	summary.AvgRequestPayloadKB /= divisor
 	summary.AvgResponsePayloadKB /= divisor
+	summary.AvgFirstEventMs /= divisor
 	summary.AvgMessageLatencyMs /= divisor
 	summary.AvgMessagesSentPerSec /= divisor
 	summary.AvgMessagesReceivedPerSec /= divisor

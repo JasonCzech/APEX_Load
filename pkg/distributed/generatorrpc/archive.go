@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -433,10 +434,7 @@ func archiveArtifactNames(manifest *archiveManifest) []string {
 }
 
 func resolveArchiveRoot() string {
-	if dir := os.Getenv("APEXLOAD_ARCHIVE_DIR"); dir != "" {
-		return dir
-	}
-	return filepath.Join("artifacts", "archives")
+	return config.ArchiveDir()
 }
 
 func sanitizeArchiveNamespace(value string) string {

@@ -13,11 +13,12 @@ type VersionResponse struct {
 }
 
 type DeploymentIdentity struct {
-	Kind             string `json:"kind"`
-	Label            string `json:"label"`
-	BindScope        string `json:"bind_scope"`
-	AuthEnforced     bool   `json:"auth_enforced"`
-	DesktopAvailable bool   `json:"desktop_available"`
+	Kind                   string `json:"kind"`
+	Label                  string `json:"label"`
+	BindScope              string `json:"bind_scope"`
+	AuthEnforced           bool   `json:"auth_enforced"`
+	DesktopAvailable       bool   `json:"desktop_available"`
+	ClientDownloadsEnabled bool   `json:"client_downloads_enabled"`
 }
 
 func (s *Server) versionResponse() VersionResponse {
@@ -40,11 +41,12 @@ func (s *Server) deploymentIdentity(info buildinfo.Info) DeploymentIdentity {
 	kind, label := s.deploymentKindAndLabel(info.Environment, bindScope)
 	auth := normalizeAuthSettings(settings.Auth)
 	return DeploymentIdentity{
-		Kind:             kind,
-		Label:            label,
-		BindScope:        bindScope,
-		AuthEnforced:     !isAuthBypassMode(auth.Mode),
-		DesktopAvailable: clientAppAvailable(settings.ClientApp),
+		Kind:                   kind,
+		Label:                  label,
+		BindScope:              bindScope,
+		AuthEnforced:           !isAuthBypassMode(auth.Mode),
+		DesktopAvailable:       clientAppAvailable(settings.ClientApp),
+		ClientDownloadsEnabled: clientDownloadsEnabled(settings.ClientDownloads),
 	}
 }
 

@@ -1497,3 +1497,60 @@ func TestHTTP_Execute_SaveAllOnMiss(t *testing.T) {
 		})
 	}
 }
+
+func TestHTTPExecuteServerSentEvents(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatalf("response writer does not implement http.Flusher")
+		}
+		_, _ = w.Write([]byte("event: token\n"))
+		_, _ = w.Write([]byte("data: hello\n\n"))
+		flusher.Flush()
+		time.Sleep(10 * time.Millisecond)
+		_, _ = w.Write([]byte("event: done\n"))
+		_, _ = w.Write([]byte("data: complete\n\n"))
+		flusher.Flush()
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"request_timeout_ms": float64(1000)})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "agent-stream",
+		Type:   "GET",
+		Target: ts.URL,
+		Params: map[string]any{
+			"stop_on_event":     "done",
+			"stream_timeout_ms": float64(1000),
+		},
+		Extractors: []protocol.Extractor{
+			{Name: "first_token", Type: "sse_event", Expression: "token"},
+			{Name: "all_events", Type: "sse_concat"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("result was not successful: %s", result.ErrorMessage)
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatalf("server telemetry missing")
+	}
+	if result.ServerTelemetry.EventCount != 2 {
+		t.Fatalf("event count = %d, want 2", result.ServerTelemetry.EventCount)
+	}
+	if result.ServerTelemetry.FirstEventMs <= 0 {
+		t.Fatalf("first event ms = %f, want > 0", result.ServerTelemetry.FirstEventMs)
+	}
+	if got := result.Extractions["first_token"]; got != "hello" {
+		t.Fatalf("first_token = %q, want hello", got)
+	}
+	if got := result.Extractions["all_events"]; got != "hello\ncomplete" {
+		t.Fatalf("all_events = %q, want concatenated data", got)
+	}
+	if !strings.Contains(result.ResponseBody, "event: done") {
+		t.Fatalf("response body did not retain SSE framing: %q", result.ResponseBody)
+	}
+}

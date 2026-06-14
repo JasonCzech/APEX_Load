@@ -286,6 +286,9 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	if action.Type == "http_sequence" {
 		return append(issues, rebased(validateHTTPSequenceActionIssues(index, action))...)
 	}
+	if CanonicalActionType(action.Type) == "http_oauth2_token" {
+		return issues
+	}
 	if action.Target == "" {
 		issues = append(issues, fmt.Sprintf("%s: missing target", actionLabel(path, action)))
 	}

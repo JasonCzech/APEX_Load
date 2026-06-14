@@ -9,9 +9,85 @@ VERSION="$(VERSION="$RAW_VERSION" COMMIT="$COMMIT" BUILD_TIME="$BUILD_TIME" "$RO
 BI="github.com/jasonczech/apexload/pkg/buildinfo"
 DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist/recording-agent}"
 PLATFORMS="${PLATFORMS:-darwin/arm64 darwin/amd64 windows/amd64 linux/amd64 linux/arm64}"
+MACOS_CODESIGN_IDENTITY="${APEXLOAD_MACOS_CODESIGN_IDENTITY:-${MACOS_CODESIGN_IDENTITY:-}}"
+MACOS_NOTARIZE="${APEXLOAD_MACOS_NOTARIZE:-${MACOS_NOTARIZE:-0}}"
+MACOS_NOTARY_PROFILE="${APEXLOAD_MACOS_NOTARY_PROFILE:-${MACOS_NOTARY_PROFILE:-}}"
+MACOS_NOTARY_APPLE_ID="${APEXLOAD_MACOS_NOTARY_APPLE_ID:-${MACOS_NOTARY_APPLE_ID:-}}"
+MACOS_NOTARY_PASSWORD="${APEXLOAD_MACOS_NOTARY_PASSWORD:-${MACOS_NOTARY_PASSWORD:-}}"
+MACOS_NOTARY_TEAM_ID="${APEXLOAD_MACOS_NOTARY_TEAM_ID:-${MACOS_NOTARY_TEAM_ID:-}}"
 
-rm -rf "$DIST_DIR"
+truthy() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|y|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+macos_notarization_requested() {
+  truthy "$MACOS_NOTARIZE"
+}
+
+sign_macos_binary() {
+  local binary_path="$1"
+  if [[ -z "$MACOS_CODESIGN_IDENTITY" ]]; then
+    if macos_notarization_requested; then
+      echo "APEXLOAD_MACOS_NOTARIZE is enabled, but APEXLOAD_MACOS_CODESIGN_IDENTITY is not set." >&2
+      exit 1
+    fi
+    echo "macOS Developer ID signing is not configured; $binary_path will trigger Gatekeeper on downloaded Macs." >&2
+    return 0
+  fi
+  if ! command -v codesign >/dev/null 2>&1; then
+    echo "codesign is required for macOS release signing but was not found." >&2
+    exit 1
+  fi
+  codesign --force --options runtime --timestamp --sign "$MACOS_CODESIGN_IDENTITY" "$binary_path"
+  codesign --verify --strict --verbose=2 "$binary_path"
+}
+
+notarize_macos_package() {
+  local package="$1"
+  local zip_path="$DIST_DIR/${package}.notary.zip"
+  if ! macos_notarization_requested; then
+    return 0
+  fi
+  if ! command -v xcrun >/dev/null 2>&1; then
+    echo "xcrun notarytool is required for macOS notarization but was not found." >&2
+    exit 1
+  fi
+  (
+    cd "$DIST_DIR"
+    rm -f "$(basename "$zip_path")"
+    if command -v ditto >/dev/null 2>&1; then
+      ditto -c -k --keepParent "$package" "$(basename "$zip_path")"
+    elif command -v zip >/dev/null 2>&1; then
+      zip -qry "$(basename "$zip_path")" "$package"
+    else
+      echo "ditto or zip is required to create a notarization upload archive." >&2
+      exit 1
+    fi
+  )
+
+  local submit_args=(notarytool submit "$zip_path" --wait)
+  if [[ -n "$MACOS_NOTARY_PROFILE" ]]; then
+    submit_args+=(--keychain-profile "$MACOS_NOTARY_PROFILE")
+  else
+    if [[ -z "$MACOS_NOTARY_APPLE_ID" || -z "$MACOS_NOTARY_PASSWORD" || -z "$MACOS_NOTARY_TEAM_ID" ]]; then
+      echo "Set APEXLOAD_MACOS_NOTARY_PROFILE or APEXLOAD_MACOS_NOTARY_APPLE_ID/APEXLOAD_MACOS_NOTARY_PASSWORD/APEXLOAD_MACOS_NOTARY_TEAM_ID for notarization." >&2
+      exit 1
+    fi
+    submit_args+=(--apple-id "$MACOS_NOTARY_APPLE_ID" --password "$MACOS_NOTARY_PASSWORD" --team-id "$MACOS_NOTARY_TEAM_ID")
+  fi
+  xcrun "${submit_args[@]}"
+  rm -f "$zip_path"
+}
+
+# Clear the dist dir's *contents* rather than the directory itself. A bind mount
+# (e.g. docker compose's ./dist/recording-agent:/packages/recording-agent) pins to
+# the directory inode at container-start; rm -rf + mkdir would orphan that mount and
+# leave the container seeing an empty dir until it is recreated.
 mkdir -p "$DIST_DIR"
+find "$DIST_DIR" -mindepth 1 -delete
 
 for platform in $PLATFORMS; do
   GOOS="${platform%/*}"
@@ -31,6 +107,10 @@ for platform in $PLATFORMS; do
       -ldflags "-s -w -X ${BI}.Version=${VERSION} -X ${BI}.Commit=${COMMIT} -X ${BI}.BuildTime=${BUILD_TIME}" \
       -o "$workdir/$binary" ./cmd/apexload-record-agent
   )
+
+  if [[ "$GOOS" == "darwin" ]]; then
+    sign_macos_binary "$workdir/$binary"
+  fi
 
   cat > "$workdir/README.txt" <<EOF
 APEX Load Recording Agent ${VERSION}
@@ -53,7 +133,23 @@ Optional browser dependency preflight:
 The agent binds to 127.0.0.1 only. It does not require admin privileges to run,
 but enterprise endpoint controls may require this binary and its browser payload
 to be approved by IT.
+
+macOS Gatekeeper:
+
+Production macOS packages must be built with a Developer ID Application
+certificate and Apple notarization before distribution. Local development
+packages built without APEXLOAD_MACOS_CODESIGN_IDENTITY are not notarized; macOS
+may show "Apple could not verify '${binary}' is free of malware." For local
+development only, after verifying this package came from your own controller and
+the controller checksum endpoint or release SHA256SUMS.txt entry matches, clear
+the quarantine attribute:
+
+  xattr -dr com.apple.quarantine ./${binary}
 EOF
+
+  if [[ "$GOOS" == "darwin" ]]; then
+    notarize_macos_package "$package"
+  fi
 
   (
     cd "$DIST_DIR"

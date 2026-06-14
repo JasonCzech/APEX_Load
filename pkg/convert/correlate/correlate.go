@@ -67,6 +67,14 @@ var (
 	aspNetHiddenPattern    = regexp.MustCompile(`(?i)<input[^>]*\bname="(__[A-Za-z0-9]+)"[^>]*\bvalue="([^"]*)"`)
 	xmlElementTokenPattern = regexp.MustCompile(`(?is)<(?:[A-Za-z0-9_.-]+:)?([A-Za-z0-9_.-]*(?:token|session|csrf|xsrf|nonce|state|messageid|relatesto|correlationid|correlation|requestid|id)[A-Za-z0-9_.-]*)\b[^>]*>\s*([^<\s][^<]{5,})\s*</(?:[A-Za-z0-9_.-]+:)?[A-Za-z0-9_.-]+>`)
 	xmlAttrTokenPattern    = regexp.MustCompile(`(?is)\b(?:[A-Za-z0-9_.-]+:)?([A-Za-z0-9_.-]*(?:token|session|csrf|xsrf|nonce|state|messageid|relatesto|correlationid|correlation|requestid|id)[A-Za-z0-9_.-]*)\s*=\s*"([^"]{6,})"`)
+	auraTokenPattern       = regexp.MustCompile(`(?i)(?:^|[&{,"\s])aura\.token["']?\s*[:=]\s*["']?([^"&',}\s]{6,})`)
+	auraFWUIDPattern       = regexp.MustCompile(`(?i)"fwuid"\s*:\s*"([^"]{6,})"`)
+	auraAppPattern         = regexp.MustCompile(`(?i)"app"\s*:\s*"([^"]{4,})"`)
+	auraLoadedPattern      = regexp.MustCompile(`(?i)"loaded"\s*:\s*(\{[^}]{6,}\})`)
+	auraPageURIPattern     = regexp.MustCompile(`(?i)(?:"pageURI"\s*:\s*"([^"]{4,})"|aura\.pageURI\s*=\s*([^&\s]{4,}))`)
+	visualforcePattern     = regexp.MustCompile(`(?i)<input[^>]*\bname="((?:com\.salesforce\.visualforce\.)?ViewState(?:MAC|Version|CSRF)?)"[^>]*\bvalue="([^"]{4,})"`)
+	confirmationPattern    = regexp.MustCompile(`(?i)(?:^|[&{,"\s])_CONFIRMATIONTOKEN["']?\s*[:=]\s*["']?([^"&',}\s]{6,})`)
+	frontdoorSIDPattern    = regexp.MustCompile(`(?i)(?:^|[?&{,"\s])sid(?:_Client(?:_id)?)?["']?\s*[:=]\s*["']?([A-Za-z0-9!._-]{8,})`)
 )
 
 func Detect(observations []Observation) []Correlation {
@@ -122,6 +130,8 @@ func Detect(observations []Observation) []Correlation {
 
 func Candidates(responseBody string, responseHeaders map[string]string) []Candidate {
 	candidates := make([]Candidate, 0)
+	candidates = append(candidates, salesforceCandidates(responseBody, responseHeaders)...)
+	candidates = append(candidates, formCandidates(responseBody)...)
 	candidates = append(candidates, aspNetHiddenCandidates(responseBody)...)
 	candidates = append(candidates, htmlInputCandidates(responseBody)...)
 	candidates = append(candidates, jsonCandidates(responseBody)...)
@@ -134,8 +144,14 @@ func ObservationContains(observation Observation, value string) bool {
 	if strings.Contains(observation.RequestURL, value) || strings.Contains(observation.RequestBody, value) {
 		return true
 	}
+	if decodedContains(observation.RequestURL, value) || decodedContains(observation.RequestBody, value) {
+		return true
+	}
+	if formContainsValue(observation.RequestBody, value) {
+		return true
+	}
 	for _, headerValue := range observation.RequestHeaders {
-		if strings.Contains(headerValue, value) {
+		if strings.Contains(headerValue, value) || decodedContains(headerValue, value) {
 			return true
 		}
 	}
@@ -192,6 +208,135 @@ func Truncate(value string, maxLen int) string {
 		return value
 	}
 	return value[:maxLen] + "..."
+}
+
+func salesforceCandidates(responseBody string, responseHeaders map[string]string) []Candidate {
+	decoded := urlDecoded(responseBody)
+	candidates := make([]Candidate, 0)
+	candidates = append(candidates, salesforceRegexCandidates(decoded)...)
+	for key, value := range responseHeaders {
+		header := key + ": " + value
+		candidates = append(candidates, salesforceRegexCandidates(header)...)
+	}
+	return candidates
+}
+
+func salesforceRegexCandidates(body string) []Candidate {
+	candidates := make([]Candidate, 0)
+	addMatches := func(pattern *regexp.Regexp, name, ruleID, reason string, confidence float64) {
+		for _, match := range pattern.FindAllStringSubmatch(body, -1) {
+			value := lastNonEmptyMatch(match)
+			if value == "" {
+				continue
+			}
+			candidates = append(candidates, Candidate{
+				Name:           "corr_" + Slug(name),
+				Value:          value,
+				Source:         "body",
+				ExtractType:    "regex",
+				Expression:     pattern.String(),
+				RuleID:         ruleID,
+				BaseConfidence: confidence,
+				Reason:         reason,
+			})
+		}
+	}
+	addMatches(auraTokenPattern, "salesforce_aura_token", RuleSalesforceAuraToken, "Salesforce aura.token value", 0.95)
+	addMatches(auraFWUIDPattern, "salesforce_aura_fwuid", RuleSalesforceAuraContextFWUID, "Salesforce Aura context fwuid", 0.94)
+	addMatches(auraAppPattern, "salesforce_aura_app", RuleSalesforceAuraAppDescriptor, "Salesforce Aura app descriptor", 0.9)
+	addMatches(auraLoadedPattern, "salesforce_aura_loaded", RuleSalesforceAuraLoaded, "Salesforce Aura loaded map", 0.88)
+	addMatches(auraPageURIPattern, "salesforce_aura_page_uri", RuleSalesforceAuraPageURI, "Salesforce Aura page URI", 0.86)
+	addMatches(visualforcePattern, "salesforce_viewstate", RuleSalesforceViewState, "Salesforce Visualforce ViewState field", 0.94)
+	addMatches(confirmationPattern, "salesforce_confirmation_token", RuleSalesforceConfirmationToken, "Salesforce confirmation token", 0.93)
+	addMatches(frontdoorSIDPattern, "salesforce_frontdoor_sid", RuleSalesforceFrontdoorSID, "Salesforce frontdoor sid/session value", 0.85)
+	return candidates
+}
+
+func formCandidates(body string) []Candidate {
+	values, err := url.ParseQuery(body)
+	if err != nil || len(values) == 0 {
+		return nil
+	}
+	candidates := make([]Candidate, 0)
+	add := func(name, value, ruleID string, confidence float64, reason string) {
+		if strings.TrimSpace(value) == "" {
+			return
+		}
+		candidates = append(candidates, Candidate{
+			Name:           "corr_" + Slug(name),
+			Value:          value,
+			Source:         "body",
+			ExtractType:    "boundary",
+			Expression:     name + "=|||&",
+			RuleID:         ruleID,
+			BaseConfidence: confidence,
+			Reason:         reason,
+		})
+	}
+	for key, fieldValues := range values {
+		for _, value := range fieldValues {
+			switch strings.ToLower(key) {
+			case "aura.token":
+				add("salesforce_aura_token", value, RuleSalesforceAuraToken, 0.95, "Salesforce aura.token form field")
+			case "aura.context":
+				for _, candidate := range salesforceRegexCandidates(value) {
+					candidates = append(candidates, candidate)
+				}
+			case "aura.pageuri":
+				add("salesforce_aura_page_uri", value, RuleSalesforceAuraPageURI, 0.86, "Salesforce aura.pageURI form field")
+			case "com.salesforce.visualforce.viewstate", "viewstatemac", "viewstateversion", "viewstatecsrf":
+				add("salesforce_viewstate", value, RuleSalesforceViewState, 0.94, "Salesforce Visualforce ViewState form field")
+			case "_confirmationtoken":
+				add("salesforce_confirmation_token", value, RuleSalesforceConfirmationToken, 0.93, "Salesforce confirmation token form field")
+			case "sid", "sid_client", "sid_client_id":
+				add("salesforce_frontdoor_sid", value, RuleSalesforceFrontdoorSID, 0.85, "Salesforce frontdoor sid form field")
+			}
+		}
+	}
+	return candidates
+}
+
+func lastNonEmptyMatch(match []string) string {
+	for i := len(match) - 1; i >= 1; i-- {
+		if strings.TrimSpace(match[i]) != "" {
+			return strings.TrimSpace(match[i])
+		}
+	}
+	return ""
+}
+
+func decodedContains(raw, value string) bool {
+	decoded := urlDecoded(raw)
+	return decoded != raw && strings.Contains(decoded, value)
+}
+
+func formContainsValue(body, value string) bool {
+	values, err := url.ParseQuery(body)
+	if err != nil || len(values) == 0 {
+		return false
+	}
+	for key, vals := range values {
+		if strings.Contains(key, value) {
+			return true
+		}
+		for _, val := range vals {
+			if strings.Contains(val, value) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func urlDecoded(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	decoded, err := url.QueryUnescape(raw)
+	if err != nil {
+		return raw
+	}
+	return decoded
 }
 
 func jsonCandidates(body string) []Candidate {

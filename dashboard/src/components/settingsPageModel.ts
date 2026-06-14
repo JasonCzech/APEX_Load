@@ -112,6 +112,9 @@ export const DEFAULT_SETTINGS: DashboardSystemSettings = {
   client_app: {
     availability: 'disabled',
   },
+  client_downloads: {
+    enabled: true,
+  },
 }
 
 export const GENERATOR_PRESETS = [
@@ -491,6 +494,13 @@ export function normalizeDashboardSystemSettings(settings: DashboardSystemSettin
       ...DEFAULT_SETTINGS.client_app,
       ...settings.client_app,
       availability: settings.client_app?.availability === 'enabled' ? 'enabled' : 'disabled',
+    },
+    client_downloads: {
+      ...DEFAULT_SETTINGS.client_downloads,
+      ...settings.client_downloads,
+      // Default to enabled; only an explicit false disables (matches the
+      // server-side default and migration behaviour).
+      enabled: settings.client_downloads?.enabled !== false,
     },
   }
 }

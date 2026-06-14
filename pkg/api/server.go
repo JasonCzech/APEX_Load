@@ -449,8 +449,10 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scripts/import/oracle-ebusiness/support-matrix", cors(log(auth(http.HandlerFunc(s.handleOracleEBusinessSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/oracle-ebusiness/review", cors(log(auth(http.HandlerFunc(s.handleReviewOracleEBusinessImport)))))
 	s.mux.Handle("POST /api/v1/scripts/import/har", cors(log(auth(http.HandlerFunc(s.handleImportHAR)))))
+	s.mux.Handle("POST /api/v1/scripts/import/salesforce", cors(log(auth(http.HandlerFunc(s.handleImportSalesforce)))))
 	s.mux.Handle("POST /api/v1/scripts/import/recorder", cors(log(auth(http.HandlerFunc(s.handleImportRecorder)))))
 	s.mux.Handle("POST /api/v1/scripts/import/openapi", cors(log(auth(http.HandlerFunc(s.handleImportOpenAPI)))))
+	s.mux.Handle("POST /api/v1/scripts/import/raml", cors(log(auth(http.HandlerFunc(s.handleImportRAML)))))
 	s.mux.Handle("POST /api/v1/scripts/import/postman", cors(log(auth(http.HandlerFunc(s.handleImportPostman)))))
 	s.mux.Handle("POST /api/v1/scripts/import/wsdl", cors(log(auth(http.HandlerFunc(s.handleImportWSDL)))))
 	s.mux.Handle("POST /api/v1/scripts/import/asyncapi", cors(log(auth(http.HandlerFunc(s.handleImportAsyncAPI)))))
@@ -555,6 +557,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/system/readiness", cors(log(http.HandlerFunc(s.handleSystemReadiness))))
 	s.mux.Handle("GET /api/v1/downloads/recording-agent/latest", cors(log(auth(http.HandlerFunc(s.handleDownloadRecordingAgent)))))
 	s.mux.Handle("GET /api/v1/downloads/recording-agent/latest/checksum", cors(log(auth(http.HandlerFunc(s.handleRecordingAgentChecksum)))))
+	s.mux.Handle("GET /api/v1/downloads/desktop/latest", cors(log(auth(http.HandlerFunc(s.handleDownloadDesktopApp)))))
+	s.mux.Handle("GET /api/v1/downloads/desktop/latest/checksum", cors(log(auth(http.HandlerFunc(s.handleDesktopAppChecksum)))))
 	// With a dedicated metrics listener (APEXLOAD_METRICS_ADDR) the scrape
 	// endpoint moves off the API port entirely, so NetworkPolicy can grant the
 	// monitoring namespace metrics access without exposing the API surface.

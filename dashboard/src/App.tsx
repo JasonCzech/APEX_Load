@@ -31,6 +31,7 @@ import { isEffectiveOperationAllowed } from './utils/authAccessUtils'
 import { DesktopStatusResponse } from './types/library'
 import ThemeToggle from './components/ThemeToggle'
 import DeploymentBanner from './components/DeploymentBanner'
+import ClientDownloadsMenu from './components/ClientDownloadsMenu'
 import {
   pageTitleForScriptSubView,
   pageTitleForView,
@@ -653,6 +654,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
                 )}
               </div>
             )}
+            <ClientDownloadsMenu />
             <DeploymentBanner />
             <ThemeToggle theme={theme} onThemeChange={setTheme} />
           </div>

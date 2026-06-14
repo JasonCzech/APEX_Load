@@ -2287,6 +2287,82 @@
             "properties": {
               "type": {
                 "enum": [
+                  "http_oauth2_token"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Fetch and cache an OAuth2 access token for later HTTP requests.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "audience": {
+                    "description": "JWT-bearer audience; defaults to the token endpoint origin.",
+                    "type": "string"
+                  },
+                  "client_id": {
+                    "description": "OAuth2 client ID or Salesforce connected-app consumer key.",
+                    "type": "string"
+                  },
+                  "client_secret": {
+                    "description": "OAuth2 client secret when required by the grant; prefer a {{secret.NAME}} template.",
+                    "type": "string"
+                  },
+                  "grant_type": {
+                    "description": "Grant type: client_credentials, jwt_bearer, or refresh_token.",
+                    "type": "string"
+                  },
+                  "issuer": {
+                    "description": "JWT-bearer issuer; defaults to client_id.",
+                    "type": "string"
+                  },
+                  "private_key": {
+                    "description": "PEM-encoded RSA private key for JWT-bearer assertions; prefer a {{secret.NAME}} template.",
+                    "type": "string"
+                  },
+                  "refresh_token": {
+                    "description": "Refresh token for refresh_token grant; prefer a {{secret.NAME}} template.",
+                    "type": "string"
+                  },
+                  "save_as": {
+                    "description": "VUser variable name for the access token; defaults to access_token.",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Space-delimited OAuth2 scopes.",
+                    "type": "string"
+                  },
+                  "subject": {
+                    "description": "JWT-bearer subject, usually the Salesforce integration username.",
+                    "type": "string"
+                  },
+                  "token_url": {
+                    "description": "OAuth2 token endpoint URL.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token_url",
+                  "grant_type",
+                  "client_id"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "params"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "http_sequence"
                 ]
               }
@@ -4437,6 +4513,7 @@
             "grpc_client_stream",
             "grpc_server_stream",
             "grpc_unary",
+            "http_oauth2_token",
             "http_sequence",
             "imap_command",
             "insert",

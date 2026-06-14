@@ -42,6 +42,26 @@ describe('settingsPageModel', () => {
     expect(normalized.client_app.availability).toBe('disabled')
   })
 
+  it('defaults client software downloads to enabled', () => {
+    expect(DEFAULT_SETTINGS.client_downloads.enabled).toBe(true)
+  })
+
+  it('normalizes missing client downloads settings to enabled', () => {
+    const normalized = normalizeDashboardSystemSettings({
+      ...DEFAULT_SETTINGS,
+      client_downloads: undefined as unknown as typeof DEFAULT_SETTINGS.client_downloads,
+    })
+    expect(normalized.client_downloads.enabled).toBe(true)
+  })
+
+  it('preserves an explicit client downloads disable', () => {
+    const normalized = normalizeDashboardSystemSettings({
+      ...DEFAULT_SETTINGS,
+      client_downloads: { enabled: false },
+    })
+    expect(normalized.client_downloads.enabled).toBe(false)
+  })
+
   it('usesDefaultGeneratorCapacity is true for the defaults', () => {
     expect(usesDefaultGeneratorCapacity(DEFAULT_SETTINGS)).toBe(true)
   })

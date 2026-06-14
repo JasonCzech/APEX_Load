@@ -1000,6 +1000,9 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 	if !rawJSONHasKey(string(body), "client_app") {
 		settings.ClientApp = s.runner.GetSystemSettings().ClientApp
 	}
+	if !rawJSONHasKey(string(body), "client_downloads") {
+		settings.ClientDownloads = s.runner.GetSystemSettings().ClientDownloads
+	}
 
 	updated, err := s.runner.UpdateSystemSettings(settings)
 	if err != nil {

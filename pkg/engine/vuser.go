@@ -16,6 +16,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	protocolhttp "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 type VUser struct {
@@ -733,6 +734,8 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 		return true, nil
 	case "source_runtime":
 		return true, vu.handleSourceRuntimeAction(ctx, action)
+	case "http_oauth2_token":
+		return true, vu.handleHTTPOAuth2TokenAction(ctx, action)
 	case "source_transaction":
 		vu.handleSourceTransactionAction(action)
 		return true, nil
@@ -751,6 +754,45 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 	default:
 		return false, nil
 	}
+}
+
+func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Action) error {
+	params := vu.interpolateAnyMap(action.Params)
+	saveAs, _ := actionParamString(params, "save_as")
+	if saveAs == "" {
+		saveAs = "access_token"
+	}
+	paramString := func(key string) string {
+		value, _ := actionParamString(params, key)
+		return value
+	}
+	token, err := protocolhttp.FetchOAuth2Token(ctx, protocolhttp.OAuthTokenRequest{
+		TokenURL:     paramString("token_url"),
+		GrantType:    paramString("grant_type"),
+		ClientID:     paramString("client_id"),
+		ClientSecret: paramString("client_secret"),
+		Scope:        paramString("scope"),
+		Audience:     paramString("audience"),
+		Issuer:       paramString("issuer"),
+		Subject:      paramString("subject"),
+		PrivateKey:   paramString("private_key"),
+		RefreshToken: paramString("refresh_token"),
+	})
+	if err != nil {
+		return fmt.Errorf("http_oauth2_token %q: %w", action.Name, err)
+	}
+	vu.ensureVariables()
+	writeVariableAlias := func(key, value string) {
+		vu.Variables[key] = value
+		vu.Variables[strings.ToLower(key)] = value
+	}
+	writeVariableAlias(saveAs, token.AccessToken)
+	writeVariableAlias(saveAs+"_token_type", token.TokenType)
+	writeVariableAlias(saveAs+"_instance_url", token.InstanceURL)
+	if !token.ExpiresAt.IsZero() {
+		writeVariableAlias(saveAs+"_expires_at", strconv.FormatInt(token.ExpiresAt.Unix(), 10))
+	}
+	return nil
 }
 
 func (vu *VUser) handleSourceMessageAction(ctx context.Context, action dsl.Action) {

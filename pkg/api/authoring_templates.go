@@ -80,6 +80,88 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 			RecommendedScenario: AuthoringTemplateScenario{Duration: "2m", VUsers: 5, RampUp: "30s", Iterations: 1},
 		},
 		{
+			ID:          "agentforce-streaming-agent",
+			Name:        "Agentforce Streaming Agent",
+			Protocol:    "http",
+			UseCase:     "enterprise_flow",
+			Description: "Agent API session lifecycle with OAuth2 token acquisition, SSE message streaming, and end-session cleanup.",
+			Tags:        []string{"salesforce", "agentforce", "sse", "oauth2"},
+			Script: dsl.Script{
+				Name:     "Agentforce Streaming Agent",
+				Version:  "1.0.0",
+				Protocol: "http",
+				Config: dsl.ScriptConfig{
+					BaseURL: "{{env.SF_API_HOST}}",
+					ThinkTime: dsl.ThinkTimeConfig{
+						Type:   "fixed",
+						MeanMs: 500,
+					},
+					Pacing: dsl.PacingConfig{Type: "none"},
+					RunLogic: dsl.RunLogicConfig{
+						Iterations:       1,
+						AutoTransactions: "per_action",
+					},
+					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false},
+				},
+				Init: []dsl.Action{
+					templateAction("http_oauth2_token", "Get Agent API Token", func(action *dsl.Action) {
+						action.Params = map[string]any{
+							"token_url":     "{{env.SALESFORCE_TOKEN_URL}}",
+							"grant_type":    "client_credentials",
+							"client_id":     "{{env.SALESFORCE_CLIENT_ID}}",
+							"client_secret": "{{secret.SALESFORCE_CLIENT_SECRET}}",
+							"scope":         "{{env.SALESFORCE_SCOPE}}",
+							"save_as":       "access_token",
+						}
+					}),
+				},
+				Actions: []dsl.Action{
+					httpTemplateAction("POST", "Start Agent Session", "/einstein/ai-agent/v1/agents/{{env.AGENT_ID}}/sessions", func(action *dsl.Action) {
+						action.Headers = map[string]string{
+							"Authorization": "Bearer {{var.access_token}}",
+							"Content-Type":  "application/json",
+							"Accept":        "application/json",
+						}
+						action.Body = `{"externalSessionKey":"{{fn.uuid()}}","instanceConfig":{"endpoint":"{{env.MY_DOMAIN_URL}}"},"featureSupport":"Streaming","bypassUser":true}`
+						action.Extractors = []dsl.Extractor{{Name: "session_id", Source: "body", Type: "jsonpath", Expression: "$.sessionId", OnMiss: "fail"}}
+						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+					}),
+					httpTemplateAction("POST", "Send Streaming Message", "/einstein/ai-agent/v1/sessions/{{var.session_id}}/messages/stream", func(action *dsl.Action) {
+						action.Headers = map[string]string{
+							"Authorization": "Bearer {{var.access_token}}",
+							"Content-Type":  "application/json",
+							"Accept":        "text/event-stream",
+						}
+						action.Params = map[string]any{
+							"stream":            "sse",
+							"stop_on_event":     "EndOfTurn",
+							"max_events":        200,
+							"stream_timeout_ms": 60000,
+						}
+						action.Body = `{"message":{"sequenceId":{{fn.timestamp.unix()}},"type":"Text","text":"{{env.AGENT_PROMPT}}"},"variables":[]}`
+						action.Extractors = []dsl.Extractor{
+							{Name: "agent_text", Source: "body", Type: "sse_concat", Expression: "TextChunk", OnMiss: "empty"},
+							{Name: "end_of_turn", Source: "body", Type: "sse_event", Expression: "EndOfTurn", OnMiss: "empty"},
+						}
+						action.Assertions = []dsl.Assertion{
+							{Type: "status_code", Expected: 200},
+							{Type: "body_not_contains", Value: "ValidationFailureChunk"},
+						}
+					}),
+				},
+				Teardown: []dsl.Action{
+					httpTemplateAction("DELETE", "End Agent Session", "/einstein/ai-agent/v1/sessions/{{var.session_id}}", func(action *dsl.Action) {
+						action.Headers = map[string]string{
+							"Authorization":        "Bearer {{var.access_token}}",
+							"x-session-end-reason": "UserRequest",
+						}
+						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+					}),
+				},
+			},
+			RecommendedScenario: AuthoringTemplateScenario{Duration: "5m", VUsers: 5, RampUp: "1m", Iterations: 1},
+		},
+		{
 			ID:          "browser-checkout-canary",
 			Name:        "Browser Checkout Canary",
 			Protocol:    "browser",

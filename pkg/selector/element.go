@@ -44,6 +44,7 @@ var dataTestAttributes = []string{"data-testid", "data-test-id", "data-test", "d
 func Candidates(meta ElementMetadata) []Candidate {
 	out := make([]Candidate, 0, 8)
 	tag := strings.ToLower(strings.TrimSpace(meta.Tag))
+	lightningElement := isLightningElement(meta)
 
 	if value := strings.TrimSpace(meta.DataTestID); value != "" {
 		out = append(out, Candidate{
@@ -58,20 +59,50 @@ func Candidates(meta ElementMetadata) []Candidate {
 		if !safeCSSIdentifier.MatchString(value) {
 			idSelector = CSSAttributeSelector("id", value)
 		}
+		confidence := ConfidenceHTMLID
+		reason := "HTML id attribute captured at recording time."
+		if isVolatileAuraID(value) {
+			confidence = 56
+			reason = "Aura-generated id captured at recording time; ranked below role/text fallbacks because it may drift."
+		}
 		out = append(out, Candidate{
 			Kind:       "css",
 			Value:      idSelector,
-			Confidence: ConfidenceHTMLID,
-			Reason:     "HTML id attribute captured at recording time.",
+			Confidence: confidence,
+			Reason:     reason,
 		})
 	}
 	if value := strings.TrimSpace(meta.AriaLabel); value != "" {
+		confidence := ConfidenceAriaLabel
+		reason := "ARIA label captured at recording time."
+		if lightningElement {
+			confidence = 88
+			reason = "Lightning component ARIA label captured at recording time."
+		}
 		out = append(out, Candidate{
 			Kind:       "css",
 			Value:      tagPrefixed(tag, CSSAttributeSelector("aria-label", value)),
-			Confidence: ConfidenceAriaLabel,
-			Reason:     "ARIA label captured at recording time.",
+			Confidence: confidence,
+			Reason:     reason,
 		})
+	}
+	if lightningElement {
+		if value := strings.TrimSpace(meta.Attributes["data-aura-class"]); value != "" {
+			out = append(out, Candidate{
+				Kind:       "css",
+				Value:      tagPrefixed(tag, CSSAttributeSelector("data-aura-class", value)),
+				Confidence: 84,
+				Reason:     "Lightning Aura class hint captured at recording time.",
+			})
+		}
+		if value := strings.TrimSpace(meta.Attributes["title"]); value != "" {
+			out = append(out, Candidate{
+				Kind:       "css",
+				Value:      tagPrefixed(tag, CSSAttributeSelector("title", value)),
+				Confidence: 80,
+				Reason:     "Lightning component title captured at recording time.",
+			})
+		}
 	}
 	if value := strings.TrimSpace(meta.Name); value != "" {
 		out = append(out, Candidate{
@@ -83,11 +114,17 @@ func Candidates(meta ElementMetadata) []Candidate {
 	}
 	if role := strings.TrimSpace(meta.Role); role != "" {
 		if accessibleName := firstNonEmpty(meta.AriaLabel, shortText(meta.Text)); accessibleName != "" {
+			confidence := ConfidenceRoleName
+			reason := "Accessible role and name captured at recording time."
+			if lightningElement {
+				confidence = 86
+				reason = "Lightning accessible role and name captured at recording time."
+			}
 			out = append(out, Candidate{
 				Kind:       "role",
 				Value:      RoleSelector(role, accessibleName),
-				Confidence: ConfidenceRoleName,
-				Reason:     "Accessible role and name captured at recording time.",
+				Confidence: confidence,
+				Reason:     reason,
 			})
 		}
 	}
@@ -161,4 +198,34 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func isLightningElement(meta ElementMetadata) bool {
+	tag := strings.ToLower(strings.TrimSpace(meta.Tag))
+	if strings.HasPrefix(tag, "lightning-") || strings.HasPrefix(tag, "force-") || strings.HasPrefix(tag, "c-") {
+		return true
+	}
+	for key := range meta.Attributes {
+		lower := strings.ToLower(strings.TrimSpace(key))
+		if strings.HasPrefix(lower, "data-aura-") {
+			return true
+		}
+	}
+	return false
+}
+
+func isVolatileAuraID(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	if strings.Contains(value, ":") {
+		return true
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

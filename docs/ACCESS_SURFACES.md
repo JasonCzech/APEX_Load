@@ -22,6 +22,25 @@ Remote run v1 is intentionally poll-based:
 
 Run links are persisted under `remote.run_links.v1`, separate from library sync links (`library.sync_links.v1`). Full realtime viewing should use the hosted run page link; a server-side WebSocket relay is deferred.
 
+### Desktop Distribution Trust
+
+The local development Wails build is not a production installer. macOS desktop
+packages must be signed with a Developer ID Application certificate and
+notarized before distribution to end users, otherwise Gatekeeper may block the
+downloaded `.app` with an Apple verification warning. Build release packages
+with:
+
+```bash
+APEXLOAD_MACOS_CODESIGN_IDENTITY='Developer ID Application: Example Corp (TEAMID)' \
+APEXLOAD_MACOS_NOTARIZE=1 \
+APEXLOAD_MACOS_NOTARY_PROFILE=apexload-notary \
+make desktop-release
+```
+
+Windows desktop distribution should likewise use an Authenticode-signed
+installer or executable from CI. Raw local debug archives are acceptable for
+developer machines only, not for broad user distribution.
+
 ## 3. CLI
 
 `apexctl` remains the CI/headless surface. It can run scripts locally or target a controller API, and this access-surface work does not change its contract.

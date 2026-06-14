@@ -113,6 +113,72 @@ func TestRuleCatalogAndFamily(t *testing.T) {
 	}
 }
 
+func TestDetectSalesforceAuraAndVisualforceCorrelation(t *testing.T) {
+	observations := []Observation{
+		{
+			ID: 1,
+			ResponseBody: `aura.token=07Dxx0000004ABC%21AQ0AQHabcdefghijk&` +
+				`aura.context=%7B%22mode%22%3A%22PROD%22%2C%22fwuid%22%3A%22FWUID-abcdef1234567890%22%2C%22app%22%3A%22markup%3A%2F%2Fone%3Aone%22%7D` +
+				`<input type="hidden" name="com.salesforce.visualforce.ViewState" value="/wEPDwULLTEyMzQ1Njc4OTAPZBYCZg9kFgICAw9kFgJmD2QWAgIBD2QWAmYPZBYCAgMPZBYCAgEPZBYCAgEPZBYCAgEPZBYCAgMPFgIeBFRleHQFBlNhbGVzZGQWAgIDDxYCHwAFB1Rlc3RpbmdkZGRk" />`,
+		},
+		{
+			ID: 2,
+			RequestBody: `aura.token=07Dxx0000004ABC%21AQ0AQHabcdefghijk&` +
+				`aura.context=%7B%22fwuid%22%3A%22FWUID-abcdef1234567890%22%2C%22app%22%3A%22markup%3A%2F%2Fone%3Aone%22%7D&` +
+				`com.salesforce.visualforce.ViewState=%2FwEPDwULLTEyMzQ1Njc4OTAPZBYCZg9kFgICAw9kFgJmD2QWAgIBD2QWAmYPZBYCAgMPZBYCAgEPZBYCAgEPZBYCAgEPZBYCAgMPFgIeBFRleHQFBlNhbGVzZGQWAgIDDxYCHwAFB1Rlc3RpbmdkZGRk`,
+		},
+	}
+
+	correlations := Detect(observations)
+	wantRules := map[string]bool{
+		RuleSalesforceAuraToken:         false,
+		RuleSalesforceAuraContextFWUID:  false,
+		RuleSalesforceAuraAppDescriptor: false,
+		RuleSalesforceViewState:         false,
+	}
+	for _, c := range correlations {
+		if _, ok := wantRules[c.RuleID]; ok {
+			wantRules[c.RuleID] = true
+			if c.Confidence < 0.9 {
+				t.Fatalf("Salesforce rule %s should be high-confidence, got %.2f", c.RuleID, c.Confidence)
+			}
+		}
+	}
+	for rule, found := range wantRules {
+		if !found {
+			t.Fatalf("missing Salesforce rule %s in correlations: %#v", rule, correlations)
+		}
+	}
+}
+
+func TestDetectSalesforceLoginTokensFromDecodedForms(t *testing.T) {
+	observations := []Observation{
+		{
+			ID:           1,
+			ResponseBody: `_CONFIRMATIONTOKEN=confirm-abcdef123456&sid=frontdoor-session-abcdef123456`,
+		},
+		{
+			ID:          2,
+			RequestBody: `_CONFIRMATIONTOKEN=confirm-abcdef123456&sid=frontdoor-session-abcdef123456`,
+		},
+	}
+	correlations := Detect(observations)
+	wantRules := map[string]bool{
+		RuleSalesforceConfirmationToken: false,
+		RuleSalesforceFrontdoorSID:      false,
+	}
+	for _, c := range correlations {
+		if _, ok := wantRules[c.RuleID]; ok {
+			wantRules[c.RuleID] = true
+		}
+	}
+	for rule, found := range wantRules {
+		if !found {
+			t.Fatalf("missing Salesforce login rule %s in correlations: %#v", rule, correlations)
+		}
+	}
+}
+
 func TestSetCookieSessionVsOtherConfidence(t *testing.T) {
 	obs := []Observation{
 		{ID: 1, ResponseHeaders: map[string]string{"Set-Cookie": "JSESSIONID=abcd1234efgh; Path=/"}},

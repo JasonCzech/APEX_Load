@@ -235,11 +235,27 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	defer h.bufPool.Put(buf)
 
 	bodyReadStart := time.Now()
-	n, _ := io.Copy(buf, resp.Body)
+	var (
+		n             int64
+		bodyReadErr   error
+		sseFirstEvent time.Duration
+		sseEventCount int
+	)
+	isEventStream := shouldReadSSE(resp.Header.Get("Content-Type"), action.Params)
+	if isEventStream {
+		sseResult, err := readSSEResponse(ctx, resp.Body, action.Params, result.StartTime)
+		_, _ = buf.Write(sseResult.Body)
+		n = sseResult.BytesRead
+		sseFirstEvent = sseResult.FirstEvent
+		sseEventCount = sseResult.EventCount
+		bodyReadErr = err
+	} else {
+		n, bodyReadErr = io.Copy(buf, resp.Body)
+	}
 	bodyReadDuration := time.Since(bodyReadStart)
 	resp.Body.Close()
 
-	if delay := h.streaming.responseDelay(resp, action, targetURL, n, bodyReadDuration); delay > 0 {
+	if delay := h.streaming.responseDelay(resp, action, targetURL, n, bodyReadDuration); !isEventStream && delay > 0 {
 		if err := h.streaming.wait(ctx, delay); err != nil {
 			result.Duration = time.Since(result.StartTime)
 			result.StatusCode = resp.StatusCode
@@ -257,7 +273,15 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	result.BytesReceived = n
 	reused, rCount, rDur := applyTraceTelemetry()
 	result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
+	if result.ServerTelemetry != nil {
+		result.ServerTelemetry.FirstEventMs = durationToNonNegativeMilliseconds(sseFirstEvent)
+		result.ServerTelemetry.EventCount = sseEventCount
+	}
 	result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
+	if bodyReadErr != nil {
+		result.Success = false
+		result.ErrorMessage = bodyReadErr.Error()
+	}
 	result.CorrelationID = explicitCorrelationID
 	if result.CorrelationID == "" {
 		result.CorrelationID = correlationIDFromHTTPHeader(resp.Header)

@@ -10,6 +10,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
 	"github.com/jasonczech/apexload/pkg/convert/openapi"
 	"github.com/jasonczech/apexload/pkg/convert/postman"
+	"github.com/jasonczech/apexload/pkg/convert/raml"
 	"github.com/jasonczech/apexload/pkg/convert/wsdl"
 )
 
@@ -39,6 +40,13 @@ type asyncAPIImportRequest struct {
 	ProjectID string
 	Name      string
 	Opts      asyncapi.ConvertOptions
+}
+
+type ramlImportRequest struct {
+	Data      []byte
+	ProjectID string
+	Name      string
+	Opts      raml.ConvertOptions
 }
 
 func (s *Server) handleDevWebSupportMatrix(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +89,46 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		ReviewSections:      appendImportDiagnosticReviewSections(buildOpenAPIReviewSections(result), result.Unsupported),
 		SourceReview:        result.SourceReview,
 		Parameterization:    buildImportParameterization(result.Script, nil),
+	}))
+}
+
+func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
+	importReq, ok := readRAMLImportRequest(w, r)
+	if !ok {
+		return
+	}
+	result, err := raml.Convert(raml.ImportRequest{
+		Name:      importReq.Name,
+		ProjectID: importReq.ProjectID,
+		Content:   string(importReq.Data),
+		Options:   importReq.Opts,
+	})
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
+		return
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	attachSourceReviewToScript(result.Script, "raml", importReq.Name, nil)
+	if issues := validateScript(result.Script); len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+		Result:              result,
+		Script:              result.Script,
+		Warnings:            result.Warnings,
+		Stats:               result.Stats,
+		Summary:             result.Summary,
+		UnsupportedElements: result.Unsupported.Strings(),
+		ReviewSections: []scriptImportReviewSection{{
+			Key:      "raml_import",
+			Title:    "RAML Import Review",
+			Severity: "info",
+			Summary:  "RAML resources and methods were converted to HTTP DSL actions.",
+			Items:    append([]string{"OAuth2 security schemes create an http_oauth2_token init action when an accessTokenUri is present."}, result.Summary.Resources...),
+		}},
+		Parameterization: buildImportParameterization(result.Script, nil),
 	}))
 }
 
@@ -338,6 +386,52 @@ func readOpenAPIImportRequest(w http.ResponseWriter, r *http.Request) (*openAPII
 		ProjectID: r.URL.Query().Get("project_id"),
 		Name:      strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
 		Opts: openapi.ConvertOptions{
+			BaseURL:    r.URL.Query().Get("base_url"),
+			ScriptName: r.URL.Query().Get("script_name"),
+		},
+	}, true
+}
+
+func readRAMLImportRequest(w http.ResponseWriter, r *http.Request) (*ramlImportRequest, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/json") {
+		data, ok := readImportBody(w, r)
+		if !ok {
+			return nil, false
+		}
+		var req raml.ImportRequest
+		if err := json.Unmarshal(data, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return nil, false
+		}
+		return &ramlImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
+	}
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
+		if !ok {
+			return nil, false
+		}
+		return &ramlImportRequest{
+			Data:      data,
+			ProjectID: r.FormValue("project_id"),
+			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
+			Opts: raml.ConvertOptions{
+				BaseURL:    r.FormValue("base_url"),
+				ScriptName: r.FormValue("script_name"),
+			},
+		}, true
+	}
+	data, ok := readImportBody(w, r)
+	if !ok {
+		return nil, false
+	}
+	filename := r.URL.Query().Get("filename")
+	return &ramlImportRequest{
+		Data:      data,
+		ProjectID: r.URL.Query().Get("project_id"),
+		Name:      strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
+		Opts: raml.ConvertOptions{
 			BaseURL:    r.URL.Query().Get("base_url"),
 			ScriptName: r.URL.Query().Get("script_name"),
 		},

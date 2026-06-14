@@ -81,7 +81,7 @@ func extract(ext protocol.Extractor, headers http.Header, body []byte) (string, 
 
 func extractRaw(ext protocol.Extractor, headers http.Header, body []byte) (string, error) {
 	switch ext.Source {
-	case "body":
+	case "", "body":
 		return extractFromBody(ext, body)
 	case "header":
 		return extractFromHeaders(ext, headers)
@@ -214,6 +214,10 @@ func extractFromBody(ext protocol.Extractor, body []byte) (string, error) {
 		return extractRegexOrdinal(ext.Expression, body)
 	case "boundary":
 		return extractBoundary(ext.Expression, body)
+	case "sse_concat":
+		return extractSSEConcat(ext.Expression, body)
+	case "sse_event":
+		return extractSSEEvent(ext.Expression, body)
 	default:
 		return "", fmt.Errorf("unsupported extraction type: %s", ext.Type)
 	}

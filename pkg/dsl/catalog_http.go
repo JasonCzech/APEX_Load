@@ -28,7 +28,7 @@ func httpActionSpecs() []ActionSpec {
 		{"HEAD", "HTTP HEAD request."},
 		{"OPTIONS", "HTTP OPTIONS request."},
 	}
-	specs := make([]ActionSpec, 0, len(methods)+1)
+	specs := make([]ActionSpec, 0, len(methods)+2)
 	for _, m := range methods {
 		specs = append(specs, ActionSpec{
 			Type:      m.method,
@@ -37,6 +37,24 @@ func httpActionSpecs() []ActionSpec {
 			Fields:    requestFields,
 		})
 	}
+	specs = append(specs, ActionSpec{
+		Type:      "http_oauth2_token",
+		Protocols: []string{"http"},
+		Summary:   "Fetch and cache an OAuth2 access token for later HTTP requests.",
+		Fields: []FieldSpec{
+			{Name: "params.token_url", Required: true, Kind: FieldKindString, Doc: "OAuth2 token endpoint URL."},
+			{Name: "params.grant_type", Required: true, Kind: FieldKindString, Doc: "Grant type: client_credentials, jwt_bearer, or refresh_token."},
+			{Name: "params.client_id", Required: true, Kind: FieldKindString, Doc: "OAuth2 client ID or Salesforce connected-app consumer key."},
+			{Name: "params.client_secret", Kind: FieldKindString, Doc: "OAuth2 client secret when required by the grant; prefer a {{secret.NAME}} template."},
+			{Name: "params.scope", Kind: FieldKindString, Doc: "Space-delimited OAuth2 scopes."},
+			{Name: "params.audience", Kind: FieldKindString, Doc: "JWT-bearer audience; defaults to the token endpoint origin."},
+			{Name: "params.issuer", Kind: FieldKindString, Doc: "JWT-bearer issuer; defaults to client_id."},
+			{Name: "params.subject", Kind: FieldKindString, Doc: "JWT-bearer subject, usually the Salesforce integration username."},
+			{Name: "params.private_key", Kind: FieldKindString, Doc: "PEM-encoded RSA private key for JWT-bearer assertions; prefer a {{secret.NAME}} template."},
+			{Name: "params.refresh_token", Kind: FieldKindString, Doc: "Refresh token for refresh_token grant; prefer a {{secret.NAME}} template."},
+			{Name: "params.save_as", Kind: FieldKindString, Doc: "VUser variable name for the access token; defaults to access_token."},
+		},
+	})
 	specs = append(specs, ActionSpec{
 		Type:      "http_sequence",
 		Protocols: []string{"http"},

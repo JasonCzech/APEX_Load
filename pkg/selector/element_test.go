@@ -160,3 +160,54 @@ func TestCandidatesConfidenceMonotonic(t *testing.T) {
 		}
 	}
 }
+
+func TestCandidatesLightningDemotesAuraRenderID(t *testing.T) {
+	meta := ElementMetadata{
+		Tag:       "lightning-button",
+		ID:        "123:456;a",
+		Role:      "button",
+		AriaLabel: "Save",
+		Text:      "Save",
+		Attributes: map[string]string{
+			"data-aura-class": "force:button",
+			"title":           "Save",
+		},
+		CSSPath: "one-app lightning-button:nth-of-type(4)",
+	}
+
+	got := Candidates(meta)
+	gotValues := candidateValues(got)
+	wantPrefix := []string{
+		`css:lightning-button[aria-label="Save"]`,
+		`role:role=button[name="Save"]`,
+		`css:lightning-button[data-aura-class="force:button"]`,
+		`css:lightning-button[title="Save"]`,
+	}
+	if len(gotValues) < len(wantPrefix) {
+		t.Fatalf("Candidates() = %v, want at least %v", gotValues, wantPrefix)
+	}
+	for i, want := range wantPrefix {
+		if gotValues[i] != want {
+			t.Fatalf("Candidates()[%d] = %q, want %q (full: %v)", i, gotValues[i], want, gotValues)
+		}
+	}
+	idIndex := -1
+	textIndex := -1
+	for i, value := range gotValues {
+		switch value {
+		case `css:[id="123:456;a"]`:
+			idIndex = i
+		case `text:text="Save"`:
+			textIndex = i
+		}
+	}
+	if idIndex == -1 {
+		t.Fatalf("volatile Aura id candidate missing: %v", gotValues)
+	}
+	if textIndex == -1 {
+		t.Fatalf("text fallback missing: %v", gotValues)
+	}
+	if idIndex < textIndex {
+		t.Fatalf("volatile Aura id ranked above text fallback: %v", gotValues)
+	}
+}
