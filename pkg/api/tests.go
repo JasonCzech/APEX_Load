@@ -30,6 +30,7 @@ func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
 		return nil, false
 	}
 	cloned := *t
+	cloned.Groups = cloneArchiveTestGroups(t.Groups)
 	cloned.VUserRamps = cloneVUserRampStatusMap(t.VUserRamps)
 	cloned.GoalTargets = cloneGoalTargetStatusMap(t.GoalTargets)
 	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(t)
@@ -188,6 +189,7 @@ func (tr *TestRunner) PinComparisonBaseline(id string) (*ManagedTest, error) {
 		tr.saveManagedTestRecord(candidate)
 	}
 	cloned := *test
+	cloned.Groups = cloneArchiveTestGroups(test.Groups)
 	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(test)
 	return &cloned, nil
 }
@@ -205,6 +207,7 @@ func (tr *TestRunner) UnpinComparisonBaseline(id string) (*ManagedTest, error) {
 	test.BaselinePinnedAt = nil
 	tr.saveManagedTestRecord(test)
 	cloned := *test
+	cloned.Groups = cloneArchiveTestGroups(test.Groups)
 	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(test)
 	return &cloned, nil
 }

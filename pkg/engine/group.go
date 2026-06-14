@@ -368,7 +368,10 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 	}
 
 	wg.Add(1)
-	mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
+	mge.mu.Lock()
+	activeVUsers := mge.activeVUserCount()
+	mge.mu.Unlock()
+	mge.metrics.SetActiveVUsers(int64(activeVUsers))
 
 	go func() {
 		defer wg.Done()
@@ -403,6 +406,8 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 	}()
 }
 
+// activeVUserCount returns the number of live VUsers. Callers MUST hold mge.mu;
+// the spawn/teardown paths mutate vuserCancels under that lock.
 func (mge *MultiGroupEngine) activeVUserCount() int {
 	return len(mge.vuserCancels)
 }

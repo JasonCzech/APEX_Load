@@ -324,6 +324,8 @@ func TestSystemRestartDuplicateInFlight(t *testing.T) {
 	server, _, restarter, _ := newRestartServer(t, []GeneratorInventoryEntry{restartGeneratorEntry(target, "connected", 0)})
 	restarter.deleteStarted = make(chan struct{})
 	restarter.releaseDelete = make(chan struct{})
+	// Capture the channel before the restart goroutine can nil the field under f.mu.
+	deleteStarted := restarter.deleteStarted
 
 	firstDone := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
@@ -336,7 +338,7 @@ func TestSystemRestartDuplicateInFlight(t *testing.T) {
 		})
 		firstDone <- resp
 	}()
-	<-restarter.deleteStarted
+	<-deleteStarted
 
 	resp, result := postRestart(t, server, SystemRestartRequest{
 		TargetType:   restartTargetGenerator,
