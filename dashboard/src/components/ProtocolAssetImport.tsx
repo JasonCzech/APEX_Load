@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type StoredScript } from '../types'
-import { type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type HARImportSummary, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
+import { type AgentforceReview, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type HARImportSummary, type MulesoftReview, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
@@ -12,6 +12,7 @@ import ScriptImportReview from './ScriptImportReview'
 import SelectorCandidatesReview from './SelectorCandidatesReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
+import { salesforceApiSurfaceBreakdown, salesforceEndpointTotal } from './salesforceReviewSummary'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
 
@@ -63,9 +64,9 @@ const copy = {
   },
   raml: {
     title: 'Import RAML',
-    subtitle: 'Upload a RAML 1.0 JSON/YAML document and generate HTTP actions with resource, method, example, and OAuth2 review notes.',
-    accept: '.raml,.yaml,.yml,.json,application/json,application/yaml,text/yaml,text/plain',
-    drop: 'Drop a RAML file here',
+    subtitle: 'Upload a RAML 1.0 JSON/YAML document — or a .zip bundle whose !include files resolve together — and generate HTTP actions with resource, method, example, OAuth2, and Anypoint policy review notes.',
+    accept: '.raml,.yaml,.yml,.json,.zip,application/json,application/yaml,text/yaml,text/plain,application/zip',
+    drop: 'Drop a RAML file or .zip bundle here',
     button: 'Convert RAML',
   },
   postman: {
@@ -170,9 +171,14 @@ function salesforceReviewForImport(result?: ProtocolImportResult | null, script?
   return summaryReview || metadataReview || null
 }
 
-function endpointTotal(review: SalesforceReview, key: 'aura_endpoints' | 'lightning_endpoints' | 'login_flow') {
-  return (review[key] || []).reduce((sum, item) => sum + (item.count || 0), 0)
+// MuleSoft/Agentforce reviews are attached as preserved import metadata by the
+// relevant importers (RAML/OpenAPI/Postman → mulesoft+agentforce; Salesforce → agentforce).
+function preservedReviewForImport<T extends { detected: boolean }>(script: ScriptDefinition | null | undefined, key: string): T | null {
+  const review = script?.metadata?.import?.preserved?.[key] as T | undefined
+  return review && review.detected ? review : null
 }
+
+const endpointTotal = salesforceEndpointTotal
 
 export default function ProtocolAssetImport({ kind, projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
@@ -189,7 +195,17 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [retentionDays, setRetentionDays] = useState(7)
   const [messageError, setMessageError] = useState('')
   const [reviewMode, setReviewMode] = useState<'conversion' | 'validation'>('conversion')
+  const [ramlSupport, setRamlSupport] = useState<{ entries: RAMLSupportMatrixEntry[]; notes: string[] } | null>(null)
   const labels = copy[kind]
+
+  useEffect(() => {
+    if (kind !== 'raml') return
+    let cancelled = false
+    api.getRAMLSupportMatrix()
+      .then(response => { if (!cancelled) setRamlSupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
+      .catch(() => { if (!cancelled) setRamlSupport(null) })
+    return () => { cancelled = true }
+  }, [api, kind])
 
   const handleConvert = async (mode: 'conversion' | 'validation' = 'conversion') => {
     if (!file) {
@@ -233,6 +249,8 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const sourceReview = sourceReviewForImport(result, reviewedScript)
   const harSummary: HARImportSummary | undefined = kind === 'har' ? (result as HARImportResult | null | undefined)?.summary : undefined
   const salesforceReview = kind === 'salesforce' ? salesforceReviewForImport(result, reviewedScript) : null
+  const mulesoftReview = preservedReviewForImport<MulesoftReview>(reviewedScript, 'mulesoft_review')
+  const agentforceReview = preservedReviewForImport<AgentforceReview>(reviewedScript, 'agentforce_review')
   const ramlSummary = kind === 'raml' ? (result as RAMLImportResult | null | undefined)?.summary : undefined
   const harDiff = harSummary?.har_diff
 
@@ -327,6 +345,24 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
           {convertTask.pending && reviewMode === 'conversion' ? <><span className="spinner" /> Converting...</> : labels.button}
         </button>
       </div>
+
+      {kind === 'raml' && ramlSupport && ramlSupport.entries.length > 0 && (
+        <details className="sample-import-support-matrix">
+          <summary>RAML import coverage ({ramlSupport.entries.length} constructs)</summary>
+          <ul className="sample-import-findings">
+            {ramlSupport.entries.map(entry => (
+              <li key={entry.id}>
+                <strong>{entry.construct}</strong> — {entry.status}{entry.review_required ? ' (review)' : ''}{entry.notes ? `: ${entry.notes}` : ''}
+              </li>
+            ))}
+          </ul>
+          {ramlSupport.notes.length > 0 && (
+            <ul className="sample-import-findings">
+              {ramlSupport.notes.map((note, index) => <li key={`note-${index}`}>{note}</li>)}
+            </ul>
+          )}
+        </details>
+      )}
 
       {(messageError || convertTask.error) && <div className="sample-import-error">{messageError || convertTask.error}</div>}
 
@@ -445,6 +481,30 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
                     ))}
                   </ul>
                 )}
+                {salesforceApiSurfaceBreakdown(salesforceReview).length > 0 && (
+                  <>
+                    <p className="sample-import-subtitle">API surface</p>
+                    <ul className="sample-import-findings">
+                      {salesforceApiSurfaceBreakdown(salesforceReview).map(surface => (
+                        <li key={surface.key}>
+                          <strong>{surface.label}</strong> {surface.calls} call{surface.calls === 1 ? '' : 's'} across {surface.endpoints} endpoint{surface.endpoints === 1 ? '' : 's'}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {(salesforceReview.parameterizations?.length || 0) > 0 && (
+                  <>
+                    <p className="sample-import-subtitle">Aura parameterization candidates</p>
+                    <ul className="sample-import-findings">
+                      {salesforceReview.parameterizations!.slice(0, 6).map(param => (
+                        <li key={`${param.param_key}-${param.expression}`}>
+                          <strong>{param.param_key}</strong> ({param.kind}){param.sample_value ? ` e.g. ${param.sample_value}` : ''} → <code>{param.template}</code>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
                 {(salesforceReview.blockers?.length || salesforceReview.next_actions?.length) ? (
                   <ul className="sample-import-findings">
                     {salesforceReview.blockers?.slice(0, 4).map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
@@ -494,6 +554,83 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
                     ))}
                   </ul>
                 )}
+                {(ramlSummary?.policies?.length || 0) > 0 && (
+                  <ul className="sample-import-findings">
+                    {ramlSummary!.policies!.map(policy => (
+                      <li key={policy.policy}><strong>{policy.policy}</strong> — {policy.detail}{policy.scheme ? ` (${policy.scheme})` : ''}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            {mulesoftReview && (
+              <div className="sample-import-review-block">
+                <h4>MuleSoft / Anypoint Review</h4>
+                {(mulesoftReview.domains?.length || 0) > 0 && (
+                  <ul className="sample-import-findings">
+                    {mulesoftReview.domains!.slice(0, 5).map(domain => (
+                      <li key={`${domain.host}-${domain.kind}`}><strong>{domain.host}</strong> {domain.kind} ({domain.count} request{domain.count === 1 ? '' : 's'})</li>
+                    ))}
+                  </ul>
+                )}
+                {(mulesoftReview.policy_findings?.length || 0) > 0 && (
+                  <>
+                    <p className="sample-import-subtitle">Policies</p>
+                    <ul className="sample-import-findings">
+                      {mulesoftReview.policy_findings!.map((policy, index) => <li key={`policy-${index}`}><strong>{policy.policy}</strong> {policy.detail}</li>)}
+                    </ul>
+                  </>
+                )}
+                {(mulesoftReview.auth_findings?.length || 0) > 0 && (
+                  <>
+                    <p className="sample-import-subtitle">Auth</p>
+                    <ul className="sample-import-findings">
+                      {mulesoftReview.auth_findings!.map((auth, index) => <li key={`auth-${index}`}><strong>{auth.type}</strong> {auth.detail}</li>)}
+                    </ul>
+                  </>
+                )}
+                {(mulesoftReview.blockers?.length || mulesoftReview.next_actions?.length) ? (
+                  <ul className="sample-import-findings">
+                    {mulesoftReview.blockers?.slice(0, 4).map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
+                    {mulesoftReview.next_actions?.slice(0, 4).map(item => <li key={`next-${item}`}><strong>Next action</strong> {item}</li>)}
+                  </ul>
+                ) : null}
+              </div>
+            )}
+            {agentforceReview && (
+              <div className="sample-import-review-block">
+                <h4>Agentforce Agent API Review {agentforceReview.streaming ? <span className="tag-chip">streaming (SSE)</span> : null}</h4>
+                {(agentforceReview.lifecycle?.length || 0) > 0 && (
+                  <>
+                    <p className="sample-import-subtitle">Conversation lifecycle</p>
+                    <ul className="sample-import-findings">
+                      {agentforceReview.lifecycle!.map((step, index) => (
+                        <li key={`step-${index}`}><strong>{step.step}</strong> {step.method} {step.path}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {(agentforceReview.session_vars?.length || 0) > 0 && (
+                  <>
+                    <p className="sample-import-subtitle">Correlation</p>
+                    <ul className="sample-import-findings">
+                      {agentforceReview.session_vars!.map((sessionVar, index) => (
+                        <li key={`var-${index}`}><strong>{sessionVar.name}</strong> {sessionVar.type} <code>{sessionVar.expression}</code></li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {(agentforceReview.assertion_hints?.length || 0) > 0 && (
+                  <ul className="sample-import-findings">
+                    {agentforceReview.assertion_hints!.map((hint, index) => <li key={`hint-${index}`}><strong>Assertion</strong> {hint.detail}</li>)}
+                  </ul>
+                )}
+                {(agentforceReview.blockers?.length || agentforceReview.next_actions?.length) ? (
+                  <ul className="sample-import-findings">
+                    {agentforceReview.blockers?.slice(0, 4).map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
+                    {agentforceReview.next_actions?.slice(0, 4).map(item => <li key={`next-${item}`}><strong>Next action</strong> {item}</li>)}
+                  </ul>
+                ) : null}
               </div>
             )}
           </ScriptImportReview>

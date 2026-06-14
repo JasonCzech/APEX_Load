@@ -8,6 +8,7 @@ import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from '
 import ScriptImportReview from './ScriptImportReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
+import { salesforceApiSurfaceSummary } from './salesforceReviewSummary'
 import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuthoringState'
 import './EnterpriseArchiveImport.css'
 
@@ -1746,10 +1747,25 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
                       <dt>Correlations</dt>
                       <dd>{salesforceReview.native_preview?.correlations?.length || 0}</dd>
                     </div>
+                    <div>
+                      <dt>API surface</dt>
+                      <dd>{salesforceApiSurfaceSummary(salesforceReview)}</dd>
+                    </div>
+                    <div>
+                      <dt>Aura params</dt>
+                      <dd>{salesforceReview.parameterizations?.length || 0}</dd>
+                    </div>
                   </dl>
                   {salesforceReview.blockers?.length ? (
                     <ul className="lr-salesforce-blockers">
                       {salesforceReview.blockers.slice(0, 4).map((blocker, index) => <li key={index}>{blocker}</li>)}
+                    </ul>
+                  ) : null}
+                  {salesforceReview.parameterizations?.length ? (
+                    <ul className="lr-salesforce-blockers">
+                      {salesforceReview.parameterizations.slice(0, 4).map((param, index) => (
+                        <li key={index}>{param.param_key} ({param.kind}) → {param.template}</li>
+                      ))}
                     </ul>
                   ) : null}
                   {onEdit && salesforceNativeScript && renderEditorActionButtons([

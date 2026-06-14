@@ -889,7 +889,9 @@ function extractorTypeOptions(protocol: string): Array<[string, string]> {
   if (protocol.startsWith('jms') || protocol === 'websocket') {
     return [['jsonpath', 'JSONPath'], ['regex', 'Regex'], ['boundary', 'Boundary']]
   }
-  return [['jsonpath', 'JSONPath'], ['regex', 'Regex'], ['boundary', 'Boundary'], ['xpath', 'XPath']]
+  // HTTP family: include SSE modes for consuming text/event-stream responses
+  // (Agentforce streaming) — sse_concat joins data: frames, sse_event picks a named event.
+  return [['jsonpath', 'JSONPath'], ['jmespath', 'JMESPath'], ['regex', 'Regex'], ['boundary', 'Boundary'], ['xpath', 'XPath'], ['css', 'CSS'], ['sse_concat', 'SSE concat'], ['sse_event', 'SSE event']]
 }
 
 function extractorExpressionPlaceholder(protocol: string, source: string) {

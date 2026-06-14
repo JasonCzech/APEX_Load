@@ -273,18 +273,94 @@ export interface SalesforceNativePreview {
   correlations?: SalesforceCorrelationCandidate[]
 }
 
+export interface SalesforceParameterizationCandidate {
+  name: string
+  source: string
+  expression: string
+  action_seq?: number
+  param_key: string
+  sample_value?: string
+  kind: string
+  column: string
+  template: string
+}
+
 export interface SalesforceReview {
   detected: boolean
   domains?: SalesforceDomainObservation[]
   aura_endpoints?: SalesforceEndpointObservation[]
   lightning_endpoints?: SalesforceEndpointObservation[]
   login_flow?: SalesforceEndpointObservation[]
+  ui_api_endpoints?: SalesforceEndpointObservation[]
+  rest_endpoints?: SalesforceEndpointObservation[]
+  apex_rest_endpoints?: SalesforceEndpointObservation[]
+  composite_endpoints?: SalesforceEndpointObservation[]
+  graphql_endpoints?: SalesforceEndpointObservation[]
+  bulk_endpoints?: SalesforceEndpointObservation[]
+  agentforce_endpoints?: SalesforceEndpointObservation[]
   transactions?: SalesforceTransactionCandidate[]
+  parameterizations?: SalesforceParameterizationCandidate[]
   correlation_confidence?: string
   har_match_coverage: SalesforceHARMatchCoverage
   blockers?: string[]
   next_actions?: string[]
   native_preview?: SalesforceNativePreview
+}
+
+export interface MulesoftDomainObservation {
+  host: string
+  kind: string
+  count: number
+}
+
+export interface MulesoftPolicyFinding {
+  policy: string
+  detail: string
+  evidence?: string
+}
+
+export interface MulesoftAuthFinding {
+  type: string
+  detail: string
+}
+
+export interface MulesoftReview {
+  detected: boolean
+  domains?: MulesoftDomainObservation[]
+  policy_findings?: MulesoftPolicyFinding[]
+  auth_findings?: MulesoftAuthFinding[]
+  blockers?: string[]
+  next_actions?: string[]
+}
+
+export interface AgentforceLifecycleStep {
+  step: string
+  action_name?: string
+  method?: string
+  path?: string
+}
+
+export interface AgentforceSessionVar {
+  name: string
+  source: string
+  type: string
+  expression: string
+  detail?: string
+}
+
+export interface AgentforceAssertionHint {
+  step: string
+  detail: string
+}
+
+export interface AgentforceReview {
+  detected: boolean
+  streaming?: boolean
+  lifecycle?: AgentforceLifecycleStep[]
+  session_vars?: AgentforceSessionVar[]
+  assertion_hints?: AgentforceAssertionHint[]
+  blockers?: string[]
+  next_actions?: string[]
 }
 
 export interface EnterpriseArchiveProtocolSupportEntry {
@@ -543,12 +619,34 @@ export interface RAMLImportStats {
   auth_schemes_detected?: string[]
 }
 
+export interface RAMLPolicyHint {
+  policy: string
+  detail: string
+  scheme?: string
+}
+
 export interface RAMLImportSummary {
   title?: string
   version?: string
   base_url?: string
   resources?: string[]
   auth_schemes?: string[]
+  policies?: RAMLPolicyHint[]
+}
+
+export interface RAMLSupportMatrixEntry {
+  id: string
+  area: string
+  construct: string
+  status: string
+  review_required?: boolean
+  fields?: string[]
+  notes?: string
+}
+
+export interface RAMLSupportMatrixResponse {
+  support_matrix?: RAMLSupportMatrixEntry[]
+  notes?: string[]
 }
 
 export type RAMLImportResult = ScriptImportResult<RAMLImportStats, unknown, ScriptDefinition, unknown, RAMLImportSummary>

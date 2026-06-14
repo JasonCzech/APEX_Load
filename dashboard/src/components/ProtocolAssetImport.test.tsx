@@ -15,6 +15,7 @@ const apiMock = {
   importBrowserRecording: vi.fn(),
   importOpenAPI: vi.fn(),
   importRAML: vi.fn(),
+  getRAMLSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   importPostman: vi.fn(),
   importWSDL: vi.fn(),
   importAsyncAPI: vi.fn(),
@@ -157,6 +158,18 @@ describe('ProtocolAssetImport', () => {
         actions: [
           { name: 'Aura Bootstrap', type: 'request', method: 'POST', target: '/aura' },
         ],
+        metadata: {
+          import: {
+            preserved: {
+              agentforce_review: {
+                detected: true,
+                streaming: true,
+                lifecycle: [{ step: 'session_start', method: 'POST', path: '/einstein/ai-agent/v1/sessions' }],
+                session_vars: [{ name: 'agent_session_id', source: 'body', type: 'jsonpath', expression: '$.sessionId' }],
+              },
+            },
+          },
+        },
       },
       warnings: [],
       unsupported_elements: [],
@@ -186,6 +199,9 @@ describe('ProtocolAssetImport', () => {
           domains: [{ host: 'acme.my.salesforce.com', kind: 'lightning', count: 2 }],
           aura_endpoints: [{ method: 'POST', path: '/aura', host: 'acme.my.salesforce.com', count: 2 }],
           lightning_endpoints: [{ method: 'GET', path: '/lightning', host: 'acme.my.salesforce.com', count: 1 }],
+          apex_rest_endpoints: [{ method: 'GET', path: '/services/apexrest/Acct', host: 'acme.my.salesforce.com', count: 3 }],
+          composite_endpoints: [{ method: 'POST', path: '/services/data/v60.0/composite', host: 'acme.my.salesforce.com', count: 2 }],
+          parameterizations: [{ name: 'param_recordid', source: 'aura_message', expression: 'actions[0].params.recordId', param_key: 'recordId', sample_value: '001D000000IqhSLIAZ', kind: 'record_id', column: 'recordid', template: '{{data.salesforce_records.recordid}}' }],
           transactions: [{ name: 'Salesforce Login', source: 'har', request_count: 2, aura_actions: 1 }],
           correlation_confidence: 'high',
           har_match_coverage: { har_provided: true, imported_requests: 2, matched_requests: 2, coverage_pct: 100 },
@@ -204,6 +220,18 @@ describe('ProtocolAssetImport', () => {
         actions: [
           { name: 'GET /orders', type: 'request', method: 'GET', target: '/orders' },
         ],
+        metadata: {
+          import: {
+            preserved: {
+              mulesoft_review: {
+                detected: true,
+                domains: [{ host: 'orders.us-e2.cloudhub.io', kind: 'cloudhub', count: 1 }],
+                policy_findings: [{ policy: 'client_id_enforcement', detail: 'Anypoint Client ID Enforcement detected.' }],
+                auth_findings: [{ type: 'oauth2_client_credentials', detail: 'OAuth2 client-credentials flow wired via http_oauth2_token.' }],
+              },
+            },
+          },
+        },
       },
       warnings: [],
       unsupported_elements: [],
@@ -231,6 +259,7 @@ describe('ProtocolAssetImport', () => {
         base_url: 'https://api.example.test',
         resources: ['/orders'],
         auth_schemes: ['oauth_2_0'],
+        policies: [{ policy: 'client_id_enforcement', detail: 'Anypoint Client ID Enforcement detected.' }],
       },
     })
     apiMock.importBrowserRecording.mockResolvedValue({
@@ -480,14 +509,31 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('acme.my.salesforce.com')
     expect(container.textContent).toContain('Salesforce Login')
     expect(container.textContent).toContain('Review Salesforce correlation extractors before approval.')
+    // Broadened API surface (G3)
+    expect(container.textContent).toContain('API surface')
+    expect(container.textContent).toContain('Apex REST')
+    expect(container.textContent).toContain('Composite')
+    // Aura message parameterization candidates (G3)
+    expect(container.textContent).toContain('Aura parameterization candidates')
+    expect(container.textContent).toContain('recordId')
+    // Agentforce panel from preserved metadata (G4)
+    expect(container.textContent).toContain('Agentforce Agent API Review')
+    expect(container.textContent).toContain('streaming (SSE)')
   })
 
   it('imports RAML files through the shared protocol asset flow', async () => {
+    apiMock.getRAMLSupportMatrix.mockResolvedValue({
+      support_matrix: [{ id: 'raml-resources', area: 'Resources', construct: 'nested resources + URI params', status: 'supported' }],
+      notes: ['RAML import targets common HTTP/JSON API specifications.'],
+    })
     await act(async () => {
       root.render(<ProtocolAssetImport kind="raml" projectId="project-1" />)
     })
+    await flushPromises()
 
     expect(container.textContent).toContain('Import RAML')
+    // RAML support-matrix panel (G2)
+    expect(container.textContent).toContain('RAML import coverage')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
     expect(fileInput).not.toBeNull()
@@ -516,6 +562,10 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('/orders')
     expect(container.textContent).toContain('oauth_2_0')
     expect(container.textContent).toContain('http_oauth2_token')
+    // RAML Anypoint policy hint (G4) + MuleSoft panel from preserved metadata (G4)
+    expect(container.textContent).toContain('client_id_enforcement')
+    expect(container.textContent).toContain('MuleSoft / Anypoint Review')
+    expect(container.textContent).toContain('orders.us-e2.cloudhub.io')
   })
 
   it('converts browser recordings and renders ranked selector candidates', async () => {

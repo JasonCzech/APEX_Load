@@ -27,7 +27,7 @@ import {
 } from '../../types'
 import { type AuthoringTemplate } from '../../types'
 import { type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
-import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -510,6 +510,11 @@ export function useScriptApi() {
     [],
   )
 
+  const getRAMLSupportMatrix = useCallback(
+    () => request<RAMLSupportMatrixResponse>('/scripts/import/raml/support-matrix'),
+    [],
+  )
+
   const saveJMeterImport = useCallback(
     (payload: SaveJMeterImportRequest) =>
       request<SaveJMeterImportResponse>('/scripts/import/jmeter/save', { method: 'POST', body: JSON.stringify(payload) }),
@@ -829,6 +834,7 @@ export function useScriptApi() {
       importJMeter,
       validateJMeterImport,
       getJMeterSupportMatrix,
+      getRAMLSupportMatrix,
       saveJMeterImport,
       importSample,
       importDevWeb,
@@ -899,6 +905,7 @@ export function useScriptApi() {
       importJMeter,
       validateJMeterImport,
       getJMeterSupportMatrix,
+      getRAMLSupportMatrix,
       saveJMeterImport,
       importSample,
       importDevWeb,
