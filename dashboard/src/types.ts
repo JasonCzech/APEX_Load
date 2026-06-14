@@ -839,6 +839,8 @@ export interface ServerTelemetry {
   messages_sent_per_sec?: number
   messages_received_per_sec?: number
   consumer_lag_ms?: number
+  first_event_ms?: number
+  event_count?: number
   connection_reused?: boolean
 }
 
@@ -858,6 +860,9 @@ export interface ServerTelemetrySummary {
   avg_messages_received_per_sec?: number
   avg_consumer_lag_ms?: number
   max_consumer_lag_ms?: number
+  avg_first_event_ms?: number
+  max_first_event_ms?: number
+  event_count?: number
   request_size_classes?: Record<string, number>
   response_size_classes?: Record<string, number>
   connection_reused_count?: number
@@ -2400,6 +2405,7 @@ export interface DeploymentIdentity {
   bind_scope: 'loopback' | 'wide' | string
   auth_enforced: boolean
   desktop_available: boolean
+  client_downloads_enabled: boolean
 }
 
 export interface HealthResponse {
@@ -3479,6 +3485,10 @@ export interface DashboardClientAppSettings {
   availability: 'enabled' | 'disabled' | string
 }
 
+export interface DashboardClientDownloadsSettings {
+  enabled: boolean
+}
+
 export interface DashboardSystemSettings {
   general: DashboardGeneralSettings
   thresholds: DashboardThresholdSettings
@@ -3490,6 +3500,7 @@ export interface DashboardSystemSettings {
   github: DashboardGitHubSettings
   prometheus: DashboardPrometheusSettings
   client_app: DashboardClientAppSettings
+  client_downloads: DashboardClientDownloadsSettings
 }
 
 export interface PrometheusPoint {

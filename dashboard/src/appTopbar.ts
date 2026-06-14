@@ -78,10 +78,14 @@ export function pageTitleForScriptSubView(subView?: string): string {
       return 'Import DevWeb'
     case 'har-import':
       return 'Import HAR'
+    case 'salesforce-import':
+      return 'Import Salesforce'
     case 'recorder-import':
       return 'Import Browser Recording'
     case 'openapi-import':
       return 'Import OpenAPI'
+    case 'raml-import':
+      return 'Import RAML'
     case 'postman-import':
       return 'Import Postman'
     case 'wsdl-import':

@@ -27,7 +27,7 @@ import {
 } from '../../types'
 import { type AuthoringTemplate } from '../../types'
 import { type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
-import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -584,6 +584,24 @@ export function useScriptApi() {
     [],
   )
 
+  const importSalesforce = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<SalesforceImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+
+      const res = await apiFetch('/scripts/import/salesforce', { method: 'POST', body: formData })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json() as Promise<SalesforceImportResult>
+    },
+    [],
+  )
+
   const importBrowserRecording = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<BrowserRecordingImportResult> => {
       const formData = new FormData()
@@ -616,6 +634,24 @@ export function useScriptApi() {
         throw new Error(body.error || res.statusText)
       }
       return res.json() as Promise<OpenAPIImportResult>
+    },
+    [],
+  )
+
+  const importRAML = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<RAMLImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('script_name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+
+      const res = await apiFetch('/scripts/import/raml', { method: 'POST', body: formData })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json() as Promise<RAMLImportResult>
     },
     [],
   )
@@ -797,8 +833,10 @@ export function useScriptApi() {
       importSample,
       importDevWeb,
       importHAR,
+      importSalesforce,
       importBrowserRecording,
       importOpenAPI,
+      importRAML,
       importPostman,
       importWSDL,
       importAsyncAPI,
@@ -865,8 +903,10 @@ export function useScriptApi() {
       importSample,
       importDevWeb,
       importHAR,
+      importSalesforce,
       importBrowserRecording,
       importOpenAPI,
+      importRAML,
       importPostman,
       importWSDL,
       importAsyncAPI,

@@ -527,11 +527,31 @@ export type JMeterImportResult = ScriptImportResult<JMeterConvertStats, unknown,
 export type SampleImportResult = ScriptImportResult<SampleImportStats, SampleCorrelation>
 export type DevWebImportResult = ScriptImportResult<DevWebImportStats, unknown>
 export type HARImportResult = ScriptImportResult<HARImportStats, SampleCorrelation, ScriptDefinition, unknown, HARImportSummary>
+export type SalesforceImportResult = ScriptImportResult<HARImportStats, SalesforceCorrelationCandidate, ScriptDefinition, unknown, HARImportSummary & { salesforce_review?: SalesforceReview }>
 export type OpenAPIImportResult = ScriptImportResult<OpenAPIImportStats, unknown>
 export type PostmanImportResult = ScriptImportResult<PostmanImportStats, unknown>
 export type WSDLImportResult = ScriptImportResult<WSDLImportStats, unknown>
 export type AsyncAPIImportResult = ScriptImportResult<AsyncAPIImportStats, unknown>
 export type RecorderImportResult = ScriptImportResult<Record<string, unknown>, RecorderCorrelation>
+
+export interface RAMLImportStats {
+  format: string
+  total_resources: number
+  total_methods: number
+  converted_actions: number
+  request_bodies: number
+  auth_schemes_detected?: string[]
+}
+
+export interface RAMLImportSummary {
+  title?: string
+  version?: string
+  base_url?: string
+  resources?: string[]
+  auth_schemes?: string[]
+}
+
+export type RAMLImportResult = ScriptImportResult<RAMLImportStats, unknown, ScriptDefinition, unknown, RAMLImportSummary>
 
 export interface BrowserRecordingImportStats {
   format: string

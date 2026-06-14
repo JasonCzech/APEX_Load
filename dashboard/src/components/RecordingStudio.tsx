@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, type MouseEvent } from 'react'
-import { downloadBlob } from '../utils/fileUtils'
+import { downloadBlob, downloadFilenameFromDisposition } from '../utils/fileUtils'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { API_ORIGIN, apiFetch, trimTrailingSlash } from '../hooks/apiClient'
 import { Project } from '../types'
-import { type RecorderImportResult } from '../types/scriptImports'
+import { type RecorderImportResult, type SalesforceImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import BrowserRecorderControlPanel from './BrowserRecorderControlPanel'
@@ -72,6 +72,26 @@ function confidenceTone(confidence?: number): 'high' | 'medium' | 'low' | null {
   if (confidence >= 0.8) return 'high'
   if (confidence >= 0.6) return 'medium'
   return 'low'
+}
+
+function safeRecordingFileName(name?: string): string {
+  return (name || 'recording').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'recording'
+}
+
+function recordingLooksSalesforce(session: RecordingSession): boolean {
+  const text = [
+    session.base_url,
+    ...((session.requests || []).flatMap(req => [req.host, req.url, req.path, req.content_type])),
+  ].join(' ').toLowerCase()
+  return [
+    'salesforce.com',
+    '.force.com',
+    'lightning.force',
+    '/aura',
+    'agentforce',
+    'mulesoft',
+    'anypoint',
+  ].some(signal => text.includes(signal))
 }
 
 interface RecorderStatus {
@@ -198,10 +218,6 @@ function recordingAgentDownloadConfig(): { url: string; managed: boolean } {
   }
 }
 
-function downloadFilenameFromDisposition(disposition: string | null): string {
-  const match = disposition?.match(/filename="?([^";]+)"?/i)
-  return match?.[1] || 'apexload-recording-agent.tar.gz'
-}
 
 function bridgePairingErrorMessage(error: any, bridgeOrigin: string): string {
   const message = error?.message || ''
@@ -316,6 +332,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const [bridgeStatus, setBridgeStatus] = useState('')
   const [bridgeStatusTone, setBridgeStatusTone] = useState<'info' | 'success' | 'error'>('info')
   const convertTask = useAsyncTask<RecorderImportResult>()
+  const salesforceTask = useAsyncTask<SalesforceImportResult>()
 
   const proxyPort = recorderProxyPort(proxyAddr)
 
@@ -356,7 +373,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
         throw new Error('Recording Agent download endpoint returned the dashboard instead of an agent archive. Restart the controller with the latest build and stage the agent packages.')
       }
       const blob = await res.blob()
-      downloadBlob(blob, downloadFilenameFromDisposition(res.headers.get('content-disposition')))
+      downloadBlob(blob, downloadFilenameFromDisposition(res.headers.get('content-disposition'), 'apexload-recording-agent.tar.gz'))
       showFeedback('APEX Load Recording Agent download started')
     } catch (e: any) {
       showFeedback(e.message || 'Failed to download the APEX Load Recording Agent', 'error')
@@ -719,9 +736,31 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
         throw new Error(payload.error || 'Failed to export HAR')
       }
       const blob = await res.blob()
-      const safeName = (session.name || 'recording').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-      downloadBlob(blob, `${safeName || 'recording'}.har`)
+      const safeName = safeRecordingFileName(session.name)
+      downloadBlob(blob, `${safeName}.har`)
       showFeedback(`Exported "${session.name}" as HAR`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleReviewSalesforceSession = async (session: RecordingSession) => {
+    try {
+      const result = await salesforceTask.run(async () => {
+        const res = await apiFetch(`/recorder/${session.id}/export?format=har`)
+        if (!res.ok) {
+          const payload = await res.json().catch(() => ({ error: 'Failed to export HAR' }))
+          throw new Error(payload.error || 'Failed to export HAR')
+        }
+        const blob = await res.blob()
+        const file = new File([blob], `${safeRecordingFileName(session.name)}.har`, { type: blob.type || 'application/json' })
+        return api.importSalesforce(file, {
+          name: `${session.name} Salesforce HTTP`,
+          base_url: session.base_url,
+          project_id: activeProject?.id,
+        })
+      }, { clearValue: true })
+      showFeedback(`Salesforce HTTP draft generated with ${result.script?.actions?.length || 0} actions`)
     } catch (e: any) {
       showFeedback(e.message, 'error')
     }
@@ -769,6 +808,27 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
     }
   }
 
+  const handleEditSalesforceScript = () => {
+    const script = salesforceTask.value?.script || salesforceTask.value?.scripts?.[0]
+    if (script) {
+      onEdit?.(script)
+    }
+  }
+
+  const handleSaveSalesforceScript = async () => {
+    const script = salesforceTask.value?.script || salesforceTask.value?.scripts?.[0]
+    if (!script) {
+      return
+    }
+    try {
+      const savedScript = await api.createScript(script, activeProject?.id)
+      showFeedback(`Salesforce HTTP script "${script.name}" saved to the script library`)
+      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, script)] })
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
   const handleDelete = async (id: string) => {
     try {
       await api.deleteRecording(id)
@@ -783,6 +843,9 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const convertResult = convertTask.value
   const convertedScript = convertResult?.script
   const converting = convertTask.pending
+  const salesforceResult = salesforceTask.value
+  const salesforceScript = salesforceResult?.script || salesforceResult?.scripts?.[0]
+  const reviewingSalesforce = salesforceTask.pending
   const browserUnavailableReason = browserAvailability?.reason?.trim() || ''
   const browserUnavailableDueToDisplay = browserUnavailableReason.toLowerCase().includes('no display detected')
   const canRetryBrowserInstall = browserRecorderInstallRetryable(browserUnavailableReason, installState)
@@ -1334,6 +1397,15 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
                   >
                     Review Script
                   </button>
+                  {recordingLooksSalesforce(session) && (
+                    <button
+                      className="btn btn-sm btn-secondary"
+                      onClick={(e) => { e.stopPropagation(); handleReviewSalesforceSession(session) }}
+                      disabled={reviewingSalesforce}
+                    >
+                      {reviewingSalesforce ? 'Reviewing...' : 'Review Salesforce HTTP'}
+                    </button>
+                  )}
                   <button
                     className="btn btn-sm btn-secondary"
                     onClick={(e) => { e.stopPropagation(); handleExportHAR(session) }}
@@ -1533,6 +1605,37 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
             <div className="rec-warnings">
               {convertResult.warnings.map((w, i) => (
                 <div key={i} className="rec-warning-item">{w}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {salesforceResult && salesforceScript && (
+        <div className="rec-convert-result">
+          <h3 className="rec-section-title">Salesforce HTTP Draft</h3>
+          <div className="rec-result-summary">
+            <div className="rec-result-item">
+              <span className="rec-result-label">Script</span>
+              <span className="rec-result-value">{salesforceScript.name}</span>
+            </div>
+            <div className="rec-result-item">
+              <span className="rec-result-label">Protocol</span>
+              <span className="rec-result-value">{salesforceScript.protocol}</span>
+            </div>
+            <div className="rec-result-item">
+              <span className="rec-result-label">HAR Coverage</span>
+              <span className="rec-result-value">{Math.round(salesforceResult.summary?.salesforce_review?.har_match_coverage?.coverage_pct || 0)}%</span>
+            </div>
+          </div>
+          <div className="rec-result-actions">
+            <button className="btn btn-primary" type="button" onClick={handleSaveSalesforceScript}>Save To Script Library</button>
+            {onEdit && <button className="btn btn-secondary" type="button" onClick={handleEditSalesforceScript}>Open In Visual Editor</button>}
+          </div>
+          {(salesforceResult.warnings?.length || 0) > 0 && (
+            <div className="rec-warnings">
+              {salesforceResult.warnings.slice(0, 4).map((warning, idx) => (
+                <div key={idx} className="rec-warning-item">{warning}</div>
               ))}
             </div>
           )}

@@ -26,6 +26,7 @@ const apiMock = {
   getRecording: vi.fn(),
   previewRecordingConversion: vi.fn(),
   convertRecording: vi.fn(),
+  importSalesforce: vi.fn(),
   createScript: vi.fn(),
   startRecording: vi.fn(),
   stopRecording: vi.fn(),
@@ -176,6 +177,29 @@ describe('RecordingStudio', () => {
       review_sections: [],
       stats: {},
       summary: {},
+    })
+    apiMock.importSalesforce.mockResolvedValue({
+      scripts: [],
+      script: {
+        name: 'Salesforce Capture HTTP',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://acme.my.salesforce.com' },
+        actions: [{ name: 'Aura Bootstrap', type: 'request', method: 'POST', target: '/aura' }],
+      },
+      warnings: ['Review Salesforce correlation extractors before approval.'],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: { converted_actions: 1 },
+      summary: {
+        salesforce_review: {
+          detected: true,
+          har_match_coverage: { har_provided: true, imported_requests: 1, matched_requests: 1, coverage_pct: 100 },
+        },
+      },
     })
     apiMock.createScript.mockImplementation(async (script: { name?: string; protocol?: string; version?: string }) => ({
       id: 'script-1',
@@ -482,6 +506,83 @@ describe('RecordingStudio', () => {
         name: 'Checkout Preview',
         protocol: 'http',
       })],
+    }))
+  })
+
+  it('reviews Salesforce-looking proxy recordings through the native HTTP importer', async () => {
+    const onImported = vi.fn()
+    const onEdit = vi.fn()
+    apiMock.listRecordings.mockResolvedValueOnce({
+      sessions: [{
+        id: 'rec-sf',
+        name: 'Salesforce Capture',
+        status: 'stopped',
+        started_at: '2026-05-12T20:00:00Z',
+        base_url: 'https://acme.my.salesforce.com',
+        requests: [{
+          seq: 1,
+          timestamp: '2026-05-12T20:00:01Z',
+          method: 'POST',
+          url: 'https://acme.my.salesforce.com/aura',
+          path: '/aura',
+          host: 'acme.my.salesforce.com',
+          status_code: 200,
+          response_time_ms: 88,
+          content_type: 'application/json',
+          body: '',
+          think_time_ms: 0,
+          is_static: false,
+        }],
+        filters: { exclude_static: true },
+      }],
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio onImported={onImported} onEdit={onEdit} />)
+    })
+    await flushPromises()
+    await openProxyAdvanced(container)
+
+    expect(container.textContent).toContain('Review Salesforce HTTP')
+
+    const reviewButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Review Salesforce HTTP')
+    expect(reviewButton).toBeDefined()
+    if (!reviewButton) return
+
+    await act(async () => {
+      reviewButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/recorder/rec-sf/export?format=har')
+    expect(apiMock.importSalesforce).toHaveBeenCalledWith(expect.any(File), expect.objectContaining({
+      name: 'Salesforce Capture Salesforce HTTP',
+      base_url: 'https://acme.my.salesforce.com',
+    }))
+    expect(container.textContent).toContain('Salesforce HTTP Draft')
+    expect(container.textContent).toContain('Salesforce Capture HTTP')
+    expect(container.textContent).toContain('100%')
+    expect(container.textContent).toContain('Review Salesforce correlation extractors before approval.')
+
+    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Open In Visual Editor')
+    expect(editButton).toBeDefined()
+    if (!editButton) return
+    await act(async () => {
+      editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ name: 'Salesforce Capture HTTP', protocol: 'http' }))
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save To Script Library')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ name: 'Salesforce Capture HTTP' }), undefined)
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ name: 'Salesforce Capture HTTP' })],
     }))
   })
 

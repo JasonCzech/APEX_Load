@@ -5,7 +5,7 @@ import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createJavaHttpDraft, createJmsDraft, createKafkaDraft, createNetworkDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
 
-export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'recorder-import' | 'sample' | 'java-http-import' | 'devweb-import' | 'har-import' | 'openapi-import' | 'postman-import' | 'wsdl-import' | 'asyncapi-import'
+export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'recorder-import' | 'sample' | 'java-http-import' | 'devweb-import' | 'har-import' | 'salesforce-import' | 'openapi-import' | 'raml-import' | 'postman-import' | 'wsdl-import' | 'asyncapi-import'
 
 export interface DraftEditorFocus {
 	targetAction?: string | null
@@ -61,8 +61,10 @@ export interface ScriptsCreateOptionActions {
   openJavaHttpImport: () => void
   openDevWebImport: () => void
   openHARImport: () => void
+  openSalesforceImport: () => void
   openBrowserRecordingImport: () => void
   openOpenAPIImport: () => void
+  openRAMLImport: () => void
   openPostmanImport: () => void
   openWSDLImport: () => void
   openAsyncAPIImport: () => void
@@ -174,12 +176,20 @@ export function useScriptsAuthoringState({
     setSubview('har-import')
   }, [setSubview])
 
+  const openSalesforceImport = useCallback(() => {
+    setSubview('salesforce-import')
+  }, [setSubview])
+
   const openBrowserRecordingImport = useCallback(() => {
     setSubview('recorder-import')
   }, [setSubview])
 
   const openOpenAPIImport = useCallback(() => {
     setSubview('openapi-import')
+  }, [setSubview])
+
+  const openRAMLImport = useCallback(() => {
+    setSubview('raml-import')
   }, [setSubview])
 
   const openPostmanImport = useCallback(() => {
@@ -343,8 +353,10 @@ export function useScriptsAuthoringState({
       openJavaHttpImport,
       openDevWebImport,
       openHARImport,
+      openSalesforceImport,
       openBrowserRecordingImport,
       openOpenAPIImport,
+      openRAMLImport,
       openPostmanImport,
       openWSDLImport,
       openAsyncAPIImport,
