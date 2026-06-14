@@ -1,0 +1,9 @@
+{{- if .Values.namespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "apexload.namespace" . }}
+  labels:
+    app.kubernetes.io/name: apexload
+{{ include "apexload.labels" . | indent 4 }}
+{{- end }}

@@ -3,15 +3,17 @@ import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
-import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, SystemServicesResponse, TelemetryDiagnosticEntry } from '../types'
+import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryGenerator, SystemInventoryResponse, SystemReadinessResponse, SystemRestartCapabilities, SystemRestartRequest, SystemServicesResponse, TelemetryDiagnosticEntry } from '../types'
 import { readStoredStringArray, writeStoredJSON } from '../utils/browserStorage'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
+import ConfirmDestructiveModal, { type DestructiveConfirmation } from './ConfirmDestructiveModal'
 import './CreateTestModal.css'
 
 interface Props {
   connectionState: WebSocketConnectionState
   telemetryDiagnostics?: TelemetryDiagnosticEntry[]
   onSelectTest?: (id: string) => void
+  canManageSystem?: boolean
 }
 
 const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
@@ -27,6 +29,18 @@ const MONITOR_CATEGORIES = [
 type MonitorCategoryId = typeof MONITOR_CATEGORIES[number]['id']
 type RunCalendarView = 'month' | 'week' | 'day'
 type RunCalendarFilter = 'all' | 'cron' | 'ad_hoc' | 'current'
+
+type RestartAction = {
+  targetType: SystemRestartRequest['target_type']
+  scope: SystemRestartRequest['scope']
+  target: string
+  title: string
+  description: string
+  targetLabel: string
+  confirmLabel: string
+  warning?: string
+  forceDescription?: string
+}
 
 function formatReadinessStatus(status?: string): string {
   switch (status) {
@@ -66,7 +80,42 @@ function safeApiCall<T>(request: () => Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest }: Props) {
+function formatBuildVersion(version?: string, displayVersion?: string): string {
+  const raw = (displayVersion || version || '').trim()
+  if (!raw) return '-'
+  if (/^[0-9a-fA-F]{12,64}$/.test(raw)) return `dev+${raw.slice(0, 7)}`
+  if (raw.length > 1 && /^[vV][0-9]/.test(raw)) return raw
+  return /^[0-9]/.test(raw) ? `v${raw}` : raw
+}
+
+function disabledRestartCapabilities(reason: string): SystemRestartCapabilities {
+  return {
+    enabled: false,
+    disabled_reason: reason,
+    execution_mode: 'unknown',
+    allow_force: false,
+    supports: {
+      controller_workload: false,
+      generator_workload: false,
+      generator_pod: false,
+    },
+  }
+}
+
+function restartErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null) {
+    const payload = (error as { payload?: unknown }).payload
+    if (typeof payload === 'object' && payload !== null) {
+      const message = (payload as { message?: unknown; error?: unknown }).message || (payload as { error?: unknown }).error
+      if (typeof message === 'string' && message.trim()) return message
+    }
+    const message = (error as { message?: unknown }).message
+    if (typeof message === 'string' && message.trim()) return message
+  }
+  return 'Restart request failed.'
+}
+
+export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [health, setHealth] = useState<HealthResponse | null>(null)
@@ -84,6 +133,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [fleetAlerts, setFleetAlerts] = useState<FleetAlert[]>([])
   const [fleetCapacity, setFleetCapacity] = useState<FleetCapacityResponse | null>(null)
   const [provisioner, setProvisioner] = useState<ProvisionerInfo | null>(null)
+  const [restartCapabilities, setRestartCapabilities] = useState<SystemRestartCapabilities | null>(null)
+  const [restartAction, setRestartAction] = useState<RestartAction | null>(null)
+  const [restartError, setRestartError] = useState<string | null>(null)
+  const [restartMessage, setRestartMessage] = useState<string | null>(null)
+  const [restartLoading, setRestartLoading] = useState(false)
   const [isTelemetryModalOpen, setIsTelemetryModalOpen] = useState(false)
   const [isGeneratorsModalOpen, setIsGeneratorsModalOpen] = useState(false)
   const [activeCategoryId, setActiveCategoryId] = useState<MonitorCategoryId>('overview')
@@ -102,6 +156,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ? `${telemetryWarningCount} warning`
       : 'healthy'
   const generators = inventory?.generators ?? EMPTY_GENERATORS
+  const canRestart = canManageSystem && Boolean(restartCapabilities?.enabled)
+  const restartDisabledReason = canManageSystem
+    ? restartCapabilities?.disabled_reason || (restartCapabilities ? '' : 'Restart capability status is unavailable.')
+    : ''
   const generatorConnectedCount = generators.filter(generator => generator.status === 'connected').length
   const generatorIssueCount = generators.length - generatorConnectedCount
   const generatorAvailableCapacity = generators.reduce((sum, generator) => sum + generator.available_capacity, 0)
@@ -204,9 +262,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       return
     }
     try {
-      const [healthRes, inventoryRes, readinessRes, servicesRes, scheduleHealthRes, runCalendarRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetCapacityRes, provisionerRes] = await Promise.all([
+      const [healthRes, inventoryRes, restartCapsRes, readinessRes, servicesRes, scheduleHealthRes, runCalendarRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetCapacityRes, provisionerRes] = await Promise.all([
         api.getHealth(),
         api.getSystemInventory().catch(() => null),
+        canManageSystem ? api.getRestartCapabilities().catch(() => disabledRestartCapabilities('Restart capability status is unavailable.')) : Promise.resolve(null),
         api.getSystemReadiness().catch(() => null),
         api.getSystemServices().catch(() => null),
         api.getScheduleHealth().catch(() => null),
@@ -223,6 +282,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ])
       setHealth(healthRes)
       setInventory(inventoryRes)
+      setRestartCapabilities(restartCapsRes)
       setSystemReadiness(readinessRes)
       setSystemServices(servicesRes)
       setScheduleHealth(scheduleHealthRes)
@@ -236,7 +296,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     } catch {
       // API not available
     }
-  }, [activeProject?.id, api, calendarRange.from, calendarRange.to])
+  }, [activeProject?.id, api, calendarRange.from, calendarRange.to, canManageSystem])
 
   useEffect(() => {
     refresh()
@@ -281,6 +341,86 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     }
   }, [onSelectTest, selectedCalendarEvent?.test_id])
 
+  const openGeneratorPodRestart = useCallback((generator: SystemInventoryGenerator) => {
+    const target = generator.pod_name || generator.target
+    setRestartError(null)
+    setRestartMessage(null)
+    setRestartAction({
+      targetType: 'generator',
+      scope: 'pod',
+      target,
+      title: 'Restart Generator Pod',
+      description: 'Delete one generator pod and let Kubernetes recreate it.',
+      targetLabel: 'Generator pod',
+      confirmLabel: 'Restart Pod',
+      warning: generator.active_vusers > 0
+        ? `${generator.active_vusers.toLocaleString()} active VUsers are currently assigned to this generator.`
+        : generator.status === 'connected' || generator.status === 'healthy' || generator.status === 'ready'
+          ? 'Idle generator pod restart requested.'
+          : 'This generator is not reachable, so Kubernetes state is the source of truth.',
+      forceDescription: 'Required for active VUsers or unreachable generators. Active work can be interrupted.',
+    })
+  }, [])
+
+  const openGeneratorWorkloadRestart = useCallback(() => {
+    const target = restartCapabilities?.generator_stateful_set || 'apexload-generator'
+    setRestartError(null)
+    setRestartMessage(null)
+    setRestartAction({
+      targetType: 'generator',
+      scope: 'workload',
+      target,
+      title: 'Restart Generator Fleet',
+      description: 'Roll the configured generator StatefulSet.',
+      targetLabel: 'StatefulSet',
+      confirmLabel: 'Restart Fleet',
+      warning: generatorActiveVUsers > 0
+        ? `${generatorActiveVUsers.toLocaleString()} active VUsers are running across the generator fleet.`
+        : 'All generator pods in the StatefulSet will be replaced by Kubernetes.',
+      forceDescription: 'Allows the rollout even when generators have active VUsers or runs are active.',
+    })
+  }, [generatorActiveVUsers, restartCapabilities?.generator_stateful_set])
+
+  const openControllerRestart = useCallback(() => {
+    const target = restartCapabilities?.controller_deployment || 'apexload-controller'
+    setRestartError(null)
+    setRestartMessage(null)
+    setRestartAction({
+      targetType: 'controller',
+      scope: 'workload',
+      target,
+      title: 'Restart Controller',
+      description: 'Roll the configured controller Deployment.',
+      targetLabel: 'Deployment',
+      confirmLabel: 'Restart Controller',
+      warning: 'Any in-flight runs will be marked FAILED if the controller restarts before they complete.',
+      forceDescription: 'Allows the rollout while runs are initializing, running, paused, stopping, or in shakeout.',
+    })
+  }, [restartCapabilities?.controller_deployment])
+
+  const submitRestart = useCallback(async ({ reason, confirmation, force }: DestructiveConfirmation) => {
+    if (!restartAction) return
+    setRestartLoading(true)
+    setRestartError(null)
+    try {
+      const result = await api.executeRestart({
+        target_type: restartAction.targetType,
+        scope: restartAction.scope,
+        target: restartAction.target,
+        reason,
+        confirmation,
+        force,
+      })
+      setRestartMessage(result.message || 'Restart requested.')
+      setRestartAction(null)
+      await refresh()
+    } catch (error) {
+      setRestartError(restartErrorMessage(error))
+    } finally {
+      setRestartLoading(false)
+    }
+  }, [api, refresh, restartAction])
+
   const cards = useMemo<MonitorCard[]>(() => [
     {
       id: 'system-health',
@@ -298,7 +438,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Version</span>
-            <span className="monitor-value">{health?.version || '-'}</span>
+            <span className="monitor-value">{formatBuildVersion(health?.version, health?.display_version)}</span>
           </div>
           <div className="monitor-row">
             <span className="monitor-label">WebSocket</span>
@@ -408,7 +548,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Version</span>
-            <span className="monitor-value">{health?.version || '-'}</span>
+            <span className="monitor-value">{formatBuildVersion(health?.version, health?.display_version)}</span>
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Active Tests</span>
@@ -434,6 +574,17 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             <span className="monitor-label">Address</span>
             <span className="monitor-value cell-mono">{inventory?.controller.address || '-'}</span>
           </div>
+          {canRestart && restartCapabilities?.supports.controller_workload && (
+            <div className="monitor-action-row">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={openControllerRestart}
+              >
+                Restart Controller
+              </button>
+            </div>
+          )}
         </div>
       ),
     },
@@ -827,7 +978,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         />
       ),
     },
-  ], [apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, websocketLabel, websocketValueClass])
+  ], [apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, restartCapabilities?.supports.controller_workload, restartDisabledReason, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))
@@ -1010,6 +1161,12 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       )}
 
+      {restartMessage && (
+        <div className="monitor-restart-banner" role="status">
+          {restartMessage}
+        </div>
+      )}
+
       {isTelemetryModalOpen && telemetryDiagnostics.length > 0 && (
         <div className="modal-overlay" onClick={() => setIsTelemetryModalOpen(false)}>
           <div className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="telemetry-diagnostics-title" onClick={(event) => event.stopPropagation()}>
@@ -1065,17 +1222,77 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                 <span className="telemetry-summary-label">Active VUsers</span>
               </div>
             </div>
+            {canRestart && (
+              <div className="monitor-restart-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={openGeneratorWorkloadRestart}
+                  disabled={!restartCapabilities?.supports.generator_workload}
+                >
+                  Restart Generator Fleet
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={openControllerRestart}
+                  disabled={!restartCapabilities?.supports.controller_workload}
+                >
+                  Restart Controller
+                </button>
+                {restartMessage && <span className="monitor-action-message">{restartMessage}</span>}
+              </div>
+            )}
+            {canManageSystem && !canRestart && restartDisabledReason && <p className="monitor-action-message muted">{restartDisabledReason}</p>}
             <div className="monitor-body telemetry-modal-body">
-              <GeneratorInventoryList generators={generators} />
+              <GeneratorInventoryList
+                generators={generators}
+                canRestart={canRestart && Boolean(restartCapabilities?.supports.generator_pod)}
+                restartDisabledReason={restartDisabledReason}
+                onRestartGenerator={openGeneratorPodRestart}
+              />
             </div>
           </div>
         </div>
+      )}
+
+      {restartAction && (
+        <ConfirmDestructiveModal
+          title={restartAction.title}
+          description={restartAction.description}
+          target={restartAction.target}
+          targetLabel={restartAction.targetLabel}
+          confirmLabel={restartAction.confirmLabel}
+          allowForce={Boolean(restartCapabilities?.allow_force)}
+          forceLabel="Force restart"
+          forceDescription={restartAction.forceDescription}
+          warning={restartAction.warning}
+          error={restartError}
+          loading={restartLoading}
+          onCancel={() => {
+            if (!restartLoading) {
+              setRestartAction(null)
+              setRestartError(null)
+            }
+          }}
+          onConfirm={submitRestart}
+        />
       )}
     </div>
   )
 }
 
-function GeneratorInventoryList({ generators }: { generators: SystemInventoryResponse['generators'] }) {
+function GeneratorInventoryList({
+  generators,
+  canRestart,
+  restartDisabledReason,
+  onRestartGenerator,
+}: {
+  generators: SystemInventoryResponse['generators']
+  canRestart: boolean
+  restartDisabledReason?: string
+  onRestartGenerator: (generator: SystemInventoryGenerator) => void
+}) {
   return (
     <div className="monitor-inventory-list">
       {generators.map(generator => (
@@ -1084,6 +1301,12 @@ function GeneratorInventoryList({ generators }: { generators: SystemInventoryRes
             <span className="monitor-value">{generator.generator_id || generator.target}</span>
             <span className={`monitor-value ${generator.status === 'connected' ? 'text-success' : 'text-danger'}`}>{generator.status}</span>
           </div>
+          {generator.pod_name && (
+            <div className="monitor-row">
+              <span className="monitor-label">Pod</span>
+              <span className="monitor-value cell-mono">{generator.pod_name}</span>
+            </div>
+          )}
           <div className="monitor-row">
             <span className="monitor-label">Target</span>
             <span className="monitor-value cell-mono">{generator.target}</span>
@@ -1116,6 +1339,20 @@ function GeneratorInventoryList({ generators }: { generators: SystemInventoryRes
             <span className="monitor-label">Goroutines</span>
             <span className="monitor-value">{generator.goroutine_count.toLocaleString()}</span>
           </div>
+          {canRestart && (
+          <div className="monitor-action-row">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => onRestartGenerator(generator)}
+              disabled={!canRestart || generator.restartable === false}
+              title={generator.restartable === false ? generator.restart_blocked_reason : restartDisabledReason}
+            >
+              Restart Pod
+            </button>
+            {generator.restart_blocked_reason && <span className="monitor-action-message muted">{generator.restart_blocked_reason}</span>}
+          </div>
+          )}
         </div>
       ))}
     </div>

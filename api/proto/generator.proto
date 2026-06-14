@@ -126,6 +126,8 @@ message ServerTelemetry {
   int32 messages_received = 11;
   double messages_sent_per_sec = 12;
   double messages_received_per_sec = 13;
+  double first_event_ms = 14;
+  int32 event_count = 15;
 }
 
 message TransactionMetric {

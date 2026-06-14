@@ -1304,7 +1304,7 @@ describe('ResultsPage', () => {
     const remoteIDRow = sourceRowNamed(container, 'Remote ID Match')
     const pullButton = buttonInRow(remoteIDRow, 'Pull')
     const compareButton = buttonInRow(remoteIDRow, 'Compare')
-    const remoteLink = Array.from(remoteIDRow.querySelectorAll('a')).find(link => link.textContent?.trim() === 'Open in Remote Library') as HTMLAnchorElement | undefined
+    const remoteLink = Array.from(remoteIDRow.querySelectorAll('a')).find(link => link.textContent?.trim() === 'Open in Remote Workspace') as HTMLAnchorElement | undefined
     expect(pullButton).toBeDefined()
     expect(compareButton).toBeDefined()
     expect(remoteLink?.href).toBe('https://apexload.example.test/#/test/remote-run-a')

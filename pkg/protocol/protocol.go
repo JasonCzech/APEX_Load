@@ -170,6 +170,8 @@ type ServerTelemetry struct {
 	SOAPNamespaceConflict  string  `json:"soap_namespace_conflict,omitempty"`
 	RedirectCount          int     `json:"redirect_count,omitempty"`
 	RedirectMs             float64 `json:"redirect_ms,omitempty"`
+	FirstEventMs           float64 `json:"first_event_ms,omitempty"`
+	EventCount             int     `json:"event_count,omitempty"`
 	MessageLatencyMs       float64 `json:"message_latency_ms,omitempty"`
 	MessagesSent           int     `json:"messages_sent,omitempty"`
 	MessagesReceived       int     `json:"messages_received,omitempty"`

@@ -55,3 +55,62 @@ func TestHandleDownloadRecordingAgentMissingPackageDoesNotServeDashboardShell(t 
 		t.Fatalf("body = %q, want actionable package staging error", resp.Body.String())
 	}
 }
+
+func TestFindRelativeDistDirSearchesParentDirectories(t *testing.T) {
+	root := t.TempDir()
+	distDir := filepath.Join(root, defaultRecordingAgentDistDir)
+	if err := os.MkdirAll(distDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := filepath.Join(root, "bin", "release")
+	if err := os.MkdirAll(start, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok := findRelativeDistDir(defaultRecordingAgentDistDir, start)
+	if !ok {
+		t.Fatalf("findRelativeDistDir() ok = false, want true")
+	}
+	if got != distDir {
+		t.Fatalf("findRelativeDistDir() = %q, want %q", got, distDir)
+	}
+}
+
+func TestRecordingAgentDownloadSurfacesChecksum(t *testing.T) {
+	distDir := t.TempDir()
+	packageName := "apexload-recording-agent-0.1.0-linux-amd64.tar.gz"
+	if err := os.WriteFile(filepath.Join(distDir, packageName), []byte("agent package"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const sum = "d8df2adeb0f3718d0beeebb225572273e1677b6208cef613c2378f3b3f41f3b2"
+	if err := os.WriteFile(filepath.Join(distDir, recordingAgentChecksumFile), []byte(sum+"  "+packageName+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(recordingAgentDistDirEnv, distDir)
+	server := NewServer(ServerConfig{})
+
+	// The download surfaces the hash so clients can verify the binary before running it.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/downloads/recording-agent/latest?platform=linux-amd64", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("download status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Header().Get("X-Content-SHA256"); got != sum {
+		t.Fatalf("X-Content-SHA256 = %q, want %q", got, sum)
+	}
+	if got := resp.Header().Get("Digest"); !strings.HasPrefix(got, "sha-256=") {
+		t.Fatalf("Digest = %q, want sha-256= prefix", got)
+	}
+
+	// The companion endpoint returns the same hash as JSON.
+	creq := httptest.NewRequest(http.MethodGet, "/api/v1/downloads/recording-agent/latest/checksum?platform=linux-amd64", nil)
+	cresp := httptest.NewRecorder()
+	server.mux.ServeHTTP(cresp, creq)
+	if cresp.Code != http.StatusOK {
+		t.Fatalf("checksum status = %d body=%s", cresp.Code, cresp.Body.String())
+	}
+	if !strings.Contains(cresp.Body.String(), sum) {
+		t.Fatalf("checksum body = %q, want sha256 %s", cresp.Body.String(), sum)
+	}
+}

@@ -39,6 +39,9 @@ describe('TestExecutionSummary', () => {
 				samples: 12,
 				avg_server_processing_ms: 48,
 				avg_transfer_ms: 14,
+				avg_first_event_ms: 125,
+				max_first_event_ms: 180,
+				event_count: 7,
 				avg_request_payload_kb: 1.25,
 				avg_response_payload_kb: 4,
 				connection_reused_pct: 75,
@@ -56,6 +59,9 @@ describe('TestExecutionSummary', () => {
 						samples: 10,
 						avg_server_processing_ms: 42,
 						avg_transfer_ms: 18,
+						avg_first_event_ms: 150,
+						max_first_event_ms: 210,
+						event_count: 5,
 						avg_request_payload_kb: 1.2,
 						avg_response_payload_kb: 4,
 						connection_reused_pct: 50,
@@ -79,6 +85,8 @@ describe('TestExecutionSummary', () => {
 		expect(container.textContent).toContain('Server Telemetry')
 		expect(container.textContent).toContain('Server 48.0 ms (+6.0 ms vs prev)')
 		expect(container.textContent).toContain('Transfer 14.0 ms (-4.0 ms vs prev)')
+		expect(container.textContent).toContain('First event 125.0 ms / max 180.0 ms (-25.0 ms vs prev)')
+		expect(container.textContent).toContain('Events 7')
 		expect(container.textContent).toContain('Payload 1.25 KB / 4.00 KB')
 		expect(container.textContent).toContain('Reuse 75% (+25% vs prev)')
 	})

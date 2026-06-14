@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../aks
+  - triggerauthentication.yaml
+patches:
+  - path: delete-servicemonitor.yaml
+  - path: generator-keda-azure-monitor-patch.yaml

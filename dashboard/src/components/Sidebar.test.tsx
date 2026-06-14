@@ -391,6 +391,32 @@ describe('Sidebar', () => {
     expect(container.querySelector('.sidebar.collapsed .sidebar-footer .build-badge')).not.toBeNull()
   })
 
+  it('does not render raw SHA build versions as the badge label', async () => {
+    const rawRevision = 'abcdef0123456789abcdef0123456789abcdef01'
+    systemApiMock.getVersion.mockResolvedValueOnce({
+      build_time: '2026-06-13T14:00:00Z',
+      commit: 'abcdef0',
+      display_version: 'v1.4.2-dev.20260613+abcdef0',
+      environment: 'kubernetes',
+      go_version: 'go1.26',
+      version: rawRevision,
+    })
+
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('v1.4.2-dev.20260613+abcdef0')
+    expect(container.textContent).not.toContain(rawRevision)
+  })
+
   it('shows Access navigation only when service-account management is allowed', async () => {
     const onNavigate = vi.fn()
 

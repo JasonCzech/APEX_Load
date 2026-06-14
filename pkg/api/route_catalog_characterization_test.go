@@ -1,0 +1,484 @@
+package api
+
+import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// accessRequirementFingerprint produces a stable, comparable string describing
+// the access requirement resolved for a request. It captures every observable
+// field (roles, lookups-present, flags, body limits) so that a refactor of the
+// route-access resolution can be proven behavior-preserving.
+func accessRequirementFingerprint(r *http.Request) string {
+	req, ok := accessRequirementForRequest(r)
+	if !ok {
+		return "NO_MATCH"
+	}
+	parts := []string{
+		fmt.Sprintf("auth=%t", req.AuthenticatedOnly),
+		"global=" + strings.Join(req.GlobalRoles, ","),
+		"project=" + strings.Join(req.ProjectRoles, ","),
+		"domain=" + strings.Join(req.DomainRoles, ","),
+		"repo=" + strings.Join(req.RepositoryRoles, ","),
+		fmt.Sprintf("projectLookup=%t", req.ProjectLookup != nil),
+		fmt.Sprintf("domainLookup=%t", req.DomainLookup != nil),
+		fmt.Sprintf("repoLookup=%t", req.RepositoryLookup != nil),
+		fmt.Sprintf("maxBody=%d", req.MaxBodyBytes),
+	}
+	return strings.Join(parts, " ")
+}
+
+// characterizationCase is a single (method, path, query, pathValues) probe.
+type characterizationCase struct {
+	method     string
+	path       string
+	query      string
+	pathValues map[string]string
+}
+
+func (c characterizationCase) key() string {
+	q := ""
+	if c.query != "" {
+		q = "?" + c.query
+	}
+	return c.method + " " + c.path + q
+}
+
+func (c characterizationCase) request() *http.Request {
+	target := c.path
+	if c.query != "" {
+		target += "?" + c.query
+	}
+	req := httptest.NewRequest(c.method, target, nil)
+	for name, value := range c.pathValues {
+		req.SetPathValue(name, value)
+	}
+	return req
+}
+
+// characterizationCases assembles every registered generic-auth route plus a
+// curated set of query-string and path variants that exercise the conditional
+// branches in accessRequirementForRequest.
+func characterizationCases(t *testing.T) []characterizationCase {
+	t.Helper()
+	var cases []characterizationCase
+	seen := map[string]bool{}
+	add := func(c characterizationCase) {
+		if seen[c.key()] {
+			return
+		}
+		seen[c.key()] = true
+		cases = append(cases, c)
+	}
+
+	for _, route := range registeredServerRoutes(t) {
+		if !strings.HasPrefix(route.Path, "/api/v1/") || !route.GenericAuth {
+			continue
+		}
+		add(characterizationCase{method: route.Method, path: route.SamplePath, pathValues: route.PathValues})
+	}
+
+	// Curated variants exercising query-param-dependent branches.
+	for _, v := range []characterizationCase{
+		{method: http.MethodGet, path: "/api/v1/library/catalog"},
+		{method: http.MethodGet, path: "/api/v1/library/catalog", query: "project_id=p1"},
+		{method: http.MethodGet, path: "/api/v1/ai/policy"},
+		{method: http.MethodGet, path: "/api/v1/ai/policy", query: "project_id=p1"},
+		{method: http.MethodGet, path: "/api/v1/ai/review-queue", query: "project_id=p1"},
+		{method: http.MethodGet, path: "/api/v1/recorder/status"},
+		{method: http.MethodGet, path: "/api/v1/recorder/status", query: "project_id=p1"},
+		{method: http.MethodGet, path: "/api/v1/recorder/ca.pem", query: "project_id=p1"},
+		{method: http.MethodGet, path: "/api/v1/ws"},
+		{method: http.MethodGet, path: "/api/v1/ws", query: "project_id=p1"},
+		{method: http.MethodGet, path: "/api/v1/applications"},
+		{method: http.MethodGet, path: "/api/v1/applications", query: "project_id=p1"},
+		{method: http.MethodGet, path: "/api/v1/scripts"},
+		{method: http.MethodGet, path: "/api/v1/scripts", query: "project_id=p1"},
+		{method: http.MethodGet, path: "/api/v1/scripts", query: "folder_id=f1"},
+		{method: http.MethodGet, path: "/api/v1/data-pools"},
+		{method: http.MethodGet, path: "/api/v1/data-pools", query: "project_id=p1"},
+		{method: http.MethodGet, path: "/api/v1/tests"},
+		{method: http.MethodGet, path: "/api/v1/tests", query: "project_id=p1"},
+		{method: http.MethodGet, path: "/api/v1/tests", query: "application_id=a1"},
+		{method: http.MethodGet, path: "/api/v1/tests", query: "release_id=r1"},
+		{method: http.MethodGet, path: "/api/v1/tests", query: "scenario_id=s1"},
+		{method: http.MethodGet, path: "/api/v1/scenarios"},
+		{method: http.MethodGet, path: "/api/v1/scenarios", query: "project_id=p1"},
+		// Path-template + suffix variants.
+		{method: http.MethodGet, path: "/api/v1/projects/p1/releases", pathValues: map[string]string{"id": "p1"}},
+		{method: http.MethodGet, path: "/api/v1/projects/p1/folders", pathValues: map[string]string{"pid": "p1"}},
+		{method: http.MethodPost, path: "/api/v1/projects/p1/releases", pathValues: map[string]string{"id": "p1"}},
+		{method: http.MethodPost, path: "/api/v1/projects/p1/folders", pathValues: map[string]string{"pid": "p1"}},
+		{method: http.MethodGet, path: "/api/v1/projects/p1", pathValues: map[string]string{"id": "p1"}},
+		{method: http.MethodPut, path: "/api/v1/projects/p1", pathValues: map[string]string{"id": "p1"}},
+		{method: http.MethodGet, path: "/api/v1/scripts/s1/github/status", pathValues: map[string]string{"id": "s1"}},
+		{method: http.MethodPost, path: "/api/v1/scripts/s1/github/push", pathValues: map[string]string{"id": "s1"}},
+		{method: http.MethodPost, path: "/api/v1/scripts/s1/validate", pathValues: map[string]string{"id": "s1"}},
+		{method: http.MethodPost, path: "/api/v1/scripts/s1/export", pathValues: map[string]string{"id": "s1"}},
+		{method: http.MethodPost, path: "/api/v1/scripts/s1/run", pathValues: map[string]string{"id": "s1"}},
+		{method: http.MethodPatch, path: "/api/v1/tests/t1/move", pathValues: map[string]string{"id": "t1"}},
+		{method: http.MethodPatch, path: "/api/v1/tests/t1", pathValues: map[string]string{"id": "t1"}},
+		{method: http.MethodGet, path: "/api/v1/domains/d1/application-repository", pathValues: map[string]string{"id": "d1"}},
+		{method: http.MethodPut, path: "/api/v1/domains/d1/application-repository", pathValues: map[string]string{"id": "d1"}},
+		{method: http.MethodGet, path: "/api/v1/domains/d1/application-repository/categories", pathValues: map[string]string{"id": "d1"}},
+		{method: http.MethodPost, path: "/api/v1/domains/d1/application-repository/categories", pathValues: map[string]string{"id": "d1"}},
+		{method: http.MethodGet, path: "/api/v1/domains/d1", pathValues: map[string]string{"id": "d1"}},
+		{method: http.MethodPut, path: "/api/v1/domains/d1", pathValues: map[string]string{"id": "d1"}},
+		{method: http.MethodGet, path: "/api/v1/library/remotes/r1/catalog"},
+		{method: http.MethodPost, path: "/api/v1/library/remotes/r1/diff"},
+		{method: http.MethodPost, path: "/api/v1/library/remotes/r1/pull"},
+		{method: http.MethodPut, path: "/api/v1/library/remotes/r1"},
+		{method: http.MethodPost, path: "/api/v1/projects/p1/github/policy", pathValues: map[string]string{"id": "p1"}},
+		{method: http.MethodGet, path: "/api/v1/projects/p1/github/policy", pathValues: map[string]string{"id": "p1"}},
+		{method: http.MethodPut, path: "/api/v1/projects/p1/github/policy", pathValues: map[string]string{"id": "p1"}},
+	} {
+		add(v)
+	}
+
+	return cases
+}
+
+// TestAccessRequirementSnapshotStable pins the resolved access requirement for
+// every registered generic-auth route plus curated query/path variants. It is a
+// characterization (golden) test: the expected map below was captured from the
+// pre-refactor behavior of accessRequirementForRequest, so any drift introduced
+// while migrating routes into the declarative catalog fails loudly here.
+//
+// To regenerate after an intentional authz change, temporarily switch the body
+// to print accessRequirementFingerprint for each case and update the map.
+func TestAccessRequirementSnapshotStable(t *testing.T) {
+	for _, c := range characterizationCases(t) {
+		want, known := accessRequirementGolden[c.key()]
+		if !known {
+			// A newly added route should be given an explicit expected value
+			// rather than silently passing.
+			t.Errorf("no golden fingerprint for %s (got %q) — add it to accessRequirementGolden", c.key(), accessRequirementFingerprint(c.request()))
+			continue
+		}
+		if got := accessRequirementFingerprint(c.request()); got != want {
+			t.Errorf("%s:\n  got  %s\n  want %s", c.key(), got, want)
+		}
+	}
+}
+
+// accessRequirementGolden is the captured pre-refactor authz fingerprint for
+// each characterization case. See TestAccessRequirementSnapshotStable.
+var accessRequirementGolden = map[string]string{
+	"DELETE /api/v1/application-repository/categories/sample-id":               "auth=false global=project_admin,system_admin project= domain=project_admin repo=project_admin projectLookup=false domainLookup=true repoLookup=true maxBody=0",
+	"DELETE /api/v1/applications/sample-id":                                    "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/auth/service-accounts/sample-id":                           "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/auth/users/sample-id/bindings/sample-binding-id":           "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/data-pools/sample-id":                                      "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/data-pools/sample-id/rows/sample-row-id":                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/domains/sample-id":                                         "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/folders/sample-id":                                         "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/integrations/github/connection":                            "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/library/remotes/sample-id":                                 "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/projects/sample-id":                                        "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/releases/sample-id":                                        "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/scenarios/sample-id":                                       "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/scenarios/sample-id/schedules/sample-schedule-id":          "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/scripts/authoring/sessions/sample-id":                      "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/scripts/sample-id":                                         "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/tests/sample-id":                                           "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"DELETE /api/v1/tests/sample-id/comparison-baseline/pin":                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/ai/authoring/contract":                                        "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/ai/policy":                                                    "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/ai/policy?project_id=p1":                                      "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/ai/review-queue":                                              "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/ai/review-queue?project_id=p1":                                "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/applications":                                                 "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/applications/sample-id":                                       "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/applications/sample-id/load-comparison":                       "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/applications/sample-id/releases":                              "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/applications?project_id=p1":                                   "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/auth/audit-events":                                            "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/auth/audit-events/export":                                     "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/auth/service-accounts":                                        "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/auth/user-activity":                                           "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/auth/user-activity/export":                                    "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/auth/users":                                                   "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/auth/users/sample-id":                                         "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/browser-recorder/devices":                                     "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/browser-recorder/install":                                     "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/downloads/recording-agent/latest":                             "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/downloads/recording-agent/latest/checksum":                    "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/downloads/desktop/latest":                                     "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/downloads/desktop/latest/checksum":                            "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/correlations/rules":                                           "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/data-pools":                                                   "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/data-pools/sample-id":                                         "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/data-pools/sample-id/rows":                                    "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/data-pools?project_id=p1":                                     "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/desktop/status":                                               "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/domains":                                                      "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/domains/d1":                                                   "auth=false global=viewer,editor,project_admin,system_admin project= domain=viewer,editor,project_admin repo= projectLookup=false domainLookup=true repoLookup=false maxBody=0",
+	"GET /api/v1/domains/d1/application-repository":                            "auth=false global=viewer,editor,project_admin,system_admin project= domain=viewer,editor,project_admin repo= projectLookup=false domainLookup=true repoLookup=false maxBody=0",
+	"GET /api/v1/domains/d1/application-repository/categories":                 "auth=false global=viewer,editor,project_admin,system_admin project= domain=viewer,editor,project_admin repo= projectLookup=false domainLookup=true repoLookup=false maxBody=0",
+	"GET /api/v1/domains/sample-id":                                            "auth=false global=viewer,editor,project_admin,system_admin project= domain=viewer,editor,project_admin repo= projectLookup=false domainLookup=true repoLookup=false maxBody=0",
+	"GET /api/v1/domains/sample-id/application-repository":                     "auth=false global=viewer,editor,project_admin,system_admin project= domain=viewer,editor,project_admin repo= projectLookup=false domainLookup=true repoLookup=false maxBody=0",
+	"GET /api/v1/domains/sample-id/application-repository/categories":          "auth=false global=viewer,editor,project_admin,system_admin project= domain=viewer,editor,project_admin repo= projectLookup=false domainLookup=true repoLookup=false maxBody=0",
+	"GET /api/v1/dsl/actions":                                                  "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/fleet/alerts":                                                 "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/fleet/capacity":                                               "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/fleet/load-zones":                                             "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/fleet/provisioner":                                            "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/integrations/apm/profiles":                                    "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/integrations/github/branches":                                 "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/integrations/github/callback":                                 "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/integrations/github/check-links":                              "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/integrations/github/config":                                   "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/integrations/github/connection":                               "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/integrations/github/contents":                                 "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/integrations/github/diagnostics":                              "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/integrations/github/installations":                            "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/integrations/github/login":                                    "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/integrations/github/repos":                                    "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/integrations/github/sync-jobs":                                "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/integrations/github/sync-jobs/sample-id":                      "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/integrations/github/webhooks":                                 "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/library/capabilities":                                         "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/library/catalog":                                              "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/library/catalog?project_id=p1":                                "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/library/remotes":                                              "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/library/remotes/r1/catalog":                                   "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/library/remotes/sample-id/catalog":                            "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/library/results/sample-id/archive":                            "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/remotes/sample-id/runs/sample-remote-test-id":                 "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/monitoring/packs":                                             "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/monitoring/prometheus/graphs":                                 "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/projects":                                                     "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/projects/p1":                                                  "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/projects/p1/folders":                                          "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/projects/p1/github/policy":                                    "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/projects/p1/releases":                                         "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/projects/sample-id":                                           "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/projects/sample-id/github/policy":                             "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/projects/sample-id/releases":                                  "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/projects/sample-pid/folders":                                  "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/protocol-bundles/support-matrix":                              "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/protocols/native-support-matrix":                              "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/recorder/ca.pem":                                              "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/recorder/ca.pem?project_id=p1":                                "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/recorder/status":                                              "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/recorder/status?project_id=p1":                                "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/releases/sample-id":                                           "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/releases/sample-id/sla-governance":                            "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/releases/sample-id/trend":                                     "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/releases/sample-id/trend/export":                              "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/reports/profiles":                                             "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/results/imports":                                              "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/run-calendar":                                                 "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/runtime-settings/support-matrix":                              "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scenarios":                                                    "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scenarios/load-models/support-matrix":                         "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scenarios/load-models/templates":                              "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scenarios/sample-id":                                          "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scenarios/sample-id/data-pools":                               "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scenarios/sample-id/results":                                  "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scenarios/sample-id/runtime-settings/report":                  "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scenarios/sample-id/schedules":                                "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scenarios/sample-id/schedules/sample-schedule-id/occurrences": "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scenarios?project_id=p1":                                      "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/schedules/health":                                             "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts":                                                      "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/authoring/capabilities":                               "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/authoring/components":                                 "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/authoring/sessions":                                   "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/authoring/sessions/sample-id":                         "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/authoring/templates":                                  "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/import/asyncapi/support-matrix":                       "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/import/devweb/support-matrix":                         "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/import/enterprise-script-archive/support-matrix":      "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/import/jmeter/support-matrix":                         "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/import/k6/support-matrix":                             "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/import/oracle-ebusiness/support-matrix":               "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/s1/github/status":                                     "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/sample-id":                                            "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/sample-id/download":                                   "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/sample-id/github/status":                              "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/sample-id/runtime-settings/report":                    "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/web-api/support-matrix":                               "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts?folder_id=f1":                                         "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts?project_id=p1":                                        "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/system/browser-benchmarks":                                    "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/system/inventory":                                             "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/system/parity-status":                                         "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/system/restarts/capabilities":                                 "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/system/services":                                              "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/system/settings":                                              "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/system/usage":                                                 "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/system/usage/export":                                          "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/system/usage/snapshots":                                       "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests":                                                        "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id":                                              "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/archive":                                      "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/archive/ai-root-cause":                        "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/archive/analysis":                             "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/archive/browser-diagnostics":                  "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/archive/comparison":                           "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/archive/files/sample-name":                    "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/archive/manifest":                             "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/archive/report":                               "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/archive/resources":                            "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/archive/root-cause":                           "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/archive/summaries":                            "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/archive/transactions":                         "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/errors/evidence":                              "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/manifest":                                     "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/metrics":                                      "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/report":                                       "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/report/annotations":                           "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/sla-status":                                   "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests/sample-id/stream":                                       "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests?application_id=a1":                                      "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests?project_id=p1":                                          "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests?release_id=r1":                                          "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/tests?scenario_id=s1":                                         "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/ws":                                                           "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/ws?project_id=p1":                                             "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PATCH /api/v1/auth/service-accounts/sample-id":                            "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"PATCH /api/v1/auth/users/sample-id":                                       "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"PATCH /api/v1/scripts/sample-id/move":                                     "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PATCH /api/v1/system/generators/drain":                                    "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"PATCH /api/v1/tests/sample-id/duration":                                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PATCH /api/v1/tests/sample-id/goal-targets":                               "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PATCH /api/v1/tests/sample-id/move":                                       "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PATCH /api/v1/tests/sample-id/vusers":                                     "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PATCH /api/v1/tests/t1":                                                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PATCH /api/v1/tests/t1/move":                                              "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/ai/drafts":                                                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/ai/explain":                                                  "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/ai/repairs":                                                  "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/applications":                                                "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/applications/sample-id/releases":                             "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/archives/retention/apply":                                    "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/archives/retention/plan":                                     "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/auth/service-accounts":                                       "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/auth/service-accounts/sample-id/rotate":                      "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/auth/users":                                                  "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/auth/users/sample-id/bindings":                               "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/auth/users/sample-id/disable":                                "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/auth/users/sample-id/enable":                                 "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/browser-recorder/install":                                    "auth=false global=editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/correlations/diagnose":                                       "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/correlations/diff":                                           "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/data-pools":                                                  "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/data-pools/sample-id/rows":                                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/domains":                                                     "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/domains/d1/application-repository/categories":                "auth=false global=project_admin,system_admin project= domain=editor,project_admin repo=editor,project_admin projectLookup=false domainLookup=true repoLookup=true maxBody=0",
+	"POST /api/v1/domains/sample-id/application-repository/categories":         "auth=false global=project_admin,system_admin project= domain=editor,project_admin repo=editor,project_admin projectLookup=false domainLookup=true repoLookup=true maxBody=0",
+	"POST /api/v1/integrations/dynatrace/dry-run":                              "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/integrations/github/sync-jobs":                               "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/library/export":                                              "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/library/import":                                              "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/library/import/archive":                                      "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/library/remotes":                                             "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/library/remotes/r1/diff":                                     "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/library/remotes/r1/pull":                                     "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/library/remotes/sample-id/diff":                              "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/library/remotes/sample-id/probe":                             "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/library/remotes/sample-id/pull":                              "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/library/remotes/sample-id/push":                              "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/remotes/sample-id/runs":                                      "auth=false global=editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/remotes/sample-id/runs/sample-remote-test-id/abort":          "auth=false global=editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/remotes/sample-id/runs/sample-remote-test-id/pause":          "auth=false global=editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/remotes/sample-id/runs/sample-remote-test-id/resume":         "auth=false global=editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/remotes/sample-id/runs/sample-remote-test-id/start":          "auth=false global=editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/remotes/sample-id/runs/sample-remote-test-id/stop":           "auth=false global=editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/projects":                                                    "auth=false global=project_admin,system_admin project= domain=editor,project_admin repo=editor,project_admin projectLookup=false domainLookup=true repoLookup=true maxBody=0",
+	"POST /api/v1/projects/p1/folders":                                         "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/projects/p1/github/policy":                                   "NO_MATCH",
+	"POST /api/v1/projects/p1/releases":                                        "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain=editor,project_admin repo=editor,project_admin projectLookup=true domainLookup=true repoLookup=true maxBody=0",
+	"POST /api/v1/projects/sample-id/releases":                                 "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain=editor,project_admin repo=editor,project_admin projectLookup=true domainLookup=true repoLookup=true maxBody=0",
+	"POST /api/v1/projects/sample-pid/folders":                                 "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/releases/sample-id/archive":                                  "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/releases/sample-id/sla-governance/waivers":                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/results/import":                                              "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scenarios":                                                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scenarios/sample-id/schedules":                               "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scenarios/sample-id/schedules/sample-schedule-id/approvals/sample-approval-id/approve": "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scenarios/sample-id/schedules/sample-schedule-id/approvals/sample-approval-id/reject":  "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scenarios/size-from-goal":                                  "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scenarios/validate-load-model":                             "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts":                                                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/authoring/sessions":                                "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/authoring/sessions/sample-id/approve":              "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/authoring/sessions/sample-id/correlations/preview": "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/browser-replay/sessions":                           "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/browser-to-http/preview":                           "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/debug/sessions":                                    "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/export/k6":                                         "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/import/asyncapi":                                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=20971520",
+	"POST /api/v1/scripts/import/devweb":                                     "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=20971520",
+	"POST /api/v1/scripts/import/enterprise-script-archive":                  "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=104857600",
+	"POST /api/v1/scripts/import/enterprise-script-archive/validate":         "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=104857600",
+	"POST /api/v1/scripts/import/github":                                     "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/import/har":                                        "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=52428800",
+	"POST /api/v1/scripts/import/salesforce":                                 "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=52428800",
+	"POST /api/v1/scripts/import/jmeter":                                     "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=52428800",
+	"POST /api/v1/scripts/import/jmeter/save":                                "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/import/jmeter/validate":                            "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=52428800",
+	"POST /api/v1/scripts/import/k6":                                         "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=10485760",
+	"POST /api/v1/scripts/import/openapi":                                    "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=20971520",
+	"POST /api/v1/scripts/import/raml":                                       "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=20971520",
+	"POST /api/v1/scripts/import/oracle-ebusiness/review":                    "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=10485760",
+	"POST /api/v1/scripts/import/parameterize/apply":                         "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/import/postman":                                    "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=20971520",
+	"POST /api/v1/scripts/import/recorder":                                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=10485760",
+	"POST /api/v1/scripts/import/sample":                                     "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/import/wsdl":                                       "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=20971520",
+	"POST /api/v1/scripts/replay":                                            "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/replay/sessions":                                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/s1/export":                                         "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/s1/github/push":                                    "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/s1/run":                                            "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/s1/validate":                                       "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/sample-id/browser-replay/sessions":                 "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/sample-id/debug/sessions":                          "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/sample-id/export":                                  "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/sample-id/github/push":                             "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/sample-id/replay":                                  "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/sample-id/replay/sessions":                         "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/sample-id/validate":                                "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/scripts/validate":                                          "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/selectors/diagnose":                                        "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/system/restarts":                                           "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/system/usage/snapshots":                                    "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/tests":                                                     "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/tests/estimate":                                            "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/tests/preflight":                                           "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/tests/sample-id/abort":                                     "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/tests/sample-id/comparison-baseline/pin":                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/tests/sample-id/github/check-run":                          "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/tests/sample-id/pause":                                     "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/tests/sample-id/resume":                                    "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/tests/sample-id/start":                                     "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/tests/sample-id/stop":                                      "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/application-repository/categories/sample-id":                "auth=false global=project_admin,system_admin project= domain=project_admin repo=project_admin projectLookup=false domainLookup=true repoLookup=true maxBody=0",
+	"PUT /api/v1/applications/sample-id":                                     "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/data-pools/sample-id":                                       "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/data-pools/sample-id/rows/sample-row-id":                    "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/domains/d1":                                                 "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/domains/d1/application-repository":                          "auth=false global=project_admin,system_admin project= domain=project_admin repo=project_admin projectLookup=false domainLookup=true repoLookup=true maxBody=0",
+	"PUT /api/v1/domains/sample-id":                                          "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/domains/sample-id/application-repository":                   "auth=false global=project_admin,system_admin project= domain=project_admin repo=project_admin projectLookup=false domainLookup=true repoLookup=true maxBody=0",
+	"PUT /api/v1/folders/sample-id":                                          "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/library/remotes/r1":                                         "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/library/remotes/sample-id":                                  "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/projects/p1":                                                "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/projects/p1/github/policy":                                  "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/projects/sample-id":                                         "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/projects/sample-id/github/policy":                           "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/releases/sample-id":                                         "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/scenarios/sample-id":                                        "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/scenarios/sample-id/data-pools":                             "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/scenarios/sample-id/schedules/sample-schedule-id":           "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/scripts/authoring/sessions/sample-id":                       "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/scripts/sample-id":                                          "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/system/settings":                                            "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/tests/sample-id/report/annotations":                         "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+}

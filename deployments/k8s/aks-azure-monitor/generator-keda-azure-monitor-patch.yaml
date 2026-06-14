@@ -1,0 +1,34 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: apexload-generator
+  namespace: apexload
+spec:
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: https://CHANGE-ME.monitor.azure.com
+        metricName: apexload_queued_vusers
+        query: sum(apexload_scaling_vusers{state="queued"})
+        threshold: "5000"
+        activationThreshold: "1"
+      authenticationRef:
+        name: apexload-azure-monitor
+    - type: prometheus
+      metadata:
+        serverAddress: https://CHANGE-ME.monitor.azure.com
+        metricName: apexload_queued_browser_vusers
+        query: sum(apexload_scaling_protocol_vusers{state="queued",protocol="browser"})
+        threshold: "20"
+        activationThreshold: "1"
+      authenticationRef:
+        name: apexload-azure-monitor
+    - type: prometheus
+      metadata:
+        serverAddress: https://CHANGE-ME.monitor.azure.com
+        metricName: apexload_saturated_generators
+        query: sum(apexload_generator_capacity_state_count{state="saturated"})
+        threshold: "1"
+        activationThreshold: "1"
+      authenticationRef:
+        name: apexload-azure-monitor

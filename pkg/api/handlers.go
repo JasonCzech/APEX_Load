@@ -36,8 +36,8 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	}
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	if actorType == "user" || actorType == "service_account" {
-		test.CreatedBySubject = actorSubject
-		test.CreatedByDisplayName = actorDisplayName
+		// AttributeTestCreated sets CreatedBySubject/CreatedByDisplayName under
+		// tr.mu; writing them here directly would race the run/read paths.
 		s.runner.AttributeTestCreated(test.ID, actorSubject, actorDisplayName)
 	}
 	s.recordAuditEvent(r, "test.create", "success", "test", test.ID, test.ProjectID, map[string]any{"name": test.Name, "status": test.Status})
@@ -727,7 +727,7 @@ func (s *Server) handleAdjustDuration(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSystemVersion(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, buildinfo.Get())
+	writeJSON(w, http.StatusOK, s.versionResponse())
 }
 
 func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
@@ -735,12 +735,15 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	availability := resolveCapacityAvailability(settings)
 	build := buildinfo.Get()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":      "healthy",
-		"version":     build.Version,
-		"environment": build.Environment,
-		"build_time":  build.BuildTime,
-		"ws_clients":  s.hub.ClientCount(),
-		"test_count":  len(s.runner.tests),
+		"status":          "healthy",
+		"version":         build.Version,
+		"display_version": build.DisplayVersion,
+		"commit":          build.Commit,
+		"revision":        build.Revision,
+		"environment":     build.Environment,
+		"build_time":      build.BuildTime,
+		"ws_clients":      s.hub.ClientCount(),
+		"test_count":      len(s.runner.tests),
 		"capacity_availability": map[string]any{
 			"source":                          availability.Source,
 			"configured_available_generators": availability.ConfiguredAvailableGenerators,
@@ -993,6 +996,12 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 	// the faithful normalizer in UpdateSystemSettings now preserves.
 	if !rawJSONHasKey(string(body), "prometheus") {
 		settings.Prometheus = s.runner.GetSystemSettings().Prometheus
+	}
+	if !rawJSONHasKey(string(body), "client_app") {
+		settings.ClientApp = s.runner.GetSystemSettings().ClientApp
+	}
+	if !rawJSONHasKey(string(body), "client_downloads") {
+		settings.ClientDownloads = s.runner.GetSystemSettings().ClientDownloads
 	}
 
 	updated, err := s.runner.UpdateSystemSettings(settings)

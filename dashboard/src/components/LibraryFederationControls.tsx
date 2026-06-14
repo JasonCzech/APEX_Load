@@ -5,12 +5,12 @@ import { LIBRARY_SOURCE_OPTIONS, type UseLibraryFederationResult } from './useLi
 
 function sourceDescription(kind: LibraryKind) {
   if (kind === 'result') return 'Move completed result archives between this controller and a remote team library.'
-  if (kind === 'scenario') return 'Pull or promote reusable scenario definitions and referenced scripts between local and remote libraries.'
-  return 'Pull or promote authored scripts between local and remote libraries.'
+  if (kind === 'scenario') return 'Pull or promote reusable scenario definitions and referenced scripts between local and Remote Workspaces.'
+  return 'Pull or promote authored scripts between local storage and Remote Workspaces.'
 }
 
 function remoteStatusLabel(status?: string) {
-  return status || 'No Remote Library'
+  return status || 'No Remote Workspace'
 }
 
 function credentialsLabel(ready: boolean) {
@@ -60,7 +60,7 @@ export default function LibraryFederationControls({ kind, federation, filterCont
               type="button"
               className={`script-health-token library-source-pill-link ${libraryStatusTone(selectedRemote?.status)}`}
               onClick={onConfigureRemotes}
-              title="Manage remote libraries in Settings > Integrations"
+              title="Manage Remote Workspaces in Settings > Integrations"
             >{remoteStatusLabel(selectedRemote?.status)}</button>
           ) : (
             <span className={`script-health-token ${libraryStatusTone(selectedRemote?.status)}`}>{remoteStatusLabel(selectedRemote?.status)}</span>

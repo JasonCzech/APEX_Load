@@ -23,6 +23,11 @@ It deploys:
 - Generator StatefulSet: `apexload-generator`
 - Controller PVC: `apexload-controller-data`
 
+Audited Kubernetes restart controls are available as an explicit local opt-in
+via [restart-controls.example.yaml](restart-controls.example.yaml). They stay
+disabled and tokenless by default; see
+[Kubernetes restart controls](../../../docs/KUBERNETES_RESTART_CONTROLS.md).
+
 ## Prerequisites
 
 1. Docker Desktop is installed.

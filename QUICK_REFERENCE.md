@@ -136,13 +136,25 @@ cp apexload.db apexload.db.backup
 | GET | `/api/v1/run-calendar` | Calendar view of scheduled and recent runs |
 | GET | `/api/v1/schedules/health` | Scheduling health and queue signals |
 
+### Remote Workspaces
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST | `/api/v1/remotes/{id}/runs` | Push local dependencies and create a remote run through the local controller proxy |
+| GET | `/api/v1/remotes/{id}/runs/{remote_test_id}` | Poll linked remote run status |
+| POST | `/api/v1/remotes/{id}/runs/{remote_test_id}/start` | Start linked remote run |
+| POST | `/api/v1/remotes/{id}/runs/{remote_test_id}/stop` | Stop linked remote run |
+| POST | `/api/v1/remotes/{id}/runs/{remote_test_id}/abort` | Abort linked remote run |
+| POST | `/api/v1/remotes/{id}/runs/{remote_test_id}/pause` | Pause linked remote run |
+| POST | `/api/v1/remotes/{id}/runs/{remote_test_id}/resume` | Resume linked remote run |
+
 ### System
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | GET | `/api/v1/system/health` | Health check |
 | GET | `/api/v1/system/readiness` | Readiness probe |
-| GET | `/api/v1/system/version` | Controller version |
+| GET | `/api/v1/system/version` | Controller version plus deployment identity |
 | GET | `/api/v1/system/services` | Service health detail |
 | GET | `/api/v1/fleet/load-zones` | Named self-hosted load zones |
 | GET | `/api/v1/fleet/provisioner` | Active generator provisioner |

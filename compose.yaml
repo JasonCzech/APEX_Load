@@ -12,10 +12,12 @@ services:
     init: true
     restart: unless-stopped
     environment:
-      APEXLOAD_ADDR: ":8080"
+      APEXLOAD_ADDR: "0.0.0.0:8080"
       APEXLOAD_METRICS_ADDR: ":9091"
       APEXLOAD_DB: /data/apexload.db
       APEXLOAD_ARCHIVE_DIR: /data/archives
+      APEXLOAD_RECORDING_AGENT_DIST_DIR: /packages/recording-agent
+      APEXLOAD_DESKTOP_DIST_DIR: /packages/desktop
       APEXLOAD_PROMETHEUS_URL: http://prometheus:9090
       APEXLOAD_ENV: local
     ports:
@@ -23,6 +25,8 @@ services:
       - "127.0.0.1:9091:9091"
     volumes:
       - controller-data:/data
+      - ./dist/recording-agent:/packages/recording-agent:ro
+      - ./dist/desktop:/packages/desktop:ro
 
   prometheus:
     image: prom/prometheus:v3.12.0

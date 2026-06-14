@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -148,7 +149,56 @@ func TestDistributedPlannerRejectsIncompatibleGeneratorVersion(t *testing.T) {
 	}
 }
 
+func TestCompatibleMajorVersionTreatsDevLabelsAsUnknown(t *testing.T) {
+	tests := []struct {
+		name      string
+		candidate string
+		required  string
+		want      bool
+	}{
+		{name: "matching numeric majors", candidate: "v1.2.3", required: "1.4.0", want: true},
+		{name: "different numeric majors", candidate: "2.0.0", required: "1.4.0", want: false},
+		{name: "candidate dev label is unknown", candidate: "dev+abc1234", required: "0.1.0", want: true},
+		{name: "required dev label is unknown", candidate: "1.0.0", required: "dev+abc1234", want: true},
+		{name: "raw build label is unknown", candidate: "abcdef0123456789", required: "0.1.0", want: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := compatibleMajorVersion(tc.candidate, tc.required); got != tc.want {
+				t.Fatalf("compatibleMajorVersion(%q, %q) = %v, want %v", tc.candidate, tc.required, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLeadingMajorVersionIgnoresNonSemverLabels(t *testing.T) {
+	tests := map[string]string{
+		"v1.2.3":           "1",
+		"1.2.3":            "1",
+		"dev+abc1234":      "",
+		"abcdef0123456789": "",
+		"unknown":          "",
+	}
+
+	for version, want := range tests {
+		if got := leadingMajorVersion(version); got != want {
+			t.Fatalf("leadingMajorVersion(%q) = %q, want %q", version, got, want)
+		}
+	}
+}
+
 func TestHandleGetFleetAlertsSummarizesInventoryRisks(t *testing.T) {
+	origVersion, origCommit, origBuildTime := buildinfo.Version, buildinfo.Commit, buildinfo.BuildTime
+	buildinfo.Version = "0.1.0"
+	buildinfo.Commit = ""
+	buildinfo.BuildTime = ""
+	t.Cleanup(func() {
+		buildinfo.Version = origVersion
+		buildinfo.Commit = origCommit
+		buildinfo.BuildTime = origBuildTime
+	})
+
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{
 		{

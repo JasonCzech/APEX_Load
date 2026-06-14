@@ -24,6 +24,14 @@ function formatBuildTime(buildTime?: string): string | null {
   return Number.isNaN(parsed.getTime()) ? buildTime : parsed.toLocaleString()
 }
 
+function formatVersionLabel(version?: string): string {
+  const raw = (version || '').trim()
+  if (!raw) return 'dev'
+  if (/^[0-9a-fA-F]{12,64}$/.test(raw)) return `dev+${raw.slice(0, 7)}`
+  const normalized = raw.length > 1 && /^[vV][0-9]/.test(raw) ? raw.slice(1) : raw
+  return /^[0-9]/.test(normalized) ? `v${normalized}` : normalized
+}
+
 // BuildBadge is a self-contained, subtle indicator of the running build and
 // environment. It fetches the version once on mount and renders nothing if the
 // endpoint is unreachable, so it can never break its host chrome.
@@ -72,7 +80,7 @@ export default function BuildBadge({ placement = 'down' }: { placement?: 'up' | 
 
   const tone = envTone(info.environment)
   const buildTime = formatBuildTime(info.build_time)
-  const versionLabel = info.version.startsWith('v') ? info.version : `v${info.version}`
+  const versionLabel = formatVersionLabel(info.display_version || info.version)
   const summary = `${info.environment} · ${versionLabel}`
 
   return (
@@ -94,6 +102,7 @@ export default function BuildBadge({ placement = 'down' }: { placement?: 'up' | 
           <BuildDetail label="Version" value={versionLabel} />
           <BuildDetail label="Environment" value={info.environment} />
           {info.commit && <BuildDetail label="Commit" value={info.commit} mono />}
+          {info.revision && info.revision !== info.commit && <BuildDetail label="Revision" value={info.revision} mono />}
           {buildTime && <BuildDetail label="Built" value={buildTime} />}
           {info.go_version && <BuildDetail label="Runtime" value={info.go_version} />}
         </div>

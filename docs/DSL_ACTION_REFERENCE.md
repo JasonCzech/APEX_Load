@@ -685,6 +685,24 @@ Protocols: http, soap, java_http
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
+### `http_oauth2_token`
+
+Fetch and cache an OAuth2 access token for later HTTP requests.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.token_url` | string | yes | OAuth2 token endpoint URL. |
+| `params.grant_type` | string | yes | Grant type: client_credentials, jwt_bearer, or refresh_token. |
+| `params.client_id` | string | yes | OAuth2 client ID or Salesforce connected-app consumer key. |
+| `params.client_secret` | string |  | OAuth2 client secret when required by the grant; prefer a {{secret.NAME}} template. |
+| `params.scope` | string |  | Space-delimited OAuth2 scopes. |
+| `params.audience` | string |  | JWT-bearer audience; defaults to the token endpoint origin. |
+| `params.issuer` | string |  | JWT-bearer issuer; defaults to client_id. |
+| `params.subject` | string |  | JWT-bearer subject, usually the Salesforce integration username. |
+| `params.private_key` | string |  | PEM-encoded RSA private key for JWT-bearer assertions; prefer a {{secret.NAME}} template. |
+| `params.refresh_token` | string |  | Refresh token for refresh_token grant; prefer a {{secret.NAME}} template. |
+| `params.save_as` | string |  | VUser variable name for the access token; defaults to access_token. |
+
 ### `http_sequence`
 
 Composite step that issues an ordered list of child HTTP requests as one reported unit.

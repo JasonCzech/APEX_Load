@@ -30,6 +30,8 @@ import {
 import { isEffectiveOperationAllowed } from './utils/authAccessUtils'
 import { DesktopStatusResponse } from './types/library'
 import ThemeToggle from './components/ThemeToggle'
+import DeploymentBanner from './components/DeploymentBanner'
+import ClientDownloadsMenu from './components/ClientDownloadsMenu'
 import {
   pageTitleForScriptSubView,
   pageTitleForView,
@@ -222,6 +224,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const canManageRepositoryProjects = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_repository_projects', false)
   const canManageRepositoryReleases = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_repository_releases', false)
   const canManageRepository = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_application_repository', false)
+  const canManageSystem = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_system', false)
   const snapshotAudience = dashboardSnapshotAudience(authStatus, devViewMode, activeProject?.id)
 
   const navigateToTest = useCallback((id: string, tab?: TestWorkspaceTabID) => {
@@ -651,6 +654,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
                 )}
               </div>
             )}
+            <ClientDownloadsMenu />
+            <DeploymentBanner />
             <ThemeToggle theme={theme} onThemeChange={setTheme} />
           </div>
         </div>
@@ -736,7 +741,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               activeRelease={activeRelease}
             />
           )}
-          {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} />}
+          {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} />}
           {view.page === 'docs' && <ApiGuidePage activePage={view.guidePage} onNavigate={handleNavigate} effectiveAccessResources={effectiveAccessResources} />}
           {view.page === 'swagger' && <SwaggerDocsPage />}
           {view.page === 'repository-guide' && <RepositoryGuidePage />}

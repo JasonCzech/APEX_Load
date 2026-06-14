@@ -28,6 +28,7 @@ resource "azurerm_kubernetes_cluster" "main" {
     node_count           = var.system_node_count
     vm_size              = var.system_node_vm_size
     auto_scaling_enabled = false
+    vnet_subnet_id       = local.private_network_enabled ? azurerm_subnet.aks_system[0].id : null
     upgrade_settings {
       max_surge = "33%"
     }
@@ -63,6 +64,7 @@ resource "azurerm_kubernetes_cluster_node_pool" "generators" {
   auto_scaling_enabled  = true
   min_count             = var.generator_node_min_count
   max_count             = var.generator_node_max_count
+  vnet_subnet_id        = local.private_network_enabled ? azurerm_subnet.aks_generators[0].id : null
   mode                  = "User"
   tags                  = local.tags
 

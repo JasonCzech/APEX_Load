@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"log/slog"
 	"math"
 	"os"
@@ -284,12 +285,15 @@ func (b *distributedExecutionBackend) allowedTargetsForTest(test *ManagedTest) (
 }
 
 func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
+	tr.mu.Lock()
 	assignment, err := normalizeGeneratorAssignmentSettings(test.Assignment)
 	if err != nil {
+		tr.mu.Unlock()
 		tr.failTestBeforeRun(test, err.Error())
 		return
 	}
 	test.Assignment = assignment
+	tr.mu.Unlock()
 	targetSpecs := b.configuredTargetSpecs()
 	if len(targetSpecs) == 0 {
 		tr.failTestBeforeRun(test, "no generator targets configured")
@@ -421,7 +425,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 }
 
 func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest) error {
-	clients, err := b.clientsForTest(test)
+	tr.mu.RLock()
+	clientsByTarget, single, remoteTarget := cloneClientMap(test.remoteClientsByTarget), test.remoteClient, test.remoteTarget
+	status := test.Status
+	tr.mu.RUnlock()
+	clients, err := b.clientsFromSnapshot(clientsByTarget, single, remoteTarget)
 	if err != nil {
 		return err
 	}
@@ -433,7 +441,7 @@ func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest
 		if err != nil {
 			code := grpcStatus.Code(err)
 			if code == grpcCodes.Canceled || code == grpcCodes.Unavailable || code == grpcCodes.NotFound {
-				if test.Status == "COMPLETE" || test.Status == "FAILED" {
+				if status == "COMPLETE" || status == "FAILED" {
 					continue
 				}
 			}
@@ -451,6 +459,7 @@ func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest
 }
 
 func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedTest, groupName string, targetVUsers int) error {
+	tr.mu.RLock()
 	groupExists := false
 	for _, group := range test.Groups {
 		if group.Name == groupName {
@@ -458,17 +467,22 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 			break
 		}
 	}
+	shards := cloneGeneratorShardSummaries(test.remoteGroupShards[groupName])
+	groupTarget, groupTargetOK := test.remoteGroupTargets[groupName]
+	currentShardVUsers := testGroupCurrentShardVUsers(test, groupName)
+	clientsByTarget, single, remoteTarget := cloneClientMap(test.remoteClientsByTarget), test.remoteClient, test.remoteTarget
+	tr.mu.RUnlock()
+
 	if !groupExists {
 		return fmt.Errorf("test group not found: %s", groupName)
 	}
-	shards := test.remoteGroupShards[groupName]
 	if len(shards) == 0 {
-		if target, ok := test.remoteGroupTargets[groupName]; ok && target != "" {
-			shards = []GeneratorShardSummary{{Group: groupName, Target: target, VUsers: testGroupCurrentShardVUsers(test, groupName)}}
+		if groupTargetOK && groupTarget != "" {
+			shards = []GeneratorShardSummary{{Group: groupName, Target: groupTarget, VUsers: currentShardVUsers}}
 		}
 	}
 	if len(shards) == 0 {
-		client, err := b.clientForGroup(test, groupName)
+		client, err := b.groupClientFromSnapshot(groupTarget, groupTargetOK, clientsByTarget, single, remoteTarget)
 		if err != nil {
 			return err
 		}
@@ -488,7 +502,7 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 		return nil
 	}
 
-	clients, err := b.clientsForTest(test)
+	clients, err := b.clientsFromSnapshot(clientsByTarget, single, remoteTarget)
 	if err != nil {
 		return err
 	}
@@ -547,7 +561,7 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 }
 
 func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *ManagedTest, newDuration time.Duration) error {
-	clients, err := b.clientsForTest(test)
+	clients, err := b.resolveClientsLocked(tr, test)
 	if err != nil {
 		return err
 	}
@@ -569,7 +583,7 @@ func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *Manag
 }
 
 func (b *distributedExecutionBackend) PauseTest(tr *TestRunner, test *ManagedTest) error {
-	streams := b.metricsStreamsForTest(test)
+	streams := b.snapshotMetricsStreams(tr, test)
 	if len(streams) == 0 {
 		return fmt.Errorf("distributed metrics stream is not initialized")
 	}
@@ -582,7 +596,7 @@ func (b *distributedExecutionBackend) PauseTest(tr *TestRunner, test *ManagedTes
 }
 
 func (b *distributedExecutionBackend) ResumeTest(tr *TestRunner, test *ManagedTest) error {
-	streams := b.metricsStreamsForTest(test)
+	streams := b.snapshotMetricsStreams(tr, test)
 	if len(streams) == 0 {
 		return fmt.Errorf("distributed metrics stream is not initialized")
 	}
@@ -653,39 +667,81 @@ func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, te
 	}
 }
 
-func (b *distributedExecutionBackend) clientForTest(test *ManagedTest) (generatorClient, error) {
-	if len(test.remoteClientsByTarget) == 1 {
-		for _, client := range test.remoteClientsByTarget {
+// The snapshot* helpers below read the mutable remote* fields under tr.mu and return
+// plain locals (cloning map/slice headers) so the control methods can resolve clients,
+// dial, and make blocking gRPC calls WITHOUT holding tr.mu — mirroring the read/clear
+// pattern in closeRemoteResources. They replace the direct clientsForTest/clientForGroup/
+// metricsStreamsForTest reads, which raced the teardown/finalize mutators.
+
+// snapshotRemoteClients copies, under tr.mu, the fields clientForTest reads.
+func (b *distributedExecutionBackend) snapshotRemoteClients(tr *TestRunner, test *ManagedTest) (map[string]generatorClient, generatorClient, string) {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	return cloneClientMap(test.remoteClientsByTarget), test.remoteClient, test.remoteTarget
+}
+
+// clientFromSnapshot mirrors clientForTest on a lock-free snapshot; dials unlocked.
+func (b *distributedExecutionBackend) clientFromSnapshot(clientsByTarget map[string]generatorClient, single generatorClient, target string) (generatorClient, error) {
+	if len(clientsByTarget) == 1 {
+		for _, client := range clientsByTarget {
 			return client, nil
 		}
 	}
-	if test.remoteClient != nil {
-		return test.remoteClient, nil
+	if single != nil {
+		return single, nil
 	}
-	if test.remoteTarget == "" {
+	if target == "" {
 		return nil, fmt.Errorf("distributed generator target is not recorded")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
-	client, err := b.dial(ctx, test.remoteTarget)
+	client, err := b.dial(ctx, target)
 	if err != nil {
 		return nil, fmt.Errorf("connect generator: %w", err)
 	}
 	return client, nil
 }
 
-func (b *distributedExecutionBackend) clientsForTest(test *ManagedTest) (map[string]generatorClient, error) {
-	if len(test.remoteClientsByTarget) > 0 {
-		return cloneClientMap(test.remoteClientsByTarget), nil
+// clientsFromSnapshot mirrors clientsForTest on a lock-free snapshot.
+func (b *distributedExecutionBackend) clientsFromSnapshot(clientsByTarget map[string]generatorClient, single generatorClient, target string) (map[string]generatorClient, error) {
+	if len(clientsByTarget) > 0 {
+		return clientsByTarget, nil
 	}
-	client, err := b.clientForTest(test)
+	client, err := b.clientFromSnapshot(clientsByTarget, single, target)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]generatorClient{test.remoteTarget: client}, nil
+	return map[string]generatorClient{target: client}, nil
 }
 
-func (b *distributedExecutionBackend) metricsStreamsForTest(test *ManagedTest) map[string]*generatorrpc.MetricsStream {
+// resolveClientsLocked is snapshotRemoteClients + clientsFromSnapshot — the lock-safe
+// replacement for clientsForTest(test).
+func (b *distributedExecutionBackend) resolveClientsLocked(tr *TestRunner, test *ManagedTest) (map[string]generatorClient, error) {
+	clientsByTarget, single, target := b.snapshotRemoteClients(tr, test)
+	return b.clientsFromSnapshot(clientsByTarget, single, target)
+}
+
+// groupClientFromSnapshot mirrors clientForGroup on a lock-free snapshot.
+func (b *distributedExecutionBackend) groupClientFromSnapshot(groupTarget string, groupTargetOK bool, clientsByTarget map[string]generatorClient, single generatorClient, target string) (generatorClient, error) {
+	if groupTargetOK {
+		if client := clientsByTarget[groupTarget]; client != nil {
+			return client, nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+		defer cancel()
+		client, err := b.dial(ctx, groupTarget)
+		if err != nil {
+			return nil, fmt.Errorf("connect generator: %w", err)
+		}
+		return client, nil
+	}
+	return b.clientFromSnapshot(clientsByTarget, single, target)
+}
+
+// snapshotMetricsStreams mirrors metricsStreamsForTest but reads under tr.mu.
+func (b *distributedExecutionBackend) snapshotMetricsStreams(tr *TestRunner, test *ManagedTest) map[string]*generatorrpc.MetricsStream {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
 	if len(test.remoteMetricsStreamsByTarget) > 0 {
 		return cloneMetricsStreamMap(test.remoteMetricsStreamsByTarget)
 	}
@@ -693,22 +749,6 @@ func (b *distributedExecutionBackend) metricsStreamsForTest(test *ManagedTest) m
 		return nil
 	}
 	return map[string]*generatorrpc.MetricsStream{test.remoteTarget: test.remoteMetricsStream}
-}
-
-func (b *distributedExecutionBackend) clientForGroup(test *ManagedTest, groupName string) (generatorClient, error) {
-	if target, ok := test.remoteGroupTargets[groupName]; ok {
-		if client := test.remoteClientsByTarget[target]; client != nil {
-			return client, nil
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-		defer cancel()
-		client, err := b.dial(ctx, target)
-		if err != nil {
-			return nil, fmt.Errorf("connect generator: %w", err)
-		}
-		return client, nil
-	}
-	return b.clientForTest(test)
 }
 
 func (b *distributedExecutionBackend) rollbackShardVUsers(testID string, groupName string, clients map[string]generatorClient, successes []GeneratorShardSummary, previousByTarget map[string]int) error {
@@ -742,29 +782,38 @@ func testGroupCurrentShardVUsers(test *ManagedTest, groupName string) int {
 	return vusers
 }
 
-func (b *distributedExecutionBackend) closeRemoteResources(test *ManagedTest) {
-	if len(test.remoteMetricsStreamsByTarget) > 0 {
-		for _, stream := range test.remoteMetricsStreamsByTarget {
-			_ = stream.CloseSend()
-		}
-	} else if test.remoteMetricsStream != nil {
-		_ = test.remoteMetricsStream.CloseSend()
-	}
+func (b *distributedExecutionBackend) closeRemoteResources(tr *TestRunner, test *ManagedTest) {
+	// Snapshot the streams/clients and clear the fields under the lock, then do
+	// the blocking gRPC closes outside the lock (they must not be held under mu).
+	tr.mu.Lock()
+	streamsByTarget := test.remoteMetricsStreamsByTarget
+	singleStream := test.remoteMetricsStream
+	clientsByTarget := test.remoteClientsByTarget
+	singleClient := test.remoteClient
 	test.remoteMetricsStream = nil
 	test.remoteMetricsStreamsByTarget = nil
-	if len(test.remoteClientsByTarget) > 0 {
-		for _, client := range test.remoteClientsByTarget {
-			_ = client.Close()
-		}
-	} else if test.remoteClient != nil {
-		_ = test.remoteClient.Close()
-	}
 	test.remoteClient = nil
 	test.remoteClientsByTarget = nil
 	test.remoteGroupTargets = nil
 	test.remoteGroupShards = nil
 	test.remoteMetricsBatchesByTarget = nil
 	test.remoteTargetStates = nil
+	tr.mu.Unlock()
+
+	if len(streamsByTarget) > 0 {
+		for _, stream := range streamsByTarget {
+			_ = stream.CloseSend()
+		}
+	} else if singleStream != nil {
+		_ = singleStream.CloseSend()
+	}
+	if len(clientsByTarget) > 0 {
+		for _, client := range clientsByTarget {
+			_ = client.Close()
+		}
+	} else if singleClient != nil {
+		_ = singleClient.Close()
+	}
 }
 
 func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *TestRunner, test *ManagedTest, target string, stream *generatorrpc.MetricsStream) {
@@ -872,7 +921,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 		groupVUsers := liveGroupVUsers(test, live)
 		currentTotalVUsers := totalGroupVUsers(groupVUsers)
 		update := evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
-		applyGoalControllerUpdate(test, live, groupVUsers, update, func(groupName string, target int) error {
+		applyGoalControllerUpdate(tr, test, live, groupVUsers, update, func(groupName string, target int) error {
 			return b.ScaleVUsers(tr, test, groupName, target)
 		})
 	}
@@ -882,31 +931,31 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 
 func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner, test *ManagedTest, finalStatus string, finalError string) {
 	if finalStatus == "FAILED" {
-		if err := b.stopRemainingRemoteTargets(test); err != nil {
-			finalError = appendRunError(finalError, "stop remote targets", err)
+		if err := b.stopRemainingRemoteTargets(tr, test); err != nil {
+			finalError = testexec.AppendRunError(finalError, "stop remote targets", err)
 		}
 	}
-	archiveRecord, archiveErr := b.stageRemoteArchive(test, finalStatus == "COMPLETE")
+	archiveRecord, archiveErr := b.stageRemoteArchive(tr, test, finalStatus == "COMPLETE")
 	if archiveErr != nil {
 		finalStatus = "FAILED"
-		finalError = appendRunError(finalError, "remote archive stage failed", archiveErr)
+		finalError = testexec.AppendRunError(finalError, "remote archive stage failed", archiveErr)
 	}
-	b.closeRemoteResources(test)
+	b.closeRemoteResources(tr, test)
 	if test.cancel != nil {
 		test.cancel()
 	}
 	if archiveRecord != nil {
 		if err := tr.saveRunArchiveRecord(archiveRecord); err != nil {
 			finalStatus = "FAILED"
-			finalError = appendRunError(finalError, "archive metadata save failed", err)
+			finalError = testexec.AppendRunError(finalError, "archive metadata save failed", err)
 			archiveRecord = nil
 		}
 	}
 	tr.completeTestRun(test, finalStatus, time.Now(), finalError, archiveRecord)
 }
 
-func (b *distributedExecutionBackend) stageRemoteArchive(test *ManagedTest, requireAll bool) (*storage.RunArchiveRecord, error) {
-	bundles, err := b.fetchRemoteArchiveBundles(test, requireAll)
+func (b *distributedExecutionBackend) stageRemoteArchive(tr *TestRunner, test *ManagedTest, requireAll bool) (*storage.RunArchiveRecord, error) {
+	bundles, err := b.fetchRemoteArchiveBundles(tr, test, requireAll)
 	if err != nil {
 		return nil, err
 	}
@@ -962,8 +1011,8 @@ type remoteArchiveBundle struct {
 	summaries    []byte
 }
 
-func (b *distributedExecutionBackend) fetchRemoteArchiveBundles(test *ManagedTest, requireAll bool) ([]remoteArchiveBundle, error) {
-	clients, err := b.clientsForTest(test)
+func (b *distributedExecutionBackend) fetchRemoteArchiveBundles(tr *TestRunner, test *ManagedTest, requireAll bool) ([]remoteArchiveBundle, error) {
+	clients, err := b.resolveClientsLocked(tr, test)
 	if err != nil {
 		return nil, err
 	}
@@ -1097,14 +1146,21 @@ func appendArchiveContent(file *os.File, content []byte) error {
 	return nil
 }
 
-func (b *distributedExecutionBackend) stopRemainingRemoteTargets(test *ManagedTest) error {
-	clients, err := b.clientsForTest(test)
+func (b *distributedExecutionBackend) stopRemainingRemoteTargets(tr *TestRunner, test *ManagedTest) error {
+	tr.mu.RLock()
+	clientsByTarget, single, remoteTarget := cloneClientMap(test.remoteClientsByTarget), test.remoteClient, test.remoteTarget
+	states := make(map[string]string, len(test.remoteTargetStates))
+	for k, v := range test.remoteTargetStates {
+		states[k] = v
+	}
+	tr.mu.RUnlock()
+	clients, err := b.clientsFromSnapshot(clientsByTarget, single, remoteTarget)
 	if err != nil {
 		return err
 	}
 	var stopErr error
 	for _, target := range orderedGeneratorTargets(clients, b.configuredTargets()) {
-		if state := test.remoteTargetStates[target]; state == "COMPLETE" || state == "FAILED" {
+		if state := states[target]; state == "COMPLETE" || state == "FAILED" {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
@@ -1260,8 +1316,14 @@ func leadingVersionPart(version string) (string, bool) {
 	}
 	part, _, _ := strings.Cut(version, ".")
 	part = strings.TrimSpace(part)
+	part = strings.TrimLeft(part, "vV")
 	if part == "" {
 		return "", false
+	}
+	for _, r := range part {
+		if r < '0' || r > '9' {
+			return "", false
+		}
 	}
 	return part, true
 }
@@ -2384,6 +2446,9 @@ func cloneEngineServerTelemetrySummary(summary *engine.ServerTelemetrySummary) *
 		AvgResponsePayloadKB:      summary.AvgResponsePayloadKB,
 		RequestPayloadHistogram:   cloneTelemetryClassCounts(summary.RequestPayloadHistogram),
 		ResponsePayloadHistogram:  cloneTelemetryClassCounts(summary.ResponsePayloadHistogram),
+		AvgFirstEventMs:           summary.AvgFirstEventMs,
+		MaxFirstEventMs:           summary.MaxFirstEventMs,
+		EventCount:                summary.EventCount,
 		AvgMessageLatencyMs:       summary.AvgMessageLatencyMs,
 		MaxMessageLatencyMs:       summary.MaxMessageLatencyMs,
 		MessagesSent:              summary.MessagesSent,
@@ -2413,6 +2478,11 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 	metrics.ServerTelemetry.AvgResponsePayloadKB += telemetry.ResponsePayloadKB
 	incrementTelemetryHistogramCount(&metrics.ServerTelemetry.RequestPayloadHistogram, telemetry.RequestPayloadKB)
 	incrementTelemetryHistogramCount(&metrics.ServerTelemetry.ResponsePayloadHistogram, telemetry.ResponsePayloadKB)
+	metrics.ServerTelemetry.AvgFirstEventMs += telemetry.FirstEventMs
+	if telemetry.FirstEventMs > metrics.ServerTelemetry.MaxFirstEventMs {
+		metrics.ServerTelemetry.MaxFirstEventMs = telemetry.FirstEventMs
+	}
+	metrics.ServerTelemetry.EventCount += int64(telemetry.EventCount)
 	metrics.ServerTelemetry.AvgMessageLatencyMs += telemetry.MessageLatencyMs
 	if telemetry.MessageLatencyMs > metrics.ServerTelemetry.MaxMessageLatencyMs {
 		metrics.ServerTelemetry.MaxMessageLatencyMs = telemetry.MessageLatencyMs
@@ -2441,6 +2511,7 @@ func finalizeAPIServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	summary.AvgTransferMs /= divisor
 	summary.AvgRequestPayloadKB /= divisor
 	summary.AvgResponsePayloadKB /= divisor
+	summary.AvgFirstEventMs /= divisor
 	summary.AvgMessageLatencyMs /= divisor
 	summary.AvgMessagesSentPerSec /= divisor
 	summary.AvgMessagesReceivedPerSec /= divisor

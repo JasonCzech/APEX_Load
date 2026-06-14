@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -76,22 +75,11 @@ func readRecorderImportRequest(w http.ResponseWriter, r *http.Request) (*recorde
 		return &recorderImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(recorderImportMaxBodyBytes); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
+		data, uploadName, ok := readImportMultipartFile(w, r, recorderImportMaxBodyBytes)
+		if !ok {
 			return nil, false
 		}
-		file, header, err := r.FormFile("file")
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "file field is required")
-			return nil, false
-		}
-		defer file.Close()
-		data, err := io.ReadAll(file)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
-			return nil, false
-		}
-		name := strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename))
+		name := strings.TrimSuffix(uploadName, filepath.Ext(uploadName))
 		return &recorderImportRequest{
 			Data:      data,
 			ProjectID: r.FormValue("project_id"),
@@ -101,9 +89,8 @@ func readRecorderImportRequest(w http.ResponseWriter, r *http.Request) (*recorde
 			},
 		}, true
 	}
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+	data, ok := readImportBody(w, r)
+	if !ok {
 		return nil, false
 	}
 	filename := r.URL.Query().Get("filename")

@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
@@ -339,6 +340,16 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 		result.Script.ProjectID = normalizeProjectID(info.ProjectID)
 		result.Script.GeneratedBy = "browser-recorder"
 		result.Script.GeneratedFrom = "browser_recording_har"
+		review, reviewErr := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{BuildNative: true, HARData: artifact.HAR})
+		if reviewErr != nil {
+			result.Warnings = append(result.Warnings, "Salesforce review failed: "+reviewErr.Error())
+		} else if review != nil && review.Detected {
+			preserved := ensureScriptImportPreserved(result.Script, "browser_recording_har")
+			preserved["salesforce_review"] = salesforceReviewForResponse(review)
+			if review.NativePreview != nil && review.NativePreview.Script != nil {
+				result.Warnings = append(result.Warnings, "Salesforce traffic detected; use /api/v1/scripts/import/salesforce for the native HTTP draft.")
+			}
+		}
 	}
 	return result.Script, result.Warnings, nil
 }

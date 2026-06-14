@@ -7,7 +7,7 @@ short-lived token.
 
 ## User Flow
 
-1. Install the signed `apexload-record-agent` package from the dashboard's
+1. Install the trusted `apexload-record-agent` package from the dashboard's
    **Download the APEX Load Recording Agent** link.
 2. Open Recording Studio in the dashboard.
 3. Copy the generated terminal command.
@@ -31,10 +31,34 @@ Running the agent does not normally require admin privileges. It binds to
 
 Locked-down workstations may still require IT approval for:
 
-- running the signed agent binary
+- running the signed/notarized agent binary
 - launching browser automation
 - downloading or executing the Playwright Chromium payload
 - browser private-network access from the dashboard origin to loopback
+
+## macOS Gatekeeper
+
+The local development package is a raw command-line binary archive. If it was
+not built with a Developer ID Application certificate and notarized by Apple,
+macOS may block it with:
+
+```text
+Apple could not verify "apexload-record-agent" is free of malware that may harm your Mac or compromise your privacy.
+```
+
+For local development only, verify the artifact first, then clear the quarantine
+attribute on the extracted binary:
+
+```bash
+curl -fsS 'http://127.0.0.1:8080/api/v1/downloads/recording-agent/latest/checksum?platform=darwin-arm64'
+shasum -a 256 apexload-recording-agent-*-darwin-arm64.tar.gz
+tar -xzf apexload-recording-agent-*-darwin-arm64.tar.gz
+xattr -dr com.apple.quarantine apexload-recording-agent-*-darwin-arm64/apexload-record-agent
+```
+
+Production macOS distribution should not rely on that workaround. Build with a
+Developer ID identity and notarization credentials so Gatekeeper can verify the
+downloaded agent.
 
 ## Browser Dependency Preflight
 
@@ -70,6 +94,23 @@ dist/recording-agent/
 
 Release packaging should sign/notarize the resulting binaries or wrap them in
 the enterprise installer format used by your fleet management system.
+
+For macOS release builds, configure Developer ID signing and notarization:
+
+```bash
+xcrun notarytool store-credentials apexload-notary \
+  --apple-id "$APPLE_ID" \
+  --team-id "$APPLE_TEAM_ID" \
+  --password "$APPLE_APP_SPECIFIC_PASSWORD"
+
+APEXLOAD_MACOS_CODESIGN_IDENTITY='Developer ID Application: Example Corp (TEAMID)' \
+APEXLOAD_MACOS_NOTARIZE=1 \
+APEXLOAD_MACOS_NOTARY_PROFILE=apexload-notary \
+make package-recording-agent
+```
+
+The package script signs Darwin binaries with hardened runtime before archiving
+and submits a temporary ZIP to `notarytool` when notarization is enabled.
 
 ## Dashboard Download Link
 

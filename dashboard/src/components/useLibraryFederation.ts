@@ -20,7 +20,7 @@ export type LibraryAssetSourceKind = 'Local' | 'Remote'
 export const LIBRARY_SOURCE_OPTIONS: Array<{ value: LibrarySourceFilter; label: string }> = [
   { value: 'all', label: 'All' },
   { value: 'local', label: 'Local' },
-  { value: 'host', label: 'Remote Library' },
+  { value: 'host', label: 'Remote Workspace' },
 ]
 
 function transferProjectMessage(projectMapping: string, remote?: LibraryRemote) {
@@ -97,7 +97,7 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal }: UseLib
 
   useEffect(() => {
     void loadRemotes().catch(error => {
-      setActionError(getErrorMessage(error, 'Unable to load remote libraries'))
+      setActionError(getErrorMessage(error, 'Unable to load Remote Workspaces'))
     })
   }, [loadRemotes])
 
@@ -133,7 +133,7 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal }: UseLib
 
   const actionBlocked = !selectedRemoteId || !credentialsReady || Boolean(projectBlockMessage)
   const actionBlockedReason = !selectedRemoteId
-    ? 'Select a remote library first.'
+    ? 'Select a Remote Workspace first.'
     : !credentialsReady
       ? 'Configure remote credentials in Settings first.'
       : projectBlockMessage

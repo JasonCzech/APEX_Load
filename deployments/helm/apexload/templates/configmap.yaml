@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.dataPlatform.configMapName }}
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+    app.kubernetes.io/name: apexload
+    app.kubernetes.io/component: data-platform
+{{ include "apexload.labels" . | indent 4 }}
+data:
+  APEXLOAD_STORE: {{ .Values.dataPlatform.store | quote }}
+  APEXLOAD_DATABASE_MAX_OPEN_CONNS: {{ .Values.dataPlatform.databaseMaxOpenConns | quote }}
+  APEXLOAD_DATABASE_MAX_IDLE_CONNS: {{ .Values.dataPlatform.databaseMaxIdleConns | quote }}
+  APEXLOAD_DATABASE_CONN_MAX_LIFETIME: {{ .Values.dataPlatform.databaseConnMaxLifetime | quote }}
+  APEXLOAD_TIMESCALEDB: {{ .Values.dataPlatform.timescaleDB | quote }}
+  APEXLOAD_ARCHIVE_BACKEND: {{ .Values.dataPlatform.archiveBackend | quote }}
+  APEXLOAD_ARCHIVE_CONTAINER: {{ .Values.dataPlatform.archiveContainer | quote }}
+  APEXLOAD_ARCHIVE_PREFIX: {{ .Values.dataPlatform.archivePrefix | quote }}
+  AZURE_STORAGE_ACCOUNT: {{ .Values.dataPlatform.azureStorageAccount | quote }}
+  APEXLOAD_CACHE_BACKEND: {{ .Values.dataPlatform.cacheBackend | quote }}
+  APEXLOAD_REDIS_KEY_PREFIX: {{ .Values.dataPlatform.redisKeyPrefix | quote }}
+  APEXLOAD_REDIS_TIMEOUT: {{ .Values.dataPlatform.redisTimeout | quote }}
+  APEXLOAD_REDIS_FANOUT_CHANNEL: {{ .Values.dataPlatform.redisFanoutChannel | quote }}
+  APEXLOAD_AZURE_KEY_VAULT_URL: {{ .Values.dataPlatform.keyVaultUrl | quote }}
+  APEXLOAD_AZURE_KEY_VAULT_AUTH: {{ .Values.dataPlatform.keyVaultAuth | quote }}
+  APEXLOAD_GENERATORS: {{ .Values.dataPlatform.generators | quote }}
+  APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: {{ .Values.dataPlatform.generatorDiscoveryInterval | quote }}
+  APEXLOAD_GENERATOR_TIMEOUT: {{ .Values.dataPlatform.generatorTimeout | quote }}
+  APEXLOAD_GRPC_TLS_CERT: /etc/apexload/grpc-tls/tls.crt
+  APEXLOAD_GRPC_TLS_KEY: /etc/apexload/grpc-tls/tls.key
+  APEXLOAD_GRPC_TLS_CA: /etc/apexload/grpc-tls/ca.crt
+  APEXLOAD_GRPC_TLS_SERVER_NAME: apexload-generator.{{ include "apexload.namespace" . }}.svc.cluster.local
+  APEXLOAD_METRICS_ADDR: {{ .Values.dataPlatform.metricsAddr | quote }}
+  APEXLOAD_API_KEY_RATE_LIMIT_PER_MINUTE: {{ .Values.dataPlatform.apiKeyRateLimitPerMinute | quote }}
+  APEXLOAD_IDEMPOTENCY_KEY_TTL: {{ .Values.dataPlatform.idempotencyKeyTTL | quote }}

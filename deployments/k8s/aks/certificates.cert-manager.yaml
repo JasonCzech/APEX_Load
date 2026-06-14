@@ -1,0 +1,70 @@
+# Optional cert-manager issuance for controller<->generator mTLS on AKS.
+# Not included in kustomization.yaml because clusters may use an enterprise CA
+# or Key Vault CSI synced secrets instead. Any issuer is acceptable as long as:
+#   apexload-generator-grpc-tls contains tls.crt / tls.key / ca.crt
+#   apexload-controller-grpc-tls contains tls.crt / tls.key / ca.crt
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: apexload-selfsigned
+  namespace: apexload
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apexload-grpc-ca
+  namespace: apexload
+spec:
+  isCA: true
+  commonName: apexload-grpc-ca
+  secretName: apexload-grpc-ca
+  duration: 8760h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: apexload-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: apexload-grpc-ca
+  namespace: apexload
+spec:
+  ca:
+    secretName: apexload-grpc-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apexload-generator-grpc-tls
+  namespace: apexload
+spec:
+  secretName: apexload-generator-grpc-tls
+  duration: 2160h
+  dnsNames:
+    - apexload-generator.apexload.svc.cluster.local
+    - apexload-generator.apexload.svc
+  usages:
+    - server auth
+  issuerRef:
+    name: apexload-grpc-ca
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apexload-controller-grpc-tls
+  namespace: apexload
+spec:
+  secretName: apexload-controller-grpc-tls
+  duration: 2160h
+  commonName: apexload-controller
+  usages:
+    - client auth
+  issuerRef:
+    name: apexload-grpc-ca
+    kind: Issuer

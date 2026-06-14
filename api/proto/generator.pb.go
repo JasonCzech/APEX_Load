@@ -812,6 +812,8 @@ type ServerTelemetry struct {
 	MessagesReceived       int32                  `protobuf:"varint,11,opt,name=messages_received,json=messagesReceived,proto3" json:"messages_received,omitempty"`
 	MessagesSentPerSec     float64                `protobuf:"fixed64,12,opt,name=messages_sent_per_sec,json=messagesSentPerSec,proto3" json:"messages_sent_per_sec,omitempty"`
 	MessagesReceivedPerSec float64                `protobuf:"fixed64,13,opt,name=messages_received_per_sec,json=messagesReceivedPerSec,proto3" json:"messages_received_per_sec,omitempty"`
+	FirstEventMs           float64                `protobuf:"fixed64,14,opt,name=first_event_ms,json=firstEventMs,proto3" json:"first_event_ms,omitempty"`
+	EventCount             int32                  `protobuf:"varint,15,opt,name=event_count,json=eventCount,proto3" json:"event_count,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -933,6 +935,20 @@ func (x *ServerTelemetry) GetMessagesSentPerSec() float64 {
 func (x *ServerTelemetry) GetMessagesReceivedPerSec() float64 {
 	if x != nil {
 		return x.MessagesReceivedPerSec
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetFirstEventMs() float64 {
+	if x != nil {
+		return x.FirstEventMs
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetEventCount() int32 {
+	if x != nil {
+		return x.EventCount
 	}
 	return 0
 }
@@ -2073,7 +2089,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\rsample_age_ms\x18\x04 \x01(\x01R\vsampleAgeMs\"F\n" +
 	"\vGroupMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
-	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\xe3\x04\n" +
+	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\xaa\x05\n" +
 	"\x0fServerTelemetry\x120\n" +
 	"\x14server_processing_ms\x18\x01 \x01(\x01R\x12serverProcessingMs\x12\x1f\n" +
 	"\vtransfer_ms\x18\x02 \x01(\x01R\n" +
@@ -2089,7 +2105,10 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	" \x01(\x05R\fmessagesSent\x12+\n" +
 	"\x11messages_received\x18\v \x01(\x05R\x10messagesReceived\x121\n" +
 	"\x15messages_sent_per_sec\x18\f \x01(\x01R\x12messagesSentPerSec\x129\n" +
-	"\x19messages_received_per_sec\x18\r \x01(\x01R\x16messagesReceivedPerSec\"\xa9\x05\n" +
+	"\x19messages_received_per_sec\x18\r \x01(\x01R\x16messagesReceivedPerSec\x12$\n" +
+	"\x0efirst_event_ms\x18\x0e \x01(\x01R\ffirstEventMs\x12\x1f\n" +
+	"\vevent_count\x18\x0f \x01(\x05R\n" +
+	"eventCount\"\xa9\x05\n" +
 	"\x11TransactionMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
 	"\x12start_time_unix_ms\x18\x02 \x01(\x03R\x0fstartTimeUnixMs\x12\x1f\n" +

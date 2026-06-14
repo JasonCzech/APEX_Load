@@ -1426,7 +1426,9 @@ func TestImportMultipartProjectLookupHonorsRouteBodyLimits(t *testing.T) {
 		{name: "k6 import", path: "/api/v1/scripts/import/k6", limit: k6ImportMaxBodyBytes},
 		{name: "devweb import", path: "/api/v1/scripts/import/devweb", limit: webAPIImportMaxBodyBytes},
 		{name: "asyncapi import", path: "/api/v1/scripts/import/asyncapi", limit: webAPIImportMaxBodyBytes},
+		{name: "raml import", path: "/api/v1/scripts/import/raml", limit: webAPIImportMaxBodyBytes},
 		{name: "har import", path: "/api/v1/scripts/import/har", limit: harImportMaxBodyBytes},
+		{name: "salesforce import", path: "/api/v1/scripts/import/salesforce", limit: harImportMaxBodyBytes},
 		{name: "jmeter import", path: "/api/v1/scripts/import/jmeter", limit: jmeterImportMaxBodyBytes},
 		{name: "enterprise archive import", path: "/api/v1/scripts/import/enterprise-script-archive", limit: enterpriseArchiveImportMaxBodyBytes},
 	}

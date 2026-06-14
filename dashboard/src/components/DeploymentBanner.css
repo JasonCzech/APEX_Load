@@ -1,0 +1,78 @@
+.deployment-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  --wails-draggable: no-drag;
+}
+
+.deployment-banner-chip,
+.deployment-banner-warning,
+.deployment-banner-promotion {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  max-width: 220px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.deployment-banner-chip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deployment-banner-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.deployment-banner-chip.kubernetes {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: var(--success-text);
+}
+
+.deployment-banner-chip.kubernetes .deployment-banner-dot {
+  background: var(--success);
+}
+
+.deployment-banner-chip.desktop {
+  background: var(--info-bg);
+  border-color: var(--info-border);
+  color: var(--info-text);
+}
+
+.deployment-banner-chip.desktop .deployment-banner-dot {
+  background: var(--info);
+}
+
+.deployment-banner-warning {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+.deployment-banner-promotion {
+  background: var(--info-bg);
+  border-color: var(--info-border);
+  color: var(--info-text);
+}
+
+@media (max-width: 820px) {
+  .deployment-banner-warning,
+  .deployment-banner-promotion {
+    display: none;
+  }
+}

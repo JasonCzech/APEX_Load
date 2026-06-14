@@ -28,6 +28,8 @@ describe('app topbar helpers', () => {
     expect(pageTitleForScriptSubView('create')).toBe('Create Script')
     expect(pageTitleForScriptSubView('edit')).toBe('Edit Script')
     expect(pageTitleForScriptSubView('openapi-import')).toBe('Import OpenAPI')
+    expect(pageTitleForScriptSubView('raml-import')).toBe('Import RAML')
+    expect(pageTitleForScriptSubView('salesforce-import')).toBe('Import Salesforce')
     expect(pageTitleForScriptSubView('recorder')).toBe('Record Browser')
   })
 

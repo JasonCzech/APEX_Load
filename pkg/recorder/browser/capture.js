@@ -137,6 +137,17 @@
         break;
       }
     }
+    ['title', 'data-aura-class', 'data-aura-rendered-by'].forEach((name) => {
+      const v = el.getAttribute(name);
+      if (v) attrs[name] = v;
+    });
+    if (el.attributes) {
+      Array.prototype.forEach.call(el.attributes, (attr) => {
+        if (attr && attr.name && attr.name.indexOf('data-aura-') === 0 && attr.value) {
+          attrs[attr.name] = attr.value;
+        }
+      });
+    }
     return {
       tag: el.tagName.toLowerCase(),
       id: el.id || '',

@@ -18,7 +18,8 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "version", "--version":
-			fmt.Printf("apexload-record-agent %s (%s, %s)\n", buildinfo.Version, buildinfo.Commit, buildinfo.BuildTime)
+			info := buildinfo.Get()
+			fmt.Printf("apexload-record-agent %s (%s, %s)\n", info.DisplayVersion, info.Commit, info.BuildTime)
 			return
 		case "install-browsers":
 			if err := recordagent.InstallBrowsers(os.Stdout); err != nil {

@@ -8,7 +8,7 @@ import {
   type BrowserRecorderTransactionSuggestion,
 } from '../hooks/api/useBrowserRecorderApi'
 import { type StoredScript } from '../types'
-import { type RecorderImportResult } from '../types/scriptImports'
+import { type RecorderImportResult, type SalesforceImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import BrowserReplayProgress from './BrowserReplayProgress'
@@ -72,6 +72,29 @@ function statusLabel(session: BrowserRecorderSession): string {
   }
 }
 
+function safeRecordingFileName(name?: string): string {
+  return (name || 'browser-recording').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'browser-recording'
+}
+
+function hasSalesforceSignal(session: BrowserRecorderSession, preview?: RecorderImportResult | null): boolean {
+  const text = [
+    session.start_url,
+    session.current_url,
+    ...(session.warnings || []),
+    ...(preview?.warnings || []),
+  ].join(' ').toLowerCase()
+  return [
+    'salesforce traffic detected',
+    'salesforce.com',
+    '.force.com',
+    'lightning.force',
+    '/aura',
+    'agentforce',
+    'mulesoft',
+    'anypoint',
+  ].some(signal => text.includes(signal))
+}
+
 export interface BrowserRecorderControlPanelProps {
   sessionId: string
   /** Rendered as its own chrome-less page (popup window route). */
@@ -94,6 +117,7 @@ export default function BrowserRecorderControlPanel({
   const [loadError, setLoadError] = useState('')
   const [scriptName, setScriptName] = useState('')
   const [preview, setPreview] = useState<RecorderImportResult | null>(null)
+  const [salesforceDraft, setSalesforceDraft] = useState<SalesforceImportResult | null>(null)
   const [savedScript, setSavedScript] = useState<StoredScript | null>(null)
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState('')
@@ -412,11 +436,59 @@ export default function BrowserRecorderControlPanel({
         throw new Error(payload.error || 'Failed to export HAR')
       }
       const blob = await res.blob()
-      const safeName = (session?.name || 'browser-recording').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      const safeName = safeRecordingFileName(session?.name)
       downloadBlob(blob, `${safeName || 'browser-recording'}.har`)
       showFeedback('Side-car HAR downloaded')
     } catch (e: any) {
       showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleReviewSalesforceHTTP = async () => {
+    if (!session) return
+    setBusy(true)
+    try {
+      const res = await api.exportBrowserRecording(sessionId, 'har')
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({ error: 'Failed to export HAR' }))
+        throw new Error(payload.error || 'Failed to export HAR')
+      }
+      const blob = await res.blob()
+      const file = new File([blob], `${safeRecordingFileName(session.name)}.har`, { type: blob.type || 'application/json' })
+      const result = await api.importSalesforce(file, {
+        name: scriptName || `${session.name} Salesforce HTTP`,
+        project_id: session.project_id,
+      })
+      setSalesforceDraft(result)
+      const script = result.script || result.scripts?.[0]
+      showFeedback(`Salesforce HTTP draft ready with ${script?.actions?.length || 0} actions`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleSaveSalesforceDraft = async () => {
+    const script = salesforceDraft?.script || salesforceDraft?.scripts?.[0]
+    if (!script) return
+    setBusy(true)
+    try {
+      const saved = await api.createScript(script, session?.project_id)
+      setSavedScript(saved)
+      onImported?.({ scripts: [saved] })
+      showFeedback(`Salesforce HTTP script "${saved.name}" saved to the script library`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleOpenSalesforceDraft = () => {
+    const script = salesforceDraft?.script || salesforceDraft?.scripts?.[0]
+    if (script) {
+      onEdit?.(script)
     }
   }
 
@@ -441,6 +513,9 @@ export default function BrowserRecorderControlPanel({
   const stopped = session.status === 'stopped'
   const controllable = CONTROLLABLE_STATUSES.has(session.status)
   const openTransactions = session.open_transactions || []
+  const showSalesforceHandoff = session.har_available && hasSalesforceSignal(session, preview)
+  const salesforceScript = salesforceDraft?.script || salesforceDraft?.scripts?.[0] || null
+  const salesforceReview = salesforceDraft?.summary?.salesforce_review
 
   return (
     <div className={`brp-panel ${standalone ? 'brp-standalone' : ''}`} data-testid="browser-recorder-panel">
@@ -699,11 +774,19 @@ export default function BrowserRecorderControlPanel({
               <span>Also create a protocol-level HTTP script from the recorded HAR</span>
             </label>
           )}
+          {showSalesforceHandoff && (
+            <div className="brp-hint">
+              Salesforce-family traffic was detected in the recorded HAR. Review a native HTTP draft before saving when Aura, Lightning, Mulesoft, or Agentforce calls are part of the flow.
+            </div>
+          )}
           <div className="brp-actions">
             {!replaySessionId && (
               <button className="btn btn-secondary" onClick={handleVerify} disabled={busy} data-testid="verify-recording">Verify Recording</button>
             )}
             <button className="btn btn-secondary" onClick={handlePreview} disabled={busy}>Preview Conversion</button>
+            {showSalesforceHandoff && (
+              <button className="btn btn-secondary" onClick={handleReviewSalesforceHTTP} disabled={busy}>Review Salesforce HTTP Draft</button>
+            )}
             <button className="btn btn-primary" onClick={handleSave} disabled={busy}>Save to Script Library</button>
             {onEdit && (
               <button className="btn btn-secondary" onClick={handleOpenEditor} disabled={busy || !editableScript}>
@@ -725,6 +808,28 @@ export default function BrowserRecorderControlPanel({
                   ))}
                 </div>
               )}
+            </div>
+          )}
+          {salesforceDraft && salesforceScript && (
+            <div className="brp-preview-summary">
+              <div>
+                Salesforce HTTP draft: {salesforceScript.actions?.length || 0} actions
+                {salesforceReview?.har_match_coverage &&
+                  ` · ${Math.round(salesforceReview.har_match_coverage.coverage_pct || 0)}% HAR coverage`}
+              </div>
+              {(salesforceDraft.warnings?.length ?? 0) > 0 && (
+                <div className="brp-warnings">
+                  {salesforceDraft.warnings.slice(0, 4).map((warning, idx) => (
+                    <div key={idx} className="brp-warning">{warning}</div>
+                  ))}
+                </div>
+              )}
+              <div className="brp-actions">
+                <button className="btn btn-primary" onClick={handleSaveSalesforceDraft} disabled={busy}>Save Salesforce HTTP Script</button>
+                {onEdit && (
+                  <button className="btn btn-secondary" onClick={handleOpenSalesforceDraft} disabled={busy}>Open Salesforce Draft</button>
+                )}
+              </div>
             </div>
           )}
           {savedScript && (

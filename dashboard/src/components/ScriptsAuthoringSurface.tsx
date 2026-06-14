@@ -129,6 +129,11 @@ export default function ScriptsAuthoringSurface({
         <ProtocolAssetImport kind="har" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
         onOpenCreateOptions,
       )
+    case 'salesforce-import':
+      return renderCreateOptionsSurface(
+        <ProtocolAssetImport kind="salesforce" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
     case 'recorder-import':
       return renderCreateOptionsSurface(
         <ProtocolAssetImport kind="recorder-export" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
@@ -137,6 +142,11 @@ export default function ScriptsAuthoringSurface({
     case 'openapi-import':
       return renderCreateOptionsSurface(
         <ProtocolAssetImport kind="openapi" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
+    case 'raml-import':
+      return renderCreateOptionsSurface(
+        <ProtocolAssetImport kind="raml" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
         onOpenCreateOptions,
       )
     case 'postman-import':

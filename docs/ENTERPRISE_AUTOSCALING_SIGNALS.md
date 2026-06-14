@@ -97,11 +97,11 @@ This keeps old FIFO behavior as the final tie breaker while preventing one busy 
 
 ## Protocol Density Envelopes
 
-Capacity advice now publishes protocol-specific density envelopes in `capacity_advisory.protocol_densities` and uses them when computing VUser-driven generator recommendations. Each envelope also carries benchmark metadata: `benchmark_profile`, `benchmark_evidence`, `calibration_source`, and `calibrated_at`, so API consumers can distinguish measured targets, calibrated models, and conservative fallback assumptions.
+Capacity advice now publishes protocol-specific density envelopes in `capacity_advisory.protocol_densities` and uses them when computing VUser-driven generator recommendations. Each envelope also carries planning metadata: `benchmark_profile`, `benchmark_evidence`, `calibration_source`, and `calibrated_at`, so API consumers can distinguish design targets, calibrated models, and conservative fallback assumptions. These are planning envelopes: the HTTP figure is a **design target** (not yet benchmarked) and the others are calibrated models, not measured results. Treat any value as authoritative only once a deployment publishes local benchmark evidence.
 
 | Protocol | Max VUsers / generator | Confidence | Notes |
 | --- | ---: | --- | --- |
-| HTTP / HTTPS / HTTP/2 | 10,000 | Measured target | Baseline goroutine-per-VUser target. |
+| HTTP / HTTPS / HTTP/2 | 10,000 | Design target | Baseline goroutine-per-VUser target; not yet benchmarked. |
 | gRPC | 12,000 | Calibrated model | High-density HTTP/2 transport with compact payloads. |
 | WebSocket | 6,000 | Calibrated model | Persistent connection footprint lowers density relative to stateless HTTP. |
 | SOAP | 5,000 | Calibrated model | XML parsing and larger payload assumptions. |

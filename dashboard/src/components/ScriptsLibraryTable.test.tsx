@@ -112,7 +112,7 @@ describe('ScriptsLibraryTable federation', () => {
     await act(async () => { pullButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     expect(federation.onPullRemote).toHaveBeenCalledWith(remoteItem)
 
-    const openLink = Array.from(container.querySelectorAll('a')).find(a => a.textContent?.includes('Open in Remote Library'))
+    const openLink = Array.from(container.querySelectorAll('a')).find(a => a.textContent?.includes('Open in Remote Workspace'))
     expect(openLink).toBeDefined()
   })
 

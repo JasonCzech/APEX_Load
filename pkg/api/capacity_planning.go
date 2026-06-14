@@ -658,7 +658,7 @@ func protocolDensityEnvelopesForVUsers(protocolVUsers map[string]int) []Protocol
 func protocolDensityEnvelope(protocol string) ProtocolDensityEnvelope {
 	switch strings.ToLower(strings.TrimSpace(protocol)) {
 	case "http":
-		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "http", MaxVUsersPerGenerator: 10000, CPUCoresPerVUser: 0.00025, MemoryMBPerVUser: 0.35, NetworkMbpsPerVUser: 0.08, CompatibilityConfidence: "measured_target"}, "http_10k_vusers_4vcpu_8gb")
+		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "http", MaxVUsersPerGenerator: 10000, CPUCoresPerVUser: 0.00025, MemoryMBPerVUser: 0.35, NetworkMbpsPerVUser: 0.08, CompatibilityConfidence: "design_target"}, "http_10k_vusers_4vcpu_8gb")
 	case "grpc":
 		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "grpc", MaxVUsersPerGenerator: 12000, CPUCoresPerVUser: 0.00022, MemoryMBPerVUser: 0.30, NetworkMbpsPerVUser: 0.06, CompatibilityConfidence: "calibrated_model"}, "grpc_12k_unary_4vcpu_8gb")
 	case "websocket":

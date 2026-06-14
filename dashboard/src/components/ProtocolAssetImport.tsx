@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type StoredScript } from '../types'
-import { type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type HARImportSummary, type OpenAPIImportResult, type PostmanImportResult, type WSDLImportResult } from '../types/scriptImports'
+import { type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type HARImportSummary, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
@@ -15,7 +15,7 @@ import { withFallbackPersistedScript } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
 
-type ImportKind = 'devweb' | 'har' | 'recorder-export' | 'openapi' | 'postman' | 'wsdl' | 'asyncapi'
+type ImportKind = 'devweb' | 'har' | 'salesforce' | 'recorder-export' | 'openapi' | 'raml' | 'postman' | 'wsdl' | 'asyncapi'
 
 interface Props {
   kind: ImportKind
@@ -40,6 +40,13 @@ const copy = {
     drop: 'Drop a .har file here',
     button: 'Convert HAR',
   },
+  salesforce: {
+    title: 'Import Salesforce HAR',
+    subtitle: 'Upload a Salesforce, Lightning, MuleSoft, or Agentforce HAR and generate a Salesforce-aware HTTP draft with native correlation review.',
+    accept: '.har,.json,application/json',
+    drop: 'Drop a Salesforce HAR or JSON file here',
+    button: 'Convert Salesforce HAR',
+  },
   'recorder-export': {
     title: 'Import Browser Recording',
     subtitle: 'Upload a Chrome DevTools Recorder JSON export or a Playwright codegen script and convert it into a browser script with ranked selector candidates for replay self-heal.',
@@ -53,6 +60,13 @@ const copy = {
     accept: '.json,.yaml,.yml,application/json,application/yaml,text/yaml,text/plain',
     drop: 'Drop an OpenAPI JSON or YAML file here',
     button: 'Convert OpenAPI',
+  },
+  raml: {
+    title: 'Import RAML',
+    subtitle: 'Upload a RAML 1.0 JSON/YAML document and generate HTTP actions with resource, method, example, and OAuth2 review notes.',
+    accept: '.raml,.yaml,.yml,.json,application/json,application/yaml,text/yaml,text/plain',
+    drop: 'Drop a RAML file here',
+    button: 'Convert RAML',
   },
   postman: {
     title: 'Import Postman Collection',
@@ -77,13 +91,87 @@ const copy = {
   },
 } satisfies Record<ImportKind, Record<string, string>>
 
-type ProtocolImportResult = DevWebImportResult | HARImportResult | BrowserRecordingImportResult | OpenAPIImportResult | PostmanImportResult | WSDLImportResult | AsyncAPIImportResult
+type ProtocolImportResult = DevWebImportResult | HARImportResult | SalesforceImportResult | BrowserRecordingImportResult | OpenAPIImportResult | RAMLImportResult | PostmanImportResult | WSDLImportResult | AsyncAPIImportResult
 
 function sourceReviewForImport(result?: ProtocolImportResult | null, script?: ScriptDefinition | null): SourceReview | null {
   const metadataReview = script?.metadata?.import?.preserved?.source_review as SourceReview | undefined
   const review = result?.source_review || metadataReview
   if (!review || (!Array.isArray(review.source_files) && !Array.isArray(review.mappings))) return null
   return review
+}
+
+function uploadNounForKind(kind: ImportKind): string {
+  switch (kind) {
+    case 'devweb':
+      return 'a DevWeb script'
+    case 'har':
+      return 'a HAR file'
+    case 'salesforce':
+      return 'a Salesforce HAR file'
+    case 'recorder-export':
+      return 'a Chrome Recorder export or Playwright script'
+    case 'openapi':
+      return 'an OpenAPI document'
+    case 'raml':
+      return 'a RAML document'
+    case 'postman':
+      return 'a Postman collection'
+    case 'asyncapi':
+      return 'an AsyncAPI document'
+    default:
+      return 'a WSDL document'
+  }
+}
+
+function scriptNamePlaceholder(kind: ImportKind): string {
+  switch (kind) {
+    case 'devweb':
+      return 'Imported DevWeb Script'
+    case 'har':
+      return 'Imported HAR Script'
+    case 'salesforce':
+      return 'Imported Salesforce Script'
+    case 'postman':
+      return 'Imported Postman Script'
+    case 'raml':
+      return 'Imported RAML Script'
+    default:
+      return 'Imported API Script'
+  }
+}
+
+function generatedFromLabel(kind: ImportKind): string {
+  switch (kind) {
+    case 'devweb':
+      return 'DevWeb source'
+    case 'har':
+      return 'HAR entries'
+    case 'salesforce':
+      return 'Salesforce HAR entries'
+    case 'recorder-export':
+      return 'recorded browser steps'
+    case 'openapi':
+      return 'OpenAPI operations'
+    case 'raml':
+      return 'RAML resources'
+    case 'postman':
+      return 'Postman requests'
+    case 'asyncapi':
+      return 'AsyncAPI operations'
+    default:
+      return 'WSDL operations'
+  }
+}
+
+function salesforceReviewForImport(result?: ProtocolImportResult | null, script?: ScriptDefinition | null): SalesforceReview | null {
+  if (!result && !script) return null
+  const summaryReview = (result as SalesforceImportResult | undefined)?.summary?.salesforce_review
+  const metadataReview = script?.metadata?.import?.preserved?.salesforce_review as SalesforceReview | undefined
+  return summaryReview || metadataReview || null
+}
+
+function endpointTotal(review: SalesforceReview, key: 'aura_endpoints' | 'lightning_endpoints' | 'login_flow') {
+  return (review[key] || []).reduce((sum, item) => sum + (item.count || 0), 0)
 }
 
 export default function ProtocolAssetImport({ kind, projectId, onImported, onEdit, onClose }: Props) {
@@ -105,7 +193,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
 
   const handleConvert = async (mode: 'conversion' | 'validation' = 'conversion') => {
     if (!file) {
-      setMessageError(`Please upload ${kind === 'devweb' ? 'a DevWeb script' : kind === 'har' ? 'a HAR file' : kind === 'recorder-export' ? 'a Chrome Recorder export or Playwright script' : kind === 'openapi' ? 'an OpenAPI document' : kind === 'postman' ? 'a Postman collection' : kind === 'asyncapi' ? 'an AsyncAPI document' : 'a WSDL document'}.`)
+      setMessageError(`Please upload ${uploadNounForKind(kind)}.`)
       return
     }
     setMessageError('')
@@ -126,8 +214,10 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
           retention_days: retentionDays,
           redact_sensitive: redactSensitive,
         })
+        if (kind === 'salesforce') return api.importSalesforce(file, options)
         if (kind === 'recorder-export') return api.importBrowserRecording(file, options)
         if (kind === 'openapi') return api.importOpenAPI(file, options)
+        if (kind === 'raml') return api.importRAML(file, options)
         if (kind === 'postman') return api.importPostman(file, options)
         if (kind === 'asyncapi') return api.importAsyncAPI(file, { name: options.name, project_id: options.project_id })
         return api.importWSDL(file, { ...options, soap_version: soapVersion })
@@ -142,6 +232,8 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const reviewedScript = result?.script || result?.scripts?.[0] || null
   const sourceReview = sourceReviewForImport(result, reviewedScript)
   const harSummary: HARImportSummary | undefined = kind === 'har' ? (result as HARImportResult | null | undefined)?.summary : undefined
+  const salesforceReview = kind === 'salesforce' ? salesforceReviewForImport(result, reviewedScript) : null
+  const ramlSummary = kind === 'raml' ? (result as RAMLImportResult | null | undefined)?.summary : undefined
   const harDiff = harSummary?.har_diff
 
   const handleSave = async () => {
@@ -188,7 +280,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
           </div>
           <label className="sample-import-field">
             <span>Script Name</span>
-            <input value={name} onChange={event => setName(event.target.value)} placeholder={kind === 'devweb' ? 'Imported DevWeb Script' : kind === 'har' ? 'Imported HAR Script' : kind === 'postman' ? 'Imported Postman Script' : 'Imported API Script'} />
+            <input value={name} onChange={event => setName(event.target.value)} placeholder={scriptNamePlaceholder(kind)} />
           </label>
           <label className="sample-import-field">
             <span>Base URL Override</span>
@@ -242,7 +334,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
         <div className="sample-import-result">
           <ScriptImportReview
             title={reviewMode === 'validation' ? 'Validation Review' : 'Review Generated Script'}
-            subtitle={`${actionCount} action(s) generated from ${kind === 'devweb' ? 'DevWeb source' : kind === 'har' ? 'HAR entries' : kind === 'recorder-export' ? 'recorded browser steps' : kind === 'openapi' ? 'OpenAPI operations' : kind === 'postman' ? 'Postman requests' : kind === 'asyncapi' ? 'AsyncAPI operations' : 'WSDL operations'}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
+            subtitle={`${actionCount} action(s) generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
             saveLabel={reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save To Script Library'}
             script={reviewedScript}
             warnings={result.warnings}
@@ -304,6 +396,104 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
                     ))}
                   </ul>
                 ) : null}
+              </div>
+            )}
+            {kind === 'salesforce' && salesforceReview && (
+              <div className="sample-import-review-block">
+                <h4>Salesforce Native Review</h4>
+                <div className="sample-import-stats-grid">
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{salesforceReview.detected ? 'Detected' : 'Needs review'}</span>
+                    <span className="sample-stat-label">traffic match</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{Math.round(salesforceReview.har_match_coverage?.coverage_pct || 0)}%</span>
+                    <span className="sample-stat-label">HAR coverage</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{salesforceReview.har_match_coverage?.matched_requests || 0} / {salesforceReview.har_match_coverage?.imported_requests || 0}</span>
+                    <span className="sample-stat-label">matched requests</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{salesforceReview.domains?.length || 0}</span>
+                    <span className="sample-stat-label">domains</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{endpointTotal(salesforceReview, 'aura_endpoints')}</span>
+                    <span className="sample-stat-label">Aura calls</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{endpointTotal(salesforceReview, 'lightning_endpoints')}</span>
+                    <span className="sample-stat-label">Lightning calls</span>
+                  </div>
+                </div>
+                {(salesforceReview.domains?.length || 0) > 0 && (
+                  <ul className="sample-import-findings">
+                    {salesforceReview.domains!.slice(0, 5).map(domain => (
+                      <li key={`${domain.host}-${domain.kind}`}>
+                        <strong>{domain.host}</strong> {domain.kind} ({domain.count} request{domain.count === 1 ? '' : 's'})
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {(salesforceReview.transactions?.length || 0) > 0 && (
+                  <ul className="sample-import-findings">
+                    {salesforceReview.transactions!.slice(0, 5).map(tx => (
+                      <li key={`${tx.name}-${tx.source}`}>
+                        <strong>{tx.name}</strong> {tx.request_count} request{tx.request_count === 1 ? '' : 's'}{tx.aura_actions ? ` / ${tx.aura_actions} Aura action${tx.aura_actions === 1 ? '' : 's'}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {(salesforceReview.blockers?.length || salesforceReview.next_actions?.length) ? (
+                  <ul className="sample-import-findings">
+                    {salesforceReview.blockers?.slice(0, 4).map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
+                    {salesforceReview.next_actions?.slice(0, 4).map(item => <li key={`next-${item}`}><strong>Next action</strong> {item}</li>)}
+                  </ul>
+                ) : null}
+              </div>
+            )}
+            {kind === 'raml' && (ramlSummary || stats) && (
+              <div className="sample-import-review-block">
+                <h4>RAML Import Review</h4>
+                <div className="sample-import-stats-grid">
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{(stats?.total_resources as number | undefined) ?? ramlSummary?.resources?.length ?? 0}</span>
+                    <span className="sample-stat-label">resources</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{(stats?.total_methods as number | undefined) ?? 0}</span>
+                    <span className="sample-stat-label">methods</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{(stats?.request_bodies as number | undefined) ?? 0}</span>
+                    <span className="sample-stat-label">request bodies</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{ramlSummary?.auth_schemes?.length || 0}</span>
+                    <span className="sample-stat-label">auth schemes</span>
+                  </div>
+                  {ramlSummary?.base_url && (
+                    <div className="sample-stat">
+                      <span className="sample-stat-value">{ramlSummary.base_url}</span>
+                      <span className="sample-stat-label">base URL</span>
+                    </div>
+                  )}
+                </div>
+                {(ramlSummary?.resources?.length || 0) > 0 && (
+                  <ul className="sample-import-findings">
+                    {ramlSummary!.resources!.slice(0, 6).map(resource => (
+                      <li key={resource}><strong>{resource}</strong> converted from RAML resources</li>
+                    ))}
+                  </ul>
+                )}
+                {(ramlSummary?.auth_schemes?.length || 0) > 0 && (
+                  <ul className="sample-import-findings">
+                    {ramlSummary!.auth_schemes!.map(scheme => (
+                      <li key={scheme}><strong>{scheme}</strong> mapped into OAuth2 token setup when token metadata was present</li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
           </ScriptImportReview>

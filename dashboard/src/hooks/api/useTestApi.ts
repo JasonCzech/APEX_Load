@@ -18,6 +18,7 @@ import {
   ResourceSample,
   ReportAnnotationsInput,
   ReportAnnotationsResponse,
+  RemoteRunProxyResponse,
   RunArchiveAnalysisResponse,
   RunArchiveManifest,
   RunArchiveReport,
@@ -119,6 +120,13 @@ type TestCreateRequest = {
 
 type LaunchPreflightRequest = TestCreateRequest & {
   intent?: 'immediate' | 'scheduled' | 'queue'
+}
+
+type RemoteRunCreateRequest = TestCreateRequest & {
+  test?: TestCreateRequest
+  remote_project_id?: string
+  start_immediately?: boolean
+  start_options?: StartTestOptions
 }
 
 type TestActionResponse = {
@@ -336,6 +344,30 @@ export function useTestApi() {
   const pauseTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/pause`, { method: 'POST' }), [])
   
   const resumeTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/resume`, { method: 'POST' }), [])
+
+  const createRemoteRun = useCallback(
+    (remoteId: string, data: RemoteRunCreateRequest) =>
+      request<RemoteRunProxyResponse>(`/remotes/${encodeURIComponent(remoteId)}/runs`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    [],
+  )
+
+  const getRemoteRun = useCallback(
+    (remoteId: string, remoteTestId: string) =>
+      request<RemoteRunProxyResponse>(`/remotes/${encodeURIComponent(remoteId)}/runs/${encodeURIComponent(remoteTestId)}`),
+    [],
+  )
+
+  const controlRemoteRun = useCallback(
+    (remoteId: string, remoteTestId: string, action: 'start' | 'stop' | 'abort' | 'pause' | 'resume', options?: StartTestOptions) =>
+      request<RemoteRunProxyResponse>(`/remotes/${encodeURIComponent(remoteId)}/runs/${encodeURIComponent(remoteTestId)}/${action}`, {
+        method: 'POST',
+        body: action === 'start' && options ? JSON.stringify(options) : undefined,
+      }),
+    [],
+  )
 
   const listScenarioSchedules = useCallback(
     (scenarioId: string) => request<ScenarioScheduleListResponse>(`/scenarios/${scenarioId}/schedules`),
@@ -592,6 +624,9 @@ export function useTestApi() {
       adjustDuration,
       pauseTest,
       resumeTest,
+      createRemoteRun,
+      getRemoteRun,
+      controlRemoteRun,
       listScenarioSchedules,
       createScenarioSchedule,
       updateScenarioSchedule,
@@ -620,6 +655,9 @@ export function useTestApi() {
       deleteTest,
       pauseTest,
       resumeTest,
+      createRemoteRun,
+      getRemoteRun,
+      controlRemoteRun,
       listScenarioSchedules,
       createScenarioSchedule,
       updateScenarioSchedule,

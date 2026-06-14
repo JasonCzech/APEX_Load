@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"gocloud.dev/blob"
 	_ "gocloud.dev/blob/azureblob"
@@ -73,10 +74,7 @@ func resolveArchiveRoot() string {
 }
 
 func resolveFilesystemArchiveRoot() string {
-	if dir := os.Getenv("APEXLOAD_ARCHIVE_DIR"); strings.TrimSpace(dir) != "" {
-		return dir
-	}
-	return filepath.Join("artifacts", "archives")
+	return config.ArchiveDir()
 }
 
 func objectArchiveStagingRoot(filesystemRoot string, backend string) string {

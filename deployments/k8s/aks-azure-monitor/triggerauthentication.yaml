@@ -1,0 +1,11 @@
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: apexload-azure-monitor
+  namespace: apexload
+  labels:
+    app.kubernetes.io/name: apexload-generator
+    app.kubernetes.io/component: autoscaling
+spec:
+  podIdentity:
+    provider: azure-workload
