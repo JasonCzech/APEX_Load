@@ -10,6 +10,7 @@ dashboard/node_modules/
 dashboard/dist/
 dashboard/.vite/
 desktop/build/
+dist/recording-agent/
 pkg/**/artifacts/
 coverage.out
 coverage.html

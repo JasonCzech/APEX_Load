@@ -29,9 +29,59 @@ func (s *Server) handleDownloadRecordingAgent(w http.ResponseWriter, r *http.Req
 
 func recordingAgentDistDir() string {
 	if dir := strings.TrimSpace(os.Getenv(recordingAgentDistDirEnv)); dir != "" {
+		return resolveRecordingAgentDistDir(dir)
+	}
+	return resolveRecordingAgentDistDir(defaultRecordingAgentDistDir)
+}
+
+func resolveRecordingAgentDistDir(dir string) string {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		dir = defaultRecordingAgentDistDir
+	}
+	if filepath.IsAbs(dir) {
 		return dir
 	}
-	return defaultRecordingAgentDistDir
+	if resolved, ok := findRelativeRecordingAgentDistDir(dir, recordingAgentSearchBases()...); ok {
+		return resolved
+	}
+	return dir
+}
+
+func recordingAgentSearchBases() []string {
+	var bases []string
+	if wd, err := os.Getwd(); err == nil {
+		bases = append(bases, wd)
+	}
+	if exe, err := os.Executable(); err == nil {
+		bases = append(bases, filepath.Dir(exe))
+	}
+	return bases
+}
+
+func findRelativeRecordingAgentDistDir(rel string, bases ...string) (string, bool) {
+	rel = strings.TrimSpace(rel)
+	if rel == "" || filepath.IsAbs(rel) {
+		return rel, false
+	}
+	for _, base := range bases {
+		base = strings.TrimSpace(base)
+		if base == "" {
+			continue
+		}
+		for {
+			candidate := filepath.Join(base, rel)
+			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+				return candidate, true
+			}
+			parent := filepath.Dir(base)
+			if parent == base {
+				break
+			}
+			base = parent
+		}
+	}
+	return rel, false
 }
 
 func recordingAgentPlatform(r *http.Request) string {

@@ -55,3 +55,23 @@ func TestHandleDownloadRecordingAgentMissingPackageDoesNotServeDashboardShell(t 
 		t.Fatalf("body = %q, want actionable package staging error", resp.Body.String())
 	}
 }
+
+func TestFindRelativeRecordingAgentDistDirSearchesParentDirectories(t *testing.T) {
+	root := t.TempDir()
+	distDir := filepath.Join(root, defaultRecordingAgentDistDir)
+	if err := os.MkdirAll(distDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := filepath.Join(root, "bin", "release")
+	if err := os.MkdirAll(start, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok := findRelativeRecordingAgentDistDir(defaultRecordingAgentDistDir, start)
+	if !ok {
+		t.Fatalf("findRelativeRecordingAgentDistDir() ok = false, want true")
+	}
+	if got != distDir {
+		t.Fatalf("findRelativeRecordingAgentDistDir() = %q, want %q", got, distDir)
+	}
+}

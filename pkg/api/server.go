@@ -645,8 +645,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	if err != nil {
 		slog.Warn("embedded static files not available, dashboard will show build instructions")
 		s.mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/api/") {
-				http.NotFound(w, r)
+			if serveAPINotFound(w, r) {
 				return
 			}
 			serveDashboardBuildMissingOrNotFound(w, r)
@@ -654,8 +653,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	} else if ok, reason := dashboardStaticReady(staticSub); !ok {
 		slog.Warn("embedded static files incomplete, dashboard will show build instructions", "reason", reason)
 		s.mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/api/") {
-				http.NotFound(w, r)
+			if serveAPINotFound(w, r) {
 				return
 			}
 			serveDashboardBuildMissingOrNotFound(w, r)
@@ -663,6 +661,9 @@ func (s *Server) routes(allowedOrigins []string) {
 	} else {
 		fileServer := http.FileServer(http.FS(staticSub))
 		s.mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if serveAPINotFound(w, r) {
+				return
+			}
 			setDashboardStaticHeaders(w)
 			// Serve real files directly. Only extensionless client routes fall back to the SPA shell.
 			path := strings.TrimPrefix(r.URL.Path, "/")
@@ -700,6 +701,14 @@ func dashboardStaticReady(staticFS fs.FS) (bool, string) {
 		}
 	}
 	return true, ""
+}
+
+func serveAPINotFound(w http.ResponseWriter, r *http.Request) bool {
+	if !strings.HasPrefix(r.URL.Path, "/api/") {
+		return false
+	}
+	writeError(w, http.StatusNotFound, "API endpoint not found")
+	return true
 }
 
 func serveDashboardBuildMissingOrNotFound(w http.ResponseWriter, r *http.Request) {

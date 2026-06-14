@@ -54,6 +54,27 @@ func TestStaticRoutesReturnNotFoundForMissingAssetPath(t *testing.T) {
 	}
 }
 
+func TestStaticRoutesReturnJSONNotFoundForUnknownAPIPath(t *testing.T) {
+	server := NewServer(ServerConfig{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/downloads/not-a-real-download", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusNotFound, resp.Body.String())
+	}
+	if contentType := resp.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("content-type = %q, want application/json", contentType)
+	}
+	if strings.Contains(resp.Body.String(), "<div id=\"root\"></div>") {
+		t.Fatalf("body = %q, did not want dashboard shell for unknown API path", resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "API endpoint not found") {
+		t.Fatalf("body = %q, want API not found error", resp.Body.String())
+	}
+}
+
 func TestDashboardStaticReadyAcceptsMatchingAssets(t *testing.T) {
 	staticFS := fstest.MapFS{
 		"index.html": {
