@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -35,8 +36,8 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	}
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	if actorType == "user" || actorType == "service_account" {
-		test.CreatedBySubject = actorSubject
-		test.CreatedByDisplayName = actorDisplayName
+		// AttributeTestCreated sets CreatedBySubject/CreatedByDisplayName under
+		// tr.mu; writing them here directly would race the run/read paths.
 		s.runner.AttributeTestCreated(test.ID, actorSubject, actorDisplayName)
 	}
 	s.recordAuditEvent(r, "test.create", "success", "test", test.ID, test.ProjectID, map[string]any{"name": test.Name, "status": test.Status})
@@ -726,7 +727,7 @@ func (s *Server) handleAdjustDuration(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSystemVersion(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, buildinfo.Get())
+	writeJSON(w, http.StatusOK, s.versionResponse())
 }
 
 func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
@@ -734,12 +735,15 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	availability := resolveCapacityAvailability(settings)
 	build := buildinfo.Get()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":      "healthy",
-		"version":     build.Version,
-		"environment": build.Environment,
-		"build_time":  build.BuildTime,
-		"ws_clients":  s.hub.ClientCount(),
-		"test_count":  len(s.runner.tests),
+		"status":          "healthy",
+		"version":         build.Version,
+		"display_version": build.DisplayVersion,
+		"commit":          build.Commit,
+		"revision":        build.Revision,
+		"environment":     build.Environment,
+		"build_time":      build.BuildTime,
+		"ws_clients":      s.hub.ClientCount(),
+		"test_count":      len(s.runner.tests),
 		"capacity_availability": map[string]any{
 			"source":                          availability.Source,
 			"configured_available_generators": availability.ConfiguredAvailableGenerators,
@@ -976,10 +980,28 @@ func (s *Server) handleGetSystemSettings(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Request) {
-	var settings SystemSettings
-	if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
+	}
+	var settings SystemSettings
+	if err := json.Unmarshal(body, &settings); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	// A PUT that omits the prometheus section must not wipe it — inherit the
+	// currently-stored value. When the section IS present, settings.Prometheus
+	// carries the admin's explicit choice (including an explicit disable), which
+	// the faithful normalizer in UpdateSystemSettings now preserves.
+	if !rawJSONHasKey(string(body), "prometheus") {
+		settings.Prometheus = s.runner.GetSystemSettings().Prometheus
+	}
+	if !rawJSONHasKey(string(body), "client_app") {
+		settings.ClientApp = s.runner.GetSystemSettings().ClientApp
+	}
+	if !rawJSONHasKey(string(body), "client_downloads") {
+		settings.ClientDownloads = s.runner.GetSystemSettings().ClientDownloads
 	}
 
 	updated, err := s.runner.UpdateSystemSettings(settings)

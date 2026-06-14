@@ -1107,6 +1107,8 @@ describe('TestExecutionArchive', () => {
         messages_sent_per_sec: 6.4,
         messages_received_per_sec: 5.8,
         consumer_lag_ms: 22,
+        first_event_ms: 125,
+        event_count: 7,
         connection_reused: false,
       },
     }]
@@ -1158,10 +1160,16 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Response payload: 4.00 KB')
     expect(container.textContent).toContain('Response size class: small')
     expect(container.textContent).toContain('Envelope overhead: 0.75 KB')
-    expect(container.textContent).toContain('SOAP fault: soapenv:Client / client')
+    expect(container.textContent).toContain('Stream: first event 125.0 ms / 7 events')
 
     const serverTelemetryCard = Array.from(container.querySelectorAll('.archive-event-detail-card')).find(card => card.textContent?.includes('Server Telemetry'))
     expect(serverTelemetryCard).toBeDefined()
+    const openFullTextButton = Array.from(serverTelemetryCard?.querySelectorAll('button') ?? []).find(button => button.textContent?.includes('Open full text'))
+    expect(openFullTextButton).toBeDefined()
+    await act(async () => {
+      openFullTextButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(document.body.textContent).toContain('SOAP fault: soapenv:Client / client')
     const copyTelemetryButton = Array.from(serverTelemetryCard?.querySelectorAll('button') ?? []).find(button => button.textContent?.includes('Copy'))
     const openTelemetryButton = Array.from(serverTelemetryCard?.querySelectorAll('button') ?? []).find(button => button.textContent?.includes('Open full text'))
     expect(copyTelemetryButton).toBeDefined()

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -53,12 +54,19 @@ type Server struct {
 	fanoutSub          FanoutSubscription
 	generatorDiscovery *generatorDiscovery
 	discoveryCancel    context.CancelFunc
+	k8sRestart         K8sRestartSettings
+	kubeRestarter      KubeRestarter
+	restartMu          sync.Mutex
+	restartInFlight    map[string]struct{}
 	metricsAddr        string
 	metricsServer      *http.Server
 	metricsBoundAddr   string
 	desktopMode        bool
+	bridgeMode         bool
+	recordingBridge    *BrowserRecordingBridge
 	desktopAppData     string
 	desktopLogPath     string
+	bindScope          string
 	boundAddr          string
 	boundAddrMu        sync.RWMutex
 }
@@ -66,6 +74,9 @@ type Server struct {
 // ServerConfig configures API server startup behavior and integrations.
 type ServerConfig struct {
 	Addr string
+	// BindScope is "loopback" or "wide" for the API listener. When omitted it
+	// is inferred from Addr.
+	BindScope string
 	// MetricsAddr, when set (e.g. ":9091"), serves GET /metrics on its own
 	// listener instead of the API port.
 	MetricsAddr        string
@@ -77,7 +88,10 @@ type ServerConfig struct {
 	LibraryCredentials LibraryCredentialStore
 	GeneratorTargets   []string
 	GeneratorTimeout   time.Duration
+	K8sRestart         K8sRestartSettings
+	KubeRestarter      KubeRestarter
 	DesktopMode        bool
+	BridgeMode         bool
 	DesktopAppDataPath string
 	DesktopLogPath     string
 }
@@ -86,6 +100,10 @@ type ServerConfig struct {
 func NewServer(cfg ServerConfig) *Server {
 	if cfg.Addr == "" {
 		cfg.Addr = ":8080"
+	}
+	cfg.BindScope = strings.TrimSpace(cfg.BindScope)
+	if cfg.BindScope == "" {
+		cfg.BindScope = config.ClassifyBindScope(cfg.Addr)
 	}
 	if cfg.MaxConcurrent <= 0 {
 		cfg.MaxConcurrent = 10
@@ -140,10 +158,15 @@ func NewServer(cfg ServerConfig) *Server {
 		githubTokens:     make(map[string]githubCachedToken),
 		mux:              http.NewServeMux(),
 		desktopMode:      cfg.DesktopMode,
+		bridgeMode:       cfg.BridgeMode,
 		desktopAppData:   cfg.DesktopAppDataPath,
 		desktopLogPath:   cfg.DesktopLogPath,
+		bindScope:        cfg.BindScope,
 
 		generatorDiscovery: discovery,
+		k8sRestart:         normalizeK8sRestartSettings(cfg.K8sRestart),
+		kubeRestarter:      cfg.KubeRestarter,
+		restartInFlight:    make(map[string]struct{}),
 		metricsAddr:        strings.TrimSpace(cfg.MetricsAddr),
 	}
 
@@ -426,8 +449,10 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scripts/import/oracle-ebusiness/support-matrix", cors(log(auth(http.HandlerFunc(s.handleOracleEBusinessSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/oracle-ebusiness/review", cors(log(auth(http.HandlerFunc(s.handleReviewOracleEBusinessImport)))))
 	s.mux.Handle("POST /api/v1/scripts/import/har", cors(log(auth(http.HandlerFunc(s.handleImportHAR)))))
+	s.mux.Handle("POST /api/v1/scripts/import/salesforce", cors(log(auth(http.HandlerFunc(s.handleImportSalesforce)))))
 	s.mux.Handle("POST /api/v1/scripts/import/recorder", cors(log(auth(http.HandlerFunc(s.handleImportRecorder)))))
 	s.mux.Handle("POST /api/v1/scripts/import/openapi", cors(log(auth(http.HandlerFunc(s.handleImportOpenAPI)))))
+	s.mux.Handle("POST /api/v1/scripts/import/raml", cors(log(auth(http.HandlerFunc(s.handleImportRAML)))))
 	s.mux.Handle("POST /api/v1/scripts/import/postman", cors(log(auth(http.HandlerFunc(s.handleImportPostman)))))
 	s.mux.Handle("POST /api/v1/scripts/import/wsdl", cors(log(auth(http.HandlerFunc(s.handleImportWSDL)))))
 	s.mux.Handle("POST /api/v1/scripts/import/asyncapi", cors(log(auth(http.HandlerFunc(s.handleImportAsyncAPI)))))
@@ -530,6 +555,10 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/system/health", cors(log(http.HandlerFunc(s.handleHealthCheck))))
 	s.mux.Handle("GET /api/v1/system/version", cors(log(http.HandlerFunc(s.handleSystemVersion))))
 	s.mux.Handle("GET /api/v1/system/readiness", cors(log(http.HandlerFunc(s.handleSystemReadiness))))
+	s.mux.Handle("GET /api/v1/downloads/recording-agent/latest", cors(log(auth(http.HandlerFunc(s.handleDownloadRecordingAgent)))))
+	s.mux.Handle("GET /api/v1/downloads/recording-agent/latest/checksum", cors(log(auth(http.HandlerFunc(s.handleRecordingAgentChecksum)))))
+	s.mux.Handle("GET /api/v1/downloads/desktop/latest", cors(log(auth(http.HandlerFunc(s.handleDownloadDesktopApp)))))
+	s.mux.Handle("GET /api/v1/downloads/desktop/latest/checksum", cors(log(auth(http.HandlerFunc(s.handleDesktopAppChecksum)))))
 	// With a dedicated metrics listener (APEXLOAD_METRICS_ADDR) the scrape
 	// endpoint moves off the API port entirely, so NetworkPolicy can grant the
 	// monitoring namespace metrics access without exposing the API surface.
@@ -588,6 +617,13 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/library/remotes/{id}/pull", cors(log(auth(http.HandlerFunc(s.handleLibraryRemotePull)))))
 	s.mux.Handle("POST /api/v1/library/remotes/{id}/push", cors(log(auth(http.HandlerFunc(s.handleLibraryRemotePush)))))
 	s.mux.Handle("POST /api/v1/library/remotes/{id}/diff", cors(log(auth(http.HandlerFunc(s.handleLibraryRemoteDiff)))))
+	s.mux.Handle("POST /api/v1/remotes/{id}/runs", cors(log(auth(http.HandlerFunc(s.handleCreateRemoteRun)))))
+	s.mux.Handle("GET /api/v1/remotes/{id}/runs/{remote_test_id}", cors(log(auth(http.HandlerFunc(s.handleGetRemoteRun)))))
+	s.mux.Handle("POST /api/v1/remotes/{id}/runs/{remote_test_id}/start", cors(log(auth(s.handleRemoteRunAction("start")))))
+	s.mux.Handle("POST /api/v1/remotes/{id}/runs/{remote_test_id}/stop", cors(log(auth(s.handleRemoteRunAction("stop")))))
+	s.mux.Handle("POST /api/v1/remotes/{id}/runs/{remote_test_id}/abort", cors(log(auth(s.handleRemoteRunAction("abort")))))
+	s.mux.Handle("POST /api/v1/remotes/{id}/runs/{remote_test_id}/pause", cors(log(auth(s.handleRemoteRunAction("pause")))))
+	s.mux.Handle("POST /api/v1/remotes/{id}/runs/{remote_test_id}/resume", cors(log(auth(s.handleRemoteRunAction("resume")))))
 	s.mux.Handle("POST /api/v1/results/import", cors(log(auth(http.HandlerFunc(s.handleImportExternalResults)))))
 	s.mux.Handle("GET /api/v1/results/imports", cors(log(auth(http.HandlerFunc(s.handleListExternalResultImports)))))
 	s.mux.Handle("GET /api/v1/fleet/alerts", cors(log(auth(http.HandlerFunc(s.handleGetFleetAlerts)))))
@@ -595,6 +631,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/fleet/load-zones", cors(log(auth(http.HandlerFunc(s.handleGetFleetLoadZones)))))
 	s.mux.Handle("GET /api/v1/fleet/provisioner", cors(log(auth(http.HandlerFunc(s.handleGetFleetProvisioner)))))
 	s.mux.Handle("PATCH /api/v1/system/generators/drain", cors(log(auth(http.HandlerFunc(s.handleSetGeneratorDrainState)))))
+	s.mux.Handle("GET /api/v1/system/restarts/capabilities", cors(log(auth(http.HandlerFunc(s.handleGetSystemRestartCapabilities)))))
+	s.mux.Handle("POST /api/v1/system/restarts", cors(log(auth(http.HandlerFunc(s.handleSystemRestart)))))
 	s.mux.Handle("GET /api/v1/system/settings", cors(log(auth(http.HandlerFunc(s.handleGetSystemSettings)))))
 	s.mux.Handle("PUT /api/v1/system/settings", cors(log(auth(http.HandlerFunc(s.handleUpdateSystemSettings)))))
 
@@ -612,8 +650,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	if err != nil {
 		slog.Warn("embedded static files not available, dashboard will show build instructions")
 		s.mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/api/") {
-				http.NotFound(w, r)
+			if serveAPINotFound(w, r) {
 				return
 			}
 			serveDashboardBuildMissingOrNotFound(w, r)
@@ -621,8 +658,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	} else if ok, reason := dashboardStaticReady(staticSub); !ok {
 		slog.Warn("embedded static files incomplete, dashboard will show build instructions", "reason", reason)
 		s.mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/api/") {
-				http.NotFound(w, r)
+			if serveAPINotFound(w, r) {
 				return
 			}
 			serveDashboardBuildMissingOrNotFound(w, r)
@@ -630,6 +666,9 @@ func (s *Server) routes(allowedOrigins []string) {
 	} else {
 		fileServer := http.FileServer(http.FS(staticSub))
 		s.mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if serveAPINotFound(w, r) {
+				return
+			}
 			setDashboardStaticHeaders(w)
 			// Serve real files directly. Only extensionless client routes fall back to the SPA shell.
 			path := strings.TrimPrefix(r.URL.Path, "/")
@@ -669,6 +708,14 @@ func dashboardStaticReady(staticFS fs.FS) (bool, string) {
 	return true, ""
 }
 
+func serveAPINotFound(w http.ResponseWriter, r *http.Request) bool {
+	if !strings.HasPrefix(r.URL.Path, "/api/") {
+		return false
+	}
+	writeError(w, http.StatusNotFound, "API endpoint not found")
+	return true
+}
+
 func serveDashboardBuildMissingOrNotFound(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
 	if strings.HasPrefix(path, "assets/") {
@@ -700,12 +747,22 @@ func (s *Server) enforceAuthPosture() error {
 	if productionMode() {
 		return fmt.Errorf("refusing to start: auth mode %q bypasses authentication but APEXLOAD_ENV=production; configure %q or %q auth", mode, authModeOIDC, authModeTrustedHeaders)
 	}
+	if s.bindScope == config.BindScopeWide {
+		slog.Warn("controller is wide-bound while auth is in a bypass mode; all reachable API endpoints are unauthenticated",
+			"auth_mode", mode,
+			"addr", s.httpServer.Addr,
+			"bind_scope", s.bindScope)
+		return nil
+	}
 	slog.Warn("auth is in a bypass mode — all API endpoints are unauthenticated; do not use this configuration in production",
 		"auth_mode", mode)
 	return nil
 }
 
 func (s *Server) Start() error {
+	if s.bridgeMode {
+		return s.startBridge()
+	}
 	if err := s.enforceAuthPosture(); err != nil {
 		return err
 	}
@@ -729,6 +786,20 @@ func (s *Server) Start() error {
 	}
 	s.setBoundAddr(listener.Addr().String())
 	slog.Info("apexload API server starting", "addr", s.httpServer.Addr, "bound_addr", s.BoundAddr())
+	if err := s.httpServer.Serve(listener); err != http.ErrServerClosed {
+		return err
+	}
+	return nil
+}
+
+func (s *Server) startBridge() error {
+	go s.hub.Run()
+	listener, err := net.Listen("tcp", s.httpServer.Addr)
+	if err != nil {
+		return err
+	}
+	s.setBoundAddr(listener.Addr().String())
+	slog.Info("apexload browser recording bridge starting", "addr", s.httpServer.Addr, "bound_addr", s.BoundAddr())
 	if err := s.httpServer.Serve(listener); err != http.ErrServerClosed {
 		return err
 	}
@@ -826,8 +897,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		_ = s.fanoutSub.Close()
 		s.fanoutSub = nil
 	}
-	s.hub.Stop()
-	s.recorder.StopProxy()
+	if s.hub != nil {
+		s.hub.Stop()
+	}
+	if s.recorder != nil {
+		s.recorder.StopProxy()
+	}
 	if s.cache != nil {
 		_ = s.cache.Close()
 	}

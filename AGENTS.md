@@ -13,7 +13,7 @@ default), a React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 - **Dashboard** (React 18 + TypeScript + Recharts): Real-time WebSocket-fed monitoring.
 - **Telemetry**: Prometheus scrape + W3C `traceparent` propagation + Dynatrace event webhooks. Controller aggregates with t-digest for percentiles. (Full OpenTelemetry span instrumentation is not yet implemented.)
 - **Storage**: SQLite by default (`apexload.db`); PostgreSQL is an optional enterprise backend (via pgx). Live state is in-memory with optional Redis/Valkey for HA. Archives are written to the local filesystem; S3/Azure Blob/GCS are optional enterprise backends.
-- **Deployment**: AKS with CRDs, K8s operator, Helm charts, Terraform IaC.
+- **Deployment**: Kustomize manifests for local/kind, on-prem, and AKS; Helm chart for enterprise installs; KEDA-driven generator autoscaling; Terraform IaC for the Azure stack. (No operator/CRDs yet.)
 
 ## Module Path
 `github.com/jasonczech/apexload`
@@ -24,6 +24,7 @@ cmd/
   generator/     — Load generator binary (deployed as StatefulSet pods)
   controller/    — Test controller + API server binary (Deployment, 2 replicas)
   apexctl/       — CLI tool for running/managing tests
+  apexload-record-agent/ — Local browser-recording bridge agent (run on operator workstations)
   dslschema/     — Code generator for docs/dsl.schema.json + DSL_ACTION_REFERENCE.md
 pkg/
   protocol/      — Protocol plugin interface + registry
@@ -42,6 +43,8 @@ pkg/
   refkey/        — Human-readable, environment-aware reference keys
   buildinfo/     — Build metadata (version/commit/build-time)
   config/        — Configuration types
+  kubeops/       — In-cluster Kubernetes operations (generator pod restart/drain)
+  recordagent/   — Local recording-agent runtime (Playwright/Chromium provisioning + bridge)
 api/
   proto/         — gRPC protobuf definitions (controller ↔ generator)
 dashboard/       — React 18 + TypeScript + Recharts SPA
@@ -49,9 +52,14 @@ dashboard/       — React 18 + TypeScript + Recharts SPA
   src/hooks/      — useWebSocket (real-time), useApi (REST client)
 desktop/         — Wails native client shell (embeds controller API + dashboard)
 deployments/
-  k8s/           — Kubernetes manifests, Helm charts
+  k8s/           — Kubernetes manifests (Kustomize overlays: local/local-kind/onprem/aks)
+  helm/          — Helm chart for Kubernetes/AKS enterprise installs
+  docker/        — docker-compose stack for local multi-service runs
+  azure/         — Terraform IaC (AKS/ACR/PostgreSQL/Redis/Blob/Key Vault) + App Service launcher
+  ci/            — CI pipeline templates (GitHub Actions + Azure Pipelines)
 mcp/
-  server.py      — Model Context Protocol (MCP) server for AI agents
+  apexload_mcp/  — Python MCP server package (client + tools)
+  server.py      — MCP server entrypoint for AI agents
   README.md      — Setup and configuration instructions
 ```
 
@@ -70,14 +78,19 @@ mcp/
 ## Protocol Interface
 All protocols implement `pkg/protocol.Protocol`. Register new protocols in `pkg/protocol/registry.go`.
 Bundled and compiled into the controller/generator binaries (see the `_` imports in `cmd/*/main.go`):
-HTTP (http/1.1, http/2), SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), WebSocket, gRPC,
-JMS Solace, JMS IBM MQ, Kafka (produce/consume/request-reply; in-memory mock broker by default, real
-franz-go network adapter opt-in via `-tags kafka_real`), database (SQL query/exec/transactions),
+HTTP (http/1.1, http/2), SOAP (+ WSDL import), Java-over-HTTP (`java_http`, bounded codec MVP),
+Java Vuser sidecar bridge (`java_vuser`, external-runner; governed and disabled unless runner config
+enables it), WebSocket, gRPC, JMS Solace, JMS IBM MQ, JMS Azure Service Bus (real adapter opt-in via
+`-tags jms_servicebus_real`), Kafka (produce/consume/request-reply; in-memory mock broker by default,
+real franz-go network adapter opt-in via `-tags kafka_real`), database (SQL query/exec/transactions),
 network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), and browser (replay + canary diagnostics). `apexctl`
-bundles the same set except database, java_http, and network.
+bundles the same set except database, java_http, and network. (`sap_gui` actions are
+authorable/importable via the DSL catalog but have no registered runtime protocol.)
 
 ## Script DSL
-JSON-based. Template variables: `{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`, `{{fn.uuid()}}`.
+JSON-based. Template namespaces: `{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`,
+`{{param.name}}`, `{{secret.name}}`, plus built-in functions under `{{fn.*}}`/`{{fake.*}}`
+(e.g. `fn.uuid()`, `fn.timestamp.unix()`, `fn.random(min,max)`, `fn.random_string(n)`, `fake.email()`).
 Sections: config, data_sources, init, actions, teardown.
 
 ## REST API

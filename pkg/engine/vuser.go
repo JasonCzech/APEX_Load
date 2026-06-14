@@ -16,6 +16,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	protocolhttp "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 type VUser struct {
@@ -126,6 +127,21 @@ func (vu *VUser) Run(ctx context.Context) {
 	iterationTxMode := autoTx == "per_iteration" || (autoTx == "none" && !scriptHasExplicitTransactions(vu.Script))
 	maxIter := cfg.RunLogic.Iterations
 	continueOnError := cfg.ErrorHandling.ContinueOnError
+
+	// ctx (the value passed to Run) stops the loop from starting new iterations;
+	// it is cancelled when a shared execution goal exhausts (soft stop) and on
+	// per-VUser scale/ramp-down. iterCtx governs the body of an iteration once it
+	// holds a goal reservation: it is set to HardStopCtx so a claimed reservation
+	// always completes and is recorded on a goal-exhaustion soft stop, while
+	// still being interrupted on scale/ramp-down and hard stops. In the
+	// MultiGroupEngine, HardStopCtx is a per-VUser "shed" context that is a child
+	// of the engine base context (so hard stops cancel it) and is cancelled
+	// explicitly on scale/ramp-down — but NOT by goal exhaustion.
+	iterCtx := ctx
+	if vu.HardStopCtx != nil {
+		iterCtx = vu.HardStopCtx
+	}
+
 	applyActionThinkTime := func(action dsl.Action) {
 		if !action.ThinkTimeAfter {
 			return
@@ -153,18 +169,10 @@ func (vu *VUser) Run(ctx context.Context) {
 				thinkCfg.Ignore = true
 			}
 		}
-		applyThinkTime(thinkCfg)
+		applyThinkTimeCtx(iterCtx, thinkCfg)
 	}
 
 	// --- Main iteration loop ---
-	// ctx stops the loop from starting new iterations (it is cancelled when a
-	// shared execution goal exhausts); iterCtx governs the body of an
-	// iteration once it holds a goal reservation, so that reservation always
-	// completes and is recorded unless the run is hard-stopped.
-	iterCtx := ctx
-	if vu.HardStopCtx != nil {
-		iterCtx = vu.HardStopCtx
-	}
 	iteration := 0
 	for {
 		// Check iteration limit
@@ -414,8 +422,9 @@ func (vu *VUser) Run(ctx context.Context) {
 
 		iteration++
 
-		// Apply pacing between iterations
-		applyIterationPacing(pacingCfg, iterStart)
+		// Apply pacing between iterations (interruptible: a scale/ramp-down or
+		// hard stop cuts the pacing sleep short instead of holding load).
+		applyIterationPacingCtx(iterCtx, pacingCfg, iterStart)
 	}
 
 teardown:
@@ -725,6 +734,8 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 		return true, nil
 	case "source_runtime":
 		return true, vu.handleSourceRuntimeAction(ctx, action)
+	case "http_oauth2_token":
+		return true, vu.handleHTTPOAuth2TokenAction(ctx, action)
 	case "source_transaction":
 		vu.handleSourceTransactionAction(action)
 		return true, nil
@@ -743,6 +754,45 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 	default:
 		return false, nil
 	}
+}
+
+func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Action) error {
+	params := vu.interpolateAnyMap(action.Params)
+	saveAs, _ := actionParamString(params, "save_as")
+	if saveAs == "" {
+		saveAs = "access_token"
+	}
+	paramString := func(key string) string {
+		value, _ := actionParamString(params, key)
+		return value
+	}
+	token, err := protocolhttp.FetchOAuth2Token(ctx, protocolhttp.OAuthTokenRequest{
+		TokenURL:     paramString("token_url"),
+		GrantType:    paramString("grant_type"),
+		ClientID:     paramString("client_id"),
+		ClientSecret: paramString("client_secret"),
+		Scope:        paramString("scope"),
+		Audience:     paramString("audience"),
+		Issuer:       paramString("issuer"),
+		Subject:      paramString("subject"),
+		PrivateKey:   paramString("private_key"),
+		RefreshToken: paramString("refresh_token"),
+	})
+	if err != nil {
+		return fmt.Errorf("http_oauth2_token %q: %w", action.Name, err)
+	}
+	vu.ensureVariables()
+	writeVariableAlias := func(key, value string) {
+		vu.Variables[key] = value
+		vu.Variables[strings.ToLower(key)] = value
+	}
+	writeVariableAlias(saveAs, token.AccessToken)
+	writeVariableAlias(saveAs+"_token_type", token.TokenType)
+	writeVariableAlias(saveAs+"_instance_url", token.InstanceURL)
+	if !token.ExpiresAt.IsZero() {
+		writeVariableAlias(saveAs+"_expires_at", strconv.FormatInt(token.ExpiresAt.Unix(), 10))
+	}
+	return nil
 }
 
 func (vu *VUser) handleSourceMessageAction(ctx context.Context, action dsl.Action) {
@@ -2063,7 +2113,7 @@ func (vu *VUser) resolveTemplateValue(expr string) (string, bool) {
 		return value, ok
 	case strings.HasPrefix(expr, "env."):
 		key := strings.TrimSpace(strings.TrimPrefix(expr, "env."))
-		value, ok := os.LookupEnv(key)
+		value, ok := lookupScriptEnv(key)
 		return value, ok
 	case strings.HasPrefix(expr, "secret."):
 		key := strings.TrimSpace(strings.TrimPrefix(expr, "secret."))

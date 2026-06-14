@@ -11,10 +11,13 @@ import ProtocolAssetImport from './ProtocolAssetImport'
 const apiMock = {
   importDevWeb: vi.fn(),
   importHAR: vi.fn(),
+  importSalesforce: vi.fn(),
   importBrowserRecording: vi.fn(),
   importOpenAPI: vi.fn(),
+  importRAML: vi.fn(),
   importPostman: vi.fn(),
   importWSDL: vi.fn(),
+  importAsyncAPI: vi.fn(),
   createScript: vi.fn(),
 }
 
@@ -142,6 +145,92 @@ describe('ProtocolAssetImport', () => {
       source_review: {
         source_files: [{ path: 'sample.har', language: 'json', content: '{"log":{"entries":[]}}' }],
         mappings: [{ id: 'har-entry', source_file: 'sample.har', start_line: 1, function: 'har_entry', target_path: 'actions[0]', target_name: 'GET api orders', target_kind: 'action', status: 'converted' }],
+      },
+    })
+    apiMock.importSalesforce.mockResolvedValue({
+      scripts: [],
+      script: {
+        name: 'Imported Salesforce',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://acme.my.salesforce.com' },
+        actions: [
+          { name: 'Aura Bootstrap', type: 'request', method: 'POST', target: '/aura' },
+        ],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [{
+        key: 'salesforce_review',
+        title: 'Salesforce Native Review',
+        severity: 'info',
+        summary: 'Salesforce traffic detected.',
+        items: ['Aura and Lightning endpoints were detected.'],
+      }],
+      repair_suggestions: [],
+      correlations: [{ name: 'aura_token', source: 'body', expression: 'aura.token', found_in_seq: 1 }],
+      stats: {
+        format: 'har',
+        total_requests: 2,
+        converted_actions: 1,
+        filtered_assets: 0,
+        assertions: 1,
+        extractors: 1,
+        correlations_detected: 1,
+      },
+      summary: {
+        artifact_mode: 'salesforce_native_http',
+        salesforce_review: {
+          detected: true,
+          domains: [{ host: 'acme.my.salesforce.com', kind: 'lightning', count: 2 }],
+          aura_endpoints: [{ method: 'POST', path: '/aura', host: 'acme.my.salesforce.com', count: 2 }],
+          lightning_endpoints: [{ method: 'GET', path: '/lightning', host: 'acme.my.salesforce.com', count: 1 }],
+          transactions: [{ name: 'Salesforce Login', source: 'har', request_count: 2, aura_actions: 1 }],
+          correlation_confidence: 'high',
+          har_match_coverage: { har_provided: true, imported_requests: 2, matched_requests: 2, coverage_pct: 100 },
+          next_actions: ['Review Salesforce correlation extractors before approval.'],
+        },
+      },
+    })
+    apiMock.importRAML.mockResolvedValue({
+      scripts: [],
+      script: {
+        name: 'Imported RAML',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://api.example.test' },
+        init: [{ name: 'Get OAuth2 Token', type: 'http_oauth2_token', target: '', params: { token_url: 'https://auth.example.test/token' } }],
+        actions: [
+          { name: 'GET /orders', type: 'request', method: 'GET', target: '/orders' },
+        ],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [{
+        key: 'raml_import',
+        title: 'RAML Import Review',
+        severity: 'info',
+        summary: 'RAML resources and methods were converted to HTTP DSL actions.',
+        items: ['OAuth2 security schemes create an http_oauth2_token init action when an accessTokenUri is present.'],
+      }],
+      repair_suggestions: [],
+      correlations: [],
+      stats: {
+        format: 'raml',
+        total_resources: 1,
+        total_methods: 1,
+        converted_actions: 1,
+        request_bodies: 0,
+        auth_schemes_detected: ['oauth_2_0'],
+      },
+      summary: {
+        title: 'Orders API',
+        version: 'v1',
+        base_url: 'https://api.example.test',
+        resources: ['/orders'],
+        auth_schemes: ['oauth_2_0'],
       },
     })
     apiMock.importBrowserRecording.mockResolvedValue({
@@ -354,6 +443,79 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('filtered assets')
     expect(container.textContent).toContain('HAR Artifact Review')
     expect(container.textContent).toContain('dynamic candidates')
+  })
+
+  it('imports Salesforce HAR files through the native review flow', async () => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="salesforce" projectId="project-1" />)
+    })
+
+    expect(container.textContent).toContain('Import Salesforce HAR')
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+
+    const file = new File(['{"log":{"entries":[]}}'], 'salesforce.har', { type: 'application/json' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Salesforce HAR'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importSalesforce).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
+    expect(container.textContent).toContain('Salesforce Native Review')
+    expect(container.textContent).toContain('100%')
+    expect(container.textContent).toContain('acme.my.salesforce.com')
+    expect(container.textContent).toContain('Salesforce Login')
+    expect(container.textContent).toContain('Review Salesforce correlation extractors before approval.')
+  })
+
+  it('imports RAML files through the shared protocol asset flow', async () => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="raml" projectId="project-1" />)
+    })
+
+    expect(container.textContent).toContain('Import RAML')
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+
+    const file = new File(['#%RAML 1.0\ntitle: Orders API'], 'orders.raml', { type: 'text/yaml' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert RAML'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importRAML).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
+    expect(container.textContent).toContain('RAML Import Review')
+    expect(container.textContent).toContain('/orders')
+    expect(container.textContent).toContain('oauth_2_0')
+    expect(container.textContent).toContain('http_oauth2_token')
   })
 
   it('converts browser recordings and renders ranked selector candidates', async () => {

@@ -1390,3 +1390,167 @@ func TestHTTP_Execute_ExtractorOnMissEmptyAssignsEmptyString(t *testing.T) {
 		t.Errorf("Extractions[token] = %q (present=%v), want empty string", val, ok)
 	}
 }
+
+// TestHTTP_Execute_SaveAllOnMiss covers every on_miss disposition for a
+// mode:"all" extractor that finds zero matches. The "empty" case is the bug
+// fix: previously a save-all miss never assigned the base variable for "empty",
+// so {{var.items}} leaked the literal template into later requests.
+func TestHTTP_Execute_SaveAllOnMiss(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`nothing here`))
+	}))
+	defer ts.Close()
+
+	tests := []struct {
+		name string
+		// onMiss is the extractor's on_miss disposition.
+		onMiss string
+		// wantSuccess is whether the request should still succeed.
+		wantSuccess bool
+		// wantBaseSet is whether the bare variable name must be assigned.
+		wantBaseSet bool
+		// wantBaseVal is the expected bare-variable value when wantBaseSet.
+		wantBaseVal string
+		// wantCountSet is whether name_count must be published.
+		wantCountSet bool
+		// wantCountVal is the expected name_count when wantCountSet.
+		wantCountVal string
+	}{
+		{
+			name:         "empty assigns empty string and zero count",
+			onMiss:       "empty",
+			wantSuccess:  true,
+			wantBaseSet:  true,
+			wantBaseVal:  "",
+			wantCountSet: true,
+			wantCountVal: "0",
+		},
+		{
+			name:         "ignore leaves base unset but publishes zero count",
+			onMiss:       "ignore",
+			wantSuccess:  true,
+			wantBaseSet:  false,
+			wantCountSet: true,
+			wantCountVal: "0",
+		},
+		{
+			name:         "default leaves base unset but publishes zero count",
+			onMiss:       "",
+			wantSuccess:  true,
+			wantBaseSet:  false,
+			wantCountSet: true,
+			wantCountVal: "0",
+		},
+		{
+			name:         "fail fails the request and publishes nothing",
+			onMiss:       "fail",
+			wantSuccess:  false,
+			wantBaseSet:  false,
+			wantCountSet: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := initHTTP(t, map[string]any{"base_url": ts.URL})
+			result, err := h.Execute(context.Background(), &protocol.Action{
+				Name:   "save-all-onmiss",
+				Method: "GET",
+				Target: "/page",
+				Extractors: []protocol.Extractor{
+					{Name: "items", Source: "body", Type: "boundary", Expression: "item=|||;", Mode: "all", OnMiss: tc.onMiss},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if result.Success != tc.wantSuccess {
+				t.Fatalf("Success = %v, want %v (%s)", result.Success, tc.wantSuccess, result.ErrorMessage)
+			}
+
+			val, ok := result.Extractions["items"]
+			if tc.wantBaseSet {
+				if !ok {
+					t.Errorf("Extractions[items] missing; want assigned %q so templates expand instead of leaking literally", tc.wantBaseVal)
+				} else if val != tc.wantBaseVal {
+					t.Errorf("Extractions[items] = %q, want %q", val, tc.wantBaseVal)
+				}
+			} else if ok {
+				t.Errorf("Extractions[items] = %q, want unset for on_miss=%q", val, tc.onMiss)
+			}
+
+			count, ok := result.Extractions["items_count"]
+			if tc.wantCountSet {
+				if !ok {
+					t.Errorf("items_count missing; want %q", tc.wantCountVal)
+				} else if count != tc.wantCountVal {
+					t.Errorf("items_count = %q, want %q", count, tc.wantCountVal)
+				}
+			} else if ok {
+				t.Errorf("items_count = %q, want unpublished for on_miss=%q", count, tc.onMiss)
+			}
+
+			// Save-all must never define indexed slots on a miss.
+			if v, ok := result.Extractions["items_1"]; ok {
+				t.Errorf("items_1 = %q, want no indexed values on a zero-match", v)
+			}
+		})
+	}
+}
+
+func TestHTTPExecuteServerSentEvents(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatalf("response writer does not implement http.Flusher")
+		}
+		_, _ = w.Write([]byte("event: token\n"))
+		_, _ = w.Write([]byte("data: hello\n\n"))
+		flusher.Flush()
+		time.Sleep(10 * time.Millisecond)
+		_, _ = w.Write([]byte("event: done\n"))
+		_, _ = w.Write([]byte("data: complete\n\n"))
+		flusher.Flush()
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"request_timeout_ms": float64(1000)})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "agent-stream",
+		Type:   "GET",
+		Target: ts.URL,
+		Params: map[string]any{
+			"stop_on_event":     "done",
+			"stream_timeout_ms": float64(1000),
+		},
+		Extractors: []protocol.Extractor{
+			{Name: "first_token", Type: "sse_event", Expression: "token"},
+			{Name: "all_events", Type: "sse_concat"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("result was not successful: %s", result.ErrorMessage)
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatalf("server telemetry missing")
+	}
+	if result.ServerTelemetry.EventCount != 2 {
+		t.Fatalf("event count = %d, want 2", result.ServerTelemetry.EventCount)
+	}
+	if result.ServerTelemetry.FirstEventMs <= 0 {
+		t.Fatalf("first event ms = %f, want > 0", result.ServerTelemetry.FirstEventMs)
+	}
+	if got := result.Extractions["first_token"]; got != "hello" {
+		t.Fatalf("first_token = %q, want hello", got)
+	}
+	if got := result.Extractions["all_events"]; got != "hello\ncomplete" {
+		t.Fatalf("all_events = %q, want concatenated data", got)
+	}
+	if !strings.Contains(result.ResponseBody, "event: done") {
+		t.Fatalf("response body did not retain SSE framing: %q", result.ResponseBody)
+	}
+}

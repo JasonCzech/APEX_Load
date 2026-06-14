@@ -126,6 +126,11 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 	if strings.TrimSpace(target) == "" {
 		issues = append(issues, fmt.Sprintf("%s: missing target", childLabel))
 	}
+	// Child requests support body_file the same way top-level actions do; the
+	// engine decodes each child into a dsl.Action whose HTTP protocol uses only
+	// the inline body, so an unresolved body_file would silently send an empty
+	// body. Apply the same conflict + load-context checks as validateBodyFileIssues.
+	issues = append(issues, validateSequenceChildBodyFileIssues(childLabel, request)...)
 	// Child requests carry full extractor objects (the importer's primary
 	// output shape); run the same field checks as top-level actions so typos
 	// fail validation instead of silently misbehaving at runtime. The JSON
@@ -139,6 +144,24 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 			}
 		}
 	}
+	return issues
+}
+
+// validateSequenceChildBodyFileIssues mirrors validateBodyFileIssues for the
+// untyped http_sequence child-request map form. body_file is only resolvable
+// when loading scripts from a local file (see ResolveBodyRefs); API uploads
+// must inline the body. Rejecting it here prevents the engine from silently
+// sending an empty child body at runtime.
+func validateSequenceChildBodyFileIssues(childLabel string, request map[string]any) []string {
+	bodyFile := strings.TrimSpace(stringAnyValue(request["body_file"]))
+	if bodyFile == "" {
+		return nil
+	}
+	issues := make([]string, 0, 2)
+	if strings.TrimSpace(stringAnyValue(request["body"])) != "" {
+		issues = append(issues, fmt.Sprintf("%s: body and body_file cannot both be set", childLabel))
+	}
+	issues = append(issues, fmt.Sprintf("%s: body_file is only supported when loading scripts from a local file; inline body is required for API uploads", childLabel))
 	return issues
 }
 
@@ -262,6 +285,9 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	}
 	if action.Type == "http_sequence" {
 		return append(issues, rebased(validateHTTPSequenceActionIssues(index, action))...)
+	}
+	if CanonicalActionType(action.Type) == "http_oauth2_token" {
+		return issues
 	}
 	if action.Target == "" {
 		issues = append(issues, fmt.Sprintf("%s: missing target", actionLabel(path, action)))

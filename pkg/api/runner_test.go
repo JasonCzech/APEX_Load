@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -42,6 +44,7 @@ type metricsStoreSpy struct {
 	approvalsByID         map[string]*storage.ScenarioScheduleApproval
 	leasesByName          map[string]*storage.SchedulerLease
 	auditEvents           []*storage.AuditEvent
+	usageMu               sync.Mutex
 	usageSnapshots        []*storage.UsageAccountingSnapshot
 	settings              map[string]string
 	statusUpdates         []testStatusUpdate
@@ -478,9 +481,19 @@ func (s *metricsStoreSpy) ListAuditEvents(filter storage.AuditEventFilter) ([]*s
 func (s *metricsStoreSpy) SaveUsageAccountingSnapshot(snapshot *storage.UsageAccountingSnapshot) error {
 	if snapshot != nil {
 		clone := *snapshot
+		s.usageMu.Lock()
 		s.usageSnapshots = append(s.usageSnapshots, &clone)
+		s.usageMu.Unlock()
 	}
 	return nil
+}
+
+// usageSnapshotCount returns the number of saved usage snapshots under the lock,
+// for tests polling the cadence goroutine without racing its appends.
+func (s *metricsStoreSpy) usageSnapshotCount() int {
+	s.usageMu.Lock()
+	defer s.usageMu.Unlock()
+	return len(s.usageSnapshots)
 }
 func (s *metricsStoreSpy) ListUsageAccountingSnapshots(projectID string, limit int, offset int) ([]*storage.UsageAccountingSnapshot, error) {
 	return nil, nil
@@ -1359,37 +1372,37 @@ func TestNormalizeCreateTestGroupsUsesSingleScriptFallback(t *testing.T) {
 }
 
 func TestAppendRunErrorBuildsMessage(t *testing.T) {
-	msg := appendRunError("", "archive finalize failed", errors.New("disk full"))
+	msg := testexec.AppendRunError("", "archive finalize failed", errors.New("disk full"))
 	if msg != "archive finalize failed: disk full" {
 		t.Fatalf("unexpected message: %q", msg)
 	}
 
-	msg = appendRunError("engine failed", "archive metadata save failed", errors.New("permission denied"))
+	msg = testexec.AppendRunError("engine failed", "archive metadata save failed", errors.New("permission denied"))
 	if msg != "engine failed; archive metadata save failed: permission denied" {
 		t.Fatalf("unexpected appended message: %q", msg)
 	}
 }
 
 func TestResourceBaselineWindows(t *testing.T) {
-	pre, post := resourceBaselineWindows(false)
+	pre, post := testexec.ResourceBaselineWindows(false)
 	if pre != 0 || post != 0 {
 		t.Fatalf("expected disabled baseline windows to be zero, got pre=%s post=%s", pre, post)
 	}
 
-	pre, post = resourceBaselineWindows(true)
+	pre, post = testexec.ResourceBaselineWindows(true)
 	if pre != 5*time.Minute || post != 5*time.Minute {
 		t.Fatalf("expected enabled baseline windows to be 5m, got pre=%s post=%s", pre, post)
 	}
 }
 
 func TestStartDelayWindow(t *testing.T) {
-	if got := startDelayWindow(""); got != 0 {
+	if got := testexec.StartDelayWindow(""); got != 0 {
 		t.Fatalf("expected empty start delay to be zero, got %v", got)
 	}
-	if got := startDelayWindow("45s"); got != 45*time.Second {
+	if got := testexec.StartDelayWindow("45s"); got != 45*time.Second {
 		t.Fatalf("expected 45s start delay, got %v", got)
 	}
-	if got := startDelayWindow("bad-value"); got != 0 {
+	if got := testexec.StartDelayWindow("bad-value"); got != 0 {
 		t.Fatalf("expected invalid start delay to normalize to 0, got %v", got)
 	}
 }
@@ -3080,7 +3093,7 @@ func TestApplyGoalControllerUpdateScalesGroupsAndUpdatesStatus(t *testing.T) {
 		group  string
 		target int
 	}
-	applyGoalControllerUpdate(testRun, live, groupVUsers, update, func(groupName string, target int) error {
+	applyGoalControllerUpdate(&TestRunner{}, testRun, live, groupVUsers, update, func(groupName string, target int) error {
 		scaled = append(scaled, struct {
 			group  string
 			target int
@@ -5839,7 +5852,7 @@ func TestRunnerCapturesUsageSnapshotOnCadenceTick(t *testing.T) {
 	ticks <- time.Now()
 
 	deadline := time.Now().Add(time.Second)
-	for len(store.usageSnapshots) == 0 && time.Now().Before(deadline) {
+	for store.usageSnapshotCount() == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	cancel()

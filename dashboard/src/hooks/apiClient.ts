@@ -25,7 +25,7 @@ type ApiErrorPayload = {
   [key: string]: unknown
 }
 
-function trimTrailingSlash(value: string): string {
+export function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '')
 }
 
@@ -156,16 +156,20 @@ function mergeHeaders(headers?: HeadersInit, previewHeaders = buildDevPreviewHea
   return merged
 }
 
-function apiUrl(pathOrURL: string): string {
+function buildApiUrl(apiOrigin: string, pathOrURL: string): string {
   if (/^https?:\/\//i.test(pathOrURL)) {
     return pathOrURL
   }
   const path = pathOrURL.startsWith('/') ? pathOrURL : `/${pathOrURL}`
-  return `${BASE}${path}`
+  return `${trimTrailingSlash(apiOrigin)}/api/v1${path}`
 }
 
-export function wsUrl(path: string): string {
-  const wsOrigin = API_ORIGIN.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:')
+function apiUrl(pathOrURL: string): string {
+  return buildApiUrl(API_ORIGIN, pathOrURL)
+}
+
+export function wsUrl(path: string, apiOrigin = API_ORIGIN): string {
+  const wsOrigin = trimTrailingSlash(apiOrigin).replace(/^http:/, 'ws:').replace(/^https:/, 'wss:')
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
   return `${wsOrigin}${normalizedPath}`
 }
@@ -209,12 +213,23 @@ export function apiFetch(pathOrURL: string, options?: RequestInit): Promise<Resp
   })
 }
 
+export function apiFetchFromOrigin(apiOrigin: string, pathOrURL: string, options?: RequestInit): Promise<Response> {
+  return fetch(buildApiUrl(apiOrigin, pathOrURL), {
+    ...options,
+    headers: mergeHeaders(options?.headers),
+  })
+}
+
 export async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  return requestFromOrigin<T>(API_ORIGIN, path, options)
+}
+
+export async function requestFromOrigin<T>(apiOrigin: string, path: string, options?: RequestInit): Promise<T> {
   const headers = mergeHeaders(options?.headers)
   if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
-  const res = await apiFetch(path, {
+  const res = await apiFetchFromOrigin(apiOrigin, path, {
     ...options,
     headers,
   })

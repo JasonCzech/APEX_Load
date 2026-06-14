@@ -99,6 +99,79 @@ variable "authorized_ip_ranges" {
   default     = []
 }
 
+variable "network_mode" {
+  description = "Azure data-plane networking mode. Use private for production private endpoints/private DNS; public is evaluation-only."
+  type        = string
+  default     = "private"
+
+  validation {
+    condition     = contains(["private", "public"], var.network_mode)
+    error_message = "network_mode must be private or public."
+  }
+}
+
+variable "vnet_address_space" {
+  description = "Address space for the private AKS/data-platform VNet when network_mode=private."
+  type        = list(string)
+  default     = ["10.42.0.0/16"]
+}
+
+variable "aks_system_subnet_prefixes" {
+  description = "Subnet prefixes for the AKS system pool when network_mode=private."
+  type        = list(string)
+  default     = ["10.42.0.0/22"]
+}
+
+variable "aks_generator_subnet_prefixes" {
+  description = "Subnet prefixes for the AKS generator pool when network_mode=private."
+  type        = list(string)
+  default     = ["10.42.4.0/22"]
+}
+
+variable "private_endpoint_subnet_prefixes" {
+  description = "Subnet prefixes for private endpoints when network_mode=private."
+  type        = list(string)
+  default     = ["10.42.8.0/24"]
+}
+
+variable "private_dns_zone_names" {
+  description = "Private DNS zone names used by Azure private endpoints."
+  type = object({
+    postgres = string
+    redis    = string
+    blob     = string
+    keyvault = string
+  })
+  default = {
+    postgres = "privatelink.postgres.database.azure.com"
+    redis    = "privatelink.redis.cache.windows.net"
+    blob     = "privatelink.blob.core.windows.net"
+    keyvault = "privatelink.vaultcore.azure.net"
+  }
+}
+
+variable "managed_prometheus_mode" {
+  description = "Prometheus integration mode for deployment artifacts: kube_prometheus_stack or azure_monitor."
+  type        = string
+  default     = "kube_prometheus_stack"
+
+  validation {
+    condition     = contains(["kube_prometheus_stack", "azure_monitor"], var.managed_prometheus_mode)
+    error_message = "managed_prometheus_mode must be kube_prometheus_stack or azure_monitor."
+  }
+}
+
+variable "cert_manager_mode" {
+  description = "How gRPC mTLS secrets are provisioned: cert_manager, key_vault_csi, or external."
+  type        = string
+  default     = "external"
+
+  validation {
+    condition     = contains(["cert_manager", "key_vault_csi", "external"], var.cert_manager_mode)
+    error_message = "cert_manager_mode must be cert_manager, key_vault_csi, or external."
+  }
+}
+
 variable "postgres_allowed_cidrs" {
   description = "Extra CIDRs allowed through the PostgreSQL firewall (e.g. office egress for psql access during migration). AKS egress is allowed automatically."
   type        = map(string)

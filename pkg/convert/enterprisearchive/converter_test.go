@@ -1128,6 +1128,77 @@ func TestConvertMaskedBodyWithLiteralBodyKeepsBodyButFlagsReview(t *testing.T) {
 	}
 }
 
+// TestConvertMaskedBodyArgRedactsWithoutFlag exercises the safe-by-default
+// invariant directly through the exported Convert entry point WITHOUT setting
+// ConvertOptions.UseMaskedBodySecretReferences (the flag ConvertZip's http/soap
+// branch sets). A web function whose Body= argument carries lr_unmask("...")
+// must still produce the governed secret reference in action.Body — never the
+// raw masked payload — and the raw masked text must not survive in metadata or
+// the serialized result.
+func TestConvertMaskedBodyArgRedactsWithoutFlag(t *testing.T) {
+	const maskedPayload = "6a2cMASKEDPAYLOADREDACTME"
+	parsed, err := ParseActionFile("Action.c", `Action()
+{
+	web_rest("POST: SubmitOrder",
+		"URL=https://api.example.test/orders",
+		"Method=POST",
+		"EncType=raw",
+		"Body=lr_unmask(\"`+maskedPayload+`\")",
+		LAST);
+}`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	// Deliberately do NOT set UseMaskedBodySecretReferences: this is the future
+	// caller the defense-in-depth fix protects against.
+	opts := ConvertOptions{}
+	if opts.UseMaskedBodySecretReferences {
+		t.Fatalf("guard: flag must be false for this test")
+	}
+
+	result, err := Convert([]*ParsedAction{parsed}, opts)
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+	}
+	action := result.Script.Actions[0]
+
+	if !strings.HasPrefix(action.Body, "{{secret.lr_unmask_") {
+		t.Fatalf("action.Body = %q, want governed lr_unmask secret reference", action.Body)
+	}
+	if strings.Contains(action.Body, maskedPayload) {
+		t.Fatalf("action.Body = %q leaked the raw masked payload", action.Body)
+	}
+	if strings.Contains(action.Body, "lr_unmask(") {
+		t.Fatalf("action.Body = %q still contains a raw lr_unmask call", action.Body)
+	}
+
+	// Governance metadata is recorded, but the raw masked text is scrubbed.
+	if ref := metadataString(action.Metadata, "source_secret_ref"); !strings.HasPrefix(ref, "lr_unmask_") {
+		t.Fatalf("metadata source_secret_ref = %q, want governed secret name", ref)
+	}
+	if !metadataBool(action.Metadata, "body_gated_by_secret") {
+		t.Fatalf("metadata body_gated_by_secret = %#v, want true", action.Metadata["body_gated_by_secret"])
+	}
+	if raw, ok := action.Metadata["masked_body_raw"]; ok {
+		if rawStr, isStr := raw.(string); isStr && strings.Contains(rawStr, maskedPayload) {
+			t.Fatalf("metadata masked_body_raw = %q leaked the raw masked payload", rawStr)
+		}
+	}
+
+	// Nothing in the fully serialized result may carry the masked payload.
+	payload, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal result: %v", err)
+	}
+	if strings.Contains(string(payload), maskedPayload) {
+		t.Fatalf("masked lr_unmask payload leaked into converted output: %s", payload)
+	}
+}
+
 func findSourceReviewMappingByTarget(t *testing.T, result *ConvertResult, targetName string) SourceReviewMapping {
 	t.Helper()
 	if result.SourceReview == nil {

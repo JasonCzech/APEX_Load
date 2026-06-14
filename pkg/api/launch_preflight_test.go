@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	_ "github.com/jasonczech/apexload/pkg/protocol/java_vuser"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -97,8 +98,11 @@ func TestPreflightLaunchAllowsImmediateStartWhenCapacityAvailable(t *testing.T) 
 }
 
 func TestPreflightLaunchBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
+	// Enablement is operator-owned: with the runner env unset the gate blocks,
+	// regardless of any config.java_vuser.enabled flag in the uploaded script.
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "false")
 	runner := NewTestRunner(10, NewHub(), nil)
-	storePreflightJavaVuserScript(runner, "script-preflight-java-vuser", "", false)
+	storePreflightJavaVuserScript(runner, "script-preflight-java-vuser", "", true)
 
 	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
 		CreateTestRequest: CreateTestRequest{
@@ -117,14 +121,17 @@ func TestPreflightLaunchBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
 	if len(preflight.BlockingConflicts) != 1 || preflight.BlockingConflicts[0].Code != "java_vuser_runner_required" {
 		t.Fatalf("blocking conflicts = %#v, want Java Vuser runner conflict", preflight.BlockingConflicts)
 	}
-	if !strings.Contains(preflight.BlockingConflicts[0].Message, "java_vuser_jvm_runner") {
-		t.Fatalf("conflict message = %q, want JVM runner guidance", preflight.BlockingConflicts[0].Message)
+	if !strings.Contains(preflight.BlockingConflicts[0].Message, config.EnvJavaVuserRunnerEnabled) {
+		t.Fatalf("conflict message = %q, want operator-enablement guidance referencing %s", preflight.BlockingConflicts[0].Message, config.EnvJavaVuserRunnerEnabled)
 	}
 }
 
 func TestCreateTestBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
+	// Even a script that sets config.java_vuser.enabled=true cannot self-clear
+	// the gate: only the operator env enables the runner.
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "false")
 	runner := NewTestRunner(10, NewHub(), nil)
-	storePreflightJavaVuserScript(runner, "script-create-java-vuser", "", false)
+	storePreflightJavaVuserScript(runner, "script-create-java-vuser", "", true)
 
 	_, err := runner.CreateTest(CreateTestRequest{
 		Name:     "Java Vuser",
@@ -138,8 +145,10 @@ func TestCreateTestBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
 }
 
 func TestPreflightLaunchAllowsJavaVuserWithRunnerCapability(t *testing.T) {
+	// The operator has enabled the runner on this fleet; the gate clears.
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
 	runner := NewTestRunner(10, NewHub(), nil)
-	storePreflightJavaVuserScript(runner, "script-preflight-java-vuser-enabled", "", true)
+	storePreflightJavaVuserScript(runner, "script-preflight-java-vuser-enabled", "", false)
 
 	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
 		CreateTestRequest: CreateTestRequest{

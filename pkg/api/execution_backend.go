@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -33,6 +34,20 @@ type inventoryExecutionBackend interface {
 
 type drainableExecutionBackend interface {
 	SetGeneratorDrainState(target string, state string) error
+}
+
+type KubePodRef struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	IP        string `json:"ip,omitempty"`
+	Phase     string `json:"phase,omitempty"`
+}
+
+type KubeRestarter interface {
+	DeletePod(ctx context.Context, namespace string, name string) error
+	RolloutRestart(ctx context.Context, kind string, namespace string, name string) error
+	PodByIP(ctx context.Context, namespace string, selector string, ip string) (KubePodRef, error)
+	ListPods(ctx context.Context, namespace string, selector string) ([]KubePodRef, error)
 }
 
 type pausableExecutionBackend interface {
@@ -241,16 +256,16 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 		archiveRecord.RefKey = test.RefKey
 	}
 	if archiveErr != nil {
-		return archiveRecord, "FAILED", appendRunError(finalError, "archive finalize failed", archiveErr)
+		return archiveRecord, "FAILED", testexec.AppendRunError(finalError, "archive finalize failed", archiveErr)
 	}
 	if a.runner != nil && archiveRecord != nil {
 		if err := a.runner.persistTestManifestArtifact(test, archiveRecord); err != nil {
-			return archiveRecord, "FAILED", appendRunError(finalError, "test manifest archive failed", err)
+			return archiveRecord, "FAILED", testexec.AppendRunError(finalError, "test manifest archive failed", err)
 		}
 	}
 	if a.saveRecord != nil {
 		if err := a.saveRecord(archiveRecord); err != nil {
-			return archiveRecord, "FAILED", appendRunError(finalError, "archive metadata save failed", err)
+			return archiveRecord, "FAILED", testexec.AppendRunError(finalError, "archive metadata save failed", err)
 		}
 	}
 	return archiveRecord, finalStatus, finalError

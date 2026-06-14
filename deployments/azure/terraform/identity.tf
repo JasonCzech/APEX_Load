@@ -1,8 +1,15 @@
-# One user-assigned identity shared by the controller and generator service
-# accounts. Split into two identities if you want generators limited to Key
-# Vault only (no Blob access).
+# The original `apexload` identity resource is retained as the controller
+# identity so existing Terraform state does not need a resource move. Generators
+# get a separate identity with Key Vault-only access by default.
 resource "azurerm_user_assigned_identity" "apexload" {
-  name                = "${local.name}-workload"
+  name                = "${local.name}-controller-workload"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  tags                = local.tags
+}
+
+resource "azurerm_user_assigned_identity" "generator" {
+  name                = "${local.name}-generator-workload"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   tags                = local.tags
@@ -20,7 +27,7 @@ resource "azurerm_federated_identity_credential" "controller" {
 resource "azurerm_federated_identity_credential" "generator" {
   name                = "${local.name}-generator"
   resource_group_name = azurerm_resource_group.main.name
-  parent_id           = azurerm_user_assigned_identity.apexload.id
+  parent_id           = azurerm_user_assigned_identity.generator.id
   audience            = ["api://AzureADTokenExchange"]
   issuer              = azurerm_kubernetes_cluster.main.oidc_issuer_url
   subject             = "system:serviceaccount:${local.k8s_namespace}:${local.generator_service_account}"
@@ -38,4 +45,10 @@ resource "azurerm_role_assignment" "workload_keyvault" {
   scope                = azurerm_key_vault.main.id
   role_definition_name = "Key Vault Secrets User"
   principal_id         = azurerm_user_assigned_identity.apexload.principal_id
+}
+
+resource "azurerm_role_assignment" "generator_keyvault" {
+  scope                = azurerm_key_vault.main.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = azurerm_user_assigned_identity.generator.principal_id
 }

@@ -1398,7 +1398,13 @@ func (s *Server) remoteJSONAccepted(ctx context.Context, remote LibraryRemote, m
 	if (resp.StatusCode < 200 || resp.StatusCode >= 300) && !accepted[resp.StatusCode] {
 		return resp.StatusCode, fmt.Errorf("remote library returned %s", resp.Status)
 	}
-	return resp.StatusCode, json.NewDecoder(resp.Body).Decode(out)
+	if out == nil {
+		return resp.StatusCode, nil
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil && err != io.EOF {
+		return resp.StatusCode, err
+	}
+	return resp.StatusCode, nil
 }
 
 func libraryRemoteJSONTimeout() time.Duration {
@@ -1410,11 +1416,11 @@ func libraryRemoteArchiveTimeout() time.Duration {
 }
 
 func libraryRemoteJSONHTTPClient(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout}
+	return newGuardedHTTPClient(timeout)
 }
 
 func libraryRemoteArchiveHTTPClient(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout}
+	return newGuardedHTTPClient(timeout)
 }
 
 func ctxOrBackground(ctx context.Context) context.Context {
@@ -1471,6 +1477,9 @@ func normalizeLibraryRemoteBaseURL(raw string) (string, error) {
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return "", fmt.Errorf("remote base_url must use http or https")
+	}
+	if err := validateOutboundRemoteHost(parsed.Hostname()); err != nil {
+		return "", fmt.Errorf("remote base_url rejected: %w", err)
 	}
 	return baseURL, nil
 }

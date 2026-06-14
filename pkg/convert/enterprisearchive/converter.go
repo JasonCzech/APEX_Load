@@ -1297,7 +1297,17 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		action.Body = convertParamReferences(action.Body)
 	}
 	if secretName := fn.Args[maskedBodySecretArgKey]; secretName != "" {
-		if opts.UseMaskedBodySecretReferences {
+		// Safe-by-default invariant: a masked credential payload must never
+		// reach action.Body verbatim. If the masked lr_unmask(...) call landed
+		// in the body (e.g. "Body=lr_unmask(...)"), replace it with the
+		// governed secret reference regardless of opts — every entry point
+		// (Convert/ConvertDatabase/ConvertNetwork as well as ConvertZip) now
+		// produces the reference, never the raw masked payload. The flag only
+		// governs the cosmetic choice of materializing the reference into an
+		// otherwise-empty body (the ConvertZip http/soap behavior).
+		if _, masked := extractLRUnmaskPayload(action.Body); masked {
+			action.Body = maskedBodySecretReference(secretName)
+		} else if opts.UseMaskedBodySecretReferences {
 			action.Body = maskedBodySecretReference(secretName)
 		}
 		action.Metadata["source_secret_ref"] = secretName
@@ -1307,7 +1317,11 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 	}
 
 	warnings = append(warnings, annotateOpaqueTransformArgs(action, fn)...)
-	if opts.UseMaskedBodySecretReferences {
+	// Scrub raw masked metadata on every path: whenever a masked-body secret
+	// reference was established (flag-driven or because the body carried the
+	// masked payload) the retained masked_body_raw/masked_body_calls must never
+	// hold the obscured credential text.
+	if opts.UseMaskedBodySecretReferences || strings.HasPrefix(action.Body, "{{secret.") {
 		redactOpaqueTransformMetadata(action)
 	}
 

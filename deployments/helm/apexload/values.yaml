@@ -1,0 +1,129 @@
+namespace:
+  create: true
+  name: apexload
+
+image:
+  registry: changeme.azurecr.io
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+  controllerRepository: apexload-controller
+  generatorRepository: apexload-generator
+
+dataPlatform:
+  configMapName: apexload-data-platform
+  secretName: apexload-data-platform
+  createSecret: false
+  databaseUrl: ""
+  redisUrl: ""
+  grpcAuthToken: ""
+  store: postgres
+  databaseMaxOpenConns: "25"
+  databaseMaxIdleConns: "10"
+  databaseConnMaxLifetime: 30m
+  timescaleDB: "false"
+  archiveBackend: azure_blob
+  archiveContainer: apexload-archives
+  archivePrefix: production/run-evidence
+  azureStorageAccount: changemestorageaccount
+  cacheBackend: redis
+  redisKeyPrefix: apexload:prod
+  redisTimeout: 2s
+  redisFanoutChannel: telemetry:fanout
+  keyVaultUrl: https://change-me.vault.azure.net
+  keyVaultAuth: azure_identity
+  generators: dns://apexload-generator.apexload.svc.cluster.local:9090
+  generatorDiscoveryInterval: 15s
+  generatorTimeout: 10s
+  metricsAddr: ":9091"
+  apiKeyRateLimitPerMinute: "600"
+  idempotencyKeyTTL: 15m
+
+workloadIdentity:
+  enabled: true
+  controllerClientId: ""
+  generatorClientId: ""
+
+controller:
+  # Keep one active controller until scheduler/reconciler singleton loops are
+  # PostgreSQL-lease guarded.
+  replicas: 1
+  serviceAccountName: apexload-controller
+  grpcTlsSecretName: apexload-controller-grpc-tls
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+      ephemeral-storage: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+      ephemeral-storage: 14Gi
+  scratch:
+    tmpSizeLimit: 2Gi
+    dataSizeLimit: 10Gi
+
+generator:
+  replicas: 2
+  serviceAccountName: apexload-generator
+  grpcTlsSecretName: apexload-generator-grpc-tls
+  nodeSelector:
+    apexload.io/node-pool: generators
+  tolerations:
+    - key: apexload.io/dedicated
+      operator: Equal
+      value: generators
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+      ephemeral-storage: 1Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+      ephemeral-storage: 6Gi
+  scratch:
+    tmpSizeLimit: 4Gi
+
+ingress:
+  enabled: true
+  className: webapprouting.kubernetes.azure.com
+  host: apexload.example.com
+  tls:
+    enabled: false
+    secretName: apexload-tls
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: 64m
+
+networkPolicy:
+  enabled: true
+  ingressNamespace: app-routing-system
+  monitoringNamespace: monitoring
+
+pdb:
+  enabled: true
+
+keda:
+  enabled: true
+  minReplicaCount: 2
+  maxReplicaCount: 50
+  pollingInterval: 15
+  cooldownPeriod: 300
+  prometheusServerAddress: http://prometheus-operated.monitoring.svc:9090
+  azureMonitor:
+    enabled: false
+    triggerAuthenticationName: apexload-azure-monitor
+    serverAddress: https://CHANGE-ME.monitor.azure.com
+
+serviceMonitor:
+  enabled: true
+  releaseLabel: prometheus
+  interval: 15s
+  scrapeTimeout: 10s
+
+certManager:
+  enabled: false
+  issuerName: apexload-grpc-ca
+  selfSignedBootstrap: true

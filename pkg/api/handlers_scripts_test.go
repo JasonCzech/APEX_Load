@@ -710,6 +710,173 @@ func TestHandleImportHARJSON(t *testing.T) {
 	}
 }
 
+func TestHandleImportSalesforceHARJSON(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name": "Salesforce HAR",
+		"content": `{
+  "log": {
+    "entries": [
+      {
+        "request": {
+          "method": "GET",
+          "url": "https://attone--perfhyper2.sandbox.my.salesforce.com/login",
+          "headers": []
+        },
+        "response": {
+          "status": 200,
+          "headers": [],
+          "content": {"text": "{\"access_token\":\"tok-abcdef123456\"}"}
+        }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "url": "https://attone--perfhyper2.sandbox.lightning.force.com/aura",
+          "headers": [{"name":"content-type","value":"application/x-www-form-urlencoded"}],
+          "postData": {"text": "aura.token=tok-abcdef123456&message=%7B%22actions%22%3A%5B%7B%22descriptor%22%3A%22apex%3A%2F%2FAccountController%2FACTION%24get%22%7D%5D%7D"}
+        },
+        "response": {
+          "status": 200,
+          "headers": [],
+          "content": {"text": "{\"actions\":[{\"state\":\"SUCCESS\"}]}"}
+        }
+      }
+    ]
+  }
+}`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/salesforce", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			GeneratedBy string `json:"generated_by"`
+			Protocol    string `json:"protocol"`
+			Actions     []struct {
+				Target string `json:"target"`
+				Body   string `json:"body"`
+			} `json:"actions"`
+			Metadata struct {
+				Import struct {
+					Source    string         `json:"source"`
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		Summary map[string]any `json:"summary"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "http" {
+		t.Fatalf("protocol = %q, want http", result.Script.Protocol)
+	}
+	if result.Script.GeneratedBy != "apexload-salesforce-builder" {
+		t.Fatalf("generated_by = %q, want Salesforce native builder", result.Script.GeneratedBy)
+	}
+	if result.Script.Metadata.Import.Source != "salesforce" {
+		t.Fatalf("import source = %q, want salesforce", result.Script.Metadata.Import.Source)
+	}
+	if _, ok := result.Script.Metadata.Import.Preserved["salesforce_review"]; !ok {
+		t.Fatalf("salesforce review metadata missing: %#v", result.Script.Metadata.Import.Preserved)
+	}
+	if result.Summary["generation_mode"] != "salesforce_native_http" {
+		t.Fatalf("summary generation_mode = %#v", result.Summary["generation_mode"])
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
+	}
+	if !strings.Contains(result.Script.Actions[1].Body, "{{var.corr_access_token}}") {
+		t.Fatalf("aura body = %q, want correlated token variable", result.Script.Actions[1].Body)
+	}
+}
+
+func TestHandleImportRAMLJSON(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name": "Mule API",
+		"content": `#%RAML 1.0
+title: Mule API
+baseUri: https://mule.example.test/api
+securitySchemes:
+  oauth_2_0:
+    type: OAuth 2.0
+    settings:
+      accessTokenUri: https://login.example.test/oauth/token
+/orders:
+  post:
+    displayName: Create Order
+    body:
+      application/json:
+        example: '{"sku":"A-1"}'
+`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/raml", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			Protocol string `json:"protocol"`
+			Init     []struct {
+				Type   string         `json:"type"`
+				Params map[string]any `json:"params"`
+			} `json:"init"`
+			Actions []struct {
+				Method  string            `json:"method"`
+				Target  string            `json:"target"`
+				Headers map[string]string `json:"headers"`
+				Body    string            `json:"body"`
+			} `json:"actions"`
+		} `json:"script"`
+		Stats map[string]any `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "http" {
+		t.Fatalf("protocol = %q, want http", result.Script.Protocol)
+	}
+	if len(result.Script.Init) != 1 || result.Script.Init[0].Type != "http_oauth2_token" {
+		t.Fatalf("init = %#v, want OAuth token action", result.Script.Init)
+	}
+	if result.Script.Init[0].Params["token_url"] != "https://login.example.test/oauth/token" {
+		t.Fatalf("token_url = %#v", result.Script.Init[0].Params["token_url"])
+	}
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Method != "POST" || result.Script.Actions[0].Target != "/orders" {
+		t.Fatalf("actions = %#v", result.Script.Actions)
+	}
+	if result.Script.Actions[0].Headers["Authorization"] != "Bearer {{var.access_token}}" {
+		t.Fatalf("authorization header = %#v", result.Script.Actions[0].Headers)
+	}
+	if result.Script.Actions[0].Body != `{"sku":"A-1"}` {
+		t.Fatalf("body = %q", result.Script.Actions[0].Body)
+	}
+}
+
 func TestHandleImportHARHonorsIncludeStaticAssetsOption(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	payload := map[string]any{
@@ -3034,8 +3201,18 @@ func TestAuthoringTemplatesEndpointReturnsValidProtocolStarters(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
-	if payload.Count != 1 || payload.Templates[0].Protocol != "http" {
-		t.Fatalf("payload = %#v, want one HTTP template", payload)
+	if payload.Count < 2 {
+		t.Fatalf("payload = %#v, want HTTP templates", payload)
+	}
+	httpTemplateIDs := map[string]bool{}
+	for _, template := range payload.Templates {
+		if template.Protocol != "http" {
+			t.Fatalf("payload = %#v, want only HTTP templates", payload)
+		}
+		httpTemplateIDs[template.ID] = true
+	}
+	if !httpTemplateIDs["http-api-smoke"] || !httpTemplateIDs["agentforce-streaming-agent"] {
+		t.Fatalf("HTTP template ids = %#v, want smoke and Agentforce starters", httpTemplateIDs)
 	}
 	if payload.Templates[0].RecommendedScenario.VUsers == 0 || payload.Templates[0].RecommendedScenario.Duration == "" {
 		t.Fatalf("recommended scenario = %#v, want runnable scenario hints", payload.Templates[0].RecommendedScenario)

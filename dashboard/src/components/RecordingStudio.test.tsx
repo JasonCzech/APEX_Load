@@ -26,6 +26,7 @@ const apiMock = {
   getRecording: vi.fn(),
   previewRecordingConversion: vi.fn(),
   convertRecording: vi.fn(),
+  importSalesforce: vi.fn(),
   createScript: vi.fn(),
   startRecording: vi.fn(),
   stopRecording: vi.fn(),
@@ -41,6 +42,12 @@ const apiMock = {
   listBrowserRecorderDevices: vi.fn(),
   installBrowserRecorder: vi.fn(),
   suggestBrowserRecordingTransactions: vi.fn(),
+  pairBrowserRecorderBridge: vi.fn(),
+  verifyBrowserRecorderBridgeAgent: vi.fn(),
+  clearBrowserRecorderBridge: vi.fn(),
+  getBrowserRecorderBridgeStatus: vi.fn(),
+  exportBrowserRecording: vi.fn(),
+  browserRecorderBridge: null as any,
 }
 
 const clipboardWriteMock = vi.fn()
@@ -50,7 +57,9 @@ vi.mock('../hooks/useApi', () => ({
 }))
 
 vi.mock('../hooks/apiClient', () => ({
+  API_ORIGIN: 'http://127.0.0.1:3000',
   apiFetch: apiFetchMock,
+  trimTrailingSlash: (value: string) => value.replace(/\/+$/, ''),
 }))
 
 vi.mock('../utils/fileUtils', () => ({
@@ -68,6 +77,7 @@ describe('RecordingStudio', () => {
     apiFetchMock.mockReset()
     apiFetchMock.mockResolvedValue({
       ok: true,
+      headers: new Headers({ 'content-type': 'application/octet-stream' }),
       blob: vi.fn().mockResolvedValue(new Blob(['certificate'])),
     })
     downloadBlobMock.mockReset()
@@ -109,6 +119,11 @@ describe('RecordingStudio', () => {
       proxy_addr: ':8081',
       ca_cert_path: 'artifacts/recorder/ca-cert.pem',
       active: null,
+      browser: {
+        availability: { available: true },
+        active: null,
+        install: { status: 'idle' },
+      },
     })
     apiMock.getRecording.mockResolvedValue(null)
     apiMock.previewRecordingConversion.mockResolvedValue({
@@ -163,6 +178,29 @@ describe('RecordingStudio', () => {
       stats: {},
       summary: {},
     })
+    apiMock.importSalesforce.mockResolvedValue({
+      scripts: [],
+      script: {
+        name: 'Salesforce Capture HTTP',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://acme.my.salesforce.com' },
+        actions: [{ name: 'Aura Bootstrap', type: 'request', method: 'POST', target: '/aura' }],
+      },
+      warnings: ['Review Salesforce correlation extractors before approval.'],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: { converted_actions: 1 },
+      summary: {
+        salesforce_review: {
+          detected: true,
+          har_match_coverage: { har_provided: true, imported_requests: 1, matched_requests: 1, coverage_pct: 100 },
+        },
+      },
+    })
     apiMock.createScript.mockImplementation(async (script: { name?: string; protocol?: string; version?: string }) => ({
       id: 'script-1',
       name: script.name || 'Saved Script',
@@ -208,6 +246,22 @@ describe('RecordingStudio', () => {
     apiMock.listBrowserRecorderDevices.mockResolvedValue({ devices: [{ name: 'iphone_15_pro', platform: 'ios' }] })
     apiMock.installBrowserRecorder.mockResolvedValue({ install: { status: 'installing' } })
     apiMock.suggestBrowserRecordingTransactions.mockResolvedValue({ suggestions: [] })
+    apiMock.pairBrowserRecorderBridge.mockResolvedValue({
+      origin: 'http://127.0.0.1:49152',
+      token: 'tok',
+      session_id: 'ws-1',
+      status: { availability: { available: true }, api_origin: 'http://127.0.0.1:49152', paired: true },
+    })
+    apiMock.verifyBrowserRecorderBridgeAgent.mockResolvedValue({ status: 'healthy', version: 'test' })
+    apiMock.clearBrowserRecorderBridge.mockReset()
+    apiMock.getBrowserRecorderBridgeStatus.mockResolvedValue({
+      bridge: { availability: { available: true }, api_origin: 'http://127.0.0.1:49152', paired: true, active: null },
+    })
+    apiMock.exportBrowserRecording.mockResolvedValue({
+      ok: true,
+      blob: vi.fn().mockResolvedValue(new Blob(['{"log":{}}'])),
+    })
+    apiMock.browserRecorderBridge = null
     vi.spyOn(window, 'open').mockImplementation(() => null)
   })
 
@@ -455,6 +509,83 @@ describe('RecordingStudio', () => {
     }))
   })
 
+  it('reviews Salesforce-looking proxy recordings through the native HTTP importer', async () => {
+    const onImported = vi.fn()
+    const onEdit = vi.fn()
+    apiMock.listRecordings.mockResolvedValueOnce({
+      sessions: [{
+        id: 'rec-sf',
+        name: 'Salesforce Capture',
+        status: 'stopped',
+        started_at: '2026-05-12T20:00:00Z',
+        base_url: 'https://acme.my.salesforce.com',
+        requests: [{
+          seq: 1,
+          timestamp: '2026-05-12T20:00:01Z',
+          method: 'POST',
+          url: 'https://acme.my.salesforce.com/aura',
+          path: '/aura',
+          host: 'acme.my.salesforce.com',
+          status_code: 200,
+          response_time_ms: 88,
+          content_type: 'application/json',
+          body: '',
+          think_time_ms: 0,
+          is_static: false,
+        }],
+        filters: { exclude_static: true },
+      }],
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio onImported={onImported} onEdit={onEdit} />)
+    })
+    await flushPromises()
+    await openProxyAdvanced(container)
+
+    expect(container.textContent).toContain('Review Salesforce HTTP')
+
+    const reviewButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Review Salesforce HTTP')
+    expect(reviewButton).toBeDefined()
+    if (!reviewButton) return
+
+    await act(async () => {
+      reviewButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/recorder/rec-sf/export?format=har')
+    expect(apiMock.importSalesforce).toHaveBeenCalledWith(expect.any(File), expect.objectContaining({
+      name: 'Salesforce Capture Salesforce HTTP',
+      base_url: 'https://acme.my.salesforce.com',
+    }))
+    expect(container.textContent).toContain('Salesforce HTTP Draft')
+    expect(container.textContent).toContain('Salesforce Capture HTTP')
+    expect(container.textContent).toContain('100%')
+    expect(container.textContent).toContain('Review Salesforce correlation extractors before approval.')
+
+    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Open In Visual Editor')
+    expect(editButton).toBeDefined()
+    if (!editButton) return
+    await act(async () => {
+      editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ name: 'Salesforce Capture HTTP', protocol: 'http' }))
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save To Script Library')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ name: 'Salesforce Capture HTTP' }), undefined)
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ name: 'Salesforce Capture HTTP' })],
+    }))
+  })
+
   it('passes the parameterize option through when toggled', async () => {
     await act(async () => {
       root.render(<RecordingStudio />)
@@ -612,15 +743,16 @@ describe('RecordingStudio', () => {
     expect(container.textContent).toContain('Windows restore proxy command copied')
   })
 
-  it('renders the browser launcher as the primary path with proxy tools collapsed', async () => {
+  it('renders browser and proxy recorder options side by side', async () => {
     await act(async () => {
       root.render(<RecordingStudio />)
     })
     await flushPromises()
 
     expect(container.textContent).toContain('Record Browser Session')
-    expect(container.querySelector('[data-testid="rec-advanced-toggle"]')).not.toBeNull()
-    // Proxy setup stays hidden until the Advanced section is expanded.
+    expect(container.querySelector('[data-testid="rec-proxy-recorder-option"]')).not.toBeNull()
+    expect(container.textContent).toContain('Advanced Proxy Recorder')
+    expect(container.textContent).toContain('Proxy Setup')
     expect(container.textContent).not.toContain('Download CA Certificate')
   })
 
@@ -699,8 +831,319 @@ describe('RecordingStudio', () => {
 
     expect(container.querySelector('[data-testid="browser-recorder-unavailable"]')).not.toBeNull()
     expect(container.textContent).toContain('disabled in production mode')
-    // The Advanced proxy section auto-expands as the fallback path.
-    expect(container.textContent).toContain('Download CA Certificate')
+    expect(container.textContent).toContain('Advanced Proxy Recorder')
+    expect(container.textContent).toContain('Proxy Setup')
+    expect(container.textContent).not.toContain('Download CA Certificate')
+  })
+
+  it('pairs a local recording bridge when the remote controller cannot launch a browser', async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+      browser: {
+        availability: { available: false, reason: 'browser recording is disabled in production mode' },
+        active: null,
+      },
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    expect(container.querySelector('[data-testid="browser-recorder-bridge-panel"]')).not.toBeNull()
+    const downloadLink = Array.from(container.querySelectorAll('a')).find(link => link.textContent?.includes('Download the APEX Load Recording Agent'))
+    expect(downloadLink).toBeDefined()
+    expect(downloadLink?.getAttribute('href')).toContain('/api/v1/downloads/recording-agent/latest')
+    expect(container.textContent).not.toContain('Install it from your enterprise software catalog')
+    expect(container.textContent).toContain('1Download the Recording Agent')
+    expect(container.textContent).toContain('2Run the local command')
+    expect(container.textContent).toContain('3Verify the agent')
+    expect(container.textContent).toContain('4Pair the local bridge')
+    expect(container.textContent).toContain('Paste this command into Terminal or PowerShell')
+    expect(container.textContent).toContain('Token included')
+    expect(container.textContent).toContain('No separate token paste is needed')
+    expect(container.textContent).toContain('Verify Agent')
+    const command = container.querySelector('[data-testid="browser-recorder-bridge-command"]')?.textContent || ''
+    const generatedToken = command.match(/--token ([0-9a-f]+)/)?.[1]
+    expect(command).toContain('apexload-record-agent --addr 127.0.0.1:27777 --token')
+    expect(command).toContain('--allow-origin')
+    expect(generatedToken).toMatch(/^[0-9a-f]{48}$/)
+
+    const inputs = Array.from(container.querySelectorAll('.rec-bridge-panel input')) as HTMLInputElement[]
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(inputs[0], 'http://127.0.0.1:49152')
+      inputs[0].dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const pairButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Pair Local Bridge'))
+    expect(pairButton).toBeDefined()
+    await act(async () => {
+      pairButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.pairBrowserRecorderBridge).toHaveBeenCalledWith('http://127.0.0.1:49152', generatedToken)
+    expect(container.textContent).toContain('Local browser recording bridge paired')
+    expect(container.textContent).toContain('Record Browser')
+  })
+
+  it('verifies that the local recording agent is running before pairing', async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+      browser: {
+        availability: { available: false, reason: 'browser recording is disabled in production mode' },
+        active: null,
+      },
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    const verifyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Verify Agent'))
+    expect(verifyButton).toBeDefined()
+    await act(async () => {
+      verifyButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.verifyBrowserRecorderBridgeAgent).toHaveBeenCalledWith('http://127.0.0.1:27777')
+    expect(container.textContent).toContain('APEX Load Recording Agent is running at http://127.0.0.1:27777')
+    expect(container.textContent).toContain('Click Pair Local Bridge to connect')
+  })
+
+  it('does not navigate to the dashboard shell when the agent download endpoint returns HTML', async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+      browser: {
+        availability: { available: false, reason: 'browser recording is disabled in production mode' },
+        active: null,
+      },
+    })
+    apiFetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }),
+      blob: vi.fn().mockResolvedValue(new Blob(['<html>dashboard</html>'])),
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    const downloadLink = Array.from(container.querySelectorAll('a')).find(link => link.textContent?.includes('Download the APEX Load Recording Agent'))
+    expect(downloadLink).toBeDefined()
+    await act(async () => {
+      downloadLink!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    })
+    await flushPromises()
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/downloads/recording-agent/latest')
+    expect(downloadBlobMock).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Recording Agent download endpoint returned the dashboard instead of an agent archive')
+  })
+
+  it('shows an actionable message when the local recording agent is not reachable', async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+      browser: {
+        availability: { available: false, reason: 'browser recording is disabled in production mode' },
+        active: null,
+      },
+    })
+    apiMock.verifyBrowserRecorderBridgeAgent.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    const verifyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Verify Agent'))
+    expect(verifyButton).toBeDefined()
+    await act(async () => {
+      verifyButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('APEX Load Recording Agent is not reachable at http://127.0.0.1:27777')
+    expect(container.textContent).toContain('Download and run the agent command')
+  })
+
+  it('copies and regenerates the dashboard-created bridge command token', async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+      browser: {
+        availability: { available: false, reason: 'browser recording is disabled in production mode' },
+        active: null,
+      },
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    const commandBefore = container.querySelector('[data-testid="browser-recorder-bridge-command"]')?.textContent || ''
+    const tokenBefore = commandBefore.match(/--token ([0-9a-f]+)/)?.[1]
+    const copyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy Terminal Command'))
+    expect(copyButton).toBeDefined()
+
+    await act(async () => {
+      copyButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(clipboardWriteMock).toHaveBeenCalledWith(commandBefore)
+
+    const regenerateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Regenerate Token'))
+    expect(regenerateButton).toBeDefined()
+    await act(async () => {
+      regenerateButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const commandAfter = container.querySelector('[data-testid="browser-recorder-bridge-command"]')?.textContent || ''
+    const tokenAfter = commandAfter.match(/--token ([0-9a-f]+)/)?.[1]
+    expect(tokenAfter).toMatch(/^[0-9a-f]{48}$/)
+    expect(tokenAfter).not.toBe(tokenBefore)
+  })
+
+  it('falls back to selection copy when browser clipboard permission is denied', async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+      browser: {
+        availability: { available: false, reason: 'browser recording is disabled in production mode' },
+        active: null,
+      },
+    })
+    clipboardWriteMock.mockRejectedValueOnce(new Error('Write permission denied'))
+    const originalExecCommand = document.execCommand
+    const execCommandMock = vi.fn().mockReturnValue(true)
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommandMock,
+    })
+
+    try {
+      await act(async () => {
+        root.render(<RecordingStudio />)
+      })
+      await flushPromises()
+
+      const command = container.querySelector('[data-testid="browser-recorder-bridge-command"]')?.textContent || ''
+      const copyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy Terminal Command'))
+      expect(copyButton).toBeDefined()
+
+      await act(async () => {
+        copyButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      await flushPromises()
+
+      expect(clipboardWriteMock).toHaveBeenCalledWith(command)
+      expect(execCommandMock).toHaveBeenCalledWith('copy')
+      expect(container.textContent).toContain('Terminal command copied')
+    } finally {
+      Object.defineProperty(document, 'execCommand', {
+        configurable: true,
+        value: originalExecCommand,
+      })
+    }
+  })
+
+  it('shows a manual-copy message when all clipboard paths are blocked', async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+      browser: {
+        availability: { available: false, reason: 'browser recording is disabled in production mode' },
+        active: null,
+      },
+    })
+    clipboardWriteMock.mockRejectedValueOnce(new Error('Write permission denied'))
+    const originalExecCommand = document.execCommand
+    const execCommandMock = vi.fn().mockReturnValue(false)
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommandMock,
+    })
+
+    try {
+      await act(async () => {
+        root.render(<RecordingStudio />)
+      })
+      await flushPromises()
+
+      const copyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy Terminal Command'))
+      expect(copyButton).toBeDefined()
+
+      await act(async () => {
+        copyButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      await flushPromises()
+
+      expect(execCommandMock).toHaveBeenCalledWith('copy')
+      expect(container.textContent).toContain('Clipboard is blocked in this browser. Select the terminal command and press Cmd+C or Ctrl+C.')
+    } finally {
+      Object.defineProperty(document, 'execCommand', {
+        configurable: true,
+        value: originalExecCommand,
+      })
+    }
+  })
+
+  it('uses an already paired bridge as the browser recorder backend', async () => {
+    apiMock.browserRecorderBridge = { origin: 'http://127.0.0.1:49152', token: 'tok', session_id: 'ws-1' }
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+      browser: {
+        availability: { available: false, reason: 'production mode' },
+        active: null,
+      },
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    expect(apiMock.getBrowserRecorderBridgeStatus).toHaveBeenCalled()
+    expect(container.querySelector('[data-testid="browser-recorder-bridge-connected"]')).not.toBeNull()
+    expect(container.textContent).toContain('Local bridge: http://127.0.0.1:49152')
+  })
+
+  it('does not offer browser recording when the controller omits browser recorder capability', async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    expect(container.querySelector('[data-testid="browser-recorder-unavailable"]')).not.toBeNull()
+    expect(container.textContent).toContain('controller does not expose browser recording endpoints')
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.includes('Record Browser'))).toBe(false)
+    expect(container.textContent).toContain('Proxy Setup')
+    expect(container.textContent).not.toContain('Download CA Certificate')
   })
 
   it('adopts a live browser recording reported by the controller status', async () => {
@@ -757,6 +1200,7 @@ describe('RecordingStudio', () => {
       browser: {
         availability: { available: false, reason: 'no recording browser installed' },
         active: null,
+        install: { status: 'idle' },
       },
     })
     await act(async () => { root.render(<RecordingStudio />) })
@@ -768,6 +1212,51 @@ describe('RecordingStudio', () => {
     await flushPromises()
     expect(apiMock.installBrowserRecorder).toHaveBeenCalled()
   })
+
+  it('keeps install failures visible and retryable when browser dependencies are missing', async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+      browser: {
+        availability: { available: false, reason: 'no recording browser installed' },
+        active: null,
+        install: { status: 'failed', error: 'download failed' },
+      },
+    })
+    await act(async () => { root.render(<RecordingStudio />) })
+    await flushPromises()
+
+    const unavailable = container.querySelector('[data-testid="browser-recorder-unavailable"]')
+    expect(unavailable?.textContent).toContain('Recording browser install failed')
+    expect(unavailable?.textContent).toContain('download failed')
+    expect(Array.from(unavailable?.querySelectorAll('button') || []).some(b => b.textContent?.includes('Install Recording Browser'))).toBe(true)
+  })
+
+  it('does not offer install as a fix for no-display Docker controllers', async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+      browser: {
+        availability: { available: false, reason: 'no display detected on the controller host for a headed browser' },
+        active: null,
+        install: {
+          status: 'failed',
+          error: 'could not install driver: could not run driver: fork/exec /usr/bin/node: no such file or directory',
+        },
+      },
+    })
+    await act(async () => { root.render(<RecordingStudio />) })
+    await flushPromises()
+
+    const unavailable = container.querySelector('[data-testid="browser-recorder-unavailable"]')
+    expect(unavailable?.textContent).toContain('no display detected on the controller host for a headed browser')
+    expect(unavailable?.textContent).toContain('Install cannot add a display to this controller')
+    expect(unavailable?.textContent).toContain('Recording browser install failed')
+    expect(unavailable?.textContent).toContain('/usr/bin/node')
+    expect(Array.from(unavailable?.querySelectorAll('button') || []).some(b => b.textContent?.includes('Install Recording Browser'))).toBe(false)
+  })
 })
 
 async function flushPromises() {
@@ -777,13 +1266,17 @@ async function flushPromises() {
   })
 }
 
-// The proxy recorder now lives behind the Advanced toggle; expand it before
-// exercising proxy UI.
+// The proxy recorder is a first-class option next to browser recording; keep
+// this helper so older proxy tests still assert they are operating in that area.
 async function openProxyAdvanced(container: HTMLElement) {
-  const toggle = container.querySelector('[data-testid="rec-advanced-toggle"]') as HTMLElement | null
-  expect(toggle).not.toBeNull()
-  await act(async () => {
-    toggle!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-  })
+  expect(container.querySelector('[data-testid="rec-proxy-recorder-option"]')).not.toBeNull()
+  if (!container.querySelector('.rec-setup-steps')) {
+    const setupToggle = container.querySelector('.rec-setup-toggle')
+    expect(setupToggle).not.toBeNull()
+    await act(async () => {
+      setupToggle!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
   await flushPromises()
+  expect(container.querySelector('.rec-setup-steps')).not.toBeNull()
 }

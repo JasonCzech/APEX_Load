@@ -12,6 +12,7 @@ counterpart to `deployments/k8s/local` (dev) and the on-prem sibling of
 | Pod Security Admission `restricted` enforced on the namespace | [namespace.yaml](namespace.yaml) |
 | Dedicated ServiceAccounts, no API tokens mounted | [serviceaccounts.yaml](serviceaccounts.yaml) |
 | Scoped ingress NetworkPolicies + opt-in egress templates | [network-policy.yaml](network-policy.yaml), [egress-policies.example.yaml](egress-policies.example.yaml) |
+| Opt-in audited pod/workload restart controls | [restart-controls.example.yaml](restart-controls.example.yaml), [Kubernetes restart controls](../../../docs/KUBERNETES_RESTART_CONTROLS.md) |
 | ephemeral-storage limits + bounded emptyDirs (no DiskPressure evictions) | deployment/statefulset |
 | PDBs for controller and generators | [pdb.yaml](pdb.yaml) |
 | Fail-closed production posture (`APEXLOAD_ENV=production`) | deployment/statefulset env |

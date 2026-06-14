@@ -68,18 +68,87 @@ func TestGetUsesLdflagValues(t *testing.T) {
 	origV, origC, origB := Version, Commit, BuildTime
 	t.Cleanup(func() { Version, Commit, BuildTime = origV, origC, origB })
 
-	Version = "9.9.9"
-	Commit = "abcdef0"
+	Version = "v9.9.9"
+	Commit = "abcdef0123456789abcdef0123456789abcdef01"
 	BuildTime = "2026-06-03T00:00:00Z"
 
 	info := Get()
 	if info.Version != "9.9.9" {
 		t.Errorf("Version = %q, want %q", info.Version, "9.9.9")
 	}
+	if info.DisplayVersion != "v9.9.9" {
+		t.Errorf("DisplayVersion = %q, want %q", info.DisplayVersion, "v9.9.9")
+	}
 	if info.Commit != "abcdef0" {
 		t.Errorf("Commit = %q, want %q", info.Commit, "abcdef0")
 	}
+	if info.Revision != "abcdef0123456789abcdef0123456789abcdef01" {
+		t.Errorf("Revision = %q, want full revision", info.Revision)
+	}
 	if info.BuildTime != "2026-06-03T00:00:00Z" {
 		t.Errorf("BuildTime = %q, want %q", info.BuildTime, "2026-06-03T00:00:00Z")
+	}
+}
+
+func TestGetConvertsRawSHAVersionToFriendlyDevVersion(t *testing.T) {
+	origV, origC, origB := Version, Commit, BuildTime
+	t.Cleanup(func() { Version, Commit, BuildTime = origV, origC, origB })
+
+	Version = "abcdef0123456789abcdef0123456789abcdef01"
+	Commit = "abcdef0123456789abcdef0123456789abcdef01"
+	BuildTime = "2026-06-03T12:34:56Z"
+
+	info := Get()
+	if info.Version != "0.1.0-dev.20260603+abcdef0" {
+		t.Errorf("Version = %q, want friendly fallback", info.Version)
+	}
+	if info.DisplayVersion != "v0.1.0-dev.20260603+abcdef0" {
+		t.Errorf("DisplayVersion = %q, want prefixed friendly fallback", info.DisplayVersion)
+	}
+	if info.Commit != "abcdef0" {
+		t.Errorf("Commit = %q, want short SHA", info.Commit)
+	}
+	if info.Revision != "abcdef0123456789abcdef0123456789abcdef01" {
+		t.Errorf("Revision = %q, want full SHA", info.Revision)
+	}
+}
+
+func TestGetFormatsExplicitDevBuildWithCommit(t *testing.T) {
+	origV, origC, origB := Version, Commit, BuildTime
+	t.Cleanup(func() { Version, Commit, BuildTime = origV, origC, origB })
+
+	Version = "dev"
+	Commit = "1234567890abcdef1234567890abcdef12345678"
+	BuildTime = ""
+
+	info := Get()
+	if info.Version != "dev+1234567" {
+		t.Errorf("Version = %q, want dev+shortsha", info.Version)
+	}
+	if info.DisplayVersion != "dev+1234567" {
+		t.Errorf("DisplayVersion = %q, want dev+shortsha", info.DisplayVersion)
+	}
+}
+
+func TestVersionHelpers(t *testing.T) {
+	tests := []struct {
+		raw     string
+		display string
+	}{
+		{raw: "v1.2.3", display: "v1.2.3"},
+		{raw: "1.2.3-dev.20260603+abcdef0", display: "v1.2.3-dev.20260603+abcdef0"},
+		{raw: "dev+abcdef0", display: "dev+abcdef0"},
+	}
+
+	for _, tc := range tests {
+		if got := DisplayVersion(tc.raw); got != tc.display {
+			t.Errorf("DisplayVersion(%q) = %q, want %q", tc.raw, got, tc.display)
+		}
+	}
+	if !VersionsEqual("v1.2.3", "1.2.3") {
+		t.Error("VersionsEqual should ignore cosmetic v-prefixes")
+	}
+	if VersionsEqual("1.2.3", "1.2.4") {
+		t.Error("VersionsEqual returned true for different versions")
 	}
 }

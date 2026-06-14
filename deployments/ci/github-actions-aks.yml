@@ -4,6 +4,10 @@
 # Uses OIDC federation (no stored cloud secrets). Repo configuration:
 #   Variables: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
 #              ACR_NAME, AKS_RESOURCE_GROUP, AKS_CLUSTER_NAME
+#   Terraform state should be initialized for deployments, or provide
+#   APEXLOAD_ACR_LOGIN_SERVER, APEXLOAD_STORAGE_ACCOUNT_NAME,
+#   APEXLOAD_KEY_VAULT_URL, APEXLOAD_CONTROLLER_WORKLOAD_IDENTITY_CLIENT_ID,
+#   and APEXLOAD_GENERATOR_WORKLOAD_IDENTITY_CLIENT_ID as environment values.
 #   The federated app registration needs AcrPush on the registry and
 #   Azure Kubernetes Service RBAC Writer on the cluster.
 name: Deploy to AKS
@@ -22,6 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: azure/login@v2
         with:
@@ -33,19 +39,41 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          BUILD_VERSION=$(COMMIT="${GITHUB_SHA}" BUILD_TIME="${BUILD_TIME}" ./scripts/resolve-version.sh)
           for binary in controller generator; do
             az acr build --registry "${{ vars.ACR_NAME }}" \
               --image "apexload-${binary}:${GITHUB_SHA}" \
               --image "apexload-${binary}:latest" \
               --build-arg BINARY="${binary}" \
-              --build-arg VERSION="${GITHUB_SHA}" \
+              --build-arg VERSION="${BUILD_VERSION}" \
               --build-arg COMMIT="${GITHUB_SHA}" \
               --build-arg BUILD_TIME="${BUILD_TIME}" \
               --file Dockerfile .
           done
 
+  validate-deploy-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-helm@v4
+      - name: Validate Terraform, Kustomize, and Helm
+        run: |
+          set -euo pipefail
+          terraform -chdir=deployments/azure/terraform fmt -check -diff
+          terraform -chdir=deployments/azure/terraform init -backend=false -input=false
+          terraform -chdir=deployments/azure/terraform validate
+          kubectl kustomize deployments/k8s/aks >/tmp/apexload-aks.yaml
+          helm lint deployments/helm/apexload \
+            --set workloadIdentity.controllerClientId=00000000-0000-0000-0000-000000000001 \
+            --set workloadIdentity.generatorClientId=00000000-0000-0000-0000-000000000002
+          helm template apexload deployments/helm/apexload --namespace apexload \
+            --set workloadIdentity.controllerClientId=00000000-0000-0000-0000-000000000001 \
+            --set workloadIdentity.generatorClientId=00000000-0000-0000-0000-000000000002 >/tmp/apexload-helm.yaml
+
   deploy:
-    needs: build-push
+    needs: [build-push, validate-deploy-artifacts]
     runs-on: ubuntu-latest
     environment: aks-production
     steps:
@@ -63,13 +91,9 @@ jobs:
           az aks get-credentials \
             --resource-group "${{ vars.AKS_RESOURCE_GROUP }}" \
             --name "${{ vars.AKS_CLUSTER_NAME }}" --overwrite-existing
-          ACR_SERVER=$(az acr show --name "${{ vars.ACR_NAME }}" --query loginServer -o tsv)
-          cd deployments/k8s/aks
-          kubectl kustomize . >/dev/null  # fail fast on manifest errors
-          kustomize edit set image \
-            "apexload-controller=${ACR_SERVER}/apexload-controller:${GITHUB_SHA}" \
-            "apexload-generator=${ACR_SERVER}/apexload-generator:${GITHUB_SHA}"
-          kubectl apply -k .
+          terraform -chdir=deployments/azure/terraform init -input=false
+          APEXLOAD_IMAGE_TAG="${GITHUB_SHA}" scripts/render-aks-manifests.sh --output /tmp/apexload-aks.yaml
+          kubectl apply -f /tmp/apexload-aks.yaml
           kubectl -n apexload rollout status deployment/apexload-controller --timeout=300s
           kubectl -n apexload rollout status statefulset/apexload-generator --timeout=300s
 

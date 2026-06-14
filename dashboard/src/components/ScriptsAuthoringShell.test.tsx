@@ -108,8 +108,10 @@ function createActions(overrides: Partial<ScriptsCreateOptionActions> = {}): Scr
     openJavaHttpImport: vi.fn(),
     openDevWebImport: vi.fn(),
     openHARImport: vi.fn(),
+    openSalesforceImport: vi.fn(),
     openBrowserRecordingImport: vi.fn(),
     openOpenAPIImport: vi.fn(),
+    openRAMLImport: vi.fn(),
     openPostmanImport: vi.fn(),
     openWSDLImport: vi.fn(),
     openAsyncAPIImport: vi.fn(),
@@ -193,17 +195,27 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('Import From Source')
     expect(container.textContent).not.toContain('Start From Source')
     expect(container.textContent).not.toContain('Import Existing')
+    expect(container.textContent).toContain('Record Browser')
+    expect(container.textContent).not.toContain('Browser Recorder')
 
     await clickButton('Checkout Model')
     expect(onStartExistingScript).toHaveBeenCalledWith(expect.objectContaining({ id: 'script-1' }))
 
+    await clickButton('Record Browser')
+    expect(actions.openRecorder).toHaveBeenCalled()
+    expect(container.textContent).not.toContain('Browser Recorder')
+
     await clickButton('Import From Source')
     expect(container.textContent).toContain('Contracts & Collections')
+    expect(container.textContent).toContain('Salesforce Family')
     expect(container.textContent).toContain('Traffic & Samples')
     expect(container.textContent).toContain('Legacy & Tool Exports')
     expect(container.textContent).toContain('OpenAPI / Swagger')
     expect(container.textContent).toContain('Postman Collection')
     expect(container.textContent).toContain('WSDL / SOAP')
+    expect(container.textContent).toContain('Salesforce HAR')
+    expect(container.textContent).toContain('RAML / Anypoint')
+    expect(container.textContent).toContain('Agentforce Template')
     expect(container.textContent).toContain('HAR Traffic')
     expect(container.textContent).toContain('Request / Response Sample')
     expect(container.textContent).toContain('Import Java over HTTP')
@@ -214,6 +226,8 @@ describe('ScriptsAuthoringShell', () => {
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('OpenAPI / Swagger'))).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('Postman Collection'))).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('WSDL / SOAP'))).toHaveLength(1)
+    expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('Salesforce HAR'))).toHaveLength(1)
+    expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('RAML / Anypoint'))).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('HAR Traffic'))).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('DevWeb Source'))).toHaveLength(1)
 
@@ -222,6 +236,12 @@ describe('ScriptsAuthoringShell', () => {
 
     await clickButton('Postman Collection')
     expect(actions.openPostmanImport).toHaveBeenCalled()
+
+    await clickButton('Salesforce HAR')
+    expect(actions.openSalesforceImport).toHaveBeenCalled()
+
+    await clickButton('RAML / Anypoint')
+    expect(actions.openRAMLImport).toHaveBeenCalled()
 
     await clickButton('Import Enterprise Script Archive')
     expect(actions.openEnterpriseArchiveImport).toHaveBeenCalled()
@@ -333,26 +353,48 @@ describe('ScriptsAuthoringShell', () => {
   it('renders backend starter templates and delegates template drafts', async () => {
     const actions = createActions()
     apiMock.listAuthoringTemplates.mockResolvedValueOnce({
-      templates: [{
-        id: 'template-http-smoke',
-        name: 'HTTP Smoke',
-        protocol: 'http',
-        use_case: 'ci_smoke',
-        description: 'Exercise one critical API path before release promotion.',
-        tags: ['api', 'ci', 'smoke'],
-        script: {
+      templates: [
+        {
+          id: 'template-http-smoke',
           name: 'HTTP Smoke',
-          version: '1.0.0',
           protocol: 'http',
-          config: { base_url: 'https://api.example.com' },
-          actions: [],
+          use_case: 'ci_smoke',
+          description: 'Exercise one critical API path before release promotion.',
+          tags: ['api', 'ci', 'smoke'],
+          script: {
+            name: 'HTTP Smoke',
+            version: '1.0.0',
+            protocol: 'http',
+            config: { base_url: 'https://api.example.com' },
+            actions: [],
+          },
+          recommended_scenario: {
+            duration: '2m',
+            vusers: 3,
+          },
         },
-        recommended_scenario: {
-          duration: '2m',
-          vusers: 3,
+        {
+          id: 'template-agentforce-sse',
+          name: 'Agentforce SSE',
+          protocol: 'http',
+          use_case: 'agent_streaming',
+          description: 'Exercise an Agentforce session over OAuth2 and SSE.',
+          tags: ['agentforce', 'salesforce', 'sse', 'oauth2'],
+          script: {
+            name: 'Agentforce SSE',
+            version: '1.0.0',
+            protocol: 'http',
+            config: { base_url: '{{env.SF_API_HOST}}' },
+            init: [{ name: 'Get Token', type: 'http_oauth2_token', target: '', params: { client_secret: '{{secret.SALESFORCE_CLIENT_SECRET}}' } }],
+            actions: [{ name: 'Send Prompt', type: 'request', method: 'POST', target: '/agents/{{env.AGENT_ID}}/messages', body: '{{env.AGENT_PROMPT}}' }],
+          },
+          recommended_scenario: {
+            duration: '5m',
+            vusers: 1,
+          },
         },
-      }],
-      count: 1,
+      ],
+      count: 2,
     })
     apiMock.listAuthoringComponents.mockResolvedValueOnce({
       components: [{
@@ -387,6 +429,9 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('HTTP Smoke')
     expect(container.textContent).toMatch(/ci smoke\s*api\s*ci\s*smoke/i)
     expect(container.textContent).toMatch(/3 VUsers\s*\/\s*2m/i)
+    expect(container.textContent).toContain('Agentforce SSE')
+    expect(container.textContent).toContain('Salesforce Family')
+    expect(container.textContent).toContain('Required values: env.AGENT_ID, env.AGENT_PROMPT, env.SF_API_HOST, secret.SALESFORCE_CLIENT_SECRET')
 
     await clickButton('Reusable Blocks')
     expect(container.querySelectorAll('.script-create-table-list')).toHaveLength(1)

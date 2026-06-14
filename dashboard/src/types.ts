@@ -1,4 +1,5 @@
 import { type BrowserConfig, type PacingConfig, type ReplayPreflight, type ScriptActionDefinition, type ScriptDefinition, type ThinkTimeConfig } from './types/scripts'
+import type { LibraryImportResultItem, LibraryRemote } from './types/library'
 
 export type { ReplayPreflight, ReplayPreflightCheck } from './types/scripts'
 
@@ -527,6 +528,27 @@ export interface TestSummary {
   script_name?: string
 }
 
+export interface RemoteRunLink {
+  local_run_id: string
+  remote_id: string
+  remote_test_id: string
+  remote_url: string
+  local_project_id?: string
+  local_scenario_id?: string
+  remote_project_id?: string
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+export interface RemoteRunProxyResponse {
+  remote?: LibraryRemote
+  link: RemoteRunLink
+  test?: TestSummary
+  action?: Record<string, unknown>
+  pushed?: LibraryImportResultItem[]
+}
+
 export interface ScriptShakeoutResult {
   group_name: string
   script_id?: string
@@ -817,6 +839,8 @@ export interface ServerTelemetry {
   messages_sent_per_sec?: number
   messages_received_per_sec?: number
   consumer_lag_ms?: number
+  first_event_ms?: number
+  event_count?: number
   connection_reused?: boolean
 }
 
@@ -836,6 +860,9 @@ export interface ServerTelemetrySummary {
   avg_messages_received_per_sec?: number
   avg_consumer_lag_ms?: number
   max_consumer_lag_ms?: number
+  avg_first_event_ms?: number
+  max_first_event_ms?: number
+  event_count?: number
   request_size_classes?: Record<string, number>
   response_size_classes?: Record<string, number>
   connection_reused_count?: number
@@ -2363,15 +2390,30 @@ export interface MetricsHistoryPoint {
 
 export interface VersionResponse {
   version: string
+  display_version?: string
   commit?: string
+  revision?: string
   build_time?: string
   go_version?: string
   environment: string
+  deployment?: DeploymentIdentity
+}
+
+export interface DeploymentIdentity {
+  kind: 'desktop' | 'kubernetes' | 'docker' | 'local-server' | 'server' | string
+  label: string
+  bind_scope: 'loopback' | 'wide' | string
+  auth_enforced: boolean
+  desktop_available: boolean
+  client_downloads_enabled: boolean
 }
 
 export interface HealthResponse {
   status: string
   version: string
+  display_version?: string
+  commit?: string
+  revision?: string
   environment?: string
   build_time?: string
   ws_clients: number
@@ -2396,6 +2438,9 @@ export interface SystemInventoryController {
 export interface SystemInventoryGenerator {
   target: string
   generator_id: string
+  pod_name?: string
+  restartable?: boolean
+  restart_blocked_reason?: string
   region?: string
   status: 'connected' | 'healthy' | 'ready' | 'unreachable' | string
   version?: string
@@ -2444,6 +2489,47 @@ export interface SystemInventoryResponse {
   execution_mode: 'local' | 'distributed'
   controller: SystemInventoryController
   generators: SystemInventoryGenerator[]
+}
+
+export interface SystemRestartCapabilities {
+  enabled: boolean
+  disabled_reason?: string
+  execution_mode: 'local' | 'distributed' | string
+  namespace?: string
+  controller_deployment?: string
+  generator_stateful_set?: string
+  allow_force: boolean
+  supports: {
+    controller_workload: boolean
+    generator_workload: boolean
+    generator_pod: boolean
+  }
+}
+
+export interface SystemRestartRequest {
+  target_type: 'controller' | 'generator'
+  scope: 'pod' | 'workload'
+  target: string
+  reason: string
+  confirmation: string
+  force?: boolean
+}
+
+export interface SystemRestartResult {
+  status: 'success' | 'blocked' | 'failed' | 'disabled' | 'not_found' | string
+  message: string
+  target_type?: 'controller' | 'generator' | string
+  scope?: 'pod' | 'workload' | string
+  target?: string
+  namespace?: string
+  workload?: string
+  pod_name?: string
+  active_vusers?: number
+  active_run_count?: number
+  reachable?: boolean
+  forced?: boolean
+  warnings?: string[]
+  disabled_reason?: string
 }
 
 export interface SystemServiceEntry {
@@ -3395,6 +3481,14 @@ export interface DashboardPrometheusSettings {
   timeout_seconds: number
 }
 
+export interface DashboardClientAppSettings {
+  availability: 'enabled' | 'disabled' | string
+}
+
+export interface DashboardClientDownloadsSettings {
+  enabled: boolean
+}
+
 export interface DashboardSystemSettings {
   general: DashboardGeneralSettings
   thresholds: DashboardThresholdSettings
@@ -3405,6 +3499,8 @@ export interface DashboardSystemSettings {
   auth: DashboardAuthSettings
   github: DashboardGitHubSettings
   prometheus: DashboardPrometheusSettings
+  client_app: DashboardClientAppSettings
+  client_downloads: DashboardClientDownloadsSettings
 }
 
 export interface PrometheusPoint {

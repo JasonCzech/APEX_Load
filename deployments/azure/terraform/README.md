@@ -11,7 +11,8 @@ Provisions everything APEX Load needs on Azure. The same Terraform stack serves 
 | Azure Cache for Redis | Live-run state + WebSocket fanout for multi-replica or HA controller. | Secret `APEXLOAD_REDIS_URL` / App Service app setting |
 | Storage account + `apexload-archives` container | Run-evidence archives (`APEXLOAD_ARCHIVE_BACKEND=azure_blob`). Account keys disabled — workload identity / managed identity only. | ConfigMap `AZURE_STORAGE_ACCOUNT`, `APEXLOAD_ARCHIVE_CONTAINER` |
 | Key Vault (RBAC) | `{{secret.*}}` script secrets and gRPC TLS PEM blobs (App Service topology). | ConfigMap `APEXLOAD_AZURE_KEY_VAULT_URL`; App Service Key Vault references |
-| User-assigned identity + federated credentials | Workload identity for the `apexload-controller` / `apexload-generator` service accounts. Roles: `Storage Blob Data Contributor`, `Key Vault Secrets User`. | `serviceaccounts.yaml` client-id annotation; App Service system-assigned identity needs the same roles |
+| User-assigned identities + federated credentials | Split workload identities for `apexload-controller` and `apexload-generator`. Controller gets Blob + Key Vault; generators get Key Vault only by default. | `serviceaccounts.yaml` client-id annotations; App Service system-assigned identity needs controller-equivalent roles |
+| Private networking | Production default private endpoints/private DNS for PostgreSQL, Redis, Blob, and Key Vault. | `network_mode=private` |
 
 ## Usage
 
@@ -29,8 +30,9 @@ terraform apply
 # Cluster credentials
 $(terraform output -raw kubeconfig_command)
 
-# Service accounts: workload identity client ID
-export WORKLOAD_IDENTITY_CLIENT_ID=$(terraform output -raw workload_identity_client_id)
+# Service accounts: workload identity client IDs
+export CONTROLLER_WORKLOAD_IDENTITY_CLIENT_ID=$(terraform output -raw controller_workload_identity_client_id)
+export GENERATOR_WORKLOAD_IDENTITY_CLIENT_ID=$(terraform output -raw generator_workload_identity_client_id)
 
 # ConfigMap values (deployments/k8s/aks/configmap.yaml)
 terraform output -raw storage_account_name   # → AZURE_STORAGE_ACCOUNT
@@ -46,6 +48,14 @@ terraform output -raw acr_login_server       # → images newName prefix
 ```
 
 Full migration steps (data, archives, cutover): `deployments/k8s/aks/README.md`.
+
+For Kustomize deployments, prefer the render script so placeholders are checked
+before anything is applied:
+
+```bash
+scripts/render-aks-manifests.sh --output /tmp/apexload-aks.yaml --image-tag "$(git rev-parse --short HEAD)"
+kubectl apply -f /tmp/apexload-aks.yaml
+```
 
 ## Wiring the outputs into App Service
 
@@ -75,9 +85,11 @@ The App Service's system-assigned managed identity must have `Storage Blob Data 
 ## Notes
 
 - **State**: configure the `azurerm` backend in `versions.tf` before team use.
-- **Networking**: PostgreSQL uses the public endpoint restricted to Azure-internal
-  traffic plus `postgres_allowed_cidrs`. For private-only access, move the server
-  onto a delegated subnet with private DNS (requires adding a VNet definition).
+- **Networking**: `network_mode=private` is the production default and creates a
+  VNet, AKS subnets, private endpoints, and private DNS for PostgreSQL, Redis,
+  Blob Storage, and Key Vault. `network_mode=public` keeps the earlier
+  evaluation posture with public data-plane endpoints plus PostgreSQL firewall
+  rules.
 - **Prometheus**: the KEDA ScaledObject expects a Prometheus query endpoint.
   Installing kube-prometheus-stack in-cluster mirrors the on-prem setup; Azure
   Monitor managed Prometheus also works with a workload-identity

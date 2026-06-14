@@ -27,8 +27,10 @@ interface Props {
   onOpenJMeterImport: () => void
   onOpenDevWebImport: () => void
   onOpenHARImport: () => void
+  onOpenSalesforceImport: () => void
   onOpenBrowserRecordingImport: () => void
   onOpenOpenAPIImport: () => void
+  onOpenRAMLImport: () => void
   onOpenPostmanImport: () => void
   onOpenWSDLImport: () => void
   onOpenAsyncAPIImport: () => void
@@ -39,6 +41,7 @@ interface Props {
 type ExistingScriptSortKey = 'name' | 'health' | 'usage' | 'associated_releases' | 'created_at' | 'last_run'
 type ExistingScriptSortDirection = 'asc' | 'desc'
 type StartNewCategory = 'templates' | 'editors' | 'blocks'
+type CreateWorkflow = 'existing' | 'start-new' | 'source'
 
 function formatScriptStatus(status?: string) {
   return status ? status.replace(/_/g, ' ') : 'not scored'
@@ -112,6 +115,29 @@ function getExistingScriptSearchText(script: StoredScript) {
   ].filter(value => value !== undefined && value !== null).join(' ').toLowerCase()
 }
 
+function isSalesforceFamilyTemplate(template: AuthoringTemplate) {
+  const text = [
+    template.id,
+    template.name,
+    template.description,
+    template.protocol,
+    template.use_case,
+    ...(template.tags || []),
+  ].join(' ').toLowerCase()
+  return ['agentforce', 'salesforce', 'mulesoft', 'sse', 'oauth2'].some(signal => text.includes(signal))
+}
+
+function templateRuntimeReferences(template: AuthoringTemplate) {
+  const content = JSON.stringify(template.script || {})
+  const refs = new Set<string>()
+  const pattern = /\{\{(env|secret)\.([A-Za-z0-9_.-]+)[^}]*\}\}/g
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(content)) !== null) {
+    refs.add(`${match[1]}.${match[2]}`)
+  }
+  return Array.from(refs).sort((a, b) => a.localeCompare(b))
+}
+
 function compareExistingScripts(a: StoredScript, b: StoredScript, key: ExistingScriptSortKey) {
   if (key === 'usage') {
     return (a.scenario_count || 0) - (b.scenario_count || 0)
@@ -156,8 +182,10 @@ export default function ScriptCreateOptions({
   onOpenJMeterImport,
   onOpenDevWebImport,
   onOpenHARImport,
+  onOpenSalesforceImport,
   onOpenBrowserRecordingImport,
   onOpenOpenAPIImport,
+  onOpenRAMLImport,
   onOpenPostmanImport,
   onOpenWSDLImport,
   onOpenAsyncAPIImport,
@@ -168,7 +196,7 @@ export default function ScriptCreateOptions({
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const [templates, setTemplates] = useState<AuthoringTemplate[]>([])
   const [components, setComponents] = useState<AuthoringComponent[]>([])
-  const [workflow, setWorkflow] = useState<'existing' | 'start-new' | 'source' | 'record'>('existing')
+  const [workflow, setWorkflow] = useState<CreateWorkflow>('existing')
   const [existingScriptQuery, setExistingScriptQuery] = useState('')
   const [existingScriptProtocol, setExistingScriptProtocol] = useState('all')
   const [existingScriptHealth, setExistingScriptHealth] = useState('all')
@@ -375,7 +403,7 @@ export default function ScriptCreateOptions({
           <strong>Start New Script</strong>
           <small>Use templates, reusable blocks, or blank protocol editors.</small>
         </button>
-        <button type="button" className={`script-workflow-card ${workflow === 'record' ? 'active' : ''}`} onClick={() => setWorkflow('record')}>
+        <button type="button" className="script-workflow-card" onClick={onOpenRecorder}>
           <span>3</span>
           <strong>Record Browser</strong>
           <small>Capture a user journey and review it before save.</small>
@@ -541,32 +569,42 @@ export default function ScriptCreateOptions({
                         </tr>
                       </thead>
                       <tbody>
-                        {templates.map(template => (
-                          <tr key={template.id}>
-                            <td><span className="script-create-type-badge inline">{template.protocol.toUpperCase()}</span></td>
-                            <td className="cell-name">
-                              <div>{template.name}</div>
-                              <div className="script-create-table-description">{template.description}</div>
-                            </td>
-                            <td><span className="tag-chip use-case">{template.use_case.replace(/_/g, ' ')}</span></td>
-                            <td>
-                              <div className="script-create-template-tags compact">
-                                {template.tags?.slice(0, 3).map(tag => (
-                                  <span key={tag} className="tag-chip">{tag}</span>
-                                ))}
-                                {!template.tags?.length && <span className="cell-muted">No tags</span>}
-                              </div>
-                            </td>
-                            <td className="cell-muted">
-                              {template.recommended_scenario
-                                ? `${template.recommended_scenario.vusers || 1} VUsers / ${template.recommended_scenario.duration || 'script default'}`
-                                : 'Not specified'}
-                            </td>
-                            <td style={{ textAlign: 'right' }}>
-                              <button type="button" className="btn btn-sm btn-secondary" onClick={() => onStartTemplateScript(template.script)}>Use {template.name}</button>
-                            </td>
-                          </tr>
-                        ))}
+                        {templates.map(template => {
+                          const familyTemplate = isSalesforceFamilyTemplate(template)
+                          const runtimeRefs = familyTemplate ? templateRuntimeReferences(template).slice(0, 6) : []
+                          return (
+                            <tr key={template.id}>
+                              <td><span className="script-create-type-badge inline">{template.protocol.toUpperCase()}</span></td>
+                              <td className="cell-name">
+                                <div>{template.name}</div>
+                                <div className="script-create-table-description">{template.description}</div>
+                                {runtimeRefs.length > 0 && (
+                                  <div className="script-create-table-description cell-muted">
+                                    Required values: {runtimeRefs.join(', ')}
+                                  </div>
+                                )}
+                              </td>
+                              <td><span className="tag-chip use-case">{template.use_case.replace(/_/g, ' ')}</span></td>
+                              <td>
+                                <div className="script-create-template-tags compact">
+                                  {familyTemplate && <span className="tag-chip use-case">Salesforce Family</span>}
+                                  {template.tags?.slice(0, familyTemplate ? 2 : 3).map(tag => (
+                                    <span key={tag} className={`tag-chip ${['agentforce', 'salesforce', 'sse', 'oauth2'].includes(tag.toLowerCase()) ? 'use-case' : ''}`}>{tag}</span>
+                                  ))}
+                                  {!template.tags?.length && <span className="cell-muted">No tags</span>}
+                                </div>
+                              </td>
+                              <td className="cell-muted">
+                                {template.recommended_scenario
+                                  ? `${template.recommended_scenario.vusers || 1} VUsers / ${template.recommended_scenario.duration || 'script default'}`
+                                  : 'Not specified'}
+                              </td>
+                              <td style={{ textAlign: 'right' }}>
+                                <button type="button" className="btn btn-sm btn-secondary" onClick={() => onStartTemplateScript(template.script)}>Use {template.name}</button>
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -655,23 +693,6 @@ export default function ScriptCreateOptions({
           </section>
         )}
 
-        {workflow === 'record' && (
-        <section className="script-create-lane web full">
-          <div className="script-create-lane-header">
-            <span className="script-create-kicker">Browser capture</span>
-            <h3>Record Browser</h3>
-            <p>Capture a rendered browser flow, then review and edit the generated draft before promotion.</p>
-          </div>
-          <div className="script-create-grid">
-            <button className="script-create-option" onClick={onOpenRecorder}>
-              <span className="script-create-type-badge web">WEB</span>
-              <h3>Browser Recorder</h3>
-              <p>Capture a browser session and convert selected traffic into reusable Web/HTML script assets.</p>
-            </button>
-          </div>
-        </section>
-        )}
-
         {workflow === 'source' && (
         <section className="script-create-lane import full">
           <div className="script-create-lane-header">
@@ -702,6 +723,33 @@ export default function ScriptCreateOptions({
                   <span className="script-create-type-badge">ASYNC</span>
                   <h3>AsyncAPI / Kafka</h3>
                   <p>Convert AsyncAPI 2.x/3.x channels into Kafka produce, consume, and request-reply actions with brokers, topics, and sample payloads.</p>
+                </button>
+              </div>
+            </div>
+
+            <div className="script-create-import-group">
+              <h4>Salesforce Family</h4>
+              <div className="script-create-grid">
+                <button className="script-create-option primary" onClick={onOpenSalesforceImport}>
+                  <span className="script-create-type-badge">SF</span>
+                  <h3>Salesforce HAR</h3>
+                  <p>Review Salesforce Lightning, Aura, UI API, login, and Agentforce traffic as a native HTTP draft with Salesforce-aware correlation.</p>
+                </button>
+                <button className="script-create-option primary" onClick={onOpenRAMLImport}>
+                  <span className="script-create-type-badge">RAML</span>
+                  <h3>RAML / Anypoint</h3>
+                  <p>Convert RAML resources, methods, examples, and OAuth2 security schemes into reviewable HTTP actions.</p>
+                </button>
+                <button
+                  className="script-create-option"
+                  onClick={() => {
+                    setWorkflow('start-new')
+                    setStartNewCategory('templates')
+                  }}
+                >
+                  <span className="script-create-type-badge import">AGT</span>
+                  <h3>Agentforce Template</h3>
+                  <p>Start from the backend Agentforce SSE/OAuth2 template and review required environment and secret values before editing.</p>
                 </button>
               </div>
             </div>

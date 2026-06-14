@@ -10,20 +10,40 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 const (
-	defaultRunnerCommand  = "java"
-	defaultMaxProcesses   = 25
+	defaultRunnerCommand  = config.DefaultJavaVuserRunnerCommand
+	defaultMaxProcesses   = config.DefaultJavaVuserMaxProcesses
 	defaultActionTimeout  = 30 * time.Second
 	defaultHarnessMain    = "Harness"
 	javaVuserProtocolName = "java_vuser"
 )
 
-var processSlots = make(chan struct{}, defaultMaxProcesses)
+// processSlots bounds the number of concurrent runner processes per generator.
+// It is sized once from the operator-owned APEXLOAD_JAVA_VUSER_MAX_PROCESSES so
+// that a single generator-wide cap applies across every java_vuser group,
+// regardless of any (now-ignored) script-supplied max_processes value.
+var (
+	processSlots     chan struct{}
+	processSlotsOnce sync.Once
+)
+
+func processSlotChan() chan struct{} {
+	processSlotsOnce.Do(func() {
+		limit := config.LoadJavaVuserOperatorConfig().MaxProcesses
+		if limit <= 0 {
+			limit = defaultMaxProcesses
+		}
+		processSlots = make(chan struct{}, limit)
+	})
+	return processSlots
+}
 
 func init() {
 	protocol.Register(javaVuserProtocolName, func() protocol.Protocol {
@@ -32,10 +52,10 @@ func init() {
 }
 
 type JavaVuser struct {
-	cfg config
+	cfg configuration
 }
 
-type config struct {
+type configuration struct {
 	Enabled        bool
 	RunnerCommand  string
 	HarnessJar     string
@@ -60,13 +80,19 @@ func (j *JavaVuser) Name() string {
 }
 
 func (j *JavaVuser) Init(_ context.Context, cfg map[string]any) error {
-	j.cfg = config{
-		Enabled:        boolValue(cfg, "java_vuser_enabled"),
-		RunnerCommand:  firstNonEmpty(stringValue(cfg, "java_vuser_runner_command"), defaultRunnerCommand),
-		HarnessJar:     stringValue(cfg, "java_vuser_harness_jar"),
-		Classpath:      stringSliceValue(cfg, "java_vuser_classpath"),
-		WorkDir:        stringValue(cfg, "java_vuser_work_dir"),
-		MaxProcesses:   intValue(cfg, "java_vuser_max_processes", defaultMaxProcesses),
+	// Enablement and the runner command/classpath/working-directory are
+	// operator-owned (resolved from process environment), NOT taken from the
+	// uploaded script. A script author cannot enable the runner or steer which
+	// binary executes; the only script-controlled knobs are non-privileged
+	// per-action timeouts.
+	operator := config.LoadJavaVuserOperatorConfig()
+	j.cfg = configuration{
+		Enabled:        operator.Enabled,
+		RunnerCommand:  firstNonEmpty(operator.RunnerCommand, defaultRunnerCommand),
+		HarnessJar:     operator.HarnessJar,
+		Classpath:      operator.Classpath,
+		WorkDir:        operator.WorkDir,
+		MaxProcesses:   operator.MaxProcesses,
 		StartupTimeout: durationValue(cfg, "java_vuser_startup_timeout_ms", 0),
 		ActionTimeout:  durationValue(cfg, "java_vuser_action_timeout_ms", defaultActionTimeout),
 	}
@@ -96,7 +122,7 @@ func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*prot
 		return result, nil
 	}
 	if !j.cfg.Enabled {
-		err := fmt.Errorf("java_vuser runner is disabled; set config.java_vuser.enabled=true only on governed generator-java runners")
+		err := fmt.Errorf("java_vuser runner is disabled; an operator must enable it on this generator via %s=true (script config cannot enable it)", config.EnvJavaVuserRunnerEnabled)
 		finalizeResult(result, start, action, err, "", "")
 		return result, nil
 	}
@@ -191,9 +217,10 @@ func finalizeResult(result *protocol.Result, start time.Time, action *protocol.A
 }
 
 func acquireProcessSlot(ctx context.Context) (func(), error) {
+	slots := processSlotChan()
 	select {
-	case processSlots <- struct{}{}:
-		return func() { <-processSlots }, nil
+	case slots <- struct{}{}:
+		return func() { <-slots }, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

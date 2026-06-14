@@ -174,3 +174,119 @@ func TestHARErrors(t *testing.T) {
 		t.Error("expected error for missing log section")
 	}
 }
+
+// TestPolicyCompile asserts custom patterns compile once and that invalid
+// patterns are surfaced as errors rather than silently swallowed.
+func TestPolicyCompile(t *testing.T) {
+	t.Run("valid patterns compile", func(t *testing.T) {
+		valid, errs := Policy{ExtraPatterns: []Rule{
+			{Pattern: `\d{3}-\d{2}-\d{4}`},
+			{Pattern: `4\d{15}`, Replacement: "****"},
+		}}.Compile()
+		if len(errs) != 0 {
+			t.Fatalf("unexpected compile errors: %v", errs)
+		}
+		if len(valid) != 2 {
+			t.Fatalf("expected 2 compiled patterns, got %d", len(valid))
+		}
+	})
+
+	t.Run("invalid pattern surfaced", func(t *testing.T) {
+		valid, errs := Policy{ExtraPatterns: []Rule{
+			{Pattern: `\d{3}-\d{2}-\d{4}`},
+			{Pattern: `([`}, // unbalanced group → invalid
+		}}.Compile()
+		if len(errs) != 1 {
+			t.Fatalf("expected 1 compile error, got %d: %v", len(errs), errs)
+		}
+		if !strings.Contains(errs[0].Error(), "([") {
+			t.Errorf("error should name the offending pattern, got %q", errs[0].Error())
+		}
+		if len(valid) != 1 {
+			t.Errorf("valid patterns should still be returned, got %d", len(valid))
+		}
+	})
+
+	t.Run("empty policy compiles clean", func(t *testing.T) {
+		valid, errs := Policy{}.Compile()
+		if len(valid) != 0 || len(errs) != 0 {
+			t.Errorf("zero-value policy should yield no patterns/errors, got %d/%d", len(valid), len(errs))
+		}
+	})
+}
+
+// TestHARWithErrorsSurfacesInvalidPattern proves a typo'd custom pattern is
+// reported once through the HAR entry point while built-in redaction still runs.
+func TestHARWithErrorsSurfacesInvalidPattern(t *testing.T) {
+	policy := Policy{ExtraPatterns: []Rule{{Pattern: `([`}}}
+	scrubbed, patternErrs, err := HARWithErrors([]byte(sampleHAR), policy)
+	if err != nil {
+		t.Fatalf("HARWithErrors: %v", err)
+	}
+	if len(patternErrs) != 1 {
+		t.Fatalf("expected the invalid pattern to be surfaced, got %d errors", len(patternErrs))
+	}
+	// Built-in protections must still apply despite the bad custom rule.
+	if strings.Contains(string(scrubbed), "Bearer tok123") {
+		t.Error("built-in redaction must still run when a custom pattern is invalid")
+	}
+
+	// HAR (the legacy signature) keeps working and just drops the errors.
+	if _, err := HAR([]byte(sampleHAR), policy); err != nil {
+		t.Fatalf("HAR with invalid custom pattern should not error: %v", err)
+	}
+}
+
+// TestCompileOnceManyValues feeds a single policy through many values and HAR
+// entries, asserting the custom pattern redacts every match. Compiling per call
+// would still be correct, so this guards behavior; the benchmark below guards
+// against the per-call recompile regression.
+func TestCompileOnceManyValues(t *testing.T) {
+	policy := Policy{ExtraPatterns: []Rule{{Pattern: `SSN-\d{4}`, Replacement: "[PII]"}}}
+
+	for i := 0; i < 500; i++ {
+		got := Value("user SSN-1234 record", policy)
+		if got != "user [PII] record" {
+			t.Fatalf("iteration %d: Value = %q, want %q", i, got, "user [PII] record")
+		}
+	}
+
+	hdrs := map[string]string{"X-Note": "SSN-9999 here", "Content-Type": "text/plain"}
+	out := Headers(hdrs, policy)
+	if out["X-Note"] != "[PII] here" {
+		t.Errorf("Headers custom pattern not applied: %q", out["X-Note"])
+	}
+	if out["Content-Type"] != "text/plain" {
+		t.Errorf("Headers altered a non-matching value: %q", out["Content-Type"])
+	}
+}
+
+// BenchmarkValueCustomPattern guards the compile-once optimization: Value
+// applies the same custom policy to many values without recompiling the regexp
+// on every call. A regression that recompiled per call would inflate this.
+func BenchmarkValueCustomPattern(b *testing.B) {
+	policy := Policy{ExtraPatterns: []Rule{
+		{Pattern: `SSN-\d{4}`, Replacement: "[PII]"},
+		{Pattern: `\b\d{16}\b`, Replacement: "[CARD]"},
+	}}
+	const input = "account SSN-1234 paid with 4111111111111111 today"
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = Value(input, policy)
+	}
+}
+
+// BenchmarkHARCustomPattern exercises the hot path where one compiled policy is
+// reused across every header/cookie/param/body value in a HAR document.
+func BenchmarkHARCustomPattern(b *testing.B) {
+	policy := Policy{ExtraPatterns: []Rule{{Pattern: `SSN-\d{4}`, Replacement: "[PII]"}}}
+	data := []byte(sampleHAR)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := HAR(data, policy); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

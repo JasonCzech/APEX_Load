@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { useWebSocket } from '../hooks/useWebSocket'
+import { type BrowserRecorderBridgeConnection } from '../hooks/api/browserRecorderBridge'
 import {
   type WSMessage,
   type BrowserReplayEvent,
@@ -12,6 +13,7 @@ export interface BrowserReplayProgressProps {
   replaySessionId: string
   projectId?: string
   onDismiss?: () => void
+  bridge?: BrowserRecorderBridgeConnection | null
 }
 
 type Phase = 'running' | 'completed' | 'failed' | 'stopped'
@@ -20,7 +22,7 @@ type Phase = 'running' | 'completed' | 'failed' | 'stopped'
 // the just-recorded script and shows per-step pass/fail with selector self-heal
 // suggestions, subscribing to the same browser_replay_* events the full
 // debugger uses.
-export default function BrowserReplayProgress({ replaySessionId, projectId, onDismiss }: BrowserReplayProgressProps) {
+export default function BrowserReplayProgress({ replaySessionId, projectId, onDismiss, bridge }: BrowserReplayProgressProps) {
   const [events, setEvents] = useState<BrowserReplayEvent[]>([])
   const [phase, setPhase] = useState<Phase>('running')
   const [report, setReport] = useState<BrowserReplayReport | null>(null)
@@ -57,7 +59,7 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
     [replaySessionId],
   )
 
-  useWebSocket({ projectId, onMessage: handleMessage })
+  useWebSocket({ projectId, onMessage: handleMessage, bridge })
 
   const real = events.filter(Boolean)
   const passed = real.filter(e => e.success).length

@@ -9,13 +9,36 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+// sleepCtx sleeps for d, but returns early if ctx is cancelled. This lets
+// think-time and between-iteration pacing be interrupted promptly when a VUser
+// is scaled/ramped down or the run is hard-stopped, instead of holding load for
+// the full sleep duration.
+func sleepCtx(ctx context.Context, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	if ctx == nil {
+		time.Sleep(d)
+		return
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+	case <-timer.C:
+	}
+}
+
 // applyThinkTime sleeps for a computed think time duration, respecting
 // multiplier, limit, and ignore settings.
 func applyThinkTime(cfg protocol.ThinkTimeConfig) {
-	d := computeThinkTime(cfg)
-	if d > 0 {
-		time.Sleep(d)
-	}
+	applyThinkTimeCtx(context.Background(), cfg)
+}
+
+// applyThinkTimeCtx is the context-aware variant of applyThinkTime; the sleep is
+// cut short if ctx is cancelled.
+func applyThinkTimeCtx(ctx context.Context, cfg protocol.ThinkTimeConfig) {
+	sleepCtx(ctx, computeThinkTime(cfg))
 }
 
 func computeThinkTime(cfg protocol.ThinkTimeConfig) time.Duration {
@@ -69,6 +92,12 @@ func computeThinkTime(cfg protocol.ThinkTimeConfig) time.Duration {
 // applyIterationPacing applies the configured pacing delay between iterations.
 // iterStart is the time the iteration began (used for interval-based pacing).
 func applyIterationPacing(cfg PacingRuntimeConfig, iterStart time.Time) {
+	applyIterationPacingCtx(context.Background(), cfg, iterStart)
+}
+
+// applyIterationPacingCtx is the context-aware variant of applyIterationPacing;
+// the pacing sleep is cut short if ctx is cancelled.
+func applyIterationPacingCtx(ctx context.Context, cfg PacingRuntimeConfig, iterStart time.Time) {
 	switch cfg.Type {
 	case "none", "":
 		// No pacing — start next iteration immediately
@@ -76,25 +105,25 @@ func applyIterationPacing(cfg PacingRuntimeConfig, iterStart time.Time) {
 
 	case "fixed_delay":
 		if cfg.DelayMs > 0 {
-			time.Sleep(time.Duration(cfg.DelayMs) * time.Millisecond)
+			sleepCtx(ctx, time.Duration(cfg.DelayMs)*time.Millisecond)
 		}
 
 	case "random_delay":
 		lo := cfg.MinDelayMs
 		hi := cfg.MaxDelayMs
 		if hi <= lo {
-			time.Sleep(time.Duration(lo) * time.Millisecond)
+			sleepCtx(ctx, time.Duration(lo)*time.Millisecond)
 			return
 		}
 		d := lo + rand.Intn(hi-lo+1)
-		time.Sleep(time.Duration(d) * time.Millisecond)
+		sleepCtx(ctx, time.Duration(d)*time.Millisecond)
 
 	case "fixed_interval":
 		if cfg.IntervalMs > 0 {
 			elapsed := time.Since(iterStart)
 			target := time.Duration(cfg.IntervalMs) * time.Millisecond
 			if elapsed < target {
-				time.Sleep(target - elapsed)
+				sleepCtx(ctx, target-elapsed)
 			}
 		}
 
@@ -107,7 +136,7 @@ func applyIterationPacing(cfg PacingRuntimeConfig, iterStart time.Time) {
 		target := time.Duration(lo+rand.Intn(hi-lo+1)) * time.Millisecond
 		elapsed := time.Since(iterStart)
 		if elapsed < target {
-			time.Sleep(target - elapsed)
+			sleepCtx(ctx, target-elapsed)
 		}
 	}
 }

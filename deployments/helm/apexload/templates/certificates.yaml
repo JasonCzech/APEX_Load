@@ -1,0 +1,79 @@
+{{- if .Values.certManager.enabled }}
+{{- if .Values.certManager.selfSignedBootstrap }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: apexload-selfsigned
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+{{ include "apexload.labels" . | indent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apexload-grpc-ca
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+{{ include "apexload.labels" . | indent 4 }}
+spec:
+  isCA: true
+  commonName: apexload-grpc-ca
+  secretName: apexload-grpc-ca
+  duration: 8760h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: apexload-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ .Values.certManager.issuerName }}
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+{{ include "apexload.labels" . | indent 4 }}
+spec:
+  ca:
+    secretName: apexload-grpc-ca
+---
+{{- end }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apexload-generator-grpc-tls
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+{{ include "apexload.labels" . | indent 4 }}
+spec:
+  secretName: {{ .Values.generator.grpcTlsSecretName }}
+  duration: 2160h
+  dnsNames:
+    - apexload-generator.{{ include "apexload.namespace" . }}.svc.cluster.local
+    - apexload-generator.{{ include "apexload.namespace" . }}.svc
+  usages:
+    - server auth
+  issuerRef:
+    name: {{ .Values.certManager.issuerName }}
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apexload-controller-grpc-tls
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+{{ include "apexload.labels" . | indent 4 }}
+spec:
+  secretName: {{ .Values.controller.grpcTlsSecretName }}
+  duration: 2160h
+  commonName: apexload-controller
+  usages:
+    - client auth
+  issuerRef:
+    name: {{ .Values.certManager.issuerName }}
+    kind: Issuer
+{{- end }}

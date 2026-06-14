@@ -187,6 +187,67 @@ describe('TestExecutionLiveControls', () => {
     expect(onAbort).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps Abort enabled while a graceful stop is in progress', async () => {
+    const onAbort = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <TestExecutionLiveControls
+          showControls={false}
+          onToggleControls={vi.fn()}
+          test={buildRunningTest()}
+          vuserTargets={{ Checkout: 12 }}
+          onVuserTargetChange={vi.fn()}
+          vuserGroupActions={{ Checkout: 'run' }}
+          onVuserGroupActionChange={vi.fn()}
+          vuserRampEnabled={false}
+          onVuserRampEnabledChange={vi.fn()}
+          vuserRampDuration="1m"
+          onVuserRampDurationChange={vi.fn()}
+          onScaleVUsers={vi.fn()}
+          onStopAllVUsers={vi.fn()}
+          durationInput="10m"
+          onDurationInputChange={vi.fn()}
+          onAdjustDuration={vi.fn()}
+          isRunning
+          isPaused={false}
+          isStopping
+          onPause={vi.fn()}
+          onResume={vi.fn()}
+          onStop={vi.fn()}
+          onAbort={onAbort}
+          liveControlPreview={{
+            points: [],
+            currentTotal: 12,
+            projectedTotal: 12,
+            remainingSeconds: 600,
+            projectedDurationSeconds: 600,
+            vuserTransitionSeconds: 0,
+            isGradualVuserChange: false,
+            hasActiveVuserRamp: false,
+            hasPendingChanges: false,
+          }}
+          controlFeedback=""
+          groupColors={['#00a3ff']}
+        />,
+      )
+    })
+
+    expect(container.querySelector('.run-actions-inline')?.textContent).toContain('Stopping')
+    // Stop Test stays disabled once a graceful stop is underway, but Abort must remain the escalation path.
+    const stopButton = toolbarButtonByText('Stop Test') as HTMLButtonElement | undefined
+    expect(stopButton?.disabled).toBe(true)
+    const abortButton = toolbarButtonByText('Abort') as HTMLButtonElement | undefined
+    expect(abortButton).not.toBeUndefined()
+    expect(abortButton?.disabled).toBe(false)
+
+    await act(async () => {
+      abortButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onAbort).toHaveBeenCalledTimes(1)
+  })
+
   function toolbarButtonByText(label: string) {
     return Array.from(container.querySelectorAll('.run-actions-inline button')).find(button => button.textContent === label)
   }

@@ -64,7 +64,7 @@ export default function LibraryFederationPanel({ projectId }: LibraryFederationP
 
   useEffect(() => {
     void loadRemotes().catch(error => {
-      setActionError(getErrorMessage(error, 'Unable to load remote libraries'))
+      setActionError(getErrorMessage(error, 'Unable to load Remote Workspaces'))
     })
   }, [loadRemotes])
 
@@ -88,12 +88,12 @@ export default function LibraryFederationPanel({ projectId }: LibraryFederationP
       const saved = selectedRemote
         ? await libraryApi.updateRemote(selectedRemote.id, body)
         : await libraryApi.createRemote(body)
-      setActionMessage(`${selectedRemote ? 'Updated' : 'Added'} remote library "${saved.name}".`)
+      setActionMessage(`${selectedRemote ? 'Updated' : 'Added'} Remote Workspace "${saved.name}".`)
       setDraft(remoteToDraft(saved, projectId))
       await loadRemotes()
       setSelectedRemoteId(saved.id)
     } catch (error) {
-      setActionError(getErrorMessage(error, selectedRemote ? 'Unable to update remote library' : 'Unable to add remote library'))
+      setActionError(getErrorMessage(error, selectedRemote ? 'Unable to update Remote Workspace' : 'Unable to add Remote Workspace'))
     } finally {
       setLoading(false)
     }
@@ -108,25 +108,25 @@ export default function LibraryFederationPanel({ projectId }: LibraryFederationP
       await loadRemotes()
       setActionMessage(response.status === 'healthy' ? 'Remote library is healthy.' : `Remote library is unreachable: ${response.error || 'probe failed'}`)
     } catch (error) {
-      setActionError(getErrorMessage(error, 'Unable to probe remote library'))
+      setActionError(getErrorMessage(error, 'Unable to probe Remote Workspace'))
     } finally {
       setLoading(false)
     }
   }
 
   async function deleteRemote(remote: LibraryRemote) {
-    if (!confirm(`Delete remote library "${remote.name}"? Sync links for this host will also be removed.`)) return
+    if (!confirm(`Delete Remote Workspace "${remote.name}"? Sync links for this host will also be removed.`)) return
     setActionMessage('')
     setActionError('')
     setLoading(true)
     try {
       await libraryApi.deleteRemote(remote.id)
-      setActionMessage(`Deleted remote library "${remote.name}".`)
+      setActionMessage(`Deleted Remote Workspace "${remote.name}".`)
       setSelectedRemoteId('')
       setDraft(remoteToDraft(undefined, projectId))
       await loadRemotes()
     } catch (error) {
-      setActionError(getErrorMessage(error, 'Unable to delete remote library'))
+      setActionError(getErrorMessage(error, 'Unable to delete Remote Workspace'))
     } finally {
       setLoading(false)
     }
@@ -145,7 +145,7 @@ export default function LibraryFederationPanel({ projectId }: LibraryFederationP
     <div className="settings-subsection library-federation-panel">
       <div className="settings-manager-summary">
         <div>
-          <span className="setting-label">Remote Libraries</span>
+          <span className="setting-label">Remote Workspaces</span>
           <span className="setting-desc">Manage Kubernetes-hosted team libraries. API keys are write-only and resolved by the local controller.</span>
         </div>
         <strong>{remotes.length}</strong>

@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v4
@@ -38,8 +40,22 @@ jobs:
       - name: Build Dashboard
         run: cd dashboard && npm install && npm run build
 
+      - name: Resolve friendly build version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          BUILD_VERSION=$(COMMIT="${GITHUB_SHA}" BUILD_TIME="${BUILD_TIME}" ./scripts/resolve-version.sh)
+          echo "version=${BUILD_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build_time=${BUILD_TIME}" >> "$GITHUB_OUTPUT"
+
       - name: Build Wails App
-        run: cd desktop && wails build -clean
+        shell: bash
+        run: |
+          BI=github.com/jasonczech/apexload/pkg/buildinfo
+          cd desktop
+          wails build -clean -ldflags "-s -w -X ${BI}.Version=${{ steps.version.outputs.version }} -X ${BI}.Commit=${GITHUB_SHA} -X ${BI}.BuildTime=${{ steps.version.outputs.build_time }}"
         
       - name: Upload Artifacts (Windows)
         if: matrix.os == 'windows-latest'

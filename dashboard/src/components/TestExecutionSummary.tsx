@@ -103,6 +103,22 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
                       <span className="server-telemetry-label">Transfer</span>
                       <span className="server-telemetry-value">{formatTelemetryValue(tx.server_telemetry?.avg_transfer_ms, ' ms')}{formatTelemetryDelta(tx.server_telemetry?.avg_transfer_ms, previous?.server_telemetry?.avg_transfer_ms, ' ms')}</span>
                     </div>
+                    {tx.server_telemetry?.avg_first_event_ms !== undefined && (
+                      <div className="server-telemetry-stat">
+                        <span className="server-telemetry-label">First Event</span>
+                        <span className="server-telemetry-value">
+                          {formatTelemetryValue(tx.server_telemetry.avg_first_event_ms, ' ms')}
+                          {tx.server_telemetry.max_first_event_ms !== undefined ? ` / ${formatTelemetryValue(tx.server_telemetry.max_first_event_ms, ' ms')}` : ''}
+                          {formatTelemetryDelta(tx.server_telemetry.avg_first_event_ms, previous?.server_telemetry?.avg_first_event_ms, ' ms')}
+                        </span>
+                      </div>
+                    )}
+                    {tx.server_telemetry?.event_count !== undefined && (
+                      <div className="server-telemetry-stat">
+                        <span className="server-telemetry-label">Events</span>
+                        <span className="server-telemetry-value">{tx.server_telemetry.event_count}</span>
+                      </div>
+                    )}
                     <div className="server-telemetry-stat">
                       <span className="server-telemetry-label">Payload</span>
                       <span className="server-telemetry-value">{formatTelemetryValue(tx.server_telemetry?.avg_request_payload_kb, ' KB', 2)} / {formatTelemetryValue(tx.server_telemetry?.avg_response_payload_kb, ' KB', 2)}</span>
@@ -1519,6 +1535,8 @@ function renderServerTelemetry(current: TxMetrics, previous?: TxMetrics) {
   const parts = [
     `Server ${formatTelemetryValue(telemetry.avg_server_processing_ms, ' ms')}${formatTelemetryDelta(telemetry.avg_server_processing_ms, previousTelemetry?.avg_server_processing_ms, ' ms')}`,
     `Transfer ${formatTelemetryValue(telemetry.avg_transfer_ms, ' ms')}${formatTelemetryDelta(telemetry.avg_transfer_ms, previousTelemetry?.avg_transfer_ms, ' ms')}`,
+    ...(telemetry.avg_first_event_ms !== undefined ? [`First event ${formatTelemetryValue(telemetry.avg_first_event_ms, ' ms')}${telemetry.max_first_event_ms !== undefined ? ` / max ${formatTelemetryValue(telemetry.max_first_event_ms, ' ms')}` : ''}${formatTelemetryDelta(telemetry.avg_first_event_ms, previousTelemetry?.avg_first_event_ms, ' ms')}`] : []),
+    ...(telemetry.event_count !== undefined ? [`Events ${telemetry.event_count}`] : []),
     `Payload ${formatTelemetryValue(telemetry.avg_request_payload_kb, ' KB', 2)} / ${formatTelemetryValue(telemetry.avg_response_payload_kb, ' KB', 2)}`,
     `Reuse ${formatTelemetryValue(telemetry.connection_reused_pct, '%', 0)}${formatTelemetryDelta(telemetry.connection_reused_pct, previousTelemetry?.connection_reused_pct, '%', 0)}`,
   ]

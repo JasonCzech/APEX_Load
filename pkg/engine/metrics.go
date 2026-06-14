@@ -98,6 +98,9 @@ type ServerTelemetrySummary struct {
 	AvgResponsePayloadKB      float64          `json:"avg_response_payload_kb,omitempty"`
 	RequestPayloadHistogram   map[string]int64 `json:"request_payload_histogram,omitempty"`
 	ResponsePayloadHistogram  map[string]int64 `json:"response_payload_histogram,omitempty"`
+	AvgFirstEventMs           float64          `json:"avg_first_event_ms,omitempty"`
+	MaxFirstEventMs           float64          `json:"max_first_event_ms,omitempty"`
+	EventCount                int64            `json:"event_count,omitempty"`
 	AvgMessageLatencyMs       float64          `json:"avg_message_latency_ms,omitempty"`
 	MaxMessageLatencyMs       float64          `json:"max_message_latency_ms,omitempty"`
 	MessagesSent              int64            `json:"messages_sent,omitempty"`
@@ -737,6 +740,11 @@ func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *pro
 	summary.AvgResponsePayloadKB += telemetry.ResponsePayloadKB
 	incrementTelemetryHistogramCount(&summary.RequestPayloadHistogram, telemetry.RequestPayloadKB)
 	incrementTelemetryHistogramCount(&summary.ResponsePayloadHistogram, telemetry.ResponsePayloadKB)
+	summary.AvgFirstEventMs += telemetry.FirstEventMs
+	if telemetry.FirstEventMs > summary.MaxFirstEventMs {
+		summary.MaxFirstEventMs = telemetry.FirstEventMs
+	}
+	summary.EventCount += int64(telemetry.EventCount)
 	summary.AvgMessageLatencyMs += telemetry.MessageLatencyMs
 	if telemetry.MessageLatencyMs > summary.MaxMessageLatencyMs {
 		summary.MaxMessageLatencyMs = telemetry.MessageLatencyMs
@@ -765,6 +773,7 @@ func finalizeServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	summary.AvgTransferMs /= divisor
 	summary.AvgRequestPayloadKB /= divisor
 	summary.AvgResponsePayloadKB /= divisor
+	summary.AvgFirstEventMs /= divisor
 	summary.AvgMessageLatencyMs /= divisor
 	summary.AvgMessagesSentPerSec /= divisor
 	summary.AvgMessagesReceivedPerSec /= divisor

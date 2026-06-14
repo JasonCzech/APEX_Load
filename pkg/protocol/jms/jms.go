@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -15,6 +16,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
+
+// sidecarCommandEnv is the operator-owned environment variable that supplies the
+// JMS sidecar command line. The sidecar command is deliberately NOT sourced from
+// script-supplied properties: a script is user-controlled JSON, so honoring a
+// script-supplied command would allow arbitrary command execution on generators.
+const sidecarCommandEnv = "APEXLOAD_JMS_SIDECAR_COMMAND"
 
 func init() {
 	protocol.Register("jms-solace", func() protocol.Protocol {
@@ -56,9 +63,9 @@ type config struct {
 }
 
 type jmsTLSConfig struct {
-	CACertSecret       string
-	TrustStoreRef      string
-	InsecureSkipVerify bool
+	CACertSecret       string `json:"ca_cert_secret,omitempty"`
+	TrustStoreRef      string `json:"trust_store_ref,omitempty"`
+	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"`
 }
 
 type brokerAdapter interface {
@@ -157,18 +164,43 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 	if j.cfg.Mock {
 		j.adapter = memoryAdapter{broker: broker}
 	} else {
-		if j.provider == "ibmmq" {
-			j.adapter = unavailableIbmMqAdapter{cfg: j.cfg}
-		} else if j.provider == "servicebus" {
-			j.adapter = newServiceBusAdapter(j.cfg)
-		} else if sidecarCommand := strings.TrimSpace(j.cfg.Properties["sidecar_command"]); strings.EqualFold(strings.TrimSpace(j.cfg.Properties["adapter"]), "sidecar") && sidecarCommand != "" {
-			j.adapter = sidecarAdapter{command: sidecarCommand, cfg: j.cfg}
-		} else {
-			j.adapter = newSolaceAdapter(j.cfg)
+		adapter, err := j.selectAdapter()
+		if err != nil {
+			return err
 		}
+		j.adapter = adapter
 	}
 	j.initialized = true
 	return nil
+}
+
+// selectAdapter chooses the non-mock broker adapter based on the configured
+// provider and the operator-owned sidecar command. It enforces the security
+// invariant that the sidecar command may ONLY come from the operator env var
+// APEXLOAD_JMS_SIDECAR_COMMAND, never from script-supplied properties.
+func (j *JMS) selectAdapter() (brokerAdapter, error) {
+	// Reject any script-supplied sidecar command outright: a script is
+	// user-controlled JSON, so honoring it would be arbitrary command execution.
+	if scriptCommand := strings.TrimSpace(j.cfg.Properties["sidecar_command"]); scriptCommand != "" {
+		return nil, fmt.Errorf("script-supplied sidecar_command is not allowed; configure %s on the runner", sidecarCommandEnv)
+	}
+
+	switch j.provider {
+	case "ibmmq":
+		return unavailableIbmMqAdapter{cfg: j.cfg}, nil
+	case "servicebus":
+		return newServiceBusAdapter(j.cfg), nil
+	}
+
+	if strings.EqualFold(strings.TrimSpace(j.cfg.Properties["adapter"]), "sidecar") {
+		operatorCommand := strings.TrimSpace(os.Getenv(sidecarCommandEnv))
+		if operatorCommand == "" {
+			return nil, fmt.Errorf("jms adapter=sidecar requires the operator-owned %s to be set on the runner", sidecarCommandEnv)
+		}
+		return sidecarAdapter{command: operatorCommand, cfg: j.cfg}, nil
+	}
+
+	return newSolaceAdapter(j.cfg), nil
 }
 
 func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {

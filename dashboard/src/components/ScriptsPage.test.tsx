@@ -367,7 +367,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Associated Release')
     expect(container.textContent).toContain('Search Release')
     expect(container.textContent).not.toContain('Asset Type')
-    expect(container.textContent).not.toContain('Select a remote library first.')
+    expect(container.textContent).not.toContain('Select a Remote Workspace first.')
 
     await clickButton('Script Builder')
 
@@ -468,6 +468,23 @@ describe('ScriptsPage', () => {
     expect(countImportOption('Import JMeter')).toBe(1)
     expect(countImportOption('DevWeb Source')).toBe(1)
     expect(countImportOption('Import SOAP Assets')).toBe(0)
+  })
+
+  it('opens the recording studio directly from the Record Browser workflow card', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Record Browser')
+    expect(container.textContent).not.toContain('Browser Recorder')
+
+    await clickButton('Record Browser')
+    await flushPromises()
+
+    expect(container.querySelector('[data-testid="recording-studio"]')).not.toBeNull()
+    expect(container.textContent).not.toContain('Browser Recorder')
   })
 
   it('consolidates template and manual choices under Start New Script', async () => {
@@ -629,7 +646,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    const noRemoteButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('No Remote Library'))
+    const noRemoteButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('No Remote Workspace'))
     const credentialsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Credentials Missing'))
     expect(noRemoteButton).toBeDefined()
     expect(credentialsButton).toBeDefined()

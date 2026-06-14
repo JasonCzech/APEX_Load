@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -91,6 +92,35 @@ func TestFilterLiveMetricsForGroupsAggregatesSelectedPerformanceMetrics(t *testi
 	}
 	if filtered.Resources == nil || filtered.Resources.CPUProcessPct != 55 {
 		t.Fatalf("resources were not preserved: %#v", filtered.Resources)
+	}
+}
+
+func TestParseGroupFilterQueryBlankMeansNoFilter(t *testing.T) {
+	cases := []struct {
+		name         string
+		query        string
+		wantExplicit bool
+		wantNames    []string
+	}{
+		{name: "absent", query: "", wantExplicit: false},
+		{name: "present blank", query: "groups=", wantExplicit: false},
+		{name: "present commas only", query: "groups=,,", wantExplicit: false},
+		{name: "real names", query: "groups=Checkout,Search", wantExplicit: true, wantNames: []string{"Checkout", "Search"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			values, err := url.ParseQuery(tc.query)
+			if err != nil {
+				t.Fatalf("ParseQuery(%q): %v", tc.query, err)
+			}
+			got := parseGroupFilterQuery(values)
+			if got.Explicit != tc.wantExplicit {
+				t.Fatalf("Explicit = %v, want %v (blank groups must not filter to nothing)", got.Explicit, tc.wantExplicit)
+			}
+			if len(got.Names) != len(tc.wantNames) {
+				t.Fatalf("Names = %#v, want %#v", got.Names, tc.wantNames)
+			}
+		})
 	}
 }
 

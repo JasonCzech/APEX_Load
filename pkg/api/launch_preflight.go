@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"sort"
 	"strings"
 	"time"
@@ -194,12 +195,12 @@ func browserDensityReleaseGateMessage(advisory *CapacityAdvisory) string {
 
 func launchWindowForTest(test *ManagedTest, start time.Time) LaunchWindow {
 	start = start.UTC()
-	preBaseline, postBaseline := resourceBaselineWindows(test != nil && test.ResourceBaseline)
+	preBaseline, postBaseline := testexec.ResourceBaselineWindows(test != nil && test.ResourceBaseline)
 	startDelay := time.Duration(0)
 	duration := time.Minute
 	maxRampDown := time.Duration(0)
 	if test != nil {
-		startDelay = startDelayWindow(test.StartDelay)
+		startDelay = testexec.StartDelayWindow(test.StartDelay)
 		if test.Duration > 0 {
 			duration = test.Duration
 		}

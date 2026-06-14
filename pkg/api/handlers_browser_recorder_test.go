@@ -252,6 +252,48 @@ func TestHandlePreviewBrowserRecordingConversion(t *testing.T) {
 	}
 }
 
+func TestHandlePreviewBrowserRecordingConversionReturnsAllScriptsWithoutStoring(t *testing.T) {
+	artifact := recordedBrowserArtifact()
+	artifact.HAR = []byte(`{"log":{"version":"1.2","entries":[{"startedDateTime":"2026-05-12T20:00:00Z","time":12,"request":{"method":"GET","url":"https://shop.example/api/cart","httpVersion":"HTTP/1.1","headers":[],"queryString":[],"cookies":[],"headersSize":-1,"bodySize":0},"response":{"status":200,"statusText":"OK","httpVersion":"HTTP/1.1","headers":[{"name":"Content-Type","value":"application/json"}],"cookies":[],"content":{"size":2,"mimeType":"application/json","text":"{}"},"redirectURL":"","headersSize":-1,"bodySize":2},"cache":{},"timings":{"send":1,"wait":10,"receive":1}}]}}`)
+	fake := newFakeBrowserRecorder(artifact)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert/preview",
+		bytes.NewBufferString(`{"name":"Checkout Preview","also_create_http_script":true}`))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("preview status = %d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var payload struct {
+		Scripts []struct {
+			Name     string `json:"name"`
+			Protocol string `json:"protocol"`
+		} `json:"scripts"`
+		HTTPScript *struct {
+			Name     string `json:"name"`
+			Protocol string `json:"protocol"`
+		} `json:"http_script"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Scripts) != 2 {
+		t.Fatalf("scripts = %+v, want browser + HTTP script", payload.Scripts)
+	}
+	if payload.Scripts[0].Protocol != "browser" || payload.Scripts[1].Protocol != "http" {
+		t.Errorf("scripts = %+v, want browser then http", payload.Scripts)
+	}
+	if payload.HTTPScript == nil || payload.HTTPScript.Protocol != "http" {
+		t.Errorf("http_script = %+v, want HTTP script preview", payload.HTTPScript)
+	}
+	if got := len(server.runner.ListScripts()); got != 0 {
+		t.Fatalf("preview stored %d scripts, want 0", got)
+	}
+}
+
 func TestHandleConvertBrowserRecordingRequiresStop(t *testing.T) {
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
 	server := newBrowserRecorderTestServer(t, fake)

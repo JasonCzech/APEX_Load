@@ -104,7 +104,7 @@ export default function TestExecutionLiveControls({
             <button type="button" className="btn btn-sm btn-secondary" onClick={onStop} disabled={isStopping}>
               Stop Test
             </button>
-            <button type="button" className="btn btn-sm btn-danger" onClick={onAbort} disabled={isStopping}>
+            <button type="button" className="btn btn-sm btn-danger" onClick={onAbort}>
               Abort
             </button>
           </div>

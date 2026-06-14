@@ -93,6 +93,8 @@ type ServerTelemetry struct {
 	ConnectionReused       bool
 	RequestSizeClass       string
 	ResponseSizeClass      string
+	FirstEventMs           float64
+	EventCount             int32
 	MessageLatencyMs       float64
 	MessagesSent           int32
 	MessagesReceived       int32
@@ -418,6 +420,8 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 				ConnectionReused:       tx.GetServerTelemetry().GetConnectionReused(),
 				RequestSizeClass:       tx.GetServerTelemetry().GetRequestSizeClass(),
 				ResponseSizeClass:      tx.GetServerTelemetry().GetResponseSizeClass(),
+				FirstEventMs:           tx.GetServerTelemetry().GetFirstEventMs(),
+				EventCount:             tx.GetServerTelemetry().GetEventCount(),
 				MessageLatencyMs:       tx.GetServerTelemetry().GetMessageLatencyMs(),
 				MessagesSent:           tx.GetServerTelemetry().GetMessagesSent(),
 				MessagesReceived:       tx.GetServerTelemetry().GetMessagesReceived(),

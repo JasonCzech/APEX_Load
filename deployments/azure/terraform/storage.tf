@@ -7,6 +7,7 @@ resource "azurerm_storage_account" "main" {
   min_tls_version                 = "TLS1_2"
   allow_nested_items_to_be_public = false
   shared_access_key_enabled       = false # workload identity only — no account keys
+  public_network_access_enabled   = !local.private_network_enabled
   tags                            = local.tags
 
   blob_properties {

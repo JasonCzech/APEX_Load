@@ -1,0 +1,62 @@
+name: Deploy Artifact Validation
+
+on:
+  pull_request:
+    paths:
+      - "deployments/**"
+      - "scripts/render-aks-manifests.sh"
+      - ".github/workflows/deploy-artifacts-validation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "deployments/**"
+      - "scripts/render-aks-manifests.sh"
+      - ".github/workflows/deploy-artifacts-validation.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - uses: azure/setup-kubectl@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: Install kubeconform
+        run: |
+          set -euo pipefail
+          version="0.6.7"
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/v${version}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz kubeconform
+          sudo mv kubeconform /usr/local/bin/kubeconform
+
+      - name: Terraform validate
+        run: |
+          set -euo pipefail
+          terraform -chdir=deployments/azure/terraform fmt -check -diff
+          terraform -chdir=deployments/azure/terraform init -backend=false -input=false
+          terraform -chdir=deployments/azure/terraform validate
+
+      - name: Kustomize validate
+        run: |
+          set -euo pipefail
+          kubectl kustomize deployments/k8s/aks > /tmp/apexload-aks.yaml
+          kubeconform -strict -ignore-missing-schemas /tmp/apexload-aks.yaml
+          kubectl kustomize deployments/k8s/aks-azure-monitor > /tmp/apexload-aks-azure-monitor.yaml
+          kubeconform -strict -ignore-missing-schemas /tmp/apexload-aks-azure-monitor.yaml
+
+      - name: Helm validate
+        run: |
+          set -euo pipefail
+          helm lint deployments/helm/apexload \
+            --set workloadIdentity.controllerClientId=00000000-0000-0000-0000-000000000001 \
+            --set workloadIdentity.generatorClientId=00000000-0000-0000-0000-000000000002
+          helm template apexload deployments/helm/apexload \
+            --namespace apexload \
+            --set workloadIdentity.controllerClientId=00000000-0000-0000-0000-000000000001 \
+            --set workloadIdentity.generatorClientId=00000000-0000-0000-0000-000000000002 \
+            > /tmp/apexload-helm.yaml
+          kubeconform -strict -ignore-missing-schemas /tmp/apexload-helm.yaml

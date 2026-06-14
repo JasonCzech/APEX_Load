@@ -1596,6 +1596,8 @@ function RunControlShelf({
   onOpenExecution,
 }: RunControlShelfProps) {
   const terminal = status === 'ABORTED' || status === 'STOPPING' || status === 'COMPLETE' || status === 'FAILED'
+  // Abort must stay available during STOPPING so a wedged graceful stop can still be escalated.
+  const fullyTerminal = status === 'ABORTED' || status === 'COMPLETE' || status === 'FAILED'
   const canStart = status === 'QUEUED' || status === 'RESERVED'
   const canPauseResume = status === 'RUNNING' || status === 'PAUSED'
   const canStop = status === 'RUNNING' || status === 'INITIALIZING' || status === 'PAUSED'
@@ -1643,8 +1645,8 @@ function RunControlShelf({
                 Stop
               </button>
             )}
-            {!terminal && (
-              <button type="button" className="btn btn-sm btn-danger" onClick={onAbort}>
+            {!fullyTerminal && (
+              <button type="button" className="btn btn-sm btn-danger" onClick={onAbort} disabled={fullyTerminal}>
                 Abort
               </button>
             )}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -483,7 +484,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			CpuLimitCores:      s.podResources.CPULimitCores,
 			MemoryLimitBytes:   s.podResources.MemoryLimitBytes,
 			MaxVusers:          s.podResources.MaxVUsers,
-			Version:            "0.1.0",
+			Version:            buildinfo.Get().Version,
 			SupportedProtocols: supportedProtocolNames(),
 			CompatibleFeatures: supportedProtocolNames(),
 		}); err != nil {
@@ -928,6 +929,8 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 				ConnectionReused:       tx.ServerTelemetry.ConnectionReused,
 				RequestSizeClass:       tx.ServerTelemetry.RequestSizeClass,
 				ResponseSizeClass:      tx.ServerTelemetry.ResponseSizeClass,
+				FirstEventMs:           tx.ServerTelemetry.FirstEventMs,
+				EventCount:             tx.ServerTelemetry.EventCount,
 				MessageLatencyMs:       tx.ServerTelemetry.MessageLatencyMs,
 				MessagesSent:           tx.ServerTelemetry.MessagesSent,
 				MessagesReceived:       tx.ServerTelemetry.MessagesReceived,
@@ -1062,6 +1065,8 @@ func cloneServerTelemetry(input *protocol.ServerTelemetry) *ServerTelemetry {
 		ConnectionReused:       input.ConnectionReused,
 		RequestSizeClass:       input.RequestSizeClass,
 		ResponseSizeClass:      input.ResponseSizeClass,
+		FirstEventMs:           input.FirstEventMs,
+		EventCount:             int32(input.EventCount),
 		MessageLatencyMs:       input.MessageLatencyMs,
 		MessagesSent:           int32(input.MessagesSent),
 		MessagesReceived:       int32(input.MessagesReceived),

@@ -23,6 +23,8 @@ jobs:
     environment: appservice-production
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # Build the React dashboard first — go:embed in pkg/api/server.go picks
       # up pkg/api/static/ which is the output of this step.
@@ -54,8 +56,9 @@ jobs:
           set -euo pipefail
           BI=github.com/jasonczech/apexload/pkg/buildinfo
           BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          BUILD_VERSION=$(COMMIT="${GITHUB_SHA}" BUILD_TIME="${BUILD_TIME}" ./scripts/resolve-version.sh)
           go build -trimpath \
-            -ldflags "-s -w -X ${BI}.Version=${GITHUB_SHA} -X ${BI}.Commit=${GITHUB_SHA} -X ${BI}.BuildTime=${BUILD_TIME}" \
+            -ldflags "-s -w -X ${BI}.Version=${BUILD_VERSION} -X ${BI}.Commit=${GITHUB_SHA} -X ${BI}.BuildTime=${BUILD_TIME}" \
             -o deployments/azure/appservice/bin/controller \
             ./cmd/controller
 

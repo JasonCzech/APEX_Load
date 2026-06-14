@@ -71,6 +71,8 @@ func TestLibraryExportImportScenarioIncludesScriptDependency(t *testing.T) {
 }
 
 func TestLibraryRemotePullAndPushScriptBetweenControllers(t *testing.T) {
+	// Federation targets are loopback httptest servers; opt past the SSRF guard.
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
 	host := NewServer(ServerConfig{})
 	local := NewServer(ServerConfig{})
 	hostScript := host.runner.StoreScript(libraryTestScript("host-script", "Hosted Checkout", "team-project", "/hosted"))
@@ -132,6 +134,7 @@ func TestLibraryRemotePullAndPushScriptBetweenControllers(t *testing.T) {
 
 func TestLibraryRemoteJSONHonorsConfiguredTimeout(t *testing.T) {
 	t.Setenv("APEXLOAD_LIBRARY_REMOTE_JSON_TIMEOUT", "10ms")
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1") // loopback target; test the timeout, not the SSRF guard
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 		writeJSON(w, http.StatusOK, LibraryCapabilitiesResponse{})
@@ -146,6 +149,7 @@ func TestLibraryRemoteJSONHonorsConfiguredTimeout(t *testing.T) {
 
 func TestLibraryRemoteArchiveDownloadHonorsConfiguredTimeout(t *testing.T) {
 	t.Setenv("APEXLOAD_LIBRARY_REMOTE_ARCHIVE_TIMEOUT", "10ms")
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1") // loopback target; test the timeout, not the SSRF guard
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
@@ -173,6 +177,8 @@ func TestBuildLibraryRemoteRequiresHTTPURL(t *testing.T) {
 }
 
 func TestLibraryPullDetectsLocalAndRemoteConflict(t *testing.T) {
+	// Federation targets are loopback httptest servers; opt past the SSRF guard.
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
 	host := NewServer(ServerConfig{})
 	local := NewServer(ServerConfig{})
 	hostScript := host.runner.StoreScript(libraryTestScript("host-conflict", "Hosted Conflict", "team-project", "/v1"))
@@ -394,6 +400,8 @@ func TestLibraryResultArchiveStreamsAndImportsMultipart(t *testing.T) {
 }
 
 func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) {
+	// Federation targets are loopback httptest servers; opt past the SSRF guard.
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
 	host := NewServer(ServerConfig{})
 	local := NewServer(ServerConfig{})
 

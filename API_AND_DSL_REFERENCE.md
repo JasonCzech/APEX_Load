@@ -902,7 +902,7 @@ POST /api/v1/projects/proj-123/folders
 #### Rename folder
 
 ```
-PUT /api/v1/projects/proj-123/folders/folder-456
+PUT /api/v1/folders/folder-456
 
 {
   "name": "Checkout Tests - Updated"
@@ -912,7 +912,7 @@ PUT /api/v1/projects/proj-123/folders/folder-456
 #### Delete folder
 
 ```
-DELETE /api/v1/projects/proj-123/folders/folder-456
+DELETE /api/v1/folders/folder-456
 ```
 
 ### Recorder
@@ -1079,6 +1079,39 @@ The addressed run (`baseline-123`) is treated as the baseline. `comparison_ids` 
 
 Returns `400` if `comparison_ids` contains duplicates, includes the baseline run, exceeds 10 total runs, or `format` is not `csv`.
 
+### Remote Workspace Runs
+
+Remote Workspace run endpoints are served by the local controller, primarily for the desktop workspace. They use the existing Remote Workspace credential store to call the hosted controller server-side, so the desktop SPA remains same-origin with its embedded controller.
+
+```
+POST /api/v1/remotes/{id}/runs
+GET  /api/v1/remotes/{id}/runs/{remote_test_id}
+POST /api/v1/remotes/{id}/runs/{remote_test_id}/start
+POST /api/v1/remotes/{id}/runs/{remote_test_id}/stop
+POST /api/v1/remotes/{id}/runs/{remote_test_id}/abort
+POST /api/v1/remotes/{id}/runs/{remote_test_id}/pause
+POST /api/v1/remotes/{id}/runs/{remote_test_id}/resume
+```
+
+`POST /runs` accepts the normal create-test request shape, plus optional wrapper fields:
+
+```json
+{
+  "name": "Remote checkout",
+  "duration": "10m",
+  "scenario_id": "local-scenario-id",
+  "remote_project_id": "hosted-project-id",
+  "start_immediately": true,
+  "start_options": {
+    "override_capacity_shortfall": true
+  }
+}
+```
+
+The proxy pushes required scripts/scenarios/dependencies through library federation, translates local IDs to remote IDs, creates the hosted test, and persists a linked run record under `remote.run_links.v1`.
+
+Realtime remote monitoring is intentionally not relayed through WebSockets in this v1. Poll the proxy status endpoint in the desktop app, or open the hosted run page for full realtime streams.
+
 ### System
 
 #### Health check
@@ -1096,6 +1129,30 @@ GET /api/v1/system/health
   "version": "1.0.0"
 }
 ```
+
+#### Version and deployment identity
+
+```
+GET /api/v1/system/version
+```
+
+Returns build metadata plus a public deployment identity block used by the dashboard banner:
+
+```json
+{
+  "version": "1.0.0",
+  "environment": "kubernetes",
+  "deployment": {
+    "kind": "kubernetes",
+    "label": "Kubernetes",
+    "bind_scope": "wide",
+    "auth_enforced": true,
+    "desktop_available": false
+  }
+}
+```
+
+`desktop_available` reflects `SystemSettings.client_app.availability`. It controls hosted UI promotion of the optional desktop workspace only; it does not authorize or deny API calls.
 
 #### Parity status
 

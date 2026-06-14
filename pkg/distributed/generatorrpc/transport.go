@@ -82,6 +82,18 @@ type TransportSecurity struct {
 
 func (t TransportSecurity) Insecure() bool { return !t.TLS && !t.Token }
 
+// productionEnv is the APEXLOAD_ENV value that arms the fail-closed posture.
+const productionEnv = "production"
+
+// MustRefuseInsecure reports whether a process running in environment env must
+// refuse to start given this transport posture. The contract is fail-closed in
+// production only: a plaintext, tokenless channel (Insecure) in production is a
+// hard error, while any secured channel — or any non-production environment —
+// is permitted (at most warned about). This keeps local/kind dev permissive.
+func (t TransportSecurity) MustRefuseInsecure(env string) bool {
+	return t.Insecure() && strings.TrimSpace(env) == productionEnv
+}
+
 func (t TransportSecurity) String() string {
 	parts := make([]string, 0, 3)
 	if t.MutualTLS {

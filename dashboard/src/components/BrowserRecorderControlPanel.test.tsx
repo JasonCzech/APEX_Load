@@ -31,6 +31,10 @@ const apiMock = {
   updateBrowserRecordingStep: vi.fn(),
   suggestBrowserRecordingTransactions: vi.fn(),
   verifyBrowserRecording: vi.fn(),
+  exportBrowserRecording: vi.fn(),
+  importSalesforce: vi.fn(),
+  createScript: vi.fn(),
+  browserRecorderBridge: null as any,
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -77,6 +81,13 @@ const stoppedSession = {
   warnings: ['step 1 filled a password input; the value was masked at capture — provide it at runtime via {{env.PASSWORD}}'],
 }
 
+const salesforceStoppedSession = {
+  ...stoppedSession,
+  start_url: 'https://acme.my.salesforce.com/lightning/setup',
+  current_url: 'https://acme.lightning.force.com/lightning/page/home',
+  warnings: ['Salesforce traffic detected; use /api/v1/scripts/import/salesforce for the native HTTP draft.'],
+}
+
 describe('BrowserRecorderControlPanel', () => {
   let container: HTMLDivElement
   let root: Root
@@ -116,6 +127,42 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.updateBrowserRecordingStep.mockResolvedValue({ session: recordingSession })
     apiMock.suggestBrowserRecordingTransactions.mockResolvedValue({ suggestions: [] })
     apiMock.verifyBrowserRecording.mockResolvedValue({ replay_session_id: 'replay-1', replay_session: {}, warnings: [] })
+    apiMock.exportBrowserRecording.mockResolvedValue({
+      ok: true,
+      blob: vi.fn().mockResolvedValue(new Blob(['{"log":{}}'])),
+    })
+    apiMock.importSalesforce.mockResolvedValue({
+      scripts: [],
+      script: {
+        name: 'Checkout Flow Salesforce HTTP',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://acme.my.salesforce.com' },
+        actions: [{ name: 'Aura Bootstrap', type: 'request', method: 'POST', target: '/aura' }],
+      },
+      warnings: ['Review Salesforce correlation extractors before approval.'],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: { converted_actions: 1 },
+      summary: {
+        salesforce_review: {
+          detected: true,
+          har_match_coverage: { har_provided: true, imported_requests: 1, matched_requests: 1, coverage_pct: 100 },
+        },
+      },
+    })
+    apiMock.createScript.mockResolvedValue({
+      id: 'script-remote-1',
+      name: 'Checkout Flow',
+      protocol: 'browser',
+      version: '1',
+      created_at: '2026-05-12T20:10:00Z',
+      script: { name: 'Checkout Flow', protocol: 'browser', actions: [] },
+    })
+    apiMock.browserRecorderBridge = null
   })
 
   afterEach(async () => {
@@ -208,8 +255,46 @@ describe('BrowserRecorderControlPanel', () => {
     await clickButton('Download HAR')
     await flushPromises()
 
-    expect(apiFetchMock).toHaveBeenCalledWith('/browser-recorder/sessions/brec-1/export?format=har')
+    expect(apiMock.exportBrowserRecording).toHaveBeenCalledWith('brec-1', 'har')
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'checkout-flow.har')
+  })
+
+  it('reviews Salesforce-family HAR traffic as a native HTTP draft', async () => {
+    const onEdit = vi.fn()
+    const onImported = vi.fn()
+    apiMock.getBrowserRecording.mockResolvedValue({ session: salesforceStoppedSession })
+    apiMock.createScript.mockResolvedValue({
+      id: 'script-salesforce-1',
+      name: 'Checkout Flow Salesforce HTTP',
+      protocol: 'http',
+      version: '1.0.0',
+      created_at: '2026-05-12T20:10:00Z',
+      script: { name: 'Checkout Flow Salesforce HTTP', protocol: 'http', actions: [] },
+    })
+
+    await renderPanel({ onEdit, onImported })
+
+    expect(container.textContent).toContain('Review Salesforce HTTP Draft')
+
+    await clickButton('Review Salesforce HTTP Draft')
+    await flushPromises()
+
+    expect(apiMock.exportBrowserRecording).toHaveBeenCalledWith('brec-1', 'har')
+    expect(apiMock.importSalesforce).toHaveBeenCalledWith(expect.any(File), expect.objectContaining({
+      name: 'Checkout Flow',
+    }))
+    expect(container.textContent).toContain('Salesforce HTTP draft: 1 actions')
+    expect(container.textContent).toContain('100% HAR coverage')
+    expect(container.textContent).toContain('Review Salesforce correlation extractors before approval.')
+
+    await clickButton('Open Salesforce Draft')
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ name: 'Checkout Flow Salesforce HTTP', protocol: 'http' }))
+
+    await clickButton('Save Salesforce HTTP Script')
+    await flushPromises()
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ name: 'Checkout Flow Salesforce HTTP' }), undefined)
+    expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-salesforce-1' })] })
   })
 
   it('shows the load error when the session cannot be fetched', async () => {
@@ -447,6 +532,35 @@ describe('BrowserRecorderControlPanel', () => {
       split_at_transactions: true,
       also_create_http_script: true,
     }))
+  })
+
+  it('saves bridge recordings by previewing locally and creating scripts remotely', async () => {
+    const onImported = vi.fn()
+    apiMock.browserRecorderBridge = { origin: 'http://127.0.0.1:49152', token: 'tok', session_id: 'ws-1' }
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    apiMock.previewBrowserRecordingConversion.mockResolvedValue({
+      script: { name: 'Checkout Flow', protocol: 'browser', actions: [] },
+      scripts: [
+        { name: 'Checkout Flow', protocol: 'browser', actions: [] },
+        { name: 'Checkout Flow (HTTP)', protocol: 'http', actions: [] },
+      ],
+      warnings: [],
+      stats: {},
+      parameterization: { suggestions: [], summary: { total: 0 } },
+    })
+    apiMock.createScript
+      .mockResolvedValueOnce({ id: 'remote-browser', name: 'Checkout Flow', protocol: 'browser', script: { name: 'Checkout Flow', protocol: 'browser', actions: [] } })
+      .mockResolvedValueOnce({ id: 'remote-http', name: 'Checkout Flow (HTTP)', protocol: 'http', script: { name: 'Checkout Flow (HTTP)', protocol: 'http', actions: [] } })
+
+    await renderPanel({ onImported })
+    await clickButton('Save to Script Library')
+    await flushPromises()
+
+    expect(apiMock.convertBrowserRecording).not.toHaveBeenCalled()
+    expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledWith('brec-1', expect.objectContaining({ name: 'Checkout Flow' }))
+    expect(apiMock.createScript).toHaveBeenCalledTimes(2)
+    expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'remote-browser' }), expect.objectContaining({ id: 'remote-http' })] })
+    expect(container.textContent).toContain('Saved 2 scripts to the remote script library')
   })
 })
 

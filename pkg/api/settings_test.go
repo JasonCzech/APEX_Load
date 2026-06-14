@@ -58,6 +58,9 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if initial.Auth.UserHeader != "X-Auth-Request-User" {
 		t.Fatalf("initial auth user header = %q, want X-Auth-Request-User", initial.Auth.UserHeader)
 	}
+	if initial.ClientApp.Availability != clientAppDisabled {
+		t.Fatalf("initial client app availability = %q, want %q", initial.ClientApp.Availability, clientAppDisabled)
+	}
 	if initial.Thresholds.MaxTelemetrySampleAgeMs == nil || *initial.Thresholds.MaxTelemetrySampleAgeMs != defaultTelemetrySampleAgeBudgetMs {
 		t.Fatalf("initial telemetry sample age threshold = %#v, want %v", initial.Thresholds.MaxTelemetrySampleAgeMs, defaultTelemetrySampleAgeBudgetMs)
 	}
@@ -149,6 +152,7 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 			RolesHeader:        "X-Test-Roles",
 			ProjectRolesHeader: "X-Test-Project-Roles",
 		},
+		ClientApp: ClientAppSettings{Availability: clientAppEnabled},
 	}
 	body, _ := json.Marshal(update)
 	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
@@ -177,6 +181,9 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	}
 	if updated.General.MetricsIntervalSeconds != 2 {
 		t.Fatalf("metrics interval = %d, want 2", updated.General.MetricsIntervalSeconds)
+	}
+	if updated.ClientApp.Availability != clientAppEnabled {
+		t.Fatalf("client app availability = %q, want %q", updated.ClientApp.Availability, clientAppEnabled)
 	}
 	if updated.Thresholds.MaxErrorRatePct == nil || *updated.Thresholds.MaxErrorRatePct != maxErr {
 		t.Fatalf("max error rate = %#v, want %v", updated.Thresholds.MaxErrorRatePct, maxErr)

@@ -195,6 +195,12 @@ function formatServerTelemetryBlock(telemetry: NonNullable<TransactionEvent['ser
   const lines: string[] = []
   if (telemetry.server_processing_ms !== undefined) lines.push(`Server processing: ${formatBrowserMetric(telemetry.server_processing_ms, ' ms')}`)
   if (telemetry.transfer_ms !== undefined) lines.push(`Transfer: ${formatBrowserMetric(telemetry.transfer_ms, ' ms')}`)
+  if (telemetry.first_event_ms !== undefined || telemetry.event_count !== undefined) {
+    const streamParts: string[] = []
+    if (telemetry.first_event_ms !== undefined) streamParts.push(`first event ${formatBrowserMetric(telemetry.first_event_ms, ' ms')}`)
+    if (telemetry.event_count !== undefined) streamParts.push(`${telemetry.event_count} events`)
+    lines.push(`Stream: ${streamParts.join(' / ')}`)
+  }
   if (telemetry.serialization_ms !== undefined) lines.push(`Serialization: ${formatBrowserMetric(telemetry.serialization_ms, ' ms')}`)
   if (telemetry.deserialization_ms !== undefined) lines.push(`Deserialization: ${formatBrowserMetric(telemetry.deserialization_ms, ' ms')}`)
   if (telemetry.request_payload_kb !== undefined) lines.push(`Request payload: ${formatBrowserMetric(telemetry.request_payload_kb, ' KB', 2)}`)

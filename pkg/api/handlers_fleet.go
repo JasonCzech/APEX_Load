@@ -619,5 +619,14 @@ func leadingMajorVersion(version string) string {
 	if dot := strings.Index(version, "."); dot >= 0 {
 		version = version[:dot]
 	}
-	return strings.TrimLeft(version, "v")
+	version = strings.TrimLeft(version, "vV")
+	if version == "" {
+		return ""
+	}
+	for _, r := range version {
+		if r < '0' || r > '9' {
+			return ""
+		}
+	}
+	return version
 }

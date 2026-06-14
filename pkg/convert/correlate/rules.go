@@ -10,22 +10,30 @@ import (
 // produced it so the dashboard, migration review, and replay-repair surfaces can
 // explain and group findings by response family.
 const (
-	RuleJSONAuthToken    = "json.auth_token"
-	RuleJSONCSRFToken    = "json.csrf_token"
-	RuleJSONSessionID    = "json.session_id"
-	RuleJSONNumericID    = "json.numeric_id"
-	RuleJSONDynamicID    = "json.dynamic_id"
-	RuleHTMLHiddenToken  = "html.hidden_token"
-	RuleASPNetState      = "html.aspnet_state"
-	RuleXMLSOAPToken     = "xml.soap_token"
-	RuleXMLDynamicID     = "xml.dynamic_id"
-	RuleSetCookieSession = "cookie.session"
-	RuleSetCookieOther   = "cookie.other"
-	RuleDynamicHeader    = "header.dynamic"
-	RuleLocationRedirect = "header.location"
-	RuleLocationParam    = "header.location_param"
-	RuleWebSocketID      = "messaging.websocket_id"
-	RuleJMSCorrelationID = "messaging.jms_correlation_id"
+	RuleJSONAuthToken               = "json.auth_token"
+	RuleJSONCSRFToken               = "json.csrf_token"
+	RuleJSONSessionID               = "json.session_id"
+	RuleJSONNumericID               = "json.numeric_id"
+	RuleJSONDynamicID               = "json.dynamic_id"
+	RuleHTMLHiddenToken             = "html.hidden_token"
+	RuleASPNetState                 = "html.aspnet_state"
+	RuleXMLSOAPToken                = "xml.soap_token"
+	RuleXMLDynamicID                = "xml.dynamic_id"
+	RuleSetCookieSession            = "cookie.session"
+	RuleSetCookieOther              = "cookie.other"
+	RuleDynamicHeader               = "header.dynamic"
+	RuleLocationRedirect            = "header.location"
+	RuleLocationParam               = "header.location_param"
+	RuleWebSocketID                 = "messaging.websocket_id"
+	RuleJMSCorrelationID            = "messaging.jms_correlation_id"
+	RuleSalesforceAuraToken         = "salesforce.aura_token"
+	RuleSalesforceAuraContextFWUID  = "salesforce.aura_context_fwuid"
+	RuleSalesforceAuraAppDescriptor = "salesforce.aura_app_descriptor"
+	RuleSalesforceAuraLoaded        = "salesforce.aura_loaded"
+	RuleSalesforceAuraPageURI       = "salesforce.aura_page_uri"
+	RuleSalesforceViewState         = "salesforce.viewstate"
+	RuleSalesforceFrontdoorSID      = "salesforce.frontdoor_sid"
+	RuleSalesforceConfirmationToken = "salesforce.confirmation_token"
 )
 
 // ResponseFamily groups rules by the kind of response they inspect.
@@ -38,6 +46,7 @@ const (
 	FamilyHeader  ResponseFamily = "header"
 	FamilyCookie  ResponseFamily = "cookie"
 	FamilyMessage ResponseFamily = "messaging"
+	FamilyForm    ResponseFamily = "form"
 )
 
 // RuleInfo documents a detection rule for UX/catalog surfaces (e.g. an API that
@@ -56,6 +65,14 @@ type RuleInfo struct {
 // stay in sync with behavior.
 func RuleCatalog() []RuleInfo {
 	return []RuleInfo{
+		{RuleSalesforceAuraToken, FamilyForm, "Salesforce Aura token", "aura.token values from Lightning bootstrap/form traffic that are echoed in later /aura requests.", 0.95},
+		{RuleSalesforceAuraContextFWUID, FamilyForm, "Salesforce Aura fwuid", "fwuid values inside aura.context that bind a Lightning component/app bundle version.", 0.94},
+		{RuleSalesforceViewState, FamilyForm, "Salesforce Visualforce ViewState", "com.salesforce.visualforce.ViewState and related ViewStateMAC/CSRF hidden fields.", 0.94},
+		{RuleSalesforceConfirmationToken, FamilyForm, "Salesforce confirmation token", "_CONFIRMATIONTOKEN values used by Salesforce login and challenge flows.", 0.93},
+		{RuleSalesforceAuraAppDescriptor, FamilyForm, "Salesforce Aura app descriptor", "Aura app descriptors from aura.context/app that are replay-sensitive in Lightning flows.", 0.9},
+		{RuleSalesforceAuraLoaded, FamilyForm, "Salesforce Aura loaded map", "Aura loaded component maps from Lightning bootstrap/context payloads.", 0.88},
+		{RuleSalesforceAuraPageURI, FamilyForm, "Salesforce Aura page URI", "Aura pageURI values that may need environment-aware replacement across Salesforce orgs.", 0.86},
+		{RuleSalesforceFrontdoorSID, FamilyForm, "Salesforce frontdoor sid", "sid/frontdoor session values passed through Salesforce frontdoor redirects.", 0.85},
 		{RuleASPNetState, FamilyHTML, "ASP.NET state field", "WebForms __VIEWSTATE / __EVENTVALIDATION style hidden fields that change every request.", 0.95},
 		{RuleHTMLHiddenToken, FamilyHTML, "Hidden anti-CSRF/state token", "Hidden form inputs named like csrf, xsrf, token, nonce, state, viewstate, authenticity.", 0.9},
 		{RuleJSONCSRFToken, FamilyJSON, "JSON CSRF token", "JSON fields whose name contains csrf/xsrf.", 0.9},
@@ -158,6 +175,8 @@ func FamilyForRule(ruleID string) ResponseFamily {
 		return FamilyHeader
 	case strings.HasPrefix(ruleID, "messaging."):
 		return FamilyMessage
+	case strings.HasPrefix(ruleID, "salesforce."):
+		return FamilyForm
 	default:
 		return ""
 	}

@@ -6,7 +6,10 @@ metadata:
     app.kubernetes.io/name: apexload-controller
     app.kubernetes.io/component: controller
 spec:
-  replicas: 2
+  # Keep one active controller until scheduler/reconciler singleton loops are
+  # PostgreSQL-lease guarded. Add API-only replicas only with an explicit HA
+  # runbook.
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: apexload-controller
@@ -76,6 +79,9 @@ spec:
               mountPath: /tmp
             - name: data
               mountPath: /var/lib/apexload
+            - name: grpc-tls
+              mountPath: /etc/apexload/grpc-tls
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /api/v1/system/readiness
@@ -105,3 +111,9 @@ spec:
         - name: data
           emptyDir:
             sizeLimit: 10Gi
+        # Client certificate + CA for mTLS to generators. Provision the
+        # apexload-controller-grpc-tls Secret via cert-manager or the Key Vault
+        # CSI driver (see onprem/certificates.example.yaml for issuance).
+        - name: grpc-tls
+          secret:
+            secretName: apexload-controller-grpc-tls

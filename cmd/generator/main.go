@@ -52,8 +52,16 @@ func main() {
 		os.Exit(1)
 	}
 	security := generatorrpc.TransportSecurityFromEnv()
-	if security.Insecure() && os.Getenv("APEXLOAD_ENV") == "production" {
-		slog.Warn("generator gRPC is plaintext and unauthenticated in production; set APEXLOAD_GRPC_TLS_* and/or APEXLOAD_GRPC_AUTH_TOKEN")
+	appEnv := os.Getenv("APEXLOAD_ENV")
+	if security.MustRefuseInsecure(appEnv) {
+		// Fail closed: a plaintext, tokenless gRPC channel is never acceptable
+		// in production. Refuse to start so a missing/misnamed token or TLS
+		// secret cannot silently degrade the controller<->generator channel.
+		slog.Error("refusing to start: generator gRPC is plaintext and unauthenticated with APEXLOAD_ENV=production; set APEXLOAD_GRPC_TLS_* and/or APEXLOAD_GRPC_AUTH_TOKEN")
+		os.Exit(1)
+	}
+	if security.Insecure() {
+		slog.Warn("generator gRPC is plaintext and unauthenticated; set APEXLOAD_GRPC_TLS_* and/or APEXLOAD_GRPC_AUTH_TOKEN")
 	}
 
 	grpcServer := grpc.NewServer(serverOptions...)

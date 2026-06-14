@@ -323,9 +323,21 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 		parentCtx = mge.baseCtx
 	}
 	vuCtx, vuCancel := context.WithCancel(parentCtx)
+	// shedCtx interrupts the in-flight iteration body on scale/ramp-down and on
+	// hard stops. It is a child of baseCtx (NOT loopCtx, so NOT a descendant of
+	// vuCtx): a shared-goal exhaustion cancels loopCtx — and thus vuCtx — which
+	// stops new iterations at the top of the loop, but leaves shedCtx alive so a
+	// VUser that already claimed a goal reservation finishes its current
+	// iteration. cancelVUser sheds load promptly by cancelling BOTH shedCtx (the
+	// running iteration) and vuCtx (no further iterations).
+	shedCtx, shedCancel := context.WithCancel(mge.baseCtx)
+	cancelVUser := func() {
+		shedCancel()
+		vuCancel()
+	}
 
 	mge.mu.Lock()
-	mge.vuserCancels[vuserID] = vuCancel
+	mge.vuserCancels[vuserID] = cancelVUser
 	mge.vuserGroups[vuserID] = group.Name
 	mge.mu.Unlock()
 
@@ -340,26 +352,30 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 				time.Sleep(time.Duration(idx) * rampDownDelay)
 			}
 			cancelFunc()
-		}(rampIdx, vuCancel)
+		}(rampIdx, cancelVUser)
 	}
 
 	vuProto, err := protocol.Get(group.Script.Protocol)
 	if err != nil {
 		slog.Error("failed to create protocol", "group", group.Name, "vuser", vuserID, "err", err)
-		vuCancel()
+		cancelVUser()
 		return
 	}
 	if err := vuProto.Init(vuCtx, vuserProtoConfig(protoConfig, vuserID)); err != nil {
 		slog.Error("failed to init protocol", "group", group.Name, "vuser", vuserID, "err", err)
-		vuCancel()
+		cancelVUser()
 		return
 	}
 
 	wg.Add(1)
-	mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
+	mge.mu.Lock()
+	activeVUsers := mge.activeVUserCount()
+	mge.mu.Unlock()
+	mge.metrics.SetActiveVUsers(int64(activeVUsers))
 
 	go func() {
 		defer wg.Done()
+		defer cancelVUser()
 		defer func() {
 			vuProto.Teardown(context.Background())
 			mge.mu.Lock()
@@ -382,7 +398,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 			IterationRateLimiter: group.rateLimiter,
 			Rendezvous:           group.rendezvous,
 			ExecutionGoals:       group.executionGoals,
-			HardStopCtx:          mge.baseCtx,
+			HardStopCtx:          shedCtx,
 			SkipInit:             groupLifecycleAtOnce(group),
 			SkipTeardown:         groupLifecycleAtOnce(group),
 		}
@@ -390,6 +406,8 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 	}()
 }
 
+// activeVUserCount returns the number of live VUsers. Callers MUST hold mge.mu;
+// the spawn/teardown paths mutate vuserCancels under that lock.
 func (mge *MultiGroupEngine) activeVUserCount() int {
 	return len(mge.vuserCancels)
 }
@@ -408,9 +426,16 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		parentCtx = mge.baseCtx
 	}
 	vuCtx, vuCancel := context.WithCancel(parentCtx)
+	// See spawnVUser: shedCtx interrupts the running iteration on stop/hard-stop
+	// without being tripped by a shared-goal soft stop.
+	shedCtx, shedCancel := context.WithCancel(mge.baseCtx)
+	cancelVUser := func() {
+		shedCancel()
+		vuCancel()
+	}
 
 	mge.mu.Lock()
-	mge.vuserCancels[vuserID] = vuCancel
+	mge.vuserCancels[vuserID] = cancelVUser
 	mge.vuserGroups[vuserID] = group.Name
 	mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 	mge.mu.Unlock()
@@ -418,7 +443,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 	vuProto, err := protocol.Get(group.Script.Protocol)
 	if err != nil {
 		slog.Error("failed to create protocol for open workload worker", "group", group.Name, "worker", vuserID, "err", err)
-		vuCancel()
+		cancelVUser()
 		mge.mu.Lock()
 		delete(mge.vuserCancels, vuserID)
 		delete(mge.vuserGroups, vuserID)
@@ -428,7 +453,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 	}
 	if err := vuProto.Init(vuCtx, vuserProtoConfig(protoConfig, vuserID)); err != nil {
 		slog.Error("failed to init protocol for open workload worker", "group", group.Name, "worker", vuserID, "err", err)
-		vuCancel()
+		cancelVUser()
 		mge.mu.Lock()
 		delete(mge.vuserCancels, vuserID)
 		delete(mge.vuserGroups, vuserID)
@@ -441,6 +466,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer cancelVUser()
 		defer func() {
 			vuProto.Teardown(context.Background())
 			mge.mu.Lock()
@@ -460,7 +486,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 			RedactionConfig: group.RedactionConfig,
 			PauseControl:    mge,
 			ExecutionGoals:  group.executionGoals,
-			HardStopCtx:     mge.baseCtx,
+			HardStopCtx:     shedCtx,
 			SkipInit:        groupLifecycleAtOnce(group),
 			SkipTeardown:    groupLifecycleAtOnce(group),
 		}

@@ -28,7 +28,7 @@ apexload/
 ├── dashboard/            # React 18 + TypeScript SPA
 ├── desktop/             # Wails native client shell (embeds controller API + dashboard)
 ├── mcp/                 # Python MCP server exposing the REST API as agent tools
-├── deployments/          # Kubernetes manifests, Helm charts
+├── deployments/          # Kustomize manifests, Helm chart, Docker Compose, Azure Terraform/IaC, CI templates
 └── examples/            # Sample scripts, HAR files
 ```
 
@@ -81,10 +81,12 @@ type Protocol interface {
 - **HTTP**: Supports HTTP/1.1 and HTTP/2; handles redirects, cookies, extractors, assertions
 - **SOAP**: Reuses the HTTP transport with SOAP-specific defaults, namespaces, and fault-handling semantics
 - **Java over HTTP** (`java_http`): Reuses the HTTP transport with the bounded `java_serialized_object_base64` codec for opaque serialized payloads
+- **Java Vuser** (`java_vuser`): External-runner sidecar bridge for JVM Vuser scripts; governed and disabled unless runner config enables it
 - **WebSocket**: Connect, send/receive, configurable timeouts and max message size
 - **gRPC**: Reflection-based dynamic protobuf marshaling, TLS, metadata, streaming
 - **JMS (Solace)** (`jms-solace`): Message queue protocol
 - **JMS (IBM MQ)** (`jms-ibmmq`): Message queue protocol
+- **JMS (Azure Service Bus)** (`jms-servicebus`): Message queue protocol; real adapter opt-in via `-tags jms_servicebus_real`
 - **Kafka**: produce/consume/request-reply; in-memory mock broker by default, real franz-go network adapter opt-in via `-tags kafka_real`
 - **database**: SQL query/exec/transactions
 - **network**: DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP
@@ -394,7 +396,14 @@ npm run test
 **Build Go binaries:**
 ```bash
 make build
-# Outputs to ./bin/controller, ./bin/generator, ./bin/apexctl
+# Outputs to ./bin/controller, ./bin/generator, ./bin/apexctl,
+# and ./bin/apexload-record-agent
+```
+
+**Package the production Recording Agent:**
+```bash
+make package-recording-agent
+# Outputs release archives to ./dist/recording-agent
 ```
 
 **Build dashboard for embedding:**

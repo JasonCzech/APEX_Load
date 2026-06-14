@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 
@@ -101,12 +100,9 @@ func (vu *VUser) conditionExprDataMap() map[string]any {
 }
 
 func conditionExprEnvMap() map[string]any {
-	out := map[string]any{}
-	for _, entry := range os.Environ() {
-		key, value, ok := strings.Cut(entry, "=")
-		if ok {
-			out[key] = value
-		}
-	}
-	return out
+	// Only expose env values the script is permitted to read. When an operator
+	// sets APEXLOAD_SCRIPT_ENV_ALLOWLIST this restricts the CEL `env` binding to
+	// the listed keys; the engine secret namespace is always excluded so a
+	// condition expression cannot enumerate or read resolved credentials.
+	return scriptVisibleEnvMap()
 }

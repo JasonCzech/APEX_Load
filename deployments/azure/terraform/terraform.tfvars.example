@@ -5,6 +5,10 @@ prefix      = "apexload"
 environment = "prod"
 location    = "eastus2"
 
+# Production default: private endpoints/private DNS for PostgreSQL, Redis,
+# Storage, and Key Vault. Use "public" only for evaluation environments.
+# network_mode = "private"
+
 # Lock down the AKS API server to your network egress.
 # authorized_ip_ranges = ["203.0.113.0/24"]
 

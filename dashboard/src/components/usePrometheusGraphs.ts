@@ -41,6 +41,15 @@ function prometheusStepSeconds(startMs: number, endMs: number) {
   return Math.min(3600, Math.max(5, Math.ceil(rangeSeconds / 420)))
 }
 
+// quantizeMs snaps a timestamp to a bucket boundary so that the query window only changes when it
+// crosses a genuine boundary, not on every WebSocket data tick (~1-2s). Without this the window
+// object identity changes each tick, tearing down the 10s poll and refetching all graphs.
+function quantizeMs(valueMs: number, bucketMs: number, mode: 'floor' | 'ceil') {
+  if (bucketMs <= 0) return valueMs
+  const ratio = valueMs / bucketMs
+  return (mode === 'floor' ? Math.floor(ratio) : Math.ceil(ratio)) * bucketMs
+}
+
 export function usePrometheusGraphs(test: TestSummary | null, filteredData: MetricsHistoryPoint[]) {
   const { getPrometheusGraphs } = useSystemApi()
   const [graphs, setGraphs] = useState<PrometheusGraph[]>([])
@@ -51,9 +60,14 @@ export function usePrometheusGraphs(test: TestSummary | null, filteredData: Metr
   const queryWindow = useMemo<PrometheusGraphWindow | null>(() => {
     const window = visibleDataWindow(filteredData) ?? fallbackRunWindow(test)
     if (!window) return null
+    const stepSeconds = prometheusStepSeconds(window.startMs, window.endMs)
+    // Quantize the raw endpoints to the step bucket so the window stays referentially stable
+    // between genuine boundaries; new data ticks within the same bucket do not move it.
+    const bucketMs = Math.max(stepSeconds, 10) * 1000
     return {
-      ...window,
-      stepSeconds: prometheusStepSeconds(window.startMs, window.endMs),
+      startMs: quantizeMs(window.startMs, bucketMs, 'floor'),
+      endMs: quantizeMs(window.endMs, bucketMs, 'ceil'),
+      stepSeconds,
     }
   }, [
     filteredData,
@@ -63,8 +77,15 @@ export function usePrometheusGraphs(test: TestSummary | null, filteredData: Metr
     test?.started_at,
   ])
 
+  // Depend the fetch effect on the quantized scalar values rather than the memoized object
+  // identity, so it only re-runs when the window actually crosses a step boundary.
+  const windowStartMs = queryWindow?.startMs ?? null
+  const windowEndMs = queryWindow?.endMs ?? null
+  const windowStepSeconds = queryWindow?.stepSeconds ?? null
+  const testStatus = test?.status
+
   useEffect(() => {
-    if (!queryWindow) {
+    if (windowStartMs === null || windowEndMs === null || windowStepSeconds === null) {
       setGraphs([])
       setLoading(false)
       setError('')
@@ -79,9 +100,9 @@ export function usePrometheusGraphs(test: TestSummary | null, filteredData: Metr
       if (showLoading) setLoading(true)
       try {
         const response = await getPrometheusGraphs({
-          start: new Date(queryWindow.startMs).toISOString(),
-          end: new Date(queryWindow.endMs).toISOString(),
-          step_seconds: queryWindow.stepSeconds,
+          start: new Date(windowStartMs).toISOString(),
+          end: new Date(windowEndMs).toISOString(),
+          step_seconds: windowStepSeconds,
         })
         if (cancelled) return
         const enabledAndConfigured = response.enabled && response.configured
@@ -99,7 +120,7 @@ export function usePrometheusGraphs(test: TestSummary | null, filteredData: Metr
     }
 
     void load(true)
-    if (test?.status && LIVE_PROMETHEUS_REFRESH_STATUSES.has(test.status)) {
+    if (testStatus && LIVE_PROMETHEUS_REFRESH_STATUSES.has(testStatus)) {
       timer = window.setInterval(() => {
         void load(false)
       }, 10_000)
@@ -109,7 +130,7 @@ export function usePrometheusGraphs(test: TestSummary | null, filteredData: Metr
       cancelled = true
       if (timer !== undefined) window.clearInterval(timer)
     }
-  }, [getPrometheusGraphs, queryWindow, test?.status])
+  }, [getPrometheusGraphs, windowStartMs, windowEndMs, windowStepSeconds, testStatus])
 
   return { prometheusGraphs: graphs, prometheusLoading: loading && available, prometheusError: error }
 }

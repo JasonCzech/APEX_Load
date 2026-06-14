@@ -320,24 +320,13 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	if javaHTTPCfg.PreserveBinaryResult {
 		cfg["java_http_preserve_binary_result"] = true
 	}
-	if javaVuserCfg.Enabled {
-		cfg["java_vuser_enabled"] = true
-	}
-	if javaVuserCfg.RunnerCommand != "" {
-		cfg["java_vuser_runner_command"] = javaVuserCfg.RunnerCommand
-	}
-	if javaVuserCfg.HarnessJar != "" {
-		cfg["java_vuser_harness_jar"] = javaVuserCfg.HarnessJar
-	}
-	if len(javaVuserCfg.Classpath) > 0 {
-		cfg["java_vuser_classpath"] = javaVuserCfg.Classpath
-	}
-	if javaVuserCfg.WorkDir != "" {
-		cfg["java_vuser_work_dir"] = javaVuserCfg.WorkDir
-	}
-	if javaVuserCfg.MaxProcesses > 0 {
-		cfg["java_vuser_max_processes"] = float64(javaVuserCfg.MaxProcesses)
-	}
+	// Java Vuser enablement and the runner command/classpath/working-directory
+	// are operator-owned: the protocol resolves them from process environment
+	// (APEXLOAD_JAVA_VUSER_*), never from uploaded script DSL. Deliberately do
+	// NOT flatten javaVuserCfg.Enabled/RunnerCommand/HarnessJar/Classpath/
+	// WorkDir/MaxProcesses here — doing so would let a script author enable and
+	// steer local process execution on the generator. Only the non-privileged
+	// per-action timeouts remain script-controlled.
 	if javaVuserCfg.StartupTimeoutMs > 0 {
 		cfg["java_vuser_startup_timeout_ms"] = float64(javaVuserCfg.StartupTimeoutMs)
 	}

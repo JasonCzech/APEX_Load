@@ -9,6 +9,13 @@ export function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+// downloadFilenameFromDisposition extracts the filename from a Content-Disposition
+// response header, falling back to fallbackName when absent or unparseable.
+export function downloadFilenameFromDisposition(disposition: string | null, fallbackName: string): string {
+  const match = disposition?.match(/filename="?([^";]+)"?/i)
+  return match?.[1] || fallbackName
+}
+
 export interface ZipFileEntry {
   name: string
   content: string | Uint8Array

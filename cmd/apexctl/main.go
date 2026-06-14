@@ -41,6 +41,8 @@ func main() {
 		waitCmd()
 	case "record":
 		recordCmd()
+	case "record-agent":
+		recordAgentCmd()
 	case "github":
 		githubCmd()
 	case "version":
@@ -340,6 +342,7 @@ Commands:
   status    Print a test's current status + SLA verdict (exits 1 on breach/failure)
 	  wait      Block until a started test finishes, then report SLA verdict
 	  record    Record a browser script with the embedded recorder (ranked selectors + side-car HAR)
+	  record-agent  Start the localhost browser recording bridge for a remote dashboard
 	  github    Inspect and run GitHub Enterprise sync/check workflows
 	  version   Print version information
   help      Show this help

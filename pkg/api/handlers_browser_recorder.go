@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
@@ -37,7 +38,7 @@ func (s *Server) browserRecordingAvailability() browserRecordingAvailability {
 	case "on", "enabled", "true", "1":
 		// Explicit opt-in overrides the production-mode default-off.
 	default:
-		if productionMode() && !s.desktopMode {
+		if productionMode() && !s.desktopMode && !s.bridgeMode {
 			return browserRecordingAvailability{Reason: "browser recording launches a headed browser on the controller host and is disabled in production mode (set APEXLOAD_BROWSER_RECORDER=on to override)"}
 		}
 	}
@@ -339,6 +340,16 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 		result.Script.ProjectID = normalizeProjectID(info.ProjectID)
 		result.Script.GeneratedBy = "browser-recorder"
 		result.Script.GeneratedFrom = "browser_recording_har"
+		review, reviewErr := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{BuildNative: true, HARData: artifact.HAR})
+		if reviewErr != nil {
+			result.Warnings = append(result.Warnings, "Salesforce review failed: "+reviewErr.Error())
+		} else if review != nil && review.Detected {
+			preserved := ensureScriptImportPreserved(result.Script, "browser_recording_har")
+			preserved["salesforce_review"] = salesforceReviewForResponse(review)
+			if review.NativePreview != nil && review.NativePreview.Script != nil {
+				result.Warnings = append(result.Warnings, "Salesforce traffic detected; use /api/v1/scripts/import/salesforce for the native HTTP draft.")
+			}
+		}
 	}
 	return result.Script, result.Warnings, nil
 }
@@ -358,12 +369,36 @@ func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, 
 	json.NewDecoder(r.Body).Decode(&req)
 
 	result := s.convertBrowserRecording(artifact, info, req)
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	warnings := append([]string(nil), result.Warnings...)
+	scripts := make([]any, 0, len(result.Scripts)+1)
+	for _, sc := range result.Scripts {
+		if sc != nil {
+			scripts = append(scripts, sc)
+		}
+	}
+	var httpScript *dsl.Script
+	if req.AlsoCreateHTTPScript {
+		var httpWarnings []string
+		var err error
+		httpScript, httpWarnings, err = s.createHTTPScriptFromHAR(artifact, info, req.Name)
+		if err != nil {
+			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
+		} else if httpScript != nil {
+			scripts = append(scripts, httpScript)
+			warnings = append(warnings, httpWarnings...)
+		}
+	}
+	response := newScriptImportResponse(scriptImportResponseOptions{
 		Script:           result.Script,
-		Warnings:         result.Warnings,
+		Scripts:          scripts,
+		Warnings:         warnings,
 		Stats:            result.Stats,
 		Parameterization: buildImportParameterization(result.Script, nil),
-	}))
+	})
+	if httpScript != nil {
+		response["http_script"] = httpScript
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Request) {

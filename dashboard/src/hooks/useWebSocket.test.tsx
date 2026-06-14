@@ -28,8 +28,8 @@ class MockWebSocket {
   }
 }
 
-function Harness({ projectId }: { projectId?: string }) {
-  const { connected, connectionState } = useWebSocket({ projectId })
+function Harness({ projectId, bridge }: { projectId?: string; bridge?: any }) {
+  const { connected, connectionState } = useWebSocket({ projectId, bridge })
 
   return (
     <div
@@ -114,6 +114,15 @@ describe('useWebSocket', () => {
     flushDebounce()
 
     expect(MockWebSocket.instances[0]?.url).toContain('/api/v1/ws?project_id=project-1')
+  })
+
+  it('uses the paired bridge websocket session when provided', async () => {
+    await act(async () => {
+      root.render(<Harness bridge={{ origin: 'http://127.0.0.1:49152', token: 'tok', session_id: 'ws-1' }} />)
+    })
+    flushDebounce()
+
+    expect(MockWebSocket.instances[0]?.url).toBe('ws://127.0.0.1:49152/api/v1/ws?bridge_session_id=ws-1')
   })
 
   it('reports disconnected (not stuck connecting) and opens no socket when the tab is hidden', async () => {

@@ -27,7 +27,7 @@ Stable resources are also available:
 Use Python 3.10 or newer.
 
 ```bash
-cd /path/to/Project_APEX Load/mcp
+cd /path/to/apexload/mcp
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -71,7 +71,7 @@ Errors use the same top-level shape with `ok:false`, normalized `error.code`, `e
   "mcpServers": {
     "apexload": {
       "command": "python3",
-      "args": ["/path/to/Project_APEX Load/mcp/server.py"],
+      "args": ["/path/to/apexload/mcp/server.py"],
       "env": {
         "APEXLOAD_URL": "http://localhost:8080/api/v1",
         "APEXLOAD_API_KEY": "srk_...",
@@ -85,7 +85,7 @@ Errors use the same top-level shape with `ok:false`, normalized `error.code`, `e
 ## Running Manually
 
 ```bash
-cd /path/to/Project_APEX Load/mcp
+cd /path/to/apexload/mcp
 APEXLOAD_URL=http://localhost:8080/api/v1 python3 server.py
 ```
 

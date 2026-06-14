@@ -12,6 +12,7 @@ import (
 	"time"
 
 	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	_ "github.com/jasonczech/apexload/pkg/protocol/http"
@@ -239,8 +240,8 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	if !reflect.DeepEqual(pong.ActiveTestIDs, []string{"test-1"}) {
 		t.Fatalf("active test ids = %v, want [test-1]", pong.ActiveTestIDs)
 	}
-	if pong.Version != "0.1.0" {
-		t.Fatalf("heartbeat version = %q, want 0.1.0", pong.Version)
+	if want := buildinfo.Get().Version; pong.Version != want {
+		t.Fatalf("heartbeat version = %q, want %q", pong.Version, want)
 	}
 	if !hasString(pong.SupportedProtocols, "http") {
 		t.Fatalf("supported protocols = %v, want http", pong.SupportedProtocols)
