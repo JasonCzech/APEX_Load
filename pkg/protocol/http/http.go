@@ -164,30 +164,56 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	explicitCorrelationID := correlationIDFromHTTPHeader(req.Header)
 	generatedTraceparent := ensureTraceparentHeader(req.Header)
 
+	// httptrace callbacks run on the transport's connection goroutines, so every
+	// field they touch must be guarded. They write into traceMu-protected locals;
+	// applyTraceTelemetry copies them into result on this goroutine before the
+	// timings are read (previously the callbacks wrote result.* directly, racing
+	// finalizeHTTPServerTelemetry on the error path under -race).
+	var traceMu sync.Mutex
 	var dnsStart, connStart, tlsStart time.Time
+	var traceDNSTime, traceConnectTime, traceTLSTime, traceTTFB time.Duration
+	startTime := result.StartTime
 	trace := &httptrace.ClientTrace{
-		DNSStart:             func(_ httptrace.DNSStartInfo) { dnsStart = time.Now() },
-		DNSDone:              func(_ httptrace.DNSDoneInfo) { result.DNSTime = time.Since(dnsStart) },
-		ConnectStart:         func(_, _ string) { connStart = time.Now() },
-		ConnectDone:          func(_, _ string, _ error) { result.ConnectTime = time.Since(connStart) },
-		TLSHandshakeStart:    func() { tlsStart = time.Now() },
-		TLSHandshakeDone:     func(_ tls.ConnectionState, _ error) { result.TLSTime = time.Since(tlsStart) },
-		GotConn:              func(info httptrace.GotConnInfo) { connectionReused = info.Reused },
-		GotFirstResponseByte: func() { result.TTFB = time.Since(result.StartTime) },
+		DNSStart:          func(_ httptrace.DNSStartInfo) { traceMu.Lock(); dnsStart = time.Now(); traceMu.Unlock() },
+		DNSDone:           func(_ httptrace.DNSDoneInfo) { traceMu.Lock(); traceDNSTime = time.Since(dnsStart); traceMu.Unlock() },
+		ConnectStart:      func(_, _ string) { traceMu.Lock(); connStart = time.Now(); traceMu.Unlock() },
+		ConnectDone:       func(_, _ string, _ error) { traceMu.Lock(); traceConnectTime = time.Since(connStart); traceMu.Unlock() },
+		TLSHandshakeStart: func() { traceMu.Lock(); tlsStart = time.Now(); traceMu.Unlock() },
+		TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
+			traceMu.Lock()
+			traceTLSTime = time.Since(tlsStart)
+			traceMu.Unlock()
+		},
+		GotConn:              func(info httptrace.GotConnInfo) { traceMu.Lock(); connectionReused = info.Reused; traceMu.Unlock() },
+		GotFirstResponseByte: func() { traceMu.Lock(); traceTTFB = time.Since(startTime); traceMu.Unlock() },
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 	baseCheckRedirect := h.client.CheckRedirect
 	client := *h.client
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		traceMu.Lock()
 		redirectCount = len(via)
 		if !redirectLegStart.IsZero() {
 			redirectDuration += time.Since(redirectLegStart)
 		}
 		redirectLegStart = time.Now()
+		traceMu.Unlock()
 		if baseCheckRedirect != nil {
 			return baseCheckRedirect(req, via)
 		}
 		return nil
+	}
+	// applyTraceTelemetry publishes the trace timings into result and returns the
+	// connection/redirect counters, all under traceMu. Call it on this goroutine
+	// before reading the timings.
+	applyTraceTelemetry := func() (bool, int, time.Duration) {
+		traceMu.Lock()
+		defer traceMu.Unlock()
+		result.DNSTime = traceDNSTime
+		result.ConnectTime = traceConnectTime
+		result.TLSTime = traceTLSTime
+		result.TTFB = traceTTFB
+		return connectionReused, redirectCount, redirectDuration
 	}
 
 	if requestBytes > 0 {
@@ -197,7 +223,8 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	resp, err := client.Do(req)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
-		result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, connectionReused, redirectCount, redirectDuration)
+		reused, rCount, rDur := applyTraceTelemetry()
+		result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
 		result.ErrorMessage = err.Error()
 		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
 		return result, nil
@@ -217,7 +244,8 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.Duration = time.Since(result.StartTime)
 			result.StatusCode = resp.StatusCode
 			result.BytesReceived = n
-			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, connectionReused, redirectCount, redirectDuration)
+			reused, rCount, rDur := applyTraceTelemetry()
+			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
 			result.ErrorMessage = err.Error()
 			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), buf.Bytes())
 			return result, nil
@@ -227,7 +255,8 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	result.Duration = time.Since(result.StartTime)
 	result.StatusCode = resp.StatusCode
 	result.BytesReceived = n
-	result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, connectionReused, redirectCount, redirectDuration)
+	reused, rCount, rDur := applyTraceTelemetry()
+	result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
 	result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
 	result.CorrelationID = explicitCorrelationID
 	if result.CorrelationID == "" {
