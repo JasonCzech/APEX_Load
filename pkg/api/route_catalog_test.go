@@ -111,6 +111,10 @@ type registeredRoute struct {
 	SamplePath  string
 	PathValues  map[string]string
 	GenericAuth bool
+	// Unauthenticated is true when the route is registered with no auth middleware of
+	// any kind (cors(log(http.HandlerFunc(...)))) — neither generic auth() nor a custom
+	// per-resource auth wrapper.
+	Unauthenticated bool
 }
 
 func registeredServerRoutes(t *testing.T) []registeredRoute {
@@ -133,11 +137,12 @@ func registeredServerRoutes(t *testing.T) []registeredRoute {
 		}
 		samplePath, pathValues := sampleRegisteredRoutePath(matches[2])
 		routes = append(routes, registeredRoute{
-			Method:      matches[1],
-			Path:        matches[2],
-			SamplePath:  samplePath,
-			PathValues:  pathValues,
-			GenericAuth: routeUsesGenericAuthMiddleware(line),
+			Method:          matches[1],
+			Path:            matches[2],
+			SamplePath:      samplePath,
+			PathValues:      pathValues,
+			GenericAuth:     routeUsesGenericAuthMiddleware(line),
+			Unauthenticated: routeHasNoAuthMiddleware(line),
 		})
 	}
 	if len(routes) == 0 {
@@ -160,4 +165,12 @@ func sampleRegisteredRoutePath(path string) (string, map[string]string) {
 
 func routeUsesGenericAuthMiddleware(line string) bool {
 	return strings.Contains(line, "log(auth(")
+}
+
+// routeHasNoAuthMiddleware reports whether a mux.Handle line wires the handler with
+// no auth middleware at all — the handler sits directly inside log(...) with no auth
+// wrapper (cors(log(http.HandlerFunc(...)))). Routes guarded by a custom per-resource
+// auth wrapper read log(<wrapper>(http.HandlerFunc(...))) and are not matched.
+func routeHasNoAuthMiddleware(line string) bool {
+	return strings.Contains(line, "log(http.HandlerFunc(")
 }
