@@ -553,7 +553,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/system/health", cors(log(http.HandlerFunc(s.handleHealthCheck))))
 	s.mux.Handle("GET /api/v1/system/version", cors(log(http.HandlerFunc(s.handleSystemVersion))))
 	s.mux.Handle("GET /api/v1/system/readiness", cors(log(http.HandlerFunc(s.handleSystemReadiness))))
-	s.mux.Handle("GET /api/v1/downloads/recording-agent/latest", cors(log(http.HandlerFunc(s.handleDownloadRecordingAgent))))
+	s.mux.Handle("GET /api/v1/downloads/recording-agent/latest", cors(log(auth(http.HandlerFunc(s.handleDownloadRecordingAgent)))))
+	s.mux.Handle("GET /api/v1/downloads/recording-agent/latest/checksum", cors(log(auth(http.HandlerFunc(s.handleRecordingAgentChecksum)))))
 	// With a dedicated metrics listener (APEXLOAD_METRICS_ADDR) the scrape
 	// endpoint moves off the API port entirely, so NetworkPolicy can grant the
 	// monitoring namespace metrics access without exposing the API surface.

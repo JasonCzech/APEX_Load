@@ -16,19 +16,18 @@ import (
 // only enumerate auth()-wrapped routes (a route registered with no auth() is invisible to
 // them, as the recording-agent download was).
 var intentionallyPublicAPIRoutes = map[string]bool{
-	"GET /api/v1/auth/login":                       true,
-	"GET /api/v1/auth/callback":                    true,
-	"POST /api/v1/auth/logout":                     true,
-	"GET /api/v1/auth/me":                          true,
-	"GET /api/v1/auth/diagnostics":                 true,
-	"GET /api/v1/auth/roles":                       true,
-	"GET /api/v1/auth/access-matrix":               true,
-	"GET /api/v1/auth/effective-access":            true,
-	"GET /api/v1/system/health":                    true,
-	"GET /api/v1/system/version":                   true,
-	"GET /api/v1/system/readiness":                 true,
-	"GET /api/v1/downloads/recording-agent/latest": true,
-	"POST /api/v1/integrations/github/webhook":     true,
+	"GET /api/v1/auth/login":                   true,
+	"GET /api/v1/auth/callback":                true,
+	"POST /api/v1/auth/logout":                 true,
+	"GET /api/v1/auth/me":                      true,
+	"GET /api/v1/auth/diagnostics":             true,
+	"GET /api/v1/auth/roles":                   true,
+	"GET /api/v1/auth/access-matrix":           true,
+	"GET /api/v1/auth/effective-access":        true,
+	"GET /api/v1/system/health":                true,
+	"GET /api/v1/system/version":               true,
+	"GET /api/v1/system/readiness":             true,
+	"POST /api/v1/integrations/github/webhook": true,
 }
 
 func TestUnauthenticatedAPIRoutesAreAllowlisted(t *testing.T) {

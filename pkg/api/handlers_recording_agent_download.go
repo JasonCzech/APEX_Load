@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,6 +15,7 @@ const (
 	recordingAgentDistDirEnv     = "APEXLOAD_RECORDING_AGENT_DIST_DIR"
 	defaultRecordingAgentDistDir = "dist/recording-agent"
 	recordingAgentPackagePrefix  = "apexload-recording-agent-"
+	recordingAgentChecksumFile   = "SHA256SUMS.txt"
 )
 
 func (s *Server) handleDownloadRecordingAgent(w http.ResponseWriter, r *http.Request) {
@@ -22,9 +25,58 @@ func (s *Server) handleDownloadRecordingAgent(w http.ResponseWriter, r *http.Req
 		return
 	}
 	filename := filepath.Base(packagePath)
+	if sum, ok := recordingAgentPackageSHA256(filepath.Dir(packagePath), filename); ok {
+		w.Header().Set("X-Content-SHA256", sum)
+		if raw, decErr := hex.DecodeString(sum); decErr == nil {
+			// RFC 3230 Digest header so clients can verify the binary before running it.
+			w.Header().Set("Digest", "sha-256="+base64.StdEncoding.EncodeToString(raw))
+		}
+	}
 	w.Header().Set("Content-Type", "application/gzip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeFilename(filename)))
 	http.ServeFile(w, r, packagePath)
+}
+
+// handleRecordingAgentChecksum returns the SHA-256 of the recording-agent package the
+// download endpoint would serve, so the dashboard can show the expected hash next to the
+// download and users can verify the artifact out of band.
+func (s *Server) handleRecordingAgentChecksum(w http.ResponseWriter, r *http.Request) {
+	packagePath, err := findRecordingAgentPackage(recordingAgentDistDir(), recordingAgentPlatform(r))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	filename := filepath.Base(packagePath)
+	sum, ok := recordingAgentPackageSHA256(filepath.Dir(packagePath), filename)
+	if !ok {
+		writeError(w, http.StatusNotFound, "checksum for the APEX Load Recording Agent package is not staged")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"algorithm": "sha-256",
+		"filename":  filename,
+		"sha256":    sum,
+	})
+}
+
+// recordingAgentPackageSHA256 returns the hex SHA-256 for filename from the SHA256SUMS.txt
+// staged alongside the packages (lines are "<hex>  <name>"), if present.
+func recordingAgentPackageSHA256(distDir, filename string) (string, bool) {
+	data, err := os.ReadFile(filepath.Join(distDir, recordingAgentChecksumFile))
+	if err != nil {
+		return "", false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		// sha256sum binary-mode prefixes the name with '*'.
+		if strings.TrimPrefix(fields[1], "*") == filename {
+			return strings.ToLower(fields[0]), true
+		}
+	}
+	return "", false
 }
 
 func recordingAgentDistDir() string {
