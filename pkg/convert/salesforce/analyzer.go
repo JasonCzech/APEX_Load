@@ -19,17 +19,25 @@ type AnalyzeOptions struct {
 }
 
 type Review struct {
-	Detected              bool                   `json:"detected"`
-	Domains               []DomainObservation    `json:"domains,omitempty"`
-	AuraEndpoints         []EndpointObservation  `json:"aura_endpoints,omitempty"`
-	LightningEndpoints    []EndpointObservation  `json:"lightning_endpoints,omitempty"`
-	LoginFlow             []EndpointObservation  `json:"login_flow,omitempty"`
-	Transactions          []TransactionCandidate `json:"transactions,omitempty"`
-	CorrelationConfidence string                 `json:"correlation_confidence,omitempty"`
-	HARMatchCoverage      MatchCoverage          `json:"har_match_coverage"`
-	Blockers              []string               `json:"blockers,omitempty"`
-	NextActions           []string               `json:"next_actions,omitempty"`
-	NativePreview         *NativePreview         `json:"native_preview,omitempty"`
+	Detected              bool                        `json:"detected"`
+	Domains               []DomainObservation         `json:"domains,omitempty"`
+	AuraEndpoints         []EndpointObservation       `json:"aura_endpoints,omitempty"`
+	LightningEndpoints    []EndpointObservation       `json:"lightning_endpoints,omitempty"`
+	LoginFlow             []EndpointObservation       `json:"login_flow,omitempty"`
+	UIAPIEndpoints        []EndpointObservation       `json:"ui_api_endpoints,omitempty"`
+	RestEndpoints         []EndpointObservation       `json:"rest_endpoints,omitempty"`
+	ApexRestEndpoints     []EndpointObservation       `json:"apex_rest_endpoints,omitempty"`
+	CompositeEndpoints    []EndpointObservation       `json:"composite_endpoints,omitempty"`
+	GraphQLEndpoints      []EndpointObservation       `json:"graphql_endpoints,omitempty"`
+	BulkEndpoints         []EndpointObservation       `json:"bulk_endpoints,omitempty"`
+	AgentforceEndpoints   []EndpointObservation       `json:"agentforce_endpoints,omitempty"`
+	Transactions          []TransactionCandidate      `json:"transactions,omitempty"`
+	Parameterizations     []ParameterizationCandidate `json:"parameterizations,omitempty"`
+	CorrelationConfidence string                      `json:"correlation_confidence,omitempty"`
+	HARMatchCoverage      MatchCoverage               `json:"har_match_coverage"`
+	Blockers              []string                    `json:"blockers,omitempty"`
+	NextActions           []string                    `json:"next_actions,omitempty"`
+	NativePreview         *NativePreview              `json:"native_preview,omitempty"`
 }
 
 type DomainObservation struct {
@@ -75,6 +83,23 @@ type CorrelationCandidate struct {
 	RuleID     string   `json:"rule_id,omitempty"`
 	Confidence float64  `json:"confidence,omitempty"`
 	Reasons    []string `json:"reasons,omitempty"`
+}
+
+// ParameterizationCandidate is a record/object identifier discovered inside an
+// Aura `message` request payload that a load test should likely drive from a
+// data source (one identifier per VUser) rather than replay as a fixed literal.
+// These are surfaced for review and are not auto-applied; the value comes from a
+// user-supplied dataset via the parameterization-review flow.
+type ParameterizationCandidate struct {
+	Name        string `json:"name"`
+	Source      string `json:"source"`
+	Expression  string `json:"expression"`
+	ActionSeq   int    `json:"action_seq,omitempty"`
+	ParamKey    string `json:"param_key"`
+	SampleValue string `json:"sample_value,omitempty"`
+	Kind        string `json:"kind"`
+	Column      string `json:"column"`
+	Template    string `json:"template"`
 }
 
 type actionRef struct {
@@ -132,6 +157,12 @@ type harLog struct {
 var (
 	auraDescriptorPattern = regexp.MustCompile(`(?i)"descriptor"\s*:\s*"([^"]+)"`)
 	jmesIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	// salesforceIDPattern matches a canonical 15- or 18-character Salesforce
+	// record/object identifier.
+	salesforceIDPattern = regexp.MustCompile(`^[A-Za-z0-9]{15}(?:[A-Za-z0-9]{3})?$`)
+	// idLikeValuePattern matches identifier-shaped values for keys that end in
+	// "id" but are not full Salesforce IDs (e.g. external ids).
+	idLikeValuePattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{6,}$`)
 )
 
 func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
@@ -149,12 +180,19 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 	}
 
 	review := &Review{
-		Detected:           detectsSalesforce(refs, entries),
-		Domains:            domainObservations(refs, entries),
-		AuraEndpoints:      endpointObservations(refs, "aura"),
-		LightningEndpoints: endpointObservations(refs, "lightning"),
-		LoginFlow:          endpointObservations(refs, "login"),
-		Transactions:       transactionCandidates(refs),
+		Detected:            detectsSalesforce(refs, entries),
+		Domains:             domainObservations(refs, entries),
+		AuraEndpoints:       endpointObservations(refs, "aura"),
+		LightningEndpoints:  endpointObservations(refs, "lightning"),
+		LoginFlow:           endpointObservations(refs, "login"),
+		UIAPIEndpoints:      endpointObservations(refs, "ui_api"),
+		RestEndpoints:       endpointObservations(refs, "rest_api"),
+		ApexRestEndpoints:   endpointObservations(refs, "apex_rest"),
+		CompositeEndpoints:  endpointObservations(refs, "composite"),
+		GraphQLEndpoints:    endpointObservations(refs, "graphql"),
+		BulkEndpoints:       endpointObservations(refs, "bulk_data"),
+		AgentforceEndpoints: endpointObservations(refs, "agentforce"),
+		Transactions:        transactionCandidates(refs),
 		HARMatchCoverage: MatchCoverage{
 			HARProvided:      len(entries) > 0,
 			ImportedRequests: len(refs),
@@ -173,12 +211,13 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 	if opts.BuildNative && len(entries) > 0 && review.HARMatchCoverage.CoveragePct < 80 {
 		review.Blockers = append(review.Blockers, "Salesforce native preview HAR coverage is below 80%; attach a HAR from the same recording that covers the missing imported requests.")
 	}
-	if review.Detected && len(review.AuraEndpoints) == 0 {
-		review.Blockers = append(review.Blockers, "No Salesforce Aura endpoints were detected; validate that the capture includes Lightning transaction traffic.")
+	if review.Detected && !hasRecognizedSalesforceEndpoints(review) {
+		review.Blockers = append(review.Blockers, "No Salesforce Aura or API endpoints were detected; validate that the capture includes the Salesforce transaction traffic.")
 	}
 
 	correlations := detectCorrelations(entries)
 	review.CorrelationConfidence = correlationConfidence(correlations, len(entries))
+	review.Parameterizations = auraMessageParameterizations(refs, correlations)
 	if opts.BuildNative {
 		preview, err := buildNativePreview(script, refs, entries, matches, correlations)
 		if err != nil {
@@ -399,19 +438,47 @@ func classifySalesforceAction(action *dsl.Action, rawURL string) string {
 	path := strings.ToLower(parsed.EscapedPath())
 	body := strings.ToLower(action.Body)
 	switch {
-	case strings.Contains(host, "test.salesforce.com") || strings.Contains(host, "mobileauth.salesforce.com") || strings.Contains(path, "login") || strings.Contains(path, "oauth"):
-		return "login"
+	// Concrete API surfaces are matched before the login heuristic so that data
+	// or Apex resources whose names merely contain "login"/"oauth" (e.g. the
+	// standard LoginHistory object, a Login_Event__c, or a LoginController Apex
+	// class) are not misclassified as auth traffic.
+	case strings.Contains(path, "/einstein/ai-agent"):
+		return "agentforce"
 	case strings.Contains(path, "/aura") || strings.Contains(body, "aura.context") || strings.Contains(body, "aura.token") || strings.Contains(body, "\"descriptor\""):
 		return "aura"
+	case strings.Contains(path, "/services/apexrest/"):
+		return "apex_rest"
 	case strings.Contains(path, "/services/data/") && strings.Contains(path, "/ui-api/"):
 		return "ui_api"
+	case strings.Contains(path, "/services/data/") && strings.Contains(path, "/graphql"):
+		return "graphql"
+	case strings.Contains(path, "/services/data/") && strings.Contains(path, "/composite"):
+		return "composite"
+	case strings.Contains(path, "/services/data/") && (strings.Contains(path, "/jobs/ingest") || strings.Contains(path, "/jobs/query")):
+		return "bulk_data"
 	case strings.Contains(path, "/services/data/"):
 		return "rest_api"
+	case isSalesforceLoginRequest(host, path):
+		return "login"
 	case strings.Contains(host, "lightning.force.com"):
 		return "lightning"
 	default:
 		return "generic"
 	}
+}
+
+// isSalesforceLoginRequest matches genuine Salesforce authentication traffic by
+// host and anchored auth paths, rather than any path that merely contains the
+// substring "login" or "oauth".
+func isSalesforceLoginRequest(host, path string) bool {
+	if host == "test.salesforce.com" || host == "login.salesforce.com" || strings.Contains(host, "mobileauth.salesforce.com") {
+		return true
+	}
+	return strings.Contains(path, "/services/oauth2/") ||
+		strings.Contains(path, "frontdoor.jsp") ||
+		strings.Contains(path, "/secur/login") ||
+		strings.Contains(path, "/.well-known/openid") ||
+		strings.HasPrefix(path, "/login")
 }
 
 func salesforceActionEvidence(action *dsl.Action, rawURL string) string {
@@ -447,11 +514,28 @@ func extractAuraDescriptor(evidence string) string {
 func classifySalesforceFlow(evidence, descriptor string) string {
 	lower := strings.ToLower(evidence + " " + descriptor)
 	switch {
+	case containsAny(lower, "/einstein/ai-agent", "ai-agent", "agentforce", "copilot"):
+		return "agent_conversation"
+	// Endpoint/path-anchored API shapes are evaluated before the object-name
+	// heuristics below: the request body almost always also mentions a business
+	// object (Account/Contact/...), so checking object names first would steal
+	// composite/bulk/apex/file/list requests away from their correct flow kind.
+	case containsAny(lower, "/jobs/ingest", "/jobs/query", "/services/async/", "bulkapi"):
+		return "bulk_data"
+	case containsAny(lower, "/composite/graph", "/composite/batch", "/composite"):
+		return "composite"
+	case containsAny(lower, "/services/apexrest/"):
+		return "apex_custom_api"
+	case containsAny(lower, "listview", "list-records", "list-ui", "list_view", "list view"):
+		return "list_view"
+	case containsAny(lower, "contentversion", "contentdocument", ".content.force.com", ".file.force.com", "/sobjects/contentversion"):
+		return "file_content"
+	// Object/business-name heuristics.
 	case containsAny(lower, "workorder", "work_order", "work order", "serviceappointment", "service appointment"):
 		return "work_order"
 	case containsAny(lower, "serviceaddress", "service address", "serviceavailability", "service availability", "getservices", "productoffer", "product offer", "rateplan", "rate plan", "cartreview"):
 		return "service"
-	case containsAny(lower, "account", "contact", "customer", "billing", "ban", "createguestrecords"):
+	case containsAny(lower, "account", "contact", "customer", "billing", "createguestrecords"):
 		return "account"
 	case containsAny(lower, "recordui", "recordwithfields", "recordid", "/ui-api/record", "/sobjects/"):
 		return "record"
@@ -494,8 +578,14 @@ func classifySalesforceObject(evidence, descriptor string) string {
 func salesforceHost(host string) string {
 	host = strings.ToLower(strings.TrimSpace(host))
 	switch {
+	case host == "api.salesforce.com":
+		return "agentforce"
+	case strings.Contains(host, ".sandbox.my.salesforce.com"):
+		return "sandbox"
 	case strings.Contains(host, ".my.salesforce.com"):
 		return "my_salesforce"
+	case strings.Contains(host, ".content.force.com") || strings.Contains(host, ".file.force.com") || strings.Contains(host, ".vf.force.com"):
+		return "content"
 	case strings.Contains(host, ".lightning.force.com"):
 		return "lightning"
 	case host == "test.salesforce.com":
@@ -545,6 +635,22 @@ func domainObservations(refs []actionRef, entries []harEntry) []DomainObservatio
 		return out[i].Count > out[j].Count
 	})
 	return out
+}
+
+// hasRecognizedSalesforceEndpoints reports whether the review captured any
+// recognized Salesforce surface (Lightning UI or API). It gates the
+// missing-traffic blocker so API-only imports (REST/Composite/Agentforce) are
+// not flagged for lacking Aura/Lightning UI traffic.
+func hasRecognizedSalesforceEndpoints(review *Review) bool {
+	return len(review.AuraEndpoints) > 0 ||
+		len(review.LightningEndpoints) > 0 ||
+		len(review.UIAPIEndpoints) > 0 ||
+		len(review.RestEndpoints) > 0 ||
+		len(review.ApexRestEndpoints) > 0 ||
+		len(review.CompositeEndpoints) > 0 ||
+		len(review.GraphQLEndpoints) > 0 ||
+		len(review.BulkEndpoints) > 0 ||
+		len(review.AgentforceEndpoints) > 0
 }
 
 func endpointObservations(refs []actionRef, kind string) []EndpointObservation {
@@ -868,6 +974,157 @@ func appendJMESPath(path, key string) string {
 func dynamicJSONKey(key string) bool {
 	lower := strings.ToLower(strings.TrimSpace(key))
 	return containsAny(lower, "token", "access_token", "id_token", "refresh_token", "session", "sessionid", "sid", "csrf", "xsrf", "auth", "nonce", "state", "recordid", "record_id", "interactionid", "interaction_id", "workorderid", "work_order_id", "accountid", "account_id", "contactid", "contact_id", "orderid", "order_id", "cartid", "cart_id", "id")
+}
+
+// auraMessageParameterizations cracks open the Aura `message` envelope of each
+// /aura request and proposes data-source parameterization for record/object
+// identifiers carried in action params. Values that are already correlated
+// (produced by an earlier response) are skipped — those are handled
+// deterministically by the correlation pass instead.
+func auraMessageParameterizations(refs []actionRef, correlations []correlate.Correlation) []ParameterizationCandidate {
+	correlated := make(map[string]bool, len(correlations))
+	for _, corr := range correlations {
+		if corr.Value != "" {
+			correlated[corr.Value] = true
+		}
+	}
+	seenValues := map[string]bool{}
+	usedNames := map[string]bool{}
+	out := make([]ParameterizationCandidate, 0)
+	for _, ref := range refs {
+		if ref.Action == nil {
+			continue
+		}
+		message := auraMessageBody(ref.Action.Body)
+		if message == "" {
+			continue
+		}
+		var decoded any
+		if err := json.Unmarshal([]byte(message), &decoded); err != nil {
+			continue
+		}
+		actions, ok := auraMessageActions(decoded)
+		if !ok {
+			continue
+		}
+		for actionIndex, actionValue := range actions {
+			params, ok := auraActionParams(actionValue)
+			if !ok {
+				continue
+			}
+			base := fmt.Sprintf("actions[%d].params", actionIndex)
+			walkAuraParams(params, base, "", func(key, value, expression string) {
+				kind, ok := auraParamIdentifierKind(key, value)
+				if !ok || correlated[value] || seenValues[value] {
+					return
+				}
+				seenValues[value] = true
+				column := correlate.Slug(key)
+				if column == "" {
+					column = "record_id"
+				}
+				name := "param_" + column
+				for i := 2; usedNames[name]; i++ {
+					name = fmt.Sprintf("param_%s_%d", column, i)
+				}
+				usedNames[name] = true
+				out = append(out, ParameterizationCandidate{
+					Name:        name,
+					Source:      "aura_message",
+					Expression:  expression,
+					ActionSeq:   ref.Sequence,
+					ParamKey:    key,
+					SampleValue: correlate.Truncate(value, 80),
+					Kind:        kind,
+					Column:      column,
+					Template:    "{{data.salesforce_records." + column + "}}",
+				})
+			})
+		}
+	}
+	return out
+}
+
+// auraMessageBody returns the decoded Aura `message` payload from a request
+// body. Lightning posts /aura as application/x-www-form-urlencoded with a
+// url-encoded JSON `message` field; recorded/imported bodies may also carry the
+// raw JSON directly. Returns "" when no Aura message envelope is present.
+func auraMessageBody(body string) string {
+	trimmed := strings.TrimSpace(body)
+	if trimmed == "" {
+		return ""
+	}
+	// Raw-JSON Aura bodies start with '{'; form-encoded bodies (message=...&aura.token=...)
+	// never do. Detect raw JSON first so url.ParseQuery does not mis-split a JSON
+	// string value that happens to contain a "message=" / "&...=" substring.
+	if strings.HasPrefix(trimmed, "{") {
+		if strings.Contains(trimmed, `"actions"`) {
+			return trimmed
+		}
+		return ""
+	}
+	if values, err := url.ParseQuery(trimmed); err == nil {
+		if msg := strings.TrimSpace(values.Get("message")); msg != "" {
+			return msg
+		}
+	}
+	if strings.Contains(trimmed, `"actions"`) {
+		return trimmed
+	}
+	return ""
+}
+
+func auraMessageActions(decoded any) ([]any, bool) {
+	obj, ok := decoded.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	actions, ok := obj["actions"].([]any)
+	return actions, ok
+}
+
+func auraActionParams(actionValue any) (any, bool) {
+	obj, ok := actionValue.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	params, ok := obj["params"]
+	return params, ok
+}
+
+// walkAuraParams visits every string leaf in an Aura action params tree,
+// reporting the leaf key, value, and JMESPath expression rooted at the params
+// node.
+func walkAuraParams(value any, path, key string, visit func(key, value, expression string)) {
+	switch typed := value.(type) {
+	case map[string]any:
+		for childKey, child := range typed {
+			walkAuraParams(child, appendJMESPath(path, childKey), childKey, visit)
+		}
+	case []any:
+		for index, child := range typed {
+			walkAuraParams(child, fmt.Sprintf("%s[%d]", path, index), key, visit)
+		}
+	case string:
+		visit(key, typed, path)
+	}
+}
+
+// auraParamIdentifierKind classifies an Aura param value as a Salesforce
+// record/object identifier worth parameterizing, or reports ok=false.
+func auraParamIdentifierKind(key, value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", false
+	}
+	if salesforceIDPattern.MatchString(value) {
+		return "record_id", true
+	}
+	normalized := strings.ToLower(strings.NewReplacer("-", "", "_", "").Replace(key))
+	if (strings.HasSuffix(normalized, "id") || strings.Contains(normalized, "recordid")) && idLikeValuePattern.MatchString(value) {
+		return "object_id", true
+	}
+	return "", false
 }
 
 func correlationSummaries(correlations []correlate.Correlation) []CorrelationCandidate {

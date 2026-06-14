@@ -1,9 +1,11 @@
 package salesforce
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -347,6 +349,210 @@ func TestAnalyzeHandlesHAREdgeCases(t *testing.T) {
 	}
 	if review.NativePreview.Script.Actions[2].Metadata["salesforce"].(map[string]any)["har_match_id"] == 0 {
 		t.Fatalf("second duplicate Aura request was not matched: %#v", review.NativePreview.Script.Actions[2].Metadata)
+	}
+}
+
+func TestAnalyzeClassifiesBroadenedSalesforceSurface(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "SF Broad Surface",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme--dev.sandbox.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "Apex REST", Type: "GET", Method: "GET", Target: "https://acme.my.salesforce.com/services/apexrest/MyApi/v1/resource"},
+			{Name: "Composite", Type: "POST", Method: "POST", Target: "https://acme.my.salesforce.com/services/data/v60.0/composite"},
+			{Name: "Composite Graph", Type: "POST", Method: "POST", Target: "https://acme.my.salesforce.com/services/data/v60.0/composite/graph"},
+			{Name: "GraphQL", Type: "POST", Method: "POST", Target: "https://acme.my.salesforce.com/services/data/v60.0/graphql"},
+			{Name: "Bulk Ingest", Type: "POST", Method: "POST", Target: "https://acme--dev.sandbox.my.salesforce.com/services/data/v60.0/jobs/ingest"},
+			{Name: "Bulk Query", Type: "GET", Method: "GET", Target: "https://acme.my.salesforce.com/services/data/v60.0/jobs/query/750xx"},
+			{Name: "Agentforce Session", Type: "POST", Method: "POST", Target: "https://api.salesforce.com/einstein/ai-agent/v1/agents/0Xxxx/sessions"},
+			{Name: "File Download", Type: "GET", Method: "GET", Target: "https://acme.file.force.com/sfc/servlet.shepherd/version/download/068xx"},
+		},
+	}
+
+	review, err := Analyze(script, AnalyzeOptions{})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if !review.Detected {
+		t.Fatal("Salesforce traffic was not detected")
+	}
+
+	for _, check := range []struct {
+		name string
+		got  []EndpointObservation
+	}{
+		{"apex_rest", review.ApexRestEndpoints},
+		{"composite", review.CompositeEndpoints},
+		{"graphql", review.GraphQLEndpoints},
+		{"bulk", review.BulkEndpoints},
+		{"agentforce", review.AgentforceEndpoints},
+	} {
+		if len(check.got) == 0 {
+			t.Fatalf("%s endpoints not detected; review = %#v", check.name, review)
+		}
+	}
+	if len(review.CompositeEndpoints) < 2 {
+		t.Fatalf("composite endpoints = %#v, want composite + composite/graph", review.CompositeEndpoints)
+	}
+
+	domainKinds := map[string]string{}
+	for _, domain := range review.Domains {
+		domainKinds[domain.Host] = domain.Kind
+	}
+	for host, wantKind := range map[string]string{
+		"acme--dev.sandbox.my.salesforce.com": "sandbox",
+		"acme.file.force.com":                 "content",
+		"api.salesforce.com":                  "agentforce",
+	} {
+		if domainKinds[host] != wantKind {
+			t.Fatalf("domain %s kind = %q, want %q (%#v)", host, domainKinds[host], wantKind, review.Domains)
+		}
+	}
+
+	flowKinds := map[string]bool{}
+	for _, transaction := range review.Transactions {
+		for _, flow := range transaction.FlowKinds {
+			flowKinds[flow] = true
+		}
+	}
+	for _, want := range []string{"apex_custom_api", "composite", "bulk_data", "agent_conversation"} {
+		if !flowKinds[want] {
+			t.Fatalf("flow kinds = %#v, want %s", flowKinds, want)
+		}
+	}
+}
+
+func TestAnalyzeProposesAuraMessageParameterization(t *testing.T) {
+	formMessage := `{"actions":[{"id":"123;a","descriptor":"apex://AccountController/ACTION$getAccount","params":{"recordId":"001D000000IqhSLIAZ"}}]}`
+	form := url.Values{}
+	form.Set("message", formMessage)
+	form.Set("aura.token", "tok-123456")
+	form.Set("aura.context", `{"fwuid":"abc"}`)
+
+	script := &dsl.Script{
+		Name:     "SF Aura Params",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{{
+			Name:   "Form-encoded Aura",
+			Type:   "POST",
+			Method: "POST",
+			Target: "https://acme.lightning.force.com/aura",
+			Body:   form.Encode(),
+		}, {
+			Name:   "Raw JSON Aura",
+			Type:   "POST",
+			Method: "POST",
+			Target: "https://acme.lightning.force.com/aura",
+			Body:   `{"actions":[{"id":"1;a","descriptor":"apex://AcctController/ACTION$get","params":{"entity":{"accountId":"5003000000D8cuIAAR"}}}]}`,
+		}},
+	}
+
+	review, err := Analyze(script, AnalyzeOptions{})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	byKey := map[string]ParameterizationCandidate{}
+	for _, candidate := range review.Parameterizations {
+		byKey[candidate.ParamKey] = candidate
+	}
+	if len(review.Parameterizations) != 2 {
+		t.Fatalf("parameterizations = %#v, want recordId + accountId", review.Parameterizations)
+	}
+	recordID, ok := byKey["recordId"]
+	if !ok || recordID.Expression != "actions[0].params.recordId" || recordID.Kind != "record_id" {
+		t.Fatalf("recordId candidate = %#v, want form-encoded record id", recordID)
+	}
+	if !strings.HasPrefix(recordID.Template, "{{data.salesforce_records.") || recordID.Column == "" {
+		t.Fatalf("recordId template = %q / column = %q, want data-source template", recordID.Template, recordID.Column)
+	}
+	accountID, ok := byKey["accountId"]
+	if !ok || accountID.Expression != "actions[0].params.entity.accountId" {
+		t.Fatalf("accountId candidate = %#v, want nested raw-JSON path", accountID)
+	}
+}
+
+func TestAuraMessageParameterizationsSkipsCorrelatedValues(t *testing.T) {
+	refs := []actionRef{{
+		Sequence: 7,
+		Action: &dsl.Action{
+			Body: `{"actions":[{"params":{"recordId":"001D000000IqhSLIAZ","contactId":"003D000000Zx1AAAS"}}]}`,
+		},
+	}}
+	// recordId is already produced by an earlier response (correlated); only the
+	// non-correlated contactId should be proposed for parameterization.
+	correlations := []correlate.Correlation{{Name: "corr_record_id", Value: "001D000000IqhSLIAZ"}}
+
+	got := auraMessageParameterizations(refs, correlations)
+	if len(got) != 1 {
+		t.Fatalf("candidates = %#v, want only the non-correlated contactId", got)
+	}
+	if got[0].ParamKey != "contactId" {
+		t.Fatalf("candidate = %#v, want contactId", got[0])
+	}
+	if got[0].ActionSeq != 7 {
+		t.Fatalf("action seq = %d, want 7", got[0].ActionSeq)
+	}
+}
+
+func TestClassifySalesforceActionAnchorsLogin(t *testing.T) {
+	cases := map[string]string{
+		"https://acme.my.salesforce.com/services/apexrest/LoginController/recent":        "apex_rest",
+		"https://acme.my.salesforce.com/services/data/v60.0/sobjects/Login_Event__c/a01": "rest_api",
+		"https://acme.my.salesforce.com/services/data/v60.0/ui-api/records/LoginHistory": "ui_api",
+		"https://login.salesforce.com/services/oauth2/token":                             "login",
+		"https://acme.my.salesforce.com/secur/login":                                     "login",
+		"https://test.salesforce.com/":                                                   "login",
+	}
+	for rawURL, want := range cases {
+		if got := classifySalesforceAction(&dsl.Action{}, rawURL); got != want {
+			t.Errorf("classifySalesforceAction(%q) = %q, want %q", rawURL, got, want)
+		}
+	}
+}
+
+func TestClassifySalesforceFlowAnchoredShapesBeatObjectNames(t *testing.T) {
+	cases := map[string]string{
+		`{"compositeRequest":[{"url":"/services/data/v60.0/composite/sobjects/Account"}]}`: "composite",
+		`/services/data/v60.0/jobs/ingest {"object":"Account"}`:                            "bulk_data",
+		`/services/apexrest/AccountService {"contact":"x"}`:                                "apex_custom_api",
+		`contentversion title billing-statement.pdf for account`:                           "file_content",
+		`apex://AccountController/ACTION$getAccount`:                                       "account",
+	}
+	for evidence, want := range cases {
+		if got := classifySalesforceFlow(evidence, ""); got != want {
+			t.Errorf("classifySalesforceFlow(%q) = %q, want %q", evidence, got, want)
+		}
+	}
+}
+
+func TestAuraMessageParameterizationsTerminatesOnNameCollision(t *testing.T) {
+	// Columns rec_3, rec, rec with distinct SF-ID values previously caused a
+	// non-terminating disambiguation loop (param_rec collided with param_rec_3).
+	refs := []actionRef{
+		{Sequence: 1, Action: &dsl.Action{Body: `{"actions":[{"params":{"rec 3":"001D000000IqhSLIAZ","rec":"5003000000D8cuIAAR"}}]}`}},
+		{Sequence: 2, Action: &dsl.Action{Body: `{"actions":[{"params":{"rec":"00Q3000001AbCdEFGH"}}]}`}},
+	}
+	got := auraMessageParameterizations(refs, nil)
+	if len(got) != 3 {
+		t.Fatalf("candidates = %#v, want 3 uniquely-named candidates", got)
+	}
+	names := map[string]bool{}
+	for _, c := range got {
+		if names[c.Name] {
+			t.Fatalf("duplicate candidate name %q in %#v", c.Name, got)
+		}
+		names[c.Name] = true
+	}
+}
+
+func TestAuraMessageBodyHandlesRawJSONWithEmbeddedQueryString(t *testing.T) {
+	// A raw-JSON Aura body whose string value contains "&message=" must not be
+	// mis-split by url.ParseQuery; the recordId candidate must still surface.
+	body := `{"actions":[{"params":{"recordId":"001D000000IqhSLIAZ","redirect":"https://x?a=1&message=2"}}]}`
+	got := auraMessageParameterizations([]actionRef{{Sequence: 1, Action: &dsl.Action{Body: body}}}, nil)
+	if len(got) != 1 || got[0].ParamKey != "recordId" {
+		t.Fatalf("candidates = %#v, want a single recordId candidate from raw JSON", got)
 	}
 }
 

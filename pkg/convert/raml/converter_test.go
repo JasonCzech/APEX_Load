@@ -3,6 +3,8 @@ package raml
 import (
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestConvertRAMLResourcesAndOAuth2(t *testing.T) {
@@ -68,5 +70,150 @@ func TestConvertRAMLRejectsEmptyResources(t *testing.T) {
 	_, err := Convert(ImportRequest{Content: "#%RAML 1.0\ntitle: Empty\n"})
 	if err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestConvertRAMLClientIDEnforcement(t *testing.T) {
+	content := `#%RAML 1.0
+title: Secured API
+baseUri: https://api.example.test
+securitySchemes:
+  client_id_required:
+    type: Pass Through
+    describedBy:
+      headers:
+        client_id:
+          type: string
+        client_secret:
+          type: string
+/things:
+  get:
+    displayName: List Things
+`
+	result, err := Convert(ImportRequest{Content: content})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Summary.Policies) != 1 || result.Summary.Policies[0].Policy != "client_id_enforcement" {
+		t.Fatalf("policies = %#v, want client_id_enforcement", result.Summary.Policies)
+	}
+	if len(result.Script.Actions) == 0 {
+		t.Fatalf("no actions converted")
+	}
+	headers := result.Script.Actions[0].Headers
+	if headers["client_id"] != "{{env.RAML_CLIENT_ID}}" || headers["client_secret"] != "{{secret.RAML_CLIENT_SECRET}}" {
+		t.Fatalf("headers = %#v, want env/secret client credentials", headers)
+	}
+	if len(result.Warnings) == 0 {
+		t.Fatalf("warnings = %#v, want client-credential warning", result.Warnings)
+	}
+}
+
+func TestConvertRAMLResolvesIncludesFromFiles(t *testing.T) {
+	content := `#%RAML 1.0
+title: Inc API
+baseUri: https://api.example.test
+/widgets:
+  post:
+    displayName: Create Widget
+    body:
+      application/json:
+        example: !include examples/widget.json
+/orders: !include resources/orders.raml
+`
+	files := map[string][]byte{
+		"examples/widget.json":  []byte(`{"name":"Widget"}`),
+		"resources/orders.raml": []byte("get:\n  displayName: List Orders\n"),
+	}
+	result, err := Convert(ImportRequest{Content: content, Files: files})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	var widget, orders *dsl.Action
+	for i := range result.Script.Actions {
+		action := &result.Script.Actions[i]
+		switch action.Target {
+		case "/widgets":
+			widget = action
+		case "/orders":
+			orders = action
+		}
+	}
+	if widget == nil || widget.Method != "POST" || !strings.Contains(widget.Body, `"name":"Widget"`) {
+		t.Fatalf("widget action = %#v, want POST with included JSON body", widget)
+	}
+	if orders == nil || orders.Method != "GET" {
+		t.Fatalf("orders action = %#v, want GET from included resource", orders)
+	}
+}
+
+func TestConvertRAMLUnresolvedIncludeErrors(t *testing.T) {
+	content := "#%RAML 1.0\ntitle: Inc\nbaseUri: https://api.example.test\n/orders: !include resources/orders.raml\n"
+	if _, err := Convert(ImportRequest{Content: content}); err == nil {
+		t.Fatalf("expected unresolved-include error")
+	}
+}
+
+func TestConvertRAMLKeepsNonStructuredIncludeAsRawText(t *testing.T) {
+	content := `#%RAML 1.0
+title: Raw Body API
+baseUri: https://api.example.test
+/things:
+  post:
+    body:
+      text/plain:
+        example: !include body.txt
+`
+	// body.txt is valid YAML (a mapping) but must be preserved verbatim, not
+	// reparsed into a JSON object.
+	files := map[string][]byte{"body.txt": []byte("key: value\nother: 2")}
+	result, err := Convert(ImportRequest{Content: content, Files: files})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	body := result.Script.Actions[0].Body
+	if body != "key: value\nother: 2" {
+		t.Fatalf("body = %q, want verbatim raw text", body)
+	}
+}
+
+func TestLookupIncludeBasenameCollisionIsDeterministic(t *testing.T) {
+	files := map[string][]byte{
+		"d2/w.json": []byte("two"),
+		"d1/w.json": []byte("one"),
+		"d3/w.json": []byte("three"),
+	}
+	for i := 0; i < 50; i++ {
+		content, ok := lookupInclude(files, "x/w.json")
+		if !ok || string(content) != "one" {
+			t.Fatalf("lookupInclude = %q, %v; want deterministic 'one' (smallest key)", string(content), ok)
+		}
+	}
+}
+
+func TestConvertRAMLApiKeySchemeIsNotClientIDEnforcement(t *testing.T) {
+	content := `#%RAML 1.0
+title: API-Key API
+baseUri: https://api.example.test
+securitySchemes:
+  api_key:
+    type: Pass Through
+    describedBy:
+      headers:
+        api_key:
+          type: string
+/things:
+  get:
+    displayName: List Things
+`
+	result, err := Convert(ImportRequest{Content: content})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Summary.Policies) != 0 {
+		t.Fatalf("policies = %#v, want no client_id_enforcement for a pure api-key scheme", result.Summary.Policies)
+	}
+	if got := result.Script.Actions[0].Headers["client_id"]; got != "" {
+		t.Fatalf("client_id header = %q, want none for api-key scheme", got)
 	}
 }

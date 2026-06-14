@@ -65,6 +65,7 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 			Items:    salesforceReviewItems(review),
 		})
 	}
+	reviewSections = attachAgentforceReview(script, "salesforce_har", reviewSections)
 	summary := harImportSummary(result)
 	summary["generation_mode"] = "salesforce_native_http"
 	summary["protocol_scope"] = "salesforce_http_family"

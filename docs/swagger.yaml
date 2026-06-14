@@ -4721,6 +4721,20 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
         - Scripts
+  /api/v1/scripts/import/raml/support-matrix:
+    get:
+      summary: R A M L Support Matrix
+      description: |-
+        **Handler:** `handleRAMLSupportMatrix`
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin
+      operationId: handleRAMLSupportMatrix
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+        - Scripts
   /api/v1/scripts/import/recorder:
     post:
       summary: Import Recorder

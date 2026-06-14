@@ -1,17 +1,25 @@
 package api
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"path"
 	"path/filepath"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/agentforce"
 	"github.com/jasonczech/apexload/pkg/convert/asyncapi"
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
+	"github.com/jasonczech/apexload/pkg/convert/mulesoft"
 	"github.com/jasonczech/apexload/pkg/convert/openapi"
 	"github.com/jasonczech/apexload/pkg/convert/postman"
 	"github.com/jasonczech/apexload/pkg/convert/raml"
 	"github.com/jasonczech/apexload/pkg/convert/wsdl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type openAPIImportRequest struct {
@@ -46,6 +54,7 @@ type ramlImportRequest struct {
 	Data      []byte
 	ProjectID string
 	Name      string
+	Files     map[string][]byte
 	Opts      raml.ConvertOptions
 }
 
@@ -79,6 +88,14 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 	if issues := validateScript(result.Script); len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
+	reviewSections := appendImportDiagnosticReviewSections(buildOpenAPIReviewSections(result), result.Unsupported)
+	if muleReview := mulesoft.Analyze(result.Script); muleReview.Detected {
+		if result.Script != nil {
+			ensureScriptImportPreserved(result.Script, "openapi")["mulesoft_review"] = muleReview
+		}
+		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
+	}
+	reviewSections = attachAgentforceReview(result.Script, "openapi", reviewSections)
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
@@ -86,10 +103,17 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		Stats:               result.Stats,
 		Summary:             result.Summary,
 		UnsupportedElements: result.Unsupported.Strings(),
-		ReviewSections:      appendImportDiagnosticReviewSections(buildOpenAPIReviewSections(result), result.Unsupported),
+		ReviewSections:      reviewSections,
 		SourceReview:        result.SourceReview,
 		Parameterization:    buildImportParameterization(result.Script, nil),
 	}))
+}
+
+func (s *Server) handleRAMLSupportMatrix(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"support_matrix": raml.GetSupportMatrix(),
+		"notes":          raml.GetSupportMatrixNotes(),
+	})
 }
 
 func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
@@ -101,6 +125,7 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 		Name:      importReq.Name,
 		ProjectID: importReq.ProjectID,
 		Content:   string(importReq.Data),
+		Files:     importReq.Files,
 		Options:   importReq.Opts,
 	})
 	if err != nil {
@@ -114,6 +139,30 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 	if issues := validateScript(result.Script); len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
+
+	reviewSections := []scriptImportReviewSection{{
+		Key:      "raml_import",
+		Title:    "RAML Import Review",
+		Severity: "info",
+		Summary:  "RAML resources and methods were converted to HTTP DSL actions.",
+		Items:    ramlReviewItems(result),
+	}}
+	muleReview := mulesoft.Analyze(result.Script)
+	if muleReview.Detected {
+		// The RAML review section already surfaces Anypoint Client ID Enforcement
+		// (the converter emits its own policy hint); drop the duplicate from the
+		// MuleSoft section so the same guidance is not shown twice.
+		if ramlSummaryReportsPolicy(result.Summary, "client_id_enforcement") {
+			dropMulesoftClientIDEnforcement(muleReview)
+		}
+		if mulesoftReviewHasContent(muleReview) {
+			if result.Script != nil {
+				ensureScriptImportPreserved(result.Script, "raml")["mulesoft_review"] = muleReview
+			}
+			reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
+		}
+	}
+
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
@@ -121,15 +170,132 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 		Stats:               result.Stats,
 		Summary:             result.Summary,
 		UnsupportedElements: result.Unsupported.Strings(),
-		ReviewSections: []scriptImportReviewSection{{
-			Key:      "raml_import",
-			Title:    "RAML Import Review",
-			Severity: "info",
-			Summary:  "RAML resources and methods were converted to HTTP DSL actions.",
-			Items:    append([]string{"OAuth2 security schemes create an http_oauth2_token init action when an accessTokenUri is present."}, result.Summary.Resources...),
-		}},
-		Parameterization: buildImportParameterization(result.Script, nil),
+		ReviewSections:      reviewSections,
+		Parameterization:    buildImportParameterization(result.Script, nil),
 	}))
+}
+
+func ramlSummaryReportsPolicy(summary raml.ReviewSummary, policy string) bool {
+	for _, p := range summary.Policies {
+		if p.Policy == policy {
+			return true
+		}
+	}
+	return false
+}
+
+// dropMulesoftClientIDEnforcement removes the client_id_enforcement policy and
+// its credential blocker from a MuleSoft review (used when another section
+// already reports the same Anypoint policy).
+func dropMulesoftClientIDEnforcement(review *mulesoft.Review) {
+	policies := review.PolicyFindings[:0]
+	for _, p := range review.PolicyFindings {
+		if p.Policy != "client_id_enforcement" {
+			policies = append(policies, p)
+		}
+	}
+	review.PolicyFindings = policies
+	blockers := review.Blockers[:0]
+	for _, b := range review.Blockers {
+		if !strings.Contains(b, "client_id/client_secret") {
+			blockers = append(blockers, b)
+		}
+	}
+	review.Blockers = blockers
+}
+
+func mulesoftReviewHasContent(review *mulesoft.Review) bool {
+	return len(review.Domains) > 0 || len(review.PolicyFindings) > 0 || len(review.AuthFindings) > 0
+}
+
+func ramlReviewItems(result *raml.ConvertResult) []string {
+	items := []string{"OAuth2 security schemes create an http_oauth2_token init action when an accessTokenUri is present."}
+	for _, policy := range result.Summary.Policies {
+		items = append(items, fmt.Sprintf("Policy: %s — %s", policy.Policy, policy.Detail))
+	}
+	return append(items, result.Summary.Resources...)
+}
+
+func mulesoftReviewSection(review *mulesoft.Review) scriptImportReviewSection {
+	severity := "info"
+	if len(review.Blockers) > 0 {
+		severity = "warning"
+	}
+	items := make([]string, 0)
+	for _, domain := range review.Domains {
+		items = append(items, fmt.Sprintf("Anypoint domain: %s (%s, %d request(s))", domain.Host, domain.Kind, domain.Count))
+	}
+	for _, policy := range review.PolicyFindings {
+		items = append(items, fmt.Sprintf("Policy: %s — %s", policy.Policy, policy.Detail))
+	}
+	for _, auth := range review.AuthFindings {
+		items = append(items, fmt.Sprintf("Auth: %s — %s", auth.Type, auth.Detail))
+	}
+	for _, blocker := range review.Blockers {
+		items = append(items, "Blocker: "+blocker)
+	}
+	for _, action := range review.NextActions {
+		items = append(items, "Next action: "+action)
+	}
+	summary := "MuleSoft/Anypoint signals were not detected."
+	if review.Detected {
+		summary = fmt.Sprintf("Detected MuleSoft/Anypoint signals across %d domain(s) with %d policy and %d auth finding(s).", len(review.Domains), len(review.PolicyFindings), len(review.AuthFindings))
+	}
+	return scriptImportReviewSection{
+		Key:      "mulesoft_review",
+		Title:    "MuleSoft / Anypoint Review",
+		Severity: severity,
+		Summary:  summary,
+		Items:    items,
+	}
+}
+
+// attachAgentforceReview runs the Agentforce analyzer and, when an Agent API
+// conversation is detected, preserves the review on the script and returns the
+// review section appended to the supplied sections.
+func attachAgentforceReview(script *dsl.Script, source string, sections []scriptImportReviewSection) []scriptImportReviewSection {
+	review := agentforce.Analyze(script)
+	if !review.Detected {
+		return sections
+	}
+	if script != nil {
+		ensureScriptImportPreserved(script, source)["agentforce_review"] = review
+	}
+	return append(sections, agentforceReviewSection(review))
+}
+
+func agentforceReviewSection(review *agentforce.Review) scriptImportReviewSection {
+	severity := "info"
+	if len(review.Blockers) > 0 {
+		severity = "warning"
+	}
+	items := make([]string, 0)
+	for _, step := range review.Lifecycle {
+		items = append(items, fmt.Sprintf("Lifecycle: %s — %s %s", step.Step, step.Method, step.Path))
+	}
+	for _, sessionVar := range review.SessionVars {
+		items = append(items, fmt.Sprintf("Correlation: extract %s via %s %q", sessionVar.Name, sessionVar.Type, sessionVar.Expression))
+	}
+	for _, hint := range review.Assertions {
+		items = append(items, "Assertion: "+hint.Detail)
+	}
+	for _, blocker := range review.Blockers {
+		items = append(items, "Blocker: "+blocker)
+	}
+	for _, action := range review.NextActions {
+		items = append(items, "Next action: "+action)
+	}
+	streaming := "non-streaming"
+	if review.Streaming {
+		streaming = "streaming (SSE)"
+	}
+	return scriptImportReviewSection{
+		Key:      "agentforce_review",
+		Title:    "Agentforce Agent API Review",
+		Severity: severity,
+		Summary:  fmt.Sprintf("Detected an Agentforce Agent API conversation (%s) across %d lifecycle step(s).", streaming, len(review.Lifecycle)),
+		Items:    items,
+	}
 }
 
 func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
@@ -189,6 +355,14 @@ func (s *Server) handleImportPostman(w http.ResponseWriter, r *http.Request) {
 	if issues := validateScript(result.Script); len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
+	reviewSections := appendImportDiagnosticReviewSections(buildPostmanReviewSections(result), result.Unsupported)
+	if muleReview := mulesoft.Analyze(result.Script); muleReview.Detected {
+		if result.Script != nil {
+			ensureScriptImportPreserved(result.Script, "postman")["mulesoft_review"] = muleReview
+		}
+		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
+	}
+	reviewSections = attachAgentforceReview(result.Script, "postman", reviewSections)
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
@@ -196,7 +370,7 @@ func (s *Server) handleImportPostman(w http.ResponseWriter, r *http.Request) {
 		Stats:               result.Stats,
 		Summary:             result.Summary,
 		UnsupportedElements: result.Unsupported.Strings(),
-		ReviewSections:      appendImportDiagnosticReviewSections(buildPostmanReviewSections(result), result.Unsupported),
+		ReviewSections:      reviewSections,
 		SourceReview:        result.SourceReview,
 		Parameterization:    buildImportParameterization(result.Script, nil),
 	}))
@@ -395,47 +569,139 @@ func readOpenAPIImportRequest(w http.ResponseWriter, r *http.Request) (*openAPII
 func readRAMLImportRequest(w http.ResponseWriter, r *http.Request) (*ramlImportRequest, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
 	contentType := r.Header.Get("Content-Type")
-	if strings.HasPrefix(contentType, "application/json") {
-		data, ok := readImportBody(w, r)
+
+	var (
+		data      []byte
+		projectID string
+		name      string
+		origName  string
+		opts      raml.ConvertOptions
+	)
+
+	switch {
+	case strings.HasPrefix(contentType, "application/json"):
+		body, ok := readImportBody(w, r)
 		if !ok {
 			return nil, false
 		}
 		var req raml.ImportRequest
-		if err := json.Unmarshal(data, &req); err != nil {
+		if err := json.Unmarshal(body, &req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return nil, false
 		}
-		return &ramlImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
-	}
-	if strings.HasPrefix(contentType, "multipart/form-data") {
-		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
+		data = []byte(req.Content)
+		projectID = req.ProjectID
+		name = req.Name
+		origName = req.Name
+		opts = req.Options
+	case strings.HasPrefix(contentType, "multipart/form-data"):
+		fileData, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
 		if !ok {
 			return nil, false
 		}
-		return &ramlImportRequest{
-			Data:      data,
-			ProjectID: r.FormValue("project_id"),
-			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
-			Opts: raml.ConvertOptions{
-				BaseURL:    r.FormValue("base_url"),
-				ScriptName: r.FormValue("script_name"),
-			},
-		}, true
+		data = fileData
+		projectID = r.FormValue("project_id")
+		name = strings.TrimSuffix(filename, filepath.Ext(filename))
+		origName = filename
+		opts = raml.ConvertOptions{BaseURL: r.FormValue("base_url"), ScriptName: r.FormValue("script_name")}
+	default:
+		body, ok := readImportBody(w, r)
+		if !ok {
+			return nil, false
+		}
+		filename := r.URL.Query().Get("filename")
+		data = body
+		projectID = r.URL.Query().Get("project_id")
+		name = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+		origName = filename
+		opts = raml.ConvertOptions{BaseURL: r.URL.Query().Get("base_url"), ScriptName: r.URL.Query().Get("script_name")}
 	}
-	data, ok := readImportBody(w, r)
-	if !ok {
-		return nil, false
+
+	importReq := &ramlImportRequest{Data: data, ProjectID: projectID, Name: name, Opts: opts}
+	if isZipArchive(data) {
+		mainContent, files, mainName, err := extractRAMLZip(data)
+		if err != nil {
+			writeError(w, http.StatusUnprocessableEntity, "RAML zip: "+err.Error())
+			return nil, false
+		}
+		importReq.Data = mainContent
+		importReq.Files = files
+		// Replace a zip-derived/empty script name with the main RAML entry name.
+		// Check the ORIGINAL filename (the stripped `name` no longer ends in .zip).
+		if strings.TrimSpace(importReq.Name) == "" || strings.HasSuffix(strings.ToLower(origName), ".zip") {
+			importReq.Name = strings.TrimSuffix(filepath.Base(mainName), filepath.Ext(mainName))
+		}
 	}
-	filename := r.URL.Query().Get("filename")
-	return &ramlImportRequest{
-		Data:      data,
-		ProjectID: r.URL.Query().Get("project_id"),
-		Name:      strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
-		Opts: raml.ConvertOptions{
-			BaseURL:    r.URL.Query().Get("base_url"),
-			ScriptName: r.URL.Query().Get("script_name"),
-		},
-	}, true
+	return importReq, true
+}
+
+// isZipArchive reports whether data begins with the ZIP local-file-header magic.
+func isZipArchive(data []byte) bool {
+	return len(data) >= 4 && data[0] == 'P' && data[1] == 'K' && data[2] == 0x03 && data[3] == 0x04
+}
+
+// extractRAMLZip reads a RAML zip upload, returning the main RAML content, the
+// full file set (keyed by archive path, used to resolve !include), and the main
+// entry name.
+func extractRAMLZip(data []byte) ([]byte, map[string][]byte, string, error) {
+	const maxRAMLZipEntries = 2000
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, nil, "", err
+	}
+	files := make(map[string][]byte)
+	// Guard against zip-bomb amplification: cap total decompressed bytes with a
+	// shared remaining budget across all entries, plus an entry-count cap.
+	remaining := int64(webAPIImportMaxBodyBytes)
+	for _, f := range reader.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		if len(files) >= maxRAMLZipEntries {
+			return nil, nil, "", fmt.Errorf("archive has too many entries (>%d)", maxRAMLZipEntries)
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, nil, "", err
+		}
+		content, err := io.ReadAll(io.LimitReader(rc, remaining+1))
+		rc.Close()
+		if err != nil {
+			return nil, nil, "", err
+		}
+		if int64(len(content)) > remaining {
+			return nil, nil, "", fmt.Errorf("archive decompressed size exceeds the %d-byte limit", webAPIImportMaxBodyBytes)
+		}
+		remaining -= int64(len(content))
+		files[f.Name] = content
+	}
+	mainName := pickMainRAML(files)
+	if mainName == "" {
+		return nil, nil, "", fmt.Errorf("no .raml entry found in archive")
+	}
+	return files[mainName], files, mainName, nil
+}
+
+// pickMainRAML selects the root RAML document from a zip: a file named
+// api.raml/root.raml wins, otherwise the shallowest .raml entry (alpha tie-break).
+func pickMainRAML(files map[string][]byte) string {
+	best := ""
+	bestDepth := 1 << 30
+	for name := range files {
+		if !strings.HasSuffix(strings.ToLower(name), ".raml") {
+			continue
+		}
+		depth := strings.Count(name, "/")
+		base := strings.ToLower(path.Base(name))
+		if base == "api.raml" || base == "root.raml" {
+			depth = -1
+		}
+		if depth < bestDepth || (depth == bestDepth && (best == "" || name < best)) {
+			bestDepth = depth
+			best = name
+		}
+	}
+	return best
 }
 
 func readWSDLImportRequest(w http.ResponseWriter, r *http.Request) (*wsdlImportRequest, bool) {

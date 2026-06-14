@@ -31,6 +31,7 @@ const (
 	RuleSalesforceAuraAppDescriptor = "salesforce.aura_app_descriptor"
 	RuleSalesforceAuraLoaded        = "salesforce.aura_loaded"
 	RuleSalesforceAuraPageURI       = "salesforce.aura_page_uri"
+	RuleSalesforcePageScopeID       = "salesforce.page_scope_id"
 	RuleSalesforceViewState         = "salesforce.viewstate"
 	RuleSalesforceFrontdoorSID      = "salesforce.frontdoor_sid"
 	RuleSalesforceConfirmationToken = "salesforce.confirmation_token"
@@ -72,6 +73,7 @@ func RuleCatalog() []RuleInfo {
 		{RuleSalesforceAuraAppDescriptor, FamilyForm, "Salesforce Aura app descriptor", "Aura app descriptors from aura.context/app that are replay-sensitive in Lightning flows.", 0.9},
 		{RuleSalesforceAuraLoaded, FamilyForm, "Salesforce Aura loaded map", "Aura loaded component maps from Lightning bootstrap/context payloads.", 0.88},
 		{RuleSalesforceAuraPageURI, FamilyForm, "Salesforce Aura page URI", "Aura pageURI values that may need environment-aware replacement across Salesforce orgs.", 0.86},
+		{RuleSalesforcePageScopeID, FamilyForm, "Salesforce pageScopeId", "Per-page pageScopeId values from aura.context that bind a Lightning page instance and are echoed in later requests.", 0.85},
 		{RuleSalesforceFrontdoorSID, FamilyForm, "Salesforce frontdoor sid", "sid/frontdoor session values passed through Salesforce frontdoor redirects.", 0.85},
 		{RuleASPNetState, FamilyHTML, "ASP.NET state field", "WebForms __VIEWSTATE / __EVENTVALIDATION style hidden fields that change every request.", 0.95},
 		{RuleHTMLHiddenToken, FamilyHTML, "Hidden anti-CSRF/state token", "Hidden form inputs named like csrf, xsrf, token, nonce, state, viewstate, authenticity.", 0.9},

@@ -13,10 +13,13 @@ import (
 )
 
 type ImportRequest struct {
-	Name      string         `json:"name,omitempty"`
-	ProjectID string         `json:"project_id,omitempty"`
-	Content   string         `json:"content"`
-	Options   ConvertOptions `json:"options,omitempty"`
+	Name      string `json:"name,omitempty"`
+	ProjectID string `json:"project_id,omitempty"`
+	Content   string `json:"content"`
+	// Files holds additional spec files (keyed by their in-archive path) used to
+	// resolve !include directives, e.g. the entries of an uploaded RAML zip.
+	Files   map[string][]byte `json:"-"`
+	Options ConvertOptions    `json:"options,omitempty"`
 }
 
 type ConvertOptions struct {
@@ -34,11 +37,25 @@ type ConvertStats struct {
 }
 
 type ReviewSummary struct {
-	Title       string   `json:"title,omitempty"`
-	Version     string   `json:"version,omitempty"`
-	BaseURL     string   `json:"base_url,omitempty"`
-	Resources   []string `json:"resources,omitempty"`
-	AuthSchemes []string `json:"auth_schemes,omitempty"`
+	Title       string       `json:"title,omitempty"`
+	Version     string       `json:"version,omitempty"`
+	BaseURL     string       `json:"base_url,omitempty"`
+	Resources   []string     `json:"resources,omitempty"`
+	AuthSchemes []string     `json:"auth_schemes,omitempty"`
+	Policies    []PolicyHint `json:"policies,omitempty"`
+}
+
+// PolicyHint records an Anypoint API-gateway policy inferred from the RAML spec.
+type PolicyHint struct {
+	Policy string `json:"policy"`
+	Detail string `json:"detail"`
+	Scheme string `json:"scheme,omitempty"`
+}
+
+// applyOptions controls per-action auth/policy decoration during resource walk.
+type applyOptions struct {
+	oauth    bool
+	clientID bool
 }
 
 type ConvertResult struct {
@@ -54,9 +71,9 @@ var ramlMethods = map[string]bool{
 }
 
 func Convert(req ImportRequest) (*ConvertResult, error) {
-	var doc map[string]any
-	if err := yaml.Unmarshal([]byte(req.Content), &doc); err != nil {
-		return nil, fmt.Errorf("parse RAML: %w", err)
+	doc, err := parseRAMLDocument(req.Content, req.Files)
+	if err != nil {
+		return nil, err
 	}
 	if len(doc) == 0 {
 		return nil, fmt.Errorf("RAML document is empty")
@@ -102,10 +119,21 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		})
 	}
 
+	clientIDEnforced, policySchemes := detectClientIDEnforcement(doc)
+	if clientIDEnforced {
+		result.Summary.Policies = append(result.Summary.Policies, PolicyHint{
+			Policy: "client_id_enforcement",
+			Detail: "Anypoint Client ID Enforcement detected; client_id/client_secret mapped to env/secret placeholders on each request.",
+			Scheme: strings.Join(policySchemes, ", "),
+		})
+		result.Warnings = append(result.Warnings, "Anypoint Client ID Enforcement: supply client_id via {{env.RAML_CLIENT_ID}} and client_secret via {{secret.RAML_CLIENT_SECRET}} before running; do not embed live credentials.")
+	}
+
+	apply := applyOptions{oauth: len(script.Init) > 0, clientID: clientIDEnforced}
 	resources := sortedResourceKeys(doc)
 	for _, resource := range resources {
 		node, _ := doc[resource].(map[string]any)
-		walkResource(resource, node, result, script, len(script.Init) > 0)
+		walkResource(resource, node, result, script, apply)
 	}
 	if len(script.Actions) == 0 {
 		return nil, fmt.Errorf("RAML document did not contain HTTP resources or methods")
@@ -115,7 +143,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	return result, nil
 }
 
-func walkResource(resourcePath string, node map[string]any, result *ConvertResult, script *dsl.Script, withOAuth bool) {
+func walkResource(resourcePath string, node map[string]any, result *ConvertResult, script *dsl.Script, apply applyOptions) {
 	if node == nil {
 		return
 	}
@@ -139,8 +167,12 @@ func walkResource(resourcePath string, node map[string]any, result *ConvertResul
 			},
 			Assertions: []dsl.Assertion{{Type: "status_code", Expected: 200}},
 		}
-		if withOAuth {
+		if apply.oauth {
 			action.Headers["Authorization"] = "Bearer {{var.access_token}}"
+		}
+		if apply.clientID {
+			action.Headers["client_id"] = "{{env.RAML_CLIENT_ID}}"
+			action.Headers["client_secret"] = "{{secret.RAML_CLIENT_SECRET}}"
 		}
 		if body, contentType, ok := ramlMethodBody(child); ok {
 			action.Body = body
@@ -154,7 +186,7 @@ func walkResource(resourcePath string, node map[string]any, result *ConvertResul
 			continue
 		}
 		child, _ := node[key].(map[string]any)
-		walkResource(joinRAMLPath(resourcePath, key), child, result, script, withOAuth)
+		walkResource(joinRAMLPath(resourcePath, key), child, result, script, apply)
 	}
 }
 
@@ -189,6 +221,152 @@ func ramlMethodBody(method map[string]any) (string, string, bool) {
 		}
 	}
 	return "", "", false
+}
+
+// parseRAMLDocument parses RAML content into a generic map, resolving any
+// !include directives against the supplied file set (e.g. a zip upload).
+func parseRAMLDocument(content string, files map[string][]byte) (map[string]any, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
+		return nil, fmt.Errorf("parse RAML: %w", err)
+	}
+	if err := resolveIncludes(&root, files, 0); err != nil {
+		return nil, err
+	}
+	var doc map[string]any
+	if err := root.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("parse RAML: %w", err)
+	}
+	return doc, nil
+}
+
+// resolveIncludes walks a YAML node tree and replaces !include scalars with the
+// parsed content of the referenced file. Included files may themselves contain
+// !include directives (bounded recursion).
+func resolveIncludes(node *yaml.Node, files map[string][]byte, depth int) error {
+	if node == nil || depth > 20 {
+		return nil
+	}
+	if node.Tag == "!include" {
+		name := strings.TrimSpace(node.Value)
+		content, ok := lookupInclude(files, name)
+		if !ok {
+			return fmt.Errorf("RAML !include %q could not be resolved; upload the referenced files (zip) to import this spec", name)
+		}
+		// Only structured fragments (RAML/YAML/JSON) are parsed as a node tree;
+		// arbitrary text (e.g. an XML/text body example) is kept verbatim as a
+		// string scalar. Parsing arbitrary text as YAML would silently retype,
+		// reorder, requote, or drop it (most text is valid YAML).
+		if !includeIsStructured(name) {
+			node.Kind = yaml.ScalarNode
+			node.Tag = "!!str"
+			node.Value = string(content)
+			return nil
+		}
+		var included yaml.Node
+		if err := yaml.Unmarshal(content, &included); err != nil {
+			node.Kind = yaml.ScalarNode
+			node.Tag = "!!str"
+			node.Value = string(content)
+			return nil
+		}
+		resolved := &included
+		if included.Kind == yaml.DocumentNode && len(included.Content) > 0 {
+			resolved = included.Content[0]
+		}
+		if err := resolveIncludes(resolved, files, depth+1); err != nil {
+			return err
+		}
+		*node = *resolved
+		return nil
+	}
+	for _, child := range node.Content {
+		if err := resolveIncludes(child, files, depth+1); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func lookupInclude(files map[string][]byte, name string) ([]byte, bool) {
+	if len(files) == 0 || name == "" {
+		return nil, false
+	}
+	clean := strings.TrimPrefix(name, "./")
+	if content, ok := files[name]; ok {
+		return content, true
+	}
+	if content, ok := files[clean]; ok {
+		return content, true
+	}
+	// Fall back to a basename match, chosen deterministically (lexicographically
+	// smallest key) so that colliding basenames across directories never resolve
+	// to an arbitrary, run-dependent file.
+	base := path.Base(clean)
+	bestKey := ""
+	for key := range files {
+		if path.Base(key) == base && (bestKey == "" || key < bestKey) {
+			bestKey = key
+		}
+	}
+	if bestKey != "" {
+		return files[bestKey], true
+	}
+	return nil, false
+}
+
+// includeIsStructured reports whether an !include target should be parsed as a
+// structured (RAML/YAML/JSON) fragment rather than kept as raw text.
+func includeIsStructured(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.HasSuffix(lower, ".raml") ||
+		strings.HasSuffix(lower, ".yaml") ||
+		strings.HasSuffix(lower, ".yml") ||
+		strings.HasSuffix(lower, ".json")
+}
+
+// detectClientIDEnforcement reports whether the spec applies Anypoint Client ID
+// Enforcement, inferred from securitySchemes that require client_id/client_secret
+// credentials or are explicitly named/typed for client-id enforcement.
+func detectClientIDEnforcement(doc map[string]any) (bool, []string) {
+	securitySchemes, _ := doc["securitySchemes"].(map[string]any)
+	schemes := make([]string, 0)
+	for name, raw := range securitySchemes {
+		scheme, _ := raw.(map[string]any)
+		if len(scheme) == 0 {
+			continue
+		}
+		typeLower := strings.ToLower(stringValue(scheme["type"]))
+		nameLower := strings.ToLower(name)
+		isClientScheme := schemeRequiresClientCredentials(scheme) ||
+			strings.Contains(typeLower, "client") ||
+			(strings.Contains(nameLower, "client") && strings.Contains(nameLower, "id"))
+		if isClientScheme {
+			schemes = append(schemes, name)
+		}
+	}
+	sort.Strings(schemes)
+	return len(schemes) > 0, schemes
+}
+
+func schemeRequiresClientCredentials(scheme map[string]any) bool {
+	describedBy, _ := scheme["describedBy"].(map[string]any)
+	if len(describedBy) == 0 {
+		return false
+	}
+	for _, key := range []string{"headers", "queryParameters"} {
+		params, _ := describedBy[key].(map[string]any)
+		for paramName := range params {
+			normalized := strings.ToLower(strings.NewReplacer("-", "", "_", "").Replace(paramName))
+			// Only client_id/client_secret indicate Anypoint Client ID
+			// Enforcement. A bare api-key credential is a different scheme and must
+			// not be mislabeled (nor injected with client_id/client_secret headers).
+			if normalized == "clientid" || normalized == "clientsecret" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func oauth2TokenURL(doc map[string]any) (string, []string) {

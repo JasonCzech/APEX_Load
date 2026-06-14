@@ -569,6 +569,20 @@ func salesforceReviewItems(review *salesforce.Review) []string {
 			items = append(items, "Salesforce flow kinds: "+strings.Join(ordered, ", "))
 		}
 	}
+	if len(review.Parameterizations) > 0 {
+		keySet := map[string]bool{}
+		for _, param := range review.Parameterizations {
+			if strings.TrimSpace(param.ParamKey) != "" {
+				keySet[param.ParamKey] = true
+			}
+		}
+		keys := make([]string, 0, len(keySet))
+		for key := range keySet {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		items = append(items, fmt.Sprintf("Aura message parameterization candidates: %d (keys: %s)", len(review.Parameterizations), strings.Join(keys, ", ")))
+	}
 	if review.CorrelationConfidence != "" {
 		items = append(items, "Correlation confidence: "+review.CorrelationConfidence)
 	}
