@@ -8,12 +8,18 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 const remoteRunLinksSettingKey = "remote.run_links.v1"
+
+// remoteRunLinksMu serializes the read-modify-write of the remote-run links
+// settings blob (a single store key) so concurrent remote-run creates do not
+// lost-update one another.
+var remoteRunLinksMu sync.Mutex
 
 type RemoteRunCreateRequest struct {
 	CreateTestRequest
@@ -331,6 +337,8 @@ func remoteRunStatusFromAction(action map[string]any) string {
 }
 
 func (s *Server) upsertRemoteRunLink(update RemoteRunLink) RemoteRunLink {
+	remoteRunLinksMu.Lock()
+	defer remoteRunLinksMu.Unlock()
 	now := time.Now().UTC()
 	links := s.loadRemoteRunLinks()
 	for i := range links {

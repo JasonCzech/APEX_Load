@@ -3,10 +3,12 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -197,5 +199,35 @@ func TestRemoteRunPageURLUsesHostedCommandCenterRoute(t *testing.T) {
 	want := "https://apex.example/base#/command-center/test%201"
 	if got != want {
 		t.Fatalf("remoteRunPageURL = %q, want %q", got, want)
+	}
+}
+
+func TestUpsertRemoteRunLinkConcurrentNoLostUpdate(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store})
+
+	const n = 25
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			server.upsertRemoteRunLink(RemoteRunLink{
+				RemoteID:     fmt.Sprintf("remote-%d", i),
+				RemoteTestID: fmt.Sprintf("test-%d", i),
+				Status:       "running",
+			})
+		}(i)
+	}
+	wg.Wait()
+
+	// Without serialization, concurrent read-modify-write of the single links blob
+	// would lose updates and persist fewer than n links.
+	if links := server.loadRemoteRunLinks(); len(links) != n {
+		t.Fatalf("persisted %d remote-run links, want %d (lost update)", len(links), n)
 	}
 }
