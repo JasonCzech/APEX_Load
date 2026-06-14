@@ -13,6 +13,8 @@ import (
 )
 
 func TestRemoteRunProxyPushesDependenciesCreatesStartsAndPolls(t *testing.T) {
+	// Remote target is a loopback httptest server; opt past the SSRF guard.
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)

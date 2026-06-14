@@ -1416,11 +1416,11 @@ func libraryRemoteArchiveTimeout() time.Duration {
 }
 
 func libraryRemoteJSONHTTPClient(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout}
+	return newGuardedHTTPClient(timeout)
 }
 
 func libraryRemoteArchiveHTTPClient(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout}
+	return newGuardedHTTPClient(timeout)
 }
 
 func ctxOrBackground(ctx context.Context) context.Context {
@@ -1477,6 +1477,9 @@ func normalizeLibraryRemoteBaseURL(raw string) (string, error) {
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return "", fmt.Errorf("remote base_url must use http or https")
+	}
+	if err := validateOutboundRemoteHost(parsed.Hostname()); err != nil {
+		return "", fmt.Errorf("remote base_url rejected: %w", err)
 	}
 	return baseURL, nil
 }

@@ -84,7 +84,12 @@ func authMiddleware(settings func() AuthSettings, store storage.Store, coordinat
 
 			requirement, ok := accessRequirementForRequest(r)
 			if !ok {
-				next.ServeHTTP(w, r)
+				// Fail closed: a request that reached the auth middleware (an auth()-wrapped
+				// route) but has no catalog entry is a configuration bug. Denying is safe —
+				// TestGenericAuthAPIRoutesDeclareAccessRequirement guarantees every auth-wrapped
+				// /api/v1/ route is cataloged, so this only rejects unknown/forgotten paths
+				// rather than serving them without an access check.
+				writeError(w, http.StatusForbidden, "no access policy is configured for this route")
 				return
 			}
 
