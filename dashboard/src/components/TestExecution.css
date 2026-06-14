@@ -3388,6 +3388,11 @@
   padding: 20px;
 }
 
+.execution-error-diagnostic {
+  margin-top: 16px;
+  max-width: 760px;
+}
+
 /* Live Controls */
 .live-controls-section {
   display: flex;

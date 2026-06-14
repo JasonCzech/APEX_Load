@@ -55,6 +55,46 @@ describe('DeploymentBanner', () => {
     expect(container.textContent).not.toContain('Desktop available')
   })
 
+  it('opens explanatory help for the wide auth bypass warning', async () => {
+    getVersionMock.mockResolvedValue({
+      version: 'dev',
+      environment: 'docker',
+      deployment: {
+        kind: 'docker',
+        label: 'Docker',
+        bind_scope: 'wide',
+        auth_enforced: false,
+        desktop_available: false,
+      },
+    })
+
+    await act(async () => {
+      root.render(<DeploymentBanner />)
+    })
+
+    const warning = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent?.includes('Wide unauthenticated'))
+    expect(warning).not.toBeUndefined()
+    expect(warning?.getAttribute('aria-expanded')).toBe('false')
+    expect(container.textContent).not.toContain('Docker Compose publishes the host port on 127.0.0.1')
+
+    await act(async () => {
+      warning?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(warning?.getAttribute('aria-expanded')).toBe('true')
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('Why this appears')
+    expect(container.textContent).toContain('Docker Compose publishes the host port on 127.0.0.1')
+    expect(container.textContent).toContain('Configure OIDC or trusted-header auth')
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+
+    expect(warning?.getAttribute('aria-expanded')).toBe('false')
+    expect(container.textContent).not.toContain('Docker Compose publishes the host port on 127.0.0.1')
+  })
+
   it('shows hosted desktop promotion only when enabled', async () => {
     getVersionMock.mockResolvedValue({
       version: 'dev',

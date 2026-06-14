@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 
 import { DashboardAuthStatus } from '../types'
+import { diagnoseError, type ErrorDiagnostic } from '../utils/errorUtils'
 import { useAuthApi } from './api/useAuthApi'
 import { useDevView } from './useDevView'
 
 export type AuthStatusState =
   | { status: 'loading' }
   | { status: 'ready'; auth: DashboardAuthStatus }
-  | { status: 'error'; message: string }
+  | { status: 'error'; message: string; diagnostic: ErrorDiagnostic }
 
 export function useAuthStatus(): AuthStatusState {
   const { getAuthStatus } = useAuthApi()
@@ -28,8 +29,8 @@ export function useAuthStatus(): AuthStatusState {
         if (!active) {
           return
         }
-        const message = error instanceof Error ? error.message : 'Unable to determine authentication status.'
-        setState({ status: 'error', message })
+        const diagnostic = diagnoseError(error, 'Unable to determine authentication status.')
+        setState({ status: 'error', message: diagnostic.summary, diagnostic })
       })
 
     return () => {

@@ -1,6 +1,7 @@
 import { ReactNode } from 'react'
 
 import { AuthStatusState } from '../hooks/useAuthStatus'
+import ErrorDiagnostic from './ErrorDiagnostic'
 import Logo from './Logo'
 import './AuthGate.css'
 
@@ -43,8 +44,7 @@ export default function AuthGate({ children, state }: { children: ReactNode; sta
             <p className="auth-gate-kicker">APEX Load Access</p>
           </div>
           <h1>Authentication check failed</h1>
-          <p>{state.message}</p>
-          <p>Verify the controller is reachable and that the dashboard is pointing at the correct API origin.</p>
+          <ErrorDiagnostic diagnostic={state.diagnostic} compact />
         </section>
       </div>
     )

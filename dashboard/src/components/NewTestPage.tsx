@@ -7,6 +7,7 @@ import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import { formatTimeCompact, parseDurationToSeconds } from '../utils/timeUtils'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
+import ErrorDiagnostic from './ErrorDiagnostic'
 import PageViewToggle from './PageViewToggle'
 import {
   buildEffectiveScenarioGroups,
@@ -1464,7 +1465,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
         )}
       </div>
 
-      {error && <div className="settings-error-inline">{error}</div>}
+      {error && <ErrorDiagnostic error={error} fallback="Unable to create or load test setup" compact className="new-test-error-diagnostic" />}
       {!canManageTests && <div className="settings-error-inline">Current session can view scenarios but cannot create runs or schedules for this project.</div>}
 
       {pageMode === 'schedules' ? (

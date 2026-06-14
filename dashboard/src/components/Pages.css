@@ -6894,6 +6894,11 @@
   margin-top: -14px;
 }
 
+.new-test-error-diagnostic {
+  margin-top: -8px;
+  margin-bottom: 4px;
+}
+
 .settings-errors {
   border: 1px solid rgba(239, 68, 68, 0.35);
   background: rgba(239, 68, 68, 0.08);

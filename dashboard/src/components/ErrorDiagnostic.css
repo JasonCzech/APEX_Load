@@ -1,0 +1,115 @@
+.error-diagnostic {
+  width: 100%;
+  border: 1px solid rgba(239, 68, 68, 0.34);
+  border-radius: var(--radius, 8px);
+  background: rgba(127, 29, 29, 0.18);
+  color: var(--text, #e5e7eb);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+}
+
+.error-diagnostic--warning {
+  border-color: rgba(245, 158, 11, 0.44);
+  background: rgba(120, 53, 15, 0.18);
+}
+
+.error-diagnostic--critical {
+  border-color: rgba(248, 113, 113, 0.58);
+  background: rgba(127, 29, 29, 0.24);
+}
+
+.error-diagnostic--info {
+  border-color: rgba(56, 189, 248, 0.34);
+  background: rgba(14, 116, 144, 0.14);
+}
+
+.error-diagnostic--compact {
+  padding: 12px 14px;
+  gap: 8px;
+  box-shadow: none;
+}
+
+.error-diagnostic-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.error-diagnostic-heading strong {
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--text, #f8fafc);
+}
+
+.error-diagnostic-severity {
+  flex: 0 0 auto;
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  border-radius: 999px;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.35);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.error-diagnostic--warning .error-diagnostic-severity {
+  border-color: rgba(251, 191, 36, 0.55);
+  color: #fde68a;
+  background: rgba(120, 53, 15, 0.32);
+}
+
+.error-diagnostic--info .error-diagnostic-severity {
+  border-color: rgba(56, 189, 248, 0.48);
+  color: #bae6fd;
+  background: rgba(14, 116, 144, 0.28);
+}
+
+.error-diagnostic p,
+.error-diagnostic ul {
+  margin: 0;
+}
+
+.error-diagnostic-summary,
+.error-diagnostic-cause,
+.error-diagnostic-next {
+  color: var(--text-muted, #cbd5e1);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.error-diagnostic-cause span,
+.error-diagnostic-next span {
+  color: var(--text, #f8fafc);
+  font-weight: 700;
+}
+
+.error-diagnostic-next ul,
+.error-diagnostic-evidence ul {
+  margin-top: 4px;
+  padding-left: 18px;
+}
+
+.error-diagnostic-next li + li,
+.error-diagnostic-evidence li + li {
+  margin-top: 3px;
+}
+
+.error-diagnostic-evidence {
+  color: var(--text-muted, #cbd5e1);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.error-diagnostic-evidence summary {
+  cursor: pointer;
+  color: var(--text, #f8fafc);
+  font-weight: 700;
+}

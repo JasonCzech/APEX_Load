@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AuthGate from './AuthGate'
 import { AuthStatusState } from '../hooks/useAuthStatus'
+import { diagnoseError } from '../utils/errorUtils'
 
 type ReadyAuthState = Extract<AuthStatusState, { status: 'ready' }>['auth']
 
@@ -107,6 +108,25 @@ describe('AuthGate', () => {
 
     expect(container.textContent).toContain('session has expired')
     expect(container.textContent).toContain('Continue to Microsoft Entra ID')
+    expect(container.textContent).not.toContain('Protected content')
+  })
+
+  it('shows diagnostic guidance when authentication status cannot be checked', async () => {
+    await act(async () => {
+      root.render(
+        <AuthGate state={{
+          status: 'error',
+          message: 'API controller is unreachable',
+          diagnostic: diagnoseError(new TypeError('Failed to fetch'), 'Unable to determine authentication status.'),
+        }}>
+          <div data-testid="protected">Protected content</div>
+        </AuthGate>,
+      )
+    })
+
+    expect(container.textContent).toContain('Authentication check failed')
+    expect(container.textContent).toContain('API controller is unreachable')
+    expect(container.textContent).toContain('Docker Compose stack or controller process')
     expect(container.textContent).not.toContain('Protected content')
   })
 })

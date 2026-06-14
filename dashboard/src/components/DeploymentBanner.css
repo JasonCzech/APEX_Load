@@ -25,6 +25,11 @@
   white-space: nowrap;
 }
 
+.deployment-banner-warning-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
 .deployment-banner-chip {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -62,6 +67,66 @@
   background: var(--danger-bg);
   border-color: var(--danger-border);
   color: var(--danger-text);
+  font-family: inherit;
+  cursor: help;
+}
+
+.deployment-banner-warning:hover,
+.deployment-banner-warning:focus-visible {
+  border-color: var(--danger);
+}
+
+.deployment-banner-warning:focus-visible {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
+}
+
+.deployment-banner-help-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+.deployment-banner-help {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 1220;
+  width: min(360px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(33, 36, 47, 0.96);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(12px);
+  color: #f3f6fb;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.deployment-banner-help-title {
+  margin-bottom: 6px;
+  color: #aeb7c8;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.deployment-banner-help p {
+  margin: 0;
+}
+
+.deployment-banner-help p + p {
+  margin-top: 8px;
 }
 
 .deployment-banner-promotion {
@@ -71,7 +136,7 @@
 }
 
 @media (max-width: 820px) {
-  .deployment-banner-warning,
+  .deployment-banner-warning-wrap,
   .deployment-banner-promotion {
     display: none;
   }

@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useSystemApi } from '../hooks/api/useSystemApi'
 import type { DeploymentIdentity, VersionResponse } from '../types'
 import './DeploymentBanner.css'
+
+const WIDE_BYPASS_HELP_ID = 'deployment-wide-bypass-help'
 
 function isDesktopSurface(): boolean {
   if (typeof window === 'undefined') return false
@@ -19,9 +21,20 @@ function deploymentLabel(deployment?: DeploymentIdentity, environment?: string):
   return environment || 'Server'
 }
 
+function wideBypassDetail(deployment: DeploymentIdentity, environment?: string): string {
+  const kind = deployment.kind.toLowerCase()
+  const env = (environment || '').toLowerCase()
+  if (kind === 'docker' || kind === 'container' || env === 'docker' || env === 'container') {
+    return 'The controller is listening on all container interfaces while auth is in dev bypass mode. Docker Compose publishes the host port on 127.0.0.1 by default, so this is expected for local Docker.'
+  }
+  return 'The controller is reachable beyond loopback while auth is in dev bypass mode. This is useful for local development, but should not be exposed to a shared network.'
+}
+
 export default function DeploymentBanner() {
   const { getVersion } = useSystemApi()
   const [version, setVersion] = useState<VersionResponse | null>(null)
+  const [wideBypassHelpOpen, setWideBypassHelpOpen] = useState(false)
+  const wideBypassRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -36,6 +49,31 @@ export default function DeploymentBanner() {
       cancelled = true
     }
   }, [getVersion])
+
+  useEffect(() => {
+    if (!wideBypassHelpOpen) return
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Node && wideBypassRef.current?.contains(target)) {
+        return
+      }
+      setWideBypassHelpOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setWideBypassHelpOpen(false)
+      }
+    }
+    const closeOnResize = () => setWideBypassHelpOpen(false)
+    window.addEventListener('pointerdown', closeOnOutsidePointerDown)
+    window.addEventListener('resize', closeOnResize)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', closeOnOutsidePointerDown)
+      window.removeEventListener('resize', closeOnResize)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [wideBypassHelpOpen])
 
   const desktopSurface = useMemo(() => isDesktopSurface(), [])
   const deployment = version?.deployment
@@ -59,9 +97,27 @@ export default function DeploymentBanner() {
         </span>
       )}
       {warnWideBypass && (
-        <span className="deployment-banner-warning" title="Controller is reachable beyond loopback while auth is bypassed">
-          Wide unauthenticated
-        </span>
+        <div className="deployment-banner-warning-wrap" ref={wideBypassRef}>
+          <button
+            type="button"
+            className="deployment-banner-warning"
+            title="Controller is reachable beyond loopback while auth is bypassed. Click for details."
+            aria-label="Explain wide unauthenticated warning"
+            aria-expanded={wideBypassHelpOpen}
+            aria-controls={WIDE_BYPASS_HELP_ID}
+            onClick={() => setWideBypassHelpOpen(open => !open)}
+          >
+            Wide unauthenticated
+            <span className="deployment-banner-help-mark" aria-hidden="true">?</span>
+          </button>
+          {wideBypassHelpOpen && (
+            <div id={WIDE_BYPASS_HELP_ID} className="deployment-banner-help" role="status" aria-live="polite">
+              <div className="deployment-banner-help-title">Why this appears</div>
+              <p>{wideBypassDetail(deployment, version.environment)}</p>
+              <p>Configure OIDC or trusted-header auth before exposing the controller beyond your machine.</p>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )

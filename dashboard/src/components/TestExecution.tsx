@@ -27,6 +27,7 @@ import ReportComposer from './ReportComposer'
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
+import ErrorDiagnostic from './ErrorDiagnostic'
 import { mergeArchiveResourceHistory } from './testExecutionMetricsModel'
 import { buildExecutionPhaseModel } from './testExecutionPhaseModel'
 import { buildExecutionStatusModel, describeGoalController } from './testExecutionStatusModel'
@@ -396,7 +397,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
     return (
       <div className="execution">
         <button className="btn btn-secondary" onClick={onBack}>Back</button>
-        <p className="error-msg">{error}</p>
+        <ErrorDiagnostic error={error} fallback="Unable to load test execution details" className="execution-error-diagnostic" />
       </div>
     )
   }
