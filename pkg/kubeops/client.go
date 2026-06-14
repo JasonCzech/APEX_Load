@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -48,6 +49,9 @@ type PodRef struct {
 
 type Client struct {
 	cfg Config
+
+	httpMu     sync.Mutex
+	httpClient *http.Client
 }
 
 func NewInClusterClient(cfg Config) (*Client, error) {
@@ -187,7 +191,7 @@ func (c *Client) doOnce(ctx context.Context, method, path, contentType string, b
 	if err != nil {
 		return nil, 0, err
 	}
-	client, err := c.httpClient()
+	client, err := c.resolveHTTPClient()
 	if err != nil {
 		return nil, 0, err
 	}
@@ -223,12 +227,34 @@ func (c *Client) readToken() (string, error) {
 	return token, nil
 }
 
-func (c *Client) httpClient() (*http.Client, error) {
+// resolveHTTPClient returns the shared HTTPS client, building it (and reading the
+// cluster CA) at most once and reusing it across calls. ListPods runs on every
+// dashboard-polled system-inventory request; rebuilding the client per call re-read
+// ca.crt from disk and dialed a fresh connection each time. The service-account
+// token is intentionally NOT cached — readToken re-reads it per call because it
+// rotates. On a build error the client is not cached, so a later call retries
+// (preserving the original lazy semantics: construction succeeds, the CA error
+// surfaces on first use).
+func (c *Client) resolveHTTPClient() (*http.Client, error) {
 	if c.cfg.HTTPClient != nil {
 		return c.cfg.HTTPClient, nil
 	}
+	c.httpMu.Lock()
+	defer c.httpMu.Unlock()
+	if c.httpClient != nil {
+		return c.httpClient, nil
+	}
+	client, err := buildInClusterHTTPClient(c.cfg.CAFile)
+	if err != nil {
+		return nil, err
+	}
+	c.httpClient = client
+	return c.httpClient, nil
+}
+
+func buildInClusterHTTPClient(caFile string) (*http.Client, error) {
 	roots := x509.NewCertPool()
-	ca, err := os.ReadFile(c.cfg.CAFile)
+	ca, err := os.ReadFile(caFile)
 	if err != nil {
 		return nil, fmt.Errorf("read Kubernetes service-account CA: %w", err)
 	}

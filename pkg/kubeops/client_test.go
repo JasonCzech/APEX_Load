@@ -216,6 +216,41 @@ func TestClientReportsInvalidCA(t *testing.T) {
 	}
 }
 
+func TestClientCachesHTTPClientAcrossCalls(t *testing.T) {
+	dir := t.TempDir()
+	tokenFile := dir + "/token"
+	if err := os.WriteFile(tokenFile, []byte("token-a\n"), 0o600); err != nil {
+		t.Fatalf("write token: %v", err)
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{}})
+	}))
+	defer server.Close()
+
+	caFile := writeServerCA(t, dir, server)
+	client, err := NewInClusterClient(Config{
+		Namespace:    "apex",
+		APIServerURL: server.URL,
+		TokenFile:    tokenFile,
+		CAFile:       caFile,
+	})
+	if err != nil {
+		t.Fatalf("NewInClusterClient() error = %v", err)
+	}
+
+	if _, err := client.ListPods(context.Background(), "apex", "app=generator"); err != nil {
+		t.Fatalf("first ListPods() error = %v", err)
+	}
+	// Corrupt the CA on disk. A client rebuilt per call would re-read it and fail;
+	// a cached client keeps working.
+	if err := os.WriteFile(caFile, []byte("not a certificate"), 0o600); err != nil {
+		t.Fatalf("corrupt CA: %v", err)
+	}
+	if _, err := client.ListPods(context.Background(), "apex", "app=generator"); err != nil {
+		t.Fatalf("second ListPods() after CA corruption error = %v; client was not cached", err)
+	}
+}
+
 func newTestClient(t *testing.T, handler http.Handler) (*Client, func()) {
 	t.Helper()
 	dir := t.TempDir()
