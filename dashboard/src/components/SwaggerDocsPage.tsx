@@ -11,14 +11,15 @@ function stripMarkdown(value: string) {
     .trim()
 }
 
-function operationMatches(operation: SwaggerOperation, query: string, tag: string) {
+function operationMatches(operation: SwaggerOperation, query: string, category: string) {
   const normalizedQuery = query.trim().toLowerCase()
-  const matchesTag = tag === 'all' || operation.tags.includes(tag)
-  if (!matchesTag) return false
+  const matchesCategory = category === 'all' || operation.category === category
+  if (!matchesCategory) return false
   if (!normalizedQuery) return true
   return [
     operation.method,
     operation.path,
+    operation.category,
     operation.summary,
     operation.description,
     operation.operationId,
@@ -27,11 +28,10 @@ function operationMatches(operation: SwaggerOperation, query: string, tag: strin
   ].join(' ').toLowerCase().includes(normalizedQuery)
 }
 
-function groupByTag(operations: SwaggerOperation[]) {
+function groupByCategory(operations: SwaggerOperation[]) {
   return operations.reduce<Record<string, SwaggerOperation[]>>((groups, operation) => {
-    const tag = operation.tags[0] || 'Other'
-    groups[tag] = groups[tag] || []
-    groups[tag].push(operation)
+    groups[operation.category] = groups[operation.category] || []
+    groups[operation.category].push(operation)
     return groups
   }, {})
 }
@@ -45,14 +45,14 @@ function descriptionLines(description: string) {
 
 export default function SwaggerDocsPage() {
   const document = useMemo(() => parseSwaggerDocument(swaggerYaml), [])
-  const tags = useMemo(() => Array.from(new Set(document.operations.flatMap(operation => operation.tags.length ? operation.tags : ['Other']))).sort(), [document.operations])
+  const categories = useMemo(() => Array.from(new Set(document.operations.map(operation => operation.category))).sort(), [document.operations])
   const [query, setQuery] = useState('')
-  const [tag, setTag] = useState('all')
+  const [category, setCategory] = useState('all')
   const filteredOperations = useMemo(
-    () => document.operations.filter(operation => operationMatches(operation, query, tag)),
-    [document.operations, query, tag],
+    () => document.operations.filter(operation => operationMatches(operation, query, category)),
+    [document.operations, query, category],
   )
-  const groupedOperations = useMemo(() => groupByTag(filteredOperations), [filteredOperations])
+  const groupedOperations = useMemo(() => groupByCategory(filteredOperations), [filteredOperations])
   useApiGuideTopbarContribution('swagger', 'Swagger Docs')
 
   return (
@@ -72,7 +72,7 @@ export default function SwaggerDocsPage() {
         </div>
         <div className="swagger-docs-stats">
           <div><span>Operations</span><strong>{document.operations.length}</strong></div>
-          <div><span>Tags</span><strong>{tags.length}</strong></div>
+          <div><span>Categories</span><strong>{categories.length}</strong></div>
           <div><span>Auth</span><strong>Bearer</strong></div>
         </div>
       </section>
@@ -80,13 +80,13 @@ export default function SwaggerDocsPage() {
       <section className="swagger-docs-controls" aria-label="Swagger documentation filters">
         <label>
           <span>Search APIs</span>
-          <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search method, path, summary, role..." />
+          <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search method, path, category, role..." />
         </label>
         <label>
-          <span>Tag</span>
-          <select value={tag} onChange={event => setTag(event.target.value)}>
-            <option value="all">All tags</option>
-            {tags.map(nextTag => <option key={nextTag} value={nextTag}>{nextTag}</option>)}
+          <span>Category</span>
+          <select value={category} onChange={event => setCategory(event.target.value)}>
+            <option value="all">All categories</option>
+            {categories.map(nextCategory => <option key={nextCategory} value={nextCategory}>{nextCategory}</option>)}
           </select>
         </label>
       </section>
@@ -99,7 +99,7 @@ export default function SwaggerDocsPage() {
         {filteredOperations.length === 0 ? (
           <div className="api-guide-callout">
             <h3>No APIs Found</h3>
-            <p>Clear the search or choose another tag to see the generated OpenAPI endpoints.</p>
+            <p>Clear the search or choose another category to see the generated OpenAPI endpoints.</p>
           </div>
         ) : Object.entries(groupedOperations).map(([group, operations]) => (
           <div className="swagger-docs-tag-group" key={group}>
@@ -122,6 +122,14 @@ export default function SwaggerDocsPage() {
                       <div>
                         <dt>Access Control</dt>
                         <dd>{operation.roles || 'Public or inherited'}</dd>
+                      </div>
+                      <div>
+                        <dt>Category</dt>
+                        <dd>{operation.category}</dd>
+                      </div>
+                      <div>
+                        <dt>OpenAPI Tags</dt>
+                        <dd>{operation.tags.length ? operation.tags.join(', ') : 'None'}</dd>
                       </div>
                     </dl>
                     <div className="swagger-detail-grid">

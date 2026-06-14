@@ -13,6 +13,7 @@ export type SwaggerResponse = {
 export type SwaggerOperation = {
   method: string
   path: string
+  category: string
   summary: string
   description: string
   operationId: string
@@ -32,6 +33,47 @@ export type SwaggerDocument = {
 
 const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options'])
 
+const CATEGORY_BY_PATH_SEGMENT: Record<string, string> = {
+  ai: 'AI Assistance',
+  'application-repository': 'Workspace & Assets',
+  applications: 'Workspace & Assets',
+  archives: 'Results & Reporting',
+  auth: 'Identity & Access',
+  'browser-recorder': 'Recording & Replay',
+  'browser-replay': 'Recording & Replay',
+  correlations: 'Script Authoring',
+  'data-pools': 'Data & Parameters',
+  desktop: 'System & Distribution',
+  domains: 'Workspace & Assets',
+  downloads: 'System & Distribution',
+  dsl: 'Script Authoring',
+  fleet: 'Operations & Observability',
+  folders: 'Workspace & Assets',
+  integrations: 'Integrations & Protocols',
+  library: 'Script Library',
+  metrics: 'Operations & Observability',
+  monitoring: 'Operations & Observability',
+  projects: 'Workspace & Assets',
+  'protocol-bundles': 'Integrations & Protocols',
+  protocols: 'Integrations & Protocols',
+  recorder: 'Recording & Replay',
+  releases: 'Results & Reporting',
+  remotes: 'Remote Execution',
+  replay: 'Recording & Replay',
+  reports: 'Results & Reporting',
+  results: 'Results & Reporting',
+  'run-calendar': 'Scheduling',
+  'runtime-settings': 'Execution Configuration',
+  scenarios: 'Test Execution',
+  schedules: 'Scheduling',
+  'script-debug': 'Recording & Replay',
+  scripts: 'Script Authoring',
+  selectors: 'Script Authoring',
+  system: 'System & Distribution',
+  tests: 'Test Execution',
+  ws: 'Operations & Observability',
+}
+
 function countLeadingSpaces(line: string) {
   return line.match(/^ */)?.[0].length || 0
 }
@@ -47,10 +89,26 @@ function cleanYamlValue(value: string) {
     .trim()
 }
 
+function humanizeSegment(segment: string) {
+  return segment
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map(word => word.toUpperCase() === word ? word : word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+function categoryForPath(path: string) {
+  if (path === '/metrics') return CATEGORY_BY_PATH_SEGMENT.metrics
+  const trimmed = path.replace(/^\/api\/v1\/?/, '').replace(/^\//, '')
+  const segment = trimmed.split('/')[0]
+  if (!segment) return 'General'
+  return CATEGORY_BY_PATH_SEGMENT[segment] || humanizeSegment(segment)
+}
+
 function readBlockScalar(lines: string[], startIndex: number, fieldIndent: number) {
   const line = lines[startIndex]
-  const firstValue = line.slice(line.indexOf(':') + 1)
-  const parts = [firstValue]
+  const firstValue = line.slice(line.indexOf(':') + 1).trim()
+  const parts = /^[>|][+-]?$/.test(firstValue) ? [] : [firstValue]
   let index = startIndex + 1
   while (index < lines.length) {
     const nextLine = lines[index]
@@ -82,8 +140,13 @@ function parseTags(lines: string[]) {
   const tagIndex = lines.findIndex(line => /^ {6}tags:\s*$/.test(line))
   if (tagIndex < 0) return tags
   for (let index = tagIndex + 1; index < lines.length; index += 1) {
-    const match = lines[index].match(/^ {6}-\s+(.+)$/)
-    if (!match) break
+    const line = lines[index]
+    const trimmed = line.trim()
+    const indent = countLeadingSpaces(line)
+    if (!trimmed) continue
+    if (indent <= 6 && !trimmed.startsWith('-')) break
+    const match = trimmed.match(/^-\s+(.+)$/)
+    if (!match) continue
     tags.push(cleanYamlValue(match[1]))
   }
   return tags
@@ -96,19 +159,22 @@ function parseParameters(lines: string[]) {
   let current: SwaggerParameter | null = null
   for (let index = start + 1; index < lines.length; index += 1) {
     const line = lines[index]
-    if (/^ {6}[A-Za-z0-9_-]+:/.test(line)) break
-    const nameMatch = line.match(/^ {6}- name:\s*(.+)$/)
+    const trimmed = line.trim()
+    const indent = countLeadingSpaces(line)
+    if (!trimmed) continue
+    if (indent <= 6 && !trimmed.startsWith('-')) break
+    const nameMatch = trimmed.match(/^-\s+name:\s*(.+)$/)
     if (nameMatch) {
       current = { name: cleanYamlValue(nameMatch[1]), location: '', required: false, type: '' }
       parameters.push(current)
       continue
     }
     if (!current) continue
-    const locationMatch = line.match(/^ {8}in:\s*(.+)$/)
+    const locationMatch = trimmed.match(/^in:\s*(.+)$/)
     if (locationMatch) current.location = cleanYamlValue(locationMatch[1])
-    const requiredMatch = line.match(/^ {8}required:\s*(.+)$/)
+    const requiredMatch = trimmed.match(/^required:\s*(.+)$/)
     if (requiredMatch) current.required = cleanYamlValue(requiredMatch[1]).toLowerCase() === 'true'
-    const typeMatch = line.match(/^ {10}type:\s*(.+)$/)
+    const typeMatch = trimmed.match(/^type:\s*(.+)$/)
     if (typeMatch) current.type = cleanYamlValue(typeMatch[1])
   }
   return parameters
@@ -121,15 +187,18 @@ function parseResponses(lines: string[]) {
   let current: SwaggerResponse | null = null
   for (let index = start + 1; index < lines.length; index += 1) {
     const line = lines[index]
-    if (/^ {6}[A-Za-z0-9_-]+:/.test(line)) break
-    const statusMatch = line.match(/^ {8}['"]?([^:'"]+)['"]?:\s*$/)
+    const trimmed = line.trim()
+    const indent = countLeadingSpaces(line)
+    if (!trimmed) continue
+    if (indent <= 6 && !trimmed.startsWith('-')) break
+    const statusMatch = trimmed.match(/^['"]?([^:'"]+)['"]?:\s*$/)
     if (statusMatch) {
       current = { status: statusMatch[1], description: '' }
       responses.push(current)
       continue
     }
     if (!current) continue
-    const descriptionMatch = line.match(/^ {10}description:\s*(.+)$/)
+    const descriptionMatch = trimmed.match(/^description:\s*(.+)$/)
     if (descriptionMatch) current.description = cleanYamlValue(descriptionMatch[1])
   }
   return responses
@@ -137,14 +206,16 @@ function parseResponses(lines: string[]) {
 
 function parseOperation(path: string, method: string, lines: string[]): SwaggerOperation {
   const summary = readField(lines, 'summary', 6) || `${method.toUpperCase()} ${path}`
+  const tags = parseTags(lines)
   return {
     method: method.toUpperCase(),
     path,
+    category: categoryForPath(path),
     summary,
     description: readField(lines, 'description', 6),
     operationId: readField(lines, 'operationId', 6),
     roles: readField(lines, 'x-roles', 6),
-    tags: parseTags(lines),
+    tags,
     parameters: parseParameters(lines),
     responses: parseResponses(lines),
   }
@@ -154,7 +225,7 @@ export function parseSwaggerDocument(source: string): SwaggerDocument {
   const lines = source.split('\n')
   const title = cleanYamlValue(lines.find(line => /^ {2}title:\s+/.test(line))?.replace(/^ {2}title:\s+/, '') || 'APEX Load API')
   const version = cleanYamlValue(lines.find(line => /^ {2}version:\s+/.test(line))?.replace(/^ {2}version:\s+/, '') || '')
-  const serverUrl = cleanYamlValue(lines.find(line => /^- url:\s+/.test(line))?.replace(/^- url:\s+/, '') || '')
+  const serverUrl = cleanYamlValue(lines.find(line => /^\s*-\s+url:\s+/.test(line))?.replace(/^\s*-\s+url:\s+/, '') || '')
   const descriptionIndex = lines.findIndex(line => /^ {2}description:\s+/.test(line))
   const description = descriptionIndex >= 0 ? readBlockScalar(lines, descriptionIndex, 2) : ''
   const operations: SwaggerOperation[] = []
