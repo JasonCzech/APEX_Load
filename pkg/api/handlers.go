@@ -1189,6 +1189,20 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return true
 }
 
+// queryFormat returns the normalized (trimmed, lower-cased) "format" query
+// parameter — the conventional selector for response encodings (e.g. "csv",
+// "json"). It mirrors the strings.ToLower(strings.TrimSpace(...)) idiom that was
+// repeated across the export handlers.
+func queryFormat(r *http.Request) string {
+	return strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+}
+
+// wantsCSV reports whether the request asked for a CSV-encoded response via
+// ?format=csv (case-insensitive, whitespace-tolerant).
+func wantsCSV(r *http.Request) bool {
+	return queryFormat(r) == "csv"
+}
+
 func writeError(w http.ResponseWriter, status int, msg string) {
 	// Never leak internal error detail (DB errors, file paths, stack context) to
 	// clients on 5xx responses. Log the real message server-side under a

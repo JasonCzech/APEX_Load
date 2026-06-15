@@ -469,7 +469,7 @@ func (s *Server) handleGetScenarioRuntimeSettingsReport(w http.ResponseWriter, r
 }
 
 func writeRuntimeSettingsReport(w http.ResponseWriter, r *http.Request, report RuntimeSettingsReport) {
-	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+	format := queryFormat(r)
 	if format == "" || format == "json" {
 		writeJSON(w, http.StatusOK, report)
 		return

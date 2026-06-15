@@ -153,7 +153,7 @@ func (s *Server) handleGetRunArchiveTransactions(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusInternalServerError, "failed to read archive transactions: "+err.Error())
 		return
 	}
-	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "csv") {
+	if wantsCSV(r) {
 		testID := r.PathValue("id")
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-transactions-"+testID+".csv\"")
@@ -201,7 +201,7 @@ func (s *Server) handleGetRunArchiveResources(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, "failed to read archive resources: "+err.Error())
 		return
 	}
-	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "csv") {
+	if wantsCSV(r) {
 		testID := r.PathValue("id")
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-resources-"+testID+".csv\"")
@@ -235,7 +235,7 @@ func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, "failed to read archive summaries: "+err.Error())
 		return
 	}
-	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "csv") {
+	if wantsCSV(r) {
 		testID := r.PathValue("id")
 		filename := "apexload-archive-summaries-" + testID
 		if action != "" {
@@ -274,7 +274,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
 		return
 	}
-	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format"))) {
+	switch queryFormat(r) {
 	case "csv":
 		testID := r.PathValue("id")
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
@@ -364,7 +364,7 @@ func (s *Server) handleGetRunArchiveComparison(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	if format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format"))); format != "" && format != "csv" {
+	if format := queryFormat(r); format != "" && format != "csv" {
 		writeError(w, http.StatusBadRequest, "unsupported comparison format")
 		return
 	}
