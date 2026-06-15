@@ -101,8 +101,7 @@ func (s *Server) handleStartBrowserRecording(w http.ResponseWriter, r *http.Requ
 	}
 
 	var req BrowserRecordingStartRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if err := validateBrowserRecordingStartURL(req.StartURL); err != nil {
@@ -171,8 +170,7 @@ func (s *Server) handleNavigateBrowserRecording(w http.ResponseWriter, r *http.R
 	var req struct {
 		URL string `json:"url"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	// Same scheme allow-list as the start URL: the panel must not be able to
@@ -483,8 +481,7 @@ func (s *Server) handleSetBrowserRecordingSection(w http.ResponseWriter, r *http
 	var req struct {
 		Section string `json:"section"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	session, ok, err := s.browserRecording.SetSection(r.PathValue("id"), req.Section)
@@ -495,8 +492,7 @@ func (s *Server) handleSetBrowserRecordingPickMode(w http.ResponseWriter, r *htt
 	var req struct {
 		On bool `json:"on"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	session, ok, err := s.browserRecording.SetAssertMode(r.PathValue("id"), req.On)
@@ -519,8 +515,7 @@ func (s *Server) handleUpdateBrowserRecordingStep(w http.ResponseWriter, r *http
 		Secret   *bool `json:"mark_secret,omitempty"`
 		Param    *bool `json:"mark_param,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	id := r.PathValue("id")

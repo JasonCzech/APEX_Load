@@ -1,0 +1,157 @@
+// @vitest-environment jsdom
+
+import { beforeEach, describe, expect, it } from 'vitest'
+import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
+import type { ProtocolEvidence } from '../types'
+import {
+  BROWSER_DEVICE_PROFILES,
+  SCRIPT_JSON_TAB_ID,
+  buildScriptPhaseActionRows,
+  clampDebuggerPaneSize,
+  codePathForDebugRow,
+  defaultCenterTabsState,
+  findParameterReferencesInJson,
+  formatBrowserDeviceProfileLabel,
+  formatDebugPhaseLabel,
+  formatProtocolEvidenceSummary,
+  formatScriptJson,
+  isCenterWorkbenchTabId,
+  lookupBrowserDeviceProfile,
+  parseScriptJsonDraft,
+  readCenterTabsState,
+  scriptActionsForPhase,
+} from './scriptEditorWorkbench'
+
+const action = (name: string): ScriptActionDefinition => ({ name } as unknown as ScriptActionDefinition)
+
+const script = (over: Partial<ScriptDefinition> = {}): ScriptDefinition =>
+  ({ name: 'demo', actions: [], ...over } as unknown as ScriptDefinition)
+
+describe('JSON draft round-trip', () => {
+  it('formats a script under a top-level script key', () => {
+    const text = formatScriptJson(script({ name: 'order-flow' }))
+    expect(text).toContain('"script"')
+    expect(JSON.parse(text).script.name).toBe('order-flow')
+  })
+
+  it('parses a wrapped {script} draft', () => {
+    const text = formatScriptJson(script({ name: 'wrapped' }))
+    const res = parseScriptJsonDraft(text)
+    expect(res.ok).toBe(true)
+    if (res.ok) expect(res.script.name).toBe('wrapped')
+  })
+
+  it('parses a bare script object', () => {
+    const res = parseScriptJsonDraft(JSON.stringify({ name: 'bare', actions: [] }))
+    expect(res.ok).toBe(true)
+    if (res.ok) expect(res.script.name).toBe('bare')
+  })
+
+  it('rejects empty and invalid JSON', () => {
+    expect(parseScriptJsonDraft('   ')).toEqual({ ok: false, message: 'Script JSON is empty.' })
+    const bad = parseScriptJsonDraft('{ not json')
+    expect(bad.ok).toBe(false)
+    if (!bad.ok) expect(bad.message).toMatch(/invalid/i)
+  })
+})
+
+describe('clampDebuggerPaneSize', () => {
+  it.each([
+    ['rail', 10, 180],
+    ['rail', 9999, 560],
+    ['vars', 400, 400],
+    ['bottom', 130.6, 140],
+  ] as const)('clamps %s %d to %d', (kind, value, expected) => {
+    expect(clampDebuggerPaneSize(kind, value)).toBe(expected)
+  })
+})
+
+describe('center tabs state', () => {
+  beforeEach(() => window.localStorage.clear())
+
+  it('isCenterWorkbenchTabId validates known ids', () => {
+    expect(isCenterWorkbenchTabId('script-json')).toBe(true)
+    expect(isCenterWorkbenchTabId('nope')).toBe(false)
+    expect(isCenterWorkbenchTabId(42)).toBe(false)
+  })
+
+  it('returns default when storage empty', () => {
+    expect(readCenterTabsState('k')).toEqual(defaultCenterTabsState())
+  })
+
+  it('always keeps script-json first and dedups it', () => {
+    window.localStorage.setItem('k', JSON.stringify({ tabs: ['configuration', 'script-json'], activeTabId: 'configuration' }))
+    const state = readCenterTabsState('k')
+    expect(state.tabs[0]).toBe(SCRIPT_JSON_TAB_ID)
+    expect(state.tabs.filter(t => t === SCRIPT_JSON_TAB_ID)).toHaveLength(1)
+    expect(state.activeTabId).toBe('configuration')
+  })
+
+  it('falls back to script-json for an unknown active tab', () => {
+    window.localStorage.setItem('k', JSON.stringify({ tabs: ['configuration'], activeTabId: 'bogus' }))
+    expect(readCenterTabsState('k').activeTabId).toBe(SCRIPT_JSON_TAB_ID)
+  })
+
+  it('returns default on malformed JSON', () => {
+    window.localStorage.setItem('k', '{not json')
+    expect(readCenterTabsState('k')).toEqual(defaultCenterTabsState())
+  })
+})
+
+describe('phase action rows', () => {
+  it('orders init -> action -> teardown with running global index', () => {
+    const s = script({ init: [action('i0')], actions: [action('a0'), action('a1')], teardown: [action('t0')] })
+    const rows = buildScriptPhaseActionRows(s)
+    expect(rows.map(r => [r.phase, r.actionIndex, r.globalIndex])).toEqual([
+      ['init', 0, 0],
+      ['action', 0, 1],
+      ['action', 1, 2],
+      ['teardown', 0, 3],
+    ])
+    expect(rows[0].phaseLabel).toBe('Init')
+  })
+
+  it('scriptActionsForPhase reads the right slice', () => {
+    const s = script({ init: [action('i')], actions: [action('a')], teardown: [action('t')] })
+    expect(scriptActionsForPhase(s, 'init').map(a => a.name)).toEqual(['i'])
+    expect(scriptActionsForPhase(s, 'action').map(a => a.name)).toEqual(['a'])
+    expect(scriptActionsForPhase(s, 'teardown').map(a => a.name)).toEqual(['t'])
+  })
+})
+
+describe('misc helpers', () => {
+  it('codePathForDebugRow', () => {
+    expect(codePathForDebugRow({ phase: 'action', actionIndex: 2 })).toBe('script.actions[2]')
+    expect(codePathForDebugRow({ phase: 'init', actionIndex: 0 })).toBe('script.init[0]')
+    expect(codePathForDebugRow({ phase: 'teardown', actionIndex: 1 })).toBe('script.teardown[1]')
+    expect(codePathForDebugRow(null)).toBe('')
+  })
+
+  it('formatDebugPhaseLabel title-cases underscores', () => {
+    expect(formatDebugPhaseLabel('think_time')).toBe('Think Time')
+    expect(formatDebugPhaseLabel('action')).toBe('Action')
+  })
+
+  it('formatProtocolEvidenceSummary joins present fields', () => {
+    expect(formatProtocolEvidenceSummary(undefined)).toBe('')
+    const ev = { protocol: 'http', operation: 'GET', status: '', target: 'https://x' } as ProtocolEvidence
+    expect(formatProtocolEvidenceSummary(ev)).toBe('http / GET / https://x')
+  })
+
+  it('findParameterReferencesInJson finds {{param.x}} occurrences', () => {
+    const text = 'a {{param.user}} b {{ param.user }} c'
+    const ranges = findParameterReferencesInJson(text, 'user')
+    expect(ranges).toHaveLength(2)
+    expect(text.slice(ranges[0].from, ranges[0].to)).toBe('{{param.user}}')
+    expect(findParameterReferencesInJson(text, '')).toEqual([])
+  })
+
+  it('browser device profile lookup + label', () => {
+    expect(lookupBrowserDeviceProfile('iphone_15_pro')?.engine).toBe('webkit')
+    expect(lookupBrowserDeviceProfile('missing')).toBeUndefined()
+    const webkit = BROWSER_DEVICE_PROFILES.find(p => p.engine === 'webkit')!
+    expect(formatBrowserDeviceProfileLabel(webkit)).toContain('(WebKit)')
+    const chromium = BROWSER_DEVICE_PROFILES.find(p => p.engine === 'chromium')!
+    expect(formatBrowserDeviceProfileLabel(chromium)).not.toContain('(WebKit)')
+  })
+})

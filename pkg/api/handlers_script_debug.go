@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -33,8 +32,7 @@ func (s *Server) handleStartScriptDebugDraftScript(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, "request body is required")
 		return
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Script == nil {
@@ -54,8 +52,7 @@ func (s *Server) handleStartScriptDebugScript(w http.ResponseWriter, r *http.Req
 
 	var req ScriptDebugStartRequest
 	if r.Body != nil && r.ContentLength != 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		if !decodeJSONBody(w, r, &req) {
 			return
 		}
 	}
@@ -80,8 +77,7 @@ func (s *Server) handleStartReplaySessionDraftScript(w http.ResponseWriter, r *h
 		writeError(w, http.StatusBadRequest, "request body is required")
 		return
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Script == nil {
@@ -102,8 +98,7 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 
 	var req ScriptDebugStartRequest
 	if r.Body != nil && r.ContentLength != 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		if !decodeJSONBody(w, r, &req) {
 			return
 		}
 	}
@@ -229,8 +224,7 @@ func (s *Server) handleUpdateScriptDebugBreakpoints(w http.ResponseWriter, r *ht
 	var req struct {
 		Breakpoints []ScriptDebugBreakpoint `json:"breakpoints"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	session, ok := s.scriptDebug.UpdateBreakpoints(sessionID, req.Breakpoints)

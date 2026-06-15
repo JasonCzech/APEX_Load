@@ -5,7 +5,6 @@ package api
 import (
 	"archive/zip"
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -338,8 +337,7 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		Scripts       []dsl.Script          `json:"scripts"`
 		ScenarioDraft *jmeter.ScenarioDraft `json:"scenario_draft,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if len(req.Scripts) == 0 {

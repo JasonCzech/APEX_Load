@@ -11,8 +11,7 @@ import (
 
 func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 	var req CreateScenarioRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	scenario, err := s.runner.StoreScenario(req)
@@ -46,8 +45,7 @@ func (s *Server) handleGetScenario(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 	var req CreateScenarioRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	scenario, ok, err := s.runner.UpdateScenario(r.PathValue("id"), req)
@@ -65,8 +63,7 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleValidateScenarioLoadModel(w http.ResponseWriter, r *http.Request) {
 	var req CreateScenarioRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	report, err := s.runner.ValidateScenarioLoadModel(req)
@@ -79,8 +76,7 @@ func (s *Server) handleValidateScenarioLoadModel(w http.ResponseWriter, r *http.
 
 func (s *Server) handleSizeScenarioFromGoal(w http.ResponseWriter, r *http.Request) {
 	var req GoalSizingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.BaselineTestID) == "" {
@@ -140,8 +136,7 @@ func (s *Server) handleScenarioResults(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateScenarioSchedule(w http.ResponseWriter, r *http.Request) {
 	var req CreateScenarioScheduleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	_, actorSubject, actorDisplayName := s.resolveAuditActor(r)
@@ -176,8 +171,7 @@ func (s *Server) handleListScenarioSchedules(w http.ResponseWriter, r *http.Requ
 
 func (s *Server) handleUpdateScenarioSchedule(w http.ResponseWriter, r *http.Request) {
 	var req CreateScenarioScheduleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	_, actorSubject, actorDisplayName := s.resolveAuditActor(r)

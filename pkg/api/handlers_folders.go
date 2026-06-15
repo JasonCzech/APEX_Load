@@ -2,7 +2,6 @@ package api
 
 import (
 	"database/sql"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -21,8 +20,7 @@ func (s *Server) handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		Category string  `json:"category"`
 		ParentID *string `json:"parent_id,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {
@@ -82,8 +80,7 @@ func (s *Server) handleUpdateFolder(w http.ResponseWriter, r *http.Request) {
 		Name     *string `json:"name,omitempty"`
 		ParentID *string `json:"parent_id,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Name != nil {

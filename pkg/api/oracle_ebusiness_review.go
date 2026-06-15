@@ -155,8 +155,7 @@ func (s *Server) handleOracleEBusinessSupportMatrix(w http.ResponseWriter, r *ht
 func (s *Server) handleReviewOracleEBusinessImport(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, oracleReviewImportMaxBodyBytes)
 	var req oracleEBusinessReviewRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.SourceText) == "" && len(req.Files) == 0 && req.Script == nil {

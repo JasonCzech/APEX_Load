@@ -2,7 +2,6 @@ package api
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -47,8 +46,7 @@ func (s *Server) handleCreateDataPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req storage.SharedDataPool
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	req.ID = uuid.New().String()
@@ -106,8 +104,7 @@ func (s *Server) handleUpdateDataPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req storage.SharedDataPool
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	existing.Name = strings.TrimSpace(req.Name)
@@ -168,8 +165,7 @@ func (s *Server) handleCreateDataPoolRow(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req storage.SharedDataPoolRow
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	req.ID = uuid.New().String()
@@ -195,8 +191,7 @@ func (s *Server) handleUpdateDataPoolRow(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req storage.SharedDataPoolRow
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	req.ID = r.PathValue("row_id")
@@ -262,8 +257,7 @@ func (s *Server) handleUpdateScenarioDataPools(w http.ResponseWriter, r *http.Re
 	var req struct {
 		DataPools []storage.ScenarioDataPoolBinding `json:"data_pools"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	bindings, err := normalizeScenarioDataPoolBindings(scenarioID, req.DataPools)

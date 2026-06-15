@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -24,8 +23,7 @@ func (s *Server) handleReplayDraftScript(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "request body is required")
 		return
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Script == nil {
@@ -45,8 +43,7 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 
 	var req ReplayScriptRequest
 	if r.Body != nil && r.ContentLength != 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		if !decodeJSONBody(w, r, &req) {
 			return
 		}
 	}

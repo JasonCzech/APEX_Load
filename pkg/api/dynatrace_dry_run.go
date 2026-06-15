@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
@@ -56,8 +55,7 @@ func (s *Server) handleDynatraceDryRun(w http.ResponseWriter, r *http.Request) {
 	var req DynatraceDryRunRequest
 	if r.Body != nil {
 		defer r.Body.Close()
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		if !decodeJSONBody(w, r, &req) {
 			return
 		}
 	}

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -117,8 +116,7 @@ func (s *Server) handleSystemRestart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req SystemRestartRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	req = normalizeSystemRestartRequest(req)

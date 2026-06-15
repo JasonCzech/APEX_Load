@@ -24,8 +24,7 @@ import (
 
 func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	var req CreateTestRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -47,8 +46,7 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleEstimateTest(w http.ResponseWriter, r *http.Request) {
 	var req CreateTestRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -63,8 +61,7 @@ func (s *Server) handleEstimateTest(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePreflightTest(w http.ResponseWriter, r *http.Request) {
 	var req LaunchPreflightRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -139,8 +136,7 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req StartTestOptions
 	if r.Body != nil && r.ContentLength != 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		if !decodeJSONBody(w, r, &req) {
 			return
 		}
 	}
@@ -434,8 +430,7 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		FolderID  *string    `json:"folder_id,omitempty"`
 		Script    dsl.Script `json:"script"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&wrapper); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &wrapper) {
 		return
 	}
 	script := &wrapper.Script
@@ -506,8 +501,7 @@ func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Reques
 		Script    dsl.Script        `json:"script"`
 		Variables map[string]string `json:"variables,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&wrapper); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &wrapper) {
 		return
 	}
 
@@ -532,8 +526,7 @@ func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		FolderID *string `json:"folder_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if !s.runner.MoveScript(id, req.FolderID) {
@@ -554,8 +547,7 @@ func (s *Server) handleMoveTest(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		FolderID *string `json:"folder_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if !s.runner.MoveTest(id, req.FolderID) {
@@ -574,8 +566,7 @@ func (s *Server) handleScaleVUsers(w http.ResponseWriter, r *http.Request) {
 		TargetVUsers int    `json:"target_vusers"`
 		RampDuration string `json:"ramp_duration,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Group == "" {
@@ -653,8 +644,7 @@ func (s *Server) handleUpdateGoalTarget(w http.ResponseWriter, r *http.Request) 
 		Group     string  `json:"group"`
 		TargetTPS float64 `json:"target_tps"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.Group) == "" {
@@ -692,8 +682,7 @@ func (s *Server) handleAdjustDuration(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Duration string `json:"duration"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -1185,6 +1174,33 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
+}
+
+// decodeJSONBody decodes the JSON request body into dst. On failure it writes a
+// 400 "invalid request body" response and returns false, signalling the caller
+// to stop (the response has already been written). On success it returns true.
+// It does not buffer the body — use decodeRequestBody when the body must be read
+// again after decoding (e.g. for project-scope resolution).
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return false
+	}
+	return true
+}
+
+// queryFormat returns the normalized (trimmed, lower-cased) "format" query
+// parameter — the conventional selector for response encodings (e.g. "csv",
+// "json"). It mirrors the strings.ToLower(strings.TrimSpace(...)) idiom that was
+// repeated across the export handlers.
+func queryFormat(r *http.Request) string {
+	return strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+}
+
+// wantsCSV reports whether the request asked for a CSV-encoded response via
+// ?format=csv (case-insensitive, whitespace-tolerant).
+func wantsCSV(r *http.Request) bool {
+	return queryFormat(r) == "csv"
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
