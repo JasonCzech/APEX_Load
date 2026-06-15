@@ -48,12 +48,15 @@ func TestReportAnnotationsEndpointsRoundTrip(t *testing.T) {
 		t.Fatalf("expected default annotations with a title, got %#v", initial.Annotations)
 	}
 
-	// PUT analyst edits.
+	// PUT analyst edits, including a verdict override and a curated finding.
 	body, _ := json.Marshal(reportAnnotationsRequest{
 		Title:              "Edited Title",
 		PreparedBy:         "Jane Analyst",
 		ExecutiveNarrative: "Edited narrative.",
 		SectionComments:    map[string]string{"overview": "edited overview note"},
+		VerdictOverride:    "Conditional Pass",
+		VerdictExplanation: "Transient breach recovered without intervention.",
+		Findings:           []ReportFinding{{Title: "Curated finding", Severity: "minor", Observed: "analyst observation"}},
 	})
 	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/tests/"+testID+"/report/annotations?profile=executive", bytes.NewReader(body))
 	putResp := httptest.NewRecorder()
@@ -81,6 +84,18 @@ func TestReportAnnotationsEndpointsRoundTrip(t *testing.T) {
 	}
 	if saved.Annotations.UpdatedBy == "" {
 		t.Fatal("expected UpdatedBy to be recorded")
+	}
+	if saved.Annotations.VerdictOverride != "Conditional Pass" {
+		t.Fatalf("verdict override = %q, want Conditional Pass", saved.Annotations.VerdictOverride)
+	}
+	if saved.Annotations.VerdictExplanation != "Transient breach recovered without intervention." {
+		t.Fatalf("verdict explanation = %q, want analyst text", saved.Annotations.VerdictExplanation)
+	}
+	if len(saved.Annotations.Findings) != 1 {
+		t.Fatalf("findings = %d, want 1 curated finding", len(saved.Annotations.Findings))
+	}
+	if got := saved.Annotations.Findings[0]; got.Title != "Curated finding" || got.ID != "F-01" {
+		t.Fatalf("curated finding = %#v, want title 'Curated finding' with backfilled ID F-01", got)
 	}
 }
 

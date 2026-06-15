@@ -14,6 +14,70 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+func TestBuildRunArchiveReportComputesOverallPercentiles(t *testing.T) {
+	archiveDir := t.TempDir()
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	manifest := RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersion,
+		TestID:                "pct-1",
+		TestName:              "Percentiles",
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("json.Marshal manifest returned error: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatalf("WriteFile manifest returned error: %v", err)
+	}
+
+	timestamp := time.Date(2026, time.May, 16, 10, 0, 0, 0, time.UTC)
+	txFile, err := os.Create(filepath.Join(archiveDir, "transactions.jsonl"))
+	if err != nil {
+		t.Fatalf("Create transactions.jsonl returned error: %v", err)
+	}
+	encoder := json.NewEncoder(txFile)
+	// Durations 10,20,…,100 ms across 10 successful transactions.
+	for i := 1; i <= 10; i++ {
+		tx := TransactionEvent{
+			Timestamp:  timestamp.Add(time.Duration(i) * time.Second),
+			TestID:     "pct-1",
+			TestName:   "Percentiles",
+			ActionName: "Step",
+			Success:    true,
+			DurationMs: float64(i * 10),
+		}
+		if err := encoder.Encode(tx); err != nil {
+			t.Fatalf("Encode transaction returned error: %v", err)
+		}
+	}
+	if err := txFile.Close(); err != nil {
+		t.Fatalf("Close transactions.jsonl returned error: %v", err)
+	}
+	for _, name := range []string{"resources.jsonl", "interval_summaries.jsonl"} {
+		if err := os.WriteFile(filepath.Join(archiveDir, name), nil, 0o644); err != nil {
+			t.Fatalf("WriteFile %s returned error: %v", name, err)
+		}
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: archiveDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	approx := func(label string, got, want float64) {
+		if diff := got - want; diff > 0.05 || diff < -0.05 {
+			t.Fatalf("%s = %.3f, want ~%.3f", label, got, want)
+		}
+	}
+	// Linear-interpolation percentiles over sorted [10..100].
+	approx("p50", report.Overview.P50Ms, 55.0)
+	approx("p90", report.Overview.P90Ms, 91.0)
+	approx("p95", report.Overview.P95Ms, 95.5)
+	approx("p99", report.Overview.P99Ms, 99.1)
+}
+
 func TestBuildRunArchiveReportClustersErrorPatterns(t *testing.T) {
 	archiveDir := t.TempDir()
 	manifestPath := filepath.Join(archiveDir, "manifest.json")

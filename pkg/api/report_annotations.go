@@ -20,8 +20,16 @@ type ReportAnnotations struct {
 	PreparedBy         string            `json:"prepared_by"`
 	ExecutiveNarrative string            `json:"executive_narrative"`
 	SectionComments    map[string]string `json:"section_comments"`
-	UpdatedAt          time.Time         `json:"updated_at"`
-	UpdatedBy          string            `json:"updated_by"`
+	// VerdictOverride, when non-empty, replaces the auto-derived headline
+	// verdict (e.g. "Conditional Pass" for a transient, self-recovered breach).
+	// VerdictExplanation accompanies it in the verdict bar.
+	VerdictOverride    string `json:"verdict_override,omitempty"`
+	VerdictExplanation string `json:"verdict_explanation,omitempty"`
+	// Findings, when non-empty, replaces the auto-derived findings list with an
+	// analyst-curated set rendered verbatim in the Findings section.
+	Findings  []ReportFinding `json:"findings,omitempty"`
+	UpdatedAt time.Time       `json:"updated_at"`
+	UpdatedBy string          `json:"updated_by"`
 }
 
 // reportCommentarySection describes a labeled, analyst-editable comment block.

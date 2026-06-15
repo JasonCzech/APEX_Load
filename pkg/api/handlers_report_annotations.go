@@ -21,6 +21,9 @@ type reportAnnotationsRequest struct {
 	PreparedBy         string            `json:"prepared_by"`
 	ExecutiveNarrative string            `json:"executive_narrative"`
 	SectionComments    map[string]string `json:"section_comments"`
+	VerdictOverride    string            `json:"verdict_override"`
+	VerdictExplanation string            `json:"verdict_explanation"`
+	Findings           []ReportFinding   `json:"findings"`
 }
 
 // handleGetReportAnnotations returns the analyst commentary for a test+profile,
@@ -75,6 +78,9 @@ func (s *Server) handleSaveReportAnnotations(w http.ResponseWriter, r *http.Requ
 		PreparedBy:         strings.TrimSpace(req.PreparedBy),
 		ExecutiveNarrative: strings.TrimSpace(req.ExecutiveNarrative),
 		SectionComments:    req.SectionComments,
+		VerdictOverride:    strings.TrimSpace(req.VerdictOverride),
+		VerdictExplanation: strings.TrimSpace(req.VerdictExplanation),
+		Findings:           normalizeReportFindings(req.Findings),
 		UpdatedAt:          time.Now().UTC(),
 		UpdatedBy:          firstNonEmpty(actorDisplay, actorSubject),
 	}

@@ -55,9 +55,11 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	errorPatternActions := make(map[string]map[string]struct{})
 
 	var totalDuration float64
+	overallDurations := make([]float64, 0, len(transactions))
 	for index, tx := range transactions {
 		report.Overview.Transactions++
 		totalDuration += tx.DurationMs
+		overallDurations = append(overallDurations, tx.DurationMs)
 		if !tx.Success {
 			report.Overview.Errors++
 			mergeArchiveErrorPattern(errorPatterns, errorPatternActions, tx)
@@ -141,6 +143,11 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	if report.Overview.Transactions > 0 {
 		report.Overview.AvgResponseMs = totalDuration / float64(report.Overview.Transactions)
 		report.Overview.ErrorPct = float64(report.Overview.Errors) / float64(report.Overview.Transactions) * 100
+		sort.Float64s(overallDurations)
+		report.Overview.P50Ms = archiveAnalysisPercentile(overallDurations, 0.50)
+		report.Overview.P90Ms = archiveAnalysisPercentile(overallDurations, 0.90)
+		report.Overview.P95Ms = archiveAnalysisPercentile(overallDurations, 0.95)
+		report.Overview.P99Ms = archiveAnalysisPercentile(overallDurations, 0.99)
 	}
 	if len(errorPatterns) > 0 {
 		report.ErrorPatterns = make([]RunArchiveErrorPattern, 0, len(errorPatterns))

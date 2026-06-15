@@ -411,6 +411,10 @@ type RunArchiveOverview struct {
 	AvgResponseMs             float64                     `json:"avg_response_ms"`
 	MinResponseMs             float64                     `json:"min_response_ms"`
 	MaxResponseMs             float64                     `json:"max_response_ms"`
+	P50Ms                     float64                     `json:"p50_ms,omitempty"`
+	P90Ms                     float64                     `json:"p90_ms,omitempty"`
+	P95Ms                     float64                     `json:"p95_ms,omitempty"`
+	P99Ms                     float64                     `json:"p99_ms,omitempty"`
 	ResourceSamples           int64                       `json:"resource_samples"`
 	IntervalSummaries         int64                       `json:"interval_summaries"`
 	PeakTPS                   float64                     `json:"peak_tps"`

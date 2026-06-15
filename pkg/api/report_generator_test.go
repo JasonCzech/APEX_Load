@@ -199,3 +199,106 @@ func TestRenderRunArchiveHTMLReportSupportsProfiles(t *testing.T) {
 		t.Fatal("expected unknown profile to fail")
 	}
 }
+
+func TestRenderRunArchiveHTMLReportIncludesManifestAppendix(t *testing.T) {
+	report := &RunArchiveReport{
+		SchemaVersion: runArchiveReportSchemaVersion,
+		Manifest: &RunArchiveManifest{
+			TestID:      "test-789",
+			TestName:    "Peak Certification",
+			Status:      "COMPLETE",
+			SLABreached: true,
+			SLADetails:  []string{"p95 latency exceeded SLA"},
+			Provenance:  RunArchiveProvenance{GoalConfig: &GoalConfig{P95LatencyMs: ptr(800.0)}},
+		},
+		Overview: RunArchiveOverview{Transactions: 1000, P95Ms: 742, PeakTPS: 84.7, PeakActiveVUsers: 600},
+		ByAction: map[string]RunArchiveActionStats{
+			"SubmitOrder": {Transactions: 1000, P95Ms: 742, ErrorPct: 0.4},
+		},
+	}
+	manifest := &TestRunManifest{
+		TestID:   "test-789",
+		TestName: "Peak Certification",
+		LoadGenerators: TestRunManifestLoadGenerators{
+			Assignment:      &GeneratorAssignmentSettings{Mode: "auto", ShardStrategy: "capacity_weighted"},
+			GeneratorShards: []GeneratorShardSummary{{Group: "buyers", Target: "gen-pod-1", VUsers: 300, ShardStrategy: "capacity_weighted"}},
+			GeneratorInventory: []GeneratorInventoryEntry{
+				{Target: "gen-pod-1", Region: "eastus2", Status: "connected", HealthScore: 98, ActiveVUsers: 300, AvailableCapacity: 700, MaxVUsers: 1000, CapacityState: "available"},
+			},
+		},
+		Scripts: []TestRunManifestScript{{GroupName: "buyers", ScriptName: "oms-order-flows", Protocol: "http", VUsers: 300, RampUp: "15m"}},
+	}
+
+	html, err := renderRunArchiveHTMLReportWithAnnotations(report, "executive", nil, manifest)
+	if err != nil {
+		t.Fatalf("render with manifest returned error: %v", err)
+	}
+	body := string(html)
+	// An SLA breach yields a Fail verdict; the manifest appendix renders the
+	// assignment, shards, inventory, and scripts pulled from the manifest.
+	for _, want := range []string{
+		"Appendix C — Generator assignment manifest",
+		"gen-pod-1",         // shard + inventory target
+		"capacity_weighted", // assignment strategy
+		"oms-order-flows",   // scripts & groups
+		"eastus2",           // inventory region
+		"SubmitOrder",       // SLA compliance row
+		"Fail",              // verdict badge from SLABreached
+		"Run at a glance",   // Section 2 heading
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected manifest report HTML to contain %q", want)
+		}
+	}
+}
+
+func TestRenderRunArchiveHTMLReportHandlesNilManifest(t *testing.T) {
+	report := &RunArchiveReport{
+		SchemaVersion: runArchiveReportSchemaVersion,
+		Manifest:      &RunArchiveManifest{TestID: "test-000", TestName: "No Manifest", Status: "COMPLETE"},
+		Overview:      RunArchiveOverview{},
+		ByAction:      map[string]RunArchiveActionStats{},
+	}
+	html, err := renderRunArchiveHTMLReportWithAnnotations(report, "engineer", nil, nil)
+	if err != nil {
+		t.Fatalf("render with nil manifest returned error: %v", err)
+	}
+	body := string(html)
+	if !strings.Contains(body, "Appendix C — Generator assignment manifest") {
+		t.Fatal("expected manifest appendix heading even with nil manifest")
+	}
+	if !strings.Contains(body, "generator assignment manifest was not available") {
+		t.Fatalf("expected unavailable note for nil manifest, got %q", body)
+	}
+}
+
+func TestRenderRunArchiveHTMLReportHonorsVerdictAndFindingsOverrides(t *testing.T) {
+	report := &RunArchiveReport{
+		SchemaVersion: runArchiveReportSchemaVersion,
+		Manifest:      &RunArchiveManifest{TestID: "t", TestName: "Override", Status: "COMPLETE", SLABreached: true, SLADetails: []string{"latency"}},
+		Overview:      RunArchiveOverview{Transactions: 10},
+		ByAction:      map[string]RunArchiveActionStats{},
+	}
+	annotations := &ReportAnnotations{
+		TestID:             "t",
+		Profile:            "executive",
+		VerdictOverride:    "Conditional Pass",
+		VerdictExplanation: "Transient breach recovered without intervention.",
+		Findings:           []ReportFinding{{ID: "F-01", Title: "Curated finding", Severity: "minor", Observed: "analyst observation"}},
+		SectionComments:    map[string]string{},
+	}
+	html, err := renderRunArchiveHTMLReportWithAnnotations(report, "executive", annotations, nil)
+	if err != nil {
+		t.Fatalf("render with overrides returned error: %v", err)
+	}
+	body := string(html)
+	if !strings.Contains(body, "Conditional Pass") {
+		t.Fatal("expected analyst verdict override to win over auto-derived Fail")
+	}
+	if !strings.Contains(body, "Transient breach recovered") {
+		t.Fatal("expected analyst verdict explanation")
+	}
+	if !strings.Contains(body, "Curated finding") {
+		t.Fatal("expected analyst-curated finding to render")
+	}
+}

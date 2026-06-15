@@ -628,7 +628,14 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
 		return
 	}
-	html, err := renderRunArchiveHTMLReportWithAnnotations(report, profile, annotations)
+	// The generator-assignment manifest powers Appendix C. It is best-effort:
+	// a failure (e.g. an archived run whose live state is gone) must not block
+	// the report, so the renderer degrades to an "unavailable" note on nil.
+	manifest, manifestErr := s.runner.GetTestManifest(r.PathValue("id"))
+	if manifestErr != nil {
+		manifest = nil
+	}
+	html, err := renderRunArchiveHTMLReportWithAnnotations(report, profile, annotations, manifest)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to render archive report: "+err.Error())
 		return

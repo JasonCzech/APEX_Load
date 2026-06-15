@@ -42,12 +42,12 @@ const (
 	reportChartPadR    = 18
 	reportChartPadT    = 40
 	reportChartPadB    = 30
-	reportChartAccent  = "#0f766e"
-	reportChartAccent2 = "#b45309"
-	reportChartGrid    = "#d8cfc2"
-	reportChartInk     = "#1f2933"
-	reportChartMuted   = "#5b6875"
-	reportChartSurface = "#fffdf8"
+	reportChartAccent  = "#1f6feb"
+	reportChartAccent2 = "#8a6100"
+	reportChartGrid    = "#d4dbe3"
+	reportChartInk     = "#1a2330"
+	reportChartMuted   = "#4a5568"
+	reportChartSurface = "#f3f6f9"
 )
 
 // buildReportCharts derives all report graphs from the archived run report.
