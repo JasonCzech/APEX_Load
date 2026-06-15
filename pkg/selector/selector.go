@@ -37,6 +37,19 @@ const (
 	ConfidenceXPath       = 58
 )
 
+// Salesforce Lightning/Aura confidence levels. Lightning component attributes
+// (aria-label, data-aura-class, title, role) are more stable than the generic
+// equivalents on a Lightning page, so they rank slightly higher — while a
+// volatile Aura-generated id ranks below role/text fallbacks because it drifts
+// between renders.
+const (
+	ConfidenceLightningAriaLabel = 88
+	ConfidenceLightningRoleName  = 86
+	ConfidenceLightningAuraClass = 84
+	ConfidenceLightningTitle     = 80
+	ConfidenceVolatileAuraID     = 56
+)
+
 // Unique trims, dedupes (by kind+value), and sorts candidates by confidence
 // descending with value as the tiebreaker. The sort is stable so equal-confidence
 // candidates keep their source order before the value tiebreak.

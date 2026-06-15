@@ -17,6 +17,13 @@ import (
 
 const defaultSSEStreamTimeout = 30 * time.Second
 
+// defaultSSEMaxBodyBytes bounds how much of an SSE stream is buffered when the
+// script sets neither max_events nor stop_on_event. Without a bound a long-lived
+// or never-terminating stream grows the in-memory buffer without limit, and a
+// VUser looping over such a read exhausts memory. Authors can raise it (or set
+// max_body_bytes <= 0 to opt out) via the action params.
+const defaultSSEMaxBodyBytes = 8 << 20 // 8 MiB
+
 type sseEvent struct {
 	Event string
 	Data  string
@@ -61,6 +68,7 @@ func isSSEContentType(value string) bool {
 func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]any, start time.Time) (sseReadResult, error) {
 	maxEvents := sseParamInt(params, "max_events", 0)
 	stopOnEvent := strings.TrimSpace(sseParamString(params, "stop_on_event"))
+	maxBodyBytes := sseMaxBodyBytes(params)
 	timeout := time.Duration(sseParamInt(params, "stream_timeout_ms", int(defaultSSEStreamTimeout/time.Millisecond))) * time.Millisecond
 
 	var timedOut atomic.Bool
@@ -135,6 +143,13 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 				dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
 			case strings.HasPrefix(line, "id:"):
 				current.ID = strings.TrimSpace(strings.TrimPrefix(line, "id:"))
+			}
+			if maxBodyBytes > 0 && result.BytesRead >= maxBodyBytes {
+				// Buffer bound reached: flush any in-progress event and stop
+				// reading so an unbounded stream cannot exhaust memory.
+				dispatch()
+				result.Body = out.Bytes()
+				return result, nil
 			}
 		}
 		if err != nil {
@@ -264,6 +279,17 @@ func parseSSEExtractorExpression(expr string) (string, int) {
 		}
 	}
 	return trimmed, ordinal
+}
+
+// sseMaxBodyBytes resolves the SSE buffer cap. When max_body_bytes is unset the
+// default cap applies; a value <= 0 disables the cap (unbounded, opt-in).
+func sseMaxBodyBytes(params map[string]any) int64 {
+	if params != nil {
+		if _, ok := params["max_body_bytes"]; ok {
+			return int64(sseParamInt(params, "max_body_bytes", 0))
+		}
+	}
+	return defaultSSEMaxBodyBytes
 }
 
 func sseParamString(params map[string]any, key string) string {

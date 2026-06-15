@@ -24,7 +24,14 @@ const (
 	jwtBearerGrantURN       = "urn:ietf:params:oauth:grant-type:jwt-bearer"
 	defaultTokenCacheTTL    = 5 * time.Minute
 	tokenCacheExpirySlack   = 30 * time.Second
-	jwtBearerAssertionTTL   = 3 * time.Minute
+	// jwtBearerAssertionTTL is the validity window of the signed JWT bearer
+	// assertion. It must comfortably cover network latency and clock skew between
+	// this host and the token endpoint; 3 minutes proved too tight under
+	// distributed/clock-skewed conditions, so the window is 5 minutes.
+	jwtBearerAssertionTTL = 5 * time.Minute
+	// maxOAuthErrorDescriptionLen bounds how much of an error endpoint's
+	// error_description is echoed into a returned error message.
+	maxOAuthErrorDescriptionLen = 256
 	defaultOAuthTokenType   = "Bearer"
 	oauthFormContentType    = "application/x-www-form-urlencoded"
 	oauthJSONAcceptMimeType = "application/json"
@@ -186,8 +193,13 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 		return OAuthToken{}, fmt.Errorf("decode OAuth2 token response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		if payload.ErrorCode != "" || payload.ErrorDescription != "" {
-			return OAuthToken{}, fmt.Errorf("OAuth2 token endpoint returned %d: %s %s", resp.StatusCode, payload.ErrorCode, payload.ErrorDescription)
+		// error_code is the RFC 6749 §5.2 enum (safe). error_description is
+		// free-form text from the endpoint: bound its length and strip any of our
+		// own request secrets it may echo back before surfacing it in an error
+		// that gets logged/stored in result.ErrorMessage.
+		desc := redactOAuthErrorDescription(payload.ErrorDescription, req)
+		if payload.ErrorCode != "" || desc != "" {
+			return OAuthToken{}, fmt.Errorf("OAuth2 token endpoint returned %d: %s %s", resp.StatusCode, payload.ErrorCode, desc)
 		}
 		return OAuthToken{}, fmt.Errorf("OAuth2 token endpoint returned %d", resp.StatusCode)
 	}
@@ -208,6 +220,28 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 		InstanceURL: strings.TrimSpace(payload.InstanceURL),
 		ExpiresAt:   time.Now().Add(ttl),
 	}, nil
+}
+
+// redactOAuthErrorDescription bounds the length of an OAuth endpoint's
+// error_description and replaces any occurrence of the request's own secrets
+// (client_secret, refresh_token, private_key) with a placeholder so a
+// misbehaving or malicious endpoint cannot echo our credentials back into a
+// logged error string.
+func redactOAuthErrorDescription(desc string, req OAuthTokenRequest) string {
+	desc = strings.TrimSpace(desc)
+	if desc == "" {
+		return ""
+	}
+	for _, secret := range []string{req.ClientSecret, req.PrivateKey, req.RefreshToken} {
+		secret = strings.TrimSpace(secret)
+		if secret != "" {
+			desc = strings.ReplaceAll(desc, secret, "[redacted]")
+		}
+	}
+	if len(desc) > maxOAuthErrorDescriptionLen {
+		desc = desc[:maxOAuthErrorDescriptionLen] + "…"
+	}
+	return desc
 }
 
 func buildJWTBearerAssertion(req OAuthTokenRequest, now time.Time) (string, error) {

@@ -119,6 +119,35 @@ func findRelativeDistDir(rel string, bases ...string) (string, bool) {
 	return rel, false
 }
 
+// pathWithinDir reports whether file, after resolving symlinks in both file and
+// dir, stays inside dir. It is used to keep download handlers from serving a
+// symlink staged inside the dist directory that points outside it.
+func pathWithinDir(file, dir string) bool {
+	resolvedDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		resolvedDir = dir
+	}
+	resolvedDir, err = filepath.Abs(resolvedDir)
+	if err != nil {
+		return false
+	}
+	resolvedFile, err := filepath.EvalSymlinks(file)
+	if err != nil {
+		// File missing or unreadable: fall back to the lexical path so a
+		// non-existent target is simply not matched downstream.
+		resolvedFile = file
+	}
+	resolvedFile, err = filepath.Abs(resolvedFile)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(resolvedDir, resolvedFile)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // findDownloadPackage returns the newest staged "<prefix>*-<platform>.tar.gz" in
 // distDir. humanName/stageCmd/distDirEnv are woven into the not-found errors so
 // each artifact surfaces an actionable staging hint.
@@ -141,7 +170,14 @@ func findDownloadPackage(distDir, prefix, platform, humanName, stageCmd, distDir
 		if platform != "" && !strings.Contains(name, "-"+platform+".tar.gz") {
 			continue
 		}
-		matches = append(matches, filepath.Join(distDir, name))
+		candidate := filepath.Join(distDir, name)
+		// Defense in depth: never serve a staged entry whose real path (after
+		// resolving symlinks) escapes the dist directory. This blocks a symlinked
+		// "<prefix>-<platform>.tar.gz" from exfiltrating arbitrary host files.
+		if !pathWithinDir(candidate, distDir) {
+			continue
+		}
+		matches = append(matches, candidate)
 	}
 	sort.Strings(matches)
 	if len(matches) == 0 && platform != "" {

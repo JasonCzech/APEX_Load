@@ -166,3 +166,80 @@ func marshalSettingsWithoutKey(t *testing.T, settings SystemSettings, key string
 	}
 	return string(out)
 }
+
+func TestSanitizeDownloadPlatform(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"darwin-arm64", "darwin-arm64"},
+		{"linux-amd64", "linux-amd64"},
+		{"LINUX-AMD64", "linux-amd64"},
+		{"  windows-amd64  ", "windows-amd64"},
+		{"linux/amd64", "linux-amd64"},
+		{"", ""},
+		{"   ", ""},
+		{"../../etc/passwd", ""},
+		{"linux-amd64\x00", ""},
+		{"%2e%2e", ""},
+		{"darwin-arm64; rm -rf /", ""},
+		{strings.Repeat("a", 4096), ""},
+		{"freebsd-amd64", ""},
+	}
+	for _, tc := range cases {
+		if got := sanitizeDownloadPlatform(tc.in); got != tc.want {
+			t.Errorf("sanitizeDownloadPlatform(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestFindDownloadPackageRejectsSymlinkEscape verifies a symlink staged inside
+// the dist directory that points outside it is never selected for serving —
+// the path-confinement guard added to findDownloadPackage.
+func TestFindDownloadPackageRejectsSymlinkEscape(t *testing.T) {
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.tar.gz")
+	if err := os.WriteFile(secret, []byte("top secret host file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	distDir := t.TempDir()
+	// A malicious symlink whose name matches the served-package pattern.
+	link := filepath.Join(distDir, recordingAgentPackagePrefix+"0.1.0-linux-amd64.tar.gz")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	_, err := findDownloadPackage(distDir, recordingAgentPackagePrefix, "linux-amd64", "Agent", "stage", recordingAgentDistDirEnv)
+	if err == nil {
+		t.Fatal("symlink escaping the dist dir must not be served, but a package was returned")
+	}
+
+	// A legitimate regular package in the same dir is still found, and is chosen
+	// over the escaping symlink.
+	real := filepath.Join(distDir, recordingAgentPackagePrefix+"0.2.0-linux-amd64.tar.gz")
+	if err := os.WriteFile(real, []byte("agent"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := findDownloadPackage(distDir, recordingAgentPackagePrefix, "linux-amd64", "Agent", "stage", recordingAgentDistDirEnv)
+	if err != nil {
+		t.Fatalf("legit package should be found: %v", err)
+	}
+	if filepath.Base(got) != filepath.Base(real) {
+		t.Fatalf("selected %q, want the real package %q (symlink must be excluded)", got, real)
+	}
+}
+
+func TestPathWithinDir(t *testing.T) {
+	dir := t.TempDir()
+	inside := filepath.Join(dir, "pkg.tar.gz")
+	if err := os.WriteFile(inside, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !pathWithinDir(inside, dir) {
+		t.Fatal("a regular file inside the dir should be within it")
+	}
+	if pathWithinDir(filepath.Join(dir, "..", "escape.tar.gz"), dir) {
+		t.Fatal("a parent-relative path must not be reported as within the dir")
+	}
+}

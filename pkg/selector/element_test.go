@@ -211,3 +211,65 @@ func TestCandidatesLightningDemotesAuraRenderID(t *testing.T) {
 		t.Fatalf("volatile Aura id ranked above text fallback: %v", gotValues)
 	}
 }
+
+func confidenceForValue(candidates []Candidate, kind, value string) (int, bool) {
+	for _, c := range candidates {
+		if c.Kind == kind && c.Value == value {
+			return c.Confidence, true
+		}
+	}
+	return 0, false
+}
+
+func TestCandidatesLightningConfidenceLevels(t *testing.T) {
+	lightning := Candidates(ElementMetadata{
+		Tag:       "lightning-button",
+		Role:      "button",
+		AriaLabel: "Save",
+		Text:      "Save",
+		Attributes: map[string]string{
+			"data-aura-class": "force:button",
+			"title":           "Save",
+		},
+	})
+	checks := []struct {
+		kind, value string
+		want        int
+	}{
+		{"css", `lightning-button[aria-label="Save"]`, ConfidenceLightningAriaLabel},
+		{"css", `lightning-button[data-aura-class="force:button"]`, ConfidenceLightningAuraClass},
+		{"css", `lightning-button[title="Save"]`, ConfidenceLightningTitle},
+		{"role", `role=button[name="Save"]`, ConfidenceLightningRoleName},
+	}
+	for _, c := range checks {
+		got, ok := confidenceForValue(lightning, c.kind, c.value)
+		if !ok {
+			t.Fatalf("missing candidate %s:%s", c.kind, c.value)
+		}
+		if got != c.want {
+			t.Fatalf("%s confidence = %d, want %d", c.value, got, c.want)
+		}
+	}
+
+	// A plain (non-Lightning) element keeps the generic aria-label confidence,
+	// not the Lightning-boosted one.
+	plain := Candidates(ElementMetadata{Tag: "button", AriaLabel: "Save"})
+	got, ok := confidenceForValue(plain, "css", `button[aria-label="Save"]`)
+	if !ok {
+		t.Fatal("missing plain aria-label candidate")
+	}
+	if got != ConfidenceAriaLabel {
+		t.Fatalf("plain aria-label confidence = %d, want generic %d", got, ConfidenceAriaLabel)
+	}
+}
+
+func TestVolatileAuraIDConfidence(t *testing.T) {
+	got := Candidates(ElementMetadata{Tag: "span", ID: "j_id0:form:input"})
+	conf, ok := confidenceForValue(got, "css", `[id="j_id0:form:input"]`)
+	if !ok {
+		t.Fatalf("missing volatile aura id candidate: %#v", got)
+	}
+	if conf != ConfidenceVolatileAuraID {
+		t.Fatalf("volatile aura id confidence = %d, want %d", conf, ConfidenceVolatileAuraID)
+	}
+}

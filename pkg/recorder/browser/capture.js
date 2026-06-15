@@ -165,6 +165,18 @@
     };
   }
 
+  // safeMetaFor wraps metaFor so a DOM exception while collecting element
+  // metadata (detached node, cross-origin frame, exotic element state) degrades
+  // to a null element instead of throwing out of the event handler and silently
+  // dropping the entire recorded step.
+  function safeMetaFor(el) {
+    try {
+      return metaFor(el);
+    } catch (e) {
+      return null;
+    }
+  }
+
   // Same-origin frames identify themselves via frameElement; cross-origin
   // frames are resolved on the Go side from the binding source frame URL.
   function frameSelector() {
@@ -191,7 +203,7 @@
       url: location.href,
       title: document.title,
       frame_selector: frameSelector(),
-      element: el ? metaFor(el) : null
+      element: el ? safeMetaFor(el) : null
     });
   }
 

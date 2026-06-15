@@ -7,6 +7,7 @@
 package mulesoft
 
 import (
+	"encoding/json"
 	"net/url"
 	"sort"
 	"strings"
@@ -121,6 +122,12 @@ func Analyze(script *dsl.Script) *Review {
 				addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement client credentials are passed as query parameters; move to env/secret placeholders.", "query "+key)
 			}
 		}
+		// Request-body signals: client credentials carried in a JSON or
+		// form-encoded body (common for token exchanges) would otherwise be
+		// missed by the header/query checks above.
+		if key, ok := bodyCredentialKey(action.Body); ok {
+			addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement client credentials are sent in the request body; move to env/secret placeholders.", "body "+key)
+		}
 		// http_oauth2_token init actions reveal the OAuth grant.
 		if strings.EqualFold(action.Type, "http_oauth2_token") {
 			sawOAuthInit = true
@@ -232,6 +239,66 @@ func queryKeys(rawURL string) map[string]bool {
 		keys[key] = true
 	}
 	return keys
+}
+
+// bodyCredentialKey reports the first Anypoint client-credential key found in a
+// request body. It understands JSON objects (recursively) and form-encoded
+// bodies; other content is ignored.
+func bodyCredentialKey(body string) (string, bool) {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return "", false
+	}
+	// JSON object body.
+	if strings.HasPrefix(body, "{") {
+		var decoded map[string]any
+		if err := json.Unmarshal([]byte(body), &decoded); err == nil {
+			if key, ok := jsonCredentialKey(decoded); ok {
+				return key, true
+			}
+			return "", false
+		}
+	}
+	// Form-encoded body. Require a key=value shape to avoid matching free-form
+	// text that merely contains the substring "client_id".
+	if strings.Contains(body, "=") {
+		if values, err := url.ParseQuery(body); err == nil {
+			keys := make([]string, 0, len(values))
+			for key := range values {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				if clientCredentialKeys[strings.ToLower(strings.TrimSpace(key))] {
+					return key, true
+				}
+			}
+		}
+	}
+	return "", false
+}
+
+// jsonCredentialKey walks a decoded JSON object for a client-credential key,
+// visiting keys in sorted order at each level so the reported evidence is stable.
+func jsonCredentialKey(node map[string]any) (string, bool) {
+	keys := make([]string, 0, len(node))
+	for key := range node {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if clientCredentialKeys[strings.ToLower(strings.TrimSpace(key))] {
+			return key, true
+		}
+	}
+	for _, key := range keys {
+		if nested, ok := node[key].(map[string]any); ok {
+			if found, ok := jsonCredentialKey(nested); ok {
+				return found, true
+			}
+		}
+	}
+	return "", false
 }
 
 func paramString(params map[string]any, key string) string {

@@ -231,3 +231,48 @@ func testRSAPrivateKeyPEM(t *testing.T) string {
 	der := x509.MarshalPKCS1PrivateKey(key)
 	return string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der}))
 }
+
+func TestFetchOAuth2TokenRedactsSecretsInError(t *testing.T) {
+	resetOAuthTokenCacheForTest()
+	const secret = "super-secret-value-1234567890"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A misbehaving endpoint echoes our own client_secret back in the
+		// human-readable error_description.
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":             "invalid_client",
+			"error_description": "client authentication failed for secret " + secret,
+		})
+	}))
+	defer server.Close()
+
+	_, err := FetchOAuth2Token(context.Background(), OAuthTokenRequest{
+		TokenURL:     server.URL,
+		GrantType:    OAuthGrantClientCredentials,
+		ClientID:     "client-1",
+		ClientSecret: secret,
+	})
+	if err == nil {
+		t.Fatal("expected an error for a 400 token response")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("error leaked the client secret: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "[redacted]") {
+		t.Fatalf("error should mark the redaction: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "invalid_client") {
+		t.Fatalf("error should retain the safe RFC 6749 error code: %q", err.Error())
+	}
+}
+
+func TestRedactOAuthErrorDescriptionCapsLength(t *testing.T) {
+	long := strings.Repeat("a", maxOAuthErrorDescriptionLen+50)
+	got := redactOAuthErrorDescription(long, OAuthTokenRequest{})
+	if len([]rune(got)) > maxOAuthErrorDescriptionLen+1 { // +1 for the ellipsis rune
+		t.Fatalf("description not capped: len=%d", len([]rune(got)))
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Fatalf("capped description should end with an ellipsis: %q", got)
+	}
+}

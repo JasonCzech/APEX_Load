@@ -137,3 +137,68 @@ func TestAnalyzeIgnoresNonMuleScripts(t *testing.T) {
 		t.Fatalf("review = %#v, want not detected for non-Mule script", review)
 	}
 }
+
+func TestAnalyzeDetectsClientIDEnforcementInRequestBody(t *testing.T) {
+	cases := []struct {
+		name        string
+		body        string
+		wantEvidPfx string
+	}{
+		{
+			name:        "json body",
+			body:        `{"grant_type":"client_credentials","client_id":"abc","client_secret":"xyz"}`,
+			wantEvidPfx: "body client_",
+		},
+		{
+			name:        "nested json body",
+			body:        `{"auth":{"client_secret":"xyz"}}`,
+			wantEvidPfx: "body client_secret",
+		},
+		{
+			name:        "form encoded body",
+			body:        `grant_type=client_credentials&client_id=abc&client_secret=xyz`,
+			wantEvidPfx: "body client_",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			script := &dsl.Script{
+				Config: dsl.ScriptConfig{BaseURL: "https://accounts-api.us-e2.cloudhub.io/api"},
+				Actions: []dsl.Action{{
+					Name:   "Token",
+					Type:   "POST",
+					Method: "POST",
+					Target: "/token",
+					Body:   tc.body,
+				}},
+			}
+			review := Analyze(script)
+			var found *PolicyFinding
+			for i := range review.PolicyFindings {
+				if review.PolicyFindings[i].Policy == "client_id_enforcement" {
+					found = &review.PolicyFindings[i]
+				}
+			}
+			if found == nil {
+				t.Fatalf("client_id_enforcement not detected from body; findings = %#v", review.PolicyFindings)
+			}
+			if !strings.HasPrefix(found.Evidence, tc.wantEvidPfx) {
+				t.Fatalf("evidence = %q, want prefix %q", found.Evidence, tc.wantEvidPfx)
+			}
+		})
+	}
+}
+
+func TestBodyCredentialKeyIgnoresPlainText(t *testing.T) {
+	// Free-form text that merely mentions client_id but is neither JSON nor a
+	// key=value form must not trigger detection.
+	if key, ok := bodyCredentialKey("please provide your client_id to the admin"); ok {
+		t.Fatalf("plain text should not match, got key %q", key)
+	}
+	if key, ok := bodyCredentialKey(""); ok {
+		t.Fatalf("empty body should not match, got key %q", key)
+	}
+	if key, ok := bodyCredentialKey(`{"order_id":"123"}`); ok {
+		t.Fatalf("unrelated JSON should not match, got key %q", key)
+	}
+}

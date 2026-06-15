@@ -62,7 +62,7 @@ func Candidates(meta ElementMetadata) []Candidate {
 		confidence := ConfidenceHTMLID
 		reason := "HTML id attribute captured at recording time."
 		if isVolatileAuraID(value) {
-			confidence = 56
+			confidence = ConfidenceVolatileAuraID
 			reason = "Aura-generated id captured at recording time; ranked below role/text fallbacks because it may drift."
 		}
 		out = append(out, Candidate{
@@ -76,7 +76,7 @@ func Candidates(meta ElementMetadata) []Candidate {
 		confidence := ConfidenceAriaLabel
 		reason := "ARIA label captured at recording time."
 		if lightningElement {
-			confidence = 88
+			confidence = ConfidenceLightningAriaLabel
 			reason = "Lightning component ARIA label captured at recording time."
 		}
 		out = append(out, Candidate{
@@ -91,7 +91,7 @@ func Candidates(meta ElementMetadata) []Candidate {
 			out = append(out, Candidate{
 				Kind:       "css",
 				Value:      tagPrefixed(tag, CSSAttributeSelector("data-aura-class", value)),
-				Confidence: 84,
+				Confidence: ConfidenceLightningAuraClass,
 				Reason:     "Lightning Aura class hint captured at recording time.",
 			})
 		}
@@ -99,7 +99,7 @@ func Candidates(meta ElementMetadata) []Candidate {
 			out = append(out, Candidate{
 				Kind:       "css",
 				Value:      tagPrefixed(tag, CSSAttributeSelector("title", value)),
-				Confidence: 80,
+				Confidence: ConfidenceLightningTitle,
 				Reason:     "Lightning component title captured at recording time.",
 			})
 		}
@@ -117,7 +117,7 @@ func Candidates(meta ElementMetadata) []Candidate {
 			confidence := ConfidenceRoleName
 			reason := "Accessible role and name captured at recording time."
 			if lightningElement {
-				confidence = 86
+				confidence = ConfidenceLightningRoleName
 				reason = "Lightning accessible role and name captured at recording time."
 			}
 			out = append(out, Candidate{
