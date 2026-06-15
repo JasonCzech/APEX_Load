@@ -8,8 +8,8 @@ import "testing"
 // preflight is rejected and the dashboard reports "Authentication check failed".
 func TestWailsWebviewOriginsCoverPlatforms(t *testing.T) {
 	want := map[string]bool{
-		"wails://wails.localhost": false, // macOS (WKWebView)
-		"http://wails.localhost":  false, // Windows (WebView2) / Linux (WebKitGTK)
+		"wails://wails":          false, // macOS (WKWebView, Wails v2.12) — confirmed location.origin
+		"http://wails.localhost": false, // Windows (WebView2) / Linux (WebKitGTK)
 	}
 	for _, origin := range wailsWebviewOrigins {
 		if _, ok := want[origin]; ok {

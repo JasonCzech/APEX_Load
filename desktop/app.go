@@ -16,13 +16,19 @@ import (
 )
 
 // wailsWebviewOrigins are the page origins the Wails webview serves the
-// dashboard from across platforms: macOS (WKWebView) uses the wails:// scheme,
-// while Windows (WebView2) and Linux (WebKitGTK) use http://wails.localhost.
-// The embedded API server binds a loopback random port, so dashboard requests
-// to it are cross-origin and must be allow-listed or the browser blocks the
-// CORS preflight (and the WebSocket upgrade), surfacing in the dashboard as
-// "Authentication check failed" when GET /api/v1/auth/me never resolves.
+// dashboard from across platforms. The embedded API server binds a loopback
+// random port, so the dashboard's requests to it are cross-origin and must be
+// allow-listed or the browser blocks the CORS preflight (and the WebSocket
+// upgrade), surfacing in the dashboard as "Authentication check failed" when
+// GET /api/v1/auth/me never resolves.
+//
+// The exact origin differs per webview/Wails version, so all known variants are
+// listed. macOS (WKWebView, Wails v2.12) is "wails://wails" — host "wails", not
+// "wails.localhost" — confirmed from the webview's own location.origin; the
+// .localhost and http(s) forms cover Windows (WebView2), Linux (WebKitGTK), and
+// older Wails releases.
 var wailsWebviewOrigins = []string{
+	"wails://wails",
 	"wails://wails.localhost",
 	"http://wails.localhost",
 	"https://wails.localhost",
