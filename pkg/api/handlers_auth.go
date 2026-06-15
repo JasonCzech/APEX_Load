@@ -584,8 +584,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	var req AuthUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	subject := strings.TrimSpace(req.Subject)
@@ -636,8 +635,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req AuthUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.Subject) != "" {
@@ -669,8 +667,7 @@ func (s *Server) handleCreateUserBinding(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req AuthUserBindingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	binding := normalizeUserBindingRequest(user.ID, req)
@@ -1018,8 +1015,7 @@ func (s *Server) handleCreateServiceAccount(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var req AuthServiceAccountRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	account, apiKey, err := buildServiceAccount(req)
@@ -1051,8 +1047,7 @@ func (s *Server) handleUpdateServiceAccount(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var req AuthServiceAccountUpdateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Active == nil {

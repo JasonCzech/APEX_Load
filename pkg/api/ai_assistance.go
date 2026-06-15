@@ -358,8 +358,7 @@ func buildAIPolicyResponse(projectID string, now time.Time) AIPolicyResponse {
 
 func (s *Server) handleAIDraftGeneration(w http.ResponseWriter, r *http.Request) {
 	var req AIDraftRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	projectID := s.deriveAIDraftProjectID(req)
@@ -417,8 +416,7 @@ func (s *Server) handleAIDraftGeneration(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleAIRepairSuggestions(w http.ResponseWriter, r *http.Request) {
 	var req AIRepairRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	provider := normalizeAIProvider(req.Provider)
@@ -470,8 +468,7 @@ func (s *Server) handleAIRepairSuggestions(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleAIExplain(w http.ResponseWriter, r *http.Request) {
 	var req AIExplainRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	projectID := s.deriveAIExplainProjectID(req)

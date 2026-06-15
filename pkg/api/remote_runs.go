@@ -81,8 +81,7 @@ func (s *Server) handleCreateRemoteRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req RemoteRunCreateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	createReq := req.CreateTestRequest
@@ -179,8 +178,7 @@ func (s *Server) handleRemoteRunAction(action string) http.HandlerFunc {
 		if action == "start" {
 			var req StartTestOptions
 			if r.Body != nil && r.ContentLength != 0 {
-				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-					writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+				if !decodeJSONBody(w, r, &req) {
 					return
 				}
 			}

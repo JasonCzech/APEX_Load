@@ -70,8 +70,7 @@ func (s *Server) handlePreviewAuthoringCorrelation(w http.ResponseWriter, r *htt
 	}
 
 	var req authoringCorrelationPreviewRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if len(req.Repairs) > 0 {

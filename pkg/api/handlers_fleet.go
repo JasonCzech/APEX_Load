@@ -124,8 +124,7 @@ func (s *Server) handleGetFleetLoadZones(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleSetGeneratorDrainState(w http.ResponseWriter, r *http.Request) {
 	var req GeneratorDrainRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	req.Target = strings.TrimSpace(req.Target)

@@ -110,8 +110,7 @@ func (s *Server) handleImportK6(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleExportK6(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	var req k6.ExportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	result, err := k6.Export(req)

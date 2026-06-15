@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -61,8 +60,7 @@ func (s *Server) handleSaveReportAnnotations(w http.ResponseWriter, r *http.Requ
 	profile := normalizeReportProfileID(r.URL.Query().Get("profile"))
 
 	var req reportAnnotationsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.SectionComments == nil {

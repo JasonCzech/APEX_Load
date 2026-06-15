@@ -189,8 +189,7 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 5<<20)
 
 	var req sample.ImportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -319,8 +318,7 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 	var wrapper struct {
 		Script dsl.Script `json:"script"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&wrapper); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &wrapper) {
 		return
 	}
 	script := &wrapper.Script

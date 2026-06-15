@@ -23,8 +23,7 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		RedactHeaders         []string `json:"redact_headers,omitempty"`
 		CaptureCookies        bool     `json:"capture_cookies,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Name == "" {
@@ -139,8 +138,7 @@ func (s *Server) handleUpdateRecordedRequest(w http.ResponseWriter, r *http.Requ
 	}
 
 	var update recorder.RequestUpdate
-	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &update) {
 		return
 	}
 

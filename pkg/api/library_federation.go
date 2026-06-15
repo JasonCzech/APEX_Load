@@ -344,8 +344,7 @@ func (s *Server) handleLibraryCatalog(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLibraryExport(w http.ResponseWriter, r *http.Request) {
 	var req LibraryTransferRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	bundle, err := s.buildLibraryBundle(req.Kind, req.ID, req.ProjectID, req.IncludeDependencies)
@@ -359,8 +358,7 @@ func (s *Server) handleLibraryExport(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLibraryImport(w http.ResponseWriter, r *http.Request) {
 	var req LibraryImportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	result, err := s.importLibraryBundle(req, "")
@@ -438,8 +436,7 @@ func (s *Server) handleLibraryListRemotes(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleLibraryCreateRemote(w http.ResponseWriter, r *http.Request) {
 	var req LibraryRemoteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	remote, err := buildLibraryRemote(req)
@@ -462,8 +459,7 @@ func (s *Server) handleLibraryCreateRemote(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.PathValue("id"))
 	var req LibraryRemoteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	s.libraryMu.Lock()
@@ -591,8 +587,7 @@ func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req LibraryTransferRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.ProjectID) == "" {
@@ -642,8 +637,7 @@ func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req LibraryTransferRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.ProjectID) == "" {
@@ -687,8 +681,7 @@ func (s *Server) handleLibraryRemoteDiff(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req LibraryTransferRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	localID := firstNonEmpty(req.LocalID, req.ID)

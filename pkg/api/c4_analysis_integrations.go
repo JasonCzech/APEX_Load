@@ -609,8 +609,7 @@ func (s *Server) handleGetReleaseSLAGovernance(w http.ResponseWriter, r *http.Re
 func (s *Server) handleCreateReleaseSLAWaiver(w http.ResponseWriter, r *http.Request) {
 	releaseID := strings.TrimSpace(r.PathValue("id"))
 	var req createReleaseSLAWaiverRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	req.Scope = strings.TrimSpace(req.Scope)
@@ -846,8 +845,7 @@ func managedTestCompletedAt(test *ManagedTest) time.Time {
 
 func (s *Server) handleImportExternalResults(w http.ResponseWriter, r *http.Request) {
 	var req ExternalResultImportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	provider := normalizeExternalResultProvider(req.Provider)

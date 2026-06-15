@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -27,8 +26,7 @@ func (s *Server) handleStartBrowserReplayDraftScript(w http.ResponseWriter, r *h
 		writeError(w, http.StatusBadRequest, "request body is required")
 		return
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Script == nil {
@@ -48,8 +46,7 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 
 	var req BrowserReplayStartRequest
 	if r.Body != nil && r.ContentLength != 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		if !decodeJSONBody(w, r, &req) {
 			return
 		}
 	}
