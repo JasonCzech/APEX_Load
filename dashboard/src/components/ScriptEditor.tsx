@@ -14465,6 +14465,14 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
               : HTTP_ACTION_TYPES
   const actionTypeLabel = isBrowserScript || isJmsScript || isWebSocketScript || isGrpcScript || isDatabaseScript || isNetworkScript ? 'Action Type' : 'Method'
 
+  // http_oauth2_token is an engine action driven by params (no target/headers/body),
+  // so it gets a dedicated field editor instead of the generic HTTP request inputs.
+  const isOAuthTokenAction = action.type === 'http_oauth2_token'
+  const oauthParams = (action.params || {}) as Record<string, unknown>
+  const oauthStr = (key: string, fallback = '') => (typeof oauthParams[key] === 'string' ? (oauthParams[key] as string) : fallback)
+  const setOAuthParam = (key: string, value: string) => onUpdate(index, 'params', { ...oauthParams, [key]: value })
+  const oauthGrant = oauthStr('grant_type', 'client_credentials')
+
   return (
     <div className="form-grid">
       <label><span>Name</span><input value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
@@ -14473,7 +14481,42 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
           {actionTypes.map(type => <option key={type}>{type}</option>)}
         </select>
       </label>
-      <label className="full-width"><span>{targetLabel}</span><input value={action.target} onChange={e => onUpdate(index, 'target', e.target.value)} placeholder={targetPlaceholder} /></label>
+      {isOAuthTokenAction ? (
+        <>
+          <label><span>Grant Type</span>
+            <select value={oauthGrant} onChange={e => setOAuthParam('grant_type', e.target.value)}>
+              <option value="client_credentials">client_credentials</option>
+              <option value="jwt_bearer">jwt_bearer</option>
+              <option value="refresh_token">refresh_token</option>
+              <option value="password">password</option>
+            </select>
+          </label>
+          <label><span>Save As (variable)</span><input value={oauthStr('save_as', 'access_token')} onChange={e => setOAuthParam('save_as', e.target.value)} placeholder="access_token" /></label>
+          <label className="full-width"><span>Token URL</span><input value={oauthStr('token_url')} onChange={e => setOAuthParam('token_url', e.target.value)} placeholder="https://login.salesforce.com/services/oauth2/token" /></label>
+          <label><span>Client ID</span><input value={oauthStr('client_id')} onChange={e => setOAuthParam('client_id', e.target.value)} placeholder="{{env.CLIENT_ID}}" /></label>
+          <label><span>Client Secret</span><input value={oauthStr('client_secret')} onChange={e => setOAuthParam('client_secret', e.target.value)} placeholder="{{secret.CLIENT_SECRET}}" /></label>
+          <label><span>Scope</span><input value={oauthStr('scope')} onChange={e => setOAuthParam('scope', e.target.value)} placeholder="api full" /></label>
+          <label><span>Audience</span><input value={oauthStr('audience')} onChange={e => setOAuthParam('audience', e.target.value)} placeholder="https://login.salesforce.com" /></label>
+          {oauthGrant === 'jwt_bearer' && (
+            <>
+              <label><span>Issuer (iss)</span><input value={oauthStr('issuer')} onChange={e => setOAuthParam('issuer', e.target.value)} placeholder="{{env.CLIENT_ID}}" /></label>
+              <label><span>Subject (sub)</span><input value={oauthStr('subject')} onChange={e => setOAuthParam('subject', e.target.value)} placeholder="user@example.com" /></label>
+              <label className="full-width"><span>Private Key (PEM)</span><input value={oauthStr('private_key')} onChange={e => setOAuthParam('private_key', e.target.value)} placeholder="{{secret.JWT_PRIVATE_KEY}}" /></label>
+            </>
+          )}
+          {oauthGrant === 'refresh_token' && (
+            <label className="full-width"><span>Refresh Token</span><input value={oauthStr('refresh_token')} onChange={e => setOAuthParam('refresh_token', e.target.value)} placeholder="{{secret.REFRESH_TOKEN}}" /></label>
+          )}
+          {oauthGrant === 'password' && (
+            <>
+              <label><span>Username</span><input value={oauthStr('username')} onChange={e => setOAuthParam('username', e.target.value)} placeholder="{{env.USERNAME}}" /></label>
+              <label><span>Password</span><input value={oauthStr('password')} onChange={e => setOAuthParam('password', e.target.value)} placeholder="{{secret.PASSWORD}}" /></label>
+            </>
+          )}
+        </>
+      ) : (
+        <label className="full-width"><span>{targetLabel}</span><input value={action.target} onChange={e => onUpdate(index, 'target', e.target.value)} placeholder={targetPlaceholder} /></label>
+      )}
       {showSelector && (
         <label className="full-width"><span>Selector Override</span><input value={action.selector || ''} onChange={e => onUpdate(index, 'selector', e.target.value)} placeholder="#submit, input[name=email], [data-testid=save]" /></label>
       )}

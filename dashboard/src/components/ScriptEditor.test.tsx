@@ -1131,6 +1131,45 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('No screenshot yet')
   })
 
+  it('renders a dedicated http_oauth2_token param editor', async () => {
+    const oauthScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'http',
+      actions: [
+        {
+          name: 'Get Token',
+          type: 'http_oauth2_token',
+          target: '',
+          params: {
+            grant_type: 'jwt_bearer',
+            token_url: 'https://login.salesforce.com/services/oauth2/token',
+            save_as: 'access_token',
+          },
+        },
+        { name: 'List Orders', type: 'GET', method: 'GET', target: '/orders' },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={oauthScript} />)
+    })
+
+    const tokenRow = Array.from(container.querySelectorAll('.action-item')).find(row => row.textContent?.includes('Get Token'))
+    expect(tokenRow).toBeDefined()
+    if (!tokenRow) return
+    await act(async () => {
+      tokenRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Token URL')
+    expect(container.textContent).toContain('Grant Type')
+    expect(container.textContent).toContain('Save As')
+    expect(container.textContent).toContain('Private Key')
+    const grantSelect = Array.from(container.querySelectorAll('select')).find(select => Array.from(select.options).some(option => option.value === 'jwt_bearer'))
+    expect(grantSelect).toBeDefined()
+    expect(grantSelect?.value).toBe('jwt_bearer')
+  })
+
   it('surfaces TruClient2 review gates, selector fallbacks, and control actions in the browser editor', async () => {
     const browserScript: ScriptDefinition = {
       ...initialScript,
