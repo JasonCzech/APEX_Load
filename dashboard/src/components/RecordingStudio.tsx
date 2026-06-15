@@ -323,6 +323,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const [browserWSPayloads, setBrowserWSPayloads] = useState(false)
   const [browserStorageState, setBrowserStorageState] = useState('')
   const [browserExcludeHosts, setBrowserExcludeHosts] = useState('')
+  const [browserSidebar, setBrowserSidebar] = useState(true)
   const [browserOptionsOpen, setBrowserOptionsOpen] = useState(false)
   const [installState, setInstallState] = useState<{ status: string; error?: string } | null>(null)
   const [bridgeOrigin, setBridgeOrigin] = useState(DEFAULT_BRIDGE_ORIGIN)
@@ -614,6 +615,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
         capture_screenshots: browserScreenshots,
         capture_ws_payloads: browserWSPayloads,
         storage_state_path: browserStorageState.trim() || undefined,
+        sidebar: browserSidebar,
         exclude_hosts: browserExcludeHosts.trim()
           ? browserExcludeHosts.split(',').map(h => h.trim()).filter(Boolean)
           : undefined,
@@ -1021,6 +1023,10 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
               {browserOptionsOpen && (
                 <div className="rec-browser-options">
                   <label className="rec-checkbox-row">
+                    <input type="checkbox" checked={browserSidebar} onChange={e => setBrowserSidebar(e.target.checked)} />
+                    <span>Show in-page advanced sidebar <span className="rec-hint">(section, transactions, notes, recent steps — uncheck for the minimal pause/assert toolbar)</span></span>
+                  </label>
+                  <label className="rec-checkbox-row">
                     <input type="checkbox" checked={browserScreenshots} onChange={e => setBrowserScreenshots(e.target.checked)} />
                     <span>Capture per-step screenshot thumbnails</span>
                   </label>
@@ -1048,8 +1054,9 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
                 Record Browser
               </button>
               <div className="rec-browser-unavailable">
-                A Chromium window opens on this machine with an in-page recording toolbar (pause and verification picker).
-                Manage the session from the control panel docked below — it also opens as a compact popup window.
+                A Chromium window opens on this machine with an in-page recording sidebar (sections, transactions, notes,
+                recent steps, pause and verification picker) you can drag to any corner. Manage the session from there or
+                the control panel docked below — which also opens as a compact popup window.
               </div>
             </div>
           )}

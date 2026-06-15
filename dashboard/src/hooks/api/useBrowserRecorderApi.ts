@@ -115,6 +115,10 @@ export type BrowserRecorderStartRequest = {
   section?: string
   include_hosts?: string[]
   exclude_hosts?: string[]
+  // sidebar toggles the in-page advanced control sidebar embedded in the
+  // recorded browser. Omitted/true shows it; false falls back to the minimal
+  // pause/assert toolbar.
+  sidebar?: boolean
 }
 
 export type BrowserRecorderConvertRequest = {

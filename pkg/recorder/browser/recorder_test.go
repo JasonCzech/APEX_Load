@@ -392,6 +392,172 @@ func TestPickToggleControlEvent(t *testing.T) {
 	}
 }
 
+func TestControlEventKindRecognizesSidebarActions(t *testing.T) {
+	cases := map[string]string{
+		`{"kind":"pause_toggle"}`:                 "pause_toggle",
+		`{"kind":"pick_toggle"}`:                  "pick_toggle",
+		`{"kind":"section_set","section":"init"}`: "section_set",
+		`{"kind":"transaction_start","name":"x"}`: "transaction_start",
+		`{"kind":"transaction_end","name":"x"}`:   "transaction_end",
+		`{"kind":"note_add","text":"hi"}`:         "note_add",
+		`{"kind":"navigate","url":"https://x/"}`:  "navigate",
+		`{"kind":"delete_last_step"}`:             "delete_last_step",
+		`{"kind":"step_exclude","seq":1}`:         "step_exclude",
+		`{"kind":"step_mark","seq":1}`:            "step_mark",
+		// Capture steps must NOT be classified as control events.
+		`{"kind":"click"}`: "",
+		`{"kind":"fill"}`:  "",
+		`{not json`:        "",
+	}
+	for payload, want := range cases {
+		if got := controlEventKind(payload); got != want {
+			t.Errorf("controlEventKind(%s) = %q, want %q", payload, got, want)
+		}
+	}
+}
+
+func TestSidebarControlEventsRouteToRecorderMethods(t *testing.T) {
+	r := New(Options{StartURL: "https://app.example/"})
+
+	// Section switch from the sidebar tags subsequent steps and is not recorded.
+	r.handleRecordBinding(nil, `{"kind":"section_set","section":"teardown","ts":1}`)
+	if got := r.Section(); got != SectionTeardown {
+		t.Fatalf("section after section_set = %q, want teardown", got)
+	}
+
+	// Transaction lifecycle through the sidebar binding.
+	r.handleRecordBinding(nil, `{"kind":"transaction_start","name":"Checkout","ts":2}`)
+	if open := r.Snapshot().OpenTransactions; len(open) != 1 || open[0] != "Checkout" {
+		t.Fatalf("open transactions = %v, want [Checkout]", open)
+	}
+	r.handleRecordBinding(nil, `{"kind":"transaction_end","name":"Checkout","ts":3}`)
+	if open := r.Snapshot().OpenTransactions; len(open) != 0 {
+		t.Errorf("open transactions after end = %v, want none", open)
+	}
+
+	// Note marker through the sidebar binding.
+	r.handleRecordBinding(nil, `{"kind":"note_add","text":"watch the cart","ts":4}`)
+
+	// Record two steps, then exclude/mark/delete via the sidebar binding.
+	r.handleRecordBinding(nil, `{"kind":"fill","value":"tok","ts":5,"element":{"tag":"input","name":"t","css_path":"#t"}}`)
+	r.handleRecordBinding(nil, `{"kind":"click","ts":6,"element":{"tag":"button","css_path":"#go"}}`)
+	r.handleRecordBinding(nil, `{"kind":"step_exclude","seq":1,"excluded":true,"ts":7}`)
+	r.handleRecordBinding(nil, `{"kind":"step_mark","seq":1,"secret":true,"ts":8}`)
+	r.handleRecordBinding(nil, `{"kind":"delete_last_step","ts":9}`)
+
+	steps := r.Snapshot().Steps
+	if len(steps) != 2 {
+		t.Fatalf("steps = %d, want 2 (control events must not record steps)", len(steps))
+	}
+	if !steps[0].Excluded || !steps[0].MarkSecret {
+		t.Errorf("step 1 = %+v, want excluded+secret", steps[0])
+	}
+	if !steps[1].Deleted {
+		t.Errorf("step 2 not deleted by delete_last_step")
+	}
+	if markers := r.Snapshot().Markers; len(markers) != 3 { // start + end + note
+		t.Errorf("markers = %d, want 3", len(markers))
+	}
+	if warnings := r.Snapshot().Warnings; len(warnings) != 0 {
+		t.Errorf("sidebar control events must not produce artifact warnings: %v", warnings)
+	}
+}
+
+func TestSidebarControlEventsWorkWhilePaused(t *testing.T) {
+	r := New(Options{StartURL: "https://app.example/"})
+	r.Pause()
+	// A capture step is dropped while paused, but a section switch still applies.
+	r.handleRecordBinding(nil, `{"kind":"click","ts":1,"element":{"tag":"button","css_path":"#a"}}`)
+	r.handleRecordBinding(nil, `{"kind":"section_set","section":"init","ts":2}`)
+	if got := r.Section(); got != SectionInit {
+		t.Errorf("section while paused = %q, want init (control events bypass the pause gate)", got)
+	}
+	if steps := r.Snapshot().Steps; len(steps) != 0 {
+		t.Errorf("steps = %d, want 0 (capture gated while paused)", len(steps))
+	}
+}
+
+func TestSidebarControlEventErrorEmitsWarningOnly(t *testing.T) {
+	var warnings []string
+	r := New(Options{StartURL: "https://app.example/", OnEvent: func(e Event) {
+		if e.Type == EventWarning {
+			warnings = append(warnings, e.Warning)
+		}
+	}})
+	// Ending a transaction when none is open errors; it surfaces as a warning
+	// event but is NOT persisted to the recorded artifact's warnings.
+	r.handleRecordBinding(nil, `{"kind":"transaction_end","name":"Nope","ts":1}`)
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "transaction_end") {
+		t.Fatalf("warning events = %v, want one transaction_end warning", warnings)
+	}
+	if got := len(r.Snapshot().Warnings); got != 0 {
+		t.Errorf("artifact warnings = %d, want 0 (control errors stay transient)", got)
+	}
+}
+
+func TestBuildSidebarStateSnapshot(t *testing.T) {
+	r := New(Options{StartURL: "https://app.example/", Section: SectionInit})
+	r.session.NavEvents = append(r.session.NavEvents, NavEvent{URL: "https://app.example/next"})
+	r.handleRecordBinding(nil, `{"kind":"fill","value":"hunter2","ts":1,"element":{"tag":"input","name":"u","css_path":"#u","text":""}}`)
+	r.handleRecordBinding(nil, `{"kind":"click","ts":2,"element":{"tag":"button","css_path":"#go","text":"Submit"}}`)
+	if _, err := r.AddMarker(MarkerTransactionStart, "Login", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.SetStepExcluded(2, true); err != nil {
+		t.Fatal(err)
+	}
+
+	state := r.buildSidebarStateLocked()
+	if state.Section != SectionInit {
+		t.Errorf("section = %q, want init", state.Section)
+	}
+	if state.NavCount != 1 {
+		t.Errorf("navCount = %d, want 1", state.NavCount)
+	}
+	if state.StepCount != 1 {
+		t.Errorf("stepCount = %d, want 1 (excluded step does not count)", state.StepCount)
+	}
+	if len(state.OpenTransactions) != 1 || state.OpenTransactions[0] != "Login" {
+		t.Errorf("openTransactions = %v, want [Login]", state.OpenTransactions)
+	}
+	if len(state.RecentSteps) != 2 {
+		t.Fatalf("recentSteps = %d, want 2", len(state.RecentSteps))
+	}
+	if !state.RecentSteps[0].Fill {
+		t.Errorf("step 1 should be flagged as a fill")
+	}
+	if state.RecentSteps[1].Detail != "Submit" || !state.RecentSteps[1].Excluded {
+		t.Errorf("step 2 view = %+v, want detail=Submit excluded=true", state.RecentSteps[1])
+	}
+
+	// JSON marshals with stable, JS-facing field names.
+	if encoded := r.buildSidebarStateJSON(); !strings.Contains(encoded, `"recentSteps"`) || !strings.Contains(encoded, `"openTransactions"`) {
+		t.Errorf("sidebar state JSON missing expected keys: %s", encoded)
+	}
+}
+
+func TestSidebarStepDetailMasksFills(t *testing.T) {
+	masked := sidebarStepDetail(Step{Kind: StepFill, Masked: true, Value: ""})
+	if masked != "••••" {
+		t.Errorf("masked fill detail = %q, want ••••", masked)
+	}
+	nav := sidebarStepDetail(Step{Kind: StepNavigate, URL: "https://x/y"})
+	if nav != "https://x/y" {
+		t.Errorf("navigate detail = %q", nav)
+	}
+}
+
+func TestConfigScriptReflectsSidebarOption(t *testing.T) {
+	on := New(Options{StartURL: "https://app.example/", Sidebar: true}).configScript()
+	if !strings.Contains(on, `"sidebar":true`) || !strings.Contains(on, "__apexloadRecorderConfig") {
+		t.Errorf("config script (enabled) = %q", on)
+	}
+	off := New(Options{StartURL: "https://app.example/", Sidebar: false}).configScript()
+	if !strings.Contains(off, `"sidebar":false`) {
+		t.Errorf("config script (disabled) = %q", off)
+	}
+}
+
 func TestSessionCloneCopiesSlices(t *testing.T) {
 	session := &Session{
 		ID:        "rec_x",

@@ -79,6 +79,9 @@ type BrowserRecordingStartRequest struct {
 	WindowY      int `json:"window_y,omitempty"`
 	WindowWidth  int `json:"window_width,omitempty"`
 	WindowHeight int `json:"window_height,omitempty"`
+	// Sidebar toggles the in-page advanced control sidebar embedded in the
+	// recorded browser. Default true; set false for only the minimal toolbar.
+	Sidebar *bool `json:"sidebar,omitempty"`
 }
 
 // BrowserRecordingSession is the API view of one headed-browser recording.
@@ -150,6 +153,10 @@ func (m *BrowserRecordingManager) Start(req BrowserRecordingStartRequest) (*Brow
 	if req.CaptureHAR != nil {
 		captureHAR = *req.CaptureHAR
 	}
+	sidebar := true
+	if req.Sidebar != nil {
+		sidebar = *req.Sidebar
+	}
 
 	var device *recbrowser.DeviceEmulation
 	deviceName := ""
@@ -212,6 +219,7 @@ func (m *BrowserRecordingManager) Start(req BrowserRecordingStartRequest) (*Brow
 		WindowY:      req.WindowY,
 		WindowWidth:  req.WindowWidth,
 		WindowHeight: req.WindowHeight,
+		Sidebar:      sidebar,
 		Scrubber:     func(s string) string { return scrub.Value(s, scrub.Policy{}) },
 	})
 	session.mu.Lock()

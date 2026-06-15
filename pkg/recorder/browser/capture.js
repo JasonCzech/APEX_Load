@@ -14,6 +14,17 @@
   let assertMode = false;
   let toolbarHost = null;
 
+  // Live recording state the Go recorder pushes into the page for the advanced
+  // sidebar (counts, active section, open transactions, recent steps). Updated
+  // via __apexloadRecorderSetState; rendered by the panel when expanded.
+  let sidebarState = {
+    section: 'actions',
+    stepCount: 0,
+    navCount: 0,
+    openTransactions: [],
+    recentSteps: []
+  };
+
   // The Go recorder owns the authoritative pause state (it also gates events
   // server-side); this setter keeps the local gate and toolbar in sync.
   window.__apexloadRecorderSetPaused = (value) => {
@@ -26,6 +37,21 @@
   // so the control panel and the in-page toolbar never diverge.
   window.__apexloadRecorderSetAssertMode = (value) => {
     assertMode = !!value && !paused;
+    refreshToolbar();
+  };
+
+  // The Go recorder pushes the full live snapshot here on every relevant change
+  // (debounced server-side). It is authoritative for pause/pick too, so a freshly
+  // navigated document or a new tab hydrates correctly from a single call.
+  window.__apexloadRecorderSetState = (json) => {
+    try {
+      const next = JSON.parse(json);
+      if (next && typeof next === 'object') {
+        sidebarState = next;
+        if (typeof next.paused === 'boolean') paused = next.paused;
+        if (typeof next.picking === 'boolean') assertMode = next.picking && !paused;
+      }
+    } catch (e) { return; }
     refreshToolbar();
   };
 
@@ -305,52 +331,283 @@
     record('press_key', el, ev.key);
   }, true);
 
-  // --- Minimal toolbar (main frame only), isolated in a closed shadow root ---
+  // --- Control panel (main frame only), isolated in a closed shadow root ---
+  // Collapsed it is the minimal REC/Pause/Assert bar; expanded it is a
+  // draggable, corner-snapping advanced sidebar (section / transactions / notes
+  // / navigate / recent-steps). Every action round-trips through the
+  // __apexloadRecord binding so the Go recorder stays authoritative, and the
+  // recorder pushes live state back via __apexloadRecorderSetState. Because the
+  // whole UI lives inside the closed shadow host, the capture listeners' existing
+  // isToolbar() guard keeps its own clicks/keystrokes out of the recording.
 
   let refreshToolbar = () => {};
 
+  const TOOLBAR_STYLE =
+    ':host{all:initial}' +
+    '.wrap{position:fixed;z-index:2147483647}' +
+    '.wrap.corner-tl{top:16px;left:16px}.wrap.corner-tr{top:16px;right:16px}' +
+    '.wrap.corner-bl{bottom:16px;left:16px}.wrap.corner-br{bottom:16px;right:16px}' +
+    '.bar{display:flex;gap:8px;align-items:center;padding:8px 12px;border-radius:8px;' +
+    'background:#1c2333;color:#e6e9f0;font:12px/1.4 system-ui,sans-serif;' +
+    'box-shadow:0 4px 16px rgba(0,0,0,.35);cursor:grab}' +
+    '.panel{display:none;flex-direction:column;gap:8px;width:300px;max-height:calc(100vh - 32px);' +
+    'overflow:auto;padding:10px;border-radius:10px;background:#1c2333;color:#e6e9f0;' +
+    'font:12px/1.4 system-ui,sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.45)}' +
+    '.wrap.dragging .bar,.wrap.dragging .phead{cursor:grabbing}' +
+    'button{border:1px solid #3a4357;border-radius:6px;background:#2a3245;color:#e6e9f0;' +
+    'padding:4px 8px;font:inherit;cursor:pointer}' +
+    'button:hover{background:#333d54}' +
+    'button.active,button.on{background:#c2410c;border-color:#c2410c}' +
+    '.dot{width:8px;height:8px;border-radius:50%;background:#ef4444;flex:0 0 auto}' +
+    '.dot.paused{background:#9ca3af}' +
+    '.phead{display:flex;gap:8px;align-items:center;cursor:grab;user-select:none}' +
+    '.phead .title{font-weight:600}.spacer{flex:1}' +
+    '.prow{display:flex;gap:6px}' +
+    '.counts{color:#9aa4bd;font-size:11px}' +
+    '.slabel{color:#9aa4bd;font-size:11px}' +
+    '.section{display:flex;gap:4px;align-items:center;flex-wrap:wrap}' +
+    '.row{display:flex;gap:6px}' +
+    '.row input{flex:1;min-width:0;border:1px solid #3a4357;border-radius:6px;' +
+    'background:#11161f;color:#e6e9f0;padding:4px 8px;font:inherit}' +
+    '.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}' +
+    '.chip{display:inline-flex;gap:6px;align-items:center;background:#11302a;border:1px solid #1f6f5c;' +
+    'border-radius:12px;padding:2px 6px 2px 10px;color:#a7f3d0}' +
+    '.chip button{padding:0 6px;border-radius:10px}' +
+    '.steps{display:flex;flex-direction:column;gap:4px}' +
+    '.stepsHead{display:flex;align-items:center;justify-content:space-between}' +
+    '.stepsList{display:flex;flex-direction:column;gap:3px;max-height:200px;overflow:auto}' +
+    '.step{display:flex;gap:6px;align-items:center;padding:3px 4px;border-radius:6px;background:#161c28}' +
+    '.step.excluded{opacity:.5}.step .seq{color:#6b7790;flex:0 0 auto}' +
+    '.step .kind{color:#cbd5e1;flex:0 0 auto;text-transform:uppercase;font-size:10px;letter-spacing:.04em}' +
+    '.step .detail{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.step .bdg{font-size:9px;color:#fbbf24;border:1px solid #5b4a1e;border-radius:4px;padding:0 3px;flex:0 0 auto}' +
+    '.step .acts{display:flex;gap:3px;flex:0 0 auto}.step .acts button{padding:0 6px}' +
+    '.empty{color:#6b7790;text-align:center;padding:6px 0}' +
+    '.hint{color:#6b7790;font-size:10px;text-align:center}';
+
+  const TOOLBAR_HTML =
+    '<div class="wrap">' +
+    '<div class="bar"><span class="dot"></span><span class="label">REC</span>' +
+    '<button class="pause">Pause</button><button class="assert">Assert</button>' +
+    '<button class="expand" title="Advanced controls">⋯</button></div>' +
+    '<div class="panel">' +
+    '<div class="phead"><span class="dot"></span><span class="title">APEX Recorder</span>' +
+    '<span class="label"></span><span class="spacer"></span>' +
+    '<button class="collapse" title="Collapse">▾</button></div>' +
+    '<div class="prow"><button class="pause">Pause</button><button class="assert">Assert</button></div>' +
+    '<div class="counts"></div>' +
+    '<div class="section"><span class="slabel">Section</span>' +
+    '<button data-section="init">Init</button><button data-section="actions">Main</button>' +
+    '<button data-section="teardown">Teardown</button></div>' +
+    '<div class="nav row"><input class="navUrl" type="text" placeholder="Navigate to URL…" />' +
+    '<button class="navGo">Go</button></div>' +
+    '<div class="txn"><div class="row"><input class="txnName" type="text" placeholder="Transaction name…" />' +
+    '<button class="txnStart">Start</button></div><div class="chips txnOpen"></div></div>' +
+    '<div class="note row"><input class="noteText" type="text" placeholder="Note for next action…" />' +
+    '<button class="noteAdd">Add</button></div>' +
+    '<div class="steps"><div class="stepsHead"><span class="slabel">Recent steps</span>' +
+    '<button class="undo">Undo last</button></div><div class="stepsList"></div></div>' +
+    '<div class="hint">Convert &amp; save from the APEX Load dashboard.</div>' +
+    '</div></div>';
+
+  function lsGet(key) { try { return localStorage.getItem('apexload_rec_' + key); } catch (e) { return null; } }
+  function lsSet(key, val) { try { localStorage.setItem('apexload_rec_' + key, val); } catch (e) { /* ignore */ } }
+
   function installToolbar() {
     if (window !== window.top || !document.body || toolbarHost) return;
+
+    const cfg = (window.__apexloadRecorderConfig && typeof window.__apexloadRecorderConfig === 'object')
+      ? window.__apexloadRecorderConfig : {};
+    const sidebarEnabled = cfg.sidebar !== false;
+    let corner = lsGet('sidebar_corner') || cfg.corner || 'br';
+    if (!/^[tb][lr]$/.test(corner)) corner = 'br';
+    const storedOpen = lsGet('sidebar_open');
+    let expanded = sidebarEnabled && (storedOpen === null ? cfg.open !== false : storedOpen === '1');
+
     toolbarHost = document.createElement('div');
     toolbarHost.setAttribute('data-apexload-recorder', 'toolbar');
     const shadow = toolbarHost.attachShadow({ mode: 'closed' });
-    shadow.innerHTML =
-      '<style>' +
-      ':host{all:initial}' +
-      '.bar{position:fixed;bottom:16px;right:16px;z-index:2147483647;display:flex;gap:8px;' +
-      'align-items:center;padding:8px 12px;border-radius:8px;background:#1c2333;color:#e6e9f0;' +
-      'font:12px/1.4 system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.35)}' +
-      'button{border:1px solid #3a4357;border-radius:6px;background:#2a3245;color:#e6e9f0;' +
-      'padding:4px 10px;font:inherit;cursor:pointer}' +
-      'button.active{background:#c2410c;border-color:#c2410c}' +
-      '.dot{width:8px;height:8px;border-radius:50%;background:#ef4444}' +
-      '.dot.paused{background:#9ca3af}' +
-      '</style>' +
-      '<div class="bar"><span class="dot"></span><span class="label">REC</span>' +
-      '<button class="pause">Pause</button><button class="assert">Assert</button></div>';
-    const dot = shadow.querySelector('.dot');
-    const label = shadow.querySelector('.label');
-    const pauseBtn = shadow.querySelector('.pause');
-    const assertBtn = shadow.querySelector('.assert');
-    refreshToolbar = () => {
-      dot.className = 'dot' + (paused ? ' paused' : '');
-      label.textContent = paused ? 'PAUSED' : (assertMode ? 'PICK ELEMENT' : 'REC');
-      pauseBtn.textContent = paused ? 'Resume' : 'Pause';
-      assertBtn.className = 'assert' + (assertMode ? ' active' : '');
-    };
-    pauseBtn.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      // Round-trip through Go: the recorder flips its authoritative state and
-      // pushes it back into every page (so the control panel agrees).
-      send({ kind: 'pause_toggle', ts: Date.now() });
-    });
-    assertBtn.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      if (paused) return;
-      // Round-trip through Go so the control panel and every page agree on the
-      // picker state (the recorder pushes it back via the setter below).
-      send({ kind: 'pick_toggle', ts: Date.now() });
-    });
+    shadow.innerHTML = '<style>' + TOOLBAR_STYLE + '</style>' + TOOLBAR_HTML;
+
+    const wrap = shadow.querySelector('.wrap');
+    const bar = shadow.querySelector('.bar');
+    const panel = shadow.querySelector('.panel');
+    const phead = shadow.querySelector('.phead');
+    const dots = shadow.querySelectorAll('.dot');
+    const labels = shadow.querySelectorAll('.label');
+    const pauseBtns = shadow.querySelectorAll('.pause');
+    const assertBtns = shadow.querySelectorAll('.assert');
+    const expandBtn = shadow.querySelector('.expand');
+    const collapseBtn = shadow.querySelector('.collapse');
+    const counts = shadow.querySelector('.counts');
+    const sectionBtns = shadow.querySelectorAll('.section [data-section]');
+    const navUrl = shadow.querySelector('.navUrl');
+    const navGo = shadow.querySelector('.navGo');
+    const txnName = shadow.querySelector('.txnName');
+    const txnStart = shadow.querySelector('.txnStart');
+    const txnOpen = shadow.querySelector('.txnOpen');
+    const noteText = shadow.querySelector('.noteText');
+    const noteAdd = shadow.querySelector('.noteAdd');
+    const undoBtn = shadow.querySelector('.undo');
+    const stepsList = shadow.querySelector('.stepsList');
+
+    if (!sidebarEnabled) { expandBtn.style.display = 'none'; expanded = false; }
+
+    function applyCorner() {
+      wrap.classList.remove('corner-tl', 'corner-tr', 'corner-bl', 'corner-br');
+      wrap.classList.add('corner-' + corner);
+    }
+
+    function badge(text) { const b = document.createElement('span'); b.className = 'bdg'; b.textContent = text; return b; }
+
+    function stepButton(text, title, on, handler) {
+      const b = document.createElement('button');
+      b.textContent = text;
+      b.title = title;
+      if (on) b.className = 'on';
+      b.addEventListener('click', (ev) => { ev.stopPropagation(); handler(); });
+      return b;
+    }
+
+    function renderTxns() {
+      txnOpen.textContent = '';
+      (sidebarState.openTransactions || []).forEach((name) => {
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        const label = document.createElement('span');
+        label.textContent = name;
+        const end = document.createElement('button');
+        end.textContent = '×';
+        end.title = 'End transaction';
+        end.addEventListener('click', (ev) => { ev.stopPropagation(); send({ kind: 'transaction_end', name: name, ts: Date.now() }); });
+        chip.appendChild(label);
+        chip.appendChild(end);
+        txnOpen.appendChild(chip);
+      });
+    }
+
+    function renderSteps() {
+      stepsList.textContent = '';
+      const steps = sidebarState.recentSteps || [];
+      if (!steps.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = 'No steps recorded yet';
+        stepsList.appendChild(empty);
+        return;
+      }
+      steps.forEach((s) => {
+        const row = document.createElement('div');
+        row.className = 'step' + (s.excluded ? ' excluded' : '');
+        const seq = document.createElement('span'); seq.className = 'seq'; seq.textContent = '#' + s.seq;
+        const kind = document.createElement('span'); kind.className = 'kind'; kind.textContent = s.kind;
+        const detail = document.createElement('span'); detail.className = 'detail'; detail.textContent = s.detail || '';
+        row.appendChild(seq); row.appendChild(kind); row.appendChild(detail);
+        if (s.masked) row.appendChild(badge('masked'));
+        if (s.secret) row.appendChild(badge('secret'));
+        if (s.param) row.appendChild(badge('param'));
+        const acts = document.createElement('span'); acts.className = 'acts';
+        acts.appendChild(stepButton(s.excluded ? '+' : '−', s.excluded ? 'Include step' : 'Exclude step', false, () => {
+          send({ kind: 'step_exclude', seq: s.seq, excluded: !s.excluded, ts: Date.now() });
+        }));
+        if (s.fill) {
+          acts.appendChild(stepButton('🔒', 'Mark as secret', s.secret, () => {
+            send({ kind: 'step_mark', seq: s.seq, secret: !s.secret, param: s.param, ts: Date.now() });
+          }));
+          acts.appendChild(stepButton('≈', 'Mark as parameter', s.param, () => {
+            send({ kind: 'step_mark', seq: s.seq, secret: s.secret, param: !s.param, ts: Date.now() });
+          }));
+        }
+        row.appendChild(acts);
+        stepsList.appendChild(row);
+      });
+    }
+
+    function render() {
+      bar.style.display = expanded ? 'none' : 'flex';
+      panel.style.display = expanded ? 'flex' : 'none';
+      if (!dragging) {
+        wrap.style.left = ''; wrap.style.top = ''; wrap.style.right = ''; wrap.style.bottom = '';
+        applyCorner();
+      }
+      const status = paused ? 'PAUSED' : (assertMode ? 'PICK ELEMENT' : 'REC');
+      dots.forEach((d) => { d.className = 'dot' + (paused ? ' paused' : ''); });
+      labels.forEach((l) => { l.textContent = status; });
+      pauseBtns.forEach((b) => { b.textContent = paused ? 'Resume' : 'Pause'; });
+      assertBtns.forEach((b) => { b.className = 'assert' + (assertMode ? ' active' : ''); });
+      counts.textContent = (sidebarState.stepCount || 0) + ' steps · ' + (sidebarState.navCount || 0) + ' navigations';
+      const active = sidebarState.section || 'actions';
+      sectionBtns.forEach((b) => { b.className = b.getAttribute('data-section') === active ? 'on' : ''; });
+      renderTxns();
+      renderSteps();
+    }
+
+    // --- Drag + corner snap (Gemini-style movable dock) ---
+    let dragging = false, dragOffX = 0, dragOffY = 0;
+    function clamp(v, min, max) { return v < min ? min : (v > max ? max : v); }
+    function onPointerMove(ev) {
+      const w = wrap.offsetWidth, h = wrap.offsetHeight;
+      wrap.style.left = clamp(ev.clientX - dragOffX, 4, window.innerWidth - w - 4) + 'px';
+      wrap.style.top = clamp(ev.clientY - dragOffY, 4, window.innerHeight - h - 4) + 'px';
+    }
+    function onPointerUp() {
+      window.removeEventListener('pointermove', onPointerMove, true);
+      window.removeEventListener('pointerup', onPointerUp, true);
+      if (!dragging) return;
+      dragging = false;
+      wrap.classList.remove('dragging');
+      const r = wrap.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      corner = (cy < window.innerHeight / 2 ? 't' : 'b') + (cx < window.innerWidth / 2 ? 'l' : 'r');
+      lsSet('sidebar_corner', corner);
+      wrap.style.left = ''; wrap.style.top = ''; wrap.style.right = ''; wrap.style.bottom = '';
+      applyCorner();
+    }
+    function startDrag(ev) {
+      if (ev.button !== undefined && ev.button !== 0) return;
+      const t = ev.target;
+      if (t && (t.tagName === 'BUTTON' || t.tagName === 'INPUT')) return;
+      ev.preventDefault();
+      const r = wrap.getBoundingClientRect();
+      dragOffX = ev.clientX - r.left;
+      dragOffY = ev.clientY - r.top;
+      wrap.style.left = r.left + 'px';
+      wrap.style.top = r.top + 'px';
+      wrap.style.right = 'auto';
+      wrap.style.bottom = 'auto';
+      wrap.classList.remove('corner-tl', 'corner-tr', 'corner-bl', 'corner-br');
+      dragging = true;
+      wrap.classList.add('dragging');
+      window.addEventListener('pointermove', onPointerMove, true);
+      window.addEventListener('pointerup', onPointerUp, true);
+    }
+    bar.addEventListener('pointerdown', startDrag);
+    phead.addEventListener('pointerdown', startDrag);
+
+    // --- Wire actions (all round-trip through the recorder binding) ---
+    function setExpanded(v) { expanded = v; lsSet('sidebar_open', v ? '1' : '0'); render(); }
+    expandBtn.addEventListener('click', (ev) => { ev.stopPropagation(); setExpanded(true); });
+    collapseBtn.addEventListener('click', (ev) => { ev.stopPropagation(); setExpanded(false); });
+    pauseBtns.forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); send({ kind: 'pause_toggle', ts: Date.now() }); }));
+    assertBtns.forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); if (paused) return; send({ kind: 'pick_toggle', ts: Date.now() }); }));
+    sectionBtns.forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); send({ kind: 'section_set', section: b.getAttribute('data-section'), ts: Date.now() }); }));
+
+    function doNavigate() { const u = navUrl.value.trim(); if (u) send({ kind: 'navigate', url: u, ts: Date.now() }); }
+    navGo.addEventListener('click', (ev) => { ev.stopPropagation(); doNavigate(); });
+    navUrl.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); doNavigate(); } });
+
+    function doTxnStart() { const n = txnName.value.trim(); if (n) { send({ kind: 'transaction_start', name: n, ts: Date.now() }); txnName.value = ''; } }
+    txnStart.addEventListener('click', (ev) => { ev.stopPropagation(); doTxnStart(); });
+    txnName.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); doTxnStart(); } });
+
+    function doNote() { const t = noteText.value.trim(); if (t) { send({ kind: 'note_add', text: t, ts: Date.now() }); noteText.value = ''; } }
+    noteAdd.addEventListener('click', (ev) => { ev.stopPropagation(); doNote(); });
+    noteText.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); doNote(); } });
+
+    undoBtn.addEventListener('click', (ev) => { ev.stopPropagation(); send({ kind: 'delete_last_step', ts: Date.now() }); });
+
+    refreshToolbar = render;
+    render();
     document.body.appendChild(toolbarHost);
   }
 

@@ -72,6 +72,11 @@ type Options struct {
 	// Scrubber redacts WebSocket frame payloads before storage. Injected by the
 	// API layer (which owns pkg/scrub); nil disables payload redaction.
 	Scrubber func(string) string
+	// Sidebar enables the in-page advanced control sidebar (the expandable,
+	// draggable, corner-snapping panel embedded in the recorded browser). When
+	// false the page shows only the minimal REC/Pause/Assert toolbar. The API
+	// manager defaults this on.
+	Sidebar bool
 }
 
 // Recorder drives one headed Chromium session and accumulates a Session.
@@ -93,6 +98,11 @@ type Recorder struct {
 	done     chan struct{}
 	doneOnce sync.Once
 	harTemp  bool
+
+	// sidebarPush coalesces live-state pushes to the in-page sidebar. A single
+	// drainer goroutine (started in Start) debounces bursts of events into one
+	// page.Evaluate per open page so rapid capture never floods the browser.
+	sidebarPush chan struct{}
 }
 
 // EnsureBrowsers downloads the Playwright driver and Chromium if they are not
@@ -116,7 +126,8 @@ func New(opts Options) *Recorder {
 			StartedAt:     time.Now(),
 			DeviceProfile: device,
 		},
-		done: make(chan struct{}),
+		done:        make(chan struct{}),
+		sidebarPush: make(chan struct{}, 1),
 	}
 }
 
@@ -196,11 +207,19 @@ func (r *Recorder) Start() error {
 		r.cleanup()
 		return fmt.Errorf("expose recorder binding: %w", err)
 	}
+	// The config script runs before the capture script in every frame so the
+	// in-page panel reads its initial mode (sidebar enabled, open by default,
+	// snapped to the bottom-right corner). User changes persist via localStorage.
+	if err := context.AddInitScript(playwright.Script{Content: playwright.String(r.configScript())}); err != nil {
+		r.cleanup()
+		return fmt.Errorf("inject recorder config: %w", err)
+	}
 	if err := context.AddInitScript(playwright.Script{Content: playwright.String(captureScript)}); err != nil {
 		r.cleanup()
 		return fmt.Errorf("inject capture script: %w", err)
 	}
 	context.OnPage(r.registerPage)
+	go r.sidebarPushLoop()
 
 	page, err := context.NewPage()
 	if err != nil {
@@ -249,8 +268,10 @@ func (r *Recorder) registerPage(page playwright.Page) {
 		r.mu.Unlock()
 		if paused {
 			// The fresh document's capture script starts unpaused; re-sync so
-			// the in-page toolbar and client-side gating match the server.
+			// the in-page toolbar and client-side gating match the server, and
+			// hydrate the new document's sidebar with current live state.
 			r.pushPauseState(page, true)
+			r.markSidebarDirty()
 			return
 		}
 		r.emit(Event{Type: EventNavigation, Nav: &nav})
@@ -350,9 +371,13 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 	if !ok {
 		return nil
 	}
-	// Control events from the in-page toolbar round-trip through the server so
-	// the panel, recorder state, and every page stay in sync.
-	switch controlEventKind(payload) {
+	// Control events from the in-page toolbar/sidebar round-trip through the
+	// server so the panel, recorder state, and every page stay in sync. They are
+	// handled before (and regardless of) the pause gate, matching the REST
+	// control handlers which stay usable while paused.
+	switch kind := controlEventKind(payload); kind {
+	case "":
+		// Not a control event; fall through to step parsing below.
 	case "pause_toggle":
 		r.mu.Lock()
 		paused := r.paused
@@ -364,6 +389,9 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 		assert := r.assertMode
 		r.mu.Unlock()
 		r.SetAssertMode(!assert)
+		return nil
+	default:
+		r.handleControlEvent(payload)
 		return nil
 	}
 	r.mu.Lock()
@@ -404,6 +432,9 @@ func (r *Recorder) emit(event Event) {
 	if r.opts.OnEvent != nil {
 		r.opts.OnEvent(event)
 	}
+	// Every observed event can change what the in-page sidebar shows (counts,
+	// recent steps, section, transactions, pause/pick). Flag a coalesced push.
+	r.markSidebarDirty()
 }
 
 // Snapshot returns a stable copy of the in-progress (or finished) session.
@@ -540,10 +571,62 @@ func controlEventKind(payload string) string {
 		return ""
 	}
 	switch probe.Kind {
-	case "pause_toggle", "pick_toggle":
+	case "pause_toggle", "pick_toggle",
+		"section_set", "transaction_start", "transaction_end", "note_add",
+		"navigate", "delete_last_step", "step_exclude", "step_mark":
 		return probe.Kind
 	}
 	return ""
+}
+
+// controlEvent carries the optional fields the in-page sidebar's advanced
+// actions send alongside their kind (transaction/note/section/navigate/step
+// edits). Field names match the capture script's payload keys.
+type controlEvent struct {
+	Kind     string `json:"kind"`
+	Name     string `json:"name"`
+	Text     string `json:"text"`
+	URL      string `json:"url"`
+	Section  string `json:"section"`
+	Seq      int    `json:"seq"`
+	Secret   bool   `json:"secret"`
+	Param    bool   `json:"param"`
+	Excluded bool   `json:"excluded"`
+}
+
+// handleControlEvent dispatches an advanced-sidebar action to the matching
+// recorder method. Each method already emits its own observer event (marker/
+// section/step_update), which in turn re-pushes live state to every page.
+// Errors surface as warning events without polluting the recorded artifact.
+func (r *Recorder) handleControlEvent(payload string) {
+	var ev controlEvent
+	if err := json.Unmarshal([]byte(payload), &ev); err != nil {
+		return
+	}
+	var err error
+	switch ev.Kind {
+	case "section_set":
+		r.SetSection(ev.Section)
+	case "transaction_start":
+		_, err = r.AddMarker(MarkerTransactionStart, ev.Name, "")
+	case "transaction_end":
+		_, err = r.AddMarker(MarkerTransactionEnd, ev.Name, "")
+	case "note_add":
+		_, err = r.AddMarker(MarkerNote, "", ev.Text)
+	case "navigate":
+		// Navigate blocks on page.Goto; run it off the binding callback so the
+		// Playwright event loop is never stalled.
+		go func(target string) { _ = r.Navigate(target) }(ev.URL)
+	case "delete_last_step":
+		_, err = r.DeleteLastStep()
+	case "step_exclude":
+		_, err = r.SetStepExcluded(ev.Seq, ev.Excluded)
+	case "step_mark":
+		_, err = r.SetStepMark(ev.Seq, ev.Secret, ev.Param)
+	}
+	if err != nil {
+		r.emit(Event{Type: EventWarning, Warning: fmt.Sprintf("recorder control %q: %v", ev.Kind, err)})
+	}
 }
 
 // frameSelectorFromURL builds a replayable iframe selector for cross-origin
@@ -689,6 +772,171 @@ func (r *Recorder) pushAssertModeState(page playwright.Page, on bool) {
 		return
 	}
 	_, _ = page.Evaluate(`(on) => { if (window.__apexloadRecorderSetAssertMode) window.__apexloadRecorderSetAssertMode(on) }`, on)
+}
+
+// configScript builds the init script that seeds the in-page panel's initial
+// mode before the capture script runs.
+func (r *Recorder) configScript() string {
+	config := map[string]any{
+		"sidebar": r.opts.Sidebar,
+		"open":    true,
+		"corner":  "br",
+	}
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		encoded = []byte("{}")
+	}
+	return "window.__apexloadRecorderConfig = " + string(encoded) + ";"
+}
+
+// sidebarRecentLimit caps how many recent steps the in-page sidebar shows.
+const sidebarRecentLimit = 8
+
+// sidebarStateView is the live snapshot pushed into the recorded page so the
+// in-page sidebar renders counts, the active section, open transactions, and a
+// scrolling tail of recent steps without calling back into the controller REST
+// API (which it cannot reach cross-origin).
+type sidebarStateView struct {
+	Section          string            `json:"section"`
+	StepCount        int               `json:"stepCount"`
+	NavCount         int               `json:"navCount"`
+	Paused           bool              `json:"paused"`
+	Picking          bool              `json:"picking"`
+	OpenTransactions []string          `json:"openTransactions"`
+	RecentSteps      []sidebarStepView `json:"recentSteps"`
+}
+
+// sidebarStepView is one entry in the sidebar's recent-steps tail.
+type sidebarStepView struct {
+	Seq      int    `json:"seq"`
+	Kind     string `json:"kind"`
+	Detail   string `json:"detail"`
+	Excluded bool   `json:"excluded"`
+	Masked   bool   `json:"masked"`
+	Secret   bool   `json:"secret"`
+	Param    bool   `json:"param"`
+	Fill     bool   `json:"fill"`
+}
+
+// buildSidebarStateLocked assembles the live sidebar snapshot. Callers hold r.mu.
+func (r *Recorder) buildSidebarStateLocked() sidebarStateView {
+	view := sidebarStateView{
+		Section:          r.currentSection,
+		NavCount:         len(r.session.NavEvents),
+		Paused:           r.paused,
+		Picking:          r.assertMode,
+		OpenTransactions: append([]string{}, r.session.OpenTransactions...),
+		RecentSteps:      []sidebarStepView{},
+	}
+	for _, step := range r.session.Steps {
+		if step.Deleted {
+			continue
+		}
+		if !step.Excluded {
+			view.StepCount++
+		}
+		view.RecentSteps = append(view.RecentSteps, sidebarStepView{
+			Seq:      step.Seq,
+			Kind:     step.Kind,
+			Detail:   sidebarStepDetail(step),
+			Excluded: step.Excluded,
+			Masked:   step.Masked,
+			Secret:   step.MarkSecret,
+			Param:    step.MarkParam,
+			Fill:     step.Kind == StepFill,
+		})
+	}
+	if len(view.RecentSteps) > sidebarRecentLimit {
+		view.RecentSteps = view.RecentSteps[len(view.RecentSteps)-sidebarRecentLimit:]
+	}
+	return view
+}
+
+// buildSidebarStateJSON marshals the current sidebar snapshot for page push.
+func (r *Recorder) buildSidebarStateJSON() string {
+	r.mu.Lock()
+	view := r.buildSidebarStateLocked()
+	r.mu.Unlock()
+	encoded, err := json.Marshal(view)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
+}
+
+// sidebarStepDetail produces a short, human-readable description of a step for
+// the in-page recent-steps tail (masked fills never leak their value).
+func sidebarStepDetail(step Step) string {
+	switch step.Kind {
+	case StepNavigate, StepSwitchWindow:
+		return step.URL
+	case StepFill:
+		if step.Masked {
+			return "••••"
+		}
+		return step.Value
+	case StepSelect, StepSetFiles, StepPressKey:
+		return step.Value
+	case StepHandleDialog:
+		return step.DialogMessage
+	default:
+		if step.Element != nil {
+			if text := strings.TrimSpace(step.Element.Text); text != "" {
+				return text
+			}
+			if step.Element.CSSPath != "" {
+				return step.Element.CSSPath
+			}
+		}
+		return step.Value
+	}
+}
+
+// markSidebarDirty requests a coalesced live-state push to the sidebar. The
+// buffered channel collapses bursts into a single drained signal; a nil channel
+// (recorder built without New, in some tests) simply no-ops via the default.
+func (r *Recorder) markSidebarDirty() {
+	select {
+	case r.sidebarPush <- struct{}{}:
+	default:
+	}
+}
+
+// sidebarPushLoop debounces dirty signals and pushes the freshest live state to
+// every open page. It exits when the recording is done.
+func (r *Recorder) sidebarPushLoop() {
+	for {
+		select {
+		case <-r.done:
+			return
+		case <-r.sidebarPush:
+			select {
+			case <-r.done:
+				return
+			case <-time.After(80 * time.Millisecond):
+			}
+			r.broadcastSidebarState()
+		}
+	}
+}
+
+// broadcastSidebarState pushes the current snapshot into every open page.
+func (r *Recorder) broadcastSidebarState() {
+	state := r.buildSidebarStateJSON()
+	r.mu.Lock()
+	pages := r.openPagesLocked()
+	r.mu.Unlock()
+	for _, page := range pages {
+		r.pushSidebarState(page, state)
+	}
+}
+
+// pushSidebarState delivers one live-state snapshot to a single page's sidebar.
+func (r *Recorder) pushSidebarState(page playwright.Page, state string) {
+	if page == nil {
+		return
+	}
+	_, _ = page.Evaluate(`(s) => { if (window.__apexloadRecorderSetState) window.__apexloadRecorderSetState(s) }`, state)
 }
 
 // DeleteLastStep tombstones the most recent non-deleted step.
