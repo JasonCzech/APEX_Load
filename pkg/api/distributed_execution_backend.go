@@ -641,6 +641,14 @@ func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, te
 	test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
 	test.remoteTargetStates = make(map[string]string)
 	test.remoteFinalizing = false
+	// Goal-oriented distributed runs evaluate the goal controller from the
+	// per-target consumeMetrics goroutines (applyRemoteMetricsBatch). Initialize
+	// the controller state here, mirroring the local path (startManagedTestRun),
+	// so the first scale decision does not dereference a nil pointer and crash
+	// the controller.
+	if test.goalControl == nil {
+		test.goalControl = &goalControllerState{}
+	}
 	if test.remoteClient == nil && len(clientsByTarget) == 1 {
 		for target, client := range clientsByTarget {
 			test.remoteTarget = target
@@ -914,14 +922,33 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 	}
 	tr.mu.Unlock()
 
+	// aggregateDistributedMetricsBatches only reads test.ID + the batches snapshot,
+	// so it is safe to run without the lock. Everything below reads mutable
+	// ManagedTest state (Groups, GoalConfig/GoalTargets/ScenarioMode) and the
+	// goalControl state machine (breachStartedAt), which is concurrently written
+	// under tr.mu by UpdateGoalTargetTPS/applyGoalControllerUpdate and by sibling
+	// per-target consumeMetrics goroutines — so it must hold tr.mu. The lock is
+	// released BEFORE applyGoalControllerUpdate, which re-locks internally and
+	// issues blocking gRPC scale calls.
 	aggregated := aggregateDistributedMetricsBatches(test.ID, batches)
+	tr.mu.Lock()
 	live := buildLiveMetricsFromDistributedBatch(test, aggregated)
 	applyRuntimeGoalTargetsToLiveMetrics(test, live)
+	var (
+		runGoalUpdate   bool
+		goalGroupVUsers map[string]int
+		goalUpdate      goalControllerUpdate
+	)
 	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
-		groupVUsers := liveGroupVUsers(test, live)
-		currentTotalVUsers := totalGroupVUsers(groupVUsers)
-		update := evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
-		applyGoalControllerUpdate(tr, test, live, groupVUsers, update, func(groupName string, target int) error {
+		goalGroupVUsers = liveGroupVUsers(test, live)
+		currentTotalVUsers := totalGroupVUsers(goalGroupVUsers)
+		goalUpdate = evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
+		runGoalUpdate = true
+	}
+	tr.mu.Unlock()
+
+	if runGoalUpdate {
+		applyGoalControllerUpdate(tr, test, live, goalGroupVUsers, goalUpdate, func(groupName string, target int) error {
 			return b.ScaleVUsers(tr, test, groupName, target)
 		})
 	}

@@ -76,8 +76,15 @@ func collectBodyParams(collector *dataParamCollector, section string, index int,
 			collector.add(key, value, "JSON body field", section, index, action,
 				"body", match[0], func(template string) string {
 					// Numbers stay unquoted so template expansion preserves the
-					// JSON type when the data column holds a numeric value.
-					return strings.Replace(match[0], value, template, 1)
+					// JSON type when the data column holds a numeric value. The value
+					// is the trailing token of match[0] (`"key": <number>`), so splice
+					// at its last occurrence — a plain Replace of the bare number can
+					// hit digits inside the key (e.g. order1_id with value 1).
+					cut := strings.LastIndex(match[0], value)
+					if cut < 0 {
+						return match[0]
+					}
+					return match[0][:cut] + template + match[0][cut+len(value):]
 				})
 		}
 		return

@@ -3,6 +3,7 @@ package generatorrpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -117,6 +118,7 @@ type Service struct {
 	archiveWriters   map[string]*archiveRecorder
 	archiveRecords   map[string]*storage.RunArchiveRecord
 	resCollector     *engine.ResourceCollector
+	resCollectorMu   sync.Mutex // serializes resCollector.Collect (mutates delta state)
 	executionEnabled bool
 	publishInterval  time.Duration
 	completionTimers map[string]*time.Timer
@@ -181,6 +183,9 @@ func (s *Service) AssignWork(_ context.Context, assignment *pb.WorkAssignment) (
 	}
 	if assignment.GetScriptId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "script_id is required")
+	}
+	if assignment.GetVuserCount() < 0 {
+		return nil, status.Error(codes.InvalidArgument, "vuser_count must not be negative")
 	}
 
 	s.mu.Lock()
@@ -452,7 +457,11 @@ func (s *Service) GetArchiveArtifact(_ context.Context, request *pb.ArchiveArtif
 	manifestPath := record.ManifestPath
 	fullPath := manifestPath
 	if request.GetName() != "manifest.json" {
-		fullPath = filepath.Join(record.ArchivePath, request.GetName())
+		confined, err := confinedArchiveArtifactPath(record.ArchivePath, request.GetName())
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid artifact name: %v", err)
+		}
+		fullPath = confined
 	}
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
@@ -462,6 +471,35 @@ func (s *Service) GetArchiveArtifact(_ context.Context, request *pb.ArchiveArtif
 		return nil, status.Errorf(codes.Internal, "read archive artifact: %v", err)
 	}
 	return &pb.ArchiveArtifact{Name: request.GetName(), Content: content}, nil
+}
+
+// confinedArchiveArtifactPath joins name onto base and verifies the result stays
+// within base, rejecting path-traversal names ("..", absolute, backslash, NUL,
+// Windows volume). The controller validates artifact names the same way
+// (pkg/api/archive_manifest.go); the generator must not trust the field either.
+func confinedArchiveArtifactPath(base, name string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("empty name")
+	}
+	if strings.ContainsRune(name, 0) {
+		return "", fmt.Errorf("name contains NUL byte")
+	}
+	if strings.ContainsRune(name, '\\') {
+		return "", fmt.Errorf("name contains backslash")
+	}
+	if filepath.IsAbs(name) || filepath.VolumeName(name) != "" {
+		return "", fmt.Errorf("name must be relative")
+	}
+	cleanBase := filepath.Clean(base)
+	full := filepath.Join(cleanBase, filepath.FromSlash(name))
+	rel, err := filepath.Rel(cleanBase, full)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("name escapes archive directory")
+	}
+	return full, nil
 }
 
 func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
@@ -474,13 +512,23 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			return err
 		}
 
-		stats := generatorStatsFromResources(s.collectResources(), s.activeVUsersLocked())
+		// activeVUsersLocked/availableCapacityLocked iterate s.assignments and
+		// assume s.mu is held; the Heartbeat handler runs concurrently with the
+		// AssignWork/StopTest writers, so take the read lock around them (a bare
+		// read here is a concurrent map iteration vs locked writes — a hard race
+		// that can fatal-crash the generator). collectResources() touches the
+		// resource collector, not s.assignments, so compute it outside the lock.
+		s.mu.RLock()
+		active := s.activeVUsersLocked()
+		avail := s.availableCapacityLocked()
+		s.mu.RUnlock()
+		stats := generatorStatsFromResources(s.collectResources(), active)
 		if err := stream.Send(&pb.HeartbeatPong{
 			GeneratorId:        s.generatorID,
 			TimestampUnixMs:    maxInt64(time.Now().UnixMilli(), ping.GetTimestampUnixMs()),
 			ActiveTestIds:      s.activeTestIDs(),
 			Stats:              toProtoStats(stats),
-			AvailableCapacity:  s.availableCapacityLocked(),
+			AvailableCapacity:  avail,
 			CpuLimitCores:      s.podResources.CPULimitCores,
 			MemoryLimitBytes:   s.podResources.MemoryLimitBytes,
 			MaxVusers:          s.podResources.MaxVUsers,
@@ -503,6 +551,11 @@ func (s *Service) collectResources() *engine.SystemResources {
 	if s == nil || s.resCollector == nil {
 		return nil
 	}
+	// ResourceCollector.Collect mutates internal delta-tracking state with no
+	// mutex of its own; concurrent Heartbeat streams share one collector, so
+	// serialize Collect to avoid a data race (and garbage CPU/GC deltas).
+	s.resCollectorMu.Lock()
+	defer s.resCollectorMu.Unlock()
 	return s.resCollector.Collect()
 }
 

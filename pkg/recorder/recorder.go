@@ -209,19 +209,27 @@ func (r *Recorder) StopSession(id string) (*Session, error) {
 	if !ok {
 		return nil, fmt.Errorf("session %q not found", id)
 	}
-	if s.Status != "recording" && s.Status != "paused" {
-		return nil, fmt.Errorf("session %q is not recording or paused (status: %s)", id, s.Status)
-	}
 
+	// Status/StoppedAt/Requests are read on the record/snapshot hot paths under
+	// s.mu; guard the check+write here with s.mu too (r.mu only protects the
+	// sessions map + r.active). Lock order is r.mu -> s.mu; readers only hold s.mu.
+	s.mu.Lock()
+	if s.Status != "recording" && s.Status != "paused" {
+		status := s.Status
+		s.mu.Unlock()
+		return nil, fmt.Errorf("session %q is not recording or paused (status: %s)", id, status)
+	}
 	now := time.Now()
 	s.Status = "stopped"
 	s.StoppedAt = &now
+	reqCount := len(s.Requests)
+	s.mu.Unlock()
 
 	if r.active != nil && r.active.ID == id {
 		r.active = nil
 	}
 
-	slog.Info("recording session stopped", "id", id, "requests", len(s.Requests))
+	slog.Info("recording session stopped", "id", id, "requests", reqCount)
 	return s, nil
 }
 
@@ -233,10 +241,14 @@ func (r *Recorder) PauseSession(id string) (*Session, error) {
 	if !ok {
 		return nil, fmt.Errorf("session %q not found", id)
 	}
+	s.mu.Lock()
 	if s.Status != "recording" {
-		return nil, fmt.Errorf("session %q is not recording (status: %s)", id, s.Status)
+		status := s.Status
+		s.mu.Unlock()
+		return nil, fmt.Errorf("session %q is not recording (status: %s)", id, status)
 	}
 	s.Status = "paused"
+	s.mu.Unlock()
 	if s.notify != nil {
 		s.notify(SessionEvent{Type: "recording_paused", SessionID: s.ID, Session: s})
 	}
@@ -251,10 +263,14 @@ func (r *Recorder) ResumeSession(id string) (*Session, error) {
 	if !ok {
 		return nil, fmt.Errorf("session %q not found", id)
 	}
+	s.mu.Lock()
 	if s.Status != "paused" {
-		return nil, fmt.Errorf("session %q is not paused (status: %s)", id, s.Status)
+		status := s.Status
+		s.mu.Unlock()
+		return nil, fmt.Errorf("session %q is not paused (status: %s)", id, status)
 	}
 	s.Status = "recording"
+	s.mu.Unlock()
 	if s.notify != nil {
 		s.notify(SessionEvent{Type: "recording_resumed", SessionID: s.ID, Session: s})
 	}

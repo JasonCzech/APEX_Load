@@ -119,7 +119,10 @@ function genericMessage(message: string): boolean {
 }
 
 function summaryOr(details: ErrorDetails, replacement: string): string {
-  return genericMessage(details.message) ? replacement : details.message
+  // The raw server message is surfaced to the user when it is non-generic, so
+  // redact credential-shaped values (Bearer/Basic, secret key:value) the same way
+  // evidence previews are, in case an upstream error echoes a token.
+  return genericMessage(details.message) ? replacement : redactSensitiveEvidence(details.message)
 }
 
 function collectEvidence(details: ErrorDetails): string[] {
@@ -196,7 +199,9 @@ function diagnostic(
     likelyCause,
     nextSteps,
     evidence: evidence.length > 0 ? evidence : undefined,
-    rawMessage: details.message,
+    // Redact like evidence: the raw error message can echo a Bearer/Basic token
+    // or key:value secret that must not reach the user-visible diagnostic.
+    rawMessage: redactSensitiveEvidence(details.message),
     status: details.status,
     code: details.code,
   }
@@ -419,7 +424,7 @@ export function diagnoseError(error: unknown, fallback: string): ErrorDiagnostic
     details,
     'unknown',
     'error',
-    details.message || fallback,
+    redactSensitiveEvidence(details.message) || fallback,
     'The dashboard does not recognize this error pattern yet.',
     UNKNOWN_NEXT_STEPS,
   )

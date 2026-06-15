@@ -1554,3 +1554,78 @@ func TestHTTPExecuteServerSentEvents(t *testing.T) {
 		t.Fatalf("response body did not retain SSE framing: %q", result.ResponseBody)
 	}
 }
+
+func TestHTTP_Execute_BoundsResponseBodySize(t *testing.T) {
+	big := bytes.Repeat([]byte("a"), 256*1024) // 256 KiB
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(big)
+	}))
+	defer ts.Close()
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+
+	// Cap below the body size → failed sample, body truncated to the cap.
+	capped, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "capped",
+		Method: http.MethodGet,
+		Target: "/",
+		Params: map[string]any{"max_body_bytes": 4096},
+	})
+	if capped.Success {
+		t.Fatal("expected oversized response to fail the sample")
+	}
+	if capped.BytesReceived != 4096 {
+		t.Fatalf("BytesReceived = %d, want 4096", capped.BytesReceived)
+	}
+	if !strings.Contains(capped.ErrorMessage, "exceeded") {
+		t.Fatalf("ErrorMessage = %q, want limit error", capped.ErrorMessage)
+	}
+
+	// Opt out (<= 0) → full body read.
+	full, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "uncapped",
+		Method: http.MethodGet,
+		Target: "/",
+		Params: map[string]any{"max_body_bytes": 0},
+	})
+	if !full.Success {
+		t.Fatalf("uncapped request should succeed: %s", full.ErrorMessage)
+	}
+	if full.BytesReceived != int64(len(big)) {
+		t.Fatalf("uncapped BytesReceived = %d, want %d", full.BytesReceived, len(big))
+	}
+}
+
+func TestHTTP_Execute_BoundsDecompressedBodySize(t *testing.T) {
+	payload := bytes.Repeat([]byte("b"), 512*1024) // inflates well past the cap
+	var compressed bytes.Buffer
+	gw := gzip.NewWriter(&compressed)
+	if _, err := gw.Write(payload); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	body := compressed.Bytes()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	}))
+	defer ts.Close()
+	h := initHTTP(t, map[string]any{"base_url": ts.URL, "accept_encoding": "gzip"})
+
+	res, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "bomb",
+		Method: http.MethodGet,
+		Target: "/",
+		Params: map[string]any{"max_body_bytes": 8192},
+	})
+	if res.Success {
+		t.Fatal("expected decompression past the cap to fail the sample")
+	}
+	if !strings.Contains(res.ErrorMessage, "exceeded") {
+		t.Fatalf("ErrorMessage = %q, want decoded limit error", res.ErrorMessage)
+	}
+}

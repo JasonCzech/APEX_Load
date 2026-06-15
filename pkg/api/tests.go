@@ -271,6 +271,14 @@ func cloneTxMetricsMap(in map[string]*TxMetrics) map[string]*TxMetrics {
 	return out
 }
 
+// TestCount returns the number of tracked tests under the lock that guards the
+// tests map, so callers (e.g. the health handler) never read the map bare.
+func (tr *TestRunner) TestCount() int {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	return len(tr.tests)
+}
+
 func (tr *TestRunner) ListTests() []*ManagedTest {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()

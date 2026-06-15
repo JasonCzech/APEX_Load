@@ -246,19 +246,28 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
     })
   }
 
+  // csvCell quotes a value, doubling interior quotes (so embedded `"` in
+  // imported source fields can't break the row) and prefixing a `'` when the
+  // value starts with a spreadsheet formula trigger (CSV/Excel formula injection).
+  const csvCell = (value: unknown): string => {
+    let s = String(value ?? '')
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`
+    return `"${s.replace(/"/g, '""')}"`
+  }
+
   const exportCsv = () => {
     const header = ['Source File', 'Start Line', 'Function', 'Target Path', 'Status', 'Approved', 'Support Mode', 'Notes'].join(',')
     const rows = filteredMappings.map(m => {
       const isApproved = approvedMappingIds.has(m.id)
       return [
-        `"${m.source_file || ''}"`,
+        csvCell(m.source_file || ''),
         m.start_line || '',
-        `"${m.function || ''}"`,
-        `"${m.target_path || m.target_name || ''}"`,
-        `"${m.status || ''}"`,
+        csvCell(m.function || ''),
+        csvCell(m.target_path || m.target_name || ''),
+        csvCell(m.status || ''),
         isApproved ? 'Yes' : 'No',
-        `"${m.support_mode || ''}"`,
-        `"${(m.notes || '').replace(/"/g, '""')}"`
+        csvCell(m.support_mode || ''),
+        csvCell(m.notes || '')
       ].join(',')
     })
     const csvContent = [header, ...rows].join('\n')

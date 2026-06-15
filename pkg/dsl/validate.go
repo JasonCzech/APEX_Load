@@ -289,6 +289,15 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	if CanonicalActionType(action.Type) == "http_oauth2_token" {
 		return issues
 	}
+	// JMS and Kafka actions resolve their destination/topic from script config
+	// (config.jms.destination / config.kafka.topic) when target is omitted, so the
+	// generic "missing target" rule must not apply to them — otherwise a JMS/Kafka
+	// action nested in a control_if/control_loop body is falsely flagged as
+	// "missing target" even though the config-level destination is set. The
+	// destination-aware checks live in the top-level JMS/Kafka validators.
+	if ProtocolFamily(protocol) == "jms" || protocol == "kafka" {
+		return issues
+	}
 	if action.Target == "" {
 		issues = append(issues, fmt.Sprintf("%s: missing target", actionLabel(path, action)))
 	}

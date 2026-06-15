@@ -346,9 +346,13 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 		},
 	}
 
-	// Read HTTP requests from the TLS connection and forward them.
+	// Read HTTP requests from the TLS connection and forward them. The hijacked
+	// connection is detached from the http.Server's Read/Write timeouts, so set an
+	// idle deadline before each read; an idle or slow-loris client would otherwise
+	// hold the goroutine + fd open forever.
 	reader := bufio.NewReader(tlsConn)
 	for {
+		_ = tlsConn.SetReadDeadline(time.Now().Add(connectTunnelIdleTimeout))
 		clientReq, err := http.ReadRequest(reader)
 		if err != nil {
 			if err != io.EOF {
@@ -356,10 +360,17 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 			}
 			return
 		}
+		// Clear the idle deadline while the request is actively forwarded (it may
+		// be a long upload/download); the next iteration re-arms it.
+		_ = tlsConn.SetReadDeadline(time.Time{})
 
 		r.forwardHTTPS(tlsConn, reader, clientReq, hostname, host, client)
 	}
 }
+
+// connectTunnelIdleTimeout bounds how long a hijacked CONNECT/MITM tunnel may sit
+// idle between requests before it is closed, reclaiming the goroutine + fd.
+const connectTunnelIdleTimeout = 120 * time.Second
 
 func peekConnectTunnelByte(conn net.Conn, reader *bufio.Reader) (byte, error) {
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
@@ -373,6 +384,7 @@ func peekConnectTunnelByte(conn net.Conn, reader *bufio.Reader) (byte, error) {
 
 func (r *Recorder) forwardPlainConnect(clientConn net.Conn, clientReader *bufio.Reader, hostname, host string) {
 	for {
+		_ = clientConn.SetReadDeadline(time.Now().Add(connectTunnelIdleTimeout))
 		clientReq, err := http.ReadRequest(clientReader)
 		if err != nil {
 			if err != io.EOF {
@@ -380,6 +392,7 @@ func (r *Recorder) forwardPlainConnect(clientConn net.Conn, clientReader *bufio.
 			}
 			return
 		}
+		_ = clientConn.SetReadDeadline(time.Time{})
 
 		r.mu.RLock()
 		session := r.active

@@ -345,8 +345,22 @@ func (s *SQLiteStore) UpdateUserActive(id string, active bool, updatedAt time.Ti
 }
 
 func (s *SQLiteStore) DeleteUser(id string) error {
-	_, err := s.db.Exec(`DELETE FROM users WHERE id = ?`, id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// The declared FK ON DELETE CASCADE is non-functional on both backends (SQLite
+	// FK enforcement is off; the Postgres schema rewriter strips FOREIGN KEY lines),
+	// so delete role bindings explicitly. Otherwise a deleted user leaves orphaned
+	// RBAC grants that a reused user id would silently inherit.
+	if _, err := tx.Exec(`DELETE FROM user_role_bindings WHERE user_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM users WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) SaveUserRoleBinding(binding *UserRoleBinding) error {

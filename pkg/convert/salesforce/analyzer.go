@@ -433,7 +433,12 @@ func detectsSalesforce(refs []actionRef, entries []harEntry) bool {
 }
 
 func classifySalesforceAction(action *dsl.Action, rawURL string) string {
-	parsed, _ := url.Parse(rawURL)
+	// url.Parse returns (nil, err) for inputs with spaces, control bytes, or bad
+	// percent-encoding — which an imported (untrusted) action.Target can contain.
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed == nil {
+		return "generic"
+	}
 	host := strings.ToLower(parsed.Hostname())
 	path := strings.ToLower(parsed.EscapedPath())
 	body := strings.ToLower(action.Body)
@@ -659,7 +664,10 @@ func endpointObservations(refs []actionRef, kind string) []EndpointObservation {
 		if ref.Kind != kind {
 			continue
 		}
-		parsed, _ := url.Parse(ref.URL)
+		parsed, err := url.Parse(ref.URL)
+		if err != nil || parsed == nil {
+			continue
+		}
 		key := ref.Method + " " + parsed.Host + " " + parsed.EscapedPath()
 		current := counts[key]
 		current.Method = ref.Method

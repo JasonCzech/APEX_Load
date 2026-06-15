@@ -381,3 +381,43 @@ func TestConvertWSDLUnresolvedHeaderBindingWarns(t *testing.T) {
 		t.Fatalf("expected unresolved soap:header warning, got %+v", result.Unsupported)
 	}
 }
+
+// TestConvertWSDLHandlesRecursiveTypeWithoutStackOverflow feeds a self-referential
+// complexType (NodeType contains a child of type NodeType). Without the depth cap
+// this recurses forever and overflows the stack (a fatal throw that crashes the
+// controller); the test completing at all is the regression assertion.
+func TestConvertWSDLHandlesRecursiveTypeWithoutStackOverflow(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `<?xml version="1.0"?>
+<definitions name="NodeService" targetNamespace="urn:nodes"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:tns="urn:nodes"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <types>
+    <xsd:schema targetNamespace="urn:nodes">
+      <xsd:element name="GetNodeRequest" type="tns:NodeType"/>
+      <xsd:complexType name="NodeType">
+        <xsd:sequence>
+          <xsd:element name="label" type="xsd:string"/>
+          <xsd:element name="child" type="tns:NodeType"/>
+        </xsd:sequence>
+      </xsd:complexType>
+    </xsd:schema>
+  </types>
+  <message name="GetNodeInput"><part name="parameters" element="tns:GetNodeRequest"/></message>
+  <portType name="NodePortType"><operation name="GetNode"><input message="tns:GetNodeInput"/></operation></portType>
+  <binding name="NodeBinding" type="tns:NodePortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="GetNode"><soap:operation soapAction="urn:GetNode"/></operation>
+  </binding>
+  <service name="NodeService"><port name="Primary" binding="tns:NodeBinding"><soap:address location="https://nodes.example.test/node"/></port></service>
+</definitions>`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) == 0 || result.Script.Actions[0].Body == "" {
+		t.Fatal("expected a bounded SOAP body for the recursive type")
+	}
+}

@@ -743,7 +743,7 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 		"environment":     build.Environment,
 		"build_time":      build.BuildTime,
 		"ws_clients":      s.hub.ClientCount(),
-		"test_count":      len(s.runner.tests),
+		"test_count":      s.runner.TestCount(),
 		"capacity_availability": map[string]any{
 			"source":                          availability.Source,
 			"configured_available_generators": availability.ConfiguredAvailableGenerators,

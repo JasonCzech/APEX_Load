@@ -619,3 +619,47 @@ func TestJMSConsumeClassifiesDeadLetterDestinations(t *testing.T) {
 		t.Fatalf("explicit dead-letter DependencyType = %q, want jms_dead_letter_queue", result.DependencyType)
 	}
 }
+
+// TestJMSPublishWithMetadataAndNoPropertiesConfig reproduces the nil-map panic:
+// when no jms_properties is configured, cloneStringMap returns nil, and writing
+// action metadata into it crashed the generator. The publish must succeed and
+// carry the metadata through as a message property.
+func TestJMSPublishWithMetadataAndNoPropertiesConfig(t *testing.T) {
+	ctx := context.Background()
+	p := &JMS{name: "jms-solace", provider: "solace"}
+	// No jms_properties → j.cfg.Properties empty → cloneStringMap returns nil.
+	if err := p.Init(ctx, map[string]any{
+		"jms_destination": "orders.test",
+		"jms_mock":        true,
+		"jms_timeout_ms":  float64(250),
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	published, err := p.Execute(ctx, &protocol.Action{
+		Name:     "publish-order",
+		Type:     "jms_publish",
+		Body:     []byte("hello"),
+		Metadata: map[string]any{"source_transaction": "checkout"},
+	})
+	if err != nil {
+		t.Fatalf("publish returned error: %v", err)
+	}
+	if !published.Success {
+		t.Fatalf("publish success = false: %s", published.ErrorMessage)
+	}
+
+	consumed, err := p.Execute(ctx, &protocol.Action{
+		Name: "consume-order",
+		Type: "jms_consume",
+		Assertions: []protocol.Assertion{
+			{Type: "property_equals", Value: "source_transaction", Expected: "checkout"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("consume returned error: %v", err)
+	}
+	if !consumed.Success {
+		t.Fatalf("consume success = false: %s", consumed.ErrorMessage)
+	}
+}

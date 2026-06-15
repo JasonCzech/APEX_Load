@@ -91,3 +91,32 @@ func TestTokenBucket(t *testing.T) {
 		t.Error("token bucket Wait() did not return in time")
 	}
 }
+
+// TestNewTokenBucket_LargeTPS ensures a very large pacing.tps (which truncates
+// the fill interval to 0) does not panic the fill goroutine via NewTicker(0).
+func TestNewTokenBucket_LargeTPS(t *testing.T) {
+	for _, tps := range []float64{1e9, 2e9, 1e10, 1e15} {
+		tb := NewTokenBucket(tps)
+		if tb == nil {
+			t.Fatalf("tps=%g: NewTokenBucket returned nil", tps)
+		}
+		if cap(tb.tokens) > maxTokenBucketCapacity+1 {
+			t.Errorf("tps=%g: token channel cap %d exceeds bound %d", tps, cap(tb.tokens), maxTokenBucketCapacity+1)
+		}
+		if tb.interval <= 0 {
+			t.Errorf("tps=%g: interval %v not clamped to a positive value", tps, tb.interval)
+		}
+		// Give fill() a moment to start; it must not panic on NewTicker(0).
+		done := make(chan struct{})
+		go func() {
+			tb.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(200 * time.Millisecond):
+			t.Errorf("tps=%g: Wait() did not return; fill goroutine likely failed", tps)
+		}
+		tb.Stop()
+	}
+}

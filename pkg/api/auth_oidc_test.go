@@ -69,8 +69,8 @@ func TestHandleGetAuthDiagnosticsReturnsHealthyOIDCReadiness(t *testing.T) {
 	enableOIDCAuth(t, server, provider.Issuer)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
-	req.Header.Set("X-Auth-Request-User", "alice")
-	req.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin)
+	// Diagnostics is admin-gated in OIDC mode; authenticate via an admin session.
+	req.AddCookie(oidcAdminSessionCookie(t, server, RoleSystemAdmin))
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)
 

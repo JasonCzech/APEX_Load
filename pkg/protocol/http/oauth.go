@@ -21,9 +21,9 @@ const (
 	OAuthGrantJWTBearer         = "jwt_bearer"
 	OAuthGrantRefreshToken      = "refresh_token"
 
-	jwtBearerGrantURN       = "urn:ietf:params:oauth:grant-type:jwt-bearer"
-	defaultTokenCacheTTL    = 5 * time.Minute
-	tokenCacheExpirySlack   = 30 * time.Second
+	jwtBearerGrantURN     = "urn:ietf:params:oauth:grant-type:jwt-bearer"
+	defaultTokenCacheTTL  = 5 * time.Minute
+	tokenCacheExpirySlack = 30 * time.Second
 	// jwtBearerAssertionTTL is the validity window of the signed JWT bearer
 	// assertion. It must comfortably cover network latency and clock skew between
 	// this host and the token endpoint; 3 minutes proved too tight under
@@ -32,9 +32,9 @@ const (
 	// maxOAuthErrorDescriptionLen bounds how much of an error endpoint's
 	// error_description is echoed into a returned error message.
 	maxOAuthErrorDescriptionLen = 256
-	defaultOAuthTokenType   = "Bearer"
-	oauthFormContentType    = "application/x-www-form-urlencoded"
-	oauthJSONAcceptMimeType = "application/json"
+	defaultOAuthTokenType       = "Bearer"
+	oauthFormContentType        = "application/x-www-form-urlencoded"
+	oauthJSONAcceptMimeType     = "application/json"
 )
 
 type OAuthTokenRequest struct {

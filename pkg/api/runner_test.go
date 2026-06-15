@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"net/http"
 	"net/http/httptest"
@@ -3128,6 +3129,77 @@ func TestApplyGoalControllerUpdateScalesGroupsAndUpdatesStatus(t *testing.T) {
 	if live.GoalStatus.CurrentTotalVUsers != 45 || live.GoalStatus.SuggestedTotalVUsers != 45 {
 		t.Fatalf("expected goal status totals to settle at 45, got %+v", live.GoalStatus)
 	}
+}
+
+// TestApplyGoalControllerUpdateInitializesNilGoalControl reproduces the
+// distributed-run crash: startDistributedTestRun left test.goalControl nil, so
+// the first scale decision dereferenced a nil pointer and crashed the controller.
+// applyGoalControllerUpdate must initialize it defensively rather than panic.
+func TestApplyGoalControllerUpdateInitializesNilGoalControl(t *testing.T) {
+	timestamp := time.Date(2026, time.May, 10, 11, 0, 0, 0, time.UTC)
+	testRun := &ManagedTest{
+		ID:           "test-distributed",
+		ScenarioMode: "goal_oriented",
+		Groups:       []TestGroup{{Name: "buyers", VUsers: 10}},
+		goalControl:  nil, // distributed path previously never initialized this
+	}
+	live := &LiveMetrics{Timestamp: timestamp}
+	groupVUsers := map[string]int{"buyers": 10}
+	update := goalControllerUpdate{
+		Status:         &GoalStatus{CurrentTotalVUsers: 10, SuggestedTotalVUsers: 20},
+		ShouldScale:    true,
+		TargetTotal:    20,
+		ScaleDirection: "up",
+		ScaleReason:    "tps below target",
+	}
+
+	// Must not panic on the nil goalControl.
+	applyGoalControllerUpdate(&TestRunner{}, testRun, live, groupVUsers, update, func(string, int) error { return nil })
+
+	if testRun.goalControl == nil {
+		t.Fatal("expected goalControl to be initialized, got nil")
+	}
+	if testRun.goalControl.lastScaleAt == nil || !testRun.goalControl.lastScaleAt.Equal(timestamp) {
+		t.Fatalf("expected lastScaleAt %s, got %#v", timestamp, testRun.goalControl.lastScaleAt)
+	}
+}
+
+// TestTestCountIsRaceFreeUnderConcurrentMutation locks in the health-handler fix:
+// reading the test count must hold tr.mu so it cannot race the lifecycle writers
+// (a bare len(tr.tests) is a concurrent map read against locked writers).
+func TestTestCountIsRaceFreeUnderConcurrentMutation(t *testing.T) {
+	hub := NewHub()
+	tr := NewTestRunner(2, hub, nil)
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			id := fmt.Sprintf("t-%d", i)
+			tr.mu.Lock()
+			tr.tests[id] = &ManagedTest{ID: id}
+			delete(tr.tests, id)
+			tr.mu.Unlock()
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 2000; i++ {
+			_ = tr.TestCount()
+		}
+		close(stop)
+	}()
+
+	wg.Wait()
 }
 
 func TestRequestStopIfRunningTransitionsAndBroadcasts(t *testing.T) {

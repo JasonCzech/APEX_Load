@@ -3,6 +3,7 @@ package devweb
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -494,5 +495,46 @@ func TestConvertDevWebCarriesStandingAssumptions(t *testing.T) {
 	}
 	if !foundJSCaveat {
 		t.Fatalf("assumptions missing JS-not-executed caveat: %v", result.Assumptions)
+	}
+}
+
+// TestConvertZipRejectsDecompressionBomb ensures an oversized (highly
+// compressible) zip entry is rejected rather than fully materialized in memory.
+func TestConvertZipRejectsDecompressionBomb(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create("bomb.js")
+	if err != nil {
+		t.Fatalf("zip create: %v", err)
+	}
+	zeros := make([]byte, maxDevWebEntryBytes+1) // expands past the per-entry cap
+	if _, err := w.Write(zeros); err != nil {
+		t.Fatalf("zip write: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip close: %v", err)
+	}
+
+	if _, err := ConvertZip(buf.Bytes(), ConvertOptions{}); err == nil {
+		t.Fatal("expected decompression-bomb rejection")
+	} else if !strings.Contains(err.Error(), "decompression limit") {
+		t.Fatalf("err = %v, want decompression limit error", err)
+	}
+}
+
+// TestConvertZipRejectsTooManyEntries ensures an entry-count bomb is rejected.
+func TestConvertZipRejectsTooManyEntries(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for i := 0; i < maxDevWebZipEntries+1; i++ {
+		if _, err := zw.Create(fmt.Sprintf("f%d.txt", i)); err != nil {
+			t.Fatalf("zip create: %v", err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip close: %v", err)
+	}
+	if _, err := ConvertZip(buf.Bytes(), ConvertOptions{}); err == nil {
+		t.Fatal("expected too-many-entries rejection")
 	}
 }

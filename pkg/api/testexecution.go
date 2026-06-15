@@ -840,6 +840,11 @@ func applyGoalControllerUpdate(tr *TestRunner, test *ManagedTest, live *LiveMetr
 
 	now := live.Timestamp
 	tr.mu.Lock()
+	if test.goalControl == nil {
+		// Defense-in-depth: the distributed path may reach a scale decision
+		// before run-state init in pathological orderings; never nil-deref here.
+		test.goalControl = &goalControllerState{}
+	}
 	test.goalControl.lastScaleAt = &now
 	test.goalControl.lastScaleDirection = update.ScaleDirection
 	test.goalControl.lastScaleReason = update.ScaleReason

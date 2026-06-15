@@ -113,12 +113,17 @@ func (b *Browser) captureRuntimeMetrics(ctx context.Context, metrics *protocol.C
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if b.pwCDP != nil {
-		_, _ = b.pwCDP.Send("Performance.enable", map[string]any{})
-		if raw, err := b.pwCDP.Send("Performance.getMetrics", map[string]any{}); err == nil {
+	// Snapshot pwCDP under b.mu: the OnPage dispatch goroutine can swap it via
+	// installCDPSession, and close() nils it, concurrently with this action path.
+	b.mu.Lock()
+	cdp := b.pwCDP
+	b.mu.Unlock()
+	if cdp != nil {
+		_, _ = cdp.Send("Performance.enable", map[string]any{})
+		if raw, err := cdp.Send("Performance.getMetrics", map[string]any{}); err == nil {
 			b.applyCDPPerformanceMetrics(raw, metrics)
 		}
-		if raw, err := b.pwCDP.Send("Runtime.getHeapUsage", map[string]any{}); err == nil {
+		if raw, err := cdp.Send("Runtime.getHeapUsage", map[string]any{}); err == nil {
 			b.applyCDPHeapMetrics(raw, metrics)
 		}
 	}

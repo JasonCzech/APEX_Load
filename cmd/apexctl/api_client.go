@@ -161,19 +161,34 @@ func (c *ApiClient) startTest(testID string) error {
 	return nil
 }
 
+// maxPollErrors bounds consecutive transient poll failures before pollTest gives
+// up, so the CLI cannot hang forever on a persistent error response.
+const maxPollErrors = 5
+
 func (c *ApiClient) pollTest(testID string, format string, expectSLA bool) (*ApiTestResult, error) {
 	start := time.Now()
+	consecutiveErrors := 0
 	for {
 		time.Sleep(2 * time.Second)
 
-		resp, err := c.Client.Get(c.BaseURL + "/api/v1/tests/" + testID)
+		// GetTestStatus validates the status code (404 -> "not found", other
+		// non-2xx -> error) and surfaces decode errors, so a deleted test or an
+		// auth/posture flip no longer leaves Status empty and loops forever.
+		test, err := c.GetTestStatus(testID)
 		if err != nil {
-			return nil, err
+			if strings.Contains(err.Error(), "not found") {
+				return nil, err
+			}
+			consecutiveErrors++
+			if consecutiveErrors >= maxPollErrors {
+				return nil, fmt.Errorf("polling test %s failed after %d consecutive errors: %w", testID, consecutiveErrors, err)
+			}
+			if format != "json" {
+				fmt.Printf("... status check failed (%d/%d): %v\n", consecutiveErrors, maxPollErrors, err)
+			}
+			continue
 		}
-
-		var test api.ManagedTest
-		json.NewDecoder(resp.Body).Decode(&test)
-		resp.Body.Close()
+		consecutiveErrors = 0
 
 		if format != "json" {
 			fmt.Printf("... Status: %s\n", test.Status)

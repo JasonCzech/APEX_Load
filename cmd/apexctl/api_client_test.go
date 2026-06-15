@@ -4,10 +4,27 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/api"
 )
+
+// TestPollTestFailsFastOn404 locks in that pollTest surfaces a 404 (test deleted)
+// instead of looping forever with an empty status.
+func TestPollTestFailsFastOn404(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := NewApiClient(server.URL)
+	if _, err := client.pollTest("test-x", "json", false); err == nil {
+		t.Fatal("expected error when test status returns 404")
+	} else if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("err = %v, want not found", err)
+	}
+}
 
 func TestCreateTestIncludesGoalConfig(t *testing.T) {
 	var captured api.CreateTestRequest

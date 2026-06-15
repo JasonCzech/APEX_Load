@@ -691,6 +691,12 @@ func (a unavailableServiceBusAdapter) err() error {
 func (j *JMS) buildMessage(action *protocol.Action, destination string) message {
 	correlationID := paramString(action.Params, "correlation_id", "")
 	properties := cloneStringMap(j.cfg.Properties)
+	// cloneStringMap returns nil for an empty config; writing action metadata into
+	// a nil map panics and crashes the generator. Allocate when metadata is present
+	// (mirrors kafka.buildRecord).
+	if properties == nil && len(action.Metadata) > 0 {
+		properties = make(map[string]string)
+	}
 	for k, v := range action.Metadata {
 		if s, ok := v.(string); ok {
 			properties[k] = s

@@ -185,7 +185,12 @@ func (b *Browser) installCDPSession(browserContext playwright.BrowserContext, pa
 	if err != nil {
 		return
 	}
+	// b.pwCDP is read by the action goroutine (captureRuntimeMetrics) and close();
+	// registerPage runs this on Playwright's OnPage dispatch goroutine, so guard
+	// the write with b.mu (registerPage already released b.mu before calling here).
+	b.mu.Lock()
 	b.pwCDP = cdp
+	b.mu.Unlock()
 	if b.cpuThrottleRate > 1.0 {
 		_, _ = cdp.Send("Emulation.setCPUThrottlingRate", map[string]any{"rate": b.cpuThrottleRate})
 	}

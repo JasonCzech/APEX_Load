@@ -117,6 +117,8 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	mge.metrics.Start(time.Second)
 	defer mge.metrics.Stop()
 
+	var wg sync.WaitGroup
+
 	mge.mu.Lock()
 	mge.vuserCancels = make(map[int]context.CancelFunc)
 	mge.vuserGroups = make(map[int]string)
@@ -131,6 +133,10 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	mge.baseCtx = baseCtx
 	mge.loopCtx = loopCtx
 	mge.cancel = baseCancel
+	// Publish mge.wg under the lock alongside baseCtx so any ScaleVUsers caller
+	// that observes a running baseCtx also sees a non-nil wg (avoids a nil-deref
+	// in spawnVUser's wg.Add and a data race on the field).
+	mge.wg = &wg
 	for i := range mge.groups {
 		mge.groups[i].executionGoals = NewExecutionGoalLimiter(mge.groups[i].Script.Config.RunLogic, loopCancel)
 		if !isOpenWorkload(mge.groups[i].Script) {
@@ -144,8 +150,6 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	defer loopCancel()
 
 	start := time.Now()
-	var wg sync.WaitGroup
-	mge.wg = &wg
 	groupResults := make([]GroupResult, len(mge.groups))
 
 	maxRampDown := time.Duration(0)
@@ -650,8 +654,11 @@ func (mge *MultiGroupEngine) WaitIfPaused(ctx context.Context) error {
 }
 
 func (mge *MultiGroupEngine) Stop() {
-	if mge.cancel != nil {
-		mge.cancel()
+	mge.mu.Lock()
+	cancel := mge.cancel
+	mge.mu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 }
 

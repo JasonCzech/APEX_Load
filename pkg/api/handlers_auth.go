@@ -382,7 +382,14 @@ func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetAuthDiagnostics(w http.ResponseWriter, r *http.Request) {
 	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
-	if settings.Mode == authModeTrustedHeaders {
+	// Require a system admin in every non-bypass mode (OIDC and trusted-headers).
+	// Previously only trusted-headers was gated, so OIDC/dev callers could read
+	// the diagnostics (issuer/redirect URLs, scopes, secret env-var names) and
+	// trigger the controller's outbound OIDC discovery probe unauthenticated.
+	// resolveRequestAuth resolves the correct identity per mode (OIDC session,
+	// trusted headers, or API key). Bypass modes (dev/disabled) stay open for
+	// local development.
+	if !isAuthBypassMode(settings.Mode) {
 		resolution, err := resolveRequestAuth(r, settings, s.store)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, err.Error())

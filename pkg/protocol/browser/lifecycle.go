@@ -1,14 +1,15 @@
 package browser
 
 func (b *Browser) close() {
-	if b.pwCDP != nil {
-		_ = b.pwCDP.Detach()
-		b.pwCDP = nil
-	}
 	b.mu.Lock()
+	cdp := b.pwCDP
+	b.pwCDP = nil
 	page := b.pwPage
 	b.pwPage = nil
 	b.mu.Unlock()
+	if cdp != nil {
+		_ = cdp.Detach()
+	}
 	if page != nil {
 		_ = page.Close()
 	}

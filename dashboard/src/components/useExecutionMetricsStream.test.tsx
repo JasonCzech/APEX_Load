@@ -19,8 +19,8 @@ vi.mock('../hooks/useWebSocket', () => ({
   useWebSocket: (...args: unknown[]) => useWebSocketMock(...args),
 }))
 
-function MetricsStreamHarness({ status = 'RUNNING' }: { status?: 'RUNNING' | 'COMPLETE' }) {
-  const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream('test-1', status)
+function MetricsStreamHarness({ status = 'RUNNING', testId = 'test-1' }: { status?: 'RUNNING' | 'COMPLETE'; testId?: string }) {
+  const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream(testId, status)
   const latest = localMetricsHistory[localMetricsHistory.length - 1]
 
   return (
@@ -236,6 +236,27 @@ describe('useExecutionMetricsStream', () => {
 
     expect(readTestId('count')).toBe('300')
     expect(readTestId('tps')).toBe('300')
+  })
+
+  it('resets accumulated history and latest metrics when the testId changes', async () => {
+    await act(async () => {
+      root.render(<MetricsStreamHarness testId="test-1" />)
+    })
+
+    await emit({
+      type: 'metrics_update',
+      timestamp: '2026-05-12T20:05:00Z',
+      data: { active_vusers: 5, tps: 9, avg_response_ms: 100, error_pct: 0, p50_ms: 1, p90_ms: 1, p99_ms: 1 },
+    } as WSMessage)
+    expect(readTestId('count')).toBe('1')
+    expect(readTestId('tps')).toBe('9')
+
+    // Navigating to run B must not show run A's accumulated history/snapshot.
+    await act(async () => {
+      root.render(<MetricsStreamHarness testId="test-2" />)
+    })
+    expect(readTestId('count')).toBe('0')
+    expect(readTestId('tps')).toBe('-1')
   })
 
   async function emit(message: WSMessage) {

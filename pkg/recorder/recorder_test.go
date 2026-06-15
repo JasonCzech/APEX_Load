@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -841,4 +842,35 @@ func TestIsTextContent(t *testing.T) {
 			t.Errorf("isTextContent(%q) = %v, want %v", tt.ct, got, tt.expect)
 		}
 	}
+}
+
+// TestRecorderStatusReadWriteIsRaceFree exercises the fix making s.mu the owning
+// lock for Session.Status/StoppedAt: snapshot reads (GetSession) must not race the
+// lifecycle writers (Pause/Resume/Stop). Run under go test -race.
+func TestRecorderStatusReadWriteIsRaceFree(t *testing.T) {
+	r := New("127.0.0.1:0")
+	if _, err := r.StartSession("s1", "race", SessionFilters{}, nil); err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 500; j++ {
+				_, _ = r.GetSession("s1")
+			}
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for j := 0; j < 200; j++ {
+			_, _ = r.PauseSession("s1")
+			_, _ = r.ResumeSession("s1")
+		}
+		_, _ = r.StopSession("s1")
+	}()
+	wg.Wait()
 }

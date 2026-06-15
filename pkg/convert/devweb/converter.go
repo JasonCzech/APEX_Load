@@ -134,20 +134,33 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	return convertSource(firstNonEmpty(req.Name, "Converted_DevWeb_Script"), firstNonEmpty(req.Name, "devweb")+".js", req.Content, req.Options)
 }
 
+// Decompression-bomb guards for untrusted DevWeb archive uploads. These also
+// protect the enterprise->devweb bridge, which re-extracts the raw zip here.
+const (
+	maxDevWebZipEntries = 4000
+	maxDevWebEntryBytes = 64 << 20  // per uncompressed entry
+	maxDevWebTotalBytes = 256 << 20 // cumulative uncompressed
+)
+
 func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	reader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
 	if err != nil {
 		return nil, err
 	}
+	if len(reader.File) > maxDevWebZipEntries {
+		return nil, fmt.Errorf("archive has too many entries (%d > %d)", len(reader.File), maxDevWebZipEntries)
+	}
 	files := make(map[string]string)
+	var total int64
 	for _, file := range reader.File {
 		if file.FileInfo().IsDir() {
 			continue
 		}
-		body, err := readZipFile(file)
+		body, err := readZipFile(file, maxDevWebTotalBytes-total)
 		if err != nil {
 			return nil, err
 		}
+		total += int64(len(body))
 		files[filepath.ToSlash(file.Name)] = string(body)
 	}
 	name, sourceFile, content := selectDevWebMainSource(files)
@@ -2000,13 +2013,29 @@ func sanitizeName(value string) string {
 	return value
 }
 
-func readZipFile(file *zip.File) ([]byte, error) {
+func readZipFile(file *zip.File, remainingTotal int64) ([]byte, error) {
 	reader, err := file.Open()
 	if err != nil {
 		return nil, err
 	}
 	defer reader.Close()
-	return io.ReadAll(reader)
+	// Bound the decompressed read by the smaller of the per-entry cap and the
+	// remaining cumulative budget, so a small zip can't inflate to GiBs in memory.
+	limit := int64(maxDevWebEntryBytes)
+	if remainingTotal < limit {
+		limit = remainingTotal
+	}
+	if limit < 0 {
+		limit = 0
+	}
+	body, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("zip entry %q exceeds the decompression limit (possible zip bomb)", file.Name)
+	}
+	return body, nil
 }
 
 func firstNonEmpty(values ...string) string {

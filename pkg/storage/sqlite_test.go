@@ -1281,3 +1281,35 @@ func TestSQLiteStoreUsageAccountingSnapshots(t *testing.T) {
 		t.Fatalf("all snapshots = %#v, want newest first", allSnapshots)
 	}
 }
+
+// TestDeleteUserRemovesRoleBindings locks in that DeleteUser cleans up role
+// bindings explicitly (the declared FK cascade is non-functional on both
+// backends), so a deleted user cannot leave orphaned RBAC grants.
+func TestDeleteUserRemovesRoleBindings(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	user := &User{ID: "user-del", Subject: "oidc|del", Email: "del@example.com", Active: true, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveUser(user); err != nil {
+		t.Fatalf("SaveUser returned error: %v", err)
+	}
+	if err := store.SaveUserRoleBinding(&UserRoleBinding{ID: "b-del", UserID: user.ID, ScopeType: "global", Role: "system_admin", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveUserRoleBinding returned error: %v", err)
+	}
+
+	if err := store.DeleteUser(user.ID); err != nil {
+		t.Fatalf("DeleteUser returned error: %v", err)
+	}
+
+	bindings, err := store.ListUserRoleBindings(user.ID)
+	if err != nil {
+		t.Fatalf("ListUserRoleBindings returned error: %v", err)
+	}
+	if len(bindings) != 0 {
+		t.Fatalf("expected no role bindings after DeleteUser, got %d: %#v", len(bindings), bindings)
+	}
+}

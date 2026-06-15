@@ -564,3 +564,23 @@ func containsString(values []string, want string) bool {
 	}
 	return false
 }
+
+// TestAnalyzeHandlesMalformedTargetURLs ensures imported actions whose Target
+// contains characters that make url.Parse return (nil, err) do not panic.
+func TestAnalyzeHandlesMalformedTargetURLs(t *testing.T) {
+	for _, target := range []string{
+		"https://example.my.salesforce.com/services/data\x7f/v59.0",
+		"https://example.my.salesforce.com/%zz",
+		"ht tp://bad host/login",
+	} {
+		script := &dsl.Script{
+			Name:     "SF Import",
+			Protocol: "http",
+			Config:   dsl.ScriptConfig{BaseURL: "https://example.my.salesforce.com"},
+			Actions:  []dsl.Action{{Name: "req", Type: "POST", Method: "POST", Target: target}},
+		}
+		if _, err := Analyze(script, AnalyzeOptions{BuildNative: true}); err != nil {
+			t.Fatalf("Analyze(%q) returned error: %v", target, err)
+		}
+	}
+}

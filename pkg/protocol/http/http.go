@@ -241,6 +241,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		sseFirstEvent time.Duration
 		sseEventCount int
 	)
+	maxBody := httpMaxBodyBytes(action.Params)
 	isEventStream := shouldReadSSE(resp.Header.Get("Content-Type"), action.Params)
 	if isEventStream {
 		sseResult, err := readSSEResponse(ctx, resp.Body, action.Params, result.StartTime)
@@ -249,6 +250,16 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		sseFirstEvent = sseResult.FirstEvent
 		sseEventCount = sseResult.EventCount
 		bodyReadErr = err
+	} else if maxBody > 0 {
+		// Bound the buffered body so a giant (or pathologically compressible)
+		// response becomes a failed sample instead of OOM-ing the generator.
+		// max_body_bytes <= 0 opts out (legitimate streaming/download tests).
+		n, bodyReadErr = io.Copy(buf, io.LimitReader(resp.Body, maxBody+1))
+		if bodyReadErr == nil && n > maxBody {
+			buf.Truncate(int(maxBody))
+			n = maxBody
+			bodyReadErr = fmt.Errorf("response body exceeded %d-byte limit", maxBody)
+		}
 	} else {
 		n, bodyReadErr = io.Copy(buf, resp.Body)
 	}
@@ -292,9 +303,10 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	responseHeaders := cloneHTTPHeaders(resp.Header)
 
 	respBody := append([]byte(nil), buf.Bytes()...)
-	respBody, responseHeaders, err = decodeHTTPResponseContent(respBody, resp.Header, responseHeaders)
+	respBody, responseHeaders, err = decodeHTTPResponseContent(respBody, resp.Header, responseHeaders, maxBody)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
+		result.Success = false
 		result.ErrorMessage = err.Error()
 		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, buf.Bytes())
 		return result, nil
@@ -377,7 +389,37 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	return result, nil
 }
 
-func decodeHTTPResponseContent(body []byte, headers http.Header, snapshotHeaders map[string]string) ([]byte, map[string]string, error) {
+// defaultHTTPMaxBodyBytes bounds the buffered+decoded response body when the
+// caller does not specify max_body_bytes. A value <= 0 (via the action param)
+// disables the cap for legitimate streaming/large-download tests.
+const defaultHTTPMaxBodyBytes = 64 << 20 // 64 MiB
+
+func httpMaxBodyBytes(params map[string]any) int64 {
+	if params != nil {
+		if _, ok := params["max_body_bytes"]; ok {
+			return int64(sseParamInt(params, "max_body_bytes", 0))
+		}
+	}
+	return defaultHTTPMaxBodyBytes
+}
+
+// readAllLimited reads all of r, rejecting payloads larger than maxBytes when
+// maxBytes > 0 (bounds decompression bombs). maxBytes <= 0 reads unbounded.
+func readAllLimited(r io.Reader, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		return io.ReadAll(r)
+	}
+	data, err := io.ReadAll(io.LimitReader(r, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("decoded response body exceeded %d-byte limit", maxBytes)
+	}
+	return data, nil
+}
+
+func decodeHTTPResponseContent(body []byte, headers http.Header, snapshotHeaders map[string]string, maxBytes int64) ([]byte, map[string]string, error) {
 	encodings := responseContentEncodings(headers)
 	if len(encodings) == 0 {
 		return body, snapshotHeaders, nil
@@ -393,11 +435,11 @@ func decodeHTTPResponseContent(body []byte, headers http.Header, snapshotHeaders
 		var err error
 		switch encoding {
 		case "gzip", "x-gzip":
-			decoded, err = decodeGzipBody(decoded)
+			decoded, err = decodeGzipBody(decoded, maxBytes)
 		case "deflate":
-			decoded, err = decodeDeflateBody(decoded)
+			decoded, err = decodeDeflateBody(decoded, maxBytes)
 		case "br":
-			decoded, err = decodeBrotliBody(decoded)
+			decoded, err = decodeBrotliBody(decoded, maxBytes)
 		default:
 			return body, snapshotHeaders, fmt.Errorf("unsupported response content encoding %q", encoding)
 		}
@@ -429,20 +471,20 @@ func responseContentEncodings(headers http.Header) []string {
 	return encodings
 }
 
-func decodeDeflateBody(body []byte) ([]byte, error) {
+func decodeDeflateBody(body []byte, maxBytes int64) ([]byte, error) {
 	zlibReader, err := zlib.NewReader(bytes.NewReader(body))
 	if err == nil {
 		defer zlibReader.Close()
-		return io.ReadAll(zlibReader)
+		return readAllLimited(zlibReader, maxBytes)
 	}
 
 	flateReader := flate.NewReader(bytes.NewReader(body))
 	defer flateReader.Close()
-	return io.ReadAll(flateReader)
+	return readAllLimited(flateReader, maxBytes)
 }
 
-func decodeBrotliBody(body []byte) ([]byte, error) {
-	return io.ReadAll(brotli.NewReader(bytes.NewReader(body)))
+func decodeBrotliBody(body []byte, maxBytes int64) ([]byte, error) {
+	return readAllLimited(brotli.NewReader(bytes.NewReader(body)), maxBytes)
 }
 
 func decodedResponseHeaders(headers map[string]string) map[string]string {

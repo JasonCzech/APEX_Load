@@ -676,8 +676,21 @@ func xsdAttributeNames(attributes []xsdAttribute) string {
 	return strings.Join(names, ", ")
 }
 
+// maxXSDRenderDepth bounds XSD skeleton recursion. renderXSDFields recurses
+// through type/element references with no cycle detection; a self-referential
+// complexType (e.g. `<element name="child" type="tns:Node"/>` inside type Node)
+// would otherwise recurse forever and overflow the stack — a fatal runtime throw
+// that recover() cannot catch, crashing the whole controller. Entry callers start
+// at depth 3, so this allows deeply-but-finitely nested schemas while breaking
+// cycles. The cap is high enough that real schemas are unaffected.
+const maxXSDRenderDepth = 64
+
 func renderXSDFields(doc definitions, fields []xsdElement, diagnostics *diag.Collector, location string, depth int) string {
 	if len(fields) == 0 {
+		return ""
+	}
+	if depth >= maxXSDRenderDepth {
+		diagnostics.Add(diag.Warning, "WSDL XSD type", location, fmt.Sprintf("stopped rendering at depth %d; the schema is recursive or extremely deep — fill in nested levels manually before replay", depth))
 		return ""
 	}
 	indent := strings.Repeat("  ", depth)

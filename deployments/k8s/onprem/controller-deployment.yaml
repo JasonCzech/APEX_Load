@@ -6,7 +6,13 @@ metadata:
     app.kubernetes.io/name: apexload-controller
     app.kubernetes.io/component: controller
 spec:
-  replicas: 2
+  # Keep exactly one active controller. The boot-time pending-test reconciler
+  # (ReconcilePendingTests/promotePendingTests) is NOT yet PostgreSQL-lease
+  # guarded, so a second replica independently promotes the same QUEUED tests at
+  # startup and double-starts load runs (doubling VUsers, corrupting accounting).
+  # This matches the AKS overlay and the Helm default. Do not raise above 1 until
+  # every singleton background loop acquires a durable lease first.
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: apexload-controller

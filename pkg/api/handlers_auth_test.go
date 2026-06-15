@@ -250,7 +250,12 @@ func TestHandleGetAuthDiagnosticsReturnsTrustedHeaderReadiness(t *testing.T) {
 	}
 }
 
-func TestHandleGetAuthDiagnosticsFailsOIDCReadinessWhenSecretsMissing(t *testing.T) {
+// configureOIDCDiagnosticsServer puts the server in OIDC mode with a usable
+// session secret (so an admin session cookie validates) but an unset client
+// secret env var (so readiness still reports "not ready").
+func configureOIDCDiagnosticsServer(t *testing.T) *Server {
+	t.Helper()
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "test-session-secret-0123456789abcdef")
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	settings := server.runner.GetSystemSettings()
 	settings.Auth.Mode = authModeOIDC
@@ -263,10 +268,33 @@ func TestHandleGetAuthDiagnosticsFailsOIDCReadinessWhenSecretsMissing(t *testing
 	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
 		t.Fatalf("UpdateSystemSettings returned error: %v", err)
 	}
+	return server
+}
+
+// oidcAdminSessionCookie mints a signed OIDC session cookie whose token carries
+// the system-admin global role. On an empty store the bootstrap path returns the
+// upstream session user as-is, so this authenticates as an admin.
+func oidcAdminSessionCookie(t *testing.T, server *Server, roles ...string) *http.Cookie {
+	t.Helper()
+	settings := normalizeAuthSettings(server.runner.GetSystemSettings().Auth)
+	secret := strings.TrimSpace(getenvOrFatal(t, settings.SessionSecretEnvVar))
+	encoded, err := encodeSignedCookieValue(oidcSessionToken{
+		Subject:     "sysadmin",
+		GlobalRoles: roles,
+		IssuedAt:    time.Now().UTC(),
+		ExpiresAt:   time.Now().UTC().Add(time.Hour),
+	}, secret)
+	if err != nil {
+		t.Fatalf("encodeSignedCookieValue returned error: %v", err)
+	}
+	return &http.Cookie{Name: oidcSessionCookieName, Value: encoded, Path: "/"}
+}
+
+func TestHandleGetAuthDiagnosticsFailsOIDCReadinessWhenSecretsMissing(t *testing.T) {
+	server := configureOIDCDiagnosticsServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
-	req.Header.Set("X-Auth-Request-User", "sysadmin")
-	req.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin)
+	req.AddCookie(oidcAdminSessionCookie(t, server, RoleSystemAdmin))
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
@@ -284,6 +312,38 @@ func TestHandleGetAuthDiagnosticsFailsOIDCReadinessWhenSecretsMissing(t *testing
 	}
 	if payload.ProviderModel != "native_oidc" {
 		t.Fatalf("provider model = %q, want native_oidc", payload.ProviderModel)
+	}
+}
+
+// TestHandleGetAuthDiagnosticsRequiresAdminInOIDCMode locks in that the
+// diagnostics endpoint is gated behind a system admin in OIDC mode: anonymous
+// callers get 401, non-admins get 403, and an admin session gets 200. Previously
+// only trusted-headers mode was gated, leaking config + an outbound discovery
+// probe to anonymous OIDC callers.
+func TestHandleGetAuthDiagnosticsRequiresAdminInOIDCMode(t *testing.T) {
+	server := configureOIDCDiagnosticsServer(t)
+
+	anon := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
+	anonResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(anonResp, anon)
+	if anonResp.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous status = %d, want %d body=%s", anonResp.Code, http.StatusUnauthorized, anonResp.Body.String())
+	}
+
+	nonAdmin := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
+	nonAdmin.AddCookie(oidcAdminSessionCookie(t, server, RoleViewer))
+	nonAdminResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(nonAdminResp, nonAdmin)
+	if nonAdminResp.Code != http.StatusForbidden {
+		t.Fatalf("non-admin status = %d, want %d body=%s", nonAdminResp.Code, http.StatusForbidden, nonAdminResp.Body.String())
+	}
+
+	admin := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
+	admin.AddCookie(oidcAdminSessionCookie(t, server, RoleSystemAdmin))
+	adminResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(adminResp, admin)
+	if adminResp.Code != http.StatusOK {
+		t.Fatalf("admin status = %d, want %d body=%s", adminResp.Code, http.StatusOK, adminResp.Body.String())
 	}
 }
 

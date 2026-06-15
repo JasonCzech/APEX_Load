@@ -132,7 +132,7 @@ func applyDataFormattingTransform(body []byte, transform dataFormattingTransform
 		mode := strings.ToLower(strings.TrimSpace(transform.Options["mode"]))
 		switch mode {
 		case "", "decode":
-			decoded, err := decodeGzipBody(body)
+			decoded, err := decodeGzipBody(body, 0)
 			if err != nil {
 				return nil, err
 			}
@@ -191,17 +191,16 @@ func decodeBase64Body(body []byte) ([]byte, error) {
 	return nil, err
 }
 
-func decodeGzipBody(body []byte) ([]byte, error) {
+// decodeGzipBody decompresses body. maxBytes > 0 bounds the decoded size
+// (decompression-bomb guard); maxBytes <= 0 is unbounded (request-side callers
+// pass 0 since those payloads are operator-authored, not remote).
+func decodeGzipBody(body []byte, maxBytes int64) ([]byte, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	defer reader.Close()
-	decoded, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, err
-	}
-	return decoded, nil
+	return readAllLimited(reader, maxBytes)
 }
 
 func encodeGzipBody(body []byte) ([]byte, error) {
@@ -240,7 +239,7 @@ func detectGzipPayload(body []byte) ([]byte, bool) {
 	if len(trimmed) < 2 || trimmed[0] != 0x1f || trimmed[1] != 0x8b {
 		return nil, false
 	}
-	decoded, err := decodeGzipBody(trimmed)
+	decoded, err := decodeGzipBody(trimmed, 0)
 	if err != nil || !isLikelyAutoDecodedPayload(decoded) {
 		return nil, false
 	}

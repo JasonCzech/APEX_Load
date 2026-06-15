@@ -1090,3 +1090,27 @@ func TestValidateExtractorIssuesAcceptsNewEnums(t *testing.T) {
 		t.Errorf("valid enum values rejected: %v", issues)
 	}
 }
+
+// TestValidateScriptIssues_NestedJMSHonorsConfigDestination locks in that a JMS
+// action nested inside a control block is NOT falsely flagged "missing target"
+// when config.jms.destination supplies the destination.
+func TestValidateScriptIssues_NestedJMSHonorsConfigDestination(t *testing.T) {
+	script := &Script{
+		Name:     "jms-control",
+		Protocol: "jms-solace",
+		Config:   ScriptConfig{JMS: JMSConfig{Provider: "solace", Destination: "orders.in", Mock: true}},
+		Actions: []Action{{
+			Name: "loop",
+			Type: "control_loop",
+			Control: &ControlFlow{
+				Count: 1,
+				Steps: []Action{{Name: "pub", Type: "jms_publish"}},
+			},
+		}},
+	}
+	for _, issue := range ValidateScriptIssues(script) {
+		if strings.Contains(issue, "missing target") {
+			t.Fatalf("nested jms_publish with config destination flagged missing target: %v", ValidateScriptIssues(script))
+		}
+	}
+}

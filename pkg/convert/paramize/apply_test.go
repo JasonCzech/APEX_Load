@@ -236,3 +236,30 @@ func TestApplyCSVEscaping(t *testing.T) {
 		t.Errorf("inline data = %q, want csv-quoted seed value", applied.DataSources[0].InlineData)
 	}
 }
+
+// TestApplyDataParamNumericKeyOverlap reproduces the corruption where the JSON
+// numeric value's digits also appear in the key (order1_id / value 1): the
+// applied body must replace the value, not a character inside the key.
+func TestApplyDataParamNumericKeyOverlap(t *testing.T) {
+	script := httpScript(
+		dsl.Action{Name: "create", Type: "http_request", Method: "POST", Target: "/orders", Body: `{"order1_id": 1}`},
+	)
+	result := Suggest(script, allClasses())
+	params := findByKind(result.Suggestions, KindDataParam)
+	if len(params) != 1 {
+		t.Fatalf("expected 1 data_param, got %d (%+v)", len(params), params)
+	}
+	if params[0].VarName != "order1_id" {
+		t.Fatalf("var name = %q, want order1_id", params[0].VarName)
+	}
+
+	applied, _, err := ApplySuggestions(script, result.Suggestions, selectAll(result.Suggestions))
+	if err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+	got := applied.Actions[0].Body
+	want := `{"order1_id": {{var.order1_id}}}`
+	if got != want {
+		t.Fatalf("applied body = %q, want %q (key must not be corrupted)", got, want)
+	}
+}

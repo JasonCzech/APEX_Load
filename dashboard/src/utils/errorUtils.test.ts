@@ -98,6 +98,16 @@ describe('error diagnostics', () => {
     expect(preview).toContain('[redacted]')
   })
 
+  it('redacts credential-shaped values from the user-visible message and rawMessage', () => {
+    const token = 'eyJhbGciOiJIUzI1NiJ9.payloadpayload.signaturesignature'
+    const diagnostic = diagnoseError(
+      { message: `request failed: Authorization: Bearer ${token}` },
+      'Request failed',
+    )
+    expect(diagnostic.summary).not.toContain(token)
+    expect(diagnostic.rawMessage).not.toContain(token)
+  })
+
   it('classifies common string-only HTTP messages after hooks store simple errors', () => {
     const diagnostic = diagnoseError('test not found', 'Unable to load test execution details')
 

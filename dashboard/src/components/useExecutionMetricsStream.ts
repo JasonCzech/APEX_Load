@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { useWebSocket } from '../hooks/useWebSocket'
 import { LiveMetrics, MetricsHistoryPoint, NetworkLatency, TelemetryHealth, TestStatus, WSMessage } from '../types'
@@ -53,6 +53,14 @@ function applyLatencyTargets(point: MetricsHistoryPoint, latency?: NetworkLatenc
 export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
   const [localMetricsHistory, setLocalMetricsHistory] = useState<MetricsHistoryPoint[]>([])
   const [latestMetrics, setLatestMetrics] = useState<LiveMetrics>()
+
+  // Clear accumulated stream state when switching tests so run B never shows run
+  // A's history/last-metrics snapshot (the parent reuses this hook instance
+  // without a key, and the next run may not stream, so nothing else clears it).
+  useEffect(() => {
+    setLocalMetricsHistory([])
+    setLatestMetrics(undefined)
+  }, [testId])
 
   const handleTestWSMessage = useCallback((msg: WSMessage) => {
     if (msg.type === 'latency_update' && msg.latency) {

@@ -56,8 +56,15 @@ var cookieHeaders = map[string]bool{
 // sensitiveParamPattern redacts token-bearing query string and form fields.
 var sensitiveParamPattern = regexp.MustCompile(`(?i)((?:^|[&?])(?:password|passwd|secret|token|access_token|refresh_token|id_token|api_key|apikey|session|session_id|sessionid|auth|csrf|xsrf)=)([^&\s]+)`)
 
-// sensitiveJSONPattern redacts token-bearing JSON body fields.
-var sensitiveJSONPattern = regexp.MustCompile(`(?i)("(?:password|passwd|secret|token|access_token|refresh_token|id_token|api_key|apikey|session_id|csrf_token|client_secret)"\s*:\s*")([^"]*)(")`)
+// sensitiveJSONPattern redacts token-bearing JSON body fields. Note: this list is
+// deliberately narrower than sensitiveParamNames. Query-string/header values are
+// in transit, but JSON BODY fields are the primary source the correlation engine
+// captures-and-replays (the HAR/recorder pipelines scrub BEFORE correlation), so
+// classic correlation targets — session/sessionid/csrf/xsrf — must stay
+// un-redacted here or replay parameterization breaks (see pkg/convert/har
+// TestConvertHAR). Only unambiguous secrets that are never correlation keys are
+// added; "authorization" carries a Bearer token in a body and is one such case.
+var sensitiveJSONPattern = regexp.MustCompile(`(?i)("(?:authorization|password|passwd|secret|token|access_token|refresh_token|id_token|api_key|apikey|session_id|csrf_token|client_secret)"\s*:\s*")([^"]*)(")`)
 
 // compiledRule is one ExtraPatterns rule with its regexp compiled exactly once.
 type compiledRule struct {

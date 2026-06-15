@@ -904,11 +904,7 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 			}
 
 			live := buildLiveMetricsForBroadcast(snap, groupVUsers, time.Now())
-			applyRuntimeGoalTargetsToLiveMetrics(test, live)
-
-			if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
-				currentTotalVUsers := totalGroupVUsers(groupVUsers)
-				update := evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
+			if update, ok := tr.evaluateGoalControllerLocked(test, live, groupVUsers); ok {
 				applyGoalControllerUpdate(tr, test, live, groupVUsers, update, mge.ScaleVUsers)
 			}
 
@@ -923,13 +919,27 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 	}
 }
 
-func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.MetricsSnapshot, groupVUsers map[string]int, scaleVUsers func(groupName string, target int) error, artifacts *runArtifacts) {
-	live := buildLiveMetricsFromSnapshot(snap, groupVUsers)
+// evaluateGoalControllerLocked applies runtime goal targets to live and, for
+// goal-oriented runs, evaluates the goal controller — all under tr.mu so the
+// reads of test.Groups/GoalConfig/GoalTargets/ScenarioMode and the goalControl
+// state machine are serialized with the locked writers (UpdateGoalTargetTPS,
+// applyGoalControllerUpdate, updateTestGroupVUsers). The returned scale decision
+// must be applied AFTER the lock is released, since applyGoalControllerUpdate
+// re-locks internally and issues blocking scale calls.
+func (tr *TestRunner) evaluateGoalControllerLocked(test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int) (goalControllerUpdate, bool) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
 	applyRuntimeGoalTargetsToLiveMetrics(test, live)
-
 	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
 		currentTotalVUsers := totalGroupVUsers(groupVUsers)
-		update := evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
+		return evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl), true
+	}
+	return goalControllerUpdate{}, false
+}
+
+func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.MetricsSnapshot, groupVUsers map[string]int, scaleVUsers func(groupName string, target int) error, artifacts *runArtifacts) {
+	live := buildLiveMetricsFromSnapshot(snap, groupVUsers)
+	if update, ok := tr.evaluateGoalControllerLocked(test, live, groupVUsers); ok {
 		applyGoalControllerUpdate(tr, test, live, groupVUsers, update, scaleVUsers)
 	}
 

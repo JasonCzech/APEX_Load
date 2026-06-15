@@ -796,9 +796,12 @@ func sampleForSchema(s schema, res resolver, location string, seen map[string]bo
 		}
 		switch strings.ToLower(s.Format) {
 		case "date-time":
-			return "{{fn.now()}}", nil
+			// fn.now is not an engine builtin; fn.timestamp.iso8601 is. Emitting a
+			// non-existent function ships the literal "{{fn.now()}}" in the body.
+			return "{{fn.timestamp.iso8601}}", nil
 		case "date":
-			return "{{fn.now(\"2006-01-02\")}}", nil
+			// The engine has no date-only formatter; use a static placeholder.
+			return "2025-01-01", nil
 		case "uuid":
 			return "{{fn.uuid()}}", nil
 		case "email":

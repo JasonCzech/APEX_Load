@@ -66,7 +66,15 @@ func newGuardedHTTPClient(timeout time.Duration) *http.Client {
 	allowPrivate := remoteOutboundAllowsPrivateHosts()
 	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
+		// Deliberately NOT http.ProxyFromEnvironment: with an HTTP(S)_PROXY set,
+		// the transport would dial the proxy and issue CONNECT to the real target,
+		// so the proxy — not our IP-checking DialContext — makes the final
+		// connection, silently defeating the SSRF guard for DNS-name targets.
+		// The sibling GitHub/webhook/external-metric clients likewise set no proxy.
+		// (Trade-off: control-plane federation/remote-run egress cannot be routed
+		// through an HTTP_PROXY; on-prem egress proxying must be done at the network
+		// layer, not via these env vars.)
+		Proxy: nil,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, port, err := net.SplitHostPort(addr)
 			if err != nil {

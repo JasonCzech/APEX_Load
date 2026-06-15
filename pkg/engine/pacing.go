@@ -160,13 +160,26 @@ type TokenBucket struct {
 	done     chan struct{}
 }
 
+// maxTokenBucketCapacity bounds the buffered token channel so a pathologically
+// large pacing.tps cannot trigger an enormous channel allocation.
+const maxTokenBucketCapacity = 1_000_000
+
 func NewTokenBucket(tps float64) *TokenBucket {
 	if tps <= 0 || math.IsNaN(tps) || math.IsInf(tps, 0) {
 		return nil
 	}
+	// For very large tps the fill interval truncates to 0, which makes
+	// time.NewTicker panic ("non-positive interval for NewTicker") inside the
+	// recover-less fill goroutine, crashing the worker. Clamp to 1ns, mirroring
+	// runArrivalScheduler.
+	interval := time.Duration(float64(time.Second) / tps)
+	if interval <= 0 {
+		interval = time.Nanosecond
+	}
+	capacity := int(math.Min(tps*2, maxTokenBucketCapacity)) + 1
 	tb := &TokenBucket{
-		tokens:   make(chan struct{}, int(tps*2)+1),
-		interval: time.Duration(float64(time.Second) / tps),
+		tokens:   make(chan struct{}, capacity),
+		interval: interval,
 		done:     make(chan struct{}),
 	}
 	go tb.fill()

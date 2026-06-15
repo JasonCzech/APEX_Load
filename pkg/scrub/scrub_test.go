@@ -290,3 +290,33 @@ func BenchmarkHARCustomPattern(b *testing.B) {
 		}
 	}
 }
+
+// TestValueRedactsAuthorizationJSONField locks in that an "authorization" JSON
+// body field (a Bearer token, never a correlation key) is redacted.
+func TestValueRedactsAuthorizationJSONField(t *testing.T) {
+	got := Value(`{"authorization":"Bearer eyJ.abc.def"}`, Policy{})
+	if !strings.Contains(got, Redacted) || strings.Contains(got, "eyJ.abc.def") {
+		t.Fatalf("expected authorization value redacted, got %s", got)
+	}
+}
+
+// TestValuePreservesCorrelationTargets locks in that JSON body fields the
+// correlation engine captures-and-replays (session/sessionid/csrf/xsrf) are NOT
+// redacted — the HAR/recorder pipelines scrub before correlation, so redacting
+// these would break replay parameterization (see pkg/convert/har TestConvertHAR).
+func TestValuePreservesCorrelationTargets(t *testing.T) {
+	cases := []struct {
+		in    string
+		value string
+	}{
+		{`{"sessionId":"abc12345"}`, "abc12345"},
+		{`{"session":"sid-123"}`, "sid-123"},
+		{`{"csrf":"csrf-tok"}`, "csrf-tok"},
+		{`{"xsrf":"xsrf-tok"}`, "xsrf-tok"},
+	}
+	for _, tc := range cases {
+		if got := Value(tc.in, Policy{}); !strings.Contains(got, tc.value) {
+			t.Fatalf("correlation value %q was redacted (breaks replay): %s", tc.value, got)
+		}
+	}
+}
