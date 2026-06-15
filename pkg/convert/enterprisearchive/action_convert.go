@@ -92,7 +92,7 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		// Safe-by-default invariant: a masked credential payload must never
 		// reach action.Body verbatim. If the masked lr_unmask(...) call landed
 		// in the body (e.g. "Body=lr_unmask(...)"), replace it with the
-		// governed secret reference regardless of opts â every entry point
+		// governed secret reference regardless of opts — every entry point
 		// (Convert/ConvertDatabase/ConvertNetwork as well as ConvertZip) now
 		// produces the reference, never the raw masked payload. The flag only
 		// governs the cosmetic choice of materializing the reference into an
@@ -132,8 +132,8 @@ var reOpaqueSourceTransformCall = regexp.MustCompile(`\b(lr_unmask|lr_decrypt_ex
 
 // annotateOpaqueTransformArgs flags request arguments built from opaque
 // transform calls so they never import as a silently empty body. The body is
-// deliberately left empty â replaying machine-key-bound ciphertext would send
-// garbage â and the original call text (including the masked hex) is preserved
+// deliberately left empty — replaying machine-key-bound ciphertext would send
+// garbage — and the original call text (including the masked hex) is preserved
 // in metadata.masked_body_raw so the payload can be re-entered or re-masked
 // externally.
 func annotateOpaqueTransformArgs(action *dsl.Action, fn ParsedFunction) []string {
@@ -169,7 +169,7 @@ func annotateOpaqueTransformArgs(action *dsl.Action, fn ParsedFunction) []string
 		bodyNote = "the converted body may be incomplete"
 	}
 	return []string{fmt.Sprintf(
-		"%s line %d: %s '%s' passes %s(...) as a request argument; the masked value is bound to the recording machine's key and cannot be recovered at import time â %s and the action requires manual review (original call preserved in metadata.masked_body_raw)",
+		"%s line %d: %s '%s' passes %s(...) as a request argument; the masked value is bound to the recording machine's key and cannot be recovered at import time — %s and the action requires manual review (original call preserved in metadata.masked_body_raw)",
 		fn.Filename, fn.LineNumber, fn.Name, fn.StepName, strings.Join(uniqueSourceStrings(names), ", "), bodyNote)}
 }
 

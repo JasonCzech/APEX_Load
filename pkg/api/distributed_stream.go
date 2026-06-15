@@ -126,7 +126,7 @@ func (b *distributedExecutionBackend) clientsFromSnapshot(clientsByTarget map[st
 	return map[string]generatorClient{target: client}, nil
 }
 
-// resolveClientsLocked is snapshotRemoteClients + clientsFromSnapshot â the lock-safe
+// resolveClientsLocked is snapshotRemoteClients + clientsFromSnapshot — the lock-safe
 // replacement for clientsForTest(test).
 func (b *distributedExecutionBackend) resolveClientsLocked(tr *TestRunner, test *ManagedTest) (map[string]generatorClient, error) {
 	clientsByTarget, single, target := b.snapshotRemoteClients(tr, test)
@@ -331,7 +331,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 	// ManagedTest state (Groups, GoalConfig/GoalTargets/ScenarioMode) and the
 	// goalControl state machine (breachStartedAt), which is concurrently written
 	// under tr.mu by UpdateGoalTargetTPS/applyGoalControllerUpdate and by sibling
-	// per-target consumeMetrics goroutines â so it must hold tr.mu. The lock is
+	// per-target consumeMetrics goroutines — so it must hold tr.mu. The lock is
 	// released BEFORE applyGoalControllerUpdate, which re-locks internally and
 	// issues blocking gRPC scale calls.
 	aggregated := aggregateDistributedMetricsBatches(test.ID, batches)

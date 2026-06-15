@@ -136,7 +136,7 @@ func sourceExtractorPostProcessing(fn ParsedFunction, paramName string) (saveOff
 	saveLength = parsePositiveInt(firstNonEmptyArg(fn, "SaveLen"))
 	if raw := strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "SaveLen"))); raw != "" {
 		// SaveLen=0 saves an empty string in the source tool, but the DSL's
-		// save_length zero value means "entire remainder" â surface the
+		// save_length zero value means "entire remainder" — surface the
 		// inversion instead of importing it silently. (-1 = entire, faithful.)
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed == 0 {
 			warnings = append(warnings, fmt.Sprintf("line %d: parameter %q uses SaveLen=0 (the source saves an empty string); the DSL cannot express zero-length truncation, so the full value is saved", fn.LineNumber, paramName))
@@ -315,7 +315,7 @@ func normalizeSourceContentCheckScope(value string) string {
 func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, string) {
 	text := firstNonEmptyArg(fn, "Text")
 	if text == "" {
-		return nil, nil, fmt.Sprintf("line %d: web_reg_find '%s' â manual review recommended because no Text argument was found", fn.LineNumber, fn.StepName)
+		return nil, nil, fmt.Sprintf("line %d: web_reg_find '%s' — manual review recommended because no Text argument was found", fn.LineNumber, fn.StepName)
 	}
 
 	assertionType := "body_contains"
