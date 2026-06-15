@@ -1084,6 +1084,16 @@ export interface ReportCommentarySection {
   label: string
 }
 
+export interface ReportFinding {
+  id: string
+  title: string
+  severity: 'major' | 'minor' | 'info'
+  observed?: string
+  evidence?: string
+  root_cause?: string
+  impact?: string
+}
+
 export interface ReportAnnotations {
   test_id: string
   profile: string
@@ -1091,6 +1101,9 @@ export interface ReportAnnotations {
   prepared_by: string
   executive_narrative: string
   section_comments: Record<string, string>
+  verdict_override?: string
+  verdict_explanation?: string
+  findings?: ReportFinding[]
   updated_at: string
   updated_by: string
 }
@@ -1105,6 +1118,9 @@ export interface ReportAnnotationsInput {
   prepared_by: string
   executive_narrative: string
   section_comments: Record<string, string>
+  verdict_override: string
+  verdict_explanation: string
+  findings: ReportFinding[]
 }
 
 export interface RunArchiveAnalysisStats {

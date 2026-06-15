@@ -5,7 +5,7 @@ import ReportCharts from './ReportCharts'
 import { useApi } from '../hooks/useApi'
 import { downloadBlob } from '../utils/fileUtils'
 import { getErrorMessage } from '../utils/errorUtils'
-import { ReportAnnotations, ReportCommentarySection, RunArchiveReport } from '../types'
+import { ReportAnnotations, ReportCommentarySection, ReportFinding, RunArchiveReport } from '../types'
 import type { ReportProfileId } from './GenerateReportModal'
 import './ReportComposer.css'
 
@@ -30,6 +30,9 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   const [preparedBy, setPreparedBy] = useState('')
   const [narrative, setNarrative] = useState('')
   const [comments, setComments] = useState<Record<string, string>>({})
+  const [verdictOverride, setVerdictOverride] = useState('')
+  const [verdictExplanation, setVerdictExplanation] = useState('')
+  const [findings, setFindings] = useState<ReportFinding[]>([])
   const [updatedBy, setUpdatedBy] = useState('')
 
   const [loading, setLoading] = useState(true)
@@ -42,7 +45,22 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     setPreparedBy(annotations.prepared_by || '')
     setNarrative(annotations.executive_narrative || '')
     setComments(annotations.section_comments || {})
+    setVerdictOverride(annotations.verdict_override || '')
+    setVerdictExplanation(annotations.verdict_explanation || '')
+    setFindings(annotations.findings || [])
     setUpdatedBy(annotations.updated_by || '')
+  }, [])
+
+  const addFinding = useCallback(() => {
+    setFindings((current) => [...current, { id: '', title: '', severity: 'minor' }])
+  }, [])
+
+  const updateFinding = useCallback((index: number, patch: Partial<ReportFinding>) => {
+    setFindings((current) => current.map((finding, i) => (i === index ? { ...finding, ...patch } : finding)))
+  }, [])
+
+  const removeFinding = useCallback((index: number) => {
+    setFindings((current) => current.filter((_, i) => i !== index))
   }, [])
 
   useEffect(() => {
@@ -73,11 +91,19 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     setSaving(true)
     setStatus('')
     try {
+      // Drop findings with no title so a stray empty row never replaces the
+      // auto-derived list; the backend backfills any missing F-0n ids.
+      const cleanedFindings = findings
+        .map((finding) => ({ ...finding, title: finding.title.trim() }))
+        .filter((finding) => finding.title !== '')
       const response = await api.saveTestReportAnnotations(testId, profile, {
         title: title.trim(),
         prepared_by: preparedBy.trim(),
         executive_narrative: narrative.trim(),
         section_comments: comments,
+        verdict_override: verdictOverride,
+        verdict_explanation: verdictExplanation.trim(),
+        findings: cleanedFindings,
       })
       applyAnnotations(response.annotations)
       setStatus('Saved')
@@ -88,7 +114,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     } finally {
       setSaving(false)
     }
-  }, [api, testId, profile, title, preparedBy, narrative, comments, applyAnnotations])
+  }, [api, testId, profile, title, preparedBy, narrative, comments, verdictOverride, verdictExplanation, findings, applyAnnotations])
 
   const handleDownloadHtml = useCallback(async () => {
     if (!(await persist())) return
@@ -179,6 +205,36 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               <Metric label="Error Rate" value={`${formatNum(overview?.error_pct)}%`} tone={(overview?.error_pct ?? 0) > 0 ? 'warn' : 'ok'} />
               <Metric label="Peak TPS" value={formatNum(overview?.peak_tps)} />
               <Metric label="Peak VUsers" value={formatInt(overview?.peak_active_vusers)} />
+            </section>
+
+            <section className="report-section">
+              <h2>Verdict</h2>
+              <p className="report-hint no-print">
+                Leave on “Auto” to use the verdict derived from SLA, telemetry, and completeness signals.
+                Choosing an override (e.g. for a transient, self-recovered breach) replaces it in the report.
+              </p>
+              <label className="report-comment">
+                <span>Verdict override</span>
+                <select
+                  className="report-select"
+                  value={verdictOverride}
+                  onChange={(event) => setVerdictOverride(event.target.value)}
+                >
+                  <option value="">Auto (derived)</option>
+                  <option value="Pass">Pass</option>
+                  <option value="Conditional Pass">Conditional Pass</option>
+                  <option value="Fail">Fail</option>
+                </select>
+              </label>
+              <label className="report-comment">
+                <span>Verdict explanation</span>
+                <textarea
+                  value={verdictExplanation}
+                  onChange={(event) => setVerdictExplanation(event.target.value)}
+                  placeholder="Optional — shown in the verdict bar when an override is set."
+                  rows={2}
+                />
+              </label>
             </section>
 
             <section className="report-section">
@@ -275,6 +331,86 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
                 </div>
               </section>
             )}
+
+            <section className="report-section">
+              <h2>Findings</h2>
+              <p className="report-hint no-print">
+                Leave empty to use the findings auto-derived from the run. Add entries to curate the
+                F-0n list shown in the report; ids are filled in automatically.
+              </p>
+              {findings.map((finding, index) => (
+                <div key={index} className="report-finding-edit">
+                  <div className="report-finding-edit-head">
+                    <span className="report-finding-id">
+                      {finding.id || `F-${String(index + 1).padStart(2, '0')}`}
+                    </span>
+                    <input
+                      className="report-finding-title"
+                      value={finding.title}
+                      onChange={(event) => updateFinding(index, { title: event.target.value })}
+                      placeholder="Finding title"
+                      aria-label={`Finding ${index + 1} title`}
+                    />
+                    <select
+                      className="report-select"
+                      value={finding.severity}
+                      onChange={(event) =>
+                        updateFinding(index, { severity: event.target.value as ReportFinding['severity'] })
+                      }
+                      aria-label={`Finding ${index + 1} severity`}
+                    >
+                      <option value="major">Major</option>
+                      <option value="minor">Minor</option>
+                      <option value="info">Info</option>
+                    </select>
+                    <button
+                      type="button"
+                      className="btn btn-secondary no-print"
+                      onClick={() => removeFinding(index)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div className="report-finding-edit-grid">
+                    <label className="report-comment">
+                      <span>Observed</span>
+                      <textarea
+                        rows={2}
+                        value={finding.observed || ''}
+                        onChange={(event) => updateFinding(index, { observed: event.target.value })}
+                      />
+                    </label>
+                    <label className="report-comment">
+                      <span>Evidence</span>
+                      <textarea
+                        rows={2}
+                        value={finding.evidence || ''}
+                        onChange={(event) => updateFinding(index, { evidence: event.target.value })}
+                      />
+                    </label>
+                    <label className="report-comment">
+                      <span>Root cause</span>
+                      <textarea
+                        rows={2}
+                        value={finding.root_cause || ''}
+                        onChange={(event) => updateFinding(index, { root_cause: event.target.value })}
+                      />
+                    </label>
+                    <label className="report-comment">
+                      <span>Impact</span>
+                      <textarea
+                        rows={2}
+                        value={finding.impact || ''}
+                        onChange={(event) => updateFinding(index, { impact: event.target.value })}
+                      />
+                    </label>
+                  </div>
+                </div>
+              ))}
+              <button type="button" className="btn btn-secondary no-print report-add-finding" onClick={addFinding}>
+                Add finding
+              </button>
+            </section>
 
             <section className="report-section">
               <h2>Analyst Commentary</h2>
