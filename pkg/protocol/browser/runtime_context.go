@@ -100,6 +100,16 @@ func (b *Browser) installBrowserContextHandlers(browserContext playwright.Browse
 	})
 }
 
+// currentPage returns the active page under b.mu. The OnPage handler activates
+// new pages (registerPage) on Playwright's dispatch goroutine, so every read of
+// the active page from the execution goroutine must go through this accessor to
+// avoid racing that write.
+func (b *Browser) currentPage() playwright.Page {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.pwPage
+}
+
 func (b *Browser) registerPage(page playwright.Page, activate bool) {
 	if page == nil {
 		return

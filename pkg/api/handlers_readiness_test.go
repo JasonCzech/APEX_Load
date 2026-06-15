@@ -6,9 +6,20 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+// readinessTestStaticFS returns an in-memory dashboard asset filesystem so the
+// readiness suite is deterministic regardless of whether `npm run build` has
+// populated the compile-time embed (which is gitignored).
+func readinessTestStaticFS() fstest.MapFS {
+	return fstest.MapFS{
+		"static/index.html":    {Data: []byte("<!doctype html><title>APEX Load</title>")},
+		"static/assets/app.js": {Data: []byte("export default null")},
+	}
+}
 
 func TestHandleSystemReadinessReturnsReadyForConfiguredLocalController(t *testing.T) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
@@ -19,6 +30,7 @@ func TestHandleSystemReadinessReturnsReadyForConfiguredLocalController(t *testin
 	defer store.Close()
 
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080", Store: store})
+	server.staticFS = readinessTestStaticFS()
 	settings := server.runner.GetSystemSettings()
 	settings.Auth.Mode = authModeTrustedHeaders
 	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
@@ -152,6 +164,7 @@ func TestPlatformIntegrationsReadinessReportsAzureAndPrometheusSettings(t *testi
 	defer store.Close()
 
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080", Store: store})
+	server.staticFS = readinessTestStaticFS()
 	settings := server.runner.GetSystemSettings()
 	settings.Auth.Mode = authModeTrustedHeaders
 	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
@@ -212,6 +225,31 @@ func TestHandleSystemReadinessReturnsNotReadyWhenRedisConfiguredButUnavailable(t
 	cache := assertReadinessCheck(t, payload, "cache_backend", readinessStatusNotReady)
 	if cache.Details["cache_backend"] != cacheBackendRedis {
 		t.Fatalf("cache backend = %#v, want redis", cache.Details["cache_backend"])
+	}
+}
+
+func TestPlatformIntegrationsReadinessDegradedWhenDashboardMissing(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080", Store: store})
+	// No dashboard assets staged: the embedded build is absent.
+	server.staticFS = fstest.MapFS{}
+
+	check := server.platformIntegrationsReadiness()
+	if check.Status != readinessStatusDegraded {
+		t.Fatalf("status = %q, want degraded when dashboard assets are missing", check.Status)
+	}
+	dashboard, ok := check.Details["dashboard_static_assets"].(map[string]any)
+	if !ok {
+		t.Fatalf("dashboard_static_assets details missing: %#v", check.Details)
+	}
+	if dashboard["index_html"] != false {
+		t.Fatalf("dashboard index_html = %#v, want false", dashboard["index_html"])
 	}
 }
 

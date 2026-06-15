@@ -54,6 +54,7 @@ type Engine struct {
 	duration time.Duration
 	rampUp   time.Duration
 	metrics  *MetricsCollector
+	mu       sync.Mutex // guards cancel
 	cancel   context.CancelFunc
 }
 
@@ -102,7 +103,9 @@ func New(cfg Config) (*Engine, error) {
 
 func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, e.duration)
+	e.mu.Lock()
 	e.cancel = cancel
+	e.mu.Unlock()
 	defer cancel()
 
 	proto, err := protocol.Get(e.script.Protocol)
@@ -205,8 +208,11 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 }
 
 func (e *Engine) Stop() {
-	if e.cancel != nil {
-		e.cancel()
+	e.mu.Lock()
+	cancel := e.cancel
+	e.mu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 }
 

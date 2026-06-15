@@ -69,6 +69,10 @@ type Server struct {
 	bindScope          string
 	boundAddr          string
 	boundAddrMu        sync.RWMutex
+	// staticFS is the dashboard asset filesystem probed by readiness checks.
+	// It defaults to the compile-time embedded StaticFS; tests override it so
+	// the readiness suite does not depend on a prior `npm run build`.
+	staticFS fs.FS
 }
 
 // ServerConfig configures API server startup behavior and integrations.
@@ -168,6 +172,7 @@ func NewServer(cfg ServerConfig) *Server {
 		kubeRestarter:      cfg.KubeRestarter,
 		restartInFlight:    make(map[string]struct{}),
 		metricsAddr:        strings.TrimSpace(cfg.MetricsAddr),
+		staticFS:           StaticFS,
 	}
 
 	s.loadLibraryState()

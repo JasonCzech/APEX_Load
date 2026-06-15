@@ -49,7 +49,7 @@ func (b *Browser) dblclickAction(action *protocol.Action, selector string) error
 		}
 		return locator.Dblclick()
 	}
-	return b.pwPage.Dblclick(selector)
+	return b.currentPage().Dblclick(selector)
 }
 
 func (b *Browser) hoverAction(action *protocol.Action, selector string) error {
@@ -59,7 +59,7 @@ func (b *Browser) hoverAction(action *protocol.Action, selector string) error {
 		}
 		return locator.Hover()
 	}
-	return b.pwPage.Hover(selector)
+	return b.currentPage().Hover(selector)
 }
 
 func (b *Browser) dragAndDropAction(action *protocol.Action, source, target string) error {
@@ -77,14 +77,14 @@ func (b *Browser) dragAndDropAction(action *protocol.Action, source, target stri
 		}
 		return sourceLocator.DragTo(targetLocator)
 	}
-	return b.pwPage.DragAndDrop(source, target)
+	return b.currentPage().DragAndDrop(source, target)
 }
 
 func (b *Browser) setInputFilesAction(action *protocol.Action, selector string, files []string) error {
 	if locator, ok := b.actionLocator(action, selector); ok {
 		return locator.SetInputFiles(files)
 	}
-	return b.pwPage.SetInputFiles(selector, files)
+	return b.currentPage().SetInputFiles(selector, files)
 }
 
 func (b *Browser) pressKeyAction(action *protocol.Action, selector string, key string) error {
@@ -95,9 +95,9 @@ func (b *Browser) pressKeyAction(action *protocol.Action, selector string, key s
 			}
 			return locator.Press(key)
 		}
-		return b.pwPage.Press(selector, key)
+		return b.currentPage().Press(selector, key)
 	}
-	return b.pwPage.Keyboard().Press(key)
+	return b.currentPage().Keyboard().Press(key)
 }
 
 func (b *Browser) waitVisibleForAction(ctx context.Context, action *protocol.Action, selector string) error {
@@ -120,10 +120,11 @@ func (b *Browser) waitHiddenForAction(ctx context.Context, action *protocol.Acti
 
 func (b *Browser) actionLocator(action *protocol.Action, selector string) (playwright.Locator, bool) {
 	frameSelector := b.actionFrameSelector(action)
-	if strings.TrimSpace(frameSelector) == "" || b.pwPage == nil {
+	page := b.currentPage()
+	if strings.TrimSpace(frameSelector) == "" || page == nil {
 		return nil, false
 	}
-	return b.pwPage.FrameLocator(frameSelector).Locator(selector), true
+	return page.FrameLocator(frameSelector).Locator(selector), true
 }
 
 func (b *Browser) actionFrameSelector(action *protocol.Action) string {
@@ -188,8 +189,8 @@ func (b *Browser) dispatchSwitchFrame(action *protocol.Action) error {
 		b.currentFrameSelector = ""
 		return nil
 	}
-	if b.pwPage != nil {
-		locator := b.pwPage.FrameLocator(selector).Locator("body")
+	if page := b.currentPage(); page != nil {
+		locator := page.FrameLocator(selector).Locator("body")
 		if err := b.waitLocatorVisible(locator, b.actionTimeout(action)); err != nil {
 			return err
 		}

@@ -106,7 +106,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		StartTime:   time.Now(),
 		Extractions: map[string]string{},
 	}
-	if b.pwPage == nil {
+	if b.currentPage() == nil {
 		result.ErrorMessage = "browser protocol is not initialized"
 		return result, nil
 	}

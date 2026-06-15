@@ -5,9 +5,12 @@ func (b *Browser) close() {
 		_ = b.pwCDP.Detach()
 		b.pwCDP = nil
 	}
-	if b.pwPage != nil {
-		_ = b.pwPage.Close()
-		b.pwPage = nil
+	b.mu.Lock()
+	page := b.pwPage
+	b.pwPage = nil
+	b.mu.Unlock()
+	if page != nil {
+		_ = page.Close()
 	}
 	if b.pwContext != nil {
 		_ = b.pwContext.Close() // flushes the context HAR recording

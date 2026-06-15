@@ -307,19 +307,60 @@ func (r *Recorder) UpdateRequest(sessionID string, seq int, update RequestUpdate
 	return nil, fmt.Errorf("request seq %d not found in session %q", seq, sessionID)
 }
 
+// snapshot returns a deep-enough copy of the session for safe concurrent reads.
+// It is taken under s.mu so it never races the recorder's write paths
+// (recordRequestWithOptions / appendWebSocketMessage / UpdateRequest, which all
+// hold s.mu). The returned *Session has a fresh zero-value mutex and must be
+// treated as read-only — mutators look sessions up by id, never via this copy.
+// Header maps are created once under lock and never mutated afterward, so they
+// are aliased; WebSocketMessages is appended after creation, so it is cloned.
+func (s *Session) snapshot() *Session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := &Session{
+		ID:        s.ID,
+		Name:      s.Name,
+		ProjectID: s.ProjectID,
+		Status:    s.Status,
+		StartedAt: s.StartedAt,
+		StoppedAt: s.StoppedAt,
+		BaseURL:   s.BaseURL,
+		Filters:   s.Filters,
+	}
+	if len(s.Requests) > 0 {
+		cp.Requests = make([]RecordedRequest, len(s.Requests))
+		copy(cp.Requests, s.Requests)
+		for i := range cp.Requests {
+			if msgs := cp.Requests[i].WebSocketMessages; len(msgs) > 0 {
+				cloned := make([]RecordedWebSocketMessage, len(msgs))
+				copy(cloned, msgs)
+				cp.Requests[i].WebSocketMessages = cloned
+			}
+		}
+	}
+	return cp
+}
+
 func (r *Recorder) GetSession(id string) (*Session, bool) {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
 	s, ok := r.sessions[id]
-	return s, ok
+	r.mu.RUnlock()
+	if !ok {
+		return nil, false
+	}
+	return s.snapshot(), true
 }
 
 func (r *Recorder) ListSessions() []*Session {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-	result := make([]*Session, 0, len(r.sessions))
+	live := make([]*Session, 0, len(r.sessions))
 	for _, s := range r.sessions {
-		result = append(result, s)
+		live = append(live, s)
+	}
+	r.mu.RUnlock()
+	result := make([]*Session, len(live))
+	for i, s := range live {
+		result[i] = s.snapshot()
 	}
 	return result
 }
@@ -341,8 +382,12 @@ func (r *Recorder) DeleteSession(id string) bool {
 
 func (r *Recorder) ActiveSession() *Session {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.active
+	s := r.active
+	r.mu.RUnlock()
+	if s == nil {
+		return nil
+	}
+	return s.snapshot()
 }
 
 func (r *Recorder) StartProxy() error {

@@ -77,7 +77,7 @@ func (b *Browser) navigate(ctx context.Context, target string) error {
 		resolvedTarget = "http://" + target
 	}
 
-	if _, err := b.pwPage.Goto(resolvedTarget); err != nil {
+	if _, err := b.currentPage().Goto(resolvedTarget); err != nil {
 		return err
 	}
 	b.currentURL = resolvedTarget
@@ -88,28 +88,28 @@ func (b *Browser) click(ctx context.Context, selector string) error {
 	if err := b.waitVisible(ctx, selector); err != nil {
 		return err
 	}
-	return b.pwPage.Click(selector)
+	return b.currentPage().Click(selector)
 }
 
 func (b *Browser) fill(ctx context.Context, selector, value string) error {
 	if err := b.waitVisible(ctx, selector); err != nil {
 		return err
 	}
-	return b.pwPage.Fill(selector, value)
+	return b.currentPage().Fill(selector, value)
 }
 
 func (b *Browser) waitVisible(ctx context.Context, selector string) error {
-	_, err := b.pwPage.WaitForSelector(selector)
+	_, err := b.currentPage().WaitForSelector(selector)
 	return err
 }
 
 func (b *Browser) waitHidden(ctx context.Context, selector string) error {
-	_, err := b.pwPage.WaitForSelector(selector, playwright.PageWaitForSelectorOptions{State: playwright.WaitForSelectorStateHidden})
+	_, err := b.currentPage().WaitForSelector(selector, playwright.PageWaitForSelectorOptions{State: playwright.WaitForSelectorStateHidden})
 	return err
 }
 
 func (b *Browser) evaluatePageExpression(ctx context.Context, expression string, result any) error {
-	res, err := b.pwPage.Evaluate(expression)
+	res, err := b.currentPage().Evaluate(expression)
 	if err != nil {
 		return err
 	}
@@ -121,14 +121,14 @@ func (b *Browser) evaluatePageExpression(ctx context.Context, expression string,
 }
 
 func (b *Browser) captureHTML(ctx context.Context) (string, error) {
-	return b.pwPage.Content()
+	return b.currentPage().Content()
 }
 
 func (b *Browser) captureScreenshot(ctx context.Context, action *protocol.Action) (string, error) {
 	opts := playwright.PageScreenshotOptions{}
 	selector := b.screenshotSelector(action)
 	if selector != "" {
-		el, err := b.pwPage.QuerySelector(selector)
+		el, err := b.currentPage().QuerySelector(selector)
 		if err != nil {
 			return "", err
 		}
@@ -140,12 +140,12 @@ func (b *Browser) captureScreenshot(ctx context.Context, action *protocol.Action
 	if action != nil && action.Capture != nil && action.Capture.FullPage {
 		opts.FullPage = playwright.Bool(true)
 	}
-	buf, err := b.pwPage.Screenshot(opts)
+	buf, err := b.currentPage().Screenshot(opts)
 	return base64.StdEncoding.EncodeToString(buf), err
 }
 
 func (b *Browser) readDOMSummary(ctx context.Context) (string, string, *protocol.DOMSummary, error) {
-	res, err := b.pwPage.Evaluate(`(() => ({
+	res, err := b.currentPage().Evaluate(`(() => ({
 		url: window.location.href,
 		title: document.title,
 		readyState: document.readyState,
@@ -185,7 +185,7 @@ func (b *Browser) selectOption(ctx context.Context, selector, value string) erro
 	if err := b.waitVisible(ctx, selector); err != nil {
 		return err
 	}
-	_, err := b.pwPage.SelectOption(selector, playwright.SelectOptionValues{
+	_, err := b.currentPage().SelectOption(selector, playwright.SelectOptionValues{
 		ValuesOrLabels: playwright.StringSlice(value),
 	})
 	return err

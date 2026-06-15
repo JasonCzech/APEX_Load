@@ -55,7 +55,7 @@ func (b *Browser) evaluateBrowserAssertions(assertions []protocol.Assertion, res
 			if selector == "" {
 				return fmt.Errorf("element_visible assertion requires selector in value")
 			}
-			visible, err := b.pwPage.IsVisible(selector)
+			visible, err := b.currentPage().IsVisible(selector)
 			if err != nil {
 				return fmt.Errorf("failed to check visibility for %q: %v", selector, err)
 			}
@@ -67,7 +67,7 @@ func (b *Browser) evaluateBrowserAssertions(assertions []protocol.Assertion, res
 			if selector == "" {
 				return fmt.Errorf("element_text_equals assertion requires selector in value")
 			}
-			text, err := b.pwPage.TextContent(selector)
+			text, err := b.currentPage().TextContent(selector)
 			if err != nil {
 				return fmt.Errorf("failed to get text for %q: %v", selector, err)
 			}
@@ -81,7 +81,7 @@ func (b *Browser) evaluateBrowserAssertions(assertions []protocol.Assertion, res
 			if selector == "" {
 				return fmt.Errorf("element_text_contains assertion requires selector in value")
 			}
-			text, err := b.pwPage.TextContent(selector)
+			text, err := b.currentPage().TextContent(selector)
 			if err != nil {
 				return fmt.Errorf("failed to get text for %q: %v", selector, err)
 			}

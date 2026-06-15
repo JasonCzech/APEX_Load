@@ -331,7 +331,7 @@ func (s *Server) authModeReadiness() SystemReadinessCheck {
 func (s *Server) platformIntegrationsReadiness() SystemReadinessCheck {
 	backend := currentArchiveBackend()
 	prometheus := normalizePrometheusSettings(s.runner.GetSystemSettings().Prometheus)
-	dashboard := dashboardStaticAssetsReadiness()
+	dashboard := dashboardStaticAssetsReadiness(s.dashboardStaticFS())
 	status := readinessStatusReady
 	message := "deployment integration surfaces are configured"
 	if dashboard["status"] != readinessStatusReady {
@@ -419,18 +419,27 @@ func azureIdentityReadinessDetails() map[string]any {
 	}
 }
 
-func dashboardStaticAssetsReadiness() map[string]any {
+// dashboardStaticFS returns the filesystem used to probe embedded dashboard
+// assets, defaulting to the compile-time embed when no override is set.
+func (s *Server) dashboardStaticFS() fs.FS {
+	if s != nil && s.staticFS != nil {
+		return s.staticFS
+	}
+	return StaticFS
+}
+
+func dashboardStaticAssetsReadiness(staticFS fs.FS) map[string]any {
 	details := map[string]any{
 		"status": readinessStatusReady,
 	}
-	if _, err := fs.Stat(StaticFS, "static/index.html"); err != nil {
+	if _, err := fs.Stat(staticFS, "static/index.html"); err != nil {
 		details["status"] = readinessStatusDegraded
 		details["index_html"] = false
 		details["error"] = err.Error()
 		return details
 	}
 	details["index_html"] = true
-	assets, err := fs.Glob(StaticFS, "static/assets/*")
+	assets, err := fs.Glob(staticFS, "static/assets/*")
 	if err != nil {
 		details["status"] = readinessStatusDegraded
 		details["error"] = err.Error()

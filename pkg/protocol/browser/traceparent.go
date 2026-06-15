@@ -17,14 +17,15 @@ import (
 // cross-origin requests non-simple and can introduce CORS preflights the real
 // user traffic would not have, so fidelity-sensitive runs leave it off.
 func (b *Browser) applyActionTraceparent(ctx context.Context, result *protocol.Result) {
-	if !b.traceparentEnabled || b.pwPage == nil {
+	page := b.currentPage()
+	if !b.traceparentEnabled || page == nil {
 		return
 	}
 	traceparent := newBrowserTraceparent()
 	if traceparent == "" {
 		return
 	}
-	if err := b.pwPage.SetExtraHTTPHeaders(map[string]string{"traceparent": traceparent}); err != nil {
+	if err := page.SetExtraHTTPHeaders(map[string]string{"traceparent": traceparent}); err != nil {
 		return
 	}
 	if result != nil {

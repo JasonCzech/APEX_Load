@@ -58,10 +58,11 @@ func (b *Browser) selectorPresent(action *protocol.Action, engineSelector string
 	if locator, ok := b.actionLocator(action, engineSelector); ok {
 		return b.waitLocatorVisible(locator, healProbeTimeout) == nil
 	}
-	if b.pwPage == nil {
+	page := b.currentPage()
+	if page == nil {
 		return false
 	}
-	return b.waitLocatorVisible(b.pwPage.Locator(engineSelector), healProbeTimeout) == nil
+	return b.waitLocatorVisible(page.Locator(engineSelector), healProbeTimeout) == nil
 }
 
 func (b *Browser) recordSelfHeal(action *protocol.Action, result *protocol.Result, primary string, healed string, candidate selector.Candidate) {

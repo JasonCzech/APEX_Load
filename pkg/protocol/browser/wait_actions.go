@@ -41,11 +41,11 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 			}
 			return b.waitForJS(waitCtx, fmt.Sprintf(`window.location.href.includes(%q)`, waitValue))
 		case "load":
-			return b.pwPage.WaitForLoadState(playwright.PageWaitForLoadStateOptions{State: playwright.LoadStateLoad})
+			return b.currentPage().WaitForLoadState(playwright.PageWaitForLoadStateOptions{State: playwright.LoadStateLoad})
 		case "networkidle":
-			return b.pwPage.WaitForLoadState(playwright.PageWaitForLoadStateOptions{State: playwright.LoadStateNetworkidle})
+			return b.currentPage().WaitForLoadState(playwright.PageWaitForLoadStateOptions{State: playwright.LoadStateNetworkidle})
 		case "domcontentloaded":
-			return b.pwPage.WaitForLoadState(playwright.PageWaitForLoadStateOptions{State: playwright.LoadStateDomcontentloaded})
+			return b.currentPage().WaitForLoadState(playwright.PageWaitForLoadStateOptions{State: playwright.LoadStateDomcontentloaded})
 		case "duration", "sleep":
 			delay, err := parseWaitDelay(waitValue)
 			if err != nil {
@@ -89,17 +89,17 @@ func (b *Browser) runPostActionSync(ctx context.Context, action *protocol.Action
 	}
 	switch syncType {
 	case "network_idle", "networkidle":
-		return b.pwPage.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+		return b.currentPage().WaitForLoadState(playwright.PageWaitForLoadStateOptions{
 			State:   playwright.LoadStateNetworkidle,
 			Timeout: playwright.Float(float64(b.waitTimeout(sync.TimeoutMs).Milliseconds())),
 		})
 	case "load":
-		return b.pwPage.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+		return b.currentPage().WaitForLoadState(playwright.PageWaitForLoadStateOptions{
 			State:   playwright.LoadStateLoad,
 			Timeout: playwright.Float(float64(b.waitTimeout(sync.TimeoutMs).Milliseconds())),
 		})
 	case "domcontentloaded":
-		return b.pwPage.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+		return b.currentPage().WaitForLoadState(playwright.PageWaitForLoadStateOptions{
 			State:   playwright.LoadStateDomcontentloaded,
 			Timeout: playwright.Float(float64(b.waitTimeout(sync.TimeoutMs).Milliseconds())),
 		})
