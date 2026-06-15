@@ -15,6 +15,19 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+// wailsWebviewOrigins are the page origins the Wails webview serves the
+// dashboard from across platforms: macOS (WKWebView) uses the wails:// scheme,
+// while Windows (WebView2) and Linux (WebKitGTK) use http://wails.localhost.
+// The embedded API server binds a loopback random port, so dashboard requests
+// to it are cross-origin and must be allow-listed or the browser blocks the
+// CORS preflight (and the WebSocket upgrade), surfacing in the dashboard as
+// "Authentication check failed" when GET /api/v1/auth/me never resolves.
+var wailsWebviewOrigins = []string{
+	"wails://wails.localhost",
+	"http://wails.localhost",
+	"https://wails.localhost",
+}
+
 // App struct
 type App struct {
 	ctx         context.Context
@@ -70,6 +83,7 @@ func (a *App) startup(ctx context.Context) {
 		MaxConcurrent:      10,
 		Store:              store,
 		LibraryCredentials: api.NewKeyringLibraryCredentialStore(),
+		AllowedOrigins:     wailsWebviewOrigins,
 		DesktopMode:        true,
 		DesktopAppDataPath: appDataPath,
 		DesktopLogPath:     logPath,
@@ -106,6 +120,17 @@ func (a *App) SelectFile(title string) (string, error) {
 func (a *App) GetAPIOrigin() string {
 	if a.server == nil {
 		return ""
+	}
+	// The API server binds its random loopback port asynchronously (Start runs
+	// in a goroutine). Wait for the listener to come up so the dashboard is
+	// pointed at the real port rather than the unbound ":0" placeholder, which
+	// would make every API request — including the startup auth check — fail.
+	deadline := time.Now().Add(5 * time.Second)
+	for !a.server.BoundAddrReady() {
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	return a.server.BrowserURL()
 }

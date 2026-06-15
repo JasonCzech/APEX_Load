@@ -871,6 +871,21 @@ func (s *Server) BoundAddr() string {
 	return s.httpServer.Addr
 }
 
+// BoundAddrReady reports whether the HTTP listener has bound its address. It is
+// false until Start has called net.Listen, which matters when the server is
+// configured with a random port (":0"): callers that need the real address
+// (e.g. the desktop bridge reporting the API origin to the dashboard) must wait
+// for this to become true before reading BrowserURL, otherwise they would
+// observe the unbound ":0" placeholder.
+func (s *Server) BoundAddrReady() bool {
+	if s == nil {
+		return false
+	}
+	s.boundAddrMu.RLock()
+	defer s.boundAddrMu.RUnlock()
+	return s.boundAddr != ""
+}
+
 func (s *Server) BrowserURL() string {
 	addr := s.BoundAddr()
 	if strings.HasPrefix(addr, ":") {

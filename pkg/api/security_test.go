@@ -80,6 +80,11 @@ func TestOriginAllowed(t *testing.T) {
 		{name: "unlisted origin rejected", allowed: []string{"https://dash.example.com"}, origin: "https://evil.example.com", host: "api.example.com", want: false},
 		{name: "wildcard permits any", allowed: []string{"*"}, origin: "https://anything.example.com", host: "api.example.com", want: true},
 		{name: "case-insensitive match", allowed: []string{"https://Dash.Example.com"}, origin: "https://dash.example.com", host: "api.example.com", want: true},
+		// Wails desktop: the webview's cross-origin requests to the loopback API
+		// must be permitted only when the wails origin is explicitly allow-listed.
+		{name: "wails origin rejected when unconfigured", allowed: nil, origin: "wails://wails.localhost", host: "127.0.0.1:54321", want: false},
+		{name: "wails macos origin permitted when listed", allowed: []string{"wails://wails.localhost"}, origin: "wails://wails.localhost", host: "127.0.0.1:54321", want: true},
+		{name: "wails windows origin permitted when listed", allowed: []string{"http://wails.localhost"}, origin: "http://wails.localhost", host: "127.0.0.1:54321", want: true},
 	}
 
 	for _, tc := range tests {
@@ -88,6 +93,57 @@ func TestOriginAllowed(t *testing.T) {
 				t.Fatalf("originAllowed = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestCORSPreflightAllowsAllowListedWailsOrigin reproduces the desktop failure:
+// the dashboard's GET /api/v1/auth/me sets Content-Type, so the webview issues a
+// CORS preflight. Without the wails origin on the allow-list the preflight gets
+// no Access-Control-Allow-Origin header and the browser blocks the request,
+// surfacing as "Authentication check failed". With it allow-listed the origin is
+// reflected and the request proceeds.
+func TestCORSPreflightAllowsAllowListedWailsOrigin(t *testing.T) {
+	const wailsOrigin = "wails://wails.localhost"
+
+	preflight := func(allowed []string) *httptest.ResponseRecorder {
+		server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: "127.0.0.1:0", AllowedOrigins: allowed})
+		req := httptest.NewRequest(http.MethodOptions, "/api/v1/auth/me", nil)
+		req.Header.Set("Origin", wailsOrigin)
+		req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		return resp
+	}
+
+	blocked := preflight(nil)
+	if got := blocked.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("expected no Access-Control-Allow-Origin without allow-list, got %q", got)
+	}
+
+	allowed := preflight([]string{wailsOrigin})
+	if allowed.Code != http.StatusNoContent {
+		t.Fatalf("preflight status = %d, want %d", allowed.Code, http.StatusNoContent)
+	}
+	if got := allowed.Header().Get("Access-Control-Allow-Origin"); got != wailsOrigin {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want %q", got, wailsOrigin)
+	}
+}
+
+func TestBoundAddrReady(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: "127.0.0.1:0"})
+	if server.BoundAddrReady() {
+		t.Fatal("BoundAddrReady = true before the listener bound, want false")
+	}
+	if got := server.BrowserURL(); !strings.HasSuffix(got, ":0") {
+		t.Fatalf("BrowserURL before bind = %q, want the unbound :0 placeholder", got)
+	}
+
+	server.setBoundAddr("127.0.0.1:54321")
+	if !server.BoundAddrReady() {
+		t.Fatal("BoundAddrReady = false after setBoundAddr, want true")
+	}
+	if got := server.BrowserURL(); got != "http://127.0.0.1:54321" {
+		t.Fatalf("BrowserURL after bind = %q, want http://127.0.0.1:54321", got)
 	}
 }
 
