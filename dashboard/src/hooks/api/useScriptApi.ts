@@ -189,6 +189,18 @@ export type BrowserToHTTPPreviewResponse = {
   }
 }
 
+// errorMessageFromResponse pulls a server-provided error string from a failed
+// response body, falling back to the HTTP status text. It type-guards the
+// `error` field so a non-string (object/array) payload cannot stringify into a
+// "[object Object]" message.
+async function errorMessageFromResponse(res: Response): Promise<string> {
+  const body = await res.json().catch(() => undefined)
+  if (body && typeof (body as { error?: unknown }).error === 'string') {
+    return (body as { error: string }).error
+  }
+  return res.statusText
+}
+
 function buildScriptQuery(projectId?: string, folderId?: string | null) {
   const query = new URLSearchParams()
   if (projectId) query.set('project_id', projectId)
@@ -420,8 +432,7 @@ export function useScriptApi() {
         body: formData,
       })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error || res.statusText)
+        throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<EnterpriseArchiveImportResult>
     },
@@ -446,8 +457,7 @@ export function useScriptApi() {
         body: formData,
       })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error || res.statusText)
+        throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<EnterpriseArchiveImportResult>
     },
@@ -474,8 +484,7 @@ export function useScriptApi() {
         body: formData,
       })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error || res.statusText)
+        throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<JMeterImportResult>
     },
@@ -497,8 +506,7 @@ export function useScriptApi() {
         body: formData,
       })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error || res.statusText)
+        throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<JMeterImportResult>
     },
@@ -549,8 +557,7 @@ export function useScriptApi() {
 
       const res = await apiFetch('/scripts/import/devweb', { method: 'POST', body: formData })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error || res.statusText)
+        throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<DevWebImportResult>
     },
@@ -581,8 +588,7 @@ export function useScriptApi() {
 
       const res = await apiFetch('/scripts/import/har', { method: 'POST', body: formData })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error || res.statusText)
+        throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<HARImportResult>
     },
@@ -599,8 +605,7 @@ export function useScriptApi() {
 
       const res = await apiFetch('/scripts/import/salesforce', { method: 'POST', body: formData })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error || res.statusText)
+        throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<SalesforceImportResult>
     },
@@ -617,8 +622,7 @@ export function useScriptApi() {
 
       const res = await apiFetch('/scripts/import/recorder', { method: 'POST', body: formData })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error || res.statusText)
+        throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<BrowserRecordingImportResult>
     },
@@ -635,8 +639,7 @@ export function useScriptApi() {
 
       const res = await apiFetch('/scripts/import/openapi', { method: 'POST', body: formData })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error || res.statusText)
+        throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<OpenAPIImportResult>
     },
@@ -653,8 +656,7 @@ export function useScriptApi() {
 
       const res = await apiFetch('/scripts/import/raml', { method: 'POST', body: formData })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error || res.statusText)
+        throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<RAMLImportResult>
     },
@@ -671,8 +673,7 @@ export function useScriptApi() {
 
       const res = await apiFetch('/scripts/import/postman', { method: 'POST', body: formData })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error || res.statusText)
+        throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<PostmanImportResult>
     },
@@ -690,8 +691,7 @@ export function useScriptApi() {
 
       const res = await apiFetch('/scripts/import/wsdl', { method: 'POST', body: formData })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error || res.statusText)
+        throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<WSDLImportResult>
     },
@@ -707,8 +707,7 @@ export function useScriptApi() {
 
       const res = await apiFetch('/scripts/import/asyncapi', { method: 'POST', body: formData })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error || res.statusText)
+        throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<AsyncAPIImportResult>
     },

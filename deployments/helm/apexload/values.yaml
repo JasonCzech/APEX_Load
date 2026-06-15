@@ -5,7 +5,9 @@ namespace:
 image:
   registry: changeme.azurecr.io
   tag: "0.1.0"
-  pullPolicy: IfNotPresent
+  # Always re-pull at schedule time: production runs pin a registry tag, and a
+  # re-pushed tag (or a hotfix) must not be masked by a stale node-cached image.
+  pullPolicy: Always
   controllerRepository: apexload-controller
   generatorRepository: apexload-generator
 
@@ -90,7 +92,10 @@ ingress:
   className: webapprouting.kubernetes.azure.com
   host: apexload.example.com
   tls:
-    enabled: false
+    # Secure by default: the public ingress terminates TLS. Operators must supply
+    # a certificate in secretName (or let cert-manager populate it). Set to false
+    # only behind a TLS-terminating gateway you control.
+    enabled: true
     secretName: apexload-tls
   annotations:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"

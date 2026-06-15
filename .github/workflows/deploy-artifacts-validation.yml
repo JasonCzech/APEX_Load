@@ -58,5 +58,15 @@ jobs:
             --namespace apexload \
             --set workloadIdentity.controllerClientId=00000000-0000-0000-0000-000000000001 \
             --set workloadIdentity.generatorClientId=00000000-0000-0000-0000-000000000002 \
+            --set image.registry=ci.azurecr.io \
+            --set dataPlatform.azureStorageAccount=ciapexloadstorage \
+            --set dataPlatform.keyVaultUrl=https://ci-apexload.vault.azure.net \
             > /tmp/apexload-helm.yaml
           kubeconform -strict -ignore-missing-schemas /tmp/apexload-helm.yaml
+          # Fail closed if any values.yaml placeholder leaks into a rendered
+          # manifest (mirrors the CHANGE-ME guard in render-aks-manifests.sh): a
+          # rendered changeme/CHANGE-ME means a required value lacks an override.
+          if grep -Ein 'changeme|change-me' /tmp/apexload-helm.yaml; then
+            echo "::error::Rendered Helm manifest still contains placeholder values; supply the required --set overrides." >&2
+            exit 1
+          fi

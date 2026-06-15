@@ -79,6 +79,25 @@ describe('error diagnostics', () => {
     expect(diagnostic.evidence).toContain('Field: schedule.cron')
   })
 
+  it('redacts credential-shaped values from response body previews', () => {
+    const token = 'eyJhbGciOiJIUzI1NiJ9.payloadpayload.signaturesignature'
+    const diagnostic = diagnoseError(
+      {
+        message: 'Upstream rejected the request',
+        status: 502,
+        payload: {
+          body: `{"error":"bad gateway","access_token":"${token}","hint":"Authorization: Bearer ${token}"}`,
+        },
+      },
+      'Request failed',
+    )
+
+    const preview = diagnostic.evidence?.find((item) => item.startsWith('Response preview:'))
+    expect(preview).toBeDefined()
+    expect(preview).not.toContain(token)
+    expect(preview).toContain('[redacted]')
+  })
+
   it('classifies common string-only HTTP messages after hooks store simple errors', () => {
     const diagnostic = diagnoseError('test not found', 'Unable to load test execution details')
 

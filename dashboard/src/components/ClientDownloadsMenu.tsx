@@ -122,7 +122,7 @@ export default function ClientDownloadsMenu() {
         let message = `${artifact.name} for ${platformLabel(platform)} is not available from this controller.`
         try {
           const data = await res.json()
-          if (data?.error) message = data.error
+          if (typeof data?.error === 'string') message = data.error
         } catch {
           // non-JSON error body; keep the default message
         }

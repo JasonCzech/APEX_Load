@@ -57,8 +57,35 @@ function numberValue(value: unknown): number | undefined {
   return undefined
 }
 
+// SENSITIVE_EVIDENCE_PATTERNS masks credential-shaped values in free-form server
+// text before it is shown as diagnostic evidence. The server should not echo
+// secrets, but error/response previews are surfaced verbatim to the user, so this
+// is defense in depth against an upstream leak. The scheme pattern runs first so
+// "Authorization: Bearer <tok>" loses the token before the key/value pass.
+const SENSITIVE_EVIDENCE_PATTERNS: { re: RegExp; replace: (...args: string[]) => string }[] = [
+  // Bearer / Basic credential following an auth scheme keyword.
+  {
+    re: /\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi,
+    replace: (_match, scheme) => `${scheme} [redacted]`,
+  },
+  // name: value / name=value, with an optionally JSON-quoted name, for known
+  // sensitive field names. The value may be quoted or an unquoted run.
+  {
+    re: /(["']?)(authorization|password|passwd|secret|client[_-]?secret|token|access[_-]?token|refresh[_-]?token|api[_-]?key|apikey|x-api-key|private[_-]?key)\1\s*[:=]\s*("[^"]*"|'[^']*'|[^\s,}&]+)/gi,
+    replace: (_match, _quote, name) => `${name}=[redacted]`,
+  },
+]
+
+function redactSensitiveEvidence(value: string): string {
+  let out = value
+  for (const { re, replace } of SENSITIVE_EVIDENCE_PATTERNS) {
+    out = out.replace(re, replace as (substring: string, ...args: unknown[]) => string)
+  }
+  return out
+}
+
 function truncateEvidence(value: string, maxLength = 160): string {
-  const compact = value.replace(/\s+/g, ' ').trim()
+  const compact = redactSensitiveEvidence(value.replace(/\s+/g, ' ').trim())
   return compact.length > maxLength ? `${compact.slice(0, maxLength - 1)}...` : compact
 }
 
