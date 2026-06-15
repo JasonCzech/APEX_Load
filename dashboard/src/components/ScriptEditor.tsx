@@ -22,7 +22,6 @@ import {
   ScriptDebugLogLevel,
   ScriptDebugSession,
   BrowserReplaySnapshot,
-  type ProtocolEvidence,
   type AuthoringComponent,
   StoredScript,
   WSMessage,
@@ -78,7 +77,6 @@ import {
 import {
   defaultAssertionForProtocol,
   defaultExtractorForProtocol,
-  escapeRegExp,
   sanitizeDownloadName,
 } from './scriptEditorHelpers'
 import {
@@ -139,19 +137,34 @@ import {
   validateInlineData,
   type JsonStringOccurrence,
 } from './scriptEditorUtils'
+import {
+  BROWSER_DEVICE_PROFILES,
+  CENTER_TABS_STORAGE_PREFIX,
+  DEBUGGER_LAYOUT_DEFAULTS,
+  DEBUGGER_LAYOUT_LIMITS,
+  SCRIPT_JSON_TAB_ID,
+  buildScriptPhaseActionRows,
+  clampDebuggerPaneSize,
+  codePathForDebugRow,
+  findParameterReferencesInJson,
+  formatBrowserDeviceProfileLabel,
+  formatDebugPhaseLabel,
+  formatProtocolEvidenceSummary,
+  formatScriptJson,
+  lookupBrowserDeviceProfile,
+  parseScriptJsonDraft,
+  readCenterTabsState,
+  type CenterTabsState,
+  type CenterWorkbenchTabId,
+  type DebuggerResizeKind,
+  type ScriptActionPhase,
+  type ScriptPhaseActionRow,
+} from './scriptEditorWorkbench'
 import './ScriptEditor.css'
 
 type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
 type ScriptData = ScriptDefinition
-type ScriptActionPhase = 'init' | 'action' | 'teardown'
-type ScriptPhaseActionRow = {
-  phase: ScriptActionPhase
-  phaseLabel: string
-  actionIndex: number
-  globalIndex: number
-  action: Action
-}
 type ImportedParameterFileMapping = {
   section: {
     file: string
@@ -166,20 +179,8 @@ type ReplaySnapshot = BrowserReplaySnapshot
 type ReplayActionEvent = BrowserReplayEvent
 type ReplayReport = BrowserReplayReport
 type WorkbenchMode = 'author' | 'debug'
-type CenterWorkbenchTabId =
-  | 'script-json'
-  | 'configuration'
-  | 'runtime-settings'
-  | 'imported-metadata'
-  | 'conversion-mapping'
-  | 'parameter-data'
-  | 'browser-replay'
-  | 'object-descriptors'
-  | 'http-conversion'
 type DebuggerTab = 'request' | 'browser'
 type DebuggerBottomTab = 'console' | 'timeline' | 'problems' | 'output'
-type DebuggerResizeKind = 'rail' | 'vars' | 'bottom'
-type JsonDraftParseResult = { ok: true; script: ScriptData } | { ok: false; message: string }
 type ScriptJsonSidebarTab = 'map' | 'auto-params' | 'details'
 
 interface CenterWorkbenchTabDescriptor {
@@ -210,31 +211,13 @@ interface AuthorRightSidebarContext {
   wide?: boolean
 }
 
-interface CenterTabsState {
-  tabs: CenterWorkbenchTabId[]
-  activeTabId: CenterWorkbenchTabId
-}
 
 interface ScriptCodeLineJumpRequest {
   line: number
   nonce: number
 }
 
-type BrowserEngineName = 'chromium' | 'webkit'
 
-type BrowserDeviceProfileOption = {
-  name: string
-  engine: BrowserEngineName
-}
-
-const BROWSER_DEVICE_PROFILES: readonly BrowserDeviceProfileOption[] = [
-  { name: 'desktop_1080p', engine: 'chromium' },
-  { name: 'galaxy_s24', engine: 'chromium' },
-  { name: 'ipad_air', engine: 'webkit' },
-  { name: 'iphone_15_pro', engine: 'webkit' },
-  { name: 'iphone_se', engine: 'webkit' },
-  { name: 'pixel_8', engine: 'chromium' },
-]
 
 const AUTHORING_COMPONENT_GROUPS = [
   { kind: 'request_group', label: 'Request Groups' },
@@ -244,151 +227,24 @@ const AUTHORING_COMPONENT_GROUPS = [
   { kind: 'teardown', label: 'Teardown Blocks' },
 ] as const
 
-const SCRIPT_JSON_TAB_ID: CenterWorkbenchTabId = 'script-json'
 const BROWSER_REPLAY_TAB_ID: CenterWorkbenchTabId = 'browser-replay'
-const CENTER_TABS_STORAGE_PREFIX = 'scriptEditorCenterTabs'
-const CENTER_WORKBENCH_TAB_IDS: readonly CenterWorkbenchTabId[] = [
-  'script-json',
-  'configuration',
-  'runtime-settings',
-  'imported-metadata',
-  'conversion-mapping',
-  'parameter-data',
-  'browser-replay',
-  'object-descriptors',
-  'http-conversion',
-]
 
-function isCenterWorkbenchTabId(value: unknown): value is CenterWorkbenchTabId {
-  return typeof value === 'string' && CENTER_WORKBENCH_TAB_IDS.includes(value as CenterWorkbenchTabId)
-}
 
-function defaultCenterTabsState(): CenterTabsState {
-  return {
-    tabs: [SCRIPT_JSON_TAB_ID, 'configuration', 'runtime-settings'],
-    activeTabId: SCRIPT_JSON_TAB_ID,
-  }
-}
 
-function readCenterTabsState(storageKey: string): CenterTabsState {
-  if (typeof window === 'undefined') return defaultCenterTabsState()
-  try {
-    const raw = window.localStorage.getItem(storageKey)
-    if (!raw) return defaultCenterTabsState()
-    const parsed = JSON.parse(raw) as Partial<CenterTabsState>
-    const tabs = Array.isArray(parsed.tabs)
-      ? parsed.tabs.filter(isCenterWorkbenchTabId)
-      : []
-    const normalizedTabs = [SCRIPT_JSON_TAB_ID, ...tabs.filter(tab => tab !== SCRIPT_JSON_TAB_ID)]
-    const activeTabId = isCenterWorkbenchTabId(parsed.activeTabId) && normalizedTabs.includes(parsed.activeTabId)
-      ? parsed.activeTabId
-      : SCRIPT_JSON_TAB_ID
-    return {
-      tabs: normalizedTabs,
-      activeTabId,
-    }
-  } catch {
-    return defaultCenterTabsState()
-  }
-}
 
 
 const WEBKIT_INSTALL_ADVISORY = 'WebKit execution requires Playwright WebKit assets installed on the controller host. Run go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install webkit before running browser tests or replay sessions.'
 const DEBUG_LOG_LEVELS: ScriptDebugLogLevel[] = ['error', 'warn', 'info', 'debug', 'trace']
-const DEBUGGER_LAYOUT_DEFAULTS: Record<DebuggerResizeKind, number> = {
-  rail: 260,
-  vars: 320,
-  bottom: 220,
-}
-const DEBUGGER_LAYOUT_LIMITS: Record<DebuggerResizeKind, { max: number; min: number; step: number }> = {
-  rail: { min: 180, max: 560, step: 24 },
-  vars: { min: 220, max: 600, step: 24 },
-  bottom: { min: 140, max: 640, step: 24 },
-}
 
-function findParameterReferencesInJson(text: string, parameterName: string): ScriptCodeMatchRange[] {
-  const name = parameterName.trim()
-  if (!name) return []
-  const ranges: ScriptCodeMatchRange[] = []
-  const pattern = new RegExp(`\\{\\{\\s*param\\.${escapeRegExp(name)}\\s*\\}\\}`, 'g')
-  let match = pattern.exec(text)
-  while (match) {
-    ranges.push({ from: match.index, to: match.index + match[0].length })
-    match = pattern.exec(text)
-  }
-  return ranges
-}
 
-function clampDebuggerPaneSize(kind: DebuggerResizeKind, value: number) {
-  const limits = DEBUGGER_LAYOUT_LIMITS[kind]
-  return Math.min(limits.max, Math.max(limits.min, Math.round(value)))
-}
 
-function formatScriptJson(script: ScriptData) {
-  return JSON.stringify({ script }, null, 2)
-}
 
-function parseScriptJsonDraft(text: string): JsonDraftParseResult {
-  if (!text.trim()) {
-    return { ok: false, message: 'Script JSON is empty.' }
-  }
-  try {
-    const parsed = JSON.parse(text) as ScriptData | { script?: ScriptData }
-    const script = 'script' in parsed && parsed.script ? parsed.script : parsed as ScriptData
-    return { ok: true, script }
-  } catch (error) {
-    return { ok: false, message: error instanceof Error ? `Script JSON is invalid: ${error.message}` : 'Script JSON is invalid.' }
-  }
-}
 
-function codePathForDebugRow(row?: { phase: string; actionIndex: number } | null) {
-  if (!row) return ''
-  if (row.phase === 'action') return `script.actions[${row.actionIndex}]`
-  if (row.phase === 'init') return `script.init[${row.actionIndex}]`
-  if (row.phase === 'teardown') return `script.teardown[${row.actionIndex}]`
-  return ''
-}
 
-function scriptActionsForPhase(script: ScriptData, phase: ScriptActionPhase): Action[] {
-  if (phase === 'init') return script.init || []
-  if (phase === 'teardown') return script.teardown || []
-  return script.actions || []
-}
 
-function buildScriptPhaseActionRows(script: ScriptData): ScriptPhaseActionRow[] {
-  const rows: ScriptPhaseActionRow[] = []
-  ;(['init', 'action', 'teardown'] as ScriptActionPhase[]).forEach(phase => {
-    scriptActionsForPhase(script, phase).forEach((action, actionIndex) => {
-      rows.push({
-        phase,
-        phaseLabel: formatDebugPhaseLabel(phase),
-        actionIndex,
-        globalIndex: rows.length,
-        action,
-      })
-    })
-  })
-  return rows
-}
 
-function formatProtocolEvidenceSummary(evidence?: ProtocolEvidence): string {
-  if (!evidence) return ''
-  const parts = [
-    evidence.protocol,
-    evidence.operation,
-    evidence.status,
-    evidence.target,
-  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-  return parts.join(' / ')
-}
 
-function lookupBrowserDeviceProfile(name?: string) {
-  return BROWSER_DEVICE_PROFILES.find(profile => profile.name === name)
-}
 
-function formatBrowserDeviceProfileLabel(profile: BrowserDeviceProfileOption) {
-  return profile.engine === 'webkit' ? `${profile.name} (WebKit)` : profile.name
-}
 
 interface JsonPaneSelectionRequest {
   start: number
@@ -2209,9 +2065,6 @@ function normalizeDebugPhase(phase: string): ScriptDebugBreakpoint['phase'] {
   return phase === 'init' || phase === 'teardown' ? phase : 'action'
 }
 
-function formatDebugPhaseLabel(phase: string): string {
-  return phase.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
-}
 
 function debugLogLevelWeight(level: ScriptDebugLogLevel | 'all'): number {
   switch (level) {
