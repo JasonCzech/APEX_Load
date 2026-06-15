@@ -180,6 +180,22 @@ function currentDashboardOrigin(): string {
   return window.location.origin
 }
 
+function bridgeAllowedDashboardOrigins(): string[] {
+  const origin = currentDashboardOrigin()
+  const origins = new Set([origin])
+  try {
+    const url = new URL(origin)
+    if (url.hostname === '127.0.0.1') {
+      origins.add(`${url.protocol}//localhost${url.port ? `:${url.port}` : ''}`)
+    } else if (url.hostname === 'localhost') {
+      origins.add(`${url.protocol}//127.0.0.1${url.port ? `:${url.port}` : ''}`)
+    }
+  } catch {
+    // Keep the primary origin if parsing fails.
+  }
+  return Array.from(origins)
+}
+
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
 }
@@ -198,11 +214,12 @@ function bridgeRecordAgentCommand(bridgeOrigin: string, token: string): string {
     RECORDING_AGENT_COMMAND,
     '--addr',
     bridgeListenAddress(bridgeOrigin),
-    '--allow-origin',
-    shellQuote(currentDashboardOrigin()),
   ]
   if (token) {
-    parts.splice(3, 0, '--token', token)
+    parts.push('--token', token)
+  }
+  for (const origin of bridgeAllowedDashboardOrigins()) {
+    parts.push('--allow-origin', shellQuote(origin))
   }
   return parts.join(' ')
 }
@@ -583,9 +600,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
       setBridgeOrigin(origin)
       setBridgeStatusTone('success')
       setBridgeStatus(`APEX Load Recording Agent is running at ${origin}. Click Pair Local Bridge to connect.`)
+      showFeedback('APEX Load Recording Agent verified')
     } catch (e: any) {
+      const message = bridgeVerificationErrorMessage(e, origin)
       setBridgeStatusTone('error')
-      setBridgeStatus(bridgeVerificationErrorMessage(e, origin))
+      setBridgeStatus(message)
+      showFeedback(message, 'error')
     } finally {
       setBridgeVerifying(false)
     }

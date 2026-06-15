@@ -77,6 +77,27 @@ func TestAccessRequirementCoversAuthGovernanceRoutes(t *testing.T) {
 	}
 }
 
+func TestSecurityHeadersAllowLoopbackRecordingBridgeConnections(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	resp := httptest.NewRecorder()
+	securityHeadersMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})).ServeHTTP(resp, req)
+
+	csp := resp.Header().Get("Content-Security-Policy")
+	for _, want := range []string{
+		"connect-src",
+		"http://127.0.0.1:*",
+		"http://localhost:*",
+		"ws://127.0.0.1:*",
+		"ws://localhost:*",
+	} {
+		if !strings.Contains(csp, want) {
+			t.Fatalf("Content-Security-Policy = %q, want %q for local recording bridge access", csp, want)
+		}
+	}
+}
+
 func TestTrustedHeaderAuthRequiresIdentityForSystemSettings(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableTrustedHeaderAuth(t, server)

@@ -913,6 +913,7 @@ describe('RecordingStudio', () => {
     await flushPromises()
 
     expect(apiMock.verifyBrowserRecorderBridgeAgent).toHaveBeenCalledWith('http://127.0.0.1:27777')
+    expect(container.textContent).toContain('APEX Load Recording Agent verified')
     expect(container.textContent).toContain('APEX Load Recording Agent is running at http://127.0.0.1:27777')
     expect(container.textContent).toContain('Click Pair Local Bridge to connect')
   })
@@ -996,6 +997,8 @@ describe('RecordingStudio', () => {
 
     const commandBefore = container.querySelector('[data-testid="browser-recorder-bridge-command"]')?.textContent || ''
     const tokenBefore = commandBefore.match(/--token ([0-9a-f]+)/)?.[1]
+    expect(commandBefore).toContain("--allow-origin 'http://localhost:3000'")
+    expect(commandBefore).toContain("--allow-origin 'http://127.0.0.1:3000'")
     const copyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy Terminal Command'))
     expect(copyButton).toBeDefined()
 
