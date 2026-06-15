@@ -106,6 +106,9 @@ func recordCmd() {
 		StartURL:   args.url,
 		Headless:   args.headless,
 		CaptureHAR: !args.noHAR,
+		// The CLI flow has no dashboard panel, so the in-page advanced sidebar
+		// (sections/transactions/notes/recent-steps) is the only control surface.
+		Sidebar: true,
 	})
 	if err := recorder.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: start recorder: %v\n", err)
