@@ -156,6 +156,22 @@ func (s *Server) handleStopBrowserRecording(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]any{"session": session})
 }
 
+func (s *Server) handleForceStopBrowserRecording(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	session, ok, err := s.browserRecording.ForceStop(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "browser recording session not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	s.recordAuditEvent(r, "browser_recording.force_stop", "success", "browser_recording", session.ID, session.ProjectID,
+		map[string]any{"stop_reason": session.StopReason, "step_count": session.StepCount})
+	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+}
+
 func (s *Server) handlePauseBrowserRecording(w http.ResponseWriter, r *http.Request) {
 	session, ok, err := s.browserRecording.Pause(r.PathValue("id"))
 	s.writeBrowserRecordingControlResult(w, session, ok, err)
@@ -191,6 +207,103 @@ func (s *Server) handleNavigateBrowserRecording(w http.ResponseWriter, r *http.R
 func (s *Server) handleFocusBrowserRecording(w http.ResponseWriter, r *http.Request) {
 	session, ok, err := s.browserRecording.Focus(r.PathValue("id"))
 	s.writeBrowserRecordingControlResult(w, session, ok, err)
+}
+
+type browserRecordingControlPanelRequest struct {
+	URL              string                                `json:"url"`
+	BridgeConnection *browserRecordingBridgeConnectionSeed `json:"bridge_connection,omitempty"`
+}
+
+type browserRecordingBridgeConnectionSeed struct {
+	Origin           string `json:"origin"`
+	Token            string `json:"token"`
+	SessionID        string `json:"session_id"`
+	PairedOrigin     string `json:"paired_origin,omitempty"`
+	PairedAt         string `json:"paired_at,omitempty"`
+	PairingExpiresAt string `json:"pairing_expires_at,omitempty"`
+	SessionExpiresAt string `json:"session_expires_at,omitempty"`
+}
+
+func (s *Server) handleOpenBrowserRecordingControlPanel(w http.ResponseWriter, r *http.Request) {
+	var req browserRecordingControlPanelRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if err := recbrowser.ValidateControlPanelURL(req.URL); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	panelOrigin, err := absoluteHTTPOrigin(req.URL)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "control panel url origin is invalid: "+err.Error())
+		return
+	}
+	if requestOrigin := strings.TrimSpace(r.Header.Get("Origin")); requestOrigin != "" {
+		normalizedRequestOrigin, err := absoluteHTTPOrigin(requestOrigin)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "request Origin is invalid: "+err.Error())
+			return
+		}
+		if normalizedRequestOrigin != panelOrigin {
+			writeError(w, http.StatusBadRequest, "control panel url must use the requesting dashboard origin")
+			return
+		}
+	}
+	localStorage := map[string]string{}
+	if req.BridgeConnection != nil {
+		key, value, err := req.BridgeConnection.localStorageEntry(req.URL)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		localStorage[key] = value
+	}
+
+	id := r.PathValue("id")
+	session, ok, err := s.browserRecording.OpenControlPanel(id, req.URL, localStorage)
+	if ok && err == nil {
+		s.recordAuditEvent(r, "browser_recording.control_panel", "success", "browser_recording", id, session.ProjectID,
+			map[string]any{"url": req.URL})
+	}
+	s.writeBrowserRecordingControlResult(w, session, ok, err)
+}
+
+func (b *browserRecordingBridgeConnectionSeed) localStorageEntry(panelURL string) (string, string, error) {
+	if b == nil {
+		return "", "", fmt.Errorf("bridge_connection is required")
+	}
+	remoteOrigin, err := absoluteHTTPOrigin(panelURL)
+	if err != nil {
+		return "", "", fmt.Errorf("control panel url origin is invalid: %w", err)
+	}
+	bridgeOrigin, err := absoluteHTTPOrigin(b.Origin)
+	if err != nil {
+		return "", "", fmt.Errorf("bridge_connection.origin is invalid: %w", err)
+	}
+	b.Origin = bridgeOrigin
+	b.Token = strings.TrimSpace(b.Token)
+	b.SessionID = strings.TrimSpace(b.SessionID)
+	if b.Token == "" || b.SessionID == "" {
+		return "", "", fmt.Errorf("bridge_connection token and session_id are required")
+	}
+	encoded, err := json.Marshal(b)
+	if err != nil {
+		return "", "", fmt.Errorf("encode bridge_connection: %w", err)
+	}
+	return recbrowser.BrowserRecorderBridgeStoragePrefix + remoteOrigin, string(encoded), nil
+}
+
+func absoluteHTTPOrigin(raw string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("must be an absolute http(s) URL")
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return parsed.Scheme + "://" + parsed.Host, nil
+	default:
+		return "", fmt.Errorf("scheme %q is not allowed; use http or https", parsed.Scheme)
+	}
 }
 
 func (s *Server) handleStartBrowserRecordingTransaction(w http.ResponseWriter, r *http.Request) {

@@ -79,6 +79,10 @@ type Options struct {
 	Sidebar bool
 }
 
+// BrowserRecorderBridgeStoragePrefix is the dashboard localStorage key prefix
+// used for local recording bridge pairings.
+const BrowserRecorderBridgeStoragePrefix = "apexload.browserRecorderBridge."
+
 // Recorder drives one headed Chromium session and accumulates a Session.
 type Recorder struct {
 	opts    Options
@@ -93,6 +97,8 @@ type Recorder struct {
 	assertMode     bool
 	currentSection string
 	activePage     playwright.Page
+	controlPages   map[playwright.Page]struct{}
+	openingControl bool
 
 	thumbWG  sync.WaitGroup
 	done     chan struct{}
@@ -126,8 +132,9 @@ func New(opts Options) *Recorder {
 			StartedAt:     time.Now(),
 			DeviceProfile: device,
 		},
-		done:        make(chan struct{}),
-		sidebarPush: make(chan struct{}, 1),
+		done:         make(chan struct{}),
+		controlPages: make(map[playwright.Page]struct{}),
+		sidebarPush:  make(chan struct{}, 1),
 	}
 }
 
@@ -237,6 +244,13 @@ func (r *Recorder) Start() error {
 // New pages become the active page (the browser focuses them on open).
 func (r *Recorder) registerPage(page playwright.Page) {
 	r.mu.Lock()
+	if r.openingControl || isRecorderControlPanelURL(page.URL()) {
+		r.markControlPageLocked(page)
+		r.openingControl = false
+		r.mu.Unlock()
+		page.OnClose(func(closed playwright.Page) { r.handlePageClose(closed) })
+		return
+	}
 	r.activePage = page
 	isPopup := len(r.session.NavEvents) > 0 || len(r.session.Steps) > 0
 	paused := r.paused
@@ -345,20 +359,24 @@ func (r *Recorder) registerPage(page playwright.Page) {
 		}
 	})
 	page.OnClose(func(closed playwright.Page) {
-		r.mu.Lock()
-		if r.activePage == closed {
-			r.activePage = nil
-			if r.context != nil {
-				if pages := r.context.Pages(); len(pages) > 0 {
-					r.activePage = pages[len(pages)-1]
-				}
-			}
-		}
-		r.mu.Unlock()
-		if r.context == nil || len(r.context.Pages()) == 0 {
-			r.signalDone()
-		}
+		r.handlePageClose(closed)
 	})
+}
+
+func (r *Recorder) handlePageClose(closed playwright.Page) {
+	r.mu.Lock()
+	delete(r.controlPages, closed)
+	if r.activePage == closed || r.activePage == nil || r.isControlPageLocked(r.activePage) {
+		r.activePage = nil
+		if pages := r.recordablePagesLocked(); len(pages) > 0 {
+			r.activePage = pages[len(pages)-1]
+		}
+	}
+	noRecordablePages := len(r.recordablePagesLocked()) == 0
+	r.mu.Unlock()
+	if noRecordablePages {
+		r.signalDone()
+	}
 }
 
 // handleRecordBinding receives capture-script payloads. The binding source
@@ -366,6 +384,14 @@ func (r *Recorder) registerPage(page playwright.Page) {
 func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ...any) any {
 	if len(args) == 0 {
 		return nil
+	}
+	if source != nil && source.Page != nil {
+		r.mu.Lock()
+		isControlPage := r.isControlPageLocked(source.Page)
+		r.mu.Unlock()
+		if isControlPage {
+			return nil
+		}
 	}
 	payload, ok := args[0].(string)
 	if !ok {
@@ -472,7 +498,7 @@ func (r *Recorder) setPaused(paused bool) {
 	} else if n := len(r.session.PauseIntervals); n > 0 && r.session.PauseIntervals[n-1].To.IsZero() {
 		r.session.PauseIntervals[n-1].To = now
 	}
-	pages := r.openPagesLocked()
+	pages := r.recordablePagesLocked()
 	r.mu.Unlock()
 
 	for _, page := range pages {
@@ -496,6 +522,37 @@ func (r *Recorder) openPagesLocked() []playwright.Page {
 		return nil
 	}
 	return r.context.Pages()
+}
+
+func (r *Recorder) recordablePagesLocked() []playwright.Page {
+	pages := r.openPagesLocked()
+	out := make([]playwright.Page, 0, len(pages))
+	for _, page := range pages {
+		if !r.isControlPageLocked(page) {
+			out = append(out, page)
+		}
+	}
+	return out
+}
+
+func (r *Recorder) markControlPageLocked(page playwright.Page) {
+	if page == nil {
+		return
+	}
+	if r.controlPages == nil {
+		r.controlPages = make(map[playwright.Page]struct{})
+	}
+	r.controlPages[page] = struct{}{}
+}
+
+func (r *Recorder) isControlPageLocked(page playwright.Page) bool {
+	if page == nil {
+		return false
+	}
+	if _, ok := r.controlPages[page]; ok {
+		return true
+	}
+	return isRecorderControlPanelURL(page.URL())
 }
 
 // Navigate drives the active recording page to a URL (control-panel "go to").
@@ -528,13 +585,69 @@ func (r *Recorder) Focus() error {
 	return nil
 }
 
+// OpenControlPanel opens the standalone dashboard control panel as a sibling
+// tab in the same browser context as the recorded page. The tab is deliberately
+// excluded from capture so panel clicks do not become script steps.
+func (r *Recorder) OpenControlPanel(targetURL string, localStorage map[string]string) error {
+	targetURL = strings.TrimSpace(targetURL)
+	if err := ValidateControlPanelURL(targetURL); err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	if r.stopped {
+		r.mu.Unlock()
+		return fmt.Errorf("recording already stopped")
+	}
+	context := r.context
+	active := r.activePage
+	r.openingControl = true
+	r.mu.Unlock()
+	if context == nil {
+		r.mu.Lock()
+		r.openingControl = false
+		r.mu.Unlock()
+		return fmt.Errorf("browser recorder context unavailable")
+	}
+
+	page, err := context.NewPage()
+	r.mu.Lock()
+	r.openingControl = false
+	if page != nil {
+		r.markControlPageLocked(page)
+	}
+	r.mu.Unlock()
+	if err != nil {
+		return fmt.Errorf("open control panel tab: %w", err)
+	}
+	if script := controlPanelLocalStorageScript(localStorage); script != "" {
+		if err := page.AddInitScript(playwright.Script{Content: playwright.String(script)}); err != nil {
+			_ = page.Close()
+			return fmt.Errorf("seed control panel bridge connection: %w", err)
+		}
+	}
+	if _, err := page.Goto(targetURL); err != nil {
+		_ = page.Close()
+		return fmt.Errorf("open control panel %s: %w", targetURL, err)
+	}
+
+	r.mu.Lock()
+	if active != nil && !r.isControlPageLocked(active) {
+		r.activePage = active
+	} else if pages := r.recordablePagesLocked(); len(pages) > 0 {
+		r.activePage = pages[len(pages)-1]
+	}
+	r.mu.Unlock()
+	return nil
+}
+
 func (r *Recorder) currentPage() playwright.Page {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.activePage != nil {
+	if r.activePage != nil && !r.isControlPageLocked(r.activePage) {
 		return r.activePage
 	}
-	if pages := r.openPagesLocked(); len(pages) > 0 {
+	if pages := r.recordablePagesLocked(); len(pages) > 0 {
 		return pages[len(pages)-1]
 	}
 	return nil
@@ -759,7 +872,7 @@ func (r *Recorder) SetAssertMode(on bool) {
 		return
 	}
 	r.assertMode = on
-	pages := r.openPagesLocked()
+	pages := r.recordablePagesLocked()
 	r.mu.Unlock()
 	for _, page := range pages {
 		r.pushAssertModeState(page, on)
@@ -787,6 +900,54 @@ func (r *Recorder) configScript() string {
 		encoded = []byte("{}")
 	}
 	return "window.__apexloadRecorderConfig = " + string(encoded) + ";"
+}
+
+// ValidateControlPanelURL checks that a browser-recorder companion tab points
+// at the standalone recorder panel route served by the dashboard.
+func ValidateControlPanelURL(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("control panel url must be an absolute http(s) URL")
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+	default:
+		return fmt.Errorf("control panel url scheme %q is not allowed; use http or https", parsed.Scheme)
+	}
+	if !isRecorderControlPanelURL(raw) {
+		return fmt.Errorf("control panel url must use the #/recorder-panel route")
+	}
+	return nil
+}
+
+func isRecorderControlPanelURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	fragment := strings.TrimPrefix(parsed.Fragment, "/")
+	return fragment == "recorder-panel" ||
+		strings.HasPrefix(fragment, "recorder-panel?") ||
+		strings.HasPrefix(fragment, "recorder-panel/")
+}
+
+func controlPanelLocalStorageScript(entries map[string]string) string {
+	if len(entries) == 0 {
+		return ""
+	}
+	encoded, err := json.Marshal(entries)
+	if err != nil {
+		return ""
+	}
+	return `(() => {
+  const entries = ` + string(encoded) + `;
+  try {
+    for (const [key, value] of Object.entries(entries)) {
+      window.localStorage.setItem(key, value);
+    }
+    window.dispatchEvent(new CustomEvent('apexload:browser-recorder-bridge-changed'));
+  } catch (e) {}
+})();`
 }
 
 // sidebarRecentLimit caps how many recent steps the in-page sidebar shows.
@@ -924,7 +1085,7 @@ func (r *Recorder) sidebarPushLoop() {
 func (r *Recorder) broadcastSidebarState() {
 	state := r.buildSidebarStateJSON()
 	r.mu.Lock()
-	pages := r.openPagesLocked()
+	pages := r.recordablePagesLocked()
 	r.mu.Unlock()
 	for _, page := range pages {
 		r.pushSidebarState(page, state)

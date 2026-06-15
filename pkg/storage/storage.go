@@ -64,6 +64,47 @@ type Store interface {
 	ListScenarioDataPoolBindings(scenarioID string) ([]ScenarioDataPoolBinding, error)
 	DeleteScenarioDataPoolBinding(id string) error
 
+	// Capacity reservations (timeslots) — forward-booking of a future window.
+	SaveCapacityReservation(reservation *CapacityReservation) error
+	GetCapacityReservation(id string) (*CapacityReservation, error)
+	ListCapacityReservations(projectID string, limit int, offset int) ([]*CapacityReservation, error)
+	ListCapacityReservationsByTimeRange(projectID string, startAt, endAt time.Time) ([]*CapacityReservation, error)
+	// UpdateCapacityReservationBinding atomically binds a reservation to a test
+	// only if it is not already bound; the bool reports whether the bind happened.
+	UpdateCapacityReservationBinding(id string, testID *string, testStatus *string, updatedAt time.Time) (bool, error)
+	DeleteCapacityReservation(id string) error
+
+	// Fleet pools, generator metadata, and cloud provisioning.
+	SaveFleetPool(pool *FleetPool) error
+	GetFleetPool(id string) (*FleetPool, error)
+	ListFleetPools(limit int, offset int) ([]*FleetPool, error)
+	// DeleteFleetPool removes the pool and clears the pool reference from its
+	// members and generator metadata (application-level integrity).
+	DeleteFleetPool(id string) error
+	SaveFleetPoolMembers(poolID string, members []*FleetPoolMember) error
+	ListFleetPoolMembers(poolID string) ([]*FleetPoolMember, error)
+	SaveGeneratorMetadata(metadata *GeneratorMetadata) error
+	GetGeneratorMetadata(generatorID string) (*GeneratorMetadata, error)
+	ListGeneratorMetadata(limit int, offset int) ([]*GeneratorMetadata, error)
+	DeleteGeneratorMetadata(generatorID string) error
+	SaveProvisioningRequest(req *ProvisioningRequest) error
+	GetProvisioningRequest(id string) (*ProvisioningRequest, error)
+	ListProvisioningRequests(fleetPoolID string, limit int, offset int) ([]*ProvisioningRequest, error)
+	SaveProvisioningEvent(event *ProvisioningEvent) error
+	ListProvisioningEvents(requestID string) ([]*ProvisioningEvent, error)
+
+	// Execution plans (ordered cross-run orchestration).
+	SaveExecutionPlan(plan *ExecutionPlan) error
+	GetExecutionPlan(id string) (*ExecutionPlan, error)
+	ListExecutionPlans(projectID string, limit int, offset int) ([]*ExecutionPlan, error)
+	DeleteExecutionPlan(id string) error
+
+	// Monitoring collectors (restricted-network agent control plane).
+	SaveMonitoringCollector(collector *MonitoringCollector) error
+	GetMonitoringCollector(id string) (*MonitoringCollector, error)
+	ListMonitoringCollectors(projectID string, limit int, offset int) ([]*MonitoringCollector, error)
+	DeleteMonitoringCollector(id string) error
+
 	// Shared data pools
 	SaveDataPool(pool *SharedDataPool) error
 	GetDataPool(id string) (*SharedDataPool, error)
@@ -606,6 +647,35 @@ type ScenarioScheduleApproval struct {
 	RequiredRole     string     `json:"required_role,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+// CapacityReservation is a forward-booking of a capacity window (the
+// LoadRunner Enterprise "timeslot" analog). It reuses the project/approval
+// vocabulary of scenario schedules: ApprovalState moves pending → approved →
+// rejected, and a reservation may be bound to exactly one test run.
+type CapacityReservation struct {
+	ID                string                      `json:"id"`
+	ProjectID         string                      `json:"project_id"`
+	ScenarioID        *string                     `json:"scenario_id,omitempty"`
+	StartAt           time.Time                   `json:"start_at"`
+	EndAt             time.Time                   `json:"end_at"`
+	Timezone          string                      `json:"timezone,omitempty"`
+	RequestedCapacity *CapacityReservationRequest `json:"requested_capacity,omitempty"`
+	ApprovalState     string                      `json:"approval_state"`
+	ApprovalID        *string                     `json:"approval_id,omitempty"`
+	BoundTestID       *string                     `json:"bound_test_id,omitempty"`
+	BoundTestStatus   *string                     `json:"bound_test_status,omitempty"`
+	ConflictSummary   string                      `json:"conflict_summary,omitempty"`
+	CreatedAt         time.Time                   `json:"created_at"`
+	UpdatedAt         time.Time                   `json:"updated_at"`
+}
+
+// CapacityReservationRequest is the requested capacity envelope for a timeslot.
+type CapacityReservationRequest struct {
+	Generators *int   `json:"generators,omitempty"`
+	VUsers     *int   `json:"vusers,omitempty"`
+	Protocol   string `json:"protocol,omitempty"`
+	LoadZone   string `json:"load_zone,omitempty"`
 }
 
 type SchedulerLease struct {

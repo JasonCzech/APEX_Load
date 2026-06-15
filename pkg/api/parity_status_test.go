@@ -60,6 +60,76 @@ func TestHandleGetParityStatusReturnsReleaseGateSummary(t *testing.T) {
 	}
 }
 
+func TestHandleGetParityStatusReturnsAPIParityProgram(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/parity-status", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload ParityStatusResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+
+	// Expected status per dimension. A dimension flips gap -> partial -> supported
+	// as its build family lands; capacity_reservation (timeslots) is the first.
+	wantStatus := map[string]string{
+		"capacity_reservation":    "partial",
+		"fleet_management":        "partial",
+		"execution_planning":      "partial",
+		"monitoring_collectors":   "partial",
+		"entitlements":            "partial",
+		"correlation_persistence": "gap",
+		"object_repository":       "gap",
+	}
+	if len(payload.APIParityProgram) != len(wantStatus) {
+		t.Fatalf("api_parity_program count = %d, want %d", len(payload.APIParityProgram), len(wantStatus))
+	}
+	byID := make(map[string]ParityStatusArea, len(payload.APIParityProgram))
+	for _, area := range payload.APIParityProgram {
+		byID[area.ID] = area
+	}
+	validStatus := map[string]bool{"gap": true, "partial": true, "supported": true}
+	for id, want := range wantStatus {
+		area, ok := byID[id]
+		if !ok {
+			t.Fatalf("missing api parity program dimension %q in %#v", id, payload.APIParityProgram)
+		}
+		if !validStatus[area.Status] {
+			t.Errorf("dimension %q status = %q, want one of gap/partial/supported", id, area.Status)
+		}
+		if area.Status != want {
+			t.Errorf("dimension %q status = %q, want %q", id, area.Status, want)
+		}
+		if area.Name == "" || area.Summary == "" || len(area.Evidence) == 0 || len(area.Remaining) == 0 {
+			t.Errorf("dimension %q is under-populated: %#v", id, area)
+		}
+		// Every dimension must cite the scorecard doc so the two stay in sync.
+		citesDoc := false
+		for _, e := range area.Evidence {
+			if e == apiComparisonEvidence {
+				citesDoc = true
+				break
+			}
+		}
+		if !citesDoc {
+			t.Errorf("dimension %q does not cite %s", id, apiComparisonEvidence)
+		}
+	}
+
+	// The build program must not leak into release-gate aggregation or shipped areas.
+	if payload.Overall != "partial" {
+		t.Fatalf("overall = %q, want partial (api parity program must not change aggregation)", payload.Overall)
+	}
+	if len(payload.Areas) != 10 {
+		t.Fatalf("area count = %d, want 10 (api parity program must be separate from shipped areas)", len(payload.Areas))
+	}
+}
+
 func TestHandleGetBrowserBenchmarkEvidenceReturnsProfilesAndClaimPolicy(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/browser-benchmarks", nil)

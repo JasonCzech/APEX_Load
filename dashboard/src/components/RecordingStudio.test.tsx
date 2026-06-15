@@ -37,6 +37,7 @@ const apiMock = {
   startBrowserRecording: vi.fn(),
   getBrowserRecording: vi.fn(),
   stopBrowserRecording: vi.fn(),
+  openBrowserRecordingControlPanel: vi.fn(),
   previewBrowserRecordingConversion: vi.fn(),
   convertBrowserRecording: vi.fn(),
   listBrowserRecorderDevices: vi.fn(),
@@ -209,6 +210,22 @@ describe('RecordingStudio', () => {
       created_at: '2026-05-17T00:00:00Z',
     }))
     apiMock.startBrowserRecording.mockResolvedValue({
+      session: {
+        id: 'brec-1',
+        name: 'Browser Recording',
+        status: 'recording',
+        start_url: 'https://app.example.com/login',
+        capture_har: true,
+        started_at: '2026-05-12T20:00:00Z',
+        step_count: 0,
+        navigation_count: 0,
+        network_request_count: 0,
+        websocket_count: 0,
+        warning_count: 0,
+        har_available: false,
+      },
+    })
+    apiMock.openBrowserRecordingControlPanel.mockResolvedValue({
       session: {
         id: 'brec-1',
         name: 'Browser Recording',
@@ -803,14 +820,45 @@ describe('RecordingStudio', () => {
       project_id: 'proj-1',
       capture_har: true,
     }))
-    // The companion popup opens (web shell) and the docked panel renders.
+    // The companion panel opens in the recording browser context; the docked
+    // panel stays visible as a fallback/control surface.
+    expect(apiMock.openBrowserRecordingControlPanel).toHaveBeenCalledWith(
+      'brec-1',
+      expect.stringContaining('#/recorder-panel?session=brec-1'),
+    )
+    expect(window.open).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-testid="browser-recorder-panel"]')).not.toBeNull()
+    expect(apiMock.getBrowserRecording).toHaveBeenCalledWith('brec-1')
+  })
+
+  it('falls back to a popup when the recording browser cannot open the panel tab', async () => {
+    apiMock.openBrowserRecordingControlPanel.mockRejectedValueOnce(new Error('control panel route unavailable'))
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: 'proj-1', name: 'Web' } as any} />)
+    })
+    await flushPromises()
+
+    const urlInput = container.querySelector('input[placeholder="https://app.example.com/login"]') as HTMLInputElement
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(urlInput, 'https://app.example.com/login')
+      urlInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const recordButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Record Browser'))
+    await act(async () => {
+      recordButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.openBrowserRecordingControlPanel).toHaveBeenCalledWith(
+      'brec-1',
+      expect.stringContaining('#/recorder-panel?session=brec-1'),
+    )
     expect(window.open).toHaveBeenCalledWith(
       expect.stringContaining('#/recorder-panel?session=brec-1'),
       'apexload-browser-recorder',
       expect.any(String),
     )
-    expect(container.querySelector('[data-testid="browser-recorder-panel"]')).not.toBeNull()
-    expect(apiMock.getBrowserRecording).toHaveBeenCalledWith('brec-1')
   })
 
   it('falls back to the Advanced proxy recorder when browser recording is unavailable', async () => {

@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
 	"github.com/jasonczech/apexload/pkg/scrub"
@@ -40,6 +41,26 @@ func startBrowserRecordingViaAPI(t *testing.T, server *Server) string {
 		t.Fatalf("unmarshal start response: %v", err)
 	}
 	return payload.Session.ID
+}
+
+func stopBrowserRecordingViaAPI(t *testing.T, server *Server, id string) BrowserRecordingSession {
+	t.Helper()
+	stopReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/stop", nil)
+	stopResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(stopResp, stopReq)
+	if stopResp.Code != http.StatusOK {
+		t.Fatalf("stop status = %d body=%s", stopResp.Code, stopResp.Body.String())
+	}
+	var stopPayload struct {
+		Session BrowserRecordingSession `json:"session"`
+	}
+	if err := json.Unmarshal(stopResp.Body.Bytes(), &stopPayload); err != nil {
+		t.Fatal(err)
+	}
+	if stopPayload.Session.Status != BrowserRecordingStopping || stopPayload.Session.StopReason != browserRecordingStopRequested {
+		t.Fatalf("initial stop response = %+v, want stopping/requested", &stopPayload.Session)
+	}
+	return *waitForRecordingStatus(t, server.browserRecording, id, BrowserRecordingStopped)
 }
 
 func TestHandleStartBrowserRecording(t *testing.T) {
@@ -175,20 +196,9 @@ func TestHandleGetAndStopBrowserRecording(t *testing.T) {
 		t.Errorf("get session steps = %d count=%d, want 2", len(getPayload.Session.Steps), getPayload.Session.StepCount)
 	}
 
-	stopReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/stop", nil)
-	stopResp := httptest.NewRecorder()
-	server.mux.ServeHTTP(stopResp, stopReq)
-	if stopResp.Code != http.StatusOK {
-		t.Fatalf("stop status = %d body=%s", stopResp.Code, stopResp.Body.String())
-	}
-	var stopPayload struct {
-		Session BrowserRecordingSession `json:"session"`
-	}
-	if err := json.Unmarshal(stopResp.Body.Bytes(), &stopPayload); err != nil {
-		t.Fatal(err)
-	}
-	if stopPayload.Session.Status != BrowserRecordingStopped || stopPayload.Session.StopReason != browserRecordingStopRequested {
-		t.Errorf("stop session = %+v", &stopPayload.Session)
+	stopped := stopBrowserRecordingViaAPI(t, server, id)
+	if stopped.Status != BrowserRecordingStopped || stopped.StopReason != browserRecordingStopRequested {
+		t.Errorf("stop session = %+v", &stopped)
 	}
 
 	missing := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/nope", nil)
@@ -313,8 +323,7 @@ func TestHandleConvertBrowserRecordingStoresScript(t *testing.T) {
 	server := newBrowserRecorderTestServer(t, fake)
 	id := startBrowserRecordingViaAPI(t, server)
 
-	stopReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/stop", nil)
-	server.mux.ServeHTTP(httptest.NewRecorder(), stopReq)
+	stopBrowserRecordingViaAPI(t, server, id)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert",
 		bytes.NewBufferString(`{"name":"Checkout Saved"}`))
@@ -355,7 +364,7 @@ func TestHandleExportBrowserRecordingHAR(t *testing.T) {
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
 	server := newBrowserRecorderTestServer(t, fake)
 	id := startBrowserRecordingViaAPI(t, server)
-	server.mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/stop", nil))
+	stopBrowserRecordingViaAPI(t, server, id)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+id+"/export?format=har", nil)
 	resp := httptest.NewRecorder()
@@ -448,6 +457,56 @@ func TestHandlePauseResumeBrowserRecording(t *testing.T) {
 	}
 }
 
+func TestHandleForceStopBrowserRecording(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	fake.stopStarted = make(chan struct{})
+	fake.stopRelease = make(chan struct{})
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	stopResp := postBrowserRecorderControl(t, server, id, "stop", "")
+	if stopResp.Code != http.StatusOK {
+		t.Fatalf("stop status = %d body=%s", stopResp.Code, stopResp.Body.String())
+	}
+	select {
+	case <-fake.stopStarted:
+	case <-time.After(time.Second):
+		t.Fatal("backend Stop was not started")
+	}
+
+	forceResp := postBrowserRecorderControl(t, server, id, "force-stop", "")
+	if forceResp.Code != http.StatusOK {
+		t.Fatalf("force-stop status = %d body=%s", forceResp.Code, forceResp.Body.String())
+	}
+	var payload struct {
+		Session BrowserRecordingSession `json:"session"`
+	}
+	if err := json.Unmarshal(forceResp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Session.Status != BrowserRecordingStopped || payload.Session.StopReason != browserRecordingStopForced {
+		t.Fatalf("force-stop session = %+v", &payload.Session)
+	}
+	if payload.Session.StepCount != 2 {
+		t.Errorf("force-stop StepCount = %d, want captured steps preserved", payload.Session.StepCount)
+	}
+	if !strings.Contains(strings.Join(payload.Session.Warnings, "\n"), "force-finished") {
+		t.Errorf("force-stop warnings = %v, want force-finished warning", payload.Session.Warnings)
+	}
+	close(fake.stopRelease)
+}
+
+func TestHandleForceStopBrowserRecordingRequiresStopping(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	resp := postBrowserRecorderControl(t, server, id, "force-stop", "")
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("force-stop live session status = %d, want 409 body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestHandleNavigateBrowserRecording(t *testing.T) {
 	fake := newFakeBrowserRecorder(nil)
 	server := newBrowserRecorderTestServer(t, fake)
@@ -488,6 +547,60 @@ func TestHandleFocusBrowserRecording(t *testing.T) {
 	missing := postBrowserRecorderControl(t, server, "nope", "focus", "")
 	if missing.Code != http.StatusNotFound {
 		t.Errorf("focus unknown session status = %d, want 404", missing.Code)
+	}
+}
+
+func TestHandleOpenBrowserRecordingControlPanel(t *testing.T) {
+	fake := newFakeBrowserRecorder(nil)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	body := `{
+		"url":"http://127.0.0.1:8080/#/recorder-panel?session=` + id + `",
+		"bridge_connection":{
+			"origin":"http://127.0.0.1:27777/",
+			"token":"bridge-token",
+			"session_id":"bridge-session",
+			"paired_at":"2026-06-15T12:00:00Z"
+		}
+	}`
+	resp := postBrowserRecorderControl(t, server, id, "control-panel", body)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("control-panel status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if len(fake.panelURLs) != 1 || !strings.Contains(fake.panelURLs[0], "#/recorder-panel?session="+id) {
+		t.Fatalf("panelURLs = %v", fake.panelURLs)
+	}
+	key := recbrowser.BrowserRecorderBridgeStoragePrefix + "http://127.0.0.1:8080"
+	seed := fake.panelStorage[key]
+	if !strings.Contains(seed, `"origin":"http://127.0.0.1:27777"`) || !strings.Contains(seed, `"session_id":"bridge-session"`) {
+		t.Errorf("bridge seed = %q", seed)
+	}
+
+	mismatchReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/control-panel",
+		bytes.NewBufferString(`{"url":"http://127.0.0.1:8080/#/recorder-panel?session=`+id+`"}`))
+	mismatchReq.Header.Set("Origin", "http://127.0.0.1:3000")
+	mismatchResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(mismatchResp, mismatchReq)
+	if mismatchResp.Code != http.StatusBadRequest {
+		t.Errorf("mismatched origin status = %d, want 400 body=%s", mismatchResp.Code, mismatchResp.Body.String())
+	}
+
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{name: "non-panel route", body: `{"url":"http://127.0.0.1:8080/#/scripts"}`},
+		{name: "non-http scheme", body: `{"url":"file:///tmp/panel.html#/recorder-panel"}`},
+		{name: "bad bridge origin", body: `{"url":"http://127.0.0.1:8080/#/recorder-panel","bridge_connection":{"origin":"file:///tmp","token":"x","session_id":"y"}}`},
+	} {
+		bad := postBrowserRecorderControl(t, server, id, "control-panel", tc.body)
+		if bad.Code != http.StatusBadRequest {
+			t.Errorf("%s status = %d, want 400 body=%s", tc.name, bad.Code, bad.Body.String())
+		}
+	}
+	if len(fake.panelURLs) != 1 {
+		t.Errorf("blocked control-panel requests reached backend: %v", fake.panelURLs)
 	}
 }
 
@@ -668,7 +781,7 @@ func TestHandleConvertBrowserRecordingDualHTTP(t *testing.T) {
 	fake := newFakeBrowserRecorder(artifact)
 	server := newBrowserRecorderTestServer(t, fake)
 	id := startBrowserRecordingViaAPI(t, server)
-	server.mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/stop", nil))
+	stopBrowserRecordingViaAPI(t, server, id)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert",
 		bytes.NewBufferString(`{"name":"Checkout","also_create_http_script":true}`))
@@ -696,7 +809,7 @@ func TestHandleConvertBrowserRecordingStampsProvenance(t *testing.T) {
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
 	server := newBrowserRecorderTestServer(t, fake)
 	id := startBrowserRecordingViaAPI(t, server)
-	server.mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/stop", nil))
+	stopBrowserRecordingViaAPI(t, server, id)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewBufferString(`{"name":"Checkout"}`))
 	resp := httptest.NewRecorder()
@@ -738,7 +851,7 @@ func TestHandleExportBrowserRecordingStorageState(t *testing.T) {
 	fake := newFakeBrowserRecorder(artifact)
 	server := newBrowserRecorderTestServer(t, fake)
 	id := startBrowserRecordingViaAPI(t, server)
-	server.mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/stop", nil))
+	stopBrowserRecordingViaAPI(t, server, id)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+id+"/storage-state", nil)
 	resp := httptest.NewRecorder()

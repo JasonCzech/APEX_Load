@@ -320,7 +320,68 @@ func (s *metricsStoreSpy) SaveScenarioDataPoolBindings(scenarioID string, bindin
 func (s *metricsStoreSpy) ListScenarioDataPoolBindings(scenarioID string) ([]storage.ScenarioDataPoolBinding, error) {
 	return nil, nil
 }
-func (s *metricsStoreSpy) DeleteScenarioDataPoolBinding(id string) error { return nil }
+func (s *metricsStoreSpy) DeleteScenarioDataPoolBinding(id string) error              { return nil }
+func (s *metricsStoreSpy) SaveCapacityReservation(*storage.CapacityReservation) error { return nil }
+func (s *metricsStoreSpy) GetCapacityReservation(string) (*storage.CapacityReservation, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListCapacityReservations(string, int, int) ([]*storage.CapacityReservation, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListCapacityReservationsByTimeRange(string, time.Time, time.Time) ([]*storage.CapacityReservation, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) UpdateCapacityReservationBinding(string, *string, *string, time.Time) (bool, error) {
+	return false, nil
+}
+func (s *metricsStoreSpy) DeleteCapacityReservation(string) error { return nil }
+func (s *metricsStoreSpy) SaveFleetPool(*storage.FleetPool) error { return nil }
+func (s *metricsStoreSpy) GetFleetPool(string) (*storage.FleetPool, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListFleetPools(int, int) ([]*storage.FleetPool, error) { return nil, nil }
+func (s *metricsStoreSpy) DeleteFleetPool(string) error                          { return nil }
+func (s *metricsStoreSpy) SaveFleetPoolMembers(string, []*storage.FleetPoolMember) error {
+	return nil
+}
+func (s *metricsStoreSpy) ListFleetPoolMembers(string) ([]*storage.FleetPoolMember, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) SaveGeneratorMetadata(*storage.GeneratorMetadata) error { return nil }
+func (s *metricsStoreSpy) GetGeneratorMetadata(string) (*storage.GeneratorMetadata, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListGeneratorMetadata(int, int) ([]*storage.GeneratorMetadata, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) DeleteGeneratorMetadata(string) error                       { return nil }
+func (s *metricsStoreSpy) SaveProvisioningRequest(*storage.ProvisioningRequest) error { return nil }
+func (s *metricsStoreSpy) GetProvisioningRequest(string) (*storage.ProvisioningRequest, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListProvisioningRequests(string, int, int) ([]*storage.ProvisioningRequest, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) SaveProvisioningEvent(*storage.ProvisioningEvent) error { return nil }
+func (s *metricsStoreSpy) ListProvisioningEvents(string) ([]*storage.ProvisioningEvent, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) SaveExecutionPlan(*storage.ExecutionPlan) error { return nil }
+func (s *metricsStoreSpy) GetExecutionPlan(string) (*storage.ExecutionPlan, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListExecutionPlans(string, int, int) ([]*storage.ExecutionPlan, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) DeleteExecutionPlan(string) error                           { return nil }
+func (s *metricsStoreSpy) SaveMonitoringCollector(*storage.MonitoringCollector) error { return nil }
+func (s *metricsStoreSpy) GetMonitoringCollector(string) (*storage.MonitoringCollector, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListMonitoringCollectors(string, int, int) ([]*storage.MonitoringCollector, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) DeleteMonitoringCollector(string) error { return nil }
 func (s *metricsStoreSpy) SaveDataPool(pool *storage.SharedDataPool) error {
 	return nil
 }

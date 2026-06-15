@@ -137,6 +137,8 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 
 **One-line verdict:** APEX wins on architecture and day-to-day usability; LRE wins on migration intelligence, analysis depth, and battle-tested scale.
 
+> **REST API / integration layer:** for a focused comparison of the programmable surface (auth, versioning, streaming, test-as-code, results extraction, CI/webhooks) and the bidirectional API gap analysis, see [APEX_LOAD_REST_API_COMPARISON.md](APEX_LOAD_REST_API_COMPARISON.md). The rows below cover product capability; that doc covers the API layer.
+
 #### Capability Matrix
 
 Legend: **▲ APEX leads** · **= parity** · **▼ APEX trails** · **▼▼ APEX trails badly**

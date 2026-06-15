@@ -7,6 +7,15 @@
 // shadow elements).
 (() => {
   'use strict';
+  function isRecorderControlPanelPage() {
+    try {
+      const fragment = String(window.location.hash || '').replace(/^#\/?/, '');
+      return fragment === 'recorder-panel' || fragment.indexOf('recorder-panel?') === 0 || fragment.indexOf('recorder-panel/') === 0;
+    } catch (e) {
+      return false;
+    }
+  }
+  if (isRecorderControlPanelPage()) return;
   if (window.__apexloadRecorderInstalled) return;
   window.__apexloadRecorderInstalled = true;
 
@@ -369,10 +378,11 @@
     '.row{display:flex;gap:6px}' +
     '.row input{flex:1;min-width:0;border:1px solid #3a4357;border-radius:6px;' +
     'background:#11161f;color:#e6e9f0;padding:4px 8px;font:inherit}' +
-    '.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}' +
-    '.chip{display:inline-flex;gap:6px;align-items:center;background:#11302a;border:1px solid #1f6f5c;' +
-    'border-radius:12px;padding:2px 6px 2px 10px;color:#a7f3d0}' +
-    '.chip button{padding:0 6px;border-radius:10px}' +
+    '.txnActive{display:none;flex:1;min-width:0;border:1px solid #1f6f5c;border-radius:6px;' +
+    'background:#11302a;color:#a7f3d0;padding:4px 8px;font:inherit;white-space:nowrap;' +
+    'overflow:hidden;text-overflow:ellipsis}' +
+    '.txnToggle.stop{background:#7f1d1d;border-color:#b91c1c;color:#fee2e2}' +
+    '.txnToggle.stop:hover{background:#991b1b}' +
     '.steps{display:flex;flex-direction:column;gap:4px}' +
     '.stepsHead{display:flex;align-items:center;justify-content:space-between}' +
     '.stepsList{display:flex;flex-direction:column;gap:3px;max-height:200px;overflow:auto}' +
@@ -402,7 +412,7 @@
     '<div class="nav row"><input class="navUrl" type="text" placeholder="Navigate to URL…" />' +
     '<button class="navGo">Go</button></div>' +
     '<div class="txn"><div class="row"><input class="txnName" type="text" placeholder="Transaction name…" />' +
-    '<button class="txnStart">Start</button></div><div class="chips txnOpen"></div></div>' +
+    '<span class="txnActive"></span><button class="txnToggle">Start</button></div></div>' +
     '<div class="note row"><input class="noteText" type="text" placeholder="Note for next action…" />' +
     '<button class="noteAdd">Add</button></div>' +
     '<div class="steps"><div class="stepsHead"><span class="slabel">Recent steps</span>' +
@@ -444,8 +454,8 @@
     const navUrl = shadow.querySelector('.navUrl');
     const navGo = shadow.querySelector('.navGo');
     const txnName = shadow.querySelector('.txnName');
-    const txnStart = shadow.querySelector('.txnStart');
-    const txnOpen = shadow.querySelector('.txnOpen');
+    const txnActive = shadow.querySelector('.txnActive');
+    const txnToggle = shadow.querySelector('.txnToggle');
     const noteText = shadow.querySelector('.noteText');
     const noteAdd = shadow.querySelector('.noteAdd');
     const undoBtn = shadow.querySelector('.undo');
@@ -469,21 +479,32 @@
       return b;
     }
 
-    function renderTxns() {
-      txnOpen.textContent = '';
-      (sidebarState.openTransactions || []).forEach((name) => {
-        const chip = document.createElement('span');
-        chip.className = 'chip';
-        const label = document.createElement('span');
-        label.textContent = name;
-        const end = document.createElement('button');
-        end.textContent = '×';
-        end.title = 'End transaction';
-        end.addEventListener('click', (ev) => { ev.stopPropagation(); send({ kind: 'transaction_end', name: name, ts: Date.now() }); });
-        chip.appendChild(label);
-        chip.appendChild(end);
-        txnOpen.appendChild(chip);
-      });
+    function activeTxnName() {
+      const open = sidebarState.openTransactions || [];
+      return open.length ? open[open.length - 1] : '';
+    }
+
+    function renderTxnToggle() {
+      const current = activeTxnName();
+      if (current) {
+        txnName.style.display = 'none';
+        txnName.disabled = true;
+        txnActive.style.display = 'block';
+        txnActive.textContent = current;
+        txnActive.title = 'Open transaction: ' + current;
+        txnToggle.textContent = 'Stop';
+        txnToggle.title = 'Stop transaction "' + current + '"';
+        txnToggle.className = 'txnToggle stop';
+        return;
+      }
+      txnName.style.display = '';
+      txnName.disabled = false;
+      txnActive.style.display = 'none';
+      txnActive.textContent = '';
+      txnActive.title = '';
+      txnToggle.textContent = 'Start';
+      txnToggle.title = 'Start transaction';
+      txnToggle.className = 'txnToggle';
     }
 
     function renderSteps() {
@@ -538,7 +559,7 @@
       counts.textContent = (sidebarState.stepCount || 0) + ' steps · ' + (sidebarState.navCount || 0) + ' navigations';
       const active = sidebarState.section || 'actions';
       sectionBtns.forEach((b) => { b.className = b.getAttribute('data-section') === active ? 'on' : ''; });
-      renderTxns();
+      renderTxnToggle();
       renderSteps();
     }
 
@@ -596,9 +617,20 @@
     navGo.addEventListener('click', (ev) => { ev.stopPropagation(); doNavigate(); });
     navUrl.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); doNavigate(); } });
 
-    function doTxnStart() { const n = txnName.value.trim(); if (n) { send({ kind: 'transaction_start', name: n, ts: Date.now() }); txnName.value = ''; } }
-    txnStart.addEventListener('click', (ev) => { ev.stopPropagation(); doTxnStart(); });
-    txnName.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); doTxnStart(); } });
+    function doTxnToggle() {
+      const current = activeTxnName();
+      if (current) {
+        send({ kind: 'transaction_end', name: current, ts: Date.now() });
+        return;
+      }
+      const n = txnName.value.trim();
+      if (n) {
+        send({ kind: 'transaction_start', name: n, ts: Date.now() });
+        txnName.value = '';
+      }
+    }
+    txnToggle.addEventListener('click', (ev) => { ev.stopPropagation(); doTxnToggle(); });
+    txnName.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); doTxnToggle(); } });
 
     function doNote() { const t = noteText.value.trim(); if (t) { send({ kind: 'note_add', text: t, ts: Date.now() }); noteText.value = ''; } }
     noteAdd.addEventListener('click', (ev) => { ev.stopPropagation(); doNote(); });

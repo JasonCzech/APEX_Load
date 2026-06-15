@@ -32,6 +32,42 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/auth/audit-events/export", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
 	routeAuth(http.MethodGet, "/api/v1/schedules/health", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/run-calendar", viewerGlobalAccess()),
+
+	// Execution plans (ordered cross-run orchestration).
+	routeAuth(http.MethodPost, "/api/v1/execution-plans", editorImportAccess(resolveExecutionPlanCreateProjectID, 262144)),
+	routeAuth(http.MethodGet, "/api/v1/execution-plans", viewerProjectAccess(resolveProjectIDFromQuery)),
+	routeAuth(http.MethodGet, "/api/v1/execution-plans/{id}", viewerProjectAccess(resolveExecutionPlanProjectID)),
+	routeAuth(http.MethodPut, "/api/v1/execution-plans/{id}", editorImportAccess(resolveExecutionPlanProjectID, 262144)),
+	routeAuth(http.MethodDelete, "/api/v1/execution-plans/{id}", editorProjectAccess(resolveExecutionPlanProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/execution-plans/{id}/runs", editorProjectAccess(resolveExecutionPlanProjectID)),
+
+	// Monitoring collectors (restricted-network agent control plane) — project-admin infra.
+	routeAuth(http.MethodPost, "/api/v1/monitoring/collectors", accessRequirement{GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, ProjectLookup: resolveMonitoringCollectorCreateProjectID, MaxBodyBytes: 65536}),
+	routeAuth(http.MethodGet, "/api/v1/monitoring/collectors", viewerProjectAccess(resolveProjectIDFromQuery)),
+	routeAuth(http.MethodGet, "/api/v1/monitoring/collectors/{id}", viewerProjectAccess(resolveMonitoringCollectorProjectID)),
+	routeAuth(http.MethodPatch, "/api/v1/monitoring/collectors/{id}", accessRequirement{GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, ProjectLookup: resolveMonitoringCollectorProjectID, MaxBodyBytes: 65536}),
+	routeAuth(http.MethodDelete, "/api/v1/monitoring/collectors/{id}", projectAdminAccess(resolveMonitoringCollectorProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/monitoring/collectors/{id}/rotate-token", projectAdminAccess(resolveMonitoringCollectorProjectID)),
+
+	// Enterprise entitlements (read-only consumption vs limits).
+	routeAuth(http.MethodGet, "/api/v1/system/entitlements", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/system/entitlements/usage", viewerGlobalAccess()),
+
+	// Capacity reservations (timeslots).
+	routeAuth(http.MethodPost, "/api/v1/capacity/timeslots", editorImportAccess(resolveTimeslotCreateProjectID, 65536)),
+	routeAuth(http.MethodGet, "/api/v1/capacity/timeslots", viewerProjectAccess(resolveProjectIDFromQuery)),
+	routeAuth(http.MethodPost, "/api/v1/capacity/timeslots/availability", accessRequirement{
+		GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+		ProjectLookup: resolveTimeslotCreateProjectID,
+		MaxBodyBytes:  65536,
+	}),
+	routeAuth(http.MethodGet, "/api/v1/capacity/timeslots/{id}", viewerProjectAccess(resolveTimeslotProjectID)),
+	routeAuth(http.MethodPut, "/api/v1/capacity/timeslots/{id}", editorImportAccess(resolveTimeslotProjectID, 65536)),
+	routeAuth(http.MethodDelete, "/api/v1/capacity/timeslots/{id}", projectAdminAccess(resolveTimeslotProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/capacity/timeslots/{id}/approve", projectAdminAccess(resolveTimeslotProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/capacity/timeslots/{id}/reject", projectAdminAccess(resolveTimeslotProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/capacity/timeslots/{id}/bind", editorImportAccess(resolveTimeslotProjectID, 65536)),
 	routeAuth(http.MethodPost, "/api/v1/tests/preflight", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestCreateProjectID}),
 	routeAuth(http.MethodPost, "/api/v1/scenarios/validate-load-model", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveScenarioCreateProjectID}),
 	routeAuth(http.MethodPost, "/api/v1/scenarios/size-from-goal", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveGoalSizingBaselineProjectID}),
@@ -75,6 +111,17 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/fleet/capacity", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/fleet/load-zones", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/fleet/provisioner", viewerGlobalAccess()),
+
+	// Fleet management (pools, generator metadata, provisioning) — system-admin infra.
+	routeAuth(http.MethodPost, "/api/v1/fleet/pools", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 1048576}),
+	routeAuth(http.MethodGet, "/api/v1/fleet/pools", systemAdminAccess()),
+	routeAuth(http.MethodGet, "/api/v1/fleet/pools/{id}", systemAdminAccess()),
+	routeAuth(http.MethodPut, "/api/v1/fleet/pools/{id}", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 1048576}),
+	routeAuth(http.MethodDelete, "/api/v1/fleet/pools/{id}", systemAdminAccess()),
+	routeAuth(http.MethodGet, "/api/v1/fleet/generators", systemAdminAccess()),
+	routeAuth(http.MethodPatch, "/api/v1/fleet/generators/{id}", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 262144}),
+	routeAuth(http.MethodPost, "/api/v1/fleet/provision-requests", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 262144}),
+	routeAuth(http.MethodGet, "/api/v1/fleet/provision-requests/{id}", systemAdminAccess()),
 	routeAuth(http.MethodPatch, "/api/v1/system/generators/drain", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
 	routeAuth(http.MethodGet, "/api/v1/system/restarts/capabilities", systemAdminAccess()),
 	routeAuth(http.MethodPost, "/api/v1/system/restarts", systemAdminAccess()),

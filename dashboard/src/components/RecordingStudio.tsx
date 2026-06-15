@@ -297,6 +297,14 @@ function isWailsShell(): boolean {
     (window.location.protocol === 'wails:' || window.location.hostname === 'wails.localhost')
 }
 
+function browserRecorderPanelURL(sessionId: string): string {
+  const fragment = `/recorder-panel?session=${encodeURIComponent(sessionId)}`
+  if (typeof window === 'undefined') return `#${fragment}`
+  const url = new URL(window.location.href)
+  url.hash = fragment
+  return url.toString()
+}
+
 interface RecordingStudioProps {
   activeProject?: Project | null
   onImported?: (result: ImportedSaveResult) => void
@@ -642,15 +650,23 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
       })
       const sessionId = res.session.id
       setBrowserPanelSessionId(sessionId)
-      showFeedback('Recording browser launched — interact with the page, then stop from the control panel')
+      const panelURL = browserRecorderPanelURL(sessionId)
       if (!isWailsShell()) {
-        // Companion popup next to the recording browser; the docked panel
-        // below stays as the fallback when the popup is blocked.
-        window.open(
-          `#/recorder-panel?session=${encodeURIComponent(sessionId)}`,
-          'apexload-browser-recorder',
-          'width=440,height=760',
-        )
+        try {
+          await api.openBrowserRecordingControlPanel(sessionId, panelURL)
+          showFeedback('Recording browser launched — control panel opened beside it')
+        } catch {
+          // Older agents/controllers do not expose the same-browser companion
+          // tab endpoint. Keep the separate popup as a fallback.
+          window.open(
+            panelURL,
+            'apexload-browser-recorder',
+            'width=440,height=760',
+          )
+          showFeedback('Recording browser launched — interact with the page, then stop from the control panel')
+        }
+      } else {
+        showFeedback('Recording browser launched — interact with the page, then stop from the control panel')
       }
     } catch (e: any) {
       showFeedback(e.message, 'error')

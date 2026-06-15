@@ -27,9 +27,12 @@ const (
 const (
 	browserRecordingStopRequested     = "requested"
 	browserRecordingStopBrowserClosed = "browser_closed"
+	browserRecordingStopForced        = "forced"
 )
 
 var errBrowserRecordingActive = errors.New("a browser recording is already in progress on this controller")
+
+const defaultBrowserRecordingStopTimeout = 20 * time.Second
 
 // browserRecorderBackend abstracts recbrowser.Recorder so manager and handler
 // tests run without launching Chromium.
@@ -42,6 +45,7 @@ type browserRecorderBackend interface {
 	Resume()
 	Navigate(url string) error
 	Focus() error
+	OpenControlPanel(url string, localStorage map[string]string) error
 	AddMarker(kind, name, text string) (recbrowser.Marker, error)
 	SetSection(section string) string
 	SetAssertMode(on bool)
@@ -125,17 +129,19 @@ type BrowserRecordingSession struct {
 // BrowserRecordingManager owns the controller's headed-browser recordings: one
 // live session at a time, lifecycle transitions, and hub broadcasts.
 type BrowserRecordingManager struct {
-	hub      *Hub
-	mu       sync.RWMutex
-	sessions map[string]*BrowserRecordingSession
-	activeID string
-	factory  browserRecorderFactory
+	hub         *Hub
+	mu          sync.RWMutex
+	sessions    map[string]*BrowserRecordingSession
+	activeID    string
+	factory     browserRecorderFactory
+	stopTimeout time.Duration
 }
 
 func NewBrowserRecordingManager(hub *Hub) *BrowserRecordingManager {
 	return &BrowserRecordingManager{
-		hub:      hub,
-		sessions: make(map[string]*BrowserRecordingSession),
+		hub:         hub,
+		sessions:    make(map[string]*BrowserRecordingSession),
+		stopTimeout: defaultBrowserRecordingStopTimeout,
 		factory: func(opts recbrowser.Options) browserRecorderBackend {
 			return recbrowser.New(opts)
 		},
@@ -265,8 +271,9 @@ func (m *BrowserRecordingManager) Active() *BrowserRecordingSession {
 	return session.summary()
 }
 
-// Stop ends a recording: the browser closes, the side-car HAR is collected,
-// and the terminal state broadcasts. Idempotent for already-stopped sessions.
+// Stop requests a graceful recording stop. Browser/HAR cleanup can hang inside
+// Playwright, so cleanup runs asynchronously and a watchdog force-finishes the
+// API session if the backend does not return.
 func (m *BrowserRecordingManager) Stop(id string) (*BrowserRecordingSession, bool) {
 	m.mu.RLock()
 	session, ok := m.sessions[id]
@@ -275,17 +282,51 @@ func (m *BrowserRecordingManager) Stop(id string) (*BrowserRecordingSession, boo
 		return nil, false
 	}
 
+	startCleanup := false
 	session.mu.Lock()
-	if session.Status != BrowserRecordingActive && session.Status != BrowserRecordingPaused {
+	switch session.Status {
+	case BrowserRecordingActive, BrowserRecordingPaused:
+		session.Status = BrowserRecordingStopping
+		session.StopReason = browserRecordingStopRequested
+		startCleanup = true
+	case BrowserRecordingStopping:
+		// Idempotent: cleanup is already in-flight.
+	default:
 		session.mu.Unlock()
 		return session.fullSnapshot(), true
 	}
-	session.Status = BrowserRecordingStopping
-	session.StopReason = browserRecordingStopRequested
 	session.mu.Unlock()
 
-	m.finishStop(session)
+	if startCleanup {
+		m.broadcast("browser_recording_stopping", session, nil)
+		go m.finishStop(session)
+		go m.watchStopTimeout(session)
+	}
 	return session.fullSnapshot(), true
+}
+
+// ForceStop is the kill-switch path for a recording stuck in the graceful
+// stopping phase. It preserves captured browser steps from the latest snapshot,
+// marks HAR/storage cleanup as bypassed via warnings, frees the active slot, and
+// lets any already-running backend cleanup goroutine finish in the background.
+func (m *BrowserRecordingManager) ForceStop(id string) (*BrowserRecordingSession, bool, error) {
+	m.mu.RLock()
+	session, ok := m.sessions[id]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, false, nil
+	}
+	session.mu.RLock()
+	status := session.Status
+	session.mu.RUnlock()
+	switch status {
+	case BrowserRecordingStopping:
+		return m.forceStopSession(session, "graceful stop did not finish; force-finished recording and preserved captured browser steps"), true, nil
+	case BrowserRecordingStopped, BrowserRecordingFailed:
+		return session.fullSnapshot(), true, nil
+	default:
+		return session.fullSnapshot(), true, fmt.Errorf("recording is not stuck in stopping state (status %s)", status)
+	}
 }
 
 // Pause suspends capture. The status flip and broadcast flow through the
@@ -350,6 +391,22 @@ func (m *BrowserRecordingManager) Focus(id string) (*BrowserRecordingSession, bo
 		return session.fullSnapshot(), true, err
 	}
 	if err := backend.Focus(); err != nil {
+		return session.fullSnapshot(), true, err
+	}
+	return session.fullSnapshot(), true, nil
+}
+
+// OpenControlPanel opens the companion control panel inside the same browser
+// context as the recorded page so it appears in that browser's tab group.
+func (m *BrowserRecordingManager) OpenControlPanel(id string, panelURL string, localStorage map[string]string) (*BrowserRecordingSession, bool, error) {
+	session, backend, err := m.liveBackend(id)
+	if session == nil {
+		return nil, false, nil
+	}
+	if err != nil {
+		return session.fullSnapshot(), true, err
+	}
+	if err := backend.OpenControlPanel(panelURL, localStorage); err != nil {
 		return session.fullSnapshot(), true, err
 	}
 	return session.fullSnapshot(), true, nil
@@ -523,7 +580,26 @@ func (m *BrowserRecordingManager) watchDone(session *BrowserRecordingSession) {
 	session.Status = BrowserRecordingStopping
 	session.StopReason = browserRecordingStopBrowserClosed
 	session.mu.Unlock()
+	m.broadcast("browser_recording_stopping", session, nil)
+	go m.watchStopTimeout(session)
 	m.finishStop(session)
+}
+
+func (m *BrowserRecordingManager) watchStopTimeout(session *BrowserRecordingSession) {
+	timeout := m.stopTimeout
+	if timeout <= 0 {
+		return
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	<-timer.C
+	session.mu.RLock()
+	stillStopping := session.Status == BrowserRecordingStopping
+	session.mu.RUnlock()
+	if !stillStopping {
+		return
+	}
+	m.forceStopSession(session, fmt.Sprintf("graceful stop did not finish within %s; force-finished recording and preserved captured browser steps", timeout.Round(time.Second)))
 }
 
 // finishStop drives the backend to completion and broadcasts the terminal
@@ -533,6 +609,13 @@ func (m *BrowserRecordingManager) finishStop(session *BrowserRecordingSession) {
 	final, err := session.stopBackend()
 	now := time.Now()
 	session.mu.Lock()
+	if session.Status != BrowserRecordingStopping {
+		if session.final == nil && final != nil {
+			session.final = final
+		}
+		session.mu.Unlock()
+		return
+	}
 	session.StoppedAt = &now
 	if err != nil {
 		session.Status = BrowserRecordingFailed
@@ -549,6 +632,55 @@ func (m *BrowserRecordingManager) finishStop(session *BrowserRecordingSession) {
 		return
 	}
 	m.broadcast("browser_recording_stopped", session, nil)
+}
+
+func (m *BrowserRecordingManager) forceStopSession(session *BrowserRecordingSession, warning string) *BrowserRecordingSession {
+	now := time.Now()
+	artifact := session.artifact()
+	if artifact != nil {
+		finalizeForcedBrowserRecordingArtifact(artifact, now, warning)
+	}
+
+	session.mu.Lock()
+	if session.Status != BrowserRecordingStopping {
+		session.mu.Unlock()
+		return session.fullSnapshot()
+	}
+	session.Status = BrowserRecordingStopped
+	session.StopReason = browserRecordingStopForced
+	session.StoppedAt = &now
+	session.Error = ""
+	session.OpenTransactions = nil
+	if artifact != nil {
+		session.final = artifact
+	}
+	session.mu.Unlock()
+	m.clearActive(session.ID)
+	m.broadcast("browser_recording_force_stopped", session, nil)
+	return session.fullSnapshot()
+}
+
+func finalizeForcedBrowserRecordingArtifact(session *recbrowser.Session, stoppedAt time.Time, warning string) {
+	if session == nil {
+		return
+	}
+	session.StoppedAt = stoppedAt
+	if n := len(session.PauseIntervals); n > 0 && session.PauseIntervals[n-1].To.IsZero() {
+		session.PauseIntervals[n-1].To = stoppedAt
+	}
+	for i := len(session.OpenTransactions) - 1; i >= 0; i-- {
+		name := session.OpenTransactions[i]
+		session.Markers = append(session.Markers, recbrowser.Marker{
+			Kind:      recbrowser.MarkerTransactionEnd,
+			Name:      name,
+			Timestamp: stoppedAt,
+			Auto:      true,
+		})
+	}
+	session.OpenTransactions = nil
+	if warning != "" {
+		session.Warnings = append(session.Warnings, warning)
+	}
 }
 
 func (m *BrowserRecordingManager) handleEvent(session *BrowserRecordingSession, event recbrowser.Event) {

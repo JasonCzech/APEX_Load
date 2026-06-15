@@ -6,12 +6,14 @@ import (
 )
 
 const competitiveSupportMatrixEvidence = "docs/COMPETITIVE_COMPARISON.md#support-matrix"
+const apiComparisonEvidence = "docs/APEX_LOAD_REST_API_COMPARISON.md"
 
 type ParityStatusResponse struct {
 	GeneratedAt       time.Time                 `json:"generated_at"`
 	Overall           string                    `json:"overall"`
 	Areas             []ParityStatusArea        `json:"areas"`
 	CompetitiveParity []CompetitiveParityArea   `json:"competitive_parity,omitempty"`
+	APIParityProgram  []ParityStatusArea        `json:"api_parity_program,omitempty"`
 	BrowserBenchmarks []BrowserBenchmarkProfile `json:"browser_benchmarks,omitempty"`
 }
 
@@ -142,7 +144,75 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 		Overall:           aggregateParityStatus(areas),
 		Areas:             areas,
 		CompetitiveParity: buildCompetitiveParityStatus(),
+		APIParityProgram:  buildAPIParityProgram(),
 		BrowserBenchmarks: browserBenchmarks.Profiles,
+	}
+}
+
+// buildAPIParityProgram returns the in-flight LoadRunner Enterprise REST API-parity
+// build dimensions. These are the "▼ APEX trails" rows from
+// docs/APEX_LOAD_REST_API_COMPARISON.md, tracked here so the scorecard doc and the
+// endpoint never drift. Each flips gap → partial → supported as its family lands.
+// They are intentionally separate from Areas (shipped platform state) and do not
+// participate in release-gate aggregation.
+func buildAPIParityProgram() []ParityStatusArea {
+	return []ParityStatusArea{
+		{
+			ID:        "capacity_reservation",
+			Name:      "Capacity Reservations (Timeslots)",
+			Status:    "partial",
+			Summary:   "Forward-booking timeslot reservations now have first-class CRUD, conflict/availability checks, an approval state, and atomic binding to a test run; the scheduler's admission control is not yet reservation-aware.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/capacity/timeslots", "/api/v1/capacity/timeslots/availability", "pkg/api/handlers_timeslots.go", "pkg/storage/sqlite_timeslots.go", "pkg/api/capacity.go"},
+			Remaining: []string{"Make capacity.go admission control reservation-aware (block other tenants during an approved, bound window); wire timeslot_id binding into test creation."},
+		},
+		{
+			ID:        "fleet_management",
+			Name:      "Fleet Pool & Provisioning Management",
+			Status:    "partial",
+			Summary:   "Managed generator pools, persistent generator metadata (labels/region/cordon/pool membership), and provisioning requests now have CRUD/PATCH APIs; provisioning resolves to not_configured until a live cloud/Kubernetes provider backend is wired.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/fleet/pools", "/api/v1/fleet/generators", "/api/v1/fleet/provision-requests", "pkg/api/handlers_fleet_management.go", "pkg/storage/sqlite_fleet.go"},
+			Remaining: []string{"Wire a real cloud/Kubernetes provisioner backend; enrich GeneratorInventoryEntry with persisted pool/metadata; make generator assignment pool-aware."},
+		},
+		{
+			ID:        "execution_planning",
+			Name:      "Enterprise Execution Planning",
+			Status:    "partial",
+			Summary:   "Execution plans (ordered parallel|sequential scenario entries with per-entry overrides and failure policy) have CRUD plus a materialize endpoint that creates one test run per enabled entry with per-entry partial-failure reporting.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/execution-plans", "pkg/api/handlers_execution_plans.go", "pkg/storage/sqlite_execution_plans.go"},
+			Remaining: []string{"Add dependency-gated sequential execution (await run N before starting N+1); per-entry data-pool override semantics; enforce optional timeslot binding."},
+		},
+		{
+			ID:        "monitoring_collectors",
+			Name:      "Monitoring Collectors",
+			Status:    "partial",
+			Summary:   "Restricted-network monitoring collectors now register via API with SHA-256 scoped tokens (one-time issue + rotation), allowed metric packs, and health/state; the agent runtime and collector-token-authenticated heartbeat are a follow-on.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/monitoring/collectors", "pkg/api/handlers_monitoring_collectors.go", "pkg/storage/sqlite_monitoring_collectors.go"},
+			Remaining: []string{"Build the agent runtime + collector-token-authenticated heartbeat/health ingestion and route scoped metric packs to live monitoring."},
+		},
+		{
+			ID:        "entitlements",
+			Name:      "Enterprise Entitlements (Read-Only)",
+			Status:    "partial",
+			Summary:   "Read-only entitlements now project edition, enabled protocol bundles, and operational limits plus current consumption (active tests, service accounts, projects) in one view — surfaced, not enforced.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/system/entitlements", "/api/v1/system/entitlements/usage", "pkg/api/handlers_entitlements.go"},
+			Remaining: []string{"Add per-project entitlement scoping and richer per-bundle / per-limit consumption breakdowns."},
+		},
+		{
+			ID:        "correlation_persistence",
+			Name:      "Persistent Correlation Rulesets",
+			Status:    "gap",
+			Summary:   "The detect/diagnose/diff correlation engine exists but is stateless; there are no persisted rulesets or per-script discover/apply records.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/correlations/rules", "/api/v1/correlations/diagnose", "pkg/convert/correlate"},
+			Remaining: []string{"Persist correlation rulesets and per-script discover/apply results over the existing engine."},
+		},
+		{
+			ID:        "object_repository",
+			Name:      "Browser Object Repository",
+			Status:    "gap",
+			Summary:   "Selectors are inline in DSL actions and TruClient object repositories are parsed at import then discarded; there is no persisted per-script object repository.",
+			Evidence:  []string{apiComparisonEvidence, "pkg/selector", "pkg/convert/trueclient/archive_inspection.go"},
+			Remaining: []string{"Persist a per-script object repository (named element catalog) with repair, seeded from import-time descriptors."},
+		},
 	}
 }
 

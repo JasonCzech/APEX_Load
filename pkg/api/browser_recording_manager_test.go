@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -15,22 +16,27 @@ import (
 // fakeBrowserRecorderBackend stands in for the Playwright-driven recorder so
 // manager and handler tests never launch Chromium.
 type fakeBrowserRecorderBackend struct {
-	mu          sync.Mutex
-	opts        recbrowser.Options
-	startErr    error
-	stopErr     error
-	navigateErr error
-	focusErr    error
-	started     bool
-	paused      bool
-	assertMode  bool
-	section     string
-	stopCalls   int
-	focusCalls  int
-	navigatedTo []string
-	doneOnce    sync.Once
-	done        chan struct{}
-	session     *recbrowser.Session
+	mu           sync.Mutex
+	opts         recbrowser.Options
+	startErr     error
+	stopErr      error
+	navigateErr  error
+	focusErr     error
+	panelErr     error
+	started      bool
+	paused       bool
+	assertMode   bool
+	section      string
+	stopCalls    int
+	focusCalls   int
+	navigatedTo  []string
+	panelURLs    []string
+	panelStorage map[string]string
+	stopStarted  chan struct{}
+	stopRelease  chan struct{}
+	doneOnce     sync.Once
+	done         chan struct{}
+	session      *recbrowser.Session
 }
 
 func newFakeBrowserRecorder(session *recbrowser.Session) *fakeBrowserRecorderBackend {
@@ -69,7 +75,19 @@ func (f *fakeBrowserRecorderBackend) Stop() (*recbrowser.Session, error) {
 	f.stopCalls++
 	err := f.stopErr
 	session := f.session
+	started := f.stopStarted
+	release := f.stopRelease
 	f.mu.Unlock()
+	if started != nil {
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
+	}
+	if release != nil {
+		<-release
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -130,6 +148,20 @@ func (f *fakeBrowserRecorderBackend) Focus() error {
 	defer f.mu.Unlock()
 	f.focusCalls++
 	return f.focusErr
+}
+
+func (f *fakeBrowserRecorderBackend) OpenControlPanel(url string, localStorage map[string]string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.panelErr != nil {
+		return f.panelErr
+	}
+	f.panelURLs = append(f.panelURLs, url)
+	f.panelStorage = make(map[string]string, len(localStorage))
+	for k, v := range localStorage {
+		f.panelStorage[k] = v
+	}
+	return nil
 }
 
 func (f *fakeBrowserRecorderBackend) AddMarker(kind, name, text string) (recbrowser.Marker, error) {
@@ -304,6 +336,10 @@ func TestBrowserRecordingManagerStopRequested(t *testing.T) {
 	if !ok {
 		t.Fatal("Stop() did not find session")
 	}
+	if stopped.Status != BrowserRecordingStopping || stopped.StopReason != browserRecordingStopRequested {
+		t.Errorf("initial stop response = status %q reason %q, want stopping/requested", stopped.Status, stopped.StopReason)
+	}
+	stopped = waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)
 	if stopped.Status != BrowserRecordingStopped || stopped.StopReason != browserRecordingStopRequested {
 		t.Errorf("stopped session = status %q reason %q", stopped.Status, stopped.StopReason)
 	}
@@ -349,12 +385,99 @@ func TestBrowserRecordingManagerStopIsIdempotent(t *testing.T) {
 		t.Fatal("first Stop() missing session")
 	}
 	again, ok := m.Stop(started.ID)
-	if !ok || again.Status != BrowserRecordingStopped {
+	if !ok || again.Status != BrowserRecordingStopping {
 		t.Errorf("second Stop() = %+v ok=%v", again, ok)
 	}
+	waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)
 	if fake.stopCalls != 1 {
 		t.Errorf("backend stop calls = %d, want 1", fake.stopCalls)
 	}
+}
+
+func TestBrowserRecordingManagerForceStopsStuckCleanup(t *testing.T) {
+	hub := NewHub()
+	m := NewBrowserRecordingManager(hub)
+	m.stopTimeout = time.Hour
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	fake.stopStarted = make(chan struct{})
+	fake.stopRelease = make(chan struct{})
+	fake.install(m)
+
+	started, err := m.Start(BrowserRecordingStartRequest{StartURL: "https://shop.example/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainHubBroadcasts(t, hub)
+
+	stopping, ok := m.Stop(started.ID)
+	if !ok || stopping.Status != BrowserRecordingStopping {
+		t.Fatalf("Stop() = %+v ok=%v, want stopping", stopping, ok)
+	}
+	select {
+	case <-fake.stopStarted:
+	case <-time.After(time.Second):
+		t.Fatal("backend Stop was not started")
+	}
+
+	forced, ok, err := m.ForceStop(started.ID)
+	if !ok || err != nil {
+		t.Fatalf("ForceStop() ok=%v err=%v", ok, err)
+	}
+	if forced.Status != BrowserRecordingStopped || forced.StopReason != browserRecordingStopForced {
+		t.Fatalf("forced session = status %q reason %q", forced.Status, forced.StopReason)
+	}
+	if forced.StepCount != 2 {
+		t.Errorf("forced StepCount = %d, want captured steps preserved", forced.StepCount)
+	}
+	if len(forced.OpenTransactions) != 0 {
+		t.Errorf("forced open transactions = %v, want closed", forced.OpenTransactions)
+	}
+	if !strings.Contains(strings.Join(forced.Warnings, "\n"), "force-finished") {
+		t.Errorf("forced warnings = %v, want force-finished warning", forced.Warnings)
+	}
+	if active := m.Active(); active != nil {
+		t.Errorf("Active() after force stop = %+v, want nil", active)
+	}
+	if _, err := m.Start(BrowserRecordingStartRequest{StartURL: "https://shop.example/next"}); err != nil {
+		t.Errorf("Start() after force stop error: %v", err)
+	}
+
+	close(fake.stopRelease)
+	waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)
+	after, _ := m.Get(started.ID)
+	if after.StopReason != browserRecordingStopForced {
+		t.Errorf("late graceful cleanup changed stop reason to %q", after.StopReason)
+	}
+	if types := broadcastTypes(drainHubBroadcasts(t, hub)); !containsString(types, "browser_recording_force_stopped") {
+		t.Errorf("broadcasts = %v, want force stop broadcast", types)
+	}
+}
+
+func TestBrowserRecordingManagerStopWatchdogForceStops(t *testing.T) {
+	m := NewBrowserRecordingManager(NewHub())
+	m.stopTimeout = 10 * time.Millisecond
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	fake.stopStarted = make(chan struct{})
+	fake.stopRelease = make(chan struct{})
+	fake.install(m)
+
+	started, err := m.Start(BrowserRecordingStartRequest{StartURL: "https://shop.example/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Stop(started.ID); !ok {
+		t.Fatal("Stop() missing session")
+	}
+	select {
+	case <-fake.stopStarted:
+	case <-time.After(time.Second):
+		t.Fatal("backend Stop was not started")
+	}
+	forced := waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)
+	if forced.StopReason != browserRecordingStopForced {
+		t.Fatalf("watchdog stop reason = %q, want forced", forced.StopReason)
+	}
+	close(fake.stopRelease)
 }
 
 func TestBrowserRecordingManagerBrowserClosedByUser(t *testing.T) {
@@ -526,9 +649,10 @@ func TestBrowserRecordingManagerStopFromPaused(t *testing.T) {
 		t.Fatal(err)
 	}
 	stopped, ok := m.Stop(started.ID)
-	if !ok || stopped.Status != BrowserRecordingStopped {
+	if !ok || stopped.Status != BrowserRecordingStopping {
 		t.Errorf("Stop from paused = %q ok=%v", stopped.Status, ok)
 	}
+	waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)
 	if fake.stopCalls != 1 {
 		t.Errorf("stop calls = %d", fake.stopCalls)
 	}
@@ -556,11 +680,24 @@ func TestBrowserRecordingManagerNavigateAndFocus(t *testing.T) {
 	if fake.focusCalls != 1 {
 		t.Errorf("focus calls = %d", fake.focusCalls)
 	}
+	panelStorage := map[string]string{"apexload.browserRecorderBridge.http://127.0.0.1:8080": `{"origin":"http://127.0.0.1:27777"}`}
+	if _, ok, err := m.OpenControlPanel(started.ID, "http://127.0.0.1:8080/#/recorder-panel?session="+started.ID, panelStorage); !ok || err != nil {
+		t.Fatalf("OpenControlPanel() ok=%v err=%v", ok, err)
+	}
+	if len(fake.panelURLs) != 1 || !strings.Contains(fake.panelURLs[0], "#/recorder-panel") {
+		t.Errorf("panelURLs = %v", fake.panelURLs)
+	}
+	if got := fake.panelStorage["apexload.browserRecorderBridge.http://127.0.0.1:8080"]; !strings.Contains(got, "27777") {
+		t.Errorf("panelStorage = %v", fake.panelStorage)
+	}
 
 	// Controls refuse once the session ends.
 	m.Stop(started.ID)
 	if _, _, err := m.Navigate(started.ID, "https://shop.example/"); err == nil {
 		t.Error("Navigate after stop must error")
+	}
+	if _, _, err := m.OpenControlPanel(started.ID, "http://127.0.0.1:8080/#/recorder-panel?session="+started.ID, nil); err == nil {
+		t.Error("OpenControlPanel after stop must error")
 	}
 	if _, _, err := m.Pause(started.ID); err == nil {
 		t.Error("Pause after stop must error")

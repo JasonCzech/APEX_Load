@@ -64,7 +64,9 @@ function statusLabel(session: BrowserRecorderSession): string {
     case 'stopping':
       return 'Stopping…'
     case 'stopped':
-      return session.stop_reason === 'browser_closed' ? 'Stopped (browser closed)' : 'Stopped'
+      if (session.stop_reason === 'browser_closed') return 'Stopped (browser closed)'
+      if (session.stop_reason === 'forced') return 'Force finished'
+      return 'Stopped'
     case 'failed':
       return 'Failed'
     default:
@@ -196,7 +198,24 @@ export default function BrowserRecorderControlPanel({
     try {
       const res = await api.stopBrowserRecording(sessionId)
       setSession(res.session)
-      showFeedback(`Recording stopped — ${res.session.step_count} steps captured`)
+      if (res.session.status === 'stopping') {
+        showFeedback('Stop requested — finalizing browser and HAR capture')
+      } else {
+        showFeedback(`Recording stopped — ${res.session.step_count} steps captured`)
+      }
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleForceStop = async () => {
+    setBusy(true)
+    try {
+      const res = await api.forceStopBrowserRecording(sessionId)
+      setSession(res.session)
+      showFeedback(`Recording force-finished — ${res.session.step_count} captured steps preserved`)
     } catch (e: any) {
       showFeedback(e.message, 'error')
     } finally {
@@ -564,10 +583,20 @@ export default function BrowserRecorderControlPanel({
       </div>
 
       <div className="brp-actions">
-        {live && (
+        {controllable && (
           <button className="btn btn-danger" onClick={handleStop} disabled={busy}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
             Stop Recording
+          </button>
+        )}
+        {session.status === 'stopping' && (
+          <button
+            className="btn btn-danger"
+            onClick={handleForceStop}
+            disabled={busy}
+            title="Force-finish a stuck stop. Captured browser steps are preserved, but HAR and storage-state cleanup may be incomplete."
+          >
+            Force Finish
           </button>
         )}
         {controllable && (
@@ -649,12 +678,20 @@ export default function BrowserRecorderControlPanel({
             <button className="btn btn-secondary btn-sm" onClick={handleStartTransaction}>Start Transaction</button>
           </div>
           {openTransactions.length > 0 && (
-            <div className="brp-txn-chips">
+            <div className="brp-open-transactions" aria-label="Open transactions">
+              <div className="brp-open-transactions-title">Open transactions</div>
               {openTransactions.map(name => (
-                <span key={name} className="brp-txn-chip" data-testid="open-transaction">
-                  {name}
-                  <button type="button" className="brp-txn-end" onClick={() => handleEndTransaction(name)}>End</button>
-                </span>
+                <div key={name} className="brp-txn-row" data-testid="open-transaction">
+                  <span className="brp-txn-name">{name}</span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm brp-txn-end"
+                    onClick={() => handleEndTransaction(name)}
+                    aria-label={`End transaction ${name}`}
+                  >
+                    End Transaction
+                  </button>
+                </div>
               ))}
             </div>
           )}

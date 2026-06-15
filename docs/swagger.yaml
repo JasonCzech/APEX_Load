@@ -801,6 +801,26 @@ paths:
             type: string
       tags:
         - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/control-panel:
+    post:
+      summary: Open Browser Recording Control Panel
+      description: |-
+        **Handler:** `handleOpenBrowserRecordingControlPanel`
+
+        **Access Control:** Requires Authentication
+      operationId: handleOpenBrowserRecordingControlPanel
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Browser Recorder
   /api/v1/browser-recorder/sessions/{id}/convert:
     post:
       summary: Convert Browser Recording
@@ -869,6 +889,26 @@ paths:
 
         **Access Control:** Requires Authentication
       operationId: handleFocusBrowserRecording
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Browser Recorder
+  /api/v1/browser-recorder/sessions/{id}/force-stop:
+    post:
+      summary: Force Stop Browser Recording
+      description: |-
+        **Handler:** `handleForceStopBrowserRecording`
+
+        **Access Control:** Requires Authentication
+      operationId: handleForceStopBrowserRecording
       responses:
         "200":
           description: Successful operation
@@ -1246,6 +1286,165 @@ paths:
             type: string
       tags:
         - Browser Replay
+  /api/v1/capacity/timeslots:
+    get:
+      summary: List Capacity Reservations
+      description: |-
+        **Handler:** `handleListCapacityReservations`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleListCapacityReservations
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Capacity
+    post:
+      summary: Create Capacity Reservation
+      description: |-
+        **Handler:** `handleCreateCapacityReservation`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCreateCapacityReservation
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Capacity
+  /api/v1/capacity/timeslots/{id}:
+    delete:
+      summary: Delete Capacity Reservation
+      description: |-
+        **Handler:** `handleDeleteCapacityReservation`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleDeleteCapacityReservation
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Capacity
+    get:
+      summary: Get Capacity Reservation
+      description: |-
+        **Handler:** `handleGetCapacityReservation`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleGetCapacityReservation
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Capacity
+    put:
+      summary: Update Capacity Reservation
+      description: |-
+        **Handler:** `handleUpdateCapacityReservation`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleUpdateCapacityReservation
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Capacity
+  /api/v1/capacity/timeslots/{id}/approve:
+    post:
+      summary: Approve Capacity Reservation
+      description: |-
+        **Handler:** `handleApproveCapacityReservation`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleApproveCapacityReservation
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Capacity
+  /api/v1/capacity/timeslots/{id}/bind:
+    post:
+      summary: Bind Capacity Timeslot
+      description: |-
+        **Handler:** `handleBindCapacityTimeslot`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleBindCapacityTimeslot
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Capacity
+  /api/v1/capacity/timeslots/{id}/reject:
+    post:
+      summary: Reject Capacity Reservation
+      description: |-
+        **Handler:** `handleRejectCapacityReservation`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleRejectCapacityReservation
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Capacity
+  /api/v1/capacity/timeslots/availability:
+    post:
+      summary: Check Capacity Availability
+      description: |-
+        **Handler:** `handleCheckCapacityAvailability`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCheckCapacityAvailability
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Capacity
   /api/v1/correlations/diagnose:
     post:
       summary: Diagnose Correlations
@@ -1708,6 +1907,111 @@ paths:
       x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
       tags:
         - Dsl
+  /api/v1/execution-plans:
+    get:
+      summary: List Execution Plans
+      description: |-
+        **Handler:** `handleListExecutionPlans`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleListExecutionPlans
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Execution Plans
+    post:
+      summary: Create Execution Plan
+      description: |-
+        **Handler:** `handleCreateExecutionPlan`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCreateExecutionPlan
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Execution Plans
+  /api/v1/execution-plans/{id}:
+    delete:
+      summary: Delete Execution Plan
+      description: |-
+        **Handler:** `handleDeleteExecutionPlan`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleDeleteExecutionPlan
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
+    get:
+      summary: Get Execution Plan
+      description: |-
+        **Handler:** `handleGetExecutionPlan`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleGetExecutionPlan
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
+    put:
+      summary: Update Execution Plan
+      description: |-
+        **Handler:** `handleUpdateExecutionPlan`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleUpdateExecutionPlan
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
+  /api/v1/execution-plans/{id}/runs:
+    post:
+      summary: Materialize And Run Execution Plan
+      description: |-
+        **Handler:** `handleMaterializeAndRunExecutionPlan`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleMaterializeAndRunExecutionPlan
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
   /api/v1/fleet/alerts:
     get:
       summary: Get Fleet Alerts
@@ -1736,6 +2040,40 @@ paths:
       x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
       tags:
         - Fleet
+  /api/v1/fleet/generators:
+    get:
+      summary: List Generator Metadata
+      description: |-
+        **Handler:** `handleListGeneratorMetadata`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleListGeneratorMetadata
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      tags:
+        - Fleet
+  /api/v1/fleet/generators/{id}:
+    patch:
+      summary: Patch Generator Metadata
+      description: |-
+        **Handler:** `handlePatchGeneratorMetadata`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handlePatchGeneratorMetadata
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Fleet
   /api/v1/fleet/load-zones:
     get:
       summary: Get Fleet Load Zones
@@ -1748,6 +2086,125 @@ paths:
         "200":
           description: Successful operation
       x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+        - Fleet
+  /api/v1/fleet/pools:
+    get:
+      summary: List Fleet Pools
+      description: |-
+        **Handler:** `handleListFleetPools`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleListFleetPools
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      tags:
+        - Fleet
+    post:
+      summary: Create Fleet Pool
+      description: |-
+        **Handler:** `handleCreateFleetPool`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleCreateFleetPool
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      tags:
+        - Fleet
+  /api/v1/fleet/pools/{id}:
+    delete:
+      summary: Delete Fleet Pool
+      description: |-
+        **Handler:** `handleDeleteFleetPool`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleDeleteFleetPool
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Fleet
+    get:
+      summary: Get Fleet Pool
+      description: |-
+        **Handler:** `handleGetFleetPool`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleGetFleetPool
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Fleet
+    put:
+      summary: Update Fleet Pool
+      description: |-
+        **Handler:** `handleUpdateFleetPool`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleUpdateFleetPool
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Fleet
+  /api/v1/fleet/provision-requests:
+    post:
+      summary: Create Provisioning Request
+      description: |-
+        **Handler:** `handleCreateProvisioningRequest`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleCreateProvisioningRequest
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      tags:
+        - Fleet
+  /api/v1/fleet/provision-requests/{id}:
+    get:
+      summary: Get Provisioning Request
+      description: |-
+        **Handler:** `handleGetProvisioningRequest`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleGetProvisioningRequest
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       tags:
         - Fleet
   /api/v1/fleet/provisioner:
@@ -2316,6 +2773,111 @@ paths:
             type: string
       tags:
         - Library
+  /api/v1/monitoring/collectors:
+    get:
+      summary: List Monitoring Collectors
+      description: |-
+        **Handler:** `handleListMonitoringCollectors`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleListMonitoringCollectors
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Monitoring
+    post:
+      summary: Create Monitoring Collector
+      description: |-
+        **Handler:** `handleCreateMonitoringCollector`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCreateMonitoringCollector
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Monitoring
+  /api/v1/monitoring/collectors/{id}:
+    delete:
+      summary: Delete Monitoring Collector
+      description: |-
+        **Handler:** `handleDeleteMonitoringCollector`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleDeleteMonitoringCollector
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
+    get:
+      summary: Get Monitoring Collector
+      description: |-
+        **Handler:** `handleGetMonitoringCollector`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleGetMonitoringCollector
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
+    patch:
+      summary: Patch Monitoring Collector
+      description: |-
+        **Handler:** `handlePatchMonitoringCollector`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handlePatchMonitoringCollector
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
+  /api/v1/monitoring/collectors/{id}/rotate-token:
+    post:
+      summary: Rotate Monitoring Collector Token
+      description: |-
+        **Handler:** `handleRotateMonitoringCollectorToken`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleRotateMonitoringCollectorToken
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
   /api/v1/monitoring/packs:
     get:
       summary: List Infrastructure Monitor Packs
@@ -4869,6 +5431,34 @@ paths:
 
         **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin
       operationId: handleGetBrowserBenchmarkEvidence
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+        - System
+  /api/v1/system/entitlements:
+    get:
+      summary: Get Entitlements
+      description: |-
+        **Handler:** `handleGetEntitlements`
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin
+      operationId: handleGetEntitlements
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+        - System
+  /api/v1/system/entitlements/usage:
+    get:
+      summary: Get Entitlements Usage
+      description: |-
+        **Handler:** `handleGetEntitlementsUsage`
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin
+      operationId: handleGetEntitlementsUsage
       responses:
         "200":
           description: Successful operation

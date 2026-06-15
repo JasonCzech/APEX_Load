@@ -605,6 +605,99 @@ func resolveDataPoolProjectID(r *http.Request, store storage.Store) (string, int
 	return normalizeProjectID(pool.ProjectID), 0, ""
 }
 
+// resolveTimeslotCreateProjectID extracts the owning project from the request
+// body for capacity-reservation create/availability calls.
+func resolveTimeslotCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID string `json:"project_id,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if strings.TrimSpace(req.ProjectID) == "" {
+		return "", http.StatusBadRequest, "project_id is required for project-scoped capacity reservations"
+	}
+	return normalizeProjectID(req.ProjectID), 0, ""
+}
+
+// resolveTimeslotProjectID looks up an existing capacity reservation to find the
+// project that owns it, for {id}-scoped access checks.
+func resolveTimeslotProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "storage is not configured"
+	}
+	reservation, err := store.GetCapacityReservation(r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", http.StatusNotFound, "timeslot not found"
+		}
+		return "", http.StatusInternalServerError, "failed to load timeslot"
+	}
+	return normalizeProjectID(reservation.ProjectID), 0, ""
+}
+
+// resolveExecutionPlanCreateProjectID reads the owning project from the request
+// body for execution-plan creation.
+func resolveExecutionPlanCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID string `json:"project_id,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if strings.TrimSpace(req.ProjectID) == "" {
+		return "", http.StatusBadRequest, "project_id is required for project-scoped execution plans"
+	}
+	return normalizeProjectID(req.ProjectID), 0, ""
+}
+
+// resolveExecutionPlanProjectID looks up an existing execution plan to find the
+// project that owns it, for {id}-scoped access checks.
+func resolveExecutionPlanProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "storage is not configured"
+	}
+	plan, err := store.GetExecutionPlan(r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", http.StatusNotFound, "execution plan not found"
+		}
+		return "", http.StatusInternalServerError, "failed to load execution plan"
+	}
+	return normalizeProjectID(plan.ProjectID), 0, ""
+}
+
+// resolveMonitoringCollectorCreateProjectID reads the owning project from the
+// request body for monitoring-collector creation.
+func resolveMonitoringCollectorCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID string `json:"project_id,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if strings.TrimSpace(req.ProjectID) == "" {
+		return "", http.StatusBadRequest, "project_id is required for project-scoped monitoring collectors"
+	}
+	return normalizeProjectID(req.ProjectID), 0, ""
+}
+
+// resolveMonitoringCollectorProjectID looks up an existing collector to find its
+// owning project, for {id}-scoped access checks.
+func resolveMonitoringCollectorProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "storage is not configured"
+	}
+	collector, err := store.GetMonitoringCollector(r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", http.StatusNotFound, "monitoring collector not found"
+		}
+		return "", http.StatusInternalServerError, "failed to load monitoring collector"
+	}
+	return normalizeProjectID(collector.ProjectID), 0, ""
+}
+
 func resolveRecorderListProjectID(r *http.Request) (string, int, string) {
 	projectID := normalizeProjectID(r.URL.Query().Get("project_id"))
 	if projectID == "" {

@@ -510,6 +510,100 @@ func (s *SQLiteStore) init() error {
 			updated_at DATETIME NOT NULL,
 			last_accessed_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS capacity_reservations (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			scenario_id TEXT,
+			start_at DATETIME NOT NULL,
+			end_at DATETIME NOT NULL,
+			timezone TEXT,
+			requested_capacity_json TEXT,
+			approval_state TEXT NOT NULL DEFAULT 'pending',
+			approval_id TEXT,
+			bound_test_id TEXT,
+			bound_test_status TEXT,
+			conflict_summary TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS fleet_pools (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT,
+			cloud_provider TEXT NOT NULL,
+			region TEXT,
+			min_size INTEGER DEFAULT 0,
+			max_size INTEGER DEFAULT 0,
+			desired_size INTEGER DEFAULT 0,
+			status TEXT NOT NULL DEFAULT 'active',
+			tags_json TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS fleet_pool_members (
+			id TEXT PRIMARY KEY,
+			pool_id TEXT NOT NULL,
+			generator_id TEXT NOT NULL,
+			target TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'provisioned',
+			joined_at DATETIME NOT NULL,
+			UNIQUE(pool_id, generator_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS generator_metadata (
+			generator_id TEXT PRIMARY KEY,
+			target TEXT,
+			fleet_pool_id TEXT,
+			region TEXT,
+			provider_id TEXT,
+			provider_status TEXT,
+			cordoned INTEGER DEFAULT 0,
+			tags_json TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS provisioning_requests (
+			id TEXT PRIMARY KEY,
+			fleet_pool_id TEXT NOT NULL,
+			project_id TEXT,
+			status TEXT NOT NULL DEFAULT 'pending',
+			desired_count INTEGER NOT NULL DEFAULT 0,
+			reason TEXT,
+			requested_by_subject TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			completed_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS provisioning_events (
+			id TEXT PRIMARY KEY,
+			request_id TEXT NOT NULL,
+			event_type TEXT NOT NULL,
+			message TEXT,
+			timestamp DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS execution_plans (
+			id TEXT PRIMARY KEY,
+			project_id TEXT,
+			name TEXT NOT NULL,
+			description TEXT,
+			entries_json TEXT,
+			run_mode TEXT NOT NULL DEFAULT 'parallel',
+			timeslot_id TEXT,
+			status TEXT DEFAULT 'draft',
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS monitoring_collectors (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			token_hash TEXT NOT NULL,
+			health TEXT NOT NULL DEFAULT 'unreachable',
+			last_seen_at DATETIME,
+			allowed_metric_packs_json TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
 	}
 
 	for _, q := range queries {
@@ -610,6 +704,13 @@ func (s *SQLiteStore) init() error {
 		{`CREATE UNIQUE INDEX IF NOT EXISTS idx_scenarios_ref_key ON scenarios(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_scenarios_ref_key"},
 		{`CREATE UNIQUE INDEX IF NOT EXISTS idx_tests_ref_key ON tests(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_tests_ref_key"},
 		{`CREATE UNIQUE INDEX IF NOT EXISTS idx_run_archives_ref_key ON run_archives(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_run_archives_ref_key"},
+		{`CREATE INDEX IF NOT EXISTS idx_capacity_reservations_project_time ON capacity_reservations(project_id, start_at, end_at)`, "idx_capacity_reservations_project_time"},
+		{`CREATE INDEX IF NOT EXISTS idx_fleet_pool_members_pool ON fleet_pool_members(pool_id)`, "idx_fleet_pool_members_pool"},
+		{`CREATE INDEX IF NOT EXISTS idx_generator_metadata_pool ON generator_metadata(fleet_pool_id)`, "idx_generator_metadata_pool"},
+		{`CREATE INDEX IF NOT EXISTS idx_provisioning_requests_pool ON provisioning_requests(fleet_pool_id)`, "idx_provisioning_requests_pool"},
+		{`CREATE INDEX IF NOT EXISTS idx_provisioning_events_request ON provisioning_events(request_id)`, "idx_provisioning_events_request"},
+		{`CREATE INDEX IF NOT EXISTS idx_execution_plans_project ON execution_plans(project_id)`, "idx_execution_plans_project"},
+		{`CREATE INDEX IF NOT EXISTS idx_monitoring_collectors_project ON monitoring_collectors(project_id)`, "idx_monitoring_collectors_project"},
 	} {
 		if _, err := s.db.Exec(idx.query); err != nil {
 			return fmt.Errorf("failed to create %s: %w", idx.name, err)

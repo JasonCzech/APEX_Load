@@ -76,7 +76,7 @@ export type BrowserRecorderSession = {
   capture_har: boolean
   started_at: string
   stopped_at?: string
-  stop_reason?: 'requested' | 'browser_closed'
+  stop_reason?: 'requested' | 'browser_closed' | 'forced'
   error?: string
   current_url?: string
   step_count: number
@@ -170,6 +170,11 @@ export function useBrowserRecorderApi() {
     [recorderRequest],
   )
 
+  const forceStopBrowserRecording = useCallback(
+    (id: string) => recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/force-stop`, { method: 'POST' }),
+    [recorderRequest],
+  )
+
   const pauseBrowserRecording = useCallback(
     (id: string) => recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/pause`, { method: 'POST' }),
     [recorderRequest],
@@ -192,6 +197,18 @@ export function useBrowserRecorderApi() {
   const focusBrowserRecording = useCallback(
     (id: string) => recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/focus`, { method: 'POST' }),
     [recorderRequest],
+  )
+
+  const openBrowserRecordingControlPanel = useCallback(
+    (id: string, url: string) =>
+      recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/control-panel`, {
+        method: 'POST',
+        body: JSON.stringify({
+          url,
+          bridge_connection: browserRecorderBridge || undefined,
+        }),
+      }),
+    [browserRecorderBridge, recorderRequest],
   )
 
   const startBrowserRecordingTransaction = useCallback(
@@ -344,10 +361,12 @@ export function useBrowserRecorderApi() {
       startBrowserRecording,
       getBrowserRecording,
       stopBrowserRecording,
+      forceStopBrowserRecording,
       pauseBrowserRecording,
       resumeBrowserRecording,
       navigateBrowserRecording,
       focusBrowserRecording,
+      openBrowserRecordingControlPanel,
       startBrowserRecordingTransaction,
       endBrowserRecordingTransaction,
       addBrowserRecordingNote,
@@ -372,10 +391,12 @@ export function useBrowserRecorderApi() {
       startBrowserRecording,
       getBrowserRecording,
       stopBrowserRecording,
+      forceStopBrowserRecording,
       pauseBrowserRecording,
       resumeBrowserRecording,
       navigateBrowserRecording,
       focusBrowserRecording,
+      openBrowserRecordingControlPanel,
       startBrowserRecordingTransaction,
       endBrowserRecordingTransaction,
       addBrowserRecordingNote,

@@ -536,6 +536,42 @@ func TestBuildSidebarStateSnapshot(t *testing.T) {
 	}
 }
 
+func TestCaptureSidebarUsesTransactionStartStopToggle(t *testing.T) {
+	if !strings.Contains(captureScript, `class="txnToggle"`) {
+		t.Fatal("capture sidebar must render a single transaction toggle button")
+	}
+	if !strings.Contains(captureScript, "txnToggle.textContent = 'Stop'") {
+		t.Fatal("capture sidebar must switch the transaction toggle to visible Stop text")
+	}
+	if !strings.Contains(captureScript, `txnToggle.title = 'Stop transaction "' + current + '"'`) {
+		t.Fatal("capture sidebar stop toggle should name the active transaction in its title")
+	}
+	if !strings.Contains(captureScript, "send({ kind: 'transaction_end', name: current, ts: Date.now() });") {
+		t.Fatal("capture sidebar stop toggle must end the active transaction")
+	}
+}
+
+func TestControlPanelRouteIsNotInstrumented(t *testing.T) {
+	if err := ValidateControlPanelURL("http://127.0.0.1:8080/#/recorder-panel?session=abc"); err != nil {
+		t.Fatalf("valid control panel URL rejected: %v", err)
+	}
+	for _, raw := range []string{
+		"http://127.0.0.1:8080/#/scripts",
+		"file:///tmp/dashboard.html#/recorder-panel",
+		"/#/recorder-panel?session=abc",
+	} {
+		if err := ValidateControlPanelURL(raw); err == nil {
+			t.Errorf("ValidateControlPanelURL(%q) succeeded, want error", raw)
+		}
+	}
+	if !strings.Contains(captureScript, "isRecorderControlPanelPage") {
+		t.Fatal("capture script should detect recorder-panel route")
+	}
+	if !strings.Contains(captureScript, "if (isRecorderControlPanelPage()) return;") {
+		t.Fatal("capture script must bail out before installing listeners on the control panel")
+	}
+}
+
 func TestSidebarStepDetailMasksFills(t *testing.T) {
 	masked := sidebarStepDetail(Step{Kind: StepFill, Masked: true, Value: ""})
 	if masked != "••••" {

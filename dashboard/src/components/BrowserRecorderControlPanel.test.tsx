@@ -16,6 +16,7 @@ const { apiFetchMock, downloadBlobMock } = vi.hoisted(() => ({
 const apiMock = {
   getBrowserRecording: vi.fn(),
   stopBrowserRecording: vi.fn(),
+  forceStopBrowserRecording: vi.fn(),
   pauseBrowserRecording: vi.fn(),
   resumeBrowserRecording: vi.fn(),
   navigateBrowserRecording: vi.fn(),
@@ -81,6 +82,17 @@ const stoppedSession = {
   warnings: ['step 1 filled a password input; the value was masked at capture — provide it at runtime via {{env.PASSWORD}}'],
 }
 
+const forceStoppedSession = {
+  ...stoppedSession,
+  stop_reason: 'forced',
+  warnings: ['graceful stop did not finish; force-finished recording and preserved captured browser steps'],
+}
+
+const stoppingSession = {
+  ...recordingSession,
+  status: 'stopping',
+}
+
 const salesforceStoppedSession = {
   ...stoppedSession,
   start_url: 'https://acme.my.salesforce.com/lightning/setup',
@@ -102,6 +114,7 @@ describe('BrowserRecorderControlPanel', () => {
     })
     apiMock.getBrowserRecording.mockResolvedValue({ session: recordingSession })
     apiMock.stopBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    apiMock.forceStopBrowserRecording.mockResolvedValue({ session: forceStoppedSession })
     apiMock.previewBrowserRecordingConversion.mockResolvedValue({
       script: { name: 'Checkout Flow', protocol: 'browser', actions: [{ name: 'Navigate' }, { name: 'Fill' }] },
       warnings: ['masked password'],
@@ -202,6 +215,28 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).not.toContain('Save to Script Library')
   })
 
+  it('renders long console and network annotations inside warning rows', async () => {
+    const longIssue = 'https://api.shop.example/v1/cart/checkout/really-long-path-without-natural-breaks?trace=abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789 failed with ERR_CONNECTION_RESET'
+    apiMock.getBrowserRecording.mockResolvedValue({
+      session: {
+        ...recordingSession,
+        annotation_count: 1,
+        annotations: [
+          { kind: 'request_failed', text: longIssue, timestamp: '2026-05-12T20:00:03Z' },
+        ],
+      },
+    })
+
+    await renderPanel({ standalone: true })
+
+    const annotations = container.querySelector('[data-testid="recording-annotations"]')
+    expect(annotations).not.toBeNull()
+    const warning = annotations!.querySelector('.brp-warning')
+    expect(warning).not.toBeNull()
+    expect(warning!.textContent).toContain('[request]')
+    expect(warning!.textContent).toContain(longIssue)
+  })
+
   it('stops the recording and reveals conversion controls', async () => {
     await renderPanel()
     await clickButton('Stop Recording')
@@ -213,6 +248,32 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).toContain('Save to Script Library')
     // The capture-time masking warning surfaces to the user.
     expect(container.textContent).toContain('{{env.PASSWORD}}')
+  })
+
+  it('shows force finish when graceful stop is still finalizing', async () => {
+    apiMock.stopBrowserRecording.mockResolvedValueOnce({ session: stoppingSession })
+    await renderPanel()
+    await clickButton('Stop Recording')
+    await flushPromises()
+
+    expect(apiMock.stopBrowserRecording).toHaveBeenCalledWith('brec-1')
+    expect(container.textContent).toContain('Stopping')
+    expect(container.textContent).toContain('Stop requested')
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.includes('Stop Recording'))).toBe(false)
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.includes('Force Finish'))).toBe(true)
+  })
+
+  it('force finishes a stuck browser recording while preserving captured steps', async () => {
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppingSession })
+    await renderPanel()
+    await clickButton('Force Finish')
+    await flushPromises()
+
+    expect(apiMock.forceStopBrowserRecording).toHaveBeenCalledWith('brec-1')
+    expect(container.textContent).toContain('Force finished')
+    expect(container.textContent).toContain('captured steps preserved')
+    expect(container.textContent).toContain('graceful stop did not finish')
+    expect(container.textContent).toContain('Save to Script Library')
   })
 
   it('previews the conversion with parameterization summary', async () => {
@@ -385,8 +446,9 @@ describe('BrowserRecorderControlPanel', () => {
     const chip = container.querySelector('[data-testid="open-transaction"]')
     expect(chip).not.toBeNull()
     expect(chip!.textContent).toContain('Checkout')
+    expect(chip!.textContent).toContain('End Transaction')
 
-    await clickButton('End')
+    await clickButton('End Transaction')
     await flushPromises()
     expect(apiMock.endBrowserRecordingTransaction).toHaveBeenCalledWith('brec-1', 'Checkout')
     expect(container.querySelector('[data-testid="open-transaction"]')).toBeNull()
