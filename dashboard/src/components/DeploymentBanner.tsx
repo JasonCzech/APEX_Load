@@ -15,7 +15,6 @@ function isDesktopSurface(): boolean {
 function deploymentLabel(deployment?: DeploymentIdentity, environment?: string): string {
   const kind = deployment?.kind || ''
   if (kind === 'kubernetes') return 'Hosted K8s'
-  if (kind === 'local-server') return 'Local server'
   if (kind === 'desktop') return 'Local engine'
   if (deployment?.label) return deployment.label
   return environment || 'Server'

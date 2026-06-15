@@ -2400,7 +2400,7 @@ export interface VersionResponse {
 }
 
 export interface DeploymentIdentity {
-  kind: 'desktop' | 'kubernetes' | 'docker' | 'local-server' | 'server' | string
+  kind: 'desktop' | 'kubernetes' | 'docker' | 'server' | string
   label: string
   bind_scope: 'loopback' | 'wide' | string
   auth_enforced: boolean

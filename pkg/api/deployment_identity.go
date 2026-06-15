@@ -38,7 +38,7 @@ func (s *Server) deploymentIdentity(info buildinfo.Info) DeploymentIdentity {
 	if bindScope == "" {
 		bindScope = config.BindScopeWide
 	}
-	kind, label := s.deploymentKindAndLabel(info.Environment, bindScope)
+	kind, label := s.deploymentKindAndLabel(info.Environment)
 	auth := normalizeAuthSettings(settings.Auth)
 	return DeploymentIdentity{
 		Kind:                   kind,
@@ -50,24 +50,22 @@ func (s *Server) deploymentIdentity(info buildinfo.Info) DeploymentIdentity {
 	}
 }
 
-func (s *Server) deploymentKindAndLabel(environment string, bindScope string) (string, string) {
+func (s *Server) deploymentKindAndLabel(environment string) (string, string) {
+	// The Wails desktop client is the only "local" surface; it is detected by
+	// desktopMode and labeled "Local engine" in the UI.
 	if s.desktopMode {
 		return "desktop", "Desktop"
 	}
+	// Every other surface is a browser connected to a (remote) server. The only
+	// supported browser configuration is browser -> remote Docker/Azure server,
+	// so a non-desktop controller is always a "server" regardless of bind scope —
+	// a browser is never a "local server".
 	env := strings.ToLower(strings.TrimSpace(environment))
 	switch env {
 	case "kubernetes", "k8s", "aks", "eks", "gke":
 		return "kubernetes", "Kubernetes"
 	case "docker", "container":
 		return "docker", "Docker"
-	case "local", "dev", "development":
-		if bindScope == config.BindScopeLoopback {
-			return "local-server", "Local server"
-		}
-		return "server", "Server"
-	}
-	if bindScope == config.BindScopeLoopback {
-		return "local-server", "Local server"
 	}
 	return "server", "Server"
 }
