@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { type DetectedSourceProtocol, type ImportRepairSuggestion, type EnterpriseArchiveImportResult, type EnterpriseArchiveImportSummary, type EnterpriseArchiveMigrationReadiness, type EnterpriseArchiveProtocolSupportEntry, type EnterpriseArchiveReviewArtifact, type EnterpriseArchiveSupportMatrixEntry, type EnterpriseArchiveSupportMatrixExample, type EnterpriseArchiveSupportMatrixResponse, type SalesforceReview, type TrueClient2CompatReport } from '../types/scriptImports'
-import { type BrowserReplayEvent, type BrowserReplaySession } from '../types'
+import { type BrowserReplayEvent, type BrowserReplaySession, type StoredScript } from '../types'
 import { type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from './scriptEditorUtils'
@@ -117,6 +117,14 @@ function getTrueClient2CompatReport(result: EnterpriseArchiveImportResult | null
     return preservedReport as TrueClient2CompatReport
   }
   return null
+}
+
+function getEnterpriseArchiveResultScripts(result: EnterpriseArchiveImportResult | null): ScriptDefinition[] {
+  if (!result) return []
+  if (Array.isArray(result.scripts) && result.scripts.length > 0) {
+    return result.scripts
+  }
+  return result.script ? [result.script] : []
 }
 
 function enterpriseArchiveImportStatusLabel(status: EnterpriseArchiveImportQueueStatus) {
@@ -580,17 +588,31 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
   const queuedFileCount = importItems.length
   const runningFileCount = importItems.filter(item => enterpriseArchiveImportStatusIsRunning(item.status)).length
   const failedFileCount = importItems.filter(item => item.status === 'failed').length
+  const validatedFileCount = importItems.filter(item => item.status === 'validated').length
+  const convertedFileCount = importItems.filter(item => item.status === 'converted').length
+  const pendingValidationFileCount = Math.max(queuedFileCount - validatedFileCount - convertedFileCount, 0)
+  const allQueuedArchivesValidated = queuedFileCount > 0 && importItems.every(item => item.status === 'validated')
+  const selectedItemValidated = selectedItem?.status === 'validated'
   const activeImportFileCount = runningFileCount || queuedFileCount
   const importProgressMessage = workingMode === 'validate'
     ? `Validating ${activeImportFileCount} enterprise script archive${activeImportFileCount === 1 ? '' : 's'}. Review will appear when the dry run finishes.`
     : workingMode === 'convert'
-      ? `Converting ${activeImportFileCount} enterprise script archive${activeImportFileCount === 1 ? '' : 's'}. Review will appear when import finishes.`
+      ? `Converting and saving ${activeImportFileCount} enterprise script archive${activeImportFileCount === 1 ? '' : 's'}. The saved script will open in the editor.`
       : ''
   const failedImportMessage = failedFileCount > 0
     ? `${failedFileCount} enterprise script archive${failedFileCount === 1 ? '' : 's'} failed during import review. Failed queue rows show the error details.`
     : ''
   const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Only'
   const convertButtonLabel = queuedFileCount > 1 ? `Convert ${queuedFileCount} Enterprise Script Archives` : 'Convert Enterprise Script Archive'
+  const conversionGateMessage = workingMode === 'convert'
+    ? 'Conversion is saving validated scripts and will open the saved script in the editor.'
+    : queuedFileCount === 0
+      ? 'Add an enterprise script archive before validating or converting.'
+      : allQueuedArchivesValidated
+        ? 'Validation passed. Conversion will save the script and open it in the editor.'
+        : convertedFileCount === queuedFileCount
+          ? 'Conversion complete.'
+          : `${pendingValidationFileCount} archive${pendingValidationFileCount === 1 ? '' : 's'} must pass validation before conversion.`
   const importedScript = result?.script ?? result?.scripts?.[0] ?? null
   const detectedProtocol = result?.detected_protocol ?? result?.summary?.detected_protocol ?? null
   const reviewArtifact = result?.review_artifact ?? result?.summary?.review_artifact ?? null
@@ -658,11 +680,13 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
     : (saveBlockedByMigrationPolicy || replayValidationLoading || browserReplayInProgress)
   const saveActionLabel = saveBlockedByProtocolGate
     ? (reviewArtifactSaving ? 'Saving Review Artifact...' : 'Save Review Artifact Instead')
-    : (browserReplayInProgress
-    ? 'Draft Browser Replay In Progress'
-    : (saveRequiresBrowserReplay
-        ? (browserReplayWasStarted ? 'Rerun Draft Browser Replay Before Saving' : 'Start Draft Browser Replay Before Saving')
-        : (reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save to Script Library')))
+    : (reviewMode === 'validation'
+      ? 'Convert Enterprise Script Archive'
+      : (browserReplayInProgress
+      ? 'Draft Browser Replay In Progress'
+      : (saveRequiresBrowserReplay
+          ? (browserReplayWasStarted ? 'Rerun Draft Browser Replay Before Saving' : 'Start Draft Browser Replay Before Saving')
+          : 'Save to Script Library')))
   const replayActionLabel = replayValidationLoading
     ? 'Starting Draft Browser Replay...'
     : (browserReplayInProgress
@@ -675,16 +699,14 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
       : 'The latest draft browser replay completed. Review the draft browser replay results before saving it to the library.')
   const reviewSubtitle = reviewMode === 'validation'
     ? (saveBlockedByMigrationPolicy
-        ? 'This preview came from the dry-run validator. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'
+        ? 'This preview came from the dry-run validator. Conversion can continue, but saving will remain blocked until migration readiness blockers are resolved or the active policy is relaxed.'
         : (browserReplayInProgress
         ? 'This preview came from the dry-run validator. Wait for the draft browser replay to finish before saving it to the library.'
             : (saveBlockedByProtocolGate
           ? (externalRunnerGate
               ? `This preview came from the dry-run validator. ${protocolGateName} execution requires ${protocolGateRunnerRequirement || 'an approved external runner'}; save the review artifact before promotion.`
               : 'This preview came from the dry-run validator. Save the review artifact before script promotion.')
-              : (saveRequiresBrowserReplay
-          ? `This preview came from the dry-run validator. ${browserReplayWasStarted ? 'Rerun' : 'Run'} a draft browser replay before saving it to the library.`
-                : 'This preview came from the dry-run validator. You can still save the reviewed script if the output looks correct.'))))
+              : 'This preview came from the dry-run validator. Convert the validated archive to save the generated script.')))
     : (saveBlockedByMigrationPolicy
         ? 'Review the generated script, preserved metadata, and warnings. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'
         : (browserReplayInProgress
@@ -1129,7 +1151,7 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
           reviewMode: mode === 'validate' ? 'validation' : 'conversion',
           error: '',
           notice: completionNotice || (mode === 'validate'
-            ? 'Validation complete. Review the generated script, warnings, and preserved settings before saving.'
+            ? 'Validation complete. Review the generated script, warnings, and preserved settings before conversion.'
             : 'Conversion complete. Review the generated script, warnings, and preserved settings before saving.'),
         })
       } catch (error: unknown) {
@@ -1146,6 +1168,133 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
     if (targetItems.length > 1) {
       const action = mode === 'validate' ? 'Validated' : 'Converted'
       setNotice(`${action} ${successCount} of ${targetItems.length} enterprise script archive${targetItems.length === 1 ? '' : 's'}${failureCount > 0 ? `; ${failureCount} failed` : ''}.`)
+    }
+  }
+
+  const convertValidatedItems = async (itemIds?: string[]) => {
+    const targetItems = importItems.filter(item => (!itemIds || itemIds.includes(item.id)) && item.status === 'validated')
+    const requestedItems = importItems.filter(item => !itemIds || itemIds.includes(item.id))
+    if (requestedItems.length === 0) return
+
+    if (targetItems.length !== requestedItems.length) {
+      setError('Validate the queued enterprise script archive before converting it.')
+      return
+    }
+
+    const targetIds = new Set(targetItems.map(item => item.id))
+    const useNameOverride = targetItems.length === 1
+    const savedScripts: StoredScript[] = []
+    let successCount = 0
+    let failureCount = 0
+
+    setWorkingMode('convert')
+    setError('')
+    setNotice('')
+    setSelectedItemId(prev => targetIds.has(prev) ? prev : targetItems[0].id)
+    setImportItems(items => items.map(item => targetIds.has(item.id)
+      ? {
+          ...item,
+          status: 'converting',
+          error: '',
+          notice: '',
+          replayValidationLoading: false,
+          replayValidationError: '',
+          replayValidationWarnings: [],
+          replayValidationSession: null,
+        }
+      : item))
+
+    for (const item of targetItems) {
+      try {
+        const conversionResult = await api.importEnterpriseArchive(item.file, {
+          name: useNameOverride ? options.name || undefined : undefined,
+          project_id: projectId,
+          base_url: options.base_url || undefined,
+          include_assertions: options.include_assertions,
+          preserve_transactions: options.preserve_transactions,
+          migration_block_statuses: buildMigrationBlockStatuses(options),
+          ...(item.harFile ? { har_file: item.harFile } : {}),
+          ...(options.salesforce_native ? { salesforce_native: true } : {}),
+        })
+        const scriptsToSave = getEnterpriseArchiveResultScripts(conversionResult)
+        const conversionDetectedProtocol = conversionResult.detected_protocol ?? conversionResult.summary?.detected_protocol ?? null
+        const conversionBlockedByProtocol = Boolean(conversionDetectedProtocol && conversionDetectedProtocol.import_mode !== 'executable')
+        const conversionBlockedByMigration = Boolean(conversionResult.summary?.migration_readiness?.blocked)
+        const conversionRequiresBrowserReplay = scriptsToSave.some(script => isBrowserImport(script))
+        if (scriptsToSave.length === 0) {
+          updateImportItem(item.id, {
+            status: 'converted',
+            result: conversionResult,
+            reviewMode: 'conversion',
+            error: 'Conversion completed, but no executable script was produced. Review the generated artifact before saving.',
+            notice: '',
+          })
+          failureCount += 1
+          continue
+        }
+        if (conversionBlockedByProtocol || conversionBlockedByMigration || conversionRequiresBrowserReplay) {
+          updateImportItem(item.id, {
+            status: 'converted',
+            result: conversionResult,
+            reviewMode: 'conversion',
+            error: '',
+            notice: conversionBlockedByProtocol
+              ? 'Conversion complete. Review the protocol gate before saving or promoting this archive.'
+              : conversionBlockedByMigration
+                ? 'Conversion complete. Resolve migration readiness blockers before saving.'
+                : 'Conversion complete. Run draft browser replay before saving this browser script.',
+          })
+          successCount += 1
+          continue
+        }
+
+        const itemSavedScripts: StoredScript[] = []
+        for (const script of scriptsToSave) {
+          const scriptToSave = isBrowserImport(script)
+            ? attachTrueClientPromotionReview(script, {
+              compatReport: getTrueClient2CompatReport(conversionResult, getImportMetadata(script)),
+              replaySession: item.replayValidationSession,
+              replayWarnings: item.replayValidationWarnings || [],
+              importWarnings: conversionResult.warnings || [],
+            })
+            : script
+          const savedScript = await api.createScript(scriptToSave, projectId)
+          itemSavedScripts.push(withFallbackPersistedScript(savedScript, scriptToSave))
+        }
+
+        savedScripts.push(...itemSavedScripts)
+        successCount += 1
+        updateImportItem(item.id, {
+          status: 'converted',
+          result: conversionResult,
+          reviewMode: 'conversion',
+          error: '',
+          notice: `Converted and saved ${itemSavedScripts.length} script${itemSavedScripts.length === 1 ? '' : 's'} to the library.`,
+        })
+      } catch (error: unknown) {
+        failureCount += 1
+        updateImportItem(item.id, {
+          status: 'failed',
+          error: getErrorMessage(error, 'Import failed'),
+          notice: '',
+        })
+      }
+    }
+
+    setWorkingMode(null)
+
+    if (savedScripts.length > 0 && onImported) {
+      onImported({ scripts: savedScripts })
+      return
+    }
+
+    if (savedScripts.length > 0) {
+      setNotice(`Converted and saved ${savedScripts.length} script${savedScripts.length === 1 ? '' : 's'} to the library${failureCount > 0 ? `; ${failureCount} archive${failureCount === 1 ? '' : 's'} failed` : ''}.`)
+      return
+    }
+
+    if (targetItems.length > 1) {
+      setNotice(`Converted ${successCount} of ${targetItems.length} enterprise script archive${targetItems.length === 1 ? '' : 's'}${failureCount > 0 ? `; ${failureCount} failed` : ''}.`)
     }
   }
 
@@ -1427,10 +1576,11 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
             <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={queuedFileCount === 0 || workingMode !== null}>
               {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : validateButtonLabel}
             </button>
-            <button className="btn btn-primary btn-lg" onClick={() => runReview('convert')} disabled={queuedFileCount === 0 || workingMode !== null}>
-              {workingMode === 'convert' ? <><span className="spinner" /> Converting...</> : convertButtonLabel}
+            <button className="btn btn-primary btn-lg" onClick={() => convertValidatedItems()} disabled={!allQueuedArchivesValidated || workingMode !== null}>
+              {workingMode === 'convert' ? <><span className="spinner" /> Converting And Saving...</> : convertButtonLabel}
             </button>
           </div>
+          <p className="lr-subtitle">{conversionGateMessage}</p>
         </div>
       </div>
 
@@ -1566,10 +1716,16 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
             script={importedScript}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
-            saving={saveBlockedByProtocolGate ? reviewArtifactSaving : false}
-            saveDisabled={primarySaveDisabled}
+            saving={saveBlockedByProtocolGate ? reviewArtifactSaving : workingMode === 'convert'}
+            saveDisabled={reviewMode === 'validation'
+              ? (!selectedItemValidated || workingMode !== null || (saveBlockedByProtocolGate && (!reviewArtifact || reviewArtifactSaving)))
+              : (primarySaveDisabled || workingMode !== null)}
             saveLabel={saveActionLabel}
-            onSave={saveBlockedByProtocolGate && reviewArtifact ? handleSaveReviewArtifact : handleSaveConverted}
+            onSave={saveBlockedByProtocolGate && reviewArtifact
+              ? handleSaveReviewArtifact
+              : reviewMode === 'validation' && selectedItem
+                ? () => convertValidatedItems([selectedItem.id])
+                : handleSaveConverted}
             onEdit={onEdit ? () => openImportedScriptInEditor() : undefined}
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} /> : undefined}
           >

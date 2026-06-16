@@ -436,17 +436,28 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
+    const convertButton = findButton(container, 'Convert Enterprise Script Archive')
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
     }
+    expect(convertButton.disabled).toBe(true)
 
-    await act(async () => {
-      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
+    await clickImportAction(container, 'Validate Only')
     await flushPromises()
+
+    expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledWith(file, {
+      name: undefined,
+      project_id: undefined,
+      base_url: undefined,
+      include_assertions: true,
+      preserve_transactions: true,
+      migration_block_statuses: ['blocked', 'partial', 'compatibility_only'],
+    })
+    expect(convertButton.disabled).toBe(false)
+    expect(container.textContent).toContain('Validation Review')
+
+    await clickButton(convertButton)
 
     expect(apiMock.importEnterpriseArchive).toHaveBeenCalledWith(file, {
       name: undefined,
@@ -520,18 +531,6 @@ describe('EnterpriseArchiveImport', () => {
     expect(sourceComparison?.querySelector('.source-map-review')).not.toBeNull()
     expect(preview && sourceComparison ? reviewChildren.indexOf(preview) < reviewChildren.indexOf(sourceComparison) : false).toBe(true)
     expect(review?.querySelector('.script-import-review-preview-row')).toBeNull()
-
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
-    expect(saveButton).toBeDefined()
-    if (!saveButton) {
-      return
-    }
-
-    await act(async () => {
-      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await flushPromises()
 
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo Enterprise Script Archive',
@@ -640,6 +639,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
@@ -691,6 +692,8 @@ describe('EnterpriseArchiveImport', () => {
       })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
+
+    await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
@@ -790,6 +793,8 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('2 ZIP files queued')
     expect(container.textContent).not.toContain('beta.zip')
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert 2 Enterprise Script Archives'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -806,7 +811,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(apiMock.importEnterpriseArchive.mock.calls[0][0]).toBe(firstFile)
     expect(apiMock.importEnterpriseArchive.mock.calls[1][0]).toBe(lastFile)
     expect(apiMock.importEnterpriseArchive.mock.calls.map(call => (call[0] as File).name)).toEqual(['alpha.zip', 'gamma.zip'])
-    expect(container.textContent).toContain('Converted 2 of 2 enterprise script archives')
+    expect(container.textContent).toContain('Converted and saved 2 scripts to the library')
     expect(container.textContent).toContain('alpha')
   })
 
@@ -843,6 +848,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert 2 Enterprise Script Archives'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -853,7 +860,7 @@ describe('EnterpriseArchiveImport', () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('[role="status"]')?.textContent).toContain('Converting 2 enterprise script archives')
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('Converting and saving 2 enterprise script archives')
     const convertingRows = Array.from(container.querySelectorAll('.lr-file-row.converting'))
     expect(convertingRows).toHaveLength(2)
 
@@ -893,7 +900,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     expect(container.querySelector('[role="status"]')).toBeNull()
-    expect(container.textContent).toContain('Converted 1 of 2 enterprise script archives; 1 failed')
+    expect(container.textContent).toContain('Converted and saved 1 script to the library; 1 archive failed')
     expect(container.textContent).toContain('1 enterprise script archive failed during import review')
     expect(container.textContent).toContain('Unsupported archive layout')
 
@@ -1074,6 +1081,8 @@ describe('EnterpriseArchiveImport', () => {
       })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
+
+    await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
@@ -1424,6 +1433,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -1475,6 +1486,8 @@ describe('EnterpriseArchiveImport', () => {
       })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
+
+    await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
@@ -1528,6 +1541,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -1579,6 +1594,8 @@ describe('EnterpriseArchiveImport', () => {
       })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
+
+    await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
@@ -1632,6 +1649,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -1683,6 +1702,8 @@ describe('EnterpriseArchiveImport', () => {
       })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
+
+    await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
@@ -1736,6 +1757,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -1787,6 +1810,8 @@ describe('EnterpriseArchiveImport', () => {
       })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
+
+    await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
@@ -1840,6 +1865,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -1891,6 +1918,8 @@ describe('EnterpriseArchiveImport', () => {
       })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
+
+    await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
@@ -1944,6 +1973,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -1995,6 +2026,8 @@ describe('EnterpriseArchiveImport', () => {
       })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
+
+    await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
@@ -2048,6 +2081,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -2099,6 +2134,8 @@ describe('EnterpriseArchiveImport', () => {
       })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
+
+    await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
@@ -2152,6 +2189,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -2204,6 +2243,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -2255,6 +2296,8 @@ describe('EnterpriseArchiveImport', () => {
       })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
+
+    await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
@@ -2465,6 +2508,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -2563,6 +2608,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -2611,6 +2658,8 @@ describe('EnterpriseArchiveImport', () => {
       })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
+
+    await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
@@ -2730,6 +2779,8 @@ describe('EnterpriseArchiveImport', () => {
       })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
+
+    await clickImportAction(container, 'Validate Only')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
@@ -2976,6 +3027,8 @@ describe('EnterpriseArchiveImport', () => {
         fileInput.dispatchEvent(new Event('change', { bubbles: true }))
       })
 
+      await clickImportAction(container, 'Validate Only')
+
       const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
       expect(convertButton).toBeDefined()
       if (!convertButton) {
@@ -3208,6 +3261,8 @@ describe('EnterpriseArchiveImport', () => {
         fileInput.dispatchEvent(new Event('change', { bubbles: true }))
       })
 
+      await clickImportAction(container, 'Validate Only')
+
       const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
       expect(convertButton).toBeDefined()
       if (!convertButton) {
@@ -3324,6 +3379,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -3353,7 +3410,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Not Run')
   })
 
-  it('shows the replay-first save label for browser validation reviews', async () => {
+  it('shows the convert action for browser validation reviews', async () => {
     apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce({
       script: {
         name: 'Imported TruClient Mobile Web',
@@ -3434,10 +3491,10 @@ describe('EnterpriseArchiveImport', () => {
 
     await flushPromises()
 
-    const replayFirstSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay Before Saving'))
-    expect(replayFirstSaveButton).toBeDefined()
-    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Reviewed Script'))).toBeUndefined()
-    expect(container.textContent).toContain('Run a draft browser replay before saving it to the library.')
+    const convertValidationButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
+    expect(convertValidationButton).toBeDefined()
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay Before Saving'))).toBeUndefined()
+    expect(container.textContent).toContain('Convert the validated archive to save the generated script.')
   })
 
   it('shows rerun copy after a browser validation replay fails', async () => {
@@ -3491,6 +3548,7 @@ describe('EnterpriseArchiveImport', () => {
         skipped: 0,
       },
     })
+    apiMock.importEnterpriseArchive.mockImplementationOnce(() => apiMock.validateEnterpriseArchiveImport.mock.results[0]?.value)
     apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
       script_id: '',
       replay_session_id: 'draft-browser-validation',
@@ -3554,6 +3612,18 @@ describe('EnterpriseArchiveImport', () => {
 
       await act(async () => {
         validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      await flushPromises()
+
+      const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
+      expect(convertButton).toBeDefined()
+      if (!convertButton) {
+        return
+      }
+
+      await act(async () => {
+        convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
 
       await flushPromises()
@@ -3644,6 +3714,7 @@ describe('EnterpriseArchiveImport', () => {
         skipped: 0,
       },
     })
+    apiMock.importEnterpriseArchive.mockImplementationOnce(() => apiMock.validateEnterpriseArchiveImport.mock.results[0]?.value)
     apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
       script_id: '',
       replay_session_id: 'draft-browser-validation',
@@ -3696,6 +3767,18 @@ describe('EnterpriseArchiveImport', () => {
 
       await act(async () => {
         validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      await flushPromises()
+
+      const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
+      expect(convertButton).toBeDefined()
+      if (!convertButton) {
+        return
+      }
+
+      await act(async () => {
+        convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
 
       await flushPromises()
@@ -3830,6 +3913,8 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await clickImportAction(container, 'Validate Only')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Enterprise Script Archive'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
@@ -3864,7 +3949,27 @@ describe('EnterpriseArchiveImport', () => {
 
 async function flushPromises() {
   await act(async () => {
-    await Promise.resolve()
-    await Promise.resolve()
+    for (let index = 0; index < 8; index += 1) {
+      await Promise.resolve()
+    }
   })
+}
+
+function findButton(container: HTMLElement, label: string): HTMLButtonElement | undefined {
+  return Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes(label)) as HTMLButtonElement | undefined
+}
+
+async function clickButton(button: HTMLButtonElement) {
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+  await flushPromises()
+}
+
+async function clickImportAction(container: HTMLElement, label: string) {
+  const button = findButton(container, label) || (label === 'Validate Only' ? findButton(container, 'Validate') : undefined)
+  expect(button).toBeDefined()
+  if (!button) return null
+  await clickButton(button)
+  return button
 }
