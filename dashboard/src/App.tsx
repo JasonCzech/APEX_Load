@@ -252,12 +252,14 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     setScriptsTopbarState(state)
   }, [])
 
-  const handleScenarioViewChange = useCallback((scenarioView: 'library' | 'builder') => {
+  const handleScenarioViewChange = useCallback((scenarioView: 'library' | 'builder' | 'plans') => {
     setView(current => {
       if (current.page !== 'tests') return current
       const next: AppView = scenarioView === 'builder'
         ? { page: 'tests', scenarioView: 'builder' }
-        : { page: 'tests' }
+        : scenarioView === 'plans'
+          ? { page: 'tests', scenarioView: 'plans' }
+          : { page: 'tests' }
       return viewToLocationHash(current) === viewToLocationHash(next) ? current : next
     })
   }, [])

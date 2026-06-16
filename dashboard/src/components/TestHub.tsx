@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
+import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
@@ -14,6 +14,7 @@ import { buildScenarioModelPreview, buildScenarioShapeCatalog, formatModelTimeLa
 import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
 import DurationField from './DurationField'
 import PageViewToggle from './PageViewToggle'
+import ExecutionPlansPanel from './ExecutionPlansPanel'
 import { type NavPage } from './Sidebar'
 import LibraryFederationControls from './LibraryFederationControls'
 import { useLibraryFederation } from './useLibraryFederation'
@@ -27,8 +28,8 @@ interface Props {
   onOpenCommandCenter?: (id: string) => void
   onCreateTestFromScenario?: (scenarioId: string) => void
   onNavigate?: (page: NavPage) => void
-  onScenarioViewChange?: (view: 'library' | 'builder') => void
-  initialView?: 'library' | 'builder'
+  onScenarioViewChange?: (view: 'library' | 'builder' | 'plans') => void
+  initialView?: 'library' | 'builder' | 'plans'
 }
 
 interface ScenarioFormState {
@@ -45,6 +46,15 @@ interface ScenarioFormState {
   goal_max_error_pct?: number
   continue_on_error: boolean
   snapshot_on_error: boolean
+  runtime_iterations?: number
+  runtime_pacing_type: '' | 'none' | 'fixed_delay' | 'fixed_interval' | 'tps'
+  runtime_pacing_delay_ms?: number
+  runtime_pacing_interval_ms?: number
+  runtime_pacing_tps?: number
+  runtime_think_time_ms?: number
+  runtime_ignore_think_time: boolean
+  runtime_log_level: string
+  runtime_auto_transactions: string
   browser_device_profile?: string
   browser_orientation?: string
   browser_touch_mode?: '' | 'true' | 'false'
@@ -71,6 +81,7 @@ interface ScenarioFormGroup {
 type ScenarioSortField = 'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_test_id' | 'last_run_at' | 'last_run_ended_at' | 'result_count'
 type ScriptLibrarySortField = 'name' | 'created_at' | 'last_run_at' | 'associated_scenarios' | 'associated_releases' | 'protocol'
 type ScenarioStartChoice = ScenarioSourceMode | 'goal' | ''
+type RunSettingsTab = 'scenario' | 'runtime' | 'infrastructure'
 
 const scenarioWizardSteps: Array<{ id: ScenarioWizardStep, label: string }> = [
   { id: 'start', label: 'Start' },
@@ -79,6 +90,12 @@ const scenarioWizardSteps: Array<{ id: ScenarioWizardStep, label: string }> = [
   { id: 'run', label: 'Run Settings' },
   { id: 'data', label: 'Data' },
   { id: 'review', label: 'Review' },
+]
+
+const runSettingsTabs: Array<{ id: RunSettingsTab, label: string }> = [
+  { id: 'scenario', label: 'Scenario Settings' },
+  { id: 'runtime', label: 'Browser/Script Runtime' },
+  { id: 'infrastructure', label: 'Controller/Generator' },
 ]
 
 
@@ -104,6 +121,10 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
     resource_baseline: false,
     continue_on_error: false,
     snapshot_on_error: false,
+    runtime_pacing_type: '',
+    runtime_ignore_think_time: false,
+    runtime_log_level: '',
+    runtime_auto_transactions: '',
     browser_device_profile: '',
     browser_orientation: '',
     browser_touch_mode: '',
@@ -332,6 +353,41 @@ function browserRuntimeFromForm(form: ScenarioFormState) {
   return Object.keys(browser).length > 0 ? browser : undefined
 }
 
+function pacingFromForm(form: ScenarioFormState): RuntimeSettingsOverride['pacing'] | undefined {
+  if (!form.runtime_pacing_type) return undefined
+  if (form.runtime_pacing_type === 'none') return { type: 'none' }
+  if (form.runtime_pacing_type === 'fixed_interval') {
+    return { type: 'fixed_interval', interval_ms: form.runtime_pacing_interval_ms }
+  }
+  if (form.runtime_pacing_type === 'tps') {
+    return { type: 'tps', tps: form.runtime_pacing_tps }
+  }
+  return { type: 'fixed_delay', delay_ms: form.runtime_pacing_delay_ms }
+}
+
+function thinkTimeFromForm(form: ScenarioFormState): RuntimeSettingsOverride['think_time'] | undefined {
+  if (form.runtime_ignore_think_time) {
+    return { type: 'fixed', mean_ms: form.runtime_think_time_ms ?? 0, ignore: true }
+  }
+  if (form.runtime_think_time_ms !== undefined) {
+    return { type: 'fixed', mean_ms: form.runtime_think_time_ms, ignore: false }
+  }
+  return undefined
+}
+
+function runtimeSettingsFromForm(form: ScenarioFormState, includeBrowser: boolean) {
+  return {
+    iterations: form.runtime_iterations,
+    pacing: pacingFromForm(form),
+    think_time: thinkTimeFromForm(form),
+    browser: includeBrowser ? browserRuntimeFromForm(form) : undefined,
+    log_level: form.runtime_log_level,
+    auto_transactions: form.runtime_auto_transactions,
+    continue_on_error: form.continue_on_error,
+    snapshot_on_error: form.snapshot_on_error,
+  }
+}
+
 function booleanSelectValue(value?: boolean): '' | 'true' | 'false' {
   if (value === undefined) return ''
   return value ? 'true' : 'false'
@@ -346,6 +402,9 @@ function scenarioFormStateFromStoredScenario(
     .sort((left, right) => (left.order ?? 0) - (right.order ?? 0))
     .map(group => scenarioFormGroupFromStored(group, fallbackScriptId))
   const firstPool = scenario.data_pools?.[0]
+  const runtimeSettings = scenario.runtime_settings
+  const pacing = runtimeSettings?.pacing
+  const thinkTime = runtimeSettings?.think_time
 
   return {
     name: cloneDraft ? `${scenario.name} (Copy)` : scenario.name,
@@ -361,6 +420,15 @@ function scenarioFormStateFromStoredScenario(
     goal_max_error_pct: scenario.goal_config?.max_error_pct,
     continue_on_error: Boolean(scenario.runtime_settings?.error_handling?.continue_on_error),
     snapshot_on_error: Boolean(scenario.runtime_settings?.error_handling?.snapshot_on_error),
+    runtime_iterations: runtimeSettings?.iterations,
+    runtime_pacing_type: (pacing?.type || '') as ScenarioFormState['runtime_pacing_type'],
+    runtime_pacing_delay_ms: pacing?.delay_ms,
+    runtime_pacing_interval_ms: pacing?.interval_ms,
+    runtime_pacing_tps: pacing?.tps,
+    runtime_think_time_ms: thinkTime?.mean_ms,
+    runtime_ignore_think_time: Boolean(thinkTime?.ignore),
+    runtime_log_level: runtimeSettings?.log_level || '',
+    runtime_auto_transactions: runtimeSettings?.auto_transactions || '',
     browser_device_profile: scenario.runtime_settings?.browser?.device_profile || '',
     browser_orientation: scenario.runtime_settings?.browser?.orientation || '',
     browser_touch_mode: booleanSelectValue(scenario.runtime_settings?.browser?.touch_mode),
@@ -693,6 +761,8 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const [loadModelValidationLoading, setLoadModelValidationLoading] = useState(false)
   const [loadModelValidationError, setLoadModelValidationError] = useState('')
   const [showForm, setShowForm] = useState(initialView === 'builder')
+  const [showPlans, setShowPlans] = useState(initialView === 'plans')
+  const [planSeedScenarioId, setPlanSeedScenarioId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [wizardStep, setWizardStep] = useState<ScenarioWizardStep>('start')
   const [maxVisitedWizardIndex, setMaxVisitedWizardIndex] = useState(0)
@@ -732,6 +802,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const [goalSizingError, setGoalSizingError] = useState('')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [stageGroupIndex, setStageGroupIndex] = useState(0)
+  const [runSettingsTab, setRunSettingsTab] = useState<RunSettingsTab>('scenario')
   const scriptLibraryRef = useRef<HTMLDivElement | null>(null)
   const scriptLibrarySearchRef = useRef<HTMLInputElement | null>(null)
   const scriptGroupRefs = useRef<Array<HTMLDivElement | null>>([])
@@ -804,7 +875,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       return String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' }) * direction
     })
   }, [scriptLibraryQuery, scriptLibrarySortDirection, scriptLibrarySortField, scripts])
-  const showScenarioLibrary = !showForm
+  const showScenarioLibrary = !showForm && !showPlans
   const showScriptLibrary = showForm && wizardStep === 'scripts'
   const showModelPreview = showForm && wizardStep !== 'start' && wizardStep !== 'scripts'
 
@@ -828,16 +899,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
         : { mode: 'auto', selected_targets: [] },
       groups: draftForm.groups.map(normalizeGroupForPayload),
       goalConfig: goalConfigFromForm(draftForm),
-      runtimeSettings: {
-        iterations: undefined,
-        pacing: undefined,
-        think_time: undefined,
-        browser: showBrowserRuntimeSettings ? browserRuntimeFromForm(draftForm) : undefined,
-        log_level: '',
-        auto_transactions: '',
-        continue_on_error: draftForm.continue_on_error,
-        snapshot_on_error: draftForm.snapshot_on_error,
-      },
+      runtimeSettings: runtimeSettingsFromForm(draftForm, showBrowserRuntimeSettings),
       dataPools: dataPoolsPayload,
     })
   }, [dataPools, form, showBrowserRuntimeSettings])
@@ -932,16 +994,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       assignment: draftPayload.assignment,
       groups: form.groups.map(normalizeGroupForPayload),
       goalConfig: goalConfigFromForm(form),
-      runtimeSettings: {
-        iterations: undefined,
-        pacing: undefined,
-        think_time: undefined,
-        browser: showBrowserRuntimeSettings ? browserRuntimeFromForm(form) : undefined,
-        log_level: '',
-        auto_transactions: '',
-        continue_on_error: false,
-        snapshot_on_error: false,
-      },
+      runtimeSettings: runtimeSettingsFromForm(form, showBrowserRuntimeSettings),
     }))
       .then((estimate) => {
         if (cancelled) return
@@ -1078,16 +1131,19 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setScenarioStartChoice('')
     setScenarioCloneQuery('')
     setScriptSelectionTargetIndex(null)
+    setRunSettingsTab('scenario')
     setWizardStep('start')
     setMaxVisitedWizardIndex(0)
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     setShowForm(true)
+    setShowPlans(false)
     onScenarioViewChange?.('builder')
   }, [canManageTests, onScenarioViewChange])
 
   const openScenarioLibrary = useCallback(() => {
     setShowForm(false)
+    setShowPlans(false)
     setEditingId(null)
     setConfirmDeleteScenarioId(null)
     setScriptSelectionTargetIndex(null)
@@ -1096,28 +1152,42 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     onScenarioViewChange?.('library')
   }, [onScenarioViewChange])
 
+  const openExecutionPlans = useCallback(() => {
+    setShowForm(false)
+    setShowPlans(true)
+    setEditingId(null)
+    onScenarioViewChange?.('plans')
+  }, [onScenarioViewChange])
+
+  const addScenarioToPlan = useCallback((scenarioId: string) => {
+    setPlanSeedScenarioId(scenarioId)
+    openExecutionPlans()
+  }, [openExecutionPlans])
+
   const scenarioPageControls = useMemo(() => (
     <PageViewToggle
-      value={showForm ? 'builder' : 'library'}
+      value={showPlans ? 'plans' : showForm ? 'builder' : 'library'}
       ariaLabel="Scenario page view"
       className="scenario-page-toggle topbar-page-section-toggle"
       onChange={view => {
         if (view === 'library') openScenarioLibrary()
+        else if (view === 'plans') openExecutionPlans()
         else openCreate()
       }}
       options={[
         { value: 'library', label: 'Scenario Library' },
         { value: 'builder', label: 'Scenario Builder', disabled: !canManageTests },
+        { value: 'plans', label: 'Execution Plans' },
       ]}
     />
-  ), [canManageTests, openCreate, openScenarioLibrary, showForm])
+  ), [canManageTests, openCreate, openExecutionPlans, openScenarioLibrary, showForm, showPlans])
 
   const scenarioTopbarContribution = useMemo(() => ({
     id: 'scenario-page',
-    title: showForm ? 'Scenario Builder' : 'Scenario Library',
+    title: showPlans ? 'Execution Plans' : showForm ? 'Scenario Builder' : 'Scenario Library',
     controls: scenarioPageControls,
     priority: 10,
-  }), [scenarioPageControls, showForm])
+  }), [scenarioPageControls, showForm, showPlans])
 
   useTopbarContribution(scenarioTopbarContribution)
 
@@ -1137,6 +1207,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setScenarioStartChoice('existing')
     setScenarioCloneQuery('')
     setScriptSelectionTargetIndex(null)
+    setRunSettingsTab('scenario')
     setWizardStep('scripts')
     setMaxVisitedWizardIndex(2)
     setLoadModelValidation(null)
@@ -1172,6 +1243,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setScenarioSourceMode('existing')
     setScenarioStartChoice('existing')
     setScriptSelectionTargetIndex(null)
+    setRunSettingsTab('scenario')
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     void loadScenarioRuns(scenario)
@@ -1223,6 +1295,15 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       goal_max_vusers: template.scenario.goal_config?.max_vusers,
       goal_p95_latency_ms: template.scenario.goal_config?.p95_latency_ms,
       goal_max_error_pct: template.scenario.goal_config?.max_error_pct,
+      runtime_iterations: template.scenario.runtime_settings?.iterations ?? prev.runtime_iterations,
+      runtime_pacing_type: (template.scenario.runtime_settings?.pacing?.type || prev.runtime_pacing_type || '') as ScenarioFormState['runtime_pacing_type'],
+      runtime_pacing_delay_ms: template.scenario.runtime_settings?.pacing?.delay_ms ?? prev.runtime_pacing_delay_ms,
+      runtime_pacing_interval_ms: template.scenario.runtime_settings?.pacing?.interval_ms ?? prev.runtime_pacing_interval_ms,
+      runtime_pacing_tps: template.scenario.runtime_settings?.pacing?.tps ?? prev.runtime_pacing_tps,
+      runtime_think_time_ms: template.scenario.runtime_settings?.think_time?.mean_ms ?? prev.runtime_think_time_ms,
+      runtime_ignore_think_time: template.scenario.runtime_settings?.think_time?.ignore ?? prev.runtime_ignore_think_time,
+      runtime_log_level: template.scenario.runtime_settings?.log_level ?? prev.runtime_log_level,
+      runtime_auto_transactions: template.scenario.runtime_settings?.auto_transactions ?? prev.runtime_auto_transactions,
       continue_on_error: template.scenario.runtime_settings?.error_handling?.continue_on_error ?? prev.continue_on_error,
       snapshot_on_error: template.scenario.runtime_settings?.error_handling?.snapshot_on_error ?? prev.snapshot_on_error,
     }))
@@ -1335,6 +1416,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     setGoalSizingOpen(false)
+    setRunSettingsTab('scenario')
     setWizardStep('run')
   }
 
@@ -1350,6 +1432,11 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
         prev.groups.map((group, groupIndex) => groupIndex === index ? { ...group, ...patch } : group),
       ),
     }))
+    setLoadModelValidation(null)
+  }
+
+  const updateRuntimeForm = (patch: Partial<ScenarioFormState>) => {
+    setForm(prev => ({ ...prev, ...patch }))
     setLoadModelValidation(null)
   }
 
@@ -1525,6 +1612,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setScenarioSourceMode('shape')
     setScenarioStartChoice('')
     setScenarioCloneQuery('')
+    setRunSettingsTab('scenario')
     setWizardStep('start')
     setMaxVisitedWizardIndex(0)
     setLoadModelValidation(null)
@@ -2037,6 +2125,30 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
             <h4>Run Settings</h4>
             <p>Configure VUsers, ramp, duration, mode, goals, stage modeling, browser defaults, and generator assignment.</p>
           </div>
+          <div className="scenario-run-settings-tabs" role="tablist" aria-label="Run settings sections">
+            {runSettingsTabs.map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                id={`scenario-run-settings-${tab.id}-tab`}
+                className={`scenario-run-settings-tab ${runSettingsTab === tab.id ? 'active' : ''}`}
+                role="tab"
+                aria-selected={runSettingsTab === tab.id}
+                aria-controls={`scenario-run-settings-${tab.id}-panel`}
+                onClick={() => setRunSettingsTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div
+            className="scenario-run-settings-tab-panel"
+            id={`scenario-run-settings-${runSettingsTab}-panel`}
+            role="tabpanel"
+            aria-labelledby={`scenario-run-settings-${runSettingsTab}-tab`}
+          >
+            {runSettingsTab === 'scenario' && (
+              <>
           <div className="settings-grid scenario-core-grid">
             <DurationField
               className="scenario-field"
@@ -2214,8 +2326,126 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
               <p className="scenario-assignment-copy secondary">Simple ramp is active for this group. Enable advanced stages to define stair-step intervals and per-step VUser/TPS targets.</p>
             )}
           </div>
-          {showBrowserRuntimeSettings && (
-            <div className="scenario-subpanel">
+              </>
+            )}
+            {runSettingsTab === 'runtime' && (
+              <>
+                <div className="scenario-subpanel">
+                  <div className="scenario-assignment-header">
+                    <div>
+                      <h4>Script Runtime</h4>
+                      <p>Override script defaults for this scenario without editing the underlying DSL scripts.</p>
+                    </div>
+                  </div>
+                  <div className="scenario-browser-grid">
+                    <label>
+                      <span>Iterations</span>
+                      <input
+                        className="settings-input"
+                        type="number"
+                        min={0}
+                        value={form.runtime_iterations ?? ''}
+                        onChange={event => updateRuntimeForm({ runtime_iterations: event.target.value === '' ? undefined : Number(event.target.value) })}
+                        placeholder="Script default"
+                      />
+                    </label>
+                    <label>
+                      <span>Pacing</span>
+                      <select
+                        className="settings-input"
+                        value={form.runtime_pacing_type}
+                        onChange={event => updateRuntimeForm({ runtime_pacing_type: event.target.value as ScenarioFormState['runtime_pacing_type'] })}
+                      >
+                        <option value="">Script default</option>
+                        <option value="none">None</option>
+                        <option value="fixed_delay">Fixed delay</option>
+                        <option value="fixed_interval">Fixed interval</option>
+                        <option value="tps">Target TPS</option>
+                      </select>
+                    </label>
+                    {form.runtime_pacing_type === 'fixed_delay' && (
+                      <label>
+                        <span>Pacing delay (ms)</span>
+                        <input
+                          className="settings-input"
+                          type="number"
+                          min={0}
+                          value={form.runtime_pacing_delay_ms ?? ''}
+                          onChange={event => updateRuntimeForm({ runtime_pacing_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })}
+                          placeholder="0"
+                        />
+                      </label>
+                    )}
+                    {form.runtime_pacing_type === 'fixed_interval' && (
+                      <label>
+                        <span>Pacing interval (ms)</span>
+                        <input
+                          className="settings-input"
+                          type="number"
+                          min={0}
+                          value={form.runtime_pacing_interval_ms ?? ''}
+                          onChange={event => updateRuntimeForm({ runtime_pacing_interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })}
+                          placeholder="0"
+                        />
+                      </label>
+                    )}
+                    {form.runtime_pacing_type === 'tps' && (
+                      <label>
+                        <span>Target TPS</span>
+                        <input
+                          className="settings-input"
+                          type="number"
+                          min={0}
+                          value={form.runtime_pacing_tps ?? ''}
+                          onChange={event => updateRuntimeForm({ runtime_pacing_tps: event.target.value === '' ? undefined : Number(event.target.value) })}
+                          placeholder="0"
+                        />
+                      </label>
+                    )}
+                    <label>
+                      <span>Think time override (ms)</span>
+                      <input
+                        className="settings-input"
+                        type="number"
+                        min={0}
+                        value={form.runtime_ignore_think_time ? '' : (form.runtime_think_time_ms ?? '')}
+                        onChange={event => updateRuntimeForm({ runtime_think_time_ms: event.target.value === '' ? undefined : Number(event.target.value) })}
+                        placeholder="Script default"
+                        disabled={form.runtime_ignore_think_time}
+                      />
+                    </label>
+                    <label>
+                      <span>Log level</span>
+                      <select className="settings-input" value={form.runtime_log_level} onChange={event => updateRuntimeForm({ runtime_log_level: event.target.value })}>
+                        <option value="">Script default</option>
+                        <option value="disabled">Disabled</option>
+                        <option value="standard">Standard</option>
+                        <option value="extended">Extended</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Auto-transactions</span>
+                      <select className="settings-input" value={form.runtime_auto_transactions} onChange={event => updateRuntimeForm({ runtime_auto_transactions: event.target.value })}>
+                        <option value="">Script default</option>
+                        <option value="none">None</option>
+                        <option value="per_action">Per action</option>
+                        <option value="per_iteration">Per iteration</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="scenario-option-grid">
+                    <label className={`scenario-option-card ${form.runtime_ignore_think_time ? 'selected' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={form.runtime_ignore_think_time}
+                        onChange={event => updateRuntimeForm({ runtime_ignore_think_time: event.target.checked })}
+                      />
+                      <div><strong>Ignore think time</strong><span>Bypass scripted think times during this scenario run.</span></div>
+                    </label>
+                  </div>
+                </div>
+                {showBrowserRuntimeSettings ? (
+                <div className="scenario-subpanel">
               <div className="scenario-assignment-header">
                 <div>
                   <h4>Browser Runtime</h4>
@@ -2229,8 +2459,20 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
                 <label><span>Headless</span><select className="settings-input" value={form.browser_headless || ''} onChange={event => setForm({ ...form, browser_headless: event.target.value as ScenarioFormState['browser_headless'] })}><option value="">Script default</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
               </div>
             </div>
-          )}
-          <div className="scenario-subpanel">
+              ) : (
+                <div className="scenario-subpanel">
+                  <div className="scenario-assignment-header">
+                    <div>
+                      <h4>Browser Runtime</h4>
+                      <p>Select a browser script group to store device, orientation, touch, and headless defaults with this scenario.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              </>
+            )}
+            {runSettingsTab === 'infrastructure' && (
+              <div className="scenario-subpanel">
             <div className="scenario-assignment-header">
               <div>
                 <h4>Controller / Generator Assignment</h4>
@@ -2271,6 +2513,8 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
             {estimateError && <div className="settings-error-inline">{estimateError}</div>}
             {assignmentRecommendation?.warnings && assignmentRecommendation.warnings.length > 0 && (
               <div className="scenario-assignment-warnings">{assignmentRecommendation.warnings.map(warning => <p key={warning}>{warning}</p>)}</div>
+            )}
+              </div>
             )}
           </div>
         </section>
@@ -2376,14 +2620,31 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       {(!showForm || !hasTopbarContributionProvider) && (
         <div className="page-header">
           <div>
-            <h2>{showForm ? 'Scenario Builder' : 'Scenario Library'}</h2>
-            <p className="page-subtitle">Reusable scenario definitions linked to scripts, releases, and results.</p>
+            <h2>{showPlans ? 'Execution Plans' : showForm ? 'Scenario Builder' : 'Scenario Library'}</h2>
+            <p className="page-subtitle">
+              {showPlans
+                ? 'Ordered, cross-run orchestration of scenarios — parallel or sequential.'
+                : 'Reusable scenario definitions linked to scripts, releases, and results.'}
+            </p>
           </div>
           {!hasTopbarContributionProvider && scenarioPageControls}
         </div>
       )}
 
       {error && <div className="settings-error-inline">{error}</div>}
+
+      {showPlans && (
+        <div className="page-section">
+          <ExecutionPlansPanel
+            projectId={activeProject?.id}
+            canManage={canManageTests}
+            scenarioOptions={scenarios.map(scenario => ({ id: scenario.id, name: scenario.name }))}
+            onOpenTest={onSelectTest}
+            seedScenarioId={planSeedScenarioId ?? undefined}
+            onSeedConsumed={() => setPlanSeedScenarioId(null)}
+          />
+        </div>
+      )}
 
       {showForm && (
         <div className="page-section scenario-builder">
@@ -2662,6 +2923,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
                         <>
                           <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); openEdit(scenario) }}>Edit</button>
                           <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
+                          <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); addScenarioToPlan(scenario.id) }} title="Seed a new execution plan with this scenario">Add to plan</button>
                           <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); setConfirmDeleteScenarioId(scenario.id) }}>Delete</button>
                           <button
                             className="btn btn-sm btn-secondary"

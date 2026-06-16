@@ -3694,3 +3694,195 @@ export interface GitHubSyncJob {
   updated_at?: string
   completed_at?: string
 }
+
+// ---------------------------------------------------------------------------
+// LRE API-parity families (capacity timeslots, fleet management, execution
+// plans, monitoring collectors, entitlements). These mirror the backend JSON
+// shapes. CapacityTimeslot is intentionally distinct from the settings-embedded
+// CapacityReservation type above (forward-booking reservation vs static pool).
+// ---------------------------------------------------------------------------
+
+export interface CapacityTimeslotRequest {
+  generators?: number
+  vusers?: number
+  protocol?: string
+  load_zone?: string
+}
+export interface CapacityTimeslot {
+  id: string
+  project_id: string
+  scenario_id?: string
+  start_at: string
+  end_at: string
+  timezone?: string
+  requested_capacity?: CapacityTimeslotRequest
+  approval_state: string // pending | approved | rejected
+  approval_id?: string
+  bound_test_id?: string
+  bound_test_status?: string
+  conflict_summary?: string
+  created_at: string
+  updated_at: string
+}
+export interface CapacityTimeslotListResponse {
+  timeslots: CapacityTimeslot[]
+  count: number
+  limit?: number
+  offset?: number
+}
+export interface CapacityTimeslotAvailabilityResponse {
+  available: boolean
+  conflicts: CapacityTimeslot[]
+  count: number
+  summary?: string
+}
+
+export interface FleetPoolMember {
+  id: string
+  pool_id: string
+  generator_id: string
+  target: string
+  status: string
+  joined_at: string
+}
+export interface FleetPool {
+  id: string
+  name: string
+  description?: string
+  cloud_provider: string // kubernetes | aws | azure | gcp | static
+  region?: string
+  min_size?: number
+  max_size?: number
+  desired_size?: number
+  status: string // active | suspended | error
+  tags?: Record<string, string>
+  created_at: string
+  updated_at: string
+  members?: FleetPoolMember[]
+}
+export interface FleetPoolListResponse {
+  fleet_pools: FleetPool[]
+  count: number
+  limit?: number
+  offset?: number
+}
+export interface FleetGeneratorMetadata {
+  generator_id: string
+  target?: string
+  fleet_pool_id?: string | null
+  region?: string
+  provider_id?: string
+  provider_status?: string
+  cordoned?: boolean
+  tags?: Record<string, string>
+  created_at: string
+  updated_at: string
+}
+export interface FleetGeneratorMetadataListResponse {
+  generators: FleetGeneratorMetadata[]
+  count: number
+  limit?: number
+  offset?: number
+}
+export interface FleetProvisioningEvent {
+  id: string
+  request_id: string
+  event_type: string
+  message?: string
+  timestamp: string
+}
+export interface FleetProvisioningRequest {
+  id: string
+  fleet_pool_id: string
+  project_id?: string
+  status: string // pending | provisioning | success | failed | not_configured
+  desired_count: number
+  reason?: string
+  requested_by_subject?: string
+  events?: FleetProvisioningEvent[]
+  created_at: string
+  updated_at: string
+  completed_at?: string
+}
+
+export interface ExecutionPlanEntry {
+  order: number
+  scenario_id: string
+  scenario_name?: string
+  enabled?: boolean
+  runtime_overrides?: unknown
+  failure_policy?: string // halt | skip
+}
+export interface ExecutionPlan {
+  id: string
+  project_id?: string
+  name: string
+  description?: string
+  entries: ExecutionPlanEntry[]
+  run_mode: string // parallel | sequential
+  timeslot_id?: string
+  status?: string
+  created_at: string
+  updated_at: string
+}
+export interface ExecutionPlanListResponse {
+  execution_plans: ExecutionPlan[]
+  count: number
+  limit?: number
+  offset?: number
+}
+export interface ExecutionPlanRunResult {
+  order: number
+  scenario_id: string
+  test_id?: string
+  status: string // created | failed | skipped
+  detail?: string
+}
+export interface ExecutionPlanRunResponse {
+  execution_plan_id: string
+  run_mode: string
+  created_count: number
+  failed_count: number
+  results: ExecutionPlanRunResult[]
+  materialized_at: string
+}
+
+export interface MonitoringCollector {
+  id: string
+  project_id: string
+  name: string
+  description?: string
+  health: string // healthy | degraded | unreachable
+  last_seen_at?: string
+  allowed_metric_packs: string[]
+  created_at: string
+  updated_at: string
+}
+export interface MonitoringCollectorListResponse {
+  collectors: MonitoringCollector[]
+  count: number
+  limit?: number
+  offset?: number
+}
+export interface MonitoringCollectorTokenResponse {
+  collector: MonitoringCollector
+  token: string
+}
+
+export interface EntitlementsProtocolBundle {
+  id: string
+  display_name: string
+  protocols?: string[]
+  default?: string
+  governance?: string
+}
+export interface EntitlementsResponse {
+  edition: string
+  limits: { max_concurrent_tests: number }
+  protocol_bundles: { count: number; bundles: EntitlementsProtocolBundle[] }
+}
+export interface EntitlementsUsageResponse {
+  concurrent_tests: { used: number; limit: number }
+  service_accounts: number
+  projects: number
+}

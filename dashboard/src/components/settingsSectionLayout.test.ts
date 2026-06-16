@@ -63,6 +63,7 @@ describe('settingsSectionLayout', () => {
     expect(GENERAL_SETTINGS_SUBSECTIONS.map(section => section.id)).toEqual([
       'platform',
       'usage',
+      'entitlements',
       'readiness',
       'authentication',
       'governance',
@@ -86,6 +87,7 @@ describe('settingsSectionLayout', () => {
       'availability',
       'generator',
       'reservations',
+      'timeslots',
       'retention',
     ])
     expect(PROJECT_SETTINGS_SUBSECTIONS.map(section => section.id)).toEqual([

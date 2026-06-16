@@ -5,7 +5,7 @@ export type AppView =
   | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests' | 'docs'> }
   | { page: 'docs'; guidePage?: ApiGuideContentPageID }
   | { page: 'command-center'; testId?: string }
-  | { page: 'tests'; scenarioView?: 'library' | 'builder' }
+  | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans' }
   | { page: 'new-test'; scenarioId?: string }
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
   | { page: 'swagger' }
@@ -28,7 +28,7 @@ const NAV_PAGES: NavPage[] = [
 ]
 
 const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
-const SCENARIO_VIEWS = ['library', 'builder'] as const
+const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
 const TEST_WORKSPACE_TABS = ['overview', 'control', 'graphs', 'diagnostics', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
 
 export type TestWorkspaceTabID = typeof TEST_WORKSPACE_TABS[number]

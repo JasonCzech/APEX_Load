@@ -16,6 +16,7 @@ const SETTINGS_SECTION_IDS = SETTINGS_SECTIONS.map(section => section.id)
 export const GENERAL_SETTINGS_SUBSECTIONS = [
   { id: 'platform', title: 'Platform' },
   { id: 'usage', title: 'Usage' },
+  { id: 'entitlements', title: 'Entitlements' },
   { id: 'readiness', title: 'Readiness' },
   { id: 'authentication', title: 'Authentication' },
   { id: 'governance', title: 'Governance' },
@@ -29,6 +30,7 @@ export const CAPACITY_SETTINGS_SUBSECTIONS = [
   { id: 'availability', title: 'Availability' },
   { id: 'generator', title: 'Generator Profile' },
   { id: 'reservations', title: 'Reservations' },
+  { id: 'timeslots', title: 'Timeslots' },
   { id: 'retention', title: 'Retention' },
 ] as const
 

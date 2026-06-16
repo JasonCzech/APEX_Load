@@ -1,0 +1,102 @@
+import { useCallback, useMemo } from 'react'
+
+import {
+  FleetGeneratorMetadata,
+  FleetGeneratorMetadataListResponse,
+  FleetPool,
+  FleetPoolListResponse,
+  FleetProvisioningRequest,
+} from '../../types'
+import { request } from '../apiClient'
+
+function buildQuery(params: Record<string, string | number | undefined>) {
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') {
+      query.set(key, String(value))
+    }
+  })
+  const suffix = query.toString()
+  return suffix ? `?${suffix}` : ''
+}
+
+export type GeneratorMetadataPatch = {
+  target?: string
+  fleet_pool_id?: string
+  region?: string
+  provider_id?: string
+  provider_status?: string
+  cordoned?: boolean
+  tags?: Record<string, string>
+}
+
+export function useFleetApi() {
+  const listFleetPools = useCallback(
+    (params?: { limit?: number; offset?: number }) =>
+      request<FleetPoolListResponse>(`/fleet/pools${buildQuery({ ...params })}`),
+    [],
+  )
+
+  const getFleetPool = useCallback((id: string) => request<FleetPool>(`/fleet/pools/${id}`), [])
+
+  const createFleetPool = useCallback(
+    (body: Partial<FleetPool>) =>
+      request<FleetPool>('/fleet/pools', { method: 'POST', body: JSON.stringify(body) }),
+    [],
+  )
+
+  const updateFleetPool = useCallback(
+    (id: string, body: Partial<FleetPool>) =>
+      request<FleetPool>(`/fleet/pools/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    [],
+  )
+
+  const deleteFleetPool = useCallback(
+    (id: string) => request<{ deleted: string }>(`/fleet/pools/${id}`, { method: 'DELETE' }),
+    [],
+  )
+
+  const listGeneratorMetadata = useCallback(
+    (params?: { limit?: number; offset?: number }) =>
+      request<FleetGeneratorMetadataListResponse>(`/fleet/generators${buildQuery({ ...params })}`),
+    [],
+  )
+
+  const patchGeneratorMetadata = useCallback(
+    (generatorId: string, patch: GeneratorMetadataPatch) =>
+      request<FleetGeneratorMetadata>(`/fleet/generators/${generatorId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }),
+    [],
+  )
+
+  const createProvisionRequest = useCallback(
+    (body: { fleet_pool_id: string; desired_count: number; reason?: string; project_id?: string }) =>
+      request<FleetProvisioningRequest>('/fleet/provision-requests', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    [],
+  )
+
+  const getProvisionRequest = useCallback(
+    (id: string) => request<FleetProvisioningRequest>(`/fleet/provision-requests/${id}`),
+    [],
+  )
+
+  return useMemo(
+    () => ({
+      listFleetPools,
+      getFleetPool,
+      createFleetPool,
+      updateFleetPool,
+      deleteFleetPool,
+      listGeneratorMetadata,
+      patchGeneratorMetadata,
+      createProvisionRequest,
+      getProvisionRequest,
+    }),
+    [listFleetPools, getFleetPool, createFleetPool, updateFleetPool, deleteFleetPool, listGeneratorMetadata, patchGeneratorMetadata, createProvisionRequest, getProvisionRequest],
+  )
+}

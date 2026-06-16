@@ -1,0 +1,115 @@
+// @vitest-environment jsdom
+
+import { act } from 'react'
+import { createRoot, Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import FleetGeneratorsCard from './FleetGeneratorsCard'
+import { FleetGeneratorMetadata } from '../types'
+
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+const fleetApiMock = {
+  listFleetPools: vi.fn(),
+  getFleetPool: vi.fn(),
+  createFleetPool: vi.fn(),
+  updateFleetPool: vi.fn(),
+  deleteFleetPool: vi.fn(),
+  listGeneratorMetadata: vi.fn(),
+  patchGeneratorMetadata: vi.fn(),
+  createProvisionRequest: vi.fn(),
+  getProvisionRequest: vi.fn(),
+}
+
+vi.mock('../hooks/api/useFleetApi', () => ({
+  useFleetApi: () => fleetApiMock,
+}))
+
+let container: HTMLElement
+let root: Root
+
+beforeEach(() => {
+  container = document.createElement('div')
+  document.body.appendChild(container)
+  root = createRoot(container)
+})
+
+afterEach(() => {
+  act(() => root.unmount())
+  container.remove()
+  vi.clearAllMocks()
+})
+
+async function flush() {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}
+
+function meta(overrides: Partial<FleetGeneratorMetadata>): FleetGeneratorMetadata {
+  return {
+    generator_id: 'gen-1',
+    region: 'us-east',
+    fleet_pool_id: 'pool-1',
+    provider_status: 'running',
+    cordoned: false,
+    created_at: '',
+    updated_at: '',
+    ...overrides,
+  }
+}
+
+describe('FleetGeneratorsCard', () => {
+  it('shows the empty state and Add Metadata action when permitted', async () => {
+    fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [], count: 0 })
+    await act(async () => {
+      root.render(<FleetGeneratorsCard canManage />)
+    })
+    await flush()
+    expect(fleetApiMock.listGeneratorMetadata).toHaveBeenCalled()
+    expect(container.textContent).toContain('No generator metadata yet')
+    expect(container.textContent).toContain('Add Metadata')
+  })
+
+  it('renders generators with schedulable / cordoned pills', async () => {
+    fleetApiMock.listGeneratorMetadata.mockResolvedValue({
+      generators: [meta({ cordoned: false }), meta({ generator_id: 'gen-2', cordoned: true })],
+      count: 2,
+    })
+    await act(async () => {
+      root.render(<FleetGeneratorsCard canManage />)
+    })
+    await flush()
+    expect(container.textContent).toContain('gen-1')
+    expect(container.textContent).toContain('region: us-east')
+    expect(container.querySelector('.pp-pill-success')).toBeTruthy()
+    expect(container.querySelector('.pp-pill-warning')).toBeTruthy()
+  })
+
+  it('toggles cordon state with a metadata PATCH', async () => {
+    fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [meta({ cordoned: false })], count: 1 })
+    fleetApiMock.patchGeneratorMetadata.mockResolvedValue(meta({ cordoned: true }))
+    await act(async () => {
+      root.render(<FleetGeneratorsCard canManage />)
+    })
+    await flush()
+    const cordonButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'Cordon')
+    await act(async () => {
+      cordonButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(fleetApiMock.patchGeneratorMetadata).toHaveBeenCalledWith('gen-1', { cordoned: true })
+  })
+
+  it('hides management actions without permission', async () => {
+    fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [meta({})], count: 1 })
+    await act(async () => {
+      root.render(<FleetGeneratorsCard canManage={false} />)
+    })
+    await flush()
+    expect(container.textContent).not.toContain('Add Metadata')
+    expect(container.textContent).not.toContain('Cordon')
+    expect(container.textContent).not.toContain('Edit')
+  })
+})

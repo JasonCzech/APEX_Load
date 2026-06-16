@@ -504,7 +504,7 @@ describe('MonitoringPage', () => {
 
     await clickMonitorTab('Telemetry')
 
-    expect(visibleMonitorCardIds()).toEqual(['telemetry-diagnostics', 'apm-integrations', 'monitor-packs'])
+    expect(visibleMonitorCardIds()).toEqual(['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors'])
     expect(container.textContent).toContain('Telemetry Diagnostics')
     expect(container.textContent).toContain('danger')
     expect(container.textContent).toContain('1 danger')
@@ -536,7 +536,7 @@ describe('MonitoringPage', () => {
 
     await clickMonitorTab('Fleet')
 
-    expect(visibleMonitorCardIds()).toEqual(['capacity', 'generators', 'fleet-alerts'])
+    expect(visibleMonitorCardIds()).toEqual(['capacity', 'generators', 'fleet-alerts', 'fleet-pools', 'generator-metadata'])
     expect(container.textContent).toContain('Generators')
     expect(container.textContent).toContain('Fleet Alerts')
     expect(container.textContent).toContain('No generator inventory was returned by the controller.')
@@ -950,8 +950,8 @@ describe('MonitoringPage', () => {
     expect(advisoryBadge?.textContent).toContain('2 issues need attention')
     expect(container.querySelector('.monitor-schedule-health-card')).toBeNull()
     expect(container.querySelector('[data-card-id="schedule-health"]')).toBeNull()
-    expect(visibleMonitorCardIds()).toEqual(['run-calendar'])
-    expect(container.textContent).toContain('Schedules1/1')
+    expect(visibleMonitorCardIds()).toEqual(['run-calendar', 'timeslots'])
+    expect(container.textContent).toContain('Schedules2/2')
     expect(container.textContent).not.toContain('Advisory Panel')
     expect(container.textContent).not.toContain('Enabled Schedules')
     expect(apiMock.getScheduleHealth).toHaveBeenCalled()

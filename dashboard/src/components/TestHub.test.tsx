@@ -93,6 +93,15 @@ describe('TestHub', () => {
     })
   }
 
+  const clickRunSettingsTab = async (text: string) => {
+    const button = Array.from(container.querySelectorAll('.scenario-run-settings-tab')).find(item => item.textContent?.includes(text))
+    expect(button).toBeDefined()
+    if (!button) return
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
   const wizardStepButton = (text: string) => (
     Array.from(container.querySelectorAll('.scenario-wizard-step')).find(item => item.textContent?.includes(text))
   )
@@ -593,6 +602,108 @@ describe('TestHub', () => {
     expect(wizardStepComplete('Run Settings')).toBe(true)
   })
 
+  it('groups Scenario Builder run settings into focused tabs', async () => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+
+    await flushPromises()
+    await clickWizardStep('Run Settings')
+
+    const tabs = Array.from(container.querySelectorAll('.scenario-run-settings-tab'))
+    expect(tabs.map(tab => tab.textContent)).toEqual([
+      'Scenario Settings',
+      'Browser/Script Runtime',
+      'Controller/Generator',
+    ])
+    expect(tabs[0].getAttribute('aria-selected')).toBe('true')
+    expect(container.textContent).toContain('Load Per Group')
+    expect(container.textContent).toContain('Pre-Run Assurance')
+    expect(container.textContent).toContain('Advanced Stair-Step Ramp')
+    expect(container.textContent).not.toContain('Auto Assignment')
+
+    await clickRunSettingsTab('Controller/Generator')
+
+    expect(container.textContent).toContain('Controller / Generator Assignment')
+    expect(container.textContent).toContain('Auto Assignment')
+    expect(container.textContent).not.toContain('Load Per Group')
+
+    await clickRunSettingsTab('Browser/Script Runtime')
+
+    expect(container.textContent).toContain('Script Runtime')
+    expect(container.textContent).toContain('Iterations')
+    expect(container.textContent).toContain('Pacing')
+    expect(container.textContent).toContain('Auto-transactions')
+    expect(container.textContent).toContain('Browser Runtime')
+    expect(container.textContent).not.toContain('Auto Assignment')
+  })
+
+  it('persists script runtime settings from the Browser/Script Runtime tab', async () => {
+    const onSelectTest = vi.fn()
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+    await clickWizardStep('Scripts')
+
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
+
+    await act(async () => {
+      setInputValue(nameInput, 'Runtime Defaults Scenario')
+    })
+
+    await chooseLibraryScriptForGroup()
+    await clickWizardStep('Run Settings')
+    await clickRunSettingsTab('Browser/Script Runtime')
+
+    const iterationsInput = findControlByLabel<HTMLInputElement>(container, 'Iterations', 'input')
+    const pacingSelect = findControlByLabel<HTMLSelectElement>(container, 'Pacing', 'select')
+    const thinkTimeInput = findControlByLabel<HTMLInputElement>(container, 'Think time override (ms)', 'input')
+    const logLevelSelect = findControlByLabel<HTMLSelectElement>(container, 'Log level', 'select')
+    const autoTransactionsSelect = findControlByLabel<HTMLSelectElement>(container, 'Auto-transactions', 'select')
+
+    expect(iterationsInput).toBeDefined()
+    expect(pacingSelect).toBeDefined()
+    expect(thinkTimeInput).toBeDefined()
+    expect(logLevelSelect).toBeDefined()
+    expect(autoTransactionsSelect).toBeDefined()
+    if (!iterationsInput || !pacingSelect || !thinkTimeInput || !logLevelSelect || !autoTransactionsSelect) return
+
+    await act(async () => {
+      setInputValue(iterationsInput, '3')
+      setSelectValue(pacingSelect, 'fixed_delay')
+      setInputValue(thinkTimeInput, '250')
+      setSelectValue(logLevelSelect, 'extended')
+      setSelectValue(autoTransactionsSelect, 'per_iteration')
+    })
+
+    const pacingDelayInput = findControlByLabel<HTMLInputElement>(container, 'Pacing delay (ms)', 'input')
+    expect(pacingDelayInput).toBeDefined()
+    if (!pacingDelayInput) return
+
+    await act(async () => {
+      setInputValue(pacingDelayInput, '750')
+    })
+
+    await clickButton('Save Scenario')
+    await flushPromises()
+
+    expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Runtime Defaults Scenario',
+      runtime_settings: expect.objectContaining({
+        iterations: 3,
+        pacing: { type: 'fixed_delay', delay_ms: 750 },
+        think_time: { type: 'fixed', mean_ms: 250, ignore: false },
+        log_level: 'extended',
+        auto_transactions: 'per_iteration',
+      }),
+    }))
+  })
+
   it('shows saved assignment defaults in the scenario library', async () => {
     const onSelectTest = vi.fn()
     apiMock.listScenarios.mockResolvedValue({
@@ -1036,6 +1147,11 @@ describe('TestHub', () => {
 
     await chooseLibraryScriptForGroup('Mobile Checkout')
     await clickWizardStep('Run Settings')
+
+    expect(container.textContent).toContain('Browser/Script Runtime')
+    expect(container.textContent).not.toContain('Device profile')
+
+    await clickRunSettingsTab('Browser/Script Runtime')
 
     expect(container.textContent).toContain('Browser Runtime')
 
@@ -1686,6 +1802,13 @@ function setSelectValue(select: HTMLSelectElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
   setter?.call(select, value)
   select.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+function findControlByLabel<T extends HTMLElement>(container: HTMLElement, label: string, selector: string): T | undefined {
+  const field = Array.from(container.querySelectorAll('label')).find(item => (
+    item.querySelector('span')?.textContent === label
+  ))
+  return field?.querySelector(selector) as T | undefined
 }
 
 function getDurationFieldByLabel(container: HTMLElement, label: string) {

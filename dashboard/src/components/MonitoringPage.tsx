@@ -7,6 +7,10 @@ import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, Heal
 import { readStoredStringArray, writeStoredJSON } from '../utils/browserStorage'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 import ConfirmDestructiveModal, { type DestructiveConfirmation } from './ConfirmDestructiveModal'
+import MonitoringCollectorsCard from './MonitoringCollectorsCard'
+import FleetPoolsCard from './FleetPoolsCard'
+import FleetGeneratorsCard from './FleetGeneratorsCard'
+import TimeslotsPanel from './TimeslotsPanel'
 import './CreateTestModal.css'
 
 interface Props {
@@ -21,9 +25,9 @@ const EMPTY_SERVICES: SystemServicesResponse['services'] = []
 
 const MONITOR_CATEGORIES = [
   { id: 'overview', label: 'Overview', cardIds: ['system-health', 'active-services', 'production-readiness', 'controller'] },
-  { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts'] },
-  { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs'] },
-  { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar'] },
+  { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts', 'fleet-pools', 'generator-metadata'] },
+  { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors'] },
+  { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar', 'timeslots'] },
 ] as const
 
 type MonitorCategoryId = typeof MONITOR_CATEGORIES[number]['id']
@@ -978,7 +982,56 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         />
       ),
     },
-  ], [apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, restartCapabilities?.supports.controller_workload, restartDisabledReason, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, websocketLabel, websocketValueClass])
+    {
+      id: 'collectors',
+      title: 'Monitoring Collectors',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 11a9 9 0 0 1 9 9" />
+          <path d="M4 4a16 16 0 0 1 16 16" />
+          <circle cx="5" cy="19" r="1" />
+        </svg>
+      ),
+      content: <MonitoringCollectorsCard projectId={activeProject?.id} canManage={canManageSystem} />,
+    },
+    {
+      id: 'fleet-pools',
+      title: 'Generator Pools',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <rect x="14" y="14" width="7" height="7" rx="1" />
+        </svg>
+      ),
+      content: <FleetPoolsCard canManage={canManageSystem} />,
+    },
+    {
+      id: 'generator-metadata',
+      title: 'Generator Metadata',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 4h16v6H4z" />
+          <path d="M4 14h16v6H4z" />
+          <path d="M8 7h.01M8 17h.01" />
+        </svg>
+      ),
+      content: <FleetGeneratorsCard canManage={canManageSystem} />,
+    },
+    {
+      id: 'timeslots',
+      title: 'Capacity Reservations',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <path d="M16 2v4M8 2v4M3 10h18" />
+          <path d="M9 16l2 2 4-4" />
+        </svg>
+      ),
+      content: <TimeslotsPanel projectId={activeProject?.id} canManage={canManageSystem} />,
+    },
+  ], [activeProject?.id, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, restartCapabilities?.supports.controller_workload, restartDisabledReason, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))

@@ -29,6 +29,9 @@ import {
   type ProjectSettingsSubsectionId,
   type SettingsSectionId,
 } from './settingsSectionLayout'
+import EntitlementsPanel from './EntitlementsPanel'
+import EntitlementHeadroom from './EntitlementHeadroom'
+import TimeslotsPanel from './TimeslotsPanel'
 import {
   formatAccessOperation,
   formatAuditActor,
@@ -636,6 +639,7 @@ export default function SettingsPage({
   const generalSubsectionSummaries = useMemo<Record<GeneralSettingsSubsectionId, string>>(() => ({
     platform: `${settings.general.max_concurrent_tests} tests`,
     usage: usageAccounting ? `${usageAccounting.totals.run_count} runs` : 'No usage yet',
+    entitlements: 'Edition & limits',
     readiness: formatReadinessStatus(systemReadiness?.status),
     authentication: formatAuthMode(settings.auth.mode),
     governance: `${auditEvents.length} audit event${auditEvents.length === 1 ? '' : 's'}`,
@@ -644,6 +648,7 @@ export default function SettingsPage({
     availability: `${availabilitySnapshot?.effective_available_generators ?? settings.capacity_planning.availability.configured_available_generators} available`,
     generator: `${settings.capacity_planning.generator.cpu_cores} CPU / ${settings.capacity_planning.generator.memory_mb} MB`,
     reservations: `${settings.capacity_planning.reservations?.length ?? 0} reserved`,
+    timeslots: 'Forward-booked windows',
     retention: settings.archive_retention.enabled ? `${settings.archive_retention.default_retention_days} days` : 'Disabled',
   }), [
     availabilitySnapshot?.effective_available_generators,
@@ -1968,6 +1973,27 @@ export default function SettingsPage({
                 {usageSnapshots.length === 0 && <p className="new-test-inline-note">No usage snapshots captured yet.</p>}
               </div>
             </div>
+            <EntitlementHeadroom />
+              </div>
+            </section>
+
+            <section
+              id="settings-general-panel-entitlements"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-general-tab-entitlements"
+              hidden={activeGeneralSubsection !== 'entitlements'}
+            >
+              <div className="settings-group">
+                <div className="settings-subsection">
+                  <div className="settings-manager-summary">
+                    <div>
+                      <span className="setting-label">Entitlements</span>
+                      <span className="setting-desc">Edition, enabled protocol bundles, operational limits, and current consumption.</span>
+                    </div>
+                  </div>
+                  <EntitlementsPanel />
+                </div>
               </div>
             </section>
 
@@ -3161,6 +3187,26 @@ export default function SettingsPage({
               ))}
               <button className="btn btn-secondary" type="button" onClick={addReservation}>Add Reservation</button>
             </div>
+              </div>
+            </section>
+
+            <section
+              id="settings-capacity-panel-timeslots"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-capacity-tab-timeslots"
+              hidden={activeCapacitySubsection !== 'timeslots'}
+            >
+              <div className="settings-group">
+                <div className="settings-subsection" data-testid="capacity-timeslots">
+                  <div className="settings-manager-summary">
+                    <div>
+                      <span className="setting-label">Forward-Booked Capacity</span>
+                      <span className="setting-desc">Reserve a future window of generator capacity for a planned run, with approval and test binding. Distinct from the always-on reserved pools above.</span>
+                    </div>
+                  </div>
+                  <TimeslotsPanel projectId={activeProject?.id} canManage={canManageSystem} />
+                </div>
               </div>
             </section>
 
