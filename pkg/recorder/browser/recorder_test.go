@@ -162,6 +162,23 @@ func TestPauseToggleControlEventFromToolbar(t *testing.T) {
 	}
 }
 
+func TestRecordingStopControlEventFromToolbar(t *testing.T) {
+	var events []Event
+	r := New(Options{StartURL: "https://app.example/", OnEvent: func(e Event) { events = append(events, e) }})
+
+	r.handleRecordBinding(nil, `{"kind":"recording_stop","ts":1}`)
+	if len(events) != 1 || events[0].Type != EventStopRequested {
+		t.Fatalf("events = %+v, want one stop_requested event", events)
+	}
+	snapshot := r.Snapshot()
+	if len(snapshot.Steps) != 0 {
+		t.Errorf("recording_stop control event recorded steps: %+v", snapshot.Steps)
+	}
+	if len(snapshot.Warnings) != 0 {
+		t.Errorf("recording_stop control event produced warnings: %v", snapshot.Warnings)
+	}
+}
+
 func TestAddMarkerTransactionLifecycle(t *testing.T) {
 	var events []Event
 	r := New(Options{StartURL: "https://app.example/", OnEvent: func(e Event) { events = append(events, e) }})
@@ -404,6 +421,7 @@ func TestControlEventKindRecognizesSidebarActions(t *testing.T) {
 		`{"kind":"delete_last_step"}`:             "delete_last_step",
 		`{"kind":"step_exclude","seq":1}`:         "step_exclude",
 		`{"kind":"step_mark","seq":1}`:            "step_mark",
+		`{"kind":"recording_stop"}`:               "recording_stop",
 		// Capture steps must NOT be classified as control events.
 		`{"kind":"click"}`: "",
 		`{"kind":"fill"}`:  "",
@@ -548,6 +566,18 @@ func TestCaptureSidebarUsesTransactionStartStopToggle(t *testing.T) {
 	}
 	if !strings.Contains(captureScript, "send({ kind: 'transaction_end', name: current, ts: Date.now() });") {
 		t.Fatal("capture sidebar stop toggle must end the active transaction")
+	}
+}
+
+func TestCaptureToolbarProvidesRecordingStopControl(t *testing.T) {
+	if !strings.Contains(captureScript, `class="stopRec" title="Stop recording">Stop</button>`) {
+		t.Fatal("compact recorder toolbar must render a visible Stop button")
+	}
+	if strings.Count(captureScript, `class="stopRec" title="Stop recording">Stop</button>`) < 2 {
+		t.Fatal("expanded recorder controls must also render a visible Stop button")
+	}
+	if !strings.Contains(captureScript, "send({ kind: 'recording_stop', ts: Date.now() });") {
+		t.Fatal("recorder Stop button must send a recording_stop control event")
 	}
 }
 

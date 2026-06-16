@@ -394,6 +394,46 @@ func TestBrowserRecordingManagerStopIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestBrowserRecordingManagerStopsFromInPageControlEvent(t *testing.T) {
+	hub := NewHub()
+	m := NewBrowserRecordingManager(hub)
+	m.stopTimeout = time.Hour
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	fake.stopStarted = make(chan struct{})
+	fake.stopRelease = make(chan struct{})
+	fake.install(m)
+
+	started, err := m.Start(BrowserRecordingStartRequest{StartURL: "https://shop.example/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainHubBroadcasts(t, hub)
+
+	fake.emit(recbrowser.Event{Type: recbrowser.EventStopRequested})
+	stopping := waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopping)
+	if stopping.StopReason != browserRecordingStopRequested {
+		t.Fatalf("in-page stop reason = %q, want requested", stopping.StopReason)
+	}
+	select {
+	case <-fake.stopStarted:
+	case <-time.After(time.Second):
+		t.Fatal("backend Stop was not started from in-page stop event")
+	}
+	close(fake.stopRelease)
+
+	stopped := waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)
+	if stopped.StopReason != browserRecordingStopRequested {
+		t.Fatalf("stopped reason = %q, want requested", stopped.StopReason)
+	}
+	if fake.stopCalls != 1 {
+		t.Errorf("backend stop calls = %d, want 1", fake.stopCalls)
+	}
+	types := broadcastTypes(drainHubBroadcasts(t, hub))
+	if !containsString(types, "browser_recording_stopping") || !containsString(types, "browser_recording_stopped") {
+		t.Errorf("broadcasts = %v, want stopping and stopped", types)
+	}
+}
+
 func TestBrowserRecordingManagerForceStopsStuckCleanup(t *testing.T) {
 	hub := NewHub()
 	m := NewBrowserRecordingManager(hub)

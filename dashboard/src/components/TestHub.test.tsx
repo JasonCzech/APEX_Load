@@ -147,6 +147,20 @@ describe('TestHub', () => {
     await flushTimeouts()
   }
 
+  const selectManualShapeByName = async (shapeName: string) => {
+    const card = Array.from(container.querySelectorAll('.scenario-shape-catalog-card')).find(item => (
+      item.querySelector('.scenario-support-card-header')?.textContent?.includes(shapeName)
+    ))
+    expect(card).toBeDefined()
+    if (!card) return
+    const manualButton = Array.from(card.querySelectorAll('button')).find(button => button.textContent?.includes('Use Manual Shape'))
+    expect(manualButton).toBeDefined()
+    if (!manualButton) return
+    await act(async () => {
+      manualButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -602,6 +616,72 @@ describe('TestHub', () => {
     expect(wizardStepComplete('Run Settings')).toBe(true)
   })
 
+  it('seeds goal-oriented run settings and shows shape guidance when an open-arrival-rate shape is selected manually', async () => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await clickButton('Build from Workload Shape')
+    await selectManualShapeByName('Open Arrival Rate')
+
+    // Guidance banner reflects the chosen shape on the Scripts step.
+    const guidance = container.querySelector('.scenario-shape-guidance')
+    expect(guidance).toBeTruthy()
+    expect(guidance?.textContent).toContain('Open Arrival Rate')
+    expect(guidance?.textContent).toContain('throughput')
+
+    await clickWizardStep('Run Settings')
+    const durationField = getDurationFieldByLabel(container, 'Duration')
+    expect(durationField?.input.value).toBe('10')
+    expect(durationField?.select.value).toBe('m')
+    const modeSelect = Array.from(container.querySelectorAll('select')).find(select => select.value === 'goal_oriented')
+    expect(modeSelect?.value).toBe('goal_oriented')
+    expect(container.textContent).toContain('Goal Controller')
+  })
+
+  it('seeds stair-step stages when a stepped-ramp shape is selected manually', async () => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await clickButton('Build from Workload Shape')
+    await selectManualShapeByName('Stepped Ramp')
+    await clickWizardStep('Run Settings')
+
+    const stageRows = container.querySelectorAll('.scenario-stage-row')
+    expect(stageRows.length).toBe(6)
+    const firstStageName = stageRows[0].querySelector('input') as HTMLInputElement
+    expect(firstStageName?.value).toBe('Step 1')
+    expect(container.textContent).toContain('Peak staged VUsers: 75')
+    // Stages active → the "Use Simple Ramp" escape hatch is offered.
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.includes('Use Simple Ramp'))).toBe(true)
+  })
+
+  it('re-seeds the form from a new shape while preserving the chosen script', async () => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await clickButton('Build from Workload Shape')
+    await selectManualShapeByName('Open Arrival Rate')
+    await chooseLibraryScriptForGroup()
+
+    // Switch to a different shape from the catalog.
+    await clickWizardStep('Shape / Source')
+    await selectManualShapeByName('Stepped Ramp')
+
+    // Script selection survives the re-seed.
+    const groupCard = container.querySelector('.scenario-script-group-list-spacious .scenario-script-group-card')
+    expect(groupCard?.textContent).toContain('Checkout Flow')
+
+    // Load model now reflects the stepped-ramp preset (12m duration).
+    await clickWizardStep('Run Settings')
+    expect(getDurationFieldByLabel(container, 'Duration')?.input.value).toBe('12')
+  })
+
   it('groups Scenario Builder run settings into focused tabs', async () => {
     await act(async () => {
       root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
@@ -621,6 +701,11 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Pre-Run Assurance')
     expect(container.textContent).toContain('Advanced Stair-Step Ramp')
     expect(container.textContent).not.toContain('Auto Assignment')
+
+    const workspace = container.querySelector('.scenario-builder-workspace.with-preview')
+    expect(workspace).toBeTruthy()
+    expect(workspace?.querySelector('.scenario-builder-main .scenario-run-settings-tabs')).toBeTruthy()
+    expect(workspace?.querySelector('.scenario-builder-preview .scenario-model-preview-panel')).toBeTruthy()
 
     await clickRunSettingsTab('Controller/Generator')
 

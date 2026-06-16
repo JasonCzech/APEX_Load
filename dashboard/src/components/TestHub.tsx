@@ -10,7 +10,7 @@ import './TestHub.css'
 import './CreateTestModal.css'
 import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
-import { buildScenarioModelPreview, buildScenarioShapeCatalog, formatModelTimeLabel, ScenarioModelPreview, ScenarioSourceMode, ScenarioWizardStep, validateStageTimeline } from './scenarioWizardUtils'
+import { buildScenarioModelPreview, buildScenarioShapeCatalog, formatModelTimeLabel, getScenarioShapePreset, ScenarioModelPreview, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, validateStageTimeline } from './scenarioWizardUtils'
 import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
 import DurationField from './DurationField'
 import PageViewToggle from './PageViewToggle'
@@ -76,6 +76,43 @@ interface ScenarioFormGroup {
   ramp_down: string
   stages: LoadStageDraft[]
   initialization: 'at_runtime' | 'at_once'
+}
+
+interface ScenarioSeedGroup {
+  name?: string
+  vusers?: number
+  ramp_up?: string
+  ramp_down?: string
+  stages?: LoadStageDraft[]
+}
+
+// Normalized intermediate consumed by seedFormFromScenario — the union of fields produced
+// by both the starter-template path and the workload-shape preset path.
+interface ScenarioSeed {
+  duration?: string
+  scenario_mode?: ScenarioMode
+  script_shakeout?: boolean
+  resource_baseline?: boolean
+  groups?: ScenarioSeedGroup[]
+  goal?: {
+    target_average_tps?: number
+    min_vusers?: number
+    max_vusers?: number
+    p95_latency_ms?: number
+    max_error_pct?: number
+  }
+  pacing?: {
+    type?: ScenarioFormState['runtime_pacing_type']
+    delay_ms?: number
+    interval_ms?: number
+    tps?: number
+  }
+  think_time?: { mean_ms?: number, ignore?: boolean }
+  iterations?: number
+  log_level?: string
+  auto_transactions?: string
+  continue_on_error?: boolean
+  snapshot_on_error?: boolean
 }
 
 type ScenarioSortField = 'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_test_id' | 'last_run_at' | 'last_run_ended_at' | 'result_count'
@@ -152,6 +189,57 @@ function goalConfigFromForm(form: ScenarioFormState): GoalConfig {
 
 function maxStageVUsers(stages: LoadStageDraft[]) {
   return stages.reduce((max, stage) => Math.max(max, Number(stage.target_vusers) || 0), 0)
+}
+
+function scenarioSeedFromTemplate(template: LoadModelTemplate): ScenarioSeed {
+  const runtime = template.scenario.runtime_settings
+  const goal = template.scenario.goal_config
+  return {
+    duration: template.scenario.duration,
+    scenario_mode: template.scenario.scenario_mode || 'vuser_driven',
+    script_shakeout: template.scenario.script_shakeout,
+    resource_baseline: template.scenario.resource_baseline,
+    groups: template.scenario.groups,
+    goal: goal ? {
+      target_average_tps: goal.target_average_tps,
+      min_vusers: goal.min_vusers,
+      max_vusers: goal.max_vusers,
+      p95_latency_ms: goal.p95_latency_ms,
+      max_error_pct: goal.max_error_pct,
+    } : undefined,
+    pacing: runtime?.pacing ? {
+      type: runtime.pacing.type as ScenarioFormState['runtime_pacing_type'],
+      delay_ms: runtime.pacing.delay_ms,
+      interval_ms: runtime.pacing.interval_ms,
+      tps: runtime.pacing.tps,
+    } : undefined,
+    think_time: runtime?.think_time ? { mean_ms: runtime.think_time.mean_ms, ignore: runtime.think_time.ignore } : undefined,
+    iterations: runtime?.iterations,
+    log_level: runtime?.log_level,
+    auto_transactions: runtime?.auto_transactions,
+    continue_on_error: runtime?.error_handling?.continue_on_error,
+    snapshot_on_error: runtime?.error_handling?.snapshot_on_error,
+  }
+}
+
+function scenarioSeedFromPreset(preset: ScenarioShapePreset): ScenarioSeed {
+  return {
+    duration: preset.duration,
+    scenario_mode: preset.scenarioMode || 'vuser_driven',
+    script_shakeout: preset.scriptShakeout,
+    resource_baseline: preset.resourceBaseline,
+    groups: preset.groups.map(group => ({
+      name: group.name,
+      vusers: maxStageVUsers(group.stages || []) || group.vusers,
+      ramp_up: group.ramp_up,
+      ramp_down: group.ramp_down,
+      stages: group.stages,
+    })),
+    goal: preset.goal,
+    pacing: preset.pacing,
+    continue_on_error: preset.continueOnError,
+    snapshot_on_error: preset.snapshotOnError,
+  }
 }
 
 function normalizeStageForPayload(stage: LoadStageDraft) {
@@ -836,6 +924,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     [loadModelSupportMatrix, loadModelTemplates],
   )
   const selectedShape = shapeCatalog.find(option => option.id === selectedShapeId)
+  const selectedShapePreset: ScenarioShapePreset | undefined = selectedShape ? getScenarioShapePreset(selectedShape.id) : undefined
   const selectedTemplate = loadModelTemplates.find(template => template.id === selectedLoadModelTemplateId)
   const selectedCloneScenario = useMemo(
     () => scenarios.find(scenario => scenario.id === selectedCloneScenarioId) || null,
@@ -1249,7 +1338,49 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     void loadScenarioRuns(scenario)
   }
 
+  // Single form-seeding path shared by the starter-template button and the workload-shape
+  // catalog. Preserves any per-group script_id / initialization already chosen so switching
+  // shapes re-seeds the load model without discarding script selections.
+  const seedFormFromScenario = (seed: ScenarioSeed) => {
+    setForm(prev => ({
+      ...prev,
+      duration: seed.duration || prev.duration,
+      scenario_mode: seed.scenario_mode || 'vuser_driven',
+      script_shakeout: seed.script_shakeout ?? prev.script_shakeout,
+      resource_baseline: seed.resource_baseline ?? prev.resource_baseline,
+      groups: ensureScenarioGroups(
+        ((seed.groups && seed.groups.length > 0) ? seed.groups : [{ name: '', vusers: 10 }]).map((group, index) => ({
+          name: group.name || prev.groups[index]?.name || (index === 0 ? '' : `Group ${index + 1}`),
+          script_id: prev.groups[index]?.script_id || prev.groups[0]?.script_id || '',
+          vusers: group.vusers || prev.groups[index]?.vusers || 10,
+          ramp_up: group.ramp_up || '',
+          ramp_down: group.ramp_down || '',
+          stages: group.stages || [],
+          initialization: prev.groups[index]?.initialization || 'at_runtime',
+        })),
+      ),
+      goal_target_average_tps: seed.goal?.target_average_tps,
+      goal_min_vusers: seed.goal?.min_vusers,
+      goal_max_vusers: seed.goal?.max_vusers,
+      goal_p95_latency_ms: seed.goal?.p95_latency_ms,
+      goal_max_error_pct: seed.goal?.max_error_pct,
+      runtime_iterations: seed.iterations ?? prev.runtime_iterations,
+      runtime_pacing_type: (seed.pacing?.type || prev.runtime_pacing_type || '') as ScenarioFormState['runtime_pacing_type'],
+      runtime_pacing_delay_ms: seed.pacing?.delay_ms ?? prev.runtime_pacing_delay_ms,
+      runtime_pacing_interval_ms: seed.pacing?.interval_ms ?? prev.runtime_pacing_interval_ms,
+      runtime_pacing_tps: seed.pacing?.tps ?? prev.runtime_pacing_tps,
+      runtime_think_time_ms: seed.think_time?.mean_ms ?? prev.runtime_think_time_ms,
+      runtime_ignore_think_time: seed.think_time?.ignore ?? prev.runtime_ignore_think_time,
+      runtime_log_level: seed.log_level ?? prev.runtime_log_level,
+      runtime_auto_transactions: seed.auto_transactions ?? prev.runtime_auto_transactions,
+      continue_on_error: seed.continue_on_error ?? prev.continue_on_error,
+      snapshot_on_error: seed.snapshot_on_error ?? prev.snapshot_on_error,
+    }))
+  }
+
   const selectShapeOption = (shapeId: string) => {
+    const preset = getScenarioShapePreset(shapeId)
+    const shapeChanged = shapeId !== selectedShapeId
     setSelectedShapeId(shapeId)
     setSelectedCloneScenarioId('')
     setSelectedLoadModelTemplateId('')
@@ -1258,6 +1389,11 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setScenarioSourceMode('shape')
     setScenarioStartChoice('shape')
     setScriptSelectionTargetIndex(null)
+    if (preset && shapeChanged) {
+      seedFormFromScenario(scenarioSeedFromPreset(preset))
+    }
+    setStageGroupIndex(0)
+    setRunSettingsTab(preset?.recommendedRunTab ?? 'scenario')
     setWizardStep('scripts')
   }
 
@@ -1272,41 +1408,9 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setScenarioSourceMode('shape')
     setScenarioStartChoice('shape')
     setScriptSelectionTargetIndex(null)
+    setStageGroupIndex(0)
     setWizardStep('scripts')
-    setForm(prev => ({
-      ...prev,
-      duration: template.scenario.duration || prev.duration,
-      scenario_mode: template.scenario.scenario_mode || 'vuser_driven',
-      script_shakeout: template.scenario.script_shakeout ?? prev.script_shakeout,
-      resource_baseline: template.scenario.resource_baseline ?? prev.resource_baseline,
-      groups: ensureScenarioGroups(
-        (template.scenario.groups.length > 0 ? template.scenario.groups : [{ name: '', vusers: 10 }]).map((group, index) => ({
-          name: group.name || prev.groups[index]?.name || (index === 0 ? '' : `Group ${index + 1}`),
-          script_id: prev.groups[index]?.script_id || prev.groups[0]?.script_id || '',
-          vusers: group.vusers || prev.groups[index]?.vusers || 10,
-          ramp_up: group.ramp_up || '',
-          ramp_down: group.ramp_down || '',
-          stages: group.stages || [],
-          initialization: prev.groups[index]?.initialization || 'at_runtime',
-        })),
-      ),
-      goal_target_average_tps: template.scenario.goal_config?.target_average_tps,
-      goal_min_vusers: template.scenario.goal_config?.min_vusers,
-      goal_max_vusers: template.scenario.goal_config?.max_vusers,
-      goal_p95_latency_ms: template.scenario.goal_config?.p95_latency_ms,
-      goal_max_error_pct: template.scenario.goal_config?.max_error_pct,
-      runtime_iterations: template.scenario.runtime_settings?.iterations ?? prev.runtime_iterations,
-      runtime_pacing_type: (template.scenario.runtime_settings?.pacing?.type || prev.runtime_pacing_type || '') as ScenarioFormState['runtime_pacing_type'],
-      runtime_pacing_delay_ms: template.scenario.runtime_settings?.pacing?.delay_ms ?? prev.runtime_pacing_delay_ms,
-      runtime_pacing_interval_ms: template.scenario.runtime_settings?.pacing?.interval_ms ?? prev.runtime_pacing_interval_ms,
-      runtime_pacing_tps: template.scenario.runtime_settings?.pacing?.tps ?? prev.runtime_pacing_tps,
-      runtime_think_time_ms: template.scenario.runtime_settings?.think_time?.mean_ms ?? prev.runtime_think_time_ms,
-      runtime_ignore_think_time: template.scenario.runtime_settings?.think_time?.ignore ?? prev.runtime_ignore_think_time,
-      runtime_log_level: template.scenario.runtime_settings?.log_level ?? prev.runtime_log_level,
-      runtime_auto_transactions: template.scenario.runtime_settings?.auto_transactions ?? prev.runtime_auto_transactions,
-      continue_on_error: template.scenario.runtime_settings?.error_handling?.continue_on_error ?? prev.continue_on_error,
-      snapshot_on_error: template.scenario.runtime_settings?.error_handling?.snapshot_on_error ?? prev.snapshot_on_error,
-    }))
+    seedFormFromScenario(scenarioSeedFromTemplate(template))
   }
 
   const openGoalSizing = async () => {
@@ -1850,6 +1954,26 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     )
   }
 
+  const renderShapeGuidance = () => {
+    if (!selectedShape || !selectedShapePreset) return null
+    const showMultiGroupHint = selectedShapePreset.suggestMultipleGroups && formGroups.length > 1
+    return (
+      <div className="scenario-shape-guidance" role="note">
+        <div className="scenario-shape-guidance-header">
+          <span className="scenario-shape-guidance-name">{selectedShape.support.name}</span>
+          <span className="scenario-shape-guidance-category">{selectedShape.support.category}</span>
+        </div>
+        <p className="scenario-shape-guidance-copy">{selectedShapePreset.guidance}</p>
+        {showMultiGroupHint && (
+          <p className="scenario-shape-guidance-copy secondary">This shape seeds {formGroups.length} groups — assign a script to each.</p>
+        )}
+        {selectedShape.support.notes && (
+          <p className="scenario-shape-guidance-copy secondary">{selectedShape.support.notes}</p>
+        )}
+      </div>
+    )
+  }
+
   const renderWizardStep = () => {
     if (goalSizingOpen) {
       return renderGoalSizingPanel()
@@ -2042,6 +2166,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
               <p>Add each script participating in the scenario and set its initialization scope. Tune VUsers and ramp on the Run Settings step.</p>
             </div>
           </div>
+          {renderShapeGuidance()}
           <div className="settings-grid scenario-core-grid">
             <label className="scenario-field">
               <span>Scenario Name</span>
@@ -2125,6 +2250,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
             <h4>Run Settings</h4>
             <p>Configure VUsers, ramp, duration, mode, goals, stage modeling, browser defaults, and generator assignment.</p>
           </div>
+          {renderShapeGuidance()}
           <div className="scenario-run-settings-tabs" role="tablist" aria-label="Run settings sections">
             {runSettingsTabs.map(tab => (
               <button
@@ -2679,16 +2805,22 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
             })}
           </div>
 
-          {renderWizardStep()}
+          <div className={`scenario-builder-workspace ${showModelPreview ? 'with-preview' : ''}`}>
+            <div className="scenario-builder-main">
+              {renderWizardStep()}
+            </div>
 
-          {showModelPreview && (
-            <ScenarioModelPreviewPanel
-              model={scenarioModel}
-              shapeLabel={shapeLabel}
-              dataPoolLabel={dataPoolLabel}
-              validationStatus={validationLabel}
-            />
-          )}
+            {showModelPreview && (
+              <aside className="scenario-builder-preview">
+                <ScenarioModelPreviewPanel
+                  model={scenarioModel}
+                  shapeLabel={shapeLabel}
+                  dataPoolLabel={dataPoolLabel}
+                  validationStatus={validationLabel}
+                />
+              </aside>
+            )}
+          </div>
 
           {renderSourceScenarioRunsPanel()}
 

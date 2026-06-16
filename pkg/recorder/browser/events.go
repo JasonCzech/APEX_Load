@@ -113,6 +113,9 @@ const (
 	// EventStepUpdate reports an in-place step change (exclude/delete) so the
 	// live feed can refresh without re-fetching the whole session.
 	EventStepUpdate = "step_update"
+	// EventStopRequested reports the in-page recorder controls requesting that
+	// the API manager stop the recording through its normal async stop path.
+	EventStopRequested = "stop_requested"
 )
 
 // Event notifies a live observer (e.g. the API control-panel manager) of

@@ -367,6 +367,8 @@
     'padding:4px 8px;font:inherit;cursor:pointer}' +
     'button:hover{background:#333d54}' +
     'button.active,button.on{background:#c2410c;border-color:#c2410c}' +
+    '.stopRec{background:#7f1d1d;border-color:#b91c1c;color:#fee2e2}' +
+    '.stopRec:hover{background:#991b1b}' +
     '.dot{width:8px;height:8px;border-radius:50%;background:#ef4444;flex:0 0 auto}' +
     '.dot.paused{background:#9ca3af}' +
     '.phead{display:flex;gap:8px;align-items:center;cursor:grab;user-select:none}' +
@@ -398,13 +400,13 @@
   const TOOLBAR_HTML =
     '<div class="wrap">' +
     '<div class="bar"><span class="dot"></span><span class="label">REC</span>' +
-    '<button class="pause">Pause</button><button class="assert">Assert</button>' +
+    '<button class="pause">Pause</button><button class="assert">Assert</button><button class="stopRec" title="Stop recording">Stop</button>' +
     '<button class="expand" title="Advanced controls">⋯</button></div>' +
     '<div class="panel">' +
     '<div class="phead"><span class="dot"></span><span class="title">APEX Recorder</span>' +
     '<span class="label"></span><span class="spacer"></span>' +
     '<button class="collapse" title="Collapse">▾</button></div>' +
-    '<div class="prow"><button class="pause">Pause</button><button class="assert">Assert</button></div>' +
+    '<div class="prow"><button class="pause">Pause</button><button class="assert">Assert</button><button class="stopRec" title="Stop recording">Stop</button></div>' +
     '<div class="counts"></div>' +
     '<div class="section"><span class="slabel">Section</span>' +
     '<button data-section="init">Init</button><button data-section="actions">Main</button>' +
@@ -447,6 +449,7 @@
     const labels = shadow.querySelectorAll('.label');
     const pauseBtns = shadow.querySelectorAll('.pause');
     const assertBtns = shadow.querySelectorAll('.assert');
+    const stopBtns = shadow.querySelectorAll('.stopRec');
     const expandBtn = shadow.querySelector('.expand');
     const collapseBtn = shadow.querySelector('.collapse');
     const counts = shadow.querySelector('.counts');
@@ -611,6 +614,7 @@
     collapseBtn.addEventListener('click', (ev) => { ev.stopPropagation(); setExpanded(false); });
     pauseBtns.forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); send({ kind: 'pause_toggle', ts: Date.now() }); }));
     assertBtns.forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); if (paused) return; send({ kind: 'pick_toggle', ts: Date.now() }); }));
+    stopBtns.forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); send({ kind: 'recording_stop', ts: Date.now() }); }));
     sectionBtns.forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); send({ kind: 'section_set', section: b.getAttribute('data-section'), ts: Date.now() }); }));
 
     function doNavigate() { const u = navUrl.value.trim(); if (u) send({ kind: 'navigate', url: u, ts: Date.now() }); }

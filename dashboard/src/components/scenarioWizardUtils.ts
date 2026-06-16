@@ -1,4 +1,4 @@
-import { LoadModelSupportEntry, LoadModelTemplate, LoadStageDraft, StageTimelineValidationResult } from '../types'
+import { LoadModelSupportEntry, LoadModelTemplate, LoadStageDraft, ScenarioMode, StageTimelineValidationResult } from '../types'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 
 export type ScenarioWizardStep = 'start' | 'source' | 'scripts' | 'run' | 'data' | 'review'
@@ -53,6 +53,154 @@ export function buildScenarioShapeCatalog(
     support,
     templates: templates.filter(template => template.shape_id === support.id),
   }))
+}
+
+export type ScenarioShapePacingType = 'none' | 'fixed_delay' | 'fixed_interval' | 'tps'
+
+export interface ScenarioShapePresetGoal {
+  target_average_tps?: number
+  min_vusers?: number
+  max_vusers?: number
+  p95_latency_ms?: number
+  max_error_pct?: number
+}
+
+export interface ScenarioShapePresetPacing {
+  type: ScenarioShapePacingType
+  delay_ms?: number
+  interval_ms?: number
+  tps?: number
+}
+
+/**
+ * A ScenarioShapePreset is the deterministic starting point applied when the operator
+ * selects a workload shape via "Use Manual Shape". It seeds the scenario form so the
+ * later wizard steps reflect the chosen shape (mode, groups, stages, goal envelope).
+ *
+ * Numbers mirror pkg/api/load_model_support.go so the manual-shape path and the matching
+ * starter-template button produce the same draft. Invariants (enforced in tests):
+ *   - staged groups: Σ(stage durations) <= scenario `duration`, and group.vusers == staged peak.
+ *   - closed-vuser keeps exactly one group with no stages.
+ */
+export interface ScenarioShapePreset {
+  duration: string
+  scenarioMode?: ScenarioMode
+  scriptShakeout?: boolean
+  resourceBaseline?: boolean
+  groups: ScenarioModelGroupInput[]
+  goal?: ScenarioShapePresetGoal
+  pacing?: ScenarioShapePresetPacing
+  continueOnError?: boolean
+  snapshotOnError?: boolean
+  guidance: string
+  recommendedRunTab?: 'scenario' | 'runtime' | 'infrastructure'
+  suggestMultipleGroups?: boolean
+}
+
+function steppedRampStages(): LoadStageDraft[] {
+  return [
+    { name: 'Step 1', type: 'ramp_up', duration: '2m', target_vusers: 25 },
+    { name: 'Hold 1', type: 'hold', duration: '2m', target_vusers: 25 },
+    { name: 'Step 2', type: 'ramp_up', duration: '2m', target_vusers: 50 },
+    { name: 'Hold 2', type: 'hold', duration: '2m', target_vusers: 50 },
+    { name: 'Step 3', type: 'ramp_up', duration: '2m', target_vusers: 75 },
+    { name: 'Hold 3', type: 'hold', duration: '2m', target_vusers: 75 },
+  ]
+}
+
+function stressStages(): LoadStageDraft[] {
+  return [
+    { name: 'Ramp 1', type: 'ramp_up', duration: '4m', target_vusers: 100 },
+    { name: 'Hold 1', type: 'hold', duration: '4m', target_vusers: 100 },
+    { name: 'Ramp 2', type: 'ramp_up', duration: '4m', target_vusers: 200 },
+    { name: 'Hold 2', type: 'hold', duration: '4m', target_vusers: 200 },
+    { name: 'Ramp 3', type: 'ramp_up', duration: '2m', target_vusers: 300 },
+    { name: 'Hold 3', type: 'hold', duration: '2m', target_vusers: 300 },
+  ]
+}
+
+function chaosStages(): LoadStageDraft[] {
+  return [
+    { name: 'Baseline', type: 'ramp_up', duration: '3m', target_vusers: 25 },
+    { name: 'Turbulence', type: 'hold', duration: '10m', target_vusers: 25, target_tps: 15 },
+    { name: 'Recovery', type: 'ramp_down', duration: '5m', target_vusers: 5 },
+  ]
+}
+
+export const SCENARIO_SHAPE_PRESETS: Record<string, ScenarioShapePreset> = {
+  'closed-vuser': {
+    duration: '3m',
+    scenarioMode: 'vuser_driven',
+    groups: [{ vusers: 5, ramp_up: '30s' }],
+    guidance: 'Fixed VUsers loop for the full duration. Set per-group VUsers and ramp on the Run Settings step.',
+  },
+  'open-arrival-rate': {
+    duration: '10m',
+    scenarioMode: 'goal_oriented',
+    groups: [{ vusers: 10, ramp_up: '2m' }],
+    goal: { target_average_tps: 25, min_vusers: 5, max_vusers: 50, p95_latency_ms: 800, max_error_pct: 1 },
+    pacing: { type: 'tps', tps: 25 },
+    guidance: 'Throughput-driven: the goal controller holds a target TPS while pacing keeps arrival rate steady. Tune Target TPS and the goal envelope on Run Settings.',
+    recommendedRunTab: 'scenario',
+  },
+  'stepped-ramp': {
+    duration: '12m',
+    scenarioMode: 'vuser_driven',
+    groups: [{ vusers: 75, stages: steppedRampStages() }],
+    guidance: 'Each step holds a VUser target before the next increase. Edit the steps in the Advanced Stair-Step Ramp panel on Run Settings.',
+  },
+  'spike-rendezvous': {
+    duration: '8m',
+    scenarioMode: 'vuser_driven',
+    groups: [{ vusers: 100, ramp_up: '1m', ramp_down: '1m' }],
+    guidance: 'Add an actions[].type=rendezvous step in the script before the spike transaction so VUsers synchronize before the surge.',
+  },
+  soak: {
+    duration: '2h',
+    scenarioMode: 'vuser_driven',
+    groups: [{ vusers: 20, ramp_up: '10m', ramp_down: '5m' }],
+    pacing: { type: 'fixed_delay', delay_ms: 1000 },
+    guidance: 'Long, steady-state endurance run. Keep VUsers modest and pacing consistent to surface leaks and drift over time.',
+  },
+  stress: {
+    duration: '20m',
+    scenarioMode: 'goal_oriented',
+    groups: [{ vusers: 300, stages: stressStages() }],
+    goal: { max_vusers: 300, p95_latency_ms: 1000, max_error_pct: 2 },
+    guidance: 'Escalating load to find the breaking point. Staged groups push VUsers higher while the goal guardrails (max VUsers, SLA) and capacity advisory keep the run bounded.',
+  },
+  'goal-based': {
+    duration: '10m',
+    scenarioMode: 'goal_oriented',
+    groups: [{ vusers: 10, ramp_up: '2m' }],
+    goal: { target_average_tps: 30, min_vusers: 5, max_vusers: 100, p95_latency_ms: 800, max_error_pct: 1 },
+    guidance: 'The goal controller scales VUsers within the min/max guardrails to hold the target TPS and SLA. Set the goal envelope on Run Settings.',
+  },
+  'chaos-resilience': {
+    duration: '18m',
+    scenarioMode: 'goal_oriented',
+    scriptShakeout: true,
+    resourceBaseline: true,
+    groups: [{ name: 'chaos-steady-state', vusers: 25, ramp_up: '3m', ramp_down: '2m', stages: chaosStages() }],
+    goal: { target_average_tps: 15, min_vusers: 5, max_vusers: 75, p95_latency_ms: 1200, max_error_pct: 5 },
+    continueOnError: true,
+    snapshotOnError: true,
+    guidance: 'Guarded resilience run: the shakeout gate validates scripts first, then baseline/turbulence/recovery stages run with snapshot-on-error evidence. Pair with controlled fault injection.',
+  },
+  'mixed-protocol': {
+    duration: '15m',
+    scenarioMode: 'vuser_driven',
+    groups: [
+      { name: 'api-bulk', vusers: 500, ramp_up: '5m', ramp_down: '2m' },
+      { name: 'browser-canary', vusers: 5, ramp_up: '2m', ramp_down: '1m' },
+    ],
+    suggestMultipleGroups: true,
+    guidance: 'Assign a different protocol script to each group; the capacity advisory accounts for per-protocol density. Pick scripts for every group on the Scripts step.',
+  },
+}
+
+export function getScenarioShapePreset(shapeId: string): ScenarioShapePreset | undefined {
+  return SCENARIO_SHAPE_PRESETS[shapeId]
 }
 
 export function parseDurationSeconds(value?: string, fallbackSeconds = 60): number {

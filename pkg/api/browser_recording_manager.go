@@ -769,6 +769,8 @@ func (m *BrowserRecordingManager) handleEvent(session *BrowserRecordingSession, 
 			return
 		}
 		m.broadcast("browser_recording_step_update", session, map[string]any{"step": event.Step})
+	case recbrowser.EventStopRequested:
+		m.Stop(session.ID)
 	}
 }
 

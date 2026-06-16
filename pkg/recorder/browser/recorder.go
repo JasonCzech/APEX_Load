@@ -686,7 +686,8 @@ func controlEventKind(payload string) string {
 	switch probe.Kind {
 	case "pause_toggle", "pick_toggle",
 		"section_set", "transaction_start", "transaction_end", "note_add",
-		"navigate", "delete_last_step", "step_exclude", "step_mark":
+		"navigate", "delete_last_step", "step_exclude", "step_mark",
+		"recording_stop":
 		return probe.Kind
 	}
 	return ""
@@ -736,6 +737,8 @@ func (r *Recorder) handleControlEvent(payload string) {
 		_, err = r.SetStepExcluded(ev.Seq, ev.Excluded)
 	case "step_mark":
 		_, err = r.SetStepMark(ev.Seq, ev.Secret, ev.Param)
+	case "recording_stop":
+		r.emit(Event{Type: EventStopRequested})
 	}
 	if err != nil {
 		r.emit(Event{Type: EventWarning, Warning: fmt.Sprintf("recorder control %q: %v", ev.Kind, err)})
