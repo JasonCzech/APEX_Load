@@ -1085,6 +1085,88 @@ describe('ScriptEditor', () => {
     expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"Checkout Flow"')
   })
 
+  it('hides imported review tabs from the Debug workbench', async () => {
+    const importedScript: ScriptDefinition = {
+      ...initialScript,
+      metadata: {
+        import: {
+          source: 'enterprise_script_archive',
+          source_script_name: 'checkout.usr',
+          preserved: {
+            source_review: {
+              source_files: [
+                {
+                  path: 'Action.c',
+                  language: 'c',
+                  content: 'Action()\\n{\\n\\tweb_url("Login", "URL=https://example.com/login", LAST);\\n}',
+                },
+              ],
+              mappings: [
+                {
+                  id: 'login-action',
+                  source_file: 'Action.c',
+                  start_line: 3,
+                  end_line: 3,
+                  function: 'web_url',
+                  target_path: 'actions[0]',
+                  target_name: 'Login',
+                  target_kind: 'action',
+                  status: 'converted',
+                },
+              ],
+            },
+          },
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={importedScript} />)
+    })
+
+    const importedTab = findCenterTab(container, 'Imported Metadata')
+    expect(importedTab).toBeDefined()
+    expect(findCenterTab(container, 'Conversion Mapping')).toBeDefined()
+
+    await act(async () => {
+      importedTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(findCenterTab(container, 'Imported Metadata')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
+
+    const debugTab = findOpenDebuggerButton(container)
+    expect(debugTab).toBeDefined()
+    if (!debugTab) return
+
+    await act(async () => {
+      debugTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const debugCenter = container.querySelector('.debugger-code-center')
+    expect(debugCenter).not.toBeNull()
+    expect(findCenterTab(debugCenter || container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(debugCenter || container, 'Imported Metadata')).toBeUndefined()
+    expect(findCenterTab(debugCenter || container, 'Conversion Mapping')).toBeUndefined()
+    expect(debugCenter?.textContent).not.toContain('Imported Metadata')
+    expect(debugCenter?.textContent).not.toContain('Conversion Mapping')
+    expect(container.querySelector('#imported-metadata-section')).toBeNull()
+
+    const authorTab = findWorkspaceTab(container, 'Author')
+    expect(authorTab).toBeDefined()
+    await act(async () => {
+      authorTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(findCenterTab(container, 'Imported Metadata')).toBeDefined()
+    expect(findCenterTab(container, 'Conversion Mapping')).toBeDefined()
+    expect(findCenterTab(container, 'Imported Metadata')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
+  })
+
   it('selects the Browser Replay center tab for browser scripts in Debug mode', async () => {
     const browserScript: ScriptDefinition = {
       ...initialScript,

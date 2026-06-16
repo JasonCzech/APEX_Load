@@ -221,6 +221,8 @@ interface CenterWorkbenchTabDescriptor {
   closeable: boolean
 }
 
+const DEBUG_HIDDEN_CENTER_TABS = new Set<CenterWorkbenchTabId>(['imported-metadata', 'conversion-mapping'])
+
 type AuthorRightSidebarKind =
   | 'auto-parameterization'
   | 'signals'
@@ -6116,18 +6118,24 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       </>
     )
   }
-  const renderCenterWorkbench = (className: string, ariaLabel: string) => (
-    <CenterTabbedPane
-      activeTabId={centerTabsState.activeTabId}
-      ariaLabel={ariaLabel}
-      className={className}
-      onCloseTab={closeCenterTab}
-      onPanelElement={setCenterTabPanelElement}
-      onSelectTab={selectCenterTab}
-      renderTabPanel={renderCenterTabPanel}
-      tabs={visibleCenterTabs.length > 0 ? visibleCenterTabs : centerTabDescriptors.slice(0, 1)}
-    />
-  )
+  const renderCenterWorkbench = (className: string, ariaLabel: string, mode: WorkbenchMode) => {
+    const workbenchTabs = mode === 'debug'
+      ? visibleCenterTabs.filter(tab => !DEBUG_HIDDEN_CENTER_TABS.has(tab.id))
+      : visibleCenterTabs
+    const fallbackTabs = centerTabDescriptors.filter(tab => mode !== 'debug' || !DEBUG_HIDDEN_CENTER_TABS.has(tab.id))
+    return (
+      <CenterTabbedPane
+        activeTabId={centerTabsState.activeTabId}
+        ariaLabel={ariaLabel}
+        className={className}
+        onCloseTab={closeCenterTab}
+        onPanelElement={setCenterTabPanelElement}
+        onSelectTab={selectCenterTab}
+        renderTabPanel={renderCenterTabPanel}
+        tabs={workbenchTabs.length > 0 ? workbenchTabs : fallbackTabs.slice(0, 1)}
+      />
+    )
+  }
   const authorRightSidebarContext: AuthorRightSidebarContext = (() => {
     switch (centerTabsState.activeTabId) {
       case 'parameter-data':
@@ -7095,7 +7103,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   />
                 </aside>
 
-                {renderCenterWorkbench('debugger-code-center', 'Debugger center workbench')}
+                {renderCenterWorkbench('debugger-code-center', 'Debugger center workbench', 'debug')}
 
                 {!debugDetailCollapsed && (
                 <section className="debugger-center" aria-label="Action detail">
@@ -9561,7 +9569,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 )}
               </div>
 
-              {renderCenterWorkbench('author-code-center', 'Author center workbench')}
+              {renderCenterWorkbench('author-code-center', 'Author center workbench', 'author')}
 
               {importMetadata && centerTabPanelElements['imported-metadata'] && createPortal(
                 renderStructuredCenterDocument('Imported Metadata', (
