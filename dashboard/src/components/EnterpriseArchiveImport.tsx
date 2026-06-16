@@ -136,6 +136,10 @@ function enterpriseArchiveImportStatusLabel(status: EnterpriseArchiveImportQueue
   }
 }
 
+function enterpriseArchiveImportStatusIsRunning(status: EnterpriseArchiveImportQueueStatus) {
+  return status === 'validating' || status === 'converting'
+}
+
 function buildEnterpriseArchiveImportQueueItem(file: File, id: string): EnterpriseArchiveImportQueueItem {
   return {
     id,
@@ -574,6 +578,17 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
   const displayError = error || selectedItem?.error || ''
   const displayNotice = notice || selectedItem?.notice || ''
   const queuedFileCount = importItems.length
+  const runningFileCount = importItems.filter(item => enterpriseArchiveImportStatusIsRunning(item.status)).length
+  const failedFileCount = importItems.filter(item => item.status === 'failed').length
+  const activeImportFileCount = runningFileCount || queuedFileCount
+  const importProgressMessage = workingMode === 'validate'
+    ? `Validating ${activeImportFileCount} enterprise script archive${activeImportFileCount === 1 ? '' : 's'}. Review will appear when the dry run finishes.`
+    : workingMode === 'convert'
+      ? `Converting ${activeImportFileCount} enterprise script archive${activeImportFileCount === 1 ? '' : 's'}. Review will appear when import finishes.`
+      : ''
+  const failedImportMessage = failedFileCount > 0
+    ? `${failedFileCount} enterprise script archive${failedFileCount === 1 ? '' : 's'} failed during import review. Failed queue rows show the error details.`
+    : ''
   const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Only'
   const convertButtonLabel = queuedFileCount > 1 ? `Convert ${queuedFileCount} Enterprise Script Archives` : 'Convert Enterprise Script Archive'
   const importedScript = result?.script ?? result?.scripts?.[0] ?? null
@@ -1270,7 +1285,7 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
                   key={item.id}
                   role="button"
                   tabIndex={0}
-                  className={`lr-file-row ${selectedItem?.id === item.id ? 'active' : ''} ${item.status === 'failed' ? 'failed' : ''}`}
+                  className={`lr-file-row ${item.status} ${selectedItem?.id === item.id ? 'active' : ''}`}
                   aria-pressed={selectedItem?.id === item.id}
                   onClick={event => {
                     event.stopPropagation()
@@ -1290,10 +1305,15 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
                 >
                   <span className="lr-file-row-main">
                     <strong>{item.file.name}</strong>
-                    <small>
-                      {formatEnterpriseArchiveFileSize(item.file)} · {enterpriseArchiveImportStatusLabel(item.status)}
+                    <small className="lr-file-row-meta">
+                      {formatEnterpriseArchiveFileSize(item.file)} ·{' '}
+                      <span className={`lr-file-status-pill ${item.status}`}>
+                        {enterpriseArchiveImportStatusIsRunning(item.status) && <span className="lr-status-dot" aria-hidden="true" />}
+                        {enterpriseArchiveImportStatusLabel(item.status)}
+                      </span>
                       {item.harFile ? ` · HAR: ${item.harFile.name}` : ''}
                     </small>
+                    {item.error && <small className="lr-file-row-message" role="alert">{item.error}</small>}
                   </span>
                   <button
                     type="button"
@@ -1414,6 +1434,13 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
         </div>
       </div>
 
+      {importProgressMessage && (
+        <div className="lr-import-progress" role="status" aria-live="polite">
+          <span className="spinner" aria-hidden="true" />
+          <span>{importProgressMessage}</span>
+        </div>
+      )}
+
       {runtimeCoverageOpen && hasRuntimeCoverage && (
         <div className="lr-modal-backdrop" role="presentation" onClick={() => setRuntimeCoverageOpen(false)}>
           <div
@@ -1486,7 +1513,8 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
         )}
       </div>
 
-      {displayError && <div className="lr-error">{displayError}</div>}
+      {failedImportMessage && <div className="lr-error" role="alert">{failedImportMessage}</div>}
+      {displayError && <div className="lr-error" role="alert">{displayError}</div>}
       {displayNotice && <div className="settings-notice">{displayNotice}</div>}
 
       {/* Results */}

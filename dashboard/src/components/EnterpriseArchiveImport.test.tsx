@@ -810,6 +810,97 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('alpha')
   })
 
+  it('announces import progress and failed queue item details', async () => {
+    const firstFile = new File(['alpha'], 'alpha.zip', { type: 'application/zip' })
+    const failedFile = new File(['gamma'], 'gamma.zip', { type: 'application/zip' })
+    let resolveFirstImport: ((value: unknown) => void) | null = null
+    let rejectSecondImport: ((error: unknown) => void) | null = null
+
+    apiMock.importEnterpriseArchive
+      .mockImplementationOnce(() => new Promise(resolve => {
+        resolveFirstImport = resolve
+      }))
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => {
+        rejectSecondImport = reject
+      }))
+
+    await act(async () => {
+      root.render(<EnterpriseArchiveImport />)
+    })
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [firstFile, failedFile],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert 2 Enterprise Script Archives'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('Converting 2 enterprise script archives')
+    const convertingRows = Array.from(container.querySelectorAll('.lr-file-row.converting'))
+    expect(convertingRows).toHaveLength(2)
+
+    await act(async () => {
+      resolveFirstImport?.({
+        script: {
+          name: 'alpha',
+          protocol: 'http',
+          actions: [{ name: 'Homepage' }],
+        },
+        warnings: [],
+        unsupported_elements: [],
+        assumptions: [],
+        review_sections: [],
+        repair_suggestions: [],
+        summary: {
+          project_file: 'alpha.zip',
+          unsupported_function_count: 0,
+        },
+        stats: {
+          total_functions: 1,
+          converted_actions: 1,
+          extractors: 0,
+          think_times: 0,
+          transactions: 0,
+          skipped: 0,
+        },
+      })
+    })
+    await flushPromises()
+
+    expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      rejectSecondImport?.(new Error('Unsupported archive layout'))
+    })
+    await flushPromises()
+
+    expect(container.querySelector('[role="status"]')).toBeNull()
+    expect(container.textContent).toContain('Converted 1 of 2 enterprise script archives; 1 failed')
+    expect(container.textContent).toContain('1 enterprise script archive failed during import review')
+    expect(container.textContent).toContain('Unsupported archive layout')
+
+    const failedRow = Array.from(container.querySelectorAll('.lr-file-row')).find(row => row.textContent?.includes('gamma.zip'))
+    expect(failedRow?.className).toContain('failed')
+  })
+
   it('shows gated draft review and saves a review artifact for external-runner imports', async () => {
     const sapSourceReview = {
       source_files: [

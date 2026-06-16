@@ -53,6 +53,10 @@
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+.lr-file-row.converting,
+.lr-file-row.validating {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+}
 .lr-file-row.failed {
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
@@ -71,9 +75,41 @@
 .lr-file-row-main strong {
   font-size: 13px;
 }
-.lr-file-row-main small {
+.lr-file-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   color: var(--text-muted);
   font-size: 12px;
+}
+.lr-file-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.lr-file-status-pill.validating,
+.lr-file-status-pill.converting {
+  color: var(--accent);
+}
+.lr-file-status-pill.failed {
+  color: var(--danger);
+}
+.lr-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 36%, transparent);
+  animation: lr-status-pulse 1.2s ease-in-out infinite;
+}
+.lr-file-row-message {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: normal;
 }
 .lr-file-remove {
   flex: 0 0 auto;
@@ -250,6 +286,29 @@
   border-top-color: var(--accent-contrast); border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 8px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes lr-status-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 34%, transparent); opacity: 1; }
+  50% { box-shadow: 0 0 0 5px transparent; opacity: 0.72; }
+}
+
+.lr-import-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-card));
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.lr-import-progress .spinner {
+  flex: 0 0 auto;
+  margin-right: 0;
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  border-top-color: var(--accent);
+}
 
 /* Error */
 .lr-error {
