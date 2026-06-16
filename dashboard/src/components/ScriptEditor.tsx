@@ -165,6 +165,20 @@ import './ScriptEditor.css'
 type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
 type ScriptData = ScriptDefinition
+const SCRIPT_PROTOCOL_OPTIONS = [
+  { value: 'http', label: 'HTTP API' },
+  { value: 'https', label: 'HTTPS API' },
+  { value: 'java_http', label: 'Java over HTTP' },
+  { value: 'soap', label: 'Web Services (SOAP)' },
+  { value: 'websocket', label: 'WebSocket' },
+  { value: 'grpc', label: 'gRPC' },
+  { value: 'database', label: 'Database' },
+  { value: 'network', label: 'Network' },
+  { value: 'browser', label: 'Web/HTML Browser' },
+  { value: 'jms-solace', label: 'JMS Solace' },
+  { value: 'jms-ibmmq', label: 'JMS IBM MQ' },
+  { value: 'kafka', label: 'Kafka' },
+] as const
 type ImportedParameterFileMapping = {
   section: {
     file: string
@@ -2227,6 +2241,14 @@ interface Props {
   onClose?: () => void
 }
 
+function scriptHasAuthoredActions(script: ScriptData): boolean {
+  return (script.init?.length || 0) > 0 || script.actions.length > 0 || (script.teardown?.length || 0) > 0
+}
+
+function formatScriptProtocolLabel(protocol: string): string {
+  return SCRIPT_PROTOCOL_OPTIONS.find(option => option.value === protocol)?.label || protocol.toUpperCase()
+}
+
 function findActionIndexByName(actions: ScriptActionDefinition[], targetName?: string | null): number | null {
 	const normalizedTarget = targetName?.trim()
 	if (!normalizedTarget) return null
@@ -2432,7 +2454,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     [api, projectId, folderId],
   )
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
-  const showProtocolSelector = Boolean(scriptId)
   const {
     activeAction,
     activeReplaySessionId,
@@ -2521,6 +2542,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const isDatabaseScript = script.protocol === 'database'
   const isNetworkScript = script.protocol === 'network'
   const isHttpTransportScript = isHttpScript || script.protocol === 'https' || isJavaHttpScript || isSoapScript || isBrowserScript
+  const canEditProtocol = !scriptId && !script.metadata?.import && !scriptHasAuthoredActions(script)
   const httpProxyMode = script.config.http?.proxy_mode || 'none'
   const httpProxySummary = httpProxyMode === 'system'
     ? 'System proxy'
@@ -6569,24 +6591,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 </div>
               <div className="panel-body">
                 <div className="form-grid">
-                  {showProtocolSelector && (
-                    <label>
-                      <span>Protocol</span>
-                      <select value={script.protocol} onChange={e => updateProtocol(e.target.value)}>
-                        <option value="http">HTTP API</option>
-                        <option value="https">HTTPS API</option>
-                        <option value="java_http">Java over HTTP</option>
-                        <option value="soap">Web Services (SOAP)</option>
-                        <option value="websocket">WebSocket</option>
-                        <option value="grpc">gRPC</option>
-                        <option value="database">Database</option>
-                        <option value="network">Network</option>
-                        <option value="browser">Web/HTML Browser</option>
-                        <option value="jms-solace">JMS Solace</option>
-                        <option value="jms-ibmmq">JMS IBM MQ</option>
+                  <label>
+                    <span>Protocol</span>
+                    {canEditProtocol ? (
+                      <select value={script.protocol} onChange={e => updateProtocol(e.target.value)} aria-label="Protocol">
+                        {SCRIPT_PROTOCOL_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
                       </select>
-                    </label>
-                  )}
+                    ) : (
+                      <div className="form-readonly-value" aria-label="Protocol">
+                        <strong>{formatScriptProtocolLabel(script.protocol)}</strong>
+                        <small>{script.protocol}</small>
+                      </div>
+                    )}
+                  </label>
                   <label>
                     <span>Version</span>
                     <input value={script.version} onChange={e => updateField('version', e.target.value)} placeholder="1.0.0" />
@@ -14826,5 +14845,3 @@ function useActionParameterMenu({
 
   return { openParameterEditor, openSelectionMenu, selectionState }
 }
-
-

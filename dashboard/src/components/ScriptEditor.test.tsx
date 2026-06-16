@@ -2107,7 +2107,10 @@ describe('ScriptEditor', () => {
 
     const baseUrlInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'https://api.example.com')
     expect(baseUrlInput?.getAttribute('value')).toBe('https://api.example.com')
-    expect(container.querySelector('[aria-label="Script Configuration"]')?.textContent).not.toContain('Protocol')
+    const configPanel = container.querySelector('[aria-label="Script Configuration"]')
+    expect(configPanel?.textContent).toContain('Protocol')
+    expect(configPanel?.textContent).toContain('HTTP API')
+    expect(configPanel?.querySelector('select[aria-label="Protocol"]')).toBeNull()
   })
 
   it('opens parameter data from the outline link', async () => {
@@ -3998,14 +4001,59 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Network unavailable')
   })
 
-  it('keeps the protocol selector when editing an existing script', async () => {
+  it('keeps protocol read-only when editing an existing script', async () => {
     await act(async () => {
       root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} />)
     })
 
-    expect(container.textContent).toContain('Protocol')
-    const protocolSelect = container.querySelector('select')
+    const configPanel = container.querySelector('[aria-label="Script Configuration"]')
+    expect(configPanel?.textContent).toContain('Protocol')
+    expect(configPanel?.textContent).toContain('HTTP API')
+    expect(configPanel?.querySelector('select[aria-label="Protocol"]')).toBeNull()
+  })
+
+  it('allows protocol selection only for a blank unsaved draft', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor />)
+    })
+
+    const configPanel = container.querySelector('[aria-label="Script Configuration"]')
+    const protocolSelect = configPanel?.querySelector('select[aria-label="Protocol"]') as HTMLSelectElement | null
+    expect(protocolSelect).not.toBeNull()
     expect(protocolSelect?.value).toBe('http')
+  })
+
+  it('keeps the protocol selector aligned with newer blank script protocols', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={{ ...initialScript, actions: [], protocol: 'kafka' }} />)
+    })
+
+    const configPanel = container.querySelector('[aria-label="Script Configuration"]')
+    const protocolSelect = configPanel?.querySelector('select[aria-label="Protocol"]') as HTMLSelectElement | null
+    expect(protocolSelect).not.toBeNull()
+    expect(protocolSelect?.value).toBe('kafka')
+    expect(Array.from(protocolSelect?.options || []).some(option => option.value === 'kafka')).toBe(true)
+  })
+
+  it('keeps imported draft protocol read-only even before save', async () => {
+    const importedDraft: ScriptDefinition = {
+      ...initialScript,
+      actions: [],
+      metadata: {
+        import: {
+          source: 'enterprise_script_archive',
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={importedDraft} />)
+    })
+
+    const configPanel = container.querySelector('[aria-label="Script Configuration"]')
+    expect(configPanel?.textContent).toContain('Protocol')
+    expect(configPanel?.textContent).toContain('HTTP API')
+    expect(configPanel?.querySelector('select[aria-label="Protocol"]')).toBeNull()
   })
 
   it('validates a saved script and renders returned warnings', async () => {
