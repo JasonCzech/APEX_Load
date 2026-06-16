@@ -129,6 +129,10 @@ const COVERAGE_TOOLTIPS: Record<string, string> = {
 export default function SourceMappingReview({ focusRequestId = 0, focusedMappingId = '', id, sourceReview, script, title = 'Source Mapping' }: Props) {
   const files = useMemo(() => normalizeFiles(sourceReview), [sourceReview])
   const mappings = useMemo(() => normalizeMappings(sourceReview), [sourceReview])
+  const sourceFileOptions = useMemo(() => {
+    const mappedFiles = files.filter(file => mappings.some(mapping => mappingMatchesFile(mapping, file.path)))
+    return mappedFiles.length > 0 ? mappedFiles : files
+  }, [files, mappings])
   const [selectedMappingId, setSelectedMappingId] = useState('')
   const [selectedFilePath, setSelectedFilePath] = useState('')
   const [filter, setFilter] = useState('')
@@ -164,10 +168,13 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
   useEffect(() => {
     const nextMapping = mappings[0]
     setSelectedMappingId(nextMapping?.id || '')
-    setSelectedFilePath(nextMapping?.source_file || files[0]?.path || '')
+    const nextFile = nextMapping?.source_file
+      ? sourceFileOptions.find(file => fileMatchesPath(file, nextMapping.source_file)) || sourceFileOptions[0]
+      : sourceFileOptions[0]
+    setSelectedFilePath(nextFile?.path || nextMapping?.source_file || '')
     setCategoryFilter('')
     setCopied('')
-  }, [files, mappings])
+  }, [mappings, sourceFileOptions])
 
   useEffect(() => {
     if (!focusedMappingId) return
@@ -417,7 +424,7 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
         <label>
           <span>Source File</span>
           <select value={selectedFile?.path || ''} onChange={event => selectSourceFile(event.target.value)}>
-            {files.map(file => (
+            {sourceFileOptions.map(file => (
               <option key={file.path} value={file.path}>
                 {file.path}{file.truncated ? ' (truncated)' : ''}
               </option>
@@ -513,7 +520,7 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
                 {copied === 'source' ? 'Copied' : 'Copy Source'}
               </button>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'source' ? null : 'source')}>
-                {maximizedPane === 'source' ? 'Restore' : 'Maximize'}
+                {maximizedPane === 'source' ? 'Reset' : 'Maximize'}
               </button>
             </div>
           </div>
@@ -543,7 +550,7 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
                 {copied === 'dsl' ? 'Copied' : 'Copy DSL'}
               </button>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'dsl' ? null : 'dsl')}>
-                {maximizedPane === 'dsl' ? 'Restore' : 'Maximize'}
+                {maximizedPane === 'dsl' ? 'Reset' : 'Maximize'}
               </button>
             </div>
           </div>

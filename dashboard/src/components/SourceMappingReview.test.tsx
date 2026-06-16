@@ -271,24 +271,35 @@ describe('SourceMappingReview', () => {
     expect(convertedPill?.disabled).toBe(false)
   })
 
-  it('clears the stale DSL selection when the selected source file has no mapping', async () => {
+  it('omits source files that have no mappings from the source file selector', async () => {
     await act(async () => {
       root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)
     })
     await flushPromises()
 
     const select = sourceFileSelect(container)
+    const optionValues = Array.from(select.options).map(option => option.value)
+
+    expect(optionValues).toEqual(['Action.c', 'vuser_end.c'])
+    expect(optionValues).not.toContain('globals.h')
+    expect(generatedDslPane(container).textContent).toContain('"name": "Homepage"')
+  })
+
+  it('uses Reset for returning a maximized source or DSL pane to the split view', async () => {
     await act(async () => {
-      select.value = 'globals.h'
-      select.dispatchEvent(new Event('change', { bubbles: true }))
+      root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)
     })
     await flushPromises()
 
-    const dslPane = generatedDslPane(container)
-    expect(dslPane.dataset.activeRange).toBe('')
+    const sourceMaximize = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Maximize') as HTMLButtonElement | undefined
+    expect(sourceMaximize).toBeDefined()
+    if (!sourceMaximize) return
 
-    const copyDsl = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy DSL')) as HTMLButtonElement | undefined
-    expect(copyDsl).toBeDefined()
-    expect(copyDsl?.disabled).toBe(true)
+    await act(async () => {
+      sourceMaximize.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Reset')
+    expect(container.textContent).not.toContain('Restore')
   })
 })

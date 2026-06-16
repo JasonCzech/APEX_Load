@@ -4901,12 +4901,89 @@
 }
 .runtime-settings:not(.editor-support-dialog) {
   display: flex;
+  min-height: 0;
+  height: 100%;
 }
 .runtime-settings-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  padding: 12px;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.runtime-settings-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.runtime-settings-nav {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.runtime-settings-nav-button {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 2px 8px;
+  align-items: center;
+  padding: 9px 10px;
+  text-align: left;
+  min-height: 52px;
+}
+.runtime-settings-nav-button:hover,
+.runtime-settings-nav-button:focus-visible {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+.runtime-settings-nav-button.active {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.38);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.runtime-settings-nav-button .section-icon {
+  grid-row: 1 / span 2;
+}
+.runtime-settings-nav-button .section-summary {
+  text-align: left;
+  font-size: 11px;
+}
+.runtime-settings-detail {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 20px 24px;
+  background: var(--bg-primary);
+}
+.runtime-settings-detail .settings-section {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+.runtime-settings-detail .settings-section.open {
+  background: transparent;
+  border-color: transparent;
+}
+.runtime-settings-detail .section-toggle {
+  display: none;
+}
+.runtime-settings-detail .section-body {
+  padding: 0;
+  animation: none;
 }
 .runtime-settings .form-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5115,6 +5192,21 @@
   .debug-breakpoint-list { grid-template-columns: 1fr; }
   .debug-raw-toolbar { align-items: stretch; }
   .debug-raw-toolbar label { width: 100%; }
+  .runtime-settings-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .runtime-settings-nav {
+    max-height: 220px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .runtime-settings-detail {
+    padding: 14px;
+  }
+  .runtime-settings .form-grid {
+    grid-template-columns: 1fr;
+  }
   .browser-debugger-layout { grid-template-columns: 1fr; }
   .browser-viewport { border-right: none; border-bottom: 1px solid var(--border); }
 }

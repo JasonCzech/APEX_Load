@@ -2458,7 +2458,7 @@ describe('ScriptEditor', () => {
   expect(container.querySelector('input[aria-label="Profile weight"]')).toBeTruthy()
   })
 
-  it('keeps existing RTS accordion sections open when HTTP Transport is expanded', async () => {
+  it('shows runtime settings as a split panel with one selected category', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
@@ -2471,8 +2471,11 @@ describe('ScriptEditor', () => {
       runtimeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    async function clickSection(label: string) {
-      const button = Array.from(container.querySelectorAll('.section-toggle')).find(candidate =>
+    expect(container.querySelector('.runtime-settings-nav')).toBeTruthy()
+    expect(container.querySelector('.runtime-settings-detail')).toBeTruthy()
+
+    async function clickRuntimeCategory(label: string) {
+      const button = Array.from(container.querySelectorAll('.runtime-settings-nav-button')).find(candidate =>
         candidate.textContent?.includes(label),
       ) as HTMLButtonElement | undefined
       expect(button).toBeDefined()
@@ -2488,13 +2491,15 @@ describe('ScriptEditor', () => {
       )
     }
 
-    await clickSection('Think Time')
-    await clickSection('Iteration Pacing')
-    await clickSection('HTTP Transport')
+    await clickRuntimeCategory('Think Time')
+    await clickRuntimeCategory('Iteration Pacing')
+    await clickRuntimeCategory('HTTP Transport')
 
-    expect(sectionFor('Think Time')?.classList.contains('open')).toBe(true)
-    expect(sectionFor('Iteration Pacing')?.classList.contains('open')).toBe(true)
+    expect(sectionFor('Think Time')?.classList.contains('open')).toBe(false)
+    expect(sectionFor('Iteration Pacing')?.classList.contains('open')).toBe(false)
     expect(sectionFor('HTTP Transport')?.classList.contains('open')).toBe(true)
+    expect(container.querySelectorAll('.runtime-settings-detail .settings-section.open')).toHaveLength(1)
+    expect(container.querySelector('.runtime-settings-header-actions button')?.textContent).toContain('Save Script')
   })
 
   it('rehydrates editor state when a different initial script is provided', async () => {
@@ -2689,18 +2694,16 @@ describe('ScriptEditor', () => {
 
     const pageText = container.textContent || ''
     expect(pageText).toContain('Imported Metadata')
-    expect(pageText).toContain('Runtime Setting Parity')
-    expect(pageText).toContain('1 Executed, 1 Partial')
+    expect(pageText).toContain('Runtime Settings Parity')
     expect(container.textContent).toContain('Migration Readiness')
     expect(container.textContent).toContain('72%')
     expect(container.textContent).toContain('Blocking runtime settings matched the selected block statuses')
     expect(pageText).toContain('Executed: Run Logic')
+    expect(pageText).toContain('Partial: Logging')
     expect(pageText).toContain('Iterations')
     expect(pageText).toContain('default.cfg')
     expect(container.textContent).toContain('Open Run Logic Settings')
     expect(container.textContent).toContain('Open Logging Settings')
-    expect(container.textContent).toContain('Parameter Files')
-    expect(container.textContent).toContain('LoginUsers.prm')
     expect(container.querySelector('.parameter-mappings-launcher')?.textContent).toContain('Parameter File Mappings')
     expect(container.querySelector('.parameter-mappings-launcher')?.textContent).toContain('Open Mapping List')
     expect(container.querySelector('.parameter-mappings-launcher')?.textContent).not.toContain('Starter Blocks')
@@ -2709,13 +2712,14 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('2 rows')
     expect(container.textContent).toContain('Open In Parameter Data')
     expect(container.textContent).toContain('Source Mapping')
-    expect(pageText.indexOf('Source Mapping')).toBeLessThan(pageText.indexOf('Source Script'))
     expect(container.textContent).toContain('Action.c:3')
     expect(container.textContent).toContain('web_url')
     expect(container.textContent).toContain('"target": "/login"')
     const metadataSection = container.querySelector('#imported-metadata-section')
     const actionDetail = container.querySelector('.action-detail')
     expect(metadataSection?.classList.contains('open')).toBe(true)
+    expect(metadataSection?.querySelector('.import-metadata-body > .import-metadata-grid')).toBeNull()
+    expect(metadataSection?.textContent).not.toContain('Source Script')
     expect(actionDetail).toBeNull()
     expect(container.querySelector('.author-code-center')?.contains(metadataSection)).toBe(true)
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
@@ -4338,7 +4342,8 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.textContent).toContain('72%')
-    expect(container.textContent).toContain('1 Partial')
+    expect(container.textContent).toContain('Partial: Logging')
+    expect(container.textContent).not.toContain('Executed: Run Logic')
 
     const validateButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === 'Validate Draft',
@@ -4354,7 +4359,8 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.textContent).toContain('80%')
-    expect(container.textContent).toContain('1 Executed, 1 Partial')
+    expect(container.textContent).toContain('Executed: Run Logic')
+    expect(container.textContent).toContain('Partial: Logging')
     expect(container.textContent).toContain('No imported runtime settings matched the selected block statuses: blocked.')
   })
 
@@ -4412,43 +4418,36 @@ describe('ScriptEditor', () => {
 
     expect(container.textContent).toContain('Web HTTP/HTML Compatibility')
 
-    const runLogicToggle = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.includes('Run Logic'),
-    )
-    const loggingToggle = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.includes('Logging'),
-    )
-    expect(runLogicToggle).toBeDefined()
-    expect(loggingToggle).toBeDefined()
-    if (!runLogicToggle || !loggingToggle) {
-      return
+    async function clickRuntimeCategory(label: string) {
+      const button = Array.from(container.querySelectorAll('.runtime-settings-nav-button')).find(candidate =>
+        candidate.textContent?.includes(label),
+      ) as HTMLButtonElement | undefined
+      expect(button).toBeDefined()
+      if (!button) return
+      await act(async () => {
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
     }
 
-    await act(async () => {
-      runLogicToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      loggingToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    const activeRuntimeBodyText = () =>
+      container.querySelector('.runtime-settings-detail .settings-section.open .section-body')?.textContent || ''
 
-    expect(container.textContent).toContain('Block Scheduling')
-    expect(container.textContent).toContain('Global Iterations')
-    expect(container.textContent).toContain('Max Transactions')
-    expect(container.textContent).toContain('Workload Model')
-    expect(container.textContent).toContain('Open arrival-rate')
-    expect(container.textContent).toContain('Parameter substitution')
+    await clickRuntimeCategory('Run Logic')
+
+    expect(activeRuntimeBodyText()).toContain('Block Scheduling')
+    expect(activeRuntimeBodyText()).toContain('Global Iterations')
+    expect(activeRuntimeBodyText()).toContain('Max Transactions')
+    expect(activeRuntimeBodyText()).toContain('Workload Model')
+    expect(activeRuntimeBodyText()).toContain('Open arrival-rate')
+
+    await clickRuntimeCategory('Logging')
+
+    expect(activeRuntimeBodyText()).toContain('Parameter substitution')
+    expect(activeRuntimeBodyText()).not.toContain('Block Scheduling')
     expect(container.querySelector('.logging-settings-layout')).toBeTruthy()
     expect(container.querySelectorAll('.logging-checkbox-group .checkbox-label')).toHaveLength(4)
 
-    const compatibilityToggle = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.includes('Web HTTP/HTML Compatibility'),
-    )
-    expect(compatibilityToggle).toBeDefined()
-    if (!compatibilityToggle) {
-      return
-    }
-
-    await act(async () => {
-      compatibilityToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await clickRuntimeCategory('Web HTTP/HTML Compatibility')
 
     const attributesArea = Array.from(container.querySelectorAll('textarea')).find(area =>
       area.getAttribute('placeholder') === 'env=perf\nregion=east',
@@ -4517,14 +4516,16 @@ describe('ScriptEditor', () => {
       runtimeToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const collapsedSectionToggles = Array.from(container.querySelectorAll('button')).filter(button =>
-      button.className.includes('section-toggle') && button.textContent?.includes('▸'),
-    )
+    const httpTransportButton = Array.from(container.querySelectorAll('.runtime-settings-nav-button')).find(button =>
+      button.textContent?.includes('HTTP Transport'),
+    ) as HTMLButtonElement | undefined
+    expect(httpTransportButton).toBeDefined()
+    if (!httpTransportButton) {
+      return
+    }
 
     await act(async () => {
-      collapsedSectionToggles.forEach(button => {
-        button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      })
+      httpTransportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(container.textContent).toContain('Browser Engine')
