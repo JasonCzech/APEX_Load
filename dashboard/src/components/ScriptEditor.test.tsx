@@ -898,6 +898,19 @@ describe('ScriptEditor', () => {
     expect(authorCenterRule).toContain('max-height: none;')
   })
 
+  it('keeps imported metadata source mapping content visible above the code panes', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const editorCss = readFileSync(`${cwd}/src/components/ScriptEditor.css`, 'utf8') as string
+    const sourceMapReviewRule = cssRule(editorCss, '.imported-metadata-section .source-map-review')
+    const sourceMapPanelsRule = cssRule(editorCss, '.imported-metadata-section .source-map-panels')
+
+    expect(sourceMapReviewRule).toContain('flex: 0 0 auto;')
+    expect(sourceMapReviewRule).toContain('min-height: 0;')
+    expect(sourceMapPanelsRule).toContain('min-height: clamp(360px, 48vh, 520px);')
+  })
+
   it('keeps the landing editor focused on script name while support tools live in the outline', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
@@ -1085,7 +1098,7 @@ describe('ScriptEditor', () => {
     expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"Checkout Flow"')
   })
 
-  it('hides imported review tabs from the Debug workbench', async () => {
+  it('keeps the combined import review tab out of the Debug workbench', async () => {
     const importedScript: ScriptDefinition = {
       ...initialScript,
       metadata: {
@@ -1126,7 +1139,7 @@ describe('ScriptEditor', () => {
 
     const importedTab = findCenterTab(container, 'Imported Metadata')
     expect(importedTab).toBeDefined()
-    expect(findCenterTab(container, 'Conversion Mapping')).toBeDefined()
+    expect(findCenterTab(container, 'Conversion Mapping')).toBeUndefined()
 
     await act(async () => {
       importedTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1162,7 +1175,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(findCenterTab(container, 'Imported Metadata')).toBeDefined()
-    expect(findCenterTab(container, 'Conversion Mapping')).toBeDefined()
+    expect(findCenterTab(container, 'Conversion Mapping')).toBeUndefined()
     expect(findCenterTab(container, 'Imported Metadata')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
   })
@@ -2805,9 +2818,8 @@ describe('ScriptEditor', () => {
     expect(actionDetail).toBeNull()
     expect(container.querySelector('.author-code-center')?.contains(metadataSection)).toBe(true)
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
-    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Conversion Mapping')
-    expect(findCenterTab(container, 'Conversion Mapping')).toBeDefined()
-    expect(container.querySelector('[aria-label="Conversion Mapping"]')?.textContent).toContain('Action.c:3')
+    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).not.toContain('Conversion Mapping')
+    expect(findCenterTab(container, 'Conversion Mapping')).toBeUndefined()
     const importedMetadataTab = findCenterTab(container, 'Imported Metadata')
     expect(importedMetadataTab).toBeDefined()
     await act(async () => {
@@ -2875,26 +2887,23 @@ describe('ScriptEditor', () => {
     const activeSidebarAction = container.querySelector('.action-item.active') as HTMLDivElement | null
     expect(activeSidebarAction?.textContent).toContain('Complete Checkout')
 
-    const conversionTab = findCenterTab(container, 'Conversion Mapping')
-    expect(conversionTab).toBeDefined()
-    if (!conversionTab) {
-      return
-    }
-
+    const mappingMetadataTab = findCenterTab(container, 'Imported Metadata')
+    expect(mappingMetadataTab).toBeDefined()
     await act(async () => {
-      conversionTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      mappingMetadataTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(findCenterTab(container, 'Conversion Mapping')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Conversion Mapping')
+    expect(findCenterTab(container, 'Imported Metadata')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Imported Metadata')
+    expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Source Mapping')
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
 
     await act(async () => {
       sidebarActions[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(findCenterTab(container, 'Conversion Mapping')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Conversion Mapping')
+    expect(findCenterTab(container, 'Imported Metadata')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Imported Metadata')
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
     const activeMappingRow = container.querySelector('.source-map-table tbody tr.active') as HTMLTableRowElement | null
     expect(activeMappingRow?.dataset.mappingId).toBe('checkout-action')

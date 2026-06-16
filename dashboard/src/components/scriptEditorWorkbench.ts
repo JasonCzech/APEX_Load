@@ -27,7 +27,6 @@ export type CenterWorkbenchTabId =
   | 'configuration'
   | 'runtime-settings'
   | 'imported-metadata'
-  | 'conversion-mapping'
   | 'parameter-data'
   | 'browser-replay'
   | 'object-descriptors'
@@ -61,7 +60,6 @@ export const CENTER_WORKBENCH_TAB_IDS: readonly CenterWorkbenchTabId[] = [
   'configuration',
   'runtime-settings',
   'imported-metadata',
-  'conversion-mapping',
   'parameter-data',
   'browser-replay',
   'object-descriptors',

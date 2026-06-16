@@ -221,7 +221,7 @@ interface CenterWorkbenchTabDescriptor {
   closeable: boolean
 }
 
-const DEBUG_HIDDEN_CENTER_TABS = new Set<CenterWorkbenchTabId>(['imported-metadata', 'conversion-mapping'])
+const DEBUG_HIDDEN_CENTER_TABS = new Set<CenterWorkbenchTabId>(['imported-metadata'])
 
 type AuthorRightSidebarKind =
   | 'auto-parameterization'
@@ -229,7 +229,6 @@ type AuthorRightSidebarKind =
   | 'parameters'
   | 'inspector'
   | 'source-map'
-  | 'conversion-mapping'
   | 'imported-metadata'
   | 'object-descriptors'
   | 'http-conversion'
@@ -2674,9 +2673,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     if (importMetadata) {
       descriptors.push({ id: 'imported-metadata', label: 'Imported Metadata', title: 'Imported Metadata', closeable: true })
     }
-    if (sourceReview) {
-      descriptors.push({ id: 'conversion-mapping', label: 'Conversion Mapping', title: 'Conversion Mapping', closeable: true })
-    }
     if (objectDescriptorReview.rows.length > 0) {
       descriptors.push({ id: 'object-descriptors', label: 'Object Descriptors', title: 'Object Descriptors', closeable: true })
     }
@@ -2785,7 +2781,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setCenterTabsState(prev => {
       const nextTabs = [...prev.tabs]
       if (importMetadata && !nextTabs.includes('imported-metadata')) nextTabs.push('imported-metadata')
-      if (sourceReview && !nextTabs.includes('conversion-mapping')) nextTabs.push('conversion-mapping')
       if (nextTabs.length === prev.tabs.length) return prev
       return { ...prev, tabs: nextTabs }
     })
@@ -3273,13 +3268,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       requestId: prev.requestId + 1,
     }))
     window.requestAnimationFrame(() => {
-      const mappingElement = document.getElementById('conversion-source-mapping') || document.getElementById('imported-source-mapping')
+      const mappingElement = document.getElementById('imported-source-mapping')
       mappingElement?.scrollIntoView({ block: 'start', behavior: 'smooth' })
     })
   }
 
   const selectSidebarAction = (index: number) => {
-    if (sourceReview && (centerTabsState.activeTabId === 'conversion-mapping' || centerTabsState.activeTabId === 'imported-metadata')) {
+    if (sourceReview && centerTabsState.activeTabId === 'imported-metadata') {
       setActiveAction(index)
       setAuthorCodeFocus({ phase: 'action', actionIndex: index })
       focusSourceMappingForAction(index)
@@ -5752,13 +5747,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setError('')
   }
 
-  const openEditorSection = (section: 'config' | 'replay' | 'runtime' | 'import' | 'conversion-mapping' | 'parameter-data' | 'object-descriptors' | 'http-conversion') => {
+  const openEditorSection = (section: 'config' | 'replay' | 'runtime' | 'import' | 'parameter-data' | 'object-descriptors' | 'http-conversion') => {
     const tabBySection: Record<typeof section, CenterWorkbenchTabId> = {
       config: 'configuration',
       replay: 'script-json',
       runtime: 'runtime-settings',
       import: 'imported-metadata',
-      'conversion-mapping': 'conversion-mapping',
       'parameter-data': 'parameter-data',
       'object-descriptors': 'object-descriptors',
       'http-conversion': 'http-conversion',
@@ -6148,8 +6142,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           return { kind: 'inspector', title: 'Action Details', railLabel: 'Details', wide: true }
         }
         return { kind: 'source-map', title: 'Source Map', railLabel: 'Map' }
-      case 'conversion-mapping':
-        return { kind: 'conversion-mapping', title: 'Conversion Mapping', railLabel: 'Mapping' }
       case 'imported-metadata':
         return { kind: 'imported-metadata', title: 'Imported Metadata', railLabel: 'Import' }
       case 'object-descriptors':
@@ -6211,54 +6203,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         )
       case 'inspector':
         return renderActionInspectorContent()
-      case 'conversion-mapping':
-        return (
-          <>
-            <div className="utility-card">
-              <div className="utility-card-header">
-                <strong>Source Mapping</strong>
-                <span>{sourceReview?.mappings?.length || 0} mappings</span>
-              </div>
-              <div className="utility-metric-row">
-                <span className="action-signal-pill">{sourceReview?.source_files?.length || 0} files</span>
-                <span className="action-signal-pill">{importSummary.correlationSuggestions.length} correlations</span>
-              </div>
-              {activeAction !== null && (
-                <button type="button" className="btn btn-sm btn-secondary" onClick={() => focusSourceMappingForAction(activeAction)}>
-                  Focus Selected Action
-                </button>
-              )}
-            </div>
-            {importedCorrelationFocusTargets.length > 0 && (
-              <div className="utility-card">
-                <div className="utility-card-header">
-                  <strong>Correlation Shortcuts</strong>
-                  <span>{importedCorrelationFocusTargets.length}</span>
-                </div>
-                <div className="utility-stack">
-                  {importedCorrelationFocusTargets.map(({ correlation, foundAtActionIndex, foundAtLabel, usedAtTargets }) => (
-                    <div key={`${correlation.name}:${correlation.found_at}:mapping`} className="utility-suggestion-card">
-                      <strong>{correlation.name}</strong>
-                      <p>{foundAtLabel}{usedAtTargets.length > 0 ? ` -> ${usedAtTargets.map(target => target.label).join(', ')}` : ''}</p>
-                      <div className="utility-inline-actions">
-                        {foundAtActionIndex !== null && (
-                          <button type="button" className="btn btn-sm btn-ghost" onClick={() => selectAuthorAction(foundAtActionIndex)}>
-                            Open source
-                          </button>
-                        )}
-                        {usedAtTargets.slice(0, 2).map(target => (
-                          <button key={`${correlation.name}:${target.location}:mapping`} type="button" className="btn btn-sm btn-ghost" onClick={() => selectAuthorAction(target.actionIndex)}>
-                            Open use
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )
       case 'imported-metadata':
         return (
           <>
@@ -6274,6 +6218,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <li className="utility-list-item">{importedDataSourceSummaries.length} generated data source{importedDataSourceSummaries.length === 1 ? '' : 's'}</li>
               </ul>
             </div>
+            {sourceReview && (
+              <div className="utility-card">
+                <div className="utility-card-header">
+                  <strong>Source Mapping</strong>
+                  <span>{sourceReview.mappings?.length || 0} mappings</span>
+                </div>
+                <div className="utility-metric-row">
+                  <span className="action-signal-pill">{sourceReview.source_files?.length || 0} files</span>
+                  <span className="action-signal-pill">{importSummary.correlationSuggestions.length} correlations</span>
+                </div>
+                {activeAction !== null && (
+                  <button type="button" className="btn btn-sm btn-secondary" onClick={() => focusSourceMappingForAction(activeAction)}>
+                    Focus Selected Action
+                  </button>
+                )}
+              </div>
+            )}
             {trueClientPromotionReview && (
               <div className="utility-card">
                 <div className="utility-card-header">
@@ -9401,7 +9362,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('config')}>Script Configuration</button>
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('runtime')}>Runtime / RTS</button>
                     {importMetadata && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('import')}>Imported Metadata</button>}
-                    {sourceReview && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('conversion-mapping')}>Conversion Mapping</button>}
                     {objectDescriptorReview.rows.length > 0 && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('object-descriptors')}>Object Descriptors</button>}
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
                     {isBrowserScript && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('http-conversion')}>HTTP Conversion Review</button>}
@@ -9794,20 +9754,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     </div>
                   </section>
                 )), centerTabPanelElements['imported-metadata'])}
-
-              {sourceReview && centerTabPanelElements['conversion-mapping'] && createPortal(
-                renderStructuredCenterDocument('Conversion Mapping', (
-                  <section className="center-document conversion-mapping-panel config-panel open" aria-label="Conversion Mapping">
-                    <SourceMappingReview
-                      focusRequestId={sourceMappingFocus.requestId}
-                      focusedMappingId={sourceMappingFocus.mappingId}
-                      id="conversion-source-mapping"
-                      sourceReview={sourceReview}
-                      script={script}
-                      title="Conversion Mapping"
-                    />
-                  </section>
-                )), centerTabPanelElements['conversion-mapping'])}
 
               <div className={`editor-utility-sidebar context-${authorRightSidebarContext.kind} ${authorRightSidebarContext.wide ? 'wide' : ''} ${authorRightSidebarCollapsed ? 'collapsed' : ''}`}>
                 {authorRightSidebarCollapsed ? (

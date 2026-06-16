@@ -19,6 +19,13 @@
   gap: 12px;
 }
 
+.source-map-header,
+.source-map-coverage,
+.source-map-toolbar,
+.source-map-table-wrap {
+  flex: 0 0 auto;
+}
+
 .source-map-header h4 {
   margin: 0;
   color: var(--text-primary);
@@ -181,6 +188,8 @@
 }
 
 .source-map-table-wrap {
+  display: block;
+  min-height: 120px;
   max-height: 220px;
   overflow: auto;
   border: 1px solid var(--border);
@@ -195,8 +204,26 @@
 
 .source-map-table {
   width: 100%;
+  min-width: 760px;
   border-collapse: collapse;
+  table-layout: fixed;
   font-size: 12px;
+}
+
+.source-map-col-source {
+  width: 28%;
+}
+
+.source-map-col-function {
+  width: 18%;
+}
+
+.source-map-col-target {
+  width: 29%;
+}
+
+.source-map-col-status {
+  width: 25%;
 }
 
 .source-map-table th,
@@ -215,6 +242,9 @@
 }
 
 .source-map-table th button {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
   border: 0;
   background: transparent;
   color: var(--text-secondary);
@@ -222,6 +252,8 @@
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .source-map-table tbody tr {
@@ -233,11 +265,33 @@
   background: var(--accent-soft);
 }
 
+.source-map-source-cell,
+.source-map-function-cell,
+.source-map-target-cell {
+  overflow: hidden;
+  max-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-map-status-cell {
+  overflow: visible;
+}
+
+.source-map-approve-button {
+  min-height: 0;
+  height: auto;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .source-map-panels {
   display: flex;
   flex: 1 1 auto;
   gap: 12px;
-  min-height: 0;
+  min-height: 360px;
 }
 
 .source-map-panel {

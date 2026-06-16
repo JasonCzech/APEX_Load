@@ -8,6 +8,21 @@ import SourceMappingReview from './SourceMappingReview'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+async function readSourceMappingStylesheet(): Promise<string> {
+  // @ts-expect-error node:fs is available in the Vitest runtime.
+  const { readFileSync } = await import('node:fs')
+  const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+  return readFileSync(`${cwd}/src/components/SourceMappingReview.css`, 'utf8')
+}
+
+function cssRule(css: string, selector: string) {
+  const selectorIndex = css.indexOf(`${selector} {`)
+  expect(selectorIndex).toBeGreaterThanOrEqual(0)
+  const bodyStart = css.indexOf('{', selectorIndex) + 1
+  const bodyEnd = css.indexOf('}', bodyStart)
+  return css.slice(bodyStart, bodyEnd)
+}
+
 vi.mock('./LinkedCodePane', () => ({
   default: ({
     value,
@@ -283,6 +298,39 @@ describe('SourceMappingReview', () => {
     expect(optionValues).toEqual(['Action.c', 'vuser_end.c'])
     expect(optionValues).not.toContain('globals.h')
     expect(generatedDslPane(container).textContent).toContain('"name": "Homepage"')
+  })
+
+  it('renders source mappings with fixed review-table columns', async () => {
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)
+    })
+    await flushPromises()
+
+    const table = container.querySelector('.source-map-table')
+    const columns = Array.from(table?.querySelectorAll('col') || []).map(col => col.className)
+    const firstRow = table?.querySelector('tbody tr')
+
+    expect(table?.getAttribute('aria-label')).toBe('Source conversion mappings')
+    expect(columns).toEqual([
+      'source-map-col-source',
+      'source-map-col-function',
+      'source-map-col-target',
+      'source-map-col-status',
+    ])
+    expect(firstRow?.querySelector('.source-map-source-cell')?.textContent).toContain('Action.c')
+    expect(firstRow?.querySelector('.source-map-target-cell')?.textContent).toContain('actions[0]')
+    expect(firstRow?.querySelector('.source-map-status-cell')).not.toBeNull()
+  })
+
+  it('keeps the mapping table visible above the source code panes', async () => {
+    const stylesheet = await readSourceMappingStylesheet()
+    const nonShrinkingSections = cssRule(stylesheet, '.source-map-header,\n.source-map-coverage,\n.source-map-toolbar,\n.source-map-table-wrap')
+    const sourcePanels = cssRule(stylesheet, '.source-map-panels')
+
+    expect(nonShrinkingSections).toContain('flex: 0 0 auto;')
+    expect(stylesheet).toContain('.source-map-table-wrap {\n  display: block;\n  min-height: 120px;')
+    expect(stylesheet).toContain('max-height: 220px;')
+    expect(sourcePanels).toContain('min-height: 360px;')
   })
 
   it('uses Reset for returning a maximized source or DSL pane to the split view', async () => {

@@ -456,13 +456,19 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
       </div>
 
       <div className="source-map-table-wrap" tabIndex={0} onKeyDown={handleTableKeyDown} style={{ display: isTableCollapsed ? 'none' : 'block' }}>
-        <table className="source-map-table">
+        <table className="source-map-table" aria-label="Source conversion mappings">
+          <colgroup>
+            <col className="source-map-col-source" />
+            <col className="source-map-col-function" />
+            <col className="source-map-col-target" />
+            <col className="source-map-col-status" />
+          </colgroup>
           <thead>
             <tr>
-              <th><button type="button" onClick={() => handleSort('source')}>Source</button></th>
-              <th><button type="button" onClick={() => handleSort('function')}>Function</button></th>
-              <th><button type="button" onClick={() => handleSort('target')}>Generated DSL</button></th>
-              <th><button type="button" onClick={() => handleSort('status')}>Status</button></th>
+              <th scope="col"><button type="button" onClick={() => handleSort('source')}>Source</button></th>
+              <th scope="col"><button type="button" onClick={() => handleSort('function')}>Function</button></th>
+              <th scope="col"><button type="button" onClick={() => handleSort('target')}>Generated DSL</button></th>
+              <th scope="col"><button type="button" onClick={() => handleSort('status')}>Status</button></th>
             </tr>
           </thead>
           <tbody>
@@ -475,10 +481,10 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
                 data-target-path={mapping.target_path || ''}
                 onClick={() => selectMapping(mapping)}
               >
-                <td className="cell-mono">{formatSourceRange(mapping)}</td>
-                <td>{mapping.function || '-'}</td>
-                <td className="cell-mono">{mapping.target_path || mapping.target_name || 'review-only'}</td>
-                <td>
+                <td className="cell-mono source-map-source-cell" title={formatSourceRange(mapping)}>{formatSourceRange(mapping)}</td>
+                <td className="source-map-function-cell" title={mapping.function || '-'}>{mapping.function || '-'}</td>
+                <td className="cell-mono source-map-target-cell" title={mapping.target_path || mapping.target_name || 'review-only'}>{mapping.target_path || mapping.target_name || 'review-only'}</td>
+                <td className="source-map-status-cell">
                   <div className="source-map-status-stack">
                     <span className={`source-map-status ${approvedMappingIds.has(mapping.id) ? 'converted' : CATEGORY_CLASS[statusCategory(mapping.status)]}`}>
                       {approvedMappingIds.has(mapping.id) ? 'Approved' : formatStatusLabel(mapping.status)}
@@ -491,8 +497,7 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
                     {isNeedsReview(mapping) && (
                       <button 
                         type="button" 
-                        className="btn btn-sm btn-ghost"
-                        style={{ padding: '0 4px', height: 'auto', minHeight: '0', fontSize: '11px', border: '1px solid var(--border)' }}
+                        className="btn btn-sm btn-ghost source-map-approve-button"
                         onClick={(e) => { e.stopPropagation(); toggleApprove(mapping.id); }}
                       >
                         {approvedMappingIds.has(mapping.id) ? 'Undo' : 'Approve'}

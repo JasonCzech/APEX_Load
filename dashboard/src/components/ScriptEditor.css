@@ -831,13 +831,15 @@
   gap: 18px;
   min-height: 0;
 }
-.conversion-mapping-panel .source-map-review,
 .imported-metadata-section .source-map-review {
-  flex: 1 1 auto;
-  min-height: min(720px, calc(100vh - 260px));
+  flex: 0 0 auto;
+  min-height: 0;
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+.imported-metadata-section .source-map-panels {
+  min-height: clamp(360px, 48vh, 520px);
 }
 .panel-title {
   font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;

@@ -71,6 +71,7 @@ describe('center tabs state', () => {
 
   it('isCenterWorkbenchTabId validates known ids', () => {
     expect(isCenterWorkbenchTabId('script-json')).toBe(true)
+    expect(isCenterWorkbenchTabId('conversion-mapping')).toBe(false)
     expect(isCenterWorkbenchTabId('nope')).toBe(false)
     expect(isCenterWorkbenchTabId(42)).toBe(false)
   })
@@ -90,6 +91,14 @@ describe('center tabs state', () => {
   it('falls back to script-json for an unknown active tab', () => {
     window.localStorage.setItem('k', JSON.stringify({ tabs: ['configuration'], activeTabId: 'bogus' }))
     expect(readCenterTabsState('k').activeTabId).toBe(SCRIPT_JSON_TAB_ID)
+  })
+
+  it('drops stale standalone conversion mapping tabs from storage', () => {
+    window.localStorage.setItem('k', JSON.stringify({ tabs: ['conversion-mapping', 'imported-metadata'], activeTabId: 'conversion-mapping' }))
+    expect(readCenterTabsState('k')).toEqual({
+      tabs: [SCRIPT_JSON_TAB_ID, 'imported-metadata'],
+      activeTabId: SCRIPT_JSON_TAB_ID,
+    })
   })
 
   it('returns default on malformed JSON', () => {
