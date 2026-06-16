@@ -1,1 +1,1 @@
-0a44bf41ac2cc7a90ae99c9fdbad81d7f214c21dfcb5a9f19986059007c321ee  apexload-desktop-0.1.0-dev.20260614+084ecbb-darwin-arm64.tar.gz
+67d2552515f1431d9f2e78584714713ee4b61ec93a8bc793dd17848b0fc69177  apexload-desktop-0.1.0-dev.20260616+1c5fe08-windows-amd64.tar.gz
