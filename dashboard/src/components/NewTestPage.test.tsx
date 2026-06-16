@@ -24,6 +24,8 @@ const apiMock = {
   getAuthEffectiveAccess: vi.fn(),
   getSystemSettings: vi.fn(),
   getSystemInventory: vi.fn(),
+  listTimeslots: vi.fn(),
+  bindTimeslot: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -107,6 +109,8 @@ describe('NewTestPage', () => {
       warnings: [],
     })
     apiMock.startTest.mockResolvedValue({})
+    apiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
+    apiMock.bindTimeslot.mockResolvedValue({})
     apiMock.listScenarioSchedules.mockResolvedValue({ schedules: [], count: 0 })
     apiMock.listScenarioScheduleOccurrences.mockResolvedValue({ occurrences: [], count: 0 })
     apiMock.createScenarioSchedule.mockResolvedValue({ id: 'schedule-1' })
@@ -1124,6 +1128,66 @@ describe('NewTestPage', () => {
     expect(apiMock.startTest).toHaveBeenCalledWith('test-1')
     expect(openCommandCenter).toHaveBeenCalledWith('test-1')
     expect(selectTest).not.toHaveBeenCalled()
+  })
+
+  it('binds a selected reserved timeslot to the run it launches', async () => {
+    const openCommandCenter = vi.fn()
+    apiMock.listTimeslots.mockResolvedValue({
+      timeslots: [
+        { id: 'slot-1', project_id: 'project-1', start_at: '2026-07-01T10:00:00Z', end_at: '2026-07-01T12:00:00Z', approval_state: 'approved', created_at: '', updated_at: '' },
+        { id: 'slot-2', project_id: 'project-1', start_at: '2026-07-02T10:00:00Z', end_at: '2026-07-02T12:00:00Z', approval_state: 'pending', created_at: '', updated_at: '' },
+        { id: 'slot-3', project_id: 'project-1', start_at: '2026-07-03T10:00:00Z', end_at: '2026-07-03T12:00:00Z', approval_state: 'approved', bound_test_id: 'other', created_at: '', updated_at: '' },
+      ],
+      count: 3,
+    })
+    apiMock.preflightTest.mockResolvedValue({
+      decision: 'queue',
+      start_now_allowed: false,
+      schedule_allowed: false,
+      queue_allowed: true,
+      candidate_window: { start_at: '2026-05-12T20:00:00Z', end_at: '2026-05-12T20:10:00Z', duration_seconds: 600 },
+      blocking_conflicts: [],
+      warnings: [],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onOpenCommandCenter={openCommandCenter}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+    await flushDebouncedPreflight()
+
+    // Only the approved + unbound slot is offered (pending and already-bound are filtered out).
+    const slotSelect = Array.from(container.querySelectorAll('select')).find(select =>
+      Array.from(select.options).some(option => option.value === 'slot-1'),
+    ) as HTMLSelectElement | undefined
+    expect(slotSelect).toBeTruthy()
+    expect(Array.from(slotSelect!.options).map(option => option.value)).toEqual(['', 'slot-1'])
+
+    await act(async () => {
+      slotSelect!.value = 'slot-1'
+      slotSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+    await act(async () => {
+      queuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalled()
+    expect(apiMock.bindTimeslot).toHaveBeenCalledWith('slot-1', 'test-1')
+    expect(apiMock.startTest).toHaveBeenCalledWith('test-1')
+    expect(openCommandCenter).toHaveBeenCalledWith('test-1')
   })
 
   it('reserves the next 15-minute timeslot without starting the run', async () => {

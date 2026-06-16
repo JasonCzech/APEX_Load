@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Application, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, LaunchConflict, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario, SystemInventoryGenerator } from '../types'
+import { Application, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, LaunchConflict, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario, SystemInventoryGenerator } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
@@ -147,6 +147,16 @@ function reservationStartISO(preflight?: LaunchPreflightResponse | null) {
   const candidateDate = candidate ? new Date(candidate) : new Date()
   const sourceDate = Number.isFinite(candidateDate.getTime()) ? candidateDate : new Date()
   return ceilDateToReservationIncrement(sourceDate).toISOString()
+}
+
+function formatTimeslotLabel(slot: CapacityTimeslot) {
+  const start = new Date(slot.start_at)
+  const end = new Date(slot.end_at)
+  const window = Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())
+    ? `${slot.start_at} → ${slot.end_at}`
+    : `${start.toLocaleString()} → ${end.toLocaleString()}`
+  const gen = slot.requested_capacity?.generators ? ` · ${slot.requested_capacity.generators} gen` : ''
+  return `${window}${gen}`
 }
 
 function formatReservationWindow(preflight?: LaunchPreflightResponse | null) {
@@ -535,6 +545,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
   const [generatorInventoryLoading, setGeneratorInventoryLoading] = useState(false)
   const [generatorInventoryError, setGeneratorInventoryError] = useState('')
+  const [bindableTimeslots, setBindableTimeslots] = useState<CapacityTimeslot[]>([])
+  const [selectedTimeslotId, setSelectedTimeslotId] = useState('')
 
   const refresh = useCallback(async () => {
     try {
@@ -552,6 +564,27 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   }, [activeProject?.id, api, initialScenarioId])
 
   useEffect(() => { refresh() }, [refresh])
+
+  // Approved, not-yet-bound capacity reservations the operator can attach this run to.
+  const refreshBindableTimeslots = useCallback(async () => {
+    if (!activeProject?.id) {
+      setBindableTimeslots([])
+      return
+    }
+    try {
+      const res = await api.listTimeslots({ project_id: activeProject.id })
+      setBindableTimeslots((res.timeslots || []).filter(slot => slot.approval_state === 'approved' && !slot.bound_test_id))
+    } catch {
+      setBindableTimeslots([])
+    }
+  }, [activeProject?.id, api])
+
+  useEffect(() => { void refreshBindableTimeslots() }, [refreshBindableTimeslots])
+  // Drop the selection if the chosen slot is no longer bindable (approved+unbound) for this project.
+  useEffect(() => {
+    setSelectedTimeslotId(prev => (prev && bindableTimeslots.some(slot => slot.id === prev) ? prev : ''))
+  }, [bindableTimeslots])
+
   useEffect(() => {
     const timer = window.setInterval(() => setScheduleClock(new Date()), 60_000)
     return () => window.clearInterval(timer)
@@ -941,12 +974,25 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
           ? { ...runCreatePayload, release_id: releaseId, reserve_launch_window: true, scheduled_start_at: reservationStartISO(immediatePreflight) }
           : { ...runCreatePayload, release_id: releaseId }
       const test = await api.createTest(payload)
-      if (intent === 'reserve') {
-        ;(onOpenCommandCenter || onSelectTest)(test.id)
-        return
+      // Best-effort attach to the selected reservation before launching/navigating.
+      let bindFailed = ''
+      if (selectedTimeslotId) {
+        try {
+          await api.bindTimeslot(selectedTimeslotId, test.id)
+          setSelectedTimeslotId('')
+          void refreshBindableTimeslots()
+        } catch (bindErr: unknown) {
+          bindFailed = getErrorMessage(bindErr, 'binding failed')
+        }
       }
       if (intent === 'queue') {
         await api.startTest(test.id)
+      }
+      if (bindFailed) {
+        setError(`Run created${intent === 'queue' ? ' and started' : ''}, but binding it to the reserved timeslot failed: ${bindFailed}. You can bind it from Monitoring → Schedules.`)
+        return
+      }
+      if (intent === 'reserve' || intent === 'queue') {
         ;(onOpenCommandCenter || onSelectTest)(test.id)
         return
       }
@@ -1975,6 +2021,22 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                     <button className="btn btn-ghost btn-sm btn-accent-action new-test-add-release-link" onClick={() => setShowNewRelease(true)}>+ New Release</button>
                   )}
                 </div>
+                {bindableTimeslots.length > 0 && (
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Reserved Timeslot</span>
+                      <span className="setting-desc">Attach this run to an approved capacity reservation (optional)</span>
+                    </div>
+                    <select className="settings-input" value={selectedTimeslotId} onChange={event => setSelectedTimeslotId(event.target.value)}>
+                      <option value="">No reservation</option>
+                      {bindableTimeslots.map(slot => (
+                        <option key={slot.id} value={slot.id}>
+                          {formatTimeslotLabel(slot)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             </section>
 
