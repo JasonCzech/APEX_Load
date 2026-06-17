@@ -61,6 +61,7 @@ describe('useDashboardTheme', () => {
 
     expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('light')
     expect(document.documentElement.dataset.theme).toBe('light')
+    expect(document.documentElement.style.colorScheme).toBe('light')
 
     await act(async () => {
       const darkButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'dark')
@@ -72,7 +73,7 @@ describe('useDashboardTheme', () => {
     expect(document.documentElement.dataset.theme).toBe('dark')
   })
 
-  it('loads, applies, and persists solarized-dark with light browser color semantics', async () => {
+  it('loads, applies, and persists solarized-dark with dark browser control semantics', async () => {
     window.localStorage.setItem('apexload.theme', 'solarized-dark')
 
     await act(async () => {
@@ -81,7 +82,7 @@ describe('useDashboardTheme', () => {
 
     expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('solarized-dark')
     expect(document.documentElement.dataset.theme).toBe('solarized-dark')
-    // light colorScheme because it's not 'dark'
+    expect(document.documentElement.style.colorScheme).toBe('dark')
     expect(window.localStorage.getItem('apexload.theme')).toBe('solarized-dark')
   })
 

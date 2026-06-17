@@ -1063,7 +1063,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: color-mix(in srgb, var(--bg-card) 82%, var(--bg) 18%);
+  background: color-mix(in srgb, var(--bg-card) 82%, var(--bg-primary) 18%);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
@@ -1104,7 +1104,7 @@
   min-height: 38px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg);
+  background: var(--bg-primary);
   color: var(--text-primary);
   padding: 8px 10px;
 }
@@ -1205,7 +1205,7 @@
 }
 
 .swagger-operation-detail dl > div {
-  background: color-mix(in srgb, var(--bg-card) 82%, var(--bg) 18%);
+  background: color-mix(in srgb, var(--bg-card) 82%, var(--bg-primary) 18%);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
@@ -1360,7 +1360,7 @@
 }
 
 .markdown-code-block {
-  background: color-mix(in srgb, var(--bg-card) 70%, var(--bg) 30%);
+  background: color-mix(in srgb, var(--bg-card) 70%, var(--bg-primary) 30%);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 14px 16px;
@@ -1408,7 +1408,7 @@
 }
 
 .markdown-table-wrap th {
-  background: color-mix(in srgb, var(--bg-card) 82%, var(--bg) 18%);
+  background: color-mix(in srgb, var(--bg-card) 82%, var(--bg-primary) 18%);
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 800;

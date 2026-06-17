@@ -44,6 +44,10 @@
   --topbar-bg: rgba(5, 5, 8, 0.7);
   --control-bg: rgba(255, 255, 255, 0.03);
   --control-hover: rgba(255, 255, 255, 0.08);
+  --select-bg: var(--bg-secondary);
+  --select-hover-bg: var(--control-hover);
+  --select-menu-bg: var(--bg-elevated);
+  --select-arrow: var(--text-secondary);
   --theme-toggle-active-bg: #ffffff;
   --theme-toggle-active-text: #0f1117;
   
@@ -92,6 +96,7 @@
   --radius: 12px;
   --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-spring: 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  color-scheme: dark;
 }
 
 :root[data-theme='light'] {
@@ -177,6 +182,7 @@
   --info-bg: rgba(59, 130, 246, 0.1);
   --info-border: rgba(59, 130, 246, 0.2);
   --info-text: #1d4ed8;
+  color-scheme: light;
 }
 
 :root[data-theme='solarized-dark'] {
@@ -256,6 +262,7 @@
   --run-calendar-ad-hoc-bg: rgba(211, 54, 130, 0.18);
   --run-calendar-ad-hoc-border: rgba(211, 54, 130, 0.46);
   --run-calendar-ad-hoc-text: #d33682;
+  color-scheme: dark;
 }
 
 :root[data-theme='solarized-light'] {
@@ -337,6 +344,7 @@
   --info-bg: rgba(101, 123, 131, 0.12);
   --info-border: rgba(101, 123, 131, 0.25);
   --info-text: #657b83;
+  color-scheme: light;
 }
 
 :root[data-theme='monokai-dimmed'] {
@@ -412,6 +420,7 @@
   --info-bg: rgba(120, 220, 232, 0.12);
   --info-border: rgba(120, 220, 232, 0.25);
   --info-text: #90e2eb;
+  color-scheme: dark;
 }
 
 * {
@@ -454,6 +463,57 @@ button {
 
 input, select, textarea {
   font-family: inherit;
+}
+
+select {
+  color-scheme: inherit;
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--select-bg);
+  color: var(--text-primary);
+  padding: 8px 10px;
+  accent-color: var(--accent);
+}
+
+select:not([multiple]):not([class]) {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--select-arrow) 50%),
+    linear-gradient(135deg, var(--select-arrow) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 9px) 50%;
+  background-repeat: no-repeat;
+  background-size: 5px 5px, 5px 5px;
+  padding-right: max(28px, 2.2em);
+}
+
+:where(select:hover:not(:disabled)) {
+  background-color: var(--select-hover-bg);
+}
+
+select:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+select:disabled {
+  cursor: not-allowed;
+  color: var(--text-muted);
+  background-color: color-mix(in srgb, var(--select-bg) 76%, var(--bg-primary));
+}
+
+select option,
+select optgroup {
+  background-color: var(--select-menu-bg);
+  color: var(--text-primary);
+}
+
+select option:checked {
+  background-color: color-mix(in srgb, var(--accent) 26%, var(--select-menu-bg));
+  color: var(--text-primary);
 }
 
 ::-webkit-scrollbar {

@@ -4,6 +4,7 @@ export type DashboardTheme = 'dark' | 'light' | 'solarized-dark' | 'solarized-li
 
 const THEME_STORAGE_KEY = 'apexload.theme'
 const DASHBOARD_THEMES = new Set<DashboardTheme>(['dark', 'light', 'solarized-dark', 'solarized-light', 'monokai-dimmed'])
+const DARK_BROWSER_CONTROL_THEMES = new Set<DashboardTheme>(['dark', 'solarized-dark', 'monokai-dimmed'])
 
 function isDashboardTheme(value: string | null): value is DashboardTheme {
   return value !== null && DASHBOARD_THEMES.has(value as DashboardTheme)
@@ -24,7 +25,7 @@ export function useDashboardTheme() {
   useEffect(() => {
     if (typeof document !== 'undefined') {
       document.documentElement.dataset.theme = theme
-      document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light'
+      document.documentElement.style.colorScheme = DARK_BROWSER_CONTROL_THEMES.has(theme) ? 'dark' : 'light'
     }
 
     if (typeof window !== 'undefined') {
