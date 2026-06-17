@@ -839,7 +839,9 @@
   border-radius: 8px;
 }
 .imported-metadata-section .source-map-panels {
-  min-height: clamp(360px, 48vh, 520px);
+  height: clamp(360px, 48vh, 520px);
+  min-height: 360px;
+  max-height: min(520px, 58vh);
 }
 .panel-title {
   font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;
@@ -1875,31 +1877,6 @@
 .checkbox-label.compact {
   gap: 6px;
   font-size: 12px;
-}
-.import-metadata-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-  margin-bottom: 14px;
-}
-.import-metadata-header p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.5;
-  max-width: 760px;
-}
-.import-source-chip {
-  border: 1px solid rgba(34,197,94,0.25);
-  background: rgba(34,197,94,0.08);
-  color: var(--success);
-  border-radius: 999px;
-  padding: 6px 10px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 .import-metadata-grid {
   display: grid;
@@ -5184,7 +5161,6 @@
   .parameter-data-dialog { min-height: auto; }
   .editor-dialog-header { flex-direction: column; align-items: stretch; }
   .parameter-draft-grid { grid-template-columns: 1fr; }
-  .import-metadata-header { flex-direction: column; }
   .replay-live-banner { flex-direction: column; }
   .replay-live-banner-meta { align-items: flex-start; min-width: 0; }
   .replay-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

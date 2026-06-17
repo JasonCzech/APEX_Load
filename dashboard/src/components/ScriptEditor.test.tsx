@@ -908,7 +908,9 @@ describe('ScriptEditor', () => {
 
     expect(sourceMapReviewRule).toContain('flex: 0 0 auto;')
     expect(sourceMapReviewRule).toContain('min-height: 0;')
-    expect(sourceMapPanelsRule).toContain('min-height: clamp(360px, 48vh, 520px);')
+    expect(sourceMapPanelsRule).toContain('height: clamp(360px, 48vh, 520px);')
+    expect(sourceMapPanelsRule).toContain('min-height: 360px;')
+    expect(sourceMapPanelsRule).toContain('max-height: min(520px, 58vh);')
   })
 
   it('keeps the landing editor focused on script name while support tools live in the outline', async () => {
@@ -2802,10 +2804,6 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.parameter-mappings-launcher')?.textContent).toContain('Parameter File Mappings')
     expect(container.querySelector('.parameter-mappings-launcher')?.textContent).toContain('Open Mapping List')
     expect(container.querySelector('.parameter-mappings-launcher')?.textContent).not.toContain('Starter Blocks')
-    expect(container.textContent).toContain('Generated Data Sources')
-    expect(container.textContent).toContain('users')
-    expect(container.textContent).toContain('2 rows')
-    expect(container.textContent).toContain('Open In Parameter Data')
     expect(container.textContent).toContain('Source Mapping')
     expect(container.textContent).toContain('Action.c:3')
     expect(container.textContent).toContain('web_url')
@@ -2813,8 +2811,14 @@ describe('ScriptEditor', () => {
     const metadataSection = container.querySelector('#imported-metadata-section')
     const actionDetail = container.querySelector('.action-detail')
     expect(metadataSection?.classList.contains('open')).toBe(true)
+    expect(metadataSection?.querySelector('.import-metadata-header')).toBeNull()
+    expect(metadataSection?.querySelector('.import-source-chip')).toBeNull()
+    expect(metadataSection?.textContent).not.toContain('This script retains source-specific import metadata')
+    expect(metadataSection?.querySelector('.source-map-summary')).toBeNull()
     expect(metadataSection?.querySelector('.import-metadata-body > .import-metadata-grid')).toBeNull()
     expect(metadataSection?.textContent).not.toContain('Source Script')
+    expect(metadataSection?.textContent).not.toContain('Generated Data Sources')
+    expect(metadataSection?.textContent).not.toContain('Open In Parameter Data')
     expect(actionDetail).toBeNull()
     expect(container.querySelector('.author-code-center')?.contains(metadataSection)).toBe(true)
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
@@ -2897,9 +2901,30 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Imported Metadata')
     expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Source Mapping')
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
-
+    const workspaceGrid = container.querySelector('.actions-content-grid')
+    const maximizeSourceMappingButton = Array.from(metadataSection?.querySelectorAll('.source-map-header button') || []).find(
+      button => button.textContent?.trim() === 'Maximize',
+    )
+    expect(maximizeSourceMappingButton).toBeDefined()
     await act(async () => {
-      sidebarActions[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      maximizeSourceMappingButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(workspaceGrid?.classList.contains('author-outline-collapsed')).toBe(true)
+    expect(workspaceGrid?.classList.contains('author-right-sidebar-collapsed')).toBe(true)
+    const restoreSourceMappingButton = Array.from(metadataSection?.querySelectorAll('.source-map-header button') || []).find(
+      button => button.textContent?.trim() === 'Restore',
+    )
+    expect(restoreSourceMappingButton?.getAttribute('aria-pressed')).toBe('true')
+    await act(async () => {
+      restoreSourceMappingButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(workspaceGrid?.classList.contains('author-outline-collapsed')).toBe(false)
+    expect(workspaceGrid?.classList.contains('author-right-sidebar-collapsed')).toBe(false)
+
+    const restoredSidebarActions = container.querySelectorAll('.action-item')
+    expect(restoredSidebarActions.length).toBeGreaterThan(1)
+    await act(async () => {
+      restoredSidebarActions[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(findCenterTab(container, 'Imported Metadata')?.getAttribute('aria-selected')).toBe('true')
@@ -3008,25 +3033,9 @@ describe('ScriptEditor', () => {
     await activateParameterDataTab(container)
     expect(container.querySelector('.parameter-data-selected-view')).not.toBeNull()
 
-    const openImportedDataSourceButton = Array.from(container.querySelectorAll('button')).find(button =>
+    expect(Array.from(container.querySelectorAll('button')).some(button =>
       button.textContent?.trim() === 'Open In Parameter Data',
-    )
-    expect(openImportedDataSourceButton).toBeDefined()
-    if (!openImportedDataSourceButton) {
-      return
-    }
-
-    await act(async () => {
-      openImportedDataSourceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
-    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter: username')
-    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('{{param.username}}')
-    expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
-    expect(container.textContent).toContain('users')
-    await activateParameterDataTab(container)
-    expect(container.querySelector('.parameter-data-selected-view')).not.toBeNull()
+    )).toBe(false)
   })
 
   it('preselects the requested action when a draft opens with a focus hint', async () => {

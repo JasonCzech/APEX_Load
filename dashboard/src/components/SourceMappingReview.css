@@ -41,14 +41,18 @@
   line-height: 1.5;
 }
 
-.source-map-summary {
+.source-map-header-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
 }
 
-.source-map-summary span,
+.source-map-workspace-toggle {
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
 .source-map-status {
   position: relative;
   padding: 3px 7px;
@@ -291,7 +295,9 @@
   display: flex;
   flex: 1 1 auto;
   gap: 12px;
+  height: 420px;
   min-height: 360px;
+  max-height: min(620px, 58vh);
 }
 
 .source-map-panel {
@@ -443,14 +449,26 @@
 .linked-code-pane {
   display: flex;
   flex: 1 1 auto;
+  overflow: hidden;
   min-height: 0;
   min-width: 0;
 }
 
+.linked-code-pane > div {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
 .linked-code-pane .cm-editor {
+  flex: 1 1 auto;
   background: var(--bg-primary);
   height: 100%;
   min-height: 0;
+  max-height: 100%;
 }
 
 .linked-code-pane .cm-editor.cm-focused {
@@ -460,6 +478,7 @@
 .linked-code-pane .cm-scroller {
   overflow: auto;
   min-height: 0;
+  max-height: 100%;
 }
 
 .apex-search-match {

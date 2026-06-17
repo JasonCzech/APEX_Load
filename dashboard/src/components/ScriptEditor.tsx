@@ -2730,6 +2730,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [debuggerSettingsOpen, setDebuggerSettingsOpen] = useState(false)
   const [authorOutlineCollapsed, setAuthorOutlineCollapsed] = useState(false)
   const [authorRightSidebarCollapsed, setAuthorRightSidebarCollapsed] = useState(false)
+  const [sourceMappingWorkspaceMaximized, setSourceMappingWorkspaceMaximized] = useState(false)
   const [debugDetailCollapsed, setDebugDetailCollapsed] = useState(true)
   const [debugVariablesCollapsed, setDebugVariablesCollapsed] = useState(true)
   const [debuggerBottomTab, setDebuggerBottomTab] = useState<DebuggerBottomTab>('console')
@@ -2752,6 +2753,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     try { const val = window.localStorage.getItem('debuggerBottomHeight'); return val ? clampDebuggerPaneSize('bottom', parseInt(val, 10) || DEBUGGER_LAYOUT_DEFAULTS.bottom) : DEBUGGER_LAYOUT_DEFAULTS.bottom } catch { return DEBUGGER_LAYOUT_DEFAULTS.bottom }
   })
   const [activeDebuggerResize, setActiveDebuggerResize] = useState<DebuggerResizeKind | null>(null)
+
+  const toggleSourceMappingWorkspaceMaximized = useCallback(() => {
+    setSourceMappingWorkspaceMaximized(current => {
+      const next = !current
+      setAuthorOutlineCollapsed(next)
+      setAuthorRightSidebarCollapsed(next)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!sourceMappingWorkspaceMaximized) return
+    if (centerTabsState.activeTabId === 'imported-metadata' && sourceReview) return
+    setSourceMappingWorkspaceMaximized(false)
+    setAuthorOutlineCollapsed(false)
+    setAuthorRightSidebarCollapsed(false)
+  }, [centerTabsState.activeTabId, sourceMappingWorkspaceMaximized, sourceReview])
 
   useEffect(() => {
     try {
@@ -9534,23 +9552,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               {importMetadata && centerTabPanelElements['imported-metadata'] && createPortal(
                 renderStructuredCenterDocument('Imported Metadata', (
                   <section id="imported-metadata-section" className="center-document import-metadata-panel config-panel imported-metadata-section open" aria-label="Imported Metadata">
-                    <div className="import-metadata-header">
-                      <div>
-                        <h3 className="panel-title">Imported Metadata</h3>
-                        <p>This script retains source-specific import metadata that APEX Load uses during review but does not edit directly.</p>
-                      </div>
-                      <span className="import-source-chip">{importMetadata.source || 'enterprise_script_archive'}</span>
-                    </div>
-
                     <div className="import-metadata-body">
                       {sourceReview && (
                         <SourceMappingReview
                           focusRequestId={sourceMappingFocus.requestId}
                           focusedMappingId={sourceMappingFocus.mappingId}
                           id="imported-source-mapping"
+                          onToggleWorkspaceMaximized={toggleSourceMappingWorkspaceMaximized}
                           sourceReview={sourceReview}
                           script={script}
                           title="Source Mapping"
+                          workspaceMaximized={sourceMappingWorkspaceMaximized}
                         />
                       )}
 
@@ -9718,29 +9730,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                     ))}
                                   </div>
                                 )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {importedDataSourceSummaries.length > 0 && (
-                        <div className="import-correlation-section">
-                          <h4>Generated Data Sources</h4>
-                          <p>These data sources were created from the imported parameter files and are ready for review in the editor.</p>
-                          <div className="import-correlation-list">
-                            {importedDataSourceSummaries.map((source) => (
-                              <div key={source.name} className="import-correlation-card">
-                                <strong>{source.name}</strong>
-                                <span>{source.type} • {source.rows} row{source.rows === 1 ? '' : 's'}</span>
-                                <span>{typeof source.columns === 'number'
-                                  ? `${source.columns} column${source.columns === 1 ? '' : 's'}`
-                                  : source.columns.join(', ') || 'No columns'}</span>
-                                <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-                                  <button className="btn btn-secondary btn-sm" type="button" onClick={() => openImportedDataSourceReview(source.name)}>
-                                    Open In Parameter Data
-                                  </button>
-                                </div>
                               </div>
                             ))}
                           </div>

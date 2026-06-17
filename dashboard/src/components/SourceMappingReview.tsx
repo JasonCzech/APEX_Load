@@ -26,9 +26,11 @@ interface Props {
   focusRequestId?: number
   focusedMappingId?: string
   id?: string
+  onToggleWorkspaceMaximized?: () => void
   sourceReview?: SourceReview | null
   script?: ScriptDefinition | null
   title?: string
+  workspaceMaximized?: boolean
 }
 
 // CSS class names for category chips/gutters (reuses the existing status styles).
@@ -114,6 +116,19 @@ function excerptFromText(text: string, startLine?: number, endLine?: number) {
   return lines.slice(start - 1, end).join('\n')
 }
 
+export function scrollMappingRowIntoTableView(container: HTMLElement, row: HTMLElement) {
+  const rowTop = row.offsetTop
+  const rowBottom = rowTop + row.offsetHeight
+  const visibleTop = container.scrollTop
+  const visibleBottom = visibleTop + container.clientHeight
+
+  if (rowTop < visibleTop) {
+    container.scrollTop = Math.max(0, rowTop)
+  } else if (rowBottom > visibleBottom) {
+    container.scrollTop = Math.max(0, rowBottom - container.clientHeight)
+  }
+}
+
 function PaneFallback() {
   return <div className="source-map-empty">Loading code view…</div>
 }
@@ -126,7 +141,16 @@ const COVERAGE_TOOLTIPS: Record<string, string> = {
   dslWithoutOrigin: 'Generated DSL actions, parameters, or data sources with no traceable source mapping.',
 }
 
-export default function SourceMappingReview({ focusRequestId = 0, focusedMappingId = '', id, sourceReview, script, title = 'Source Mapping' }: Props) {
+export default function SourceMappingReview({
+  focusRequestId = 0,
+  focusedMappingId = '',
+  id,
+  onToggleWorkspaceMaximized,
+  sourceReview,
+  script,
+  title = 'Source Mapping',
+  workspaceMaximized = false,
+}: Props) {
   const files = useMemo(() => normalizeFiles(sourceReview), [sourceReview])
   const mappings = useMemo(() => normalizeMappings(sourceReview), [sourceReview])
   const sourceFileOptions = useMemo(() => {
@@ -143,7 +167,10 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
   const [isTableCollapsed, setIsTableCollapsed] = useState(false)
   const [maximizedPane, setMaximizedPane] = useState<'source' | 'dsl' | null>(null)
   const [approvedMappingIds, setApprovedMappingIds] = useState<Set<string>>(new Set())
+  const tableWrapRef = useRef<HTMLDivElement | null>(null)
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
+  const lastAppliedFocusRequestRef = useRef<number | null>(null)
+  const lastTableScrollFocusRequestRef = useRef<number | null>(null)
 
   const selectedMapping = useMemo(
     () => mappings.find(mapping => mapping.id === selectedMappingId) || null,
@@ -166,20 +193,30 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
   const sourceGutter = useMemo(() => lineStatusForSource(mappings, selectedFile?.path), [mappings, selectedFile])
 
   useEffect(() => {
-    const nextMapping = mappings[0]
-    setSelectedMappingId(nextMapping?.id || '')
-    const nextFile = nextMapping?.source_file
-      ? sourceFileOptions.find(file => fileMatchesPath(file, nextMapping.source_file)) || sourceFileOptions[0]
-      : sourceFileOptions[0]
-    setSelectedFilePath(nextFile?.path || nextMapping?.source_file || '')
-    setCategoryFilter('')
-    setCopied('')
-  }, [mappings, sourceFileOptions])
+    const selectedStillExists = selectedMappingId && mappings.some(mapping => mapping.id === selectedMappingId)
+    const nextMapping = selectedStillExists
+      ? mappings.find(mapping => mapping.id === selectedMappingId) || null
+      : mappings[0] || null
+
+    if ((nextMapping?.id || '') !== selectedMappingId) {
+      setSelectedMappingId(nextMapping?.id || '')
+    }
+
+    const fileStillExists = selectedFilePath && sourceFileOptions.some(file => fileMatchesPath(file, selectedFilePath))
+    if (!fileStillExists) {
+      const nextFile = nextMapping?.source_file
+        ? sourceFileOptions.find(file => fileMatchesPath(file, nextMapping.source_file)) || sourceFileOptions[0]
+        : sourceFileOptions[0]
+      setSelectedFilePath(nextFile?.path || nextMapping?.source_file || '')
+    }
+  }, [mappings, selectedFilePath, selectedMappingId, sourceFileOptions])
 
   useEffect(() => {
     if (!focusedMappingId) return
+    if (lastAppliedFocusRequestRef.current === focusRequestId) return
     const nextMapping = mappings.find(mapping => mapping.id === focusedMappingId)
     if (!nextMapping) return
+    lastAppliedFocusRequestRef.current = focusRequestId
     setSelectedMappingId(nextMapping.id)
     if (nextMapping.source_file) setSelectedFilePath(nextMapping.source_file)
     setCategoryFilter('')
@@ -209,15 +246,20 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
   }, [filter, mappings, sortDirection, sortField, categoryFilter, approvedMappingIds])
 
   useEffect(() => {
-    const idToScroll = focusedMappingId || selectedMappingId
-    if (!idToScroll) return
+    const hasNewFocusRequest = !!focusedMappingId && lastTableScrollFocusRequestRef.current !== focusRequestId
+    const idToScroll = hasNewFocusRequest ? focusedMappingId : selectedMappingId
+    if (hasNewFocusRequest) {
+      lastTableScrollFocusRequestRef.current = focusRequestId
+    }
+    if (!idToScroll || isTableCollapsed) return
     window.requestAnimationFrame(() => {
+      const tableWrap = tableWrapRef.current
       const row = rowRefs.current[idToScroll]
-      if (typeof row?.scrollIntoView === 'function') {
-        row.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      if (tableWrap && row) {
+        scrollMappingRowIntoTableView(tableWrap, row)
       }
     })
-  }, [focusedMappingId, focusRequestId, selectedMappingId])
+  }, [focusedMappingId, focusRequestId, isTableCollapsed, selectedMappingId])
 
   const selectMapping = (mapping: SourceReviewMapping | null) => {
     if (!mapping) return
@@ -383,10 +425,19 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
           <h4>{title}</h4>
           <p>Validate the conversion line by line — select on either side and the match is highlighted on the other.</p>
         </div>
-        <div className="source-map-summary">
-          <span>{files.length} file{files.length === 1 ? '' : 's'}</span>
-          <span>{mappings.length} mapping{mappings.length === 1 ? '' : 's'}</span>
-        </div>
+        {onToggleWorkspaceMaximized && (
+          <div className="source-map-header-actions">
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost source-map-workspace-toggle"
+              aria-pressed={workspaceMaximized}
+              title={workspaceMaximized ? 'Restore side panels' : 'Maximize source mapping'}
+              onClick={onToggleWorkspaceMaximized}
+            >
+              {workspaceMaximized ? 'Restore' : 'Maximize'}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="source-map-coverage" role="group" aria-label="Conversion coverage">
@@ -455,7 +506,7 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
         </div>
       </div>
 
-      <div className="source-map-table-wrap" tabIndex={0} onKeyDown={handleTableKeyDown} style={{ display: isTableCollapsed ? 'none' : 'block' }}>
+      <div ref={tableWrapRef} className="source-map-table-wrap" tabIndex={0} onKeyDown={handleTableKeyDown} style={{ display: isTableCollapsed ? 'none' : 'block' }}>
         <table className="source-map-table" aria-label="Source conversion mappings">
           <colgroup>
             <col className="source-map-col-source" />

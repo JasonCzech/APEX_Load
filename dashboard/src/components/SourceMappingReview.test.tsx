@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import SourceMappingReview from './SourceMappingReview'
+import SourceMappingReview, { scrollMappingRowIntoTableView } from './SourceMappingReview'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -311,6 +311,7 @@ describe('SourceMappingReview', () => {
     const firstRow = table?.querySelector('tbody tr')
 
     expect(table?.getAttribute('aria-label')).toBe('Source conversion mappings')
+    expect(container.querySelector('.source-map-summary')).toBeNull()
     expect(columns).toEqual([
       'source-map-col-source',
       'source-map-col-function',
@@ -322,6 +323,50 @@ describe('SourceMappingReview', () => {
     expect(firstRow?.querySelector('.source-map-status-cell')).not.toBeNull()
   })
 
+  it('uses a workspace maximize toggle in the source mapping title row', async () => {
+    const handleToggle = vi.fn()
+    await act(async () => {
+      root.render(
+        <SourceMappingReview
+          onToggleWorkspaceMaximized={handleToggle}
+          sourceReview={sourceReview}
+          script={script}
+          workspaceMaximized={false}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const maximizeButton = Array.from(container.querySelectorAll('.source-map-header button')).find(
+      button => button.textContent?.trim() === 'Maximize',
+    ) as HTMLButtonElement | undefined
+    expect(container.querySelector('.source-map-summary')).toBeNull()
+    expect(maximizeButton).toBeDefined()
+    expect(maximizeButton?.getAttribute('aria-pressed')).toBe('false')
+
+    await act(async () => {
+      maximizeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(handleToggle).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      root.render(
+        <SourceMappingReview
+          onToggleWorkspaceMaximized={handleToggle}
+          sourceReview={sourceReview}
+          script={script}
+          workspaceMaximized
+        />,
+      )
+    })
+
+    const restoreButton = Array.from(container.querySelectorAll('.source-map-header button')).find(
+      button => button.textContent?.trim() === 'Restore',
+    ) as HTMLButtonElement | undefined
+    expect(restoreButton).toBeDefined()
+    expect(restoreButton?.getAttribute('aria-pressed')).toBe('true')
+  })
+
   it('keeps the mapping table visible above the source code panes', async () => {
     const stylesheet = await readSourceMappingStylesheet()
     const nonShrinkingSections = cssRule(stylesheet, '.source-map-header,\n.source-map-coverage,\n.source-map-toolbar,\n.source-map-table-wrap')
@@ -330,7 +375,12 @@ describe('SourceMappingReview', () => {
     expect(nonShrinkingSections).toContain('flex: 0 0 auto;')
     expect(stylesheet).toContain('.source-map-table-wrap {\n  display: block;\n  min-height: 120px;')
     expect(stylesheet).toContain('max-height: 220px;')
+    expect(sourcePanels).toContain('height: 420px;')
     expect(sourcePanels).toContain('min-height: 360px;')
+    expect(sourcePanels).toContain('max-height: min(620px, 58vh);')
+    expect(stylesheet).toContain('.linked-code-pane > div {')
+    expect(stylesheet).toContain('height: 100%;')
+    expect(stylesheet).toContain('.linked-code-pane .cm-scroller {\n  overflow: auto;')
   })
 
   it('uses Reset for returning a maximized source or DSL pane to the split view', async () => {
@@ -349,5 +399,117 @@ describe('SourceMappingReview', () => {
 
     expect(container.textContent).toContain('Reset')
     expect(container.textContent).not.toContain('Restore')
+  })
+
+  it('scrolls selected mapping rows only within the mapping table scroller', () => {
+    const tableScroller = document.createElement('div')
+    const row = document.createElement('tr')
+
+    Object.defineProperty(tableScroller, 'clientHeight', { configurable: true, value: 120 })
+    Object.defineProperty(row, 'offsetTop', { configurable: true, value: 260 })
+    Object.defineProperty(row, 'offsetHeight', { configurable: true, value: 24 })
+
+    scrollMappingRowIntoTableView(tableScroller, row)
+    expect(tableScroller.scrollTop).toBe(164)
+
+    tableScroller.scrollTop = 200
+    Object.defineProperty(row, 'offsetTop', { configurable: true, value: 80 })
+
+    scrollMappingRowIntoTableView(tableScroller, row)
+    expect(tableScroller.scrollTop).toBe(80)
+  })
+
+  it('leaves the mapping table scroller alone when the selected row is already visible', () => {
+    const tableScroller = document.createElement('div')
+    const row = document.createElement('tr')
+
+    Object.defineProperty(tableScroller, 'clientHeight', { configurable: true, value: 120 })
+    Object.defineProperty(row, 'offsetTop', { configurable: true, value: 140 })
+    Object.defineProperty(row, 'offsetHeight', { configurable: true, value: 24 })
+    tableScroller.scrollTop = 100
+
+    scrollMappingRowIntoTableView(tableScroller, row)
+    expect(tableScroller.scrollTop).toBe(100)
+  })
+
+  it('preserves the selected mapping when equivalent source review data is re-created upstream', async () => {
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)
+    })
+    await flushPromises()
+
+    const logoutRow = container.querySelector('tr[data-mapping-id="logout"]') as HTMLTableRowElement | null
+    expect(logoutRow).not.toBeNull()
+    if (!logoutRow) return
+
+    await act(async () => {
+      logoutRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('logout')
+
+    const clonedSourceReview = JSON.parse(JSON.stringify(sourceReview))
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={clonedSourceReview} script={script} />)
+    })
+    await flushPromises()
+
+    expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('logout')
+  })
+
+  it('keeps a clicked table row from snapping back to an earlier external focus target', async () => {
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
+
+    await act(async () => {
+      root.render(
+        <SourceMappingReview
+          focusedMappingId="logout"
+          focusRequestId={1}
+          sourceReview={sourceReview}
+          script={script}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const tableScroller = container.querySelector('.source-map-table-wrap') as HTMLDivElement | null
+    const homepageRow = container.querySelector('tr[data-mapping-id="homepage"]') as HTMLTableRowElement | null
+    const logoutRow = container.querySelector('tr[data-mapping-id="logout"]') as HTMLTableRowElement | null
+
+    expect(tableScroller).not.toBeNull()
+    expect(homepageRow).not.toBeNull()
+    expect(logoutRow).not.toBeNull()
+    if (!tableScroller || !homepageRow || !logoutRow) return
+
+    Object.defineProperty(tableScroller, 'clientHeight', { configurable: true, value: 20 })
+    Object.defineProperty(homepageRow, 'offsetTop', { configurable: true, value: 0 })
+    Object.defineProperty(homepageRow, 'offsetHeight', { configurable: true, value: 20 })
+    Object.defineProperty(logoutRow, 'offsetTop', { configurable: true, value: 100 })
+    Object.defineProperty(logoutRow, 'offsetHeight', { configurable: true, value: 20 })
+    tableScroller.scrollTop = 0
+
+    await act(async () => {
+      homepageRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(tableScroller.scrollTop).toBe(0)
+
+    await act(async () => {
+      root.render(
+        <SourceMappingReview
+          focusedMappingId="logout"
+          focusRequestId={1}
+          sourceReview={{ ...sourceReview, mappings: [...sourceReview.mappings] }}
+          script={script}
+        />,
+      )
+    })
+    await flushPromises()
+
+    expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('homepage')
   })
 })
