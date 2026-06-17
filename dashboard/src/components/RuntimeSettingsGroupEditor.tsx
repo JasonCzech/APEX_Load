@@ -93,10 +93,15 @@ export default function RuntimeSettingsGroupEditor({
   const draft = overrides[index] ?? EMPTY_RUNTIME_DRAFT
   const groupOverride = overrideFromRuntimeDraft(overrides[index])
   const browserApplicable = isRuntimeFieldApplicable('browser', focusGroup.protocol)
+  const httpApplicable = isRuntimeFieldApplicable('http', focusGroup.protocol)
 
   const patch = (next: Partial<ScenarioRuntimeSettingsDraft>) => {
     const merged: ScenarioRuntimeSettingsDraft = { ...EMPTY_RUNTIME_DRAFT, ...draft, ...next }
     onChange(index, isRuntimeDraftEmpty(merged) ? undefined : merged)
+  }
+
+  const patchHttp = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['http']>>) => {
+    patch({ http: { ...draft.http, ...next } })
   }
 
   const clearField = (field: RuntimeFieldKey) => {
@@ -439,6 +444,87 @@ export default function RuntimeSettingsGroupEditor({
               <option value="landscape">Landscape</option>
             </select>
           </label>
+        </div>
+      )}
+
+      {httpApplicable && (
+        <div className="scenario-subpanel">
+          <div className="scenario-assignment-header">
+            <div>
+              <h4>HTTP transport</h4>
+              <p>Overrides this group&rsquo;s HTTP settings. Setting any field replaces the script&rsquo;s full HTTP section for the group. Auth secrets are stored masked.</p>
+            </div>
+          </div>
+          <div className="scenario-browser-grid">
+            <label>
+              <span>HTTP version</span>
+              <select className="settings-input" value={draft.http?.version || ''} onChange={event => patchHttp({ version: event.target.value || undefined })}>
+                <option value="">Inherit</option>
+                <option value="1.0">1.0</option>
+                <option value="1.1">1.1</option>
+                <option value="2">2</option>
+              </select>
+            </label>
+            <label>
+              <span>Connect timeout (ms)</span>
+              <input className="settings-input" type="number" min={0} value={draft.http?.connect_timeout_ms ?? ''} onChange={event => patchHttp({ connect_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+            </label>
+            <label>
+              <span>Request timeout (ms)</span>
+              <input className="settings-input" type="number" min={0} value={draft.http?.request_timeout_ms ?? ''} onChange={event => patchHttp({ request_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+            </label>
+            <label>
+              <span>TLS min version</span>
+              <select className="settings-input" value={draft.http?.tls?.min_version || ''} onChange={event => patchHttp({ tls: { ...draft.http?.tls, min_version: event.target.value || undefined } })}>
+                <option value="">Inherit</option>
+                <option value="1.0">1.0</option>
+                <option value="1.1">1.1</option>
+                <option value="1.2">1.2</option>
+                <option value="1.3">1.3</option>
+              </select>
+            </label>
+            <label>
+              <span>Proxy mode</span>
+              <select className="settings-input" value={draft.http?.proxy_mode || ''} onChange={event => patchHttp({ proxy_mode: event.target.value || undefined })}>
+                <option value="">Inherit</option>
+                <option value="none">None</option>
+                <option value="system">System</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            <label>
+              <span>Proxy URL</span>
+              <input className="settings-input" type="text" value={draft.http?.proxy?.url || ''} onChange={event => patchHttp({ proxy: { ...draft.http?.proxy, url: event.target.value || undefined } })} placeholder="http://proxy:8080" />
+            </label>
+            <label>
+              <span>Auth type</span>
+              <select className="settings-input" value={draft.http?.auth?.type || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, type: event.target.value || undefined } })}>
+                <option value="">Inherit</option>
+                <option value="basic">Basic</option>
+                <option value="bearer">Bearer</option>
+                <option value="ntlm">NTLM</option>
+                <option value="digest">Digest</option>
+              </select>
+            </label>
+            <label>
+              <span>Auth username</span>
+              <input className="settings-input" type="text" value={draft.http?.auth?.username || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, username: event.target.value || undefined } })} placeholder="Inherit" />
+            </label>
+            <label>
+              <span>Auth password</span>
+              <input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.password || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, password: event.target.value || undefined } })} placeholder="Inherit" />
+            </label>
+            <label>
+              <span>Auth token</span>
+              <input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.token || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, token: event.target.value || undefined } })} placeholder="Inherit" />
+            </label>
+          </div>
+          <div className="scenario-option-grid">
+            <label className={`scenario-option-card ${draft.http?.tls?.insecure_skip_verify ? 'selected' : ''}`}>
+              <input type="checkbox" checked={Boolean(draft.http?.tls?.insecure_skip_verify)} onChange={event => patchHttp({ tls: { ...draft.http?.tls, insecure_skip_verify: event.target.checked || undefined } })} />
+              <div><strong>Skip TLS verification</strong><span>Do not validate the server certificate (test environments only).</span></div>
+            </label>
+          </div>
         </div>
       )}
 

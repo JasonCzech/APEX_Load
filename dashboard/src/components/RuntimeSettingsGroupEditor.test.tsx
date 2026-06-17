@@ -207,4 +207,42 @@ describe('RuntimeSettingsGroupEditor', () => {
     )
     expect(backoff).toBeTruthy()
   })
+
+  it('renders and edits the HTTP transport form for an http group', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[undefined, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const text = container.textContent || ''
+    expect(text).toContain('HTTP transport')
+    expect(text).toContain('Auth password')
+    // The HTTP version select offers both 1.1 and 2 (distinguishes it from TLS).
+    const versionSelect = Array.from(container.querySelectorAll('select')).find(s =>
+      Array.from(s.options).some(o => o.value === '2') && Array.from(s.options).some(o => o.value === '1.1'),
+    ) as HTMLSelectElement
+    expect(versionSelect).toBeTruthy()
+    act(() => setSelectValue(versionSelect, '2'))
+    expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({ http: expect.objectContaining({ version: '2' }) }))
+  })
+
+  it('gates the HTTP transport edit form off for a non-http (browser) group', () => {
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={1} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={() => {}} onApplyToGroups={() => {}} />,
+      )
+    })
+    // The HTTP edit subpanel (h4) does not render for a browser group; it shows as a
+    // "Not applicable" summary row instead.
+    const headings = Array.from(container.querySelectorAll('h4')).map(h => h.textContent)
+    expect(headings).not.toContain('HTTP transport')
+  })
 })
