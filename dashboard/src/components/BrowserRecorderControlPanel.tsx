@@ -10,6 +10,12 @@ import {
 import { type StoredScript } from '../types'
 import { type RecorderImportResult, type SalesforceImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
+import {
+  composeHttpURL,
+  DEFAULT_HTTP_URL_SCHEME,
+  normalizeHttpURLInput,
+  type HttpURLScheme,
+} from '../utils/httpUrlInput'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import BrowserReplayProgress from './BrowserReplayProgress'
 import './RecordingStudio.css'
@@ -124,7 +130,8 @@ export default function BrowserRecorderControlPanel({
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('success')
-  const [navigateURL, setNavigateURL] = useState('')
+  const [navigateScheme, setNavigateScheme] = useState<HttpURLScheme>(DEFAULT_HTTP_URL_SCHEME)
+  const [navigateAddress, setNavigateAddress] = useState('')
   const [transactionName, setTransactionName] = useState('')
   const [noteText, setNoteText] = useState('')
   const [splitAtTransactions, setSplitAtTransactions] = useState(false)
@@ -250,17 +257,23 @@ export default function BrowserRecorderControlPanel({
     }
   }
 
+  const handleNavigateAddressChange = (value: string) => {
+    const normalized = normalizeHttpURLInput(value, navigateScheme)
+    setNavigateScheme(normalized.scheme)
+    setNavigateAddress(normalized.address)
+  }
+
   const handleNavigate = async () => {
-    const url = navigateURL.trim()
-    if (!/^https?:\/\//i.test(url)) {
-      showFeedback('Enter an absolute http(s) URL to navigate to', 'error')
+    const url = composeHttpURL(navigateScheme, navigateAddress)
+    if (!url) {
+      showFeedback('Enter an http(s) URL to navigate to', 'error')
       return
     }
     setBusy(true)
     try {
       const res = await api.navigateBrowserRecording(sessionId, url)
       setSession(res.session)
-      setNavigateURL('')
+      setNavigateAddress('')
       showFeedback(`Recording browser navigated to ${url}`)
     } catch (e: any) {
       showFeedback(e.message, 'error')
@@ -641,13 +654,24 @@ export default function BrowserRecorderControlPanel({
 
       {controllable && (
         <div className="brp-row">
-          <input
-            className="rec-input"
-            aria-label="Navigate the recording browser"
-            value={navigateURL}
-            onChange={e => setNavigateURL(e.target.value)}
-            placeholder="https://… navigate the recording browser"
-          />
+          <div className="rec-url-input-group brp-url-input-group">
+            <select
+              className="rec-input rec-url-scheme-select"
+              value={navigateScheme}
+              onChange={e => setNavigateScheme(e.target.value as HttpURLScheme)}
+              aria-label="Navigate URL scheme"
+            >
+              <option value="https://">https://</option>
+              <option value="http://">http://</option>
+            </select>
+            <input
+              className="rec-input"
+              aria-label="Navigate the recording browser"
+              value={navigateAddress}
+              onChange={e => handleNavigateAddressChange(e.target.value)}
+              placeholder="app.example.com/path"
+            />
+          </div>
           <button className="btn btn-secondary btn-sm" onClick={handleNavigate} disabled={busy}>Go</button>
         </div>
       )}

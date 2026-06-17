@@ -388,7 +388,9 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.navigateBrowserRecording.mockResolvedValue({ session: recordingSession })
     await renderPanel()
 
+    const scheme = container.querySelector('select[aria-label="Navigate URL scheme"]') as HTMLSelectElement
     const input = container.querySelector('input[aria-label="Navigate the recording browser"]') as HTMLInputElement
+    expect(scheme).not.toBeNull()
     expect(input).not.toBeNull()
 
     await act(async () => {
@@ -399,16 +401,32 @@ describe('BrowserRecorderControlPanel', () => {
     await clickButton('Go')
     await flushPromises()
     expect(apiMock.navigateBrowserRecording).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Enter an absolute http(s) URL')
+    expect(container.textContent).toContain('Enter an http(s) URL')
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!
+      setter.call(scheme, 'http://')
+      scheme.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(input, 'localhost:3000/checkout')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await clickButton('Go')
+    await flushPromises()
+    expect(apiMock.navigateBrowserRecording).toHaveBeenCalledWith('brec-1', 'http://localhost:3000/checkout')
 
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
       setter.call(input, 'https://shop.example/checkout')
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
+    expect(scheme.value).toBe('https://')
+    expect(input.value).toBe('shop.example/checkout')
     await clickButton('Go')
     await flushPromises()
-    expect(apiMock.navigateBrowserRecording).toHaveBeenCalledWith('brec-1', 'https://shop.example/checkout')
+    expect(apiMock.navigateBrowserRecording).toHaveBeenLastCalledWith('brec-1', 'https://shop.example/checkout')
   })
 
   it('focuses the recording browser', async () => {

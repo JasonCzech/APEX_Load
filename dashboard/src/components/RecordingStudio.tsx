@@ -6,6 +6,12 @@ import { API_ORIGIN, apiFetch, trimTrailingSlash } from '../hooks/apiClient'
 import { Project } from '../types'
 import { type RecorderImportResult, type SalesforceImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
+import {
+  composeHttpURL,
+  DEFAULT_HTTP_URL_SCHEME,
+  normalizeHttpURLInput,
+  type HttpURLScheme,
+} from '../utils/httpUrlInput'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import BrowserRecorderControlPanel from './BrowserRecorderControlPanel'
 import PageViewToggle from './PageViewToggle'
@@ -340,7 +346,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const [browserAvailability, setBrowserAvailability] = useState<{ available: boolean; reason?: string } | null>(null)
   const [browserPanelSessionId, setBrowserPanelSessionId] = useState<string | null>(null)
   const [browserName, setBrowserName] = useState('')
-  const [browserStartURL, setBrowserStartURL] = useState('')
+  const [browserStartScheme, setBrowserStartScheme] = useState<HttpURLScheme>(DEFAULT_HTTP_URL_SCHEME)
+  const [browserStartAddress, setBrowserStartAddress] = useState('')
   const [browserCaptureHAR, setBrowserCaptureHAR] = useState(true)
   const [browserDevice, setBrowserDevice] = useState('')
   const [browserDevices, setBrowserDevices] = useState<{ name: string; platform: string }[]>([])
@@ -627,10 +634,16 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
     refresh()
   }
 
+  const handleBrowserStartAddressChange = (value: string) => {
+    const normalized = normalizeHttpURLInput(value, browserStartScheme)
+    setBrowserStartScheme(normalized.scheme)
+    setBrowserStartAddress(normalized.address)
+  }
+
   const handleStartBrowserRecording = async () => {
-    const startURL = browserStartURL.trim()
-    if (!/^https?:\/\//i.test(startURL)) {
-      showFeedback('Enter an absolute http(s) URL to record', 'error')
+    const startURL = composeHttpURL(browserStartScheme, browserStartAddress)
+    if (!startURL) {
+      showFeedback('Enter an http(s) URL to record', 'error')
       return
     }
     try {
@@ -1019,12 +1032,24 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
               )}
               <div className="rec-form-row">
                 <label className="rec-label">Start URL</label>
-                <input
-                  className="rec-input"
-                  value={browserStartURL}
-                  onChange={e => setBrowserStartURL(e.target.value)}
-                  placeholder="https://app.example.com/login"
-                />
+                <div className="rec-url-input-group">
+                  <select
+                    className="rec-input rec-url-scheme-select"
+                    value={browserStartScheme}
+                    onChange={e => setBrowserStartScheme(e.target.value as HttpURLScheme)}
+                    aria-label="Start URL scheme"
+                  >
+                    <option value="https://">https://</option>
+                    <option value="http://">http://</option>
+                  </select>
+                  <input
+                    className="rec-input"
+                    value={browserStartAddress}
+                    onChange={e => handleBrowserStartAddressChange(e.target.value)}
+                    placeholder="app.example.com/login"
+                    aria-label="Start URL address"
+                  />
+                </div>
               </div>
               <div className="rec-form-row">
                 <label className="rec-label">Session Name</label>

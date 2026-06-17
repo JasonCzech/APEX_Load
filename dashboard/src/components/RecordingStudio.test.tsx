@@ -779,7 +779,7 @@ describe('RecordingStudio', () => {
     })
     await flushPromises()
 
-    const urlInput = container.querySelector('input[placeholder="https://app.example.com/login"]') as HTMLInputElement
+    const urlInput = container.querySelector('input[aria-label="Start URL address"]') as HTMLInputElement
     expect(urlInput).not.toBeNull()
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
@@ -794,7 +794,28 @@ describe('RecordingStudio', () => {
     await flushPromises()
 
     expect(apiMock.startBrowserRecording).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Enter an absolute http(s) URL to record')
+    expect(container.textContent).toContain('Enter an http(s) URL to record')
+  })
+
+  it('normalizes pasted full browser start URLs into scheme and address controls', async () => {
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    const scheme = container.querySelector('select[aria-label="Start URL scheme"]') as HTMLSelectElement
+    const urlInput = container.querySelector('input[aria-label="Start URL address"]') as HTMLInputElement
+    expect(scheme).not.toBeNull()
+    expect(urlInput).not.toBeNull()
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(urlInput, 'http://app.example.com:8080/login?source=qa')
+      urlInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    expect(scheme.value).toBe('http://')
+    expect(urlInput.value).toBe('app.example.com:8080/login?source=qa')
   })
 
   it('starts a browser recording and docks the control panel', async () => {
@@ -803,10 +824,10 @@ describe('RecordingStudio', () => {
     })
     await flushPromises()
 
-    const urlInput = container.querySelector('input[placeholder="https://app.example.com/login"]') as HTMLInputElement
+    const urlInput = container.querySelector('input[aria-label="Start URL address"]') as HTMLInputElement
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
-      setter.call(urlInput, 'https://app.example.com/login')
+      setter.call(urlInput, 'app.example.com/login')
       urlInput.dispatchEvent(new Event('input', { bubbles: true }))
     })
     const recordButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Record Browser'))
@@ -838,7 +859,7 @@ describe('RecordingStudio', () => {
     })
     await flushPromises()
 
-    const urlInput = container.querySelector('input[placeholder="https://app.example.com/login"]') as HTMLInputElement
+    const urlInput = container.querySelector('input[aria-label="Start URL address"]') as HTMLInputElement
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
       setter.call(urlInput, 'https://app.example.com/login')
@@ -1225,10 +1246,10 @@ describe('RecordingStudio', () => {
     expect(deviceSelect).not.toBeNull()
     expect(deviceSelect.textContent).toContain('iphone 15 pro')
 
-    const urlInput = container.querySelector('input[placeholder="https://app.example.com/login"]') as HTMLInputElement
+    const urlInput = container.querySelector('input[aria-label="Start URL address"]') as HTMLInputElement
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
-      setter.call(urlInput, 'https://app.example.com/login')
+      setter.call(urlInput, 'app.example.com/login')
       urlInput.dispatchEvent(new Event('input', { bubbles: true }))
     })
     await act(async () => {

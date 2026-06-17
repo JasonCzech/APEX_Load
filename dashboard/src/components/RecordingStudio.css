@@ -415,6 +415,33 @@
   border-color: var(--accent);
 }
 
+.rec-url-input-group {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.rec-url-input-group .rec-input {
+  min-width: 0;
+}
+
+.rec-url-scheme-select {
+  width: 104px;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: 0;
+  color: var(--text-secondary);
+}
+
+.rec-url-input-group input.rec-input {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.rec-url-input-group:focus-within .rec-input {
+  border-color: var(--accent);
+}
+
 .rec-textarea {
   min-height: 72px;
   resize: vertical;
@@ -1327,6 +1354,11 @@
 }
 
 .brp-row .rec-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.brp-url-input-group {
   flex: 1;
   min-width: 0;
 }
