@@ -263,4 +263,53 @@ describe('RuntimeSettingsGroupEditor', () => {
     act(() => sourceInput.dispatchEvent(new Event('input', { bubbles: true })))
     expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({ web_runtime: expect.objectContaining({ source_ips: ['10.0.0.1', '10.0.0.2'] }) }))
   })
+
+  it('promotes the legacy log level into the log section on edit', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[{ log_level: 'extended', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const logSelect = Array.from(container.querySelectorAll('select')).find(s =>
+      Array.from(s.options).some(o => o.value === 'extended') && Array.from(s.options).some(o => o.value === 'disabled'),
+    ) as HTMLSelectElement
+    expect(logSelect).toBeTruthy()
+    expect(logSelect.value).toBe('extended') // the legacy value is bridged into the control
+    act(() => setSelectValue(logSelect, 'standard'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last.log).toEqual({ level: 'standard' })
+    expect(last.log_level).toBe('') // legacy cleared so the section is authoritative
+  })
+
+  it('folds the legacy iterations into the run_logic section when editing workload model', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[{ iterations: 5, log_level: '', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const workloadSelect = Array.from(container.querySelectorAll('select')).find(s =>
+      Array.from(s.options).some(o => o.value === 'closed') && Array.from(s.options).some(o => o.value === 'open'),
+    ) as HTMLSelectElement
+    expect(workloadSelect).toBeTruthy()
+    act(() => setSelectValue(workloadSelect, 'open'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last.run_logic).toEqual(expect.objectContaining({ iterations: 5, workload_model: 'open' }))
+    expect(last.iterations).toBeUndefined() // legacy folded into the section
+  })
 })

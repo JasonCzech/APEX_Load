@@ -105,6 +105,23 @@ export default function RuntimeSettingsGroupEditor({
     patch({ http: { ...draft.http, ...next } })
   }
 
+  // patchLog/patchRunLogic edit the full section, promoting the legacy single-field
+  // values (log_level / iterations / auto_transactions) into the section and clearing
+  // them — so a section override always carries every field (section-replace safe) and
+  // the legacy shim is never double-emitted alongside it.
+  const patchLog = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['log']>>) => {
+    const base = { level: draft.log?.level ?? (draft.log_level || undefined) }
+    patch({ log: { ...base, ...draft.log, ...next }, log_level: '' })
+  }
+
+  const patchRunLogic = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['run_logic']>>) => {
+    const base = {
+      iterations: draft.run_logic?.iterations ?? draft.iterations,
+      auto_transactions: draft.run_logic?.auto_transactions ?? (draft.auto_transactions || undefined),
+    }
+    patch({ run_logic: { ...base, ...draft.run_logic, ...next }, iterations: undefined, auto_transactions: '' })
+  }
+
   const clearField = (field: RuntimeFieldKey) => {
     switch (field) {
       case 'iterations':
@@ -129,10 +146,10 @@ export default function RuntimeSettingsGroupEditor({
         patch({ continue_on_error: false, snapshot_on_error: false, max_retries: undefined, retry_delay_ms: undefined, retry_backoff: undefined })
         break
       case 'log':
-        patch({ log: undefined })
+        patch({ log: undefined, log_level: '' })
         break
       case 'run_logic':
-        patch({ run_logic: undefined })
+        patch({ run_logic: undefined, iterations: undefined, auto_transactions: '' })
         break
       case 'http':
         patch({ http: undefined })
@@ -265,8 +282,8 @@ export default function RuntimeSettingsGroupEditor({
             className="settings-input"
             type="number"
             min={0}
-            value={draft.iterations ?? ''}
-            onChange={event => patch({ iterations: event.target.value === '' ? undefined : Number(event.target.value) })}
+            value={draft.run_logic?.iterations ?? draft.iterations ?? ''}
+            onChange={event => patchRunLogic({ iterations: event.target.value === '' ? undefined : Number(event.target.value) })}
             placeholder="Inherit"
           />
         </label>
@@ -340,7 +357,7 @@ export default function RuntimeSettingsGroupEditor({
         </label>
         <label>
           <span>Log level</span>
-          <select className="settings-input" value={draft.log_level} onChange={event => patch({ log_level: event.target.value })}>
+          <select className="settings-input" value={draft.log?.level ?? draft.log_level ?? ''} onChange={event => patchLog({ level: event.target.value || undefined })}>
             <option value="">Inherit</option>
             <option value="disabled">Disabled</option>
             <option value="standard">Standard</option>
@@ -349,7 +366,7 @@ export default function RuntimeSettingsGroupEditor({
         </label>
         <label>
           <span>Auto-transactions</span>
-          <select className="settings-input" value={draft.auto_transactions} onChange={event => patch({ auto_transactions: event.target.value })}>
+          <select className="settings-input" value={draft.run_logic?.auto_transactions ?? draft.auto_transactions ?? ''} onChange={event => patchRunLogic({ auto_transactions: event.target.value || undefined })}>
             <option value="">Inherit</option>
             <option value="none">None</option>
             <option value="per_action">Per action</option>
@@ -556,6 +573,48 @@ export default function RuntimeSettingsGroupEditor({
           </div>
         </div>
       )}
+
+      <div className="scenario-subpanel">
+        <div className="scenario-assignment-header">
+          <div>
+            <h4>Run logic &amp; logging (advanced)</h4>
+            <p>Advanced run-logic and logging fields. Editing these folds the iterations / auto-transactions / log level above into the full section for this group.</p>
+          </div>
+        </div>
+        <div className="scenario-browser-grid">
+          <label>
+            <span>Workload model</span>
+            <select className="settings-input" value={draft.run_logic?.workload_model || ''} onChange={event => patchRunLogic({ workload_model: event.target.value || undefined })}>
+              <option value="">Inherit</option>
+              <option value="closed">Closed</option>
+              <option value="open">Open</option>
+            </select>
+          </label>
+          <label>
+            <span>Block scheduling</span>
+            <select className="settings-input" value={draft.run_logic?.block_scheduling || ''} onChange={event => patchRunLogic({ block_scheduling: event.target.value || undefined })}>
+              <option value="">Inherit</option>
+              <option value="sequential">Sequential</option>
+              <option value="random">Random</option>
+              <option value="percentage">Percentage</option>
+            </select>
+          </label>
+          <label>
+            <span>Global iterations</span>
+            <input className="settings-input" type="number" min={0} value={draft.run_logic?.global_iterations ?? ''} onChange={event => patchRunLogic({ global_iterations: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+          </label>
+          <label>
+            <span>Max transactions</span>
+            <input className="settings-input" type="number" min={0} value={draft.run_logic?.max_transactions ?? ''} onChange={event => patchRunLogic({ max_transactions: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+          </label>
+        </div>
+        <div className="scenario-option-grid">
+          <label className={`scenario-option-card ${draft.log?.on_error_only ? 'selected' : ''}`}>
+            <input type="checkbox" checked={Boolean(draft.log?.on_error_only)} onChange={event => patchLog({ on_error_only: event.target.checked || undefined })} />
+            <div><strong>Extended logging on error only</strong><span>Use extended logging only when a step fails.</span></div>
+          </label>
+        </div>
+      </div>
 
       <div className="runtime-apply-row">
         <button type="button" className="secondary-button" onClick={() => setApplyOpen(open => !open)} disabled={groups.length < 2}>
