@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
+import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
@@ -10,6 +10,8 @@ import './TestHub.css'
 import './CreateTestModal.css'
 import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
+import { isRuntimeFieldApplicable, overrideFromRuntimeDraft, runtimeDraftFromOverride } from './runtimeSettingsModel'
 import { buildScenarioModelPreview, buildScenarioShapeCatalog, formatModelTimeLabel, getScenarioShapePreset, ScenarioModelPreview, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, validateStageTimeline } from './scenarioWizardUtils'
 import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
 import DurationField from './DurationField'
@@ -76,6 +78,8 @@ interface ScenarioFormGroup {
   ramp_down: string
   stages: LoadStageDraft[]
   initialization: 'at_runtime' | 'at_once'
+  /** Per-group runtime overrides layered over the scenario-wide defaults. */
+  runtimeSettings?: ScenarioRuntimeSettingsDraft
 }
 
 interface ScenarioSeedGroup {
@@ -262,6 +266,7 @@ function normalizeGroupForPayload(group: ScenarioFormGroup) {
     rampDown: group.ramp_down,
     stages: group.stages.map(normalizeStageForPayload),
     initialization: group.initialization,
+    runtimeSettings: group.runtimeSettings,
   }
 }
 
@@ -275,6 +280,7 @@ function scenarioFormGroupFromStored(group: StoredScenario['scripts'][number], f
     ramp_down: group.ramp_down || '',
     stages: group.stages ? [...group.stages] : [],
     initialization: group.initialization || 'at_runtime',
+    runtimeSettings: runtimeDraftFromOverride(group.runtime_settings),
   }
 }
 
@@ -890,6 +896,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const [goalSizingError, setGoalSizingError] = useState('')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [stageGroupIndex, setStageGroupIndex] = useState(0)
+  const [runtimeGroupIndex, setRuntimeGroupIndex] = useState(0)
   const [runSettingsTab, setRunSettingsTab] = useState<RunSettingsTab>('scenario')
   const scriptLibraryRef = useRef<HTMLDivElement | null>(null)
   const scriptLibrarySearchRef = useRef<HTMLInputElement | null>(null)
@@ -1541,6 +1548,37 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
 
   const updateRuntimeForm = (patch: Partial<ScenarioFormState>) => {
     setForm(prev => ({ ...prev, ...patch }))
+    setLoadModelValidation(null)
+  }
+
+  const updateGroupRuntime = (index: number, next: ScenarioRuntimeSettingsDraft | undefined) => {
+    setForm(prev => ({
+      ...prev,
+      groups: prev.groups.map((group, groupIndex) => (groupIndex === index ? { ...group, runtimeSettings: next } : group)),
+    }))
+    setLoadModelValidation(null)
+  }
+
+  // applyRuntimeToGroups copies a source group's runtime override onto the selected
+  // target groups (client-side, on the in-progress draft), dropping browser-only
+  // fields for groups whose script protocol cannot use them.
+  const applyRuntimeToGroups = (sourceIndex: number, targetIndexes: number[]) => {
+    setForm(prev => {
+      const source = prev.groups[sourceIndex]?.runtimeSettings
+      return {
+        ...prev,
+        groups: prev.groups.map((group, groupIndex) => {
+          if (!targetIndexes.includes(groupIndex)) return group
+          if (!source) return { ...group, runtimeSettings: undefined }
+          const protocol = findScriptById(scripts, group.script_id)?.protocol
+          const copy: ScenarioRuntimeSettingsDraft = { ...source }
+          if (!isRuntimeFieldApplicable('browser', protocol)) {
+            copy.browser = undefined
+          }
+          return { ...group, runtimeSettings: copy }
+        }),
+      }
+    })
     setLoadModelValidation(null)
   }
 
@@ -2595,6 +2633,19 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
                   </div>
                 </div>
               )}
+              <RuntimeSettingsGroupEditor
+                groups={formGroups.map(group => ({
+                  name: group.name,
+                  scriptId: group.script_id,
+                  protocol: findScriptById(scripts, group.script_id)?.protocol,
+                }))}
+                focusedIndex={runtimeGroupIndex}
+                onFocusChange={setRuntimeGroupIndex}
+                scenarioDefault={overrideFromRuntimeDraft(runtimeSettingsFromForm(form, showBrowserRuntimeSettings))}
+                overrides={formGroups.map(group => group.runtimeSettings)}
+                onChange={updateGroupRuntime}
+                onApplyToGroups={applyRuntimeToGroups}
+              />
               </>
             )}
             {runSettingsTab === 'infrastructure' && (
