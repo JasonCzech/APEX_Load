@@ -5045,15 +5045,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     })
   }
 
-  const updateParameterType = (idx: number, nextType: string) => {
-    setScript(prev => {
-      const parameters = [...(prev.parameters || [])]
-      const current = parameters[idx] || { ...EMPTY_PARAMETER }
-      parameters[idx] = applyParameterTypeDefaults(current, nextType)
-      return { ...prev, parameters }
-    })
-  }
-
   const upsertParameterFromActionEditor = ({ selectedText, requestedName, existingName, parameterType, typeConfig, reuseExisting }: ActionEditorParameterRequest): string => {
     const normalizedExistingName = existingName ? sanitizeVarName(existingName) : ''
     const resolvedName = ensureUniqueParameterName(
@@ -10158,7 +10149,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               onUpdateParameter={updateParameter}
               onUpdateParameterDraftName={updatePendingParameterDraftName}
               onUpdateParameterDraftValue={updatePendingParameterDraftValue}
-              onUpdateParameterType={updateParameterType}
               openDataEditor={openDataEditor}
               pendingParameterDraft={pendingParameterDraft}
               selectedParameterIdx={selectedParameterIdx}
@@ -10377,7 +10367,6 @@ interface ParameterDataDialogProps {
   onUpdateParameter: (idx: number, field: keyof ParameterConfig, value: unknown) => void
   onUpdateParameterDraftName: (value: string) => void
   onUpdateParameterDraftValue: (value: string) => void
-  onUpdateParameterType: (idx: number, nextType: string) => void
   onSelectParameter: (idx: number | null) => void
   openDataEditor: number | null
   pendingParameterDraft: ActionEditorParameterDraft | null
@@ -10413,7 +10402,6 @@ function ParameterDataDialog({
   onUpdateParameter,
   onUpdateParameterDraftName,
   onUpdateParameterDraftValue,
-  onUpdateParameterType,
   onSelectParameter,
   openDataEditor,
   pendingParameterDraft,
@@ -10503,9 +10491,6 @@ function ParameterDataDialog({
             onUpdateParameter={(field, value) => {
               if (selectedParameterIdx !== null) onUpdateParameter(selectedParameterIdx, field, value)
             }}
-            onUpdateParameterType={(value) => {
-              if (selectedParameterIdx !== null) onUpdateParameterType(selectedParameterIdx, value)
-            }}
             selectedParameterIdx={selectedParameterIdx}
             selectedParameter={selectedParameter}
             script={script}
@@ -10547,7 +10532,6 @@ interface ParameterDataDetailProps {
   onUpdateDataColumnName: (idx: number, colIdx: number, value: string) => void
   onUpdateDataSource: (idx: number, field: keyof DataSourceConfig, value: unknown, trackHistory?: boolean) => void
   onUpdateParameter: (field: keyof ParameterConfig, value: unknown) => void
-  onUpdateParameterType: (value: string) => void
   script: ScriptData
   selectedParameter: ParameterConfig | null
   selectedParameterIdx: number | null
@@ -10575,7 +10559,6 @@ function ParameterDataDetail({
   onUpdateDataColumnName,
   onUpdateDataSource,
   onUpdateParameter,
-  onUpdateParameterType,
   script,
   selectedParameter,
   selectedParameterIdx,
@@ -10703,7 +10686,6 @@ function ParameterDataDetail({
           dataSources={script.data_sources || []}
           onUpdateDataSource={onUpdateDataSource}
           onUpdateParameter={onUpdateParameter}
-          onUpdateParameterType={onUpdateParameterType}
           parameter={selectedParameter}
           parameters={script.parameters || []}
           parsed={selectedParsed}
@@ -10727,7 +10709,6 @@ interface ParameterInfoPanelProps {
   dataSources: DataSourceConfig[]
   onUpdateDataSource: (idx: number, field: keyof DataSourceConfig, value: unknown, trackHistory?: boolean) => void
   onUpdateParameter: (field: keyof ParameterConfig, value: unknown) => void
-  onUpdateParameterType: (value: string) => void
   parameter: ParameterConfig
   parameters: ParameterConfig[]
   parsed: { columns: string[]; rows: string[][] } | null
@@ -10742,7 +10723,6 @@ function ParameterInfoPanel({
   dataSources,
   onUpdateDataSource,
   onUpdateParameter,
-  onUpdateParameterType,
   parameter,
   parameters,
   parsed,
@@ -10805,11 +10785,7 @@ function ParameterInfoPanel({
             <tr>
               <th scope="row">Parameter Type</th>
               <td>
-                <select aria-label={`Parameter Type for ${parameterName}`} value={parameterType} onChange={event => onUpdateParameterType(event.target.value)}>
-                  {PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
+                <ParameterTypeReadonlyValue parameterName={parameterName} parameterType={parameterType} />
               </td>
             </tr>
             <tr>
@@ -11350,7 +11326,6 @@ interface ParameterDefinitionsSectionProps {
   onSelectParameter: (idx: number, parameter: ParameterConfig) => void
   onToggleOpen: () => void
   onUpdateParameter: (idx: number, field: keyof ParameterConfig, value: unknown) => void
-  onUpdateParameterType: (idx: number, nextType: string) => void
   selectedParameterIdx: number | null
   script: ScriptData
 }
@@ -11452,6 +11427,25 @@ function formatParameterTypeLabel(value?: string | null): string {
   }
 }
 
+function ParameterTypeReadonlyValue({
+  parameterName,
+  parameterType,
+}: {
+  parameterName: string
+  parameterType: string
+}) {
+  return (
+    <span
+      className="parameter-info-readonly parameter-type-readonly"
+      aria-label={`Parameter Type for ${parameterName}: ${formatParameterTypeLabel(parameterType)}`}
+      title="Parameter type is set when the parameter is created"
+    >
+      <strong>{formatParameterTypeLabel(parameterType)}</strong>
+      <span className="cell-mono">{parameterType}</span>
+    </span>
+  )
+}
+
 function formatGeneratedParameterSource(parameter: ParameterConfig): string {
   return formatParameterTypeLabel(parameter.type)
 }
@@ -11547,6 +11541,7 @@ function getParameterSelectionControlValue(parameter: ParameterConfig): string {
 }
 
 type ParameterChoiceField = 'type' | 'update' | 'selection' | 'on_exhaustion'
+type MutableParameterChoiceField = Exclude<ParameterChoiceField, 'type'>
 
 interface ParameterChoiceOption {
   description: string
@@ -11629,12 +11624,11 @@ export function ParameterDefinitionsSection({
   onSelectParameter,
   onToggleOpen,
   onUpdateParameter,
-  onUpdateParameterType,
   selectedParameterIdx,
   script,
 }: ParameterDefinitionsSectionProps) {
   const [expandedParameterSources, setExpandedParameterSources] = useState<Set<string>>(() => new Set())
-  const [activeParameterChoice, setActiveParameterChoice] = useState<{ field: ParameterChoiceField; idx: number } | null>(null)
+  const [activeParameterChoice, setActiveParameterChoice] = useState<{ field: MutableParameterChoiceField; idx: number } | null>(null)
   const [activeSelectionSettingsIdx, setActiveSelectionSettingsIdx] = useState<number | null>(null)
   const [activeParameterSettingsIdx, setActiveParameterSettingsIdx] = useState<number | null>(null)
   const previousParameterCountRef = useRef(script.parameters?.length || 0)
@@ -11708,11 +11702,7 @@ export function ParameterDefinitionsSection({
   }
   const applyParameterChoice = (value: string) => {
     if (!activeParameterChoice) return
-    if (activeParameterChoice.field === 'type') {
-      onUpdateParameterType(activeParameterChoice.idx, value)
-    } else {
-      onUpdateParameter(activeParameterChoice.idx, activeParameterChoice.field, value)
-    }
+    onUpdateParameter(activeParameterChoice.idx, activeParameterChoice.field, value)
     setActiveParameterChoice(null)
   }
   const selectParameter = (idx: number, parameter: ParameterConfig) => {
@@ -11843,7 +11833,6 @@ export function ParameterDefinitionsSection({
             <ParameterSettingsDialog
               onClose={() => setActiveParameterSettingsIdx(null)}
               onUpdate={(field, value) => onUpdateParameter(activeParameterSettingsIdx, field, value)}
-              onUpdateType={(value) => onUpdateParameterType(activeParameterSettingsIdx, value)}
               parameter={activeParameterSettingsParameter}
             />
           )}
@@ -11856,7 +11845,7 @@ export function ParameterDefinitionsSection({
 interface ParameterDefinitionRowProps {
   idx: number
   isSelected: boolean
-  onOpenChoice: (choice: { field: ParameterChoiceField; idx: number }) => void
+  onOpenChoice: (choice: { field: MutableParameterChoiceField; idx: number }) => void
   onOpenSettings: (idx: number) => void
   onOpenSelectionSettings: (idx: number) => void
   onRemoveParameter: (idx: number) => void
@@ -12490,7 +12479,6 @@ function ParameterChoiceDialog({
 interface ParameterSettingsDialogProps {
   onClose: () => void
   onUpdate: (field: keyof ParameterConfig, value: unknown) => void
-  onUpdateType: (value: string) => void
   parameter: ParameterConfig
 }
 
@@ -12509,14 +12497,12 @@ function updateOptionalNumber(onUpdate: (field: keyof ParameterConfig, value: un
 interface ParameterSettingsBodyProps {
   className?: string
   onUpdate: (field: keyof ParameterConfig, value: unknown) => void
-  onUpdateType: (value: string) => void
   parameter: ParameterConfig
 }
 
 export function ParameterSettingsBody({
   className = '',
   onUpdate,
-  onUpdateType,
   parameter,
 }: ParameterSettingsBodyProps) {
   const parameterName = parameter.name || 'Parameter'
@@ -12535,18 +12521,10 @@ export function ParameterSettingsBody({
           <span>Parameter type and runtime behavior</span>
         </summary>
         <div className="parameter-settings-grid">
-          <label>
+          <div className="parameter-settings-field">
             <span>Parameter Type</span>
-            <select
-              aria-label={`Parameter Type for ${parameterName}`}
-              value={parameterType}
-              onChange={event => onUpdateType(event.target.value)}
-            >
-              {PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
+            <ParameterTypeReadonlyValue parameterName={parameterName} parameterType={parameterType} />
+          </div>
           <label>
             <span>Update Cadence</span>
             <select
@@ -12690,7 +12668,6 @@ export function ParameterSettingsBody({
 function ParameterSettingsDialog({
   onClose,
   onUpdate,
-  onUpdateType,
   parameter,
 }: ParameterSettingsDialogProps) {
   const parameterName = parameter.name || 'Parameter'
@@ -12723,18 +12700,10 @@ function ParameterSettingsDialog({
               <span>Parameter type and runtime behavior</span>
             </summary>
             <div className="parameter-settings-grid">
-              <label>
+              <div className="parameter-settings-field">
                 <span>Parameter Type</span>
-                <select
-                  aria-label={`Parameter Type for ${parameterName}`}
-                  value={parameterType}
-                  onChange={event => onUpdateType(event.target.value)}
-                >
-                  {PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </label>
+                <ParameterTypeReadonlyValue parameterName={parameterName} parameterType={parameterType} />
+              </div>
             </div>
           </details>
 

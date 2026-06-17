@@ -2269,14 +2269,9 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
   })
 
-  it('exposes native source parity parameter types in the parameter dialog', async () => {
-    const scriptWithoutParameters: ScriptDefinition = {
-      ...initialScript,
-      parameters: [],
-    }
-
+  it('keeps existing parameter type read-only in the parameter data settings', async () => {
     await act(async () => {
-      root.render(<ScriptEditor initialScript={scriptWithoutParameters} />)
+      root.render(<ScriptEditor initialScript={initialScript} />)
     })
 
     const parameterButton = Array.from(container.querySelectorAll('button')).find(button =>
@@ -2291,51 +2286,19 @@ describe('ScriptEditor', () => {
       parameterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const addButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === '+ Add Parameter',
-    )
-    expect(addButton).toBeDefined()
-    if (!addButton) {
-      return
-    }
-
-    await act(async () => {
-      addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(container.querySelector('.parameter-sidebar-card')?.textContent).toContain('List')
-    expect((container.querySelector('input[value="param_1"]') as HTMLInputElement | null)?.value).toBe('param_1')
-
     const dialog = container.querySelector('[aria-label="Parameter Data"]')
-    const chooseParameterType = async (value: string) => {
-      const typeSelect = dialog?.querySelector('select[aria-label="Parameter Type for param_1"]') as HTMLSelectElement | null
-      expect(typeSelect).not.toBeNull()
-      if (!typeSelect) return
-      const selectValueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
-      await act(async () => {
-        selectValueSetter?.call(typeSelect, value)
-        typeSelect.dispatchEvent(new Event('input', { bubbles: true }))
-        typeSelect.dispatchEvent(new Event('change', { bubbles: true }))
-      })
-    }
+    const typeSelect = dialog?.querySelector('select[aria-label="Parameter Type for session_id"]')
+    const readonlyType = dialog?.querySelector('.parameter-type-readonly[aria-label="Parameter Type for session_id: Counter"]')
 
+    expect(typeSelect).toBeNull()
+    expect(readonlyType).not.toBeNull()
+    expect(readonlyType?.textContent).toContain('Counter')
+    expect(readonlyType?.textContent).toContain('counter')
     expect(container.textContent).toContain('Identity')
-    const optionValues = Array.from(dialog?.querySelectorAll('[aria-label="Parameter Type for param_1"] option') || []).map(option => (option as HTMLOptionElement).value)
-    expect(optionValues).toEqual(expect.arrayContaining(['current_iteration', 'host', 'time']))
-
-    await chooseParameterType('current_iteration')
-
     expect(container.textContent).toContain('Type Options')
-    expect((dialog?.querySelector('input[placeholder="start"]') as HTMLInputElement | null)?.value).toBe('1')
+    expect((dialog?.querySelector('input[placeholder="start"]') as HTMLInputElement | null)?.value).toBe('100')
     expect((dialog?.querySelector('input[placeholder="step"]') as HTMLInputElement | null)?.value).toBe('1')
-
-    await chooseParameterType('host')
-
-    expect(dialog?.querySelector('input[placeholder="host-a, host-b"]')).not.toBeNull()
-
-    await chooseParameterType('time')
-
-    expect((dialog?.querySelector('.parameter-format-control select') as HTMLSelectElement | null)?.value).toBe('15:04:05')
+    expect(dialog?.querySelector('select[aria-label="Update Cadence for session_id"]')).not.toBeNull()
   })
 
   it('selects a newly added parameter from the Parameters sidebar', async () => {
@@ -3212,6 +3175,10 @@ describe('ScriptEditor', () => {
     expect(selectedDataView?.textContent).not.toContain('alice')
 
     await activateParameterInfoTab(container)
+    expect(container.querySelector('.parameter-info-panel select[aria-label="Parameter Type for bbclink01"]')).toBeNull()
+    const readonlyFileType = container.querySelector('.parameter-info-panel .parameter-type-readonly[aria-label="Parameter Type for bbclink01: File"]')
+    expect(readonlyFileType).not.toBeNull()
+    expect(readonlyFileType?.textContent).toContain('file')
     const columnSelect = container.querySelector('.parameter-info-panel select[aria-label="Column for bbclink01"]') as HTMLSelectElement | null
     expect(columnSelect?.value).toBe('URL')
     const selectValueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
@@ -3475,7 +3442,8 @@ describe('ScriptEditor', () => {
     expect(parameterDialog?.textContent).not.toContain('Passwords.dat')
     expect(container.querySelector('.parameter-sidebar-card')?.textContent).toContain('File')
     expect(container.querySelector('.parameter-sidebar-card')?.textContent).toContain('Current Iteration')
-    expect(parameterDialog?.textContent).toContain('Current Iteration')
+    expect(parameterDialog?.querySelector('select[aria-label="Parameter Type for username"]')).toBeNull()
+    expect(parameterDialog?.querySelector('.parameter-type-readonly[aria-label="Parameter Type for username: File"]')?.textContent).toContain('file')
     await activateParameterDataTab(container)
     const selectedDataView = container.querySelector('.parameter-data-selected-view') as HTMLDivElement | null
     expect(selectedDataView?.textContent).not.toContain('merged_parameters')
@@ -6014,7 +5982,7 @@ describe('ScriptEditor', () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    // The new parameter is created and its row is focused for type selection.
+    // The new parameter is created and focused in Parameter Data.
     expect(container.textContent).toContain('login')
 
     // Switching back to the Script JSON tab confirms the value became a template reference.

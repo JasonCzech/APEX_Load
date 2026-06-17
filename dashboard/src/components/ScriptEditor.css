@@ -1249,6 +1249,28 @@
   font-weight: 500;
   word-break: break-all;
 }
+.parameter-type-readonly {
+  width: 100%;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  word-break: normal;
+}
+.parameter-type-readonly strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+.parameter-type-readonly .cell-mono {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .parameter-info-help {
   margin: 6px 0 0;
   color: var(--text-muted);
@@ -1470,7 +1492,8 @@
   gap: 12px;
   padding: 0 14px 14px;
 }
-.parameter-settings-grid label {
+.parameter-settings-grid label,
+.parameter-settings-field {
   display: grid;
   gap: 6px;
   color: var(--text-secondary);
