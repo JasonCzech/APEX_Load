@@ -6,7 +6,7 @@
 // scenario default → script default), and mirror the backend's field-to-protocol
 // applicability rule (see pkg/api fieldApplicableForProtocol).
 
-import { type RuntimeBrowserSettings, type RuntimeSettingsOverride } from '../types'
+import { type RuntimeBrowserSettings, type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft } from '../types'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 
 export { formatBrowserRuntimeSummary }
@@ -104,6 +104,72 @@ export function isRuntimeFieldApplicable(field: RuntimeFieldKey, protocol?: stri
     return (protocol || '').trim().toLowerCase() === 'browser'
   }
   return true
+}
+
+/** An override draft with no fields set — i.e. "inherit everything". */
+export const EMPTY_RUNTIME_DRAFT: ScenarioRuntimeSettingsDraft = {
+  log_level: '',
+  auto_transactions: '',
+  continue_on_error: false,
+  snapshot_on_error: false,
+}
+
+/** isRuntimeDraftEmpty reports whether a draft carries no actual override. */
+export function isRuntimeDraftEmpty(draft?: ScenarioRuntimeSettingsDraft): boolean {
+  if (!draft) return true
+  return (
+    draft.iterations === undefined &&
+    !draft.pacing?.type &&
+    !draft.think_time &&
+    !draft.browser &&
+    !draft.log_level &&
+    !draft.auto_transactions &&
+    !draft.continue_on_error &&
+    !draft.snapshot_on_error
+  )
+}
+
+/**
+ * runtimeDraftFromOverride converts a stored API override into the editor's draft
+ * shape, so a saved scenario's per-group overrides load back into the editor.
+ */
+export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): ScenarioRuntimeSettingsDraft | undefined {
+  if (!override) return undefined
+  return {
+    iterations: override.iterations,
+    pacing: override.pacing,
+    think_time: override.think_time,
+    browser: override.browser,
+    log_level: override.log_level || '',
+    auto_transactions: override.auto_transactions || '',
+    continue_on_error: Boolean(override.error_handling?.continue_on_error),
+    snapshot_on_error: Boolean(override.error_handling?.snapshot_on_error),
+  }
+}
+
+/**
+ * overrideFromRuntimeDraft converts the editor's draft shape (flat
+ * continue/snapshot booleans) into the API RuntimeSettingsOverride shape used by
+ * the formatters and the scenario payload. Returns undefined for an empty draft.
+ */
+export function overrideFromRuntimeDraft(draft?: ScenarioRuntimeSettingsDraft): RuntimeSettingsOverride | undefined {
+  if (isRuntimeDraftEmpty(draft) || !draft) return undefined
+  const errorHandling =
+    draft.continue_on_error || draft.snapshot_on_error
+      ? {
+          continue_on_error: draft.continue_on_error || undefined,
+          snapshot_on_error: draft.snapshot_on_error || undefined,
+        }
+      : undefined
+  return {
+    iterations: draft.iterations,
+    pacing: draft.pacing?.type ? draft.pacing : undefined,
+    think_time: draft.think_time,
+    browser: draft.browser,
+    log_level: draft.log_level || undefined,
+    auto_transactions: draft.auto_transactions || undefined,
+    error_handling: errorHandling,
+  }
 }
 
 /**
