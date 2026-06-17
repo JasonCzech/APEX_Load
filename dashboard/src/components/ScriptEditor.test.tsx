@@ -64,11 +64,19 @@ vi.mock('@uiw/react-codemirror', async () => {
     if (!Array.isArray(extensions)) return [extensions]
     return extensions.flatMap(flattenExtensions)
   }
-  const CodeMirrorMock = ({ value = '', onChange, onCreateEditor, extensions }: {
+  const CodeMirrorMock = ({ value = '', onChange, onCreateEditor, extensions, basicSetup, editable = true, readOnly = false }: {
     value?: string
     onChange?: (value: string) => void
     onCreateEditor?: (view: unknown) => void
     extensions?: unknown[]
+    basicSetup?: {
+      lineNumbers?: boolean
+      foldGutter?: boolean
+      highlightActiveLine?: boolean
+      highlightActiveLineGutter?: boolean
+    } | boolean
+    editable?: boolean
+    readOnly?: boolean
   }) => {
     const ref = useRef<HTMLTextAreaElement | null>(null)
     const created = useRef(false)
@@ -177,6 +185,13 @@ vi.mock('@uiw/react-codemirror', async () => {
       <textarea
         data-testid="codemirror-mock"
         data-has-apex-dsl-semantic-highlighting={hasApexDslSemanticHighlighting ? 'true' : 'false'}
+        data-line-numbers={typeof basicSetup === 'object' && basicSetup.lineNumbers ? 'true' : 'false'}
+        data-fold-gutter={typeof basicSetup === 'object' && basicSetup.foldGutter ? 'true' : 'false'}
+        data-highlight-active-line={typeof basicSetup === 'object' && basicSetup.highlightActiveLine ? 'true' : 'false'}
+        data-highlight-active-line-gutter={typeof basicSetup === 'object' && basicSetup.highlightActiveLineGutter ? 'true' : 'false'}
+        data-editable={editable ? 'true' : 'false'}
+        data-read-only={readOnly ? 'true' : 'false'}
+        readOnly={readOnly || !editable}
         ref={ref}
         value={value}
         onChange={event => onChange?.(event.currentTarget.value)}
@@ -669,7 +684,15 @@ describe('ScriptEditor', () => {
     await act(async () => {
       metadataJsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('#metadata-json-section')?.textContent).toContain('checkout.usr')
+    const metadataJsonEditor = container.querySelector('#metadata-json-section .metadata-json-viewer textarea') as HTMLTextAreaElement | null
+    expect(metadataJsonEditor).not.toBeNull()
+    expect(metadataJsonEditor?.value).toContain('checkout.usr')
+    expect(metadataJsonEditor?.dataset.lineNumbers).toBe('true')
+    expect(metadataJsonEditor?.dataset.foldGutter).toBe('true')
+    expect(metadataJsonEditor?.dataset.highlightActiveLine).toBe('true')
+    expect(metadataJsonEditor?.dataset.highlightActiveLineGutter).toBe('true')
+    expect(metadataJsonEditor?.dataset.readOnly).toBe('true')
+    expect(metadataJsonEditor?.dataset.editable).toBe('false')
     expect(actionDetail).toBeNull()
     expect(container.querySelector('.author-code-center')?.contains(metadataSection)).toBe(true)
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
@@ -2837,8 +2860,13 @@ describe('ScriptEditor', () => {
       metadataJsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(findCenterTab(container, 'Metadata JSON')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('#metadata-json-section')?.textContent).toContain('"source_script_name": "checkout.har"')
-    expect(container.querySelector('#metadata-json-section')?.textContent).toContain('"runtime_settings_parity"')
+    const metadataJsonEditor = container.querySelector('#metadata-json-section .metadata-json-viewer textarea') as HTMLTextAreaElement | null
+    expect(metadataJsonEditor).not.toBeNull()
+    expect(metadataJsonEditor?.value).toContain('"source_script_name": "checkout.har"')
+    expect(metadataJsonEditor?.value).toContain('"runtime_settings_parity"')
+    expect(metadataJsonEditor?.dataset.lineNumbers).toBe('true')
+    expect(metadataJsonEditor?.dataset.foldGutter).toBe('true')
+    expect(metadataJsonEditor?.dataset.readOnly).toBe('true')
     await act(async () => {
       importedMetadataTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })

@@ -872,21 +872,20 @@
 .metadata-json-section {
   display: flex;
   min-height: 0;
-  padding: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-primary);
 }
-.metadata-json-pre {
+.metadata-json-section .metadata-json-viewer {
   flex: 1 1 auto;
+  align-self: stretch;
   min-height: 0;
-  margin: 0;
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
-  padding: 14px;
-  white-space: pre-wrap;
+  border: 0;
+  border-radius: 0;
+}
+.metadata-json-editor .cm-editor {
+  min-height: 0;
 }
 .panel-title {
   font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;

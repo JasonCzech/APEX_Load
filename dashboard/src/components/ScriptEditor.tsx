@@ -849,6 +849,45 @@ function ScriptCodePane({
   )
 }
 
+function MetadataJsonViewer({ metadata }: { metadata: ScriptImportMetadata }) {
+  const metadataJson = useMemo(() => JSON.stringify(metadata, null, 2), [metadata])
+  const extensions = useMemo(() => [
+    json(),
+    apexCodeMirrorTheme,
+    EditorView.lineWrapping,
+    EditorView.editable.of(false),
+  ], [])
+
+  return (
+    <section className="script-code-pane metadata-json-viewer" aria-label="Metadata JSON">
+      <div className="script-code-toolbar">
+        <div className="script-code-title">
+          <strong>{'{ }'} Metadata JSON</strong>
+          <span>Preserved import metadata</span>
+        </div>
+        <div className="script-code-status-row">
+          <span className="script-code-status synced">Read only</span>
+        </div>
+      </div>
+      <div className="script-code-editor metadata-json-editor">
+        <CodeMirror
+          value={metadataJson}
+          extensions={extensions}
+          theme="none"
+          readOnly
+          editable={false}
+          basicSetup={{
+            lineNumbers: true,
+            foldGutter: true,
+            highlightActiveLine: true,
+            highlightActiveLineGutter: true,
+          }}
+        />
+      </div>
+    </section>
+  )
+}
+
 interface JsonMinimapLine {
   lineNo: number
   textPreview: string
@@ -9910,7 +9949,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               {importMetadata && centerTabPanelElements['metadata-json'] && createPortal(
                 renderStructuredCenterDocument('Metadata JSON', (
                   <section id="metadata-json-section" className="center-document import-metadata-panel config-panel metadata-json-section open" aria-label="Metadata JSON">
-                    <pre className="metadata-json-pre">{JSON.stringify(importMetadata, null, 2)}</pre>
+                    <MetadataJsonViewer metadata={importMetadata} />
                   </section>
                 )), centerTabPanelElements['metadata-json'])}
 
