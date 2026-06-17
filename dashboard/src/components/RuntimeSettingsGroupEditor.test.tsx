@@ -312,4 +312,28 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(last.run_logic).toEqual(expect.objectContaining({ iterations: 5, workload_model: 'open' }))
     expect(last.iterations).toBeUndefined() // legacy folded into the section
   })
+
+  it('folds the legacy browser device into browser_config when editing an advanced field', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={1}
+          onFocusChange={() => {}}
+          overrides={[undefined, { browser: { device_profile: 'pixel_8' }, log_level: '', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const engineSelect = Array.from(container.querySelectorAll('select')).find(s =>
+      Array.from(s.options).some(o => o.value === 'webkit') && Array.from(s.options).some(o => o.value === 'chromium'),
+    ) as HTMLSelectElement
+    expect(engineSelect).toBeTruthy()
+    act(() => setSelectValue(engineSelect, 'firefox'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last.browser_config).toEqual(expect.objectContaining({ device_profile: 'pixel_8', engine: 'firefox' }))
+    expect(last.browser).toBeUndefined() // legacy browser folded into browser_config
+  })
 })

@@ -122,6 +122,21 @@ export default function RuntimeSettingsGroupEditor({
     patch({ run_logic: { ...base, ...draft.run_logic, ...next }, iterations: undefined, auto_transactions: '' })
   }
 
+  const patchBrowserConfig = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['browser_config']>>) => {
+    const base = {
+      device_profile: draft.browser_config?.device_profile ?? draft.browser?.device_profile,
+      orientation: draft.browser_config?.orientation ?? draft.browser?.orientation,
+      touch_mode: draft.browser_config?.touch_mode ?? draft.browser?.touch_mode,
+      headless: draft.browser_config?.headless ?? draft.browser?.headless,
+    }
+    patch({ browser_config: { ...base, ...draft.browser_config, ...next }, browser: undefined })
+  }
+
+  const browserBoolValue = (a?: boolean, b?: boolean): string => {
+    const value = a ?? b
+    return value === undefined ? '' : value ? 'true' : 'false'
+  }
+
   const clearField = (field: RuntimeFieldKey) => {
     switch (field) {
       case 'iterations':
@@ -158,7 +173,7 @@ export default function RuntimeSettingsGroupEditor({
         patch({ web_runtime: undefined })
         break
       case 'browser_config':
-        patch({ browser_config: undefined })
+        patch({ browser_config: undefined, browser: undefined })
         break
     }
   }
@@ -438,8 +453,8 @@ export default function RuntimeSettingsGroupEditor({
             <span>Device profile</span>
             <select
               className="settings-input"
-              value={draft.browser?.device_profile || ''}
-              onChange={event => patch({ browser: { ...draft.browser, device_profile: event.target.value || undefined } })}
+              value={draft.browser_config?.device_profile ?? draft.browser?.device_profile ?? ''}
+              onChange={event => patchBrowserConfig({ device_profile: event.target.value || undefined })}
             >
               <option value="">Inherit</option>
               <option value="desktop_1080p">desktop_1080p</option>
@@ -454,13 +469,46 @@ export default function RuntimeSettingsGroupEditor({
             <span>Orientation</span>
             <select
               className="settings-input"
-              value={draft.browser?.orientation || ''}
-              onChange={event => patch({ browser: { ...draft.browser, orientation: event.target.value || undefined } })}
+              value={draft.browser_config?.orientation ?? draft.browser?.orientation ?? ''}
+              onChange={event => patchBrowserConfig({ orientation: event.target.value || undefined })}
             >
               <option value="">Inherit</option>
               <option value="portrait">Portrait</option>
               <option value="landscape">Landscape</option>
             </select>
+          </label>
+          <label>
+            <span>Headless</span>
+            <select className="settings-input" value={browserBoolValue(draft.browser_config?.headless, draft.browser?.headless)} onChange={event => patchBrowserConfig({ headless: event.target.value === '' ? undefined : event.target.value === 'true' })}>
+              <option value="">Inherit</option>
+              <option value="true">Headless</option>
+              <option value="false">Headed</option>
+            </select>
+          </label>
+          <label>
+            <span>Touch mode</span>
+            <select className="settings-input" value={browserBoolValue(draft.browser_config?.touch_mode, draft.browser?.touch_mode)} onChange={event => patchBrowserConfig({ touch_mode: event.target.value === '' ? undefined : event.target.value === 'true' })}>
+              <option value="">Inherit</option>
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </label>
+          <label>
+            <span>Browser engine</span>
+            <select className="settings-input" value={draft.browser_config?.engine || ''} onChange={event => patchBrowserConfig({ engine: event.target.value || undefined })}>
+              <option value="">Inherit</option>
+              <option value="chromium">Chromium</option>
+              <option value="firefox">Firefox</option>
+              <option value="webkit">WebKit</option>
+            </select>
+          </label>
+          <label>
+            <span>User agent</span>
+            <input className="settings-input" type="text" value={draft.browser_config?.user_agent || ''} onChange={event => patchBrowserConfig({ user_agent: event.target.value || undefined })} placeholder="Inherit" />
+          </label>
+          <label>
+            <span>Slow-mo (ms)</span>
+            <input className="settings-input" type="number" min={0} value={draft.browser_config?.slow_mo_ms ?? ''} onChange={event => patchBrowserConfig({ slow_mo_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
           </label>
         </div>
       )}
