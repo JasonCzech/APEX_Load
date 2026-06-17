@@ -58,6 +58,7 @@ const (
 	intervalSummarySchemaVersionV1 = "apexload.interval-summary.v1"
 	intervalSummarySchemaVersion   = "apexload.interval-summary.v4"
 	archiveRecordSchemaVersion     = "apexload.archive.v1"
+	scriptRecordingSchemaVersion   = "apexload.recording.v1"
 )
 
 type BrowserMetricsSummaryRecord struct {

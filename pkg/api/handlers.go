@@ -429,6 +429,10 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		ProjectID string     `json:"project_id,omitempty"`
 		FolderID  *string    `json:"folder_id,omitempty"`
 		Script    dsl.Script `json:"script"`
+		// SourceRecordingSessionID, when set, captures the recorded baseline from
+		// the still-live recording session this script was generated from, for
+		// later record-vs-replay correlation diagnosis.
+		SourceRecordingSessionID string `json:"source_recording_session_id,omitempty"`
 	}
 	if !decodeJSONBody(w, r, &wrapper) {
 		return
@@ -447,6 +451,7 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stored := s.runner.StoreScript(script)
+	s.captureRecordingBaseline(stored.ID, wrapper.SourceRecordingSessionID)
 	s.recordAuditEvent(r, "script.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name, "folder_id": stored.FolderID})
 	writeJSON(w, http.StatusCreated, stored)
 }

@@ -4606,6 +4606,26 @@ paths:
             type: string
       tags:
         - Scripts
+  /api/v1/scripts/{id}/diagnose-replay:
+    post:
+      summary: Diagnose Script Replay
+      description: |-
+        **Handler:** `handleDiagnoseScriptReplay`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleDiagnoseScriptReplay
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scripts
   /api/v1/scripts/{id}/download:
     get:
       summary: Download Script
@@ -4694,6 +4714,26 @@ paths:
 
         **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleMoveScript
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scripts
+  /api/v1/scripts/{id}/recording/status:
+    get:
+      summary: Get Script Recording Status
+      description: |-
+        **Handler:** `handleGetScriptRecordingStatus`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleGetScriptRecordingStatus
       responses:
         "200":
           description: Successful operation

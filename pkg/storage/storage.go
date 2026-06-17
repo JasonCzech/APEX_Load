@@ -134,6 +134,12 @@ type Store interface {
 	DeleteScript(id string) error
 	MoveScript(id string, folderID *string) error
 
+	// Recorded baselines (the original recorded exchanges a script was generated
+	// from, used to diagnose record-vs-replay correlation issues).
+	SaveScriptRecording(record *ScriptRecordingRecord) error
+	GetScriptRecording(scriptID string) (*ScriptRecordingRecord, error)
+	DeleteScriptRecording(scriptID string) error
+
 	// Tests
 	SaveTest(test *TestRecord) error
 	GetTest(id string) (*TestRecord, error)
@@ -768,6 +774,32 @@ type RunArchiveRecord struct {
 	IntervalSummaryCount int64     `json:"interval_summary_count"`
 	CreatedAt            time.Time `json:"created_at"`
 	CompletedAt          time.Time `json:"completed_at"`
+}
+
+// ScriptRecordingObservation is one recorded request/response exchange in a
+// script's baseline. It mirrors correlate.Observation but keeps the storage
+// layer free of a dependency on the convert/correlate package.
+type ScriptRecordingObservation struct {
+	ID              int               `json:"id"`
+	RequestURL      string            `json:"request_url,omitempty"`
+	RequestBody     string            `json:"request_body,omitempty"`
+	RequestHeaders  map[string]string `json:"request_headers,omitempty"`
+	ResponseBody    string            `json:"response_body,omitempty"`
+	ResponseHeaders map[string]string `json:"response_headers,omitempty"`
+}
+
+// ScriptRecordingRecord is a per-script recorded baseline: the original recorded
+// exchanges (selectively redacted) that the script was generated from, keyed by
+// the DSL action index each exchange produced.
+type ScriptRecordingRecord struct {
+	ScriptID      string                       `json:"script_id"`
+	SchemaVersion string                       `json:"schema_version,omitempty"`
+	Source        string                       `json:"source,omitempty"`
+	Sensitivity   string                       `json:"sensitivity,omitempty"`
+	RequestCount  int                          `json:"request_count"`
+	Observations  []ScriptRecordingObservation `json:"observations"`
+	CreatedAt     time.Time                    `json:"created_at"`
+	UpdatedAt     time.Time                    `json:"updated_at"`
 }
 
 // TestRecord represents a persisted test run.

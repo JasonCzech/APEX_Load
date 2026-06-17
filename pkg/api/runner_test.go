@@ -107,6 +107,13 @@ func (s *metricsStoreSpy) DeleteScript(id string) error {
 	return nil
 }
 func (s *metricsStoreSpy) MoveScript(id string, folderID *string) error { return nil }
+func (s *metricsStoreSpy) SaveScriptRecording(record *storage.ScriptRecordingRecord) error {
+	return nil
+}
+func (s *metricsStoreSpy) GetScriptRecording(scriptID string) (*storage.ScriptRecordingRecord, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) DeleteScriptRecording(scriptID string) error { return nil }
 func (s *metricsStoreSpy) SaveTest(test *storage.TestRecord) error {
 	s.savedTests = append(s.savedTests, test)
 	return nil

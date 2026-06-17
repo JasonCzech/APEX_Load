@@ -41,6 +41,50 @@ export interface ScriptAssertionDefinition {
   max?: number
 }
 
+// --- Correlation diagnose (record-vs-replay) -------------------------------
+
+export interface CorrelationStep {
+  id: number
+  request_url?: string
+  request_body?: string
+  request_headers?: Record<string, string>
+  response_body?: string
+  response_headers?: Record<string, string>
+}
+
+export interface SuggestedExtractor {
+  name: string
+  source: string
+  extract_type: string
+  expression: string
+}
+
+export interface CorrelationRepairSuggestion {
+  rule_id: string
+  source_family?: string
+  severity: 'error' | 'warning'
+  title: string
+  detail: string
+  source_step_id: number
+  failing_step_id?: number
+  used_in_ids?: number[]
+  usage_count?: number
+  affected_fields?: string[]
+  recorded_value?: string
+  replay_value?: string
+  suggestion: string
+  extractor?: SuggestedExtractor
+  confidence: number
+  confidence_band: string
+  review_action: string
+}
+
+export interface CorrelationDiagnoseResponse {
+  suggestions: CorrelationRepairSuggestion[]
+  blocking: boolean
+  counts: { errors: number; warnings: number }
+}
+
 export interface ScriptActionDefinition {
   name: string
   type: string

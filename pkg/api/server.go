@@ -462,6 +462,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/correlations/diff", cors(log(auth(http.HandlerFunc(s.handleDiffCorrelations)))))
 	s.mux.Handle("POST /api/v1/selectors/diagnose", cors(log(auth(http.HandlerFunc(s.handleDiagnoseSelectors)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/validate", cors(log(auth(http.HandlerFunc(s.handleValidateScript)))))
+	s.mux.Handle("GET /api/v1/scripts/{id}/recording/status", cors(log(auth(http.HandlerFunc(s.handleGetScriptRecordingStatus)))))
+	s.mux.Handle("POST /api/v1/scripts/{id}/diagnose-replay", cors(log(auth(http.HandlerFunc(s.handleDiagnoseScriptReplay)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/replay", cors(log(auth(http.HandlerFunc(s.handleReplayScript)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/replay/sessions", cors(log(auth(http.HandlerFunc(s.handleStartReplaySessionScript)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/debug/sessions", cors(log(auth(http.HandlerFunc(s.handleStartScriptDebugScript)))))
