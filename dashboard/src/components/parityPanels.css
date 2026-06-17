@@ -348,3 +348,35 @@
   padding: 8px 10px;
   color: var(--text-primary);
 }
+
+/* Object repository: expandable per-object sub-list. */
+.pp-row-title-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: inherit;
+  font: inherit;
+}
+.pp-sublist {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.pp-subrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.pp-subrow code {
+  font-size: 11px;
+  word-break: break-all;
+  color: var(--text-secondary);
+}

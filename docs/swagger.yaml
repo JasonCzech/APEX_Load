@@ -2906,6 +2906,105 @@ paths:
       x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
       tags:
         - Monitoring
+  /api/v1/object-repositories:
+    get:
+      summary: List Object Repositories
+      description: |-
+        **Handler:** `handleListObjectRepositories`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleListObjectRepositories
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Object Repositories
+    post:
+      summary: Create Object Repository
+      description: |-
+        **Handler:** `handleCreateObjectRepository`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCreateObjectRepository
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Object Repositories
+  /api/v1/object-repositories/{id}:
+    delete:
+      summary: Delete Object Repository
+      description: |-
+        **Handler:** `handleDeleteObjectRepository`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleDeleteObjectRepository
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Object Repositories
+    get:
+      summary: Get Object Repository
+      description: |-
+        **Handler:** `handleGetObjectRepository`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleGetObjectRepository
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Object Repositories
+    put:
+      summary: Update Object Repository
+      description: |-
+        **Handler:** `handleUpdateObjectRepository`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleUpdateObjectRepository
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Object Repositories
+  /api/v1/object-repositories/from-script:
+    post:
+      summary: Object Repository From Script
+      description: |-
+        **Handler:** `handleObjectRepositoryFromScript`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleObjectRepositoryFromScript
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Object Repositories
   /api/v1/projects:
     get:
       summary: List Projects

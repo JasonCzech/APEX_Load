@@ -380,7 +380,15 @@ func (s *metricsStoreSpy) GetExecutionPlan(string) (*storage.ExecutionPlan, erro
 func (s *metricsStoreSpy) ListExecutionPlans(string, int, int) ([]*storage.ExecutionPlan, error) {
 	return nil, nil
 }
-func (s *metricsStoreSpy) DeleteExecutionPlan(string) error                           { return nil }
+func (s *metricsStoreSpy) DeleteExecutionPlan(string) error { return nil }
+func (s *metricsStoreSpy) SaveObjectRepository(*storage.ObjectRepository) error { return nil }
+func (s *metricsStoreSpy) GetObjectRepository(string) (*storage.ObjectRepository, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListObjectRepositories(string, int, int) ([]*storage.ObjectRepository, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) DeleteObjectRepository(string) error                         { return nil }
 func (s *metricsStoreSpy) SaveMonitoringCollector(*storage.MonitoringCollector) error { return nil }
 func (s *metricsStoreSpy) GetMonitoringCollector(string) (*storage.MonitoringCollector, error) {
 	return nil, nil

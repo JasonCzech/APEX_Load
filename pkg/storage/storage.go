@@ -99,6 +99,12 @@ type Store interface {
 	ListExecutionPlans(projectID string, limit int, offset int) ([]*ExecutionPlan, error)
 	DeleteExecutionPlan(id string) error
 
+	// Object repositories (project-scoped reusable element-descriptor catalogs).
+	SaveObjectRepository(repo *ObjectRepository) error
+	GetObjectRepository(id string) (*ObjectRepository, error)
+	ListObjectRepositories(projectID string, limit int, offset int) ([]*ObjectRepository, error)
+	DeleteObjectRepository(id string) error
+
 	// Monitoring collectors (restricted-network agent control plane).
 	SaveMonitoringCollector(collector *MonitoringCollector) error
 	GetMonitoringCollector(id string) (*MonitoringCollector, error)
