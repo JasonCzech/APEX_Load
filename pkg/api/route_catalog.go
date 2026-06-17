@@ -40,6 +40,12 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPut, "/api/v1/execution-plans/{id}", editorImportAccess(resolveExecutionPlanProjectID, 262144)),
 	routeAuth(http.MethodDelete, "/api/v1/execution-plans/{id}", editorProjectAccess(resolveExecutionPlanProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/execution-plans/{id}/runs", editorProjectAccess(resolveExecutionPlanProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/object-repositories", editorImportAccess(resolveObjectRepositoryCreateProjectID, 262144)),
+	routeAuth(http.MethodGet, "/api/v1/object-repositories", viewerProjectAccess(resolveProjectIDFromQuery)),
+	routeAuth(http.MethodPost, "/api/v1/object-repositories/from-script", editorProjectAccess(resolveObjectRepositoryFromScriptProjectID)),
+	routeAuth(http.MethodGet, "/api/v1/object-repositories/{id}", viewerProjectAccess(resolveObjectRepositoryProjectID)),
+	routeAuth(http.MethodPut, "/api/v1/object-repositories/{id}", editorImportAccess(resolveObjectRepositoryProjectID, 262144)),
+	routeAuth(http.MethodDelete, "/api/v1/object-repositories/{id}", editorProjectAccess(resolveObjectRepositoryProjectID)),
 
 	// Monitoring collectors (restricted-network agent control plane) — project-admin infra.
 	routeAuth(http.MethodPost, "/api/v1/monitoring/collectors", accessRequirement{GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, ProjectLookup: resolveMonitoringCollectorCreateProjectID, MaxBodyBytes: 65536}),

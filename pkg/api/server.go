@@ -420,6 +420,12 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PUT /api/v1/execution-plans/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateExecutionPlan)))))
 	s.mux.Handle("DELETE /api/v1/execution-plans/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteExecutionPlan)))))
 	s.mux.Handle("POST /api/v1/execution-plans/{id}/runs", cors(log(auth(http.HandlerFunc(s.handleMaterializeAndRunExecutionPlan)))))
+	s.mux.Handle("POST /api/v1/object-repositories", cors(log(auth(http.HandlerFunc(s.handleCreateObjectRepository)))))
+	s.mux.Handle("GET /api/v1/object-repositories", cors(log(auth(http.HandlerFunc(s.handleListObjectRepositories)))))
+	s.mux.Handle("POST /api/v1/object-repositories/from-script", cors(log(auth(http.HandlerFunc(s.handleObjectRepositoryFromScript)))))
+	s.mux.Handle("GET /api/v1/object-repositories/{id}", cors(log(auth(http.HandlerFunc(s.handleGetObjectRepository)))))
+	s.mux.Handle("PUT /api/v1/object-repositories/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateObjectRepository)))))
+	s.mux.Handle("DELETE /api/v1/object-repositories/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteObjectRepository)))))
 
 	// Monitoring collectors — restricted-network agent control plane.
 	s.mux.Handle("POST /api/v1/monitoring/collectors", cors(log(auth(http.HandlerFunc(s.handleCreateMonitoringCollector)))))

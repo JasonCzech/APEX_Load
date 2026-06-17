@@ -86,8 +86,8 @@ Status vocabulary (shared with the competitive matrix): **Supported** · **Parti
 | Fleet / host administration | Host pools, load generators, monitor-over-firewall, SiteScope (admin layer) | Read-only fleet + generator drain, **plus managed pools, persistent generator metadata/labels/cordon, and provisioning requests** (`/api/v1/fleet/pools\|generators\|provision-requests`); provisioning is `not_configured` until a provider is wired | **▼** (narrowing — management surface landed) |
 | Monitoring integration | SiteScope + monitor-over-firewall agents (registered collectors) | Inbound monitoring **plus a collector control plane** (`/api/v1/monitoring/collectors`: register, SHA-256 scoped token + rotation, metric packs, health); agent runtime/heartbeat pending | **▼** (narrowing — control plane landed) |
 | Entitlements / consumption | License-tier model + usage | **Read-only entitlements** (`/api/v1/system/entitlements[/usage]`): edition, enabled bundles, limits, and live consumption in one view (surfaced, not enforced) | **=** (read parity; APEX doesn't enforce by design) |
-| Correlation as-code | Per-protocol rules engine + design studio (persistent, learned) | Stateless detect/diagnose/diff engine (`pkg/convert/correlate/`); **no persisted rulesets / per-script discover+apply** | **▼** |
-| Browser object repository | VuGen/TruClient object repository | Selector model + import-time TruClient parse (discarded); **no persisted per-script object repository** | **▼** |
+| Correlation as-code | Per-protocol rules engine + design studio (persistent, learned) | detect/diagnose/diff engine (`pkg/convert/correlate/`) **plus persisted per-script recorded baselines** (`/api/v1/scripts/{id}/recording/status`, `/api/v1/scripts/{id}/diagnose-replay`, redacted to preserve correlation candidates); learned reusable rulesets still pending | **▼** (narrowing) |
+| Browser object repository | VuGen/TruClient object repository | Selector model + **persisted project-scoped object repositories** (`/api/v1/object-repositories`, seedable `from-script`); script↔repository binding + repair-on-replay still pending | **▼** (narrowing) |
 | CI/CD integration | Maintained Jenkins + Azure DevOps marketplace plugins | GitHub-native (push/pull, PR check-runs, webhooks, sync-jobs) + CI templates; **no marketplace plugins** | **=** |
 | Git / GitOps | No native Git script sync | Native GitHub script push/pull, drift status, project policy | **▲** |
 | ALM / requirements traceability | Quality Center / ALM integration | None (out of scope) | **▼** |
@@ -121,7 +121,7 @@ These are the API-layer gaps the parity program addresses. Each maps to a build 
    edition, enabled bundles, limits, and live consumption in one read-only view
    (`pkg/api/handlers_entitlements.go`) — surfaced, not enforced (no licensing engine by design).
    Tracked as `entitlements`.
-6. **Correlation and object repository are not persisted.** The engines exist but results are stateless.
+6. **Correlation baselines and object repositories now persist (partial).** Per-script recorded baselines and project-scoped object repositories are stored; learned correlation rulesets and script↔repository binding remain.
    → **Persistent correlation rulesets** + per-script discover/apply, and a **persisted object
    repository**.
 7. **No ALM/Quality Center traceability and no CI-marketplace plugins.** Out of scope for this program;

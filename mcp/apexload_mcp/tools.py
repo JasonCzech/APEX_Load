@@ -96,6 +96,8 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
     EndpointTool("script_update", "PUT", "/scripts/{id}", f"{WRITE} Update a script.", True),
     EndpointTool("script_delete", "DELETE", "/scripts/{id}", f"{DESTRUCTIVE} Delete a script.", True, True),
     EndpointTool("script_move", "PATCH", "/scripts/{id}/move", f"{WRITE} Move a script.", True),
+    EndpointTool("script_recording_status", "GET", "/scripts/{id}/recording/status", f"{READ} Check whether a recorded baseline exists for a script."),
+    EndpointTool("script_diagnose_replay", "POST", "/scripts/{id}/diagnose-replay", f"{WRITE} Diff a replay against the script's recorded baseline and return ranked correlation repair suggestions.", True),
     EndpointTool("script_validate_draft", "POST", "/scripts/validate", "Validate a draft script without saving."),
     EndpointTool("script_replay_draft", "POST", "/scripts/replay", f"{WRITE} Replay a draft script.", True, False, True),
     EndpointTool("script_browser_replay_draft", "POST", "/scripts/browser-replay/sessions", f"{WRITE} Start draft browser replay.", True, False, True),
@@ -179,6 +181,13 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
     EndpointTool("monitoring_collector_update", "PATCH", "/monitoring/collectors/{id}", f"{WRITE} Update a monitoring collector (name, packs, health).", True),
     EndpointTool("monitoring_collector_delete", "DELETE", "/monitoring/collectors/{id}", f"{DESTRUCTIVE} Delete a monitoring collector.", True, True),
     EndpointTool("monitoring_collector_rotate_token", "POST", "/monitoring/collectors/{id}/rotate-token", f"{DESTRUCTIVE} Rotate a monitoring collector token (invalidates the old one).", True, True),
+
+    EndpointTool("object_repository_list", "GET", "/object-repositories", f"{READ} List object repositories (named element-descriptor catalogs).", default_project=True),
+    EndpointTool("object_repository_create", "POST", "/object-repositories", f"{WRITE} Create an object repository.", True, False, True),
+    EndpointTool("object_repository_from_script", "POST", "/object-repositories/from-script", f"{WRITE} Seed an object repository from a script's captured element selectors.", True),
+    EndpointTool("object_repository_get", "GET", "/object-repositories/{id}", f"{READ} Get an object repository."),
+    EndpointTool("object_repository_update", "PUT", "/object-repositories/{id}", f"{WRITE} Update an object repository (name, description, objects).", True),
+    EndpointTool("object_repository_delete", "DELETE", "/object-repositories/{id}", f"{DESTRUCTIVE} Delete an object repository.", True, True),
 
     EndpointTool("system_entitlements", "GET", "/system/entitlements", f"{READ} Get edition, enabled protocol bundles, and limits."),
     EndpointTool("system_entitlements_usage", "GET", "/system/entitlements/usage", f"{READ} Get current consumption vs entitlement limits."),

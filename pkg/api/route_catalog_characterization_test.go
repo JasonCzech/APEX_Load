@@ -185,6 +185,12 @@ var accessRequirementGolden = map[string]string{
 	"PUT /api/v1/execution-plans/sample-id":       "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=262144",
 	"DELETE /api/v1/execution-plans/sample-id":    "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
 	"POST /api/v1/execution-plans/sample-id/runs": "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/object-repositories":             "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=262144",
+	"GET /api/v1/object-repositories":              "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/object-repositories/from-script":  "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/object-repositories/sample-id":    "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/object-repositories/sample-id":    "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=262144",
+	"DELETE /api/v1/object-repositories/sample-id": "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
 	// Monitoring collectors (project-admin infra) + entitlements (read-only).
 	"POST /api/v1/monitoring/collectors":                              "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=65536",
 	"GET /api/v1/monitoring/collectors":                               "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",

@@ -200,18 +200,18 @@ func buildAPIParityProgram() []ParityStatusArea {
 		{
 			ID:        "correlation_persistence",
 			Name:      "Persistent Correlation Rulesets",
-			Status:    "gap",
-			Summary:   "The detect/diagnose/diff correlation engine exists but is stateless; there are no persisted rulesets or per-script discover/apply records.",
-			Evidence:  []string{apiComparisonEvidence, "/api/v1/correlations/rules", "/api/v1/correlations/diagnose", "pkg/convert/correlate"},
-			Remaining: []string{"Persist correlation rulesets and per-script discover/apply results over the existing engine."},
+			Status:    "partial",
+			Summary:   "Per-script recorded baselines are now persisted (request/response exchanges, with selective credential redaction that preserves session/CSRF/view-state); diagnose-replay diffs the stored baseline against a replay and ranks correlation repair suggestions. Learned, reusable rulesets are still pending.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/correlations/rules", "/api/v1/correlations/diagnose", "/api/v1/scripts/{id}/recording/status", "/api/v1/scripts/{id}/diagnose-replay", "pkg/api/handlers_script_recording.go", "pkg/storage/sqlite_recordings.go", "pkg/convert/correlate"},
+			Remaining: []string{"Persist learned, reusable correlation rulesets and per-script discover/apply records over the baseline."},
 		},
 		{
 			ID:        "object_repository",
 			Name:      "Browser Object Repository",
-			Status:    "gap",
-			Summary:   "Selectors are inline in DSL actions and TruClient object repositories are parsed at import then discarded; there is no persisted per-script object repository.",
-			Evidence:  []string{apiComparisonEvidence, "pkg/selector", "pkg/convert/trueclient/archive_inspection.go"},
-			Remaining: []string{"Persist a per-script object repository (named element catalog) with repair, seeded from import-time descriptors."},
+			Status:    "partial",
+			Summary:   "Project-scoped, reusable object repositories are now persisted (named element descriptors with CSS/XPath/role/text + ranked selector candidates), creatable directly or seeded from a script's captured selectors. Bidirectional script↔repository binding and repair-on-replay are still pending.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/object-repositories", "/api/v1/object-repositories/from-script", "pkg/api/handlers_object_repository.go", "pkg/storage/sqlite_object_repository.go", "pkg/selector"},
+			Remaining: []string{"Bind scripts to repository objects by logical name and feed repair/self-heal back into the repository."},
 		},
 	}
 }

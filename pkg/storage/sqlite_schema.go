@@ -603,6 +603,16 @@ func (s *SQLiteStore) init() error {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS object_repositories (
+			id TEXT PRIMARY KEY,
+			project_id TEXT,
+			name TEXT NOT NULL,
+			description TEXT,
+			source TEXT,
+			objects_json TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS monitoring_collectors (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL,
@@ -722,6 +732,7 @@ func (s *SQLiteStore) init() error {
 		{`CREATE INDEX IF NOT EXISTS idx_provisioning_requests_pool ON provisioning_requests(fleet_pool_id)`, "idx_provisioning_requests_pool"},
 		{`CREATE INDEX IF NOT EXISTS idx_provisioning_events_request ON provisioning_events(request_id)`, "idx_provisioning_events_request"},
 		{`CREATE INDEX IF NOT EXISTS idx_execution_plans_project ON execution_plans(project_id)`, "idx_execution_plans_project"},
+		{`CREATE INDEX IF NOT EXISTS idx_object_repositories_project ON object_repositories(project_id)`, "idx_object_repositories_project"},
 		{`CREATE INDEX IF NOT EXISTS idx_monitoring_collectors_project ON monitoring_collectors(project_id)`, "idx_monitoring_collectors_project"},
 	} {
 		if _, err := s.db.Exec(idx.query); err != nil {
