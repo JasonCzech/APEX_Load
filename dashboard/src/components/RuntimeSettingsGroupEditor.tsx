@@ -233,7 +233,7 @@ export default function RuntimeSettingsGroupEditor({
       <div className="scenario-assignment-header">
         <div>
           <h4>Per-group runtime overrides</h4>
-          <p>Override the scenario defaults for one group. Unset fields inherit the scenario default, then the script default.</p>
+          <p>The table shows each group’s effective runtime (group override → scenario default → script default). Expand “Override runtime” to change a value for the focused group; the scenario-wide defaults are set in the panels above.</p>
         </div>
       </div>
 
@@ -295,6 +295,8 @@ export default function RuntimeSettingsGroupEditor({
         </tbody>
       </table>
 
+      <details className="runtime-override-edit" open={Boolean(groupOverride)}>
+        <summary>Override runtime for {groupLabel(focusGroup, index)}</summary>
       <div className="scenario-browser-grid">
         <label>
           <span>Iterations</span>
@@ -668,6 +670,7 @@ export default function RuntimeSettingsGroupEditor({
           </label>
         </div>
       </div>
+      </details>
 
       <div className="runtime-apply-row">
         <button type="button" className="secondary-button" onClick={() => setApplyOpen(open => !open)} disabled={groups.length < 2}>

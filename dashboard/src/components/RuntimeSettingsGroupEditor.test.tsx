@@ -73,6 +73,45 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(text).toContain('extended')
   })
 
+  it('collapses the per-group override form by default and opens it when the group has an override', () => {
+    // No override on the focused group -> the duplicate input form is collapsed,
+    // so the same controls are not shown both above (scenario panels) and below.
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[undefined, undefined]}
+          onChange={() => {}}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const collapsed = container.querySelector('details.runtime-override-edit') as HTMLDetailsElement | null
+    expect(collapsed).toBeTruthy()
+    expect(collapsed!.open).toBe(false)
+    // The summary label names the focused group; the effective-value table stays visible.
+    expect((container.querySelector('details.runtime-override-edit > summary')?.textContent || '')).toContain('Checkout')
+    expect(container.querySelector('.runtime-override-summary')).toBeTruthy()
+
+    // With an override on the focused group -> the form auto-opens so the override is editable.
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[GROUP0_OVERRIDE, undefined]}
+          onChange={() => {}}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const opened = container.querySelector('details.runtime-override-edit') as HTMLDetailsElement | null
+    expect(opened!.open).toBe(true)
+  })
+
   it('shows the actual script-config value as the effective value when nothing is overridden', () => {
     const groups: RuntimeEditorGroup[] = [
       {

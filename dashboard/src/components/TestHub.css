@@ -1843,6 +1843,40 @@
   margin-top: 12px;
 }
 
+.runtime-override-edit {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+}
+
+.runtime-override-edit > summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.runtime-override-edit > summary:hover {
+  color: var(--text-secondary);
+}
+
+.runtime-override-edit[open] > summary {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.runtime-override-edit > *:not(summary) {
+  margin-left: 12px;
+  margin-right: 12px;
+}
+
+.runtime-override-edit > *:last-child {
+  margin-bottom: 12px;
+}
+
 .runtime-apply-panel {
   margin-top: 10px;
   padding: 12px;
