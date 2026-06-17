@@ -335,14 +335,36 @@ export interface TemplateReferenceInfo {
   detail: string
   /** known = resolved in-script; unknown = a real authoring gap; info = runtime-resolved. */
   status: 'known' | 'unknown' | 'info'
+  /** The concrete value this reference resolved to in the latest debug run, when known. */
+  runtimeValue?: string
 }
 
-/** Describe a `{{...}}` inner expression against the script reference model. Exported for tests. */
-export function describeTemplateReference(expr: string, model: ScriptReferenceModel): TemplateReferenceInfo {
+/**
+ * Describe a `{{...}}` inner expression against the script reference model.
+ * When `runtimeValues` (a name->value map from a completed/paused debug run) is
+ * supplied, the concrete resolved value is attached. Exported for tests.
+ */
+export function describeTemplateReference(
+  expr: string,
+  model: ScriptReferenceModel,
+  runtimeValues?: Record<string, string> | null,
+): TemplateReferenceInfo {
   const trimmed = expr.trim()
   const dot = trimmed.indexOf('.')
   const namespace = (dot === -1 ? trimmed : trimmed.slice(0, dot)).trim()
   const rest = dot === -1 ? '' : trimmed.slice(dot + 1).trim()
+  const info = describeBase(namespace, rest, trimmed, model)
+  // Secrets are masked; never surface a concrete value for them.
+  if (runtimeValues && namespace !== 'secret' && ['var', 'param', 'env', 'data'].includes(namespace)) {
+    if (Object.prototype.hasOwnProperty.call(runtimeValues, rest)) {
+      info.runtimeValue = runtimeValues[rest]
+      if (info.status === 'info') info.status = 'known'
+    }
+  }
+  return info
+}
+
+function describeBase(namespace: string, rest: string, trimmed: string, model: ScriptReferenceModel): TemplateReferenceInfo {
   switch (namespace) {
     case 'param': {
       const match = model.parameters.find(parameter => parameter.name === rest)
@@ -402,28 +424,43 @@ export function templateTokenAt(state: EditorState, pos: number): { from: number
   return null
 }
 
-const templateReferenceHover = hoverTooltip((view, pos): Tooltip | null => {
-  const token = templateTokenAt(view.state, pos)
-  if (!token) return null
-  const info = describeTemplateReference(token.expr, readScriptReferenceModel(view.state))
-  return {
-    pos: token.from,
-    end: token.to,
-    above: true,
-    create() {
-      const dom = document.createElement('div')
-      dom.className = `apex-template-hover apex-template-hover-${info.status}`
-      const title = document.createElement('div')
-      title.className = 'apex-template-hover-title'
-      title.textContent = `{{${info.title}}}`
-      const detail = document.createElement('div')
-      detail.className = 'apex-template-hover-detail'
-      detail.textContent = info.detail
-      dom.append(title, detail)
-      return { dom }
-    },
-  }
-})
+/** Source of resolved runtime values for hover, read live so debug-run updates show. */
+export type RuntimeValueSource = () => Record<string, string> | null | undefined
+
+function truncateValue(value: string, max = 160): string {
+  return value.length > max ? `${value.slice(0, max)}…` : value
+}
+
+function makeTemplateReferenceHover(getRuntimeValues: RuntimeValueSource): Extension {
+  return hoverTooltip((view, pos): Tooltip | null => {
+    const token = templateTokenAt(view.state, pos)
+    if (!token) return null
+    const info = describeTemplateReference(token.expr, readScriptReferenceModel(view.state), getRuntimeValues())
+    return {
+      pos: token.from,
+      end: token.to,
+      above: true,
+      create() {
+        const dom = document.createElement('div')
+        dom.className = `apex-template-hover apex-template-hover-${info.status}`
+        const title = document.createElement('div')
+        title.className = 'apex-template-hover-title'
+        title.textContent = `{{${info.title}}}`
+        const detail = document.createElement('div')
+        detail.className = 'apex-template-hover-detail'
+        detail.textContent = info.detail
+        dom.append(title, detail)
+        if (info.runtimeValue !== undefined) {
+          const resolved = document.createElement('div')
+          resolved.className = 'apex-template-hover-resolved'
+          resolved.textContent = `= ${truncateValue(info.runtimeValue) || '(empty)'}`
+          dom.append(resolved)
+        }
+        return { dom }
+      },
+    }
+  })
+}
 
 export interface DslValidationOutcome {
   issues?: string[] | null
@@ -461,11 +498,14 @@ export function diagnosticsFromIssues(state: EditorState, issues: string[], seve
 }
 
 /**
- * Build the assist extensions: completion, JSON syntax lint, and debounced
- * server-side draft validation through `validateDraft`.
+ * Build the assist extensions: completion, `{{...}}` reference hover, JSON
+ * syntax lint, and debounced server-side draft validation through
+ * `validateDraft`. `getRuntimeValues` is read live on hover so resolved values
+ * from a debug run appear without rebuilding the editor.
  */
 export function buildDslAssistExtensions(
   validateDraft: (script: unknown) => Promise<DslValidationOutcome>,
+  getRuntimeValues: RuntimeValueSource = () => null,
 ): Extension[] {
   const validationLinter = linter(
     async view => {
@@ -495,7 +535,7 @@ export function buildDslAssistExtensions(
   )
   return [
     autocompletion({ override: [dslCompletionSource] }),
-    templateReferenceHover,
+    makeTemplateReferenceHover(getRuntimeValues),
     linter(jsonParseLinter()),
     validationLinter,
   ]

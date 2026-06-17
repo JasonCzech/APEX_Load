@@ -200,6 +200,35 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	return result
 }
 
+// SessionBaseline returns the recorded request/response exchanges that the
+// generated HTTP script's actions map to, in action order (ID = action index).
+// It is the recorded side of a record-vs-replay correlation diagnosis and uses
+// the same meaningful-request filter as ConvertSessionWithOptions's main loop,
+// so observation IDs line up with the saved script's action indices. Raw values
+// are returned; the caller applies redaction before persisting.
+func SessionBaseline(session *Session) []correlate.Observation {
+	if session == nil {
+		return nil
+	}
+	observations := make([]correlate.Observation, 0, len(session.Requests))
+	actionIdx := 0
+	for _, req := range session.Requests {
+		if req.IsStatic || req.Excluded {
+			continue
+		}
+		observations = append(observations, correlate.Observation{
+			ID:              actionIdx,
+			RequestURL:      req.URL,
+			RequestBody:     req.Body,
+			RequestHeaders:  req.Headers,
+			ResponseBody:    req.ResponseBody,
+			ResponseHeaders: req.ResponseHeaders,
+		})
+		actionIdx++
+	}
+	return observations
+}
+
 func includedWebSocketRequests(requests []RecordedRequest) []RecordedRequest {
 	result := make([]RecordedRequest, 0)
 	for _, req := range requests {

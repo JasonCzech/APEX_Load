@@ -2720,6 +2720,144 @@
   letter-spacing: 0.05em;
 }
 
+.extractor-tester {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary);
+}
+.extractor-tester-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.extractor-tester-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.extractor-tester-controls label {
+  display: grid;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.extractor-tester-controls select,
+.extractor-tester-name input,
+.extractor-tester-expression {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.extractor-tester-name { flex: 1 1 140px; }
+.extractor-tester-expression {
+  width: 100%;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.extractor-tester-result {
+  display: grid;
+  gap: 4px;
+  min-height: 18px;
+}
+.extractor-tester-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: #047857;
+}
+.extractor-tester-matches {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: grid;
+  gap: 3px;
+}
+.extractor-tester-matches code {
+  font-size: 11px;
+  word-break: break-all;
+  color: var(--text-primary);
+}
+.extractor-tester-note { font-size: 11px; color: var(--text-muted); }
+.extractor-tester-error { font-size: 11px; color: var(--danger); }
+.extractor-tester-added { font-size: 11px; color: #047857; }
+.extractor-tester-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.correlation-diagnose {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary);
+}
+.correlation-diagnose-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.correlation-diagnose-upload { cursor: pointer; }
+.correlation-diagnose-empty {
+  font-size: 12px;
+  color: #047857;
+}
+.correlation-diagnose-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.correlation-diagnose-list { display: grid; gap: 8px; }
+.correlation-diagnose-item {
+  display: grid;
+  gap: 5px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  background: var(--bg-secondary);
+}
+.correlation-diagnose-item.severity-error { border-left-color: var(--danger); }
+.correlation-diagnose-item.severity-warning { border-left-color: #d97706; }
+.correlation-diagnose-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.correlation-diagnose-item p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.correlation-diagnose-diff {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+.correlation-diagnose-recorded { color: var(--text-muted); }
+.correlation-diagnose-replay { color: var(--danger); }
+.correlation-diagnose-diff code {
+  word-break: break-all;
+  background: rgba(148, 163, 184, 0.12);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
 .replay-summary-card strong {
   color: var(--text-primary);
   font-size: 15px;
@@ -4277,6 +4415,23 @@
 .apex-template-hover-known .apex-template-hover-title { color: #047857; }
 .apex-template-hover-unknown .apex-template-hover-title { color: var(--danger); }
 .apex-template-hover-unknown .apex-template-hover-detail { color: var(--danger); }
+.apex-template-hover-resolved {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--text-primary);
+  background: rgba(16, 185, 129, 0.12);
+  border-radius: 6px;
+  padding: 3px 6px;
+  word-break: break-all;
+}
+/* Inline resolved value rendered after a {{...}} token while debugging. */
+.cm-inline-resolved-value {
+  color: #047857;
+  font-style: italic;
+  font-size: 0.9em;
+  opacity: 0.9;
+  white-space: pre;
+}
 .action-item-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
 .action-item:hover .action-item-actions { opacity: 1; }
 .action-empty { padding: 32px 16px; text-align: center; color: var(--text-muted); font-size: 13px; }

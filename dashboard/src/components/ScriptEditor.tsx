@@ -34,6 +34,7 @@ import {
   type ScriptActionDefinition,
   type ScriptAssertionDefinition,
   type ScriptDefinition,
+  type ScriptExtractorDefinition,
   type ScriptDataSource,
   type ScriptImportMetadata,
   type SourceArchiveReview,
@@ -43,6 +44,9 @@ import {
   type ReplayPreflight,
 } from '../types/scripts'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
+import { ExtractorTester } from './ExtractorTester'
+import { CorrelationDiagnosePanel } from './CorrelationDiagnosePanel'
+import type { ScriptRecordingStatus } from '../hooks/api/useScriptApi'
 import PageViewToggle from './PageViewToggle'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import { buildLocalReplayPreflight, replayPreflightStatusLabel } from './replayPreflightUtils'
@@ -71,9 +75,11 @@ import {
   scriptCodeRangeField,
   scriptCodeParameterMatchField,
   scriptCodeCandidateMatchField,
+  scriptCodeResolvedValueField,
   setScriptCodeRange,
   setScriptCodeParameterMatches,
   setScriptCodeCandidateMatches,
+  setScriptCodeResolvedValues,
   type ScriptCodeMatchRange,
 } from './scriptCodeDecorations'
 import {
@@ -694,6 +700,8 @@ interface ScriptCodePaneProps {
   jumpToLineRequest?: ScriptCodeLineJumpRequest | null
   candidateMatchRanges?: ScriptCodeMatchRange[]
   parameterMatchRanges?: ScriptCodeMatchRange[]
+  /** Resolved runtime values to render inline within the active range (debug mode). */
+  resolvedValues?: Record<string, string> | null
   onApply: () => void
   onChange: (value: string) => void
   onCopy: () => void
@@ -719,6 +727,7 @@ function ScriptCodePane({
   jumpToLineRequest,
   candidateMatchRanges = [],
   parameterMatchRanges = [],
+  resolvedValues = null,
   onApply,
   onChange,
   onCopy,
@@ -762,6 +771,7 @@ function ScriptCodePane({
     scriptCodeRangeField,
     scriptCodeParameterMatchField,
     scriptCodeCandidateMatchField,
+    scriptCodeResolvedValueField,
     EditorView.lineWrapping,
     EditorView.updateListener.of(update => {
       if (update.selectionSet || update.docChanged || update.viewportChanged || update.geometryChanged) {
@@ -904,6 +914,15 @@ function ScriptCodePane({
     view.dispatch({ effects })
     emitScrollSnapshot()
   }, [candidateMatchKey, candidateMatchRanges, editorReadyVersion, emitScrollSnapshot, value])
+
+  const resolvedValuesKey = resolvedValues ? JSON.stringify(resolvedValues) : ''
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    const range = activeStartLine != null ? { startLine: activeStartLine, endLine: activeEndLine ?? activeStartLine } : null
+    const payload = resolvedValues && range ? { values: resolvedValues, range } : null
+    view.dispatch({ effects: [setScriptCodeResolvedValues.of(payload)] })
+  }, [activeStartLine, activeEndLine, editorReadyVersion, resolvedValues, resolvedValuesKey, value])
 
   useEffect(() => {
     const view = viewRef.current
@@ -2825,6 +2844,7 @@ interface ReplayScreenshotSelection {
 
 export default function ScriptEditor({ scriptId, initialScript, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
+  const [scriptRecordingStatus, setScriptRecordingStatus] = useState<ScriptRecordingStatus | null>(null)
   // Action-type catalog from GET /api/v1/dsl/actions: powers JSON-editor
   // completion and the catalog-driven action form inputs. The state bump
   // re-renders once the catalog arrives; helpers fall back to built-in
@@ -2839,8 +2859,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       cancelled = true
     }
   }, [])
+  // Holds the latest resolved debug-run variables so the {{...}} hover can show
+  // concrete values without rebuilding the (otherwise stable) editor extensions.
+  const replayVariableInspectorRef = useRef<Record<string, string> | null>(null)
   const scriptAssistExtensions = useMemo(
-    () => buildDslAssistExtensions(script => api.validateDraftScript(script as ScriptDefinition, projectId, folderId ?? undefined)),
+    () => buildDslAssistExtensions(
+      script => api.validateDraftScript(script as ScriptDefinition, projectId, folderId ?? undefined),
+      () => replayVariableInspectorRef.current,
+    ),
     [api, projectId, folderId],
   )
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
@@ -4298,6 +4324,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     })
   }
 
+  const addExtractorDefinition = (actionIdx: number, extractor: ScriptExtractorDefinition) => {
+    setScript(prev => {
+      const actions = [...prev.actions]
+      if (actionIdx < 0 || actionIdx >= actions.length) return prev
+      const ext = [...(actions[actionIdx].extractors || []), extractor]
+      actions[actionIdx] = { ...actions[actionIdx], extractors: ext }
+      return { ...prev, actions }
+    })
+    setSuccess(`Added extractor "${extractor.name}" to ${script.actions[actionIdx]?.name || `action ${actionIdx + 1}`}.`)
+  }
+
   const updateExtractor = (actionIdx: number, extIdx: number, field: string, value: string) => {
     setScript(prev => {
       const actions = [...prev.actions]
@@ -5113,6 +5150,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         : mergeReplayVariables(replaySeedVariables, replayReport.events))
     : null
   const hasReplayVariableInspectorData = replayVariableInspector ? Object.keys(replayVariableInspector).length > 0 : false
+  replayVariableInspectorRef.current = replayVariableInspector
+
+  // Whether a recorded baseline exists for this script, so the debugger can
+  // offer an auto record-vs-replay correlation diagnosis (vs HAR-upload).
+  useEffect(() => {
+    if (workspaceTab !== 'debug' || !scriptId || isBrowserScript) {
+      setScriptRecordingStatus(null)
+      return
+    }
+    let cancelled = false
+    api.getScriptRecordingStatus(scriptId)
+      .then(status => { if (!cancelled) setScriptRecordingStatus(status) })
+      .catch(() => { if (!cancelled) setScriptRecordingStatus(null) })
+    return () => { cancelled = true }
+  }, [api, scriptId, workspaceTab, isBrowserScript])
   const replayVariableDiffs = replayReport
     ? buildReplayVariableDiffs(replaySeedVariables, replayReport.events)
     : []
@@ -6521,6 +6573,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           candidateMatchRanges={autoParameterCandidateMatchRanges}
           jumpToLineRequest={jsonLineJumpRequest}
           parameterMatchRanges={parameterMatchRanges}
+          resolvedValues={workspaceTab === 'debug' && hasReplayVariableInspectorData ? replayVariableInspector : null}
           onApply={handleApplyJsonDraft}
           onChange={handleCodePaneChange}
           onCopy={() => void navigator.clipboard?.writeText(jsonText)}
@@ -7360,6 +7413,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     </button>
                   </div>
                   <div className="debugger-center-body">
+                    {!isBrowserScript && debuggerTab !== 'browser' && replayReport && (
+                      <CorrelationDiagnosePanel
+                        scriptId={scriptId ?? null}
+                        events={replayReport.events}
+                        recordingStatus={scriptRecordingStatus}
+                        actionCount={script.actions.length}
+                        diagnoseWithBaseline={(id, replay) => api.diagnoseScriptReplay(id, replay)}
+                        diagnoseWithUpload={(recorded, replay) => api.diagnoseCorrelations(recorded, replay)}
+                        onAddExtractor={addExtractorDefinition}
+                      />
+                    )}
                     {debuggerTab === 'browser' && isBrowserScript ? (
                       <BrowserReplayDebugger
                         sessionId={activeReplaySessionId}
@@ -7376,6 +7440,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       (() => {
                         const event = selectedReplayEvent
                         const index = selectedReplayEventIndex
+                        const editableActionIndex = event.phase === 'action' && typeof event.action_index === 'number' && event.action_index < script.actions.length
+                          ? event.action_index
+                          : null
                         const variableDiff = replayVariableDiffs[index] || {}
                         const changedVariables = Object.entries(variableDiff)
                         const snapshotSoapFault = event.snapshot ? extractSOAPFaultSummaryFromBody(event.snapshot.response_body) : null
@@ -7430,12 +7497,35 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                     {(event.repair_suggestions || []).length > 0 && (
                                       <div className="replay-repair-suggestions">
                                         <span className="replay-detail-label">Draft repair suggestions</span>
-                                        {(event.repair_suggestions || []).map(suggestion => (
-                                          <div key={suggestion.id} className="replay-repair-suggestion">
-                                            <strong>{suggestion.title}</strong>
-                                            <span>{suggestion.description}</span>
-                                          </div>
-                                        ))}
+                                        {(event.repair_suggestions || []).map(suggestion => {
+                                          const fields = suggestion.fields || {}
+                                          const expression = fields.expression
+                                          const isExtractorFix = !!expression && (
+                                            suggestion.draft_patch_type?.includes('extractor')
+                                            || suggestion.draft_patch_type === 'add_extractor'
+                                            || !!fields.source
+                                          )
+                                          return (
+                                            <div key={suggestion.id} className="replay-repair-suggestion">
+                                              <strong>{suggestion.title}</strong>
+                                              <span>{suggestion.description}</span>
+                                              {isExtractorFix && editableActionIndex !== null && (
+                                                <button
+                                                  type="button"
+                                                  className="btn btn-sm btn-secondary"
+                                                  onClick={() => addExtractorDefinition(editableActionIndex, {
+                                                    name: fields.name || 'correlation_value',
+                                                    source: fields.source || 'body',
+                                                    type: fields.type || fields.extract_type || 'regex',
+                                                    expression: expression as string,
+                                                  })}
+                                                >
+                                                  Add as extractor
+                                                </button>
+                                              )}
+                                            </div>
+                                          )
+                                        })}
                                       </div>
                                     )}
                                   </div>
@@ -7572,6 +7662,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                       headers={{ 'Content-Type': 'application/json' }}
                                     />
                                   </div>
+                                )}
+                                {!isBrowserScript && (event.snapshot?.response_body || event.snapshot?.response_headers) && (
+                                  <ExtractorTester
+                                    event={event}
+                                    actionIndex={editableActionIndex}
+                                    onAddExtractor={addExtractorDefinition}
+                                  />
                                 )}
                                 {changedVariables.length > 0 && (
                                   <div className="replay-code-block">

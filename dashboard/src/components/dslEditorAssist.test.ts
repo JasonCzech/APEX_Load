@@ -231,6 +231,19 @@ describe('describeTemplateReference', () => {
   it('flags an unknown namespace', () => {
     expect(describeTemplateReference('bogus.thing', model).status).toBe('unknown')
   })
+
+  it('attaches a concrete runtime value when one is known, but never for secrets', () => {
+    const runtime = { username: 'alice', csrf: 'tok-1', PASSWORD: 'p@ss' }
+    const param = describeTemplateReference('param.username', model, runtime)
+    expect(param.runtimeValue).toBe('alice')
+
+    const variable = describeTemplateReference('var.csrf', model, runtime)
+    expect(variable.runtimeValue).toBe('tok-1')
+    expect(variable.status).toBe('known') // promoted from info once resolved
+
+    expect(describeTemplateReference('secret.PASSWORD', model, runtime).runtimeValue).toBeUndefined()
+    expect(describeTemplateReference('var.unset', model, runtime).runtimeValue).toBeUndefined()
+  })
 })
 
 describe('templateTokenAt', () => {

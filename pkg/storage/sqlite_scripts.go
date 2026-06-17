@@ -134,7 +134,11 @@ func (s *SQLiteStore) ListScripts(projectID string, folderID *string) ([]*dsl.Sc
 }
 
 func (s *SQLiteStore) DeleteScript(id string) error {
-	_, err := s.db.Exec(`DELETE FROM scripts WHERE id = ?`, id)
+	if _, err := s.db.Exec(`DELETE FROM scripts WHERE id = ?`, id); err != nil {
+		return err
+	}
+	// Cascade the recorded baseline (SQLite foreign-key cascade is not enabled).
+	_, err := s.db.Exec(`DELETE FROM script_recordings WHERE script_id = ?`, id)
 	return err
 }
 

@@ -499,6 +499,16 @@ func (s *SQLiteStore) init() error {
 			raw_json TEXT,
 			created_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS script_recordings (
+			script_id TEXT PRIMARY KEY,
+			schema_version TEXT,
+			source TEXT,
+			sensitivity TEXT,
+			request_count INTEGER,
+			observations_json TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS authoring_sessions (
 			id TEXT PRIMARY KEY,
 			project_id TEXT,

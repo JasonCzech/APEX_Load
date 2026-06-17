@@ -26,7 +26,15 @@ import {
   TestSummary,
 } from '../../types'
 import { type AuthoringTemplate } from '../../types'
-import { type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
+import { type CorrelationDiagnoseResponse, type CorrelationStep, type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
+
+export interface ScriptRecordingStatus {
+  exists: boolean
+  request_count?: number
+  source?: string
+  sensitivity?: string
+  captured_at?: string
+}
 import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { apiFetch, request } from '../apiClient'
 
@@ -298,6 +306,23 @@ export function useScriptApi() {
   const previewAuthoringCorrelation = useCallback(
     (id: string, payload: AuthoringCorrelationPreviewRequest) =>
       request<AuthoringCorrelationPreviewResponse>(`/scripts/authoring/sessions/${id}/correlations/preview`, { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
+  const getScriptRecordingStatus = useCallback(
+    (id: string) => request<ScriptRecordingStatus>(`/scripts/${id}/recording/status`),
+    [],
+  )
+
+  const diagnoseScriptReplay = useCallback(
+    (id: string, replay: CorrelationStep[]) =>
+      request<CorrelationDiagnoseResponse>(`/scripts/${id}/diagnose-replay`, { method: 'POST', body: JSON.stringify({ replay }) }),
+    [],
+  )
+
+  const diagnoseCorrelations = useCallback(
+    (recorded: CorrelationStep[], replay: CorrelationStep[]) =>
+      request<CorrelationDiagnoseResponse>('/correlations/diagnose', { method: 'POST', body: JSON.stringify({ recorded, replay }) }),
     [],
   )
 
@@ -808,6 +833,9 @@ export function useScriptApi() {
       approveAuthoringSession,
       deleteAuthoringSession,
       previewAuthoringCorrelation,
+      getScriptRecordingStatus,
+      diagnoseScriptReplay,
+      diagnoseCorrelations,
       replayScript,
   		replayDraftScript,
       startBrowserReplaySession,
@@ -879,6 +907,9 @@ export function useScriptApi() {
       approveAuthoringSession,
       deleteAuthoringSession,
       previewAuthoringCorrelation,
+      getScriptRecordingStatus,
+      diagnoseScriptReplay,
+      diagnoseCorrelations,
       replayScript,
   		replayDraftScript,
       startBrowserReplaySession,
