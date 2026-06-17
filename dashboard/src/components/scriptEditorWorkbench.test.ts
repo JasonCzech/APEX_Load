@@ -71,6 +71,7 @@ describe('center tabs state', () => {
 
   it('isCenterWorkbenchTabId validates known ids', () => {
     expect(isCenterWorkbenchTabId('script-json')).toBe(true)
+    expect(isCenterWorkbenchTabId('metadata-json')).toBe(true)
     expect(isCenterWorkbenchTabId('conversion-mapping')).toBe(false)
     expect(isCenterWorkbenchTabId('nope')).toBe(false)
     expect(isCenterWorkbenchTabId(42)).toBe(false)

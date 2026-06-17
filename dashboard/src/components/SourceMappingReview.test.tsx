@@ -341,6 +341,7 @@ describe('SourceMappingReview', () => {
       button => button.textContent?.trim() === 'Maximize',
     ) as HTMLButtonElement | undefined
     expect(container.querySelector('.source-map-summary')).toBeNull()
+    expect(container.querySelector('.source-map-header .source-map-coverage')).not.toBeNull()
     expect(maximizeButton).toBeDefined()
     expect(maximizeButton?.getAttribute('aria-pressed')).toBe('false')
 
@@ -367,12 +368,46 @@ describe('SourceMappingReview', () => {
     expect(restoreButton?.getAttribute('aria-pressed')).toBe('true')
   })
 
+  it('can hide the title while preserving source mapping controls', async () => {
+    const handleToggle = vi.fn()
+    await act(async () => {
+      root.render(
+        <SourceMappingReview
+          onToggleWorkspaceMaximized={handleToggle}
+          showTitle={false}
+          sourceReview={sourceReview}
+          script={script}
+        />,
+      )
+    })
+    await flushPromises()
+
+    expect(container.querySelector('.source-map-header h4')).toBeNull()
+    expect(container.querySelector('.source-map-header p')).toBeNull()
+    expect(container.querySelector('.source-map-header')?.classList.contains('title-hidden')).toBe(true)
+    expect(container.querySelector('.source-map-header .source-map-coverage')?.textContent).toContain('Converted:')
+    expect(Array.from(container.querySelectorAll('.source-map-header button')).some(
+      button => button.textContent?.trim() === 'Maximize',
+    )).toBe(true)
+  })
+
   it('keeps the mapping table visible above the source code panes', async () => {
     const stylesheet = await readSourceMappingStylesheet()
-    const nonShrinkingSections = cssRule(stylesheet, '.source-map-header,\n.source-map-coverage,\n.source-map-toolbar,\n.source-map-table-wrap')
+    const nonShrinkingSections = cssRule(stylesheet, '.source-map-header,\n.source-map-toolbar,\n.source-map-table-wrap')
+    const headerControls = cssRule(stylesheet, '.source-map-header-controls')
+    const hiddenTitleControls = cssRule(stylesheet, '.source-map-header.title-hidden .source-map-header-controls')
+    const coverageRule = cssRule(stylesheet, '.source-map-coverage')
+    const coverageStatusRule = cssRule(stylesheet, '.source-map-coverage .source-map-status')
     const sourcePanels = cssRule(stylesheet, '.source-map-panels')
 
     expect(nonShrinkingSections).toContain('flex: 0 0 auto;')
+    expect(headerControls).toContain('display: flex;')
+    expect(headerControls).toContain('flex-wrap: nowrap;')
+    expect(headerControls).toContain('align-items: center;')
+    expect(hiddenTitleControls).toContain('justify-content: space-between;')
+    expect(coverageRule).toContain('flex-wrap: nowrap;')
+    expect(coverageRule).toContain('overflow-x: auto;')
+    expect(coverageStatusRule).toContain('white-space: nowrap;')
     expect(stylesheet).toContain('.source-map-table-wrap {\n  display: block;\n  min-height: 120px;')
     expect(stylesheet).toContain('max-height: 220px;')
     expect(sourcePanels).toContain('height: 420px;')

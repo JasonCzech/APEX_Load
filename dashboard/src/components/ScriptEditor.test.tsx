@@ -625,14 +625,14 @@ describe('ScriptEditor', () => {
     }), 'project-1', undefined)
   })
 
-  it('keeps imported metadata in the outline instead of duplicating it in the page header', async () => {
+  it('keeps source mapping in the outline instead of duplicating imported metadata in the page header', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
 
     let headerActions = container.querySelector('.editor-header .editor-actions')
-    expect(headerActions?.textContent).not.toContain('Imported Metadata')
-    expect(container.querySelector('.editor-outline-nav')?.textContent).not.toContain('Imported Metadata')
+    expect(headerActions?.textContent).not.toContain('Source Mapping')
+    expect(container.querySelector('.editor-outline-nav')?.textContent).not.toContain('Source Mapping')
 
     const importedScript: ScriptDefinition = {
       ...initialScript,
@@ -652,9 +652,9 @@ describe('ScriptEditor', () => {
     })
 
     headerActions = container.querySelector('.editor-header .editor-actions')
-    expect(headerActions?.textContent).not.toContain('Imported Metadata')
+    expect(headerActions?.textContent).not.toContain('Source Mapping')
     const outlineButton = Array.from(container.querySelector('.editor-outline-nav')?.querySelectorAll('button') || [])
-      .find(button => button.textContent === 'Imported Metadata')
+      .find(button => button.textContent === 'Source Mapping')
     expect(outlineButton).toBeDefined()
 
     await act(async () => {
@@ -663,7 +663,13 @@ describe('ScriptEditor', () => {
 
     const metadataSection = container.querySelector('#imported-metadata-section')
     const actionDetail = container.querySelector('.action-detail')
-    expect(metadataSection?.textContent).toContain('checkout.usr')
+    expect(metadataSection).not.toBeNull()
+    expect(findCenterTab(container, 'Metadata JSON')).toBeDefined()
+    const metadataJsonTab = findCenterTab(container, 'Metadata JSON')
+    await act(async () => {
+      metadataJsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('#metadata-json-section')?.textContent).toContain('checkout.usr')
     expect(actionDetail).toBeNull()
     expect(container.querySelector('.author-code-center')?.contains(metadataSection)).toBe(true)
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
@@ -676,8 +682,8 @@ describe('ScriptEditor', () => {
       firstAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Imported Metadata')
+    expect(container.querySelector('#metadata-json-section')).not.toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Metadata JSON')
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
   })
 
@@ -766,7 +772,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={importedWeb2Script} />)
     })
 
-    const importedLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Imported Metadata'))
+    const importedLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Source Mapping'))
     expect(importedLauncher).toBeDefined()
     await act(async () => {
       importedLauncher?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -898,19 +904,27 @@ describe('ScriptEditor', () => {
     expect(authorCenterRule).toContain('max-height: none;')
   })
 
-  it('keeps imported metadata source mapping content visible above the code panes', async () => {
+  it('lets the Source Mapping tab fill the center workbench frame', async () => {
     // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
     const { readFileSync } = await import('node:fs')
     const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
     const editorCss = readFileSync(`${cwd}/src/components/ScriptEditor.css`, 'utf8') as string
     const sourceMapReviewRule = cssRule(editorCss, '.imported-metadata-section .source-map-review')
+    const sourceMapHeaderRule = cssRule(editorCss, '.imported-metadata-section .source-map-header')
     const sourceMapPanelsRule = cssRule(editorCss, '.imported-metadata-section .source-map-panels')
 
-    expect(sourceMapReviewRule).toContain('flex: 0 0 auto;')
+    expect(editorCss).toContain('.center-document.imported-metadata-section {\n  overflow: hidden;')
+    expect(editorCss).toContain('  padding: 0;\n  border: 0;\n  border-radius: 0;')
+    expect(sourceMapReviewRule).toContain('flex: 1 1 auto;')
     expect(sourceMapReviewRule).toContain('min-height: 0;')
-    expect(sourceMapPanelsRule).toContain('height: clamp(360px, 48vh, 520px);')
-    expect(sourceMapPanelsRule).toContain('min-height: 360px;')
-    expect(sourceMapPanelsRule).toContain('max-height: min(520px, 58vh);')
+    expect(sourceMapReviewRule).toContain('overflow: hidden;')
+    expect(sourceMapReviewRule).toContain('border: 0;')
+    expect(sourceMapHeaderRule).toContain('padding: 9px 10px;')
+    expect(sourceMapHeaderRule).toContain('border-bottom: 1px solid var(--border);')
+    expect(sourceMapPanelsRule).toContain('flex: 1 1 auto;')
+    expect(sourceMapPanelsRule).toContain('height: auto;')
+    expect(sourceMapPanelsRule).toContain('min-height: 0;')
+    expect(sourceMapPanelsRule).toContain('max-height: none;')
   })
 
   it('keeps the landing editor focused on script name while support tools live in the outline', async () => {
@@ -1139,8 +1153,9 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={importedScript} />)
     })
 
-    const importedTab = findCenterTab(container, 'Imported Metadata')
+    const importedTab = findCenterTab(container, 'Source Mapping')
     expect(importedTab).toBeDefined()
+    expect(findCenterTab(container, 'Metadata JSON')).toBeDefined()
     expect(findCenterTab(container, 'Conversion Mapping')).toBeUndefined()
 
     await act(async () => {
@@ -1148,7 +1163,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(findCenterTab(container, 'Imported Metadata')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Source Mapping')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
 
     const debugTab = findOpenDebuggerButton(container)
@@ -1163,9 +1178,11 @@ describe('ScriptEditor', () => {
     const debugCenter = container.querySelector('.debugger-code-center')
     expect(debugCenter).not.toBeNull()
     expect(findCenterTab(debugCenter || container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
-    expect(findCenterTab(debugCenter || container, 'Imported Metadata')).toBeUndefined()
+    expect(findCenterTab(debugCenter || container, 'Source Mapping')).toBeUndefined()
+    expect(findCenterTab(debugCenter || container, 'Metadata JSON')).toBeUndefined()
     expect(findCenterTab(debugCenter || container, 'Conversion Mapping')).toBeUndefined()
-    expect(debugCenter?.textContent).not.toContain('Imported Metadata')
+    expect(debugCenter?.textContent).not.toContain('Source Mapping')
+    expect(debugCenter?.textContent).not.toContain('Metadata JSON')
     expect(debugCenter?.textContent).not.toContain('Conversion Mapping')
     expect(container.querySelector('#imported-metadata-section')).toBeNull()
 
@@ -1176,9 +1193,10 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(findCenterTab(container, 'Imported Metadata')).toBeDefined()
+    expect(findCenterTab(container, 'Source Mapping')).toBeDefined()
+    expect(findCenterTab(container, 'Metadata JSON')).toBeDefined()
     expect(findCenterTab(container, 'Conversion Mapping')).toBeUndefined()
-    expect(findCenterTab(container, 'Imported Metadata')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Source Mapping')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
   })
 
@@ -1434,7 +1452,7 @@ describe('ScriptEditor', () => {
     })
 
     const closeImported = findButtonByText(container, '×')
-    if (closeImported?.getAttribute('aria-label') === 'Close Imported Metadata') {
+    if (closeImported?.getAttribute('aria-label') === 'Close Source Mapping') {
       await act(async () => {
         closeImported.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
@@ -1454,12 +1472,12 @@ describe('ScriptEditor', () => {
     })
     expect(findCenterTab(container, 'Runtime Settings')?.getAttribute('aria-selected')).toBe('true')
 
-    const importedLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Imported Metadata'))
+    const importedLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Source Mapping'))
     expect(importedLauncher).toBeDefined()
     await act(async () => {
       importedLauncher?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(findCenterTab(container, 'Imported Metadata')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Source Mapping')?.getAttribute('aria-selected')).toBe('true')
 
     const parameterLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Parameter Data'))
     expect(parameterLauncher).toBeDefined()
@@ -1471,7 +1489,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('[aria-label="Parameter Data"]')?.textContent).toContain('{{param.session_id}}')
   })
 
-  it('only exposes the Imported Metadata center tab for scripts with actual import metadata', async () => {
+  it('only exposes the Source Mapping and Metadata JSON center tabs for scripts with actual import metadata', async () => {
     const staleImportShellScript: ScriptDefinition = {
       ...initialScript,
       metadata: {
@@ -1483,9 +1501,11 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={staleImportShellScript} />)
     })
 
-    expect(findCenterTab(container, 'Imported Metadata')).toBeUndefined()
+    expect(findCenterTab(container, 'Source Mapping')).toBeUndefined()
+    expect(findCenterTab(container, 'Metadata JSON')).toBeUndefined()
     expect(container.querySelector('#imported-metadata-section')).toBeNull()
-    expect(container.querySelector('.editor-outline-nav')?.textContent).not.toContain('Imported Metadata')
+    expect(container.querySelector('#metadata-json-section')).toBeNull()
+    expect(container.querySelector('.editor-outline-nav')?.textContent).not.toContain('Source Mapping')
   })
 
   it('lets the debug request and response pane close to expand the center workbench', async () => {
@@ -1808,7 +1828,8 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(findCenterTab(container, 'Imported Metadata')).toBeUndefined()
+    expect(findCenterTab(container, 'Source Mapping')).toBeUndefined()
+    expect(findCenterTab(container, 'Metadata JSON')).toBeUndefined()
     expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
   })
 
@@ -2790,7 +2811,7 @@ describe('ScriptEditor', () => {
     })
 
     const pageText = container.textContent || ''
-    expect(pageText).toContain('Imported Metadata')
+    expect(pageText).toContain('Source Mapping')
     expect(pageText).toContain('Runtime Settings Parity')
     expect(container.textContent).toContain('Migration Readiness')
     expect(container.textContent).toContain('72%')
@@ -2824,12 +2845,32 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).not.toContain('Conversion Mapping')
     expect(findCenterTab(container, 'Conversion Mapping')).toBeUndefined()
-    const importedMetadataTab = findCenterTab(container, 'Imported Metadata')
+    const centerTabLabels = Array.from(container.querySelectorAll('.center-tab-button')).map(button => button.textContent?.trim())
+    const sourceMappingTabIndex = centerTabLabels.indexOf('Source Mapping')
+    expect(sourceMappingTabIndex).toBeGreaterThanOrEqual(0)
+    expect(centerTabLabels[sourceMappingTabIndex + 1]).toBe('Metadata JSON')
+    const importedMetadataTab = findCenterTab(container, 'Source Mapping')
     expect(importedMetadataTab).toBeDefined()
     await act(async () => {
       importedMetadataTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Imported Metadata')
+    expect(metadataSection?.querySelector('.source-map-header h4')).toBeNull()
+    expect(metadataSection?.querySelector('.source-map-header p')).toBeNull()
+    expect(metadataSection?.textContent).not.toContain('View preserved metadata JSON')
+    expect(metadataSection?.querySelector('.import-metadata-details')).toBeNull()
+    expect(metadataSection?.querySelector('.metadata-json-pre')).toBeNull()
+    const metadataJsonTab = findCenterTab(container, 'Metadata JSON')
+    expect(metadataJsonTab).toBeDefined()
+    await act(async () => {
+      metadataJsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(findCenterTab(container, 'Metadata JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('#metadata-json-section')?.textContent).toContain('"source_script_name": "checkout.har"')
+    expect(container.querySelector('#metadata-json-section')?.textContent).toContain('"runtime_settings_parity"')
+    await act(async () => {
+      importedMetadataTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Source Mapping')
     expect(metadataSection?.classList.contains('editor-support-dialog')).toBe(false)
     expect(metadataSection?.getAttribute('role')).toBeNull()
     expect(container.querySelector('.support-dialog-import')).toBeNull()
@@ -2846,10 +2887,10 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('Generated source: users')
     expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('Open Mapped Data Source')
 
-    // Correlation suggestions live in the Imported Metadata companion panel. Drive the UI to
+    // Correlation suggestions live in the Source Mapping companion panel. Drive the UI to
     // that panel explicitly so the assertions below do not depend on the active center tab left
     // over from a prior interaction.
-    const correlationMetadataTab = findCenterTab(container, 'Imported Metadata')
+    const correlationMetadataTab = findCenterTab(container, 'Source Mapping')
     expect(correlationMetadataTab).toBeDefined()
     await act(async () => {
       correlationMetadataTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2891,14 +2932,14 @@ describe('ScriptEditor', () => {
     const activeSidebarAction = container.querySelector('.action-item.active') as HTMLDivElement | null
     expect(activeSidebarAction?.textContent).toContain('Complete Checkout')
 
-    const mappingMetadataTab = findCenterTab(container, 'Imported Metadata')
+    const mappingMetadataTab = findCenterTab(container, 'Source Mapping')
     expect(mappingMetadataTab).toBeDefined()
     await act(async () => {
       mappingMetadataTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(findCenterTab(container, 'Imported Metadata')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Imported Metadata')
+    expect(findCenterTab(container, 'Source Mapping')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Mapping')
     expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Source Mapping')
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
     const workspaceGrid = container.querySelector('.actions-content-grid')
@@ -2927,8 +2968,8 @@ describe('ScriptEditor', () => {
       restoredSidebarActions[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(findCenterTab(container, 'Imported Metadata')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Imported Metadata')
+    expect(findCenterTab(container, 'Source Mapping')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Mapping')
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
     const activeMappingRow = container.querySelector('.source-map-table tbody tr.active') as HTMLTableRowElement | null
     expect(activeMappingRow?.dataset.mappingId).toBe('checkout-action')
@@ -2951,9 +2992,9 @@ describe('ScriptEditor', () => {
     expect(activeAction?.textContent).toContain('Complete Checkout')
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
 
-    expect(container.querySelector('.editor-header .editor-actions')?.textContent).not.toContain('Imported Metadata')
+    expect(container.querySelector('.editor-header .editor-actions')?.textContent).not.toContain('Source Mapping')
     const reopenMetadataButton = Array.from(container.querySelector('.editor-outline-nav')?.querySelectorAll('button') || []).find(button =>
-      button.textContent?.trim() === 'Imported Metadata',
+      button.textContent?.trim() === 'Source Mapping',
     )
     expect(reopenMetadataButton).toBeDefined()
     if (!reopenMetadataButton) {

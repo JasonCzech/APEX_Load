@@ -27,6 +27,7 @@ interface Props {
   focusedMappingId?: string
   id?: string
   onToggleWorkspaceMaximized?: () => void
+  showTitle?: boolean
   sourceReview?: SourceReview | null
   script?: ScriptDefinition | null
   title?: string
@@ -146,6 +147,7 @@ export default function SourceMappingReview({
   focusedMappingId = '',
   id,
   onToggleWorkspaceMaximized,
+  showTitle = true,
   sourceReview,
   script,
   title = 'Source Mapping',
@@ -420,55 +422,58 @@ export default function SourceMappingReview({
 
   return (
     <section id={id} className="source-map-review">
-      <div className="source-map-header">
-        <div>
-          <h4>{title}</h4>
-          <p>Validate the conversion line by line — select on either side and the match is highlighted on the other.</p>
-        </div>
-        {onToggleWorkspaceMaximized && (
-          <div className="source-map-header-actions">
-            <button
-              type="button"
-              className="btn btn-sm btn-ghost source-map-workspace-toggle"
-              aria-pressed={workspaceMaximized}
-              title={workspaceMaximized ? 'Restore side panels' : 'Maximize source mapping'}
-              onClick={onToggleWorkspaceMaximized}
-            >
-              {workspaceMaximized ? 'Restore' : 'Maximize'}
-            </button>
+      <div className={`source-map-header ${showTitle ? '' : 'title-hidden'}`}>
+        {showTitle && (
+          <div>
+            <h4>{title}</h4>
+            <p>Validate the conversion line by line — select on either side and the match is highlighted on the other.</p>
           </div>
         )}
-      </div>
-
-      <div className="source-map-coverage" role="group" aria-label="Conversion coverage">
-        {coverageChips.map(chip => {
-          const category = chip.key as MappingCategory
-          const active = categoryFilter === category
-          return (
-            <button
-              key={chip.key}
-              type="button"
-              className={`source-map-status source-map-status-filter ${CATEGORY_CLASS[chip.key]}${active ? ' active' : ''}`}
-              title={chip.tooltip}
-              data-tooltip={chip.tooltip}
-              aria-pressed={active}
-              disabled={chip.value === 0}
-              onClick={() => toggleCategoryFilter(category)}
-            >
-              {chip.label}: {chip.value}
-            </button>
-          )
-        })}
-        {dslDocument && (
-          <span
-            className={`source-map-status ${coverage.dslWithoutOrigin > 0 ? 'unsupported' : 'converted'}`}
-            title={COVERAGE_TOOLTIPS.dslWithoutOrigin}
-            data-tooltip={COVERAGE_TOOLTIPS.dslWithoutOrigin}
-            tabIndex={0}
-          >
-            DSL without source origin: {coverage.dslWithoutOrigin}
-          </span>
-        )}
+        <div className="source-map-header-controls">
+          <div className="source-map-coverage" role="group" aria-label="Conversion coverage">
+            {coverageChips.map(chip => {
+              const category = chip.key as MappingCategory
+              const active = categoryFilter === category
+              return (
+                <button
+                  key={chip.key}
+                  type="button"
+                  className={`source-map-status source-map-status-filter ${CATEGORY_CLASS[chip.key]}${active ? ' active' : ''}`}
+                  title={chip.tooltip}
+                  data-tooltip={chip.tooltip}
+                  aria-pressed={active}
+                  disabled={chip.value === 0}
+                  onClick={() => toggleCategoryFilter(category)}
+                >
+                  {chip.label}: {chip.value}
+                </button>
+              )
+            })}
+            {dslDocument && (
+              <span
+                className={`source-map-status ${coverage.dslWithoutOrigin > 0 ? 'unsupported' : 'converted'}`}
+                title={COVERAGE_TOOLTIPS.dslWithoutOrigin}
+                data-tooltip={COVERAGE_TOOLTIPS.dslWithoutOrigin}
+                tabIndex={0}
+              >
+                DSL without source origin: {coverage.dslWithoutOrigin}
+              </span>
+            )}
+          </div>
+          {onToggleWorkspaceMaximized && (
+            <div className="source-map-header-actions">
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost source-map-workspace-toggle"
+                aria-pressed={workspaceMaximized}
+                title={workspaceMaximized ? 'Restore side panels' : 'Maximize source mapping'}
+                onClick={onToggleWorkspaceMaximized}
+              >
+                {workspaceMaximized ? 'Restore' : 'Maximize'}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="source-map-toolbar">

@@ -824,6 +824,13 @@
   gap: 16px;
   scroll-margin-top: 92px;
 }
+.center-document.imported-metadata-section {
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-primary);
+}
 .import-metadata-body {
   display: flex;
   flex: 1 1 auto;
@@ -831,17 +838,55 @@
   gap: 18px;
   min-height: 0;
 }
+.imported-metadata-section .import-metadata-body {
+  gap: 0;
+}
 .imported-metadata-section .source-map-review {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   min-height: 0;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-primary);
+}
+.imported-metadata-section .source-map-header {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+.imported-metadata-section .source-map-toolbar {
+  padding: 12px 12px 0;
+}
+.imported-metadata-section .source-map-table-wrap {
+  margin: 0 12px;
 }
 .imported-metadata-section .source-map-panels {
-  height: clamp(360px, 48vh, 520px);
-  min-height: 360px;
-  max-height: min(520px, 58vh);
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  padding: 0 12px 12px;
+}
+.metadata-json-section {
+  display: flex;
+  min-height: 0;
+  padding: 16px;
+}
+.metadata-json-pre {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 14px;
+  white-space: pre-wrap;
 }
 .panel-title {
   font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;

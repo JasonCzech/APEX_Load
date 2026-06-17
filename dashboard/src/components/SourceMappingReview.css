@@ -14,13 +14,12 @@
 .source-map-toolbar,
 .source-map-panel-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
 .source-map-header,
-.source-map-coverage,
 .source-map-toolbar,
 .source-map-table-wrap {
   flex: 0 0 auto;
@@ -46,6 +45,28 @@
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.source-map-header.title-hidden {
+  justify-content: stretch;
+}
+
+.source-map-header-controls {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.source-map-header.title-hidden .source-map-header-controls {
+  justify-content: space-between;
+}
+
+.source-map-header-actions {
+  flex: 0 0 auto;
 }
 
 .source-map-workspace-toggle {
@@ -400,14 +421,19 @@
 
 .source-map-coverage {
   display: flex;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
   gap: 8px;
   align-items: center;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .source-map-coverage .source-map-status {
   text-transform: none;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .source-map-status-filter {

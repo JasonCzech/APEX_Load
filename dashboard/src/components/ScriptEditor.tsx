@@ -221,7 +221,7 @@ interface CenterWorkbenchTabDescriptor {
   closeable: boolean
 }
 
-const DEBUG_HIDDEN_CENTER_TABS = new Set<CenterWorkbenchTabId>(['imported-metadata'])
+const DEBUG_HIDDEN_CENTER_TABS = new Set<CenterWorkbenchTabId>(['imported-metadata', 'metadata-json'])
 
 type AuthorRightSidebarKind =
   | 'auto-parameterization'
@@ -2671,7 +2671,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       { id: 'parameter-data', label: 'Parameter Data', title: 'Parameter Data', closeable: true },
     ]
     if (importMetadata) {
-      descriptors.push({ id: 'imported-metadata', label: 'Imported Metadata', title: 'Imported Metadata', closeable: true })
+      descriptors.push(
+        { id: 'imported-metadata', label: 'Source Mapping', title: 'Source Mapping', closeable: true },
+        { id: 'metadata-json', label: 'Metadata JSON', title: 'Metadata JSON', closeable: true },
+      )
     }
     if (objectDescriptorReview.rows.length > 0) {
       descriptors.push({ id: 'object-descriptors', label: 'Object Descriptors', title: 'Object Descriptors', closeable: true })
@@ -2798,8 +2801,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     if (!importMetadata && !sourceReview) return
     setCenterTabsState(prev => {
       const nextTabs = [...prev.tabs]
-      if (importMetadata && !nextTabs.includes('imported-metadata')) nextTabs.push('imported-metadata')
-      if (nextTabs.length === prev.tabs.length) return prev
+      if (importMetadata) {
+        let sourceMappingIndex = nextTabs.indexOf('imported-metadata')
+        if (sourceMappingIndex === -1) {
+          nextTabs.push('imported-metadata')
+          sourceMappingIndex = nextTabs.length - 1
+        }
+        const metadataJsonIndex = nextTabs.indexOf('metadata-json')
+        if (metadataJsonIndex === -1) {
+          nextTabs.splice(sourceMappingIndex + 1, 0, 'metadata-json')
+        } else if (metadataJsonIndex !== sourceMappingIndex + 1) {
+          nextTabs.splice(metadataJsonIndex, 1)
+          sourceMappingIndex = nextTabs.indexOf('imported-metadata')
+          nextTabs.splice(sourceMappingIndex + 1, 0, 'metadata-json')
+        }
+      }
+      if (nextTabs.length === prev.tabs.length && nextTabs.every((tabId, index) => tabId === prev.tabs[index])) return prev
       return { ...prev, tabs: nextTabs }
     })
   }, [importMetadata, sourceReview])
@@ -6161,7 +6178,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         }
         return { kind: 'source-map', title: 'Source Map', railLabel: 'Map' }
       case 'imported-metadata':
-        return { kind: 'imported-metadata', title: 'Imported Metadata', railLabel: 'Import' }
+        return { kind: 'imported-metadata', title: 'Source Mapping', railLabel: 'Map' }
+      case 'metadata-json':
+        return { kind: 'imported-metadata', title: 'Metadata JSON', railLabel: 'JSON' }
       case 'object-descriptors':
         return { kind: 'object-descriptors', title: 'Object Descriptors', railLabel: 'Objects' }
       case 'http-conversion':
@@ -9379,7 +9398,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   <div className="editor-outline-list">
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('config')}>Script Configuration</button>
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('runtime')}>Runtime / RTS</button>
-                    {importMetadata && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('import')}>Imported Metadata</button>}
+                    {importMetadata && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('import')}>Source Mapping</button>}
                     {objectDescriptorReview.rows.length > 0 && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('object-descriptors')}>Object Descriptors</button>}
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
                     {isBrowserScript && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('http-conversion')}>HTTP Conversion Review</button>}
@@ -9550,8 +9569,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               {renderCenterWorkbench('author-code-center', 'Author center workbench', 'author')}
 
               {importMetadata && centerTabPanelElements['imported-metadata'] && createPortal(
-                renderStructuredCenterDocument('Imported Metadata', (
-                  <section id="imported-metadata-section" className="center-document import-metadata-panel config-panel imported-metadata-section open" aria-label="Imported Metadata">
+                renderStructuredCenterDocument('Source Mapping', (
+                  <section id="imported-metadata-section" className="center-document import-metadata-panel config-panel imported-metadata-section open" aria-label="Source Mapping">
                     <div className="import-metadata-body">
                       {sourceReview && (
                         <SourceMappingReview
@@ -9559,6 +9578,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           focusedMappingId={sourceMappingFocus.mappingId}
                           id="imported-source-mapping"
                           onToggleWorkspaceMaximized={toggleSourceMappingWorkspaceMaximized}
+                          showTitle={false}
                           sourceReview={sourceReview}
                           script={script}
                           title="Source Mapping"
@@ -9736,13 +9756,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         </div>
                       )}
 
-                      <details className="import-metadata-details">
-                        <summary>View preserved metadata JSON</summary>
-                        <pre>{JSON.stringify(importMetadata, null, 2)}</pre>
-                      </details>
                     </div>
                   </section>
                 )), centerTabPanelElements['imported-metadata'])}
+
+              {importMetadata && centerTabPanelElements['metadata-json'] && createPortal(
+                renderStructuredCenterDocument('Metadata JSON', (
+                  <section id="metadata-json-section" className="center-document import-metadata-panel config-panel metadata-json-section open" aria-label="Metadata JSON">
+                    <pre className="metadata-json-pre">{JSON.stringify(importMetadata, null, 2)}</pre>
+                  </section>
+                )), centerTabPanelElements['metadata-json'])}
 
               <div className={`editor-utility-sidebar context-${authorRightSidebarContext.kind} ${authorRightSidebarContext.wide ? 'wide' : ''} ${authorRightSidebarCollapsed ? 'collapsed' : ''}`}>
                 {authorRightSidebarCollapsed ? (
