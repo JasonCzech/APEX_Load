@@ -2555,10 +2555,19 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.runtime-settings-nav')).toBeTruthy()
     expect(container.querySelector('.runtime-settings-detail')).toBeTruthy()
 
-    async function clickRuntimeCategory(label: string) {
-      const button = Array.from(container.querySelectorAll('.runtime-settings-nav-button')).find(candidate =>
+    function runtimeNavButton(label: string) {
+      return Array.from(container.querySelectorAll('.runtime-settings-nav-button')).find(candidate =>
         candidate.textContent?.includes(label),
       ) as HTMLButtonElement | undefined
+    }
+
+    expect(runtimeNavButton('Think Time')?.querySelector('svg[data-runtime-section-icon="think"]')).toBeTruthy()
+    expect(runtimeNavButton('Think Time')?.textContent).not.toContain('TT')
+    expect(runtimeNavButton('Run Logic')?.querySelector('svg[data-runtime-section-icon="runlogic"]')).toBeTruthy()
+    expect(runtimeNavButton('Web HTTP/HTML Compatibility')?.querySelector('svg[data-runtime-section-icon="web_runtime"]')).toBeTruthy()
+
+    async function clickRuntimeCategory(label: string) {
+      const button = runtimeNavButton(label)
       expect(button).toBeDefined()
       if (!button) return
       await act(async () => {
@@ -3359,13 +3368,15 @@ describe('ScriptEditor', () => {
     expect(infoSection()?.hasAttribute('hidden')).toBe(false)
     expect(dataSection()?.hasAttribute('hidden')).toBe(true)
 
-    // A non-data-backed parameter (counter) only offers the Settings tab — no data table.
+    // A non-data-backed parameter (counter) has no tab switcher because Settings is the only view.
     const counterItem = Array.from(container.querySelectorAll('.parameter-sidebar-item')).find(item => item.textContent?.includes('visit_no'))
     expect(counterItem).toBeDefined()
     await act(async () => {
       counterItem?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(tabLabels()).toEqual(['Settings'])
+    expect(tabLabels()).toEqual([])
+    expect(container.querySelector('.parameter-detail-tabs')).toBeNull()
+    expect(infoSection()?.hasAttribute('hidden')).toBe(false)
     expect(container.querySelector('.parameter-detail-data')).toBeNull()
   })
 

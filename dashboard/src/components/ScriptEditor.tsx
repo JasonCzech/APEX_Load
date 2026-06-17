@@ -196,6 +196,162 @@ const RUNTIME_SETTINGS_SECTION_IDS = [
   'log',
 ] as const
 type RuntimeSettingsSectionId = typeof RUNTIME_SETTINGS_SECTION_IDS[number]
+function RuntimeSectionIcon({ section }: { section: RuntimeSettingsSectionId }) {
+  const iconProps = {
+    className: 'runtime-section-icon-svg',
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.8,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    focusable: 'false',
+  } as const
+
+  const icon = (() => {
+    switch (section) {
+      case 'think':
+        return (
+          <>
+            <path d="M6 3h12" />
+            <path d="M6 21h12" />
+            <path d="M8 3v4.5a4 4 0 0 0 1.4 3l2.6 2.1 2.6-2.1a4 4 0 0 0 1.4-3V3" />
+            <path d="M8 21v-4.5a4 4 0 0 1 1.4-3l2.6-2.1 2.6 2.1a4 4 0 0 1 1.4 3V21" />
+          </>
+        )
+      case 'pacing':
+        return (
+          <>
+            <path d="M9 3h6" />
+            <circle cx="12" cy="13" r="7" />
+            <path d="M12 13l3-3" />
+            <path d="M12 6v2" />
+          </>
+        )
+      case 'runlogic':
+        return (
+          <>
+            <path d="M6 7h8a4 4 0 0 1 4 4v1" />
+            <path d="m15 4 3 3-3 3" />
+            <path d="M18 17h-8a4 4 0 0 1-4-4v-1" />
+            <path d="m9 20-3-3 3-3" />
+          </>
+        )
+      case 'errors':
+        return (
+          <>
+            <path d="M12 3 2.5 20h19L12 3z" />
+            <path d="M12 9v5" />
+            <path d="M12 17h.01" />
+          </>
+        )
+      case 'jms':
+        return (
+          <>
+            <path d="M5 7h10a3 3 0 0 1 3 3v2a3 3 0 0 1-3 3H9l-4 4v-4a3 3 0 0 1-3-3v-2a3 3 0 0 1 3-3z" />
+            <path d="M8 10h7" />
+            <path d="M8 13h4" />
+          </>
+        )
+      case 'websocket':
+        return (
+          <>
+            <path d="M8 7V5a3 3 0 0 1 3-3h2a3 3 0 0 1 3 3v2" />
+            <path d="M8 17v2a3 3 0 0 0 3 3h2a3 3 0 0 0 3-3v-2" />
+            <path d="M5 10h14" />
+            <path d="M5 14h14" />
+            <path d="m17 10 2 2-2 2" />
+            <path d="m7 10-2 2 2 2" />
+          </>
+        )
+      case 'grpc':
+        return (
+          <>
+            <circle cx="6" cy="12" r="2.5" />
+            <circle cx="18" cy="6" r="2.5" />
+            <circle cx="18" cy="18" r="2.5" />
+            <path d="M8.4 11.1 15.8 7" />
+            <path d="M8.4 12.9 15.8 17" />
+          </>
+        )
+      case 'database':
+        return (
+          <>
+            <ellipse cx="12" cy="5" rx="7" ry="3" />
+            <path d="M5 5v10c0 1.7 3.1 3 7 3s7-1.3 7-3V5" />
+            <path d="M5 10c0 1.7 3.1 3 7 3s7-1.3 7-3" />
+          </>
+        )
+      case 'network':
+        return (
+          <>
+            <circle cx="12" cy="12" r="2.4" />
+            <circle cx="5" cy="6" r="2" />
+            <circle cx="19" cy="6" r="2" />
+            <circle cx="19" cy="18" r="2" />
+            <path d="M7 7.2 10.2 10" />
+            <path d="m13.8 10 3.2-2.8" />
+            <path d="m13.8 14 3.4 2.8" />
+          </>
+        )
+      case 'http':
+        return (
+          <>
+            <circle cx="12" cy="12" r="9" />
+            <path d="M3 12h18" />
+            <path d="M12 3a13 13 0 0 1 0 18" />
+            <path d="M12 3a13 13 0 0 0 0 18" />
+          </>
+        )
+      case 'soap':
+        return (
+          <>
+            <circle cx="9" cy="15" r="4" />
+            <circle cx="15.5" cy="9" r="3.5" />
+            <circle cx="17.5" cy="17.5" r="1.8" />
+            <path d="M6.5 5.5h.01" />
+          </>
+        )
+      case 'java_http':
+        return (
+          <>
+            <path d="M8 8h8v6a4 4 0 0 1-4 4h0a4 4 0 0 1-4-4V8z" />
+            <path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16" />
+            <path d="M9 3c1 1 1 2 0 3" />
+            <path d="M13 3c1 1 1 2 0 3" />
+            <path d="M7 21h10" />
+          </>
+        )
+      case 'web_runtime':
+        return (
+          <>
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M3 9h18" />
+            <path d="M8 13h8" />
+            <path d="M8 17h4" />
+            <path d="M17 12v6" />
+          </>
+        )
+      case 'log':
+        return (
+          <>
+            <path d="M9 4h6l1 2h3v15H5V6h3l1-2z" />
+            <path d="M9 11h6" />
+            <path d="M9 15h6" />
+            <path d="M9 19h4" />
+          </>
+        )
+    }
+  })()
+
+  return (
+    <span className="section-icon runtime-section-icon" aria-hidden="true">
+      <svg {...iconProps} data-runtime-section-icon={section}>
+        {icon}
+      </svg>
+    </span>
+  )
+}
 type ImportedParameterFileMapping = {
   section: {
     file: string
@@ -7900,17 +8056,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               <div className="runtime-settings-grid">
                 <nav className="runtime-settings-nav" aria-label="Runtime setting categories">
                   <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('think') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('think')}>
-                    <span className="section-icon">TT</span>
+                    <RuntimeSectionIcon section="think" />
                     <span className="section-label">Think Time</span>
                     <span className="section-summary">{script.config.think_time?.ignore ? 'Disabled' : `${script.config.think_time?.type || 'fixed'} - ${script.config.think_time?.mean_ms || 0}ms`}</span>
                   </button>
                   <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('pacing') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('pacing')}>
-                    <span className="section-icon">PC</span>
+                    <RuntimeSectionIcon section="pacing" />
                     <span className="section-label">Iteration Pacing</span>
                     <span className="section-summary">{script.config.pacing?.type || 'none'}</span>
                   </button>
                   <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('runlogic') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('runlogic')}>
-                    <span className="section-icon">RL</span>
+                    <RuntimeSectionIcon section="runlogic" />
                     <span className="section-label">Run Logic</span>
                     <span className="section-summary">
                       {script.config.run_logic?.global_iterations
@@ -7921,69 +8077,69 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     </span>
                   </button>
                   <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('errors') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('errors')}>
-                    <span className="section-icon">ER</span>
+                    <RuntimeSectionIcon section="errors" />
                     <span className="section-label">Error Handling</span>
                     <span className="section-summary">{script.config.error_handling?.continue_on_error ? 'Continue on error' : 'Stop on error'}</span>
                   </button>
                   {isJmsScript && (
                     <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('jms') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('jms')}>
-                      <span className="section-icon">JMS</span>
+                      <RuntimeSectionIcon section="jms" />
                       <span className="section-label">Solace JMS</span>
                       <span className="section-summary">{script.config.jms?.mock ? 'Mock broker' : script.config.jms?.broker_url ? 'Broker configured' : 'Not configured'}</span>
                     </button>
                   )}
                   {isWebSocketScript && (
                     <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('websocket') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('websocket')}>
-                      <span className="section-icon">WS</span>
+                      <RuntimeSectionIcon section="websocket" />
                       <span className="section-label">WebSocket Runtime</span>
                       <span className="section-summary">{script.config.websocket?.reconnect ? 'Reconnect enabled' : 'Single connection'}</span>
                     </button>
                   )}
                   {isGrpcScript && (
                     <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('grpc') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('grpc')}>
-                      <span className="section-icon">gRPC</span>
+                      <RuntimeSectionIcon section="grpc" />
                       <span className="section-label">gRPC Runtime</span>
                       <span className="section-summary">{script.config.grpc?.use_reflection ? 'Reflection' : script.config.grpc?.proto_files?.length ? 'Proto files' : 'Contract pending'}</span>
                     </button>
                   )}
                   {isDatabaseScript && (
                     <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('database') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('database')}>
-                      <span className="section-icon">DB</span>
+                      <RuntimeSectionIcon section="database" />
                       <span className="section-label">Database Runtime</span>
                       <span className="section-summary">{script.config.database?.driver || 'sql'}</span>
                     </button>
                   )}
                   {isNetworkScript && (
                     <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('network') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('network')}>
-                      <span className="section-icon">NET</span>
+                      <RuntimeSectionIcon section="network" />
                       <span className="section-label">Network Runtime</span>
                       <span className="section-summary">{script.config.network?.subprotocol || 'tcp'}</span>
                     </button>
                   )}
                   {isHttpTransportScript && (
                     <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('http') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('http')}>
-                      <span className="section-icon">HTTP</span>
+                      <RuntimeSectionIcon section="http" />
                       <span className="section-label">HTTP Transport</span>
                       <span className="section-summary">{httpProxySummary}</span>
                     </button>
                   )}
                   {isSoapScript && (
                     <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('soap') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('soap')}>
-                      <span className="section-icon">SOAP</span>
+                      <RuntimeSectionIcon section="soap" />
                       <span className="section-label">SOAP Settings</span>
                       <span className="section-summary">{script.config.soap?.version || 'soap11'}</span>
                     </button>
                   )}
                   {isJavaHttpScript && (
                     <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('java_http') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('java_http')}>
-                      <span className="section-icon">JH</span>
+                      <RuntimeSectionIcon section="java_http" />
                       <span className="section-label">Java over HTTP</span>
                       <span className="section-summary">{script.config.java_http?.codec || 'java_serialized_object_base64'}</span>
                     </button>
                   )}
                   {isHttpScript && (
                     <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('web_runtime') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('web_runtime')}>
-                      <span className="section-icon">RTS</span>
+                      <RuntimeSectionIcon section="web_runtime" />
                       <span className="section-label">Web HTTP/HTML Compatibility</span>
                       <span className="section-summary">
                         {httpProxySummary !== 'Default'
@@ -7995,7 +8151,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     </button>
                   )}
                   <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('log') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('log')}>
-                    <span className="section-icon">LOG</span>
+                    <RuntimeSectionIcon section="log" />
                     <span className="section-label">Logging</span>
                     <span className="section-summary">{script.config.log?.level || 'standard'}</span>
                   </button>
@@ -8004,7 +8160,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 {/* Think Time */}
                 <div className={`settings-section ${runtimeSectionIsActive('think') ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('think')}>
-                    <span className="section-icon">{'\u23f1'}</span>
+                    <RuntimeSectionIcon section="think" />
                     <span className="section-label">Think Time</span>
                     <span className="section-summary">
                       {script.config.think_time?.ignore ? 'Disabled' : `${script.config.think_time?.type || 'fixed'} — ${script.config.think_time?.mean_ms || 0}ms`}
@@ -8072,7 +8228,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 {/* Pacing */}
                 <div className={`settings-section ${runtimeSectionIsActive('pacing') ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('pacing')}>
-                    <span className="section-icon">{'\ud83d\udd04'}</span>
+                    <RuntimeSectionIcon section="pacing" />
                     <span className="section-label">Iteration Pacing</span>
                     <span className="section-summary">{script.config.pacing?.type || 'none'}</span>
                     <span className="chevron">{runtimeSectionIsActive('pacing') ? '▾' : '▸'}</span>
@@ -8135,7 +8291,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 {/* Run Logic */}
                 <div className={`settings-section ${runtimeSectionIsActive('runlogic') ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('runlogic')}>
-                    <span className="section-icon">{'\ud83d\udd01'}</span>
+                    <RuntimeSectionIcon section="runlogic" />
                     <span className="section-label">Run Logic</span>
                     <span className="section-summary">
                       {script.config.run_logic?.global_iterations
@@ -8206,7 +8362,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 {/* Error Handling */}
                 <div className={`settings-section ${runtimeSectionIsActive('errors') ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('errors')}>
-                    <span className="section-icon">{'\u26a0\ufe0f'}</span>
+                    <RuntimeSectionIcon section="errors" />
                     <span className="section-label">Error Handling</span>
                     <span className="section-summary">
                       {script.config.error_handling?.continue_on_error ? 'Continue on error' : 'Stop on error'}
@@ -8256,7 +8412,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 {isJmsScript && (
                   <div className={`settings-section ${runtimeSectionIsActive('jms') ? 'open' : ''}`}>
                     <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('jms')}>
-                      <span className="section-icon">JMS</span>
+                      <RuntimeSectionIcon section="jms" />
                       <span className="section-label">Solace JMS</span>
                       <span className="section-summary">
                         {script.config.jms?.mock ? 'Mock broker' : script.config.jms?.broker_url ? 'Broker configured' : 'Not configured'}
@@ -8334,7 +8490,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 {isWebSocketScript && (
                   <div className={`settings-section ${runtimeSectionIsActive('websocket') ? 'open' : ''}`}>
                     <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('websocket')}>
-                      <span className="section-icon">WS</span>
+                      <RuntimeSectionIcon section="websocket" />
                       <span className="section-label">WebSocket Runtime</span>
                       <span className="section-summary">{script.config.websocket?.reconnect ? 'Reconnect enabled' : 'Single connection'}</span>
                       <span className="chevron">{runtimeSectionIsActive('websocket') ? '▾' : '▸'}</span>
@@ -8376,7 +8532,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 {isGrpcScript && (
                   <div className={`settings-section ${runtimeSectionIsActive('grpc') ? 'open' : ''}`}>
                     <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('grpc')}>
-                      <span className="section-icon">gRPC</span>
+                      <RuntimeSectionIcon section="grpc" />
                       <span className="section-label">gRPC Runtime</span>
                       <span className="section-summary">{script.config.grpc?.use_reflection ? 'Reflection' : script.config.grpc?.proto_files?.length ? 'Proto files' : 'Contract pending'}</span>
                       <span className="chevron">{runtimeSectionIsActive('grpc') ? '▾' : '▸'}</span>
@@ -8416,7 +8572,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 {isDatabaseScript && (
                   <div className={`settings-section ${runtimeSectionIsActive('database') ? 'open' : ''}`}>
                     <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('database')}>
-                      <span className="section-icon">DB</span>
+                      <RuntimeSectionIcon section="database" />
                       <span className="section-label">Database Runtime</span>
                       <span className="section-summary">{script.config.database?.dsn_secret ? 'Secret-backed DSN' : script.config.database?.dsn ? 'DSN configured' : 'Not configured'}</span>
                       <span className="chevron">{runtimeSectionIsActive('database') ? '▾' : '▸'}</span>
@@ -8455,7 +8611,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 {isNetworkScript && (
                   <div className={`settings-section ${runtimeSectionIsActive('network') ? 'open' : ''}`}>
                     <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('network')}>
-                      <span className="section-icon">NET</span>
+                      <RuntimeSectionIcon section="network" />
                       <span className="section-label">Network Runtime</span>
                       <span className="section-summary">{script.config.network?.subprotocol || 'tcp'} · {script.config.network?.host || script.config.network?.address || 'host pending'}</span>
                       <span className="chevron">{runtimeSectionIsActive('network') ? '▾' : '▸'}</span>
@@ -8492,7 +8648,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 {/* HTTP transport */}
                 {isHttpTransportScript && <div className={`settings-section ${runtimeSectionIsActive('http') ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('http')}>
-                    <span className="section-icon">{'\ud83c\udf10'}</span>
+                    <RuntimeSectionIcon section="http" />
                     <span className="section-label">HTTP Transport</span>
                     <span className="section-summary">
                       {httpProxySummary !== 'Default' ? httpProxySummary : script.config.http?.auth?.type ? `Auth: ${script.config.http.auth.type}` : 'Default'}
@@ -8761,7 +8917,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
                 {isSoapScript && <div className={`settings-section ${runtimeSectionIsActive('soap') ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('soap')}>
-                    <span className="section-icon">SOAP</span>
+                    <RuntimeSectionIcon section="soap" />
                     <span className="section-label">SOAP Settings</span>
                     <span className="section-summary">
                       {script.config.soap?.ws_security?.username_token?.username
@@ -8852,7 +9008,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
                 {isJavaHttpScript && <div className={`settings-section ${runtimeSectionIsActive('java_http') ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('java_http')}>
-                    <span className="section-icon">JAVA</span>
+                    <RuntimeSectionIcon section="java_http" />
                     <span className="section-label">Java HTTP Settings</span>
                     <span className="section-summary">{`${script.config.java_http?.codec || 'java_serialized_object_base64'} · ${script.config.java_http?.helper_mode || 'embedded'}`}</span>
                     <span className="chevron">{runtimeSectionIsActive('java_http') ? '▾' : '▸'}</span>
@@ -8940,7 +9096,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
                 {isHttpScript && <div className={`settings-section ${runtimeSectionIsActive('web_runtime') ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('web_runtime')}>
-                    <span className="section-icon">RTS</span>
+                    <RuntimeSectionIcon section="web_runtime" />
                     <span className="section-label">Web HTTP/HTML Compatibility</span>
                     <span className="section-summary">
                       {httpProxySummary !== 'Default'
@@ -9289,7 +9445,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 {/* Logging */}
                 <div className={`settings-section ${runtimeSectionIsActive('log') ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('log')}>
-                    <span className="section-icon">{'\ud83d\udccb'}</span>
+                    <RuntimeSectionIcon section="log" />
                     <span className="section-label">Logging</span>
                     <span className="section-summary">{script.config.log?.level || 'standard'}</span>
                     <span className="chevron">{runtimeSectionIsActive('log') ? '▾' : '▸'}</span>
@@ -10658,17 +10814,17 @@ function ParameterDataDetail({
 
   return (
     <div className="parameter-detail-panel">
-      <div className="parameter-detail-tabs" role="tablist" aria-label="Parameter detail tabs">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'info'}
-          className={activeTab === 'info' ? 'active' : ''}
-          onClick={() => setDetailTab('info')}
-        >
-          Settings
-        </button>
-        {isDataBacked && (
+      {isDataBacked && (
+        <div className="parameter-detail-tabs" role="tablist" aria-label="Parameter detail tabs">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'info'}
+            className={activeTab === 'info' ? 'active' : ''}
+            onClick={() => setDetailTab('info')}
+          >
+            Settings
+          </button>
           <button
             type="button"
             role="tab"
@@ -10678,8 +10834,8 @@ function ParameterDataDetail({
           >
             Data
           </button>
-        )}
-      </div>
+        </div>
+      )}
       <section className="parameter-detail-info" role="tabpanel" hidden={activeTab !== 'info'}>
         <ParameterInfoPanel
           columnIndexes={selectedColumnIndexes}

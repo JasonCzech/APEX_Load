@@ -5004,6 +5004,22 @@
 .runtime-settings-nav-button .section-icon {
   grid-row: 1 / span 2;
 }
+.runtime-settings-nav-button .runtime-section-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--text-secondary);
+}
+.runtime-settings-nav-button:hover .runtime-section-icon,
+.runtime-settings-nav-button:focus-visible .runtime-section-icon {
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--text-primary);
+}
+.runtime-settings-nav-button.active .runtime-section-icon {
+  background: rgba(99, 102, 241, 0.18);
+  color: var(--accent);
+}
 .runtime-settings-nav-button .section-summary {
   text-align: left;
   font-size: 11px;
@@ -5062,6 +5078,16 @@
 }
 .section-toggle:hover { background: var(--bg-hover); }
 .section-icon { font-size: 16px; width: 22px; text-align: center; flex-shrink: 0; }
+.runtime-section-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.runtime-section-icon-svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
 .section-label { font-weight: 600; flex-shrink: 0; }
 .section-summary {
   flex: 1; text-align: right; color: var(--text-muted); font-size: 12px;
