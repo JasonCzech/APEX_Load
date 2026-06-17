@@ -52,6 +52,8 @@ var runtimeOverrideFieldKeys = map[string]bool{
 	"log_level":         true,
 	"auto_transactions": true,
 	"base_url":          true,
+	"log":               true,
+	"run_logic":         true,
 }
 
 func (s *Server) handleApplyScenarioRuntimeToGroups(w http.ResponseWriter, r *http.Request) {
@@ -205,11 +207,18 @@ func projectRuntimeFields(src *RuntimeSettingsOverride, fields []string) *Runtim
 	if !requested["base_url"] {
 		clone.BaseURL = ""
 	}
+	if !requested["log"] {
+		clone.Log = nil
+	}
+	if !requested["run_logic"] {
+		clone.RunLogic = nil
+	}
 	clone.Env = nil
 	clone.RedactionRules = nil
 	if clone.Iterations == nil && clone.Pacing == nil && clone.ThinkTime == nil &&
 		clone.ErrorHandling == nil && clone.Browser == nil && clone.LogLevel == "" &&
-		clone.AutoTransactions == "" && clone.BaseURL == "" {
+		clone.AutoTransactions == "" && clone.BaseURL == "" &&
+		clone.Log == nil && clone.RunLogic == nil {
 		return nil
 	}
 	return clone
