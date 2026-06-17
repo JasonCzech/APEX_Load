@@ -52,6 +52,11 @@ var runtimeOverrideFieldKeys = map[string]bool{
 	"log_level":         true,
 	"auto_transactions": true,
 	"base_url":          true,
+	"log":               true,
+	"run_logic":         true,
+	"http":              true,
+	"web_runtime":       true,
+	"browser_config":    true,
 }
 
 func (s *Server) handleApplyScenarioRuntimeToGroups(w http.ResponseWriter, r *http.Request) {
@@ -205,11 +210,28 @@ func projectRuntimeFields(src *RuntimeSettingsOverride, fields []string) *Runtim
 	if !requested["base_url"] {
 		clone.BaseURL = ""
 	}
+	if !requested["log"] {
+		clone.Log = nil
+	}
+	if !requested["run_logic"] {
+		clone.RunLogic = nil
+	}
+	if !requested["http"] {
+		clone.HTTP = nil
+	}
+	if !requested["web_runtime"] {
+		clone.WebRuntime = nil
+	}
+	if !requested["browser_config"] {
+		clone.BrowserConfig = nil
+	}
 	clone.Env = nil
 	clone.RedactionRules = nil
 	if clone.Iterations == nil && clone.Pacing == nil && clone.ThinkTime == nil &&
 		clone.ErrorHandling == nil && clone.Browser == nil && clone.LogLevel == "" &&
-		clone.AutoTransactions == "" && clone.BaseURL == "" {
+		clone.AutoTransactions == "" && clone.BaseURL == "" &&
+		clone.Log == nil && clone.RunLogic == nil &&
+		clone.HTTP == nil && clone.WebRuntime == nil && clone.BrowserConfig == nil {
 		return nil
 	}
 	return clone
@@ -223,13 +245,29 @@ func projectRuntimeFields(src *RuntimeSettingsOverride, fields []string) *Runtim
 // predicate to avoid drift.
 func fieldApplicableForProtocol(field, protocol string) bool {
 	switch field {
-	case "browser":
+	case "browser", "browser_config":
 		return protocolFamilyIsBrowser(protocol)
+	case "http":
+		return isHTTPProtocol(protocol)
+	case "web_runtime":
+		return protocolFamilyIsBrowser(protocol) || isHTTPProtocol(protocol)
 	default:
+		// iterations, pacing, think_time, error_handling, log, run_logic, log_level,
+		// auto_transactions, base_url are universal.
 		return true
 	}
 }
 
 func protocolFamilyIsBrowser(protocol string) bool {
 	return strings.EqualFold(strings.TrimSpace(protocol), "browser")
+}
+
+// isHTTPProtocol reports whether a script protocol uses HTTP transport, so the HTTP
+// and web-runtime override sections are applicable.
+func isHTTPProtocol(protocol string) bool {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "http", "https", "soap", "java_http", "web_http", "web":
+		return true
+	}
+	return false
 }

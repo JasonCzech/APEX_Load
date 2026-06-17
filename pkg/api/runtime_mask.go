@@ -24,6 +24,7 @@ package api
 import (
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -58,7 +59,25 @@ func maskRuntimeSettings(o *RuntimeSettingsOverride) *RuntimeSettingsOverride {
 			clone.Env[key] = scrub.Redacted
 		}
 	}
+	maskHTTPSecrets(clone.HTTP)
 	return clone
+}
+
+// maskHTTPSecrets redacts the secret-bearing fields of an HTTP override section
+// (auth password/token, proxy password) in place on a cloned section.
+func maskHTTPSecrets(http *dsl.HTTPConfig) {
+	if http == nil {
+		return
+	}
+	if http.Auth.Password != "" {
+		http.Auth.Password = scrub.Redacted
+	}
+	if http.Auth.Token != "" {
+		http.Auth.Token = scrub.Redacted
+	}
+	if http.Proxy.Password != "" {
+		http.Proxy.Password = scrub.Redacted
+	}
 }
 
 // maskStoredScenario returns a shallow copy of the scenario with root and
@@ -93,6 +112,39 @@ func maskStoredScenarios(scenarios []*StoredScenario) []*StoredScenario {
 	return masked
 }
 
+// maskManagedTest returns a shallow copy of a test with its runtime-override secrets
+// (root and per-group) redacted, so test reads never leak stored secrets. The
+// unexported compiled-script field is not JSON-serialized, so only RuntimeSettings
+// needs masking.
+func maskManagedTest(test *ManagedTest) *ManagedTest {
+	if test == nil {
+		return nil
+	}
+	masked := *test
+	masked.RuntimeSettings = maskRuntimeSettings(test.RuntimeSettings)
+	if len(test.Groups) > 0 {
+		groups := make([]TestGroup, len(test.Groups))
+		copy(groups, test.Groups)
+		for i := range groups {
+			groups[i].RuntimeSettings = maskRuntimeSettings(groups[i].RuntimeSettings)
+		}
+		masked.Groups = groups
+	}
+	return &masked
+}
+
+// maskManagedTests masks each test in a list (used by the test list endpoints).
+func maskManagedTests(tests []*ManagedTest) []*ManagedTest {
+	if tests == nil {
+		return nil
+	}
+	masked := make([]*ManagedTest, len(tests))
+	for i, t := range tests {
+		masked[i] = maskManagedTest(t)
+	}
+	return masked
+}
+
 // reconcileGroupRuntimeSecrets folds an incoming (possibly client-masked) override
 // against the prior stored override for the same group before persist. Per Env key:
 //
@@ -107,29 +159,58 @@ func reconcileGroupRuntimeSecrets(incoming, prior *RuntimeSettingsOverride) *Run
 		return nil
 	}
 	result := cloneRuntimeSettings(incoming)
-	if len(result.Env) == 0 {
-		return result
+	if result.HTTP != nil {
+		var priorHTTP *dsl.HTTPConfig
+		if prior != nil {
+			priorHTTP = prior.HTTP
+		}
+		reconcileHTTPSecrets(result.HTTP, priorHTTP)
 	}
-	var priorEnv map[string]string
-	if prior != nil {
-		priorEnv = prior.Env
-	}
-	for key, value := range result.Env {
-		switch {
-		case value == scrub.Redacted:
-			if priorValue, ok := priorEnv[key]; ok {
-				result.Env[key] = priorValue
-			} else {
+	if len(result.Env) > 0 {
+		var priorEnv map[string]string
+		if prior != nil {
+			priorEnv = prior.Env
+		}
+		for key, value := range result.Env {
+			switch {
+			case value == scrub.Redacted:
+				if priorValue, ok := priorEnv[key]; ok {
+					result.Env[key] = priorValue
+				} else {
+					delete(result.Env, key)
+				}
+			case value == "":
 				delete(result.Env, key)
 			}
-		case value == "":
-			delete(result.Env, key)
+		}
+		if len(result.Env) == 0 {
+			result.Env = nil
 		}
 	}
-	if len(result.Env) == 0 {
-		result.Env = nil
-	}
 	return result
+}
+
+// reconcileHTTPSecrets restores HTTP secret fields the client echoed back as the
+// redaction sentinel from the prior stored section; "" clears, any other value persists.
+func reconcileHTTPSecrets(incoming, prior *dsl.HTTPConfig) {
+	if incoming == nil {
+		return
+	}
+	priorAuthPassword, priorAuthToken, priorProxyPassword := "", "", ""
+	if prior != nil {
+		priorAuthPassword = prior.Auth.Password
+		priorAuthToken = prior.Auth.Token
+		priorProxyPassword = prior.Proxy.Password
+	}
+	if incoming.Auth.Password == scrub.Redacted {
+		incoming.Auth.Password = priorAuthPassword
+	}
+	if incoming.Auth.Token == scrub.Redacted {
+		incoming.Auth.Token = priorAuthToken
+	}
+	if incoming.Proxy.Password == scrub.Redacted {
+		incoming.Proxy.Password = priorProxyPassword
+	}
 }
 
 // existingRootRuntime returns the prior stored scenario-root runtime override.

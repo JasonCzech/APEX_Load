@@ -1,4 +1,4 @@
-import { type BrowserConfig, type PacingConfig, type ReplayPreflight, type ScriptActionDefinition, type ScriptDefinition, type ThinkTimeConfig } from './types/scripts'
+import { type BrowserConfig, type ErrorHandlingConfig, type HTTPConfig, type LogConfig, type PacingConfig, type ReplayPreflight, type RunLogicConfig, type ScriptActionDefinition, type ScriptDefinition, type ThinkTimeConfig, type WebRuntimeConfig } from './types/scripts'
 import type { LibraryImportResultItem, LibraryRemote } from './types/library'
 
 export type { ReplayPreflight, ReplayPreflightCheck } from './types/scripts'
@@ -173,10 +173,12 @@ export interface RuntimeSettingsOverride {
   browser?: RuntimeBrowserSettings
   log_level?: string
   auto_transactions?: string
-  error_handling?: {
-    continue_on_error?: boolean
-    snapshot_on_error?: boolean
-  }
+  error_handling?: ErrorHandlingConfig
+  log?: LogConfig
+  run_logic?: RunLogicConfig
+  http?: HTTPConfig
+  web_runtime?: WebRuntimeConfig
+  browser_config?: BrowserConfig
 }
 
 export interface RuntimeSettingsFinding {
@@ -213,6 +215,17 @@ export interface ScenarioRuntimeSettingsDraft {
   auto_transactions: string
   continue_on_error: boolean
   snapshot_on_error: boolean
+  // Full error_handling retry fields (continue/snapshot above stay for back-compat).
+  max_retries?: number
+  retry_delay_ms?: number
+  retry_backoff?: string
+  // Pass-through preservation of the full advanced sections: round-tripped so an
+  // API-set section is never dropped on a UI edit (dedicated section editors land next).
+  log?: LogConfig
+  run_logic?: RunLogicConfig
+  http?: HTTPConfig
+  web_runtime?: WebRuntimeConfig
+  browser_config?: BrowserConfig
 }
 
 export type ScenarioMode = 'vuser_driven' | 'goal_oriented'

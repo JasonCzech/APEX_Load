@@ -29,6 +29,11 @@ export type RuntimeFieldKey =
   | 'log_level'
   | 'auto_transactions'
   | 'error_handling'
+  | 'log'
+  | 'run_logic'
+  | 'http'
+  | 'web_runtime'
+  | 'browser_config'
 
 function isPresent(value: unknown): boolean {
   return value !== undefined && value !== null && value !== ''
@@ -85,6 +90,9 @@ export function formatErrorHandling(errorHandling?: RuntimeSettingsOverride['err
   if (errorHandling.snapshot_on_error !== undefined) {
     parts.push(errorHandling.snapshot_on_error ? 'Snapshot on error' : 'No snapshot')
   }
+  if (errorHandling.max_retries) {
+    parts.push(`${errorHandling.max_retries} retries`)
+  }
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
@@ -99,11 +107,33 @@ export function formatBrowserSummary(browser?: RuntimeBrowserSettings): string |
  * field is universal. The Scenario Builder uses this to render "Not applicable" rows
  * and to gate apply-to-groups against a destination group's protocol.
  */
-export function isRuntimeFieldApplicable(field: RuntimeFieldKey, protocol?: string): boolean {
-  if (field === 'browser') {
-    return (protocol || '').trim().toLowerCase() === 'browser'
+function isHTTPProtocol(protocol?: string): boolean {
+  switch ((protocol || '').trim().toLowerCase()) {
+    case 'http':
+    case 'https':
+    case 'soap':
+    case 'java_http':
+    case 'web_http':
+    case 'web':
+      return true
+    default:
+      return false
   }
-  return true
+}
+
+export function isRuntimeFieldApplicable(field: RuntimeFieldKey, protocol?: string): boolean {
+  const isBrowser = (protocol || '').trim().toLowerCase() === 'browser'
+  switch (field) {
+    case 'browser':
+    case 'browser_config':
+      return isBrowser
+    case 'http':
+      return isHTTPProtocol(protocol)
+    case 'web_runtime':
+      return isBrowser || isHTTPProtocol(protocol)
+    default:
+      return true
+  }
 }
 
 /** An override draft with no fields set — i.e. "inherit everything". */
@@ -125,7 +155,15 @@ export function isRuntimeDraftEmpty(draft?: ScenarioRuntimeSettingsDraft): boole
     !draft.log_level &&
     !draft.auto_transactions &&
     !draft.continue_on_error &&
-    !draft.snapshot_on_error
+    !draft.snapshot_on_error &&
+    draft.max_retries === undefined &&
+    draft.retry_delay_ms === undefined &&
+    !draft.retry_backoff &&
+    !draft.log &&
+    !draft.run_logic &&
+    !draft.http &&
+    !draft.web_runtime &&
+    !draft.browser_config
   )
 }
 
@@ -144,6 +182,14 @@ export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): Sc
     auto_transactions: override.auto_transactions || '',
     continue_on_error: Boolean(override.error_handling?.continue_on_error),
     snapshot_on_error: Boolean(override.error_handling?.snapshot_on_error),
+    max_retries: override.error_handling?.max_retries,
+    retry_delay_ms: override.error_handling?.retry_delay_ms,
+    retry_backoff: override.error_handling?.retry_backoff,
+    log: override.log,
+    run_logic: override.run_logic,
+    http: override.http,
+    web_runtime: override.web_runtime,
+    browser_config: override.browser_config,
   }
 }
 
@@ -154,13 +200,21 @@ export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): Sc
  */
 export function overrideFromRuntimeDraft(draft?: ScenarioRuntimeSettingsDraft): RuntimeSettingsOverride | undefined {
   if (isRuntimeDraftEmpty(draft) || !draft) return undefined
-  const errorHandling =
-    draft.continue_on_error || draft.snapshot_on_error
-      ? {
-          continue_on_error: draft.continue_on_error || undefined,
-          snapshot_on_error: draft.snapshot_on_error || undefined,
-        }
-      : undefined
+  const hasErrorHandling =
+    draft.continue_on_error ||
+    draft.snapshot_on_error ||
+    draft.max_retries !== undefined ||
+    draft.retry_delay_ms !== undefined ||
+    Boolean(draft.retry_backoff)
+  const errorHandling = hasErrorHandling
+    ? {
+        continue_on_error: draft.continue_on_error || undefined,
+        snapshot_on_error: draft.snapshot_on_error || undefined,
+        max_retries: draft.max_retries,
+        retry_delay_ms: draft.retry_delay_ms,
+        retry_backoff: draft.retry_backoff || undefined,
+      }
+    : undefined
   return {
     iterations: draft.iterations,
     pacing: draft.pacing?.type ? draft.pacing : undefined,
@@ -169,7 +223,61 @@ export function overrideFromRuntimeDraft(draft?: ScenarioRuntimeSettingsDraft): 
     log_level: draft.log_level || undefined,
     auto_transactions: draft.auto_transactions || undefined,
     error_handling: errorHandling,
+    log: draft.log,
+    run_logic: draft.run_logic,
+    http: draft.http,
+    web_runtime: draft.web_runtime,
+    browser_config: draft.browser_config,
   }
+}
+
+export function formatLog(log?: RuntimeSettingsOverride['log']): string | null {
+  if (!log) return null
+  const parts: string[] = []
+  if (log.level) parts.push(log.level)
+  if (log.on_error_only) parts.push('on-error only')
+  if (log.extended_options?.length) parts.push(`${log.extended_options.length} option${log.extended_options.length === 1 ? '' : 's'}`)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+export function formatRunLogic(runLogic?: RuntimeSettingsOverride['run_logic']): string | null {
+  if (!runLogic) return null
+  const parts: string[] = []
+  if (runLogic.workload_model) parts.push(runLogic.workload_model)
+  if (runLogic.iterations) parts.push(`${runLogic.iterations} iters`)
+  if (runLogic.auto_transactions) parts.push(runLogic.auto_transactions.replace(/_/g, ' '))
+  if (runLogic.block_scheduling) parts.push(runLogic.block_scheduling)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+export function formatHTTP(http?: RuntimeSettingsOverride['http']): string | null {
+  if (!http) return null
+  const parts: string[] = []
+  if (http.version) parts.push(`HTTP/${http.version}`)
+  if (http.tls?.min_version) parts.push(`TLS ${http.tls.min_version}`)
+  if (http.proxy_mode && http.proxy_mode !== 'none') parts.push('proxy')
+  if (http.request_timeout_ms) parts.push(`${http.request_timeout_ms}ms timeout`)
+  if (http.default_headers && Object.keys(http.default_headers).length) parts.push(`${Object.keys(http.default_headers).length} headers`)
+  return parts.length > 0 ? parts.join(' · ') : 'configured'
+}
+
+export function formatWebRuntime(webRuntime?: RuntimeSettingsOverride['web_runtime']): string | null {
+  if (!webRuntime) return null
+  const parts: string[] = []
+  if (webRuntime.source_ips?.length) parts.push(`${webRuntime.source_ips.length} source IPs`)
+  if (webRuntime.network_profiles?.length) parts.push(`${webRuntime.network_profiles.length} profiles`)
+  if (webRuntime.content_checks?.length) parts.push(`${webRuntime.content_checks.length} checks`)
+  if (webRuntime.additional_attributes && Object.keys(webRuntime.additional_attributes).length) parts.push('attributes')
+  return parts.length > 0 ? parts.join(' · ') : 'configured'
+}
+
+export function formatBrowserConfig(browser?: RuntimeSettingsOverride['browser_config']): string | null {
+  if (!browser) return null
+  const parts: string[] = []
+  if (browser.device_profile) parts.push(browser.device_profile)
+  if (browser.orientation) parts.push(browser.orientation)
+  if (browser.headless !== undefined) parts.push(browser.headless ? 'Headless' : 'Headed')
+  return parts.length > 0 ? parts.join(' · ') : 'configured'
 }
 
 /**
@@ -192,6 +300,11 @@ export function formatEffectiveRuntimeField(
     log_level: (o) => formatLogLevel(o?.log_level),
     auto_transactions: (o) => formatAutoTransactions(o?.auto_transactions),
     error_handling: (o) => formatErrorHandling(o?.error_handling),
+    log: (o) => formatLog(o?.log),
+    run_logic: (o) => formatRunLogic(o?.run_logic),
+    http: (o) => formatHTTP(o?.http),
+    web_runtime: (o) => formatWebRuntime(o?.web_runtime),
+    browser_config: (o) => formatBrowserConfig(o?.browser_config),
   }
   const format = formatters[field]
   const groupValue = format(group)

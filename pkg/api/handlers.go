@@ -81,7 +81,7 @@ func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
 	if applicationID != "" || releaseID != "" || scenarioID != "" {
 		tests := s.runner.ListTestsByContext(applicationID, releaseID, scenarioID)
 		writeJSON(w, http.StatusOK, map[string]any{
-			"tests": tests,
+			"tests": maskManagedTests(tests),
 			"count": len(tests),
 		})
 		return
@@ -96,14 +96,14 @@ func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
 	if projectID == "" && folderID == nil {
 		tests := s.runner.ListTests()
 		writeJSON(w, http.StatusOK, map[string]any{
-			"tests": tests,
+			"tests": maskManagedTests(tests),
 			"count": len(tests),
 		})
 		return
 	}
 	tests := s.runner.ListTestsFiltered(projectID, folderID)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"tests": tests,
+		"tests": maskManagedTests(tests),
 		"count": len(tests),
 	})
 }
@@ -115,7 +115,7 @@ func (s *Server) handleGetTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, test)
+	writeJSON(w, http.StatusOK, maskManagedTest(test))
 }
 
 func (s *Server) handleGetTestManifest(w http.ResponseWriter, r *http.Request) {

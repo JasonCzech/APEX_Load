@@ -904,16 +904,25 @@ type RuntimeBrowserOverride struct {
 }
 
 type RuntimeSettingsOverride struct {
-	Iterations       *int                     `json:"iterations,omitempty"`
-	Pacing           *dsl.PacingConfig        `json:"pacing,omitempty"`
-	ThinkTime        *dsl.ThinkTimeConfig     `json:"think_time,omitempty"`
-	ErrorHandling    *dsl.ErrorHandlingConfig `json:"error_handling,omitempty"`
-	Browser          *RuntimeBrowserOverride  `json:"browser,omitempty"`
-	LogLevel         string                   `json:"log_level,omitempty"`
-	AutoTransactions string                   `json:"auto_transactions,omitempty"`
-	BaseURL          string                   `json:"base_url,omitempty"`
-	Env              map[string]string        `json:"env,omitempty"`
-	RedactionRules   []engine.RedactionRule   `json:"redaction_rules,omitempty"`
+	Iterations    *int                     `json:"iterations,omitempty"`
+	Pacing        *dsl.PacingConfig        `json:"pacing,omitempty"`
+	ThinkTime     *dsl.ThinkTimeConfig     `json:"think_time,omitempty"`
+	ErrorHandling *dsl.ErrorHandlingConfig `json:"error_handling,omitempty"`
+	Log           *dsl.LogConfig           `json:"log,omitempty"`
+	RunLogic      *dsl.RunLogicConfig      `json:"run_logic,omitempty"`
+	HTTP          *dsl.HTTPConfig          `json:"http,omitempty"`
+	WebRuntime    *dsl.WebRuntimeConfig    `json:"web_runtime,omitempty"`
+	// BrowserConfig is the full browser section (whole-section replace); it wins over
+	// the legacy 4-field Browser partial-merge below when both are present.
+	BrowserConfig *dsl.BrowserConfig      `json:"browser_config,omitempty"`
+	Browser       *RuntimeBrowserOverride `json:"browser,omitempty"`
+	// LogLevel/Iterations/AutoTransactions are legacy single-field aliases for the
+	// Log/RunLogic sections above; the section wins when both are present.
+	LogLevel         string                 `json:"log_level,omitempty"`
+	AutoTransactions string                 `json:"auto_transactions,omitempty"`
+	BaseURL          string                 `json:"base_url,omitempty"`
+	Env              map[string]string      `json:"env,omitempty"`
+	RedactionRules   []engine.RedactionRule `json:"redaction_rules,omitempty"`
 }
 
 type CreateGroupEntry struct {

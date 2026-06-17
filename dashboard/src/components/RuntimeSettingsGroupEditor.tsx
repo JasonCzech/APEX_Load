@@ -37,6 +37,11 @@ const FIELD_LABELS: Record<RuntimeFieldKey, string> = {
   log_level: 'Log level',
   auto_transactions: 'Auto-transactions',
   error_handling: 'Error handling',
+  log: 'Logging',
+  run_logic: 'Run logic',
+  http: 'HTTP transport',
+  web_runtime: 'Web runtime',
+  browser_config: 'Browser config',
 }
 
 const SUMMARY_FIELDS: RuntimeFieldKey[] = [
@@ -47,6 +52,11 @@ const SUMMARY_FIELDS: RuntimeFieldKey[] = [
   'auto_transactions',
   'error_handling',
   'browser',
+  'log',
+  'run_logic',
+  'http',
+  'web_runtime',
+  'browser_config',
 ]
 
 function groupLabel(group: RuntimeEditorGroup, index: number): string {
@@ -110,7 +120,22 @@ export default function RuntimeSettingsGroupEditor({
         patch({ auto_transactions: '' })
         break
       case 'error_handling':
-        patch({ continue_on_error: false, snapshot_on_error: false })
+        patch({ continue_on_error: false, snapshot_on_error: false, max_retries: undefined, retry_delay_ms: undefined, retry_backoff: undefined })
+        break
+      case 'log':
+        patch({ log: undefined })
+        break
+      case 'run_logic':
+        patch({ run_logic: undefined })
+        break
+      case 'http':
+        patch({ http: undefined })
+        break
+      case 'web_runtime':
+        patch({ web_runtime: undefined })
+        break
+      case 'browser_config':
+        patch({ browser_config: undefined })
         break
     }
   }
@@ -133,6 +158,16 @@ export default function RuntimeSettingsGroupEditor({
         return Boolean(o.auto_transactions)
       case 'error_handling':
         return Boolean(o.error_handling)
+      case 'log':
+        return Boolean(o.log)
+      case 'run_logic':
+        return Boolean(o.run_logic)
+      case 'http':
+        return Boolean(o.http)
+      case 'web_runtime':
+        return Boolean(o.web_runtime)
+      case 'browser_config':
+        return Boolean(o.browser_config)
     }
   }
 
@@ -333,6 +368,44 @@ export default function RuntimeSettingsGroupEditor({
         <label className={`scenario-option-card ${draft.snapshot_on_error ? 'selected' : ''}`}>
           <input type="checkbox" checked={draft.snapshot_on_error} onChange={event => patch({ snapshot_on_error: event.target.checked })} />
           <div><strong>Snapshot on error</strong><span>Capture diagnostics when a step fails.</span></div>
+        </label>
+      </div>
+
+      <div className="scenario-browser-grid">
+        <label>
+          <span>Max retries</span>
+          <input
+            className="settings-input"
+            type="number"
+            min={0}
+            value={draft.max_retries ?? ''}
+            onChange={event => patch({ max_retries: event.target.value === '' ? undefined : Number(event.target.value) })}
+            placeholder="Inherit"
+          />
+        </label>
+        <label>
+          <span>Retry delay (ms)</span>
+          <input
+            className="settings-input"
+            type="number"
+            min={0}
+            value={draft.retry_delay_ms ?? ''}
+            onChange={event => patch({ retry_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })}
+            placeholder="Inherit"
+          />
+        </label>
+        <label>
+          <span>Retry backoff</span>
+          <select
+            className="settings-input"
+            value={draft.retry_backoff || ''}
+            onChange={event => patch({ retry_backoff: event.target.value || undefined })}
+          >
+            <option value="">Inherit</option>
+            <option value="constant">Constant</option>
+            <option value="linear">Linear</option>
+            <option value="exponential">Exponential</option>
+          </select>
         </label>
       </div>
 

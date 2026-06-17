@@ -7,7 +7,9 @@ import {
   formatPacing,
   formatThinkTime,
   isRuntimeFieldApplicable,
+  overrideFromRuntimeDraft,
   resolveRuntimeFieldSource,
+  runtimeDraftFromOverride,
 } from './runtimeSettingsModel'
 
 describe('runtimeSettingsModel', () => {
@@ -55,5 +57,27 @@ describe('runtimeSettingsModel', () => {
     // falls back to script default label
     expect(formatEffectiveRuntimeField('think_time', group, scenario)).toEqual({ value: 'Script default', source: 'script' })
     expect(formatEffectiveRuntimeField('iterations', undefined, undefined, 'Duration driven')).toEqual({ value: 'Duration driven', source: 'script' })
+  })
+
+  it('round-trips full error_handling and preserves log/run_logic sections', () => {
+    const override = {
+      error_handling: { continue_on_error: true, max_retries: 3, retry_delay_ms: 250, retry_backoff: 'exponential' },
+      log: { level: 'extended', on_error_only: true, extended_options: ['advanced_trace'] },
+      run_logic: { workload_model: 'open', global_iterations: 10 },
+    }
+    const draft = runtimeDraftFromOverride(override)
+    expect(draft).toBeDefined()
+    expect(draft!.max_retries).toBe(3)
+    expect(draft!.retry_delay_ms).toBe(250)
+    expect(draft!.retry_backoff).toBe('exponential')
+    expect(draft!.log).toEqual(override.log)
+    expect(draft!.run_logic).toEqual(override.run_logic)
+
+    const back = overrideFromRuntimeDraft(draft)
+    expect(back).toBeDefined()
+    expect(back!.error_handling).toEqual({ continue_on_error: true, max_retries: 3, retry_delay_ms: 250, retry_backoff: 'exponential' })
+    // log/run_logic survive a UI round-trip even though there is no editor for them yet.
+    expect(back!.log).toEqual(override.log)
+    expect(back!.run_logic).toEqual(override.run_logic)
   })
 })
