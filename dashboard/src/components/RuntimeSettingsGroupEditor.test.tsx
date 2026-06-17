@@ -98,7 +98,30 @@ describe('RuntimeSettingsGroupEditor', () => {
       Array.from(s.options).some(o => o.value === 'pixel_8'),
     )
     expect(deviceSelect).toBeTruthy()
-    expect((container.textContent || '')).not.toContain('Not applicable')
+    // Browser device is editable for a browser group; the HTTP transport section is
+    // gated off by the applicability matrix.
+    expect(container.textContent || '').toContain('Not applicable for browser protocol')
+  })
+
+  it('shows matrix-gated rows for the advanced sections (http on http, browser_config on browser)', () => {
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[{ http: { version: '2' }, log: { level: 'extended' }, log_level: '', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }, undefined]}
+          onChange={() => {}}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const text = container.textContent || ''
+    // Group 0 is http: http applies (shows the override), browser_config does not.
+    expect(text).toContain('HTTP transport')
+    expect(text).toContain('HTTP/2')
+    expect(text).toContain('Logging')
+    expect(text).toContain('Not applicable for http protocol') // Browser config row
   })
 
   it('clears a group override field via the Clear control', () => {
