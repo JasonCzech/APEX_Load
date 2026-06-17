@@ -10,6 +10,7 @@ import {
   overrideFromRuntimeDraft,
   resolveRuntimeFieldSource,
   runtimeDraftFromOverride,
+  runtimeOverrideFromScriptConfig,
 } from './runtimeSettingsModel'
 
 describe('runtimeSettingsModel', () => {
@@ -54,9 +55,49 @@ describe('runtimeSettingsModel', () => {
     expect(formatEffectiveRuntimeField('pacing', group, scenario)).toEqual({ value: 'Target TPS · 100', source: 'group' })
     // falls back to scenario default
     expect(formatEffectiveRuntimeField('log_level', group, scenario)).toEqual({ value: 'standard', source: 'scenario' })
-    // falls back to script default label
+    // falls back to script default label when no layer carries the field
     expect(formatEffectiveRuntimeField('think_time', group, scenario)).toEqual({ value: 'Script default', source: 'script' })
-    expect(formatEffectiveRuntimeField('iterations', undefined, undefined, 'Duration driven')).toEqual({ value: 'Duration driven', source: 'script' })
+    expect(formatEffectiveRuntimeField('iterations', undefined, undefined, undefined, 'Duration driven')).toEqual({ value: 'Duration driven', source: 'script' })
+  })
+
+  it('resolves the script-config layer to the actual value below group/scenario', () => {
+    const scriptDefault = runtimeOverrideFromScriptConfig({
+      base_url: 'https://example.test',
+      pacing: { type: 'fixed_delay', delay_ms: 500 },
+      think_time: { type: 'fixed', mean_ms: 750 },
+      run_logic: { iterations: 12, auto_transactions: 'per_action' },
+      log: { level: 'extended' },
+    })
+
+    // No group, no scenario → the script's actual config value is shown (not a placeholder).
+    expect(formatEffectiveRuntimeField('pacing', undefined, undefined, scriptDefault)).toEqual({ value: 'Fixed delay · 500ms', source: 'script' })
+    expect(formatEffectiveRuntimeField('think_time', undefined, undefined, scriptDefault)).toEqual({ value: 'fixed · 750ms', source: 'script' })
+    expect(formatEffectiveRuntimeField('iterations', undefined, undefined, scriptDefault)).toEqual({ value: '12', source: 'script' })
+    expect(formatEffectiveRuntimeField('auto_transactions', undefined, undefined, scriptDefault)).toEqual({ value: 'per action', source: 'script' })
+    expect(formatEffectiveRuntimeField('log_level', undefined, undefined, scriptDefault)).toEqual({ value: 'extended', source: 'script' })
+
+    // Group/scenario still win over the script layer.
+    const group = { pacing: { type: 'tps' as const, tps: 40 } }
+    expect(formatEffectiveRuntimeField('pacing', group, undefined, scriptDefault)).toEqual({ value: 'Target TPS · 40', source: 'group' })
+    // A field the script config does not set still falls through to the supplied label.
+    expect(formatEffectiveRuntimeField('web_runtime', undefined, undefined, scriptDefault, '—')).toEqual({ value: '—', source: 'script' })
+  })
+
+  it('projects a script config into the override shape (browser + run_logic mapping)', () => {
+    expect(runtimeOverrideFromScriptConfig(undefined)).toBeUndefined()
+
+    const projected = runtimeOverrideFromScriptConfig({
+      base_url: 'https://example.test',
+      run_logic: { global_iterations: 7 },
+      browser: { headless: true, device_profile: 'pixel_8', orientation: 'portrait', engine: 'chromium' },
+    })
+    // global_iterations is used when iterations is absent.
+    expect(projected!.iterations).toBe(7)
+    // browser device summary picks the 4-field subset; browser_config carries the full config.
+    expect(projected!.browser).toEqual({ headless: true, device_profile: 'pixel_8', touch_mode: undefined, orientation: 'portrait' })
+    expect(projected!.browser_config?.engine).toBe('chromium')
+    // web_runtime has no script-config equivalent.
+    expect(projected!.web_runtime).toBeUndefined()
   })
 
   it('round-trips full error_handling and preserves log/run_logic sections', () => {

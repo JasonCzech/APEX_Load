@@ -2634,11 +2634,15 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
                 </div>
               )}
               <RuntimeSettingsGroupEditor
-                groups={formGroups.map(group => ({
-                  name: group.name,
-                  scriptId: group.script_id,
-                  protocol: findScriptById(scripts, group.script_id)?.protocol,
-                }))}
+                groups={formGroups.map(group => {
+                  const script = findScriptById(scripts, group.script_id)
+                  return {
+                    name: group.name,
+                    scriptId: group.script_id,
+                    protocol: script?.protocol,
+                    scriptConfig: script?.script?.config,
+                  }
+                })}
                 focusedIndex={runtimeGroupIndex}
                 onFocusChange={setRuntimeGroupIndex}
                 scenarioDefault={overrideFromRuntimeDraft(runtimeSettingsFromForm(form, showBrowserRuntimeSettings))}

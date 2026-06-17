@@ -7,6 +7,7 @@
 // applicability rule (see pkg/api fieldApplicableForProtocol).
 
 import { type RuntimeBrowserSettings, type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft } from '../types'
+import { type ScriptConfig } from '../types/scripts'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 
 export { formatBrowserRuntimeSummary }
@@ -281,15 +282,51 @@ export function formatBrowserConfig(browser?: RuntimeSettingsOverride['browser_c
 }
 
 /**
+ * runtimeOverrideFromScriptConfig projects a script's DSL config into the override
+ * shape so the existing formatters can render the script's *actual* values as the
+ * lowest resolution layer (below scenario default and group override). This is what
+ * lets the Effective value column show the real script value (e.g. "Fixed delay ·
+ * 250ms") instead of a generic "Script default" placeholder. Fields with no
+ * script-config equivalent — web_runtime is a runtime-only concept — are left unset
+ * and fall through to the script-default label.
+ */
+export function runtimeOverrideFromScriptConfig(config?: ScriptConfig): RuntimeSettingsOverride | undefined {
+  if (!config) return undefined
+  const browser = config.browser
+  return {
+    iterations: config.run_logic?.iterations ?? config.run_logic?.global_iterations,
+    pacing: config.pacing,
+    think_time: config.think_time,
+    browser: browser
+      ? {
+          headless: browser.headless,
+          device_profile: browser.device_profile,
+          touch_mode: browser.touch_mode,
+          orientation: browser.orientation,
+        }
+      : undefined,
+    log_level: config.log?.level,
+    auto_transactions: config.run_logic?.auto_transactions,
+    error_handling: config.error_handling,
+    log: config.log,
+    run_logic: config.run_logic,
+    http: config.http,
+    browser_config: config.browser,
+  }
+}
+
+/**
  * formatEffectiveRuntimeField renders a single field's effective value with a source
- * label, resolving group → scenario → script. Returns the display value plus the
- * resolved source so callers can badge it. When no override applies, value is the
- * supplied scriptDefaultLabel (or 'Script default').
+ * label, resolving group override → scenario default → script default. Pass `script`
+ * (project a ScriptConfig via runtimeOverrideFromScriptConfig) so the script's actual
+ * value is shown when no override applies. Only when no layer carries a concrete value
+ * does it fall back to scriptDefaultLabel.
  */
 export function formatEffectiveRuntimeField(
   field: RuntimeFieldKey,
   group: RuntimeSettingsOverride | undefined,
   scenario: RuntimeSettingsOverride | undefined,
+  script?: RuntimeSettingsOverride,
   scriptDefaultLabel = 'Script default',
 ): { value: string; source: RuntimeFieldSource } {
   const formatters: Record<RuntimeFieldKey, (o?: RuntimeSettingsOverride) => string | null> = {
@@ -311,5 +348,7 @@ export function formatEffectiveRuntimeField(
   if (groupValue !== null) return { value: groupValue, source: 'group' }
   const scenarioValue = format(scenario)
   if (scenarioValue !== null) return { value: scenarioValue, source: 'scenario' }
+  const scriptValue = format(script)
+  if (scriptValue !== null) return { value: scriptValue, source: 'script' }
   return { value: scriptDefaultLabel, source: 'script' }
 }
