@@ -73,6 +73,46 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(text).toContain('extended')
   })
 
+  it('shows the actual script-config value as the effective value when nothing is overridden', () => {
+    const groups: RuntimeEditorGroup[] = [
+      {
+        name: 'Checkout',
+        scriptId: 's1',
+        protocol: 'http',
+        scriptConfig: {
+          base_url: 'https://example.test',
+          pacing: { type: 'fixed_delay', delay_ms: 500 },
+          think_time: { type: 'fixed', mean_ms: 750 },
+          run_logic: { iterations: 9 },
+        },
+      },
+    ]
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={groups}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[undefined]}
+          onChange={() => {}}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const text = container.textContent || ''
+    // The real script values are surfaced in the Effective value column...
+    expect(text).toContain('Fixed delay · 500ms')
+    expect(text).toContain('fixed · 750ms')
+    expect(text).toContain('9')
+    // ...attributed to the Script default source.
+    const badges = Array.from(container.querySelectorAll('.runtime-source-badge')).map(b => (b.textContent || '').trim())
+    expect(badges).toContain('Script default')
+    // No layer sets it anywhere → '—' placeholder, never the redundant "Script default" text in the value cell.
+    const valueCells = Array.from(container.querySelectorAll('.runtime-override-row td:nth-child(2)')).map(td => (td.textContent || '').trim())
+    expect(valueCells).not.toContain('Script default')
+    expect(valueCells).toContain('—')
+  })
+
   it('renders the browser editor and a Group override for a browser-protocol group', () => {
     const browserOverride: ScenarioRuntimeSettingsDraft = {
       browser: { device_profile: 'pixel_8' },

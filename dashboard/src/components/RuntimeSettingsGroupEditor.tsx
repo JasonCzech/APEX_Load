@@ -1,12 +1,14 @@
 import { useState } from 'react'
 
 import { type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft } from '../types'
+import { type ScriptConfig } from '../types/scripts'
 import {
   EMPTY_RUNTIME_DRAFT,
   formatEffectiveRuntimeField,
   isRuntimeDraftEmpty,
   isRuntimeFieldApplicable,
   overrideFromRuntimeDraft,
+  runtimeOverrideFromScriptConfig,
   RUNTIME_FIELD_SOURCE_LABEL,
   type RuntimeFieldKey,
 } from './runtimeSettingsModel'
@@ -15,6 +17,8 @@ export interface RuntimeEditorGroup {
   name: string
   scriptId: string
   protocol?: string
+  /** The group's script DSL config, used to resolve actual script-default values. */
+  scriptConfig?: ScriptConfig
 }
 
 export interface RuntimeSettingsGroupEditorProps {
@@ -92,6 +96,7 @@ export default function RuntimeSettingsGroupEditor({
   const focusGroup = groups[index]
   const draft = overrides[index] ?? EMPTY_RUNTIME_DRAFT
   const groupOverride = overrideFromRuntimeDraft(overrides[index])
+  const scriptDefault = runtimeOverrideFromScriptConfig(focusGroup.scriptConfig)
   const browserApplicable = isRuntimeFieldApplicable('browser', focusGroup.protocol)
   const httpApplicable = isRuntimeFieldApplicable('http', focusGroup.protocol)
   const webRuntimeApplicable = isRuntimeFieldApplicable('web_runtime', focusGroup.protocol)
@@ -271,7 +276,7 @@ export default function RuntimeSettingsGroupEditor({
                 </tr>
               )
             }
-            const effective = formatEffectiveRuntimeField(field, groupOverride, scenarioDefault)
+            const effective = formatEffectiveRuntimeField(field, groupOverride, scenarioDefault, scriptDefault, '—')
             return (
               <tr key={field} className="runtime-override-row">
                 <td>{FIELD_LABELS[field]}</td>
