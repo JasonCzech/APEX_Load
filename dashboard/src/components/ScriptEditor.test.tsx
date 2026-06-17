@@ -301,6 +301,18 @@ function changeInputValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+function findInputByLabelText(root: ParentNode, labelText: string) {
+  return Array.from(root.querySelectorAll('label')).find(label =>
+    label.textContent?.includes(labelText),
+  )?.querySelector('input') as HTMLInputElement | null | undefined
+}
+
+function findRuntimeCheckboxList(root: ParentNode, labelText: string) {
+  return Array.from(root.querySelectorAll('.runtime-checkbox-list')).find(list =>
+    list.textContent?.includes(labelText),
+  ) as HTMLElement | undefined
+}
+
 function findOpenDebuggerButton(root: ParentNode) {
   return findWorkspaceTab(root, 'Debug')
 }
@@ -1004,22 +1016,20 @@ describe('ScriptEditor', () => {
     expect(commandBar).toBeTruthy()
     expect(Boolean(namePanel!.compareDocumentPosition(commandBar!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
     expect(namePanel?.textContent).toContain('Script Name')
-    expect(namePanel?.textContent).not.toContain('Runtime / RTS')
+    expect(namePanel?.textContent).not.toContain('Runtime Settings')
     expect(namePanel?.textContent).not.toContain('Replay Output')
     expect(container.querySelectorAll('input[placeholder="My_Test_Script"]')).toHaveLength(1)
 
     const outline = container.querySelector('.editor-outline-list')
     expect(outline?.textContent).toContain('Script Configuration')
-    expect(outline?.textContent).toContain('Runtime / RTS')
+    expect(outline?.textContent).toContain('Runtime Settings')
     expect(outline?.textContent).toContain('Parameter Data')
     expect(outline?.textContent).not.toContain('Replay Output')
     expect(outline?.textContent).not.toContain('Debug Session')
 
-    const configDialog = container.querySelector('[aria-label="Script Configuration"]')
     const runtimeDialog = container.querySelector('[aria-label="Runtime Settings"]')
-    expect(configDialog?.className).toContain('center-document-config')
     expect(runtimeDialog?.className).toContain('center-document-runtime')
-    expect(configDialog?.className).not.toContain('open')
+    expect(findCenterTab(container, 'Configuration')).toBeUndefined()
     expect(container.querySelector('[aria-label="Script Debugger"]')).toBeNull()
     expect(runtimeDialog?.className).not.toContain('open')
 
@@ -1031,8 +1041,9 @@ describe('ScriptEditor', () => {
       configLauncher.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const activeCenterTab = Array.from(container.querySelectorAll('.center-tab-button')).find(button => button.textContent?.trim() === 'Configuration')
+    const activeCenterTab = Array.from(container.querySelectorAll('.center-tab-button')).find(button => button.textContent?.trim() === 'Runtime Settings')
     expect(activeCenterTab?.getAttribute('aria-selected')).toBe('true')
+    expect(runtimeDialog?.textContent).toContain('Script Configuration')
   })
 
   it('collapses outline lists and focuses parameter references in script JSON', async () => {
@@ -1420,7 +1431,7 @@ describe('ScriptEditor', () => {
       'control_loop',
     ]))
 
-    const configButton = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Runtime / RTS'))
+    const configButton = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Runtime Settings'))
     expect(configButton).toBeDefined()
     if (!configButton) return
     await act(async () => {
@@ -1431,6 +1442,14 @@ describe('ScriptEditor', () => {
     if (!transportToggle) return
     await act(async () => {
       transportToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const browserEmulationTab = Array.from(container.querySelectorAll('.http-transport-tabs [role="tab"]')).find(button =>
+      button.textContent?.includes('Browser Emulation'),
+    )
+    expect(browserEmulationTab).toBeDefined()
+    if (!browserEmulationTab) return
+    await act(async () => {
+      browserEmulationTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(container.textContent).toContain('Allow reviewed JavaScript')
@@ -1528,9 +1547,11 @@ describe('ScriptEditor', () => {
     await act(async () => {
       configLauncher?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(findCenterTab(container, 'Configuration')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Configuration')).toBeUndefined()
+    expect(findCenterTab(container, 'Runtime Settings')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('[aria-label="Runtime Settings"]')?.textContent).toContain('Script Configuration')
 
-    const runtimeLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Runtime / RTS'))
+    const runtimeLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Runtime Settings'))
     expect(runtimeLauncher).toBeDefined()
     await act(async () => {
       runtimeLauncher?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1898,8 +1919,9 @@ describe('ScriptEditor', () => {
     expect(Array.from(container.querySelectorAll('.center-tab-button')).map(button => button.textContent?.trim())).toEqual([
       'Script JSON',
       'Parameter Data',
-      'Configuration',
+      'Runtime Settings',
     ])
+    expect(findCenterTab(container, 'Configuration')).toBeUndefined()
 
     await act(async () => {
       root.unmount()
@@ -1997,7 +2019,7 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('.script-code-status.invalid')?.textContent).toContain('Invalid JSON')
 
-    const configTab = findCenterTab(container, 'Configuration')
+    const configTab = findCenterTab(container, 'Runtime Settings')
     expect(configTab).toBeDefined()
     await act(async () => {
       configTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2313,7 +2335,7 @@ describe('ScriptEditor', () => {
 
     const baseUrlInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'https://api.example.com')
     expect(baseUrlInput?.getAttribute('value')).toBe('https://api.example.com')
-    const configPanel = container.querySelector('[aria-label="Script Configuration"]')
+    const configPanel = container.querySelector('[aria-label="Runtime Settings"]')
     expect(configPanel?.textContent).toContain('Protocol')
     expect(configPanel?.textContent).toContain('HTTP API')
     expect(configPanel?.querySelector('select[aria-label="Protocol"]')).toBeNull()
@@ -2603,7 +2625,7 @@ describe('ScriptEditor', () => {
   })
 
   expect(container.textContent).toContain('Network Emulation')
-  expect(container.textContent).toContain('Jitter (ms)')
+  expect(container.textContent).toContain('Jitter (s)')
   expect(container.textContent).toContain('Packet Loss (%)')
 
   const contentCheckArea = Array.from(container.querySelectorAll('textarea')).find(area =>
@@ -2670,12 +2692,81 @@ describe('ScriptEditor', () => {
     }
 
     await clickRuntimeCategory('Think Time')
+    const thinkTimeCheckboxList = findRuntimeCheckboxList(container, 'Ignore all think times')
+    expect(thinkTimeCheckboxList).toBeTruthy()
+    expect(thinkTimeCheckboxList?.querySelectorAll('label.checkbox-label')).toHaveLength(1)
+
+    await clickRuntimeCategory('Error Handling')
+    const errorCheckboxList = findRuntimeCheckboxList(container, 'Continue on error')
+    expect(errorCheckboxList).toBeTruthy()
+    expect(errorCheckboxList?.textContent).toContain('Capture snapshot on error')
+    expect(errorCheckboxList?.querySelectorAll('label.checkbox-label')).toHaveLength(2)
+
     await clickRuntimeCategory('Iteration Pacing')
     await clickRuntimeCategory('HTTP Transport')
 
     expect(sectionFor('Think Time')?.classList.contains('open')).toBe(false)
     expect(sectionFor('Iteration Pacing')?.classList.contains('open')).toBe(false)
     expect(sectionFor('HTTP Transport')?.classList.contains('open')).toBe(true)
+    const httpTransportTabs = Array.from(container.querySelectorAll('.http-transport-tabs [role="tab"]')) as HTMLButtonElement[]
+    expect(httpTransportTabs.map(tab => tab.textContent?.trim())).toEqual([
+      'Timeouts',
+      'Connection',
+      'TLS / SSL',
+      'Proxy',
+      'Authentication',
+      'Browser Emulation',
+    ])
+    expect(httpTransportTabs.find(tab => tab.textContent?.includes('Timeouts'))?.getAttribute('aria-selected')).toBe('true')
+    expect(sectionFor('HTTP Transport')?.textContent).toContain('Connect (s)')
+    expect(sectionFor('HTTP Transport')?.textContent).not.toContain('Max Conns/Host')
+
+    const connectTimeoutInput = findInputByLabelText(container, 'Connect (s)')
+    expect(connectTimeoutInput?.value).toBe('30')
+    expect(connectTimeoutInput?.getAttribute('step')).toBe('0.001')
+    if (!connectTimeoutInput) return
+
+    await act(async () => {
+      connectTimeoutInput.focus()
+      changeInputValue(connectTimeoutInput, '60.001')
+    })
+
+    expect(connectTimeoutInput.value).toBe('60.001')
+
+    const scriptJsonTab = findCenterTab(container, 'Script JSON')
+    expect(scriptJsonTab).toBeDefined()
+    if (!scriptJsonTab) return
+    await act(async () => {
+      scriptJsonTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const jsonEditor = container.querySelector('.center-tab-panel.active textarea') as HTMLTextAreaElement | null
+    expect(jsonEditor?.value).toContain('"connect_timeout_ms": 60001')
+
+    await clickRuntimeCategory('HTTP Transport')
+
+    const connectionTab = httpTransportTabs.find(tab => tab.textContent?.includes('Connection'))
+    expect(connectionTab).toBeDefined()
+    if (!connectionTab) return
+    await act(async () => {
+      connectionTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(Array.from(container.querySelectorAll('.http-transport-tabs [role="tab"]')).find(tab => tab.textContent?.includes('Connection'))?.getAttribute('aria-selected')).toBe('true')
+    expect(sectionFor('HTTP Transport')?.textContent).toContain('Max Conns/Host')
+    expect(sectionFor('HTTP Transport')?.textContent).not.toContain('Connect (s)')
+
+    const tlsTab = Array.from(container.querySelectorAll('.http-transport-tabs [role="tab"]')).find(tab =>
+      tab.textContent?.includes('TLS / SSL'),
+    ) as HTMLButtonElement | undefined
+    expect(tlsTab).toBeDefined()
+    if (!tlsTab) return
+    await act(async () => {
+      tlsTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const tlsCheckboxList = findRuntimeCheckboxList(container, 'Skip certificate verification')
+    expect(tlsCheckboxList).toBeTruthy()
+    expect(tlsCheckboxList?.querySelectorAll('label.checkbox-label')).toHaveLength(1)
+
     expect(container.querySelectorAll('.runtime-settings-detail .settings-section.open')).toHaveLength(1)
     expect(container.querySelector('.runtime-settings-header-actions button')?.textContent).toContain('Save Script')
   })
@@ -4223,7 +4314,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} />)
     })
 
-    const configPanel = container.querySelector('[aria-label="Script Configuration"]')
+    const configPanel = container.querySelector('[aria-label="Runtime Settings"]')
     expect(configPanel?.textContent).toContain('Protocol')
     expect(configPanel?.textContent).toContain('HTTP API')
     expect(configPanel?.querySelector('select[aria-label="Protocol"]')).toBeNull()
@@ -4234,7 +4325,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor />)
     })
 
-    const configPanel = container.querySelector('[aria-label="Script Configuration"]')
+    const configPanel = container.querySelector('[aria-label="Runtime Settings"]')
     const protocolSelect = configPanel?.querySelector('select[aria-label="Protocol"]') as HTMLSelectElement | null
     expect(protocolSelect).not.toBeNull()
     expect(protocolSelect?.value).toBe('http')
@@ -4245,7 +4336,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={{ ...initialScript, actions: [], protocol: 'kafka' }} />)
     })
 
-    const configPanel = container.querySelector('[aria-label="Script Configuration"]')
+    const configPanel = container.querySelector('[aria-label="Runtime Settings"]')
     const protocolSelect = configPanel?.querySelector('select[aria-label="Protocol"]') as HTMLSelectElement | null
     expect(protocolSelect).not.toBeNull()
     expect(protocolSelect?.value).toBe('kafka')
@@ -4267,7 +4358,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={importedDraft} />)
     })
 
-    const configPanel = container.querySelector('[aria-label="Script Configuration"]')
+    const configPanel = container.querySelector('[aria-label="Runtime Settings"]')
     expect(configPanel?.textContent).toContain('Protocol')
     expect(configPanel?.textContent).toContain('HTTP API')
     expect(configPanel?.querySelector('select[aria-label="Protocol"]')).toBeNull()
@@ -4461,7 +4552,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const configurationTab = findCenterTab(container, 'Configuration')
+    const configurationTab = findCenterTab(container, 'Runtime Settings')
     expect(configurationTab).toBeDefined()
     await act(async () => {
       configurationTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -4658,6 +4749,7 @@ describe('ScriptEditor', () => {
     expect(activeRuntimeBodyText()).toContain('Parameter substitution')
     expect(activeRuntimeBodyText()).not.toContain('Block Scheduling')
     expect(container.querySelector('.logging-settings-layout')).toBeTruthy()
+    expect(container.querySelector('.logging-checkbox-group.runtime-checkbox-list')).toBeTruthy()
     expect(container.querySelectorAll('.logging-checkbox-group .checkbox-label')).toHaveLength(4)
 
     await clickRuntimeCategory('Web HTTP/HTML Compatibility')
@@ -4676,7 +4768,7 @@ describe('ScriptEditor', () => {
     expect(checksArea?.value).toContain('Access Denied|any_response|true')
     expect(dfeArea?.value).toContain('base64')
     expect(container.textContent).toContain('Network Emulation')
-    expect(container.textContent).toContain('Jitter (ms)')
+    expect(container.textContent).toContain('Jitter (s)')
     expect(container.textContent).toContain('Packet Loss (%)')
     expect(container.textContent).toContain('Data Formatting')
   })
@@ -4741,12 +4833,40 @@ describe('ScriptEditor', () => {
       httpTransportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    const browserEmulationTab = Array.from(container.querySelectorAll('.http-transport-tabs [role="tab"]')).find(tab =>
+      tab.textContent?.includes('Browser Emulation'),
+    ) as HTMLButtonElement | undefined
+    expect(browserEmulationTab).toBeDefined()
+    if (!browserEmulationTab) {
+      return
+    }
+
+    await act(async () => {
+      browserEmulationTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
     expect(container.textContent).toContain('Browser Engine')
     expect(container.textContent).toContain('Device Profile')
     expect(container.textContent).toContain('Force touch mode')
     expect(container.textContent).toContain('Capture client metrics')
     expect(container.textContent).toContain('Viewport Width')
     expect(container.textContent).toContain('Viewport Height')
+
+    const browserToggleList = container.querySelector('.browser-emulation-checkbox-list')
+    expect(browserToggleList).not.toBeNull()
+    const browserToggleRows = Array.from(browserToggleList?.querySelectorAll('label.checkbox-label') || [])
+    expect(browserToggleRows.map(row => row.textContent)).toEqual([
+      'Run headless',
+      'Force touch mode',
+      'Capture client metrics',
+      'Allow reviewed JavaScript',
+      'Allow review-required actions',
+      'Simulate browser cache',
+      'Cache URLs requiring content',
+      'Check for newer cached pages',
+      'Simulate a new user each iteration',
+    ])
+    expect(browserToggleRows.every(row => row.querySelector('input[type="checkbox"]'))).toBe(true)
 
     const deviceProfileSelect = Array.from(container.querySelectorAll('select')).find(select =>
       Array.from(select.options).some(option => option.value === 'iphone_15_pro')
@@ -5327,7 +5447,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={diagnosticScript} />)
     })
 
-    const configurationTab = findCenterTab(container, 'Configuration')
+    const configurationTab = findCenterTab(container, 'Runtime Settings')
     expect(configurationTab).toBeDefined()
     await act(async () => {
       configurationTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -6625,6 +6745,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.textContent).toContain('SOAP scripts reuse the HTTP transport model')
+    expect(container.textContent).toContain('SOAPAction')
     expect(container.textContent).toContain('CreateOrder')
 
     const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
@@ -6649,7 +6770,14 @@ describe('ScriptEditor', () => {
 
     expect(container.textContent).toContain('WS-Security UsernameToken')
     expect(container.textContent).toContain('Fail on SOAP Fault')
-    expect(container.textContent).toContain('SOAPAction')
+    const soapFaultCheckboxList = findRuntimeCheckboxList(container, 'Fail on SOAP Fault')
+    expect(soapFaultCheckboxList).toBeTruthy()
+    expect(soapFaultCheckboxList?.querySelectorAll('label.checkbox-label')).toHaveLength(1)
+
+    const wsSecurityCheckboxList = findRuntimeCheckboxList(container, 'Include nonce')
+    expect(wsSecurityCheckboxList).toBeTruthy()
+    expect(wsSecurityCheckboxList?.textContent).toContain('Include created timestamp')
+    expect(wsSecurityCheckboxList?.querySelectorAll('label.checkbox-label')).toHaveLength(2)
   })
 
   it('renders native protocol editors and runtime settings without HTTP fallback panels', async () => {
@@ -6704,7 +6832,7 @@ describe('ScriptEditor', () => {
       databaseToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('Query Timeout (ms)')
+    expect(container.textContent).toContain('Query Timeout (s)')
     expect(container.textContent).toContain('Read-only guard')
     expect(container.textContent).not.toContain('HTTP Transport')
   })
@@ -7560,7 +7688,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={importedAuthoringScript} />)
     })
 
-    const configurationTab = findCenterTab(container, 'Configuration')
+    const configurationTab = findCenterTab(container, 'Runtime Settings')
     expect(configurationTab).toBeDefined()
     await act(async () => {
       configurationTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -7639,7 +7767,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={importedAuthoringScript} />)
     })
 
-    const configurationTab = findCenterTab(container, 'Configuration')
+    const configurationTab = findCenterTab(container, 'Runtime Settings')
     expect(configurationTab).toBeDefined()
     await act(async () => {
       configurationTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -7713,7 +7841,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const configurationTab = findCenterTab(container, 'Configuration')
+    const configurationTab = findCenterTab(container, 'Runtime Settings')
     expect(configurationTab).toBeDefined()
     await act(async () => {
       configurationTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))

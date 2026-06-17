@@ -24,7 +24,6 @@ export type DebuggerResizeKind = 'rail' | 'vars' | 'bottom'
 
 export type CenterWorkbenchTabId =
   | 'script-json'
-  | 'configuration'
   | 'runtime-settings'
   | 'imported-metadata'
   | 'metadata-json'
@@ -58,7 +57,6 @@ export const SCRIPT_JSON_TAB_ID: CenterWorkbenchTabId = 'script-json'
 export const CENTER_TABS_STORAGE_PREFIX = 'scriptEditorCenterTabs'
 export const CENTER_WORKBENCH_TAB_IDS: readonly CenterWorkbenchTabId[] = [
   'script-json',
-  'configuration',
   'runtime-settings',
   'imported-metadata',
   'metadata-json',
@@ -84,9 +82,14 @@ export function isCenterWorkbenchTabId(value: unknown): value is CenterWorkbench
   return typeof value === 'string' && CENTER_WORKBENCH_TAB_IDS.includes(value as CenterWorkbenchTabId)
 }
 
+function normalizeCenterWorkbenchTabId(value: unknown): CenterWorkbenchTabId | null {
+  if (value === 'configuration') return 'runtime-settings'
+  return isCenterWorkbenchTabId(value) ? value : null
+}
+
 export function defaultCenterTabsState(): CenterTabsState {
   return {
-    tabs: [SCRIPT_JSON_TAB_ID, 'configuration', 'runtime-settings'],
+    tabs: [SCRIPT_JSON_TAB_ID, 'runtime-settings'],
     activeTabId: SCRIPT_JSON_TAB_ID,
   }
 }
@@ -97,12 +100,17 @@ export function readCenterTabsState(storageKey: string): CenterTabsState {
     const raw = window.localStorage.getItem(storageKey)
     if (!raw) return defaultCenterTabsState()
     const parsed = JSON.parse(raw) as Partial<CenterTabsState>
-    const tabs = Array.isArray(parsed.tabs)
-      ? parsed.tabs.filter(isCenterWorkbenchTabId)
+    const storedTabs = Array.isArray(parsed.tabs)
+      ? parsed.tabs
+        .map(normalizeCenterWorkbenchTabId)
+        .filter((tab): tab is CenterWorkbenchTabId => Boolean(tab))
       : []
-    const normalizedTabs = [SCRIPT_JSON_TAB_ID, ...tabs.filter(tab => tab !== SCRIPT_JSON_TAB_ID)]
-    const activeTabId = isCenterWorkbenchTabId(parsed.activeTabId) && normalizedTabs.includes(parsed.activeTabId)
-      ? parsed.activeTabId
+    const normalizedTabs = [SCRIPT_JSON_TAB_ID, ...storedTabs.filter((tab, index, tabs) => (
+      tab !== SCRIPT_JSON_TAB_ID && tabs.indexOf(tab) === index
+    ))]
+    const normalizedActiveTabId = normalizeCenterWorkbenchTabId(parsed.activeTabId)
+    const activeTabId = normalizedActiveTabId && normalizedTabs.includes(normalizedActiveTabId)
+      ? normalizedActiveTabId
       : SCRIPT_JSON_TAB_ID
     return {
       tabs: normalizedTabs,

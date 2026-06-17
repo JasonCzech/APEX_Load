@@ -181,6 +181,7 @@ const SCRIPT_PROTOCOL_OPTIONS = [
   { value: 'kafka', label: 'Kafka' },
 ] as const
 const RUNTIME_SETTINGS_SECTION_IDS = [
+  'script_config',
   'think',
   'pacing',
   'runlogic',
@@ -197,6 +198,89 @@ const RUNTIME_SETTINGS_SECTION_IDS = [
   'log',
 ] as const
 type RuntimeSettingsSectionId = typeof RUNTIME_SETTINGS_SECTION_IDS[number]
+const HTTP_TRANSPORT_TAB_OPTIONS = [
+  { id: 'timeouts', label: 'Timeouts' },
+  { id: 'connection', label: 'Connection' },
+  { id: 'tls', label: 'TLS / SSL' },
+  { id: 'proxy', label: 'Proxy' },
+  { id: 'authentication', label: 'Authentication' },
+  { id: 'browser', label: 'Browser Emulation' },
+] as const
+type HTTPTransportTabId = typeof HTTP_TRANSPORT_TAB_OPTIONS[number]['id']
+const SECONDS_INPUT_STEP = '0.001'
+
+function formatMillisecondsAsSecondsValue(valueMs: number | null | undefined, fallbackMs = 0, emptyWhenUndefined = false): string {
+  if ((valueMs === undefined || valueMs === null) && emptyWhenUndefined) return ''
+  const safeMs = valueMs ?? fallbackMs
+  if (!Number.isFinite(safeMs)) return '0'
+  const roundedSeconds = Math.round((safeMs / 1000) * 1000) / 1000
+  return roundedSeconds.toFixed(3).replace(/\.?0+$/, '')
+}
+
+function formatMillisecondsAsSecondsLabel(valueMs: number | null | undefined, fallbackMs = 0): string {
+  return `${formatMillisecondsAsSecondsValue(valueMs, fallbackMs)}s`
+}
+
+function parseSecondsInputAsMilliseconds(value: string, minSeconds = 0): number | null | undefined {
+  if (value.trim() === '') return undefined
+  const seconds = Number(value)
+  if (!Number.isFinite(seconds)) return null
+  return Math.round(Math.max(minSeconds, seconds) * 1000)
+}
+
+interface SecondsFromMillisecondsInputProps {
+  valueMs?: number | null
+  fallbackMs?: number
+  emptyWhenUndefined?: boolean
+  min?: number
+  placeholder?: string
+  ariaLabel?: string
+  onChangeMs: (valueMs: number | undefined) => void
+}
+
+function SecondsFromMillisecondsInput({
+  valueMs,
+  fallbackMs = 0,
+  emptyWhenUndefined = false,
+  min = 0,
+  placeholder,
+  ariaLabel,
+  onChangeMs,
+}: SecondsFromMillisecondsInputProps) {
+  const formattedValue = formatMillisecondsAsSecondsValue(valueMs, fallbackMs, emptyWhenUndefined)
+  const [draftValue, setDraftValue] = useState(formattedValue)
+  const [focused, setFocused] = useState(false)
+
+  useEffect(() => {
+    if (!focused) setDraftValue(formattedValue)
+  }, [focused, formattedValue])
+
+  return (
+    <input
+      type="number"
+      min={min}
+      step={SECONDS_INPUT_STEP}
+      value={focused ? draftValue : formattedValue}
+      placeholder={placeholder}
+      aria-label={ariaLabel}
+      onFocus={() => {
+        setFocused(true)
+        setDraftValue(formattedValue)
+      }}
+      onBlur={() => {
+        setFocused(false)
+        setDraftValue(formatMillisecondsAsSecondsValue(valueMs, fallbackMs, emptyWhenUndefined))
+      }}
+      onChange={event => {
+        const nextValue = event.target.value
+        setDraftValue(nextValue)
+        const nextMilliseconds = parseSecondsInputAsMilliseconds(nextValue, min)
+        if (nextMilliseconds !== null) onChangeMs(nextMilliseconds)
+      }}
+    />
+  )
+}
+
 function RuntimeSectionIcon({ section }: { section: RuntimeSettingsSectionId }) {
   const iconProps = {
     className: 'runtime-section-icon-svg',
@@ -211,6 +295,15 @@ function RuntimeSectionIcon({ section }: { section: RuntimeSettingsSectionId }) 
 
   const icon = (() => {
     switch (section) {
+      case 'script_config':
+        return (
+          <>
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+            <path d="M8 9h8" />
+            <path d="M8 13h5" />
+            <path d="M8 17h7" />
+          </>
+        )
       case 'think':
         return (
           <>
@@ -390,7 +483,6 @@ type AuthorRightSidebarKind =
   | 'object-descriptors'
   | 'http-conversion'
   | 'browser-replay'
-  | 'configuration'
   | 'runtime-settings'
 
 interface AuthorRightSidebarContext {
@@ -2840,7 +2932,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       : 'Default'
   const thinkTimeLabel = script.config.think_time?.ignore
     ? 'Disabled'
-    : `${script.config.think_time?.type || 'fixed'} / ${script.config.think_time?.mean_ms || 0}ms`
+    : `${script.config.think_time?.type || 'fixed'} / ${formatMillisecondsAsSecondsLabel(script.config.think_time?.mean_ms)}`
   const runLogicLabel = script.config.run_logic?.global_iterations
     ? `${script.config.run_logic.global_iterations} shared iterations`
     : script.config.run_logic?.max_transactions
@@ -2927,8 +3019,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const centerTabDescriptors = useMemo<CenterWorkbenchTabDescriptor[]>(() => {
     const descriptors: CenterWorkbenchTabDescriptor[] = [
       { id: 'script-json', label: 'Script JSON', title: 'Script JSON', closeable: false },
-      { id: 'configuration', label: 'Configuration', title: 'Script Configuration', closeable: true },
-      { id: 'runtime-settings', label: 'Runtime Settings', title: 'Runtime Settings and RTS', closeable: true },
+      { id: 'runtime-settings', label: 'Runtime Settings', title: 'Runtime Settings', closeable: true },
       { id: 'parameter-data', label: 'Parameter Data', title: 'Parameter Data', closeable: true },
     ]
     if (importMetadata) {
@@ -3182,7 +3273,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       setSelectedParameterIdx(parameterIndex)
     }
   }, [openCenterTab, script.data_sources, script.parameters, setOpenDataEditor])
-  const [activeRuntimeSettingsSection, setActiveRuntimeSettingsSection] = useState<RuntimeSettingsSectionId>('think')
+  const [activeRuntimeSettingsSection, setActiveRuntimeSettingsSection] = useState<RuntimeSettingsSectionId>('script_config')
+  const [activeHTTPTransportTab, setActiveHTTPTransportTab] = useState<HTTPTransportTabId>('timeouts')
   const runtimeSettingsSectionIsAvailable = useCallback((sectionId: RuntimeSettingsSectionId): boolean => {
     switch (sectionId) {
       case 'jms':
@@ -6079,7 +6171,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   const openEditorSection = (section: 'config' | 'replay' | 'runtime' | 'import' | 'parameter-data' | 'object-descriptors' | 'http-conversion') => {
     const tabBySection: Record<typeof section, CenterWorkbenchTabId> = {
-      config: 'configuration',
+      config: 'runtime-settings',
       replay: 'script-json',
       runtime: 'runtime-settings',
       import: 'imported-metadata',
@@ -6088,6 +6180,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       'http-conversion': 'http-conversion',
     }
     openCenterTab(tabBySection[section])
+    if (section === 'config') {
+      selectRuntimeSettingsSection('script_config')
+    } else if (section === 'runtime') {
+      selectRuntimeSettingsSection('think')
+    }
     setOpenSections(prev => ({ ...prev, [section]: true }))
   }
 
@@ -6485,9 +6582,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         return { kind: 'http-conversion', title: 'HTTP Conversion', railLabel: 'HTTP' }
       case BROWSER_REPLAY_TAB_ID:
         return { kind: 'browser-replay', title: 'Browser Replay', railLabel: 'Replay' }
-      case 'configuration':
-        return { kind: 'signals', title: 'Authoring Signals', railLabel: 'Signals' }
       case 'runtime-settings':
+        if (activeRuntimeSettingsSection === 'script_config') {
+          return { kind: 'signals', title: 'Authoring Signals', railLabel: 'Signals' }
+        }
         return { kind: 'runtime-settings', title: 'Runtime Settings', railLabel: 'Runtime' }
       default:
         return { kind: 'signals', title: 'Authoring Signals', railLabel: 'Signals' }
@@ -6731,30 +6829,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             </div>
           </>
         )
-      case 'configuration':
-        return (
-          <>
-            <div className="utility-card">
-              <div className="utility-card-header">
-                <strong>Script Configuration</strong>
-                <span>{script.protocol}</span>
-              </div>
-              <ul className="utility-list">
-                <li className="utility-list-item">Base URL: {script.config.base_url || 'Not set'}</li>
-                <li className="utility-list-item">Think time: {thinkTimeLabel}</li>
-                <li className="utility-list-item">Run logic: {runLogicLabel}</li>
-                <li className="utility-list-item">HTTP proxy: {httpProxySummary}</li>
-              </ul>
-            </div>
-            <div className="utility-card debug-readiness-card">
-              <div className="utility-card-header">
-                <strong>Debug Readiness</strong>
-                <span>{replayPreflightStatusLabel(replayPreflight)}</span>
-              </div>
-              <ReplayPreflightCard preflight={replayPreflight} />
-            </div>
-          </>
-        )
       case 'runtime-settings':
         return (
           <>
@@ -6768,6 +6842,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <li className="utility-list-item">Log level: {logLevelLabel}</li>
                 <li className="utility-list-item">Proxy: {httpProxySummary}</li>
               </ul>
+            </div>
+            <div className="utility-card debug-readiness-card">
+              <div className="utility-card-header">
+                <strong>Debug Readiness</strong>
+                <span>{replayPreflightStatusLabel(replayPreflight)}</span>
+              </div>
+              <ReplayPreflightCard preflight={replayPreflight} />
             </div>
             {importSummary.runtimeSettingsParity.length > 0 && (
               <div className="utility-card">
@@ -6947,147 +7028,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       )}
 
       <div className={`editor-body workspace-${workspaceTab}`}>
-          {/* Script Config Panel */}
-          {centerTabPanelElements.configuration && createPortal(
-            renderStructuredCenterDocument('Script Configuration', (
-              <section className="center-document config-panel center-document-config" aria-label="Script Configuration">
-                <div className="center-document-header">
-                  <div>
-                    <h3 className="panel-title">Script Configuration</h3>
-                    <p>Connection defaults for this script draft.</p>
-                  </div>
-                </div>
-              <div className="panel-body">
-                <div className="form-grid">
-                  <label>
-                    <span>Protocol</span>
-                    {canEditProtocol ? (
-                      <select value={script.protocol} onChange={e => updateProtocol(e.target.value)} aria-label="Protocol">
-                        {SCRIPT_PROTOCOL_OPTIONS.map(option => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <div className="form-readonly-value" aria-label="Protocol">
-                        <strong>{formatScriptProtocolLabel(script.protocol)}</strong>
-                        <small>{script.protocol}</small>
-                      </div>
-                    )}
-                  </label>
-                  <label>
-                    <span>Version</span>
-                    <input value={script.version} onChange={e => updateField('version', e.target.value)} placeholder="1.0.0" />
-                  </label>
-                  {!isJmsScript && !isDatabaseScript && !isNetworkScript && (
-                    <label>
-                      <span>{isGrpcScript ? 'gRPC Target' : isWebSocketScript ? 'WebSocket Origin' : 'Base URL'}</span>
-                      <input value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder={isGrpcScript ? 'dns:///api.example.com:443' : isWebSocketScript ? 'wss://api.example.com' : 'https://api.example.com'} />
-                    </label>
-                  )}
-                  {isDatabaseScript && (
-                    <>
-                      <label>
-                        <span>Driver</span>
-                        <select value={script.config.database?.driver || 'sqlite'} onChange={e => updateField('config.database.driver', e.target.value)}>
-                          <option value="sqlite">SQLite</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>DSN Secret</span>
-                        <input value={script.config.database?.dsn_secret || ''} onChange={e => updateField('config.database.dsn_secret', e.target.value)} placeholder="secret://perf/db-dsn" />
-                      </label>
-                      <label className="full-width">
-                        <span>DSN / Fixture</span>
-                        <input value={script.config.database?.dsn || ''} onChange={e => updateField('config.database.dsn', e.target.value)} placeholder=":memory: or file:test.db?mode=rw" />
-                      </label>
-                    </>
-                  )}
-                  {isNetworkScript && (
-                    <>
-                      <label>
-                        <span>Subprotocol</span>
-                        <select value={script.config.network?.subprotocol || 'tcp'} onChange={e => updateField('config.network.subprotocol', e.target.value)}>
-                          <option value="dns">DNS</option>
-                          <option value="tcp">TCP / Winsock</option>
-                          <option value="udp">UDP / Winsock</option>
-                          <option value="ftp">FTP</option>
-                          <option value="smtp">SMTP</option>
-                          <option value="pop3">POP3</option>
-                          <option value="imap">IMAP</option>
-                          <option value="ldap">LDAP</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>Host</span>
-                        <input value={script.config.network?.host || ''} onChange={e => updateField('config.network.host', e.target.value)} placeholder="localhost" />
-                      </label>
-                      <label>
-                        <span>Port</span>
-                        <input type="number" value={script.config.network?.port || 0} onChange={e => updateField('config.network.port', Number(e.target.value) || undefined)} placeholder="443" />
-                      </label>
-                    </>
-                  )}
-                  {isJmsScript && (
-                    <>
-                      <label>
-                        <span>Broker URL</span>
-                        <input value={script.config.jms?.broker_url || ''} onChange={e => updateField('config.jms.broker_url', e.target.value)} placeholder="tcps://broker.example.com:55443" />
-                      </label>
-                      <label>
-                        <span>Message VPN</span>
-                        <input value={script.config.jms?.message_vpn || ''} onChange={e => updateField('config.jms.message_vpn', e.target.value)} placeholder="default" />
-                      </label>
-                      <label>
-                        <span>Default Destination</span>
-                        <input value={script.config.jms?.destination || ''} onChange={e => updateField('config.jms.destination', e.target.value)} placeholder="orders.in" />
-                      </label>
-                    </>
-                  )}
-                </div>
-                {isJmsScript && (
-                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
-                    JMS Solace scripts use publish, consume, and request/reply actions with message body, headers, properties, correlation IDs, and reply destinations in the action editor below.
-                  </div>
-                )}
-                {isBrowserScript && (
-                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
-                    Browser scripts can use navigate, click, fill, select, wait, tap, long-press, swipe, and screenshot actions with device presets, touch controls, and client metrics in the action editor below.
-                  </div>
-                )}
-                {isSoapScript && (
-                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
-                    SOAP scripts reuse the HTTP transport model and add SOAP envelope, namespace, WS-Security, SOAPAction, and fault-handling settings below.
-                  </div>
-                )}
-                {isJavaHttpScript && (
-                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
-                    Java-over-HTTP scripts reuse the HTTP transport client, support embedded or sidecar helper modes, and currently ship with the `java_serialized_object_base64` codec where request bodies are base64-encoded serialized bytes.
-                  </div>
-                )}
-                {isWebSocketScript && (
-                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
-                    WebSocket scripts model connection lifecycle, message send/receive steps, handshake headers, subprotocol/origin settings, and transcript evidence for replay.
-                  </div>
-                )}
-                {isGrpcScript && (
-                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
-                    gRPC scripts model service/method calls, reflection or proto setup, metadata/TLS/authority, stream controls, and gRPC status evidence.
-                  </div>
-                )}
-                {isDatabaseScript && (
-                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
-                    Database scripts model secret-backed DSNs, query/exec/transaction actions, bind parameters, row/scalar assertions, extractors, and read-only replay guards.
-                  </div>
-                )}
-                {isNetworkScript && (
-                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
-                    Network scripts model DNS, TCP, UDP, Winsock-style sockets, FTP, SMTP, POP3, IMAP, and LDAP actions with transcript and record evidence.
-                  </div>
-                )}
-              </div>
-            </section>
-            )), centerTabPanelElements.configuration)}
-
           {workspaceTab === 'debug' && (
           <div
             className={`config-panel replay-panel script-ide-debugger debugger-dialog open ${replayReport ? 'has-report' : ''} ${debuggerMaximized ? 'maximized' : ''}`}
@@ -7139,7 +7079,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   <strong>Session Overrides</strong>
                   <button type="button" className="btn btn-sm btn-ghost" onClick={() => setDebuggerSettingsOpen(false)}>Done</button>
                 </div>
-                <p className="replay-panel-subtitle">Temporary settings for this debugger session. They do not change saved Runtime / RTS settings.</p>
+                <p className="replay-panel-subtitle">Temporary settings for this debugger session. They do not change saved Runtime Settings.</p>
                 <div className="replay-options-grid">
                   <label>
                     <span>Debugger Group</span>
@@ -7454,7 +7394,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               <strong>{event.action_name || 'Unnamed action'}</strong>
                               <span className="replay-event-target">{event.method || event.action_type} {event.target}</span>
                               <span className={event.success ? 'text-success' : 'text-danger'}>{event.success ? `HTTP ${event.status_code || 'OK'}` : event.error_message || 'Failed'}</span>
-                              <span>{event.duration_ms.toFixed(1)} ms</span>
+                              <span>{formatMillisecondsAsSecondsLabel(event.duration_ms)}</span>
                             </div>
                             <div className="replay-event-body">
                                 <div className="replay-event-detail-grid">
@@ -8195,7 +8135,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               <section className="center-document runtime-settings config-panel center-document-runtime" style={{ padding: 0 }} aria-label="Runtime Settings">
                 <div className="center-document-header">
                   <div>
-                    <h3 className="panel-title">Runtime Settings & RTS</h3>
+                    <h3 className="panel-title">Runtime Settings</h3>
                     <p>Execution, pacing, browser, protocol, and source runtime compatibility controls.</p>
                   </div>
                   <div className="runtime-settings-header-actions">
@@ -8204,12 +8144,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     </button>
                   </div>
                 </div>
-              <div className="runtime-settings-grid">
+                <div className="runtime-settings-grid">
                 <nav className="runtime-settings-nav" aria-label="Runtime setting categories">
+                  <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('script_config') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('script_config')}>
+                    <RuntimeSectionIcon section="script_config" />
+                    <span className="section-label">Script Configuration</span>
+                    <span className="section-summary">{formatScriptProtocolLabel(script.protocol)}</span>
+                  </button>
                   <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('think') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('think')}>
                     <RuntimeSectionIcon section="think" />
                     <span className="section-label">Think Time</span>
-                    <span className="section-summary">{script.config.think_time?.ignore ? 'Disabled' : `${script.config.think_time?.type || 'fixed'} - ${script.config.think_time?.mean_ms || 0}ms`}</span>
+                    <span className="section-summary">{script.config.think_time?.ignore ? 'Disabled' : `${script.config.think_time?.type || 'fixed'} - ${formatMillisecondsAsSecondsLabel(script.config.think_time?.mean_ms)}`}</span>
                   </button>
                   <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('pacing') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('pacing')}>
                     <RuntimeSectionIcon section="pacing" />
@@ -8308,13 +8253,152 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </button>
                 </nav>
                 <div className="runtime-settings-detail" aria-live="polite">
+                {/* Script Configuration */}
+                <div className={`settings-section ${runtimeSectionIsActive('script_config') ? 'open' : ''}`}>
+                  <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('script_config')}>
+                    <RuntimeSectionIcon section="script_config" />
+                    <span className="section-label">Script Configuration</span>
+                    <span className="section-summary">{formatScriptProtocolLabel(script.protocol)}</span>
+                    <span className="chevron">{runtimeSectionIsActive('script_config') ? '▾' : '▸'}</span>
+                  </button>
+                  {runtimeSectionIsActive('script_config') && (
+                    <div className="section-body">
+                      <div className="form-grid">
+                        <label>
+                          <span>Protocol</span>
+                          {canEditProtocol ? (
+                            <select value={script.protocol} onChange={e => updateProtocol(e.target.value)} aria-label="Protocol">
+                              {SCRIPT_PROTOCOL_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <div className="form-readonly-value" aria-label="Protocol">
+                              <strong>{formatScriptProtocolLabel(script.protocol)}</strong>
+                              <small>{script.protocol}</small>
+                            </div>
+                          )}
+                        </label>
+                        <label>
+                          <span>Version</span>
+                          <input value={script.version} onChange={e => updateField('version', e.target.value)} placeholder="1.0.0" />
+                        </label>
+                        {!isJmsScript && !isDatabaseScript && !isNetworkScript && (
+                          <label>
+                            <span>{isGrpcScript ? 'gRPC Target' : isWebSocketScript ? 'WebSocket Origin' : 'Base URL'}</span>
+                            <input value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder={isGrpcScript ? 'dns:///api.example.com:443' : isWebSocketScript ? 'wss://api.example.com' : 'https://api.example.com'} />
+                          </label>
+                        )}
+                        {isDatabaseScript && (
+                          <>
+                            <label>
+                              <span>Driver</span>
+                              <select value={script.config.database?.driver || 'sqlite'} onChange={e => updateField('config.database.driver', e.target.value)}>
+                                <option value="sqlite">SQLite</option>
+                              </select>
+                            </label>
+                            <label>
+                              <span>DSN Secret</span>
+                              <input value={script.config.database?.dsn_secret || ''} onChange={e => updateField('config.database.dsn_secret', e.target.value)} placeholder="secret://perf/db-dsn" />
+                            </label>
+                            <label className="full-width">
+                              <span>DSN / Fixture</span>
+                              <input value={script.config.database?.dsn || ''} onChange={e => updateField('config.database.dsn', e.target.value)} placeholder=":memory: or file:test.db?mode=rw" />
+                            </label>
+                          </>
+                        )}
+                        {isNetworkScript && (
+                          <>
+                            <label>
+                              <span>Subprotocol</span>
+                              <select value={script.config.network?.subprotocol || 'tcp'} onChange={e => updateField('config.network.subprotocol', e.target.value)}>
+                                <option value="dns">DNS</option>
+                                <option value="tcp">TCP / Winsock</option>
+                                <option value="udp">UDP / Winsock</option>
+                                <option value="ftp">FTP</option>
+                                <option value="smtp">SMTP</option>
+                                <option value="pop3">POP3</option>
+                                <option value="imap">IMAP</option>
+                                <option value="ldap">LDAP</option>
+                              </select>
+                            </label>
+                            <label>
+                              <span>Host</span>
+                              <input value={script.config.network?.host || ''} onChange={e => updateField('config.network.host', e.target.value)} placeholder="localhost" />
+                            </label>
+                            <label>
+                              <span>Port</span>
+                              <input type="number" value={script.config.network?.port || 0} onChange={e => updateField('config.network.port', Number(e.target.value) || undefined)} placeholder="443" />
+                            </label>
+                          </>
+                        )}
+                        {isJmsScript && (
+                          <>
+                            <label>
+                              <span>Broker URL</span>
+                              <input value={script.config.jms?.broker_url || ''} onChange={e => updateField('config.jms.broker_url', e.target.value)} placeholder="tcps://broker.example.com:55443" />
+                            </label>
+                            <label>
+                              <span>Message VPN</span>
+                              <input value={script.config.jms?.message_vpn || ''} onChange={e => updateField('config.jms.message_vpn', e.target.value)} placeholder="default" />
+                            </label>
+                            <label>
+                              <span>Default Destination</span>
+                              <input value={script.config.jms?.destination || ''} onChange={e => updateField('config.jms.destination', e.target.value)} placeholder="orders.in" />
+                            </label>
+                          </>
+                        )}
+                      </div>
+                      {isJmsScript && (
+                        <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                          JMS Solace scripts use publish, consume, and request/reply actions with message body, headers, properties, correlation IDs, and reply destinations in the action editor below.
+                        </div>
+                      )}
+                      {isBrowserScript && (
+                        <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                          Browser scripts can use navigate, click, fill, select, wait, tap, long-press, swipe, and screenshot actions with device presets, touch controls, and client metrics in the action editor below.
+                        </div>
+                      )}
+                      {isSoapScript && (
+                        <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                          SOAP scripts reuse the HTTP transport model and add SOAP envelope, namespace, WS-Security, SOAPAction, and fault-handling settings below.
+                        </div>
+                      )}
+                      {isJavaHttpScript && (
+                        <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                          Java-over-HTTP scripts reuse the HTTP transport client, support embedded or sidecar helper modes, and currently ship with the `java_serialized_object_base64` codec where request bodies are base64-encoded serialized bytes.
+                        </div>
+                      )}
+                      {isWebSocketScript && (
+                        <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                          WebSocket scripts model connection lifecycle, message send/receive steps, handshake headers, subprotocol/origin settings, and transcript evidence for replay.
+                        </div>
+                      )}
+                      {isGrpcScript && (
+                        <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                          gRPC scripts model service/method calls, reflection or proto setup, metadata/TLS/authority, stream controls, and gRPC status evidence.
+                        </div>
+                      )}
+                      {isDatabaseScript && (
+                        <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                          Database scripts model secret-backed DSNs, query/exec/transaction actions, bind parameters, row/scalar assertions, extractors, and read-only replay guards.
+                        </div>
+                      )}
+                      {isNetworkScript && (
+                        <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                          Network scripts model DNS, TCP, UDP, Winsock-style sockets, FTP, SMTP, POP3, IMAP, and LDAP actions with transcript and record evidence.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
                 {/* Think Time */}
                 <div className={`settings-section ${runtimeSectionIsActive('think') ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('think')}>
                     <RuntimeSectionIcon section="think" />
                     <span className="section-label">Think Time</span>
                     <span className="section-summary">
-                      {script.config.think_time?.ignore ? 'Disabled' : `${script.config.think_time?.type || 'fixed'} — ${script.config.think_time?.mean_ms || 0}ms`}
+                      {script.config.think_time?.ignore ? 'Disabled' : `${script.config.think_time?.type || 'fixed'} — ${formatMillisecondsAsSecondsLabel(script.config.think_time?.mean_ms)}`}
                     </span>
                     <span className="chevron">{runtimeSectionIsActive('think') ? '▾' : '▸'}</span>
                   </button>
@@ -8331,28 +8415,28 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           </select>
                         </label>
                         <label>
-                          <span>Mean (ms)</span>
-                          <input type="number" value={script.config.think_time?.mean_ms || 0}
-                            onChange={e => updateField('config.think_time', { ...script.config.think_time, mean_ms: Number(e.target.value) })} />
+                          <span>Mean (s)</span>
+                          <SecondsFromMillisecondsInput valueMs={script.config.think_time?.mean_ms}
+                            onChangeMs={value => updateField('config.think_time', { ...script.config.think_time, mean_ms: value ?? 0 })} />
                         </label>
                         {script.config.think_time?.type === 'gaussian' && (
                           <label>
-                            <span>Std Dev (ms)</span>
-                            <input type="number" value={script.config.think_time?.std_ms || 0}
-                              onChange={e => updateField('config.think_time', { ...script.config.think_time, std_ms: Number(e.target.value) })} />
+                            <span>Std Dev (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.think_time?.std_ms}
+                              onChangeMs={value => updateField('config.think_time', { ...script.config.think_time, std_ms: value ?? 0 })} />
                           </label>
                         )}
                         {(script.config.think_time?.type === 'uniform' || script.config.think_time?.type === 'gaussian') && (
                           <>
                             <label>
-                              <span>Min (ms)</span>
-                              <input type="number" value={script.config.think_time?.min_ms || 0}
-                                onChange={e => updateField('config.think_time', { ...script.config.think_time, min_ms: Number(e.target.value) })} />
+                              <span>Min (s)</span>
+                              <SecondsFromMillisecondsInput valueMs={script.config.think_time?.min_ms}
+                                onChangeMs={value => updateField('config.think_time', { ...script.config.think_time, min_ms: value ?? 0 })} />
                             </label>
                             <label>
-                              <span>Max (ms)</span>
-                              <input type="number" value={script.config.think_time?.max_ms || 0}
-                                onChange={e => updateField('config.think_time', { ...script.config.think_time, max_ms: Number(e.target.value) })} />
+                              <span>Max (s)</span>
+                              <SecondsFromMillisecondsInput valueMs={script.config.think_time?.max_ms}
+                                onChangeMs={value => updateField('config.think_time', { ...script.config.think_time, max_ms: value ?? 0 })} />
                             </label>
                           </>
                         )}
@@ -8362,15 +8446,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             onChange={e => updateField('config.think_time', { ...script.config.think_time, multiplier: Number(e.target.value) })} />
                         </label>
                         <label>
-                          <span>Limit (ms)</span>
-                          <input type="number" value={script.config.think_time?.limit_ms || 0} placeholder="0 = no limit"
-                            onChange={e => updateField('config.think_time', { ...script.config.think_time, limit_ms: Number(e.target.value) })} />
+                          <span>Limit (s)</span>
+                          <SecondsFromMillisecondsInput valueMs={script.config.think_time?.limit_ms} placeholder="0 = no limit"
+                            onChangeMs={value => updateField('config.think_time', { ...script.config.think_time, limit_ms: value ?? 0 })} />
                         </label>
-                        <label className="checkbox-label">
-                          <input type="checkbox" checked={script.config.think_time?.ignore || false}
-                            onChange={e => updateField('config.think_time', { ...script.config.think_time, ignore: e.target.checked })} />
-                          <span>Ignore all think times</span>
-                        </label>
+                        <div className="runtime-checkbox-list">
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.think_time?.ignore || false}
+                              onChange={e => updateField('config.think_time', { ...script.config.think_time, ignore: e.target.checked })} />
+                            <span>Ignore all think times</span>
+                          </label>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -8399,38 +8485,38 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           </select>
                         </label>
                         {script.config.pacing?.type === 'fixed_delay' && (
-                          <label><span>Delay (ms)</span>
-                            <input type="number" value={script.config.pacing?.delay_ms || 0}
-                              onChange={e => updateField('config.pacing', { ...script.config.pacing, delay_ms: Number(e.target.value) })} />
+                          <label><span>Delay (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.pacing?.delay_ms}
+                              onChangeMs={value => updateField('config.pacing', { ...script.config.pacing, delay_ms: value ?? 0 })} />
                           </label>
                         )}
                         {script.config.pacing?.type === 'random_delay' && (
                           <>
-                            <label><span>Min Delay (ms)</span>
-                              <input type="number" value={script.config.pacing?.min_delay_ms || 0}
-                                onChange={e => updateField('config.pacing', { ...script.config.pacing, min_delay_ms: Number(e.target.value) })} />
+                            <label><span>Min Delay (s)</span>
+                              <SecondsFromMillisecondsInput valueMs={script.config.pacing?.min_delay_ms}
+                                onChangeMs={value => updateField('config.pacing', { ...script.config.pacing, min_delay_ms: value ?? 0 })} />
                             </label>
-                            <label><span>Max Delay (ms)</span>
-                              <input type="number" value={script.config.pacing?.max_delay_ms || 0}
-                                onChange={e => updateField('config.pacing', { ...script.config.pacing, max_delay_ms: Number(e.target.value) })} />
+                            <label><span>Max Delay (s)</span>
+                              <SecondsFromMillisecondsInput valueMs={script.config.pacing?.max_delay_ms}
+                                onChangeMs={value => updateField('config.pacing', { ...script.config.pacing, max_delay_ms: value ?? 0 })} />
                             </label>
                           </>
                         )}
                         {script.config.pacing?.type === 'fixed_interval' && (
-                          <label><span>Interval (ms)</span>
-                            <input type="number" value={script.config.pacing?.interval_ms || 0}
-                              onChange={e => updateField('config.pacing', { ...script.config.pacing, interval_ms: Number(e.target.value) })} />
+                          <label><span>Interval (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.pacing?.interval_ms}
+                              onChangeMs={value => updateField('config.pacing', { ...script.config.pacing, interval_ms: value ?? 0 })} />
                           </label>
                         )}
                         {script.config.pacing?.type === 'random_interval' && (
                           <>
-                            <label><span>Min Interval (ms)</span>
-                              <input type="number" value={script.config.pacing?.min_interval_ms || 0}
-                                onChange={e => updateField('config.pacing', { ...script.config.pacing, min_interval_ms: Number(e.target.value) })} />
+                            <label><span>Min Interval (s)</span>
+                              <SecondsFromMillisecondsInput valueMs={script.config.pacing?.min_interval_ms}
+                                onChangeMs={value => updateField('config.pacing', { ...script.config.pacing, min_interval_ms: value ?? 0 })} />
                             </label>
-                            <label><span>Max Interval (ms)</span>
-                              <input type="number" value={script.config.pacing?.max_interval_ms || 0}
-                                onChange={e => updateField('config.pacing', { ...script.config.pacing, max_interval_ms: Number(e.target.value) })} />
+                            <label><span>Max Interval (s)</span>
+                              <SecondsFromMillisecondsInput valueMs={script.config.pacing?.max_interval_ms}
+                                onChangeMs={value => updateField('config.pacing', { ...script.config.pacing, max_interval_ms: value ?? 0 })} />
                             </label>
                           </>
                         )}
@@ -8523,16 +8609,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   {runtimeSectionIsActive('errors') && (
                     <div className="section-body">
                       <div className="form-grid">
-                        <label className="checkbox-label">
-                          <input type="checkbox" checked={script.config.error_handling?.continue_on_error || false}
-                            onChange={e => updateField('config.error_handling', { ...script.config.error_handling, continue_on_error: e.target.checked })} />
-                          <span>Continue on error</span>
-                        </label>
-                        <label className="checkbox-label">
-                          <input type="checkbox" checked={script.config.error_handling?.snapshot_on_error || false}
-                            onChange={e => updateField('config.error_handling', { ...script.config.error_handling, snapshot_on_error: e.target.checked })} />
-                          <span>Capture snapshot on error</span>
-                        </label>
+                        <div className="runtime-checkbox-list">
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.error_handling?.continue_on_error || false}
+                              onChange={e => updateField('config.error_handling', { ...script.config.error_handling, continue_on_error: e.target.checked })} />
+                            <span>Continue on error</span>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.error_handling?.snapshot_on_error || false}
+                              onChange={e => updateField('config.error_handling', { ...script.config.error_handling, snapshot_on_error: e.target.checked })} />
+                            <span>Capture snapshot on error</span>
+                          </label>
+                        </div>
                         <label>
                           <span>Max Retries</span>
                           <input type="number" value={script.config.error_handling?.max_retries || 0}
@@ -8541,9 +8629,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         {(script.config.error_handling?.max_retries || 0) > 0 && (
                           <>
                             <label>
-                              <span>Retry Delay (ms)</span>
-                              <input type="number" value={script.config.error_handling?.retry_delay_ms || 1000}
-                                onChange={e => updateField('config.error_handling', { ...script.config.error_handling, retry_delay_ms: Number(e.target.value) })} />
+                              <span>Retry Delay (s)</span>
+                              <SecondsFromMillisecondsInput valueMs={script.config.error_handling?.retry_delay_ms} fallbackMs={1000}
+                                onChangeMs={value => updateField('config.error_handling', { ...script.config.error_handling, retry_delay_ms: value ?? 0 })} />
                             </label>
                             <label>
                               <span>Retry Backoff</span>
@@ -8612,9 +8700,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             <label><span>Reply To</span>
                               <input value={script.config.jms?.reply_to || ''} placeholder="orders.reply"
                                 onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', reply_to: e.target.value })} /></label>
-                            <label><span>Timeout (ms)</span>
-                              <input type="number" value={script.config.jms?.timeout_ms || 5000}
-                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', timeout_ms: Number(e.target.value) })} /></label>
+                            <label><span>Timeout (s)</span>
+                              <SecondsFromMillisecondsInput valueMs={script.config.jms?.timeout_ms} fallbackMs={5000}
+                                onChangeMs={value => updateField('config.jms', { ...script.config.jms, provider: 'solace', timeout_ms: value ?? 0 })} /></label>
                             <label><span>Acknowledgement</span>
                               <select value={script.config.jms?.acknowledgement || 'auto'}
                                 onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', acknowledgement: e.target.value })}>
@@ -8649,12 +8737,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     {runtimeSectionIsActive('websocket') && (
                       <div className="section-body">
                         <div className="form-grid">
-                          <label><span>Read Timeout (ms)</span>
-                            <input type="number" value={script.config.websocket?.read_timeout_ms || 30000}
-                              onChange={e => updateField('config.websocket', { ...script.config.websocket, read_timeout_ms: Number(e.target.value) })} /></label>
-                          <label><span>Write Timeout (ms)</span>
-                            <input type="number" value={script.config.websocket?.write_timeout_ms || 10000}
-                              onChange={e => updateField('config.websocket', { ...script.config.websocket, write_timeout_ms: Number(e.target.value) })} /></label>
+                          <label><span>Read Timeout (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.websocket?.read_timeout_ms} fallbackMs={30000}
+                              onChangeMs={value => updateField('config.websocket', { ...script.config.websocket, read_timeout_ms: value ?? 0 })} /></label>
+                          <label><span>Write Timeout (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.websocket?.write_timeout_ms} fallbackMs={10000}
+                              onChangeMs={value => updateField('config.websocket', { ...script.config.websocket, write_timeout_ms: value ?? 0 })} /></label>
                           <label><span>Max Message Size</span>
                             <input type="number" value={script.config.websocket?.max_message_size || 1048576}
                               onChange={e => updateField('config.websocket', { ...script.config.websocket, max_message_size: Number(e.target.value) })} /></label>
@@ -8701,9 +8789,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               onChange={e => updateField('config.grpc', { ...script.config.grpc, plain_text: e.target.checked })} />
                             <span>Plaintext channel</span>
                           </label>
-                          <label><span>Timeout (ms)</span>
-                            <input type="number" value={script.config.grpc?.timeout_ms || 30000}
-                              onChange={e => updateField('config.grpc', { ...script.config.grpc, timeout_ms: Number(e.target.value) })} /></label>
+                          <label><span>Timeout (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.grpc?.timeout_ms} fallbackMs={30000}
+                              onChangeMs={value => updateField('config.grpc', { ...script.config.grpc, timeout_ms: value ?? 0 })} /></label>
                           <label><span>Max Receive Size</span>
                             <input type="number" value={script.config.grpc?.max_recv_msg_size || 4194304}
                               onChange={e => updateField('config.grpc', { ...script.config.grpc, max_recv_msg_size: Number(e.target.value) })} /></label>
@@ -8731,9 +8819,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     {runtimeSectionIsActive('database') && (
                       <div className="section-body">
                         <div className="form-grid">
-                          <label><span>Query Timeout (ms)</span>
-                            <input type="number" value={script.config.database?.query_timeout_ms || 30000}
-                              onChange={e => updateField('config.database', { ...script.config.database, query_timeout_ms: Number(e.target.value) })} /></label>
+                          <label><span>Query Timeout (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.database?.query_timeout_ms} fallbackMs={30000}
+                              onChangeMs={value => updateField('config.database', { ...script.config.database, query_timeout_ms: value ?? 0 })} /></label>
                           <label><span>Max Rows</span>
                             <input type="number" value={script.config.database?.max_rows || 100}
                               onChange={e => updateField('config.database', { ...script.config.database, max_rows: Number(e.target.value) })} /></label>
@@ -8770,9 +8858,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     {runtimeSectionIsActive('network') && (
                       <div className="section-body">
                         <div className="form-grid">
-                          <label><span>Timeout (ms)</span>
-                            <input type="number" value={script.config.network?.timeout_ms || 30000}
-                              onChange={e => updateField('config.network', { ...script.config.network, timeout_ms: Number(e.target.value) })} /></label>
+                          <label><span>Timeout (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.network?.timeout_ms} fallbackMs={30000}
+                              onChangeMs={value => updateField('config.network', { ...script.config.network, timeout_ms: value ?? 0 })} /></label>
                           <label><span>Address Override</span>
                             <input value={script.config.network?.address || ''}
                               onChange={e => updateField('config.network', { ...script.config.network, address: e.target.value })} placeholder="127.0.0.1:2525" /></label>
@@ -8808,24 +8896,50 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </button>
                   {runtimeSectionIsActive('http') && (
                     <div className="section-body">
-                      <div className="settings-sub-group">
+                      <div className="http-transport-tabs" role="tablist" aria-label="HTTP Transport option groups">
+                        {HTTP_TRANSPORT_TAB_OPTIONS.map(tab => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            role="tab"
+                            id={`http-transport-tab-${tab.id}`}
+                            aria-controls={`http-transport-panel-${tab.id}`}
+                            aria-selected={activeHTTPTransportTab === tab.id}
+                            className={`http-transport-tab ${activeHTTPTransportTab === tab.id ? 'active' : ''}`}
+                            onClick={() => setActiveHTTPTransportTab(tab.id)}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
+                      {activeHTTPTransportTab === 'timeouts' && <div
+                        id="http-transport-panel-timeouts"
+                        className="settings-sub-group http-transport-tab-panel"
+                        role="tabpanel"
+                        aria-labelledby="http-transport-tab-timeouts"
+                      >
                         <h5>Timeouts</h5>
                         <div className="form-grid">
-                          <label><span>Connect (ms)</span>
-                            <input type="number" value={script.config.http?.connect_timeout_ms || 30000}
-                              onChange={e => updateField('config.http', { ...script.config.http, connect_timeout_ms: Number(e.target.value) })} /></label>
-                          <label><span>Request (ms)</span>
-                            <input type="number" value={script.config.http?.request_timeout_ms || 60000}
-                              onChange={e => updateField('config.http', { ...script.config.http, request_timeout_ms: Number(e.target.value) })} /></label>
-                          <label><span>TLS Handshake (ms)</span>
-                            <input type="number" value={script.config.http?.tls_timeout_ms || 10000}
-                              onChange={e => updateField('config.http', { ...script.config.http, tls_timeout_ms: Number(e.target.value) })} /></label>
-                          <label><span>Idle Connection (ms)</span>
-                            <input type="number" value={script.config.http?.idle_timeout_ms || 90000}
-                              onChange={e => updateField('config.http', { ...script.config.http, idle_timeout_ms: Number(e.target.value) })} /></label>
+                          <label><span>Connect (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.http?.connect_timeout_ms} fallbackMs={30000}
+                              onChangeMs={value => updateField('config.http', { ...script.config.http, connect_timeout_ms: value ?? 0 })} /></label>
+                          <label><span>Request (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.http?.request_timeout_ms} fallbackMs={60000}
+                              onChangeMs={value => updateField('config.http', { ...script.config.http, request_timeout_ms: value ?? 0 })} /></label>
+                          <label><span>TLS Handshake (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.http?.tls_timeout_ms} fallbackMs={10000}
+                              onChangeMs={value => updateField('config.http', { ...script.config.http, tls_timeout_ms: value ?? 0 })} /></label>
+                          <label><span>Idle Connection (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.http?.idle_timeout_ms} fallbackMs={90000}
+                              onChangeMs={value => updateField('config.http', { ...script.config.http, idle_timeout_ms: value ?? 0 })} /></label>
                         </div>
-                      </div>
-                      <div className="settings-sub-group">
+                      </div>}
+                      {activeHTTPTransportTab === 'connection' && <div
+                        id="http-transport-panel-connection"
+                        className="settings-sub-group http-transport-tab-panel"
+                        role="tabpanel"
+                        aria-labelledby="http-transport-tab-connection"
+                      >
                         <h5>Connection</h5>
                         <div className="form-grid">
                           <label><span>HTTP Version</span>
@@ -8842,8 +8956,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             <input type="number" value={script.config.http?.max_redirects ?? 10}
                               onChange={e => updateField('config.http', { ...script.config.http, max_redirects: Number(e.target.value) })} /></label>
                         </div>
-                      </div>
-                      <div className="settings-sub-group">
+                      </div>}
+                      {activeHTTPTransportTab === 'tls' && <div
+                        id="http-transport-panel-tls"
+                        className="settings-sub-group http-transport-tab-panel"
+                        role="tabpanel"
+                        aria-labelledby="http-transport-tab-tls"
+                      >
                         <h5>TLS / SSL</h5>
                         <div className="form-grid">
                           <label><span>Min TLS Version</span>
@@ -8852,14 +8971,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               <option value="1.0">TLS 1.0</option><option value="1.1">TLS 1.1</option>
                               <option value="1.2">TLS 1.2</option><option value="1.3">TLS 1.3</option>
                             </select></label>
-                          <label className="checkbox-label">
-                            <input type="checkbox" checked={script.config.http?.tls?.insecure_skip_verify || false}
-                              onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, insecure_skip_verify: e.target.checked } })} />
-                            <span>Skip certificate verification</span>
-                          </label>
+                          <div className="runtime-checkbox-list">
+                            <label className="checkbox-label">
+                              <input type="checkbox" checked={script.config.http?.tls?.insecure_skip_verify || false}
+                                onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, insecure_skip_verify: e.target.checked } })} />
+                              <span>Skip certificate verification</span>
+                            </label>
+                          </div>
                         </div>
-                      </div>
-                      <div className="settings-sub-group">
+                      </div>}
+                      {activeHTTPTransportTab === 'proxy' && <div
+                        id="http-transport-panel-proxy"
+                        className="settings-sub-group http-transport-tab-panel"
+                        role="tabpanel"
+                        aria-labelledby="http-transport-tab-proxy"
+                      >
                         <h5>Proxy</h5>
                         <div className="form-grid">
                           <label>
@@ -8888,8 +9014,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             <textarea rows={3} value={formatLineList(script.config.http?.proxy?.no_proxy)} placeholder={'localhost\n*.internal.example.com'}
                               onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, no_proxy: parseLineList(e.target.value) } })} /></label>
                         </div>
-                      </div>
-                      <div className="settings-sub-group">
+                      </div>}
+                      {activeHTTPTransportTab === 'authentication' && <div
+                        id="http-transport-panel-authentication"
+                        className="settings-sub-group http-transport-tab-panel"
+                        role="tabpanel"
+                        aria-labelledby="http-transport-tab-authentication"
+                      >
                         <h5>Authentication</h5>
                         <div className="form-grid">
                           <label><span>Auth Type</span>
@@ -8916,8 +9047,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                 onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, token: e.target.value } })} /></label>
                           )}
                         </div>
-                      </div>
-                      <div className="settings-sub-group">
+                      </div>}
+                      {activeHTTPTransportTab === 'browser' && <div
+                        id="http-transport-panel-browser"
+                        className="settings-sub-group http-transport-tab-panel"
+                        role="tabpanel"
+                        aria-labelledby="http-transport-tab-browser"
+                      >
                         <h5>Browser Emulation</h5>
                         <div className="form-grid">
                           <label>
@@ -8974,9 +9110,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                   height: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0),
                                 },
                               })} /></label>
-                          <label><span>Slow Mo (ms)</span>
-                            <input type="number" min="0" value={script.config.browser?.slow_mo_ms ?? ''} placeholder="50"
-                              onChange={e => updateField('config.browser', { ...script.config.browser, slow_mo_ms: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })} /></label>
+                          <label><span>Slow Mo (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.browser?.slow_mo_ms} emptyWhenUndefined placeholder="0.05"
+                              onChangeMs={value => updateField('config.browser', { ...script.config.browser, slow_mo_ms: value })} /></label>
                           <label><span>Capture Screenshots</span>
                             <select value={script.config.browser?.capture_screenshots || 'per_action'}
                               onChange={e => updateField('config.browser', { ...script.config.browser, capture_screenshots: e.target.value })}>
@@ -9003,65 +9139,67 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               <option value="all">All non-HTML resources</option>
                             </select>
                           </label>
-                          <label className="checkbox-label">
-                            <input type="checkbox" checked={script.config.browser?.headless ?? true}
-                              onChange={e => updateField('config.browser', { ...script.config.browser, headless: e.target.checked })} />
-                            <span>Run headless</span>
-                          </label>
-                          <label className="checkbox-label">
-                            <input type="checkbox" checked={script.config.browser?.touch_mode ?? false}
-                              onChange={e => updateField('config.browser', { ...script.config.browser, touch_mode: e.target.checked })} />
-                            <span>Force touch mode</span>
-                          </label>
-                          <label className="checkbox-label">
-                            <input type="checkbox" checked={script.config.browser?.client_metrics ?? false}
-                              onChange={e => updateField('config.browser', { ...script.config.browser, client_metrics: e.target.checked })} />
-                            <span>Capture client metrics</span>
-                          </label>
-                          <label className="checkbox-label">
-                            <input type="checkbox" checked={script.config.browser?.review_policy?.allow_reviewed_javascript || false}
-                              onChange={e => updateField('config.browser', {
-                                ...script.config.browser,
-                                review_policy: {
-                                  ...script.config.browser?.review_policy,
-                                  allow_reviewed_javascript: e.target.checked,
-                                },
-                              })} />
-                            <span>Allow reviewed JavaScript</span>
-                          </label>
-                          <label className="checkbox-label">
-                            <input type="checkbox" checked={script.config.browser?.review_policy?.allow_review_required || false}
-                              onChange={e => updateField('config.browser', {
-                                ...script.config.browser,
-                                review_policy: {
-                                  ...script.config.browser?.review_policy,
-                                  allow_review_required: e.target.checked,
-                                },
-                              })} />
-                            <span>Allow review-required actions</span>
-                          </label>
-                          <label className="checkbox-label">
-                            <input type="checkbox" checked={script.config.browser?.cache_enabled || false}
-                              onChange={e => updateField('config.browser', { ...script.config.browser, cache_enabled: e.target.checked })} />
-                            <span>Simulate browser cache</span>
-                          </label>
-                          <label className="checkbox-label">
-                            <input type="checkbox" checked={script.config.browser?.cache_content_urls || false}
-                              onChange={e => updateField('config.browser', { ...script.config.browser, cache_content_urls: e.target.checked })} />
-                            <span>Cache URLs requiring content</span>
-                          </label>
-                          <label className="checkbox-label">
-                            <input type="checkbox" checked={script.config.browser?.check_newer_versions || false}
-                              onChange={e => updateField('config.browser', { ...script.config.browser, check_newer_versions: e.target.checked })} />
-                            <span>Check for newer cached pages</span>
-                          </label>
-                          <label className="checkbox-label">
-                            <input type="checkbox" checked={script.config.browser?.new_user_per_iteration || false}
-                              onChange={e => updateField('config.browser', { ...script.config.browser, new_user_per_iteration: e.target.checked })} />
-                            <span>Simulate a new user each iteration</span>
-                          </label>
+                          <div className="browser-emulation-checkbox-list" aria-label="Browser emulation toggles">
+                            <label className="checkbox-label">
+                              <input type="checkbox" checked={script.config.browser?.headless ?? true}
+                                onChange={e => updateField('config.browser', { ...script.config.browser, headless: e.target.checked })} />
+                              <span>Run headless</span>
+                            </label>
+                            <label className="checkbox-label">
+                              <input type="checkbox" checked={script.config.browser?.touch_mode ?? false}
+                                onChange={e => updateField('config.browser', { ...script.config.browser, touch_mode: e.target.checked })} />
+                              <span>Force touch mode</span>
+                            </label>
+                            <label className="checkbox-label">
+                              <input type="checkbox" checked={script.config.browser?.client_metrics ?? false}
+                                onChange={e => updateField('config.browser', { ...script.config.browser, client_metrics: e.target.checked })} />
+                              <span>Capture client metrics</span>
+                            </label>
+                            <label className="checkbox-label">
+                              <input type="checkbox" checked={script.config.browser?.review_policy?.allow_reviewed_javascript || false}
+                                onChange={e => updateField('config.browser', {
+                                  ...script.config.browser,
+                                  review_policy: {
+                                    ...script.config.browser?.review_policy,
+                                    allow_reviewed_javascript: e.target.checked,
+                                  },
+                                })} />
+                              <span>Allow reviewed JavaScript</span>
+                            </label>
+                            <label className="checkbox-label">
+                              <input type="checkbox" checked={script.config.browser?.review_policy?.allow_review_required || false}
+                                onChange={e => updateField('config.browser', {
+                                  ...script.config.browser,
+                                  review_policy: {
+                                    ...script.config.browser?.review_policy,
+                                    allow_review_required: e.target.checked,
+                                  },
+                                })} />
+                              <span>Allow review-required actions</span>
+                            </label>
+                            <label className="checkbox-label">
+                              <input type="checkbox" checked={script.config.browser?.cache_enabled || false}
+                                onChange={e => updateField('config.browser', { ...script.config.browser, cache_enabled: e.target.checked })} />
+                              <span>Simulate browser cache</span>
+                            </label>
+                            <label className="checkbox-label">
+                              <input type="checkbox" checked={script.config.browser?.cache_content_urls || false}
+                                onChange={e => updateField('config.browser', { ...script.config.browser, cache_content_urls: e.target.checked })} />
+                              <span>Cache URLs requiring content</span>
+                            </label>
+                            <label className="checkbox-label">
+                              <input type="checkbox" checked={script.config.browser?.check_newer_versions || false}
+                                onChange={e => updateField('config.browser', { ...script.config.browser, check_newer_versions: e.target.checked })} />
+                              <span>Check for newer cached pages</span>
+                            </label>
+                            <label className="checkbox-label">
+                              <input type="checkbox" checked={script.config.browser?.new_user_per_iteration || false}
+                                onChange={e => updateField('config.browser', { ...script.config.browser, new_user_per_iteration: e.target.checked })} />
+                              <span>Simulate a new user each iteration</span>
+                            </label>
+                          </div>
                         </div>
-                      </div>
+                      </div>}
                     </div>
                   )}
                 </div>}
@@ -9097,10 +9235,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               <option value="1.2">SOAP 1.2</option>
                             </select>
                           </label>
-                          <label className="checkbox-label">
-                            <input type="checkbox" checked={script.config.soap?.fault_handling?.fail_on_fault ?? true} onChange={e => updateField('config.soap.fault_handling.fail_on_fault', e.target.checked)} />
-                            <span>Fail on SOAP Fault</span>
-                          </label>
+                          <div className="runtime-checkbox-list">
+                            <label className="checkbox-label">
+                              <input type="checkbox" checked={script.config.soap?.fault_handling?.fail_on_fault ?? true} onChange={e => updateField('config.soap.fault_handling.fail_on_fault', e.target.checked)} />
+                              <span>Fail on SOAP Fault</span>
+                            </label>
+                          </div>
                         </div>
                       </div>
 
@@ -9133,14 +9273,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               <option value="digest">digest</option>
                             </select>
                           </label>
-                          <label className="checkbox-label">
-                            <input type="checkbox" checked={script.config.soap?.ws_security?.username_token?.nonce || false} onChange={e => updateField('config.soap.ws_security.username_token.nonce', e.target.checked)} />
-                            <span>Include nonce</span>
-                          </label>
-                          <label className="checkbox-label">
-                            <input type="checkbox" checked={script.config.soap?.ws_security?.username_token?.created || false} onChange={e => updateField('config.soap.ws_security.username_token.created', e.target.checked)} />
-                            <span>Include created timestamp</span>
-                          </label>
+                          <div className="runtime-checkbox-list">
+                            <label className="checkbox-label">
+                              <input type="checkbox" checked={script.config.soap?.ws_security?.username_token?.nonce || false} onChange={e => updateField('config.soap.ws_security.username_token.nonce', e.target.checked)} />
+                              <span>Include nonce</span>
+                            </label>
+                            <label className="checkbox-label">
+                              <input type="checkbox" checked={script.config.soap?.ws_security?.username_token?.created || false} onChange={e => updateField('config.soap.ws_security.username_token.created', e.target.checked)} />
+                              <span>Include created timestamp</span>
+                            </label>
+                          </div>
                         </div>
                       </div>
 
@@ -9392,24 +9534,24 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               })} />
                           </label>
                           <label>
-                            <span>Latency (ms)</span>
-                            <input type="number" value={script.config.web_runtime?.network_simulation?.latency_ms || 0}
-                              onChange={e => updateField('config.web_runtime', {
+                            <span>Latency (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.web_runtime?.network_simulation?.latency_ms}
+                              onChangeMs={value => updateField('config.web_runtime', {
                                 ...script.config.web_runtime,
                                 network_simulation: {
                                   ...script.config.web_runtime?.network_simulation,
-                                  latency_ms: Number(e.target.value),
+                                  latency_ms: value ?? 0,
                                 },
                               })} />
                           </label>
                           <label>
-                            <span>Jitter (ms)</span>
-                            <input type="number" value={script.config.web_runtime?.network_simulation?.jitter_ms || 0}
-                              onChange={e => updateField('config.web_runtime', {
+                            <span>Jitter (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={script.config.web_runtime?.network_simulation?.jitter_ms}
+                              onChangeMs={value => updateField('config.web_runtime', {
                                 ...script.config.web_runtime,
                                 network_simulation: {
                                   ...script.config.web_runtime?.network_simulation,
-                                  jitter_ms: Number(e.target.value),
+                                  jitter_ms: value ?? 0,
                                 },
                               })} />
                           </label>
@@ -9486,11 +9628,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                 })} />
                             </label>
                             <label>
-                              <span>Latency (ms)</span>
-                              <input type="number" aria-label="Profile latency" value={profile.latency_ms || 0}
-                                onChange={e => updateField('config.web_runtime', {
+                              <span>Latency (s)</span>
+                              <SecondsFromMillisecondsInput ariaLabel="Profile latency" valueMs={profile.latency_ms}
+                                onChangeMs={value => updateField('config.web_runtime', {
                                   ...script.config.web_runtime,
-                                  network_profiles: (script.config.web_runtime?.network_profiles || []).map((p, idx) => idx === i ? { ...p, latency_ms: Number(e.target.value) } : p),
+                                  network_profiles: (script.config.web_runtime?.network_profiles || []).map((p, idx) => idx === i ? { ...p, latency_ms: value ?? 0 } : p),
                                 })} />
                             </label>
                             <button type="button" className="btn btn-ghost" onClick={() => updateField('config.web_runtime', {
@@ -9525,13 +9667,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             </select>
                           </label>
                           <label>
-                            <span>Buffer Size (seconds)</span>
-                            <input type="number" value={script.config.web_runtime?.streaming?.buffer_size_seconds || 0}
-                              onChange={e => updateField('config.web_runtime', {
+                            <span>Buffer Size (s)</span>
+                            <SecondsFromMillisecondsInput valueMs={(script.config.web_runtime?.streaming?.buffer_size_seconds || 0) * 1000}
+                              onChangeMs={value => updateField('config.web_runtime', {
                                 ...script.config.web_runtime,
                                 streaming: {
                                   ...script.config.web_runtime?.streaming,
-                                  buffer_size_seconds: Number(e.target.value),
+                                  buffer_size_seconds: (value ?? 0) / 1000,
                                 },
                               })} />
                           </label>
@@ -9613,7 +9755,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             <option value="extended">Extended (verbose)</option>
                           </select>
                         </label>
-                        <div className="logging-checkbox-group">
+                        <div className="logging-checkbox-group runtime-checkbox-list">
                           <label className="checkbox-label">
                             <input type="checkbox" checked={script.config.log?.on_error_only || false}
                               onChange={e => updateField('config.log', { ...script.config.log, on_error_only: e.target.checked })} />
@@ -9695,7 +9837,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </div>
                   <div className="editor-outline-list">
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('config')}>Script Configuration</button>
-                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('runtime')}>Runtime / RTS</button>
+                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('runtime')}>Runtime Settings</button>
                     {importMetadata && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('import')}>Source Mapping</button>}
                     {objectDescriptorReview.rows.length > 0 && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('object-descriptors')}>Object Descriptors</button>}
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
@@ -14679,7 +14821,7 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
         : action.type === 'browser_switch_window'
           ? 'checkout or /payment'
       : action.type === 'browser_wait'
-        ? '#ready, text, or 750ms'
+        ? '#ready, text, or 0.75s'
         : '#submit'
     : isWebSocketScript
       ? action.type === 'ws_connect' ? '/ws or wss://example.com/ws' : 'Leave blank to use active connection'

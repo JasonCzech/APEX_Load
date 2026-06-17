@@ -86,7 +86,8 @@ describe('center tabs state', () => {
     const state = readCenterTabsState('k')
     expect(state.tabs[0]).toBe(SCRIPT_JSON_TAB_ID)
     expect(state.tabs.filter(t => t === SCRIPT_JSON_TAB_ID)).toHaveLength(1)
-    expect(state.activeTabId).toBe('configuration')
+    expect(state.tabs).toEqual([SCRIPT_JSON_TAB_ID, 'runtime-settings'])
+    expect(state.activeTabId).toBe('runtime-settings')
   })
 
   it('falls back to script-json for an unknown active tab', () => {
