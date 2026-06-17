@@ -207,4 +207,133 @@ describe('RuntimeSettingsGroupEditor', () => {
     )
     expect(backoff).toBeTruthy()
   })
+
+  it('renders and edits the HTTP transport form for an http group', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[undefined, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const text = container.textContent || ''
+    expect(text).toContain('HTTP transport')
+    expect(text).toContain('Auth password')
+    // The HTTP version select offers both 1.1 and 2 (distinguishes it from TLS).
+    const versionSelect = Array.from(container.querySelectorAll('select')).find(s =>
+      Array.from(s.options).some(o => o.value === '2') && Array.from(s.options).some(o => o.value === '1.1'),
+    ) as HTMLSelectElement
+    expect(versionSelect).toBeTruthy()
+    act(() => setSelectValue(versionSelect, '2'))
+    expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({ http: expect.objectContaining({ version: '2' }) }))
+  })
+
+  it('gates the HTTP transport edit form off for a non-http (browser) group', () => {
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={1} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={() => {}} onApplyToGroups={() => {}} />,
+      )
+    })
+    // The HTTP edit subpanel (h4) does not render for a browser group; it shows as a
+    // "Not applicable" summary row instead.
+    const headings = Array.from(container.querySelectorAll('h4')).map(h => h.textContent)
+    expect(headings).not.toContain('HTTP transport')
+  })
+
+  it('renders and edits the Web runtime source IPs', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={0} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={onChange} onApplyToGroups={() => {}} />,
+      )
+    })
+    expect(container.textContent || '').toContain('Web runtime')
+    const sourceInput = Array.from(container.querySelectorAll('input[type="text"]')).find(
+      input => (input as HTMLInputElement).placeholder.includes('10.0.0.1'),
+    ) as HTMLInputElement
+    expect(sourceInput).toBeTruthy()
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+    setter.call(sourceInput, '10.0.0.1, 10.0.0.2')
+    act(() => sourceInput.dispatchEvent(new Event('input', { bubbles: true })))
+    expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({ web_runtime: expect.objectContaining({ source_ips: ['10.0.0.1', '10.0.0.2'] }) }))
+  })
+
+  it('promotes the legacy log level into the log section on edit', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[{ log_level: 'extended', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const logSelect = Array.from(container.querySelectorAll('select')).find(s =>
+      Array.from(s.options).some(o => o.value === 'extended') && Array.from(s.options).some(o => o.value === 'disabled'),
+    ) as HTMLSelectElement
+    expect(logSelect).toBeTruthy()
+    expect(logSelect.value).toBe('extended') // the legacy value is bridged into the control
+    act(() => setSelectValue(logSelect, 'standard'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last.log).toEqual({ level: 'standard' })
+    expect(last.log_level).toBe('') // legacy cleared so the section is authoritative
+  })
+
+  it('folds the legacy iterations into the run_logic section when editing workload model', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[{ iterations: 5, log_level: '', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const workloadSelect = Array.from(container.querySelectorAll('select')).find(s =>
+      Array.from(s.options).some(o => o.value === 'closed') && Array.from(s.options).some(o => o.value === 'open'),
+    ) as HTMLSelectElement
+    expect(workloadSelect).toBeTruthy()
+    act(() => setSelectValue(workloadSelect, 'open'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last.run_logic).toEqual(expect.objectContaining({ iterations: 5, workload_model: 'open' }))
+    expect(last.iterations).toBeUndefined() // legacy folded into the section
+  })
+
+  it('folds the legacy browser device into browser_config when editing an advanced field', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={1}
+          onFocusChange={() => {}}
+          overrides={[undefined, { browser: { device_profile: 'pixel_8' }, log_level: '', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const engineSelect = Array.from(container.querySelectorAll('select')).find(s =>
+      Array.from(s.options).some(o => o.value === 'webkit') && Array.from(s.options).some(o => o.value === 'chromium'),
+    ) as HTMLSelectElement
+    expect(engineSelect).toBeTruthy()
+    act(() => setSelectValue(engineSelect, 'firefox'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last.browser_config).toEqual(expect.objectContaining({ device_profile: 'pixel_8', engine: 'firefox' }))
+    expect(last.browser).toBeUndefined() // legacy browser folded into browser_config
+  })
 })
