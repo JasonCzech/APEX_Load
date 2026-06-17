@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDashboardTheme } from './hooks/useDashboardTheme'
 import { useDashboardZoomShortcuts } from './hooks/useDashboardZoomShortcuts'
-import { KeyboardShortcutProvider, formatShortcutDisplay, useKeyboardShortcuts } from './hooks/KeyboardShortcutProvider'
+import { KeyboardShortcutProvider, useKeyboardShortcuts } from './hooks/KeyboardShortcutProvider'
 import { useWebSocket } from './hooks/useWebSocket'
 import { ApplicationProvider } from './hooks/ApplicationProvider'
 import { useApplication } from './hooks/useApplication'
@@ -99,8 +99,6 @@ function topbarActionClass(action: TopbarAction): string {
 
 function renderTopbarAction(action: TopbarAction) {
   if (action.hidden) return null
-  const shortcutLabel = formatShortcutDisplay(action.shortcut)
-  const title = shortcutLabel ? `${action.title || action.label} (${shortcutLabel})` : action.title
   return (
     <button
       key={action.id}
@@ -108,17 +106,12 @@ function renderTopbarAction(action: TopbarAction) {
       className={topbarActionClass(action)}
       aria-label={action.ariaLabel}
       aria-pressed={action.pressed}
-      title={title}
+      title={action.title}
       disabled={action.disabled}
       onClick={action.onClick}
     >
       <span className="topbar-action-label">{action.label}</span>
       {action.compactLabel && <span className="topbar-action-compact-label">{action.compactLabel}</span>}
-      {shortcutLabel && (
-        <span className="topbar-action-shortcut" aria-hidden="true">
-          <kbd>{shortcutLabel}</kbd>
-        </span>
-      )}
     </button>
   )
 }

@@ -103,8 +103,7 @@
   margin: 0;
 }
 
-.keyboard-shortcut-dialog kbd,
-.topbar-action-shortcut kbd {
+.keyboard-shortcut-dialog kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -118,11 +117,6 @@
   color: var(--text-secondary);
   font: 600 0.72rem/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   white-space: nowrap;
-}
-
-.topbar-action-shortcut {
-  display: inline-flex;
-  margin-left: 8px;
 }
 
 @media (max-width: 720px) {
@@ -144,7 +138,4 @@
     padding: 16px;
   }
 
-  .topbar-action-shortcut {
-    display: none;
-  }
 }
