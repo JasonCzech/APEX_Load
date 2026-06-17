@@ -17,6 +17,17 @@ func decodeStoredGroups(value any) []TestGroup {
 	return groups
 }
 
+// runtimeSettingsForStorage boxes a runtime override into the storage layer's
+// `any` field, returning a true nil interface (not a typed-nil pointer) when there
+// is no override — so it marshals to JSON null and decodes back to nil rather than
+// an empty &RuntimeSettingsOverride{}.
+func runtimeSettingsForStorage(rs *RuntimeSettingsOverride) any {
+	if rs == nil {
+		return nil
+	}
+	return rs
+}
+
 func decodeStoredRuntimeSettings(value any) *RuntimeSettingsOverride {
 	if value == nil {
 		return nil

@@ -1326,6 +1326,8 @@ export interface ScenarioDraftGroup {
   stages?: LoadStageDraft[]
   iterations?: number
   initialization: 'at_runtime' | 'at_once'
+  /** Per-group runtime overrides; merged over the scenario-wide runtime defaults. */
+  runtimeSettings?: ScenarioRuntimeSettingsDraft
 }
 
 export interface ScenarioDraft {

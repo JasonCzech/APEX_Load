@@ -68,16 +68,17 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 	projectID, singleProject := tr.scenarioProjectIDFromScriptsLocked(scripts)
 	for _, script := range scripts {
 		ref := ScenarioScriptRef{
-			Order:          script.Order,
-			Name:           script.Name,
-			ScriptID:       script.ScriptID,
-			Role:           script.Role,
-			VUsers:         script.VUsers,
-			RampUp:         script.RampUp,
-			RampDown:       script.RampDown,
-			Stages:         cloneLoadStages(script.Stages),
-			Iterations:     script.Iterations,
-			Initialization: script.Initialization,
+			Order:           script.Order,
+			Name:            script.Name,
+			ScriptID:        script.ScriptID,
+			Role:            script.Role,
+			VUsers:          script.VUsers,
+			RampUp:          script.RampUp,
+			RampDown:        script.RampDown,
+			Stages:          cloneLoadStages(script.Stages),
+			Iterations:      script.Iterations,
+			Initialization:  script.Initialization,
+			RuntimeSettings: decodeStoredRuntimeSettings(script.RuntimeSettings),
 		}
 		if stored, ok := tr.scripts[script.ScriptID]; ok {
 			ref.ScriptName = stored.Name
@@ -300,17 +301,18 @@ func storedScenarioRefsToStorage(stored *StoredScenario) []storage.ScenarioScrip
 	scripts := make([]storage.ScenarioScript, 0, len(stored.Scripts))
 	for _, ref := range stored.Scripts {
 		scripts = append(scripts, storage.ScenarioScript{
-			ScenarioID:     stored.ID,
-			Order:          ref.Order,
-			Name:           ref.Name,
-			ScriptID:       ref.ScriptID,
-			Role:           ref.Role,
-			VUsers:         ref.VUsers,
-			RampUp:         ref.RampUp,
-			RampDown:       ref.RampDown,
-			Stages:         cloneLoadStages(ref.Stages),
-			Iterations:     ref.Iterations,
-			Initialization: ref.Initialization,
+			ScenarioID:      stored.ID,
+			Order:           ref.Order,
+			Name:            ref.Name,
+			ScriptID:        ref.ScriptID,
+			Role:            ref.Role,
+			VUsers:          ref.VUsers,
+			RampUp:          ref.RampUp,
+			RampDown:        ref.RampDown,
+			Stages:          cloneLoadStages(ref.Stages),
+			Iterations:      ref.Iterations,
+			Initialization:  ref.Initialization,
+			RuntimeSettings: runtimeSettingsForStorage(ref.RuntimeSettings),
 		})
 	}
 	return scripts

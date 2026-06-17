@@ -543,6 +543,9 @@ type ScenarioScript struct {
 	// canaries ("observer"); validated against the script protocol at test
 	// creation.
 	Role string `json:"role,omitempty"`
+	// RuntimeSettings holds per-group runtime overrides as an opaque JSON value
+	// (mirrors Scenario.RuntimeSettings); decoded into *RuntimeSettingsOverride upstream.
+	RuntimeSettings any `json:"runtime_settings,omitempty"`
 }
 
 type LoadStage struct {

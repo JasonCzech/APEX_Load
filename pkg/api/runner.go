@@ -670,18 +670,19 @@ type StoredScenario struct {
 }
 
 type ScenarioScriptRef struct {
-	Order          int                 `json:"order"`
-	Name           string              `json:"name,omitempty"`
-	ScriptID       string              `json:"script_id"`
-	ScriptName     string              `json:"script_name,omitempty"`
-	Protocol       string              `json:"protocol,omitempty"`
-	Role           string              `json:"role,omitempty"`
-	VUsers         int                 `json:"vusers"`
-	RampUp         string              `json:"ramp_up,omitempty"`
-	RampDown       string              `json:"ramp_down,omitempty"`
-	Stages         []storage.LoadStage `json:"stages,omitempty"`
-	Iterations     *int                `json:"iterations,omitempty"`
-	Initialization string              `json:"initialization,omitempty"`
+	Order           int                      `json:"order"`
+	Name            string                   `json:"name,omitempty"`
+	ScriptID        string                   `json:"script_id"`
+	ScriptName      string                   `json:"script_name,omitempty"`
+	Protocol        string                   `json:"protocol,omitempty"`
+	Role            string                   `json:"role,omitempty"`
+	VUsers          int                      `json:"vusers"`
+	RampUp          string                   `json:"ramp_up,omitempty"`
+	RampDown        string                   `json:"ramp_down,omitempty"`
+	Stages          []storage.LoadStage      `json:"stages,omitempty"`
+	Iterations      *int                     `json:"iterations,omitempty"`
+	Initialization  string                   `json:"initialization,omitempty"`
+	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
 }
 
 const (

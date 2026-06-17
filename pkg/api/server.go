@@ -387,6 +387,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/run-calendar", cors(log(auth(http.HandlerFunc(s.handleGetRunCalendar)))))
 	s.mux.Handle("GET /api/v1/scenarios/{id}/results", cors(log(auth(http.HandlerFunc(s.handleScenarioResults)))))
 	s.mux.Handle("GET /api/v1/scenarios/{id}/runtime-settings/report", cors(log(auth(http.HandlerFunc(s.handleGetScenarioRuntimeSettingsReport)))))
+	s.mux.Handle("POST /api/v1/scenarios/{id}/runtime/apply-to-groups", cors(log(auth(http.HandlerFunc(s.handleApplyScenarioRuntimeToGroups)))))
 	s.mux.Handle("GET /api/v1/scenarios/{id}/data-pools", cors(log(auth(http.HandlerFunc(s.handleListScenarioDataPools)))))
 	s.mux.Handle("PUT /api/v1/scenarios/{id}/data-pools", cors(log(auth(http.HandlerFunc(s.handleUpdateScenarioDataPools)))))
 

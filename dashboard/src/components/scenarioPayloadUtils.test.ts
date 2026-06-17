@@ -148,6 +148,58 @@ describe('scenarioPayloadUtils', () => {
     })
   })
 
+  it('emits per-group runtime_settings only for groups that carry a runtime override', () => {
+    const payload = buildScenarioUpsertPayload({
+      name: 'Per-group Runtime',
+      duration: '5m',
+      startDelay: '',
+      scenarioMode: 'vuser_driven',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      groups: [
+        {
+          name: 'Group A',
+          scriptId: 'script-a',
+          vusers: 10,
+          rampUp: '',
+          rampDown: '',
+          initialization: 'at_runtime',
+          runtimeSettings: {
+            iterations: undefined,
+            pacing: { type: 'fixed_delay', delay_ms: 250 },
+            think_time: undefined,
+            log_level: 'debug',
+            auto_transactions: '',
+            continue_on_error: false,
+            snapshot_on_error: false,
+          },
+        },
+        {
+          name: 'Group B',
+          scriptId: 'script-b',
+          vusers: 5,
+          rampUp: '',
+          rampDown: '',
+          initialization: 'at_runtime',
+        },
+      ],
+      goalConfig: {},
+      runtimeSettings: {
+        iterations: undefined,
+        pacing: undefined,
+        think_time: undefined,
+        log_level: '',
+        auto_transactions: '',
+        continue_on_error: false,
+        snapshot_on_error: false,
+      },
+    })
+
+    expect(payload.groups[0].runtime_settings?.pacing).toEqual({ type: 'fixed_delay', delay_ms: 250 })
+    expect(payload.groups[0].runtime_settings?.log_level).toBe('debug')
+    expect(payload.groups[1].runtime_settings).toBeUndefined()
+  })
+
   it('keeps a single unnamed group in the groups array when it has an iterations override', () => {
     const payload = buildCreateTestPayload({
       name: '',
