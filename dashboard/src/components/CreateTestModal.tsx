@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useReducer, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
+import { useModalDialog } from '../hooks/useModalDialog'
 import { DraftCapacityEstimate, ScenarioDraft, ScenarioDraftGroup, StoredScript, TestSummary } from '../types'
 import './CreateTestModal.css'
 import { parseDurationToSeconds } from '../utils/timeUtils'
@@ -90,6 +91,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const [estimateError, setEstimateError] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const dialogRef = useRef<HTMLDivElement | null>(null)
 
   const { name, duration, startDelay, scenarioMode, scriptShakeout, resourceBaseline, assignment, groups, goalConfig, runtimeSettings } = scenarioDraft
   const isReviseMode = mode === 'revise-queued-run'
@@ -102,15 +104,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     dispatchScenarioDraft({ type: 'setField', field, value })
   }
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose()
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  useModalDialog({ dialogRef, onClose: loading ? undefined : onClose })
 
   const updateGroup = (idx: number, patch: Partial<ScenarioDraftGroup>) => {
     dispatchScenarioDraft({ type: 'updateGroup', index: idx, patch })
@@ -316,7 +310,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+      <div ref={dialogRef} className="modal modal-wide" role="dialog" aria-modal="true" aria-label={modalTitle} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{modalTitle}</h3>
           <span className="total-vusers">{totalVUsers} total VUsers</span>

@@ -13,6 +13,7 @@ import {
   type DashboardWorkspaceTab,
 } from './dashboardWorkspaceModel'
 import { readStoredJSON, writeStoredJSON } from '../utils/browserStorage'
+import { useKeyboardShortcuts } from '../hooks/KeyboardShortcutProvider'
 export type {
   DashboardWorkspaceCard,
   DashboardWorkspaceCardWidth,
@@ -217,6 +218,27 @@ export default function DashboardWorkspace({
   initialActiveTabId,
   storageKey,
 }: DashboardWorkspaceProps) {
+  const workspaceShortcuts = useMemo(() => [
+    {
+      id: `${storageKey}.workspace-tabs`,
+      label: 'Move between workspace tabs',
+      keys: ['ArrowLeft', 'ArrowRight', 'Home', 'End'],
+      group: 'Workspace',
+      preventDefault: false,
+      priority: 40,
+      onTrigger: () => undefined,
+    },
+    {
+      id: `${storageKey}.workspace-reorder`,
+      label: 'Reorder focused tab or card',
+      keys: ['Shift+ArrowLeft', 'Shift+ArrowRight', 'Shift+ArrowUp', 'Shift+ArrowDown'],
+      group: 'Workspace',
+      preventDefault: false,
+      priority: 40,
+      onTrigger: () => undefined,
+    },
+  ], [storageKey])
+  useKeyboardShortcuts(workspaceShortcuts)
   const cardIdSignature = useMemo(() => cards.map(card => card.id).join('|'), [cards])
   const cardIds = useMemo(() => cardIdSignature ? cardIdSignature.split('|') : [], [cardIdSignature])
   const defaultCardInsertionSignature = useMemo(

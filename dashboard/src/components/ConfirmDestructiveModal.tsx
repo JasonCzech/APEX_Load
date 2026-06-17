@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useModalDialog } from '../hooks/useModalDialog'
 import './ConfirmDestructiveModal.css'
 
 export interface DestructiveConfirmation {
@@ -41,6 +42,8 @@ export default function ConfirmDestructiveModal({
   const [reason, setReason] = useState('')
   const [confirmation, setConfirmation] = useState('')
   const [force, setForce] = useState(false)
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  useModalDialog({ dialogRef, onClose: loading ? undefined : onCancel })
 
   useEffect(() => {
     setReason('')
@@ -52,7 +55,7 @@ export default function ConfirmDestructiveModal({
 
   return (
     <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal destructive-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="destructive-confirm-title" onClick={event => event.stopPropagation()}>
+      <div ref={dialogRef} className="modal destructive-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="destructive-confirm-title" onClick={event => event.stopPropagation()}>
         <div className="modal-header">
           <div>
             <h3 id="destructive-confirm-title">{title}</h3>

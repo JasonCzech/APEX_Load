@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDashboardTheme } from './hooks/useDashboardTheme'
 import { useDashboardZoomShortcuts } from './hooks/useDashboardZoomShortcuts'
+import { KeyboardShortcutProvider, formatShortcutDisplay, useKeyboardShortcuts } from './hooks/KeyboardShortcutProvider'
 import { useWebSocket } from './hooks/useWebSocket'
 import { ApplicationProvider } from './hooks/ApplicationProvider'
 import { useApplication } from './hooks/useApplication'
@@ -41,6 +42,7 @@ import {
   updateTopbarActiveRuns,
   type TopbarRunSummary,
 } from './appTopbar'
+import { buildNavigationShortcuts, focusCurrentPageSearch } from './appKeyboardShortcuts'
 import type { ScriptsAuthoringSubView } from './components/useScriptsAuthoringState'
 import './App.css'
 import './components/Pages.css'
@@ -97,6 +99,8 @@ function topbarActionClass(action: TopbarAction): string {
 
 function renderTopbarAction(action: TopbarAction) {
   if (action.hidden) return null
+  const shortcutLabel = formatShortcutDisplay(action.shortcut)
+  const title = shortcutLabel ? `${action.title || action.label} (${shortcutLabel})` : action.title
   return (
     <button
       key={action.id}
@@ -104,12 +108,17 @@ function renderTopbarAction(action: TopbarAction) {
       className={topbarActionClass(action)}
       aria-label={action.ariaLabel}
       aria-pressed={action.pressed}
-      title={action.title}
+      title={title}
       disabled={action.disabled}
       onClick={action.onClick}
     >
       <span className="topbar-action-label">{action.label}</span>
       {action.compactLabel && <span className="topbar-action-compact-label">{action.compactLabel}</span>}
+      {shortcutLabel && (
+        <span className="topbar-action-shortcut" aria-hidden="true">
+          <kbd>{shortcutLabel}</kbd>
+        </span>
+      )}
     </button>
   )
 }
@@ -240,13 +249,13 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const navigateToScenarioBuilder = () => setView({ page: 'tests', scenarioView: 'builder' })
   const navigateToNewTestForScenario = (scenarioId: string) => setView({ page: 'new-test', scenarioId })
 
-  const handleNavigate = (page: NavPage) => {
+  const handleNavigate = useCallback((page: NavPage) => {
     if (page === 'scripts') {
       setScriptsNavigationVersion(version => version + 1)
       setScriptsTopbarState(null)
     }
     setView({ page })
-  }
+  }, [])
 
   const handleScriptsAuthoringStateChange = useCallback((state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => {
     setScriptsTopbarState(state)
@@ -284,24 +293,59 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   }, [])
   const navigateBackToTests = useCallback(() => navigateBack('tests'), [navigateBack])
 
-  useEffect(() => {
-    const handleGlobalKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.target instanceof HTMLInputElement ||
-        event.target instanceof HTMLTextAreaElement ||
-        (event.target as HTMLElement).isContentEditable ||
-        event.defaultPrevented
-      ) {
-        return
-      }
-      if (event.key === 'Backspace') {
-        event.preventDefault()
-        navigateBack('dashboard')
-      }
-    }
-    window.addEventListener('keydown', handleGlobalKeyDown)
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [navigateBack])
+  const appShellShortcuts = useMemo(() => [
+    {
+      id: 'global.back',
+      label: 'Go back',
+      keys: 'Backspace',
+      group: 'Global',
+      priority: 600,
+      onTrigger: () => navigateBack('dashboard'),
+    },
+    {
+      id: 'current-page.search',
+      label: 'Focus page search or filter',
+      keys: '/',
+      group: 'Current Page',
+      priority: 200,
+      onTrigger: () => {
+        focusCurrentPageSearch()
+      },
+    },
+    {
+      id: 'global.zoom-in',
+      label: 'Zoom dashboard in',
+      keys: 'Cmd/Ctrl+=',
+      group: 'Global',
+      preventDefault: false,
+      priority: 20,
+      onTrigger: () => undefined,
+    },
+    {
+      id: 'global.zoom-out',
+      label: 'Zoom dashboard out',
+      keys: 'Cmd/Ctrl+-',
+      group: 'Global',
+      preventDefault: false,
+      priority: 20,
+      onTrigger: () => undefined,
+    },
+    {
+      id: 'global.zoom-reset',
+      label: 'Reset dashboard zoom',
+      keys: 'Cmd/Ctrl+0',
+      group: 'Global',
+      preventDefault: false,
+      priority: 20,
+      onTrigger: () => undefined,
+    },
+    ...buildNavigationShortcuts({
+      canUseAccessWorkspace,
+      isDevUserPreview,
+      onNavigate: handleNavigate,
+    }),
+  ], [canUseAccessWorkspace, handleNavigate, isDevUserPreview, navigateBack])
+  useKeyboardShortcuts(appShellShortcuts)
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
@@ -499,13 +543,36 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     : activeTopbarRuns
   const visibleTopbarRuns = orderedTopbarRuns.slice(0, 2)
   const hiddenTopbarRunCount = Math.max(0, orderedTopbarRuns.length - visibleTopbarRuns.length)
-  const topbarPrimaryActions = (activeTopbarContribution?.primaryActions || []).filter(action => !action.hidden)
-  const topbarSecondaryActions = (activeTopbarContribution?.secondaryActions || []).filter(action => !action.hidden)
-  const topbarMeta = (activeTopbarContribution?.meta || []).filter(chip => !chip.hidden)
+  const topbarPrimaryActions = useMemo(() => (
+    (activeTopbarContribution?.primaryActions || []).filter(action => !action.hidden)
+  ), [activeTopbarContribution?.primaryActions])
+  const topbarSecondaryActions = useMemo(() => (
+    (activeTopbarContribution?.secondaryActions || []).filter(action => !action.hidden)
+  ), [activeTopbarContribution?.secondaryActions])
+  const topbarMeta = useMemo(() => (
+    (activeTopbarContribution?.meta || []).filter(chip => !chip.hidden)
+  ), [activeTopbarContribution?.meta])
   const hasContextualTopbarActions = topbarPrimaryActions.length > 0 || topbarSecondaryActions.length > 0 || Boolean(activeTopbarContribution?.controls)
   const showTopbarRunChips = visibleTopbarRuns.length > 0 && !hasContextualTopbarActions
   const effectiveTopbarTitle = activeTopbarContribution?.title || topbarPageTitle
   const mainContentClassName = `main-content topbar-title-mode page-${view.page}`
+
+  const topbarActionShortcuts = useMemo(() => (
+    [...topbarSecondaryActions, ...topbarPrimaryActions]
+      .filter(action => action.shortcut)
+      .map(action => ({
+        id: `topbar.${activeTopbarContribution?.id || 'active'}.${action.id}`,
+        label: action.label,
+        keys: action.shortcut!,
+        group: action.shortcutGroup || 'Current Page',
+        disabled: action.disabled,
+        hidden: action.hidden,
+        allowInEditable: action.allowShortcutInEditable,
+        priority: 700,
+        onTrigger: action.onClick,
+      }))
+  ), [activeTopbarContribution?.id, topbarPrimaryActions, topbarSecondaryActions])
+  useKeyboardShortcuts(topbarActionShortcuts)
 
   useEffect(() => {
     let cancelled = false
@@ -826,10 +893,12 @@ function AppContent() {
     <AuthGate state={authState}>
       <ProjectProvider>
         <ApplicationProvider>
-          <TopbarContributionProvider>
-            <TablePaginationManager />
-            <AppShell authStatus={authState.status === 'ready' ? authState.auth : undefined} />
-          </TopbarContributionProvider>
+          <KeyboardShortcutProvider>
+            <TopbarContributionProvider>
+              <TablePaginationManager />
+              <AppShell authStatus={authState.status === 'ready' ? authState.auth : undefined} />
+            </TopbarContributionProvider>
+          </KeyboardShortcutProvider>
         </ApplicationProvider>
       </ProjectProvider>
     </AuthGate>

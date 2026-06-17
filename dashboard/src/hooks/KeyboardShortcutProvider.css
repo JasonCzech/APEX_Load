@@ -1,0 +1,150 @@
+.keyboard-shortcut-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8, 13, 24, 0.62);
+  backdrop-filter: blur(8px);
+}
+
+.keyboard-shortcut-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 32px));
+  overflow: auto;
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.22));
+  border-radius: 8px;
+  background: var(--bg-elevated, #111827);
+  box-shadow: var(--shadow-md, 0 18px 56px rgba(0, 0, 0, 0.45));
+  color: var(--text-primary);
+}
+
+.keyboard-shortcut-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--border, rgba(148, 163, 184, 0.22));
+  background: var(--bg-elevated, #111827);
+}
+
+.keyboard-shortcut-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.25;
+}
+
+.keyboard-shortcut-header p {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
+.keyboard-shortcut-close {
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.22));
+  border-radius: 6px;
+  background: var(--control-bg, rgba(255, 255, 255, 0.06));
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  padding: 7px 10px;
+}
+
+.keyboard-shortcut-close:hover {
+  background: var(--control-hover, rgba(255, 255, 255, 0.1));
+}
+
+.keyboard-shortcut-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px;
+  padding: 20px 22px 24px;
+}
+
+.keyboard-shortcut-group h3 {
+  margin: 0 0 10px;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.keyboard-shortcut-group dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.keyboard-shortcut-group dl > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 34px;
+}
+
+.keyboard-shortcut-group dl > div.disabled {
+  opacity: 0.45;
+}
+
+.keyboard-shortcut-group dt {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  min-width: 0;
+}
+
+.keyboard-shortcut-group dd {
+  margin: 0;
+}
+
+.keyboard-shortcut-dialog kbd,
+.topbar-action-shortcut kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 22px;
+  padding: 2px 6px;
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.22));
+  border-bottom-color: color-mix(in srgb, var(--border, rgba(148, 163, 184, 0.22)), #000 28%);
+  border-radius: 5px;
+  background: var(--bg-surface, rgba(255, 255, 255, 0.06));
+  color: var(--text-secondary);
+  font: 600 0.72rem/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: nowrap;
+}
+
+.topbar-action-shortcut {
+  display: inline-flex;
+  margin-left: 8px;
+}
+
+@media (max-width: 720px) {
+  .keyboard-shortcut-backdrop {
+    align-items: stretch;
+    padding: 12px;
+  }
+
+  .keyboard-shortcut-dialog {
+    max-height: calc(100vh - 24px);
+  }
+
+  .keyboard-shortcut-header {
+    padding: 16px;
+  }
+
+  .keyboard-shortcut-groups {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
+
+  .topbar-action-shortcut {
+    display: none;
+  }
+}

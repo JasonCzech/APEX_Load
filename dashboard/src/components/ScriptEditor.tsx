@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Keybo
 import { createPortal } from 'react-dom'
 import { useApi } from '../hooks/useApi'
 import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
+import { useKeyboardShortcuts } from '../hooks/KeyboardShortcutProvider'
 import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
 import { useWebSocket } from '../hooks/useWebSocket'
 import CodeMirror from '@uiw/react-codemirror'
@@ -5199,48 +5200,91 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     window.addEventListener('blur', onUp)
   }
 
-  // IDE-style keyboard shortcuts, active on the editor page unless the user is typing.
-  useEffect(() => {
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (debuggerSettingsOpen) { setDebuggerSettingsOpen(false); return }
+  const scriptEditorShortcuts = useMemo(() => [
+    {
+      id: 'script.escape',
+      label: 'Close debugger panel',
+      keys: 'Escape',
+      group: 'Script Editor',
+      allowInEditable: true,
+      priority: 850,
+      onTrigger: () => {
+        if (debuggerSettingsOpen) {
+          setDebuggerSettingsOpen(false)
+          return
+        }
         if (workspaceTab === 'debug') {
           setWorkspaceTab('author')
         }
-        return
-      }
-      const target = event.target as HTMLElement | null
-      const typing = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)
-      if (typing) return
-      if (event.key === 'F5') {
-        event.preventDefault()
-        if (event.shiftKey) {
-          if (replaying) void handleStopReplay()
-        } else if (replaying) {
+      },
+    },
+    {
+      id: 'script.debug.run',
+      label: replaying ? 'Continue debugger' : 'Run debugger',
+      keys: 'F5',
+      group: 'Script Editor',
+      disabled: !replaying && (saving || !script.name || debugActionRows.length === 0),
+      priority: 850,
+      onTrigger: () => {
+        if (replaying) {
           if (isReplayPaused) void handlePauseResumeReplay()
-        } else if (!saving && script.name && debugActionRows.length > 0) {
+        } else {
           void handleReplay()
         }
-        return
-      }
-      if (event.key === 'F10') {
-        event.preventDefault()
-        if ((replaying && isReplayPaused) || (!replaying && !saving && script.name && debugActionRows.length > 0)) void handleStepReplay()
-        return
-      }
-      if ((event.metaKey || event.ctrlKey) && (event.key === 'b' || event.key === 'B')) {
-        event.preventDefault()
+      },
+    },
+    {
+      id: 'script.debug.stop',
+      label: 'Stop debugger',
+      keys: 'Shift+F5',
+      group: 'Script Editor',
+      disabled: !replaying,
+      priority: 850,
+      onTrigger: () => { void handleStopReplay() },
+    },
+    {
+      id: 'script.debug.step',
+      label: 'Step debugger',
+      keys: 'F10',
+      group: 'Script Editor',
+      disabled: !((replaying && isReplayPaused) || (!replaying && !saving && script.name && debugActionRows.length > 0)),
+      priority: 850,
+      onTrigger: () => { void handleStepReplay() },
+    },
+    {
+      id: 'script.debug.breakpoint',
+      label: 'Toggle breakpoint',
+      keys: 'Cmd/Ctrl+B',
+      group: 'Script Editor',
+      disabled: debugActionRows.length === 0 && activeAction === null,
+      priority: 850,
+      onTrigger: () => {
         const row = workspaceTab === 'debug'
           ? debugActionRows[selectedReplayEventIndex ?? 0]
           : activeAction !== null
-            ? { phase: 'action', actionIndex: activeAction, action: script.actions[activeAction] }
+            ? { phase: 'action' as const, actionIndex: activeAction, action: script.actions[activeAction] }
             : debugActionRows[0]
         if (row) void toggleDebugBreakpoint(row.phase, row.actionIndex)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [activeAction, debuggerSettingsOpen, workspaceTab, replaying, isReplayPaused, saving, script.name, script.actions, selectedReplayEventIndex, debugActionRows, handleReplay, handlePauseResumeReplay, handleStepReplay, handleStopReplay, toggleDebugBreakpoint])
+      },
+    },
+  ], [
+    activeAction,
+    debugActionRows,
+    debuggerSettingsOpen,
+    handlePauseResumeReplay,
+    handleReplay,
+    handleStepReplay,
+    handleStopReplay,
+    isReplayPaused,
+    replaying,
+    saving,
+    script.actions,
+    script.name,
+    selectedReplayEventIndex,
+    toggleDebugBreakpoint,
+    workspaceTab,
+  ])
+  useKeyboardShortcuts(scriptEditorShortcuts)
 
   // Reconcile session state by polling while a debug session is active. This is a
   // safety net for live updates that arrive before activeReplaySessionId is registered
@@ -6279,6 +6323,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         id: 'save-script',
         label: saving ? 'Saving...' : 'Save Script',
         compactLabel: 'Save',
+        shortcut: 'Cmd/Ctrl+S',
+        shortcutGroup: 'Script Editor',
+        allowShortcutInEditable: true,
         tone: 'primary',
         disabled: saving || validating || !currentDraftScript.name,
         onClick: () => { void handleSave() },

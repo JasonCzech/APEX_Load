@@ -13,6 +13,9 @@ export interface TopbarAction {
   disabled?: boolean
   hidden?: boolean
   pressed?: boolean
+  shortcut?: string | string[]
+  shortcutGroup?: string
+  allowShortcutInEditable?: boolean
   title?: string
   tone?: TopbarActionTone
 }

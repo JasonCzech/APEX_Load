@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useRef, useState } from 'react'
+import { useModalDialog } from '../hooks/useModalDialog'
 import './GenerateReportModal.css'
 
 export type ReportProfileId = 'executive' | 'engineer'
@@ -29,18 +30,12 @@ interface Props {
 
 export default function GenerateReportModal({ onClose, onGenerate }: Props) {
   const [selected, setSelected] = useState<ReportProfileId>('executive')
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  useModalDialog({ dialogRef, onClose })
 
   return (
     <div className="generate-report-backdrop" role="presentation" onMouseDown={onClose}>
-      <div className="generate-report-modal" role="dialog" aria-modal="true" aria-label="Generate report" onMouseDown={(event) => event.stopPropagation()}>
+      <div ref={dialogRef} className="generate-report-modal" role="dialog" aria-modal="true" aria-label="Generate report" onMouseDown={(event) => event.stopPropagation()}>
         <div className="generate-report-header">
           <h3>Generate Report</h3>
           <button type="button" className="generate-report-close" onClick={onClose} aria-label="Close">×</button>
