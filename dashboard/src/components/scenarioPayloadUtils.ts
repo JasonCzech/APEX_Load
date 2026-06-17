@@ -1,6 +1,6 @@
 import { GeneratorAssignmentSettings, GoalConfig, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode } from '../types'
 import { ScenarioRuntimeSettings } from './scenarioDraftUtils'
-import { BrowserConfig, ErrorHandlingConfig, LogConfig, PacingConfig, RunLogicConfig, ThinkTimeConfig } from '../types/scripts'
+import { BrowserConfig, ErrorHandlingConfig, HTTPConfig, LogConfig, PacingConfig, RunLogicConfig, ThinkTimeConfig, WebRuntimeConfig } from '../types/scripts'
 
 export type ScenarioGroupPayload = {
   name?: string
@@ -41,6 +41,9 @@ export type ScenarioUpsertPayload = {
     error_handling?: ErrorHandlingConfig
     log?: LogConfig
     run_logic?: RunLogicConfig
+    http?: HTTPConfig
+    web_runtime?: WebRuntimeConfig
+    browser_config?: BrowserConfig
   }
   data_pools?: ScenarioDataPoolBinding[]
 }
@@ -185,7 +188,7 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
     ? { ...runtimeSettings.browser }
     : undefined
 
-  if (!runtimeSettings.iterations && !pacing && !thinkTime && !browser && !runtimeSettings.log_level && !runtimeSettings.auto_transactions && !runtimeSettings.continue_on_error && !runtimeSettings.snapshot_on_error && runtimeSettings.max_retries === undefined && runtimeSettings.retry_delay_ms === undefined && !runtimeSettings.retry_backoff && !runtimeSettings.log && !runtimeSettings.run_logic) {
+  if (!runtimeSettings.iterations && !pacing && !thinkTime && !browser && !runtimeSettings.log_level && !runtimeSettings.auto_transactions && !runtimeSettings.continue_on_error && !runtimeSettings.snapshot_on_error && runtimeSettings.max_retries === undefined && runtimeSettings.retry_delay_ms === undefined && !runtimeSettings.retry_backoff && !runtimeSettings.log && !runtimeSettings.run_logic && !runtimeSettings.http && !runtimeSettings.web_runtime && !runtimeSettings.browser_config) {
     return undefined
   }
 
@@ -207,6 +210,9 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
       : undefined,
     log: runtimeSettings.log,
     run_logic: runtimeSettings.run_logic,
+    http: runtimeSettings.http,
+    web_runtime: runtimeSettings.web_runtime,
+    browser_config: runtimeSettings.browser_config,
   }
 }
 

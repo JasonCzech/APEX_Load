@@ -133,7 +133,10 @@ export function isRuntimeDraftEmpty(draft?: ScenarioRuntimeSettingsDraft): boole
     draft.retry_delay_ms === undefined &&
     !draft.retry_backoff &&
     !draft.log &&
-    !draft.run_logic
+    !draft.run_logic &&
+    !draft.http &&
+    !draft.web_runtime &&
+    !draft.browser_config
   )
 }
 
@@ -157,6 +160,9 @@ export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): Sc
     retry_backoff: override.error_handling?.retry_backoff,
     log: override.log,
     run_logic: override.run_logic,
+    http: override.http,
+    web_runtime: override.web_runtime,
+    browser_config: override.browser_config,
   }
 }
 
@@ -192,6 +198,9 @@ export function overrideFromRuntimeDraft(draft?: ScenarioRuntimeSettingsDraft): 
     error_handling: errorHandling,
     log: draft.log,
     run_logic: draft.run_logic,
+    http: draft.http,
+    web_runtime: draft.web_runtime,
+    browser_config: draft.browser_config,
   }
 }
 

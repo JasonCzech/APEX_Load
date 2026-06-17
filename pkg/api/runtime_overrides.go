@@ -42,7 +42,15 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 	if overrides.ErrorHandling != nil {
 		script.Config.ErrorHandling = *overrides.ErrorHandling
 	}
-	if overrides.Browser != nil {
+	if overrides.HTTP != nil {
+		script.Config.HTTP = *cloneViaJSON(overrides.HTTP)
+	}
+	if overrides.WebRuntime != nil {
+		script.Config.WebRuntime = *cloneViaJSON(overrides.WebRuntime)
+	}
+	if overrides.BrowserConfig != nil {
+		script.Config.Browser = *cloneViaJSON(overrides.BrowserConfig)
+	} else if overrides.Browser != nil {
 		if overrides.Browser.Headless != nil {
 			headless := *overrides.Browser.Headless
 			script.Config.Browser.Headless = &headless
@@ -144,6 +152,9 @@ func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOv
 	}
 	clone.Log = cloneLogConfig(overrides.Log)
 	clone.RunLogic = cloneRunLogicConfig(overrides.RunLogic)
+	clone.HTTP = cloneViaJSON(overrides.HTTP)
+	clone.WebRuntime = cloneViaJSON(overrides.WebRuntime)
+	clone.BrowserConfig = cloneViaJSON(overrides.BrowserConfig)
 	if overrides.Browser != nil {
 		browser := *overrides.Browser
 		if overrides.Browser.Headless != nil {
@@ -167,6 +178,24 @@ func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOv
 		copy(clone.RedactionRules, overrides.RedactionRules)
 	}
 	return &clone
+}
+
+// cloneViaJSON deep-copies a config section through JSON — the simplest safe deep
+// clone for the nested maps/slices in the larger override sections (HTTP default
+// headers, web-runtime profile mix, browser viewport, etc.). Returns nil for nil.
+func cloneViaJSON[T any](v *T) *T {
+	if v == nil {
+		return nil
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	var out T
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil
+	}
+	return &out
 }
 
 // cloneLogConfig deep-copies a log override section (including ExtendedOptions).
@@ -225,6 +254,15 @@ func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsO
 	}
 	if group.RunLogic != nil {
 		merged.RunLogic = cloneRunLogicConfig(group.RunLogic)
+	}
+	if group.HTTP != nil {
+		merged.HTTP = cloneViaJSON(group.HTTP)
+	}
+	if group.WebRuntime != nil {
+		merged.WebRuntime = cloneViaJSON(group.WebRuntime)
+	}
+	if group.BrowserConfig != nil {
+		merged.BrowserConfig = cloneViaJSON(group.BrowserConfig)
 	}
 	if group.Browser != nil {
 		browser := RuntimeBrowserOverride{}
