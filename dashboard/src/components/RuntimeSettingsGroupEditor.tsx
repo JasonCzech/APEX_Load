@@ -336,6 +336,44 @@ export default function RuntimeSettingsGroupEditor({
         </label>
       </div>
 
+      <div className="scenario-browser-grid">
+        <label>
+          <span>Max retries</span>
+          <input
+            className="settings-input"
+            type="number"
+            min={0}
+            value={draft.max_retries ?? ''}
+            onChange={event => patch({ max_retries: event.target.value === '' ? undefined : Number(event.target.value) })}
+            placeholder="Inherit"
+          />
+        </label>
+        <label>
+          <span>Retry delay (ms)</span>
+          <input
+            className="settings-input"
+            type="number"
+            min={0}
+            value={draft.retry_delay_ms ?? ''}
+            onChange={event => patch({ retry_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })}
+            placeholder="Inherit"
+          />
+        </label>
+        <label>
+          <span>Retry backoff</span>
+          <select
+            className="settings-input"
+            value={draft.retry_backoff || ''}
+            onChange={event => patch({ retry_backoff: event.target.value || undefined })}
+          >
+            <option value="">Inherit</option>
+            <option value="constant">Constant</option>
+            <option value="linear">Linear</option>
+            <option value="exponential">Exponential</option>
+          </select>
+        </label>
+      </div>
+
       {browserApplicable && (
         <div className="scenario-browser-grid">
           <label>

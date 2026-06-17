@@ -85,6 +85,9 @@ export function formatErrorHandling(errorHandling?: RuntimeSettingsOverride['err
   if (errorHandling.snapshot_on_error !== undefined) {
     parts.push(errorHandling.snapshot_on_error ? 'Snapshot on error' : 'No snapshot')
   }
+  if (errorHandling.max_retries) {
+    parts.push(`${errorHandling.max_retries} retries`)
+  }
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
@@ -125,7 +128,12 @@ export function isRuntimeDraftEmpty(draft?: ScenarioRuntimeSettingsDraft): boole
     !draft.log_level &&
     !draft.auto_transactions &&
     !draft.continue_on_error &&
-    !draft.snapshot_on_error
+    !draft.snapshot_on_error &&
+    draft.max_retries === undefined &&
+    draft.retry_delay_ms === undefined &&
+    !draft.retry_backoff &&
+    !draft.log &&
+    !draft.run_logic
   )
 }
 
@@ -144,6 +152,11 @@ export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): Sc
     auto_transactions: override.auto_transactions || '',
     continue_on_error: Boolean(override.error_handling?.continue_on_error),
     snapshot_on_error: Boolean(override.error_handling?.snapshot_on_error),
+    max_retries: override.error_handling?.max_retries,
+    retry_delay_ms: override.error_handling?.retry_delay_ms,
+    retry_backoff: override.error_handling?.retry_backoff,
+    log: override.log,
+    run_logic: override.run_logic,
   }
 }
 
@@ -154,13 +167,21 @@ export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): Sc
  */
 export function overrideFromRuntimeDraft(draft?: ScenarioRuntimeSettingsDraft): RuntimeSettingsOverride | undefined {
   if (isRuntimeDraftEmpty(draft) || !draft) return undefined
-  const errorHandling =
-    draft.continue_on_error || draft.snapshot_on_error
-      ? {
-          continue_on_error: draft.continue_on_error || undefined,
-          snapshot_on_error: draft.snapshot_on_error || undefined,
-        }
-      : undefined
+  const hasErrorHandling =
+    draft.continue_on_error ||
+    draft.snapshot_on_error ||
+    draft.max_retries !== undefined ||
+    draft.retry_delay_ms !== undefined ||
+    Boolean(draft.retry_backoff)
+  const errorHandling = hasErrorHandling
+    ? {
+        continue_on_error: draft.continue_on_error || undefined,
+        snapshot_on_error: draft.snapshot_on_error || undefined,
+        max_retries: draft.max_retries,
+        retry_delay_ms: draft.retry_delay_ms,
+        retry_backoff: draft.retry_backoff || undefined,
+      }
+    : undefined
   return {
     iterations: draft.iterations,
     pacing: draft.pacing?.type ? draft.pacing : undefined,
@@ -169,6 +190,8 @@ export function overrideFromRuntimeDraft(draft?: ScenarioRuntimeSettingsDraft): 
     log_level: draft.log_level || undefined,
     auto_transactions: draft.auto_transactions || undefined,
     error_handling: errorHandling,
+    log: draft.log,
+    run_logic: draft.run_logic,
   }
 }
 

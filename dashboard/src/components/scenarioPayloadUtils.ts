@@ -1,6 +1,6 @@
 import { GeneratorAssignmentSettings, GoalConfig, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode } from '../types'
 import { ScenarioRuntimeSettings } from './scenarioDraftUtils'
-import { BrowserConfig, PacingConfig, ThinkTimeConfig } from '../types/scripts'
+import { BrowserConfig, ErrorHandlingConfig, LogConfig, PacingConfig, RunLogicConfig, ThinkTimeConfig } from '../types/scripts'
 
 export type ScenarioGroupPayload = {
   name?: string
@@ -38,10 +38,9 @@ export type ScenarioUpsertPayload = {
     browser?: Pick<BrowserConfig, 'headless' | 'device_profile' | 'touch_mode' | 'orientation'>
     log_level?: string
     auto_transactions?: string
-    error_handling?: {
-      continue_on_error?: true
-      snapshot_on_error?: true
-    }
+    error_handling?: ErrorHandlingConfig
+    log?: LogConfig
+    run_logic?: RunLogicConfig
   }
   data_pools?: ScenarioDataPoolBinding[]
 }
@@ -186,7 +185,7 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
     ? { ...runtimeSettings.browser }
     : undefined
 
-  if (!runtimeSettings.iterations && !pacing && !thinkTime && !browser && !runtimeSettings.log_level && !runtimeSettings.auto_transactions && !runtimeSettings.continue_on_error && !runtimeSettings.snapshot_on_error) {
+  if (!runtimeSettings.iterations && !pacing && !thinkTime && !browser && !runtimeSettings.log_level && !runtimeSettings.auto_transactions && !runtimeSettings.continue_on_error && !runtimeSettings.snapshot_on_error && runtimeSettings.max_retries === undefined && runtimeSettings.retry_delay_ms === undefined && !runtimeSettings.retry_backoff && !runtimeSettings.log && !runtimeSettings.run_logic) {
     return undefined
   }
 
@@ -197,12 +196,17 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
     browser,
     log_level: runtimeSettings.log_level || undefined,
     auto_transactions: runtimeSettings.auto_transactions || undefined,
-    error_handling: runtimeSettings.continue_on_error || runtimeSettings.snapshot_on_error
+    error_handling: runtimeSettings.continue_on_error || runtimeSettings.snapshot_on_error || runtimeSettings.max_retries !== undefined || runtimeSettings.retry_delay_ms !== undefined || runtimeSettings.retry_backoff
       ? {
         continue_on_error: runtimeSettings.continue_on_error || undefined,
         snapshot_on_error: runtimeSettings.snapshot_on_error || undefined,
+        max_retries: runtimeSettings.max_retries,
+        retry_delay_ms: runtimeSettings.retry_delay_ms,
+        retry_backoff: runtimeSettings.retry_backoff || undefined,
       }
       : undefined,
+    log: runtimeSettings.log,
+    run_logic: runtimeSettings.run_logic,
   }
 }
 

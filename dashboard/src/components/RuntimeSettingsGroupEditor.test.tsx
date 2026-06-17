@@ -161,4 +161,27 @@ describe('RuntimeSettingsGroupEditor', () => {
     act(() => setSelectValue(select, '1'))
     expect(onFocus).toHaveBeenCalledWith(1)
   })
+
+  it('renders the full error_handling retry controls', () => {
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[undefined, undefined]}
+          onChange={() => {}}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const text = container.textContent || ''
+    expect(text).toContain('Max retries')
+    expect(text).toContain('Retry delay (ms)')
+    // retry_backoff select offers the backoff strategies.
+    const backoff = Array.from(container.querySelectorAll('select')).find(s =>
+      Array.from(s.options).some(o => o.value === 'exponential'),
+    )
+    expect(backoff).toBeTruthy()
+  })
 })
