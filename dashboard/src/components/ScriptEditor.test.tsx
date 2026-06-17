@@ -950,6 +950,48 @@ describe('ScriptEditor', () => {
     expect(sourceMapPanelsRule).toContain('max-height: none;')
   })
 
+  it('keeps the compact JSON source map code visually subordinate to the primary code panes', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const editorCss = readFileSync(`${cwd}/src/components/ScriptEditor.css`, 'utf8') as string
+    const indexCss = readFileSync(`${cwd}/src/index.css`, 'utf8') as string
+    const sourceMapRule = cssRule(editorCss, '.json-source-map')
+    const sourceMapHighlightRule = cssRule(editorCss, '.json-source-map-viewport-highlight')
+    const sourceMapLineRule = cssRule(editorCss, '.json-source-map-line')
+    const sourceMapSelectedLineRule = cssRule(editorCss, '.json-source-map-line.selected-line')
+    const sourceMapLineNumberRule = cssRule(editorCss, '.json-source-map-line-number')
+    const sourceMapLineCodeRule = cssRule(editorCss, '.json-source-map-line-code')
+    const lightThemeRule = cssRule(indexCss, ":root[data-theme='light']")
+    const solarizedLightThemeRule = cssRule(indexCss, ":root[data-theme='solarized-light']")
+
+    expect(sourceMapRule).toContain('gap: 5px;')
+    expect(sourceMapRule).toContain('padding: 4px;')
+    expect(sourceMapHighlightRule).toContain('min-height: 6.5px;')
+    expect(sourceMapLineRule).toContain('grid-template-columns: 20px minmax(0, 1fr);')
+    expect(sourceMapLineRule).toContain('gap: 3px;')
+    expect(sourceMapLineRule).toContain('border-left: 1px solid transparent;')
+    expect(sourceMapSelectedLineRule).toContain('border-left-color: var(--source-map-selected-border, rgba(56, 189, 248, 0.98));')
+    expect(sourceMapSelectedLineRule).toContain('background: var(--source-map-selected-bg, rgba(56, 189, 248, 0.34));')
+    expect(sourceMapSelectedLineRule).toContain('--source-map-selected-shadow')
+    expect(sourceMapLineNumberRule).toContain('color: var(--source-map-line-number, rgba(148, 163, 184, 0.72));')
+    expect(sourceMapLineNumberRule).toContain('font-size: 4.33px;')
+    expect(sourceMapLineNumberRule).toContain('line-height: 6.5px;')
+    expect(sourceMapLineCodeRule).toContain('color: var(--source-map-line-code, rgba(217, 231, 255, 0.72));')
+    expect(sourceMapLineCodeRule).toContain('font-size: 4.33px;')
+    expect(sourceMapLineCodeRule).toContain('line-height: 6.5px;')
+    expect(editorCss).toContain('color: var(--source-map-line-code-active, rgba(224, 231, 255, 0.92));')
+    expect(editorCss).toContain('color: var(--source-map-line-code-parameter, rgba(153, 246, 228, 0.92));')
+    expect(editorCss).toContain('color: var(--source-map-line-code-first-parameter, rgba(253, 230, 138, 0.96));')
+    expect(editorCss).toContain('color: var(--source-map-line-code-selected, rgba(240, 249, 255, 0.98));')
+    expect(lightThemeRule).toContain('--source-map-line-number: rgba(30, 41, 59, 0.78);')
+    expect(lightThemeRule).toContain('--source-map-line-code: rgba(15, 23, 42, 0.86);')
+    expect(lightThemeRule).toContain('--source-map-line-code-selected: rgba(8, 47, 73, 0.98);')
+    expect(solarizedLightThemeRule).toContain('--source-map-line-number: rgba(7, 54, 66, 0.76);')
+    expect(solarizedLightThemeRule).toContain('--source-map-line-code: rgba(0, 43, 54, 0.86);')
+    expect(solarizedLightThemeRule).toContain('--source-map-line-code-selected: #002b36;')
+  })
+
   it('keeps the landing editor focused on script name while support tools live in the outline', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
@@ -1696,10 +1738,33 @@ describe('ScriptEditor', () => {
     expect(thumb.getAttribute('aria-valuenow')).toBe('50')
     const maxSourceMapScrollTop = sourceMapLines.scrollHeight - sourceMapLines.clientHeight
     expect(sourceMapLines.scrollTop).toBeCloseTo(
-      Math.min(maxSourceMapScrollTop, codeArea.scrollTop * (12 / 18)),
+      Math.min(maxSourceMapScrollTop, codeArea.scrollTop * (6.5 / 18)),
     )
-    expect(Number.parseFloat(viewportHighlight.style.top)).toBeCloseTo(codeArea.scrollTop * (12 / 18))
-    expect(Number.parseFloat(viewportHighlight.style.height)).toBeCloseTo(codeArea.clientHeight * (12 / 18))
+    expect(Number.parseFloat(viewportHighlight.style.top)).toBeCloseTo(codeArea.scrollTop * (6.5 / 18))
+    expect(Number.parseFloat(viewportHighlight.style.height)).toBeCloseTo(codeArea.clientHeight * (6.5 / 18))
+  })
+
+  it('highlights the selected Script JSON line in the source map', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+    await flushReact()
+
+    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
+    expect(codeArea).not.toBeNull()
+    if (!codeArea) return
+
+    const selectedLine = 24
+    const lineStart = codeArea.value.split('\n').slice(0, selectedLine - 1).reduce((offset, line) => offset + line.length + 1, 0)
+    await act(async () => {
+      codeArea.setSelectionRange(lineStart, lineStart)
+      codeArea.dispatchEvent(new Event('select', { bubbles: true }))
+    })
+    await flushReact()
+
+    const selectedMapLines = Array.from(container.querySelectorAll('.json-source-map-line.selected-line'))
+    expect(selectedMapLines).toHaveLength(1)
+    expect(selectedMapLines[0].querySelector('.json-source-map-line-number')?.textContent).toBe(String(selectedLine))
   })
 
   it('routes mouse wheel scrolling over the source map to the Script JSON editor', async () => {
@@ -1722,7 +1787,7 @@ describe('ScriptEditor', () => {
     })
     await flushReact()
 
-    const expectedScrollTop = 180 / (12 / 18)
+    const expectedScrollTop = 180 / (6.5 / 18)
     expect(codeArea.scrollTop).toBeCloseTo(expectedScrollTop)
     expect(thumb.getAttribute('aria-valuenow')).toBe(
       String(Math.round((codeArea.scrollTop / (codeArea.scrollHeight - codeArea.clientHeight)) * 100)),
@@ -1750,7 +1815,7 @@ describe('ScriptEditor', () => {
     expect(sourceMapLines).not.toBeNull()
     if (!codeArea || !sourceMapLines) return
 
-    expect(sourceMapLines.style.gridTemplateRows).toContain('60.00px')
+    expect(sourceMapLines.style.gridTemplateRows).toContain('32.50px')
 
     Object.defineProperty(sourceMapLines, 'clientHeight', { configurable: true, value: 120 })
     Object.defineProperty(sourceMapLines, 'scrollHeight', { configurable: true, value: 2000 })
@@ -1763,7 +1828,7 @@ describe('ScriptEditor', () => {
     })
     await flushReact()
 
-    expect(sourceMapLines.scrollTop).toBeCloseTo((wrappedLineScrollTop + 45) * (12 / 18))
+    expect(sourceMapLines.scrollTop).toBeCloseTo((wrappedLineScrollTop + 45) * (6.5 / 18))
   })
 
   it('drags the source map thumb to scroll the Script JSON editor', async () => {

@@ -56,6 +56,15 @@
   
   --code-bg: #090a0f;
   --code-text: #e2e8f0;
+  --source-map-line-number: rgba(148, 163, 184, 0.72);
+  --source-map-line-code: rgba(217, 231, 255, 0.72);
+  --source-map-line-code-active: rgba(224, 231, 255, 0.92);
+  --source-map-line-code-parameter: rgba(153, 246, 228, 0.92);
+  --source-map-line-code-first-parameter: rgba(253, 230, 138, 0.96);
+  --source-map-selected-bg: rgba(56, 189, 248, 0.34);
+  --source-map-selected-border: rgba(56, 189, 248, 0.98);
+  --source-map-selected-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.78), 0 0 0 1px rgba(56, 189, 248, 0.28);
+  --source-map-line-code-selected: rgba(240, 249, 255, 0.98);
 
   --success-bg: rgba(16, 185, 129, 0.1);
   --success-border: rgba(16, 185, 129, 0.3);
@@ -143,6 +152,15 @@
   
   --code-bg: #f1f5f9;
   --code-text: #1e293b;
+  --source-map-line-number: rgba(30, 41, 59, 0.78);
+  --source-map-line-code: rgba(15, 23, 42, 0.86);
+  --source-map-line-code-active: rgba(15, 23, 42, 0.98);
+  --source-map-line-code-parameter: rgba(15, 118, 110, 0.98);
+  --source-map-line-code-first-parameter: rgba(146, 64, 14, 0.98);
+  --source-map-selected-bg: rgba(14, 165, 233, 0.24);
+  --source-map-selected-border: rgba(2, 132, 199, 0.98);
+  --source-map-selected-shadow: inset 0 0 0 1px rgba(2, 132, 199, 0.5), 0 0 0 1px rgba(2, 132, 199, 0.18);
+  --source-map-line-code-selected: rgba(8, 47, 73, 0.98);
 
   --success-bg: rgba(16, 185, 129, 0.1);
   --success-border: rgba(16, 185, 129, 0.2);
@@ -294,6 +312,15 @@
   
   --code-bg: #eee8d5;
   --code-text: #586e75;
+  --source-map-line-number: rgba(7, 54, 66, 0.76);
+  --source-map-line-code: rgba(0, 43, 54, 0.86);
+  --source-map-line-code-active: rgba(0, 43, 54, 0.98);
+  --source-map-line-code-parameter: rgba(32, 127, 121, 1);
+  --source-map-line-code-first-parameter: rgba(133, 100, 0, 1);
+  --source-map-selected-bg: rgba(38, 139, 210, 0.22);
+  --source-map-selected-border: rgba(38, 139, 210, 0.95);
+  --source-map-selected-shadow: inset 0 0 0 1px rgba(38, 139, 210, 0.45), 0 0 0 1px rgba(38, 139, 210, 0.18);
+  --source-map-line-code-selected: #002b36;
 
   --success-bg: rgba(133, 153, 0, 0.12);
   --success-border: rgba(133, 153, 0, 0.25);

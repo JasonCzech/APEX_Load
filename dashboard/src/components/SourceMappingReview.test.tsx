@@ -399,6 +399,8 @@ describe('SourceMappingReview', () => {
     const coverageRule = cssRule(stylesheet, '.source-map-coverage')
     const coverageStatusRule = cssRule(stylesheet, '.source-map-coverage .source-map-status')
     const sourcePanels = cssRule(stylesheet, '.source-map-panels')
+    const linkedCodeEditor = cssRule(stylesheet, '.linked-code-pane .cm-editor')
+    const sourceCodeFallback = cssRule(stylesheet, '.source-map-code,\n.source-map-dsl')
 
     expect(nonShrinkingSections).toContain('flex: 0 0 auto;')
     expect(headerControls).toContain('display: flex;')
@@ -413,6 +415,8 @@ describe('SourceMappingReview', () => {
     expect(sourcePanels).toContain('height: 420px;')
     expect(sourcePanels).toContain('min-height: 360px;')
     expect(sourcePanels).toContain('max-height: min(620px, 58vh);')
+    expect(linkedCodeEditor).toContain('font-size: 13px;')
+    expect(sourceCodeFallback).toContain('font-size: 13px;')
     expect(stylesheet).toContain('.linked-code-pane > div {')
     expect(stylesheet).toContain('height: 100%;')
     expect(stylesheet).toContain('.linked-code-pane .cm-scroller {\n  overflow: auto;')

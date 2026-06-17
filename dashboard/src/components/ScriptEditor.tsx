@@ -454,6 +454,8 @@ interface ScriptCodeScrollSnapshot {
   lineCount: number
   topLine: number
   bottomLine: number
+  selectedStartLine: number
+  selectedEndLine: number
   lineLayouts: ScriptCodeLineLayout[]
   baseLineHeight: number
 }
@@ -465,7 +467,7 @@ interface ScriptCodeScrollController {
   scrollToRatio: (ratio: number) => void
 }
 
-const JSON_SOURCE_MAP_LINE_HEIGHT_PX = 12
+const JSON_SOURCE_MAP_LINE_HEIGHT_PX = 6.5
 
 const SCRIPT_CODE_SCROLL_EMPTY: ScriptCodeScrollSnapshot = {
   scrollTop: 0,
@@ -474,6 +476,8 @@ const SCRIPT_CODE_SCROLL_EMPTY: ScriptCodeScrollSnapshot = {
   lineCount: 1,
   topLine: 1,
   bottomLine: 1,
+  selectedStartLine: 1,
+  selectedEndLine: 1,
   lineLayouts: [],
   baseLineHeight: JSON_SOURCE_MAP_LINE_HEIGHT_PX,
 }
@@ -524,6 +528,20 @@ function readScriptCodeLineLayouts(view: EditorView, scrollHeight: number, lineC
   }
 }
 
+function readScriptCodeSelectionLines(view: EditorView, lineCount: number) {
+  const selection = view.state.selection.main
+  const from = clampNumber(selection.from, 0, view.state.doc.length)
+  const inclusiveTo = selection.to === selection.from
+    ? from
+    : clampNumber(selection.to - 1, 0, view.state.doc.length)
+  const startLine = view.state.doc.lineAt(Math.min(from, inclusiveTo)).number
+  const endLine = view.state.doc.lineAt(Math.max(from, inclusiveTo)).number
+  return {
+    selectedStartLine: Math.max(1, Math.min(lineCount, startLine)),
+    selectedEndLine: Math.max(1, Math.min(lineCount, endLine)),
+  }
+}
+
 function readScriptCodeScrollSnapshot(view: EditorView | null): ScriptCodeScrollSnapshot {
   const scrollDOM = view?.scrollDOM
   if (!scrollDOM) return SCRIPT_CODE_SCROLL_EMPTY
@@ -539,7 +557,8 @@ function readScriptCodeScrollSnapshot(view: EditorView | null): ScriptCodeScroll
   const bottomLine = view
     ? readLinePositionAtScrollTop(view, scrollTop + clientHeight, scrollHeight, lineCount)
     : approximateLinePosition(scrollTop + clientHeight, scrollHeight, lineCount)
-  return { scrollTop, scrollHeight, clientHeight, lineCount, topLine, bottomLine, lineLayouts, baseLineHeight }
+  const selectionLines = readScriptCodeSelectionLines(view, lineCount)
+  return { scrollTop, scrollHeight, clientHeight, lineCount, topLine, bottomLine, ...selectionLines, lineLayouts, baseLineHeight }
 }
 
 function sameScriptCodeLineLayouts(a: ScriptCodeLineLayout[], b: ScriptCodeLineLayout[]) {
@@ -560,6 +579,8 @@ function sameScriptCodeScrollSnapshot(a: ScriptCodeScrollSnapshot, b: ScriptCode
     a.lineCount === b.lineCount &&
     a.topLine === b.topLine &&
     a.bottomLine === b.bottomLine &&
+    a.selectedStartLine === b.selectedStartLine &&
+    a.selectedEndLine === b.selectedEndLine &&
     a.baseLineHeight === b.baseLineHeight &&
     sameScriptCodeLineLayouts(a.lineLayouts, b.lineLayouts)
   )
@@ -617,16 +638,6 @@ function ScriptCodePane({
   const viewRef = useRef<EditorView | null>(null)
   const lastScrollSnapshotRef = useRef<ScriptCodeScrollSnapshot>(SCRIPT_CODE_SCROLL_EMPTY)
   const [editorReadyVersion, setEditorReadyVersion] = useState(0)
-  const extensions = useMemo(() => [
-    json(),
-    apexCodeMirrorTheme,
-    apexDslSemanticHighlighting(),
-    scriptCodeRangeField,
-    scriptCodeParameterMatchField,
-    scriptCodeCandidateMatchField,
-    EditorView.lineWrapping,
-    ...(assistExtensions ?? []),
-  ], [assistExtensions])
   const activeStartLine = activeRange?.startLine ?? null
   const activeEndLine = activeRange?.endLine ?? null
   const parameterMatchKey = useMemo(
@@ -650,6 +661,21 @@ function ScriptCodePane({
     lastScrollSnapshotRef.current = snapshot
     onScrollSnapshotChange?.(snapshot)
   }, [onScrollSnapshotChange])
+  const extensions = useMemo(() => [
+    json(),
+    apexCodeMirrorTheme,
+    apexDslSemanticHighlighting(),
+    scriptCodeRangeField,
+    scriptCodeParameterMatchField,
+    scriptCodeCandidateMatchField,
+    EditorView.lineWrapping,
+    EditorView.updateListener.of(update => {
+      if (update.selectionSet || update.docChanged || update.viewportChanged || update.geometryChanged) {
+        emitScrollSnapshot()
+      }
+    }),
+    ...(assistExtensions ?? []),
+  ], [assistExtensions, emitScrollSnapshot])
 
   const scrollToScrollTop = useCallback((scrollTop: number) => {
     const scrollDOM = viewRef.current?.scrollDOM
@@ -710,7 +736,12 @@ function ScriptCodePane({
     const scrollDOM = viewRef.current?.scrollDOM
     if (!scrollDOM) return undefined
     const handleScroll = () => emitScrollSnapshot()
+    const handleSelectionChange = () => emitScrollSnapshot()
     scrollDOM.addEventListener('scroll', handleScroll, { passive: true })
+    scrollDOM.addEventListener('keyup', handleSelectionChange)
+    scrollDOM.addEventListener('mouseup', handleSelectionChange)
+    scrollDOM.addEventListener('select', handleSelectionChange)
+    scrollDOM.addEventListener('input', handleSelectionChange)
     emitScrollSnapshot()
 
     let resizeObserver: ResizeObserver | null = null
@@ -722,6 +753,10 @@ function ScriptCodePane({
 
     return () => {
       scrollDOM.removeEventListener('scroll', handleScroll)
+      scrollDOM.removeEventListener('keyup', handleSelectionChange)
+      scrollDOM.removeEventListener('mouseup', handleSelectionChange)
+      scrollDOM.removeEventListener('select', handleSelectionChange)
+      scrollDOM.removeEventListener('input', handleSelectionChange)
       resizeObserver?.disconnect()
       window.removeEventListener('resize', emitScrollSnapshot)
     }
@@ -894,6 +929,7 @@ interface JsonMinimapLine {
   isActiveBlock: boolean
   hasParameterMatch: boolean
   hasFirstParameterMatch: boolean
+  isSelectedLine: boolean
   widthPct: number
 }
 
@@ -929,6 +965,7 @@ function lineNumberForOffset(lineStarts: number[], offset: number): number {
 function buildJsonMinimapLines(
   jsonText: string,
   activeRange: LineRange | null,
+  selectedLineRange: LineRange | null,
   parameterMatchRanges: ScriptCodeMatchRange[],
   candidateMatchRanges: ScriptCodeMatchRange[] = [],
 ): JsonMinimapLine[] {
@@ -962,9 +999,27 @@ function buildJsonMinimapLines(
       isActiveBlock: Boolean(activeRange && lineNo >= activeRange.startLine && lineNo <= activeRange.endLine),
       hasParameterMatch: parameterLines.has(lineNo),
       hasFirstParameterMatch: firstParameterLine === lineNo,
+      isSelectedLine: Boolean(selectedLineRange && lineNo >= selectedLineRange.startLine && lineNo <= selectedLineRange.endLine),
       widthPct,
     }
   })
+}
+
+function buildMinimapLineOffsets(lineHeights: number[]): number[] {
+  return lineHeights.reduce<number[]>((offsets, height) => {
+    offsets.push(offsets[offsets.length - 1] + height)
+    return offsets
+  }, [0])
+}
+
+function minimapOffsetForLinePosition(linePosition: number, lineOffsets: number[], lineHeights: number[]): number {
+  if (lineHeights.length === 0) return 0
+  const boundedPosition = clampNumber(linePosition, 1, lineHeights.length + 1)
+  const rawIndex = boundedPosition - 1
+  const lineIndex = Math.floor(rawIndex)
+  if (lineIndex >= lineHeights.length) return lineOffsets[lineHeights.length] || 0
+  const lineFraction = rawIndex - lineIndex
+  return (lineOffsets[lineIndex] || 0) + lineFraction * lineHeights[lineIndex]
 }
 
 function JsonSourceMinimap({
@@ -982,9 +1037,13 @@ function JsonSourceMinimap({
   const scrollTrackRef = useRef<HTMLDivElement | null>(null)
   const sourceMapLinesRef = useRef<HTMLDivElement | null>(null)
   const dragStateRef = useRef<{ pointerId: number | null; startY: number; startRatio: number; trackHeight: number } | null>(null)
+  const selectedLineRange = useMemo(() => ({
+    startLine: Math.min(scrollSnapshot.selectedStartLine, scrollSnapshot.selectedEndLine),
+    endLine: Math.max(scrollSnapshot.selectedStartLine, scrollSnapshot.selectedEndLine),
+  }), [scrollSnapshot.selectedEndLine, scrollSnapshot.selectedStartLine])
   const lines = useMemo(
-    () => buildJsonMinimapLines(jsonText, activeRange, parameterMatchRanges, candidateMatchRanges),
-    [activeRange, candidateMatchRanges, jsonText, parameterMatchRanges],
+    () => buildJsonMinimapLines(jsonText, activeRange, selectedLineRange, parameterMatchRanges, candidateMatchRanges),
+    [activeRange, candidateMatchRanges, jsonText, parameterMatchRanges, selectedLineRange],
   )
   const activeLabel = selectedParameterName
     ? `${selectedParameterName}: ${parameterMatchRanges.length} occurrence${parameterMatchRanges.length === 1 ? '' : 's'}`
@@ -1000,6 +1059,7 @@ function JsonSourceMinimap({
     }),
     [lines, minimapScale, scrollSnapshot.baseLineHeight, scrollSnapshot.lineLayouts],
   )
+  const minimapLineOffsets = useMemo(() => buildMinimapLineOffsets(minimapLineHeights), [minimapLineHeights])
   const sourceMapGridTemplateRows = useMemo(() => {
     const fallbackCount = Math.max(lines.length, 1)
     if (minimapLineHeights.length === 0) return `repeat(${fallbackCount}, ${JSON_SOURCE_MAP_LINE_HEIGHT_PX}px)`
@@ -1016,15 +1076,20 @@ function JsonSourceMinimap({
   const scrollPercent = Math.round(scrollRatio * 100)
   const thumbHeightPct = visibleRatio * 100
   const thumbTopPct = scrollRatio * 100
-  const viewportHighlightTop = scrollSnapshot.scrollTop * minimapScale
-  const viewportHighlightHeight = scrollSnapshot.clientHeight * minimapScale
+  const viewportHighlightTop = minimapOffsetForLinePosition(scrollSnapshot.topLine, minimapLineOffsets, minimapLineHeights)
+  const viewportHighlightBottom = minimapOffsetForLinePosition(
+    Math.max(scrollSnapshot.topLine, scrollSnapshot.bottomLine),
+    minimapLineOffsets,
+    minimapLineHeights,
+  )
+  const viewportHighlightHeight = Math.max(JSON_SOURCE_MAP_LINE_HEIGHT_PX, viewportHighlightBottom - viewportHighlightTop)
 
   useEffect(() => {
     const linesElement = sourceMapLinesRef.current
     if (!linesElement) return
     const maxScrollTop = Math.max(0, linesElement.scrollHeight - linesElement.clientHeight)
-    linesElement.scrollTop = clampNumber(scrollSnapshot.scrollTop * minimapScale, 0, maxScrollTop)
-  }, [lines.length, minimapScale, scrollSnapshot.scrollTop])
+    linesElement.scrollTop = clampNumber(viewportHighlightTop, 0, maxScrollTop)
+  }, [lines.length, viewportHighlightTop])
 
   const scrollFromTrackPosition = (clientY: number) => {
     const track = scrollTrackRef.current
@@ -1226,7 +1291,7 @@ function JsonSourceMinimap({
               <button
                 key={`json-map-line-${line.lineNo}`}
                 type="button"
-                className={`json-source-map-line ${line.isActiveBlock ? 'active-block' : ''} ${line.hasParameterMatch ? 'parameter-match' : ''} ${line.hasFirstParameterMatch ? 'first-parameter-match' : ''}`}
+                className={`json-source-map-line ${line.isActiveBlock ? 'active-block' : ''} ${line.hasParameterMatch ? 'parameter-match' : ''} ${line.hasFirstParameterMatch ? 'first-parameter-match' : ''} ${line.isSelectedLine ? 'selected-line' : ''}`}
                 onClick={() => onJumpToLine(line.lineNo)}
                 title={`Line ${line.lineNo}: ${line.textPreview}`}
                 aria-label={`Jump to JSON line ${line.lineNo}`}
