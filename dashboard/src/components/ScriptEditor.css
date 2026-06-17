@@ -3990,6 +3990,11 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+.editor-outline-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .editor-outline-title {
   display: flex;
   flex-direction: column;
@@ -4223,6 +4228,55 @@
   background: rgba(16, 185, 129, 0.14);
   color: #047857;
 }
+/* Quiet, non-interactive metadata cluster on an action row. Revealed on hover/active
+   so the default scan only shows the exceptional signals (review gate, issue count). */
+.action-item-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.action-item:hover .action-item-meta,
+.action-item.active .action-item-meta {
+  opacity: 1;
+}
+/* Non-interactive count badge. Visually distinct from the bright, tappable-looking
+   .action-signal-pill: lower contrast, no uppercase, square-ish corners. */
+.metric-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+/* Hover card shown over a {{...}} template token in the Script JSON editor. */
+.apex-template-hover {
+  max-width: 320px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 4px;
+}
+.apex-template-hover-title {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.apex-template-hover-detail {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.apex-template-hover-known .apex-template-hover-title { color: #047857; }
+.apex-template-hover-unknown .apex-template-hover-title { color: var(--danger); }
+.apex-template-hover-unknown .apex-template-hover-detail { color: var(--danger); }
 .action-item-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
 .action-item:hover .action-item-actions { opacity: 1; }
 .action-empty { padding: 32px 16px; text-align: center; color: var(--text-muted); font-size: 13px; }
@@ -4307,6 +4361,20 @@
 .starter-blocks-list {
   display: grid;
   gap: 8px;
+}
+.reusable-blocks-group {
+  display: grid;
+  gap: 6px;
+}
+.reusable-blocks-group + .reusable-blocks-group {
+  margin-top: 6px;
+}
+.reusable-blocks-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
 }
 .starter-block-card {
   display: flex;

@@ -197,4 +197,50 @@ describe('KeyboardShortcutProvider', () => {
 
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
   })
+
+  it('opens the command palette with Cmd+K and runs a filtered command', async () => {
+    const onTrigger = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <KeyboardShortcutProvider>
+          <input aria-label="Editor" />
+          <Publisher shortcuts={[
+            { id: 'run', label: 'Run shakeout', group: 'Test Run', keys: 'F5', onTrigger },
+            { id: 'stop', label: 'Stop run', group: 'Test Run', keys: 'F8', onTrigger: vi.fn() },
+          ]} />
+        </KeyboardShortcutProvider>,
+      )
+    })
+
+    // Opens even while focused in an editable field (allowInEditable).
+    const editor = container.querySelector('input')!
+    await act(async () => {
+      editor.dispatchEvent(keyboardEvent('k', { metaKey: true }))
+    })
+
+    const palette = document.body.querySelector('[role="dialog"][aria-label="Command palette"]')
+    expect(palette).not.toBeNull()
+    expect(palette?.textContent).toContain('Run shakeout')
+    expect(palette?.textContent).toContain('Stop run')
+
+    const search = palette!.querySelector('input') as HTMLInputElement
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+    await act(async () => {
+      nativeSetter.call(search, 'shakeout')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(palette?.textContent).toContain('Run shakeout')
+    expect(palette?.textContent).not.toContain('Stop run')
+
+    await act(async () => {
+      search.dispatchEvent(keyboardEvent('Enter'))
+    })
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+
+    expect(onTrigger).toHaveBeenCalledTimes(1)
+    expect(document.body.querySelector('[role="dialog"][aria-label="Command palette"]')).toBeNull()
+  })
 })

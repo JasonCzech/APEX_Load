@@ -485,10 +485,10 @@ function ReleaseSnapshotPanel({
             <div className="release-panel-feed">
               {visibleAttentionItems.length === 0 ? (
                 <div className="release-panel-feed-empty">No active attention items for this release.</div>
-              ) : visibleAttentionItems.map(item => (
+              ) : visibleAttentionItems.map((item, index) => (
                 <button
                   type="button"
-                  key={`${item.title}-${item.detail}`}
+                  key={`attention-${index}-${item.testId ?? item.title}`}
                   className={`release-panel-feed-item tone-${item.tone}`}
                   onClick={() => item.testId ? onSelectTest(item.testId) : onMonitoring()}
                 >

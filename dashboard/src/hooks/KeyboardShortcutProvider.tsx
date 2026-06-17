@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import './KeyboardShortcutProvider.css'
 import { useModalDialog } from './useModalDialog'
+import { CommandPalette } from '../components/CommandPalette'
 
 export type KeyboardShortcutGroup = 'Global' | 'Navigation' | 'Current Page' | 'Script Editor' | 'Test Run' | 'Workspace' | string
 
@@ -53,6 +54,17 @@ const BUILT_IN_HELP_SHORTCUT: RegisteredKeyboardShortcut = {
   group: 'Global',
   priority: 1000,
   sequence: 0,
+  onTrigger: () => undefined,
+}
+
+const BUILT_IN_PALETTE_SHORTCUT: RegisteredKeyboardShortcut = {
+  id: 'global.command-palette',
+  label: 'Open command palette',
+  keys: ['mod+k', 'ctrl+shift+p'],
+  group: 'Global',
+  priority: 1001,
+  sequence: 0,
+  allowInEditable: true,
   onTrigger: () => undefined,
 }
 
@@ -241,6 +253,7 @@ export function matchingShortcutsForEvent(
 export function KeyboardShortcutProvider({ children }: { children: ReactNode }) {
   const [registry, setRegistry] = useState<Record<string, RegisteredKeyboardShortcut>>({})
   const [helpOpen, setHelpOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
   const sequenceRef = useRef(0)
   const pendingStepsRef = useRef<ParsedShortcutStep[]>([])
   const timeoutRef = useRef<number | null>(null)
@@ -248,6 +261,7 @@ export function KeyboardShortcutProvider({ children }: { children: ReactNode }) 
   const registeredShortcuts = useMemo(() => Object.values(registry).sort(sortShortcuts), [registry])
   const allShortcuts = useMemo<RegisteredKeyboardShortcut[]>(() => [
     { ...BUILT_IN_HELP_SHORTCUT, onTrigger: () => setHelpOpen(true) },
+    { ...BUILT_IN_PALETTE_SHORTCUT, onTrigger: () => setPaletteOpen(open => !open) },
     ...registeredShortcuts,
   ], [registeredShortcuts])
 
@@ -330,6 +344,7 @@ export function KeyboardShortcutProvider({ children }: { children: ReactNode }) 
     <KeyboardShortcutContext.Provider value={value}>
       {children}
       {helpOpen && <ShortcutHelpDialog shortcuts={allShortcuts} onClose={() => setHelpOpen(false)} />}
+      {paletteOpen && <CommandPalette shortcuts={allShortcuts} onClose={() => setPaletteOpen(false)} />}
     </KeyboardShortcutContext.Provider>
   )
 }

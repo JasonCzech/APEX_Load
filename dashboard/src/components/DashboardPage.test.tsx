@@ -453,6 +453,54 @@ describe('DashboardPage', () => {
     expect(onNavigate).toHaveBeenCalledWith('new-test')
   })
 
+  it('renders same-named archive-pending attention items with unique keys', async () => {
+    // Two completed runs share a name and have no archive, so they produce
+    // attention items with identical title + detail (different ids). The feed
+    // key must stay unique or React drops/duplicates a row and warns.
+    apiMock.listTests.mockResolvedValueOnce({
+      tests: [
+        {
+          id: 'web-test-a', name: 'web test', status: 'COMPLETE',
+          application_id: 'app-1', release_id: 'rel-1',
+          groups: [{ name: 'g1', script_id: 's1', script_name: 'web', protocol: 'http', vusers: 1 }],
+          total_vusers: 1, duration: '1m', created_at: '2026-05-12T10:00:00Z', ended_at: '2026-05-12T10:01:00Z',
+        },
+        {
+          id: 'web-test-b', name: 'web test', status: 'COMPLETE',
+          application_id: 'app-1', release_id: 'rel-1',
+          groups: [{ name: 'g1', script_id: 's2', script_name: 'web', protocol: 'http', vusers: 1 }],
+          total_vusers: 1, duration: '1m', created_at: '2026-05-12T09:00:00Z', ended_at: '2026-05-12T09:01:00Z',
+        },
+      ],
+    })
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      await act(async () => {
+        root.render(
+          <DashboardPage
+            testStatuses={{}}
+            metricsHistory={{}}
+            connectionState="connected"
+            onSelectTest={onSelectTest}
+            onNavigate={onNavigate}
+            snapshotAudience="admin"
+          />,
+        )
+      })
+      await flushDashboard()
+
+      const archivePendingItems = Array.from(container.querySelectorAll('.release-panel-feed-item'))
+        .filter(item => item.textContent?.includes('archive pending'))
+      expect(archivePendingItems).toHaveLength(2)
+
+      const duplicateKeyWarnings = errorSpy.mock.calls.filter(call => String(call[0]).includes('same key'))
+      expect(duplicateKeyWarnings).toEqual([])
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
   it('shows release-quality snapshot details for non-admin audiences', async () => {
     await act(async () => {
       root.render(

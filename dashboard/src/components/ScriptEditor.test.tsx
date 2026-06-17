@@ -891,8 +891,19 @@ describe('ScriptEditor', () => {
     })
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
     expect(container.querySelectorAll('.json-source-map-line.active-block').length).toBeGreaterThan(0)
-    expect(container.querySelector('.action-list')?.textContent).toContain('R2')
-    expect(container.querySelector('.action-list')?.textContent).toContain('E1')
+    expect(container.querySelector('.action-list')?.textContent).toContain('2 req')
+    expect(container.querySelector('.action-list')?.textContent).toContain('1 ext')
+  })
+
+  it('exposes a Find affordance in the Script JSON toolbar', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+      await Promise.resolve()
+    })
+
+    const findButton = findButtonByTitle(container, 'Find in script (⌘F / Ctrl+F)')
+    expect(findButton).toBeDefined()
+    expect(findButton?.textContent?.trim()).toBe('Find')
   })
 
   it('layers the parameter data dialog above the sticky app chrome', async () => {
@@ -1406,10 +1417,9 @@ describe('ScriptEditor', () => {
     const rows = Array.from(container.querySelectorAll('.action-item'))
     const jsRow = rows.find(row => row.textContent?.includes('Custom JS'))
     const controlRow = rows.find(row => row.textContent?.includes('Ready Branch'))
-    expect(jsRow?.textContent).toContain('REV')
-    expect(jsRow?.textContent).toContain('JS')
-    expect(jsRow?.textContent).toContain('F1')
-    expect(controlRow?.textContent).toContain('CTRL')
+    expect(jsRow?.textContent).toContain('Review')
+    expect(jsRow?.textContent).toContain('1 fb')
+    expect(controlRow?.textContent).toContain('ctrl')
 
     if (!jsRow) return
     await act(async () => {
@@ -4559,7 +4569,7 @@ describe('ScriptEditor', () => {
     })
 
     const readinessCard = Array.from(container.querySelectorAll('.utility-card'))
-      .find(card => card.textContent?.includes('Debug Readiness'))
+      .find(card => card.textContent?.includes('Ready to run?'))
     expect(readinessCard?.textContent).toContain('Variable readiness')
     expect(readinessCard?.textContent).toContain('Missing variable: backend_only_account')
   })
@@ -5219,7 +5229,6 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).toContain('1 undo')
     const undoButton = findButtonByText(container, 'Undo')
     expect(undoButton).toBeDefined()
     if (!undoButton) {
@@ -5454,7 +5463,7 @@ describe('ScriptEditor', () => {
     })
 
     const readinessCard = Array.from(container.querySelectorAll('.utility-card'))
-      .find(card => card.textContent?.includes('Debug Readiness'))
+      .find(card => card.textContent?.includes('Ready to run?'))
     expect(readinessCard?.textContent).toContain('Preflight')
     expect(readinessCard?.textContent).toContain('Missing variable: account_id')
 
@@ -7706,9 +7715,9 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('Users.prm: LoginUser')
     expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('column username')
     expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('table users.csv')
-    expect(container.textContent).toContain('Convergence Checklist')
-    expect(container.textContent).toContain('Guided History')
-    expect(container.textContent).toContain('Flow Assembly')
+    expect(container.textContent).toContain('Ready to run?')
+    expect(container.textContent).not.toContain('Guided History')
+    expect(container.textContent).not.toContain('Flow Assembly')
     expect(container.textContent).toContain('Repair Actions')
     expect(container.textContent).toContain('Migration Assistant')
     expect(container.textContent).toContain('Draft Diff Review')
@@ -7849,9 +7858,9 @@ describe('ScriptEditor', () => {
 
     expect(container.textContent).toContain('Core API Request Group')
 
-    const insertButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.includes('Insert Block'),
-    )
+    const insertButton = Array.from(container.querySelectorAll('.reusable-blocks-panel .starter-block-card')).find(button =>
+      button.textContent?.includes('Core API Request Group'),
+    ) as HTMLButtonElement | undefined
     expect(insertButton).toBeDefined()
     if (!insertButton) {
       return

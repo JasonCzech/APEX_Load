@@ -6,7 +6,15 @@ import { ensureSyntaxTree } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
 
 import { setCachedDslActionCatalog, type DslActionCatalog } from './dslActionCatalog'
-import { diagnosticsFromIssues, documentProtocol, dslCompletionSource, locateJsonPath } from './dslEditorAssist'
+import {
+  describeTemplateReference,
+  diagnosticsFromIssues,
+  documentProtocol,
+  dslCompletionSource,
+  locateJsonPath,
+  readScriptReferenceModel,
+  templateTokenAt,
+} from './dslEditorAssist'
 
 const testCatalog: DslActionCatalog = {
   protocols: ['browser', 'http', 'websocket'],
@@ -171,5 +179,69 @@ describe('dslCompletionSource', () => {
 
   it('returns null without a catalog', () => {
     expect(completionAt(browserScript, '"type": "browser_cl')).toBeNull()
+  })
+})
+
+const scriptWithRefs = `{
+  "name": "demo",
+  "protocol": "http",
+  "config": { "environment": { "BASE_URL": "https://x" } },
+  "parameters": [ { "name": "username", "type": "list" } ],
+  "data_sources": [ { "name": "users", "type": "csv", "columns": ["email", "id"] } ],
+  "actions": [
+    { "name": "login", "type": "GET", "target": "/u/{{param.username}}?e={{data.users.email}}" }
+  ]
+}`
+
+describe('readScriptReferenceModel', () => {
+  it('reads parameters, data sources, and env keys (incl. through the envelope)', () => {
+    const model = readScriptReferenceModel(stateFor(scriptWithRefs))
+    expect(model.parameters.map(parameter => parameter.name)).toContain('username')
+    expect(model.dataSources.map(source => source.name)).toContain('users')
+    expect(model.envKeys.has('BASE_URL')).toBe(true)
+
+    const enveloped = `{ "script": ${scriptWithRefs} }`
+    expect(readScriptReferenceModel(stateFor(enveloped)).parameters.map(parameter => parameter.name)).toContain('username')
+  })
+})
+
+describe('describeTemplateReference', () => {
+  const model = readScriptReferenceModel(stateFor(scriptWithRefs))
+
+  it('marks a defined parameter as known and an undefined one as unknown', () => {
+    expect(describeTemplateReference('param.username', model).status).toBe('known')
+    const missing = describeTemplateReference('param.nope', model)
+    expect(missing.status).toBe('unknown')
+    expect(missing.detail).toMatch(/not defined/i)
+  })
+
+  it('resolves data bindings and flags a missing column', () => {
+    expect(describeTemplateReference('data.users.email', model).status).toBe('known')
+    expect(describeTemplateReference('data.users.missing', model).status).toBe('unknown')
+    expect(describeTemplateReference('data.absent.email', model).status).toBe('unknown')
+  })
+
+  it('treats runtime/env/secret/fn references as informational, not errors', () => {
+    expect(describeTemplateReference('var.csrf', model).status).toBe('info')
+    expect(describeTemplateReference('secret.token', model).status).toBe('info')
+    expect(describeTemplateReference('env.BASE_URL', model).status).toBe('info')
+    expect(describeTemplateReference('fn.uuid()', model).status).toBe('info')
+  })
+
+  it('flags an unknown namespace', () => {
+    expect(describeTemplateReference('bogus.thing', model).status).toBe('unknown')
+  })
+})
+
+describe('templateTokenAt', () => {
+  it('finds the {{...}} token spanning a position and ignores positions outside one', () => {
+    const state = stateFor(scriptWithRefs)
+    const doc = state.doc.toString()
+    const inside = doc.indexOf('param.username') + 2
+    const token = templateTokenAt(state, inside)
+    expect(token?.expr.trim()).toBe('param.username')
+
+    const outside = doc.indexOf('"protocol"') + 1
+    expect(templateTokenAt(state, outside)).toBeNull()
   })
 })

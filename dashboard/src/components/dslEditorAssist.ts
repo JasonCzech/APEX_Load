@@ -14,6 +14,7 @@ import { jsonParseLinter } from '@codemirror/lang-json'
 import { syntaxTree } from '@codemirror/language'
 import { linter, type Diagnostic } from '@codemirror/lint'
 import type { EditorState, Extension } from '@codemirror/state'
+import { hoverTooltip, type Tooltip } from '@codemirror/view'
 import type { SyntaxNode } from '@lezer/common'
 
 import {
@@ -287,6 +288,143 @@ export function dslCompletionSource(context: CompletionContext): CompletionResul
   return null
 }
 
+// --- Template reference hover ({{ns.name}} resolution) ---------------------
+//
+// On hover over a {{...}} token, resolve the namespace and name against the
+// script's own parameters/data_sources/config so authors immediately see
+// whether a reference is defined — the most common authoring bug is pointing
+// at a parameter or data column that does not exist.
+
+const TEMPLATE_TOKEN = /\{\{\s*([^{}]+?)\s*\}\}/g
+const KNOWN_NAMESPACES = new Set(['env', 'data', 'var', 'param', 'secret', 'fn', 'fake'])
+
+export interface ScriptReferenceModel {
+  parameters: Array<{ name?: string; type?: string }>
+  dataSources: Array<{ name?: string; type?: string; columns?: string[] }>
+  envKeys: Set<string>
+}
+
+/** Read the parameter/data-source/env surface from the document JSON. */
+export function readScriptReferenceModel(state: EditorState): ScriptReferenceModel {
+  const empty: ScriptReferenceModel = { parameters: [], dataSources: [], envKeys: new Set() }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(state.doc.toString())
+  } catch {
+    return empty
+  }
+  if (parsed && typeof parsed === 'object' && 'script' in parsed && typeof (parsed as { script?: unknown }).script === 'object') {
+    parsed = (parsed as { script?: unknown }).script
+  }
+  if (!parsed || typeof parsed !== 'object') return empty
+  const record = parsed as Record<string, unknown>
+  const config = (record.config && typeof record.config === 'object') ? record.config as Record<string, unknown> : {}
+  const envKeys = new Set<string>()
+  for (const source of [config.environment, config.variables, config.env]) {
+    if (source && typeof source === 'object') Object.keys(source as Record<string, unknown>).forEach(key => envKeys.add(key))
+  }
+  return {
+    parameters: Array.isArray(record.parameters) ? record.parameters as ScriptReferenceModel['parameters'] : [],
+    dataSources: Array.isArray(record.data_sources) ? record.data_sources as ScriptReferenceModel['dataSources'] : [],
+    envKeys,
+  }
+}
+
+export interface TemplateReferenceInfo {
+  title: string
+  detail: string
+  /** known = resolved in-script; unknown = a real authoring gap; info = runtime-resolved. */
+  status: 'known' | 'unknown' | 'info'
+}
+
+/** Describe a `{{...}}` inner expression against the script reference model. Exported for tests. */
+export function describeTemplateReference(expr: string, model: ScriptReferenceModel): TemplateReferenceInfo {
+  const trimmed = expr.trim()
+  const dot = trimmed.indexOf('.')
+  const namespace = (dot === -1 ? trimmed : trimmed.slice(0, dot)).trim()
+  const rest = dot === -1 ? '' : trimmed.slice(dot + 1).trim()
+  switch (namespace) {
+    case 'param': {
+      const match = model.parameters.find(parameter => parameter.name === rest)
+      if (match) {
+        return { title: `param.${rest}`, detail: `Parameter — defined${match.type ? ` (type: ${match.type})` : ''}.`, status: 'known' }
+      }
+      return { title: `param.${rest}`, detail: 'Parameter is not defined in this script. Add it to the Parameter List.', status: 'unknown' }
+    }
+    case 'data': {
+      const segments = rest.split('.')
+      const sourceName = segments[0]
+      const column = segments.slice(1).join('.')
+      const source = model.dataSources.find(dataSource => dataSource.name === sourceName)
+      if (!source) {
+        return { title: `data.${rest}`, detail: `Data source "${sourceName}" is not defined in this script.`, status: 'unknown' }
+      }
+      if (column && Array.isArray(source.columns) && source.columns.length > 0 && !source.columns.includes(column)) {
+        return { title: `data.${rest}`, detail: `Column "${column}" is not in data source "${sourceName}" (${source.columns.join(', ')}).`, status: 'unknown' }
+      }
+      return { title: `data.${rest}`, detail: `Data binding — source "${sourceName}"${source.type ? ` (${source.type})` : ''}${column ? `, column "${column}"` : ''}.`, status: 'known' }
+    }
+    case 'var':
+      return { title: `var.${rest}`, detail: 'Runtime variable — set by an extractor, capture, or session variable during the run.', status: 'info' }
+    case 'secret':
+      return { title: `secret.${rest}`, detail: 'Secret reference — resolved from the secret store at run time (value masked).', status: 'info' }
+    case 'env':
+      return {
+        title: `env.${rest}`,
+        detail: model.envKeys.has(rest)
+          ? 'Environment variable — a default is set in this script’s config.'
+          : 'Environment variable — resolved at run time from the selected environment.',
+        status: 'info',
+      }
+    case 'fn':
+      return { title: `fn.${rest}`, detail: 'Built-in function — evaluated each time it is used.', status: 'info' }
+    case 'fake':
+      return { title: `fake.${rest}`, detail: 'Synthetic data generator — produces a fake value on each use.', status: 'info' }
+    default:
+      if (KNOWN_NAMESPACES.has(namespace)) {
+        return { title: trimmed, detail: 'Template reference.', status: 'info' }
+      }
+      return { title: trimmed, detail: `Unknown namespace "${namespace}". Expected env, data, var, param, secret, fn, or fake.`, status: 'unknown' }
+  }
+}
+
+/** Locate the `{{...}}` token spanning `pos` on its line, if any. Exported for tests. */
+export function templateTokenAt(state: EditorState, pos: number): { from: number; to: number; expr: string } | null {
+  const line = state.doc.lineAt(pos)
+  const relative = pos - line.from
+  TEMPLATE_TOKEN.lastIndex = 0
+  for (let match = TEMPLATE_TOKEN.exec(line.text); match; match = TEMPLATE_TOKEN.exec(line.text)) {
+    const start = match.index
+    const end = match.index + match[0].length
+    if (relative < start || relative > end) continue
+    return { from: line.from + start, to: line.from + end, expr: match[1] }
+  }
+  return null
+}
+
+const templateReferenceHover = hoverTooltip((view, pos): Tooltip | null => {
+  const token = templateTokenAt(view.state, pos)
+  if (!token) return null
+  const info = describeTemplateReference(token.expr, readScriptReferenceModel(view.state))
+  return {
+    pos: token.from,
+    end: token.to,
+    above: true,
+    create() {
+      const dom = document.createElement('div')
+      dom.className = `apex-template-hover apex-template-hover-${info.status}`
+      const title = document.createElement('div')
+      title.className = 'apex-template-hover-title'
+      title.textContent = `{{${info.title}}}`
+      const detail = document.createElement('div')
+      detail.className = 'apex-template-hover-detail'
+      detail.textContent = info.detail
+      dom.append(title, detail)
+      return { dom }
+    },
+  }
+})
+
 export interface DslValidationOutcome {
   issues?: string[] | null
   warnings?: unknown
@@ -357,6 +495,7 @@ export function buildDslAssistExtensions(
   )
   return [
     autocompletion({ override: [dslCompletionSource] }),
+    templateReferenceHover,
     linter(jsonParseLinter()),
     validationLinter,
   ]

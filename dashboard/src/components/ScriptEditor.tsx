@@ -9,6 +9,7 @@ import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
 import { EditorSelection, StateEffect, type Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
+import { openSearchPanel } from '@codemirror/search'
 import { apexCodeMirrorTheme } from './codeMirrorTheme'
 import { apexDslSemanticHighlighting } from './apexDslSemanticHighlighting'
 import { buildDslAssistExtensions } from './dslEditorAssist'
@@ -916,6 +917,13 @@ function ScriptCodePane({
     emitScrollSnapshot()
   }, [editorReadyVersion, emitScrollSnapshot, jumpToLineRequest, value])
 
+  const handleOpenSearch = useCallback(() => {
+    const view = viewRef.current
+    if (!view) return
+    openSearchPanel(view)
+    view.focus()
+  }, [])
+
   const handleEditorContextMenu = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (!onRequestParameterize) return
     const view = viewRef.current
@@ -943,6 +951,7 @@ function ScriptCodePane({
         </div>
         <div className="script-code-status-row">
           <span className={`script-code-status ${status}`}>{statusMessage}</span>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={handleOpenSearch} title="Find in script (⌘F / Ctrl+F)">Find</button>
           <button type="button" className="btn btn-sm btn-ghost" onClick={onFormat}>Format</button>
           <button type="button" className="btn btn-sm btn-secondary" onClick={onApply} disabled={status === 'invalid'}>
             Apply JSON
@@ -6478,16 +6487,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           isSoapScript={isSoapScript}
           issues={actionIssueBuckets[activeAction] || []}
         />
-        <div className="utility-card contextual-history-card">
-          <div className="utility-card-header">
-            <strong>Guided History</strong>
-            <span>{editorHistory.past.length} undo • {editorHistory.future.length} redo</span>
-          </div>
-          <div className="utility-inline-actions">
-            <button type="button" className="btn btn-sm btn-secondary" onClick={undoEditorChange} disabled={editorHistory.past.length === 0}>Undo</button>
-            <button type="button" className="btn btn-sm btn-secondary" onClick={redoEditorChange} disabled={editorHistory.future.length === 0}>Redo</button>
-          </div>
-        </div>
       </>
     ) : null
   )
@@ -6584,11 +6583,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         return { kind: 'browser-replay', title: 'Browser Replay', railLabel: 'Replay' }
       case 'runtime-settings':
         if (activeRuntimeSettingsSection === 'script_config') {
-          return { kind: 'signals', title: 'Authoring Signals', railLabel: 'Signals' }
+          return { kind: 'signals', title: 'Insights', railLabel: 'Insights' }
         }
         return { kind: 'runtime-settings', title: 'Runtime Settings', railLabel: 'Runtime' }
       default:
-        return { kind: 'signals', title: 'Authoring Signals', railLabel: 'Signals' }
+        return { kind: 'signals', title: 'Insights', railLabel: 'Insights' }
     }
   })()
   const renderContextualRightSidebarContent = (): ReactNode => {
@@ -6658,8 +6657,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   <span>{sourceReview.mappings?.length || 0} mappings</span>
                 </div>
                 <div className="utility-metric-row">
-                  <span className="action-signal-pill">{sourceReview.source_files?.length || 0} files</span>
-                  <span className="action-signal-pill">{importSummary.correlationSuggestions.length} correlations</span>
+                  <span className="metric-badge">{sourceReview.source_files?.length || 0} files</span>
+                  <span className="metric-badge">{importSummary.correlationSuggestions.length} correlations</span>
                 </div>
                 {activeAction !== null && (
                   <button type="button" className="btn btn-sm btn-secondary" onClick={() => focusSourceMappingForAction(activeAction)}>
@@ -6675,9 +6674,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   <span>{formatTrueClientPromotionStatus(trueClientPromotionReview.status)}</span>
                 </div>
                 <div className="utility-metric-row">
-                  <span className="action-signal-pill">{formatPromotionCount(trueClientPromotionReview.replayEvidence.events, 'event')}</span>
-                  <span className="action-signal-pill">{trueClientPromotionReview.replayEvidence.passed} passed / {trueClientPromotionReview.replayEvidence.failed} failed</span>
-                  <span className="action-signal-pill">{formatPromotionCount(trueClientPromotionReview.gates.selectorFallbackCandidates, 'fallback')}</span>
+                  <span className="metric-badge">{formatPromotionCount(trueClientPromotionReview.replayEvidence.events, 'event')}</span>
+                  <span className="metric-badge">{trueClientPromotionReview.replayEvidence.passed} passed / {trueClientPromotionReview.replayEvidence.failed} failed</span>
+                  <span className="metric-badge">{formatPromotionCount(trueClientPromotionReview.gates.selectorFallbackCandidates, 'fallback')}</span>
                 </div>
                 <ul className="utility-list">
                   <li className="utility-list-item">Replay: {trueClientPromotionReview.replayEvidence.sessionId || trueClientPromotionReview.replayEvidence.status}</li>
@@ -6733,9 +6732,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <span>{objectDescriptorReview.rows.length} objects</span>
               </div>
               <div className="utility-metric-row">
-                <span className="action-signal-pill">{objectDescriptorReview.repositoryCount} repos</span>
-                <span className="action-signal-pill">{objectDescriptorReview.candidateCount} candidates</span>
-                <span className="action-signal-pill">{objectDescriptorReview.unsupportedCount} review</span>
+                <span className="metric-badge">{objectDescriptorReview.repositoryCount} repos</span>
+                <span className="metric-badge">{objectDescriptorReview.candidateCount} candidates</span>
+                <span className="metric-badge">{objectDescriptorReview.unsupportedCount} review</span>
               </div>
             </div>
             <div className="utility-card">
@@ -6780,9 +6779,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <span>{httpConversionReview.status.replace(/_/g, ' ')}</span>
               </div>
               <div className="utility-metric-row">
-                <span className="action-signal-pill">{httpConversionReview.browserActionCount} browser</span>
-                <span className="action-signal-pill">{httpConversionReview.candidateRequestCount} requests</span>
-                <span className="action-signal-pill">{httpConversionReview.replayEvidence ? 'replay' : 'no replay'}</span>
+                <span className="metric-badge">{httpConversionReview.browserActionCount} browser</span>
+                <span className="metric-badge">{httpConversionReview.candidateRequestCount} requests</span>
+                <span className="metric-badge">{httpConversionReview.replayEvidence ? 'replay' : 'no replay'}</span>
               </div>
               <div className="utility-stack">
                 {httpConversionReview.findings.map((finding, index) => (
@@ -6811,7 +6810,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           <>
             <div className="utility-card debug-readiness-card">
               <div className="utility-card-header">
-                <strong>Replay Readiness</strong>
+                <strong>Ready to run?</strong>
                 <span>{replayPreflightStatusLabel(replayPreflight)}</span>
               </div>
               <ReplayPreflightCard preflight={replayPreflight} />
@@ -6845,7 +6844,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             </div>
             <div className="utility-card debug-readiness-card">
               <div className="utility-card-header">
-                <strong>Debug Readiness</strong>
+                <strong>Ready to run?</strong>
                 <span>{replayPreflightStatusLabel(replayPreflight)}</span>
               </div>
               <ReplayPreflightCard preflight={replayPreflight} />
@@ -7762,8 +7761,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     aria-valuenow={debuggerBottomHeight}
                   />
                   <div className="debugger-bottom-tabs" role="tablist">
-                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'console'} className={debuggerBottomTab === 'console' ? 'active' : ''} onClick={() => setDebuggerBottomTab('console')}>Console</button>
-                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'timeline'} className={debuggerBottomTab === 'timeline' ? 'active' : ''} onClick={() => setDebuggerBottomTab('timeline')}>Timeline</button>
+                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'console'} className={debuggerBottomTab === 'console' ? 'active' : ''} onClick={() => setDebuggerBottomTab('console')} title="Wire log — raw protocol request/response and engine output">Console</button>
+                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'timeline'} className={debuggerBottomTab === 'timeline' ? 'active' : ''} onClick={() => setDebuggerBottomTab('timeline')} title="Flow log — actions, transactions, and variable changes in order">Timeline</button>
                     <button type="button" role="tab" aria-selected={debuggerBottomTab === 'problems'} className={debuggerBottomTab === 'problems' ? 'active' : ''} onClick={() => setDebuggerBottomTab('problems')}>Problems{problemCount > 0 ? ` ${problemCount}` : ''}</button>
                     <button type="button" role="tab" aria-selected={debuggerBottomTab === 'output'} className={debuggerBottomTab === 'output' ? 'active' : ''} onClick={() => setDebuggerBottomTab('output')}>Output</button>
                   </div>
@@ -9825,15 +9824,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       <strong>Outline</strong>
                       <span>{outlineSummary.actionCount} executable</span>
                     </div>
-                    <button
-                      type="button"
-                      className="debugger-pane-close"
-                      title="Collapse outline side panel"
-                      aria-label="Collapse outline side panel"
-                      onClick={() => setAuthorOutlineCollapsed(true)}
-                    >
-                      ‹
-                    </button>
+                    <div className="editor-outline-actions">
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={undoEditorChange} disabled={editorHistory.past.length === 0} title="Undo last guided change (component, repair, parameter, runtime)">Undo</button>
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={redoEditorChange} disabled={editorHistory.future.length === 0} title="Redo guided change">Redo</button>
+                      <button
+                        type="button"
+                        className="debugger-pane-close"
+                        title="Collapse outline side panel"
+                        aria-label="Collapse outline side panel"
+                        onClick={() => setAuthorOutlineCollapsed(true)}
+                      >
+                        ‹
+                      </button>
+                    </div>
                   </div>
                   <div className="editor-outline-list">
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('config')}>Script Configuration</button>
@@ -9896,15 +9899,30 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             <span className="action-method" style={{ color: methodColor(a.type) }}>{a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
                             <span className="action-name-text">{a.name || 'Unnamed'}</span>
                             <div className="action-item-signals">
-                              {controlAction && <span className="action-signal-pill control" title="Control block">CTRL</span>}
-                              {reviewGated && <span className="action-signal-pill warning" title="Review gate">REV</span>}
-                              {isReviewGatedJavaScriptAction(a) && <span className="action-signal-pill warning" title="JavaScript review gate">JS</span>}
-                              {fallbackCount > 0 && <span className="action-signal-pill selector" title={`${fallbackCount} selector fallback${fallbackCount === 1 ? '' : 's'}`}>F{fallbackCount}</span>}
-                              {requestCount > 0 && <span className="action-signal-pill">R{requestCount}</span>}
-                              {extractorCount > 0 && <span className="action-signal-pill">E{extractorCount}</span>}
+                              {(reviewGated || isReviewGatedJavaScriptAction(a)) && (
+                                <span
+                                  className="action-signal-pill warning"
+                                  title={isReviewGatedJavaScriptAction(a)
+                                    ? 'JavaScript review gate — must be reviewed before this script can replay'
+                                    : 'Review gate — must be reviewed before this script can replay'}
+                                >
+                                  Review
+                                </span>
+                              )}
                               {rowIssues.length > 0 && (
-                                <span className={`action-signal-pill ${rowIssues.some((issue) => issue.severity === 'error') ? 'error' : 'warning'}`}>
+                                <span
+                                  className={`action-signal-pill ${rowIssues.some((issue) => issue.severity === 'error') ? 'error' : 'warning'}`}
+                                  title={`${rowIssues.length} ${rowIssues.some((issue) => issue.severity === 'error') ? 'problem' : 'warning'}${rowIssues.length === 1 ? '' : 's'} on this action`}
+                                >
                                   {rowIssues.length}
+                                </span>
+                              )}
+                              {(controlAction || requestCount > 0 || extractorCount > 0 || fallbackCount > 0) && (
+                                <span className="action-item-meta">
+                                  {controlAction && <span className="metric-badge" title="Control block (if / loop / group)">ctrl</span>}
+                                  {requestCount > 0 && <span className="metric-badge" title={`${requestCount} request${requestCount === 1 ? '' : 's'}`}>{requestCount} req</span>}
+                                  {extractorCount > 0 && <span className="metric-badge" title={`${extractorCount} extractor${extractorCount === 1 ? '' : 's'}`}>{extractorCount} ext</span>}
+                                  {fallbackCount > 0 && <span className="metric-badge" title={`${fallbackCount} selector fallback${fallbackCount === 1 ? '' : 's'}`}>{fallbackCount} fb</span>}
                                 </span>
                               )}
                             </div>
@@ -9999,6 +10017,37 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           <span>{template.description}</span>
                         </button>
                       ))}
+                    </div>
+                  </div>
+                )}
+                {authoringComponents.length > 0 && (
+                  <div className="starter-blocks-panel reusable-blocks-panel">
+                    <div className="starter-blocks-header">
+                      <strong>Reusable Blocks</strong>
+                      <span>{authoringComponents.length}</span>
+                    </div>
+                    <div className="starter-blocks-list">
+                      {AUTHORING_COMPONENT_GROUPS.map(group => {
+                        const groupComponents = authoringComponents.filter(component => component.kind === group.kind)
+                        if (groupComponents.length === 0) return null
+                        return (
+                          <div key={group.kind} className="reusable-blocks-group">
+                            <span className="reusable-blocks-group-label">{group.label}</span>
+                            {groupComponents.map(component => (
+                              <button
+                                key={component.id}
+                                type="button"
+                                className="starter-block-card"
+                                onClick={() => insertAuthoringComponent(component)}
+                                title={component.usage_notes?.[0] || component.summary}
+                              >
+                                <strong>{component.name}</strong>
+                                <span>{component.summary}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
@@ -10274,7 +10323,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <>
                 <div className="utility-card">
                   <div className="utility-card-header">
-                    <strong>Authoring Signals</strong>
+                    <strong>Problems</strong>
                     <span>{errorCount} error{errorCount === 1 ? '' : 's'} • {warningCount} warning{warningCount === 1 ? '' : 's'}</span>
                   </div>
                   {scriptLevelIssues.length > 0 ? (
@@ -10290,17 +10339,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
                 <div className="utility-card debug-readiness-card">
                   <div className="utility-card-header">
-                    <strong>Debug Readiness</strong>
+                    <strong>Ready to run?</strong>
                     <span>{replayPreflightStatusLabel(replayPreflight)}</span>
                   </div>
                   <ReplayPreflightCard preflight={replayPreflight} />
-                </div>
-
-                <div className="utility-card">
-                  <div className="utility-card-header">
-                    <strong>Convergence Checklist</strong>
-                    <span>validate • repair • debug evidence • save</span>
-                  </div>
                   <div className="utility-checklist">
                     {convergenceItems.map(item => (
                       <div key={item.key} className="utility-checklist-item">
@@ -10316,54 +10358,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       </div>
                     ))}
                   </div>
-                </div>
-
-                <div className="utility-card">
-                  <div className="utility-card-header">
-                    <strong>Guided History</strong>
-                    <span>{editorHistory.past.length} undo • {editorHistory.future.length} redo</span>
-                  </div>
-                  <div className="utility-inline-actions">
-                    <button type="button" className="btn btn-sm btn-secondary" onClick={undoEditorChange} disabled={editorHistory.past.length === 0}>Undo</button>
-                    <button type="button" className="btn btn-sm btn-secondary" onClick={redoEditorChange} disabled={editorHistory.future.length === 0}>Redo</button>
-                  </div>
-                  <div className="utility-empty-state">Tracks guided component, repair, parameter, and runtime changes.</div>
-                </div>
-
-                <div className="utility-card">
-                  <div className="utility-card-header">
-                    <strong>Flow Assembly</strong>
-                    <span>{componentLibraryStatus === 'ready' ? `${authoringComponents.length} blocks` : componentLibraryStatus}</span>
-                  </div>
-                  {authoringComponents.length > 0 ? (
-                    <div className="utility-stack">
-                      {AUTHORING_COMPONENT_GROUPS.map(group => {
-                        const groupComponents = authoringComponents.filter(component => component.kind === group.kind)
-                        if (groupComponents.length === 0) return null
-                        return (
-                          <div key={group.kind} className="utility-subsection">
-                            <strong>{group.label}</strong>
-                            <div className="utility-stack">
-                              {groupComponents.map(component => (
-                                <div key={component.id} className="utility-suggestion-card">
-                                  <strong>{component.name}</strong>
-                                  <p>{component.summary}</p>
-                                  {component.usage_notes?.length ? <p>{component.usage_notes[0]}</p> : null}
-                                  <button type="button" className="btn btn-sm btn-secondary" onClick={() => insertAuthoringComponent(component)}>
-                                    Insert Block
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className="utility-empty-state">
-                      {componentLibraryStatus === 'error' ? 'Component library is unavailable.' : 'No reusable blocks match this protocol yet.'}
-                    </div>
-                  )}
                 </div>
 
                 <div className="utility-card">
@@ -10432,9 +10426,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       <span>{draftDiffSummary.changed ? 'Changed' : 'No changes'}</span>
                     </div>
                     <div className="utility-metric-row">
-                      <span className="action-signal-pill">{draftDiffSummary.actionChanges} action</span>
-                      <span className="action-signal-pill">{draftDiffSummary.parameterChanges} parameter</span>
-                      <span className="action-signal-pill">{draftDiffSummary.dataSourceChanges} data</span>
+                      <span className="metric-badge">{draftDiffSummary.actionChanges} action</span>
+                      <span className="metric-badge">{draftDiffSummary.parameterChanges} parameter</span>
+                      <span className="metric-badge">{draftDiffSummary.dataSourceChanges} data</span>
                     </div>
                     {draftDiffSummary.details.length > 0 ? (
                       <ul className="utility-list">
