@@ -245,4 +245,22 @@ describe('RuntimeSettingsGroupEditor', () => {
     const headings = Array.from(container.querySelectorAll('h4')).map(h => h.textContent)
     expect(headings).not.toContain('HTTP transport')
   })
+
+  it('renders and edits the Web runtime source IPs', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={0} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={onChange} onApplyToGroups={() => {}} />,
+      )
+    })
+    expect(container.textContent || '').toContain('Web runtime')
+    const sourceInput = Array.from(container.querySelectorAll('input[type="text"]')).find(
+      input => (input as HTMLInputElement).placeholder.includes('10.0.0.1'),
+    ) as HTMLInputElement
+    expect(sourceInput).toBeTruthy()
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+    setter.call(sourceInput, '10.0.0.1, 10.0.0.2')
+    act(() => sourceInput.dispatchEvent(new Event('input', { bubbles: true })))
+    expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({ web_runtime: expect.objectContaining({ source_ips: ['10.0.0.1', '10.0.0.2'] }) }))
+  })
 })

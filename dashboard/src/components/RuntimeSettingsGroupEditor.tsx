@@ -94,6 +94,7 @@ export default function RuntimeSettingsGroupEditor({
   const groupOverride = overrideFromRuntimeDraft(overrides[index])
   const browserApplicable = isRuntimeFieldApplicable('browser', focusGroup.protocol)
   const httpApplicable = isRuntimeFieldApplicable('http', focusGroup.protocol)
+  const webRuntimeApplicable = isRuntimeFieldApplicable('web_runtime', focusGroup.protocol)
 
   const patch = (next: Partial<ScenarioRuntimeSettingsDraft>) => {
     const merged: ScenarioRuntimeSettingsDraft = { ...EMPTY_RUNTIME_DRAFT, ...draft, ...next }
@@ -523,6 +524,34 @@ export default function RuntimeSettingsGroupEditor({
             <label className={`scenario-option-card ${draft.http?.tls?.insecure_skip_verify ? 'selected' : ''}`}>
               <input type="checkbox" checked={Boolean(draft.http?.tls?.insecure_skip_verify)} onChange={event => patchHttp({ tls: { ...draft.http?.tls, insecure_skip_verify: event.target.checked || undefined } })} />
               <div><strong>Skip TLS verification</strong><span>Do not validate the server certificate (test environments only).</span></div>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {webRuntimeApplicable && (
+        <div className="scenario-subpanel">
+          <div className="scenario-assignment-header">
+            <div>
+              <h4>Web runtime</h4>
+              <p>Source IPs to distribute this group&rsquo;s traffic across (comma-separated). Other web-runtime settings (download filters, network simulation, data formatting) are authorable via the API.</p>
+            </div>
+          </div>
+          <div className="scenario-browser-grid">
+            <label>
+              <span>Source IPs</span>
+              <input
+                className="settings-input"
+                type="text"
+                value={draft.web_runtime?.source_ips?.join(', ') || ''}
+                onChange={event => {
+                  const ips = event.target.value.split(',').map(value => value.trim()).filter(Boolean)
+                  const next = { ...draft.web_runtime, source_ips: ips.length ? ips : undefined }
+                  const hasAny = Object.values(next).some(value => value !== undefined && value !== null && (!Array.isArray(value) || value.length > 0))
+                  patch({ web_runtime: hasAny ? next : undefined })
+                }}
+                placeholder="10.0.0.1, 10.0.0.2"
+              />
             </label>
           </div>
         </div>
