@@ -50,8 +50,9 @@ func (s *SQLiteStore) SaveScenario(scenario *Scenario, scripts []ScenarioScript)
 			script.ScenarioID = scenario.ID
 		}
 		stagesJSON, _ := json.Marshal(script.Stages)
-		if _, err := tx.Exec(`INSERT INTO scenario_scripts (scenario_id, sort_order, name, script_id, vusers, ramp_up, ramp_down, stages_json, initialization, role)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, script.ScenarioID, script.Order, script.Name, script.ScriptID, script.VUsers, script.RampUp, script.RampDown, string(stagesJSON), script.Initialization, script.Role); err != nil {
+		runtimeJSON, _ := json.Marshal(script.RuntimeSettings)
+		if _, err := tx.Exec(`INSERT INTO scenario_scripts (scenario_id, sort_order, name, script_id, vusers, ramp_up, ramp_down, stages_json, initialization, role, runtime_settings_json)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, script.ScenarioID, script.Order, script.Name, script.ScriptID, script.VUsers, script.RampUp, script.RampDown, string(stagesJSON), script.Initialization, script.Role, string(runtimeJSON)); err != nil {
 			return err
 		}
 	}
@@ -110,7 +111,7 @@ func (s *SQLiteStore) ListScenarios() ([]*Scenario, error) {
 }
 
 func (s *SQLiteStore) listScenarioScripts(scenarioID string) ([]ScenarioScript, error) {
-	rows, err := s.db.Query(`SELECT scenario_id, sort_order, COALESCE(name, ''), script_id, COALESCE(vusers, 0), COALESCE(ramp_up, ''), COALESCE(ramp_down, ''), COALESCE(stages_json, ''), COALESCE(initialization, ''), COALESCE(role, '') FROM scenario_scripts WHERE scenario_id = ? ORDER BY sort_order ASC`, scenarioID)
+	rows, err := s.db.Query(`SELECT scenario_id, sort_order, COALESCE(name, ''), script_id, COALESCE(vusers, 0), COALESCE(ramp_up, ''), COALESCE(ramp_down, ''), COALESCE(stages_json, ''), COALESCE(initialization, ''), COALESCE(role, ''), COALESCE(runtime_settings_json, '') FROM scenario_scripts WHERE scenario_id = ? ORDER BY sort_order ASC`, scenarioID)
 	if err != nil {
 		return nil, err
 	}
@@ -118,12 +119,15 @@ func (s *SQLiteStore) listScenarioScripts(scenarioID string) ([]ScenarioScript, 
 	var scripts []ScenarioScript
 	for rows.Next() {
 		var script ScenarioScript
-		var stagesJSON string
-		if err := rows.Scan(&script.ScenarioID, &script.Order, &script.Name, &script.ScriptID, &script.VUsers, &script.RampUp, &script.RampDown, &stagesJSON, &script.Initialization, &script.Role); err != nil {
+		var stagesJSON, runtimeSettingsJSON string
+		if err := rows.Scan(&script.ScenarioID, &script.Order, &script.Name, &script.ScriptID, &script.VUsers, &script.RampUp, &script.RampDown, &stagesJSON, &script.Initialization, &script.Role, &runtimeSettingsJSON); err != nil {
 			return nil, err
 		}
 		if strings.TrimSpace(stagesJSON) != "" {
 			json.Unmarshal([]byte(stagesJSON), &script.Stages)
+		}
+		if strings.TrimSpace(runtimeSettingsJSON) != "" && runtimeSettingsJSON != "null" {
+			json.Unmarshal([]byte(runtimeSettingsJSON), &script.RuntimeSettings)
 		}
 		scripts = append(scripts, script)
 	}

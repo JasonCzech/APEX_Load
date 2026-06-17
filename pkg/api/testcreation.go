@@ -252,15 +252,16 @@ func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenar
 		req.Groups = make([]CreateGroupEntry, 0, len(scenario.Scripts))
 		for _, script := range scenario.Scripts {
 			req.Groups = append(req.Groups, CreateGroupEntry{
-				Name:         script.Name,
-				ScriptID:     script.ScriptID,
-				Role:         script.Role,
-				VUsers:       script.VUsers,
-				RampUp:       script.RampUp,
-				RampDown:     script.RampDown,
-				Stages:       cloneLoadStages(script.Stages),
-				Iterations:   script.Iterations,
-				InitStrategy: script.Initialization,
+				Name:            script.Name,
+				ScriptID:        script.ScriptID,
+				Role:            script.Role,
+				VUsers:          script.VUsers,
+				RampUp:          script.RampUp,
+				RampDown:        script.RampDown,
+				Stages:          cloneLoadStages(script.Stages),
+				Iterations:      script.Iterations,
+				InitStrategy:    script.Initialization,
+				RuntimeSettings: cloneRuntimeSettings(script.RuntimeSettings),
 			})
 		}
 	}

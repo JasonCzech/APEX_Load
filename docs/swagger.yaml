@@ -4078,6 +4078,26 @@ paths:
             type: string
       tags:
         - Scenarios
+  /api/v1/scenarios/{id}/runtime/apply-to-groups:
+    post:
+      summary: Apply Scenario Runtime To Groups
+      description: |-
+        **Handler:** `handleApplyScenarioRuntimeToGroups`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleApplyScenarioRuntimeToGroups
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scenarios
   /api/v1/scenarios/{id}/schedules:
     get:
       summary: List Scenario Schedules

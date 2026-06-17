@@ -39,6 +39,15 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 	if strings.TrimSpace(req.Duration) == "" {
 		return nil, fmt.Errorf("scenario duration is required")
 	}
+	// Reconcile masked runtime secrets against the prior stored scenario before any
+	// downstream use (compile, review, persist), so an echoed [REDACTED] never
+	// clobbers a stored Env secret and never reaches the engine. Keyed by stable
+	// group identity, not array index (reorder-safe).
+	existing := tr.scenarios[id]
+	req.RuntimeSettings = reconcileGroupRuntimeSecrets(req.RuntimeSettings, existingRootRuntime(existing))
+	for i := range req.Groups {
+		req.Groups[i].RuntimeSettings = reconcileGroupRuntimeSecrets(req.Groups[i].RuntimeSettings, existingGroupRuntime(existing, req.Groups[i]))
+	}
 	if _, err := validateScenarioRequest(CreateTestRequest{
 		ScenarioMode: req.ScenarioMode,
 		Assignment:   req.Assignment,
@@ -58,7 +67,6 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 		return nil, fmt.Errorf("runtime settings blocked: %s", runtimeSettingsReview.Summary)
 	}
 	now := time.Now().UTC()
-	existing := tr.scenarios[id]
 	createdAt := now
 	refKey := ""
 	if existing != nil && !existing.CreatedAt.IsZero() {
@@ -90,17 +98,18 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 		// compileManagedTestGroupsLocked validated and normalized the role
 		// (e.g. the "canary" alias), so persist the normalized value.
 		scripts = append(scripts, storage.ScenarioScript{
-			ScenarioID:     id,
-			Order:          i,
-			Name:           group.Name,
-			ScriptID:       group.ScriptID,
-			Role:           testGroups[i].Role,
-			VUsers:         group.VUsers,
-			RampUp:         group.RampUp,
-			RampDown:       group.RampDown,
-			Stages:         cloneLoadStages(group.Stages),
-			Iterations:     group.Iterations,
-			Initialization: group.InitStrategy,
+			ScenarioID:      id,
+			Order:           i,
+			Name:            group.Name,
+			ScriptID:        group.ScriptID,
+			Role:            testGroups[i].Role,
+			VUsers:          group.VUsers,
+			RampUp:          group.RampUp,
+			RampDown:        group.RampDown,
+			Stages:          cloneLoadStages(group.Stages),
+			Iterations:      group.Iterations,
+			Initialization:  group.InitStrategy,
+			RuntimeSettings: runtimeSettingsForStorage(group.RuntimeSettings),
 		})
 	}
 	dataPools, err := normalizeScenarioDataPoolBindings(id, req.DataPools)

@@ -20,18 +20,18 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAuditEvent(r, "scenario.create", "success", "scenario", scenario.ID, scenario.ProjectID, map[string]any{"name": scenario.Name, "duration": scenario.Duration})
-	writeJSON(w, http.StatusCreated, scenario)
+	writeJSON(w, http.StatusCreated, maskStoredScenario(scenario))
 }
 
 func (s *Server) handleListScenarios(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
 	if projectID != "" {
 		scenarios := s.runner.ListScenariosFiltered(projectID)
-		writeJSON(w, http.StatusOK, map[string]any{"scenarios": scenarios, "count": len(scenarios)})
+		writeJSON(w, http.StatusOK, map[string]any{"scenarios": maskStoredScenarios(scenarios), "count": len(scenarios)})
 		return
 	}
 	scenarios := s.runner.ListScenarios()
-	writeJSON(w, http.StatusOK, map[string]any{"scenarios": scenarios, "count": len(scenarios)})
+	writeJSON(w, http.StatusOK, map[string]any{"scenarios": maskStoredScenarios(scenarios), "count": len(scenarios)})
 }
 
 func (s *Server) handleGetScenario(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +40,7 @@ func (s *Server) handleGetScenario(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "scenario not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, scenario)
+	writeJSON(w, http.StatusOK, maskStoredScenario(scenario))
 }
 
 func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
@@ -58,7 +58,7 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAuditEvent(r, "scenario.update", "success", "scenario", scenario.ID, scenario.ProjectID, map[string]any{"name": scenario.Name, "duration": scenario.Duration})
-	writeJSON(w, http.StatusOK, scenario)
+	writeJSON(w, http.StatusOK, maskStoredScenario(scenario))
 }
 
 func (s *Server) handleValidateScenarioLoadModel(w http.ResponseWriter, r *http.Request) {

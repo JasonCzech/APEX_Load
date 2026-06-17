@@ -18,6 +18,7 @@ export type ScenarioGroupPayload = {
   }>
   iterations?: number
   initialization: ScenarioDraftGroup['initialization']
+  runtime_settings?: ScenarioUpsertPayload['runtime_settings']
 }
 
 export type ScenarioUpsertPayload = {
@@ -125,6 +126,13 @@ export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): Scenar
 
     if (group.iterations !== undefined) {
       payload.iterations = Number(group.iterations)
+    }
+
+    if (group.runtimeSettings) {
+      const runtimeSettings = buildRuntimeSettingsPayload(group.runtimeSettings)
+      if (runtimeSettings) {
+        payload.runtime_settings = runtimeSettings
+      }
     }
 
     return payload
