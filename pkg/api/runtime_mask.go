@@ -64,7 +64,7 @@ func maskRuntimeSettings(o *RuntimeSettingsOverride) *RuntimeSettingsOverride {
 }
 
 // maskHTTPSecrets redacts the secret-bearing fields of an HTTP override section
-// (auth password/token, proxy password) in place on a cloned section.
+// (auth password/token, proxy username/password) in place on a cloned section.
 func maskHTTPSecrets(http *dsl.HTTPConfig) {
 	if http == nil {
 		return
@@ -74,6 +74,9 @@ func maskHTTPSecrets(http *dsl.HTTPConfig) {
 	}
 	if http.Auth.Token != "" {
 		http.Auth.Token = scrub.Redacted
+	}
+	if http.Proxy.Username != "" {
+		http.Proxy.Username = scrub.Redacted
 	}
 	if http.Proxy.Password != "" {
 		http.Proxy.Password = scrub.Redacted
@@ -196,10 +199,11 @@ func reconcileHTTPSecrets(incoming, prior *dsl.HTTPConfig) {
 	if incoming == nil {
 		return
 	}
-	priorAuthPassword, priorAuthToken, priorProxyPassword := "", "", ""
+	priorAuthPassword, priorAuthToken, priorProxyUsername, priorProxyPassword := "", "", "", ""
 	if prior != nil {
 		priorAuthPassword = prior.Auth.Password
 		priorAuthToken = prior.Auth.Token
+		priorProxyUsername = prior.Proxy.Username
 		priorProxyPassword = prior.Proxy.Password
 	}
 	if incoming.Auth.Password == scrub.Redacted {
@@ -207,6 +211,9 @@ func reconcileHTTPSecrets(incoming, prior *dsl.HTTPConfig) {
 	}
 	if incoming.Auth.Token == scrub.Redacted {
 		incoming.Auth.Token = priorAuthToken
+	}
+	if incoming.Proxy.Username == scrub.Redacted {
+		incoming.Proxy.Username = priorProxyUsername
 	}
 	if incoming.Proxy.Password == scrub.Redacted {
 		incoming.Proxy.Password = priorProxyPassword

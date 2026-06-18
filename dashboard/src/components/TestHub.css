@@ -530,6 +530,22 @@
   gap: 14px;
 }
 
+/* The per-group runtime editor has up to 8 tabs; wrap them in a flex row rather than
+   forcing the fixed 3-column grid the main run-settings tabs use. */
+.runtime-override-tabs {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.runtime-override-tabs .scenario-run-settings-tab {
+  flex: 1 1 auto;
+  min-height: 36px;
+}
+
+.runtime-override-tab-panel {
+  margin-top: 14px;
+}
+
 .scenario-source-grid,
 .scenario-shape-catalog-grid,
 .scenario-review-grid {

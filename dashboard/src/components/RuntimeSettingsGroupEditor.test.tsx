@@ -46,6 +46,17 @@ function setSelectValue(select: HTMLSelectElement, value: string) {
   select.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+/** The runtime editor now organizes its forms into tabs; fields live behind their tab. */
+function tabLabels(): string[] {
+  return Array.from(container.querySelectorAll('[role="tab"]')).map(b => (b.textContent || '').trim())
+}
+
+function clickTab(label: string) {
+  const tab = Array.from(container.querySelectorAll('[role="tab"]')).find(b => (b.textContent || '').trim() === label) as HTMLButtonElement | undefined
+  if (!tab) throw new Error(`runtime tab not found: ${label} (have: ${tabLabels().join(', ')})`)
+  act(() => tab.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+}
+
 describe('RuntimeSettingsGroupEditor', () => {
   it('shows the effective value, source labels, and protocol applicability for the focused group', () => {
     act(() => {
@@ -64,6 +75,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     const text = container.textContent || ''
     expect(text).toContain('Per-group runtime overrides')
 
+    // The Summary tab is active by default and shows the effective-value table.
     const badges = Array.from(container.querySelectorAll('.runtime-source-badge')).map(b => (b.textContent || '').trim())
     // pacing + log_level are overridden on group 0; browser is not applicable for http.
     expect(badges.filter(b => b === 'Group override').length).toBe(2)
@@ -113,7 +125,34 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(valueCells).toContain('—')
   })
 
-  it('renders the browser editor and a Group override for a browser-protocol group', () => {
+  it('shows HTTP Transport + Web/HTTP tabs for http and browser groups, hidden for other protocols', () => {
+    const groups: RuntimeEditorGroup[] = [
+      { name: 'Api', scriptId: 's1', protocol: 'http' },
+      { name: 'Experience', scriptId: 's2', protocol: 'browser' },
+      { name: 'Stream', scriptId: 's3', protocol: 'grpc' },
+    ]
+    const render = (focusedIndex: number) =>
+      act(() => {
+        root.render(
+          <RuntimeSettingsGroupEditor groups={groups} focusedIndex={focusedIndex} onFocusChange={() => {}} overrides={[undefined, undefined, undefined]} onChange={() => {}} onApplyToGroups={() => {}} />,
+        )
+      })
+
+    // Universal tabs always present.
+    render(0) // http
+    expect(tabLabels()).toEqual(['Summary', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling', 'HTTP Transport', 'Web/HTTP', 'Logging'])
+
+    render(1) // browser — HTTP Transport (with browser emulation) + Web/HTTP still show
+    expect(tabLabels()).toContain('HTTP Transport')
+    expect(tabLabels()).toContain('Web/HTTP')
+
+    render(2) // grpc — protocol-specific tabs hidden
+    expect(tabLabels()).not.toContain('HTTP Transport')
+    expect(tabLabels()).not.toContain('Web/HTTP')
+    expect(tabLabels()).toEqual(['Summary', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling', 'Logging'])
+  })
+
+  it('renders the browser device editor under HTTP Transport → Browser emulation for a browser group', () => {
     const browserOverride: ScenarioRuntimeSettingsDraft = {
       browser: { device_profile: 'pixel_8' },
       log_level: '',
@@ -133,17 +172,16 @@ describe('RuntimeSettingsGroupEditor', () => {
         />,
       )
     })
-    // The browser device select is present for the browser group.
+    // HTTP Transport tab shows for the browser group and folds in Browser emulation.
+    clickTab('HTTP Transport')
+    expect(container.textContent || '').toContain('Browser emulation')
     const deviceSelect = Array.from(container.querySelectorAll('select')).find(s =>
       Array.from(s.options).some(o => o.value === 'pixel_8'),
     )
     expect(deviceSelect).toBeTruthy()
-    // Browser device is editable for a browser group; the HTTP transport section is
-    // gated off by the applicability matrix.
-    expect(container.textContent || '').toContain('Not applicable for browser protocol')
   })
 
-  it('shows matrix-gated rows for the advanced sections (http on http, browser_config on browser)', () => {
+  it('shows matrix-gated rows in the Summary table (http applies, browser_config does not, for an http group)', () => {
     act(() => {
       root.render(
         <RuntimeSettingsGroupEditor
@@ -225,7 +263,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(onFocus).toHaveBeenCalledWith(1)
   })
 
-  it('renders the full error_handling retry controls', () => {
+  it('renders the full error_handling retry controls under the Error Handling tab', () => {
     act(() => {
       root.render(
         <RuntimeSettingsGroupEditor
@@ -238,6 +276,7 @@ describe('RuntimeSettingsGroupEditor', () => {
         />,
       )
     })
+    clickTab('Error Handling')
     const text = container.textContent || ''
     expect(text).toContain('Max retries')
     expect(text).toContain('Retry delay (ms)')
@@ -248,7 +287,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(backoff).toBeTruthy()
   })
 
-  it('renders and edits the HTTP transport form for an http group', () => {
+  it('renders and edits the HTTP transport form under the HTTP Transport tab', () => {
     const onChange = vi.fn()
     act(() => {
       root.render(
@@ -262,9 +301,8 @@ describe('RuntimeSettingsGroupEditor', () => {
         />,
       )
     })
-    const text = container.textContent || ''
-    expect(text).toContain('HTTP transport')
-    expect(text).toContain('Auth password')
+    clickTab('HTTP Transport')
+    expect(container.textContent || '').toContain('Auth password')
     // The HTTP version select offers both 1.1 and 2 (distinguishes it from TLS).
     const versionSelect = Array.from(container.querySelectorAll('select')).find(s =>
       Array.from(s.options).some(o => o.value === '2') && Array.from(s.options).some(o => o.value === '1.1'),
@@ -274,26 +312,14 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({ http: expect.objectContaining({ version: '2' }) }))
   })
 
-  it('gates the HTTP transport edit form off for a non-http (browser) group', () => {
-    act(() => {
-      root.render(
-        <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={1} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={() => {}} onApplyToGroups={() => {}} />,
-      )
-    })
-    // The HTTP edit subpanel (h4) does not render for a browser group; it shows as a
-    // "Not applicable" summary row instead.
-    const headings = Array.from(container.querySelectorAll('h4')).map(h => h.textContent)
-    expect(headings).not.toContain('HTTP transport')
-  })
-
-  it('renders and edits the Web runtime source IPs', () => {
+  it('renders and edits the Web runtime source IPs under the Web/HTTP tab', () => {
     const onChange = vi.fn()
     act(() => {
       root.render(
         <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={0} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={onChange} onApplyToGroups={() => {}} />,
       )
     })
-    expect(container.textContent || '').toContain('Web runtime')
+    clickTab('Web/HTTP')
     const sourceInput = Array.from(container.querySelectorAll('input[type="text"]')).find(
       input => (input as HTMLInputElement).placeholder.includes('10.0.0.1'),
     ) as HTMLInputElement
@@ -304,7 +330,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({ web_runtime: expect.objectContaining({ source_ips: ['10.0.0.1', '10.0.0.2'] }) }))
   })
 
-  it('promotes the legacy log level into the log section on edit', () => {
+  it('promotes the legacy log level into the log section on edit (Logging tab)', () => {
     const onChange = vi.fn()
     act(() => {
       root.render(
@@ -318,6 +344,7 @@ describe('RuntimeSettingsGroupEditor', () => {
         />,
       )
     })
+    clickTab('Logging')
     const logSelect = Array.from(container.querySelectorAll('select')).find(s =>
       Array.from(s.options).some(o => o.value === 'extended') && Array.from(s.options).some(o => o.value === 'disabled'),
     ) as HTMLSelectElement
@@ -329,7 +356,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(last.log_level).toBe('') // legacy cleared so the section is authoritative
   })
 
-  it('folds the legacy iterations into the run_logic section when editing workload model', () => {
+  it('folds the legacy iterations into the run_logic section when editing workload model (Run Logic tab)', () => {
     const onChange = vi.fn()
     act(() => {
       root.render(
@@ -343,6 +370,7 @@ describe('RuntimeSettingsGroupEditor', () => {
         />,
       )
     })
+    clickTab('Run Logic')
     const workloadSelect = Array.from(container.querySelectorAll('select')).find(s =>
       Array.from(s.options).some(o => o.value === 'closed') && Array.from(s.options).some(o => o.value === 'open'),
     ) as HTMLSelectElement
@@ -353,7 +381,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(last.iterations).toBeUndefined() // legacy folded into the section
   })
 
-  it('folds the legacy browser device into browser_config when editing an advanced field', () => {
+  it('folds the legacy browser device into browser_config when editing an advanced field (HTTP Transport tab)', () => {
     const onChange = vi.fn()
     act(() => {
       root.render(
@@ -367,6 +395,7 @@ describe('RuntimeSettingsGroupEditor', () => {
         />,
       )
     })
+    clickTab('HTTP Transport')
     const engineSelect = Array.from(container.querySelectorAll('select')).find(s =>
       Array.from(s.options).some(o => o.value === 'webkit') && Array.from(s.options).some(o => o.value === 'chromium'),
     ) as HTMLSelectElement
@@ -375,5 +404,27 @@ describe('RuntimeSettingsGroupEditor', () => {
     const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
     expect(last.browser_config).toEqual(expect.objectContaining({ device_profile: 'pixel_8', engine: 'firefox' }))
     expect(last.browser).toBeUndefined() // legacy browser folded into browser_config
+  })
+
+  it('falls back to the Summary tab when switching focus to a group that hides the active tab', () => {
+    const groups: RuntimeEditorGroup[] = [
+      { name: 'Api', scriptId: 's1', protocol: 'http' },
+      { name: 'Stream', scriptId: 's2', protocol: 'grpc' },
+    ]
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={groups} focusedIndex={0} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={() => {}} onApplyToGroups={() => {}} />,
+      )
+    })
+    clickTab('HTTP Transport')
+    // Re-render focused on the grpc group, which has no HTTP Transport tab.
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={groups} focusedIndex={1} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={() => {}} onApplyToGroups={() => {}} />,
+      )
+    })
+    // The Summary table (effective-value rows) is shown, not a stranded HTTP Transport panel.
+    expect(container.querySelector('.runtime-override-summary')).toBeTruthy()
+    expect(container.textContent || '').not.toContain('Auth password')
   })
 })

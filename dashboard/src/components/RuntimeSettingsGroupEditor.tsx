@@ -63,6 +63,22 @@ const SUMMARY_FIELDS: RuntimeFieldKey[] = [
   'browser_config',
 ]
 
+/**
+ * The horizontal tabs shown below the Focus-group dropdown. Tab 1 (Summary) is the
+ * effective-value table; the rest mirror the Script Editor's Runtime Settings tabs.
+ * `summary` plus the universal sections always show; `http_transport`/`web_http` are
+ * gated by protocol applicability and hidden when not applicable.
+ */
+type RuntimeTabId =
+  | 'summary'
+  | 'think_time'
+  | 'pacing'
+  | 'run_logic'
+  | 'error_handling'
+  | 'http_transport'
+  | 'web_http'
+  | 'logging'
+
 function groupLabel(group: RuntimeEditorGroup, index: number): string {
   return group.name || `Group ${index + 1}`
 }
@@ -78,6 +94,7 @@ export default function RuntimeSettingsGroupEditor({
 }: RuntimeSettingsGroupEditorProps) {
   const [applyOpen, setApplyOpen] = useState(false)
   const [applyTargets, setApplyTargets] = useState<number[]>([])
+  const [rawActiveTab, setRawActiveTab] = useState<RuntimeTabId>('summary')
 
   if (groups.length === 0) {
     return (
@@ -228,6 +245,23 @@ export default function RuntimeSettingsGroupEditor({
 
   const pacingType = draft.pacing?.type || ''
 
+  // Tab set: universal tabs always show; HTTP Transport (browser device folds in here)
+  // and Web/HTTP are gated by protocol applicability and hidden when not applicable.
+  const tabs: Array<{ id: RuntimeTabId; label: string; show: boolean }> = [
+    { id: 'summary', label: 'Summary', show: true },
+    { id: 'think_time', label: 'Think Time', show: true },
+    { id: 'pacing', label: 'Iteration Pacing', show: true },
+    { id: 'run_logic', label: 'Run Logic', show: true },
+    { id: 'error_handling', label: 'Error Handling', show: true },
+    { id: 'http_transport', label: 'HTTP Transport', show: httpApplicable || browserApplicable },
+    { id: 'web_http', label: 'Web/HTTP', show: webRuntimeApplicable },
+    { id: 'logging', label: 'Logging', show: true },
+  ]
+  const visibleTabs = tabs.filter(tab => tab.show)
+  // Clamp the active tab to a visible one so switching focus to a group that hides the
+  // current tab (e.g. HTTP Transport on a non-HTTP group) falls back to Summary.
+  const activeTab: RuntimeTabId = visibleTabs.some(tab => tab.id === rawActiveTab) ? rawActiveTab : 'summary'
+
   return (
     <div className="scenario-subpanel">
       <div className="scenario-assignment-header">
@@ -256,357 +290,412 @@ export default function RuntimeSettingsGroupEditor({
         </label>
       </div>
 
-      <table className="runtime-override-summary">
-        <thead>
-          <tr>
-            <th>Setting</th>
-            <th>Effective value</th>
-            <th>Source</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {SUMMARY_FIELDS.map(field => {
-            const applicable = isRuntimeFieldApplicable(field, focusGroup.protocol)
-            if (!applicable) {
-              return (
-                <tr key={field} className="runtime-override-row not-applicable">
-                  <td>{FIELD_LABELS[field]}</td>
-                  <td colSpan={3}><span className="runtime-source-badge muted">Not applicable for {focusGroup.protocol || 'this'} protocol</span></td>
-                </tr>
-              )
-            }
-            const effective = formatEffectiveRuntimeField(field, groupOverride, scenarioDefault, scriptDefault, '—')
-            return (
-              <tr key={field} className="runtime-override-row">
-                <td>{FIELD_LABELS[field]}</td>
-                <td>{effective.value}</td>
-                <td><span className={`runtime-source-badge source-${effective.source}`}>{RUNTIME_FIELD_SOURCE_LABEL[effective.source]}</span></td>
-                <td>
-                  {fieldHasOverride(field) && (
-                    <button type="button" className="link-button" onClick={() => clearField(field)} aria-label={`Clear ${FIELD_LABELS[field]} override`}>
-                      Clear
-                    </button>
-                  )}
-                </td>
+      <div className="scenario-run-settings-tabs runtime-override-tabs" role="tablist" aria-label="Per-group runtime sections">
+        {visibleTabs.map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            id={`runtime-tab-${tab.id}`}
+            aria-selected={activeTab === tab.id}
+            aria-controls={`runtime-tab-panel-${tab.id}`}
+            className={`scenario-run-settings-tab ${activeTab === tab.id ? 'active' : ''}`}
+            onClick={() => setRawActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div
+        className="scenario-run-settings-tab-panel runtime-override-tab-panel"
+        role="tabpanel"
+        id={`runtime-tab-panel-${activeTab}`}
+        aria-labelledby={`runtime-tab-${activeTab}`}
+      >
+        {activeTab === 'summary' && (
+          <table className="runtime-override-summary">
+            <thead>
+              <tr>
+                <th>Setting</th>
+                <th>Effective value</th>
+                <th>Source</th>
+                <th />
               </tr>
-            )
-          })}
-        </tbody>
-      </table>
-
-      <div className="scenario-browser-grid">
-        <label>
-          <span>Iterations</span>
-          <input
-            className="settings-input"
-            type="number"
-            min={0}
-            value={draft.run_logic?.iterations ?? draft.iterations ?? ''}
-            onChange={event => patchRunLogic({ iterations: event.target.value === '' ? undefined : Number(event.target.value) })}
-            placeholder="Inherit"
-          />
-        </label>
-        <label>
-          <span>Pacing</span>
-          <select
-            className="settings-input"
-            value={pacingType}
-            onChange={event => {
-              const type = event.target.value as NonNullable<ScenarioRuntimeSettingsDraft['pacing']>['type'] | ''
-              patch({ pacing: type ? { type } : undefined })
-            }}
-          >
-            <option value="">Inherit</option>
-            <option value="none">None</option>
-            <option value="fixed_delay">Fixed delay</option>
-            <option value="fixed_interval">Fixed interval</option>
-            <option value="tps">Target TPS</option>
-          </select>
-        </label>
-        {pacingType === 'fixed_delay' && (
-          <label>
-            <span>Pacing delay (ms)</span>
-            <input
-              className="settings-input"
-              type="number"
-              min={0}
-              value={draft.pacing?.delay_ms ?? ''}
-              onChange={event => patch({ pacing: { type: 'fixed_delay', delay_ms: event.target.value === '' ? undefined : Number(event.target.value) } })}
-              placeholder="0"
-            />
-          </label>
+            </thead>
+            <tbody>
+              {SUMMARY_FIELDS.map(field => {
+                const applicable = isRuntimeFieldApplicable(field, focusGroup.protocol)
+                if (!applicable) {
+                  return (
+                    <tr key={field} className="runtime-override-row not-applicable">
+                      <td>{FIELD_LABELS[field]}</td>
+                      <td colSpan={3}><span className="runtime-source-badge muted">Not applicable for {focusGroup.protocol || 'this'} protocol</span></td>
+                    </tr>
+                  )
+                }
+                const effective = formatEffectiveRuntimeField(field, groupOverride, scenarioDefault, scriptDefault, '—')
+                return (
+                  <tr key={field} className="runtime-override-row">
+                    <td>{FIELD_LABELS[field]}</td>
+                    <td>{effective.value}</td>
+                    <td><span className={`runtime-source-badge source-${effective.source}`}>{RUNTIME_FIELD_SOURCE_LABEL[effective.source]}</span></td>
+                    <td>
+                      {fieldHasOverride(field) && (
+                        <button type="button" className="link-button" onClick={() => clearField(field)} aria-label={`Clear ${FIELD_LABELS[field]} override`}>
+                          Clear
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         )}
-        {pacingType === 'fixed_interval' && (
-          <label>
-            <span>Pacing interval (ms)</span>
-            <input
-              className="settings-input"
-              type="number"
-              min={0}
-              value={draft.pacing?.interval_ms ?? ''}
-              onChange={event => patch({ pacing: { type: 'fixed_interval', interval_ms: event.target.value === '' ? undefined : Number(event.target.value) } })}
-              placeholder="0"
-            />
-          </label>
-        )}
-        {pacingType === 'tps' && (
-          <label>
-            <span>Target TPS</span>
-            <input
-              className="settings-input"
-              type="number"
-              min={0}
-              value={draft.pacing?.tps ?? ''}
-              onChange={event => patch({ pacing: { type: 'tps', tps: event.target.value === '' ? undefined : Number(event.target.value) } })}
-              placeholder="0"
-            />
-          </label>
-        )}
-        <label>
-          <span>Think time (ms)</span>
-          <input
-            className="settings-input"
-            type="number"
-            min={0}
-            value={draft.think_time?.ignore ? '' : (draft.think_time?.mean_ms ?? '')}
-            disabled={Boolean(draft.think_time?.ignore)}
-            onChange={event => patch({ think_time: event.target.value === '' ? undefined : { type: 'fixed', mean_ms: Number(event.target.value), ignore: false } })}
-            placeholder="Inherit"
-          />
-        </label>
-        <label>
-          <span>Log level</span>
-          <select className="settings-input" value={draft.log?.level ?? draft.log_level ?? ''} onChange={event => patchLog({ level: event.target.value || undefined })}>
-            <option value="">Inherit</option>
-            <option value="disabled">Disabled</option>
-            <option value="standard">Standard</option>
-            <option value="extended">Extended</option>
-          </select>
-        </label>
-        <label>
-          <span>Auto-transactions</span>
-          <select className="settings-input" value={draft.run_logic?.auto_transactions ?? draft.auto_transactions ?? ''} onChange={event => patchRunLogic({ auto_transactions: event.target.value || undefined })}>
-            <option value="">Inherit</option>
-            <option value="none">None</option>
-            <option value="per_action">Per action</option>
-            <option value="per_iteration">Per iteration</option>
-          </select>
-        </label>
-      </div>
 
-      <div className="scenario-option-grid">
-        <label className={`scenario-option-card ${draft.think_time?.ignore ? 'selected' : ''}`}>
-          <input
-            type="checkbox"
-            checked={Boolean(draft.think_time?.ignore)}
-            onChange={event => patch({ think_time: event.target.checked ? { type: 'fixed', mean_ms: draft.think_time?.mean_ms ?? 0, ignore: true } : undefined })}
-          />
-          <div><strong>Ignore think time</strong><span>Bypass scripted think times for this group.</span></div>
-        </label>
-        <label className={`scenario-option-card ${draft.continue_on_error ? 'selected' : ''}`}>
-          <input type="checkbox" checked={draft.continue_on_error} onChange={event => patch({ continue_on_error: event.target.checked })} />
-          <div><strong>Continue on error</strong><span>Keep iterating after a failed step.</span></div>
-        </label>
-        <label className={`scenario-option-card ${draft.snapshot_on_error ? 'selected' : ''}`}>
-          <input type="checkbox" checked={draft.snapshot_on_error} onChange={event => patch({ snapshot_on_error: event.target.checked })} />
-          <div><strong>Snapshot on error</strong><span>Capture diagnostics when a step fails.</span></div>
-        </label>
-      </div>
-
-      <div className="scenario-browser-grid">
-        <label>
-          <span>Max retries</span>
-          <input
-            className="settings-input"
-            type="number"
-            min={0}
-            value={draft.max_retries ?? ''}
-            onChange={event => patch({ max_retries: event.target.value === '' ? undefined : Number(event.target.value) })}
-            placeholder="Inherit"
-          />
-        </label>
-        <label>
-          <span>Retry delay (ms)</span>
-          <input
-            className="settings-input"
-            type="number"
-            min={0}
-            value={draft.retry_delay_ms ?? ''}
-            onChange={event => patch({ retry_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })}
-            placeholder="Inherit"
-          />
-        </label>
-        <label>
-          <span>Retry backoff</span>
-          <select
-            className="settings-input"
-            value={draft.retry_backoff || ''}
-            onChange={event => patch({ retry_backoff: event.target.value || undefined })}
-          >
-            <option value="">Inherit</option>
-            <option value="constant">Constant</option>
-            <option value="linear">Linear</option>
-            <option value="exponential">Exponential</option>
-          </select>
-        </label>
-      </div>
-
-      {browserApplicable && (
-        <div className="scenario-browser-grid">
-          <label>
-            <span>Device profile</span>
-            <select
-              className="settings-input"
-              value={draft.browser_config?.device_profile ?? draft.browser?.device_profile ?? ''}
-              onChange={event => patchBrowserConfig({ device_profile: event.target.value || undefined })}
-            >
-              <option value="">Inherit</option>
-              <option value="desktop_1080p">desktop_1080p</option>
-              <option value="galaxy_s24">galaxy_s24</option>
-              <option value="pixel_8">pixel_8</option>
-              <option value="ipad_air">ipad_air (WebKit)</option>
-              <option value="iphone_15_pro">iphone_15_pro (WebKit)</option>
-              <option value="iphone_se">iphone_se (WebKit)</option>
-            </select>
-          </label>
-          <label>
-            <span>Orientation</span>
-            <select
-              className="settings-input"
-              value={draft.browser_config?.orientation ?? draft.browser?.orientation ?? ''}
-              onChange={event => patchBrowserConfig({ orientation: event.target.value || undefined })}
-            >
-              <option value="">Inherit</option>
-              <option value="portrait">Portrait</option>
-              <option value="landscape">Landscape</option>
-            </select>
-          </label>
-          <label>
-            <span>Headless</span>
-            <select className="settings-input" value={browserBoolValue(draft.browser_config?.headless, draft.browser?.headless)} onChange={event => patchBrowserConfig({ headless: event.target.value === '' ? undefined : event.target.value === 'true' })}>
-              <option value="">Inherit</option>
-              <option value="true">Headless</option>
-              <option value="false">Headed</option>
-            </select>
-          </label>
-          <label>
-            <span>Touch mode</span>
-            <select className="settings-input" value={browserBoolValue(draft.browser_config?.touch_mode, draft.browser?.touch_mode)} onChange={event => patchBrowserConfig({ touch_mode: event.target.value === '' ? undefined : event.target.value === 'true' })}>
-              <option value="">Inherit</option>
-              <option value="true">Enabled</option>
-              <option value="false">Disabled</option>
-            </select>
-          </label>
-          <label>
-            <span>Browser engine</span>
-            <select className="settings-input" value={draft.browser_config?.engine || ''} onChange={event => patchBrowserConfig({ engine: event.target.value || undefined })}>
-              <option value="">Inherit</option>
-              <option value="chromium">Chromium</option>
-              <option value="firefox">Firefox</option>
-              <option value="webkit">WebKit</option>
-            </select>
-          </label>
-          <label>
-            <span>User agent</span>
-            <input className="settings-input" type="text" value={draft.browser_config?.user_agent || ''} onChange={event => patchBrowserConfig({ user_agent: event.target.value || undefined })} placeholder="Inherit" />
-          </label>
-          <label>
-            <span>Slow-mo (ms)</span>
-            <input className="settings-input" type="number" min={0} value={draft.browser_config?.slow_mo_ms ?? ''} onChange={event => patchBrowserConfig({ slow_mo_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
-          </label>
-        </div>
-      )}
-
-      {httpApplicable && (
-        <div className="scenario-subpanel">
-          <div className="scenario-assignment-header">
-            <div>
-              <h4>HTTP transport</h4>
-              <p>Overrides this group&rsquo;s HTTP settings. Setting any field replaces the script&rsquo;s full HTTP section for the group. Auth secrets are stored masked.</p>
+        {activeTab === 'think_time' && (
+          <>
+            <div className="scenario-browser-grid">
+              <label>
+                <span>Think time (ms)</span>
+                <input
+                  className="settings-input"
+                  type="number"
+                  min={0}
+                  value={draft.think_time?.ignore ? '' : (draft.think_time?.mean_ms ?? '')}
+                  disabled={Boolean(draft.think_time?.ignore)}
+                  onChange={event => patch({ think_time: event.target.value === '' ? undefined : { type: 'fixed', mean_ms: Number(event.target.value), ignore: false } })}
+                  placeholder="Inherit"
+                />
+              </label>
             </div>
-          </div>
+            <div className="scenario-option-grid">
+              <label className={`scenario-option-card ${draft.think_time?.ignore ? 'selected' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(draft.think_time?.ignore)}
+                  onChange={event => patch({ think_time: event.target.checked ? { type: 'fixed', mean_ms: draft.think_time?.mean_ms ?? 0, ignore: true } : undefined })}
+                />
+                <div><strong>Ignore think time</strong><span>Bypass scripted think times for this group.</span></div>
+              </label>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'pacing' && (
           <div className="scenario-browser-grid">
             <label>
-              <span>HTTP version</span>
-              <select className="settings-input" value={draft.http?.version || ''} onChange={event => patchHttp({ version: event.target.value || undefined })}>
-                <option value="">Inherit</option>
-                <option value="1.0">1.0</option>
-                <option value="1.1">1.1</option>
-                <option value="2">2</option>
-              </select>
-            </label>
-            <label>
-              <span>Connect timeout (ms)</span>
-              <input className="settings-input" type="number" min={0} value={draft.http?.connect_timeout_ms ?? ''} onChange={event => patchHttp({ connect_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
-            </label>
-            <label>
-              <span>Request timeout (ms)</span>
-              <input className="settings-input" type="number" min={0} value={draft.http?.request_timeout_ms ?? ''} onChange={event => patchHttp({ request_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
-            </label>
-            <label>
-              <span>TLS min version</span>
-              <select className="settings-input" value={draft.http?.tls?.min_version || ''} onChange={event => patchHttp({ tls: { ...draft.http?.tls, min_version: event.target.value || undefined } })}>
-                <option value="">Inherit</option>
-                <option value="1.0">1.0</option>
-                <option value="1.1">1.1</option>
-                <option value="1.2">1.2</option>
-                <option value="1.3">1.3</option>
-              </select>
-            </label>
-            <label>
-              <span>Proxy mode</span>
-              <select className="settings-input" value={draft.http?.proxy_mode || ''} onChange={event => patchHttp({ proxy_mode: event.target.value || undefined })}>
+              <span>Pacing</span>
+              <select
+                className="settings-input"
+                value={pacingType}
+                onChange={event => {
+                  const type = event.target.value as NonNullable<ScenarioRuntimeSettingsDraft['pacing']>['type'] | ''
+                  patch({ pacing: type ? { type } : undefined })
+                }}
+              >
                 <option value="">Inherit</option>
                 <option value="none">None</option>
-                <option value="system">System</option>
-                <option value="custom">Custom</option>
+                <option value="fixed_delay">Fixed delay</option>
+                <option value="fixed_interval">Fixed interval</option>
+                <option value="tps">Target TPS</option>
               </select>
             </label>
-            <label>
-              <span>Proxy URL</span>
-              <input className="settings-input" type="text" value={draft.http?.proxy?.url || ''} onChange={event => patchHttp({ proxy: { ...draft.http?.proxy, url: event.target.value || undefined } })} placeholder="http://proxy:8080" />
-            </label>
-            <label>
-              <span>Auth type</span>
-              <select className="settings-input" value={draft.http?.auth?.type || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, type: event.target.value || undefined } })}>
-                <option value="">Inherit</option>
-                <option value="basic">Basic</option>
-                <option value="bearer">Bearer</option>
-                <option value="ntlm">NTLM</option>
-                <option value="digest">Digest</option>
-              </select>
-            </label>
-            <label>
-              <span>Auth username</span>
-              <input className="settings-input" type="text" value={draft.http?.auth?.username || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, username: event.target.value || undefined } })} placeholder="Inherit" />
-            </label>
-            <label>
-              <span>Auth password</span>
-              <input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.password || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, password: event.target.value || undefined } })} placeholder="Inherit" />
-            </label>
-            <label>
-              <span>Auth token</span>
-              <input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.token || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, token: event.target.value || undefined } })} placeholder="Inherit" />
-            </label>
+            {pacingType === 'fixed_delay' && (
+              <label>
+                <span>Pacing delay (ms)</span>
+                <input
+                  className="settings-input"
+                  type="number"
+                  min={0}
+                  value={draft.pacing?.delay_ms ?? ''}
+                  onChange={event => patch({ pacing: { type: 'fixed_delay', delay_ms: event.target.value === '' ? undefined : Number(event.target.value) } })}
+                  placeholder="0"
+                />
+              </label>
+            )}
+            {pacingType === 'fixed_interval' && (
+              <label>
+                <span>Pacing interval (ms)</span>
+                <input
+                  className="settings-input"
+                  type="number"
+                  min={0}
+                  value={draft.pacing?.interval_ms ?? ''}
+                  onChange={event => patch({ pacing: { type: 'fixed_interval', interval_ms: event.target.value === '' ? undefined : Number(event.target.value) } })}
+                  placeholder="0"
+                />
+              </label>
+            )}
+            {pacingType === 'tps' && (
+              <label>
+                <span>Target TPS</span>
+                <input
+                  className="settings-input"
+                  type="number"
+                  min={0}
+                  value={draft.pacing?.tps ?? ''}
+                  onChange={event => patch({ pacing: { type: 'tps', tps: event.target.value === '' ? undefined : Number(event.target.value) } })}
+                  placeholder="0"
+                />
+              </label>
+            )}
           </div>
-          <div className="scenario-option-grid">
-            <label className={`scenario-option-card ${draft.http?.tls?.insecure_skip_verify ? 'selected' : ''}`}>
-              <input type="checkbox" checked={Boolean(draft.http?.tls?.insecure_skip_verify)} onChange={event => patchHttp({ tls: { ...draft.http?.tls, insecure_skip_verify: event.target.checked || undefined } })} />
-              <div><strong>Skip TLS verification</strong><span>Do not validate the server certificate (test environments only).</span></div>
-            </label>
-          </div>
-        </div>
-      )}
+        )}
 
-      {webRuntimeApplicable && (
-        <div className="scenario-subpanel">
-          <div className="scenario-assignment-header">
-            <div>
-              <h4>Web runtime</h4>
-              <p>Source IPs to distribute this group&rsquo;s traffic across (comma-separated). Other web-runtime settings (download filters, network simulation, data formatting) are authorable via the API.</p>
-            </div>
+        {activeTab === 'run_logic' && (
+          <div className="scenario-browser-grid">
+            <label>
+              <span>Iterations</span>
+              <input
+                className="settings-input"
+                type="number"
+                min={0}
+                value={draft.run_logic?.iterations ?? draft.iterations ?? ''}
+                onChange={event => patchRunLogic({ iterations: event.target.value === '' ? undefined : Number(event.target.value) })}
+                placeholder="Inherit"
+              />
+            </label>
+            <label>
+              <span>Auto-transactions</span>
+              <select className="settings-input" value={draft.run_logic?.auto_transactions ?? draft.auto_transactions ?? ''} onChange={event => patchRunLogic({ auto_transactions: event.target.value || undefined })}>
+                <option value="">Inherit</option>
+                <option value="none">None</option>
+                <option value="per_action">Per action</option>
+                <option value="per_iteration">Per iteration</option>
+              </select>
+            </label>
+            <label>
+              <span>Workload model</span>
+              <select className="settings-input" value={draft.run_logic?.workload_model || ''} onChange={event => patchRunLogic({ workload_model: event.target.value || undefined })}>
+                <option value="">Inherit</option>
+                <option value="closed">Closed</option>
+                <option value="open">Open</option>
+              </select>
+            </label>
+            <label>
+              <span>Block scheduling</span>
+              <select className="settings-input" value={draft.run_logic?.block_scheduling || ''} onChange={event => patchRunLogic({ block_scheduling: event.target.value || undefined })}>
+                <option value="">Inherit</option>
+                <option value="sequential">Sequential</option>
+                <option value="random">Random</option>
+                <option value="percentage">Percentage</option>
+              </select>
+            </label>
+            <label>
+              <span>Global iterations</span>
+              <input className="settings-input" type="number" min={0} value={draft.run_logic?.global_iterations ?? ''} onChange={event => patchRunLogic({ global_iterations: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+            </label>
+            <label>
+              <span>Max transactions</span>
+              <input className="settings-input" type="number" min={0} value={draft.run_logic?.max_transactions ?? ''} onChange={event => patchRunLogic({ max_transactions: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+            </label>
           </div>
+        )}
+
+        {activeTab === 'error_handling' && (
+          <>
+            <div className="scenario-option-grid">
+              <label className={`scenario-option-card ${draft.continue_on_error ? 'selected' : ''}`}>
+                <input type="checkbox" checked={draft.continue_on_error} onChange={event => patch({ continue_on_error: event.target.checked })} />
+                <div><strong>Continue on error</strong><span>Keep iterating after a failed step.</span></div>
+              </label>
+              <label className={`scenario-option-card ${draft.snapshot_on_error ? 'selected' : ''}`}>
+                <input type="checkbox" checked={draft.snapshot_on_error} onChange={event => patch({ snapshot_on_error: event.target.checked })} />
+                <div><strong>Snapshot on error</strong><span>Capture diagnostics when a step fails.</span></div>
+              </label>
+            </div>
+            <div className="scenario-browser-grid">
+              <label>
+                <span>Max retries</span>
+                <input
+                  className="settings-input"
+                  type="number"
+                  min={0}
+                  value={draft.max_retries ?? ''}
+                  onChange={event => patch({ max_retries: event.target.value === '' ? undefined : Number(event.target.value) })}
+                  placeholder="Inherit"
+                />
+              </label>
+              <label>
+                <span>Retry delay (ms)</span>
+                <input
+                  className="settings-input"
+                  type="number"
+                  min={0}
+                  value={draft.retry_delay_ms ?? ''}
+                  onChange={event => patch({ retry_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })}
+                  placeholder="Inherit"
+                />
+              </label>
+              <label>
+                <span>Retry backoff</span>
+                <select
+                  className="settings-input"
+                  value={draft.retry_backoff || ''}
+                  onChange={event => patch({ retry_backoff: event.target.value || undefined })}
+                >
+                  <option value="">Inherit</option>
+                  <option value="constant">Constant</option>
+                  <option value="linear">Linear</option>
+                  <option value="exponential">Exponential</option>
+                </select>
+              </label>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'http_transport' && (
+          <>
+            <div className="scenario-browser-grid">
+              <label>
+                <span>HTTP version</span>
+                <select className="settings-input" value={draft.http?.version || ''} onChange={event => patchHttp({ version: event.target.value || undefined })}>
+                  <option value="">Inherit</option>
+                  <option value="1.0">1.0</option>
+                  <option value="1.1">1.1</option>
+                  <option value="2">2</option>
+                </select>
+              </label>
+              <label>
+                <span>Connect timeout (ms)</span>
+                <input className="settings-input" type="number" min={0} value={draft.http?.connect_timeout_ms ?? ''} onChange={event => patchHttp({ connect_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+              </label>
+              <label>
+                <span>Request timeout (ms)</span>
+                <input className="settings-input" type="number" min={0} value={draft.http?.request_timeout_ms ?? ''} onChange={event => patchHttp({ request_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+              </label>
+              <label>
+                <span>TLS min version</span>
+                <select className="settings-input" value={draft.http?.tls?.min_version || ''} onChange={event => patchHttp({ tls: { ...draft.http?.tls, min_version: event.target.value || undefined } })}>
+                  <option value="">Inherit</option>
+                  <option value="1.0">1.0</option>
+                  <option value="1.1">1.1</option>
+                  <option value="1.2">1.2</option>
+                  <option value="1.3">1.3</option>
+                </select>
+              </label>
+              <label>
+                <span>Proxy mode</span>
+                <select className="settings-input" value={draft.http?.proxy_mode || ''} onChange={event => patchHttp({ proxy_mode: event.target.value || undefined })}>
+                  <option value="">Inherit</option>
+                  <option value="none">None</option>
+                  <option value="system">System</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label>
+                <span>Proxy URL</span>
+                <input className="settings-input" type="text" value={draft.http?.proxy?.url || ''} onChange={event => patchHttp({ proxy: { ...draft.http?.proxy, url: event.target.value || undefined } })} placeholder="http://proxy:8080" />
+              </label>
+              <label>
+                <span>Auth type</span>
+                <select className="settings-input" value={draft.http?.auth?.type || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, type: event.target.value || undefined } })}>
+                  <option value="">Inherit</option>
+                  <option value="basic">Basic</option>
+                  <option value="bearer">Bearer</option>
+                  <option value="ntlm">NTLM</option>
+                  <option value="digest">Digest</option>
+                </select>
+              </label>
+              <label>
+                <span>Auth username</span>
+                <input className="settings-input" type="text" value={draft.http?.auth?.username || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, username: event.target.value || undefined } })} placeholder="Inherit" />
+              </label>
+              <label>
+                <span>Auth password</span>
+                <input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.password || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, password: event.target.value || undefined } })} placeholder="Inherit" />
+              </label>
+              <label>
+                <span>Auth token</span>
+                <input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.token || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, token: event.target.value || undefined } })} placeholder="Inherit" />
+              </label>
+            </div>
+            <div className="scenario-option-grid">
+              <label className={`scenario-option-card ${draft.http?.tls?.insecure_skip_verify ? 'selected' : ''}`}>
+                <input type="checkbox" checked={Boolean(draft.http?.tls?.insecure_skip_verify)} onChange={event => patchHttp({ tls: { ...draft.http?.tls, insecure_skip_verify: event.target.checked || undefined } })} />
+                <div><strong>Skip TLS verification</strong><span>Do not validate the server certificate (test environments only).</span></div>
+              </label>
+            </div>
+
+            {browserApplicable && (
+              <>
+                <div className="scenario-assignment-header">
+                  <div>
+                    <h4>Browser emulation</h4>
+                    <p>Device and engine defaults for this browser group.</p>
+                  </div>
+                </div>
+                <div className="scenario-browser-grid">
+                  <label>
+                    <span>Device profile</span>
+                    <select
+                      className="settings-input"
+                      value={draft.browser_config?.device_profile ?? draft.browser?.device_profile ?? ''}
+                      onChange={event => patchBrowserConfig({ device_profile: event.target.value || undefined })}
+                    >
+                      <option value="">Inherit</option>
+                      <option value="desktop_1080p">desktop_1080p</option>
+                      <option value="galaxy_s24">galaxy_s24</option>
+                      <option value="pixel_8">pixel_8</option>
+                      <option value="ipad_air">ipad_air (WebKit)</option>
+                      <option value="iphone_15_pro">iphone_15_pro (WebKit)</option>
+                      <option value="iphone_se">iphone_se (WebKit)</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Orientation</span>
+                    <select
+                      className="settings-input"
+                      value={draft.browser_config?.orientation ?? draft.browser?.orientation ?? ''}
+                      onChange={event => patchBrowserConfig({ orientation: event.target.value || undefined })}
+                    >
+                      <option value="">Inherit</option>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Headless</span>
+                    <select className="settings-input" value={browserBoolValue(draft.browser_config?.headless, draft.browser?.headless)} onChange={event => patchBrowserConfig({ headless: event.target.value === '' ? undefined : event.target.value === 'true' })}>
+                      <option value="">Inherit</option>
+                      <option value="true">Headless</option>
+                      <option value="false">Headed</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Touch mode</span>
+                    <select className="settings-input" value={browserBoolValue(draft.browser_config?.touch_mode, draft.browser?.touch_mode)} onChange={event => patchBrowserConfig({ touch_mode: event.target.value === '' ? undefined : event.target.value === 'true' })}>
+                      <option value="">Inherit</option>
+                      <option value="true">Enabled</option>
+                      <option value="false">Disabled</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Browser engine</span>
+                    <select className="settings-input" value={draft.browser_config?.engine || ''} onChange={event => patchBrowserConfig({ engine: event.target.value || undefined })}>
+                      <option value="">Inherit</option>
+                      <option value="chromium">Chromium</option>
+                      <option value="firefox">Firefox</option>
+                      <option value="webkit">WebKit</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>User agent</span>
+                    <input className="settings-input" type="text" value={draft.browser_config?.user_agent || ''} onChange={event => patchBrowserConfig({ user_agent: event.target.value || undefined })} placeholder="Inherit" />
+                  </label>
+                  <label>
+                    <span>Slow-mo (ms)</span>
+                    <input className="settings-input" type="number" min={0} value={draft.browser_config?.slow_mo_ms ?? ''} onChange={event => patchBrowserConfig({ slow_mo_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+                  </label>
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {activeTab === 'web_http' && (
           <div className="scenario-browser-grid">
             <label>
               <span>Source IPs</span>
@@ -624,49 +713,29 @@ export default function RuntimeSettingsGroupEditor({
               />
             </label>
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="scenario-subpanel">
-        <div className="scenario-assignment-header">
-          <div>
-            <h4>Run logic &amp; logging (advanced)</h4>
-            <p>Advanced run-logic and logging fields. Editing these folds the iterations / auto-transactions / log level above into the full section for this group.</p>
-          </div>
-        </div>
-        <div className="scenario-browser-grid">
-          <label>
-            <span>Workload model</span>
-            <select className="settings-input" value={draft.run_logic?.workload_model || ''} onChange={event => patchRunLogic({ workload_model: event.target.value || undefined })}>
-              <option value="">Inherit</option>
-              <option value="closed">Closed</option>
-              <option value="open">Open</option>
-            </select>
-          </label>
-          <label>
-            <span>Block scheduling</span>
-            <select className="settings-input" value={draft.run_logic?.block_scheduling || ''} onChange={event => patchRunLogic({ block_scheduling: event.target.value || undefined })}>
-              <option value="">Inherit</option>
-              <option value="sequential">Sequential</option>
-              <option value="random">Random</option>
-              <option value="percentage">Percentage</option>
-            </select>
-          </label>
-          <label>
-            <span>Global iterations</span>
-            <input className="settings-input" type="number" min={0} value={draft.run_logic?.global_iterations ?? ''} onChange={event => patchRunLogic({ global_iterations: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
-          </label>
-          <label>
-            <span>Max transactions</span>
-            <input className="settings-input" type="number" min={0} value={draft.run_logic?.max_transactions ?? ''} onChange={event => patchRunLogic({ max_transactions: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
-          </label>
-        </div>
-        <div className="scenario-option-grid">
-          <label className={`scenario-option-card ${draft.log?.on_error_only ? 'selected' : ''}`}>
-            <input type="checkbox" checked={Boolean(draft.log?.on_error_only)} onChange={event => patchLog({ on_error_only: event.target.checked || undefined })} />
-            <div><strong>Extended logging on error only</strong><span>Use extended logging only when a step fails.</span></div>
-          </label>
-        </div>
+        {activeTab === 'logging' && (
+          <>
+            <div className="scenario-browser-grid">
+              <label>
+                <span>Log level</span>
+                <select className="settings-input" value={draft.log?.level ?? draft.log_level ?? ''} onChange={event => patchLog({ level: event.target.value || undefined })}>
+                  <option value="">Inherit</option>
+                  <option value="disabled">Disabled</option>
+                  <option value="standard">Standard</option>
+                  <option value="extended">Extended</option>
+                </select>
+              </label>
+            </div>
+            <div className="scenario-option-grid">
+              <label className={`scenario-option-card ${draft.log?.on_error_only ? 'selected' : ''}`}>
+                <input type="checkbox" checked={Boolean(draft.log?.on_error_only)} onChange={event => patchLog({ on_error_only: event.target.checked || undefined })} />
+                <div><strong>Extended logging on error only</strong><span>Use extended logging only when a step fails.</span></div>
+              </label>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="runtime-apply-row">
