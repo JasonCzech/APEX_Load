@@ -47,7 +47,7 @@ export function useObjectRepositoryApi() {
   )
 
   const createObjectRepositoryFromScript = useCallback(
-    (body: { script_id: string; name?: string }) =>
+    (body: { script_id: string; name?: string; bind_script?: boolean }) =>
       request<ObjectRepository>('/object-repositories/from-script', { method: 'POST', body: JSON.stringify(body) }),
     [],
   )

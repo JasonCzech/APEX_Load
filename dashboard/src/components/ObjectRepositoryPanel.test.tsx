@@ -95,4 +95,55 @@ describe('ObjectRepositoryPanel', () => {
     expect(container.textContent).toContain('Select a project')
     expect(apiMock.listObjectRepositories).not.toHaveBeenCalled()
   })
+
+  it('shows ranked candidates (flagging self-heals) and promotes one to primary', async () => {
+    apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [repo({
+      objects: [{
+        logical_name: 'Login', css: '#login', best_confidence: 88,
+        candidates: [
+          { kind: 'css', value: '#login', confidence: 88, reason: 'captured css' },
+          { kind: 'xpath', value: 'xpath=//a', confidence: 58, reason: 'observed via replay self-heal' },
+        ],
+      }],
+    })], count: 1 })
+    apiMock.updateObjectRepository.mockResolvedValue(repo({}))
+
+    await act(async () => { root.render(<ObjectRepositoryPanel projectId="proj-a" canManage />) })
+    await flush()
+
+    // Expand the repository to reveal its objects + candidates.
+    const title = container.querySelector('.pp-row-title-button') as HTMLButtonElement
+    await act(async () => { title.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flush()
+
+    expect(container.textContent).toContain('xpath=//a')
+    expect(container.textContent).toContain('self-healed')
+
+    // Promote the non-primary (self-healed) candidate.
+    await act(async () => { findButton('Promote')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flush()
+
+    expect(apiMock.updateObjectRepository).toHaveBeenCalledTimes(1)
+    const body = apiMock.updateObjectRepository.mock.calls[0][1] as ObjectRepository
+    const object = body.objects[0]
+    expect(object.xpath).toBe('xpath=//a') // mirrored into the descriptor
+    expect(object.best_confidence).toBe(89) // bumped strictly above the prior primary
+    expect(object.candidates?.find(c => c.value === 'xpath=//a')?.confidence).toBe(89)
+  })
+
+  it('passes bind_script when the import checkbox is set', async () => {
+    apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [], count: 0 })
+    apiMock.createObjectRepositoryFromScript.mockResolvedValue(repo({ id: 'r9' }))
+
+    await act(async () => { root.render(<ObjectRepositoryPanel projectId="proj-a" canManage />) })
+    await flush()
+
+    setInput('Seed from script id…', 'script-9')
+    const checkbox = container.querySelector('.pp-check input[type=checkbox]') as HTMLInputElement
+    await act(async () => { checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await act(async () => { findButton('Import from script')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flush()
+
+    expect(apiMock.createObjectRepositoryFromScript).toHaveBeenCalledWith(expect.objectContaining({ script_id: 'script-9', bind_script: true }))
+  })
 })

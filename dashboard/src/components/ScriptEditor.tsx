@@ -14993,6 +14993,13 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
       {showSelector && (
         <label className="full-width"><span>Selector Override</span><input value={action.selector || ''} onChange={e => onUpdate(index, 'selector', e.target.value)} placeholder="#submit, input[name=email], [data-testid=save]" /></label>
       )}
+      {showSelector && (
+        <label className="full-width">
+          <span>Object Repository Ref</span>
+          <input value={action.object_ref || ''} onChange={e => onUpdate(index, 'object_ref', e.target.value)} placeholder="login or object-repo-…:login — resolves to a repository object" />
+          <small>Binds to a project object repository by logical name; resolved to a selector + fallbacks at run time (takes precedence over the inline selector when it resolves).</small>
+        </label>
+      )}
       {showValue && (
         <label className="full-width"><span>{action.type === 'browser_set_files' ? 'File Path(s)' : action.type === 'browser_press_key' ? 'Key' : 'Value'}</span><input value={action.value || ''} onChange={e => onUpdate(index, 'value', e.target.value)} placeholder={action.type === 'browser_set_files' ? '/tmp/upload.pdf or {{data.files.path}}' : action.type === 'browser_press_key' ? 'Enter' : '{{data.users.email}}'} /></label>
       )}

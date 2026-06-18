@@ -91,6 +91,10 @@ export interface ScriptActionDefinition {
   method?: string
   target: string
   selector?: string
+  // object_ref binds an element-targeting browser action to a named object in a
+  // project-scoped object repository ("name" or "repoId:name"). The controller
+  // resolves it into a concrete selector + ranked fallbacks at script prep.
+  object_ref?: string
   value?: string
   headers?: Record<string, string>
   body?: string

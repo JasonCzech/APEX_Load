@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { useObjectRepositoryApi } from '../hooks/api/useObjectRepositoryApi'
 import { ApiError } from '../hooks/apiClient'
-import { ObjectRepository } from '../types'
+import { ObjectRepository, RepositoryObject } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import './parityPanels.css'
 
@@ -27,7 +27,7 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [createForm, setCreateForm] = useState({ name: '', description: '' })
-  const [importForm, setImportForm] = useState({ scriptId: '', name: '' })
+  const [importForm, setImportForm] = useState({ scriptId: '', name: '', bindScript: false })
   const [expanded, setExpanded] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ObjectRepository | null>(null)
   const [busy, setBusy] = useState(false)
@@ -77,9 +77,34 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
   const handleImport = () => {
     if (!importForm.scriptId.trim()) return
     void runAction(
-      () => api.createObjectRepositoryFromScript({ script_id: importForm.scriptId.trim(), name: importForm.name.trim() || undefined }),
-      () => setImportForm({ scriptId: '', name: '' }),
+      () => api.createObjectRepositoryFromScript({ script_id: importForm.scriptId.trim(), name: importForm.name.trim() || undefined, bind_script: importForm.bindScript || undefined }),
+      () => setImportForm({ scriptId: '', name: '', bindScript: false }),
     )
+  }
+
+  // Promote a candidate to be the object's primary locator: raise its confidence
+  // above the others (so script-prep resolution picks it) and mirror it into the
+  // matching descriptor field, then persist the whole repository.
+  const promoteCandidate = (repo: ObjectRepository, objectIndex: number, candidateIndex: number) => {
+    const objects = repo.objects.map((object, oi): RepositoryObject => {
+      if (oi !== objectIndex) return object
+      const candidates = object.candidates || []
+      const target = candidates[candidateIndex]
+      if (!target) return object
+      const maxConfidence = candidates.reduce((max, c) => Math.max(max, c.confidence || 0), 0)
+      const promoted = Math.min(100, Math.max(maxConfidence + 1, target.confidence || 0))
+      const next: RepositoryObject = {
+        ...object,
+        best_confidence: promoted,
+        candidates: candidates.map((c, ci) => (ci === candidateIndex ? { ...c, confidence: promoted } : c)),
+      }
+      if (target.kind === 'css') next.css = target.value
+      else if (target.kind === 'xpath') next.xpath = target.value
+      else if (target.kind === 'role') next.role = target.value
+      else if (target.kind === 'text') next.text = target.value
+      return next
+    })
+    void runAction(() => api.updateObjectRepository(repo.id, { name: repo.name, description: repo.description, objects }))
   }
 
   return (
@@ -108,6 +133,10 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
         <div className="pp-field-row">
           <input className="pp-field" placeholder="Seed from script id…" value={importForm.scriptId} onChange={e => setImportForm(f => ({ ...f, scriptId: e.target.value }))} />
           <input className="pp-field" placeholder="Repository name (optional)" value={importForm.name} onChange={e => setImportForm(f => ({ ...f, name: e.target.value }))} />
+          <label className="pp-check" title="Rewrite the script's actions to reference the new repository by object_ref (keeps inline selectors as fallback).">
+            <input type="checkbox" checked={importForm.bindScript} onChange={e => setImportForm(f => ({ ...f, bindScript: e.target.checked }))} />
+            Bind script
+          </label>
           <button type="button" className="btn btn-secondary btn-sm" onClick={handleImport} disabled={busy || !importForm.scriptId.trim()}>Import from script</button>
         </div>
       )}
@@ -128,15 +157,40 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
               </div>
               {expanded === repo.id && (repo.objects?.length || 0) > 0 && (
                 <ul className="pp-sublist">
-                  {repo.objects.slice(0, 25).map((object, index) => (
-                    <li key={`${repo.id}-${index}`} className="pp-subrow">
-                      <strong>{object.logical_name}</strong>
-                      <code>{object.css || object.xpath || object.role || object.text || '—'}</code>
-                      {typeof object.best_confidence === 'number' && object.best_confidence > 0 && (
-                        <span className="pp-pill pp-pill-muted">{object.best_confidence}%</span>
-                      )}
-                    </li>
-                  ))}
+                  {repo.objects.slice(0, 25).map((object, objectIndex) => {
+                    const ranked = (object.candidates || [])
+                      .map((candidate, ci) => ({ candidate, ci }))
+                      .sort((a, b) => (b.candidate.confidence || 0) - (a.candidate.confidence || 0))
+                    return (
+                      <li key={`${repo.id}-${objectIndex}`} className="pp-subrow pp-subrow-object">
+                        <div className="pp-subrow-head">
+                          <strong>{object.logical_name}</strong>
+                          <code>{object.css || object.xpath || object.role || object.text || '—'}</code>
+                          {typeof object.best_confidence === 'number' && object.best_confidence > 0 && (
+                            <span className="pp-pill pp-pill-muted">{object.best_confidence}%</span>
+                          )}
+                        </div>
+                        {ranked.length > 0 && (
+                          <ul className="pp-candidates">
+                            {ranked.map(({ candidate, ci }, rank) => {
+                              const healed = (candidate.reason || '').toLowerCase().includes('self-heal')
+                              return (
+                                <li key={ci} className="pp-candidate">
+                                  <span className="pp-pill pp-pill-kind">{candidate.kind}</span>
+                                  <code className="pp-candidate-value">{candidate.value}</code>
+                                  <span className="pp-pill pp-pill-muted">{candidate.confidence}%</span>
+                                  {healed && <span className="pp-pill pp-pill-heal" title={candidate.reason}>self-healed</span>}
+                                  {canManage && rank !== 0 && (
+                                    <button type="button" className="btn btn-secondary btn-sm pp-promote" disabled={busy} onClick={() => promoteCandidate(repo, objectIndex, ci)}>Promote</button>
+                                  )}
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        )}
+                      </li>
+                    )
+                  })}
                   {repo.objects.length > 25 && <li className="pp-muted">+{repo.objects.length - 25} more</li>}
                 </ul>
               )}
