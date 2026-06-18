@@ -149,7 +149,7 @@ Legend: **▲ APEX leads** · **= parity** · **▼ APEX trails** · **▼▼ AP
 | --- | --- | --- | --- |
 | Script authoring UI | Web editor, multi-protocol, single pane | Thick-client VuGen, protocol-specific | **▲** |
 | HTTP/WS recording | MITM proxy, TLS, WS frames, binary/compressed, cookies | VuGen recorder (mature) | **=** |
-| Browser/SPA recording | Proxy-only; no DOM-aware capture | TruClient DOM-level record/replay | **▼▼** |
+| Browser/SPA recording | Embedded **DOM-aware record/replay** (Playwright-Go + CDP): shadow-piercing capture, ranked selectors + replay self-heal, sections/transactions, device emulation, conditional HAR (proxy recorder remains for HTTP/WS) | TruClient DOM-level record/replay | **▼** (DOM recorder shipped; TruClient still ahead on at-scale browser replay maturity) |
 | Script format | Open JSON DSL | Proprietary C/JS VUser | **▲** |
 | Import from other tools | LR, JMeter, Postman, OpenAPI, WSDL, DevWeb, HAR, cURL | LR-native; limited import | **▲** |
 
@@ -206,7 +206,7 @@ These overstatements existed in earlier docs and are now corrected:
 
 1. **AI/LLM generation** — the default provider is `deterministic-local` (`pkg/api/ai_assistance.go`). No OpenAI/Azure/Anthropic client is wired. Describe as governed deterministic assisted-authoring with external LLM policy-gated.
 2. **Storage stack** — SQLite is the runtime default. Postgres is wired but unproven at scale. Redis is optional. No Azure Blob.
-3. **Browser parity** — browser VUsers are diagnostic canaries, not TruClient-equivalent.
+3. **Browser parity** — browser VUsers are diagnostic canaries for *load execution* (not RealBrowser-class high-density browser load). The *recorder/replay* is now a first-class **DOM-aware** embedded recorder (Playwright-Go + CDP) with selector self-heal — the "proxy-only, no DOM capture" caveat no longer applies.
 4. **Scale targets** — 10k VUsers/pod and 50k total are design targets with no published benchmark artifacts.
 5. **OpenTelemetry** — only a W3C `traceparent` header is propagated; there is no span instrumentation or OTel exporter.
 
@@ -218,7 +218,7 @@ These overstatements existed in earlier docs and are now corrected:
 | P0 | CI/CD ecosystem — maintained marketplace plugins, Git script sync | M |
 | P1 | Offline analysis depth — multi-run trend polish and report profile hardening | M |
 | P1 | Benchmark evidence — publish one reproducible density benchmark | S–M |
-| P2 | Browser/SPA recording fidelity — DOM-aware capture or crisp canary scoping | L |
+| P2 | RealBrowser-class high-density browser **load** (DOM-aware record/replay already shipped; at-scale browser VUsers remain canary-scoped) | L |
 | P2 | Region/load-zone distribution with per-region response metrics | M |
 | P3 | Enterprise hardening — real OTel spans, Vault/mTLS, test-level quota enforcement | M each |
 
@@ -339,7 +339,7 @@ A comprehensive audit of APEX Load against enterprise performance testing platfo
 | Offline report depth — graph merge, per-txn drill-down, multi-run trend, PDF export | High | Archive + trend analysis, graph/drilldown API/dashboard UX, and executive/engineer PDF export delivered; heavier custom report tooling pending |
 | Correlation intelligence depth | High | Response-family rule packs + replay stale-literal evidence delivered; full VuGen-class parity pending |
 | Named load zones with benchmark envelopes | High | Named self-hosted zones delivered; benchmark envelopes pending |
-| Browser/SPA recording fidelity | Medium | Scoped as canary-only; DOM-aware capture is a separate large effort |
+| Browser/SPA recording fidelity | Medium | DOM-aware embedded recorder (Playwright-Go + CDP) + replay self-heal delivered; high-density browser *load* execution remains canary-scoped (separate effort) |
 | PDF/Word report export | Medium | Executive/engineer PDF export emitted from archive report profiles; Word export deferred |
 | Vault / mTLS | Medium | Template refs + redaction exist; Vault/mTLS not started |
 | OpenTelemetry span instrumentation | Medium | `traceparent` header propagated; full span export not started |
