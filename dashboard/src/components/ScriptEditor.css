@@ -4107,7 +4107,7 @@
 .actions-content-grid.author-outline-collapsed.author-right-sidebar-collapsed {
   --author-center-width: minmax(560px, 1fr);
 }
-.actions-sidebar { grid-area: author-rail; width: 100%; min-width: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+.actions-sidebar { grid-area: author-rail; width: 100%; min-width: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
 .actions-sidebar.collapsed {
   width: auto;
   min-width: 0;
@@ -4275,6 +4275,12 @@
 .actions-sidebar-controls { display: flex; align-items: center; gap: 8px; }
 .outline-section {
   min-height: 0;
+  /* Keep each section at its natural height (header + its own capped, internally
+     scrolling list). Without this the rail's flexbox compresses a section below
+     its content, the inner list overflows the shrunken box, and the next section
+     paints over it (Parameter List overlapping the Action List). The rail itself
+     scrolls (overflow-y on .actions-sidebar) when the sections don't all fit. */
+  flex-shrink: 0;
   border-bottom: 1px solid var(--border);
 }
 .outline-section-header {
