@@ -90,3 +90,54 @@ func TestHandleListDSLActionsFiltersByProtocol(t *testing.T) {
 		t.Error("websocket filter leaked other protocols' actions")
 	}
 }
+
+func TestHandleConfigDefaultsReturnsEngineDefaults(t *testing.T) {
+	server := NewServer(ServerConfig{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dsl/config-defaults", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Config struct {
+			HTTP struct {
+				ConnectTimeoutMs int `json:"connect_timeout_ms"`
+				RequestTimeoutMs int `json:"request_timeout_ms"`
+				TLS              struct {
+					MinVersion string `json:"min_version"`
+				} `json:"tls"`
+			} `json:"http"`
+			Browser struct {
+				Engine string `json:"engine"`
+			} `json:"browser"`
+			Pacing struct {
+				Type string `json:"type"`
+			} `json:"pacing"`
+			Log struct {
+				Level string `json:"level"`
+			} `json:"log"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Config.HTTP.ConnectTimeoutMs != 30000 || result.Config.HTTP.RequestTimeoutMs != 60000 {
+		t.Errorf("http timeout defaults not served: %+v", result.Config.HTTP)
+	}
+	if result.Config.HTTP.TLS.MinVersion != "1.2" {
+		t.Errorf("tls min_version default not served: %q", result.Config.HTTP.TLS.MinVersion)
+	}
+	if result.Config.Browser.Engine != "chromium" {
+		t.Errorf("browser engine default not served: %q", result.Config.Browser.Engine)
+	}
+	if result.Config.Pacing.Type != "none" {
+		t.Errorf("pacing default not served: %q", result.Config.Pacing.Type)
+	}
+	if result.Config.Log.Level != "standard" {
+		t.Errorf("log level default not served: %q", result.Config.Log.Level)
+	}
+}

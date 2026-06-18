@@ -37,3 +37,17 @@ func (s *Server) handleListDSLActions(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, response)
 }
+
+// dslConfigDefaultsResponse is the payload of GET /api/v1/dsl/config-defaults: the
+// load engine's built-in default ScriptConfig — the values the runtime applies when
+// a script leaves a field unset. The dashboard's per-group runtime editor uses it as
+// the lowest "inherited" layer so it can show the real effective value (never a
+// blank placeholder) for fields a script does not set.
+type dslConfigDefaultsResponse struct {
+	Config dsl.ScriptConfig `json:"config"`
+}
+
+// handleConfigDefaults returns the engine's default ScriptConfig.
+func (s *Server) handleConfigDefaults(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, dslConfigDefaultsResponse{Config: dsl.DefaultScriptConfig()})
+}

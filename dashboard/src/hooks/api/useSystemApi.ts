@@ -1,5 +1,7 @@
 import { useCallback, useMemo } from 'react'
 
+import { type ScriptConfig } from '../../types/scripts'
+
 import {
   DashboardAuthAccessMatrix,
   DashboardAuthDiagnostics,
@@ -118,6 +120,9 @@ export function useSystemApi() {
   const downloadAuthAuditEvents = useCallback((filter: DashboardAuditEventFilter = {}) => fetchBlob(`/auth/audit-events/export${buildQuery({ limit: 1000, ...filter })}`), [])
   const getHealth = useCallback(() => request<HealthResponse>('/system/health'), [])
   const getVersion = useCallback(() => request<VersionResponse>('/system/version'), [])
+  // Engine config defaults — the values the runtime applies when a script leaves a
+  // field unset; the runtime editor uses these as the lowest "inherited" layer.
+  const getConfigDefaults = useCallback(() => request<{ config: ScriptConfig }>('/dsl/config-defaults'), [])
   const getSystemInventory = useCallback(() => request<SystemInventoryResponse>('/system/inventory'), [])
   const getRestartCapabilities = useCallback(() => request<SystemRestartCapabilities>('/system/restarts/capabilities'), [])
   const executeRestart = useCallback(
@@ -192,6 +197,7 @@ export function useSystemApi() {
       downloadAuthAuditEvents,
       getHealth,
       getVersion,
+      getConfigDefaults,
       getSystemInventory,
       getRestartCapabilities,
       executeRestart,
@@ -219,6 +225,6 @@ export function useSystemApi() {
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getSystemInventory, getRestartCapabilities, executeRestart, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getConfigDefaults, getSystemInventory, getRestartCapabilities, executeRestart, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
   )
 }

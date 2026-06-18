@@ -100,6 +100,7 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/scripts/authoring/sessions", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveProjectIDFromQuery}),
 	routeAuth(http.MethodGet, "/api/v1/correlations/rules", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/dsl/actions", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/dsl/config-defaults", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/browser-recorder/devices", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/browser-recorder/install", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/browser-recorder/install", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),

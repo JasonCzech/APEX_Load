@@ -13,12 +13,26 @@ import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 export { formatBrowserRuntimeSummary }
 
 /** The layer an effective runtime value resolves to, most specific first. */
-export type RuntimeFieldSource = 'group' | 'scenario' | 'script'
+export type RuntimeFieldSource = 'group' | 'scenario' | 'script' | 'engine'
 
 export const RUNTIME_FIELD_SOURCE_LABEL: Record<RuntimeFieldSource, string> = {
   group: 'Group override',
   scenario: 'Scenario default',
   script: 'Script default',
+  engine: 'Engine default',
+}
+
+/**
+ * Descriptive labels for fields whose engine default is a behavior rather than a
+ * concrete value (or whose false/zero default is dropped by JSON omitempty), so the
+ * effective-value display always reads as a real value — never a blank placeholder.
+ */
+const ENGINE_FALLBACK_LABEL: Partial<Record<RuntimeFieldKey, string>> = {
+  iterations: 'Duration-driven',
+  error_handling: 'Stop on error',
+  web_runtime: 'None',
+  think_time: 'None',
+  pacing: 'None',
 }
 
 /** Override fields the Scenario Builder can manage per group (Phase 1 surface). */
@@ -66,6 +80,7 @@ export function formatPacing(pacing?: RuntimeSettingsOverride['pacing']): string
 export function formatThinkTime(thinkTime?: RuntimeSettingsOverride['think_time']): string | null {
   if (!thinkTime) return null
   if (thinkTime.ignore) return 'Disabled'
+  if (thinkTime.type === 'none' || (!thinkTime.type && !thinkTime.mean_ms)) return 'None'
   return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
 }
 
@@ -329,7 +344,8 @@ export function formatEffectiveRuntimeField(
   group: RuntimeSettingsOverride | undefined,
   scenario: RuntimeSettingsOverride | undefined,
   script?: RuntimeSettingsOverride,
-  scriptDefaultLabel = 'Script default',
+  engineDefault?: RuntimeSettingsOverride,
+  fallbackLabel = 'Engine default',
 ): { value: string; source: RuntimeFieldSource } {
   const formatters: Record<RuntimeFieldKey, (o?: RuntimeSettingsOverride) => string | null> = {
     iterations: (o) => formatIterations(o?.iterations),
@@ -352,5 +368,11 @@ export function formatEffectiveRuntimeField(
   if (scenarioValue !== null) return { value: scenarioValue, source: 'scenario' }
   const scriptValue = format(script)
   if (scriptValue !== null) return { value: scriptValue, source: 'script' }
-  return { value: scriptDefaultLabel, source: 'script' }
+  // Engine default (served by /api/v1/dsl/config-defaults). When even the engine
+  // config formats to null — e.g. a false/zero default dropped by JSON omitempty, or
+  // a purely behavioral default — fall back to a descriptive label so the effective
+  // value is never a blank placeholder.
+  const engineValue = format(engineDefault)
+  if (engineValue !== null) return { value: engineValue, source: 'engine' }
+  return { value: ENGINE_FALLBACK_LABEL[field] ?? fallbackLabel, source: 'engine' }
 }

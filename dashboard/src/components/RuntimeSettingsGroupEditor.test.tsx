@@ -119,10 +119,12 @@ describe('RuntimeSettingsGroupEditor', () => {
     // ...attributed to the Script default source.
     const badges = Array.from(container.querySelectorAll('.runtime-source-badge')).map(b => (b.textContent || '').trim())
     expect(badges).toContain('Script default')
-    // No layer sets it anywhere → '—' placeholder, never the redundant "Script default" text in the value cell.
+    // Fields no layer sets show a descriptive engine-default value — never a blank '—'
+    // placeholder, and never the redundant literal "Script default" text in the cell.
     const valueCells = Array.from(container.querySelectorAll('.runtime-override-row td:nth-child(2)')).map(td => (td.textContent || '').trim())
     expect(valueCells).not.toContain('Script default')
-    expect(valueCells).toContain('—')
+    expect(valueCells).not.toContain('—')
+    expect(valueCells).toContain('Stop on error') // error_handling engine-default descriptive label
   })
 
   it('shows HTTP Transport + Web/HTTP tabs for http and browser groups, hidden for other protocols', () => {

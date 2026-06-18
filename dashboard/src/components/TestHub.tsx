@@ -1,6 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
+import { type ScriptConfig } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
@@ -845,6 +846,7 @@ function ScenarioModelPreviewPanel({
 function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, onScenarioViewChange, initialView = 'library' }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
+  const [engineDefaults, setEngineDefaults] = useState<ScriptConfig | undefined>(undefined)
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
@@ -1029,6 +1031,13 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   }, [activeProject?.id, api])
 
   useEffect(() => { refresh() }, [refresh])
+  // Engine config defaults are static app-wide; fetch once so the runtime editor can
+  // show the actual inherited value (never a blank placeholder) for unset fields.
+  useEffect(() => {
+    let cancelled = false
+    api.getConfigDefaults().then(r => { if (!cancelled) setEngineDefaults(r.config) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [api])
   useEffect(() => {
     let cancelled = false
     const loadEffectiveAccess = async () => {
@@ -2502,6 +2511,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
                 focusedIndex={runtimeGroupIndex}
                 onFocusChange={setRuntimeGroupIndex}
                 scenarioDefault={overrideFromRuntimeDraft(runtimeSettingsFromForm(form, showBrowserRuntimeSettings))}
+                engineDefaults={engineDefaults}
                 overrides={formGroups.map(group => group.runtimeSettings)}
                 onChange={updateGroupRuntime}
                 onApplyToGroups={applyRuntimeToGroups}
