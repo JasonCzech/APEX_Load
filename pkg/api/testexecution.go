@@ -24,6 +24,9 @@ func (tr *TestRunner) StartTest(id string) error {
 }
 
 func (tr *TestRunner) StartTestWithOptions(id string, opts StartTestOptions) error {
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
 	tr.mu.Lock()
 	id = tr.resolveRefKeyLocked(id)
 	blocked, err := tr.preflightStartBlocksLocked(id, opts)
@@ -205,13 +208,33 @@ func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (
 }
 
 func (tr *TestRunner) ReconcilePendingTests() {
+	// Only the execution leader reconciles. On a non-leader replica (HA) this is
+	// a no-op; the eventual leader runs it via reloadAndReconcile on acquisition.
+	if !tr.isExecutionLeader() {
+		return
+	}
 	tr.promotePendingTests()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	tr.refreshPendingQueueMetadataLocked()
 }
 
+// reloadAndReconcile refreshes in-memory test state from the database and then
+// reconciles. It runs when this replica acquires execution leadership — at boot
+// when it wins the lease, or after a failover takeover where the previous
+// leader's runs and any tests created elsewhere are not yet in memory.
+func (tr *TestRunner) reloadAndReconcile() {
+	if !tr.isExecutionLeader() {
+		return
+	}
+	tr.reloadStoredTests()
+	tr.ReconcilePendingTests()
+}
+
 func (tr *TestRunner) StopTest(id string) error {
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
 	tr.mu.RLock()
 	id = tr.resolveRefKeyLocked(id)
 	test, ok := tr.tests[id]
@@ -281,6 +304,9 @@ func (tr *TestRunner) ScaleVUsers(id string, groupName string, targetVUsers int)
 }
 
 func (tr *TestRunner) ScaleVUsersWithOptions(id string, groupName string, targetVUsers int, opts ScaleVUsersOptions) error {
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
 	if opts.RampDuration <= 0 {
 		return tr.scaleVUsersNow(id, groupName, targetVUsers, true)
 	}
@@ -288,6 +314,9 @@ func (tr *TestRunner) ScaleVUsersWithOptions(id string, groupName string, target
 }
 
 func (tr *TestRunner) UpdateGoalTargetTPS(id string, groupName string, targetTPS float64) (*GoalTargetUpdate, error) {
+	if !tr.isExecutionLeader() {
+		return nil, errNotExecutionLeader
+	}
 	if strings.TrimSpace(groupName) == "" {
 		return nil, fmt.Errorf("group name is required")
 	}
@@ -648,6 +677,9 @@ func testGroupVUsers(test *ManagedTest, groupName string) (int, bool) {
 }
 
 func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error {
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
 	tr.mu.RLock()
 	id = tr.resolveRefKeyLocked(id)
 	test, ok := tr.tests[id]
@@ -697,6 +729,9 @@ func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error
 }
 
 func (tr *TestRunner) PauseTest(id string) error {
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
 	tr.mu.RLock()
 	id = tr.resolveRefKeyLocked(id)
 	test, ok := tr.tests[id]
@@ -739,6 +774,9 @@ func (tr *TestRunner) PauseTest(id string) error {
 }
 
 func (tr *TestRunner) ResumeTest(id string) error {
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
 	tr.mu.RLock()
 	id = tr.resolveRefKeyLocked(id)
 	test, ok := tr.tests[id]
@@ -781,6 +819,10 @@ func (tr *TestRunner) ResumeTest(id string) error {
 }
 
 func (tr *TestRunner) runTest(test *ManagedTest) {
+	// Defense in depth: a non-leader must never drive a generator fleet.
+	if !tr.isExecutionLeader() {
+		return
+	}
 	backend := test.executionBackend
 	if backend == nil {
 		backend = tr.execution
@@ -945,6 +987,11 @@ func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, end
 }
 
 func (tr *TestRunner) promotePendingTests() {
+	// Promotion starts work, so it is leader-only. Non-leaders never promote;
+	// the leader drives the shared queue.
+	if !tr.isExecutionLeader() {
+		return
+	}
 	for {
 		tr.mu.Lock()
 		pending := tr.nextPromotablePendingTestLocked()

@@ -74,21 +74,28 @@ func main() {
 		}
 	}
 
+	haLeaderElection := envIsTruthy(os.Getenv("APEXLOAD_CONTROLLER_HA"))
+	if haLeaderElection {
+		slog.Info("HA execution leader election enabled; only the lease holder will run tests")
+	}
+
 	server := api.NewServer(api.ServerConfig{
-		Addr:             addr,
-		BindScope:        bindScope,
-		MetricsAddr:      strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_ADDR")),
-		ProxyAddr:        recorderProxyAddr,
-		MaxConcurrent:    10,
-		Store:            store,
-		GeneratorTargets: generatorTargets,
-		GeneratorTimeout: generatorTimeout,
-		K8sRestart:       k8sRestartSettings,
-		KubeRestarter:    restarter,
+		Addr:                  addr,
+		BindScope:             bindScope,
+		MetricsAddr:           strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_ADDR")),
+		ProxyAddr:             recorderProxyAddr,
+		MaxConcurrent:         10,
+		Store:                 store,
+		GeneratorTargets:      generatorTargets,
+		GeneratorTimeout:      generatorTimeout,
+		K8sRestart:            k8sRestartSettings,
+		KubeRestarter:         restarter,
+		HAExecutionLeadership: haLeaderElection,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go server.RunExecutionLeadership(ctx)
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
@@ -115,6 +122,15 @@ func main() {
 	<-ctx.Done()
 	slog.Info("shutting down")
 	server.Shutdown(context.Background())
+}
+
+func envIsTruthy(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "on", "enabled":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseGeneratorTargets(raw string) []string {

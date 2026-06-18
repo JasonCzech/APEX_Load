@@ -161,10 +161,48 @@ func (tr *TestRunner) loadStoredTests() {
 	}
 	for _, record := range tests {
 		managedTest := managedTestFromRecord(record)
-		tr.reconcileStoredActiveTest(managedTest)
+		// Marking an interrupted run FAILED is a leader-only mutation: a booting
+		// non-leader (HA standby) must not clobber the active leader's live runs
+		// in the shared database. The eventual leader reconciles on acquisition.
+		if tr.isExecutionLeader() {
+			tr.reconcileStoredActiveTest(managedTest)
+		}
 		tr.loadStoredTestHistory(managedTest)
 		tr.loadStoredTestArchive(managedTest)
 		tr.tests[record.ID] = managedTest
+	}
+}
+
+// reloadStoredTests refreshes the in-memory test map from the database when this
+// replica acquires execution leadership. Unlike loadStoredTests (boot, single
+// threaded), it runs concurrently with API readers, so map mutation is locked.
+// Tests this replica is actively running are left untouched; everything else is
+// re-hydrated so a failover leader sees runs and queued work created elsewhere.
+func (tr *TestRunner) reloadStoredTests() {
+	if tr.testStore == nil {
+		return
+	}
+	records, err := tr.testStore.ListTests("", nil)
+	if err != nil {
+		return
+	}
+	for _, record := range records {
+		tr.mu.RLock()
+		existing, ok := tr.tests[record.ID]
+		liveLocally := ok && existing.cancel != nil
+		tr.mu.RUnlock()
+		if liveLocally {
+			continue
+		}
+		managedTest := managedTestFromRecord(record)
+		if tr.isExecutionLeader() {
+			tr.reconcileStoredActiveTest(managedTest)
+		}
+		tr.loadStoredTestHistory(managedTest)
+		tr.loadStoredTestArchive(managedTest)
+		tr.mu.Lock()
+		tr.tests[record.ID] = managedTest
+		tr.mu.Unlock()
 	}
 }
 

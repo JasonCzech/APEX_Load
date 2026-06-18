@@ -62,6 +62,11 @@ func (tr *TestRunner) EstimateDraftCapacity(req CreateTestRequest) (*DraftCapaci
 }
 
 func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
+	// Tests must be created on the execution leader so the in-memory queue stays
+	// coherent with the replica that will actually run them.
+	if !tr.isExecutionLeader() {
+		return nil, errNotExecutionLeader
+	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 

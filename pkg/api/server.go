@@ -50,6 +50,7 @@ type Server struct {
 	githubTokens       map[string]githubCachedToken
 	collectorMetrics   *collectorMetricStore
 	fleetScaler        fleetPoolScaler
+	leadership         *executionLeadership
 	mux                *http.ServeMux
 	usageCancel        context.CancelFunc
 	fanoutCancel       context.CancelFunc
@@ -100,6 +101,11 @@ type ServerConfig struct {
 	BridgeMode         bool
 	DesktopAppDataPath string
 	DesktopLogPath     string
+	// HAExecutionLeadership enables leader election so that, when multiple
+	// controller replicas run against a shared database, only the lease holder
+	// performs test execution. Requires a store that supports scheduler leases
+	// (SQLite or PostgreSQL). Off by default (single-active controller).
+	HAExecutionLeadership bool
 }
 
 // NewServer wires the HTTP server, test runner, websocket hub, recorder, and routes.
@@ -128,7 +134,23 @@ func NewServer(cfg ServerConfig) *Server {
 	if cacheBackendIsRemote(cache.Info().Backend) {
 		hub.SetFanout(cache, controllerID, cache.Info().FanoutChannel)
 	}
-	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store)
+	// Under HA leader election, build the coordinator BEFORE the runner so its
+	// not-yet-leader state suppresses boot reconciliation; the eventual leader
+	// reconciles via reloadAndReconcile on acquisition.
+	var leadership *executionLeadership
+	var runnerOpts []TestRunnerOption
+	if cfg.HAExecutionLeadership {
+		if leaseStore, ok := cfg.Store.(executionLeaseStore); ok && leaseStore != nil {
+			leadership = newExecutionLeadership(leaseStore, controllerID)
+			runnerOpts = append(runnerOpts, WithExecutionLeadership(leadership))
+		} else {
+			slog.Warn("HA execution leadership requested but the store does not support scheduler leases; running single-active")
+		}
+	}
+	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store, runnerOpts...)
+	if leadership != nil {
+		leadership.setOnAcquire(runner.reloadAndReconcile)
+	}
 	runner.setLiveStateStore(cache)
 	staticTargets, discoverySpecs := splitGeneratorTargets(cfg.GeneratorTargets)
 	var distributedBackend *distributedExecutionBackend
@@ -163,6 +185,7 @@ func NewServer(cfg ServerConfig) *Server {
 		resultImports:    make(map[string]*storage.ExternalResultImport),
 		githubTokens:     make(map[string]githubCachedToken),
 		collectorMetrics: newCollectorMetricStore(),
+		leadership:       leadership,
 		mux:              http.NewServeMux(),
 		desktopMode:      cfg.DesktopMode,
 		bridgeMode:       cfg.BridgeMode,
@@ -1073,4 +1096,22 @@ func (s *Server) RunDueSchedules() error {
 		return nil
 	}
 	return s.scheduler.RunDueSchedules()
+}
+
+// RunExecutionLeadership renews the HA execution lease until ctx is cancelled.
+// It is a no-op when leader election is not enabled (single-active controller).
+func (s *Server) RunExecutionLeadership(ctx context.Context) {
+	if s == nil || s.leadership == nil {
+		return
+	}
+	s.leadership.Run(ctx)
+}
+
+// isExecutionLeader reports whether this replica may serve execution-mutating
+// API calls. Always true when leader election is disabled.
+func (s *Server) isExecutionLeader() bool {
+	if s == nil {
+		return true
+	}
+	return s.runner.isExecutionLeader()
 }

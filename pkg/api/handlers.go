@@ -22,7 +22,21 @@ import (
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
 
+// requireExecutionLeader writes a 503 and returns false when this replica does
+// not hold the HA execution lease, so execution-mutating endpoints become
+// read-only on non-leader replicas. It is always a pass when election is off.
+func (s *Server) requireExecutionLeader(w http.ResponseWriter) bool {
+	if s.isExecutionLeader() {
+		return true
+	}
+	writeError(w, http.StatusServiceUnavailable, "this controller replica is not the active execution leader; retry against the active controller")
+	return false
+}
+
 func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	var req CreateTestRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -133,6 +147,9 @@ func (s *Server) handleGetTestManifest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	id := r.PathValue("id")
 	var req StartTestOptions
 	if r.Body != nil && r.ContentLength != 0 {
@@ -298,6 +315,9 @@ func (s *Server) handleUnpinComparisonBaseline(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) handleStopTest(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	id := r.PathValue("id")
 	if err := s.runner.StopTest(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -312,6 +332,9 @@ func (s *Server) handleStopTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAbortTest(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	id := r.PathValue("id")
 	if err := s.runner.AbortTest(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -326,6 +349,9 @@ func (s *Server) handleAbortTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePauseTest(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	id := r.PathValue("id")
 	if err := s.runner.PauseTest(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -340,6 +366,9 @@ func (s *Server) handlePauseTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleResumeTest(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	id := r.PathValue("id")
 	if err := s.runner.ResumeTest(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -564,6 +593,9 @@ func (s *Server) handleMoveTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleScaleVUsers(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	id := r.PathValue("id")
 	var req struct {
 		Group        string `json:"group"`
@@ -644,6 +676,9 @@ func (s *Server) handleScaleVUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateGoalTarget(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	id := r.PathValue("id")
 	var req struct {
 		Group     string  `json:"group"`
@@ -683,6 +718,9 @@ func (s *Server) handleUpdateGoalTarget(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleAdjustDuration(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	id := r.PathValue("id")
 	var req struct {
 		Duration string `json:"duration"`

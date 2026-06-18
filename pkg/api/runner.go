@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -133,7 +134,11 @@ type TestRunner struct {
 	seqPlanRuns      map[string]*seqPlanRunState
 	seqPlanByTest    map[string]string
 	// fleetStore resolves fleet-pool membership for pool-aware generator assignment.
-	fleetStore    fleetMembershipReader
+	fleetStore fleetMembershipReader
+	// leadership gates live test-execution mutations to a single replica when
+	// HA leader election is enabled. nil means "always leader" (single-node /
+	// test default), so behavior is unchanged unless election is wired in.
+	leadership    *executionLeadership
 	liveState     LiveStateStore
 	execution     testExecutionBackend
 	notifier      *notificationDispatcher
@@ -807,7 +812,21 @@ type runArtifacts struct {
 	externalMetrics *externalMetricCollector
 }
 
-func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
+// TestRunnerOption customizes a TestRunner at construction. Options are applied
+// before stored state is loaded so they can influence boot reconciliation (e.g.
+// suppressing it on a non-leader replica under HA leader election).
+type TestRunnerOption func(*TestRunner)
+
+// WithExecutionLeadership attaches an HA execution-leader coordinator. When the
+// replica is not (yet) the leader, boot reconciliation and all execution
+// mutations are suppressed until leadership is acquired.
+func WithExecutionLeadership(leadership *executionLeadership) TestRunnerOption {
+	return func(tr *TestRunner) {
+		tr.leadership = leadership
+	}
+}
+
+func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunnerOption) *TestRunner {
 	tr := &TestRunner{
 		tests:            make(map[string]*ManagedTest),
 		scripts:          make(map[string]*StoredScript),
@@ -835,6 +854,11 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 		execution:        localExecutionBackend{},
 		notifier:         newNotificationDispatcher(nil),
 		routeCache:       make(map[string]latencyRouteCacheEntry),
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(tr)
+		}
 	}
 	tr.loadSystemSettings(maxTests)
 	tr.loadStoredScripts()
@@ -865,6 +889,20 @@ func (tr *TestRunner) getExecutionBackend() testExecutionBackend {
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	return tr.execution
+}
+
+// errNotExecutionLeader is returned by execution-mutating runner methods when
+// this replica does not hold the HA execution lease. Handlers translate it into
+// an HTTP 503 so clients retry against the active leader.
+var errNotExecutionLeader = errors.New("controller is not the active execution leader")
+
+// isExecutionLeader reports whether this replica may mutate live test-execution
+// state. With no leadership coordinator (single-node / tests) it is always true.
+func (tr *TestRunner) isExecutionLeader() bool {
+	if tr == nil {
+		return true
+	}
+	return tr.leadership.IsLeader()
 }
 
 const (

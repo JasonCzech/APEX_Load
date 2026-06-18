@@ -76,6 +76,12 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 	if s == nil || s.runner == nil {
 		return nil
 	}
+	// Materializing a due schedule starts a run, so scheduling is leader-only.
+	// This keeps scheduling on the same replica that executes; the dedicated
+	// scenario-scheduler lease below still guards against duplicate sweeps.
+	if !s.runner.isExecutionLeader() {
+		return nil
+	}
 	now := s.now().UTC()
 	acquired, err := s.runner.acquireScenarioSchedulerLease(now, s.ownerID, s.leaseTTL)
 	if err != nil {

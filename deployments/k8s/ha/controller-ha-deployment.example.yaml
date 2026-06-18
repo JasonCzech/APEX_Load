@@ -57,6 +57,15 @@ spec:
             # Script exports are confined here; root filesystem is read-only.
             - name: APEXLOAD_EXPORT_DIR
               value: /var/lib/apexload/exports
+            # HA leader election. With replicas > 1, only the replica that holds
+            # the execution lease promotes/starts/scales tests and reconciles
+            # interrupted runs; the others serve the read-only API and return
+            # HTTP 503 for execution-mutating calls. On leader loss a standby
+            # takes over after the lease TTL (~30s). REQUIRES a shared database
+            # that backs scheduler leases — PostgreSQL here, NOT per-pod SQLite.
+            # (Point apexload-data-platform at PostgreSQL via APEXLOAD_DATABASE_URL.)
+            - name: APEXLOAD_CONTROLLER_HA
+              value: "true"
           envFrom:
             - configMapRef:
                 name: apexload-data-platform
