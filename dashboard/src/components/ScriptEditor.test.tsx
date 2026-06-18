@@ -691,12 +691,15 @@ describe('ScriptEditor', () => {
     const metadataSection = container.querySelector('#imported-metadata-section')
     const actionDetail = container.querySelector('.action-detail')
     expect(metadataSection).not.toBeNull()
-    expect(findCenterTab(container, 'Metadata JSON')).toBeDefined()
-    const metadataJsonTab = findCenterTab(container, 'Metadata JSON')
+    // Metadata JSON is no longer a center tab — it opens on demand from the outline.
+    expect(findCenterTab(container, 'Metadata JSON')).toBeUndefined()
+    const metadataJsonLink = Array.from(container.querySelector('.editor-outline-nav')?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Imported Metadata JSON')
+    expect(metadataJsonLink).toBeDefined()
     await act(async () => {
-      metadataJsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      metadataJsonLink?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    const metadataJsonEditor = container.querySelector('#metadata-json-section .metadata-json-viewer textarea') as HTMLTextAreaElement | null
+    const metadataJsonEditor = container.querySelector('.metadata-json-dialog .metadata-json-viewer textarea') as HTMLTextAreaElement | null
     expect(metadataJsonEditor).not.toBeNull()
     expect(metadataJsonEditor?.value).toContain('checkout.usr')
     expect(metadataJsonEditor?.dataset.lineNumbers).toBe('true')
@@ -705,21 +708,17 @@ describe('ScriptEditor', () => {
     expect(metadataJsonEditor?.dataset.highlightActiveLineGutter).toBe('true')
     expect(metadataJsonEditor?.dataset.readOnly).toBe('true')
     expect(metadataJsonEditor?.dataset.editable).toBe('false')
+    const closeMetadataJsonButton = Array.from(container.querySelectorAll('.metadata-json-dialog button')).find(button => button.textContent === 'Close')
+    await act(async () => {
+      closeMetadataJsonButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.metadata-json-dialog')).toBeNull()
     expect(actionDetail).toBeNull()
     expect(container.querySelector('.author-code-center')?.contains(metadataSection)).toBe(true)
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
     expect(metadataSection?.getAttribute('role')).toBeNull()
     expect(metadataSection?.classList.contains('editor-support-dialog')).toBe(false)
     expect(container.querySelector('.support-dialog-import')).toBeNull()
-
-    const firstAction = container.querySelector('.action-item')
-    await act(async () => {
-      firstAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(container.querySelector('#metadata-json-section')).not.toBeNull()
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Metadata JSON')
-    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
   })
 
   it('surfaces saved TruClient2 promotion review evidence in imported metadata', async () => {
@@ -1242,7 +1241,8 @@ describe('ScriptEditor', () => {
 
     const importedTab = findCenterTab(container, 'Source Mapping')
     expect(importedTab).toBeDefined()
-    expect(findCenterTab(container, 'Metadata JSON')).toBeDefined()
+    // Metadata JSON is an on-demand outline dialog, not a center tab.
+    expect(findCenterTab(container, 'Metadata JSON')).toBeUndefined()
     expect(findCenterTab(container, 'Conversion Mapping')).toBeUndefined()
 
     await act(async () => {
@@ -1281,7 +1281,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(findCenterTab(container, 'Source Mapping')).toBeDefined()
-    expect(findCenterTab(container, 'Metadata JSON')).toBeDefined()
+    expect(findCenterTab(container, 'Metadata JSON')).toBeUndefined()
     expect(findCenterTab(container, 'Conversion Mapping')).toBeUndefined()
     expect(findCenterTab(container, 'Source Mapping')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
@@ -3009,7 +3009,7 @@ describe('ScriptEditor', () => {
     const centerTabLabels = Array.from(container.querySelectorAll('.center-tab-button')).map(button => button.textContent?.trim())
     const sourceMappingTabIndex = centerTabLabels.indexOf('Source Mapping')
     expect(sourceMappingTabIndex).toBeGreaterThanOrEqual(0)
-    expect(centerTabLabels[sourceMappingTabIndex + 1]).toBe('Metadata JSON')
+    expect(centerTabLabels).not.toContain('Metadata JSON')
     const importedMetadataTab = findCenterTab(container, 'Source Mapping')
     expect(importedMetadataTab).toBeDefined()
     await act(async () => {
@@ -3020,19 +3020,25 @@ describe('ScriptEditor', () => {
     expect(metadataSection?.textContent).not.toContain('View preserved metadata JSON')
     expect(metadataSection?.querySelector('.import-metadata-details')).toBeNull()
     expect(metadataSection?.querySelector('.metadata-json-pre')).toBeNull()
-    const metadataJsonTab = findCenterTab(container, 'Metadata JSON')
-    expect(metadataJsonTab).toBeDefined()
+    // Metadata JSON now opens on demand from the outline rather than a center tab.
+    expect(findCenterTab(container, 'Metadata JSON')).toBeUndefined()
+    const metadataJsonLink = Array.from(container.querySelector('.editor-outline-nav')?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Imported Metadata JSON')
+    expect(metadataJsonLink).toBeDefined()
     await act(async () => {
-      metadataJsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      metadataJsonLink?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(findCenterTab(container, 'Metadata JSON')?.getAttribute('aria-selected')).toBe('true')
-    const metadataJsonEditor = container.querySelector('#metadata-json-section .metadata-json-viewer textarea') as HTMLTextAreaElement | null
+    const metadataJsonEditor = container.querySelector('.metadata-json-dialog .metadata-json-viewer textarea') as HTMLTextAreaElement | null
     expect(metadataJsonEditor).not.toBeNull()
     expect(metadataJsonEditor?.value).toContain('"source_script_name": "checkout.har"')
     expect(metadataJsonEditor?.value).toContain('"runtime_settings_parity"')
     expect(metadataJsonEditor?.dataset.lineNumbers).toBe('true')
     expect(metadataJsonEditor?.dataset.foldGutter).toBe('true')
     expect(metadataJsonEditor?.dataset.readOnly).toBe('true')
+    const closeMetadataJsonButton = Array.from(container.querySelectorAll('.metadata-json-dialog button')).find(button => button.textContent === 'Close')
+    await act(async () => {
+      closeMetadataJsonButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
     await act(async () => {
       importedMetadataTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })

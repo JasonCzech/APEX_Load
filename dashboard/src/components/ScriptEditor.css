@@ -318,6 +318,27 @@
 .json-source-map-empty {
   margin: 0;
 }
+.json-source-map-oversized {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 100%;
+  padding: 12px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.json-source-map-oversized span {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.json-source-map-oversized small {
+  font-size: 10px;
+  line-height: 1.4;
+}
 .json-source-map {
   flex: 1;
   min-height: 0;
@@ -4069,7 +4090,7 @@
 .actions-content-grid.author-outline-collapsed.author-right-sidebar-collapsed {
   --author-center-width: minmax(560px, 1fr);
 }
-.actions-sidebar { grid-area: author-rail; width: 280px; border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+.actions-sidebar { grid-area: author-rail; width: 100%; min-width: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
 .actions-sidebar.collapsed {
   width: auto;
   min-width: 0;
@@ -4300,7 +4321,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.action-method { font-family: 'SF Mono', monospace; font-size: 11px; font-weight: 700; min-width: 48px; }
+.action-method {
+  font-family: 'SF Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 48px;
+  max-width: 120px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .action-name-text { font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
 .action-breakpoint-button {
   display: inline-flex;
@@ -4952,6 +4983,24 @@
 }
 .imported-parameter-mappings-dialog {
   width: min(920px, calc(100vw - 48px));
+}
+.metadata-json-dialog {
+  width: min(1100px, calc(100vw - 48px));
+  height: min(80vh, calc(100vh - 48px));
+}
+.metadata-json-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+.metadata-json-dialog-body .metadata-json-viewer {
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
 }
 .imported-parameter-mappings-dialog-body > p {
   margin: 0;

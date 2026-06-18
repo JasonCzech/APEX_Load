@@ -365,7 +365,19 @@ function classNameForKind(kind: ApexDslSemanticKind) {
   return `apex-dsl-${kind.replace(/[A-Z]/g, match => `-${match.toLowerCase()}`)}`
 }
 
-function buildApexDslSemanticDecorations(state: EditorView['state']): DecorationSet {
+/**
+ * Whole-document semantic highlighting parses the entire JSON through the Lezer
+ * parser and materializes a decoration per matched range (and one line decoration
+ * per line of every block). For very large imported scripts (e.g. a multi-thousand
+ * action LoadRunner archive whose pretty-printed JSON runs to tens of thousands of
+ * lines) that synchronous parse + decoration build blocks the main thread for
+ * seconds on editor mount. Above this size we skip semantic highlighting entirely;
+ * CodeMirror's built-in JSON syntax highlighting still applies.
+ */
+export const APEX_DSL_SEMANTIC_MAX_DOC_CHARS = 200_000
+
+export function buildApexDslSemanticDecorations(state: EditorView['state']): DecorationSet {
+  if (state.doc.length > APEX_DSL_SEMANTIC_MAX_DOC_CHARS) return Decoration.none
   const ranges = collectApexDslSemanticRanges(state.doc.toString())
   if (ranges.length === 0) return Decoration.none
 

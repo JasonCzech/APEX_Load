@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { EditorState } from '@codemirror/state'
 
-import { collectApexDslSemanticRanges, type ApexDslSemanticKind } from './apexDslSemanticHighlighting'
+import {
+  APEX_DSL_SEMANTIC_MAX_DOC_CHARS,
+  buildApexDslSemanticDecorations,
+  collectApexDslSemanticRanges,
+  type ApexDslSemanticKind,
+} from './apexDslSemanticHighlighting'
 
 const script = {
   name: 'Checkout Flow',
@@ -90,5 +96,21 @@ describe('collectApexDslSemanticRanges', () => {
 
   it('returns no semantic ranges for invalid JSON', () => {
     expect(collectApexDslSemanticRanges('{"script": {"actions": [}')).toEqual([])
+  })
+})
+
+describe('buildApexDslSemanticDecorations', () => {
+  it('decorates ordinary documents', () => {
+    const text = JSON.stringify({ script }, null, 2)
+    const state = EditorState.create({ doc: text })
+    expect(buildApexDslSemanticDecorations(state).size).toBeGreaterThan(0)
+  })
+
+  it('skips decorations for documents above the size threshold (avoids the large-import freeze)', () => {
+    const text = JSON.stringify({ script }, null, 2)
+    const padded = text + '\n'.repeat(APEX_DSL_SEMANTIC_MAX_DOC_CHARS + 1)
+    expect(padded.length).toBeGreaterThan(APEX_DSL_SEMANTIC_MAX_DOC_CHARS)
+    const state = EditorState.create({ doc: padded })
+    expect(buildApexDslSemanticDecorations(state).size).toBe(0)
   })
 })
