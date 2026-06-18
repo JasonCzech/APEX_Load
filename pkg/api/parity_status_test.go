@@ -79,7 +79,7 @@ func TestHandleGetParityStatusReturnsAPIParityProgram(t *testing.T) {
 	// as its build family lands; capacity_reservation (timeslots) is the first.
 	wantStatus := map[string]string{
 		"capacity_reservation":    "supported",
-		"fleet_management":        "partial",
+		"fleet_management":        "supported",
 		"execution_planning":      "supported",
 		"monitoring_collectors":   "supported",
 		"entitlements":            "supported",

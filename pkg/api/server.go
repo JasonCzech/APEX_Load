@@ -49,6 +49,7 @@ type Server struct {
 	githubMu           sync.Mutex
 	githubTokens       map[string]githubCachedToken
 	collectorMetrics   *collectorMetricStore
+	fleetScaler        fleetPoolScaler
 	mux                *http.ServeMux
 	usageCancel        context.CancelFunc
 	fanoutCancel       context.CancelFunc
@@ -176,6 +177,10 @@ func NewServer(cfg ServerConfig) *Server {
 		metricsAddr:        strings.TrimSpace(cfg.MetricsAddr),
 		staticFS:           StaticFS,
 	}
+
+	// Select the fleet provisioner backend (in-cluster Kubernetes scaler when
+	// enabled + selected, else the unconfigured default → not_configured).
+	s.fleetScaler = newFleetPoolScaler(s.kubeRestarter, s.k8sRestart)
 
 	// Feed replay selector self-heals back to the bound object repository.
 	s.browserReplay.setCompletionHook(s.persistSelfHealToRepository)

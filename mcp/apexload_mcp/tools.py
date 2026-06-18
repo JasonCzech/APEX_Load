@@ -37,6 +37,7 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
     EndpointTool("protocol_bundles_support_matrix", "GET", "/protocol-bundles/support-matrix", f"{READ} Get enterprise protocol bundle support matrix."),
     EndpointTool("fleet_alerts", "GET", "/fleet/alerts", f"{READ} Get fleet alert cards."),
     EndpointTool("fleet_capacity", "GET", "/fleet/capacity", f"{READ} Get fleet capacity fit.", default_project=True),
+    EndpointTool("fleet_provisioner", "GET", "/fleet/provisioner", f"{READ} Get the active generator provisioner (static vs on-demand Kubernetes scaler)."),
     EndpointTool("fleet_pools_list", "GET", "/fleet/pools", f"{READ} List managed generator pools."),
     EndpointTool("fleet_pools_create", "POST", "/fleet/pools", f"{WRITE} Create a managed generator pool.", True),
     EndpointTool("fleet_pools_get", "GET", "/fleet/pools/{id}", f"{READ} Get a managed generator pool."),

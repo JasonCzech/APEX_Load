@@ -104,8 +104,16 @@ func (s *Server) handleGetFleetAlerts(w http.ResponseWriter, r *http.Request) {
 // cloud provisioner (AWS/Azure/GCP/K8s) plug in via RegisterGeneratorProvisioner
 // and APEXLOAD_GENERATOR_PROVISIONER.
 func (s *Server) handleGetFleetProvisioner(w http.ResponseWriter, r *http.Request) {
-	provisioner := resolveGeneratorProvisioner(s.systemInventory)
-	writeJSON(w, http.StatusOK, provisioner.Describe())
+	info := resolveGeneratorProvisioner(s.systemInventory).Describe()
+	// When a real fleet scaler is active (in-cluster Kubernetes), surface it —
+	// keeping the inventory-derived SupportedRegions.
+	if s.fleetScaler != nil && s.fleetScaler.CanProvision() {
+		backend := s.fleetScaler.Describe()
+		info.Name = backend.Name
+		info.CanProvision = true
+		info.Description = backend.Description
+	}
+	writeJSON(w, http.StatusOK, info)
 }
 
 func (s *Server) handleGetFleetCapacity(w http.ResponseWriter, r *http.Request) {

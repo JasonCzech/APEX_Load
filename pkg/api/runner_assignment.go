@@ -5,11 +5,72 @@ import (
 	"strings"
 )
 
+// resolvePoolAssignmentLocked expands a pool-scoped assignment into the pool's
+// member targets (as specific_hosts). The PoolID is retained so placement can
+// enforce it leniently (skipping members not live on this controller).
+func (tr *TestRunner) resolvePoolAssignmentLocked(assignment *GeneratorAssignmentSettings) (*GeneratorAssignmentSettings, error) {
+	if assignment == nil || strings.TrimSpace(assignment.PoolID) == "" {
+		return assignment, nil
+	}
+	poolID := strings.TrimSpace(assignment.PoolID)
+	if tr.fleetStore == nil {
+		return nil, fmt.Errorf("fleet pool assignment requires storage")
+	}
+	if _, err := tr.fleetStore.GetFleetPool(poolID); err != nil {
+		return nil, fmt.Errorf("fleet pool %q not found", poolID)
+	}
+	targets := tr.poolMemberTargets(poolID)
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("fleet pool %q has no generators", poolID)
+	}
+	out := *assignment
+	out.Mode = generatorAssignmentModeSpecificHosts
+	out.SelectedTargets = targets
+	out.PoolID = poolID
+	return &out, nil
+}
+
+// poolMemberTargets returns the deduplicated member targets of a fleet pool,
+// drawing from both explicit pool members and generator metadata bound to the pool.
+func (tr *TestRunner) poolMemberTargets(poolID string) []string {
+	if tr.fleetStore == nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	targets := make([]string, 0)
+	add := func(target string) {
+		target = strings.TrimSpace(target)
+		if target == "" {
+			return
+		}
+		if _, ok := seen[target]; ok {
+			return
+		}
+		seen[target] = struct{}{}
+		targets = append(targets, target)
+	}
+	if members, err := tr.fleetStore.ListFleetPoolMembers(poolID); err == nil {
+		for _, m := range members {
+			if m != nil {
+				add(m.Target)
+			}
+		}
+	}
+	if metadata, err := tr.fleetStore.ListGeneratorMetadata(0, 0); err == nil {
+		for _, m := range metadata {
+			if m != nil && m.FleetPoolID != nil && strings.TrimSpace(*m.FleetPoolID) == poolID {
+				add(m.Target)
+			}
+		}
+	}
+	return targets
+}
+
 func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*GeneratorAssignmentSettings, error) {
 	if in == nil {
 		return nil, nil
 	}
-	out := &GeneratorAssignmentSettings{Mode: strings.TrimSpace(in.Mode)}
+	out := &GeneratorAssignmentSettings{Mode: strings.TrimSpace(in.Mode), PoolID: strings.TrimSpace(in.PoolID)}
 	if out.Mode == "" {
 		out.Mode = generatorAssignmentModeAuto
 	}

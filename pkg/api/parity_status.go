@@ -168,10 +168,10 @@ func buildAPIParityProgram() []ParityStatusArea {
 		{
 			ID:        "fleet_management",
 			Name:      "Fleet Pool & Provisioning Management",
-			Status:    "partial",
-			Summary:   "Managed generator pools, persistent generator metadata (labels/region/cordon/pool membership), and provisioning requests now have CRUD/PATCH APIs; provisioning resolves to not_configured until a live cloud/Kubernetes provider backend is wired.",
-			Evidence:  []string{apiComparisonEvidence, "/api/v1/fleet/pools", "/api/v1/fleet/generators", "/api/v1/fleet/provision-requests", "pkg/api/handlers_fleet_management.go", "pkg/storage/sqlite_fleet.go"},
-			Remaining: []string{"Wire a real cloud/Kubernetes provisioner backend; enrich GeneratorInventoryEntry with persisted pool/metadata; make generator assignment pool-aware."},
+			Status:    "supported",
+			Summary:   "Managed generator pools, persistent generator metadata (labels/region/cordon/pool membership), and provisioning requests have CRUD/PATCH APIs. A real in-cluster Kubernetes provisioner (APEXLOAD_GENERATOR_PROVISIONER=kubernetes) scales the generator StatefulSet's replicas via the controller's service account on POST /fleet/provision-requests (lifecycle: provisioning→success/failed with events; no new cloud credentials). The live inventory is pool-aware (GeneratorInventoryEntry carries fleet_pool_id/pool_name/cordon from persisted metadata), and a run can target a pool (assignment.pool_id) which resolves to the pool's member generators at placement.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/fleet/pools", "/api/v1/fleet/generators", "/api/v1/fleet/provision-requests", "/api/v1/fleet/provisioner", "pkg/api/fleet_provisioner.go", "pkg/kubeops/client.go", "pkg/api/handlers_fleet_management.go"},
+			Remaining: []string{"Cloud (AWS/Azure/GCP) provisioner backends and autoscaling / idle-generator reaping remain future work via the GeneratorProvisioner registry; the in-cluster Kubernetes scaler is verified via an injected fake client (live scaling runs in-cluster)."},
 		},
 		{
 			ID:        "execution_planning",

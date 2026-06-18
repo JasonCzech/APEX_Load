@@ -112,6 +112,30 @@ func (c *Client) RolloutRestart(ctx context.Context, kind, namespace, name strin
 	return err
 }
 
+// ScaleStatefulSet sets the desired replica count on a generator StatefulSet via a
+// merge patch. It reuses the same in-cluster client + RBAC (statefulsets patch) as
+// RolloutRestart, so no additional permissions are required.
+func (c *Client) ScaleStatefulSet(ctx context.Context, namespace, name string, replicas int) error {
+	if c == nil {
+		return fmt.Errorf("kubernetes client is not initialized")
+	}
+	if replicas < 0 {
+		return fmt.Errorf("replicas must be >= 0")
+	}
+	payload := map[string]any{
+		"spec": map[string]any{
+			"replicas": replicas,
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	path := "/apis/apps/v1/namespaces/" + pathEscape(namespace) + "/statefulsets/" + pathEscape(name)
+	_, err = c.do(ctx, http.MethodPatch, path, "application/merge-patch+json", body)
+	return err
+}
+
 func (c *Client) PodByIP(ctx context.Context, namespace, selector, ip string) (PodRef, error) {
 	ip = strings.TrimSpace(ip)
 	if ip == "" {

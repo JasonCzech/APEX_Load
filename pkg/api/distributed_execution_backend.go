@@ -199,17 +199,30 @@ func (b *distributedExecutionBackend) allowedTargetsForTest(test *ManagedTest) (
 	for _, target := range specs {
 		configured[target.Address] = struct{}{}
 	}
+	// Pool-scoped selections (assignment.PoolID set) are enforced leniently: a pool
+	// member that is offline/draining on this controller is skipped rather than
+	// failing the run. Explicit specific_hosts selections stay strict.
+	poolScoped := strings.TrimSpace(assignment.PoolID) != ""
 	allowed := make([]string, 0, len(assignment.SelectedTargets))
 	for _, target := range assignment.SelectedTargets {
 		if _, ok := configured[target]; !ok {
+			if poolScoped {
+				continue
+			}
 			return nil, fmt.Errorf("assignment target %q is not configured on this controller", target)
 		}
 		if drainState := b.generatorDrainState(target); drainState != "active" {
+			if poolScoped {
+				continue
+			}
 			return nil, fmt.Errorf("assignment target %q is %s and cannot accept new work", target, drainState)
 		}
 		allowed = append(allowed, target)
 	}
 	if len(allowed) == 0 {
+		if poolScoped {
+			return nil, fmt.Errorf("fleet pool has no active generators configured on this controller")
+		}
 		return nil, fmt.Errorf("no explicit assignment targets are configured for this controller")
 	}
 	return allowed, nil

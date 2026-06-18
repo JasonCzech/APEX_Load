@@ -10,6 +10,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -299,7 +300,8 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "desired_count must be greater than zero")
 		return
 	}
-	if _, err := s.store.GetFleetPool(req.FleetPoolID); err != nil {
+	pool, err := s.store.GetFleetPool(req.FleetPoolID)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "fleet pool not found")
 			return
@@ -310,9 +312,44 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 	req.ID = uuid.New().String()
 	req.ProjectID = normalizeProjectID(req.ProjectID)
 	_, req.RequestedBySubject, _ = s.resolveAuditActor(r)
-	// No live cloud/Kubernetes provisioner is wired yet: resolve the request to a
-	// terminal not_configured state with an explanatory event instead of pretending.
 	now := time.Now()
+
+	if s.fleetScaler != nil && s.fleetScaler.CanProvision() {
+		// A real provisioner is wired: actually scale the pool's workload and
+		// drive the request through its lifecycle.
+		req.Status = "provisioning"
+		if err := s.store.SaveProvisioningRequest(&req); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		s.saveProvisioningEvent(req.ID, "requested", "provisioning requested", now)
+		s.saveProvisioningEvent(req.ID, "provisioning", fmt.Sprintf("scaling pool %q toward %d generators", pool.Name, req.DesiredCount), now)
+
+		workload, scaledTo, perr := s.fleetScaler.ScalePool(r.Context(), pool, req.DesiredCount)
+		done := time.Now()
+		req.CompletedAt = &done
+		if perr != nil {
+			req.Status = "failed"
+			_ = s.store.SaveProvisioningRequest(&req)
+			s.saveProvisioningEvent(req.ID, "failure", "provisioning failed: "+perr.Error(), done)
+		} else {
+			req.Status = "success"
+			_ = s.store.SaveProvisioningRequest(&req)
+			s.saveProvisioningEvent(req.ID, "success", fmt.Sprintf("scaled %s to %d replicas", workload, scaledTo), done)
+			pool.DesiredSize = scaledTo
+			if err := s.store.SaveFleetPool(pool); err != nil {
+				slog.Warn("failed to persist pool desired size after provisioning", "pool_id", pool.ID, "err", err)
+			}
+		}
+		s.recordAuditEvent(r, "provisioning.request.create", "success", "provisioning_request", req.ID, req.ProjectID, map[string]any{
+			"fleet_pool_id": req.FleetPoolID, "desired_count": req.DesiredCount, "status": req.Status, "workload": workload,
+		})
+		s.writeProvisioningRequest(w, req.ID)
+		return
+	}
+
+	// No live provisioner: resolve the request to a terminal not_configured state
+	// with an explanatory event instead of pretending.
 	req.Status = "not_configured"
 	req.CompletedAt = &now
 	req.Events = nil
@@ -320,20 +357,24 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	for _, ev := range []struct{ eventType, message string }{
-		{"requested", "provisioning requested"},
-		{"not_configured", "no cloud or Kubernetes provisioner is configured for this controller"},
-	} {
-		if err := s.store.SaveProvisioningEvent(&storage.ProvisioningEvent{
-			ID: uuid.New().String(), RequestID: req.ID, EventType: ev.eventType, Message: ev.message, Timestamp: now,
-		}); err != nil {
-			slog.Warn("failed to persist provisioning event", "request_id", req.ID, "event_type", ev.eventType, "err", err)
-		}
-	}
+	s.saveProvisioningEvent(req.ID, "requested", "provisioning requested", now)
+	s.saveProvisioningEvent(req.ID, "not_configured", "no cloud or Kubernetes provisioner is configured for this controller", now)
 	s.recordAuditEvent(r, "provisioning.request.create", "success", "provisioning_request", req.ID, req.ProjectID, map[string]any{
 		"fleet_pool_id": req.FleetPoolID, "desired_count": req.DesiredCount, "status": req.Status,
 	})
-	created, err := s.store.GetProvisioningRequest(req.ID)
+	s.writeProvisioningRequest(w, req.ID)
+}
+
+func (s *Server) saveProvisioningEvent(requestID, eventType, message string, ts time.Time) {
+	if err := s.store.SaveProvisioningEvent(&storage.ProvisioningEvent{
+		ID: uuid.New().String(), RequestID: requestID, EventType: eventType, Message: message, Timestamp: ts,
+	}); err != nil {
+		slog.Warn("failed to persist provisioning event", "request_id", requestID, "event_type", eventType, "err", err)
+	}
+}
+
+func (s *Server) writeProvisioningRequest(w http.ResponseWriter, id string) {
+	created, err := s.store.GetProvisioningRequest(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

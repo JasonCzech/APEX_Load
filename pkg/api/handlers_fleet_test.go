@@ -113,6 +113,44 @@ func TestDistributedBackendSkipsCordonedTargetsForPlacement(t *testing.T) {
 	}
 }
 
+func TestPoolScopedAssignmentSkipsOfflineMembersLeniently(t *testing.T) {
+	backend := newDistributedExecutionBackend([]string{"gen-a:9090"}, time.Second, nil)
+
+	// Pool-scoped (PoolID set): gen-c is not configured on this controller → it is
+	// skipped, gen-a is kept (lenient).
+	poolScoped := &ManagedTest{Assignment: &GeneratorAssignmentSettings{
+		Mode:            generatorAssignmentModeSpecificHosts,
+		SelectedTargets: []string{"gen-a:9090", "gen-c:9090"},
+		PoolID:          "pool-eu",
+	}}
+	allowed, err := backend.allowedTargetsForTest(poolScoped)
+	if err != nil {
+		t.Fatalf("pool-scoped allowedTargetsForTest error = %v", err)
+	}
+	if len(allowed) != 1 || allowed[0] != "gen-a:9090" {
+		t.Fatalf("pool-scoped allowed = %#v, want only gen-a (offline member skipped)", allowed)
+	}
+
+	// Explicit specific_hosts (no PoolID): an unconfigured target stays strict (error).
+	strict := &ManagedTest{Assignment: &GeneratorAssignmentSettings{
+		Mode:            generatorAssignmentModeSpecificHosts,
+		SelectedTargets: []string{"gen-a:9090", "gen-c:9090"},
+	}}
+	if _, err := backend.allowedTargetsForTest(strict); err == nil {
+		t.Fatal("explicit specific_hosts with an unconfigured target should error")
+	}
+
+	// A pool whose members are all offline → clear error.
+	empty := &ManagedTest{Assignment: &GeneratorAssignmentSettings{
+		Mode:            generatorAssignmentModeSpecificHosts,
+		SelectedTargets: []string{"gen-c:9090"},
+		PoolID:          "pool-eu",
+	}}
+	if _, err := backend.allowedTargetsForTest(empty); err == nil {
+		t.Fatal("pool with no active configured members should error")
+	}
+}
+
 func TestDistributedPlannerSkipsIncompatibleProtocolTargets(t *testing.T) {
 	groups := []TestGroup{{Name: "grpc-users", Protocol: "grpc", VUsers: 5}}
 	loadByTarget := map[string]generatorLoadSnapshot{

@@ -128,6 +128,13 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		req = createTestRequestFromScenario(req, scenario)
 	}
 
+	// Pool-aware assignment: expand a fleet-pool selection into its member targets.
+	resolvedAssignment, err := tr.resolvePoolAssignmentLocked(req.Assignment)
+	if err != nil {
+		return nil, err
+	}
+	req.Assignment = resolvedAssignment
+
 	dur, err := time.ParseDuration(req.Duration)
 	if err != nil {
 		return nil, fmt.Errorf("invalid duration: %w", err)

@@ -19,6 +19,7 @@ const fleetApiMock = {
   patchGeneratorMetadata: vi.fn(),
   createProvisionRequest: vi.fn(),
   getProvisionRequest: vi.fn(),
+  getProvisioner: vi.fn().mockResolvedValue(null),
 }
 
 vi.mock('../hooks/api/useFleetApi', () => ({
@@ -90,6 +91,18 @@ describe('FleetPoolsCard', () => {
     expect(container.textContent).toContain('kubernetes')
     expect(container.textContent).toContain('size 4 (1–10)')
     expect(container.textContent).toContain('1 member')
+  })
+
+  it('surfaces the active on-demand provisioner status', async () => {
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [pool({})], count: 1 })
+    fleetApiMock.getProvisioner.mockResolvedValue({ name: 'kubernetes', can_provision: true, description: 'in-cluster' })
+    await act(async () => {
+      root.render(<FleetPoolsCard canManage />)
+    })
+    await flush()
+    expect(fleetApiMock.getProvisioner).toHaveBeenCalled()
+    expect(container.textContent).toContain('provisioner: kubernetes')
+    expect(container.textContent).toContain('on-demand')
   })
 
   it('maps suspended status to the warning pill', async () => {

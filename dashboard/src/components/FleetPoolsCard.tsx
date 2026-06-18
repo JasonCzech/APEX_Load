@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useFleetApi } from '../hooks/api/useFleetApi'
 import { ApiError } from '../hooks/apiClient'
-import { FleetPool, FleetProvisioningRequest } from '../types'
+import { FleetPool, FleetProvisioningRequest, ProvisionerInfo } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import './parityPanels.css'
 
@@ -60,14 +60,16 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
   const [deleteTarget, setDeleteTarget] = useState<FleetPool | null>(null)
   const [provisionFor, setProvisionFor] = useState<{ pool: FleetPool; count: number } | null>(null)
   const [provisionResult, setProvisionResult] = useState<FleetProvisioningRequest | null>(null)
+  const [provisioner, setProvisioner] = useState<ProvisionerInfo | null>(null)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await api.listFleetPools()
+      const [res, prov] = await Promise.all([api.listFleetPools(), api.getProvisioner().catch(() => null)])
       setPools(res.fleet_pools || [])
+      setProvisioner(prov)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load fleet pools.')
       setPools([])
@@ -146,6 +148,12 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
       <div className="pp-toolbar">
         <span className="pp-toolbar-title">
           {pools.length} managed pool{pools.length === 1 ? '' : 's'}
+          {provisioner ? (
+            <span className={provisioner.can_provision ? 'pp-pill pp-pill-success' : 'pp-pill pp-pill-muted'} style={{ marginLeft: 8 }}>
+              provisioner: {provisioner.name}
+              {provisioner.can_provision ? ' (on-demand)' : ' (static)'}
+            </span>
+          ) : null}
         </span>
         {canManage && (
           <button type="button" className="btn btn-primary btn-sm" onClick={() => setDraft(emptyDraft())}>
@@ -269,7 +277,11 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
                 <span>Desired generator count</span>
                 <input type="number" min={1} value={provisionFor.count} onChange={e => setProvisionFor(p => (p ? { ...p, count: Number(e.target.value) } : p))} />
               </label>
-              <p className="pp-muted">Provisioning resolves to <code>not_configured</code> until a cloud/Kubernetes provider is wired.</p>
+              {provisioner?.can_provision ? (
+                <p className="pp-muted">Scales the pool&rsquo;s generator workload via the <code>{provisioner.name}</code> provisioner.</p>
+              ) : (
+                <p className="pp-muted">Provisioning resolves to <code>not_configured</code> until a cloud/Kubernetes provider is wired.</p>
+              )}
             </div>
             <div className="pp-modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setProvisionFor(null)}>Cancel</button>

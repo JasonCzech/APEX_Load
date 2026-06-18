@@ -161,6 +161,10 @@ func (a kubeRestarterAdapter) RolloutRestart(ctx context.Context, kind string, n
 	return a.client.RolloutRestart(ctx, kind, namespace, name)
 }
 
+func (a kubeRestarterAdapter) ScaleStatefulSet(ctx context.Context, namespace string, name string, replicas int) error {
+	return a.client.ScaleStatefulSet(ctx, namespace, name, replicas)
+}
+
 func (a kubeRestarterAdapter) PodByIP(ctx context.Context, namespace string, selector string, ip string) (api.KubePodRef, error) {
 	pod, err := a.client.PodByIP(ctx, namespace, selector, ip)
 	return api.KubePodRef{Name: pod.Name, Namespace: pod.Namespace, IP: pod.IP, Phase: pod.Phase}, err

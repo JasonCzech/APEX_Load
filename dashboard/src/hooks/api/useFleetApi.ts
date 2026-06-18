@@ -6,6 +6,7 @@ import {
   FleetPool,
   FleetPoolListResponse,
   FleetProvisioningRequest,
+  ProvisionerInfo,
 } from '../../types'
 import { request } from '../apiClient'
 
@@ -85,6 +86,8 @@ export function useFleetApi() {
     [],
   )
 
+  const getProvisioner = useCallback(() => request<ProvisionerInfo>('/fleet/provisioner'), [])
+
   return useMemo(
     () => ({
       listFleetPools,
@@ -96,7 +99,8 @@ export function useFleetApi() {
       patchGeneratorMetadata,
       createProvisionRequest,
       getProvisionRequest,
+      getProvisioner,
     }),
-    [listFleetPools, getFleetPool, createFleetPool, updateFleetPool, deleteFleetPool, listGeneratorMetadata, patchGeneratorMetadata, createProvisionRequest, getProvisionRequest],
+    [listFleetPools, getFleetPool, createFleetPool, updateFleetPool, deleteFleetPool, listGeneratorMetadata, patchGeneratorMetadata, createProvisionRequest, getProvisionRequest, getProvisioner],
   )
 }

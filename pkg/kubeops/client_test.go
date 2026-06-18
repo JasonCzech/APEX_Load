@@ -80,6 +80,38 @@ func TestClientRolloutRestartPatchesWorkloadTemplateAnnotation(t *testing.T) {
 	}
 }
 
+func TestClientScaleStatefulSetPatchesReplicas(t *testing.T) {
+	client, cleanup := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requireBearer(t, r, "token-a")
+		if r.Method != http.MethodPatch {
+			t.Fatalf("method = %s, want PATCH", r.Method)
+		}
+		if want := "/apis/apps/v1/namespaces/apex/statefulsets/apexload-generator"; r.URL.Path != want {
+			t.Fatalf("path = %q, want %q", r.URL.Path, want)
+		}
+		if got := r.Header.Get("Content-Type"); !strings.Contains(got, "application/merge-patch+json") {
+			t.Fatalf("Content-Type = %q", got)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode patch body: %v", err)
+		}
+		spec, _ := body["spec"].(map[string]any)
+		if spec == nil || spec["replicas"] != float64(7) {
+			t.Fatalf("patch body = %#v, want spec.replicas=7", body)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer cleanup()
+
+	if err := client.ScaleStatefulSet(context.Background(), "apex", "apexload-generator", 7); err != nil {
+		t.Fatalf("ScaleStatefulSet() error = %v", err)
+	}
+	if err := client.ScaleStatefulSet(context.Background(), "apex", "apexload-generator", -1); err == nil {
+		t.Fatal("ScaleStatefulSet() with negative replicas should error")
+	}
+}
+
 func TestClientPodByIP(t *testing.T) {
 	tests := []struct {
 		name    string

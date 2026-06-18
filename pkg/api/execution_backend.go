@@ -48,6 +48,7 @@ type KubeRestarter interface {
 	RolloutRestart(ctx context.Context, kind string, namespace string, name string) error
 	PodByIP(ctx context.Context, namespace string, selector string, ip string) (KubePodRef, error)
 	ListPods(ctx context.Context, namespace string, selector string) ([]KubePodRef, error)
+	ScaleStatefulSet(ctx context.Context, namespace string, name string, replicas int) error
 }
 
 type pausableExecutionBackend interface {

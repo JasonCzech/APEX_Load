@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -30,6 +31,9 @@ type GeneratorInventoryEntry struct {
 	Target                            string   `json:"target"`
 	GeneratorID                       string   `json:"generator_id"`
 	Region                            string   `json:"region,omitempty"`
+	FleetPoolID                       string   `json:"fleet_pool_id,omitempty"`
+	PoolName                          string   `json:"pool_name,omitempty"`
+	Cordoned                          bool     `json:"cordoned,omitempty"`
 	Status                            string   `json:"status"`
 	Version                           string   `json:"version,omitempty"`
 	SupportedProtocols                []string `json:"supported_protocols,omitempty"`
@@ -107,6 +111,7 @@ func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
 		entries[i] = normalizeGeneratorInventoryEntry(entries[i])
 	}
 	s.enrichGeneratorRestartability(ctx, entries)
+	s.enrichGeneratorInventoryWithPools(entries)
 	s.cacheGeneratorInventory(ctx, entries)
 
 	return SystemInventoryResponse{
@@ -120,6 +125,60 @@ func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
 		},
 		Generators:   entries,
 		DataPlatform: s.dataPlatformInventory(),
+	}
+}
+
+// enrichGeneratorInventoryWithPools folds persisted fleet metadata (pool
+// membership, cordon, region) onto the live inventory so the inventory is
+// pool-aware. No-op when the store has no generator metadata.
+func (s *Server) enrichGeneratorInventoryWithPools(entries []GeneratorInventoryEntry) {
+	if s == nil || s.store == nil || len(entries) == 0 {
+		return
+	}
+	metadata, err := s.store.ListGeneratorMetadata(0, 0)
+	if err != nil || len(metadata) == 0 {
+		return
+	}
+	index := make(map[string]*storage.GeneratorMetadata, len(metadata)*2)
+	for _, m := range metadata {
+		if m == nil {
+			continue
+		}
+		if m.GeneratorID != "" {
+			index[m.GeneratorID] = m
+		}
+		if t := strings.TrimSpace(m.Target); t != "" {
+			index[t] = m
+		}
+	}
+	poolNames := map[string]string{}
+	for i := range entries {
+		m := index[entries[i].GeneratorID]
+		if m == nil {
+			m = index[entries[i].Target]
+		}
+		if m == nil {
+			continue
+		}
+		if m.FleetPoolID != nil && strings.TrimSpace(*m.FleetPoolID) != "" {
+			poolID := strings.TrimSpace(*m.FleetPoolID)
+			entries[i].FleetPoolID = poolID
+			name, ok := poolNames[poolID]
+			if !ok {
+				if pool, err := s.store.GetFleetPool(poolID); err == nil && pool != nil {
+					name = pool.Name
+				}
+				poolNames[poolID] = name
+			}
+			entries[i].PoolName = name
+		}
+		entries[i].Cordoned = m.Cordoned
+		if entries[i].Region == "" && strings.TrimSpace(m.Region) != "" {
+			entries[i].Region = m.Region
+		}
+		if m.Cordoned && entries[i].DrainState == "active" {
+			entries[i].DrainState = "cordoned"
+		}
 	}
 }
 

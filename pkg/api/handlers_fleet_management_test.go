@@ -1,13 +1,126 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+// fakeFleetScaler injects a can-provision scaler without a real cluster.
+type fakeFleetScaler struct {
+	can      bool
+	workload string
+	err      error
+	calls    int
+	lastN    int
+}
+
+func (f *fakeFleetScaler) CanProvision() bool { return f.can }
+func (f *fakeFleetScaler) Describe() ProvisionerInfo {
+	return ProvisionerInfo{Name: "kubernetes", CanProvision: f.can, Description: "fake k8s scaler"}
+}
+func (f *fakeFleetScaler) ScalePool(_ context.Context, _ *storage.FleetPool, desiredCount int) (string, int, error) {
+	f.calls++
+	f.lastN = desiredCount
+	if f.err != nil {
+		return "", 0, f.err
+	}
+	return firstNonEmpty(f.workload, "apexload-generator"), desiredCount, nil
+}
+
+func TestProvisioningRequestWithKubernetesScaler(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	server.fleetScaler = &fakeFleetScaler{can: true, workload: "apexload-generator"}
+
+	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/pools",
+		map[string]any{"name": "eu", "cloud_provider": "kubernetes", "max_size": 50})
+	var pool storage.FleetPool
+	_ = json.Unmarshal(create.Body.Bytes(), &pool)
+
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests",
+		map[string]any{"fleet_pool_id": pool.ID, "desired_count": 5, "reason": "scale up"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("provision status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var req storage.ProvisioningRequest
+	_ = json.Unmarshal(rec.Body.Bytes(), &req)
+	if req.Status != "success" {
+		t.Fatalf("status = %q, want success", req.Status)
+	}
+	if req.CompletedAt == nil {
+		t.Fatal("expected CompletedAt set")
+	}
+	types := map[string]bool{}
+	for _, e := range req.Events {
+		types[e.EventType] = true
+	}
+	if !types["provisioning"] || !types["success"] {
+		t.Fatalf("events = %+v, want provisioning+success", req.Events)
+	}
+
+	// The pool's desired size now reflects the scale.
+	getPool := timeslotRequest(t, server, http.MethodGet, "/api/v1/fleet/pools/"+pool.ID, nil)
+	var updated storage.FleetPool
+	_ = json.Unmarshal(getPool.Body.Bytes(), &updated)
+	if updated.DesiredSize != 5 {
+		t.Fatalf("pool desired_size = %d, want 5", updated.DesiredSize)
+	}
+
+	// /fleet/provisioner now reports the active kubernetes backend.
+	prov := timeslotRequest(t, server, http.MethodGet, "/api/v1/fleet/provisioner", nil)
+	var info ProvisionerInfo
+	_ = json.Unmarshal(prov.Body.Bytes(), &info)
+	if info.Name != "kubernetes" || !info.CanProvision {
+		t.Fatalf("provisioner = %+v, want kubernetes/can_provision", info)
+	}
+}
+
+func TestProvisioningRequestScalerFailureRecordsFailed(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	server.fleetScaler = &fakeFleetScaler{can: true, err: errors.New("api server unreachable")}
+	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/pools",
+		map[string]any{"name": "x", "cloud_provider": "kubernetes"})
+	var pool storage.FleetPool
+	_ = json.Unmarshal(create.Body.Bytes(), &pool)
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests",
+		map[string]any{"fleet_pool_id": pool.ID, "desired_count": 3})
+	var req storage.ProvisioningRequest
+	_ = json.Unmarshal(rec.Body.Bytes(), &req)
+	if req.Status != "failed" {
+		t.Fatalf("status = %q, want failed", req.Status)
+	}
+}
+
+// TestKubernetesFleetScalerScalesWorkload exercises the real scaler against a fake
+// in-cluster client: clamping to the pool window + the per-pool workload tag.
+func TestKubernetesFleetScalerScalesWorkload(t *testing.T) {
+	fake := &fakeKubeRestarter{}
+	scaler := kubernetesFleetScaler{kube: fake, namespace: "apex", defaultWorkload: "apexload-generator"}
+
+	pool := &storage.FleetPool{ID: "p", Name: "eu", MaxSize: 10}
+	workload, n, err := scaler.ScalePool(context.Background(), pool, 25) // clamped to MaxSize
+	if err != nil {
+		t.Fatalf("scale: %v", err)
+	}
+	if workload != "apexload-generator" || n != 10 {
+		t.Fatalf("scale = %s/%d, want apexload-generator/10 (clamped to max)", workload, n)
+	}
+	if len(fake.scales) != 1 || fake.scales[0].replicas != 10 || fake.scales[0].name != "apexload-generator" {
+		t.Fatalf("scale calls = %+v", fake.scales)
+	}
+
+	// A per-pool workload tag overrides the default StatefulSet name.
+	pool.Tags = map[string]string{"kubernetes.statefulset": "apexload-generator-eu"}
+	workload, _, _ = scaler.ScalePool(context.Background(), pool, 3)
+	if workload != "apexload-generator-eu" {
+		t.Fatalf("tag override workload = %s, want apexload-generator-eu", workload)
+	}
+}
 
 func TestFleetPoolCRUD(t *testing.T) {
 	server, _ := newTimeslotServer(t)
@@ -148,6 +261,88 @@ func TestProvisioningRequestNotConfigured(t *testing.T) {
 	get := timeslotRequest(t, server, http.MethodGet, "/api/v1/fleet/provision-requests/"+req.ID, nil)
 	if get.Code != http.StatusOK {
 		t.Fatalf("get status = %d", get.Code)
+	}
+}
+
+func TestGeneratorInventoryPoolEnrichment(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	poolID := "pool-eu"
+	if err := store.SaveFleetPool(&storage.FleetPool{ID: poolID, Name: "EU edge", CloudProvider: "kubernetes"}); err != nil {
+		t.Fatalf("save pool: %v", err)
+	}
+	pid := poolID
+	if err := store.SaveGeneratorMetadata(&storage.GeneratorMetadata{GeneratorID: "gen-a", FleetPoolID: &pid, Region: "eu-west", Cordoned: true}); err != nil {
+		t.Fatalf("save metadata: %v", err)
+	}
+	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{
+		{Target: "gen-a:9090", GeneratorID: "gen-a", Status: "connected", DrainState: "active", CapacityState: "available"},
+		{Target: "gen-b:9090", GeneratorID: "gen-b", Status: "connected", DrainState: "active", CapacityState: "available"},
+	}})
+
+	rec := timeslotRequest(t, server, http.MethodGet, "/api/v1/system/inventory", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("inventory status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp SystemInventoryResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	byID := map[string]GeneratorInventoryEntry{}
+	for _, g := range resp.Generators {
+		byID[g.GeneratorID] = g
+	}
+	a := byID["gen-a"]
+	if a.FleetPoolID != poolID || a.PoolName != "EU edge" || !a.Cordoned {
+		t.Fatalf("gen-a not pool-enriched: %+v", a)
+	}
+	if a.Region != "eu-west" {
+		t.Fatalf("gen-a region not folded from metadata: %q", a.Region)
+	}
+	if a.DrainState != "cordoned" {
+		t.Fatalf("gen-a drain_state = %q, want cordoned", a.DrainState)
+	}
+	if b := byID["gen-b"]; b.FleetPoolID != "" || b.Cordoned {
+		t.Fatalf("gen-b (no metadata) should be untouched: %+v", b)
+	}
+}
+
+func TestPoolAssignmentResolvesToMembers(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	poolID := "pool-eu"
+	if err := store.SaveFleetPool(&storage.FleetPool{ID: poolID, Name: "EU"}); err != nil {
+		t.Fatalf("save pool: %v", err)
+	}
+	if err := store.SaveFleetPoolMembers(poolID, []*storage.FleetPoolMember{
+		{ID: "m1", PoolID: poolID, GeneratorID: "gen-a", Target: "gen-a:9090"},
+	}); err != nil {
+		t.Fatalf("save members: %v", err)
+	}
+	pid := poolID
+	if err := store.SaveGeneratorMetadata(&storage.GeneratorMetadata{GeneratorID: "gen-b", Target: "gen-b:9090", FleetPoolID: &pid}); err != nil {
+		t.Fatalf("save metadata: %v", err)
+	}
+
+	server.runner.mu.Lock()
+	resolved, err := server.runner.resolvePoolAssignmentLocked(&GeneratorAssignmentSettings{PoolID: poolID})
+	server.runner.mu.Unlock()
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if resolved.Mode != generatorAssignmentModeSpecificHosts || resolved.PoolID != poolID {
+		t.Fatalf("resolved = %+v, want specific_hosts + pool retained", resolved)
+	}
+	got := map[string]bool{}
+	for _, target := range resolved.SelectedTargets {
+		got[target] = true
+	}
+	if !got["gen-a:9090"] || !got["gen-b:9090"] {
+		t.Fatalf("targets = %v, want gen-a + gen-b (members + metadata)", resolved.SelectedTargets)
+	}
+
+	// Unknown pool → error.
+	server.runner.mu.Lock()
+	_, err = server.runner.resolvePoolAssignmentLocked(&GeneratorAssignmentSettings{PoolID: "nope"})
+	server.runner.mu.Unlock()
+	if err == nil {
+		t.Fatal("unknown pool should error")
 	}
 }
 

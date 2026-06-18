@@ -83,7 +83,7 @@ Status vocabulary (shared with the competitive matrix): **Supported** · **Parti
 | Scheduling / run calendar | Timeslot calendar (reservation-centric) | Cron schedules, occurrences, approvals, governance windows, `/api/v1/run-calendar` | **=** |
 | Test-set / ordered execution | Test Sets / Test Instances (ordered collections) | **Execution plans** (`/api/v1/execution-plans`): ordered scenario entries with per-entry data-pool/timeslot/runtime overrides + failure policy; **dependency-gated sequential execution** (run N+1 awaits run N's terminal state) with persisted, queryable plan-run progress | **✓** (parity) |
 | Imports / interop | LR-native; one-way archive import | 11 formats (LR archive, JMeter, k6, HAR, OpenAPI, RAML, AsyncAPI, Postman, WSDL, Salesforce, Oracle EBS) | **▲** |
-| Fleet / host administration | Host pools, load generators, monitor-over-firewall, SiteScope (admin layer) | Read-only fleet + generator drain, **plus managed pools, persistent generator metadata/labels/cordon, and provisioning requests** (`/api/v1/fleet/pools\|generators\|provision-requests`); provisioning is `not_configured` until a provider is wired | **▼** (narrowing — management surface landed) |
+| Fleet / host administration | Host pools, load generators, monitor-over-firewall, SiteScope (admin layer) | Managed pools, persistent generator metadata/labels/cordon, provisioning requests (`/api/v1/fleet/pools\|generators\|provision-requests`), a **real in-cluster Kubernetes provisioner** that scales the generator StatefulSet, pool-aware inventory + pool-scoped run assignment (cloud backends future) | **✓** (parity) |
 | Monitoring integration | SiteScope + monitor-over-firewall agents (registered collectors) | Inbound monitoring **plus a full collector loop** (`/api/v1/monitoring/collectors`: register, SHA-256 scoped token + rotation, metric packs, health) with **collector-token heartbeat/metric ingestion** (`…/{id}/heartbeat`, `…/{id}/metrics`) routed to live monitoring + a **dependency-free agent runtime** (`cmd/apexload-collector-agent`) | **✓** (parity) |
 | Entitlements / consumption | License-tier model + usage | **Read-only entitlements** (`/api/v1/system/entitlements[/usage]`, `/api/v1/projects/{id}/entitlements/usage`): edition, enabled bundles, per-limit used-vs-cap (concurrent tests + active VUsers, global and per project), per-bundle historical consumption, and a per-project breakdown (surfaced, not enforced) | **=** (read parity; APEX doesn't enforce by design) |
 | Correlation as-code | Per-protocol rules engine + design studio (persistent, learned) | detect/diagnose/diff engine (`pkg/convert/correlate/`) + persisted per-script recorded baselines (`/api/v1/scripts/{id}/recording/status`, `/api/v1/scripts/{id}/diagnose-replay`) **plus learned, reusable project-scoped correlation rulesets** (`/api/v1/correlation-rulesets`) — `discover-from-script` saves the correlations a baseline reveals, `{id}/apply-to-script` previews or writes the extractors + value-templating into a target script | **≈** (at parity) |
@@ -106,11 +106,16 @@ These are the API-layer gaps the parity program addresses. Each maps to a build 
    **reservation-aware** — an approved, bound timeslot reserves generators for its window
    (`pkg/api/timeslot_reservation.go`), so other tenants are held PENDING for that capacity. Tracked
    as the `capacity_reservation` dimension (now `supported`) in `parity-status`.
-2. **Fleet pool & provisioning management — *landed (partial)*.** APEX now exposes managed generator
-   pools, persistent generator metadata (labels/region/cordon/pool membership), and provisioning
-   requests (`/api/v1/fleet/pools|generators|provision-requests`; `pkg/api/handlers_fleet_management.go`,
-   `pkg/storage/sqlite_fleet.go`). Provisioning returns `not_configured` until a live cloud/Kubernetes
-   provider backend is wired. Tracked as `fleet_management` (now `partial`) in `parity-status`.
+2. **Fleet pool & provisioning management — *supported*.** APEX exposes managed generator pools,
+   persistent generator metadata (labels/region/cordon/pool membership), and provisioning requests
+   (`/api/v1/fleet/pools|generators|provision-requests`). A **real in-cluster Kubernetes provisioner**
+   (`APEXLOAD_GENERATOR_PROVISIONER=kubernetes`) scales the generator StatefulSet's replicas via the
+   controller service account on `POST /fleet/provision-requests` (lifecycle `provisioning → success/failed`
+   with events — **no new cloud credentials**; same RBAC as `/system/restart`). The live inventory is
+   **pool-aware** (`GeneratorInventoryEntry.fleet_pool_id/pool_name/cordoned` from persisted metadata) and a
+   run can target a pool (`assignment.pool_id`, resolved to the pool's members at placement)
+   (`pkg/api/fleet_provisioner.go`, `pkg/kubeops/client.go`). Cloud (AWS/Azure/GCP) backends remain future via
+   the `GeneratorProvisioner` registry. Tracked as `fleet_management` (now `supported`).
 3. **Ordered cross-run execution plan — *supported*.** APEX exposes execution plans
    (`/api/v1/execution-plans`: CRUD + `POST /{id}/runs`) with per-entry runtime overrides, **per-entry
    data-pool overrides**, **optional per-entry timeslot binding**, and failure policy. **Sequential plans

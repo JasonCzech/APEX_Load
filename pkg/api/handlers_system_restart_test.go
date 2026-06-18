@@ -518,12 +518,20 @@ type fakeKubeRestarter struct {
 	pods          []KubePodRef
 	deletes       []restartDeleteCall
 	rollouts      []restartRolloutCall
+	scales        []restartScaleCall
 	deleteErr     error
 	rolloutErr    error
+	scaleErr      error
 	listErr       error
 	podByIPErr    error
 	deleteStarted chan struct{}
 	releaseDelete chan struct{}
+}
+
+type restartScaleCall struct {
+	namespace string
+	name      string
+	replicas  int
 }
 
 func (f *fakeKubeRestarter) DeletePod(ctx context.Context, namespace string, name string) error {
@@ -555,6 +563,13 @@ func (f *fakeKubeRestarter) RolloutRestart(ctx context.Context, kind string, nam
 	defer f.mu.Unlock()
 	f.rollouts = append(f.rollouts, restartRolloutCall{kind: kind, namespace: namespace, name: name})
 	return f.rolloutErr
+}
+
+func (f *fakeKubeRestarter) ScaleStatefulSet(ctx context.Context, namespace string, name string, replicas int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.scales = append(f.scales, restartScaleCall{namespace: namespace, name: name, replicas: replicas})
+	return f.scaleErr
 }
 
 func (f *fakeKubeRestarter) PodByIP(ctx context.Context, namespace string, selector string, ip string) (KubePodRef, error) {

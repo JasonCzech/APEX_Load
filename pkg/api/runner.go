@@ -132,11 +132,13 @@ type TestRunner struct {
 	seqMu            sync.Mutex
 	seqPlanRuns      map[string]*seqPlanRunState
 	seqPlanByTest    map[string]string
-	liveState        LiveStateStore
-	execution        testExecutionBackend
-	notifier         *notificationDispatcher
-	notifications    atomic.Value
-	routeCache       map[string]latencyRouteCacheEntry
+	// fleetStore resolves fleet-pool membership for pool-aware generator assignment.
+	fleetStore    fleetMembershipReader
+	liveState     LiveStateStore
+	execution     testExecutionBackend
+	notifier      *notificationDispatcher
+	notifications atomic.Value
+	routeCache    map[string]latencyRouteCacheEntry
 
 	// Reference-key state (all guarded by mu). envCode is the short,
 	// environment-aware prefix resolved once at startup; the seq counters are
@@ -747,6 +749,18 @@ type GeneratorAssignmentSettings struct {
 	RegionWeights   map[string]int `json:"region_weights,omitempty"`
 	LoadZoneWeights map[string]int `json:"load_zone_weights,omitempty"`
 	ShardStrategy   string         `json:"shard_strategy,omitempty"`
+	// PoolID restricts a run to the generators in a managed fleet pool. It is
+	// resolved to the pool's member targets at create time (as specific_hosts),
+	// then enforced leniently at placement (offline members are skipped).
+	PoolID string `json:"pool_id,omitempty"`
+}
+
+// fleetMembershipReader resolves a fleet pool's member generator targets (the
+// store satisfies it). Used to make generator assignment pool-aware.
+type fleetMembershipReader interface {
+	GetFleetPool(id string) (*storage.FleetPool, error)
+	ListFleetPoolMembers(poolID string) ([]*storage.FleetPoolMember, error)
+	ListGeneratorMetadata(limit int, offset int) ([]*storage.GeneratorMetadata, error)
 }
 
 type ScenarioFootprint struct {
@@ -817,6 +831,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 		execPlanRunStore: store,
 		seqPlanRuns:      make(map[string]*seqPlanRunState),
 		seqPlanByTest:    make(map[string]string),
+		fleetStore:       store,
 		execution:        localExecutionBackend{},
 		notifier:         newNotificationDispatcher(nil),
 		routeCache:       make(map[string]latencyRouteCacheEntry),
