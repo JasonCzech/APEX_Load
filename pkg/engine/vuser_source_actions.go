@@ -123,8 +123,13 @@ func (vu *VUser) handleSourceRuntimeAction(ctx context.Context, action dsl.Actio
 	case "lr_exit":
 		vu.Variables["__source_exit_requested"] = strings.Join(sourceActionArgs(action), ",")
 	case "lr_disable_ip_spoofing":
+		// Import-compatibility marker only — see lr_enable_ip_spoofing below.
 		vu.Variables["__lr_ip_spoofing"] = "disabled"
 	case "lr_enable_ip_spoofing":
+		// Import-compatibility markers only. APEX Load binds source IPs at VUser init
+		// from config.web_runtime.source_ips (round-robin per VUser); there is no
+		// runtime toggle, so these record intent but do not change binding behavior.
+		// The __lr_ip_spoofing variable is intentionally not read anywhere.
 		vu.Variables["__lr_ip_spoofing"] = "enabled"
 	case "lr_load_dll":
 		vu.logSourceReviewAction(ctx, action)

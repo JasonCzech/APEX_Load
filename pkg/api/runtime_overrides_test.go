@@ -193,3 +193,61 @@ func TestMergeRuntimeSettingsPreservesBaseAndAppliesGroupPrecedence(t *testing.T
 		t.Fatalf("merged settings aliased source fields: %#v", merged)
 	}
 }
+
+func TestApplyRuntimeOverridesMergesWebRuntimeWithoutClobberingSiblings(t *testing.T) {
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.test",
+			WebRuntime: dsl.WebRuntimeConfig{
+				// A script-level web-runtime setting unrelated to IP spoofing.
+				NetworkSimulation: dsl.NetworkSimulationConfig{Mode: "preset", Preset: "dsl"},
+				ContentChecks:     []dsl.ContentCheckConfig{{Text: "Access Denied", Scope: "any_response"}},
+			},
+		},
+		Actions: []dsl.Action{{Name: "home", Type: "request", Target: "/"}},
+	}
+
+	// Override supplies ONLY source_ips (IP spoofing) — it must not wipe the
+	// script's network_simulation/content_checks.
+	err := applyRuntimeOverrides(script, &RuntimeSettingsOverride{
+		WebRuntime: &dsl.WebRuntimeConfig{SourceIPs: []string{"10.0.0.1", "10.0.0.2"}},
+	})
+	if err != nil {
+		t.Fatalf("applyRuntimeOverrides: %v", err)
+	}
+
+	web := script.Config.WebRuntime
+	if got := web.SourceIPs; len(got) != 2 || got[0] != "10.0.0.1" || got[1] != "10.0.0.2" {
+		t.Fatalf("source_ips = %#v, want override pool", got)
+	}
+	if web.NetworkSimulation.Mode != "preset" || web.NetworkSimulation.Preset != "dsl" {
+		t.Fatalf("network_simulation = %#v, want preserved script value", web.NetworkSimulation)
+	}
+	if len(web.ContentChecks) != 1 || web.ContentChecks[0].Text != "Access Denied" {
+		t.Fatalf("content_checks = %#v, want preserved script value", web.ContentChecks)
+	}
+}
+
+func TestMergeWebRuntimeOverlaysOnlyProvidedSections(t *testing.T) {
+	base := dsl.WebRuntimeConfig{
+		SourceIPs:         []string{"10.0.0.1"},
+		NetworkSimulation: dsl.NetworkSimulationConfig{Mode: "preset", Preset: "t1"},
+	}
+	override := dsl.WebRuntimeConfig{
+		SourceIPs: []string{"172.16.0.1", "172.16.0.2"},
+	}
+
+	merged := mergeWebRuntime(base, override)
+	if len(merged.SourceIPs) != 2 || merged.SourceIPs[0] != "172.16.0.1" {
+		t.Fatalf("source_ips = %#v, want override pool", merged.SourceIPs)
+	}
+	if merged.NetworkSimulation.Preset != "t1" {
+		t.Fatalf("network_simulation = %#v, want base preserved", merged.NetworkSimulation)
+	}
+
+	// Mutating the override's slice must not alias into the merged result.
+	override.SourceIPs[0] = "mutated"
+	if merged.SourceIPs[0] != "172.16.0.1" {
+		t.Fatalf("merged source_ips aliased override slice: %#v", merged.SourceIPs)
+	}
+}

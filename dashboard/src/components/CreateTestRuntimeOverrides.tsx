@@ -1,7 +1,25 @@
+import { useState } from 'react'
 import { ScenarioDraft } from '../types'
 
 type RuntimeSettingsState = ScenarioDraft['runtimeSettings']
 type BrowserRuntimeSettings = NonNullable<RuntimeSettingsState['browser']>
+type WebRuntimeSettings = NonNullable<RuntimeSettingsState['web_runtime']>
+
+// looksLikeIp is a lightweight client-side hint mirroring the backend's net.ParseIP
+// gate (config.web_runtime.source_ips). The server remains the authority; this only
+// flags obvious typos before submit so the run isn't rejected after the fact.
+function looksLikeIp(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed) return false
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
+  const match = trimmed.match(ipv4)
+  if (match) return match.slice(1).every((octet) => Number(octet) <= 255)
+  // IPv6: hex groups separated by colons (lenient — full validation is server-side).
+  if (trimmed.includes(':')) {
+    return /^[0-9a-fA-F:]+$/.test(trimmed) && (trimmed.match(/:/g)?.length ?? 0) >= 2
+  }
+  return false
+}
 
 type BrowserDeviceProfileOption = {
   name: string
@@ -39,6 +57,50 @@ interface Props {
 
 export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeSettingChange }: Props) {
   const pacingType = runtimeSettings.pacing?.type || ''
+
+  const initialSourceIps = runtimeSettings.web_runtime?.source_ips ?? []
+  const [spoofEnabled, setSpoofEnabled] = useState(initialSourceIps.length > 0)
+  // Local rows hold the in-progress editor state (including a blank trailing row);
+  // only trimmed, non-empty values are committed up to the scenario draft.
+  const [ipRows, setIpRows] = useState<string[]>(initialSourceIps.length > 0 ? initialSourceIps : [''])
+
+  const commitSourceIps = (rows: string[]) => {
+    const cleaned = rows.map((row) => row.trim()).filter(Boolean)
+    const base: WebRuntimeSettings = { ...(runtimeSettings.web_runtime || {}) }
+    if (cleaned.length === 0) {
+      delete base.source_ips
+      onRuntimeSettingChange('web_runtime', Object.keys(base).length > 0 ? base : undefined)
+      return
+    }
+    onRuntimeSettingChange('web_runtime', { ...base, source_ips: cleaned })
+  }
+
+  const toggleSpoof = (checked: boolean) => {
+    setSpoofEnabled(checked)
+    if (checked) {
+      commitSourceIps(ipRows)
+    } else {
+      setIpRows([''])
+      commitSourceIps([])
+    }
+  }
+
+  const updateIpRow = (index: number, value: string) => {
+    const next = ipRows.map((row, i) => (i === index ? value : row))
+    setIpRows(next)
+    commitSourceIps(next)
+  }
+
+  const addIpRow = () => setIpRows([...ipRows, ''])
+
+  const removeIpRow = (index: number) => {
+    const filtered = ipRows.filter((_, i) => i !== index)
+    const next = filtered.length > 0 ? filtered : ['']
+    setIpRows(next)
+    commitSourceIps(next)
+  }
+
+  const hasInvalidIp = ipRows.some((row) => row.trim() !== '' && !looksLikeIp(row))
 
   const updateBrowserSetting = <K extends keyof BrowserRuntimeSettings>(field: K, value: BrowserRuntimeSettings[K]) => {
     const nextBrowser: BrowserRuntimeSettings = { ...(runtimeSettings.browser || {}) }
@@ -251,6 +313,58 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
           <span>Snapshot on error</span>
         </label>
       </div>
+
+      <section className="ip-spoofing">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={spoofEnabled}
+            onChange={(event) => toggleSpoof(event.target.checked)}
+          />
+          <span>Enable IP spoofing (source IP pool)</span>
+        </label>
+        {spoofEnabled && (
+          <div className="ip-spoofing-body">
+            <p className="ip-spoofing-help">
+              Binds virtual users across a pool of local source IP addresses (round-robin per VUser),
+              so the test presents many distinct client addresses to the target. Applies to HTTP/HTTPS
+              traffic only. Every generator host must already own these addresses on its interfaces;
+              in distributed runs all generators use the full pool (IPs are not partitioned per host).
+            </p>
+            <div className="ip-spoofing-rows">
+              {ipRows.map((row, index) => {
+                const invalid = row.trim() !== '' && !looksLikeIp(row)
+                return (
+                  <div className="ip-spoofing-row" key={index}>
+                    <input
+                      type="text"
+                      className={invalid ? 'ip-spoofing-input ip-spoofing-input-invalid' : 'ip-spoofing-input'}
+                      value={row}
+                      onChange={(event) => updateIpRow(index, event.target.value)}
+                      placeholder="10.0.0.1"
+                      aria-label={`Source IP ${index + 1}`}
+                      aria-invalid={invalid}
+                    />
+                    <button
+                      type="button"
+                      className="btn-remove"
+                      onClick={() => removeIpRow(index)}
+                      aria-label={`Remove source IP ${index + 1}`}
+                      disabled={ipRows.length === 1 && row.trim() === ''}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+            {hasInvalidIp && (
+              <p className="ip-spoofing-error">Enter valid IPv4 or IPv6 addresses.</p>
+            )}
+            <button type="button" className="btn-add-ip" onClick={addIpRow}>+ Add IP</button>
+          </div>
+        )}
+      </section>
     </div>
   )
 }

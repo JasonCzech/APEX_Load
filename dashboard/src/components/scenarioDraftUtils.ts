@@ -60,6 +60,16 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
       auto_transactions: initialScenario?.runtimeSettings?.auto_transactions || '',
       continue_on_error: Boolean(initialScenario?.runtimeSettings?.continue_on_error),
       snapshot_on_error: initialScenario?.runtimeSettings?.snapshot_on_error || false,
+      // Pass-through advanced sections (web_runtime carries IP spoofing / source_ips):
+      // preserve them so an API-set section survives a wizard edit instead of being dropped.
+      max_retries: initialScenario?.runtimeSettings?.max_retries,
+      retry_delay_ms: initialScenario?.runtimeSettings?.retry_delay_ms,
+      retry_backoff: initialScenario?.runtimeSettings?.retry_backoff,
+      log: initialScenario?.runtimeSettings?.log,
+      run_logic: initialScenario?.runtimeSettings?.run_logic,
+      http: initialScenario?.runtimeSettings?.http,
+      web_runtime: initialScenario?.runtimeSettings?.web_runtime,
+      browser_config: initialScenario?.runtimeSettings?.browser_config,
     },
     groups: initialScenario?.groups.length ? initialScenario.groups : [buildDefaultScenarioGroup(scripts)],
   }
@@ -120,6 +130,16 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
       auto_transactions: test.runtime_settings?.auto_transactions || '',
       continue_on_error: Boolean(test.runtime_settings?.error_handling?.continue_on_error),
       snapshot_on_error: Boolean(test.runtime_settings?.error_handling?.snapshot_on_error),
+      // Pass-through advanced sections (web_runtime carries IP spoofing / source_ips):
+      // preserve them so reloading a test for edit keeps its configured values.
+      max_retries: test.runtime_settings?.error_handling?.max_retries,
+      retry_delay_ms: test.runtime_settings?.error_handling?.retry_delay_ms,
+      retry_backoff: test.runtime_settings?.error_handling?.retry_backoff,
+      log: test.runtime_settings?.log,
+      run_logic: test.runtime_settings?.run_logic,
+      http: test.runtime_settings?.http,
+      web_runtime: test.runtime_settings?.web_runtime,
+      browser_config: test.runtime_settings?.browser_config,
     },
     groups,
   }

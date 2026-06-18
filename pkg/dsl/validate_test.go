@@ -504,6 +504,52 @@ func TestValidateScriptIssues_WebRuntimeValidationAllowsSupportedFields(t *testi
 	}
 }
 
+func TestValidateScriptIssues_WebRuntimeSourceIPs(t *testing.T) {
+	makeScript := func(ips []string) *Script {
+		return &Script{
+			Name:     "spoof",
+			Protocol: "http",
+			Config: ScriptConfig{
+				BaseURL:    "https://example.test",
+				WebRuntime: WebRuntimeConfig{SourceIPs: ips},
+			},
+			Actions: []Action{{Name: "home", Type: "request", Target: "/"}},
+		}
+	}
+	hasIssue := func(issues []string, substr string) bool {
+		for _, issue := range issues {
+			if strings.Contains(issue, substr) {
+				return true
+			}
+		}
+		return false
+	}
+
+	t.Run("valid IPv4 and IPv6 pass", func(t *testing.T) {
+		issues := ValidateScriptIssues(makeScript([]string{"10.0.0.1", "192.168.1.5", "::1", "fe80::1"}))
+		if hasIssue(issues, "source_ips") {
+			t.Fatalf("unexpected source_ips issue: %v", issues)
+		}
+	})
+
+	t.Run("invalid IPs rejected", func(t *testing.T) {
+		issues := ValidateScriptIssues(makeScript([]string{"10.0.0.1", "10.0.0.300", "not-an-ip"}))
+		if !hasIssue(issues, "source_ips[1]") || !hasIssue(issues, "source_ips[2]") {
+			t.Fatalf("expected invalid source_ips issues, got %v", issues)
+		}
+		if hasIssue(issues, "source_ips[0]") {
+			t.Fatalf("valid first IP should not be flagged, got %v", issues)
+		}
+	})
+
+	t.Run("blank entry rejected", func(t *testing.T) {
+		issues := ValidateScriptIssues(makeScript([]string{"   "}))
+		if !hasIssue(issues, "source_ips[0] must not be empty") {
+			t.Fatalf("expected blank source_ips issue, got %v", issues)
+		}
+	})
+}
+
 func TestValidateScriptIssues_WebRuntimeCustomNetworkSimulationAllowsLossOnly(t *testing.T) {
 	script := &Script{
 		Name:     "web-loss-only",

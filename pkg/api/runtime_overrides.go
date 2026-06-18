@@ -46,7 +46,7 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 		script.Config.HTTP = *cloneViaJSON(overrides.HTTP)
 	}
 	if overrides.WebRuntime != nil {
-		script.Config.WebRuntime = *cloneViaJSON(overrides.WebRuntime)
+		script.Config.WebRuntime = mergeWebRuntime(script.Config.WebRuntime, *overrides.WebRuntime)
 	}
 	if overrides.BrowserConfig != nil {
 		script.Config.Browser = *cloneViaJSON(overrides.BrowserConfig)
@@ -180,6 +180,43 @@ func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOv
 	return &clone
 }
 
+// mergeWebRuntime overlays the non-zero fields of override onto a deep copy of
+// base, returning the combined web-runtime config. Unlike a whole-section replace,
+// this lets a runtime override that only sets e.g. source_ips (IP spoofing) reach
+// the engine without wiping unrelated script settings such as network_simulation or
+// content_checks. Each override section wins as a unit when it carries any value.
+func mergeWebRuntime(base dsl.WebRuntimeConfig, override dsl.WebRuntimeConfig) dsl.WebRuntimeConfig {
+	merged := base
+	if clone := cloneViaJSON(&base); clone != nil {
+		merged = *clone
+	}
+	if len(override.AdditionalAttributes) > 0 {
+		merged.AdditionalAttributes = override.AdditionalAttributes
+	}
+	if override.DownloadFilters.Mode != "" || len(override.DownloadFilters.Hosts) > 0 {
+		merged.DownloadFilters = override.DownloadFilters
+	}
+	if len(override.ContentChecks) > 0 {
+		merged.ContentChecks = override.ContentChecks
+	}
+	if override.NetworkSimulation != (dsl.NetworkSimulationConfig{}) {
+		merged.NetworkSimulation = override.NetworkSimulation
+	}
+	if override.Streaming != (dsl.StreamingConfig{}) {
+		merged.Streaming = override.Streaming
+	}
+	if override.DataFormatting.AutoDetect || len(override.DataFormatting.Chain) > 0 {
+		merged.DataFormatting = override.DataFormatting
+	}
+	if len(override.SourceIPs) > 0 {
+		merged.SourceIPs = append([]string(nil), override.SourceIPs...)
+	}
+	if len(override.NetworkProfiles) > 0 {
+		merged.NetworkProfiles = append([]dsl.NetworkProfileWeight(nil), override.NetworkProfiles...)
+	}
+	return merged
+}
+
 // cloneViaJSON deep-copies a config section through JSON — the simplest safe deep
 // clone for the nested maps/slices in the larger override sections (HTTP default
 // headers, web-runtime profile mix, browser viewport, etc.). Returns nil for nil.
@@ -259,7 +296,12 @@ func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsO
 		merged.HTTP = cloneViaJSON(group.HTTP)
 	}
 	if group.WebRuntime != nil {
-		merged.WebRuntime = cloneViaJSON(group.WebRuntime)
+		if merged.WebRuntime != nil {
+			combined := mergeWebRuntime(*merged.WebRuntime, *group.WebRuntime)
+			merged.WebRuntime = &combined
+		} else {
+			merged.WebRuntime = cloneViaJSON(group.WebRuntime)
+		}
 	}
 	if group.BrowserConfig != nil {
 		merged.BrowserConfig = cloneViaJSON(group.BrowserConfig)
