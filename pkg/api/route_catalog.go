@@ -64,6 +64,7 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPatch, "/api/v1/monitoring/collectors/{id}", accessRequirement{GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, ProjectLookup: resolveMonitoringCollectorProjectID, MaxBodyBytes: 65536}),
 	routeAuth(http.MethodDelete, "/api/v1/monitoring/collectors/{id}", projectAdminAccess(resolveMonitoringCollectorProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/monitoring/collectors/{id}/rotate-token", projectAdminAccess(resolveMonitoringCollectorProjectID)),
+	routeAuth(http.MethodGet, "/api/v1/monitoring/collectors/{id}/metrics", viewerProjectAccess(resolveMonitoringCollectorProjectID)),
 
 	// Enterprise entitlements (read-only consumption vs limits).
 	routeAuth(http.MethodGet, "/api/v1/system/entitlements", viewerGlobalAccess()),

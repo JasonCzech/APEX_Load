@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useMonitoringCollectorsApi } from '../hooks/api/useMonitoringCollectorsApi'
 import { ApiError } from '../hooks/apiClient'
-import { MonitoringCollector } from '../types'
+import { CollectorMetricSnapshot, MonitoringCollector } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import './parityPanels.css'
 
@@ -39,6 +39,12 @@ function formatTimestamp(value?: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
+function freshness(snapshot: CollectorMetricSnapshot): { label: string; cls: string } {
+  if (snapshot.pending) return { label: 'awaiting first heartbeat', cls: 'pp-pill pp-pill-muted' }
+  if (snapshot.stale) return { label: 'stale', cls: 'pp-pill pp-pill-warning' }
+  return { label: 'online', cls: 'pp-pill pp-pill-success' }
+}
+
 type EditState = { id: string; name: string; description: string; health: string; packs: string }
 
 export default function MonitoringCollectorsCard({ projectId, canManage = false }: Props) {
@@ -51,6 +57,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
   const [edit, setEdit] = useState<EditState | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<MonitoringCollector | null>(null)
   const [oneTimeToken, setOneTimeToken] = useState<{ name: string; token: string } | null>(null)
+  const [metrics, setMetrics] = useState<{ name: string; snapshot: CollectorMetricSnapshot } | null>(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -137,6 +144,22 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
     [api, load],
   )
 
+  const viewMetrics = useCallback(
+    async (collector: MonitoringCollector) => {
+      setBusy(true)
+      setError(null)
+      try {
+        const snapshot = await api.getCollectorMetrics(collector.id)
+        setMetrics({ name: collector.name, snapshot })
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Failed to load collector metrics.')
+      } finally {
+        setBusy(false)
+      }
+    },
+    [api],
+  )
+
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget) return
     setBusy(true)
@@ -209,32 +232,37 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
                   <span>last seen: {formatTimestamp(collector.last_seen_at)}</span>
                 </div>
               </div>
-              {canManage && (
-                <div className="pp-row-actions">
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    disabled={busy}
-                    onClick={() =>
-                      setEdit({
-                        id: collector.id,
-                        name: collector.name,
-                        description: collector.description || '',
-                        health: collector.health,
-                        packs: packsToText(collector.allowed_metric_packs),
-                      })
-                    }
-                  >
-                    Edit
-                  </button>
-                  <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void rotate(collector)}>
-                    Rotate token
-                  </button>
-                  <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => setDeleteTarget(collector)}>
-                    Delete
-                  </button>
-                </div>
-              )}
+              <div className="pp-row-actions">
+                <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void viewMetrics(collector)}>
+                  Metrics
+                </button>
+                {canManage && (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={busy}
+                      onClick={() =>
+                        setEdit({
+                          id: collector.id,
+                          name: collector.name,
+                          description: collector.description || '',
+                          health: collector.health,
+                          packs: packsToText(collector.allowed_metric_packs),
+                        })
+                      }
+                    >
+                      Edit
+                    </button>
+                    <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void rotate(collector)}>
+                      Rotate token
+                    </button>
+                    <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => setDeleteTarget(collector)}>
+                      Delete
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -356,6 +384,57 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
             </div>
             <div className="pp-modal-actions">
               <button type="button" className="btn btn-primary" onClick={() => setOneTimeToken(null)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Latest ingested metrics snapshot */}
+      {metrics && (
+        <div className="pp-modal-overlay" onClick={() => setMetrics(null)}>
+          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+            <div className="pp-modal-header">
+              <h3>
+                Live metrics — “{metrics.name}”
+                <span className={freshness(metrics.snapshot).cls} style={{ marginLeft: 8 }}>
+                  {freshness(metrics.snapshot).label}
+                </span>
+              </h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMetrics(null)}>
+                Close
+              </button>
+            </div>
+            <div className="pp-modal-form">
+              <div className="pp-row-meta">
+                <span>health: {metrics.snapshot.health}</span>
+                <span>last received: {formatTimestamp(metrics.snapshot.received_at)}</span>
+                {typeof metrics.snapshot.age_seconds === 'number' ? <span>age: {metrics.snapshot.age_seconds}s</span> : null}
+              </div>
+              {metrics.snapshot.packs.length === 0 ? (
+                <div className="pp-empty">No metrics ingested yet. Run the collector agent to push a heartbeat.</div>
+              ) : (
+                <div className="pp-list">
+                  {metrics.snapshot.packs.map(pack => (
+                    <div className="pp-row" key={pack.pack}>
+                      <div className="pp-row-main">
+                        <div className="pp-row-title">{pack.pack}</div>
+                        <div className="pp-row-meta">
+                          {Object.entries(pack.samples || {}).map(([key, value]) => (
+                            <span key={key}>
+                              {key}: {Math.round(value * 100) / 100}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="pp-modal-actions">
+              <button type="button" className="btn btn-primary" onClick={() => setMetrics(null)}>
                 Done
               </button>
             </div>

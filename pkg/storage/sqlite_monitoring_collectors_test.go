@@ -80,3 +80,36 @@ func TestMonitoringCollectorNullDefaults(t *testing.T) {
 		t.Fatal("AllowedMetricPacks should be an empty slice, not nil")
 	}
 }
+
+func TestUpdateMonitoringCollectorHealth(t *testing.T) {
+	store := openTimeslotStore(t)
+	if err := store.SaveMonitoringCollector(&MonitoringCollector{
+		ID: "collector-hb", ProjectID: "proj-a", Name: "edge", TokenHash: "h",
+		AllowedMetricPacks: []string{"linux-hosts"},
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	// Initial heartbeat-less state: health unreachable, no last-seen.
+	got, _ := store.GetMonitoringCollector("collector-hb")
+	if got.Health != "unreachable" || got.LastSeenAt != nil {
+		t.Fatalf("initial state = %s/%v, want unreachable/nil", got.Health, got.LastSeenAt)
+	}
+
+	seen := time.Date(2026, 7, 2, 10, 30, 0, 0, time.UTC)
+	if err := store.UpdateMonitoringCollectorHealth("collector-hb", "healthy", seen); err != nil {
+		t.Fatalf("update health: %v", err)
+	}
+	got, _ = store.GetMonitoringCollector("collector-hb")
+	if got.Health != "healthy" || got.LastSeenAt == nil || !got.LastSeenAt.Equal(seen) {
+		t.Fatalf("after heartbeat = %s/%v, want healthy/%v", got.Health, got.LastSeenAt, seen)
+	}
+	// Other fields (name/packs/token) untouched by the targeted update.
+	if got.Name != "edge" || len(got.AllowedMetricPacks) != 1 || got.TokenHash != "h" {
+		t.Fatalf("targeted update clobbered other fields: %+v", got)
+	}
+
+	// Unknown collector → error.
+	if err := store.UpdateMonitoringCollectorHealth("missing", "healthy", seen); err == nil {
+		t.Fatal("expected error for unknown collector")
+	}
+}

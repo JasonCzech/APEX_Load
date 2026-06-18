@@ -121,6 +121,9 @@ type Store interface {
 	GetMonitoringCollector(id string) (*MonitoringCollector, error)
 	ListMonitoringCollectors(projectID string, limit int, offset int) ([]*MonitoringCollector, error)
 	DeleteMonitoringCollector(id string) error
+	// UpdateMonitoringCollectorHealth atomically records a collector heartbeat
+	// (health + last-seen) without rewriting the rest of the row.
+	UpdateMonitoringCollectorHealth(id string, health string, lastSeenAt time.Time) error
 
 	// Shared data pools
 	SaveDataPool(pool *SharedDataPool) error

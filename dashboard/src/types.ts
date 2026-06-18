@@ -3989,6 +3989,21 @@ export interface MonitoringCollectorTokenResponse {
   collector: MonitoringCollector
   token: string
 }
+export interface CollectorMetricPack {
+  pack: string
+  timestamp: string
+  samples: Record<string, number>
+}
+export interface CollectorMetricSnapshot {
+  collector_id: string
+  project_id?: string
+  health: string
+  received_at?: string
+  age_seconds?: number
+  stale: boolean
+  pending?: boolean
+  packs: CollectorMetricPack[]
+}
 
 export interface EntitlementsProtocolBundle {
   id: string

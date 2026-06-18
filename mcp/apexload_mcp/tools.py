@@ -183,6 +183,7 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
     EndpointTool("monitoring_collector_update", "PATCH", "/monitoring/collectors/{id}", f"{WRITE} Update a monitoring collector (name, packs, health).", True),
     EndpointTool("monitoring_collector_delete", "DELETE", "/monitoring/collectors/{id}", f"{DESTRUCTIVE} Delete a monitoring collector.", True, True),
     EndpointTool("monitoring_collector_rotate_token", "POST", "/monitoring/collectors/{id}/rotate-token", f"{DESTRUCTIVE} Rotate a monitoring collector token (invalidates the old one).", True, True),
+    EndpointTool("monitoring_collector_metrics", "GET", "/monitoring/collectors/{id}/metrics", f"{READ} Get a collector's latest ingested heartbeat snapshot (health + scoped metric packs)."),
 
     EndpointTool("object_repository_list", "GET", "/object-repositories", f"{READ} List object repositories (named element-descriptor catalogs).", default_project=True),
     EndpointTool("object_repository_create", "POST", "/object-repositories", f"{WRITE} Create an object repository.", True, False, True),

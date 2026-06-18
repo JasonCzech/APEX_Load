@@ -84,7 +84,7 @@ Status vocabulary (shared with the competitive matrix): **Supported** · **Parti
 | Test-set / ordered execution | Test Sets / Test Instances (ordered collections) | **Execution plans** (`/api/v1/execution-plans`): ordered scenario entries with per-entry data-pool/timeslot/runtime overrides + failure policy; **dependency-gated sequential execution** (run N+1 awaits run N's terminal state) with persisted, queryable plan-run progress | **✓** (parity) |
 | Imports / interop | LR-native; one-way archive import | 11 formats (LR archive, JMeter, k6, HAR, OpenAPI, RAML, AsyncAPI, Postman, WSDL, Salesforce, Oracle EBS) | **▲** |
 | Fleet / host administration | Host pools, load generators, monitor-over-firewall, SiteScope (admin layer) | Read-only fleet + generator drain, **plus managed pools, persistent generator metadata/labels/cordon, and provisioning requests** (`/api/v1/fleet/pools\|generators\|provision-requests`); provisioning is `not_configured` until a provider is wired | **▼** (narrowing — management surface landed) |
-| Monitoring integration | SiteScope + monitor-over-firewall agents (registered collectors) | Inbound monitoring **plus a collector control plane** (`/api/v1/monitoring/collectors`: register, SHA-256 scoped token + rotation, metric packs, health); agent runtime/heartbeat pending | **▼** (narrowing — control plane landed) |
+| Monitoring integration | SiteScope + monitor-over-firewall agents (registered collectors) | Inbound monitoring **plus a full collector loop** (`/api/v1/monitoring/collectors`: register, SHA-256 scoped token + rotation, metric packs, health) with **collector-token heartbeat/metric ingestion** (`…/{id}/heartbeat`, `…/{id}/metrics`) routed to live monitoring + a **dependency-free agent runtime** (`cmd/apexload-collector-agent`) | **✓** (parity) |
 | Entitlements / consumption | License-tier model + usage | **Read-only entitlements** (`/api/v1/system/entitlements[/usage]`, `/api/v1/projects/{id}/entitlements/usage`): edition, enabled bundles, per-limit used-vs-cap (concurrent tests + active VUsers, global and per project), per-bundle historical consumption, and a per-project breakdown (surfaced, not enforced) | **=** (read parity; APEX doesn't enforce by design) |
 | Correlation as-code | Per-protocol rules engine + design studio (persistent, learned) | detect/diagnose/diff engine (`pkg/convert/correlate/`) + persisted per-script recorded baselines (`/api/v1/scripts/{id}/recording/status`, `/api/v1/scripts/{id}/diagnose-replay`) **plus learned, reusable project-scoped correlation rulesets** (`/api/v1/correlation-rulesets`) — `discover-from-script` saves the correlations a baseline reveals, `{id}/apply-to-script` previews or writes the extractors + value-templating into a target script | **≈** (at parity) |
 | Browser object repository | VuGen/TruClient object repository | Selector model + **persisted project-scoped object repositories** (`/api/v1/object-repositories`, seedable `from-script`) with **script↔repository binding** (action `object_ref`, resolved controller-side into selectors + fallbacks for replay and load) and **repair-on-replay write-back** (self-heals feed the working locator back into the bound object) | **≈** (at parity) |
@@ -119,10 +119,14 @@ These are the API-layer gaps the parity program addresses. Each maps to a build 
    (`pkg/api/execution_plan_orchestrator.go`); parallel plans stage all entries. Plan-run progress is
    persisted and queryable (`GET /{id}/runs`, `GET /{id}/runs/{runId}`) and streamed via
    `execution_plan_*` WebSocket events. Tracked as `execution_planning` (now `supported`).
-4. **Monitoring collectors — *control plane landed (partial)*.** Restricted-network collectors now
-   register via `/api/v1/monitoring/collectors` with SHA-256 scoped tokens (one-time issue + rotation),
-   allowed metric packs, and health (`pkg/api/handlers_monitoring_collectors.go`). Remaining: the agent
-   runtime + collector-token-authenticated heartbeat/health ingestion. Tracked as `monitoring_collectors`.
+4. **Monitoring collectors — *supported*.** Restricted-network collectors register via
+   `/api/v1/monitoring/collectors` with SHA-256 scoped tokens (one-time issue + rotation) and allowed metric
+   packs, then push **collector-token-authenticated heartbeats** (`POST …/{id}/heartbeat`) that record
+   health + last-seen and ingest **in-scope** metric packs; the latest snapshot is routed to live monitoring
+   (`monitoring_collector_heartbeat` WebSocket event + `GET …/{id}/metrics`). A dependency-free **agent
+   runtime** (`cmd/apexload-collector-agent`) collects host metrics and pushes on an interval
+   (`pkg/api/collector_metrics.go`, `pkg/collectoragent`). Live snapshot is in-memory (like running-test
+   metrics); durable history is future work. Tracked as `monitoring_collectors` (now `supported`).
 5. **Entitlements read model — *supported*.** `/api/v1/system/entitlements[/usage]` and
    `/api/v1/projects/{id}/entitlements/usage` project edition, enabled bundles, **per-limit used-vs-cap**
    (concurrent tests + active VUsers, global and per project), **per-bundle historical consumption**, and

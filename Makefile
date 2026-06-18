@@ -1,4 +1,4 @@
-.PHONY: all build test test-jms-solace-real clean generator controller apexctl recording-agent package-recording-agent desktop desktop-release java-vuser-runner proto generate lint docker-generator docker-controller docker-local-up docker-local-down docker-local-logs docker-local-prometheus-check docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-onprem-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
+.PHONY: all build test test-jms-solace-real clean generator controller apexctl recording-agent collector-agent package-recording-agent desktop desktop-release java-vuser-runner proto generate lint docker-generator docker-controller docker-local-up docker-local-down docker-local-logs docker-local-prometheus-check docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-onprem-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
 
 VERSION    ?= $(shell ./scripts/resolve-version.sh 2>/dev/null || echo 0.1.0)
 COMMIT     ?= $(shell git rev-parse HEAD 2>/dev/null)
@@ -10,7 +10,7 @@ WAILS ?= $(shell command -v wails 2>/dev/null || echo $(HOME)/go/bin/wails)
 
 all: build
 
-build: generator controller apexctl recording-agent
+build: generator controller apexctl recording-agent collector-agent
 
 generator:
 	go build $(GOFLAGS) $(LDFLAGS) -o bin/generator ./cmd/generator
@@ -23,6 +23,9 @@ apexctl:
 
 recording-agent:
 	go build $(GOFLAGS) $(LDFLAGS) -o bin/apexload-record-agent ./cmd/apexload-record-agent
+
+collector-agent:
+	go build $(GOFLAGS) $(LDFLAGS) -o bin/apexload-collector-agent ./cmd/apexload-collector-agent
 
 package-recording-agent:
 	./scripts/package-recording-agent.sh

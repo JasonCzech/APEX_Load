@@ -412,6 +412,9 @@ func (s *metricsStoreSpy) ListMonitoringCollectors(string, int, int) ([]*storage
 	return nil, nil
 }
 func (s *metricsStoreSpy) DeleteMonitoringCollector(string) error { return nil }
+func (s *metricsStoreSpy) UpdateMonitoringCollectorHealth(string, string, time.Time) error {
+	return nil
+}
 func (s *metricsStoreSpy) SaveDataPool(pool *storage.SharedDataPool) error {
 	return nil
 }

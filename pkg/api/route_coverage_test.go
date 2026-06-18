@@ -7,7 +7,8 @@ import (
 
 // intentionallyPublicAPIRoutes are the /api/v1/ routes registered with NO auth
 // middleware on purpose: the OIDC login flow, liveness/version/readiness probes, the
-// public recording-agent download, and the HMAC-validated GitHub webhook receiver.
+// public recording-agent download, the HMAC-validated GitHub webhook receiver, and the
+// monitoring-collector heartbeat (collector-token authenticated in-handler).
 // Every other /api/v1/ route must be wrapped in an auth middleware (generic or custom).
 //
 // This list is the explicit, reviewed surface of anonymous endpoints. A new route added
@@ -16,18 +17,19 @@ import (
 // only enumerate auth()-wrapped routes (a route registered with no auth() is invisible to
 // them, as the recording-agent download was).
 var intentionallyPublicAPIRoutes = map[string]bool{
-	"GET /api/v1/auth/login":                   true,
-	"GET /api/v1/auth/callback":                true,
-	"POST /api/v1/auth/logout":                 true,
-	"GET /api/v1/auth/me":                      true,
-	"GET /api/v1/auth/diagnostics":             true,
-	"GET /api/v1/auth/roles":                   true,
-	"GET /api/v1/auth/access-matrix":           true,
-	"GET /api/v1/auth/effective-access":        true,
-	"GET /api/v1/system/health":                true,
-	"GET /api/v1/system/version":               true,
-	"GET /api/v1/system/readiness":             true,
-	"POST /api/v1/integrations/github/webhook": true,
+	"GET /api/v1/auth/login":                            true,
+	"GET /api/v1/auth/callback":                         true,
+	"POST /api/v1/auth/logout":                          true,
+	"GET /api/v1/auth/me":                               true,
+	"GET /api/v1/auth/diagnostics":                      true,
+	"GET /api/v1/auth/roles":                            true,
+	"GET /api/v1/auth/access-matrix":                    true,
+	"GET /api/v1/auth/effective-access":                 true,
+	"GET /api/v1/system/health":                         true,
+	"GET /api/v1/system/version":                        true,
+	"GET /api/v1/system/readiness":                      true,
+	"POST /api/v1/integrations/github/webhook":          true,
+	"POST /api/v1/monitoring/collectors/{id}/heartbeat": true,
 }
 
 func TestUnauthenticatedAPIRoutesAreAllowlisted(t *testing.T) {

@@ -3035,6 +3035,47 @@ paths:
             type: string
       tags:
         - Monitoring
+  /api/v1/monitoring/collectors/{id}/heartbeat:
+    post:
+      summary: Collector Heartbeat
+      description: |-
+        **Handler:** `handleCollectorHeartbeat`
+
+        **Access Control:** Public (no authentication required)
+      operationId: handleCollectorHeartbeat
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Public (no authentication required)
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
+  /api/v1/monitoring/collectors/{id}/metrics:
+    get:
+      summary: Get Collector Metrics
+      description: |-
+        **Handler:** `handleGetCollectorMetrics`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleGetCollectorMetrics
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
   /api/v1/monitoring/collectors/{id}/rotate-token:
     post:
       summary: Rotate Monitoring Collector Token

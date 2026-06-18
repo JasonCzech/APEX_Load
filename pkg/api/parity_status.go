@@ -184,10 +184,10 @@ func buildAPIParityProgram() []ParityStatusArea {
 		{
 			ID:        "monitoring_collectors",
 			Name:      "Monitoring Collectors",
-			Status:    "partial",
-			Summary:   "Restricted-network monitoring collectors now register via API with SHA-256 scoped tokens (one-time issue + rotation), allowed metric packs, and health/state; the agent runtime and collector-token-authenticated heartbeat are a follow-on.",
-			Evidence:  []string{apiComparisonEvidence, "/api/v1/monitoring/collectors", "pkg/api/handlers_monitoring_collectors.go", "pkg/storage/sqlite_monitoring_collectors.go"},
-			Remaining: []string{"Build the agent runtime + collector-token-authenticated heartbeat/health ingestion and route scoped metric packs to live monitoring."},
+			Status:    "supported",
+			Summary:   "Restricted-network monitoring collectors register via API with SHA-256 scoped tokens (one-time issue + rotation) and allowed metric packs, then push collector-token-authenticated heartbeats (POST /collectors/{id}/heartbeat) that record health + last-seen and ingest in-scope metric packs; the latest snapshot is routed to live monitoring (WebSocket monitoring_collector_heartbeat + GET /collectors/{id}/metrics) and a dependency-free agent runtime (cmd/apexload-collector-agent) collects host metrics and pushes on an interval.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/monitoring/collectors", "/api/v1/monitoring/collectors/{id}/heartbeat", "/api/v1/monitoring/collectors/{id}/metrics", "pkg/api/collector_metrics.go", "pkg/collectoragent/agent.go", "cmd/apexload-collector-agent"},
+			Remaining: []string{"Live snapshot is in-memory (like running-test metrics); durable metric history, richer per-pack schemas, and attaching collector metrics to a specific running test's resources are future work."},
 		},
 		{
 			ID:        "entitlements",

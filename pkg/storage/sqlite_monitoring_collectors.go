@@ -104,3 +104,18 @@ func (s *SQLiteStore) DeleteMonitoringCollector(id string) error {
 	_, err := s.db.Exec(`DELETE FROM monitoring_collectors WHERE id = ?`, id)
 	return err
 }
+
+func (s *SQLiteStore) UpdateMonitoringCollectorHealth(id string, health string, lastSeenAt time.Time) error {
+	if health == "" {
+		health = "healthy"
+	}
+	res, err := s.db.Exec(`UPDATE monitoring_collectors SET health = ?, last_seen_at = ?, updated_at = ? WHERE id = ?`,
+		health, lastSeenAt, time.Now(), id)
+	if err != nil {
+		return err
+	}
+	if affected, err := res.RowsAffected(); err == nil && affected == 0 {
+		return fmt.Errorf("monitoring collector not found: %s", id)
+	}
+	return nil
+}

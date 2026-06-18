@@ -48,6 +48,7 @@ type Server struct {
 	resultImports      map[string]*storage.ExternalResultImport
 	githubMu           sync.Mutex
 	githubTokens       map[string]githubCachedToken
+	collectorMetrics   *collectorMetricStore
 	mux                *http.ServeMux
 	usageCancel        context.CancelFunc
 	fanoutCancel       context.CancelFunc
@@ -160,6 +161,7 @@ func NewServer(cfg ServerConfig) *Server {
 		slaWaivers:       make(map[string][]*storage.ReleaseSLAWaiver),
 		resultImports:    make(map[string]*storage.ExternalResultImport),
 		githubTokens:     make(map[string]githubCachedToken),
+		collectorMetrics: newCollectorMetricStore(),
 		mux:              http.NewServeMux(),
 		desktopMode:      cfg.DesktopMode,
 		bridgeMode:       cfg.BridgeMode,
@@ -449,6 +451,9 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PATCH /api/v1/monitoring/collectors/{id}", cors(log(auth(http.HandlerFunc(s.handlePatchMonitoringCollector)))))
 	s.mux.Handle("DELETE /api/v1/monitoring/collectors/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteMonitoringCollector)))))
 	s.mux.Handle("POST /api/v1/monitoring/collectors/{id}/rotate-token", cors(log(auth(http.HandlerFunc(s.handleRotateMonitoringCollectorToken)))))
+	// Agent-facing heartbeat — collector-token authenticated in-handler (no RBAC auth middleware).
+	s.mux.Handle("POST /api/v1/monitoring/collectors/{id}/heartbeat", cors(log(http.HandlerFunc(s.handleCollectorHeartbeat))))
+	s.mux.Handle("GET /api/v1/monitoring/collectors/{id}/metrics", cors(log(auth(http.HandlerFunc(s.handleGetCollectorMetrics)))))
 
 	// Enterprise entitlements — read-only consumption vs limits.
 	s.mux.Handle("GET /api/v1/system/entitlements", cors(log(auth(http.HandlerFunc(s.handleGetEntitlements)))))

@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react'
 
 import {
+  CollectorMetricSnapshot,
   MonitoringCollector,
   MonitoringCollectorListResponse,
   MonitoringCollectorTokenResponse,
@@ -70,6 +71,12 @@ export function useMonitoringCollectorsApi() {
     [],
   )
 
+  // getCollectorMetrics returns the latest ingested heartbeat snapshot.
+  const getCollectorMetrics = useCallback(
+    (id: string) => request<CollectorMetricSnapshot>(`/monitoring/collectors/${id}/metrics`),
+    [],
+  )
+
   return useMemo(
     () => ({
       listCollectors,
@@ -78,7 +85,8 @@ export function useMonitoringCollectorsApi() {
       patchCollector,
       deleteCollector,
       rotateCollectorToken,
+      getCollectorMetrics,
     }),
-    [listCollectors, getCollector, createCollector, patchCollector, deleteCollector, rotateCollectorToken],
+    [listCollectors, getCollector, createCollector, patchCollector, deleteCollector, rotateCollectorToken, getCollectorMetrics],
   )
 }
