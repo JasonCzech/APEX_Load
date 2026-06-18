@@ -84,7 +84,7 @@ func TestHandleGetParityStatusReturnsAPIParityProgram(t *testing.T) {
 		"monitoring_collectors":   "partial",
 		"entitlements":            "partial",
 		"correlation_persistence": "partial",
-		"object_repository":       "partial",
+		"object_repository":       "supported",
 	}
 	if len(payload.APIParityProgram) != len(wantStatus) {
 		t.Fatalf("api_parity_program count = %d, want %d", len(payload.APIParityProgram), len(wantStatus))

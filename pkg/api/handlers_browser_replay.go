@@ -67,8 +67,12 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 
 func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.Request, id string, script *dsl.Script, req BrowserReplayStartRequest) {
 	script = applyBrowserReplayOverrides(script, req)
-	issues := validateScriptForReplay(script)
-	warnings := validationWarnings(script)
+	resolvedScript, refWarnings, refIssues := resolveObjectRefs(s.store, script)
+	if resolvedScript != nil {
+		script = resolvedScript
+	}
+	issues := append(validateScriptForReplay(script), refIssues...)
+	warnings := append(validationWarnings(script), refWarnings...)
 	preflight := buildReplayPreflight(script, req.Variables, issues, warnings)
 	if len(issues) > 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{

@@ -42,10 +42,16 @@ type BrowserReplaySession struct {
 	cancel context.CancelFunc
 }
 
+// replayCompletionHook is invoked once a replay session reaches a terminal
+// report. The server wires it to feed selector self-heals back to the object
+// repository; the managers themselves hold no store.
+type replayCompletionHook func(projectID string, script *dsl.Script, report *engine.ReplayReport)
+
 type BrowserReplayManager struct {
-	hub      *Hub
-	sessions map[string]*BrowserReplaySession
-	mu       sync.RWMutex
+	hub        *Hub
+	sessions   map[string]*BrowserReplaySession
+	mu         sync.RWMutex
+	onComplete replayCompletionHook
 }
 
 func NewBrowserReplayManager(hub *Hub) *BrowserReplayManager {
@@ -53,6 +59,10 @@ func NewBrowserReplayManager(hub *Hub) *BrowserReplayManager {
 		hub:      hub,
 		sessions: make(map[string]*BrowserReplaySession),
 	}
+}
+
+func (m *BrowserReplayManager) setCompletionHook(hook replayCompletionHook) {
+	m.onComplete = hook
 }
 
 func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req BrowserReplayStartRequest) *BrowserReplaySession {
@@ -162,6 +172,10 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 		session.mu.Unlock()
 
 		m.broadcast(messageType, session, eventIndex, nil, report)
+
+		if m.onComplete != nil && report != nil {
+			m.onComplete(session.ProjectID, script, report)
+		}
 	}()
 
 	return session.snapshot()

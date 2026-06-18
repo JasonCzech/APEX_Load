@@ -200,12 +200,13 @@ Replays an imported XML document operation, saving the result into a variable.
 
 Clicks an element.
 
-Requires one of: `target`, `selector`
+Requires one of: `target`, `selector`, `object_ref`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string |  | Element locator; target or selector is required. |
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `target` | string |  | Element locator; target, selector, or object_ref is required. |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
+| `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -213,12 +214,13 @@ Requires one of: `target`, `selector`
 
 Double-clicks an element.
 
-Requires one of: `target`, `selector`
+Requires one of: `target`, `selector`, `object_ref`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string |  | Element locator; target or selector is required. |
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `target` | string |  | Element locator; target, selector, or object_ref is required. |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
+| `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -226,12 +228,13 @@ Requires one of: `target`, `selector`
 
 Drags an element onto a drop target.
 
-Requires one of: `target`, `selector`
+Requires one of: `target`, `selector`, `object_ref`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string |  | Element locator; target or selector is required. |
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `target` | string |  | Element locator; target, selector, or object_ref is required. |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
+| `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `params.target` | string | yes | Drop-target locator. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
@@ -250,12 +253,13 @@ Evaluates a reviewed JavaScript snippet in the page (subject to the browser revi
 
 Types a value into an input element.
 
-Requires one of: `target`, `selector`
+Requires one of: `target`, `selector`, `object_ref`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string |  | Element locator; target or selector is required. |
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `target` | string |  | Element locator; target, selector, or object_ref is required. |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
+| `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `value` | string | yes | Text to enter; template variables are expanded. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
@@ -277,12 +281,13 @@ Handles the next native dialog (alert/confirm/prompt) by accepting or dismissing
 
 Hovers the pointer over an element.
 
-Requires one of: `target`, `selector`
+Requires one of: `target`, `selector`, `object_ref`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string |  | Element locator; target or selector is required. |
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `target` | string |  | Element locator; target, selector, or object_ref is required. |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
+| `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -290,12 +295,13 @@ Requires one of: `target`, `selector`
 
 Long-presses an element (touch input).
 
-Requires one of: `target`, `selector`
+Requires one of: `target`, `selector`, `object_ref`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string |  | Element locator; target or selector is required. |
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `target` | string |  | Element locator; target, selector, or object_ref is required. |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
+| `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `params.duration_ms` | int |  | Press duration in milliseconds; must be greater than zero. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
@@ -309,7 +315,7 @@ Requires one of: `target`, `selector`
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string |  | Destination URL; target or selector is required. |
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -321,7 +327,7 @@ Requires one of: `value`, `params.key`, `params.key_name`, `params.keyName`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `value` | string |  | Key to press; one of value, params.key, or params.key_name is required. |
 | `params.key` | string |  | Key name alternative to value. |
 | `params.key_name` | string |  | Key name alternative to value. |
@@ -334,7 +340,7 @@ Captures a screenshot of the current page, or of one element when a locator is s
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `target` | string |  | Element locator alternative to selector; empty captures the full page. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -342,12 +348,13 @@ Captures a screenshot of the current page, or of one element when a locator is s
 
 Selects an option in a select element.
 
-Requires one of: `target`, `selector`
+Requires one of: `target`, `selector`, `object_ref`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string |  | Element locator; target or selector is required. |
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `target` | string |  | Element locator; target, selector, or object_ref is required. |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
+| `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `value` | string | yes | Option value or label to select. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
@@ -356,14 +363,15 @@ Requires one of: `target`, `selector`
 
 Attaches files to a file input element.
 
-Requires one of: `target`, `selector`
+Requires one of: `target`, `selector`, `object_ref`
 
 Requires one of: `value`, `params.file`, `params.path`, `params.files`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string |  | Element locator; target or selector is required. |
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `target` | string |  | Element locator; target, selector, or object_ref is required. |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
+| `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `value` | string |  | File path; one of value, params.file, params.path, or params.files is required. |
 | `params.file` | string |  | Single file path alternative to value. |
 | `params.path` | string |  | Single file path alternative to value. |
@@ -375,12 +383,13 @@ Requires one of: `value`, `params.file`, `params.path`, `params.files`
 
 Swipes from an element in a direction (touch input).
 
-Requires one of: `target`, `selector`
+Requires one of: `target`, `selector`, `object_ref`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string |  | Element locator; target or selector is required. |
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `target` | string |  | Element locator; target, selector, or object_ref is required. |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
+| `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `params.direction` | enum: left\|right\|up\|down |  | Swipe direction. |
 | `params.distance` | int |  | Swipe distance in pixels; must be greater than zero. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
@@ -394,7 +403,7 @@ Requires one of: `selector`, `target`, `params.frame`, `params.frame_selector`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `target` | string |  | Frame locator alternative to selector. |
 | `params.frame` | string |  | Frame name or index. |
 | `params.frame_selector` | string |  | Frame element locator. |
@@ -415,12 +424,13 @@ Switches the action scope to another window or tab.
 
 Taps an element (touch input).
 
-Requires one of: `target`, `selector`
+Requires one of: `target`, `selector`, `object_ref`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string |  | Element locator; target or selector is required. |
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `target` | string |  | Element locator; target, selector, or object_ref is required. |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
+| `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -433,7 +443,7 @@ Requires one of: `wait_for`, `selector`, `target`
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `wait_for` | object |  | Wait condition: {type, value, timeout_ms}. One of wait_for, selector, or target is required. |
-| `selector` | string |  | Element locator (CSS/XPath/object-repository reference). |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `target` | string |  | Element locator alternative to selector. |
 
 ## Protocol: database

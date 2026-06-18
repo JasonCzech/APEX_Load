@@ -407,6 +407,11 @@
                     "required": [
                       "selector"
                     ]
+                  },
+                  {
+                    "required": [
+                      "object_ref"
+                    ]
                   }
                 ]
               }
@@ -417,8 +422,12 @@
                 "description": "Evidence capture: {screenshot, full_page, html}.",
                 "type": "object"
               },
+              "object_ref": {
+                "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
+                "type": "string"
+              },
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "sync": {
@@ -426,7 +435,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Element locator; target or selector is required.",
+                "description": "Element locator; target, selector, or object_ref is required.",
                 "type": "string"
               }
             }
@@ -458,6 +467,11 @@
                     "required": [
                       "selector"
                     ]
+                  },
+                  {
+                    "required": [
+                      "object_ref"
+                    ]
                   }
                 ]
               }
@@ -468,8 +482,12 @@
                 "description": "Evidence capture: {screenshot, full_page, html}.",
                 "type": "object"
               },
+              "object_ref": {
+                "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
+                "type": "string"
+              },
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "sync": {
@@ -477,7 +495,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Element locator; target or selector is required.",
+                "description": "Element locator; target, selector, or object_ref is required.",
                 "type": "string"
               }
             }
@@ -509,6 +527,11 @@
                     "required": [
                       "selector"
                     ]
+                  },
+                  {
+                    "required": [
+                      "object_ref"
+                    ]
                   }
                 ]
               }
@@ -518,6 +541,10 @@
               "capture": {
                 "description": "Evidence capture: {screenshot, full_page, html}.",
                 "type": "object"
+              },
+              "object_ref": {
+                "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
+                "type": "string"
               },
               "params": {
                 "properties": {
@@ -532,7 +559,7 @@
                 "type": "object"
               },
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "sync": {
@@ -540,7 +567,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Element locator; target or selector is required.",
+                "description": "Element locator; target, selector, or object_ref is required.",
                 "type": "string"
               }
             },
@@ -609,6 +636,11 @@
                     "required": [
                       "selector"
                     ]
+                  },
+                  {
+                    "required": [
+                      "object_ref"
+                    ]
                   }
                 ]
               }
@@ -619,8 +651,12 @@
                 "description": "Evidence capture: {screenshot, full_page, html}.",
                 "type": "object"
               },
+              "object_ref": {
+                "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
+                "type": "string"
+              },
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "sync": {
@@ -628,7 +664,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Element locator; target or selector is required.",
+                "description": "Element locator; target, selector, or object_ref is required.",
                 "type": "string"
               },
               "value": {
@@ -725,6 +761,11 @@
                     "required": [
                       "selector"
                     ]
+                  },
+                  {
+                    "required": [
+                      "object_ref"
+                    ]
                   }
                 ]
               }
@@ -735,8 +776,12 @@
                 "description": "Evidence capture: {screenshot, full_page, html}.",
                 "type": "object"
               },
+              "object_ref": {
+                "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
+                "type": "string"
+              },
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "sync": {
@@ -744,7 +789,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Element locator; target or selector is required.",
+                "description": "Element locator; target, selector, or object_ref is required.",
                 "type": "string"
               }
             }
@@ -776,6 +821,11 @@
                     "required": [
                       "selector"
                     ]
+                  },
+                  {
+                    "required": [
+                      "object_ref"
+                    ]
                   }
                 ]
               }
@@ -785,6 +835,10 @@
               "capture": {
                 "description": "Evidence capture: {screenshot, full_page, html}.",
                 "type": "object"
+              },
+              "object_ref": {
+                "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
+                "type": "string"
               },
               "params": {
                 "properties": {
@@ -796,7 +850,7 @@
                 "type": "object"
               },
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "sync": {
@@ -804,7 +858,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Element locator; target or selector is required.",
+                "description": "Element locator; target, selector, or object_ref is required.",
                 "type": "string"
               }
             }
@@ -847,7 +901,7 @@
                 "type": "object"
               },
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "sync": {
@@ -942,7 +996,7 @@
                 "type": "object"
               },
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "sync": {
@@ -977,7 +1031,7 @@
                 "type": "object"
               },
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "target": {
@@ -1013,6 +1067,11 @@
                     "required": [
                       "selector"
                     ]
+                  },
+                  {
+                    "required": [
+                      "object_ref"
+                    ]
                   }
                 ]
               }
@@ -1023,8 +1082,12 @@
                 "description": "Evidence capture: {screenshot, full_page, html}.",
                 "type": "object"
               },
+              "object_ref": {
+                "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
+                "type": "string"
+              },
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "sync": {
@@ -1032,7 +1095,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Element locator; target or selector is required.",
+                "description": "Element locator; target, selector, or object_ref is required.",
                 "type": "string"
               },
               "value": {
@@ -1070,6 +1133,11 @@
                   {
                     "required": [
                       "selector"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "object_ref"
                     ]
                   }
                 ]
@@ -1126,6 +1194,10 @@
                 "description": "Evidence capture: {screenshot, full_page, html}.",
                 "type": "object"
               },
+              "object_ref": {
+                "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
+                "type": "string"
+              },
               "params": {
                 "properties": {
                   "file": {
@@ -1144,7 +1216,7 @@
                 "type": "object"
               },
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "sync": {
@@ -1152,7 +1224,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Element locator; target or selector is required.",
+                "description": "Element locator; target, selector, or object_ref is required.",
                 "type": "string"
               },
               "value": {
@@ -1188,6 +1260,11 @@
                     "required": [
                       "selector"
                     ]
+                  },
+                  {
+                    "required": [
+                      "object_ref"
+                    ]
                   }
                 ]
               }
@@ -1197,6 +1274,10 @@
               "capture": {
                 "description": "Evidence capture: {screenshot, full_page, html}.",
                 "type": "object"
+              },
+              "object_ref": {
+                "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
+                "type": "string"
               },
               "params": {
                 "properties": {
@@ -1218,7 +1299,7 @@
                 "type": "object"
               },
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "sync": {
@@ -1226,7 +1307,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Element locator; target or selector is required.",
+                "description": "Element locator; target, selector, or object_ref is required.",
                 "type": "string"
               }
             }
@@ -1306,7 +1387,7 @@
                 "type": "object"
               },
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "sync": {
@@ -1377,6 +1458,11 @@
                     "required": [
                       "selector"
                     ]
+                  },
+                  {
+                    "required": [
+                      "object_ref"
+                    ]
                   }
                 ]
               }
@@ -1387,8 +1473,12 @@
                 "description": "Evidence capture: {screenshot, full_page, html}.",
                 "type": "object"
               },
+              "object_ref": {
+                "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
+                "type": "string"
+              },
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "sync": {
@@ -1396,7 +1486,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Element locator; target or selector is required.",
+                "description": "Element locator; target, selector, or object_ref is required.",
                 "type": "string"
               }
             }
@@ -1440,7 +1530,7 @@
             "description": "Waits for a condition, element, or timeout before continuing.",
             "properties": {
               "selector": {
-                "description": "Element locator (CSS/XPath/object-repository reference).",
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
               },
               "target": {
@@ -4428,6 +4518,9 @@
           "type": "string"
         },
         "name": {
+          "type": "string"
+        },
+        "object_ref": {
           "type": "string"
         },
         "params": {

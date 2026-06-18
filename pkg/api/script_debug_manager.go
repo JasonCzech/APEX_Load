@@ -69,9 +69,10 @@ type ScriptDebugSession struct {
 }
 
 type ScriptDebugManager struct {
-	hub      *Hub
-	sessions map[string]*ScriptDebugSession
-	mu       sync.RWMutex
+	hub        *Hub
+	sessions   map[string]*ScriptDebugSession
+	mu         sync.RWMutex
+	onComplete replayCompletionHook
 }
 
 func NewScriptDebugManager(hub *Hub) *ScriptDebugManager {
@@ -79,6 +80,10 @@ func NewScriptDebugManager(hub *Hub) *ScriptDebugManager {
 		hub:      hub,
 		sessions: make(map[string]*ScriptDebugSession),
 	}
+}
+
+func (m *ScriptDebugManager) setCompletionHook(hook replayCompletionHook) {
+	m.onComplete = hook
 }
 
 func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req ScriptDebugStartRequest) *ScriptDebugSession {
@@ -176,6 +181,10 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 		session.mu.Unlock()
 
 		m.broadcast(messageType, session, eventIndex, nil, nil, report)
+
+		if m.onComplete != nil && report != nil {
+			m.onComplete(session.ProjectID, script, report)
+		}
 	}()
 
 	return session.snapshot()

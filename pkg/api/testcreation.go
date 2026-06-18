@@ -10,6 +10,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -475,6 +476,18 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 		if issues := dsl.ValidateScriptIssues(&scriptCopy); len(issues) > 0 {
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))
 		}
+	}
+	// Resolve object-repository bindings into concrete selectors before the
+	// script is distributed — generators have no store, so an unresolved
+	// object_ref would be unrunnable on the generator.
+	if resolved, refWarnings, refIssues := resolveObjectRefs(tr.objectRepoStore, &scriptCopy); resolved != nil {
+		if len(refIssues) > 0 {
+			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(refIssues, "; "))
+		}
+		for _, w := range refWarnings {
+			slog.Warn("object_ref resolution degraded to inline locator", "group", index, "detail", w)
+		}
+		scriptCopy = *resolved
 	}
 	if len(scriptCopy.Actions) == 0 {
 		if issues := dsl.ValidateScriptIssues(&scriptCopy); len(issues) > 0 {

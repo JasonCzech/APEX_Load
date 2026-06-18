@@ -519,11 +519,18 @@ type Parameter struct {
 }
 
 type Action struct {
-	Name           string                 `json:"name"`
-	Type           string                 `json:"type"`
-	Method         string                 `json:"method,omitempty"`
-	Target         string                 `json:"target"`
-	Selector       string                 `json:"selector,omitempty"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Method   string `json:"method,omitempty"`
+	Target   string `json:"target"`
+	Selector string `json:"selector,omitempty"`
+	// ObjectRef binds this action to a named object in a project-scoped object
+	// repository instead of (or as a fallback to) an inline selector. The
+	// controller resolves it at script-preparation time into a concrete selector
+	// plus ranked fallback candidates in Metadata; generators never see the
+	// repository. Bare "logicalName" resolves across the project's repositories;
+	// qualified "repoID:logicalName" pins to one repository.
+	ObjectRef      string                 `json:"object_ref,omitempty"`
 	Value          string                 `json:"value,omitempty"`
 	Headers        map[string]string      `json:"headers,omitempty"`
 	Body           string                 `json:"body,omitempty"`

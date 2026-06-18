@@ -87,7 +87,7 @@ Status vocabulary (shared with the competitive matrix): **Supported** · **Parti
 | Monitoring integration | SiteScope + monitor-over-firewall agents (registered collectors) | Inbound monitoring **plus a collector control plane** (`/api/v1/monitoring/collectors`: register, SHA-256 scoped token + rotation, metric packs, health); agent runtime/heartbeat pending | **▼** (narrowing — control plane landed) |
 | Entitlements / consumption | License-tier model + usage | **Read-only entitlements** (`/api/v1/system/entitlements[/usage]`): edition, enabled bundles, limits, and live consumption in one view (surfaced, not enforced) | **=** (read parity; APEX doesn't enforce by design) |
 | Correlation as-code | Per-protocol rules engine + design studio (persistent, learned) | detect/diagnose/diff engine (`pkg/convert/correlate/`) **plus persisted per-script recorded baselines** (`/api/v1/scripts/{id}/recording/status`, `/api/v1/scripts/{id}/diagnose-replay`, redacted to preserve correlation candidates); learned reusable rulesets still pending | **▼** (narrowing) |
-| Browser object repository | VuGen/TruClient object repository | Selector model + **persisted project-scoped object repositories** (`/api/v1/object-repositories`, seedable `from-script`); script↔repository binding + repair-on-replay still pending | **▼** (narrowing) |
+| Browser object repository | VuGen/TruClient object repository | Selector model + **persisted project-scoped object repositories** (`/api/v1/object-repositories`, seedable `from-script`) with **script↔repository binding** (action `object_ref`, resolved controller-side into selectors + fallbacks for replay and load) and **repair-on-replay write-back** (self-heals feed the working locator back into the bound object) | **≈** (at parity) |
 | CI/CD integration | Maintained Jenkins + Azure DevOps marketplace plugins | GitHub-native (push/pull, PR check-runs, webhooks, sync-jobs) + CI templates; **no marketplace plugins** | **=** |
 | Git / GitOps | No native Git script sync | Native GitHub script push/pull, drift status, project policy | **▲** |
 | ALM / requirements traceability | Quality Center / ALM integration | None (out of scope) | **▼** |
@@ -121,9 +121,12 @@ These are the API-layer gaps the parity program addresses. Each maps to a build 
    edition, enabled bundles, limits, and live consumption in one read-only view
    (`pkg/api/handlers_entitlements.go`) — surfaced, not enforced (no licensing engine by design).
    Tracked as `entitlements`.
-6. **Correlation baselines and object repositories now persist (partial).** Per-script recorded baselines and project-scoped object repositories are stored; learned correlation rulesets and script↔repository binding remain.
-   → **Persistent correlation rulesets** + per-script discover/apply, and a **persisted object
-   repository**.
+6. **Object repositories are load-bearing (supported); correlation baselines persist (partial).**
+   Project-scoped object repositories are stored, bound to scripts by logical name (action
+   `object_ref`, resolved controller-side into selectors + fallbacks for replay and load), and
+   replay self-heals write the working locator back into the bound object. Per-script recorded
+   correlation baselines are stored; learned reusable correlation rulesets remain.
+   → **Persistent correlation rulesets** + per-script discover/apply.
 7. **No ALM/Quality Center traceability and no CI-marketplace plugins.** Out of scope for this program;
    GitOps/PR-check-runs are the deliberate alternative. ALM remains a documented non-goal.
 

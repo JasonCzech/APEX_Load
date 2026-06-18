@@ -152,8 +152,9 @@ func (s *Server) handleObjectRepositoryFromScript(w http.ResponseWriter, r *http
 		return
 	}
 	var req struct {
-		ScriptID string `json:"script_id"`
-		Name     string `json:"name,omitempty"`
+		ScriptID   string `json:"script_id"`
+		Name       string `json:"name,omitempty"`
+		BindScript bool   `json:"bind_script,omitempty"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -191,7 +192,56 @@ func (s *Server) handleObjectRepositoryFromScript(w http.ResponseWriter, r *http
 	s.recordAuditEvent(r, "object_repository.from_script", "success", "object_repository", repo.ID, repo.ProjectID, map[string]any{
 		"name": repo.Name, "objects": len(repo.Objects), "source_script_id": scriptID,
 	})
+
+	// Optionally bind the source script's actions to the new repository so the
+	// authoring loop (seed → bind → maintain centrally) closes in one call.
+	if req.BindScript {
+		bindCopy := cloneScriptDefinition(stored.Script)
+		if bound := bindScriptToObjectRepository(bindCopy, repo); bound > 0 {
+			if _, ok := s.runner.UpdateScript(scriptID, bindCopy); ok {
+				s.recordAuditEvent(r, "object_repository.bind_script", "success", "script", scriptID, repo.ProjectID, map[string]any{
+					"object_repository_id": repo.ID, "bound": bound,
+				})
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusCreated, repo)
+}
+
+// bindScriptToObjectRepository sets object_ref on every action whose name
+// matches a repository object (leaving any inline selector as a fallback) and
+// returns the number of actions bound. The reference is qualified with the
+// repository id so resolution and self-heal write-back are deterministic.
+func bindScriptToObjectRepository(script *dsl.Script, repo *storage.ObjectRepository) int {
+	canonical := map[string]string{}
+	for _, obj := range repo.Objects {
+		key := strings.ToLower(strings.TrimSpace(obj.LogicalName))
+		if key != "" {
+			canonical[key] = strings.TrimSpace(obj.LogicalName)
+		}
+	}
+	bound := 0
+	var walk func(actions []dsl.Action)
+	walk = func(actions []dsl.Action) {
+		for i := range actions {
+			action := &actions[i]
+			if strings.TrimSpace(action.ObjectRef) == "" {
+				if name, ok := canonical[strings.ToLower(strings.TrimSpace(action.Name))]; ok {
+					action.ObjectRef = repo.ID + ":" + name
+					bound++
+				}
+			}
+			if action.Control != nil {
+				walk(action.Control.Steps)
+				walk(action.Control.Else)
+			}
+		}
+	}
+	walk(script.Init)
+	walk(script.Actions)
+	walk(script.Teardown)
+	return bound
 }
 
 // objectRepositoryObjectsFromScript builds repository objects from a script's

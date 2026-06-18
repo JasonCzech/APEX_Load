@@ -175,6 +175,10 @@ func NewServer(cfg ServerConfig) *Server {
 		staticFS:           StaticFS,
 	}
 
+	// Feed replay selector self-heals back to the bound object repository.
+	s.browserReplay.setCompletionHook(s.persistSelfHealToRepository)
+	s.scriptDebug.setCompletionHook(s.persistSelfHealToRepository)
+
 	s.loadLibraryState()
 	s.routes(cfg.AllowedOrigins)
 

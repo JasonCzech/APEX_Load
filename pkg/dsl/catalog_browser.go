@@ -12,18 +12,23 @@ import (
 // browser_screenshot intentionally skip the sync-policy rules, matching the
 // early returns in the original validator.
 func browserActionSpecs() []ActionSpec {
-	fieldSelector := FieldSpec{Name: "selector", Kind: FieldKindString, Doc: "Element locator (CSS/XPath/object-repository reference)."}
+	fieldSelector := FieldSpec{Name: "selector", Kind: FieldKindString, Doc: "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead."}
+	fieldObjectRef := FieldSpec{Name: "object_ref", Kind: FieldKindString, Doc: "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector."}
 	fieldSync := FieldSpec{Name: "sync", Kind: FieldKindObject, Doc: "Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}."}
 	fieldCapture := FieldSpec{Name: "capture", Kind: FieldKindObject, Doc: "Evidence capture: {screenshot, full_page, html}."}
 	locatorFields := func(extra ...FieldSpec) []FieldSpec {
 		fields := []FieldSpec{
-			{Name: "target", Kind: FieldKindString, Doc: "Element locator; target or selector is required."},
+			{Name: "target", Kind: FieldKindString, Doc: "Element locator; target, selector, or object_ref is required."},
 			fieldSelector,
+			fieldObjectRef,
 		}
 		fields = append(fields, extra...)
 		fields = append(fields, fieldSync, fieldCapture)
 		return fields
 	}
+	// locatorRequireOneOf marks the element-targeting actions as satisfiable by an
+	// inline target/selector or an object-repository binding.
+	locatorRequireOneOf := []string{"target", "selector", "object_ref"}
 
 	return []ActionSpec{
 		{
@@ -41,54 +46,54 @@ func browserActionSpecs() []ActionSpec {
 			Type:         "browser_click",
 			Protocols:    []string{"browser"},
 			Summary:      "Clicks an element.",
-			RequireOneOf: [][]string{{"target", "selector"}},
+			RequireOneOf: [][]string{locatorRequireOneOf},
 			Fields:       locatorFields(),
-			Validate:     browserValidator(browserRequireTargetOrSelector, nil),
+			Validate:     browserValidator(browserRequireElementLocator, nil),
 		},
 		{
 			Type:         "browser_dblclick",
 			Protocols:    []string{"browser"},
 			Summary:      "Double-clicks an element.",
-			RequireOneOf: [][]string{{"target", "selector"}},
+			RequireOneOf: [][]string{locatorRequireOneOf},
 			Fields:       locatorFields(),
-			Validate:     browserValidator(browserRequireTargetOrSelector, nil),
+			Validate:     browserValidator(browserRequireElementLocator, nil),
 		},
 		{
 			Type:         "browser_hover",
 			Protocols:    []string{"browser"},
 			Summary:      "Hovers the pointer over an element.",
-			RequireOneOf: [][]string{{"target", "selector"}},
+			RequireOneOf: [][]string{locatorRequireOneOf},
 			Fields:       locatorFields(),
-			Validate:     browserValidator(browserRequireTargetOrSelector, nil),
+			Validate:     browserValidator(browserRequireElementLocator, nil),
 		},
 		{
 			Type:         "browser_fill",
 			Protocols:    []string{"browser"},
 			Summary:      "Types a value into an input element.",
-			RequireOneOf: [][]string{{"target", "selector"}},
+			RequireOneOf: [][]string{locatorRequireOneOf},
 			Fields:       locatorFields(FieldSpec{Name: "value", Required: true, Kind: FieldKindString, Doc: "Text to enter; template variables are expanded."}),
-			Validate:     browserValidator(browserRequireTargetOrSelector, browserRequireValue),
+			Validate:     browserValidator(browserRequireElementLocator, browserRequireValue),
 		},
 		{
 			Type:         "browser_select",
 			Protocols:    []string{"browser"},
 			Summary:      "Selects an option in a select element.",
-			RequireOneOf: [][]string{{"target", "selector"}},
+			RequireOneOf: [][]string{locatorRequireOneOf},
 			Fields:       locatorFields(FieldSpec{Name: "value", Required: true, Kind: FieldKindString, Doc: "Option value or label to select."}),
-			Validate:     browserValidator(browserRequireTargetOrSelector, browserRequireValue),
+			Validate:     browserValidator(browserRequireElementLocator, browserRequireValue),
 		},
 		{
 			Type:         "browser_set_files",
 			Protocols:    []string{"browser"},
 			Summary:      "Attaches files to a file input element.",
-			RequireOneOf: [][]string{{"target", "selector"}, {"value", "params.file", "params.path", "params.files"}},
+			RequireOneOf: [][]string{locatorRequireOneOf, {"value", "params.file", "params.path", "params.files"}},
 			Fields: locatorFields(
 				FieldSpec{Name: "value", Kind: FieldKindString, Doc: "File path; one of value, params.file, params.path, or params.files is required."},
 				FieldSpec{Name: "params.file", Kind: FieldKindString, Doc: "Single file path alternative to value."},
 				FieldSpec{Name: "params.path", Kind: FieldKindString, Doc: "Single file path alternative to value."},
 				FieldSpec{Name: "params.files", Kind: FieldKindArray, Doc: "Multiple file paths."},
 			),
-			Validate: browserValidator(browserRequireTargetOrSelector, browserRequireSetFilesValue),
+			Validate: browserValidator(browserRequireElementLocator, browserRequireSetFilesValue),
 		},
 		{
 			Type:         "browser_press_key",
@@ -108,34 +113,34 @@ func browserActionSpecs() []ActionSpec {
 			Type:         "browser_tap",
 			Protocols:    []string{"browser"},
 			Summary:      "Taps an element (touch input).",
-			RequireOneOf: [][]string{{"target", "selector"}},
+			RequireOneOf: [][]string{locatorRequireOneOf},
 			Fields:       locatorFields(),
-			Validate:     browserValidator(browserRequireTargetOrSelector, nil),
+			Validate:     browserValidator(browserRequireElementLocator, nil),
 		},
 		{
 			Type:         "browser_long_press",
 			Protocols:    []string{"browser"},
 			Summary:      "Long-presses an element (touch input).",
-			RequireOneOf: [][]string{{"target", "selector"}},
+			RequireOneOf: [][]string{locatorRequireOneOf},
 			Fields:       locatorFields(FieldSpec{Name: "params.duration_ms", Kind: FieldKindInt, Doc: "Press duration in milliseconds; must be greater than zero."}),
-			Validate:     browserValidator(browserRequireTargetOrSelector, browserLongPressChecks),
+			Validate:     browserValidator(browserRequireElementLocator, browserLongPressChecks),
 		},
 		{
 			Type:         "browser_swipe",
 			Protocols:    []string{"browser"},
 			Summary:      "Swipes from an element in a direction (touch input).",
-			RequireOneOf: [][]string{{"target", "selector"}},
+			RequireOneOf: [][]string{locatorRequireOneOf},
 			Fields: locatorFields(
 				FieldSpec{Name: "params.direction", Kind: FieldKindEnum, Enum: []string{"left", "right", "up", "down"}, Doc: "Swipe direction."},
 				FieldSpec{Name: "params.distance", Kind: FieldKindInt, Doc: "Swipe distance in pixels; must be greater than zero."},
 			),
-			Validate: browserValidator(browserRequireTargetOrSelector, browserSwipeChecks),
+			Validate: browserValidator(browserRequireElementLocator, browserSwipeChecks),
 		},
 		{
 			Type:         "browser_drag_and_drop",
 			Protocols:    []string{"browser"},
 			Summary:      "Drags an element onto a drop target.",
-			RequireOneOf: [][]string{{"target", "selector"}},
+			RequireOneOf: [][]string{locatorRequireOneOf},
 			Fields: locatorFields(
 				FieldSpec{Name: "params.target", Required: true, Kind: FieldKindString, Doc: "Drop-target locator."},
 			),
@@ -262,8 +267,21 @@ func browserRequireTargetOrSelector(label string, action Action) []string {
 	return nil
 }
 
+// browserRequireElementLocator is the element-action variant of
+// browserRequireTargetOrSelector that also accepts an object-repository binding
+// (object_ref). The controller resolves object_ref into a concrete selector at
+// script preparation, so an action bound only by object_ref is valid at
+// authoring time. The message is intentionally identical so existing tooling
+// and assertions are unaffected.
+func browserRequireElementLocator(label string, action Action) []string {
+	if action.Target == "" && action.Selector == "" && strings.TrimSpace(action.ObjectRef) == "" {
+		return []string{fmt.Sprintf("%s: missing target or selector", label)}
+	}
+	return nil
+}
+
 func browserDragAndDropChecks(label string, action Action) []string {
-	issues := browserRequireTargetOrSelector(label, action)
+	issues := browserRequireElementLocator(label, action)
 	if target, ok := actionParamStringValue(action.Params, "target"); !ok || strings.TrimSpace(target) == "" {
 		issues = append(issues, fmt.Sprintf("%s: browser_drag_and_drop requires params.target", label))
 	}

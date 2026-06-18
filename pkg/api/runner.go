@@ -111,11 +111,14 @@ type TestRunner struct {
 	auditStore    auditPersistence
 	settingsStore settingsPersistence
 	usageStore    usageSnapshotPersistence
-	liveState     LiveStateStore
-	execution     testExecutionBackend
-	notifier      *notificationDispatcher
-	notifications atomic.Value
-	routeCache    map[string]latencyRouteCacheEntry
+	// objectRepoStore resolves object_ref bindings into concrete selectors when a
+	// load run is compiled (generators have no store, so binding must resolve here).
+	objectRepoStore objectRepositoryReader
+	liveState       LiveStateStore
+	execution       testExecutionBackend
+	notifier        *notificationDispatcher
+	notifications   atomic.Value
+	routeCache      map[string]latencyRouteCacheEntry
 
 	// Reference-key state (all guarded by mu). envCode is the short,
 	// environment-aware prefix resolved once at startup; the seq counters are
@@ -773,26 +776,27 @@ type runArtifacts struct {
 
 func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 	tr := &TestRunner{
-		tests:         make(map[string]*ManagedTest),
-		scripts:       make(map[string]*StoredScript),
-		scenarios:     make(map[string]*StoredScenario),
-		archives:      make(map[string]*storage.RunArchiveRecord),
-		hub:           hub,
-		maxTests:      maxTests,
-		scriptStore:   store,
-		testStore:     store,
-		scenarioStore: store,
-		dataPoolStore: store,
-		projectStore:  store,
-		releaseStore:  store,
-		historyStore:  store,
-		archiveStore:  store,
-		auditStore:    store,
-		settingsStore: store,
-		usageStore:    store,
-		execution:     localExecutionBackend{},
-		notifier:      newNotificationDispatcher(nil),
-		routeCache:    make(map[string]latencyRouteCacheEntry),
+		tests:           make(map[string]*ManagedTest),
+		scripts:         make(map[string]*StoredScript),
+		scenarios:       make(map[string]*StoredScenario),
+		archives:        make(map[string]*storage.RunArchiveRecord),
+		hub:             hub,
+		maxTests:        maxTests,
+		scriptStore:     store,
+		testStore:       store,
+		scenarioStore:   store,
+		dataPoolStore:   store,
+		projectStore:    store,
+		releaseStore:    store,
+		historyStore:    store,
+		archiveStore:    store,
+		auditStore:      store,
+		settingsStore:   store,
+		usageStore:      store,
+		objectRepoStore: store,
+		execution:       localExecutionBackend{},
+		notifier:        newNotificationDispatcher(nil),
+		routeCache:      make(map[string]latencyRouteCacheEntry),
 	}
 	tr.loadSystemSettings(maxTests)
 	tr.loadStoredScripts()

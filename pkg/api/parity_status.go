@@ -208,10 +208,10 @@ func buildAPIParityProgram() []ParityStatusArea {
 		{
 			ID:        "object_repository",
 			Name:      "Browser Object Repository",
-			Status:    "partial",
-			Summary:   "Project-scoped, reusable object repositories are now persisted (named element descriptors with CSS/XPath/role/text + ranked selector candidates), creatable directly or seeded from a script's captured selectors. Bidirectional script↔repository binding and repair-on-replay are still pending.",
-			Evidence:  []string{apiComparisonEvidence, "/api/v1/object-repositories", "/api/v1/object-repositories/from-script", "pkg/api/handlers_object_repository.go", "pkg/storage/sqlite_object_repository.go", "pkg/selector"},
-			Remaining: []string{"Bind scripts to repository objects by logical name and feed repair/self-heal back into the repository."},
+			Status:    "supported",
+			Summary:   "Project-scoped, reusable object repositories are persisted (named element descriptors with CSS/XPath/role/text + ranked selector candidates), creatable directly, seeded from a script's captured selectors, and bound to scripts by logical name via the action object_ref field. Bindings resolve on the controller at script preparation into concrete selectors + ranked fallbacks for both debug replay and distributed load, and replay self-heal feeds the working locator back into the bound repository object.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/object-repositories", "/api/v1/object-repositories/from-script", "pkg/api/handlers_object_repository.go", "pkg/api/object_ref_resolver.go", "pkg/api/object_ref_self_heal.go", "pkg/storage/sqlite_object_repository.go", "pkg/selector"},
+			Remaining: []string{"Auto-promote a healed locator to primary (today a human promotes via the dashboard); cross-project object sharing."},
 		},
 	}
 }
