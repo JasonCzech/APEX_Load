@@ -115,6 +115,53 @@ describe('scenarioDraftUtils', () => {
 	  }])
 	})
 
+	it('preserves web_runtime source IPs (IP spoofing) when mapping a test summary into a draft', () => {
+	  const draft = buildScenarioDraftFromTest({
+	    id: 'test-1',
+	    name: 'Spoof Run',
+	    status: 'QUEUED',
+	    total_vusers: 20,
+	    duration: '5m',
+	    created_at: '2026-05-12T20:00:00Z',
+	    runtime_settings: {
+	      web_runtime: {
+	        source_ips: ['10.0.0.1', '10.0.0.2', '10.0.0.3'],
+	        network_simulation: { mode: 'preset', preset: 'dsl' },
+	      },
+	    },
+	    groups: [{
+	      name: 'Checkout',
+	      script_id: 'script-1',
+	      protocol: 'http',
+	      vusers: 20,
+	      initialization: 'at_runtime',
+	    }],
+	  } as never)
+
+	  expect(draft.runtimeSettings.web_runtime?.source_ips).toEqual(['10.0.0.1', '10.0.0.2', '10.0.0.3'])
+	  // Sibling web_runtime settings survive too (no whole-section drop).
+	  expect(draft.runtimeSettings.web_runtime?.network_simulation).toEqual({ mode: 'preset', preset: 'dsl' })
+	})
+
+	it('round-trips web_runtime source IPs through buildInitialScenarioDraft', () => {
+	  const seeded = buildScenarioDraftFromTest({
+	    id: 'test-2',
+	    name: 'Spoof Run',
+	    status: 'QUEUED',
+	    total_vusers: 10,
+	    duration: '1m',
+	    created_at: '2026-05-12T20:00:00Z',
+	    runtime_settings: { web_runtime: { source_ips: ['192.168.0.5'] } },
+	    groups: [{ name: '', script_id: 'script-1', protocol: 'http', vusers: 10, initialization: 'at_runtime' }],
+	  } as never)
+
+	  const reloaded = buildInitialScenarioDraft(seeded, [
+	    { id: 'script-1', name: 'Checkout', protocol: 'http' },
+	  ] as never[])
+
+	  expect(reloaded.runtimeSettings.web_runtime?.source_ips).toEqual(['192.168.0.5'])
+	})
+
 	it('preserves group iterations when mapping a test summary into a reusable scenario draft', () => {
 	  const draft = buildScenarioDraftFromTest({
 	    id: 'test-1',

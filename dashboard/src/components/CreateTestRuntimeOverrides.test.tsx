@@ -208,4 +208,79 @@ describe('CreateTestRuntimeOverrides', () => {
 
     expect(onChangeSpy).toHaveBeenCalledWith('snapshot_on_error', true)
   })
+
+  it('reveals the IP-spoofing source pool editor and emits web_runtime.source_ips', async () => {
+    const onChangeSpy = vi.fn()
+
+    function Harness() {
+      const [runtimeSettings, setRuntimeSettings] = useState<ScenarioDraft['runtimeSettings']>({
+        log_level: '',
+        auto_transactions: '',
+        continue_on_error: false,
+        snapshot_on_error: false,
+      })
+
+      return (
+        <CreateTestRuntimeOverrides
+          runtimeSettings={runtimeSettings}
+          onRuntimeSettingChange={(field, value) => {
+            onChangeSpy(field, value)
+            setRuntimeSettings(prev => ({ ...prev, [field]: value }))
+          }}
+        />
+      )
+    }
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+
+    expect(container.textContent).toContain('Enable IP spoofing')
+
+    const enableCheckbox = Array.from(container.querySelectorAll('input')).find(
+      input => input.getAttribute('type') === 'checkbox' && input.parentElement?.textContent?.includes('Enable IP spoofing'),
+    ) as HTMLInputElement | undefined
+    expect(enableCheckbox).toBeDefined()
+
+    // The row editor only appears once spoofing is enabled.
+    expect(container.querySelector('input[aria-label="Source IP 1"]')).toBeNull()
+
+    await act(async () => {
+      enableCheckbox?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const ipInput = container.querySelector('input[aria-label="Source IP 1"]') as HTMLInputElement | null
+    expect(ipInput).not.toBeNull()
+    expect(container.textContent).toContain('HTTP/HTTPS traffic only')
+
+    await act(async () => {
+      if (ipInput) {
+        const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+        valueSetter?.call(ipInput, '10.0.0.1')
+        ipInput.dispatchEvent(new Event('input', { bubbles: true }))
+        ipInput.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    })
+
+    expect(onChangeSpy).toHaveBeenCalledWith('web_runtime', { source_ips: ['10.0.0.1'] })
+
+    // An obviously malformed address surfaces an inline hint (backend stays authoritative).
+    await act(async () => {
+      if (ipInput) {
+        const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+        valueSetter?.call(ipInput, '10.0.0.300')
+        ipInput.dispatchEvent(new Event('input', { bubbles: true }))
+        ipInput.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    })
+
+    expect(container.textContent).toContain('Enter valid IPv4 or IPv6 addresses')
+
+    // Disabling clears the pool from the draft.
+    await act(async () => {
+      enableCheckbox?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onChangeSpy).toHaveBeenLastCalledWith('web_runtime', undefined)
+  })
 })

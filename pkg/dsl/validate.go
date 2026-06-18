@@ -3,6 +3,7 @@ package dsl
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -1051,6 +1052,20 @@ func validateWebRuntimeIssues(script *Script) []string {
 		if strings.TrimSpace(key) == "" {
 			issues = append(issues, "config.web_runtime.additional_attributes keys must be non-empty")
 			break
+		}
+	}
+
+	// Source-IP pool (LR-style "IP spoofing" / multiple client IPs). Each entry binds
+	// VUser connections to that local address, so it must parse as a real IP — an
+	// invalid address would otherwise be silently dropped and the spoofing skipped.
+	for index, raw := range script.Config.WebRuntime.SourceIPs {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			issues = append(issues, fmt.Sprintf("config.web_runtime.source_ips[%d] must not be empty", index))
+			continue
+		}
+		if net.ParseIP(trimmed) == nil {
+			issues = append(issues, fmt.Sprintf("config.web_runtime.source_ips[%d] %q is not a valid IP address", index, raw))
 		}
 	}
 

@@ -392,6 +392,29 @@ Useful scenario endpoints:
 | `GET` | `/api/v1/schedules/health` | Scheduling health, queue, approval, and conflict signals. |
 | `GET` | `/api/v1/run-calendar` | Calendar view of scheduled upcoming and recent completed runs, including scenario labels and release context. |
 
+#### IP Spoofing (Source-IP Pool)
+
+Set a pool of local source IP addresses and APEX Load binds each virtual user to one of them
+(round-robin, stable per VUser), so the run presents many distinct client source addresses to the
+target — the LoadRunner "Multiple IP Addresses" capability, useful to defeat server-side IP
+throttling or sticky load balancing. Configure it either in the script (`config.web_runtime.source_ips`)
+or as a test-level runtime override:
+
+```json
+{
+  "runtime_settings": {
+    "web_runtime": { "source_ips": ["10.0.0.1", "10.0.0.2", "10.0.0.3"] }
+  }
+}
+```
+
+In the dashboard this is exposed in the Scenario Setup wizard under **Runtime Settings → Enable IP spoofing**.
+
+- **HTTP/HTTPS only.** Binding applies to the HTTP protocol (HTTP/1.1 and HTTP/2); other protocols ignore the pool.
+- **Generators must own the addresses.** Each generator host must already have these IPs configured on its network interfaces, or the connection fails at dial time (`bind: cannot assign requested address`). In distributed runs every generator uses the full pool — IPs are not partitioned per host.
+- **Validated on create.** Each entry must parse as an IPv4/IPv6 address; an invalid value is rejected when the scenario or run is validated, rather than failing silently at runtime. The runtime override merges field-by-field, so supplying `source_ips` does not clear other `web_runtime` settings (e.g. `network_simulation`).
+- The LoadRunner `lr_enable_ip_spoofing` / `lr_disable_ip_spoofing` calls are accepted for import compatibility but are no-ops — binding is governed entirely by the `source_ips` pool.
+
 ### 5. Run And Control Tests
 
 Create a run directly:

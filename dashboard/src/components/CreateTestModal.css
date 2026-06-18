@@ -604,6 +604,92 @@
   transform: scale(1.05);
 }
 
+.ip-spoofing {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ip-spoofing-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-left: 28px;
+}
+
+.ip-spoofing-help {
+  margin: 0;
+  max-width: 640px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.ip-spoofing-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ip-spoofing-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ip-spoofing-input {
+  width: 220px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--subtle-fill);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.ip-spoofing-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ip-spoofing-input-invalid,
+.ip-spoofing-input-invalid:focus {
+  border-color: var(--danger);
+}
+
+.ip-spoofing-row .btn-remove {
+  margin-top: 0;
+}
+
+.ip-spoofing-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.btn-add-ip {
+  align-self: flex-start;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-add-ip:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
 .form-error {
   color: var(--danger);
   font-size: 13px;
