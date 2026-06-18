@@ -236,6 +236,37 @@ describe('scriptAuthoringAssist', () => {
     expect(result.script.actions[result.script.actions.length - 1]?.metadata?.phase).toBe('teardown')
   })
 
+  it('splices main actions after the selected action when a target index is supplied', () => {
+    const component = {
+      id: 'cart-group',
+      kind: 'request_group',
+      name: 'Cart Request',
+      protocols: ['http'],
+      summary: 'Add to cart.',
+      init: [{ name: 'Warm Up', type: 'GET', method: 'GET', target: '/warm', headers: {}, body: '' }],
+      actions: [{ name: 'Add To Cart', type: 'POST', method: 'POST', target: '/cart', headers: {}, body: '' }],
+      teardown: [{ name: 'Clear Cart', type: 'POST', method: 'POST', target: '/cart/clear', headers: {}, body: '' }],
+    }
+
+    // importedScript has two main actions (indices 0 and 1). Insert after index 0.
+    const targeted = applyAuthoringComponentToScript(importedScript, component, 0)
+    expect(targeted.script.actions).toHaveLength(5)
+    // Main action lands between the two originals; it carries no phase tag.
+    expect(targeted.script.actions[1].name).toBe('Add_To_Cart')
+    expect(targeted.script.actions[1].metadata?.phase).toBeUndefined()
+    // init/teardown stay appended (grouped by phase in the outline regardless of position).
+    expect(targeted.script.actions[3].metadata?.phase).toBe('init')
+    expect(targeted.script.actions[4].metadata?.phase).toBe('teardown')
+
+    // With no target index the block appends as before (init, main, teardown).
+    const appended = applyAuthoringComponentToScript(importedScript, component, null)
+    expect(appended.script.actions.slice(-3).map(action => action.name)).toEqual(['Warm_Up', 'Add_To_Cart', 'Clear_Cart'])
+
+    // An out-of-range index falls back to appending.
+    const fallback = applyAuthoringComponentToScript(importedScript, component, 99)
+    expect(fallback.script.actions.slice(-3).map(action => action.name)).toEqual(['Warm_Up', 'Add_To_Cart', 'Clear_Cart'])
+  })
+
   it('builds and applies sample-backed repair suggestions', () => {
     const repairDraft: ScriptDefinition = {
       ...importedScript,

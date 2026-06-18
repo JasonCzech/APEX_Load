@@ -125,6 +125,12 @@ type Store interface {
 	// (health + last-seen) without rewriting the rest of the row.
 	UpdateMonitoringCollectorHealth(id string, health string, lastSeenAt time.Time) error
 
+	// Reusable blocks: user-saved authoring components, scoped per project.
+	SaveReusableBlock(block *ReusableBlock) error
+	GetReusableBlock(id string) (*ReusableBlock, error)
+	ListReusableBlocks(projectID string) ([]*ReusableBlock, error)
+	DeleteReusableBlock(id string) error
+
 	// Shared data pools
 	SaveDataPool(pool *SharedDataPool) error
 	GetDataPool(id string) (*SharedDataPool, error)

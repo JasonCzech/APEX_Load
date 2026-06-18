@@ -367,7 +367,11 @@ export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue
   return issues
 }
 
-export function applyAuthoringComponentToScript(script: ScriptDefinition, component: AuthoringComponent): AuthoringComponentApplyResult {
+export function applyAuthoringComponentToScript(
+  script: ScriptDefinition,
+  component: AuthoringComponent,
+  insertAfterActionIndex?: number | null,
+): AuthoringComponentApplyResult {
   const nextScript = cloneScript(script)
   const inserted: string[] = []
 
@@ -416,7 +420,23 @@ export function applyAuthoringComponentToScript(script: ScriptDefinition, compon
   const teardownActions = buildActions(component.teardown, 'teardown')
   const allActions = [...initActions, ...mainActions, ...teardownActions]
   if (allActions.length > 0) {
-    nextScript.actions = [...nextScript.actions, ...allActions]
+    // When a valid insertion point is supplied (editing an existing script), splice the main
+    // actions in right after the selected action so the block lands where the user is working.
+    // init/teardown actions stay appended — they carry a metadata.phase tag and are grouped by
+    // phase in the outline regardless of array position. With no/invalid index, append as before.
+    const canTarget =
+      typeof insertAfterActionIndex === 'number' &&
+      Number.isInteger(insertAfterActionIndex) &&
+      insertAfterActionIndex >= 0 &&
+      insertAfterActionIndex < nextScript.actions.length &&
+      mainActions.length > 0
+    if (canTarget) {
+      const base = [...nextScript.actions]
+      base.splice((insertAfterActionIndex as number) + 1, 0, ...mainActions)
+      nextScript.actions = [...base, ...initActions, ...teardownActions]
+    } else {
+      nextScript.actions = [...nextScript.actions, ...allActions]
+    }
     if (initActions.length > 0) inserted.push(`${initActions.length} init action${initActions.length === 1 ? '' : 's'}`)
     if (mainActions.length > 0) inserted.push(`${mainActions.length} action${mainActions.length === 1 ? '' : 's'}`)
     if (teardownActions.length > 0) inserted.push(`${teardownActions.length} teardown action${teardownActions.length === 1 ? '' : 's'}`)

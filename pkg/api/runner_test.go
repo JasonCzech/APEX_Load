@@ -415,6 +415,14 @@ func (s *metricsStoreSpy) DeleteMonitoringCollector(string) error { return nil }
 func (s *metricsStoreSpy) UpdateMonitoringCollectorHealth(string, string, time.Time) error {
 	return nil
 }
+func (s *metricsStoreSpy) SaveReusableBlock(*storage.ReusableBlock) error { return nil }
+func (s *metricsStoreSpy) GetReusableBlock(string) (*storage.ReusableBlock, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListReusableBlocks(string) ([]*storage.ReusableBlock, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) DeleteReusableBlock(string) error { return nil }
 func (s *metricsStoreSpy) SaveDataPool(pool *storage.SharedDataPool) error {
 	return nil
 }

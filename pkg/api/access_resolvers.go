@@ -810,6 +810,33 @@ func resolveMonitoringCollectorProjectID(r *http.Request, store storage.Store) (
 	return normalizeProjectID(collector.ProjectID), 0, ""
 }
 
+func resolveReusableBlockCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID string `json:"project_id,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if strings.TrimSpace(req.ProjectID) == "" {
+		return "", http.StatusBadRequest, "project_id is required for project-scoped reusable blocks"
+	}
+	return normalizeProjectID(req.ProjectID), 0, ""
+}
+
+func resolveReusableBlockProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "storage is not configured"
+	}
+	block, err := store.GetReusableBlock(r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", http.StatusNotFound, "reusable block not found"
+		}
+		return "", http.StatusInternalServerError, "failed to load reusable block"
+	}
+	return normalizeProjectID(block.ProjectID), 0, ""
+}
+
 func resolveRecorderListProjectID(r *http.Request) (string, int, string) {
 	projectID := normalizeProjectID(r.URL.Query().Get("project_id"))
 	if projectID == "" {

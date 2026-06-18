@@ -481,6 +481,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scripts/authoring/capabilities", cors(log(auth(http.HandlerFunc(s.handleAuthoringCapabilities)))))
 	s.mux.Handle("GET /api/v1/scripts/authoring/templates", cors(log(auth(http.HandlerFunc(s.handleAuthoringTemplates)))))
 	s.mux.Handle("GET /api/v1/scripts/authoring/components", cors(log(auth(http.HandlerFunc(s.handleAuthoringComponents)))))
+	s.mux.Handle("POST /api/v1/scripts/authoring/components", cors(log(auth(http.HandlerFunc(s.handleCreateReusableBlock)))))
+	s.mux.Handle("DELETE /api/v1/scripts/authoring/components/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteReusableBlock)))))
 	s.mux.Handle("POST /api/v1/scripts/authoring/sessions", cors(log(auth(http.HandlerFunc(s.handleCreateAuthoringSession)))))
 	s.mux.Handle("GET /api/v1/scripts/authoring/sessions", cors(log(auth(http.HandlerFunc(s.handleListAuthoringSessions)))))
 	s.mux.Handle("GET /api/v1/scripts/authoring/sessions/{id}", cors(log(auth(http.HandlerFunc(s.handleGetAuthoringSession)))))
@@ -531,6 +533,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/import/asyncapi", cors(log(auth(http.HandlerFunc(s.handleImportAsyncAPI)))))
 	s.mux.Handle("GET /api/v1/scripts/import/asyncapi/support-matrix", cors(log(auth(http.HandlerFunc(s.handleAsyncAPISupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/parameterize/apply", cors(log(auth(http.HandlerFunc(s.handleApplyImportParameterization)))))
+	s.mux.Handle("POST /api/v1/scripts/{id}/parameterize/suggest", cors(log(auth(http.HandlerFunc(s.handleSuggestScriptParameterization)))))
 
 	// Governed AI-assisted authoring, repair, explanation, and analysis.
 	s.mux.Handle("GET /api/v1/ai/authoring/contract", cors(log(auth(http.HandlerFunc(s.handleAIAuthoringContract)))))

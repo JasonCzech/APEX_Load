@@ -35,7 +35,7 @@ export interface ScriptRecordingStatus {
   sensitivity?: string
   captured_at?: string
 }
-import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type Parameterization, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -273,13 +273,26 @@ export function useScriptApi() {
   )
 
   const listAuthoringComponents = useCallback(
-    (params?: { kind?: string; protocol?: string }) => {
+    (params?: { kind?: string; protocol?: string; projectId?: string }) => {
       const query = new URLSearchParams()
       if (params?.kind) query.set('kind', params.kind)
       if (params?.protocol) query.set('protocol', params.protocol)
+      if (params?.projectId) query.set('project_id', params.projectId)
       const suffix = query.toString()
       return request<AuthoringComponentsResponse>(`/scripts/authoring/components${suffix ? `?${suffix}` : ''}`)
     },
+    [],
+  )
+
+  // Save the current selection of actions as a project-scoped reusable block, or remove one.
+  const createAuthoringComponent = useCallback(
+    (payload: AuthoringComponent & { project_id: string }) =>
+      request<AuthoringComponent>('/scripts/authoring/components', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
+  const deleteAuthoringComponent = useCallback(
+    (id: string) => request<{ deleted: string }>(`/scripts/authoring/components/${id}`, { method: 'DELETE' }),
     [],
   )
 
@@ -745,6 +758,14 @@ export function useScriptApi() {
     [],
   )
 
+  // Run the deterministic parameterization engine over a saved script (editor "Deep scan").
+  // The note explains correlations are out of scope without captured observations.
+  const suggestParameterization = useCallback(
+    (scriptId: string) =>
+      request<Parameterization & { note?: string }>(`/scripts/${scriptId}/parameterize/suggest`, { method: 'POST' }),
+    [],
+  )
+
   const listScenarios = useCallback((projectId?: string) => request<ScenarioListResponse>(`/scenarios${buildScenarioQuery(projectId)}`), [])
 
   const createScenario = useCallback(
@@ -828,6 +849,8 @@ export function useScriptApi() {
       validateDraftScript,
       listAuthoringTemplates,
       listAuthoringComponents,
+      createAuthoringComponent,
+      deleteAuthoringComponent,
       listAuthoringSessions,
       createAuthoringSession,
       approveAuthoringSession,
@@ -874,6 +897,7 @@ export function useScriptApi() {
       importWSDL,
       importAsyncAPI,
       applyImportParameterization,
+      suggestParameterization,
       listScenarios,
       createScenario,
       getScenario,
@@ -902,6 +926,8 @@ export function useScriptApi() {
       validateDraftScript,
       listAuthoringTemplates,
       listAuthoringComponents,
+      createAuthoringComponent,
+      deleteAuthoringComponent,
       listAuthoringSessions,
       createAuthoringSession,
       approveAuthoringSession,
@@ -948,6 +974,7 @@ export function useScriptApi() {
       importWSDL,
       importAsyncAPI,
       applyImportParameterization,
+      suggestParameterization,
       listScenarios,
       createScenario,
       getScenario,

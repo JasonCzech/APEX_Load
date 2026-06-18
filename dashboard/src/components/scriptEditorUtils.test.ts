@@ -9,6 +9,7 @@ import {
   parseInlineData,
   parseReplayVariablesText,
   resolveJsonStringSelection,
+  stringifyInlineData,
 } from './scriptEditorUtils'
 import { type ScriptDefinition } from '../types/scripts'
 
@@ -274,5 +275,38 @@ describe('countUniqueColumnValues', () => {
 
   it('falls back to all columns when no indexes are supplied', () => {
     expect(countUniqueColumnValues(parsed, [])).toBe(2)
+  })
+})
+
+describe('stringifyInlineData multi-row seeding', () => {
+  const source = {
+    name: 'auto_params',
+    type: 'csv',
+    path: '',
+    strategy: 'sequential',
+    delimiter: 'auto',
+    first_row_header: true,
+  } as const
+
+  it('emits a header plus every seed row, keeping the detected value in the first row', () => {
+    const columns = ['user_id', 'email']
+    // Mirrors the editor's auto_params build: row 0 holds detected literals, extra rows blank.
+    const rows = [
+      ['12345', 'jane@example.test'],
+      ['', ''],
+      ['', ''],
+    ]
+
+    const csv = stringifyInlineData(source, columns, rows)
+    const lines = csv.split('\n')
+    expect(lines[0]).toBe('user_id,email')
+    expect(lines[1]).toBe('12345,jane@example.test')
+    expect(lines).toHaveLength(4) // header + 3 seed rows
+
+    // Round-trips back through parseInlineData (blank rows are preserved, not dropped).
+    const reparsed = parseInlineData({ ...source, inline_data: csv })
+    expect(reparsed.columns).toEqual(columns)
+    expect(reparsed.rows[0]).toEqual(['12345', 'jane@example.test'])
+    expect(reparsed.rows).toHaveLength(3)
   })
 })

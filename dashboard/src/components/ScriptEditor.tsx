@@ -47,6 +47,8 @@ import {
 import BrowserReplayDebugger from './BrowserReplayDebugger'
 import { ExtractorTester } from './ExtractorTester'
 import { CorrelationDiagnosePanel } from './CorrelationDiagnosePanel'
+import ParameterizationReview from './ParameterizationReview'
+import type { Parameterization } from '../types/scriptImports'
 import type { ScriptRecordingStatus } from '../hooks/api/useScriptApi'
 import PageViewToggle from './PageViewToggle'
 import ReplayPreflightCard from './ReplayPreflightCard'
@@ -515,6 +517,9 @@ const AUTHORING_COMPONENT_GROUPS = [
   { kind: 'data_pool', label: 'Data Pools' },
   { kind: 'teardown', label: 'Teardown Blocks' },
 ] as const
+
+// User-saved blocks carry a server-generated "block-" id; built-in catalog entries do not.
+const isUserBlock = (component: AuthoringComponent) => (component.id || '').startsWith('block-')
 
 const BROWSER_REPLAY_TAB_ID: CenterWorkbenchTabId = 'browser-replay'
 
@@ -3041,6 +3046,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [outlineParameterListCollapsed, setOutlineParameterListCollapsed] = useState(false)
   const [debugActionListCollapsed, setDebugActionListCollapsed] = useState(false)
   const [debugParameterListCollapsed, setDebugParameterListCollapsed] = useState(false)
+  // Fresh import drafts (no scriptId yet) want the import-review aids expanded for verification;
+  // long-lived edits of a saved script collapse them by default to keep the outline focused.
+  const [importReviewCollapsed, setImportReviewCollapsed] = useState(Boolean(scriptId))
+  const [reusableBlocksCollapsed, setReusableBlocksCollapsed] = useState(Boolean(scriptId))
+  // How many seed rows the auto_params data source gets. >1 lets each VUser draw a distinct
+  // value once the operator fills the extra rows (the first row holds the detected literal).
+  const [autoParamSeedRows, setAutoParamSeedRows] = useState(1)
+  // Multi-select of main-phase actions for "Save as block" (project-scoped reusable block).
+  const [blockSelection, setBlockSelection] = useState<Set<number>>(new Set())
+  const [showSaveBlockModal, setShowSaveBlockModal] = useState(false)
+  const [saveBlockName, setSaveBlockName] = useState('')
+  const [saveBlockKind, setSaveBlockKind] = useState('request_group')
+  const [savingBlock, setSavingBlock] = useState(false)
   const [selectedOutlineParameterName, setSelectedOutlineParameterName] = useState<string | null>(null)
   const [scriptJsonSidebarTab, setScriptJsonSidebarTab] = useState<ScriptJsonSidebarTab>('map')
   const [activeAutoParameterCandidateId, setActiveAutoParameterCandidateId] = useState<string | null>(null)
@@ -3059,6 +3077,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const isNetworkScript = script.protocol === 'network'
   const isHttpTransportScript = isHttpScript || script.protocol === 'https' || isJavaHttpScript || isSoapScript || isBrowserScript
   const canEditProtocol = !scriptId && !script.metadata?.import && !scriptHasAuthoredActions(script)
+  // True when editing a saved script (has an id) vs. authoring a brand-new draft. Drives
+  // context-aware sidebar emphasis: scaffolding aids lead for new scripts, review/parameter
+  // aids lead when editing.
+  const isEditingExisting = Boolean(scriptId)
   const httpProxyMode = script.config.http?.proxy_mode || 'none'
   const httpProxySummary = httpProxyMode === 'system'
     ? 'System proxy'
@@ -3244,6 +3266,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [debugRawAutoScroll, setDebugRawAutoScroll] = useState(true)
   const [debugRawClearedAt, setDebugRawClearedAt] = useState(0)
   const [showImportedParameterMappingsDialog, setShowImportedParameterMappingsDialog] = useState(false)
+  // "Deep scan (server)" runs the backend parameterization engine over the saved script.
+  const [serverParameterization, setServerParameterization] = useState<(Parameterization & { note?: string }) | null>(null)
+  const [deepScanning, setDeepScanning] = useState(false)
   const [showMetadataJsonDialog, setShowMetadataJsonDialog] = useState(false)
   const [sourceMappingFocus, setSourceMappingFocus] = useState<{ mappingId: string; requestId: number }>({ mappingId: '', requestId: 0 })
   const debugRawOutputRef = useRef<HTMLDivElement | null>(null)
@@ -3638,10 +3663,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }, [importBaselineScript, initialScript, scriptId])
   const hydratedInitialScriptRef = useRef<{ script: ScriptData; scriptId?: string | null } | null>(null)
 
+  // Imperative refetch used after a user saves/deletes a reusable block; the catalog
+  // is keyed by protocol + project so saved blocks surface alongside the built-ins.
+  const reloadAuthoringComponents = useCallback(() => {
+    return api.listAuthoringComponents({ protocol: script.protocol, projectId })
+      .then((response) => {
+        setAuthoringComponents(response.components || [])
+        setComponentLibraryStatus('ready')
+      })
+      .catch(() => {
+        setComponentLibraryStatus('error')
+      })
+  }, [api, script.protocol, projectId])
+
   useEffect(() => {
     let cancelled = false
     setComponentLibraryStatus('loading')
-    api.listAuthoringComponents({ protocol: script.protocol })
+    api.listAuthoringComponents({ protocol: script.protocol, projectId })
       .then((response) => {
         if (cancelled) return
         setAuthoringComponents(response.components || [])
@@ -3655,7 +3693,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     return () => {
       cancelled = true
     }
-  }, [api, script.protocol])
+  }, [api, script.protocol, projectId])
 
   const handleCopyReplaySnapshotSection = async (key: string, value: string) => {
     if (!navigator.clipboard?.writeText) return
@@ -6323,11 +6361,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         if (!mergedColumns.includes(candidate.varName)) mergedColumns.push(candidate.varName)
       })
 
-      const mergedRow: string[] = mergedColumns.map((column, idx) => {
-        const selectedMatch = selected.find(candidate => candidate.varName === column)
-        if (selectedMatch) return selectedMatch.value
-        return existingParsed.rows[0]?.[idx] || ''
-      })
+      // Build at least `autoParamSeedRows` rows. The first row carries the detected literals;
+      // additional rows preserve any existing data and otherwise start blank for the operator to
+      // fill, so VUsers can draw distinct values instead of all sending the same seed.
+      const rowCount = Math.max(1, autoParamSeedRows, existingParsed.rows.length)
+      const mergedRows: string[][] = Array.from({ length: rowCount }, (_unused, rowIdx) =>
+        mergedColumns.map((column, idx) => {
+          const selectedMatch = selected.find(candidate => candidate.varName === column)
+          if (rowIdx === 0 && selectedMatch) return selectedMatch.value
+          return existingParsed.rows[rowIdx]?.[idx] || ''
+        }),
+      )
 
       const sourcePayload: DataSourceConfig = {
         ...(existing || EMPTY_DATA_SOURCE),
@@ -6339,7 +6383,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         inline_data: stringifyInlineData(
           { ...(existing || EMPTY_DATA_SOURCE), type: existing?.type || 'csv', delimiter: existing?.delimiter || 'auto' },
           mergedColumns,
-          [mergedRow],
+          mergedRows,
         ),
       }
 
@@ -6351,6 +6395,28 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
     setSuccess(`Applied auto-parameterization for ${selected.length} candidate${selected.length === 1 ? '' : 's'}.`)
     setError('')
+  }
+
+  // Deep scan: ask the backend engine to analyze the saved script (data params + secrets).
+  // Correlations need captured observations the editor lacks, so they're out of scope here.
+  const runServerParameterization = async () => {
+    if (!scriptId || deepScanning) return
+    setDeepScanning(true)
+    setError('')
+    try {
+      const result = await api.suggestParameterization(scriptId)
+      if (!result.suggestions || result.suggestions.length === 0) {
+        setServerParameterization(null)
+        setSuccess('Server scan found no data-parameter or secret candidates.')
+        return
+      }
+      setServerParameterization(result)
+      setSuccess('')
+    } catch (e) {
+      setError(getErrorMessage(e, 'Server parameterization scan failed'))
+    } finally {
+      setDeepScanning(false)
+    }
   }
 
   const openEditorSection = (section: 'config' | 'replay' | 'runtime' | 'import' | 'parameter-data' | 'object-descriptors' | 'http-conversion') => {
@@ -6400,12 +6466,92 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }
 
   const insertAuthoringComponent = (component: AuthoringComponent) => {
-    const result = applyAuthoringComponentToScript(script, component)
+    // When editing an existing script, drop the block in after the selected action; when
+    // authoring a new draft, append (the default).
+    const insertAfter = isEditingExisting ? activeAction : null
+    const result = applyAuthoringComponentToScript(script, component, insertAfter)
     replaceScriptWithHistory(result.script)
     recordAssistantChange(`Inserted ${component.name}`, result.summary)
-    selectAuthorAction(result.script.actions.length > 0 ? result.script.actions.length - 1 : null)
+    const mainCount = component.actions?.length || 0
+    const targeted = typeof insertAfter === 'number' && insertAfter >= 0 && insertAfter < script.actions.length && mainCount > 0
+    selectAuthorAction(
+      targeted
+        ? insertAfter + 1
+        : (result.script.actions.length > 0 ? result.script.actions.length - 1 : null),
+    )
     setSuccess(result.summary)
     setError('')
+  }
+
+  const toggleBlockSelection = (idx: number) => {
+    setBlockSelection(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }
+
+  const openSaveBlockModal = () => {
+    if (blockSelection.size === 0) return
+    setSaveBlockName('')
+    setSaveBlockKind('request_group')
+    setShowSaveBlockModal(true)
+  }
+
+  // Capture the selected main actions as a project-scoped reusable block.
+  const saveSelectedAsBlock = async () => {
+    const name = saveBlockName.trim()
+    if (!name) {
+      setError('Block name is required.')
+      return
+    }
+    if (!projectId) {
+      setError('A project is required to save a reusable block.')
+      return
+    }
+    const indices = Array.from(blockSelection).filter(i => i >= 0 && i < script.actions.length).sort((a, b) => a - b)
+    if (indices.length === 0) {
+      setError('Select at least one action to save as a block.')
+      return
+    }
+    const actions = indices.map(i => JSON.parse(JSON.stringify(script.actions[i])))
+    setSavingBlock(true)
+    try {
+      await api.createAuthoringComponent({
+        id: '',
+        kind: saveBlockKind,
+        name,
+        protocols: [script.protocol],
+        summary: `${actions.length} action${actions.length === 1 ? '' : 's'} saved from ${script.name || 'this script'}.`,
+        actions,
+        project_id: projectId,
+      })
+      await reloadAuthoringComponents()
+      setBlockSelection(new Set())
+      setShowSaveBlockModal(false)
+      setReusableBlocksCollapsed(false)
+      setSuccess(`Saved "${name}" as a reusable block.`)
+      setError('')
+    } catch (e) {
+      setError(getErrorMessage(e, 'Failed to save reusable block'))
+    } finally {
+      setSavingBlock(false)
+    }
+  }
+
+  const deleteUserBlock = async (component: AuthoringComponent) => {
+    setSavingBlock(true)
+    try {
+      await api.deleteAuthoringComponent(component.id)
+      await reloadAuthoringComponents()
+      setSuccess(`Deleted reusable block "${component.name}".`)
+      setError('')
+    } catch (e) {
+      setError(getErrorMessage(e, 'Failed to delete reusable block'))
+    } finally {
+      setSavingBlock(false)
+    }
   }
 
   const activeInspectorAction = activeAction !== null ? script.actions[activeAction] || null : null
@@ -6779,6 +6925,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             onSelectCandidate={selectAutoParameterCandidate}
             onUpdateParameterCandidate={updateCandidate}
             parameterCandidates={parameterCandidates}
+            seedRows={autoParamSeedRows}
+            onSeedRowsChange={setAutoParamSeedRows}
           />
         )
       case 'source-map':
@@ -7056,6 +7204,90 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           onClose={() => setShowImportedParameterMappingsDialog(false)}
           onOpenMappedDataSource={openImportedDataSourceReview}
         />
+      )}
+      {serverParameterization && (
+        <div className="editor-dialog-backdrop" onClick={() => setServerParameterization(null)}>
+          <div
+            className="editor-dialog server-parameterization-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Server parameterization scan"
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="editor-dialog-header">
+              <div>
+                <h3 className="panel-title">Server Parameterization Scan</h3>
+                <p className="editor-dialog-subtitle">
+                  {serverParameterization.note || 'Review and apply the detected data parameters and secrets.'}
+                </p>
+              </div>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setServerParameterization(null)}>Close</button>
+            </div>
+            <div className="editor-dialog-body">
+              <ParameterizationReview
+                parameterization={serverParameterization}
+                script={script}
+                onApplied={(applied, diffs) => {
+                  replaceScriptWithHistory(applied)
+                  recordAssistantChange('Applied server parameterization', `${diffs.length} change${diffs.length === 1 ? '' : 's'}`)
+                  setServerParameterization(null)
+                  setSuccess(`Applied server parameterization (${diffs.length} change${diffs.length === 1 ? '' : 's'}).`)
+                  setError('')
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+      {showSaveBlockModal && (
+        <div className="editor-dialog-backdrop" onClick={() => !savingBlock && setShowSaveBlockModal(false)}>
+          <div
+            className="editor-dialog save-block-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Save selected actions as a reusable block"
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="editor-dialog-header">
+              <div>
+                <h3 className="panel-title">Save as Reusable Block</h3>
+                <p className="editor-dialog-subtitle">
+                  {blockSelection.size} action{blockSelection.size === 1 ? '' : 's'} will be saved to this project's block library.
+                </p>
+              </div>
+              <button type="button" className="btn btn-sm btn-ghost" disabled={savingBlock} onClick={() => setShowSaveBlockModal(false)}>Close</button>
+            </div>
+            <div className="editor-dialog-body save-block-dialog-body">
+              <label className="save-block-field">
+                <span>Block name</span>
+                <input
+                  type="text"
+                  value={saveBlockName}
+                  autoFocus
+                  placeholder="e.g. Login transaction"
+                  onChange={event => setSaveBlockName(event.target.value)}
+                />
+              </label>
+              <label className="save-block-field">
+                <span>Kind</span>
+                <select value={saveBlockKind} onChange={event => setSaveBlockKind(event.target.value)}>
+                  {AUTHORING_COMPONENT_GROUPS.map(group => (
+                    <option key={group.kind} value={group.kind}>{group.label}</option>
+                  ))}
+                </select>
+              </label>
+              {!projectId && (
+                <p className="save-block-warning">This script isn't associated with a project, so the block can't be saved.</p>
+              )}
+              <div className="save-block-actions">
+                <button type="button" className="btn btn-sm btn-ghost" disabled={savingBlock} onClick={() => setShowSaveBlockModal(false)}>Cancel</button>
+                <button type="button" className="btn btn-sm btn-accent" disabled={savingBlock || !saveBlockName.trim() || !projectId} onClick={saveSelectedAsBlock}>
+                  {savingBlock ? 'Saving…' : 'Save block'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
       {showMetadataJsonDialog && importMetadata && (
         <MetadataJsonDialog
@@ -10091,6 +10323,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       </span>
                     </button>
                     <div className="actions-sidebar-controls">
+                      {blockSelection.size > 0 && (
+                        <button className="btn btn-sm btn-secondary" onClick={openSaveBlockModal} title="Save the selected actions as a reusable block">
+                          Save {blockSelection.size} as block
+                        </button>
+                      )}
                       <button className="btn btn-sm btn-accent" onClick={addAction}>+ Add</button>
                     </div>
                   </div>
@@ -10125,6 +10362,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             style={virtualItem ? { position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualItem.start}px)` } : undefined}
                             onClick={() => selectAuthorPhaseAction(row)}
                           >
+                            {phase === 'action' && (
+                              <input
+                                type="checkbox"
+                                className="action-block-select"
+                                checked={blockSelection.has(i)}
+                                aria-label={`Select ${a.name || 'action'} for a reusable block`}
+                                title="Select for 'Save as block'"
+                                onClick={event => event.stopPropagation()}
+                                onChange={() => toggleBlockSelection(i)}
+                              />
+                            )}
                             <button
                               type="button"
                               className={`action-breakpoint-button ${actionBreakpointActive ? 'active' : ''}`}
@@ -10226,25 +10474,53 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         <button type="button" className="btn btn-sm btn-ghost" onClick={scanForAutoParameters}>
                           Auto Parameterization
                         </button>
+                        {isEditingExisting && (
+                          <button type="button" className="btn btn-sm btn-ghost" onClick={runServerParameterization} disabled={deepScanning}>
+                            {deepScanning ? 'Scanning…' : 'Deep scan (server)'}
+                          </button>
+                        )}
+                        <p className="parameter-outline-hint">
+                          {isEditingExisting
+                            ? 'Quick scan finds hardcoded values; deep scan also flags secrets via the server engine.'
+                            : 'Build your requests, then scan to externalize hardcoded values as you go.'}
+                        </p>
                       </div>
                     </>
                   )}
                 </section>
                 {importedParameterFileMappings.length > 0 ? (
-                  <div className="starter-blocks-panel parameter-mappings-launcher">
-                    <div className="starter-blocks-header">
-                      <strong>Parameter File Mappings</strong>
-                      <span>{importedParameterFileMappings.length}</span>
+                  <section className="outline-section import-review-section">
+                    <div className="actions-sidebar-header outline-section-header">
+                      <button
+                        type="button"
+                        className="outline-section-toggle"
+                        aria-expanded={!importReviewCollapsed}
+                        onClick={() => setImportReviewCollapsed(collapsed => !collapsed)}
+                      >
+                        <span aria-hidden="true" className="outline-section-chevron">{importReviewCollapsed ? '▸' : '▾'}</span>
+                        <span>
+                          <strong>Import Review</strong>
+                          <small>{importedParameterFileMappings.length} parameter file{importedParameterFileMappings.length === 1 ? '' : 's'}</small>
+                        </span>
+                      </button>
                     </div>
-                    <p>Open the preserved import mapping list without taking space away from the source and DSL comparison panes.</p>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-secondary parameter-mappings-launcher-button"
-                      onClick={() => setShowImportedParameterMappingsDialog(true)}
-                    >
-                      Open Mapping List
-                    </button>
-                  </div>
+                    {!importReviewCollapsed && (
+                      <div className="starter-blocks-panel parameter-mappings-launcher">
+                        <div className="starter-blocks-header">
+                          <strong>Parameter File Mappings</strong>
+                          <span>{importedParameterFileMappings.length}</span>
+                        </div>
+                        <p>Review how the source tool's parameter files mapped into APEX data sources. Most useful right after import.</p>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-secondary parameter-mappings-launcher-button"
+                          onClick={() => setShowImportedParameterMappingsDialog(true)}
+                        >
+                          Open Mapping List
+                        </button>
+                      </div>
+                    )}
+                  </section>
                 ) : (
                   <div className="starter-blocks-panel">
                     <div className="starter-blocks-header">
@@ -10262,35 +10538,80 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </div>
                 )}
                 {authoringComponents.length > 0 && (
-                  <div className="starter-blocks-panel reusable-blocks-panel">
-                    <div className="starter-blocks-header">
-                      <strong>Reusable Blocks</strong>
-                      <span>{authoringComponents.length}</span>
+                  <section className="outline-section reusable-blocks-section">
+                    <div className="actions-sidebar-header outline-section-header">
+                      <button
+                        type="button"
+                        className="outline-section-toggle"
+                        aria-expanded={!reusableBlocksCollapsed}
+                        onClick={() => setReusableBlocksCollapsed(collapsed => !collapsed)}
+                      >
+                        <span aria-hidden="true" className="outline-section-chevron">{reusableBlocksCollapsed ? '▸' : '▾'}</span>
+                        <span>
+                          <strong>Reusable Blocks</strong>
+                          <small>
+                            {authoringComponents.length} block{authoringComponents.length === 1 ? '' : 's'}
+                            {isEditingExisting ? ' · inserts after selected action' : ''}
+                          </small>
+                        </span>
+                      </button>
                     </div>
-                    <div className="starter-blocks-list">
-                      {AUTHORING_COMPONENT_GROUPS.map(group => {
-                        const groupComponents = authoringComponents.filter(component => component.kind === group.kind)
-                        if (groupComponents.length === 0) return null
-                        return (
-                          <div key={group.kind} className="reusable-blocks-group">
-                            <span className="reusable-blocks-group-label">{group.label}</span>
-                            {groupComponents.map(component => (
-                              <button
-                                key={component.id}
-                                type="button"
-                                className="starter-block-card"
-                                onClick={() => insertAuthoringComponent(component)}
-                                title={component.usage_notes?.[0] || component.summary}
-                              >
-                                <strong>{component.name}</strong>
-                                <span>{component.summary}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
+                    {!reusableBlocksCollapsed && (
+                      <div className="starter-blocks-panel reusable-blocks-panel">
+                        <div className="starter-blocks-list">
+                          {AUTHORING_COMPONENT_GROUPS.map(group => {
+                            const groupComponents = authoringComponents.filter(component => !isUserBlock(component) && component.kind === group.kind)
+                            if (groupComponents.length === 0) return null
+                            return (
+                              <div key={group.kind} className="reusable-blocks-group">
+                                <span className="reusable-blocks-group-label">{group.label}</span>
+                                {groupComponents.map(component => (
+                                  <button
+                                    key={component.id}
+                                    type="button"
+                                    className="starter-block-card"
+                                    onClick={() => insertAuthoringComponent(component)}
+                                    title={component.usage_notes?.[0] || component.summary}
+                                  >
+                                    <strong>{component.name}</strong>
+                                    <span>{component.summary}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )
+                          })}
+                          {authoringComponents.some(isUserBlock) && (
+                            <div className="reusable-blocks-group">
+                              <span className="reusable-blocks-group-label">Your Blocks</span>
+                              {authoringComponents.filter(isUserBlock).map(component => (
+                                <div key={component.id} className="starter-block-card user-block-card">
+                                  <button
+                                    type="button"
+                                    className="user-block-insert"
+                                    onClick={() => insertAuthoringComponent(component)}
+                                    title={component.usage_notes?.[0] || component.summary}
+                                  >
+                                    <strong>{component.name}</strong>
+                                    <span>{component.summary}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-icon danger user-block-delete"
+                                    aria-label={`Delete reusable block ${component.name}`}
+                                    title="Delete this block"
+                                    disabled={savingBlock}
+                                    onClick={() => deleteUserBlock(component)}
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </section>
                 )}
                 </>
                 )}
@@ -11889,6 +12210,8 @@ interface AutoParameterizationSidebarProps {
   onSelectCandidate: (id: string) => void
   onUpdateParameterCandidate: (id: string, patch: Partial<ParameterCandidate>) => void
   parameterCandidates: ParameterCandidate[]
+  seedRows: number
+  onSeedRowsChange: (rows: number) => void
 }
 
 function AutoParameterizationSidebar({
@@ -11902,6 +12225,8 @@ function AutoParameterizationSidebar({
   onSelectCandidate,
   onUpdateParameterCandidate,
   parameterCandidates,
+  seedRows,
+  onSeedRowsChange,
 }: AutoParameterizationSidebarProps) {
   const selectedCount = parameterCandidates.filter(candidate => candidate.selected && sanitizeVarName(candidate.varName).length > 0).length
   const activeCandidate = parameterCandidates.find(candidate => candidate.id === activeCandidateId) || parameterCandidates[0] || null
@@ -11944,6 +12269,20 @@ function AutoParameterizationSidebar({
             Next
           </button>
         </div>
+        <label className="auto-parameter-seed-rows">
+          <span>Seed rows</span>
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            value={seedRows}
+            onChange={event => {
+              const parsed = Number.parseInt(event.target.value, 10)
+              onSeedRowsChange(Number.isFinite(parsed) ? Math.min(1000, Math.max(1, parsed)) : 1)
+            }}
+          />
+          <small>First row holds the detected value; fill the rest to vary data per VUser.</small>
+        </label>
         <button
           type="button"
           className="btn btn-sm btn-accent auto-parameter-apply"

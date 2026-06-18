@@ -5063,6 +5063,26 @@ paths:
             type: string
       tags:
         - Scripts
+  /api/v1/scripts/{id}/parameterize/suggest:
+    post:
+      summary: Suggest Script Parameterization
+      description: |-
+        **Handler:** `handleSuggestScriptParameterization`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleSuggestScriptParameterization
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scripts
   /api/v1/scripts/{id}/recording/status:
     get:
       summary: Get Script Recording Status
@@ -5189,6 +5209,39 @@ paths:
         "200":
           description: Successful operation
       x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+        - Scripts
+    post:
+      summary: Create Reusable Block
+      description: |-
+        **Handler:** `handleCreateReusableBlock`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCreateReusableBlock
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Scripts
+  /api/v1/scripts/authoring/components/{id}:
+    delete:
+      summary: Delete Reusable Block
+      description: |-
+        **Handler:** `handleDeleteReusableBlock`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleDeleteReusableBlock
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       tags:
         - Scripts
   /api/v1/scripts/authoring/sessions:

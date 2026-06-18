@@ -27,7 +27,10 @@ type AuthoringComponent struct {
 func (s *Server) handleAuthoringComponents(w http.ResponseWriter, r *http.Request) {
 	kind := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("kind")))
 	protocol := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("protocol")))
+	// Built-in catalog first, then the project's user-saved blocks (when a project
+	// is provided) so curated scaffolding stays discoverable on top.
 	components := authoringComponentCatalog()
+	components = append(components, s.userReusableBlocks(r.URL.Query().Get("project_id"))...)
 	filtered := make([]AuthoringComponent, 0, len(components))
 	for _, component := range components {
 		if kind != "" && strings.ToLower(component.Kind) != kind {

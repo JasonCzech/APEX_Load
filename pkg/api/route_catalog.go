@@ -241,6 +241,8 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/scripts/authoring/capabilities", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/scripts/authoring/templates", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/scripts/authoring/components", viewerGlobalAccess()),
+	routeAuth(http.MethodPost, "/api/v1/scripts/authoring/components", editorProjectAccess(resolveReusableBlockCreateProjectID)),
+	routeAuth(http.MethodDelete, "/api/v1/scripts/authoring/components/{id}", editorProjectAccess(resolveReusableBlockProjectID)),
 
 	// Script importers (write-level, with per-format upload limits).
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/jmeter/save", editorProjectAccess(resolveJMeterSaveProjectID)),
@@ -256,6 +258,7 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/salesforce", editorImportAccess(resolveImportProjectIDFromJSONOrForm, harImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/recorder", editorImportAccess(resolveImportProjectIDFromJSONOrForm, recorderImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/parameterize/apply", editorProjectAccess(resolveParameterizeApplyProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/parameterize/suggest", editorProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/devweb", editorImportAccess(resolveImportProjectIDFromJSONOrForm, webAPIImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/openapi", editorImportAccess(resolveImportProjectIDFromJSONOrForm, webAPIImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/raml", editorImportAccess(resolveImportProjectIDFromJSONOrForm, webAPIImportMaxBodyBytes)),
