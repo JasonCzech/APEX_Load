@@ -348,6 +348,7 @@ func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFin
 		}
 		applyKnownParameterReferences(result.Script)
 		applyParameterizedBaseURL(result.Script)
+		resolveTemplatedBaseURL(result)
 	}
 	result.SourceReview = BuildSourceReview(ctx.Files, sourceReviewMappings(result))
 	redactArchiveMaskedBodyMetadata(result.Script)

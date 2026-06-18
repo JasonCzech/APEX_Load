@@ -8,7 +8,152 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+// unresolvedBaseURLHost is the parseable placeholder substituted for a
+// parameterized base-URL host that could not be resolved to a concrete value at
+// import time. `.invalid` is reserved (RFC 6761), so it can never accidentally
+// resolve — the operator must set the real host before running.
+const unresolvedBaseURLHost = "set-base-url.invalid"
+
+var (
+	rawHostParameterPattern       = regexp.MustCompile(`^\{([A-Za-z_][A-Za-z0-9_]*)\}$`)
+	templatedHostParameterPattern = regexp.MustCompile(`^\{\{(?:var|param)\.([a-z0-9_]+)\}\}$`)
+)
+
+// resolveTemplatedBaseURL replaces a parameterized base-URL host (e.g.
+// "http://{server_url}/mi/") with the concrete value of that parameter. The
+// engine uses config.base_url verbatim — it is never template-expanded
+// (pkg/engine/config.go passes it straight through, and the HTTP protocol
+// prepends it raw in ResolveURL) — so a leading "{" makes url.Parse fail at
+// replay/debug time ("invalid character \"{\" in host name"). LoadRunner
+// commonly parameterizes the recorded host; this resolves it from the imported
+// parameters. When no importable value exists, the host is replaced with a
+// parseable placeholder and a warning is emitted so the operator sets it.
+func resolveTemplatedBaseURL(result *ConvertResult) {
+	if result == nil || result.Script == nil {
+		return
+	}
+	base := strings.TrimSpace(result.Script.Config.BaseURL)
+	if base == "" || baseURLIsParseable(base) {
+		return
+	}
+	scheme, host, rest, ok := splitSchemeHostRest(base)
+	if !ok {
+		return
+	}
+	name, ok := baseURLHostParameterName(host)
+	if !ok {
+		// Host isn't a single parameter reference (e.g. embedded mid-host); leave
+		// it for manual review rather than guessing.
+		return
+	}
+	if value, ok := concreteParameterValueByCanonicalName(result.Script, canonicalSourceParameterName(name)); ok {
+		if rebuilt, ok := rebuildConcreteBaseURL(scheme, value, rest); ok {
+			result.Script.Config.BaseURL = rebuilt
+			return
+		}
+	}
+	placeholder := scheme + "://" + unresolvedBaseURLHost + rest
+	if !baseURLIsParseable(placeholder) {
+		placeholder = scheme + "://" + unresolvedBaseURLHost
+	}
+	result.Script.Config.BaseURL = placeholder
+	result.Warnings = append(result.Warnings, fmt.Sprintf(
+		"base URL host was parameterized as {%s} and no value was found in the import; set config.base_url to the target host before running (placeholder %q applied)",
+		name, placeholder))
+}
+
+// baseURLIsParseable reports whether s is a concrete URL the engine can use
+// directly: it parses, carries a host, and has no leftover template braces.
+func baseURLIsParseable(s string) bool {
+	if strings.ContainsAny(s, "{}") {
+		return false
+	}
+	parsed, err := url.Parse(s)
+	return err == nil && parsed.Host != ""
+}
+
+// splitSchemeHostRest splits "scheme://host/rest..." into its parts. rest keeps
+// its leading slash (or is empty).
+func splitSchemeHostRest(base string) (scheme, host, rest string, ok bool) {
+	schemeIndex := strings.Index(base, "://")
+	if schemeIndex <= 0 {
+		return "", "", "", false
+	}
+	scheme = base[:schemeIndex]
+	remainder := base[schemeIndex+len("://"):]
+	if slash := strings.Index(remainder, "/"); slash >= 0 {
+		return scheme, remainder[:slash], remainder[slash:], true
+	}
+	return scheme, remainder, "", true
+}
+
+// baseURLHostParameterName returns the parameter name when the whole host is a
+// single source ({name}) or template ({{var|param.name}}) reference.
+func baseURLHostParameterName(host string) (string, bool) {
+	if m := rawHostParameterPattern.FindStringSubmatch(host); m != nil {
+		return m[1], true
+	}
+	if m := templatedHostParameterPattern.FindStringSubmatch(host); m != nil {
+		return m[1], true
+	}
+	return "", false
+}
+
+// rebuildConcreteBaseURL forms a concrete base URL from a resolved parameter
+// value, preserving the recorded scheme and path. The value may be a bare host,
+// host:port, or a full URL; only its scheme/host are used (the recording's path
+// wins).
+func rebuildConcreteBaseURL(scheme, value, rest string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", false
+	}
+	if isAbsoluteHTTPURL(value) {
+		parsed, err := url.Parse(value)
+		if err != nil || parsed.Host == "" {
+			return "", false
+		}
+		candidate := parsed.Scheme + "://" + parsed.Host + rest
+		if baseURLIsParseable(candidate) {
+			return candidate, true
+		}
+		return "", false
+	}
+	hostPart := value
+	if slash := strings.Index(hostPart, "/"); slash >= 0 {
+		hostPart = hostPart[:slash]
+	}
+	if hostPart == "" {
+		return "", false
+	}
+	candidate := scheme + "://" + hostPart + rest
+	if baseURLIsParseable(candidate) {
+		return candidate, true
+	}
+	return "", false
+}
+
+// concreteParameterValueByCanonicalName resolves a parameter value by matching
+// canonical names (the host token's casing/spelling may differ from the stored
+// parameter's), reusing firstConcreteParameterValue for the value lookup.
+func concreteParameterValueByCanonicalName(script *dsl.Script, canonicalName string) (string, bool) {
+	if script == nil || canonicalName == "" {
+		return "", false
+	}
+	for _, param := range script.Parameters {
+		if canonicalSourceParameterName(param.Name) != canonicalName {
+			continue
+		}
+		if value, ok := firstConcreteParameterValue(script, param.Name); ok {
+			return value, true
+		}
+	}
+	return "", false
+}
 
 // detectBaseURL finds the common base URL from all web_ function calls.
 func detectBaseURL(functions []ParsedFunction) string {
