@@ -12,6 +12,7 @@ import {
   RUNTIME_FIELD_SOURCE_LABEL,
   type RuntimeFieldKey,
 } from './runtimeSettingsModel'
+import WebHttpTab from './runtimeTabs/WebHttpTab'
 
 export interface RuntimeEditorGroup {
   name: string
@@ -862,23 +863,7 @@ export default function RuntimeSettingsGroupEditor({
         )}
 
         {activeTab === 'web_http' && (
-          <div className="scenario-browser-grid">
-            <label>
-              <span>Source IPs</span>
-              <input
-                className="settings-input"
-                type="text"
-                value={draft.web_runtime?.source_ips?.join(', ') || ''}
-                onChange={event => {
-                  const ips = event.target.value.split(',').map(value => value.trim()).filter(Boolean)
-                  const next = { ...draft.web_runtime, source_ips: ips.length ? ips : undefined }
-                  const hasAny = Object.values(next).some(value => value !== undefined && value !== null && (!Array.isArray(value) || value.length > 0))
-                  patch({ web_runtime: hasAny ? next : undefined })
-                }}
-                placeholder="10.0.0.1, 10.0.0.2"
-              />
-            </label>
-          </div>
+          <WebHttpTab web={draft.web_runtime} setWeb={next => patch({ web_runtime: next })} />
         )}
 
         {activeTab === 'logging' && (
