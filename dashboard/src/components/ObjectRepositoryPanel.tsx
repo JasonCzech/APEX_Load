@@ -107,6 +107,15 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
     void runAction(() => api.updateObjectRepository(repo.id, { name: repo.name, description: repo.description, objects }))
   }
 
+  const toggleAutoPromote = (repo: ObjectRepository) => {
+    void runAction(() => api.updateObjectRepository(repo.id, {
+      name: repo.name,
+      description: repo.description,
+      objects: repo.objects,
+      auto_promote_on_heal: !repo.auto_promote_on_heal,
+    }))
+  }
+
   return (
     <div className="pp-panel" aria-label="Object repositories">
       <div className="pp-toolbar">
@@ -197,6 +206,10 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
             </div>
             {canManage && (
               <div className="pp-row-actions">
+                <label className="pp-check" title="When a bound action self-heals during replay, promote the working locator to this object's primary automatically.">
+                  <input type="checkbox" checked={!!repo.auto_promote_on_heal} disabled={busy} onChange={() => toggleAutoPromote(repo)} />
+                  Auto-promote heals
+                </label>
                 <button type="button" className="btn btn-danger btn-sm" onClick={() => setDeleteTarget(repo)} disabled={busy}>Delete</button>
               </div>
             )}

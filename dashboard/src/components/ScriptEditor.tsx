@@ -2845,6 +2845,25 @@ interface ReplayScreenshotSelection {
 export default function ScriptEditor({ scriptId, initialScript, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
   const [scriptRecordingStatus, setScriptRecordingStatus] = useState<ScriptRecordingStatus | null>(null)
+  // Object-repository logical names for the per-action object_ref autocomplete.
+  const [objectRefSuggestions, setObjectRefSuggestions] = useState<string[]>([])
+  useEffect(() => {
+    if (!projectId || typeof api.listObjectRepositories !== 'function') { setObjectRefSuggestions([]); return }
+    let cancelled = false
+    void api.listObjectRepositories({ project_id: projectId })
+      .then(res => {
+        if (cancelled) return
+        const names = new Set<string>()
+        for (const repo of res.object_repositories || []) {
+          for (const object of repo.objects || []) {
+            if (object.logical_name) names.add(object.logical_name)
+          }
+        }
+        setObjectRefSuggestions(Array.from(names).sort())
+      })
+      .catch(() => { if (!cancelled) setObjectRefSuggestions([]) })
+    return () => { cancelled = true }
+  }, [api, projectId])
   // Action-type catalog from GET /api/v1/dsl/actions: powers JSON-editor
   // completion and the catalog-driven action form inputs. The state bump
   // re-renders once the catalog arrives; helpers fall back to built-in
@@ -6926,6 +6945,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   return (
     <div className="script-editor">
+      <datalist id="object-ref-suggestions">
+        {objectRefSuggestions.map(name => <option key={name} value={name} />)}
+      </datalist>
       {showImportedParameterMappingsDialog && importedParameterFileMappings.length > 0 && (
         <ImportedParameterMappingsDialog
           mappings={importedParameterFileMappings}
@@ -14996,7 +15018,7 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
       {showSelector && (
         <label className="full-width">
           <span>Object Repository Ref</span>
-          <input value={action.object_ref || ''} onChange={e => onUpdate(index, 'object_ref', e.target.value)} placeholder="login or object-repo-…:login — resolves to a repository object" />
+          <input list="object-ref-suggestions" value={action.object_ref || ''} onChange={e => onUpdate(index, 'object_ref', e.target.value)} placeholder="login or object-repo-…:login — resolves to a repository object" />
           <small>Binds to a project object repository by logical name; resolved to a selector + fallbacks at run time (takes precedence over the inline selector when it resolves).</small>
         </label>
       )}

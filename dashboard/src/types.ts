@@ -3891,6 +3891,9 @@ export interface ObjectRepository {
   description?: string
   source?: string
   objects: RepositoryObject[]
+  // When set, replay self-heal promotes a healed locator to the object's primary
+  // automatically instead of appending it for manual promotion.
+  auto_promote_on_heal?: boolean
   created_at: string
   updated_at: string
 }

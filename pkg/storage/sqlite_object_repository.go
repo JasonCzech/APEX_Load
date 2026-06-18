@@ -27,24 +27,25 @@ func (s *SQLiteStore) SaveObjectRepository(repo *ObjectRepository) error {
 		return fmt.Errorf("marshal object repository objects: %w", err)
 	}
 	_, err = s.db.Exec(`INSERT INTO object_repositories (
-			id, project_id, name, description, source, objects_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			id, project_id, name, description, source, objects_json, auto_promote_on_heal, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			project_id=excluded.project_id, name=excluded.name, description=excluded.description,
-			source=excluded.source, objects_json=excluded.objects_json, updated_at=excluded.updated_at`,
+			source=excluded.source, objects_json=excluded.objects_json,
+			auto_promote_on_heal=excluded.auto_promote_on_heal, updated_at=excluded.updated_at`,
 		repo.ID, repo.ProjectID, repo.Name, repo.Description, repo.Source, string(objectsJSON),
-		repo.CreatedAt, repo.UpdatedAt)
+		repo.AutoPromoteOnHeal, repo.CreatedAt, repo.UpdatedAt)
 	return err
 }
 
 const objectRepositorySelect = `SELECT id, COALESCE(project_id, ''), name, COALESCE(description, ''),
-	COALESCE(source, ''), COALESCE(objects_json, ''), created_at, updated_at FROM object_repositories`
+	COALESCE(source, ''), COALESCE(objects_json, ''), COALESCE(auto_promote_on_heal, 0), created_at, updated_at FROM object_repositories`
 
 func scanObjectRepository(row capacityRowScanner) (*ObjectRepository, error) {
 	var repo ObjectRepository
 	var objectsJSON string
 	if err := row.Scan(&repo.ID, &repo.ProjectID, &repo.Name, &repo.Description, &repo.Source,
-		&objectsJSON, &repo.CreatedAt, &repo.UpdatedAt); err != nil {
+		&objectsJSON, &repo.AutoPromoteOnHeal, &repo.CreatedAt, &repo.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if objectsJSON != "" && objectsJSON != "null" {

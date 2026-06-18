@@ -68,7 +68,7 @@ func (s *Server) persistSelfHealToRepository(projectID string, script *dsl.Scrip
 			repo = fetched
 			loaded[binding.repoID] = repo
 		}
-		if applyHealToRepositoryObject(repo, binding.logicalName, heal) {
+		if applyHealToRepositoryObject(repo, binding.logicalName, heal, repo.AutoPromoteOnHeal) {
 			changed[binding.repoID] = true
 		}
 	}
@@ -144,41 +144,70 @@ func objectRefBindingsByActionName(script *dsl.Script) map[string]objectRefBindi
 	return out
 }
 
-// applyHealToRepositoryObject appends (or strengthens) the healed locator on the
-// named object. Returns true when the repository changed.
-func applyHealToRepositoryObject(repo *storage.ObjectRepository, logicalName string, heal selfHealRecord) bool {
+// applyHealToRepositoryObject records the healed locator on the named object and
+// returns true when the repository changed. By default it is conservative — the
+// healed candidate is appended if absent and its confidence only ever raised,
+// never reordered above the primary. When autoPromote is set (repository opt-in)
+// the healed candidate is pushed to strictly the highest confidence so the next
+// script-prep resolution selects it as primary without manual intervention.
+func applyHealToRepositoryObject(repo *storage.ObjectRepository, logicalName string, heal selfHealRecord, autoPromote bool) bool {
 	key := strings.ToLower(strings.TrimSpace(logicalName))
 	for i := range repo.Objects {
 		obj := &repo.Objects[i]
 		if strings.ToLower(strings.TrimSpace(obj.LogicalName)) != key {
 			continue
 		}
-		for j := range obj.Candidates {
-			engineForm, ok := selector.Usable(selector.Candidate{
-				Kind:  obj.Candidates[j].Kind,
-				Value: obj.Candidates[j].Value,
+		idx := indexOfCandidateBySelector(obj.Candidates, heal.healed)
+		appended := false
+		var before storage.RepositoryObjectCandidate
+		if idx < 0 {
+			obj.Candidates = append(obj.Candidates, storage.RepositoryObjectCandidate{
+				Kind:       heal.kind,
+				Value:      heal.healed,
+				Confidence: heal.confidence,
+				Reason:     "observed via replay self-heal",
 			})
-			if !ok || engineForm != heal.healed {
-				continue
+			idx = len(obj.Candidates) - 1
+			appended = true
+		} else {
+			before = obj.Candidates[idx]
+			// Never lower a known candidate's confidence.
+			if heal.confidence > obj.Candidates[idx].Confidence {
+				obj.Candidates[idx].Confidence = heal.confidence
 			}
-			// Already a known candidate: only raise its confidence, never lower it.
-			if heal.confidence > obj.Candidates[j].Confidence {
-				obj.Candidates[j].Confidence = heal.confidence
-				recomputeBestConfidence(obj)
-				return true
-			}
-			return false
 		}
-		obj.Candidates = append(obj.Candidates, storage.RepositoryObjectCandidate{
-			Kind:       heal.kind,
-			Value:      heal.healed,
-			Confidence: heal.confidence,
-			Reason:     "observed via replay self-heal",
-		})
-		recomputeBestConfidence(obj)
-		return true
+		if autoPromote {
+			highestOther := 0
+			for j := range obj.Candidates {
+				if j != idx && obj.Candidates[j].Confidence > highestOther {
+					highestOther = obj.Candidates[j].Confidence
+				}
+			}
+			promoted := min(highestOther+1, 100)
+			if obj.Candidates[idx].Confidence < promoted {
+				obj.Candidates[idx].Confidence = promoted
+			}
+			obj.Candidates[idx].Reason = "promoted by replay self-heal"
+		}
+		changed := appended || obj.Candidates[idx] != before
+		if changed {
+			recomputeBestConfidence(obj)
+		}
+		return changed
 	}
 	return false
+}
+
+// indexOfCandidateBySelector returns the index of the candidate whose engine
+// selector form equals the given selector, or -1.
+func indexOfCandidateBySelector(candidates []storage.RepositoryObjectCandidate, engineSelector string) int {
+	for j := range candidates {
+		engineForm, ok := selector.Usable(selector.Candidate{Kind: candidates[j].Kind, Value: candidates[j].Value})
+		if ok && engineForm == engineSelector {
+			return j
+		}
+	}
+	return -1
 }
 
 func recomputeBestConfidence(obj *storage.RepositoryObject) {

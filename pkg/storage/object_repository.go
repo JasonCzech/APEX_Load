@@ -13,8 +13,12 @@ type ObjectRepository struct {
 	Description string             `json:"description,omitempty"`
 	Source      string             `json:"source,omitempty"`
 	Objects     []RepositoryObject `json:"objects"`
-	CreatedAt   time.Time          `json:"created_at"`
-	UpdatedAt   time.Time          `json:"updated_at"`
+	// AutoPromoteOnHeal makes replay self-heal promote a healed locator to the
+	// object's primary (instead of the default conservative append), so the
+	// working selector is used on the next run without manual intervention.
+	AutoPromoteOnHeal bool      `json:"auto_promote_on_heal,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // RepositoryObject is one named element in a repository. It mirrors the fields

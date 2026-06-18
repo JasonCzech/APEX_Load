@@ -59,7 +59,7 @@ func TestApplyHealToRepositoryObject(t *testing.T) {
 			LogicalName: "login", BestConfidence: 70,
 			Candidates: []storage.RepositoryObjectCandidate{{Kind: "css", Value: "#a", Confidence: 70}},
 		}}}
-		changed := applyHealToRepositoryObject(repo, "login", selfHealRecord{healed: "#b", kind: "css", confidence: 80})
+		changed := applyHealToRepositoryObject(repo, "login", selfHealRecord{healed: "#b", kind: "css", confidence: 80}, false)
 		if !changed {
 			t.Fatal("expected changed=true")
 		}
@@ -76,7 +76,7 @@ func TestApplyHealToRepositoryObject(t *testing.T) {
 			LogicalName: "login", BestConfidence: 70,
 			Candidates: []storage.RepositoryObjectCandidate{{Kind: "css", Value: "#a", Confidence: 70}},
 		}}}
-		changed := applyHealToRepositoryObject(repo, "login", selfHealRecord{healed: "#a", kind: "css", confidence: 88})
+		changed := applyHealToRepositoryObject(repo, "login", selfHealRecord{healed: "#a", kind: "css", confidence: 88}, false)
 		if !changed {
 			t.Fatal("expected changed=true")
 		}
@@ -90,7 +90,7 @@ func TestApplyHealToRepositoryObject(t *testing.T) {
 			LogicalName: "login",
 			Candidates:  []storage.RepositoryObjectCandidate{{Kind: "css", Value: "#a", Confidence: 70}},
 		}}}
-		changed := applyHealToRepositoryObject(repo, "login", selfHealRecord{healed: "#a", kind: "css", confidence: 50})
+		changed := applyHealToRepositoryObject(repo, "login", selfHealRecord{healed: "#a", kind: "css", confidence: 50}, false)
 		if changed {
 			t.Fatal("expected changed=false for a weaker observation")
 		}
@@ -105,12 +105,35 @@ func TestApplyHealToRepositoryObject(t *testing.T) {
 			Candidates:  []storage.RepositoryObjectCandidate{{Kind: "xpath", Value: "//a", Confidence: 58}},
 		}}}
 		// self-heal records the engine form ("xpath=//a"), not the raw value.
-		changed := applyHealToRepositoryObject(repo, "login", selfHealRecord{healed: "xpath=//a", kind: "xpath", confidence: 58})
+		changed := applyHealToRepositoryObject(repo, "login", selfHealRecord{healed: "xpath=//a", kind: "xpath", confidence: 58}, false)
 		if changed {
 			t.Fatal("engine-form match should not append a duplicate")
 		}
 		if len(repo.Objects[0].Candidates) != 1 {
 			t.Fatalf("candidates = %d, want 1 (no duplicate)", len(repo.Objects[0].Candidates))
+		}
+	})
+
+	t.Run("autoPromote pushes the healed candidate above the primary", func(t *testing.T) {
+		repo := &storage.ObjectRepository{Objects: []storage.RepositoryObject{{
+			LogicalName: "login", BestConfidence: 88,
+			Candidates: []storage.RepositoryObjectCandidate{
+				{Kind: "css", Value: "#login", Confidence: 88},
+				{Kind: "xpath", Value: "//a", Confidence: 58},
+			},
+		}}}
+		// The healed xpath (engine form) starts below the css primary; with
+		// autoPromote it should become strictly the highest-confidence candidate.
+		changed := applyHealToRepositoryObject(repo, "login", selfHealRecord{healed: "xpath=//a", kind: "xpath", confidence: 58}, true)
+		if !changed {
+			t.Fatal("expected changed=true")
+		}
+		healed := repo.Objects[0].Candidates[1]
+		if healed.Confidence != 89 || repo.Objects[0].BestConfidence != 89 {
+			t.Fatalf("healed not promoted: confidence=%d best=%d", healed.Confidence, repo.Objects[0].BestConfidence)
+		}
+		if healed.Reason != "promoted by replay self-heal" {
+			t.Fatalf("reason = %q", healed.Reason)
 		}
 	})
 }

@@ -314,6 +314,7 @@ func rewriteSQL(query string, dialect storeDialect) string {
 		new string
 	}{
 		{"shakeout_enabled INTEGER DEFAULT 0", "shakeout_enabled BOOLEAN DEFAULT FALSE"},
+		{"auto_promote_on_heal INTEGER DEFAULT 0", "auto_promote_on_heal BOOLEAN DEFAULT FALSE"},
 		{"resource_baseline_enabled INTEGER DEFAULT 0", "resource_baseline_enabled BOOLEAN DEFAULT FALSE"},
 		{"enabled INTEGER DEFAULT 1", "enabled BOOLEAN DEFAULT TRUE"},
 		{"baseline_pinned INTEGER DEFAULT 0", "baseline_pinned BOOLEAN DEFAULT FALSE"},

@@ -610,6 +610,7 @@ func (s *SQLiteStore) init() error {
 			description TEXT,
 			source TEXT,
 			objects_json TEXT,
+			auto_promote_on_heal INTEGER DEFAULT 0,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
@@ -643,6 +644,7 @@ func (s *SQLiteStore) init() error {
 		{name: "scenarios.start_delay", query: `ALTER TABLE scenarios ADD COLUMN start_delay TEXT`},
 		{name: "tests.assignment_json", query: `ALTER TABLE tests ADD COLUMN assignment_json TEXT`},
 		{name: "scripts.metadata_json", query: `ALTER TABLE scripts ADD COLUMN metadata_json TEXT`},
+		{name: "object_repositories.auto_promote_on_heal", query: `ALTER TABLE object_repositories ADD COLUMN auto_promote_on_heal INTEGER DEFAULT 0`},
 		{name: "projects.settings_json", query: `ALTER TABLE projects ADD COLUMN settings_json TEXT`},
 		{name: "projects.domain_id", query: `ALTER TABLE projects ADD COLUMN domain_id TEXT REFERENCES domains(id)`},
 		{name: "projects.category_id", query: `ALTER TABLE projects ADD COLUMN category_id TEXT REFERENCES repository_categories(id)`},
