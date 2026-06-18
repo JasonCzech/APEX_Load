@@ -233,7 +233,7 @@ export default function RuntimeSettingsGroupEditor({
       <div className="scenario-assignment-header">
         <div>
           <h4>Per-group runtime overrides</h4>
-          <p>Override the scenario defaults for one group. Unset fields inherit the scenario default, then the script default.</p>
+          <p>Set runtime for one group; unset fields inherit the script default. Use “Apply to groups” to copy a group’s settings to the others.</p>
         </div>
       </div>
 
