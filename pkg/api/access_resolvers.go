@@ -723,6 +723,62 @@ func resolveObjectRepositoryFromScriptProjectID(r *http.Request, store storage.S
 	return normalizeProjectID(script.ProjectID), 0, ""
 }
 
+// resolveCorrelationRulesetCreateProjectID reads the owning project from the
+// request body for correlation-ruleset creation.
+func resolveCorrelationRulesetCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID string `json:"project_id,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if strings.TrimSpace(req.ProjectID) == "" {
+		return "", http.StatusBadRequest, "project_id is required for project-scoped correlation rulesets"
+	}
+	return normalizeProjectID(req.ProjectID), 0, ""
+}
+
+// resolveCorrelationRulesetProjectID looks up an existing correlation ruleset to
+// find the project that owns it, for {id}-scoped access checks.
+func resolveCorrelationRulesetProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "storage is not configured"
+	}
+	ruleset, err := store.GetCorrelationRuleset(r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", http.StatusNotFound, "correlation ruleset not found"
+		}
+		return "", http.StatusInternalServerError, "failed to load correlation ruleset"
+	}
+	return normalizeProjectID(ruleset.ProjectID), 0, ""
+}
+
+// resolveCorrelationRulesetFromScriptProjectID resolves the project from the
+// source script referenced in the discover-from-script request body.
+func resolveCorrelationRulesetFromScriptProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "storage is not configured"
+	}
+	var req struct {
+		ScriptID string `json:"script_id"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if strings.TrimSpace(req.ScriptID) == "" {
+		return "", http.StatusBadRequest, "script_id is required"
+	}
+	script, err := store.GetScript(strings.TrimSpace(req.ScriptID))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", http.StatusNotFound, "script not found"
+		}
+		return "", http.StatusInternalServerError, "failed to load script"
+	}
+	return normalizeProjectID(script.ProjectID), 0, ""
+}
+
 // resolveMonitoringCollectorCreateProjectID reads the owning project from the
 // request body for monitoring-collector creation.
 func resolveMonitoringCollectorCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {

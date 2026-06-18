@@ -7438,6 +7438,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     {!isBrowserScript && debuggerTab !== 'browser' && replayReport && (
                       <CorrelationDiagnosePanel
                         scriptId={scriptId ?? null}
+                        projectId={projectId}
                         events={replayReport.events}
                         recordingStatus={scriptRecordingStatus}
                         actionCount={script.actions.length}

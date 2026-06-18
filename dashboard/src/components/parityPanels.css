@@ -436,3 +436,10 @@
   color: var(--text-secondary);
   white-space: nowrap;
 }
+.pp-apply-result {
+  display: grid;
+  gap: 3px;
+  margin: 6px 0 0 12px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+}

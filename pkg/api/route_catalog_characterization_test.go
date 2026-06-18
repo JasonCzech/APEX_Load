@@ -191,6 +191,14 @@ var accessRequirementGolden = map[string]string{
 	"GET /api/v1/object-repositories/sample-id":    "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
 	"PUT /api/v1/object-repositories/sample-id":    "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=262144",
 	"DELETE /api/v1/object-repositories/sample-id": "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	// Correlation rulesets (project-scoped learned rule catalogs).
+	"POST /api/v1/correlation-rulesets":                           "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=262144",
+	"GET /api/v1/correlation-rulesets":                            "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/correlation-rulesets/discover-from-script":      "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/correlation-rulesets/sample-id":                  "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/correlation-rulesets/sample-id":                  "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=262144",
+	"DELETE /api/v1/correlation-rulesets/sample-id":               "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/correlation-rulesets/sample-id/apply-to-script": "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
 	// Monitoring collectors (project-admin infra) + entitlements (read-only).
 	"POST /api/v1/monitoring/collectors":                              "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=65536",
 	"GET /api/v1/monitoring/collectors":                               "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",

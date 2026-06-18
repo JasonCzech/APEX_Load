@@ -431,6 +431,15 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PUT /api/v1/object-repositories/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateObjectRepository)))))
 	s.mux.Handle("DELETE /api/v1/object-repositories/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteObjectRepository)))))
 
+	// Correlation rulesets — learned, reusable correlation rule catalogs.
+	s.mux.Handle("POST /api/v1/correlation-rulesets", cors(log(auth(http.HandlerFunc(s.handleCreateCorrelationRuleset)))))
+	s.mux.Handle("GET /api/v1/correlation-rulesets", cors(log(auth(http.HandlerFunc(s.handleListCorrelationRulesets)))))
+	s.mux.Handle("POST /api/v1/correlation-rulesets/discover-from-script", cors(log(auth(http.HandlerFunc(s.handleDiscoverCorrelationRulesetFromScript)))))
+	s.mux.Handle("GET /api/v1/correlation-rulesets/{id}", cors(log(auth(http.HandlerFunc(s.handleGetCorrelationRuleset)))))
+	s.mux.Handle("PUT /api/v1/correlation-rulesets/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateCorrelationRuleset)))))
+	s.mux.Handle("DELETE /api/v1/correlation-rulesets/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteCorrelationRuleset)))))
+	s.mux.Handle("POST /api/v1/correlation-rulesets/{id}/apply-to-script", cors(log(auth(http.HandlerFunc(s.handleApplyCorrelationRulesetToScript)))))
+
 	// Monitoring collectors — restricted-network agent control plane.
 	s.mux.Handle("POST /api/v1/monitoring/collectors", cors(log(auth(http.HandlerFunc(s.handleCreateMonitoringCollector)))))
 	s.mux.Handle("GET /api/v1/monitoring/collectors", cors(log(auth(http.HandlerFunc(s.handleListMonitoringCollectors)))))

@@ -1445,6 +1445,125 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
         - Capacity
+  /api/v1/correlation-rulesets:
+    get:
+      summary: List Correlation Rulesets
+      description: |-
+        **Handler:** `handleListCorrelationRulesets`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleListCorrelationRulesets
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Correlation Rulesets
+    post:
+      summary: Create Correlation Ruleset
+      description: |-
+        **Handler:** `handleCreateCorrelationRuleset`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCreateCorrelationRuleset
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Correlation Rulesets
+  /api/v1/correlation-rulesets/{id}:
+    delete:
+      summary: Delete Correlation Ruleset
+      description: |-
+        **Handler:** `handleDeleteCorrelationRuleset`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleDeleteCorrelationRuleset
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Correlation Rulesets
+    get:
+      summary: Get Correlation Ruleset
+      description: |-
+        **Handler:** `handleGetCorrelationRuleset`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleGetCorrelationRuleset
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Correlation Rulesets
+    put:
+      summary: Update Correlation Ruleset
+      description: |-
+        **Handler:** `handleUpdateCorrelationRuleset`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleUpdateCorrelationRuleset
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Correlation Rulesets
+  /api/v1/correlation-rulesets/{id}/apply-to-script:
+    post:
+      summary: Apply Correlation Ruleset To Script
+      description: |-
+        **Handler:** `handleApplyCorrelationRulesetToScript`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleApplyCorrelationRulesetToScript
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Correlation Rulesets
+  /api/v1/correlation-rulesets/discover-from-script:
+    post:
+      summary: Discover Correlation Ruleset From Script
+      description: |-
+        **Handler:** `handleDiscoverCorrelationRulesetFromScript`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleDiscoverCorrelationRulesetFromScript
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Correlation Rulesets
   /api/v1/correlations/diagnose:
     post:
       summary: Diagnose Correlations

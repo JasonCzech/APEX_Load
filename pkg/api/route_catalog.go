@@ -47,6 +47,14 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPut, "/api/v1/object-repositories/{id}", editorImportAccess(resolveObjectRepositoryProjectID, 262144)),
 	routeAuth(http.MethodDelete, "/api/v1/object-repositories/{id}", editorProjectAccess(resolveObjectRepositoryProjectID)),
 
+	routeAuth(http.MethodPost, "/api/v1/correlation-rulesets", editorImportAccess(resolveCorrelationRulesetCreateProjectID, 262144)),
+	routeAuth(http.MethodGet, "/api/v1/correlation-rulesets", viewerProjectAccess(resolveProjectIDFromQuery)),
+	routeAuth(http.MethodPost, "/api/v1/correlation-rulesets/discover-from-script", editorProjectAccess(resolveCorrelationRulesetFromScriptProjectID)),
+	routeAuth(http.MethodGet, "/api/v1/correlation-rulesets/{id}", viewerProjectAccess(resolveCorrelationRulesetProjectID)),
+	routeAuth(http.MethodPut, "/api/v1/correlation-rulesets/{id}", editorImportAccess(resolveCorrelationRulesetProjectID, 262144)),
+	routeAuth(http.MethodDelete, "/api/v1/correlation-rulesets/{id}", editorProjectAccess(resolveCorrelationRulesetProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/correlation-rulesets/{id}/apply-to-script", editorProjectAccess(resolveCorrelationRulesetProjectID)),
+
 	// Monitoring collectors (restricted-network agent control plane) — project-admin infra.
 	routeAuth(http.MethodPost, "/api/v1/monitoring/collectors", accessRequirement{GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, ProjectLookup: resolveMonitoringCollectorCreateProjectID, MaxBodyBytes: 65536}),
 	routeAuth(http.MethodGet, "/api/v1/monitoring/collectors", viewerProjectAccess(resolveProjectIDFromQuery)),

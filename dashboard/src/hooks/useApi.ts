@@ -15,6 +15,7 @@ import { useFleetApi } from './api/useFleetApi'
 import { useExecutionPlansApi } from './api/useExecutionPlansApi'
 import { useMonitoringCollectorsApi } from './api/useMonitoringCollectorsApi'
 import { useObjectRepositoryApi } from './api/useObjectRepositoryApi'
+import { useCorrelationRulesetApi } from './api/useCorrelationRulesetApi'
 import { useEntitlementsApi } from './api/useEntitlementsApi'
 
 export { ApiError }
@@ -34,6 +35,7 @@ export function useApi() {
   const executionPlans = useExecutionPlansApi()
   const monitoringCollectors = useMonitoringCollectorsApi()
   const objectRepositories = useObjectRepositoryApi()
+  const correlationRulesets = useCorrelationRulesetApi()
   const entitlements = useEntitlementsApi()
 
   return useMemo(
@@ -52,8 +54,9 @@ export function useApi() {
       ...executionPlans,
       ...monitoringCollectors,
       ...objectRepositories,
+      ...correlationRulesets,
       ...entitlements,
     }),
-    [tests, applications, projects, repository, scripts, system, recorder, browserRecorder, library, capacity, fleet, executionPlans, monitoringCollectors, objectRepositories, entitlements],
+    [tests, applications, projects, repository, scripts, system, recorder, browserRecorder, library, capacity, fleet, executionPlans, monitoringCollectors, objectRepositories, correlationRulesets, entitlements],
   )
 }

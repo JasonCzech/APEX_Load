@@ -200,10 +200,10 @@ func buildAPIParityProgram() []ParityStatusArea {
 		{
 			ID:        "correlation_persistence",
 			Name:      "Persistent Correlation Rulesets",
-			Status:    "partial",
-			Summary:   "Per-script recorded baselines are now persisted (request/response exchanges, with selective credential redaction that preserves session/CSRF/view-state); diagnose-replay diffs the stored baseline against a replay and ranks correlation repair suggestions. Learned, reusable rulesets are still pending.",
-			Evidence:  []string{apiComparisonEvidence, "/api/v1/correlations/rules", "/api/v1/correlations/diagnose", "/api/v1/scripts/{id}/recording/status", "/api/v1/scripts/{id}/diagnose-replay", "pkg/api/handlers_script_recording.go", "pkg/storage/sqlite_recordings.go", "pkg/convert/correlate"},
-			Remaining: []string{"Persist learned, reusable correlation rulesets and per-script discover/apply records over the baseline."},
+			Status:    "supported",
+			Summary:   "Per-script recorded baselines are persisted (request/response exchanges with selective credential redaction that preserves session/CSRF/view-state) and diagnose-replay ranks repair suggestions. Learned, reusable correlation rulesets are now project-scoped and persisted: discover-from-script runs correlation detection over a baseline and saves the rules; apply-to-script matches a ruleset against a target script's baseline and previews or writes the extractors + value-templating into a new script version.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/correlations/rules", "/api/v1/correlations/diagnose", "/api/v1/correlation-rulesets", "/api/v1/correlation-rulesets/discover-from-script", "/api/v1/correlation-rulesets/{id}/apply-to-script", "/api/v1/scripts/{id}/recording/status", "/api/v1/scripts/{id}/diagnose-replay", "pkg/api/handlers_correlation_rulesets.go", "pkg/storage/sqlite_correlation_rulesets.go", "pkg/convert/correlate", "pkg/convert/paramize"},
+			Remaining: []string{"Cross-project ruleset sharing and an org-wide rule library (future)."},
 		},
 		{
 			ID:        "object_repository",

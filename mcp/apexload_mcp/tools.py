@@ -189,6 +189,14 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
     EndpointTool("object_repository_update", "PUT", "/object-repositories/{id}", f"{WRITE} Update an object repository (name, description, objects).", True),
     EndpointTool("object_repository_delete", "DELETE", "/object-repositories/{id}", f"{DESTRUCTIVE} Delete an object repository.", True, True),
 
+    EndpointTool("correlation_ruleset_list", "GET", "/correlation-rulesets", f"{READ} List learned correlation rulesets (reusable catalogs of correlation rules).", default_project=True),
+    EndpointTool("correlation_ruleset_create", "POST", "/correlation-rulesets", f"{WRITE} Create a correlation ruleset (e.g. from diagnose suggestions).", True, False, True),
+    EndpointTool("correlation_ruleset_discover_from_script", "POST", "/correlation-rulesets/discover-from-script", f"{WRITE} Discover and persist correlations from a script's recorded baseline.", True),
+    EndpointTool("correlation_ruleset_get", "GET", "/correlation-rulesets/{id}", f"{READ} Get a correlation ruleset."),
+    EndpointTool("correlation_ruleset_update", "PUT", "/correlation-rulesets/{id}", f"{WRITE} Update a correlation ruleset (name, description, rules).", True),
+    EndpointTool("correlation_ruleset_delete", "DELETE", "/correlation-rulesets/{id}", f"{DESTRUCTIVE} Delete a correlation ruleset.", True, True),
+    EndpointTool("correlation_ruleset_apply_to_script", "POST", "/correlation-rulesets/{id}/apply-to-script", f"{WRITE} Apply a ruleset to a script: preview, or with apply=true write the extractors into a new version.", True),
+
     EndpointTool("system_entitlements", "GET", "/system/entitlements", f"{READ} Get edition, enabled protocol bundles, and limits."),
     EndpointTool("system_entitlements_usage", "GET", "/system/entitlements/usage", f"{READ} Get current consumption vs entitlement limits."),
 

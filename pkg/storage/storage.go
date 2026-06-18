@@ -105,6 +105,12 @@ type Store interface {
 	ListObjectRepositories(projectID string, limit int, offset int) ([]*ObjectRepository, error)
 	DeleteObjectRepository(id string) error
 
+	// Correlation rulesets: project-scoped catalogs of learned correlation rules.
+	SaveCorrelationRuleset(ruleset *CorrelationRuleset) error
+	GetCorrelationRuleset(id string) (*CorrelationRuleset, error)
+	ListCorrelationRulesets(projectID string, limit int, offset int) ([]*CorrelationRuleset, error)
+	DeleteCorrelationRuleset(id string) error
+
 	// Monitoring collectors (restricted-network agent control plane).
 	SaveMonitoringCollector(collector *MonitoringCollector) error
 	GetMonitoringCollector(id string) (*MonitoringCollector, error)

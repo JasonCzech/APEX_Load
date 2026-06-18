@@ -7,10 +7,12 @@ import type {
   ScriptReplayActionEvent,
 } from '../types/scripts'
 import type { ScriptRecordingStatus } from '../hooks/api/useScriptApi'
+import { useCorrelationRulesetApi } from '../hooks/api/useCorrelationRulesetApi'
 import { harToSteps, replayEventsToSteps } from './correlationDiagnose'
 
 interface CorrelationDiagnosePanelProps {
   scriptId: string | null
+  projectId?: string
   events: ScriptReplayActionEvent[] | undefined
   recordingStatus: ScriptRecordingStatus | null
   actionCount: number
@@ -28,6 +30,7 @@ function truncate(value: string, max = 80): string {
 // one-click-applicable extractor fixes for values that rotated on replay.
 export function CorrelationDiagnosePanel({
   scriptId,
+  projectId,
   events,
   recordingStatus,
   actionCount,
@@ -35,10 +38,35 @@ export function CorrelationDiagnosePanel({
   diagnoseWithUpload,
   onAddExtractor,
 }: CorrelationDiagnosePanelProps) {
+  const rulesetApi = useCorrelationRulesetApi()
   const [suggestions, setSuggestions] = useState<CorrelationRepairSuggestion[] | null>(null)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [applied, setApplied] = useState<Set<string>>(new Set())
+  const [savedRuleset, setSavedRuleset] = useState(false)
+
+  const saveAsRuleset = async () => {
+    if (!projectId || !suggestions) return
+    const rules = suggestions
+      .filter(s => s.extractor)
+      .map(s => ({
+        name: s.extractor!.name || 'correlation_value',
+        rule_id: s.rule_id,
+        source: s.extractor!.source,
+        extract_type: s.extractor!.extract_type,
+        expression: s.extractor!.expression,
+        sample_value: s.recorded_value,
+        confidence: s.confidence,
+      }))
+    if (rules.length === 0) return
+    setError(null)
+    try {
+      await rulesetApi.createCorrelationRuleset({ project_id: projectId, name: 'Diagnosed correlations', rules })
+      setSavedRuleset(true)
+    } catch {
+      setError('Could not save the suggestions as a ruleset.')
+    }
+  }
 
   const hasBaseline = !!recordingStatus?.exists && !!scriptId
   const replaySteps = replayEventsToSteps(events)
@@ -124,6 +152,11 @@ export function CorrelationDiagnosePanel({
         <div className="correlation-diagnose-list">
           <div className="correlation-diagnose-summary">
             {suggestions.length} suggestion{suggestions.length === 1 ? '' : 's'}
+            {projectId && suggestions.some(s => s.extractor) && (
+              <button type="button" className="btn btn-sm btn-secondary" onClick={saveAsRuleset} disabled={savedRuleset}>
+                {savedRuleset ? 'Saved as ruleset' : 'Save as ruleset'}
+              </button>
+            )}
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSuggestions(null)}>Reset</button>
           </div>
           {suggestions.map((suggestion, index) => {

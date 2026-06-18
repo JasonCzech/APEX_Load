@@ -380,7 +380,7 @@ func (s *metricsStoreSpy) GetExecutionPlan(string) (*storage.ExecutionPlan, erro
 func (s *metricsStoreSpy) ListExecutionPlans(string, int, int) ([]*storage.ExecutionPlan, error) {
 	return nil, nil
 }
-func (s *metricsStoreSpy) DeleteExecutionPlan(string) error { return nil }
+func (s *metricsStoreSpy) DeleteExecutionPlan(string) error                     { return nil }
 func (s *metricsStoreSpy) SaveObjectRepository(*storage.ObjectRepository) error { return nil }
 func (s *metricsStoreSpy) GetObjectRepository(string) (*storage.ObjectRepository, error) {
 	return nil, nil
@@ -388,7 +388,15 @@ func (s *metricsStoreSpy) GetObjectRepository(string) (*storage.ObjectRepository
 func (s *metricsStoreSpy) ListObjectRepositories(string, int, int) ([]*storage.ObjectRepository, error) {
 	return nil, nil
 }
-func (s *metricsStoreSpy) DeleteObjectRepository(string) error                         { return nil }
+func (s *metricsStoreSpy) DeleteObjectRepository(string) error                      { return nil }
+func (s *metricsStoreSpy) SaveCorrelationRuleset(*storage.CorrelationRuleset) error { return nil }
+func (s *metricsStoreSpy) GetCorrelationRuleset(string) (*storage.CorrelationRuleset, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListCorrelationRulesets(string, int, int) ([]*storage.CorrelationRuleset, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) DeleteCorrelationRuleset(string) error                      { return nil }
 func (s *metricsStoreSpy) SaveMonitoringCollector(*storage.MonitoringCollector) error { return nil }
 func (s *metricsStoreSpy) GetMonitoringCollector(string) (*storage.MonitoringCollector, error) {
 	return nil, nil

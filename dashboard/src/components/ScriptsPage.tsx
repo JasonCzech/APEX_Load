@@ -9,6 +9,7 @@ import AuthoringSessionsPanel from './AuthoringSessionsPanel'
 import ScriptsAuthoringShell from './ScriptsAuthoringShell'
 import ScriptsLibraryTable, { type ScriptLibraryFederation } from './ScriptsLibraryTable'
 import ObjectRepositoryPanel from './ObjectRepositoryPanel'
+import CorrelationRulesetPanel from './CorrelationRulesetPanel'
 import PageViewToggle from './PageViewToggle'
 import LibraryFederationControls from './LibraryFederationControls'
 import { useLibraryFederation } from './useLibraryFederation'
@@ -616,6 +617,9 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
         </div>
         <div className="page-section">
           <ObjectRepositoryPanel projectId={activeProject?.id} canManage={canManageScripts} />
+        </div>
+        <div className="page-section">
+          <CorrelationRulesetPanel projectId={activeProject?.id} canManage={canManageScripts} />
         </div>
       </div>
       {githubPushScript && githubConfig && (

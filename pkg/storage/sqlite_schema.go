@@ -614,6 +614,16 @@ func (s *SQLiteStore) init() error {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS correlation_rulesets (
+			id TEXT PRIMARY KEY,
+			project_id TEXT,
+			name TEXT NOT NULL,
+			description TEXT,
+			source TEXT,
+			rules_json TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS monitoring_collectors (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL,
@@ -735,6 +745,7 @@ func (s *SQLiteStore) init() error {
 		{`CREATE INDEX IF NOT EXISTS idx_provisioning_events_request ON provisioning_events(request_id)`, "idx_provisioning_events_request"},
 		{`CREATE INDEX IF NOT EXISTS idx_execution_plans_project ON execution_plans(project_id)`, "idx_execution_plans_project"},
 		{`CREATE INDEX IF NOT EXISTS idx_object_repositories_project ON object_repositories(project_id)`, "idx_object_repositories_project"},
+		{`CREATE INDEX IF NOT EXISTS idx_correlation_rulesets_project ON correlation_rulesets(project_id)`, "idx_correlation_rulesets_project"},
 		{`CREATE INDEX IF NOT EXISTS idx_monitoring_collectors_project ON monitoring_collectors(project_id)`, "idx_monitoring_collectors_project"},
 	} {
 		if _, err := s.db.Exec(idx.query); err != nil {

@@ -3904,6 +3904,40 @@ export interface ObjectRepositoryListResponse {
   offset?: number
 }
 
+// Learned correlation rule (the persistent form of a discovered correlation).
+export interface CorrelationRule {
+  name: string
+  rule_id?: string
+  source: string
+  extract_type: string
+  expression: string
+  sample_value?: string
+  confidence?: number
+}
+export interface CorrelationRuleset {
+  id: string
+  project_id?: string
+  name: string
+  description?: string
+  source?: string
+  rules: CorrelationRule[]
+  created_at: string
+  updated_at: string
+}
+export interface CorrelationRulesetListResponse {
+  correlation_rulesets: CorrelationRuleset[]
+  count: number
+  limit?: number
+  offset?: number
+}
+export interface CorrelationRulesetApplyResponse {
+  ruleset_id: string
+  script_id: string
+  matched_rules: number
+  applied: boolean
+  diffs?: Array<{ kind: string; path?: string; before?: string; after?: string }>
+}
+
 export interface MonitoringCollector {
   id: string
   project_id: string
