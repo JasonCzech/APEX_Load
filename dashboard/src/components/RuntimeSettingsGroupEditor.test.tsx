@@ -175,6 +175,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     // HTTP Transport tab shows for the browser group and folds in Browser emulation.
     clickTab('HTTP Transport')
     expect(container.textContent || '').toContain('Browser emulation')
+    clickTab('Browser emulation')
     const deviceSelect = Array.from(container.querySelectorAll('select')).find(s =>
       Array.from(s.options).some(o => o.value === 'pixel_8'),
     )
@@ -302,14 +303,17 @@ describe('RuntimeSettingsGroupEditor', () => {
       )
     })
     clickTab('HTTP Transport')
-    expect(container.textContent || '').toContain('Auth password')
-    // The HTTP version select offers both 1.1 and 2 (distinguishes it from TLS).
+    // HTTP version lives under the Connection sub-tab.
+    clickTab('Connection')
     const versionSelect = Array.from(container.querySelectorAll('select')).find(s =>
       Array.from(s.options).some(o => o.value === '2') && Array.from(s.options).some(o => o.value === '1.1'),
     ) as HTMLSelectElement
     expect(versionSelect).toBeTruthy()
     act(() => setSelectValue(versionSelect, '2'))
     expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({ http: expect.objectContaining({ version: '2' }) }))
+    // Auth fields live under the Authentication sub-tab.
+    clickTab('Authentication')
+    expect(container.textContent || '').toContain('Auth password')
   })
 
   it('renders and edits the Web runtime source IPs under the Web/HTTP tab', () => {
@@ -396,6 +400,7 @@ describe('RuntimeSettingsGroupEditor', () => {
       )
     })
     clickTab('HTTP Transport')
+    clickTab('Browser emulation')
     const engineSelect = Array.from(container.querySelectorAll('select')).find(s =>
       Array.from(s.options).some(o => o.value === 'webkit') && Array.from(s.options).some(o => o.value === 'chromium'),
     ) as HTMLSelectElement
@@ -511,5 +516,48 @@ describe('RuntimeSettingsGroupEditor', () => {
     act(() => checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
     expect(last.log.extended_options).toContain('advanced_trace')
+  })
+
+  it('renders HTTP Transport nested sub-tabs and edits a proxy field', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={0} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={onChange} onApplyToGroups={() => {}} />,
+      )
+    })
+    clickTab('HTTP Transport')
+    // http (non-browser) group → 5 sub-tabs, no Browser emulation.
+    const subTabs = Array.from(container.querySelectorAll('.http-transport-tab')).map(b => (b.textContent || '').trim())
+    expect(subTabs).toEqual(['Timeouts', 'Connection', 'TLS / SSL', 'Proxy', 'Authentication'])
+    clickTab('Proxy')
+    const noProxyInput = Array.from(container.querySelectorAll('input[type="text"]')).find(
+      input => (input as HTMLInputElement).placeholder.includes('localhost'),
+    ) as HTMLInputElement
+    expect(noProxyInput).toBeTruthy()
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+    setter.call(noProxyInput, 'localhost, 10.0.0.0/8')
+    act(() => noProxyInput.dispatchEvent(new Event('input', { bubbles: true })))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last.http.proxy.no_proxy).toEqual(['localhost', '10.0.0.0/8'])
+  })
+
+  it('shows the Browser emulation sub-tab only for browser groups', () => {
+    const subTabLabels = () => Array.from(container.querySelectorAll('.http-transport-tab')).map(b => (b.textContent || '').trim())
+    // http group → no Browser emulation sub-tab.
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={0} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={() => {}} onApplyToGroups={() => {}} />,
+      )
+    })
+    clickTab('HTTP Transport')
+    expect(subTabLabels()).not.toContain('Browser emulation')
+    // browser group → Browser emulation sub-tab present.
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={1} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={() => {}} onApplyToGroups={() => {}} />,
+      )
+    })
+    clickTab('HTTP Transport')
+    expect(subTabLabels()).toContain('Browser emulation')
   })
 })
