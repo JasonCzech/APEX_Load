@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import type { ScriptDefinition } from '../types/scripts'
+import { getCachedDslActionCatalog, setCachedDslActionCatalog } from './dslActionCatalog'
 import {
   applyAuthoringComponentToScript,
   applyMigrationAssistantSuggestion,
@@ -69,6 +70,85 @@ describe('scriptAuthoringAssist', () => {
     expect(issues.some((issue) => issue.message.includes('missing a name or expression'))).toBe(true)
     expect(grouped[1].some((issue) => issue.message.includes('target is required'))).toBe(true)
     expect(grouped[1].some((issue) => issue.message.includes('duplicated'))).toBe(true)
+  })
+
+  it('does not flag backend-deduped action names as duplicates', () => {
+    // Importers now emit case-insensitively-unique names (e.g. an Aura
+    // token-refresh sequence becomes c_AuraToken_URL / _2 / _3), which must NOT
+    // trip the duplicate-name warning.
+    const script: ScriptDefinition = {
+      ...importedScript,
+      actions: ['c_AuraToken_URL', 'c_AuraToken_URL_2', 'c_AuraToken_URL_3'].map((name) => ({
+        name,
+        type: 'GET',
+        method: 'GET',
+        target: '/aura',
+        headers: {},
+        body: '',
+        extractors: [],
+        assertions: [],
+      })),
+    }
+
+    const issues = collectAuthoringIssues(script)
+    expect(issues.some((issue) => issue.message.includes('duplicated'))).toBe(false)
+  })
+
+  describe('target-required validation with the DSL catalog not yet loaded', () => {
+    const previousCatalog = getCachedDslActionCatalog()
+    afterEach(() => {
+      setCachedDslActionCatalog(previousCatalog)
+    })
+
+    // Reproduces the import-time false positive: the catalog fetch is async, so
+    // the first validation pass runs with cachedCatalog === null and the legacy
+    // heuristic governs. Target-less importer types must NOT be flagged.
+    it('does not flag target-less imported action types as missing a target', () => {
+      setCachedDslActionCatalog(null)
+      const script: ScriptDefinition = {
+        ...importedScript,
+        actions: [
+          { name: '99999', type: 'custom_call', target: '', headers: {}, body: '', extractors: [], assertions: [], params: { function: 'web_set_max_html_param_len' } },
+          { name: 'T01_LaunchSFApp', type: 'http_sequence', target: '', headers: {}, body: '', extractors: [], assertions: [], params: { requests: [{ name: 'a', type: 'GET', target: '/x' }] } },
+          { name: 'T02_Marker', type: 'source_transaction', target: '', headers: {}, body: '', extractors: [], assertions: [] },
+        ],
+      }
+      const issues = collectAuthoringIssues(script)
+      expect(issues.some((issue) => issue.message.includes('target is required'))).toBe(false)
+    })
+
+    it('still flags HTTP-method actions with an empty target', () => {
+      setCachedDslActionCatalog(null)
+      const script: ScriptDefinition = {
+        ...importedScript,
+        actions: [
+          { name: 'orphan_get', type: 'GET', method: 'GET', target: '', headers: {}, body: '', extractors: [], assertions: [] },
+        ],
+      }
+      const issues = collectAuthoringIssues(script)
+      expect(issues.some((issue) => issue.message.includes('target is required'))).toBe(true)
+    })
+  })
+
+  it('still flags genuine case-insensitive collisions as duplicates', () => {
+    // The dashboard folds case (normalizeTokenName); names differing only by
+    // case are real collisions the backend must resolve.
+    const script: ScriptDefinition = {
+      ...importedScript,
+      actions: ['c_AuraToken_URL', 'c_AuraToken_url'].map((name) => ({
+        name,
+        type: 'GET',
+        method: 'GET',
+        target: '/aura',
+        headers: {},
+        body: '',
+        extractors: [],
+        assertions: [],
+      })),
+    }
+
+    const issues = collectAuthoringIssues(script)
+    expect(issues.some((issue) => issue.message.includes('duplicated'))).toBe(true)
   })
 
   it('builds protocol starter blocks for browser and HTTP drafts', () => {

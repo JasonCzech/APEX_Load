@@ -3,6 +3,7 @@ package api
 import (
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
+	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -12,6 +13,11 @@ import (
 // sample/HAR importers pass their converter-applied correlations so the review
 // panel shows them as already wired in.
 func buildImportParameterization(script *dsl.Script, preApplied []paramize.PreAppliedCorrelation) *paramize.Result {
+	// Shared safety net: guarantee case-insensitively-unique action names for
+	// every importer before the script is reviewed/persisted, so the dashboard
+	// never flags false duplicates. Idempotent for importers (e.g.
+	// enterprise-archive) that already uniquify at conversion time.
+	uniquify.DeduplicateActionNames(script)
 	result := paramize.Suggest(script, paramize.Options{
 		PreApplied:       preApplied,
 		EnableDataParams: true,
@@ -30,6 +36,7 @@ func buildMultiScriptParameterization(scripts []*dsl.Script) *paramize.Result {
 		if script == nil {
 			continue
 		}
+		uniquify.DeduplicateActionNames(script)
 		result := paramize.Suggest(script, paramize.Options{
 			EnableDataParams: true,
 			EnableSecrets:    true,

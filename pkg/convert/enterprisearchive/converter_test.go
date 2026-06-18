@@ -4279,3 +4279,124 @@ func encodeUTF16LEForZip(text string) string {
 	}
 	return string(bytes)
 }
+
+// assertTopLevelNamesFoldedUnique fails if any two top-level action names (the
+// set the dashboard validates) collide once lowercased — the exact invariant
+// that the duplicate-action-name bug violated.
+func assertTopLevelNamesFoldedUnique(t *testing.T, script *dsl.Script) {
+	t.Helper()
+	seen := map[string]string{}
+	for _, phase := range [][]dsl.Action{script.Init, script.Actions, script.Teardown} {
+		for _, action := range phase {
+			if strings.TrimSpace(action.Name) == "" {
+				continue
+			}
+			key := strings.ToLower(action.Name)
+			if prev, ok := seen[key]; ok {
+				t.Fatalf("top-level action names collide under case-fold: %q and %q both fold to %q", prev, action.Name, key)
+			}
+			seen[key] = action.Name
+		}
+	}
+}
+
+// TestConvertUniquifiesCaseVariantActionNames covers the reported bug: source
+// steps that differ only in case (a common Salesforce/Aura correlation-step
+// pattern) defeated the case-sensitive per-branch dedup and surfaced as false
+// "Action name ... is duplicated" warnings in the dashboard, which folds case.
+func TestConvertUniquifiesCaseVariantActionNames(t *testing.T) {
+	source := `Action()
+{
+	web_url("c_AuraToken_URL",
+		"URL=https://acme.lightning.force.com/aura?a=1",
+		LAST);
+
+	web_url("c_AuraToken_url",
+		"URL=https://acme.lightning.force.com/aura?a=2",
+		LAST);
+
+	web_url("C_AURATOKEN_URL",
+		"URL=https://acme.lightning.force.com/aura?a=3",
+		LAST);
+
+	return 0;
+}`
+	parsed, err := ParseActionFile("Action.c", source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions = %d, want 3", len(result.Script.Actions))
+	}
+	assertTopLevelNamesFoldedUnique(t, result.Script)
+
+	// The first occurrence keeps its name; the later case variants are suffixed.
+	if result.Script.Actions[0].Name != "c_AuraToken_URL" {
+		t.Fatalf("first action = %q, want c_AuraToken_URL kept", result.Script.Actions[0].Name)
+	}
+
+	// The rename must be reflected in the source-review mapping so the import
+	// review table keeps pointing at the right action.
+	renamed := result.Script.Actions[1].Name
+	foundMapping := false
+	for _, mapping := range result.SourceReview.Mappings {
+		if mapping.TargetKind == "action" && mapping.TargetName == renamed {
+			foundMapping = true
+			break
+		}
+		if mapping.TargetKind == "action" && mapping.TargetName == "c_AuraToken_url" {
+			t.Fatalf("source-review mapping still references pre-rename name %q", "c_AuraToken_url")
+		}
+	}
+	if !foundMapping {
+		t.Fatalf("no source-review action mapping reconciled to renamed action %q in %#v", renamed, result.SourceReview.Mappings)
+	}
+}
+
+// TestConvertUniquifiesRepeatedTransactionWrappers covers the compaction path:
+// a transaction name reused across two non-contiguous request runs produces two
+// http_sequence wrapper actions with the same name. The per-branch dedup never
+// saw wrapper names (they are created after it runs), so the final pass must
+// disambiguate them.
+func TestConvertUniquifiesRepeatedTransactionWrappers(t *testing.T) {
+	source := `Action()
+{
+	lr_start_transaction("AuraFlow");
+	web_url("step_a", "URL=https://acme.my.salesforce.com/a", LAST);
+	web_url("step_b", "URL=https://acme.my.salesforce.com/b", LAST);
+	lr_end_transaction("AuraFlow", LR_AUTO);
+
+	web_url("divider", "URL=https://acme.my.salesforce.com/divider", LAST);
+
+	lr_start_transaction("AuraFlow");
+	web_url("step_c", "URL=https://acme.my.salesforce.com/c", LAST);
+	web_url("step_d", "URL=https://acme.my.salesforce.com/d", LAST);
+	lr_end_transaction("AuraFlow", LR_AUTO);
+
+	return 0;
+}`
+	parsed, err := ParseActionFile("Action.c", source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+
+	sequences := 0
+	for _, action := range result.Script.Actions {
+		if action.Type == "http_sequence" {
+			sequences++
+		}
+	}
+	if sequences != 2 {
+		t.Fatalf("http_sequence wrappers = %d, want 2 (one per AuraFlow run); actions=%#v", sequences, result.Script.Actions)
+	}
+	assertTopLevelNamesFoldedUnique(t, result.Script)
+}
+

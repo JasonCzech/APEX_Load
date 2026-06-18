@@ -33,6 +33,24 @@ func appendSourceReviewMapping(result *ConvertResult, mapping SourceReviewMappin
 	result.SourceReview.Mappings = append(result.SourceReview.Mappings, mapping)
 }
 
+// reconcileSourceReviewName repoints action-kind source-review mappings at a
+// renamed action so the import-review table keeps matching the final DSL. It
+// matches TargetName exactly (case-sensitive): the only names that reach the
+// final uniquify pass with byte-identical TargetName are http_sequence wrappers
+// whose mappings are TargetKind=="transaction" (skipped here), so in practice a
+// rename maps to a single action mapping.
+func reconcileSourceReviewName(result *ConvertResult, oldName, newName string) {
+	if result == nil || result.SourceReview == nil || oldName == newName {
+		return
+	}
+	for i := range result.SourceReview.Mappings {
+		mapping := &result.SourceReview.Mappings[i]
+		if mapping.TargetKind == "action" && mapping.TargetName == oldName {
+			mapping.TargetName = newName
+		}
+	}
+}
+
 func sourceReviewMappingForFunction(fn ParsedFunction, targetPath string, targetName string, targetKind string, status string, notes string) SourceReviewMapping {
 	mapping := SourceReviewMapping{
 		SourceFile: fn.Filename,

@@ -5,6 +5,7 @@ import (
 	"math"
 	"regexp"
 
+	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -491,6 +492,17 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 	structureSourceControlFlow(result)
 	compactSourceHTTPActions(result)
+
+	// Guarantee globally case-insensitive-unique action names on the final tree
+	// (top-level requests + http_sequence wrappers + nested control bodies). The
+	// per-branch dedup above is case-sensitive and never sees compaction-created
+	// wrapper names, so a repeated transaction name or a case-variant step name
+	// would otherwise surface as a false duplicate in the dashboard. Reconcile
+	// any rename into the source-review mappings so the import-review table keeps
+	// pointing at the right action.
+	for _, rename := range uniquify.DeduplicateActionNames(result.Script) {
+		reconcileSourceReviewName(result, rename.OldName, rename.NewName)
+	}
 
 	// Configure think time from collected lr_think_time values
 	if len(thinkTimes) > 0 {

@@ -117,7 +117,12 @@ function buildUniqueActionName(baseName: string, seen: Set<string>): string {
   return nextName
 }
 
-// Pre-catalog heuristic, used only while the action catalog has not loaded.
+// Pre-catalog heuristic, used only while the action catalog has not loaded (or
+// if GET /api/v1/dsl/actions never resolves). The excluded types carry no
+// `target` field in the catalog (pkg/dsl/catalog_engine.go source-function/
+// control/sequence specs, catalog_*.go health/transaction ops) — keep this list
+// in sync so an importer-produced target-less action is never wrongly flagged
+// "target required" during the catalog-load window.
 function legacyActionNeedsExplicitTarget(actionType: string): boolean {
   if (actionType.startsWith('browser_')) {
     return actionType !== 'browser_screenshot'
@@ -135,6 +140,28 @@ function legacyActionNeedsExplicitTarget(actionType: string): boolean {
     'database_rollback',
     'database_health',
     'network_health',
+    // Importer-produced composite/source/control steps: targets live in
+    // params.requests (http_sequence) or are absent by design (source_*,
+    // custom_call, control flow, rendezvous, error_message, review_required).
+    'http_sequence',
+    'source_transaction',
+    'source_runtime',
+    'source_timer',
+    'source_metric',
+    'source_parameter',
+    'source_message',
+    'source_json',
+    'source_xml',
+    'source_database',
+    'source_secret',
+    'source_external',
+    'source_review',
+    'custom_call',
+    'control_if',
+    'control_loop',
+    'rendezvous',
+    'error_message',
+    'review_required',
   ].includes(actionType)
 }
 

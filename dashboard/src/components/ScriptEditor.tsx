@@ -2954,7 +2954,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   // completion and the catalog-driven action form inputs. The state bump
   // re-renders once the catalog arrives; helpers fall back to built-in
   // lists until then.
-  const [, setDslCatalogReady] = useState(false)
+  const [dslCatalogReady, setDslCatalogReady] = useState(false)
   useEffect(() => {
     let cancelled = false
     void ensureDslActionCatalog().then(catalog => {
@@ -3499,7 +3499,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   // against the baseline). On a multi-thousand-action import they are expensive, so
   // they must be memoized — otherwise every render (including scroll-snapshot driven
   // re-renders) re-scans the whole script and the editor stalls.
-  const authoringIssues = useMemo(() => collectAuthoringIssues(script), [script])
+  // dslCatalogReady is a dependency so the lint passes recompute once the DSL
+  // action catalog resolves: collectAuthoringIssues reads the module-global
+  // cachedCatalog, and the first pass after an import runs before it loads.
+  // Without this, a catalog-null pass (legacy heuristic) freezes stale issues.
+  const authoringIssues = useMemo(() => collectAuthoringIssues(script), [script, dslCatalogReady])
   const actionIssueBuckets = useMemo(
     () => groupIssuesByAction(authoringIssues, script.actions.length),
     [authoringIssues, script.actions.length],
