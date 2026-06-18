@@ -127,6 +127,25 @@ export default function RuntimeSettingsGroupEditor({
     patch({ http: { ...draft.http, ...next } })
   }
 
+  // think_time / pacing carry the full DSL config; merge into the section, keeping the
+  // required type/mean_ms so the section stays valid. Clearing routes through the type
+  // select (Inherit) which sets the whole section undefined.
+  const patchThinkTime = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['think_time']>>) => {
+    const base = draft.think_time ?? { type: 'fixed', mean_ms: 0 }
+    patch({ think_time: { ...base, ...next } })
+  }
+
+  const patchPacing = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['pacing']>>) => {
+    const base = draft.pacing ?? { type: 'none' }
+    patch({ pacing: { ...base, ...next } })
+  }
+
+  const toggleLogOption = (option: string, on: boolean) => {
+    const current = draft.log?.extended_options ?? []
+    const nextOptions = on ? Array.from(new Set([...current, option])) : current.filter(o => o !== option)
+    patchLog({ extended_options: nextOptions.length ? nextOptions : undefined })
+  }
+
   // patchLog/patchRunLogic edit the full section, promoting the legacy single-field
   // values (log_level / iterations / auto_transactions) into the section and clearing
   // them — so a section override always carries every field (section-replace safe) and
@@ -358,16 +377,55 @@ export default function RuntimeSettingsGroupEditor({
           <>
             <div className="scenario-browser-grid">
               <label>
-                <span>Think time (ms)</span>
-                <input
+                <span>Distribution</span>
+                <select
                   className="settings-input"
-                  type="number"
-                  min={0}
-                  value={draft.think_time?.ignore ? '' : (draft.think_time?.mean_ms ?? '')}
+                  value={draft.think_time?.ignore ? '' : (draft.think_time?.type || '')}
                   disabled={Boolean(draft.think_time?.ignore)}
-                  onChange={event => patch({ think_time: event.target.value === '' ? undefined : { type: 'fixed', mean_ms: Number(event.target.value), ignore: false } })}
-                  placeholder="Inherit"
-                />
+                  onChange={event => {
+                    const type = event.target.value
+                    if (!type) {
+                      patch({ think_time: undefined })
+                      return
+                    }
+                    patchThinkTime({ type })
+                  }}
+                >
+                  <option value="">Inherit</option>
+                  <option value="fixed">Fixed</option>
+                  <option value="gaussian">Gaussian</option>
+                  <option value="uniform">Uniform</option>
+                </select>
+              </label>
+              <label>
+                <span>Mean (ms)</span>
+                <input className="settings-input" type="number" min={0} value={draft.think_time?.mean_ms ?? ''} disabled={Boolean(draft.think_time?.ignore)} onChange={event => patchThinkTime({ mean_ms: event.target.value === '' ? 0 : Number(event.target.value) })} placeholder="Inherit" />
+              </label>
+              {draft.think_time?.type === 'gaussian' && (
+                <label>
+                  <span>Std dev (ms)</span>
+                  <input className="settings-input" type="number" min={0} value={draft.think_time?.std_ms ?? ''} onChange={event => patchThinkTime({ std_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+                </label>
+              )}
+              {(draft.think_time?.type === 'uniform' || draft.think_time?.type === 'gaussian') && (
+                <>
+                  <label>
+                    <span>Min (ms)</span>
+                    <input className="settings-input" type="number" min={0} value={draft.think_time?.min_ms ?? ''} onChange={event => patchThinkTime({ min_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+                  </label>
+                  <label>
+                    <span>Max (ms)</span>
+                    <input className="settings-input" type="number" min={0} value={draft.think_time?.max_ms ?? ''} onChange={event => patchThinkTime({ max_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+                  </label>
+                </>
+              )}
+              <label>
+                <span>Multiplier</span>
+                <input className="settings-input" type="number" min={0} step="0.1" value={draft.think_time?.multiplier ?? ''} onChange={event => patchThinkTime({ multiplier: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+              </label>
+              <label>
+                <span>Limit (ms)</span>
+                <input className="settings-input" type="number" min={0} value={draft.think_time?.limit_ms ?? ''} onChange={event => patchThinkTime({ limit_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
               </label>
             </div>
             <div className="scenario-option-grid">
@@ -375,7 +433,7 @@ export default function RuntimeSettingsGroupEditor({
                 <input
                   type="checkbox"
                   checked={Boolean(draft.think_time?.ignore)}
-                  onChange={event => patch({ think_time: event.target.checked ? { type: 'fixed', mean_ms: draft.think_time?.mean_ms ?? 0, ignore: true } : undefined })}
+                  onChange={event => patchThinkTime({ ignore: event.target.checked || undefined })}
                 />
                 <div><strong>Ignore think time</strong><span>Bypass scripted think times for this group.</span></div>
               </label>
@@ -398,47 +456,52 @@ export default function RuntimeSettingsGroupEditor({
                 <option value="">Inherit</option>
                 <option value="none">None</option>
                 <option value="fixed_delay">Fixed delay</option>
+                <option value="random_delay">Random delay</option>
                 <option value="fixed_interval">Fixed interval</option>
+                <option value="random_interval">Random interval</option>
                 <option value="tps">Target TPS</option>
               </select>
             </label>
             {pacingType === 'fixed_delay' && (
               <label>
                 <span>Pacing delay (ms)</span>
-                <input
-                  className="settings-input"
-                  type="number"
-                  min={0}
-                  value={draft.pacing?.delay_ms ?? ''}
-                  onChange={event => patch({ pacing: { type: 'fixed_delay', delay_ms: event.target.value === '' ? undefined : Number(event.target.value) } })}
-                  placeholder="0"
-                />
+                <input className="settings-input" type="number" min={0} value={draft.pacing?.delay_ms ?? ''} onChange={event => patchPacing({ delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" />
               </label>
+            )}
+            {pacingType === 'random_delay' && (
+              <>
+                <label>
+                  <span>Min delay (ms)</span>
+                  <input className="settings-input" type="number" min={0} value={draft.pacing?.min_delay_ms ?? ''} onChange={event => patchPacing({ min_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" />
+                </label>
+                <label>
+                  <span>Max delay (ms)</span>
+                  <input className="settings-input" type="number" min={0} value={draft.pacing?.max_delay_ms ?? ''} onChange={event => patchPacing({ max_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" />
+                </label>
+              </>
             )}
             {pacingType === 'fixed_interval' && (
               <label>
                 <span>Pacing interval (ms)</span>
-                <input
-                  className="settings-input"
-                  type="number"
-                  min={0}
-                  value={draft.pacing?.interval_ms ?? ''}
-                  onChange={event => patch({ pacing: { type: 'fixed_interval', interval_ms: event.target.value === '' ? undefined : Number(event.target.value) } })}
-                  placeholder="0"
-                />
+                <input className="settings-input" type="number" min={0} value={draft.pacing?.interval_ms ?? ''} onChange={event => patchPacing({ interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" />
               </label>
+            )}
+            {pacingType === 'random_interval' && (
+              <>
+                <label>
+                  <span>Min interval (ms)</span>
+                  <input className="settings-input" type="number" min={0} value={draft.pacing?.min_interval_ms ?? ''} onChange={event => patchPacing({ min_interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" />
+                </label>
+                <label>
+                  <span>Max interval (ms)</span>
+                  <input className="settings-input" type="number" min={0} value={draft.pacing?.max_interval_ms ?? ''} onChange={event => patchPacing({ max_interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" />
+                </label>
+              </>
             )}
             {pacingType === 'tps' && (
               <label>
                 <span>Target TPS</span>
-                <input
-                  className="settings-input"
-                  type="number"
-                  min={0}
-                  value={draft.pacing?.tps ?? ''}
-                  onChange={event => patch({ pacing: { type: 'tps', tps: event.target.value === '' ? undefined : Number(event.target.value) } })}
-                  placeholder="0"
-                />
+                <input className="settings-input" type="number" min={0} value={draft.pacing?.tps ?? ''} onChange={event => patchPacing({ tps: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" />
               </label>
             )}
           </div>
@@ -490,6 +553,19 @@ export default function RuntimeSettingsGroupEditor({
             <label>
               <span>Max transactions</span>
               <input className="settings-input" type="number" min={0} value={draft.run_logic?.max_transactions ?? ''} onChange={event => patchRunLogic({ max_transactions: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+            </label>
+            <label>
+              <span>Action sequence</span>
+              <input
+                className="settings-input"
+                type="text"
+                value={draft.run_logic?.action_sequence?.join(', ') || ''}
+                onChange={event => {
+                  const sequence = event.target.value.split(',').map(value => value.trim()).filter(Boolean)
+                  patchRunLogic({ action_sequence: sequence.length ? sequence : undefined })
+                }}
+                placeholder="login, browse, checkout"
+              />
             </label>
           </div>
         )}
@@ -732,6 +808,18 @@ export default function RuntimeSettingsGroupEditor({
               <label className={`scenario-option-card ${draft.log?.on_error_only ? 'selected' : ''}`}>
                 <input type="checkbox" checked={Boolean(draft.log?.on_error_only)} onChange={event => patchLog({ on_error_only: event.target.checked || undefined })} />
                 <div><strong>Extended logging on error only</strong><span>Use extended logging only when a step fails.</span></div>
+              </label>
+              <label className={`scenario-option-card ${draft.log?.extended_options?.includes('parameter_substitution') ? 'selected' : ''}`}>
+                <input type="checkbox" checked={Boolean(draft.log?.extended_options?.includes('parameter_substitution'))} onChange={event => toggleLogOption('parameter_substitution', event.target.checked)} />
+                <div><strong>Parameter substitution</strong><span>Log each parameter substitution.</span></div>
+              </label>
+              <label className={`scenario-option-card ${draft.log?.extended_options?.includes('data_returned') ? 'selected' : ''}`}>
+                <input type="checkbox" checked={Boolean(draft.log?.extended_options?.includes('data_returned'))} onChange={event => toggleLogOption('data_returned', event.target.checked)} />
+                <div><strong>Data returned</strong><span>Log the data returned by the server.</span></div>
+              </label>
+              <label className={`scenario-option-card ${draft.log?.extended_options?.includes('advanced_trace') ? 'selected' : ''}`}>
+                <input type="checkbox" checked={Boolean(draft.log?.extended_options?.includes('advanced_trace'))} onChange={event => toggleLogOption('advanced_trace', event.target.checked)} />
+                <div><strong>Advanced trace</strong><span>Capture full advanced trace detail.</span></div>
               </label>
             </div>
           </>
