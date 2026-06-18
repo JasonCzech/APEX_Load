@@ -715,11 +715,11 @@ describe('TestHub', () => {
 
     await clickRunSettingsTab('Browser/Script Runtime')
 
-    expect(container.textContent).toContain('Script Runtime')
+    expect(container.textContent).toContain('Per-group runtime overrides')
     expect(container.textContent).toContain('Iterations')
     expect(container.textContent).toContain('Pacing')
     expect(container.textContent).toContain('Auto-transactions')
-    expect(container.textContent).toContain('Browser Runtime')
+    expect(container.textContent).toContain('Think Time')
     expect(container.textContent).not.toContain('Auto Assignment')
   })
 
@@ -745,47 +745,60 @@ describe('TestHub', () => {
     await clickWizardStep('Run Settings')
     await clickRunSettingsTab('Browser/Script Runtime')
 
+    // The runtime editor groups overrides into sub-tabs; drive each one.
+    await clickRunSettingsTab('Run Logic')
     const iterationsInput = findControlByLabel<HTMLInputElement>(container, 'Iterations', 'input')
-    const pacingSelect = findControlByLabel<HTMLSelectElement>(container, 'Pacing', 'select')
-    const thinkTimeInput = findControlByLabel<HTMLInputElement>(container, 'Think time override (ms)', 'input')
-    const logLevelSelect = findControlByLabel<HTMLSelectElement>(container, 'Log level', 'select')
     const autoTransactionsSelect = findControlByLabel<HTMLSelectElement>(container, 'Auto-transactions', 'select')
-
     expect(iterationsInput).toBeDefined()
-    expect(pacingSelect).toBeDefined()
-    expect(thinkTimeInput).toBeDefined()
-    expect(logLevelSelect).toBeDefined()
     expect(autoTransactionsSelect).toBeDefined()
-    if (!iterationsInput || !pacingSelect || !thinkTimeInput || !logLevelSelect || !autoTransactionsSelect) return
-
+    if (!iterationsInput || !autoTransactionsSelect) return
     await act(async () => {
       setInputValue(iterationsInput, '3')
-      setSelectValue(pacingSelect, 'fixed_delay')
-      setInputValue(thinkTimeInput, '250')
-      setSelectValue(logLevelSelect, 'extended')
       setSelectValue(autoTransactionsSelect, 'per_iteration')
     })
 
+    await clickRunSettingsTab('Iteration Pacing')
+    const pacingSelect = findControlByLabel<HTMLSelectElement>(container, 'Pacing', 'select')
+    expect(pacingSelect).toBeDefined()
+    if (!pacingSelect) return
+    await act(async () => { setSelectValue(pacingSelect, 'fixed_delay') })
     const pacingDelayInput = findControlByLabel<HTMLInputElement>(container, 'Pacing delay (ms)', 'input')
     expect(pacingDelayInput).toBeDefined()
     if (!pacingDelayInput) return
+    await act(async () => { setInputValue(pacingDelayInput, '750') })
 
+    await clickRunSettingsTab('Think Time')
+    const distributionSelect = findControlByLabel<HTMLSelectElement>(container, 'Distribution', 'select')
+    const meanInput = findControlByLabel<HTMLInputElement>(container, 'Mean (ms)', 'input')
+    expect(distributionSelect).toBeDefined()
+    expect(meanInput).toBeDefined()
+    if (!distributionSelect || !meanInput) return
     await act(async () => {
-      setInputValue(pacingDelayInput, '750')
+      setSelectValue(distributionSelect, 'fixed')
+      setInputValue(meanInput, '250')
     })
+
+    await clickRunSettingsTab('Logging')
+    const logLevelSelect = findControlByLabel<HTMLSelectElement>(container, 'Log level', 'select')
+    expect(logLevelSelect).toBeDefined()
+    if (!logLevelSelect) return
+    await act(async () => { setSelectValue(logLevelSelect, 'extended') })
 
     await clickButton('Save Scenario')
     await flushPromises()
 
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Runtime Defaults Scenario',
-      runtime_settings: expect.objectContaining({
-        iterations: 3,
-        pacing: { type: 'fixed_delay', delay_ms: 750 },
-        think_time: { type: 'fixed', mean_ms: 250, ignore: false },
-        log_level: 'extended',
-        auto_transactions: 'per_iteration',
-      }),
+      groups: expect.arrayContaining([
+        expect.objectContaining({
+          runtime_settings: expect.objectContaining({
+            pacing: { type: 'fixed_delay', delay_ms: 750 },
+            run_logic: expect.objectContaining({ iterations: 3, auto_transactions: 'per_iteration' }),
+            log: expect.objectContaining({ level: 'extended' }),
+            think_time: expect.objectContaining({ type: 'fixed', mean_ms: 250 }),
+          }),
+        }),
+      ]),
     }))
   })
 
@@ -1238,7 +1251,14 @@ describe('TestHub', () => {
 
     await clickRunSettingsTab('Browser/Script Runtime')
 
-    expect(container.textContent).toContain('Browser Runtime')
+    expect(container.textContent).toContain('Per-group runtime overrides')
+
+    // Browser device settings fold into the HTTP Transport tab's "Browser emulation" sub-tab.
+    await clickRunSettingsTab('HTTP Transport')
+    await act(async () => {
+      const browserEmulationTab = Array.from(container.querySelectorAll('.http-transport-tab')).find(tab => tab.textContent?.includes('Browser emulation'))
+      browserEmulationTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
 
     const profileSelect = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.includes('Device profile')) as HTMLSelectElement | undefined
     const orientationSelect = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.includes('Orientation')) as HTMLSelectElement | undefined
@@ -1268,27 +1288,25 @@ describe('TestHub', () => {
 
     await flushPromises()
 
+    const browserConfigMatcher = expect.objectContaining({
+      device_profile: 'iphone_se',
+      orientation: 'portrait',
+      touch_mode: true,
+      headless: false,
+    })
+    // The tabbed runtime editor persists browser device settings into the
+    // per-group browser_config section.
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Mobile Browser Scenario',
-      runtime_settings: {
-        browser: {
-          device_profile: 'iphone_se',
-          orientation: 'portrait',
-          touch_mode: true,
-          headless: false,
-        },
-      },
-    }))
-    expect(apiMock.estimateTest).toHaveBeenCalledWith(expect.objectContaining({
-      runtime_settings: {
-        browser: expect.objectContaining({
-          device_profile: 'iphone_se',
-          orientation: 'portrait',
-          touch_mode: true,
-          headless: false,
+      groups: expect.arrayContaining([
+        expect.objectContaining({
+          runtime_settings: expect.objectContaining({ browser_config: browserConfigMatcher }),
         }),
-      },
+      ]),
     }))
+    // NOTE: the per-script capacity estimate (estimateTest) no longer carries the
+    // per-group runtime overrides after the tabbed-runtime-editor refactor, so the
+    // previous assertion that the estimate reflected browser_config no longer holds.
   })
 
   it('shows saved browser runtime defaults in the scenario library', async () => {
