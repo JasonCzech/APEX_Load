@@ -5,6 +5,7 @@ import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
 import { useKeyboardShortcuts } from '../hooks/KeyboardShortcutProvider'
 import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
 import { EditorSelection, StateEffect, type Extension } from '@codemirror/state'
@@ -478,7 +479,7 @@ interface CenterWorkbenchTabDescriptor {
   closeable: boolean
 }
 
-const DEBUG_HIDDEN_CENTER_TABS = new Set<CenterWorkbenchTabId>(['imported-metadata', 'metadata-json'])
+const DEBUG_HIDDEN_CENTER_TABS = new Set<CenterWorkbenchTabId>(['imported-metadata'])
 
 type AuthorRightSidebarKind =
   | 'auto-parameterization'
@@ -569,6 +570,39 @@ interface ScriptCodeScrollController {
 
 const JSON_SOURCE_MAP_LINE_HEIGHT_PX = 6.5
 
+/**
+ * Above this line count we stop measuring per-line layout for the source-map snapshot.
+ * Measuring every line (view.lineBlockAt per line) is a forced synchronous layout pass
+ * that, on a tens-of-thousands-of-line imported script, blocks the main thread and — since
+ * the snapshot is stored in component state — can re-fire on every render. Consumers fall
+ * back to baseLineHeight when lineLayouts is empty.
+ */
+const SCRIPT_CODE_LINE_LAYOUT_MAX_LINES = 4000
+
+/**
+ * Above this document size the per-line source-map minimap (one DOM <button> per line)
+ * is replaced by a lightweight scrollbar-only minimap. Rendering ~50k buttons for a large
+ * imported script otherwise commits hundreds of thousands of DOM nodes in a single pass.
+ */
+const JSON_SOURCE_MAP_MAX_DOC_CHARS = 250_000
+
+/**
+ * Above this document size, line wrapping is disabled in the Script JSON editor. With
+ * EditorView.lineWrapping CodeMirror must measure the wrapped height of every line to size
+ * the document, which renders all ~100k lines of a large import (millions of px tall) and
+ * defeats viewport virtualization. Without wrapping, lines have a uniform height and only the
+ * visible viewport is rendered. The trade-off (horizontal scroll on long lines) is acceptable
+ * for very large generated JSON that is not hand-edited line by line.
+ */
+const SCRIPT_CODE_LINE_WRAP_MAX_CHARS = 250_000
+
+/**
+ * Only virtualize long lists. Below this count the (cheap) plain render is used, which keeps
+ * behavior identical for ordinary scripts and test fixtures; large imports (thousands of
+ * actions/mappings) switch to windowed rendering so only visible rows hit the DOM.
+ */
+const LIST_VIRTUALIZE_THRESHOLD = 100
+
 const SCRIPT_CODE_SCROLL_EMPTY: ScriptCodeScrollSnapshot = {
   scrollTop: 0,
   scrollHeight: 0,
@@ -605,6 +639,10 @@ function readLinePositionAtScrollTop(view: EditorView, scrollTop: number, scroll
 }
 
 function readScriptCodeLineLayouts(view: EditorView, scrollHeight: number, lineCount: number) {
+  if (lineCount > SCRIPT_CODE_LINE_LAYOUT_MAX_LINES) {
+    const base = view.defaultLineHeight || Math.max(1, scrollHeight / Math.max(1, lineCount))
+    return { lineLayouts: [] as ScriptCodeLineLayout[], baseLineHeight: Math.max(1, base) }
+  }
   try {
     const lineLayouts: ScriptCodeLineLayout[] = []
     let minHeight = Number.POSITIVE_INFINITY
@@ -764,6 +802,7 @@ function ScriptCodePane({
     lastScrollSnapshotRef.current = snapshot
     onScrollSnapshotChange?.(snapshot)
   }, [onScrollSnapshotChange])
+  const wrapLines = value.length <= SCRIPT_CODE_LINE_WRAP_MAX_CHARS
   const extensions = useMemo(() => [
     json(),
     apexCodeMirrorTheme,
@@ -772,14 +811,14 @@ function ScriptCodePane({
     scriptCodeParameterMatchField,
     scriptCodeCandidateMatchField,
     scriptCodeResolvedValueField,
-    EditorView.lineWrapping,
+    ...(wrapLines ? [EditorView.lineWrapping] : []),
     EditorView.updateListener.of(update => {
       if (update.selectionSet || update.docChanged || update.viewportChanged || update.geometryChanged) {
         emitScrollSnapshot()
       }
     }),
     ...(assistExtensions ?? []),
-  ], [assistExtensions, emitScrollSnapshot])
+  ], [assistExtensions, emitScrollSnapshot, wrapLines])
 
   const scrollToScrollTop = useCallback((scrollTop: number) => {
     const scrollDOM = viewRef.current?.scrollDOM
@@ -1007,12 +1046,13 @@ function ScriptCodePane({
 
 function MetadataJsonViewer({ metadata }: { metadata: ScriptImportMetadata }) {
   const metadataJson = useMemo(() => JSON.stringify(metadata, null, 2), [metadata])
+  const wrapLines = metadataJson.length <= SCRIPT_CODE_LINE_WRAP_MAX_CHARS
   const extensions = useMemo(() => [
     json(),
     apexCodeMirrorTheme,
-    EditorView.lineWrapping,
+    ...(wrapLines ? [EditorView.lineWrapping] : []),
     EditorView.editable.of(false),
-  ], [])
+  ], [wrapLines])
 
   return (
     <section className="script-code-pane metadata-json-viewer" aria-label="Metadata JSON">
@@ -1041,6 +1081,38 @@ function MetadataJsonViewer({ metadata }: { metadata: ScriptImportMetadata }) {
         />
       </div>
     </section>
+  )
+}
+
+/**
+ * On-demand modal wrapper for the (potentially multi-MB) read-only Metadata JSON editor.
+ * Mounted only while open — opened from the left outline — so the heavy CodeMirror over the
+ * preserved import metadata never builds on script open.
+ */
+function MetadataJsonDialog({ metadata, onClose }: { metadata: ScriptImportMetadata; onClose: () => void }) {
+  return (
+    <div className="editor-dialog-backdrop" onClick={onClose}>
+      <div
+        className="editor-dialog metadata-json-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Imported Metadata JSON"
+        onClick={event => event.stopPropagation()}
+      >
+        <div className="editor-dialog-header">
+          <div>
+            <h3 className="panel-title">Imported Metadata JSON</h3>
+            <p className="editor-dialog-subtitle">
+              Read-only view of the preserved import metadata. Opened on demand to keep the editor fast on large imports.
+            </p>
+          </div>
+          <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+        </div>
+        <div className="editor-dialog-body metadata-json-dialog-body">
+          <MetadataJsonViewer metadata={metadata} />
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1162,9 +1234,13 @@ function JsonSourceMinimap({
     startLine: Math.min(scrollSnapshot.selectedStartLine, scrollSnapshot.selectedEndLine),
     endLine: Math.max(scrollSnapshot.selectedStartLine, scrollSnapshot.selectedEndLine),
   }), [scrollSnapshot.selectedEndLine, scrollSnapshot.selectedStartLine])
+  // For very large documents the per-line minimap (one DOM button per line) would emit
+  // tens of thousands of nodes and a giant grid-template-rows string, freezing the tab on
+  // mount. Above this size we render a lightweight scrollbar-only minimap instead.
+  const oversized = jsonText.length > JSON_SOURCE_MAP_MAX_DOC_CHARS
   const lines = useMemo(
-    () => buildJsonMinimapLines(jsonText, activeRange, selectedLineRange, parameterMatchRanges, candidateMatchRanges),
-    [activeRange, candidateMatchRanges, jsonText, parameterMatchRanges, selectedLineRange],
+    () => oversized ? [] : buildJsonMinimapLines(jsonText, activeRange, selectedLineRange, parameterMatchRanges, candidateMatchRanges),
+    [oversized, activeRange, candidateMatchRanges, jsonText, parameterMatchRanges, selectedLineRange],
   )
   const activeLabel = selectedParameterName
     ? `${selectedParameterName}: ${parameterMatchRanges.length} occurrence${parameterMatchRanges.length === 1 ? '' : 's'}`
@@ -1408,7 +1484,12 @@ function JsonSourceMinimap({
                 }}
               />
             )}
-            {lines.map(line => (
+            {oversized ? (
+              <div className="json-source-map-oversized" aria-hidden="true">
+                <span>Large document</span>
+                <small>Line map disabled — drag the scrollbar to navigate</small>
+              </div>
+            ) : lines.map(line => (
               <button
                 key={`json-map-line-${line.lineNo}`}
                 type="button"
@@ -2995,8 +3076,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         ? `${script.config.run_logic.iterations} iterations`
         : 'Run until duration'
   const logLevelLabel = script.config.log?.level || 'standard'
-  const outlineSummary = buildScriptOutlineSummary(script)
+  const outlineSummary = useMemo(() => buildScriptOutlineSummary(script), [script])
   const scriptPhaseActionRows = useMemo(() => buildScriptPhaseActionRows(script), [script])
+  // Virtualize the Author Action List so a multi-thousand-action import renders only the
+  // visible rows instead of one DOM subtree per action.
+  const actionListScrollRef = useRef<HTMLDivElement | null>(null)
+  const virtualizeActions = scriptPhaseActionRows.length > LIST_VIRTUALIZE_THRESHOLD
+  const actionListVirtualizer = useVirtualizer({
+    count: scriptPhaseActionRows.length,
+    getScrollElement: () => actionListScrollRef.current,
+    estimateSize: () => 45,
+    overscan: 12,
+  })
+  const actionRowsToRender: Array<{ row: ScriptPhaseActionRow; virtualItem: VirtualItem | null }> = virtualizeActions
+    ? actionListVirtualizer.getVirtualItems().map(virtualItem => ({ row: scriptPhaseActionRows[virtualItem.index], virtualItem }))
+    : scriptPhaseActionRows.map(row => ({ row, virtualItem: null }))
   const parameterReferenceCounts = useMemo(() => {
     const counts = new Map<string, number>()
     outlineSummary.actions.forEach(action => {
@@ -3048,9 +3142,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }, [activeAutoParameterCandidate])
   const importMetadata = scriptHasImportMetadata(script) ? script.metadata?.import : undefined
   const importSummary = getImportSummary(importMetadata)
-  const sourceReview = readSourceReview(importMetadata)
-  const trueClientPromotionReview = readTrueClientPromotionReview(importMetadata)
-  const objectDescriptorReview = buildWeb2ObjectDescriptorReview(script, importMetadata)
+  const sourceReview = useMemo(() => readSourceReview(importMetadata), [importMetadata])
+  const trueClientPromotionReview = useMemo(() => readTrueClientPromotionReview(importMetadata), [importMetadata])
+  const objectDescriptorReview = useMemo(() => buildWeb2ObjectDescriptorReview(script, importMetadata), [script, importMetadata])
   const httpConversionReview = buildBrowserHTTPConversionReview(script, replayReport, browserReplaySession)
   const [httpConversionPreview, setHttpConversionPreview] = useState<BrowserToHTTPPreviewResponse | null>(null)
   const [httpConversionGenerating, setHttpConversionGenerating] = useState(false)
@@ -3077,9 +3171,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       { id: 'parameter-data', label: 'Parameter Data', title: 'Parameter Data', closeable: true },
     ]
     if (importMetadata) {
+      // Note: the full Metadata JSON is intentionally NOT a center tab — it is opened
+      // on demand from the left outline (Imported Metadata JSON) so its multi-MB read-only
+      // editor never mounts unless the user explicitly asks to see it.
       descriptors.push(
         { id: 'imported-metadata', label: 'Source Mapping', title: 'Source Mapping', closeable: true },
-        { id: 'metadata-json', label: 'Metadata JSON', title: 'Metadata JSON', closeable: true },
       )
     }
     if (objectDescriptorReview.rows.length > 0) {
@@ -3148,6 +3244,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [debugRawAutoScroll, setDebugRawAutoScroll] = useState(true)
   const [debugRawClearedAt, setDebugRawClearedAt] = useState(0)
   const [showImportedParameterMappingsDialog, setShowImportedParameterMappingsDialog] = useState(false)
+  const [showMetadataJsonDialog, setShowMetadataJsonDialog] = useState(false)
   const [sourceMappingFocus, setSourceMappingFocus] = useState<{ mappingId: string; requestId: number }>({ mappingId: '', requestId: 0 })
   const debugRawOutputRef = useRef<HTMLDivElement | null>(null)
   const [debugRailFilter, setDebugRailFilter] = useState('')
@@ -3207,20 +3304,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     if (!importMetadata && !sourceReview) return
     setCenterTabsState(prev => {
       const nextTabs = [...prev.tabs]
-      if (importMetadata) {
-        let sourceMappingIndex = nextTabs.indexOf('imported-metadata')
-        if (sourceMappingIndex === -1) {
-          nextTabs.push('imported-metadata')
-          sourceMappingIndex = nextTabs.length - 1
-        }
-        const metadataJsonIndex = nextTabs.indexOf('metadata-json')
-        if (metadataJsonIndex === -1) {
-          nextTabs.splice(sourceMappingIndex + 1, 0, 'metadata-json')
-        } else if (metadataJsonIndex !== sourceMappingIndex + 1) {
-          nextTabs.splice(metadataJsonIndex, 1)
-          sourceMappingIndex = nextTabs.indexOf('imported-metadata')
-          nextTabs.splice(sourceMappingIndex + 1, 0, 'metadata-json')
-        }
+      if (importMetadata && !nextTabs.includes('imported-metadata')) {
+        nextTabs.push('imported-metadata')
       }
       if (nextTabs.length === prev.tabs.length && nextTabs.every((tabId, index) => tabId === prev.tabs[index])) return prev
       return { ...prev, tabs: nextTabs }
@@ -3385,19 +3470,38 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [componentLibraryStatus, setComponentLibraryStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [validationEvidence, setValidationEvidence] = useState<ValidationEvidence | null>(null)
   const [validationReplayPreflight, setValidationReplayPreflight] = useState<ReplayPreflight | null>(null)
-  const authoringIssues = collectAuthoringIssues(script)
-  const actionIssueBuckets = groupIssuesByAction(authoringIssues, script.actions.length)
-  const scriptLevelIssues = authoringIssues.filter((issue) => typeof issue.actionIndex !== 'number')
+  // These derivations scan the full action set (and for imports, run a draft diff
+  // against the baseline). On a multi-thousand-action import they are expensive, so
+  // they must be memoized — otherwise every render (including scroll-snapshot driven
+  // re-renders) re-scans the whole script and the editor stalls.
+  const authoringIssues = useMemo(() => collectAuthoringIssues(script), [script])
+  const actionIssueBuckets = useMemo(
+    () => groupIssuesByAction(authoringIssues, script.actions.length),
+    [authoringIssues, script.actions.length],
+  )
+  const scriptLevelIssues = useMemo(
+    () => authoringIssues.filter((issue) => typeof issue.actionIndex !== 'number'),
+    [authoringIssues],
+  )
   const errorCount = authoringIssues.filter((issue) => issue.severity === 'error').length
   const warningCount = authoringIssues.filter((issue) => issue.severity === 'warning').length
-  const starterTemplates = buildProtocolStarterTemplates(script.protocol, script.actions.length)
-  const migrationSuggestions = buildMigrationAssistantSuggestions(script)
-  const repairSuggestions = buildScriptRepairSuggestions(script, authoringIssues)
+  const starterTemplates = useMemo(
+    () => buildProtocolStarterTemplates(script.protocol, script.actions.length),
+    [script.protocol, script.actions.length],
+  )
+  const migrationSuggestions = useMemo(() => buildMigrationAssistantSuggestions(script), [script])
+  const repairSuggestions = useMemo(
+    () => buildScriptRepairSuggestions(script, authoringIssues),
+    [script, authoringIssues],
+  )
   const reviewBaselineScript = importBaselineScript || editorHistory.past[editorHistory.past.length - 1] || null
-  const draftDiffSummary = reviewBaselineScript ? buildImportedDraftDiffSummary(reviewBaselineScript, script) : null
-  const parameterInspectorItems = summarizeParameters(script.parameters || [])
-  const dataSourceInspectorItems = summarizeDataSources(script.data_sources || [])
-  const extractorInspectorItems = scriptPhaseActionRows.flatMap((row) =>
+  const draftDiffSummary = useMemo(
+    () => (reviewBaselineScript ? buildImportedDraftDiffSummary(reviewBaselineScript, script) : null),
+    [reviewBaselineScript, script],
+  )
+  const parameterInspectorItems = useMemo(() => summarizeParameters(script.parameters || []), [script.parameters])
+  const dataSourceInspectorItems = useMemo(() => summarizeDataSources(script.data_sources || []), [script.data_sources])
+  const extractorInspectorItems = useMemo(() => scriptPhaseActionRows.flatMap((row) =>
     (row.action.extractors || []).map((extractor, extractorIndex) => ({
       id: `${row.phase}:${row.actionIndex}:${extractorIndex}`,
       label: `${extractor.name || `extractor_${extractorIndex + 1}`} • ${row.action.name || `${row.phaseLabel} ${row.actionIndex + 1}`}`,
@@ -3405,7 +3509,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       phase: row.phase,
       phaseLabel: row.phaseLabel,
     })),
-  )
+  ), [scriptPhaseActionRows])
   const selectedBrowserProfile = lookupBrowserDeviceProfile(script.config.browser?.device_profile)
   const browserEngineAdvisory = selectedBrowserProfile && selectedBrowserProfile.engine !== selectedBrowserEngine
     ? `${selectedBrowserProfile.name} requires ${selectedBrowserProfile.engine}. Choose a matching engine or switch to a compatible preset.`
@@ -6645,8 +6749,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         return { kind: 'source-map', title: 'Source Map', railLabel: 'Map' }
       case 'imported-metadata':
         return { kind: 'imported-metadata', title: 'Source Mapping', railLabel: 'Map' }
-      case 'metadata-json':
-        return { kind: 'imported-metadata', title: 'Metadata JSON', railLabel: 'JSON' }
       case 'object-descriptors':
         return { kind: 'object-descriptors', title: 'Object Descriptors', railLabel: 'Objects' }
       case 'http-conversion':
@@ -6953,6 +7055,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           mappings={importedParameterFileMappings}
           onClose={() => setShowImportedParameterMappingsDialog(false)}
           onOpenMappedDataSource={openImportedDataSourceReview}
+        />
+      )}
+      {showMetadataJsonDialog && importMetadata && (
+        <MetadataJsonDialog
+          metadata={importMetadata}
+          onClose={() => setShowMetadataJsonDialog(false)}
         />
       )}
       {parameterizeChoice && (
@@ -9962,6 +10070,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('config')}>Script Configuration</button>
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('runtime')}>Runtime Settings</button>
                     {importMetadata && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('import')}>Source Mapping</button>}
+                    {importMetadata && <button className="editor-outline-link" type="button" onClick={() => setShowMetadataJsonDialog(true)}>Imported Metadata JSON</button>}
                     {objectDescriptorReview.rows.length > 0 && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('object-descriptors')}>Object Descriptors</button>}
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
                     {isBrowserScript && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('http-conversion')}>HTTP Conversion Review</button>}
@@ -9986,8 +10095,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     </div>
                   </div>
                   {!outlineActionListCollapsed && (
-                    <div className="action-list">
-                      {scriptPhaseActionRows.map((row) => {
+                    scriptPhaseActionRows.length === 0 ? (
+                      <div className="action-list">
+                        <div className="action-empty">No actions yet. Click "+ Add" to create one.</div>
+                      </div>
+                    ) : (
+                    <div className="action-list" ref={actionListScrollRef}>
+                      <div className="action-list-virtual" style={virtualizeActions ? { height: actionListVirtualizer.getTotalSize(), position: 'relative' } : undefined}>
+                      {actionRowsToRender.map(({ row, virtualItem }) => {
                         const { action: a, actionIndex: i, phase, phaseLabel } = row
                         const actionBreakpointActive = debugBreakpointKeys.has(debugBreakpointKey(phase, i))
                         const breakpointPhaseLabel = phase === 'action' ? 'action' : phaseLabel
@@ -10002,7 +10117,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           ? authorCodeFocus.phase === phase && authorCodeFocus.actionIndex === i
                           : phase === 'action' && activeAction === i
                         return (
-                          <div key={`${phase}-${i}`} className={`action-item ${rowActive ? 'active' : ''} ${actionBreakpointActive ? 'has-breakpoint' : ''} ${phase !== 'action' ? 'lifecycle-action' : ''}`} onClick={() => selectAuthorPhaseAction(row)}>
+                          <div
+                            key={`${phase}-${i}`}
+                            data-index={virtualItem ? virtualItem.index : undefined}
+                            ref={virtualItem ? actionListVirtualizer.measureElement : undefined}
+                            className={`action-item ${rowActive ? 'active' : ''} ${actionBreakpointActive ? 'has-breakpoint' : ''} ${phase !== 'action' ? 'lifecycle-action' : ''}`}
+                            style={virtualItem ? { position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualItem.start}px)` } : undefined}
+                            onClick={() => selectAuthorPhaseAction(row)}
+                          >
                             <button
                               type="button"
                               className={`action-breakpoint-button ${actionBreakpointActive ? 'active' : ''}`}
@@ -10056,10 +10178,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           </div>
                         )
                       })}
-                      {scriptPhaseActionRows.length === 0 && (
-                        <div className="action-empty">No actions yet. Click "+ Add" to create one.</div>
-                      )}
+                      </div>
                     </div>
+                    )
                   )}
                 </section>
                 <section className="outline-section parameter-outline-section">
@@ -10369,13 +10490,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </section>
                 )), centerTabPanelElements['imported-metadata'])}
 
-              {importMetadata && centerTabPanelElements['metadata-json'] && createPortal(
-                renderStructuredCenterDocument('Metadata JSON', (
-                  <section id="metadata-json-section" className="center-document import-metadata-panel config-panel metadata-json-section open" aria-label="Metadata JSON">
-                    <MetadataJsonViewer metadata={importMetadata} />
-                  </section>
-                )), centerTabPanelElements['metadata-json'])}
-
               <div className={`editor-utility-sidebar context-${authorRightSidebarContext.kind} ${authorRightSidebarContext.wide ? 'wide' : ''} ${authorRightSidebarCollapsed ? 'collapsed' : ''}`}>
                 {authorRightSidebarCollapsed ? (
                   <button
@@ -10564,11 +10678,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       <div className="utility-json-grid">
                         <div>
                           <strong>Review Baseline</strong>
-                          <pre>{JSON.stringify(reviewBaselineScript, null, 2)}</pre>
+                          {jsonText.length > JSON_SOURCE_MAP_MAX_DOC_CHARS
+                            ? <div className="utility-empty-state">Script too large to preview inline.</div>
+                            : <pre>{JSON.stringify(reviewBaselineScript, null, 2)}</pre>}
                         </div>
                         <div>
                           <strong>Current Draft</strong>
-                          <pre>{JSON.stringify(script, null, 2)}</pre>
+                          {jsonText.length > JSON_SOURCE_MAP_MAX_DOC_CHARS
+                            ? <div className="utility-empty-state">Script too large to preview inline.</div>
+                            : <pre>{JSON.stringify(script, null, 2)}</pre>}
                         </div>
                       </div>
                     </details>
@@ -15167,10 +15285,23 @@ function formatDataSourceFitContext(item: NonNullable<ValidationEvidence['data_s
   return parts.join(' · ')
 }
 
+/**
+ * Snapshot a script for the import draft-diff baseline. The diff only compares
+ * config/actions/parameters/data_sources; preserved import metadata can be several MB for
+ * large archives and is immutable, so deep-clone only the editable body and share the
+ * metadata by reference rather than serializing the whole ~3MB object on every open.
+ */
+function cloneScriptForImportBaseline(source: ScriptData): ScriptData {
+  const { metadata, ...body } = source
+  const baseline = structuredClone(body) as ScriptData
+  if (metadata !== undefined) baseline.metadata = metadata
+  return baseline
+}
+
 function useScriptEditorState(initialScript?: ScriptData | null) {
   const [script, setScript] = useState<ScriptData>(initialScript || { ...EMPTY_SCRIPT })
   const [importBaselineScript, setImportBaselineScript] = useState<ScriptData | null>(
-    initialScript?.metadata?.import ? JSON.parse(JSON.stringify(initialScript)) as ScriptData : null,
+    initialScript?.metadata?.import ? cloneScriptForImportBaseline(initialScript) : null,
   )
   const [activeAction, setActiveAction] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
@@ -15216,7 +15347,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
 
   const hydrateEditorState = useCallback((nextScript: ScriptData) => {
     setScript(nextScript)
-    setImportBaselineScript(nextScript.metadata?.import ? JSON.parse(JSON.stringify(nextScript)) as ScriptData : null)
+    setImportBaselineScript(nextScript.metadata?.import ? cloneScriptForImportBaseline(nextScript) : null)
     if (scriptHasImportMetadata(nextScript)) {
       setOpenSections(prev => ({ ...prev, import: true }))
     }

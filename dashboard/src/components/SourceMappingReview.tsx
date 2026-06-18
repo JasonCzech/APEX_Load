@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 
 import { type ScriptDefinition, type SourceReview, type SourceReviewFile, type SourceReviewMapping } from '../types/scripts'
 import { canCopyTextToClipboard, copyTextToClipboard } from '../utils/clipboardUtils'
@@ -247,6 +248,26 @@ export default function SourceMappingReview({
     return [...next].sort((a, b) => compareText(mappingSortValue(a, sortField), mappingSortValue(b, sortField), sortDirection))
   }, [filter, mappings, sortDirection, sortField, categoryFilter, approvedMappingIds])
 
+  // Virtualize the mappings table — a large LoadRunner import can carry thousands of
+  // mappings, and rendering one <tr> per mapping would commit thousands of DOM rows.
+  // Only virtualize when there are many mappings; small imports (and test fixtures) render
+  // the full table so behavior is unchanged. Large LoadRunner imports (thousands of
+  // mappings) switch to windowed rendering.
+  const virtualizeRows = filteredMappings.length > 100
+  const rowVirtualizer = useVirtualizer({
+    count: filteredMappings.length,
+    getScrollElement: () => tableWrapRef.current,
+    estimateSize: () => 44,
+    overscan: 12,
+  })
+  const virtualRows = rowVirtualizer.getVirtualItems()
+  const virtualTotalSize = rowVirtualizer.getTotalSize()
+  const virtualPaddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0
+  const virtualPaddingBottom = virtualRows.length > 0 ? virtualTotalSize - virtualRows[virtualRows.length - 1].end : 0
+  const mappingRowsToRender = virtualizeRows
+    ? virtualRows.map(virtualRow => ({ mapping: filteredMappings[virtualRow.index], virtualItem: virtualRow }))
+    : filteredMappings.map(mapping => ({ mapping, virtualItem: null as VirtualItem | null }))
+
   useEffect(() => {
     const hasNewFocusRequest = !!focusedMappingId && lastTableScrollFocusRequestRef.current !== focusRequestId
     const idToScroll = hasNewFocusRequest ? focusedMappingId : selectedMappingId
@@ -254,6 +275,12 @@ export default function SourceMappingReview({
       lastTableScrollFocusRequestRef.current = focusRequestId
     }
     if (!idToScroll || isTableCollapsed) return
+    if (virtualizeRows) {
+      const index = filteredMappings.findIndex(mapping => mapping.id === idToScroll)
+      // Bring the row into the virtual window first; once rendered, the rAF below
+      // fine-tunes with the existing centering helper.
+      if (index >= 0) rowVirtualizer.scrollToIndex(index, { align: 'auto' })
+    }
     window.requestAnimationFrame(() => {
       const tableWrap = tableWrapRef.current
       const row = rowRefs.current[idToScroll]
@@ -261,7 +288,7 @@ export default function SourceMappingReview({
         scrollMappingRowIntoTableView(tableWrap, row)
       }
     })
-  }, [focusedMappingId, focusRequestId, isTableCollapsed, selectedMappingId])
+  }, [focusedMappingId, focusRequestId, isTableCollapsed, selectedMappingId, filteredMappings, rowVirtualizer])
 
   const selectMapping = (mapping: SourceReviewMapping | null) => {
     if (!mapping) return
@@ -528,10 +555,16 @@ export default function SourceMappingReview({
             </tr>
           </thead>
           <tbody>
-            {filteredMappings.map(mapping => (
+            {virtualizeRows && virtualPaddingTop > 0 && (
+              <tr aria-hidden="true" className="source-map-virtual-spacer">
+                <td colSpan={4} style={{ height: virtualPaddingTop, padding: 0, border: 0 }} />
+              </tr>
+            )}
+            {mappingRowsToRender.map(({ mapping, virtualItem }) => (
               <tr
                 key={mapping.id}
-                ref={node => { rowRefs.current[mapping.id] = node }}
+                data-index={virtualItem ? virtualItem.index : undefined}
+                ref={node => { rowRefs.current[mapping.id] = node; if (virtualItem) rowVirtualizer.measureElement(node) }}
                 className={mapping.id === selectedMapping?.id ? 'active' : ''}
                 data-mapping-id={mapping.id}
                 data-target-path={mapping.target_path || ''}
@@ -563,6 +596,11 @@ export default function SourceMappingReview({
                 </td>
               </tr>
             ))}
+            {virtualizeRows && virtualPaddingBottom > 0 && (
+              <tr aria-hidden="true" className="source-map-virtual-spacer">
+                <td colSpan={4} style={{ height: virtualPaddingBottom, padding: 0, border: 0 }} />
+              </tr>
+            )}
             {filteredMappings.length === 0 && (
               <tr>
                 <td colSpan={4} className="source-map-empty">No source mappings match this filter.</td>
