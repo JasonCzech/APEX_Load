@@ -89,6 +89,14 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 		}
 	}
 
+	// Strict: when a timeslot is supplied, bind it as part of creation. A bind
+	// failure aborts the create so a run is never created unprotected.
+	if req.TimeslotID != nil && strings.TrimSpace(*req.TimeslotID) != "" {
+		if err := tr.validateAndBindTimeslotLocked(strings.TrimSpace(*req.TimeslotID), test); err != nil {
+			return nil, err
+		}
+	}
+
 	tr.tests[test.ID] = test
 	tr.indexRefKeyLocked(test.RefKey, test.ID)
 

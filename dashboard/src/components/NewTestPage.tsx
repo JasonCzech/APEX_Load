@@ -973,24 +973,16 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
         : intent === 'reserve'
           ? { ...runCreatePayload, release_id: releaseId, reserve_launch_window: true, scheduled_start_at: reservationStartISO(immediatePreflight) }
           : { ...runCreatePayload, release_id: releaseId }
-      const test = await api.createTest(payload)
-      // Best-effort attach to the selected reservation before launching/navigating.
-      let bindFailed = ''
+      // Bind the reserved timeslot atomically as part of creation (strict): if the
+      // timeslot can't be bound the create fails, so a run is never left unprotected.
+      const createPayload = selectedTimeslotId ? { ...payload, timeslot_id: selectedTimeslotId } : payload
+      const test = await api.createTest(createPayload)
       if (selectedTimeslotId) {
-        try {
-          await api.bindTimeslot(selectedTimeslotId, test.id)
-          setSelectedTimeslotId('')
-          void refreshBindableTimeslots()
-        } catch (bindErr: unknown) {
-          bindFailed = getErrorMessage(bindErr, 'binding failed')
-        }
+        setSelectedTimeslotId('')
+        void refreshBindableTimeslots()
       }
       if (intent === 'queue') {
         await api.startTest(test.id)
-      }
-      if (bindFailed) {
-        setError(`Run created${intent === 'queue' ? ' and started' : ''}, but binding it to the reserved timeslot failed: ${bindFailed}. You can bind it from Monitoring → Schedules.`)
-        return
       }
       if (intent === 'reserve' || intent === 'queue') {
         ;(onOpenCommandCenter || onSelectTest)(test.id)

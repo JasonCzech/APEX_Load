@@ -120,7 +120,9 @@ func (tr *TestRunner) evaluateReservedCapacityBlockLocked(test *ManagedTest, exc
 	if test == nil {
 		return false, ""
 	}
-	totalReserved, projectReserved := capacityReservationTotals(tr.settings, normalizeProjectID(test.ProjectID))
+	now := time.Now()
+	activeSlots := tr.boundTimeslotsActiveAtLocked(now)
+	totalReserved, projectReserved := reservationTotalsWithTimeslots(tr.settings, normalizeProjectID(test.ProjectID), now, activeSlots)
 	if totalReserved <= 0 {
 		return false, "" // no reservations configured -> nothing to protect
 	}
@@ -143,7 +145,7 @@ func (tr *TestRunner) evaluateReservedCapacityBlockLocked(test *ManagedTest, exc
 	g := recommendedGeneratorCountForTest(test)
 	sharedDelta := maxInt(0, projectActive+g-projectReserved) - maxInt(0, projectActive-projectReserved)
 
-	sharedUsedTotal := tr.sharedGeneratorUsageLocked(excludeTestID)
+	sharedUsedTotal := tr.sharedGeneratorUsageLocked(excludeTestID, now, activeSlots)
 	if sharedUsedTotal+sharedDelta > shared {
 		return true, fmt.Sprintf("waiting for shared generator capacity (%d of %d generators reserved for other projects)", totalReserved, effective)
 	}
@@ -152,7 +154,7 @@ func (tr *TestRunner) evaluateReservedCapacityBlockLocked(test *ManagedTest, exc
 
 // sharedGeneratorUsageLocked sums each project's draw on the shared generator
 // pool: a project's active generators above its own reservation.
-func (tr *TestRunner) sharedGeneratorUsageLocked(excludeTestID string) int {
+func (tr *TestRunner) sharedGeneratorUsageLocked(excludeTestID string, at time.Time, activeSlots []*storage.CapacityReservation) int {
 	byProject := make(map[string]int)
 	for id, test := range tr.tests {
 		if test == nil || id == excludeTestID || !reservationActiveStatus(test.Status) {
@@ -162,7 +164,7 @@ func (tr *TestRunner) sharedGeneratorUsageLocked(excludeTestID string) int {
 	}
 	total := 0
 	for projectID, active := range byProject {
-		_, reserved := capacityReservationTotals(tr.settings, projectID)
+		_, reserved := reservationTotalsWithTimeslots(tr.settings, projectID, at, activeSlots)
 		total += maxInt(0, active-reserved)
 	}
 	return total
@@ -285,7 +287,8 @@ func (tr *TestRunner) pendingFairShareRankLocked(test *ManagedTest) pendingFairS
 	}
 	projectID := normalizeProjectID(test.ProjectID)
 	reservationTier := 1
-	_, projectReserved := capacityReservationTotals(tr.settings, projectID)
+	now := time.Now()
+	_, projectReserved := reservationTotalsWithTimeslots(tr.settings, projectID, now, tr.boundTimeslotsActiveAtLocked(now))
 	if projectReserved > 0 && tr.countActiveRecommendedGeneratorsForProjectLocked(projectID) < projectReserved {
 		reservationTier = 0
 	}

@@ -1184,8 +1184,10 @@ describe('NewTestPage', () => {
     })
     await flushPromises()
 
-    expect(apiMock.createTest).toHaveBeenCalled()
-    expect(apiMock.bindTimeslot).toHaveBeenCalledWith('slot-1', 'test-1')
+    // The timeslot is now bound strictly as part of creation (timeslot_id in the
+    // create payload), not via a best-effort post-create bind call.
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({ timeslot_id: 'slot-1' }))
+    expect(apiMock.bindTimeslot).not.toHaveBeenCalled()
     expect(apiMock.startTest).toHaveBeenCalledWith('test-1')
     expect(openCommandCenter).toHaveBeenCalledWith('test-1')
   })

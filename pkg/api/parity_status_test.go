@@ -78,7 +78,7 @@ func TestHandleGetParityStatusReturnsAPIParityProgram(t *testing.T) {
 	// Expected status per dimension. A dimension flips gap -> partial -> supported
 	// as its build family lands; capacity_reservation (timeslots) is the first.
 	wantStatus := map[string]string{
-		"capacity_reservation":    "partial",
+		"capacity_reservation":    "supported",
 		"fleet_management":        "partial",
 		"execution_planning":      "partial",
 		"monitoring_collectors":   "partial",

@@ -91,6 +91,14 @@ type usageSnapshotPersistence interface {
 	SaveUsageAccountingSnapshot(snapshot *storage.UsageAccountingSnapshot) error
 }
 
+// reservationPersistence is the slice of storage.Store used to bind a capacity
+// timeslot to a test at creation and to make admission control reservation-aware.
+type reservationPersistence interface {
+	GetCapacityReservation(id string) (*storage.CapacityReservation, error)
+	UpdateCapacityReservationBinding(id string, testID *string, testStatus *string, updatedAt time.Time) (bool, error)
+	ListCapacityReservationsByTimeRange(projectID string, startAt, endAt time.Time) ([]*storage.CapacityReservation, error)
+}
+
 type TestRunner struct {
 	tests         map[string]*ManagedTest
 	scripts       map[string]*StoredScript
@@ -114,11 +122,14 @@ type TestRunner struct {
 	// objectRepoStore resolves object_ref bindings into concrete selectors when a
 	// load run is compiled (generators have no store, so binding must resolve here).
 	objectRepoStore objectRepositoryReader
-	liveState       LiveStateStore
-	execution       testExecutionBackend
-	notifier        *notificationDispatcher
-	notifications   atomic.Value
-	routeCache      map[string]latencyRouteCacheEntry
+	// reservationStore binds capacity timeslots at test create and feeds
+	// reservation-aware admission control.
+	reservationStore reservationPersistence
+	liveState        LiveStateStore
+	execution        testExecutionBackend
+	notifier         *notificationDispatcher
+	notifications    atomic.Value
+	routeCache       map[string]latencyRouteCacheEntry
 
 	// Reference-key state (all guarded by mu). envCode is the short,
 	// environment-aware prefix resolved once at startup; the seq counters are
@@ -158,6 +169,7 @@ type ManagedTest struct {
 	DurationStr           string                       `json:"duration"`
 	CreatedAt             time.Time                    `json:"created_at"`
 	ScheduledStartAt      *time.Time                   `json:"scheduled_start_at,omitempty"`
+	TimeslotID            *string                      `json:"timeslot_id,omitempty"`
 	PendingSince          *time.Time                   `json:"pending_since,omitempty"`
 	PendingReason         string                       `json:"pending_reason,omitempty"`
 	QueuePosition         int                          `json:"queue_position,omitempty"`
@@ -776,27 +788,28 @@ type runArtifacts struct {
 
 func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 	tr := &TestRunner{
-		tests:           make(map[string]*ManagedTest),
-		scripts:         make(map[string]*StoredScript),
-		scenarios:       make(map[string]*StoredScenario),
-		archives:        make(map[string]*storage.RunArchiveRecord),
-		hub:             hub,
-		maxTests:        maxTests,
-		scriptStore:     store,
-		testStore:       store,
-		scenarioStore:   store,
-		dataPoolStore:   store,
-		projectStore:    store,
-		releaseStore:    store,
-		historyStore:    store,
-		archiveStore:    store,
-		auditStore:      store,
-		settingsStore:   store,
-		usageStore:      store,
-		objectRepoStore: store,
-		execution:       localExecutionBackend{},
-		notifier:        newNotificationDispatcher(nil),
-		routeCache:      make(map[string]latencyRouteCacheEntry),
+		tests:            make(map[string]*ManagedTest),
+		scripts:          make(map[string]*StoredScript),
+		scenarios:        make(map[string]*StoredScenario),
+		archives:         make(map[string]*storage.RunArchiveRecord),
+		hub:              hub,
+		maxTests:         maxTests,
+		scriptStore:      store,
+		testStore:        store,
+		scenarioStore:    store,
+		dataPoolStore:    store,
+		projectStore:     store,
+		releaseStore:     store,
+		historyStore:     store,
+		archiveStore:     store,
+		auditStore:       store,
+		settingsStore:    store,
+		usageStore:       store,
+		objectRepoStore:  store,
+		reservationStore: store,
+		execution:        localExecutionBackend{},
+		notifier:         newNotificationDispatcher(nil),
+		routeCache:       make(map[string]latencyRouteCacheEntry),
 	}
 	tr.loadSystemSettings(maxTests)
 	tr.loadStoredScripts()
@@ -836,23 +849,26 @@ const (
 // Helper to convert map back to LiveMetrics (since GetHistory returns any)
 
 type CreateTestRequest struct {
-	Name                string                            `json:"name"`
-	Duration            string                            `json:"duration"`
-	StartDelay          string                            `json:"start_delay,omitempty"`
-	ReserveLaunchWindow bool                              `json:"reserve_launch_window,omitempty"`
-	ApplicationID       string                            `json:"application_id,omitempty"`
-	ReleaseID           string                            `json:"release_id,omitempty"`
-	ScenarioID          string                            `json:"scenario_id,omitempty"`
-	ProjectID           string                            `json:"project_id,omitempty"`
-	FolderID            *string                           `json:"folder_id,omitempty"`
-	ScheduledStartAt    *time.Time                        `json:"scheduled_start_at,omitempty"`
-	ScenarioMode        string                            `json:"scenario_mode,omitempty"`
-	ScriptShakeout      bool                              `json:"script_shakeout,omitempty"`
-	ResourceBaseline    bool                              `json:"resource_baseline,omitempty"`
-	Assignment          *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
-	GoalConfig          *GoalConfig                       `json:"goal_config,omitempty"`
-	Groups              []CreateGroupEntry                `json:"groups,omitempty"`
-	DataPools           []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	Name                string     `json:"name"`
+	Duration            string     `json:"duration"`
+	StartDelay          string     `json:"start_delay,omitempty"`
+	ReserveLaunchWindow bool       `json:"reserve_launch_window,omitempty"`
+	ApplicationID       string     `json:"application_id,omitempty"`
+	ReleaseID           string     `json:"release_id,omitempty"`
+	ScenarioID          string     `json:"scenario_id,omitempty"`
+	ProjectID           string     `json:"project_id,omitempty"`
+	FolderID            *string    `json:"folder_id,omitempty"`
+	ScheduledStartAt    *time.Time `json:"scheduled_start_at,omitempty"`
+	// TimeslotID, when set, binds the run to an approved capacity timeslot as part
+	// of creation; if the timeslot can't be bound the create fails (strict).
+	TimeslotID       *string                           `json:"timeslot_id,omitempty"`
+	ScenarioMode     string                            `json:"scenario_mode,omitempty"`
+	ScriptShakeout   bool                              `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool                              `json:"resource_baseline,omitempty"`
+	Assignment       *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
+	GoalConfig       *GoalConfig                       `json:"goal_config,omitempty"`
+	Groups           []CreateGroupEntry                `json:"groups,omitempty"`
+	DataPools        []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
 	// Single-script shorthand (backwards compatible)
 	ScriptID string `json:"script_id,omitempty"`
 	VUsers   int    `json:"vusers,omitempty"`

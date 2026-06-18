@@ -77,7 +77,7 @@ Status vocabulary (shared with the competitive matrix): **Supported** · **Parti
 | --- | --- | --- | --- |
 | Test/script definition as code | **Cannot** create/modify test or script definitions via REST (VuGen/UI only) | Full CRUD + validate + replay + export over JSON DSL (`/api/v1/scripts*`) | **▲▲** |
 | Run lifecycle control | Create+start, stop, abort; duration/VUsers fixed at creation | Start/stop/abort/pause/resume **plus** mid-run scale-VUsers, adjust duration, adjust goal targets | **▲** |
-| Capacity model | First-class **timeslot reservation** (forward booking, calendar, conflict prevention) | Real-time admission control + estimate/preflight + scenario schedules/approvals, **plus a forward-booking timeslot API** (`/api/v1/capacity/timeslots`: CRUD, availability/conflict, approval state, atomic bind — `pkg/api/handlers_timeslots.go`); scheduler admission control not yet reservation-aware | **▼** (narrowing — reservation primitive landed) |
+| Capacity model | First-class **timeslot reservation** (forward booking, calendar, conflict prevention) | Real-time admission control + estimate/preflight + scenario schedules/approvals, **plus load-bearing forward-booking timeslots** (`/api/v1/capacity/timeslots`: CRUD, availability/conflict, approval, atomic bind) — a run binds a `timeslot_id` strictly at create and admission control is **reservation-aware** (an approved, bound timeslot reserves generators for its window; other tenants are held PENDING) | **≈** (at parity) |
 | Results & KPI extraction | Download result zip; parse proprietary `.lrr`/`.lra`/Analysis; only `RunSLAStatus` on the run entity | JSON metrics/transactions/trend/comparison endpoints; Parquet/JSONL archives; error evidence | **▲** |
 | Trend / regression analysis | Analysis tool (offline); limited REST | `GET /api/v1/releases/{id}/trend` (+ export), pinned-baseline comparison, SLA governance | **▲** |
 | Scheduling / run calendar | Timeslot calendar (reservation-centric) | Cron schedules, occurrences, approvals, governance windows, `/api/v1/run-calendar` | **=** |
@@ -98,12 +98,14 @@ Status vocabulary (shared with the competitive matrix): **Supported** · **Parti
 
 These are the API-layer gaps the parity program addresses. Each maps to a build family.
 
-1. **Forward-booking capacity reservation — *landed (partial)*.** APEX now exposes timeslot
-   reservations (`/api/v1/capacity/timeslots`: CRUD, availability/conflict checks, an approval state,
-   and atomic single-test binding — `pkg/api/handlers_timeslots.go`, `pkg/storage/sqlite_timeslots.go`).
-   Remaining for full LRE parity: make `pkg/api/capacity.go` admission control reservation-aware
-   (protect an approved, bound window from other tenants) and wire `timeslot_id` binding into test
-   creation. Tracked as the `capacity_reservation` dimension (now `partial`) in `parity-status`.
+1. **Forward-booking capacity reservation — *supported*.** APEX exposes timeslot reservations
+   (`/api/v1/capacity/timeslots`: CRUD, availability/conflict checks, an approval state, atomic
+   single-test binding — `pkg/api/handlers_timeslots.go`, `pkg/storage/sqlite_timeslots.go`) that are
+   now **load-bearing**: `POST /api/v1/tests` accepts a `timeslot_id` and binds it strictly at create
+   (the create fails if it can't be bound), and `pkg/api/capacity.go` admission control is
+   **reservation-aware** — an approved, bound timeslot reserves generators for its window
+   (`pkg/api/timeslot_reservation.go`), so other tenants are held PENDING for that capacity. Tracked
+   as the `capacity_reservation` dimension (now `supported`) in `parity-status`.
 2. **Fleet pool & provisioning management — *landed (partial)*.** APEX now exposes managed generator
    pools, persistent generator metadata (labels/region/cordon/pool membership), and provisioning
    requests (`/api/v1/fleet/pools|generators|provision-requests`; `pkg/api/handlers_fleet_management.go`,

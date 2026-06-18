@@ -160,10 +160,10 @@ func buildAPIParityProgram() []ParityStatusArea {
 		{
 			ID:        "capacity_reservation",
 			Name:      "Capacity Reservations (Timeslots)",
-			Status:    "partial",
-			Summary:   "Forward-booking timeslot reservations now have first-class CRUD, conflict/availability checks, an approval state, and atomic binding to a test run; the scheduler's admission control is not yet reservation-aware.",
-			Evidence:  []string{apiComparisonEvidence, "/api/v1/capacity/timeslots", "/api/v1/capacity/timeslots/availability", "pkg/api/handlers_timeslots.go", "pkg/storage/sqlite_timeslots.go", "pkg/api/capacity.go"},
-			Remaining: []string{"Make capacity.go admission control reservation-aware (block other tenants during an approved, bound window); wire timeslot_id binding into test creation."},
+			Status:    "supported",
+			Summary:   "Forward-booking timeslot reservations have first-class CRUD, conflict/availability checks, an approval state, and atomic binding. Timeslots are now load-bearing: a test create accepts a timeslot_id and binds it strictly (the create fails if it can't be bound), and admission control is reservation-aware — an approved, bound timeslot reserves generators for its window so other tenants are held PENDING for the capacity it holds.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/capacity/timeslots", "/api/v1/capacity/timeslots/availability", "/api/v1/tests (timeslot_id)", "pkg/api/handlers_timeslots.go", "pkg/storage/sqlite_timeslots.go", "pkg/api/capacity.go", "pkg/api/timeslot_reservation.go"},
+			Remaining: []string{"Auto-rebind a timeslot if its test is recreated; cross-window reservation rollover (future)."},
 		},
 		{
 			ID:        "fleet_management",

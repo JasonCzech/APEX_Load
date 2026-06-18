@@ -491,7 +491,8 @@ func (tr *TestRunner) launchCapacityConflictAtLocked(proposal launchCapacityEven
 }
 
 func (tr *TestRunner) launchReservationConflictAtLocked(proposal launchCapacityEvent, byProject map[string]int, sample time.Time, availability int) *LaunchConflict {
-	totalReserved, _ := capacityReservationTotalsAt(tr.settings, "", sample)
+	activeSlots := tr.boundTimeslotsActiveAtLocked(sample)
+	totalReserved, _ := reservationTotalsWithTimeslots(tr.settings, "", sample, activeSlots)
 	if totalReserved <= 0 {
 		return nil
 	}
@@ -501,7 +502,7 @@ func (tr *TestRunner) launchReservationConflictAtLocked(proposal launchCapacityE
 	shared := maxInt(0, availability-totalReserved)
 	sharedAfter := 0
 	for projectID, active := range byProject {
-		_, projectReserved := capacityReservationTotalsAt(tr.settings, projectID, sample)
+		_, projectReserved := reservationTotalsWithTimeslots(tr.settings, projectID, sample, activeSlots)
 		sharedAfter += maxInt(0, active-projectReserved)
 	}
 	if sharedAfter > shared {

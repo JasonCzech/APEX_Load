@@ -1,6 +1,9 @@
 package api
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // reservationRunner builds a runner with a fixed generator inventory and
 // reservations, plus any pre-existing active tests.
@@ -79,11 +82,11 @@ func TestSharedGeneratorUsageExcludesOwnReservationAndTest(t *testing.T) {
 		"a-running": activeTest("project-a", 5), // 5 active, 4 reserved -> 1 shared
 		"b-running": activeTest("project-b", 3), // 3 active, 0 reserved -> 3 shared
 	})
-	if got := runner.sharedGeneratorUsageLocked(""); got != 4 {
+	if got := runner.sharedGeneratorUsageLocked("", time.Now(), nil); got != 4 {
 		t.Fatalf("shared usage = %d, want 4 (1 from a above reservation + 3 from b)", got)
 	}
 	// Excluding b-running drops its 3 shared.
-	if got := runner.sharedGeneratorUsageLocked("b-running"); got != 1 {
+	if got := runner.sharedGeneratorUsageLocked("b-running", time.Now(), nil); got != 1 {
 		t.Fatalf("shared usage excluding b = %d, want 1", got)
 	}
 }
