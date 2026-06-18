@@ -79,6 +79,9 @@ type RuntimeTabId =
   | 'web_http'
   | 'logging'
 
+/** Nested sub-tabs within the HTTP Transport tab (mirrors the Script Editor). */
+type HttpSubTabId = 'timeouts' | 'connection' | 'tls' | 'proxy' | 'authentication' | 'browser_emulation'
+
 function groupLabel(group: RuntimeEditorGroup, index: number): string {
   return group.name || `Group ${index + 1}`
 }
@@ -95,6 +98,7 @@ export default function RuntimeSettingsGroupEditor({
   const [applyOpen, setApplyOpen] = useState(false)
   const [applyTargets, setApplyTargets] = useState<number[]>([])
   const [rawActiveTab, setRawActiveTab] = useState<RuntimeTabId>('summary')
+  const [rawHttpSubTab, setRawHttpSubTab] = useState<HttpSubTabId>('timeouts')
 
   if (groups.length === 0) {
     return (
@@ -280,6 +284,28 @@ export default function RuntimeSettingsGroupEditor({
   // Clamp the active tab to a visible one so switching focus to a group that hides the
   // current tab (e.g. HTTP Transport on a non-HTTP group) falls back to Summary.
   const activeTab: RuntimeTabId = visibleTabs.some(tab => tab.id === rawActiveTab) ? rawActiveTab : 'summary'
+
+  // HTTP Transport nested sub-tabs; Browser emulation only for browser groups.
+  const httpSubTabs: Array<{ id: HttpSubTabId; label: string; show: boolean }> = [
+    { id: 'timeouts', label: 'Timeouts', show: true },
+    { id: 'connection', label: 'Connection', show: true },
+    { id: 'tls', label: 'TLS / SSL', show: true },
+    { id: 'proxy', label: 'Proxy', show: true },
+    { id: 'authentication', label: 'Authentication', show: true },
+    { id: 'browser_emulation', label: 'Browser emulation', show: browserApplicable },
+  ]
+  const visibleHttpSubTabs = httpSubTabs.filter(st => st.show)
+  const httpSubTab: HttpSubTabId = visibleHttpSubTabs.some(st => st.id === rawHttpSubTab) ? rawHttpSubTab : 'timeouts'
+
+  const patchProxy = (next: Partial<NonNullable<NonNullable<ScenarioRuntimeSettingsDraft['http']>['proxy']>>) => {
+    patchHttp({ proxy: { ...draft.http?.proxy, ...next } })
+  }
+  const patchTls = (next: Partial<NonNullable<NonNullable<ScenarioRuntimeSettingsDraft['http']>['tls']>>) => {
+    patchHttp({ tls: { ...draft.http?.tls, ...next } })
+  }
+  const patchAuth = (next: Partial<NonNullable<NonNullable<ScenarioRuntimeSettingsDraft['http']>['auth']>>) => {
+    patchHttp({ auth: { ...draft.http?.auth, ...next } })
+  }
 
   return (
     <div className="scenario-subpanel">
@@ -624,150 +650,214 @@ export default function RuntimeSettingsGroupEditor({
 
         {activeTab === 'http_transport' && (
           <>
-            <div className="scenario-browser-grid">
-              <label>
-                <span>HTTP version</span>
-                <select className="settings-input" value={draft.http?.version || ''} onChange={event => patchHttp({ version: event.target.value || undefined })}>
-                  <option value="">Inherit</option>
-                  <option value="1.0">1.0</option>
-                  <option value="1.1">1.1</option>
-                  <option value="2">2</option>
-                </select>
-              </label>
-              <label>
-                <span>Connect timeout (ms)</span>
-                <input className="settings-input" type="number" min={0} value={draft.http?.connect_timeout_ms ?? ''} onChange={event => patchHttp({ connect_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
-              </label>
-              <label>
-                <span>Request timeout (ms)</span>
-                <input className="settings-input" type="number" min={0} value={draft.http?.request_timeout_ms ?? ''} onChange={event => patchHttp({ request_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
-              </label>
-              <label>
-                <span>TLS min version</span>
-                <select className="settings-input" value={draft.http?.tls?.min_version || ''} onChange={event => patchHttp({ tls: { ...draft.http?.tls, min_version: event.target.value || undefined } })}>
-                  <option value="">Inherit</option>
-                  <option value="1.0">1.0</option>
-                  <option value="1.1">1.1</option>
-                  <option value="1.2">1.2</option>
-                  <option value="1.3">1.3</option>
-                </select>
-              </label>
-              <label>
-                <span>Proxy mode</span>
-                <select className="settings-input" value={draft.http?.proxy_mode || ''} onChange={event => patchHttp({ proxy_mode: event.target.value || undefined })}>
-                  <option value="">Inherit</option>
-                  <option value="none">None</option>
-                  <option value="system">System</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </label>
-              <label>
-                <span>Proxy URL</span>
-                <input className="settings-input" type="text" value={draft.http?.proxy?.url || ''} onChange={event => patchHttp({ proxy: { ...draft.http?.proxy, url: event.target.value || undefined } })} placeholder="http://proxy:8080" />
-              </label>
-              <label>
-                <span>Auth type</span>
-                <select className="settings-input" value={draft.http?.auth?.type || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, type: event.target.value || undefined } })}>
-                  <option value="">Inherit</option>
-                  <option value="basic">Basic</option>
-                  <option value="bearer">Bearer</option>
-                  <option value="ntlm">NTLM</option>
-                  <option value="digest">Digest</option>
-                </select>
-              </label>
-              <label>
-                <span>Auth username</span>
-                <input className="settings-input" type="text" value={draft.http?.auth?.username || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, username: event.target.value || undefined } })} placeholder="Inherit" />
-              </label>
-              <label>
-                <span>Auth password</span>
-                <input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.password || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, password: event.target.value || undefined } })} placeholder="Inherit" />
-              </label>
-              <label>
-                <span>Auth token</span>
-                <input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.token || ''} onChange={event => patchHttp({ auth: { ...draft.http?.auth, token: event.target.value || undefined } })} placeholder="Inherit" />
-              </label>
-            </div>
-            <div className="scenario-option-grid">
-              <label className={`scenario-option-card ${draft.http?.tls?.insecure_skip_verify ? 'selected' : ''}`}>
-                <input type="checkbox" checked={Boolean(draft.http?.tls?.insecure_skip_verify)} onChange={event => patchHttp({ tls: { ...draft.http?.tls, insecure_skip_verify: event.target.checked || undefined } })} />
-                <div><strong>Skip TLS verification</strong><span>Do not validate the server certificate (test environments only).</span></div>
-              </label>
+            <div className="http-transport-tabs" role="tablist" aria-label="HTTP transport sections">
+              {visibleHttpSubTabs.map(st => (
+                <button
+                  key={st.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={httpSubTab === st.id}
+                  className={`http-transport-tab ${httpSubTab === st.id ? 'active' : ''}`}
+                  onClick={() => setRawHttpSubTab(st.id)}
+                >
+                  {st.label}
+                </button>
+              ))}
             </div>
 
-            {browserApplicable && (
-              <>
-                <div className="scenario-assignment-header">
-                  <div>
-                    <h4>Browser emulation</h4>
-                    <p>Device and engine defaults for this browser group.</p>
-                  </div>
+            <div className="http-transport-tab-panel">
+              {httpSubTab === 'timeouts' && (
+                <div className="scenario-browser-grid">
+                  <label><span>Connect timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.connect_timeout_ms ?? ''} onChange={event => patchHttp({ connect_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
+                  <label><span>Request timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.request_timeout_ms ?? ''} onChange={event => patchHttp({ request_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
+                  <label><span>TLS handshake timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.tls_timeout_ms ?? ''} onChange={event => patchHttp({ tls_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
+                  <label><span>Idle timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.idle_timeout_ms ?? ''} onChange={event => patchHttp({ idle_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
                 </div>
+              )}
+
+              {httpSubTab === 'connection' && (
                 <div className="scenario-browser-grid">
                   <label>
-                    <span>Device profile</span>
-                    <select
-                      className="settings-input"
-                      value={draft.browser_config?.device_profile ?? draft.browser?.device_profile ?? ''}
-                      onChange={event => patchBrowserConfig({ device_profile: event.target.value || undefined })}
-                    >
+                    <span>HTTP version</span>
+                    <select className="settings-input" value={draft.http?.version || ''} onChange={event => patchHttp({ version: event.target.value || undefined })}>
                       <option value="">Inherit</option>
-                      <option value="desktop_1080p">desktop_1080p</option>
-                      <option value="galaxy_s24">galaxy_s24</option>
-                      <option value="pixel_8">pixel_8</option>
-                      <option value="ipad_air">ipad_air (WebKit)</option>
-                      <option value="iphone_15_pro">iphone_15_pro (WebKit)</option>
-                      <option value="iphone_se">iphone_se (WebKit)</option>
+                      <option value="1.0">1.0</option>
+                      <option value="1.1">1.1</option>
+                      <option value="2">2</option>
                     </select>
                   </label>
+                  <label><span>Max connections / host</span><input className="settings-input" type="number" min={0} value={draft.http?.max_conns_per_host ?? ''} onChange={event => patchHttp({ max_conns_per_host: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
+                  <label><span>Max redirects</span><input className="settings-input" type="number" min={0} value={draft.http?.max_redirects ?? ''} onChange={event => patchHttp({ max_redirects: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
                   <label>
-                    <span>Orientation</span>
-                    <select
-                      className="settings-input"
-                      value={draft.browser_config?.orientation ?? draft.browser?.orientation ?? ''}
-                      onChange={event => patchBrowserConfig({ orientation: event.target.value || undefined })}
-                    >
-                      <option value="">Inherit</option>
-                      <option value="portrait">Portrait</option>
-                      <option value="landscape">Landscape</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>Headless</span>
-                    <select className="settings-input" value={browserBoolValue(draft.browser_config?.headless, draft.browser?.headless)} onChange={event => patchBrowserConfig({ headless: event.target.value === '' ? undefined : event.target.value === 'true' })}>
-                      <option value="">Inherit</option>
-                      <option value="true">Headless</option>
-                      <option value="false">Headed</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>Touch mode</span>
-                    <select className="settings-input" value={browserBoolValue(draft.browser_config?.touch_mode, draft.browser?.touch_mode)} onChange={event => patchBrowserConfig({ touch_mode: event.target.value === '' ? undefined : event.target.value === 'true' })}>
+                    <span>Keep-alive</span>
+                    <select className="settings-input" value={browserBoolValue(draft.http?.keep_alive)} onChange={event => patchHttp({ keep_alive: event.target.value === '' ? undefined : event.target.value === 'true' })}>
                       <option value="">Inherit</option>
                       <option value="true">Enabled</option>
                       <option value="false">Disabled</option>
                     </select>
                   </label>
+                  <label><span>User agent</span><input className="settings-input" type="text" value={draft.http?.user_agent || ''} onChange={event => patchHttp({ user_agent: event.target.value || undefined })} placeholder="Inherit" /></label>
+                  <label><span>Accept-Encoding</span><input className="settings-input" type="text" value={draft.http?.accept_encoding || ''} onChange={event => patchHttp({ accept_encoding: event.target.value || undefined })} placeholder="Inherit" /></label>
+                  <label><span>Accept-Language</span><input className="settings-input" type="text" value={draft.http?.accept_language || ''} onChange={event => patchHttp({ accept_language: event.target.value || undefined })} placeholder="Inherit" /></label>
+                </div>
+              )}
+
+              {httpSubTab === 'tls' && (
+                <>
+                  <div className="scenario-browser-grid">
+                    <label>
+                      <span>TLS min version</span>
+                      <select className="settings-input" value={draft.http?.tls?.min_version || ''} onChange={event => patchTls({ min_version: event.target.value || undefined })}>
+                        <option value="">Inherit</option>
+                        <option value="1.0">1.0</option>
+                        <option value="1.1">1.1</option>
+                        <option value="1.2">1.2</option>
+                        <option value="1.3">1.3</option>
+                      </select>
+                    </label>
+                    <label><span>Client cert file</span><input className="settings-input" type="text" value={draft.http?.tls?.client_cert_file || ''} onChange={event => patchTls({ client_cert_file: event.target.value || undefined })} placeholder="Inherit" /></label>
+                    <label><span>Client key file</span><input className="settings-input" type="text" value={draft.http?.tls?.client_key_file || ''} onChange={event => patchTls({ client_key_file: event.target.value || undefined })} placeholder="Inherit" /></label>
+                    <label><span>CA cert file</span><input className="settings-input" type="text" value={draft.http?.tls?.ca_cert_file || ''} onChange={event => patchTls({ ca_cert_file: event.target.value || undefined })} placeholder="Inherit" /></label>
+                  </div>
+                  <div className="scenario-option-grid">
+                    <label className={`scenario-option-card ${draft.http?.tls?.insecure_skip_verify ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(draft.http?.tls?.insecure_skip_verify)} onChange={event => patchTls({ insecure_skip_verify: event.target.checked || undefined })} />
+                      <div><strong>Skip TLS verification</strong><span>Do not validate the server certificate (test environments only).</span></div>
+                    </label>
+                  </div>
+                </>
+              )}
+
+              {httpSubTab === 'proxy' && (
+                <div className="scenario-browser-grid">
                   <label>
-                    <span>Browser engine</span>
-                    <select className="settings-input" value={draft.browser_config?.engine || ''} onChange={event => patchBrowserConfig({ engine: event.target.value || undefined })}>
+                    <span>Proxy mode</span>
+                    <select className="settings-input" value={draft.http?.proxy_mode || ''} onChange={event => patchHttp({ proxy_mode: event.target.value || undefined })}>
                       <option value="">Inherit</option>
-                      <option value="chromium">Chromium</option>
-                      <option value="firefox">Firefox</option>
-                      <option value="webkit">WebKit</option>
+                      <option value="none">None</option>
+                      <option value="system">System</option>
+                      <option value="custom">Custom</option>
                     </select>
                   </label>
+                  <label><span>Proxy URL</span><input className="settings-input" type="text" value={draft.http?.proxy?.url || ''} onChange={event => patchProxy({ url: event.target.value || undefined })} placeholder="http://proxy:8080" /></label>
+                  <label><span>Proxy username</span><input className="settings-input" type="text" autoComplete="off" value={draft.http?.proxy?.username || ''} onChange={event => patchProxy({ username: event.target.value || undefined })} placeholder="Inherit" /></label>
+                  <label><span>Proxy password</span><input className="settings-input" type="password" autoComplete="off" value={draft.http?.proxy?.password || ''} onChange={event => patchProxy({ password: event.target.value || undefined })} placeholder="Inherit" /></label>
                   <label>
-                    <span>User agent</span>
-                    <input className="settings-input" type="text" value={draft.browser_config?.user_agent || ''} onChange={event => patchBrowserConfig({ user_agent: event.target.value || undefined })} placeholder="Inherit" />
-                  </label>
-                  <label>
-                    <span>Slow-mo (ms)</span>
-                    <input className="settings-input" type="number" min={0} value={draft.browser_config?.slow_mo_ms ?? ''} onChange={event => patchBrowserConfig({ slow_mo_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+                    <span>No-proxy hosts</span>
+                    <input className="settings-input" type="text" value={draft.http?.proxy?.no_proxy?.join(', ') || ''} onChange={event => {
+                      const hosts = event.target.value.split(',').map(value => value.trim()).filter(Boolean)
+                      patchProxy({ no_proxy: hosts.length ? hosts : undefined })
+                    }} placeholder="localhost, 127.0.0.1" />
                   </label>
                 </div>
-              </>
-            )}
+              )}
+
+              {httpSubTab === 'authentication' && (
+                <div className="scenario-browser-grid">
+                  <label>
+                    <span>Auth type</span>
+                    <select className="settings-input" value={draft.http?.auth?.type || ''} onChange={event => patchAuth({ type: event.target.value || undefined })}>
+                      <option value="">Inherit</option>
+                      <option value="basic">Basic</option>
+                      <option value="bearer">Bearer</option>
+                      <option value="ntlm">NTLM</option>
+                      <option value="digest">Digest</option>
+                    </select>
+                  </label>
+                  <label><span>Auth username</span><input className="settings-input" type="text" value={draft.http?.auth?.username || ''} onChange={event => patchAuth({ username: event.target.value || undefined })} placeholder="Inherit" /></label>
+                  <label><span>Auth password</span><input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.password || ''} onChange={event => patchAuth({ password: event.target.value || undefined })} placeholder="Inherit" /></label>
+                  <label><span>Auth token</span><input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.token || ''} onChange={event => patchAuth({ token: event.target.value || undefined })} placeholder="Inherit" /></label>
+                </div>
+              )}
+
+              {httpSubTab === 'browser_emulation' && browserApplicable && (
+                <>
+                  <div className="scenario-browser-grid">
+                    <label>
+                      <span>Device profile</span>
+                      <select className="settings-input" value={draft.browser_config?.device_profile ?? draft.browser?.device_profile ?? ''} onChange={event => patchBrowserConfig({ device_profile: event.target.value || undefined })}>
+                        <option value="">Inherit</option>
+                        <option value="desktop_1080p">desktop_1080p</option>
+                        <option value="galaxy_s24">galaxy_s24</option>
+                        <option value="pixel_8">pixel_8</option>
+                        <option value="ipad_air">ipad_air (WebKit)</option>
+                        <option value="iphone_15_pro">iphone_15_pro (WebKit)</option>
+                        <option value="iphone_se">iphone_se (WebKit)</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Orientation</span>
+                      <select className="settings-input" value={draft.browser_config?.orientation ?? draft.browser?.orientation ?? ''} onChange={event => patchBrowserConfig({ orientation: event.target.value || undefined })}>
+                        <option value="">Inherit</option>
+                        <option value="portrait">Portrait</option>
+                        <option value="landscape">Landscape</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Headless</span>
+                      <select className="settings-input" value={browserBoolValue(draft.browser_config?.headless, draft.browser?.headless)} onChange={event => patchBrowserConfig({ headless: event.target.value === '' ? undefined : event.target.value === 'true' })}>
+                        <option value="">Inherit</option>
+                        <option value="true">Headless</option>
+                        <option value="false">Headed</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Touch mode</span>
+                      <select className="settings-input" value={browserBoolValue(draft.browser_config?.touch_mode, draft.browser?.touch_mode)} onChange={event => patchBrowserConfig({ touch_mode: event.target.value === '' ? undefined : event.target.value === 'true' })}>
+                        <option value="">Inherit</option>
+                        <option value="true">Enabled</option>
+                        <option value="false">Disabled</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Browser engine</span>
+                      <select className="settings-input" value={draft.browser_config?.engine || ''} onChange={event => patchBrowserConfig({ engine: event.target.value || undefined })}>
+                        <option value="">Inherit</option>
+                        <option value="chromium">Chromium</option>
+                        <option value="firefox">Firefox</option>
+                        <option value="webkit">WebKit</option>
+                      </select>
+                    </label>
+                    <label><span>Browser user agent</span><input className="settings-input" type="text" value={draft.browser_config?.user_agent || ''} onChange={event => patchBrowserConfig({ user_agent: event.target.value || undefined })} placeholder="Inherit" /></label>
+                    <label><span>Slow-mo (ms)</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.slow_mo_ms ?? ''} onChange={event => patchBrowserConfig({ slow_mo_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
+                    <label><span>Viewport width</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.width ?? ''} onChange={event => patchBrowserConfig({ viewport: { ...draft.browser_config?.viewport, width: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder="Inherit" /></label>
+                    <label><span>Viewport height</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.height ?? ''} onChange={event => patchBrowserConfig({ viewport: { ...draft.browser_config?.viewport, height: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder="Inherit" /></label>
+                    <label><span>Capture screenshots</span><input className="settings-input" type="text" value={draft.browser_config?.capture_screenshots || ''} onChange={event => patchBrowserConfig({ capture_screenshots: event.target.value || undefined })} placeholder="Inherit" /></label>
+                    <label><span>Download resources</span><input className="settings-input" type="text" value={draft.browser_config?.download_resources || ''} onChange={event => patchBrowserConfig({ download_resources: event.target.value || undefined })} placeholder="Inherit" /></label>
+                  </div>
+                  <div className="scenario-option-grid">
+                    <label className={`scenario-option-card ${draft.browser_config?.client_metrics ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(draft.browser_config?.client_metrics)} onChange={event => patchBrowserConfig({ client_metrics: event.target.checked || undefined })} />
+                      <div><strong>Client metrics</strong><span>Collect browser client-side metrics.</span></div>
+                    </label>
+                    <label className={`scenario-option-card ${draft.browser_config?.cache_enabled ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(draft.browser_config?.cache_enabled)} onChange={event => patchBrowserConfig({ cache_enabled: event.target.checked || undefined })} />
+                      <div><strong>Cache enabled</strong><span>Allow the browser cache during replay.</span></div>
+                    </label>
+                    <label className={`scenario-option-card ${draft.browser_config?.cache_content_urls ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(draft.browser_config?.cache_content_urls)} onChange={event => patchBrowserConfig({ cache_content_urls: event.target.checked || undefined })} />
+                      <div><strong>Cache content URLs</strong><span>Cache static content URLs.</span></div>
+                    </label>
+                    <label className={`scenario-option-card ${draft.browser_config?.check_newer_versions ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(draft.browser_config?.check_newer_versions)} onChange={event => patchBrowserConfig({ check_newer_versions: event.target.checked || undefined })} />
+                      <div><strong>Check newer versions</strong><span>Check for newer resource versions.</span></div>
+                    </label>
+                    <label className={`scenario-option-card ${draft.browser_config?.new_user_per_iteration ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(draft.browser_config?.new_user_per_iteration)} onChange={event => patchBrowserConfig({ new_user_per_iteration: event.target.checked || undefined })} />
+                      <div><strong>New user per iteration</strong><span>Start each iteration with a fresh browser profile.</span></div>
+                    </label>
+                    <label className={`scenario-option-card ${draft.browser_config?.review_policy?.allow_reviewed_javascript ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(draft.browser_config?.review_policy?.allow_reviewed_javascript)} onChange={event => patchBrowserConfig({ review_policy: { ...draft.browser_config?.review_policy, allow_reviewed_javascript: event.target.checked || undefined } })} />
+                      <div><strong>Allow reviewed JavaScript</strong><span>Permit JavaScript steps that passed review.</span></div>
+                    </label>
+                    <label className={`scenario-option-card ${draft.browser_config?.review_policy?.allow_review_required ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(draft.browser_config?.review_policy?.allow_review_required)} onChange={event => patchBrowserConfig({ review_policy: { ...draft.browser_config?.review_policy, allow_review_required: event.target.checked || undefined } })} />
+                      <div><strong>Allow review-required</strong><span>Permit steps still pending review.</span></div>
+                    </label>
+                  </div>
+                </>
+              )}
+            </div>
           </>
         )}
 
