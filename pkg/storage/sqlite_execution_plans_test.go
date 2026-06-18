@@ -54,3 +54,98 @@ func TestExecutionPlanRoundTrip(t *testing.T) {
 		t.Fatal("expected error after delete")
 	}
 }
+
+func TestExecutionPlanEntryDataPoolAndTimeslot(t *testing.T) {
+	store := openTimeslotStore(t)
+	slot := "slot-x"
+	plan := &ExecutionPlan{
+		ID:        "exec-plan-dp",
+		ProjectID: "proj-a",
+		Name:      "per-entry overrides",
+		RunMode:   "sequential",
+		Entries: []ExecutionPlanEntry{
+			{
+				Order:      0,
+				ScenarioID: "scn-1",
+				TimeslotID: &slot,
+				DataPools: []ScenarioDataPoolBinding{
+					{ID: "b1", PoolID: "pool-9", Alias: "users", AccessMode: "shared", SelectionStrategy: "sequential"},
+				},
+			},
+		},
+	}
+	if err := store.SaveExecutionPlan(plan); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, err := store.GetExecutionPlan("exec-plan-dp")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if len(got.Entries) != 1 {
+		t.Fatalf("want 1 entry, got %d", len(got.Entries))
+	}
+	e := got.Entries[0]
+	if e.TimeslotID == nil || *e.TimeslotID != "slot-x" {
+		t.Fatalf("per-entry timeslot not preserved: %+v", e.TimeslotID)
+	}
+	if len(e.DataPools) != 1 || e.DataPools[0].PoolID != "pool-9" || e.DataPools[0].Alias != "users" {
+		t.Fatalf("per-entry data pools not preserved: %+v", e.DataPools)
+	}
+}
+
+func TestExecutionPlanRunRoundTrip(t *testing.T) {
+	store := openTimeslotStore(t)
+	run := &ExecutionPlanRun{
+		ID:        "epr-1",
+		PlanID:    "exec-plan-1",
+		ProjectID: "proj-a",
+		RunMode:   "sequential",
+		Status:    "running",
+		Entries: []ExecutionPlanRunEntry{
+			{Order: 0, ScenarioID: "scn-1", ScenarioName: "checkout", TestID: "test-1", Status: "running"},
+			{Order: 1, ScenarioID: "scn-2", Status: "pending"},
+		},
+	}
+	if err := store.SaveExecutionPlanRun(run); err != nil {
+		t.Fatalf("save run: %v", err)
+	}
+	got, err := store.GetExecutionPlanRun("epr-1")
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if got.Status != "running" || got.PlanID != "exec-plan-1" || len(got.Entries) != 2 {
+		t.Fatalf("run not preserved: %+v", got)
+	}
+	if got.Entries[0].TestID != "test-1" || got.Entries[0].Status != "running" {
+		t.Fatalf("entry 0 not preserved: %+v", got.Entries[0])
+	}
+	if got.CompletedAt != nil {
+		t.Fatalf("CompletedAt should be nil for a running run")
+	}
+
+	// Upsert: mark complete with a terminal timestamp.
+	done := got.CreatedAt
+	got.Status = "completed"
+	got.Entries[1].Status = "complete"
+	got.Entries[1].TestID = "test-2"
+	got.CompletedAt = &done
+	if err := store.SaveExecutionPlanRun(got); err != nil {
+		t.Fatalf("save run (update): %v", err)
+	}
+	reloaded, err := store.GetExecutionPlanRun("epr-1")
+	if err != nil {
+		t.Fatalf("get run after update: %v", err)
+	}
+	if reloaded.Status != "completed" || reloaded.CompletedAt == nil || reloaded.Entries[1].Status != "complete" {
+		t.Fatalf("run update not preserved: %+v", reloaded)
+	}
+
+	// List by plan, with isolation.
+	if err := store.SaveExecutionPlanRun(&ExecutionPlanRun{ID: "epr-2", PlanID: "other-plan", ProjectID: "proj-a", Status: "running"}); err != nil {
+		t.Fatalf("save other run: %v", err)
+	}
+	runs, err := store.ListExecutionPlanRuns("exec-plan-1", 10, 0)
+	if err != nil || len(runs) != 1 || runs[0].ID != "epr-1" {
+		t.Fatalf("list runs = %+v (err %v), want only epr-1", runs, err)
+	}
+}

@@ -603,6 +603,17 @@ func (s *SQLiteStore) init() error {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS execution_plan_runs (
+			id TEXT PRIMARY KEY,
+			plan_id TEXT NOT NULL,
+			project_id TEXT,
+			run_mode TEXT NOT NULL DEFAULT 'sequential',
+			status TEXT NOT NULL DEFAULT 'running',
+			entries_json TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			completed_at DATETIME
+		)`,
 		`CREATE TABLE IF NOT EXISTS object_repositories (
 			id TEXT PRIMARY KEY,
 			project_id TEXT,
@@ -744,6 +755,7 @@ func (s *SQLiteStore) init() error {
 		{`CREATE INDEX IF NOT EXISTS idx_provisioning_requests_pool ON provisioning_requests(fleet_pool_id)`, "idx_provisioning_requests_pool"},
 		{`CREATE INDEX IF NOT EXISTS idx_provisioning_events_request ON provisioning_events(request_id)`, "idx_provisioning_events_request"},
 		{`CREATE INDEX IF NOT EXISTS idx_execution_plans_project ON execution_plans(project_id)`, "idx_execution_plans_project"},
+		{`CREATE INDEX IF NOT EXISTS idx_execution_plan_runs_plan ON execution_plan_runs(plan_id)`, "idx_execution_plan_runs_plan"},
 		{`CREATE INDEX IF NOT EXISTS idx_object_repositories_project ON object_repositories(project_id)`, "idx_object_repositories_project"},
 		{`CREATE INDEX IF NOT EXISTS idx_correlation_rulesets_project ON correlation_rulesets(project_id)`, "idx_correlation_rulesets_project"},
 		{`CREATE INDEX IF NOT EXISTS idx_monitoring_collectors_project ON monitoring_collectors(project_id)`, "idx_monitoring_collectors_project"},

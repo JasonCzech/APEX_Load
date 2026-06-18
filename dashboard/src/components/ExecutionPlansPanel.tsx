@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useExecutionPlansApi } from '../hooks/api/useExecutionPlansApi'
 import { ApiError } from '../hooks/apiClient'
-import { ExecutionPlan, ExecutionPlanEntry, ExecutionPlanRunResponse } from '../types'
+import {
+  ExecutionPlan,
+  ExecutionPlanEntry,
+  ExecutionPlanRun,
+  ExecutionPlanRunResponse,
+  ScenarioDataPoolBinding,
+} from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import './parityPanels.css'
 
@@ -16,11 +22,15 @@ interface Props {
   onSeedConsumed?: () => void
 }
 
+type DataPoolDraft = { pool_id: string; alias: string }
+
 type EntryDraft = {
   scenario_id: string
   scenario_name: string
   enabled: boolean
   failure_policy: string
+  timeslot_id: string
+  data_pools: DataPoolDraft[]
 }
 
 type PlanDraft = {
@@ -30,16 +40,53 @@ type PlanDraft = {
   entries: EntryDraft[]
 }
 
-const emptyEntry: EntryDraft = { scenario_id: '', scenario_name: '', enabled: true, failure_policy: 'halt' }
+const emptyEntry: EntryDraft = {
+  scenario_id: '',
+  scenario_name: '',
+  enabled: true,
+  failure_policy: 'halt',
+  timeslot_id: '',
+  data_pools: [],
+}
 
 function emptyDraft(): PlanDraft {
   return { name: '', run_mode: 'parallel', entries: [{ ...emptyEntry }] }
 }
 
+const RUN_TERMINAL = ['completed', 'halted', 'failed']
+
 function runResultPill(status: string): string {
   switch (status) {
     case 'created':
       return 'pp-pill pp-pill-success'
+    case 'failed':
+      return 'pp-pill pp-pill-danger'
+    default:
+      return 'pp-pill pp-pill-muted'
+  }
+}
+
+// Per-entry status within a sequential plan run.
+function entryStatusPill(status: string): string {
+  switch (status) {
+    case 'complete':
+      return 'pp-pill pp-pill-success'
+    case 'running':
+      return 'pp-pill pp-pill-info'
+    case 'failed':
+      return 'pp-pill pp-pill-danger'
+    default:
+      return 'pp-pill pp-pill-muted' // pending | skipped
+  }
+}
+
+function runStatusPill(status: string): string {
+  switch (status) {
+    case 'completed':
+      return 'pp-pill pp-pill-success'
+    case 'running':
+      return 'pp-pill pp-pill-info'
+    case 'halted':
     case 'failed':
       return 'pp-pill pp-pill-danger'
     default:
@@ -55,6 +102,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
   const [draft, setDraft] = useState<PlanDraft | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ExecutionPlan | null>(null)
   const [runResult, setRunResult] = useState<{ plan: string; res: ExecutionPlanRunResponse } | null>(null)
+  const [planRun, setPlanRun] = useState<{ planId: string; planName: string; run: ExecutionPlanRun } | null>(null)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
@@ -86,21 +134,47 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
     setDraft({
       name: opt?.name ? `${opt.name} plan` : '',
       run_mode: 'parallel',
-      entries: [{ scenario_id: seedScenarioId, scenario_name: opt?.name || '', enabled: true, failure_policy: 'halt' }],
+      entries: [{ ...emptyEntry, scenario_id: seedScenarioId, scenario_name: opt?.name || '' }],
     })
     onSeedConsumed?.()
   }, [seedScenarioId, canManage, scenarioOptions, onSeedConsumed])
 
+  // Poll a running sequential plan-run so the gated progression is reflected live.
+  useEffect(() => {
+    if (!planRun || RUN_TERMINAL.includes(planRun.run.status)) return
+    const timer = setInterval(async () => {
+      try {
+        const run = await api.getExecutionPlanRun(planRun.planId, planRun.run.id)
+        setPlanRun(prev => (prev && prev.run.id === run.id ? { ...prev, run } : prev))
+      } catch {
+        /* transient errors are fine — keep polling */
+      }
+    }, 1500)
+    return () => clearInterval(timer)
+  }, [planRun, api])
+
   const draftToEntries = (entries: EntryDraft[]): ExecutionPlanEntry[] =>
     entries
       .filter(e => e.scenario_id.trim())
-      .map((e, index) => ({
-        order: index,
-        scenario_id: e.scenario_id.trim(),
-        scenario_name: e.scenario_name.trim() || undefined,
-        enabled: e.enabled,
-        failure_policy: e.failure_policy,
-      }))
+      .map((e, index) => {
+        const pools: ScenarioDataPoolBinding[] = e.data_pools
+          .filter(dp => dp.pool_id.trim() && dp.alias.trim())
+          .map(dp => ({
+            pool_id: dp.pool_id.trim(),
+            alias: dp.alias.trim(),
+            access_mode: 'read_only',
+            selection_strategy: 'sequential',
+          }))
+        return {
+          order: index,
+          scenario_id: e.scenario_id.trim(),
+          scenario_name: e.scenario_name.trim() || undefined,
+          enabled: e.enabled,
+          failure_policy: e.failure_policy,
+          timeslot_id: e.timeslot_id.trim() || undefined,
+          data_pools: pools.length > 0 ? pools : undefined,
+        }
+      })
 
   const submitDraft = useCallback(async () => {
     if (!draft) return
@@ -128,7 +202,34 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
       setError(null)
       try {
         const res = await api.runExecutionPlan(plan.id)
-        setRunResult({ plan: plan.name, res })
+        if (res.run_id) {
+          // Sequential: dependency-gated run — show live per-entry progress.
+          const seeded: ExecutionPlanRun = {
+            id: res.run_id,
+            plan_id: plan.id,
+            project_id: plan.project_id,
+            run_mode: res.run_mode,
+            status: res.status || 'running',
+            entries: res.results.map(r => ({
+              order: r.order,
+              scenario_id: r.scenario_id,
+              test_id: r.test_id,
+              status: r.status,
+              detail: r.detail,
+            })),
+            created_at: res.materialized_at,
+            updated_at: res.materialized_at,
+          }
+          setPlanRun({ planId: plan.id, planName: plan.name, run: seeded })
+          try {
+            const run = await api.getExecutionPlanRun(plan.id, res.run_id)
+            setPlanRun({ planId: plan.id, planName: plan.name, run })
+          } catch {
+            /* keep the seeded snapshot if the run can't be re-read yet */
+          }
+        } else {
+          setRunResult({ plan: plan.name, res })
+        }
         await load()
       } catch (err) {
         setError(err instanceof ApiError ? err.message : 'Failed to run execution plan.')
@@ -166,6 +267,8 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
               scenario_name: e.scenario_name || '',
               enabled: e.enabled !== false,
               failure_policy: e.failure_policy || 'halt',
+              timeslot_id: e.timeslot_id || '',
+              data_pools: (e.data_pools || []).map(dp => ({ pool_id: dp.pool_id, alias: dp.alias })),
             }))
           : [{ ...emptyEntry }],
     })
@@ -173,6 +276,32 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
 
   const updateEntry = (index: number, patch: Partial<EntryDraft>) =>
     setDraft(d => (d ? { ...d, entries: d.entries.map((e, i) => (i === index ? { ...e, ...patch } : e)) } : d))
+
+  const updatePool = (entryIdx: number, poolIdx: number, patch: Partial<DataPoolDraft>) =>
+    setDraft(d =>
+      d
+        ? {
+            ...d,
+            entries: d.entries.map((e, i) =>
+              i === entryIdx ? { ...e, data_pools: e.data_pools.map((p, j) => (j === poolIdx ? { ...p, ...patch } : p)) } : e,
+            ),
+          }
+        : d,
+    )
+
+  const addPool = (entryIdx: number) =>
+    setDraft(d =>
+      d
+        ? { ...d, entries: d.entries.map((e, i) => (i === entryIdx ? { ...e, data_pools: [...e.data_pools, { pool_id: '', alias: '' }] } : e)) }
+        : d,
+    )
+
+  const removePool = (entryIdx: number, poolIdx: number) =>
+    setDraft(d =>
+      d
+        ? { ...d, entries: d.entries.map((e, i) => (i === entryIdx ? { ...e, data_pools: e.data_pools.filter((_, j) => j !== poolIdx) } : e)) }
+        : d,
+    )
 
   const moveEntry = (index: number, dir: -1 | 1) =>
     setDraft(d => {
@@ -281,7 +410,8 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
                 <span>Entries (run order)</span>
                 <div className="pp-entry-list">
                   {draft.entries.map((entry, index) => (
-                    <div className="pp-entry" key={index}>
+                    <div className="pp-entry-block" key={index}>
+                      <div className="pp-entry">
                       <div className="pp-entry-index">{index + 1}</div>
                       {scenarioOptions && scenarioOptions.length > 0 ? (
                         <select
@@ -323,6 +453,32 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
                       >
                         ✕
                       </button>
+                      </div>
+                      <div className="pp-entry-advanced">
+                        <label className="pp-entry-advanced-field">
+                          <span>Timeslot</span>
+                          <input
+                            value={entry.timeslot_id}
+                            placeholder="optional timeslot id"
+                            onChange={e => updateEntry(index, { timeslot_id: e.target.value })}
+                          />
+                        </label>
+                        <div className="pp-entry-pools">
+                          <span className="pp-entry-advanced-label">Data pools</span>
+                          {entry.data_pools.map((dp, di) => (
+                            <div className="pp-entry-pool" key={di}>
+                              <input value={dp.pool_id} placeholder="pool id" onChange={e => updatePool(index, di, { pool_id: e.target.value })} />
+                              <input value={dp.alias} placeholder="alias" onChange={e => updatePool(index, di, { alias: e.target.value })} />
+                              <button type="button" className="btn btn-ghost btn-sm" onClick={() => removePool(index, di)} title="Remove data pool">
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => addPool(index)}>
+                            + data pool
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -382,6 +538,56 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
             </div>
             <div className="pp-modal-actions">
               <button type="button" className="btn btn-primary" onClick={() => setRunResult(null)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sequential plan-run progress modal (dependency-gated, polled live) */}
+      {planRun && (
+        <div className="pp-modal-overlay" onClick={() => setPlanRun(null)}>
+          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+            <div className="pp-modal-header">
+              <h3>
+                Run “{planRun.planName}”
+                <span className={runStatusPill(planRun.run.status)} style={{ marginLeft: 8 }}>
+                  {planRun.run.status}
+                </span>
+              </h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPlanRun(null)}>
+                Close
+              </button>
+            </div>
+            <div className="pp-modal-form">
+              <div className="pp-row-meta">
+                <span>sequential — each entry starts only after the previous run finishes</span>
+                {!RUN_TERMINAL.includes(planRun.run.status) ? <span>updating…</span> : null}
+              </div>
+              <div className="pp-list">
+                {planRun.run.entries.map(entry => (
+                  <div className="pp-row" key={entry.order}>
+                    <div className="pp-row-main">
+                      <div className="pp-row-title">
+                        #{entry.order + 1} {entry.scenario_name || entry.scenario_id}
+                        <span className={entryStatusPill(entry.status)}>{entry.status}</span>
+                      </div>
+                      {entry.detail ? <div className="pp-row-meta"><span>{entry.detail}</span></div> : null}
+                    </div>
+                    {entry.test_id && onOpenTest ? (
+                      <div className="pp-row-actions">
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => onOpenTest(entry.test_id!)}>
+                          Open test
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="pp-modal-actions">
+              <button type="button" className="btn btn-primary" onClick={() => setPlanRun(null)}>
                 Done
               </button>
             </div>

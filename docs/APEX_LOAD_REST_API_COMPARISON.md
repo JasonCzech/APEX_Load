@@ -81,7 +81,7 @@ Status vocabulary (shared with the competitive matrix): **Supported** · **Parti
 | Results & KPI extraction | Download result zip; parse proprietary `.lrr`/`.lra`/Analysis; only `RunSLAStatus` on the run entity | JSON metrics/transactions/trend/comparison endpoints; Parquet/JSONL archives; error evidence | **▲** |
 | Trend / regression analysis | Analysis tool (offline); limited REST | `GET /api/v1/releases/{id}/trend` (+ export), pinned-baseline comparison, SLA governance | **▲** |
 | Scheduling / run calendar | Timeslot calendar (reservation-centric) | Cron schedules, occurrences, approvals, governance windows, `/api/v1/run-calendar` | **=** |
-| Test-set / ordered execution | Test Sets / Test Instances (ordered collections) | **Execution plans** (`/api/v1/execution-plans`): ordered parallel/sequential scenario entries that materialize one run each, with per-entry failure policy; dependency-gated sequential *execution* still pending | **▼** (narrowing — ordered plan landed) |
+| Test-set / ordered execution | Test Sets / Test Instances (ordered collections) | **Execution plans** (`/api/v1/execution-plans`): ordered scenario entries with per-entry data-pool/timeslot/runtime overrides + failure policy; **dependency-gated sequential execution** (run N+1 awaits run N's terminal state) with persisted, queryable plan-run progress | **✓** (parity) |
 | Imports / interop | LR-native; one-way archive import | 11 formats (LR archive, JMeter, k6, HAR, OpenAPI, RAML, AsyncAPI, Postman, WSDL, Salesforce, Oracle EBS) | **▲** |
 | Fleet / host administration | Host pools, load generators, monitor-over-firewall, SiteScope (admin layer) | Read-only fleet + generator drain, **plus managed pools, persistent generator metadata/labels/cordon, and provisioning requests** (`/api/v1/fleet/pools\|generators\|provision-requests`); provisioning is `not_configured` until a provider is wired | **▼** (narrowing — management surface landed) |
 | Monitoring integration | SiteScope + monitor-over-firewall agents (registered collectors) | Inbound monitoring **plus a collector control plane** (`/api/v1/monitoring/collectors`: register, SHA-256 scoped token + rotation, metric packs, health); agent runtime/heartbeat pending | **▼** (narrowing — control plane landed) |
@@ -111,10 +111,14 @@ These are the API-layer gaps the parity program addresses. Each maps to a build 
    requests (`/api/v1/fleet/pools|generators|provision-requests`; `pkg/api/handlers_fleet_management.go`,
    `pkg/storage/sqlite_fleet.go`). Provisioning returns `not_configured` until a live cloud/Kubernetes
    provider backend is wired. Tracked as `fleet_management` (now `partial`) in `parity-status`.
-3. **Ordered cross-run execution plan — *landed (partial)*.** APEX now exposes execution plans
-   (`/api/v1/execution-plans`: CRUD + `POST /{id}/runs` materializing one run per enabled entry, with
-   per-entry parallel/sequential failure handling — `pkg/api/handlers_execution_plans.go`). Remaining:
-   dependency-gated sequential execution. Tracked as `execution_planning` (now `partial`).
+3. **Ordered cross-run execution plan — *supported*.** APEX exposes execution plans
+   (`/api/v1/execution-plans`: CRUD + `POST /{id}/runs`) with per-entry runtime overrides, **per-entry
+   data-pool overrides**, **optional per-entry timeslot binding**, and failure policy. **Sequential plans
+   are dependency-gated** — each entry's run starts only after the prior run reaches a terminal state
+   (honoring halt/skip), driven by an in-memory orchestrator on the runner
+   (`pkg/api/execution_plan_orchestrator.go`); parallel plans stage all entries. Plan-run progress is
+   persisted and queryable (`GET /{id}/runs`, `GET /{id}/runs/{runId}`) and streamed via
+   `execution_plan_*` WebSocket events. Tracked as `execution_planning` (now `supported`).
 4. **Monitoring collectors — *control plane landed (partial)*.** Restricted-network collectors now
    register via `/api/v1/monitoring/collectors` with SHA-256 scoped tokens (one-time issue + rotation),
    allowed metric packs, and health (`pkg/api/handlers_monitoring_collectors.go`). Remaining: the agent

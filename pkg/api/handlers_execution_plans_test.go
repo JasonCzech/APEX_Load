@@ -137,6 +137,89 @@ func TestExecutionPlanMaterializeOrchestration(t *testing.T) {
 	}
 }
 
+// TestExecutionPlanRunHistory verifies a sequential materialize persists a
+// queryable plan-run (here it halts immediately because the scenarios are
+// absent) that the GET runs / run endpoints expose.
+func TestExecutionPlanRunHistory(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+
+	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/execution-plans", map[string]any{
+		"project_id": "proj-a", "name": "history", "run_mode": "sequential",
+		"entries": []map[string]any{
+			{"order": 0, "scenario_id": "missing-1"},
+			{"order": 1, "scenario_id": "missing-2"},
+		},
+	})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create status = %d body=%s", create.Code, create.Body.String())
+	}
+	var plan storage.ExecutionPlan
+	_ = json.Unmarshal(create.Body.Bytes(), &plan)
+
+	runRec := timeslotRequest(t, server, http.MethodPost, "/api/v1/execution-plans/"+plan.ID+"/runs", nil)
+	if runRec.Code != http.StatusOK {
+		t.Fatalf("run status = %d body=%s", runRec.Code, runRec.Body.String())
+	}
+	var runResp struct {
+		RunID  string `json:"run_id"`
+		Status string `json:"status"`
+	}
+	_ = json.Unmarshal(runRec.Body.Bytes(), &runResp)
+	if runResp.RunID == "" {
+		t.Fatalf("sequential run response missing run_id: %s", runRec.Body.String())
+	}
+	if runResp.Status != "halted" {
+		t.Fatalf("run status = %q, want halted", runResp.Status)
+	}
+
+	list := timeslotRequest(t, server, http.MethodGet, "/api/v1/execution-plans/"+plan.ID+"/runs", nil)
+	var listResp struct {
+		Runs  []storage.ExecutionPlanRun `json:"runs"`
+		Count int                        `json:"count"`
+	}
+	_ = json.Unmarshal(list.Body.Bytes(), &listResp)
+	if listResp.Count != 1 || len(listResp.Runs) != 1 || listResp.Runs[0].ID != runResp.RunID {
+		t.Fatalf("run list = %+v, want one run %q", listResp, runResp.RunID)
+	}
+
+	get := timeslotRequest(t, server, http.MethodGet, "/api/v1/execution-plans/"+plan.ID+"/runs/"+runResp.RunID, nil)
+	if get.Code != http.StatusOK {
+		t.Fatalf("get run status = %d body=%s", get.Code, get.Body.String())
+	}
+	var got storage.ExecutionPlanRun
+	_ = json.Unmarshal(get.Body.Bytes(), &got)
+	if got.Status != "halted" || len(got.Entries) != 2 || got.Entries[1].Status != "skipped" {
+		t.Fatalf("run detail = %+v", got)
+	}
+
+	// A run id that does not belong to the plan in the path is not found.
+	miss := timeslotRequest(t, server, http.MethodGet, "/api/v1/execution-plans/other-plan/runs/"+runResp.RunID, nil)
+	if miss.Code != http.StatusNotFound {
+		t.Fatalf("cross-plan get = %d, want 404", miss.Code)
+	}
+}
+
+func TestExecutionPlanEntryDataPoolValidation(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	for _, tc := range []struct {
+		name string
+		pool map[string]any
+	}{
+		{"missing pool_id", map[string]any{"alias": "users"}},
+		{"missing alias", map[string]any{"pool_id": "pool-1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/execution-plans", map[string]any{
+				"project_id": "proj-a", "name": "dp", "run_mode": "parallel",
+				"entries": []map[string]any{{"order": 0, "scenario_id": "scn-1", "data_pools": []map[string]any{tc.pool}}},
+			})
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestExecutionPlanRouteAccessRequirements(t *testing.T) {
 	for _, tc := range []struct {
 		method    string
@@ -149,6 +232,8 @@ func TestExecutionPlanRouteAccessRequirements(t *testing.T) {
 		{http.MethodPut, "/api/v1/execution-plans/p1", []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}},
 		{http.MethodDelete, "/api/v1/execution-plans/p1", []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}},
 		{http.MethodPost, "/api/v1/execution-plans/p1/runs", []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}},
+		{http.MethodGet, "/api/v1/execution-plans/p1/runs", []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}},
+		{http.MethodGet, "/api/v1/execution-plans/p1/runs/r1", []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}},
 	} {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, nil)

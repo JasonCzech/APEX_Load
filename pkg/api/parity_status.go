@@ -176,10 +176,10 @@ func buildAPIParityProgram() []ParityStatusArea {
 		{
 			ID:        "execution_planning",
 			Name:      "Enterprise Execution Planning",
-			Status:    "partial",
-			Summary:   "Execution plans (ordered parallel|sequential scenario entries with per-entry overrides and failure policy) have CRUD plus a materialize endpoint that creates one test run per enabled entry with per-entry partial-failure reporting.",
-			Evidence:  []string{apiComparisonEvidence, "/api/v1/execution-plans", "pkg/api/handlers_execution_plans.go", "pkg/storage/sqlite_execution_plans.go"},
-			Remaining: []string{"Add dependency-gated sequential execution (await run N before starting N+1); per-entry data-pool override semantics; enforce optional timeslot binding."},
+			Status:    "supported",
+			Summary:   "Execution plans (ordered scenario entries with per-entry runtime overrides, data-pool overrides, optional timeslot binding, and failure policy) have CRUD plus a materialize endpoint. Sequential plans are dependency-gated: each entry's run starts only after the previous run reaches a terminal state, honoring per-entry halt/skip; parallel plans stage all entries. Plan-run progress is persisted and queryable (GET /runs, /runs/{runId}) and streamed via execution_plan_* WebSocket events.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/execution-plans", "/api/v1/execution-plans/{id}/runs", "pkg/api/execution_plan_orchestrator.go", "pkg/api/handlers_execution_plans.go", "pkg/storage/sqlite_execution_plans.go"},
+			Remaining: []string{"Reconcile in-flight sequential runs across a controller restart (live state is in-memory today); optional parallel-mode auto-start (future)."},
 		},
 		{
 			ID:        "monitoring_collectors",

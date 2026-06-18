@@ -103,3 +103,96 @@ func (s *SQLiteStore) DeleteExecutionPlan(id string) error {
 	_, err := s.db.Exec(`DELETE FROM execution_plans WHERE id = ?`, id)
 	return err
 }
+
+func (s *SQLiteStore) SaveExecutionPlanRun(run *ExecutionPlanRun) error {
+	if run == nil {
+		return fmt.Errorf("execution plan run is required")
+	}
+	if run.ID == "" {
+		return fmt.Errorf("execution plan run id is required")
+	}
+	run.ProjectID = normalizeProjectID(run.ProjectID)
+	if run.RunMode == "" {
+		run.RunMode = "sequential"
+	}
+	if run.Status == "" {
+		run.Status = "running"
+	}
+	now := time.Now()
+	if run.CreatedAt.IsZero() {
+		run.CreatedAt = now
+	}
+	run.UpdatedAt = now
+	entriesJSON, err := json.Marshal(run.Entries)
+	if err != nil {
+		return fmt.Errorf("marshal execution plan run entries: %w", err)
+	}
+	_, err = s.db.Exec(`INSERT INTO execution_plan_runs (
+			id, plan_id, project_id, run_mode, status, entries_json, created_at, updated_at, completed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			plan_id=excluded.plan_id, project_id=excluded.project_id, run_mode=excluded.run_mode,
+			status=excluded.status, entries_json=excluded.entries_json, updated_at=excluded.updated_at,
+			completed_at=excluded.completed_at`,
+		run.ID, run.PlanID, run.ProjectID, run.RunMode, run.Status, string(entriesJSON),
+		run.CreatedAt, run.UpdatedAt, run.CompletedAt)
+	return err
+}
+
+const executionPlanRunSelect = `SELECT id, COALESCE(plan_id, ''), COALESCE(project_id, ''),
+	COALESCE(run_mode, 'sequential'), COALESCE(status, 'running'), COALESCE(entries_json, ''),
+	created_at, updated_at, completed_at FROM execution_plan_runs`
+
+func scanExecutionPlanRun(row capacityRowScanner) (*ExecutionPlanRun, error) {
+	var run ExecutionPlanRun
+	var entriesJSON string
+	if err := row.Scan(&run.ID, &run.PlanID, &run.ProjectID, &run.RunMode, &run.Status,
+		&entriesJSON, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt); err != nil {
+		return nil, err
+	}
+	if entriesJSON != "" && entriesJSON != "null" {
+		if err := json.Unmarshal([]byte(entriesJSON), &run.Entries); err != nil {
+			return nil, fmt.Errorf("unmarshal execution plan run entries: %w", err)
+		}
+	}
+	if run.Entries == nil {
+		run.Entries = []ExecutionPlanRunEntry{}
+	}
+	return &run, nil
+}
+
+func (s *SQLiteStore) GetExecutionPlanRun(id string) (*ExecutionPlanRun, error) {
+	return scanExecutionPlanRun(s.db.QueryRow(executionPlanRunSelect+` WHERE id = ?`, id))
+}
+
+func (s *SQLiteStore) ListExecutionPlanRuns(planID string, limit int, offset int) ([]*ExecutionPlanRun, error) {
+	query := executionPlanRunSelect
+	args := []any{}
+	if planID != "" {
+		query += ` WHERE plan_id = ?`
+		args = append(args, planID)
+	}
+	query += ` ORDER BY created_at DESC`
+	if limit > 0 {
+		query += ` LIMIT ?`
+		args = append(args, limit)
+		if offset > 0 {
+			query += ` OFFSET ?`
+			args = append(args, offset)
+		}
+	}
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	runs := make([]*ExecutionPlanRun, 0)
+	for rows.Next() {
+		run, err := scanExecutionPlanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, run)
+	}
+	return runs, rows.Err()
+}

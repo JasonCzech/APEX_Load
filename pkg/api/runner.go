@@ -125,6 +125,13 @@ type TestRunner struct {
 	// reservationStore binds capacity timeslots at test create and feeds
 	// reservation-aware admission control.
 	reservationStore reservationPersistence
+	// execPlanRunStore persists sequential execution-plan run progress; seqMu
+	// guards the in-memory orchestration state (kept off tr.mu since advancing
+	// a plan calls CreateTest/StartTest, which take tr.mu).
+	execPlanRunStore executionPlanRunPersistence
+	seqMu            sync.Mutex
+	seqPlanRuns      map[string]*seqPlanRunState
+	seqPlanByTest    map[string]string
 	liveState        LiveStateStore
 	execution        testExecutionBackend
 	notifier         *notificationDispatcher
@@ -807,6 +814,9 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 		usageStore:       store,
 		objectRepoStore:  store,
 		reservationStore: store,
+		execPlanRunStore: store,
+		seqPlanRuns:      make(map[string]*seqPlanRunState),
+		seqPlanByTest:    make(map[string]string),
 		execution:        localExecutionBackend{},
 		notifier:         newNotificationDispatcher(nil),
 		routeCache:       make(map[string]latencyRouteCacheEntry),

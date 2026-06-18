@@ -9,7 +9,6 @@ package api
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"sort"
@@ -40,6 +39,14 @@ func (s *Server) validateExecutionPlan(plan *storage.ExecutionPlan) (int, string
 		}
 		if entry.FailurePolicy != "" && entry.FailurePolicy != "halt" && entry.FailurePolicy != "skip" {
 			return http.StatusBadRequest, "entry failure_policy must be halt or skip"
+		}
+		for _, binding := range entry.DataPools {
+			if strings.TrimSpace(binding.PoolID) == "" {
+				return http.StatusBadRequest, "every execution plan entry data pool requires a pool_id"
+			}
+			if strings.TrimSpace(binding.Alias) == "" {
+				return http.StatusBadRequest, "every execution plan entry data pool requires an alias"
+			}
 		}
 		// Cross-tenant guard: an entry that references an existing scenario must
 		// reference one in the plan's own project. Unknown scenarios are allowed
@@ -181,55 +188,71 @@ func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *
 	if !ok {
 		return
 	}
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	attributable := actorType == "user" || actorType == "service_account"
+
+	// Sequential plans are dependency-gated: the first enabled entry is
+	// created+started, and each subsequent entry starts only after the prior run
+	// reaches a terminal state. The orchestrator owns the lifecycle; here we just
+	// kick it off and surface the initial run snapshot.
+	if plan.RunMode == "sequential" {
+		attribSubject := ""
+		if attributable {
+			attribSubject = actorSubject
+		}
+		run, err := s.runner.StartExecutionPlanRun(plan, attribSubject, actorDisplayName)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		results := make([]executionPlanRunResult, 0, len(run.Entries))
+		for _, e := range run.Entries {
+			results = append(results, executionPlanRunResult{
+				Order: e.Order, ScenarioID: e.ScenarioID, TestID: e.TestID, Status: e.Status, Detail: e.Detail,
+			})
+		}
+		s.recordAuditEvent(r, "execution_plan.run", "success", "execution_plan", plan.ID, plan.ProjectID, map[string]any{
+			"run_mode": plan.RunMode, "run_id": run.ID, "status": run.Status, "actor": actorDisplayName,
+		})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"execution_plan_id": plan.ID,
+			"run_mode":          plan.RunMode,
+			"run_id":            run.ID,
+			"status":            run.Status,
+			"results":           results,
+			"materialized_at":   time.Now().UTC(),
+		})
+		return
+	}
+
+	// Parallel: stage one queued test per enabled entry (created, not started —
+	// the operator/scheduler starts them), now with per-entry data-pool and
+	// timeslot binding.
 	entries := make([]storage.ExecutionPlanEntry, len(plan.Entries))
 	copy(entries, plan.Entries)
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Order < entries[j].Order })
 
-	sequential := plan.RunMode == "sequential"
-	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
-	attributable := actorType == "user" || actorType == "service_account"
-
 	results := make([]executionPlanRunResult, 0, len(entries))
 	created, failed := 0, 0
-	halted := false
 	for _, entry := range entries {
 		res := executionPlanRunResult{Order: entry.Order, ScenarioID: entry.ScenarioID}
-		switch {
-		case !entry.IsEnabled():
+		if !entry.IsEnabled() {
 			res.Status = "skipped"
 			res.Detail = "entry disabled"
-		case halted:
-			res.Status = "skipped"
-			res.Detail = "halted after a prior failure"
-		default:
-			var overrides *RuntimeSettingsOverride
-			if len(entry.RuntimeOverrides) > 0 {
-				var parsed RuntimeSettingsOverride
-				if err := json.Unmarshal(entry.RuntimeOverrides, &parsed); err == nil {
-					overrides = &parsed
-				}
-			}
-			test, err := s.runner.CreateTest(CreateTestRequest{
-				Name:            strings.TrimSpace(plan.Name + " / " + executionEntryLabel(entry)),
-				ScenarioID:      entry.ScenarioID,
-				ProjectID:       plan.ProjectID,
-				RuntimeSettings: overrides,
-			})
-			if err != nil {
-				failed++
-				res.Status = "failed"
-				res.Detail = err.Error()
-				// Default failure policy is halt; sequential plans stop, parallel continue.
-				if sequential && entry.FailurePolicy != "skip" {
-					halted = true
-				}
-			} else {
-				created++
-				res.Status = "created"
-				res.TestID = test.ID
-				if attributable {
-					s.runner.AttributeTestCreated(test.ID, actorSubject, actorDisplayName)
-				}
+			results = append(results, res)
+			continue
+		}
+		test, err := s.runner.CreateTest(buildPlanEntryCreateRequest(plan.Name, plan.ProjectID, plan.TimeslotID, entry))
+		if err != nil {
+			failed++
+			res.Status = "failed"
+			res.Detail = err.Error()
+		} else {
+			created++
+			res.Status = "created"
+			res.TestID = test.ID
+			if attributable {
+				s.runner.AttributeTestCreated(test.ID, actorSubject, actorDisplayName)
 			}
 		}
 		results = append(results, res)
@@ -246,6 +269,45 @@ func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *
 		"results":           results,
 		"materialized_at":   time.Now().UTC(),
 	})
+}
+
+func (s *Server) handleListExecutionPlanRuns(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffsetQuery(r, defaultExecutionPlanListLimit)
+	if s.store == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"runs": []*storage.ExecutionPlanRun{}, "count": 0, "limit": limit, "offset": offset})
+		return
+	}
+	runs, err := s.store.ListExecutionPlanRuns(r.PathValue("id"), limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if runs == nil {
+		runs = []*storage.ExecutionPlanRun{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runs": runs, "count": len(runs), "limit": limit, "offset": offset})
+}
+
+func (s *Server) handleGetExecutionPlanRun(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	run, err := s.store.GetExecutionPlanRun(r.PathValue("runId"))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "execution plan run not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load execution plan run")
+		return
+	}
+	// Confine the run to the plan in the path so the project-scoped auth holds.
+	if run.PlanID != r.PathValue("id") {
+		writeError(w, http.StatusNotFound, "execution plan run not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
 }
 
 func executionEntryLabel(entry storage.ExecutionPlanEntry) string {

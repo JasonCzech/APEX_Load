@@ -99,6 +99,11 @@ type Store interface {
 	ListExecutionPlans(projectID string, limit int, offset int) ([]*ExecutionPlan, error)
 	DeleteExecutionPlan(id string) error
 
+	// Execution plan runs (per-materialization progress; updated at each transition).
+	SaveExecutionPlanRun(run *ExecutionPlanRun) error
+	GetExecutionPlanRun(id string) (*ExecutionPlanRun, error)
+	ListExecutionPlanRuns(planID string, limit int, offset int) ([]*ExecutionPlanRun, error)
+
 	// Object repositories (project-scoped reusable element-descriptor catalogs).
 	SaveObjectRepository(repo *ObjectRepository) error
 	GetObjectRepository(id string) (*ObjectRepository, error)

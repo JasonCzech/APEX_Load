@@ -3827,6 +3827,8 @@ export interface ExecutionPlanEntry {
   enabled?: boolean
   runtime_overrides?: unknown
   failure_policy?: string // halt | skip
+  data_pools?: ScenarioDataPoolBinding[] // per-entry override of the scenario's pools
+  timeslot_id?: string // per-entry capacity timeslot (falls back to the plan-level one)
 }
 export interface ExecutionPlan {
   id: string
@@ -3856,10 +3858,38 @@ export interface ExecutionPlanRunResult {
 export interface ExecutionPlanRunResponse {
   execution_plan_id: string
   run_mode: string
-  created_count: number
-  failed_count: number
+  run_id?: string // sequential runs only — the persisted plan-run id
+  status?: string // sequential runs only — running | completed | halted | failed
+  created_count?: number // parallel runs only
+  failed_count?: number // parallel runs only
   results: ExecutionPlanRunResult[]
   materialized_at: string
+}
+
+export interface ExecutionPlanRunEntry {
+  order: number
+  scenario_id: string
+  scenario_name?: string
+  test_id?: string
+  status: string // pending | running | complete | failed | skipped
+  detail?: string
+}
+export interface ExecutionPlanRun {
+  id: string
+  plan_id: string
+  project_id?: string
+  run_mode: string
+  status: string // running | completed | halted | failed
+  entries: ExecutionPlanRunEntry[]
+  created_at: string
+  updated_at: string
+  completed_at?: string
+}
+export interface ExecutionPlanRunListResponse {
+  runs: ExecutionPlanRun[]
+  count: number
+  limit?: number
+  offset?: number
 }
 
 export interface RepositoryObjectCandidate {

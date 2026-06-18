@@ -239,6 +239,7 @@ func (tr *TestRunner) StopTest(id string) error {
 			tr.broadcastEvent("test_aborted", current)
 		}
 		tr.mu.Unlock()
+		tr.advanceExecutionPlanForTest(test, "ABORTED")
 		return nil
 	}
 	tr.mu.Lock()
@@ -913,6 +914,7 @@ func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) {
 	tr.updateStoredTestStatus(test.ID, "FAILED", &now, message)
 	tr.broadcastEvent("test_failed", test)
 	tr.promotePendingTests()
+	tr.advanceExecutionPlanForTest(test, "FAILED")
 }
 
 func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord) {
@@ -934,10 +936,12 @@ func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, end
 	if finalStatus == "FAILED" {
 		tr.broadcastEvent("test_failed", test)
 		tr.promotePendingTests()
+		tr.advanceExecutionPlanForTest(test, finalStatus)
 		return
 	}
 	tr.broadcastEvent("test_complete", test)
 	tr.promotePendingTests()
+	tr.advanceExecutionPlanForTest(test, finalStatus)
 }
 
 func (tr *TestRunner) promotePendingTests() {

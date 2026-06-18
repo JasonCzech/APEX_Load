@@ -424,6 +424,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PUT /api/v1/execution-plans/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateExecutionPlan)))))
 	s.mux.Handle("DELETE /api/v1/execution-plans/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteExecutionPlan)))))
 	s.mux.Handle("POST /api/v1/execution-plans/{id}/runs", cors(log(auth(http.HandlerFunc(s.handleMaterializeAndRunExecutionPlan)))))
+	s.mux.Handle("GET /api/v1/execution-plans/{id}/runs", cors(log(auth(http.HandlerFunc(s.handleListExecutionPlanRuns)))))
+	s.mux.Handle("GET /api/v1/execution-plans/{id}/runs/{runId}", cors(log(auth(http.HandlerFunc(s.handleGetExecutionPlanRun)))))
 	s.mux.Handle("POST /api/v1/object-repositories", cors(log(auth(http.HandlerFunc(s.handleCreateObjectRepository)))))
 	s.mux.Handle("GET /api/v1/object-repositories", cors(log(auth(http.HandlerFunc(s.handleListObjectRepositories)))))
 	s.mux.Handle("POST /api/v1/object-repositories/from-script", cors(log(auth(http.HandlerFunc(s.handleObjectRepositoryFromScript)))))

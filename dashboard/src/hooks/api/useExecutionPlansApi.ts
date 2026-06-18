@@ -3,6 +3,8 @@ import { useCallback, useMemo } from 'react'
 import {
   ExecutionPlan,
   ExecutionPlanListResponse,
+  ExecutionPlanRun,
+  ExecutionPlanRunListResponse,
   ExecutionPlanRunResponse,
 } from '../../types'
 import { request } from '../apiClient'
@@ -52,6 +54,18 @@ export function useExecutionPlansApi() {
     [],
   )
 
+  const listExecutionPlanRuns = useCallback(
+    (id: string, params?: { limit?: number; offset?: number }) =>
+      request<ExecutionPlanRunListResponse>(`/execution-plans/${id}/runs${buildQuery({ ...params })}`),
+    [],
+  )
+
+  const getExecutionPlanRun = useCallback(
+    (id: string, runId: string) =>
+      request<ExecutionPlanRun>(`/execution-plans/${id}/runs/${runId}`),
+    [],
+  )
+
   return useMemo(
     () => ({
       listExecutionPlans,
@@ -60,7 +74,18 @@ export function useExecutionPlansApi() {
       updateExecutionPlan,
       deleteExecutionPlan,
       runExecutionPlan,
+      listExecutionPlanRuns,
+      getExecutionPlanRun,
     }),
-    [listExecutionPlans, getExecutionPlan, createExecutionPlan, updateExecutionPlan, deleteExecutionPlan, runExecutionPlan],
+    [
+      listExecutionPlans,
+      getExecutionPlan,
+      createExecutionPlan,
+      updateExecutionPlan,
+      deleteExecutionPlan,
+      runExecutionPlan,
+      listExecutionPlanRuns,
+      getExecutionPlanRun,
+    ],
   )
 }

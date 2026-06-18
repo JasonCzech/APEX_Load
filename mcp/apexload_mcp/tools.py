@@ -173,7 +173,9 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
     EndpointTool("execution_plan_get", "GET", "/execution-plans/{id}", f"{READ} Get an execution plan."),
     EndpointTool("execution_plan_update", "PUT", "/execution-plans/{id}", f"{WRITE} Update an execution plan.", True),
     EndpointTool("execution_plan_delete", "DELETE", "/execution-plans/{id}", f"{DESTRUCTIVE} Delete an execution plan.", True, True),
-    EndpointTool("execution_plan_run", "POST", "/execution-plans/{id}/runs", f"{WRITE} Materialize and run an execution plan (creates one test per enabled entry).", True),
+    EndpointTool("execution_plan_run", "POST", "/execution-plans/{id}/runs", f"{WRITE} Materialize and run an execution plan (sequential plans are dependency-gated; parallel plans stage one test per enabled entry).", True),
+    EndpointTool("execution_plan_run_list", "GET", "/execution-plans/{id}/runs", f"{READ} List an execution plan's materialized runs (progress history)."),
+    EndpointTool("execution_plan_run_get", "GET", "/execution-plans/{id}/runs/{runId}", f"{READ} Get one execution plan run with per-entry status."),
 
     EndpointTool("monitoring_collector_list", "GET", "/monitoring/collectors", f"{READ} List monitoring collectors.", default_project=True),
     EndpointTool("monitoring_collector_create", "POST", "/monitoring/collectors", f"{DESTRUCTIVE} Register a monitoring collector and issue its one-time token.", True, True, True),

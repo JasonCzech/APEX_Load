@@ -2126,6 +2126,25 @@ paths:
       tags:
         - Execution Plans
   /api/v1/execution-plans/{id}/runs:
+    get:
+      summary: List Execution Plan Runs
+      description: |-
+        **Handler:** `handleListExecutionPlanRuns`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleListExecutionPlanRuns
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
     post:
       summary: Materialize And Run Execution Plan
       description: |-
@@ -2139,6 +2158,31 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       parameters:
         - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
+  /api/v1/execution-plans/{id}/runs/{runId}:
+    get:
+      summary: Get Execution Plan Run
+      description: |-
+        **Handler:** `handleGetExecutionPlanRun`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleGetExecutionPlanRun
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: runId
           in: path
           required: true
           schema:

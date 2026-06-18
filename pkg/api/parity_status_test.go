@@ -80,7 +80,7 @@ func TestHandleGetParityStatusReturnsAPIParityProgram(t *testing.T) {
 	wantStatus := map[string]string{
 		"capacity_reservation":    "supported",
 		"fleet_management":        "partial",
-		"execution_planning":      "partial",
+		"execution_planning":      "supported",
 		"monitoring_collectors":   "partial",
 		"entitlements":            "partial",
 		"correlation_persistence": "supported",

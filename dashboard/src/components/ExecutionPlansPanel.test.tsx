@@ -16,6 +16,8 @@ const plansApiMock = {
   updateExecutionPlan: vi.fn(),
   deleteExecutionPlan: vi.fn(),
   runExecutionPlan: vi.fn(),
+  listExecutionPlanRuns: vi.fn(),
+  getExecutionPlanRun: vi.fn(),
 }
 
 vi.mock('../hooks/api/useExecutionPlansApi', () => ({
@@ -42,6 +44,15 @@ async function flush() {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+// Drive a React-controlled input (onChange listens for the native input event).
+function setValue(el: Element | null, value: string) {
+  if (!el) throw new Error('input not found')
+  const input = el as HTMLInputElement
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
 function plan(overrides: Partial<ExecutionPlan>): ExecutionPlan {
@@ -105,6 +116,87 @@ describe('ExecutionPlansPanel', () => {
     await flush()
     expect(plansApiMock.listExecutionPlans).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Select a project')
+  })
+
+  it('runs a sequential plan and shows gated per-entry progress', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({})], count: 1 })
+    plansApiMock.runExecutionPlan.mockResolvedValue({
+      execution_plan_id: 'p1',
+      run_mode: 'sequential',
+      run_id: 'epr-1',
+      status: 'running',
+      results: [
+        { order: 0, scenario_id: 's1', test_id: 't1', status: 'running' },
+        { order: 1, scenario_id: 's2', status: 'pending' },
+      ],
+      materialized_at: '',
+    })
+    plansApiMock.getExecutionPlanRun.mockResolvedValue({
+      id: 'epr-1',
+      plan_id: 'p1',
+      run_mode: 'sequential',
+      status: 'completed',
+      entries: [
+        { order: 0, scenario_id: 's1', test_id: 't1', status: 'complete' },
+        { order: 1, scenario_id: 's2', test_id: 't2', status: 'complete' },
+      ],
+      created_at: '',
+      updated_at: '',
+    })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    const runBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Run')
+    await act(async () => {
+      ;(runBtn as HTMLElement).click()
+    })
+    await flush()
+    expect(plansApiMock.runExecutionPlan).toHaveBeenCalledWith('p1')
+    expect(plansApiMock.getExecutionPlanRun).toHaveBeenCalledWith('p1', 'epr-1')
+    expect(container.textContent).toContain('each entry starts only after the previous run finishes')
+    expect(container.textContent).toContain('completed')
+  })
+
+  it('authors per-entry timeslot and data pools into the create payload', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [], count: 0 })
+    plansApiMock.createExecutionPlan.mockResolvedValue(plan({}))
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    const newBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'New Execution Plan')
+    await act(async () => {
+      ;(newBtn as HTMLElement).click()
+    })
+    await flush()
+    await act(async () => {
+      setValue(container.querySelector('input[placeholder="e.g. nightly regression"]'), 'plan x')
+      setValue(container.querySelector('input[placeholder="scenario id"]'), 's1')
+      setValue(container.querySelector('input[placeholder="optional timeslot id"]'), 'slot-1')
+    })
+    await flush()
+    const addPoolBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '+ data pool')
+    await act(async () => {
+      ;(addPoolBtn as HTMLElement).click()
+    })
+    await flush()
+    await act(async () => {
+      setValue(container.querySelector('input[placeholder="pool id"]'), 'pool-1')
+      setValue(container.querySelector('input[placeholder="alias"]'), 'users')
+    })
+    await flush()
+    const createBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Create')
+    await act(async () => {
+      ;(createBtn as HTMLElement).click()
+    })
+    await flush()
+    expect(plansApiMock.createExecutionPlan).toHaveBeenCalledTimes(1)
+    const payload = plansApiMock.createExecutionPlan.mock.calls[0][0] as {
+      entries: { timeslot_id?: string; data_pools?: { pool_id: string; alias: string }[] }[]
+    }
+    expect(payload.entries[0].timeslot_id).toBe('slot-1')
+    expect(payload.entries[0].data_pools?.[0]).toMatchObject({ pool_id: 'pool-1', alias: 'users' })
   })
 
   it('opens a pre-seeded draft from a handed-in scenario and consumes the seed', async () => {
