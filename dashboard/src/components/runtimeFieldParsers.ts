@@ -2,6 +2,15 @@
 // (list and key=value fields). Kept separate so the Web/HTTP tab and any future
 // tab can share them without depending on the Script Editor's internals.
 
+/**
+ * Render an inherited value for an input placeholder. Returns the value as a
+ * string, or the fallback when nothing is inherited (undefined/null/empty) so a
+ * field's placeholder shows the actual inherited value instead of a bare label.
+ */
+export function inheritedPlaceholder(value: unknown, fallback = 'Inherit'): string {
+  return value === undefined || value === null || value === '' ? fallback : String(value)
+}
+
 /** Join a string array for display in a single-line comma input. */
 export function formatList(values?: string[]): string {
   return values && values.length ? values.join(', ') : ''

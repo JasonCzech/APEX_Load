@@ -1,8 +1,22 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatKeyValues, formatList, parseKeyValues, parseList } from './runtimeFieldParsers'
+import { formatKeyValues, formatList, inheritedPlaceholder, parseKeyValues, parseList } from './runtimeFieldParsers'
 
 describe('runtimeFieldParsers', () => {
+  it('renders inherited values as placeholders, falling back when unset', () => {
+    // Concrete inherited values are stringified for the placeholder.
+    expect(inheritedPlaceholder(30000)).toBe('30000')
+    expect(inheritedPlaceholder('mozilla/5.0')).toBe('mozilla/5.0')
+    // 0 and false are real inherited values, not "unset".
+    expect(inheritedPlaceholder(0)).toBe('0')
+    expect(inheritedPlaceholder(false)).toBe('false')
+    // undefined/null/'' mean nothing is inherited → the fallback label.
+    expect(inheritedPlaceholder(undefined)).toBe('Inherit')
+    expect(inheritedPlaceholder(null)).toBe('Inherit')
+    expect(inheritedPlaceholder('')).toBe('Inherit')
+    expect(inheritedPlaceholder(undefined, 'Duration-driven')).toBe('Duration-driven')
+  })
+
   it('parses comma- and newline-separated lists', () => {
     expect(parseList('a, b ,c')).toEqual(['a', 'b', 'c'])
     expect(parseList('a\nb\n c ')).toEqual(['a', 'b', 'c'])

@@ -4,10 +4,12 @@ import {
   type NetworkProfileWeight,
   type WebRuntimeConfig,
 } from '../../types/scripts'
-import { formatKeyValues, formatList, parseKeyValues, parseList } from '../runtimeFieldParsers'
+import { formatKeyValues, formatList, inheritedPlaceholder as inh, parseKeyValues, parseList } from '../runtimeFieldParsers'
 
 export interface WebHttpTabProps {
   web?: WebRuntimeConfig
+  /** The value this section inherits (scenario default) — fills input placeholders. */
+  inheritedWeb?: WebRuntimeConfig
   /** Replace the whole web_runtime section (undefined clears it). */
   setWeb: (next: WebRuntimeConfig | undefined) => void
 }
@@ -28,7 +30,7 @@ function isWebEmpty(web: WebRuntimeConfig): boolean {
  * edits into the section and collapses an emptied section back to undefined so
  * an all-cleared tab does not emit a spurious override.
  */
-export default function WebHttpTab({ web, setWeb }: WebHttpTabProps) {
+export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProps) {
   const patchWeb = (next: Partial<WebRuntimeConfig>) => {
     const merged = { ...web, ...next } as WebRuntimeConfig
     setWeb(isWebEmpty(merged) ? undefined : merged)
@@ -128,10 +130,10 @@ export default function WebHttpTab({ web, setWeb }: WebHttpTabProps) {
           </select>
         </label>
         <label><span>Preset</span><input className="settings-input" type="text" value={web?.network_simulation?.preset || ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, preset: event.target.value || undefined } })} placeholder="e.g. 4g, dsl" /></label>
-        <label><span>Bandwidth (kbps)</span><input className="settings-input" type="number" min={0} value={web?.network_simulation?.bandwidth_kbps ?? ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, bandwidth_kbps: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder="Inherit" /></label>
-        <label><span>Latency (ms)</span><input className="settings-input" type="number" min={0} value={web?.network_simulation?.latency_ms ?? ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, latency_ms: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder="Inherit" /></label>
-        <label><span>Jitter (ms)</span><input className="settings-input" type="number" min={0} value={web?.network_simulation?.jitter_ms ?? ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, jitter_ms: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder="Inherit" /></label>
-        <label><span>Packet loss (%)</span><input className="settings-input" type="number" min={0} value={web?.network_simulation?.packet_loss_pct ?? ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, packet_loss_pct: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder="Inherit" /></label>
+        <label><span>Bandwidth (kbps)</span><input className="settings-input" type="number" min={0} value={web?.network_simulation?.bandwidth_kbps ?? ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, bandwidth_kbps: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedWeb?.network_simulation?.bandwidth_kbps)} /></label>
+        <label><span>Latency (ms)</span><input className="settings-input" type="number" min={0} value={web?.network_simulation?.latency_ms ?? ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, latency_ms: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedWeb?.network_simulation?.latency_ms)} /></label>
+        <label><span>Jitter (ms)</span><input className="settings-input" type="number" min={0} value={web?.network_simulation?.jitter_ms ?? ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, jitter_ms: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedWeb?.network_simulation?.jitter_ms)} /></label>
+        <label><span>Packet loss (%)</span><input className="settings-input" type="number" min={0} value={web?.network_simulation?.packet_loss_pct ?? ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, packet_loss_pct: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedWeb?.network_simulation?.packet_loss_pct)} /></label>
       </div>
 
       <div className="scenario-assignment-header">
@@ -147,9 +149,9 @@ export default function WebHttpTab({ web, setWeb }: WebHttpTabProps) {
             <option value="fixed">Fixed bitrate</option>
           </select>
         </label>
-        <label><span>Buffer (seconds)</span><input className="settings-input" type="number" min={0} value={web?.streaming?.buffer_size_seconds ?? ''} onChange={event => patchWeb({ streaming: { ...web?.streaming, buffer_size_seconds: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder="Inherit" /></label>
-        <label><span>Fixed bitrate (kbps)</span><input className="settings-input" type="number" min={0} value={web?.streaming?.fixed_bitrate_kbps ?? ''} onChange={event => patchWeb({ streaming: { ...web?.streaming, fixed_bitrate_kbps: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder="Inherit" /></label>
-        <label><span>Bandwidth estimation</span><input className="settings-input" type="text" value={web?.streaming?.bandwidth_estimation || ''} onChange={event => patchWeb({ streaming: { ...web?.streaming, bandwidth_estimation: event.target.value || undefined } })} placeholder="Inherit" /></label>
+        <label><span>Buffer (seconds)</span><input className="settings-input" type="number" min={0} value={web?.streaming?.buffer_size_seconds ?? ''} onChange={event => patchWeb({ streaming: { ...web?.streaming, buffer_size_seconds: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedWeb?.streaming?.buffer_size_seconds)} /></label>
+        <label><span>Fixed bitrate (kbps)</span><input className="settings-input" type="number" min={0} value={web?.streaming?.fixed_bitrate_kbps ?? ''} onChange={event => patchWeb({ streaming: { ...web?.streaming, fixed_bitrate_kbps: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedWeb?.streaming?.fixed_bitrate_kbps)} /></label>
+        <label><span>Bandwidth estimation</span><input className="settings-input" type="text" value={web?.streaming?.bandwidth_estimation || ''} onChange={event => patchWeb({ streaming: { ...web?.streaming, bandwidth_estimation: event.target.value || undefined } })} placeholder={inh(inheritedWeb?.streaming?.bandwidth_estimation)} /></label>
       </div>
 
       <div className="scenario-assignment-header">

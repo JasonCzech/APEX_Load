@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft } from '../types'
 import { type ScriptConfig } from '../types/scripts'
+import { inheritedPlaceholder as inh } from './runtimeFieldParsers'
 import {
   EMPTY_RUNTIME_DRAFT,
   formatEffectiveRuntimeField,
@@ -124,6 +125,28 @@ export default function RuntimeSettingsGroupEditor({
   const groupOverride = overrideFromRuntimeDraft(overrides[index])
   const scriptDefault = runtimeOverrideFromScriptConfig(focusGroup.scriptConfig)
   const engineDefault = runtimeOverrideFromScriptConfig(engineDefaults)
+
+  // The value each field INHERITS when not overridden at the group level: scenario
+  // default over script config over engine default (engine lowest). Used to fill the
+  // input placeholders (via `inh`) so the user sees the actual inherited value,
+  // never a bare "Inherit".
+  const inheritedHttp = {
+    ...engineDefault?.http, ...scriptDefault?.http, ...scenarioDefault?.http,
+    tls: { ...engineDefault?.http?.tls, ...scriptDefault?.http?.tls, ...scenarioDefault?.http?.tls },
+    proxy: { ...engineDefault?.http?.proxy, ...scriptDefault?.http?.proxy, ...scenarioDefault?.http?.proxy },
+    auth: { ...engineDefault?.http?.auth, ...scriptDefault?.http?.auth, ...scenarioDefault?.http?.auth },
+  }
+  const inheritedBrowser = {
+    ...engineDefault?.browser_config, ...scriptDefault?.browser_config, ...scenarioDefault?.browser_config,
+    viewport: { ...engineDefault?.browser_config?.viewport, ...scriptDefault?.browser_config?.viewport, ...scenarioDefault?.browser_config?.viewport },
+  }
+  const inheritedThink = { ...engineDefault?.think_time, ...scriptDefault?.think_time, ...scenarioDefault?.think_time }
+  const inheritedPacing = { ...engineDefault?.pacing, ...scriptDefault?.pacing, ...scenarioDefault?.pacing }
+  const inheritedError = { ...engineDefault?.error_handling, ...scriptDefault?.error_handling, ...scenarioDefault?.error_handling }
+  const inheritedRunLogic = { ...engineDefault?.run_logic, ...scriptDefault?.run_logic, ...scenarioDefault?.run_logic }
+  const inheritedWeb = { ...engineDefault?.web_runtime, ...scriptDefault?.web_runtime, ...scenarioDefault?.web_runtime }
+  const inheritedIterations = scenarioDefault?.iterations ?? scriptDefault?.iterations ?? engineDefault?.iterations ?? inheritedRunLogic.iterations
+
   const browserApplicable = isRuntimeFieldApplicable('browser', focusGroup.protocol)
   const httpApplicable = isRuntimeFieldApplicable('http', focusGroup.protocol)
   const webRuntimeApplicable = isRuntimeFieldApplicable('web_runtime', focusGroup.protocol)
@@ -431,33 +454,33 @@ export default function RuntimeSettingsGroupEditor({
               </label>
               <label>
                 <span>Mean (ms)</span>
-                <input className="settings-input" type="number" min={0} value={draft.think_time?.mean_ms ?? ''} disabled={Boolean(draft.think_time?.ignore)} onChange={event => patchThinkTime({ mean_ms: event.target.value === '' ? 0 : Number(event.target.value) })} placeholder="Inherit" />
+                <input className="settings-input" type="number" min={0} value={draft.think_time?.mean_ms ?? ''} disabled={Boolean(draft.think_time?.ignore)} onChange={event => patchThinkTime({ mean_ms: event.target.value === '' ? 0 : Number(event.target.value) })} placeholder={inh(inheritedThink.mean_ms)} />
               </label>
               {draft.think_time?.type === 'gaussian' && (
                 <label>
                   <span>Std dev (ms)</span>
-                  <input className="settings-input" type="number" min={0} value={draft.think_time?.std_ms ?? ''} onChange={event => patchThinkTime({ std_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+                  <input className="settings-input" type="number" min={0} value={draft.think_time?.std_ms ?? ''} onChange={event => patchThinkTime({ std_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.std_ms)} />
                 </label>
               )}
               {(draft.think_time?.type === 'uniform' || draft.think_time?.type === 'gaussian') && (
                 <>
                   <label>
                     <span>Min (ms)</span>
-                    <input className="settings-input" type="number" min={0} value={draft.think_time?.min_ms ?? ''} onChange={event => patchThinkTime({ min_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+                    <input className="settings-input" type="number" min={0} value={draft.think_time?.min_ms ?? ''} onChange={event => patchThinkTime({ min_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.min_ms)} />
                   </label>
                   <label>
                     <span>Max (ms)</span>
-                    <input className="settings-input" type="number" min={0} value={draft.think_time?.max_ms ?? ''} onChange={event => patchThinkTime({ max_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+                    <input className="settings-input" type="number" min={0} value={draft.think_time?.max_ms ?? ''} onChange={event => patchThinkTime({ max_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.max_ms)} />
                   </label>
                 </>
               )}
               <label>
                 <span>Multiplier</span>
-                <input className="settings-input" type="number" min={0} step="0.1" value={draft.think_time?.multiplier ?? ''} onChange={event => patchThinkTime({ multiplier: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+                <input className="settings-input" type="number" min={0} step="0.1" value={draft.think_time?.multiplier ?? ''} onChange={event => patchThinkTime({ multiplier: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.multiplier)} />
               </label>
               <label>
                 <span>Limit (ms)</span>
-                <input className="settings-input" type="number" min={0} value={draft.think_time?.limit_ms ?? ''} onChange={event => patchThinkTime({ limit_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+                <input className="settings-input" type="number" min={0} value={draft.think_time?.limit_ms ?? ''} onChange={event => patchThinkTime({ limit_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.limit_ms)} />
               </label>
             </div>
             <div className="scenario-option-grid">
@@ -497,43 +520,43 @@ export default function RuntimeSettingsGroupEditor({
             {pacingType === 'fixed_delay' && (
               <label>
                 <span>Pacing delay (ms)</span>
-                <input className="settings-input" type="number" min={0} value={draft.pacing?.delay_ms ?? ''} onChange={event => patchPacing({ delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" />
+                <input className="settings-input" type="number" min={0} value={draft.pacing?.delay_ms ?? ''} onChange={event => patchPacing({ delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.delay_ms, '0')} />
               </label>
             )}
             {pacingType === 'random_delay' && (
               <>
                 <label>
                   <span>Min delay (ms)</span>
-                  <input className="settings-input" type="number" min={0} value={draft.pacing?.min_delay_ms ?? ''} onChange={event => patchPacing({ min_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" />
+                  <input className="settings-input" type="number" min={0} value={draft.pacing?.min_delay_ms ?? ''} onChange={event => patchPacing({ min_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.min_delay_ms, '0')} />
                 </label>
                 <label>
                   <span>Max delay (ms)</span>
-                  <input className="settings-input" type="number" min={0} value={draft.pacing?.max_delay_ms ?? ''} onChange={event => patchPacing({ max_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" />
+                  <input className="settings-input" type="number" min={0} value={draft.pacing?.max_delay_ms ?? ''} onChange={event => patchPacing({ max_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.max_delay_ms, '0')} />
                 </label>
               </>
             )}
             {pacingType === 'fixed_interval' && (
               <label>
                 <span>Pacing interval (ms)</span>
-                <input className="settings-input" type="number" min={0} value={draft.pacing?.interval_ms ?? ''} onChange={event => patchPacing({ interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" />
+                <input className="settings-input" type="number" min={0} value={draft.pacing?.interval_ms ?? ''} onChange={event => patchPacing({ interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.interval_ms, '0')} />
               </label>
             )}
             {pacingType === 'random_interval' && (
               <>
                 <label>
                   <span>Min interval (ms)</span>
-                  <input className="settings-input" type="number" min={0} value={draft.pacing?.min_interval_ms ?? ''} onChange={event => patchPacing({ min_interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" />
+                  <input className="settings-input" type="number" min={0} value={draft.pacing?.min_interval_ms ?? ''} onChange={event => patchPacing({ min_interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.min_interval_ms, '0')} />
                 </label>
                 <label>
                   <span>Max interval (ms)</span>
-                  <input className="settings-input" type="number" min={0} value={draft.pacing?.max_interval_ms ?? ''} onChange={event => patchPacing({ max_interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" />
+                  <input className="settings-input" type="number" min={0} value={draft.pacing?.max_interval_ms ?? ''} onChange={event => patchPacing({ max_interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.max_interval_ms, '0')} />
                 </label>
               </>
             )}
             {pacingType === 'tps' && (
               <label>
                 <span>Target TPS</span>
-                <input className="settings-input" type="number" min={0} value={draft.pacing?.tps ?? ''} onChange={event => patchPacing({ tps: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" />
+                <input className="settings-input" type="number" min={0} value={draft.pacing?.tps ?? ''} onChange={event => patchPacing({ tps: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.tps, '0')} />
               </label>
             )}
           </div>
@@ -549,7 +572,7 @@ export default function RuntimeSettingsGroupEditor({
                 min={0}
                 value={draft.run_logic?.iterations ?? draft.iterations ?? ''}
                 onChange={event => patchRunLogic({ iterations: event.target.value === '' ? undefined : Number(event.target.value) })}
-                placeholder="Inherit"
+                placeholder={inh(inheritedIterations, 'Duration-driven')}
               />
             </label>
             <label>
@@ -580,11 +603,11 @@ export default function RuntimeSettingsGroupEditor({
             </label>
             <label>
               <span>Global iterations</span>
-              <input className="settings-input" type="number" min={0} value={draft.run_logic?.global_iterations ?? ''} onChange={event => patchRunLogic({ global_iterations: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+              <input className="settings-input" type="number" min={0} value={draft.run_logic?.global_iterations ?? ''} onChange={event => patchRunLogic({ global_iterations: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedRunLogic.global_iterations)} />
             </label>
             <label>
               <span>Max transactions</span>
-              <input className="settings-input" type="number" min={0} value={draft.run_logic?.max_transactions ?? ''} onChange={event => patchRunLogic({ max_transactions: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" />
+              <input className="settings-input" type="number" min={0} value={draft.run_logic?.max_transactions ?? ''} onChange={event => patchRunLogic({ max_transactions: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedRunLogic.max_transactions)} />
             </label>
             <label>
               <span>Action sequence</span>
@@ -623,7 +646,7 @@ export default function RuntimeSettingsGroupEditor({
                   min={0}
                   value={draft.max_retries ?? ''}
                   onChange={event => patch({ max_retries: event.target.value === '' ? undefined : Number(event.target.value) })}
-                  placeholder="Inherit"
+                  placeholder={inh(inheritedError.max_retries, '0')}
                 />
               </label>
               <label>
@@ -634,7 +657,7 @@ export default function RuntimeSettingsGroupEditor({
                   min={0}
                   value={draft.retry_delay_ms ?? ''}
                   onChange={event => patch({ retry_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })}
-                  placeholder="Inherit"
+                  placeholder={inh(inheritedError.retry_delay_ms)}
                 />
               </label>
               <label>
@@ -674,10 +697,10 @@ export default function RuntimeSettingsGroupEditor({
             <div className="http-transport-tab-panel">
               {httpSubTab === 'timeouts' && (
                 <div className="scenario-browser-grid">
-                  <label><span>Connect timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.connect_timeout_ms ?? ''} onChange={event => patchHttp({ connect_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
-                  <label><span>Request timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.request_timeout_ms ?? ''} onChange={event => patchHttp({ request_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
-                  <label><span>TLS handshake timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.tls_timeout_ms ?? ''} onChange={event => patchHttp({ tls_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
-                  <label><span>Idle timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.idle_timeout_ms ?? ''} onChange={event => patchHttp({ idle_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
+                  <label><span>Connect timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.connect_timeout_ms ?? ''} onChange={event => patchHttp({ connect_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.connect_timeout_ms)} /></label>
+                  <label><span>Request timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.request_timeout_ms ?? ''} onChange={event => patchHttp({ request_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.request_timeout_ms)} /></label>
+                  <label><span>TLS handshake timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.tls_timeout_ms ?? ''} onChange={event => patchHttp({ tls_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.tls_timeout_ms)} /></label>
+                  <label><span>Idle timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.idle_timeout_ms ?? ''} onChange={event => patchHttp({ idle_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.idle_timeout_ms)} /></label>
                 </div>
               )}
 
@@ -692,8 +715,8 @@ export default function RuntimeSettingsGroupEditor({
                       <option value="2">2</option>
                     </select>
                   </label>
-                  <label><span>Max connections / host</span><input className="settings-input" type="number" min={0} value={draft.http?.max_conns_per_host ?? ''} onChange={event => patchHttp({ max_conns_per_host: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
-                  <label><span>Max redirects</span><input className="settings-input" type="number" min={0} value={draft.http?.max_redirects ?? ''} onChange={event => patchHttp({ max_redirects: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
+                  <label><span>Max connections / host</span><input className="settings-input" type="number" min={0} value={draft.http?.max_conns_per_host ?? ''} onChange={event => patchHttp({ max_conns_per_host: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_conns_per_host)} /></label>
+                  <label><span>Max redirects</span><input className="settings-input" type="number" min={0} value={draft.http?.max_redirects ?? ''} onChange={event => patchHttp({ max_redirects: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_redirects)} /></label>
                   <label>
                     <span>Keep-alive</span>
                     <select className="settings-input" value={browserBoolValue(draft.http?.keep_alive)} onChange={event => patchHttp({ keep_alive: event.target.value === '' ? undefined : event.target.value === 'true' })}>
@@ -702,9 +725,9 @@ export default function RuntimeSettingsGroupEditor({
                       <option value="false">Disabled</option>
                     </select>
                   </label>
-                  <label><span>User agent</span><input className="settings-input" type="text" value={draft.http?.user_agent || ''} onChange={event => patchHttp({ user_agent: event.target.value || undefined })} placeholder="Inherit" /></label>
-                  <label><span>Accept-Encoding</span><input className="settings-input" type="text" value={draft.http?.accept_encoding || ''} onChange={event => patchHttp({ accept_encoding: event.target.value || undefined })} placeholder="Inherit" /></label>
-                  <label><span>Accept-Language</span><input className="settings-input" type="text" value={draft.http?.accept_language || ''} onChange={event => patchHttp({ accept_language: event.target.value || undefined })} placeholder="Inherit" /></label>
+                  <label><span>User agent</span><input className="settings-input" type="text" value={draft.http?.user_agent || ''} onChange={event => patchHttp({ user_agent: event.target.value || undefined })} placeholder={inh(inheritedHttp.user_agent)} /></label>
+                  <label><span>Accept-Encoding</span><input className="settings-input" type="text" value={draft.http?.accept_encoding || ''} onChange={event => patchHttp({ accept_encoding: event.target.value || undefined })} placeholder={inh(inheritedHttp.accept_encoding)} /></label>
+                  <label><span>Accept-Language</span><input className="settings-input" type="text" value={draft.http?.accept_language || ''} onChange={event => patchHttp({ accept_language: event.target.value || undefined })} placeholder={inh(inheritedHttp.accept_language)} /></label>
                 </div>
               )}
 
@@ -721,9 +744,9 @@ export default function RuntimeSettingsGroupEditor({
                         <option value="1.3">1.3</option>
                       </select>
                     </label>
-                    <label><span>Client cert file</span><input className="settings-input" type="text" value={draft.http?.tls?.client_cert_file || ''} onChange={event => patchTls({ client_cert_file: event.target.value || undefined })} placeholder="Inherit" /></label>
-                    <label><span>Client key file</span><input className="settings-input" type="text" value={draft.http?.tls?.client_key_file || ''} onChange={event => patchTls({ client_key_file: event.target.value || undefined })} placeholder="Inherit" /></label>
-                    <label><span>CA cert file</span><input className="settings-input" type="text" value={draft.http?.tls?.ca_cert_file || ''} onChange={event => patchTls({ ca_cert_file: event.target.value || undefined })} placeholder="Inherit" /></label>
+                    <label><span>Client cert file</span><input className="settings-input" type="text" value={draft.http?.tls?.client_cert_file || ''} onChange={event => patchTls({ client_cert_file: event.target.value || undefined })} placeholder={inh(inheritedHttp.tls?.client_cert_file)} /></label>
+                    <label><span>Client key file</span><input className="settings-input" type="text" value={draft.http?.tls?.client_key_file || ''} onChange={event => patchTls({ client_key_file: event.target.value || undefined })} placeholder={inh(inheritedHttp.tls?.client_key_file)} /></label>
+                    <label><span>CA cert file</span><input className="settings-input" type="text" value={draft.http?.tls?.ca_cert_file || ''} onChange={event => patchTls({ ca_cert_file: event.target.value || undefined })} placeholder={inh(inheritedHttp.tls?.ca_cert_file)} /></label>
                   </div>
                   <div className="scenario-option-grid">
                     <label className={`scenario-option-card ${draft.http?.tls?.insecure_skip_verify ? 'selected' : ''}`}>
@@ -745,7 +768,7 @@ export default function RuntimeSettingsGroupEditor({
                       <option value="custom">Custom</option>
                     </select>
                   </label>
-                  <label><span>Proxy URL</span><input className="settings-input" type="text" value={draft.http?.proxy?.url || ''} onChange={event => patchProxy({ url: event.target.value || undefined })} placeholder="http://proxy:8080" /></label>
+                  <label><span>Proxy URL</span><input className="settings-input" type="text" value={draft.http?.proxy?.url || ''} onChange={event => patchProxy({ url: event.target.value || undefined })} placeholder={inh(inheritedHttp.proxy?.url, 'http://proxy:8080')} /></label>
                   <label><span>Proxy username</span><input className="settings-input" type="text" autoComplete="off" value={draft.http?.proxy?.username || ''} onChange={event => patchProxy({ username: event.target.value || undefined })} placeholder="Inherit" /></label>
                   <label><span>Proxy password</span><input className="settings-input" type="password" autoComplete="off" value={draft.http?.proxy?.password || ''} onChange={event => patchProxy({ password: event.target.value || undefined })} placeholder="Inherit" /></label>
                   <label>
@@ -753,7 +776,7 @@ export default function RuntimeSettingsGroupEditor({
                     <input className="settings-input" type="text" value={draft.http?.proxy?.no_proxy?.join(', ') || ''} onChange={event => {
                       const hosts = event.target.value.split(',').map(value => value.trim()).filter(Boolean)
                       patchProxy({ no_proxy: hosts.length ? hosts : undefined })
-                    }} placeholder="localhost, 127.0.0.1" />
+                    }} placeholder={inh(inheritedHttp.proxy?.no_proxy?.join(', '), 'localhost, 127.0.0.1')} />
                   </label>
                 </div>
               )}
@@ -770,7 +793,7 @@ export default function RuntimeSettingsGroupEditor({
                       <option value="digest">Digest</option>
                     </select>
                   </label>
-                  <label><span>Auth username</span><input className="settings-input" type="text" value={draft.http?.auth?.username || ''} onChange={event => patchAuth({ username: event.target.value || undefined })} placeholder="Inherit" /></label>
+                  <label><span>Auth username</span><input className="settings-input" type="text" value={draft.http?.auth?.username || ''} onChange={event => patchAuth({ username: event.target.value || undefined })} placeholder={inh(inheritedHttp.auth?.username)} /></label>
                   <label><span>Auth password</span><input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.password || ''} onChange={event => patchAuth({ password: event.target.value || undefined })} placeholder="Inherit" /></label>
                   <label><span>Auth token</span><input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.token || ''} onChange={event => patchAuth({ token: event.target.value || undefined })} placeholder="Inherit" /></label>
                 </div>
@@ -824,12 +847,12 @@ export default function RuntimeSettingsGroupEditor({
                         <option value="webkit">WebKit</option>
                       </select>
                     </label>
-                    <label><span>Browser user agent</span><input className="settings-input" type="text" value={draft.browser_config?.user_agent || ''} onChange={event => patchBrowserConfig({ user_agent: event.target.value || undefined })} placeholder="Inherit" /></label>
-                    <label><span>Slow-mo (ms)</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.slow_mo_ms ?? ''} onChange={event => patchBrowserConfig({ slow_mo_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
-                    <label><span>Viewport width</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.width ?? ''} onChange={event => patchBrowserConfig({ viewport: { ...draft.browser_config?.viewport, width: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder="Inherit" /></label>
-                    <label><span>Viewport height</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.height ?? ''} onChange={event => patchBrowserConfig({ viewport: { ...draft.browser_config?.viewport, height: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder="Inherit" /></label>
-                    <label><span>Capture screenshots</span><input className="settings-input" type="text" value={draft.browser_config?.capture_screenshots || ''} onChange={event => patchBrowserConfig({ capture_screenshots: event.target.value || undefined })} placeholder="Inherit" /></label>
-                    <label><span>Download resources</span><input className="settings-input" type="text" value={draft.browser_config?.download_resources || ''} onChange={event => patchBrowserConfig({ download_resources: event.target.value || undefined })} placeholder="Inherit" /></label>
+                    <label><span>Browser user agent</span><input className="settings-input" type="text" value={draft.browser_config?.user_agent || ''} onChange={event => patchBrowserConfig({ user_agent: event.target.value || undefined })} placeholder={inh(inheritedBrowser.user_agent)} /></label>
+                    <label><span>Slow-mo (ms)</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.slow_mo_ms ?? ''} onChange={event => patchBrowserConfig({ slow_mo_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedBrowser.slow_mo_ms)} /></label>
+                    <label><span>Viewport width</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.width ?? ''} onChange={event => patchBrowserConfig({ viewport: { ...draft.browser_config?.viewport, width: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedBrowser.viewport?.width)} /></label>
+                    <label><span>Viewport height</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.height ?? ''} onChange={event => patchBrowserConfig({ viewport: { ...draft.browser_config?.viewport, height: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedBrowser.viewport?.height)} /></label>
+                    <label><span>Capture screenshots</span><input className="settings-input" type="text" value={draft.browser_config?.capture_screenshots || ''} onChange={event => patchBrowserConfig({ capture_screenshots: event.target.value || undefined })} placeholder={inh(inheritedBrowser.capture_screenshots)} /></label>
+                    <label><span>Download resources</span><input className="settings-input" type="text" value={draft.browser_config?.download_resources || ''} onChange={event => patchBrowserConfig({ download_resources: event.target.value || undefined })} placeholder={inh(inheritedBrowser.download_resources)} /></label>
                   </div>
                   <div className="scenario-option-grid">
                     <label className={`scenario-option-card ${draft.browser_config?.client_metrics ? 'selected' : ''}`}>
@@ -868,7 +891,7 @@ export default function RuntimeSettingsGroupEditor({
         )}
 
         {activeTab === 'web_http' && (
-          <WebHttpTab web={draft.web_runtime} setWeb={next => patch({ web_runtime: next })} />
+          <WebHttpTab web={draft.web_runtime} inheritedWeb={inheritedWeb} setWeb={next => patch({ web_runtime: next })} />
         )}
 
         {activeTab === 'logging' && (

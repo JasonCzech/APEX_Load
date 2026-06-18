@@ -23,6 +23,7 @@ const apiMock = {
   deleteScenario: vi.fn(),
   listScenarioResults: vi.fn(),
   getAuthEffectiveAccess: vi.fn(),
+  getConfigDefaults: vi.fn().mockResolvedValue({ config: {} }),
 }
 
 const libraryApiMock = {

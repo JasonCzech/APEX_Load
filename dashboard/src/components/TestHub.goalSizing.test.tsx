@@ -20,6 +20,7 @@ const apiMock = {
   getTestArchiveReport: vi.fn(),
   getTestArchiveAnalysis: vi.fn(),
   sizeScenarioFromGoal: vi.fn(),
+  getConfigDefaults: vi.fn().mockResolvedValue({ config: {} }),
 }
 
 vi.mock('../hooks/useApi', () => ({ useApi: () => apiMock }))
