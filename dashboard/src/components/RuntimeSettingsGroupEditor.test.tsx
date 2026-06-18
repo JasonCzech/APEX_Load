@@ -543,6 +543,38 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(last.http.proxy.no_proxy).toEqual(['localhost', '10.0.0.0/8'])
   })
 
+  it('fills input placeholders with the inherited value, keeping secret fields generic', () => {
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          // Engine defaults are the lowest inherited layer; the scenario default
+          // overrides the request timeout on top of them.
+          engineDefaults={{ base_url: '', http: { connect_timeout_ms: 30000, request_timeout_ms: 60000 } }}
+          scenarioDefault={{ http: { request_timeout_ms: 45000 } }}
+          overrides={[undefined, undefined]}
+          onChange={() => {}}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('HTTP Transport') // Timeouts sub-tab is active by default
+    const placeholders = (sel: string) =>
+      Array.from(container.querySelectorAll(sel)).map(i => (i as HTMLInputElement).placeholder)
+    // Connect timeout inherits the engine default; request timeout inherits the
+    // scenario override that sits above it — neither shows a bare "Inherit".
+    expect(placeholders('input[type="number"]')).toContain('30000')
+    expect(placeholders('input[type="number"]')).toContain('45000')
+
+    // Secret fields never echo an inherited value — they stay generic.
+    clickTab('Authentication')
+    const secretPlaceholders = placeholders('input[type="password"]')
+    expect(secretPlaceholders.length).toBeGreaterThan(0)
+    expect(secretPlaceholders.every(p => p === 'Inherit')).toBe(true)
+  })
+
   it('shows the Browser emulation sub-tab only for browser groups', () => {
     const subTabLabels = () => Array.from(container.querySelectorAll('.http-transport-tab')).map(b => (b.textContent || '').trim())
     // http group → no Browser emulation sub-tab.
