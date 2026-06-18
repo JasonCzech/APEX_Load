@@ -427,4 +427,89 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(container.querySelector('.runtime-override-summary')).toBeTruthy()
     expect(container.textContent || '').not.toContain('Auth password')
   })
+
+  it('exposes full Think Time distribution controls and merges on edit', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[{ think_time: { type: 'gaussian', mean_ms: 500 }, log_level: '', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Think Time')
+    // gaussian reveals std-dev; multiplier/limit are always present.
+    expect(container.textContent || '').toContain('Std dev (ms)')
+    expect(container.textContent || '').toContain('Multiplier')
+    const distSelect = Array.from(container.querySelectorAll('select')).find(s =>
+      Array.from(s.options).some(o => o.value === 'gaussian') && Array.from(s.options).some(o => o.value === 'uniform'),
+    ) as HTMLSelectElement
+    expect(distSelect.value).toBe('gaussian')
+    // changing distribution preserves the existing mean (section merge, not replace).
+    act(() => setSelectValue(distSelect, 'fixed'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last.think_time).toEqual(expect.objectContaining({ type: 'fixed', mean_ms: 500 }))
+  })
+
+  it('exposes random-delay pacing min/max fields', () => {
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[{ pacing: { type: 'random_delay', min_delay_ms: 100 }, log_level: '', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }, undefined]}
+          onChange={() => {}}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Iteration Pacing')
+    expect(container.textContent || '').toContain('Min delay (ms)')
+    expect(container.textContent || '').toContain('Max delay (ms)')
+    const pacingSelect = Array.from(container.querySelectorAll('select')).find(s =>
+      Array.from(s.options).some(o => o.value === 'random_delay') && Array.from(s.options).some(o => o.value === 'random_interval'),
+    ) as HTMLSelectElement
+    expect(pacingSelect.value).toBe('random_delay')
+  })
+
+  it('edits the run_logic action sequence (comma-separated → array)', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={0} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={onChange} onApplyToGroups={() => {}} />,
+      )
+    })
+    clickTab('Run Logic')
+    const seqInput = Array.from(container.querySelectorAll('input[type="text"]')).find(
+      input => (input as HTMLInputElement).placeholder.includes('login, browse, checkout'),
+    ) as HTMLInputElement
+    expect(seqInput).toBeTruthy()
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+    setter.call(seqInput, 'login, browse, checkout')
+    act(() => seqInput.dispatchEvent(new Event('input', { bubbles: true })))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last.run_logic.action_sequence).toEqual(['login', 'browse', 'checkout'])
+  })
+
+  it('toggles a logging extended option into log.extended_options', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={0} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={onChange} onApplyToGroups={() => {}} />,
+      )
+    })
+    clickTab('Logging')
+    const card = Array.from(container.querySelectorAll('label')).find(l => (l.textContent || '').includes('Advanced trace'))
+    expect(card).toBeTruthy()
+    const checkbox = card!.querySelector('input[type="checkbox"]') as HTMLInputElement
+    act(() => checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last.log.extended_options).toContain('advanced_trace')
+  })
 })
