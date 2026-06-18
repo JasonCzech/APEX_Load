@@ -319,6 +319,7 @@ describe('TestHub', () => {
       ],
     })
     window.localStorage.removeItem('apexload.settings.focusSection')
+    window.localStorage.removeItem('apexload.scenarioBuilder.draft')
   })
 
   afterEach(async () => {
@@ -328,6 +329,7 @@ describe('TestHub', () => {
     container.remove()
     vi.clearAllMocks()
     window.localStorage.removeItem('apexload.settings.focusSection')
+    window.localStorage.removeItem('apexload.scenarioBuilder.draft')
   })
 
   it('creates a scenario from the typed form payload', async () => {
@@ -1878,6 +1880,45 @@ describe('TestHub', () => {
     await flushPromises()
 
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({ name: 'Late Named Scenario' }))
+  })
+
+  it('discards the in-progress draft when Start Over is confirmed', async () => {
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+
+    // Enter the builder and make progress so a draft is persisted.
+    await clickWizardStep('Scripts')
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name') as HTMLInputElement | undefined
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
+    await act(async () => {
+      setInputValue(nameInput, 'Draft Scenario')
+    })
+    await flushPromises()
+
+    const startOverButton = () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start Over')
+    expect(window.localStorage.getItem('apexload.scenarioBuilder.draft')).not.toBeNull()
+    expect(startOverButton()).toBeDefined()
+
+    // Declining the confirmation leaves the draft and progress untouched.
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await clickButton('Start Over')
+    expect(window.localStorage.getItem('apexload.scenarioBuilder.draft')).not.toBeNull()
+    expect(startOverButton()).toBeDefined()
+
+    // Confirming discards the draft and resets the wizard to a blank Start step.
+    confirmSpy.mockReturnValue(true)
+    await clickButton('Start Over')
+    await flushPromises()
+
+    expect(window.localStorage.getItem('apexload.scenarioBuilder.draft')).toBeNull()
+    expect(startOverButton()).toBeUndefined()
+    expect(wizardStepButton('Start')?.classList.contains('active')).toBe(true)
+    expect(wizardStepComplete('Start')).toBe(false)
+
+    confirmSpy.mockRestore()
   })
 })
 

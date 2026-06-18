@@ -384,14 +384,18 @@
   background: var(--accent-soft);
 }
 
-.scenario-wizard-step.active .scenario-wizard-step-marker,
-.scenario-wizard-step.complete .scenario-wizard-step-marker {
+.scenario-wizard-step.active .scenario-wizard-step-marker {
   color: var(--accent-contrast);
   background: var(--accent);
   border-color: var(--accent);
 }
 
+/* Completed steps read as green (success), and win over .active so a
+   completed current step still shows green rather than the accent blue. */
 .scenario-wizard-step.complete .scenario-wizard-step-marker {
+  color: var(--accent-contrast);
+  background: var(--success);
+  border-color: var(--success);
   border-radius: 6px;
 }
 
