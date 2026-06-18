@@ -55,9 +55,10 @@ describe('runtimeSettingsModel', () => {
     expect(formatEffectiveRuntimeField('pacing', group, scenario)).toEqual({ value: 'Target TPS · 100', source: 'group' })
     // falls back to scenario default
     expect(formatEffectiveRuntimeField('log_level', group, scenario)).toEqual({ value: 'standard', source: 'scenario' })
-    // falls back to script default label when no layer carries the field
-    expect(formatEffectiveRuntimeField('think_time', group, scenario)).toEqual({ value: 'Script default', source: 'script' })
-    expect(formatEffectiveRuntimeField('iterations', undefined, undefined, undefined, 'Duration driven')).toEqual({ value: 'Duration driven', source: 'script' })
+    // when no group/scenario/script/engine layer carries the field, a descriptive
+    // engine-default label is shown — never a blank placeholder.
+    expect(formatEffectiveRuntimeField('think_time', group, scenario)).toEqual({ value: 'None', source: 'engine' })
+    expect(formatEffectiveRuntimeField('iterations', undefined, undefined)).toEqual({ value: 'Duration-driven', source: 'engine' })
   })
 
   it('resolves the script-config layer to the actual value below group/scenario', () => {
@@ -79,8 +80,24 @@ describe('runtimeSettingsModel', () => {
     // Group/scenario still win over the script layer.
     const group = { pacing: { type: 'tps' as const, tps: 40 } }
     expect(formatEffectiveRuntimeField('pacing', group, undefined, scriptDefault)).toEqual({ value: 'Target TPS · 40', source: 'group' })
-    // A field the script config does not set still falls through to the supplied label.
-    expect(formatEffectiveRuntimeField('web_runtime', undefined, undefined, scriptDefault, '—')).toEqual({ value: '—', source: 'script' })
+    // A field neither the script config nor engine default sets falls through to a
+    // descriptive engine-default label (never a blank placeholder).
+    expect(formatEffectiveRuntimeField('web_runtime', undefined, undefined, scriptDefault)).toEqual({ value: 'None', source: 'engine' })
+  })
+
+  it('resolves the engine-default layer below the script layer (never blank)', () => {
+    const engineDefault = runtimeOverrideFromScriptConfig({
+      base_url: '',
+      http: { request_timeout_ms: 60000, tls: { min_version: '1.2' } },
+      pacing: { type: 'none' },
+      log: { level: 'standard' },
+    })
+    // Engine config value shows when group/scenario/script are absent, attributed to 'engine'.
+    expect(formatEffectiveRuntimeField('http', undefined, undefined, undefined, engineDefault)).toEqual({ value: expect.stringContaining('TLS 1.2'), source: 'engine' })
+    expect(formatEffectiveRuntimeField('pacing', undefined, undefined, undefined, engineDefault)).toEqual({ value: 'None', source: 'engine' })
+    expect(formatEffectiveRuntimeField('log_level', undefined, undefined, undefined, engineDefault)).toEqual({ value: 'standard', source: 'engine' })
+    // error_handling has no concrete engine value (omitempty) → descriptive fallback.
+    expect(formatEffectiveRuntimeField('error_handling', undefined, undefined, undefined, engineDefault)).toEqual({ value: 'Stop on error', source: 'engine' })
   })
 
   it('projects a script config into the override shape (browser + run_logic mapping)', () => {

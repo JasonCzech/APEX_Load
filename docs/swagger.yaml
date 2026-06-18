@@ -1907,6 +1907,20 @@ paths:
       x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
       tags:
         - Dsl
+  /api/v1/dsl/config-defaults:
+    get:
+      summary: Config Defaults
+      description: |-
+        **Handler:** `handleConfigDefaults`
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin
+      operationId: handleConfigDefaults
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+        - Dsl
   /api/v1/execution-plans:
     get:
       summary: List Execution Plans

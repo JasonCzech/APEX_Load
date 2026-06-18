@@ -28,6 +28,9 @@ export interface RuntimeSettingsGroupEditorProps {
   onFocusChange: (index: number) => void
   /** Scenario-wide defaults (the baseline every group inherits). */
   scenarioDefault?: RuntimeSettingsOverride
+  /** Engine config defaults (from GET /api/v1/dsl/config-defaults) — the lowest
+   *  inherited layer, so the effective value is shown even for unset fields. */
+  engineDefaults?: ScriptConfig
   /** Per-group overrides, aligned to `groups`. */
   overrides: Array<ScenarioRuntimeSettingsDraft | undefined>
   onChange: (index: number, next: ScenarioRuntimeSettingsDraft | undefined) => void
@@ -92,6 +95,7 @@ export default function RuntimeSettingsGroupEditor({
   focusedIndex,
   onFocusChange,
   scenarioDefault,
+  engineDefaults,
   overrides,
   onChange,
   onApplyToGroups,
@@ -119,6 +123,7 @@ export default function RuntimeSettingsGroupEditor({
   const draft = overrides[index] ?? EMPTY_RUNTIME_DRAFT
   const groupOverride = overrideFromRuntimeDraft(overrides[index])
   const scriptDefault = runtimeOverrideFromScriptConfig(focusGroup.scriptConfig)
+  const engineDefault = runtimeOverrideFromScriptConfig(engineDefaults)
   const browserApplicable = isRuntimeFieldApplicable('browser', focusGroup.protocol)
   const httpApplicable = isRuntimeFieldApplicable('http', focusGroup.protocol)
   const webRuntimeApplicable = isRuntimeFieldApplicable('web_runtime', focusGroup.protocol)
@@ -380,7 +385,7 @@ export default function RuntimeSettingsGroupEditor({
                     </tr>
                   )
                 }
-                const effective = formatEffectiveRuntimeField(field, groupOverride, scenarioDefault, scriptDefault, '—')
+                const effective = formatEffectiveRuntimeField(field, groupOverride, scenarioDefault, scriptDefault, engineDefault)
                 return (
                   <tr key={field} className="runtime-override-row">
                     <td>{FIELD_LABELS[field]}</td>
