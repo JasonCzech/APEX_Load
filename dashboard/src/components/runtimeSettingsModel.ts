@@ -129,7 +129,9 @@ export function isRuntimeFieldApplicable(field: RuntimeFieldKey, protocol?: stri
     case 'browser_config':
       return isBrowser
     case 'http':
-      return isHTTPProtocol(protocol)
+      // HTTP transport (which now also hosts the browser-emulation settings in the
+      // editor) applies to HTTP-family protocols AND the browser protocol.
+      return isHTTPProtocol(protocol) || isBrowser
     case 'web_runtime':
       return isBrowser || isHTTPProtocol(protocol)
     default:

@@ -107,7 +107,7 @@ func TestFieldApplicableForProtocolMatrix(t *testing.T) {
 	}{
 		{"http", "http", true},
 		{"http", "soap", true},
-		{"http", "browser", false},
+		{"http", "browser", true}, // HTTP transport now hosts browser-emulation settings
 		{"http", "grpc", false},
 		{"browser_config", "browser", true},
 		{"browser_config", "http", false},
@@ -128,11 +128,11 @@ func TestMaskRuntimeSettingsRedactsHTTPSecrets(t *testing.T) {
 	o := &RuntimeSettingsOverride{
 		HTTP: &dsl.HTTPConfig{
 			Auth:  dsl.AuthConfig{Type: "basic", Username: "u", Password: "pw", Token: "tok"},
-			Proxy: dsl.ProxyConfig{URL: "http://p:8080", Password: "ppw"},
+			Proxy: dsl.ProxyConfig{URL: "http://p:8080", Username: "puser", Password: "ppw"},
 		},
 	}
 	masked := maskRuntimeSettings(o)
-	if masked.HTTP.Auth.Password != scrub.Redacted || masked.HTTP.Auth.Token != scrub.Redacted || masked.HTTP.Proxy.Password != scrub.Redacted {
+	if masked.HTTP.Auth.Password != scrub.Redacted || masked.HTTP.Auth.Token != scrub.Redacted || masked.HTTP.Proxy.Username != scrub.Redacted || masked.HTTP.Proxy.Password != scrub.Redacted {
 		t.Fatalf("http secrets not redacted: %#v", masked.HTTP)
 	}
 	if masked.HTTP.Auth.Username != "u" || masked.HTTP.Proxy.URL != "http://p:8080" {
@@ -144,10 +144,10 @@ func TestMaskRuntimeSettingsRedactsHTTPSecrets(t *testing.T) {
 }
 
 func TestReconcileGroupRuntimeSecretsHTTP(t *testing.T) {
-	prior := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{Auth: dsl.AuthConfig{Password: "real", Token: "realtok"}, Proxy: dsl.ProxyConfig{Password: "realppw"}}}
+	prior := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{Auth: dsl.AuthConfig{Password: "real", Token: "realtok"}, Proxy: dsl.ProxyConfig{Username: "realpuser", Password: "realppw"}}}
 	incoming := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{
 		Auth:  dsl.AuthConfig{Password: scrub.Redacted, Token: "newtok"}, // echoed mask -> keep; new -> persist
-		Proxy: dsl.ProxyConfig{Password: ""},                             // cleared
+		Proxy: dsl.ProxyConfig{Username: scrub.Redacted, Password: ""},   // username echoed mask -> keep; password cleared
 	}}
 	result := reconcileGroupRuntimeSecrets(incoming, prior)
 	if result.HTTP.Auth.Password != "real" {
@@ -155,6 +155,9 @@ func TestReconcileGroupRuntimeSecretsHTTP(t *testing.T) {
 	}
 	if result.HTTP.Auth.Token != "newtok" {
 		t.Fatalf("auth token should persist new value, got %q", result.HTTP.Auth.Token)
+	}
+	if result.HTTP.Proxy.Username != "realpuser" {
+		t.Fatalf("proxy username should be restored from prior, got %q", result.HTTP.Proxy.Username)
 	}
 	if result.HTTP.Proxy.Password != "" {
 		t.Fatalf("proxy password should be cleared, got %q", result.HTTP.Proxy.Password)

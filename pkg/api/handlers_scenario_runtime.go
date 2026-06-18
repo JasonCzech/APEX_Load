@@ -248,7 +248,9 @@ func fieldApplicableForProtocol(field, protocol string) bool {
 	case "browser", "browser_config":
 		return protocolFamilyIsBrowser(protocol)
 	case "http":
-		return isHTTPProtocol(protocol)
+		// HTTP transport (which now also hosts browser-emulation settings in the
+		// editor) applies to HTTP-family protocols AND the browser protocol.
+		return isHTTPProtocol(protocol) || protocolFamilyIsBrowser(protocol)
 	case "web_runtime":
 		return protocolFamilyIsBrowser(protocol) || isHTTPProtocol(protocol)
 	default:
