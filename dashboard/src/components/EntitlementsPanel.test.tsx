@@ -11,6 +11,7 @@ import EntitlementsPanel from './EntitlementsPanel'
 const entitlementsApiMock = {
   getEntitlements: vi.fn(),
   getEntitlementsUsage: vi.fn(),
+  getProjectEntitlementsUsage: vi.fn(),
 }
 
 vi.mock('../hooks/api/useEntitlementsApi', () => ({
@@ -60,6 +61,45 @@ describe('EntitlementsPanel', () => {
     expect(container.textContent).toContain('3 / 10')
     // 30% usage → success-tone headroom bar.
     expect(container.querySelector('.pp-bar-fill-success')).toBeTruthy()
+  })
+
+  it('renders the richer per-limit, per-bundle, and per-project breakdowns', async () => {
+    entitlementsApiMock.getEntitlements.mockResolvedValue({
+      edition: 'self-hosted',
+      limits: { max_concurrent_tests: 10 },
+      protocol_bundles: { count: 1, bundles: [{ id: 'db', display_name: 'Database Protocol Bundle', protocols: ['database'] }] },
+    })
+    entitlementsApiMock.getEntitlementsUsage.mockResolvedValue({
+      concurrent_tests: { used: 3, limit: 10 },
+      service_accounts: 2,
+      projects: 1,
+      limits: [
+        { key: 'concurrent_tests', label: 'Concurrent tests', scope: 'global', used: 3, limit: 10, remaining: 7, utilization: 0.3, unlimited: false },
+        { key: 'active_vusers', label: 'Active VUsers', scope: 'global', used: 50, limit: 0, remaining: 0, utilization: 0, unlimited: true },
+      ],
+      protocol_bundles: [
+        { id: 'db', display_name: 'Database Protocol Bundle', protocols: ['database'], run_count: 5, total_vusers: 120, vuser_seconds: 0 },
+      ],
+      by_project: [
+        {
+          project_id: 'proj-a',
+          name: 'Alpha',
+          limits: [{ key: 'concurrent_tests', label: 'Concurrent tests', scope: 'project', used: 1, limit: 5, remaining: 4, utilization: 0.2, unlimited: false }],
+        },
+      ],
+    })
+    await act(async () => {
+      root.render(<EntitlementsPanel />)
+    })
+    await flush()
+    // Per-limit list (includes the uncapped Active VUsers line).
+    expect(container.textContent).toContain('Active VUsers')
+    expect(container.textContent).toContain('no cap')
+    // Per-bundle consumption merged onto the catalog row.
+    expect(container.textContent).toContain('consumption: 5 runs · 120 VUsers')
+    // Per-project breakdown.
+    expect(container.textContent).toContain('Per-project consumption')
+    expect(container.textContent).toContain('Alpha')
   })
 
   it('shows a danger headroom bar when near the concurrency limit', async () => {

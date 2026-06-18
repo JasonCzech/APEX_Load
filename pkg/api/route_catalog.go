@@ -68,6 +68,7 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	// Enterprise entitlements (read-only consumption vs limits).
 	routeAuth(http.MethodGet, "/api/v1/system/entitlements", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/system/entitlements/usage", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/projects/{id}/entitlements/usage", viewerProjectAccess(resolveProjectIDFromPath)),
 
 	// Capacity reservations (timeslots).
 	routeAuth(http.MethodPost, "/api/v1/capacity/timeslots", editorImportAccess(resolveTimeslotCreateProjectID, 65536)),

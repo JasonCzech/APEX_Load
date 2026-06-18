@@ -1,6 +1,10 @@
 import { useCallback, useMemo } from 'react'
 
-import { EntitlementsResponse, EntitlementsUsageResponse } from '../../types'
+import {
+  EntitlementsResponse,
+  EntitlementsUsageResponse,
+  ProjectEntitlementsUsageResponse,
+} from '../../types'
 import { request } from '../apiClient'
 
 export function useEntitlementsApi() {
@@ -14,8 +18,14 @@ export function useEntitlementsApi() {
     [],
   )
 
+  const getProjectEntitlementsUsage = useCallback(
+    (projectId: string) =>
+      request<ProjectEntitlementsUsageResponse>(`/projects/${projectId}/entitlements/usage`),
+    [],
+  )
+
   return useMemo(
-    () => ({ getEntitlements, getEntitlementsUsage }),
-    [getEntitlements, getEntitlementsUsage],
+    () => ({ getEntitlements, getEntitlementsUsage, getProjectEntitlementsUsage }),
+    [getEntitlements, getEntitlementsUsage, getProjectEntitlementsUsage],
   )
 }

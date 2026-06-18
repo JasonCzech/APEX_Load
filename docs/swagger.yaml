@@ -3267,6 +3267,26 @@ paths:
             type: string
       tags:
         - Projects
+  /api/v1/projects/{id}/entitlements/usage:
+    get:
+      summary: Get Project Entitlements Usage
+      description: |-
+        **Handler:** `handleGetProjectEntitlementsUsage`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleGetProjectEntitlementsUsage
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
   /api/v1/projects/{id}/github/policy:
     get:
       summary: Get Project Git Hub Policy

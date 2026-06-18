@@ -453,6 +453,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	// Enterprise entitlements — read-only consumption vs limits.
 	s.mux.Handle("GET /api/v1/system/entitlements", cors(log(auth(http.HandlerFunc(s.handleGetEntitlements)))))
 	s.mux.Handle("GET /api/v1/system/entitlements/usage", cors(log(auth(http.HandlerFunc(s.handleGetEntitlementsUsage)))))
+	s.mux.Handle("GET /api/v1/projects/{id}/entitlements/usage", cors(log(auth(http.HandlerFunc(s.handleGetProjectEntitlementsUsage)))))
 
 	// Script CRUD, validation, import, and export endpoints.
 	s.mux.Handle("POST /api/v1/scripts", cors(log(auth(http.HandlerFunc(s.handleCreateScript)))))

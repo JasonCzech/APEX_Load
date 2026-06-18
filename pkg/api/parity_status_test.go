@@ -82,7 +82,7 @@ func TestHandleGetParityStatusReturnsAPIParityProgram(t *testing.T) {
 		"fleet_management":        "partial",
 		"execution_planning":      "supported",
 		"monitoring_collectors":   "partial",
-		"entitlements":            "partial",
+		"entitlements":            "supported",
 		"correlation_persistence": "supported",
 		"object_repository":       "supported",
 	}

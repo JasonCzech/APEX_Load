@@ -85,7 +85,7 @@ Status vocabulary (shared with the competitive matrix): **Supported** · **Parti
 | Imports / interop | LR-native; one-way archive import | 11 formats (LR archive, JMeter, k6, HAR, OpenAPI, RAML, AsyncAPI, Postman, WSDL, Salesforce, Oracle EBS) | **▲** |
 | Fleet / host administration | Host pools, load generators, monitor-over-firewall, SiteScope (admin layer) | Read-only fleet + generator drain, **plus managed pools, persistent generator metadata/labels/cordon, and provisioning requests** (`/api/v1/fleet/pools\|generators\|provision-requests`); provisioning is `not_configured` until a provider is wired | **▼** (narrowing — management surface landed) |
 | Monitoring integration | SiteScope + monitor-over-firewall agents (registered collectors) | Inbound monitoring **plus a collector control plane** (`/api/v1/monitoring/collectors`: register, SHA-256 scoped token + rotation, metric packs, health); agent runtime/heartbeat pending | **▼** (narrowing — control plane landed) |
-| Entitlements / consumption | License-tier model + usage | **Read-only entitlements** (`/api/v1/system/entitlements[/usage]`): edition, enabled bundles, limits, and live consumption in one view (surfaced, not enforced) | **=** (read parity; APEX doesn't enforce by design) |
+| Entitlements / consumption | License-tier model + usage | **Read-only entitlements** (`/api/v1/system/entitlements[/usage]`, `/api/v1/projects/{id}/entitlements/usage`): edition, enabled bundles, per-limit used-vs-cap (concurrent tests + active VUsers, global and per project), per-bundle historical consumption, and a per-project breakdown (surfaced, not enforced) | **=** (read parity; APEX doesn't enforce by design) |
 | Correlation as-code | Per-protocol rules engine + design studio (persistent, learned) | detect/diagnose/diff engine (`pkg/convert/correlate/`) + persisted per-script recorded baselines (`/api/v1/scripts/{id}/recording/status`, `/api/v1/scripts/{id}/diagnose-replay`) **plus learned, reusable project-scoped correlation rulesets** (`/api/v1/correlation-rulesets`) — `discover-from-script` saves the correlations a baseline reveals, `{id}/apply-to-script` previews or writes the extractors + value-templating into a target script | **≈** (at parity) |
 | Browser object repository | VuGen/TruClient object repository | Selector model + **persisted project-scoped object repositories** (`/api/v1/object-repositories`, seedable `from-script`) with **script↔repository binding** (action `object_ref`, resolved controller-side into selectors + fallbacks for replay and load) and **repair-on-replay write-back** (self-heals feed the working locator back into the bound object) | **≈** (at parity) |
 | CI/CD integration | Maintained Jenkins + Azure DevOps marketplace plugins | GitHub-native (push/pull, PR check-runs, webhooks, sync-jobs) + CI templates; **no marketplace plugins** | **=** |
@@ -123,10 +123,12 @@ These are the API-layer gaps the parity program addresses. Each maps to a build 
    register via `/api/v1/monitoring/collectors` with SHA-256 scoped tokens (one-time issue + rotation),
    allowed metric packs, and health (`pkg/api/handlers_monitoring_collectors.go`). Remaining: the agent
    runtime + collector-token-authenticated heartbeat/health ingestion. Tracked as `monitoring_collectors`.
-5. **Entitlements read model — *landed (partial)*.** `/api/v1/system/entitlements[/usage]` projects
-   edition, enabled bundles, limits, and live consumption in one read-only view
-   (`pkg/api/handlers_entitlements.go`) — surfaced, not enforced (no licensing engine by design).
-   Tracked as `entitlements`.
+5. **Entitlements read model — *supported*.** `/api/v1/system/entitlements[/usage]` and
+   `/api/v1/projects/{id}/entitlements/usage` project edition, enabled bundles, **per-limit used-vs-cap**
+   (concurrent tests + active VUsers, global and per project), **per-bundle historical consumption**, and
+   a **per-project breakdown** — a pure read-only projection over existing usage accounting + quota config
+   (`pkg/api/entitlement_usage.go`, `handlers_entitlements.go`). Surfaced, never enforced (no licensing
+   engine by design). Tracked as `entitlements` (now `supported`).
 6. **Object repositories and correlation rulesets are both load-bearing (supported).**
    Project-scoped object repositories are stored, bound to scripts by logical name (action
    `object_ref`, resolved controller-side into selectors + fallbacks for replay and load), and

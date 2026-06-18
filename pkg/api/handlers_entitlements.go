@@ -6,7 +6,10 @@ package api
 // bundle catalog, usage, project and service-account counts — and deliberately
 // does NOT enforce anything; there is no licensing engine.
 
-import "net/http"
+import (
+	"net/http"
+	"strings"
+)
 
 func (s *Server) handleGetEntitlements(w http.ResponseWriter, r *http.Request) {
 	settings := s.runner.GetSystemSettings()
@@ -54,11 +57,39 @@ func (s *Server) handleGetEntitlementsUsage(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
+		// Back-compat top-level fields (EntitlementHeadroom relies on these).
 		"concurrent_tests": map[string]any{
 			"used":  activeTests,
 			"limit": settings.General.MaxConcurrentTests,
 		},
 		"service_accounts": serviceAccounts,
 		"projects":         projects,
+		// Richer read-only breakdowns: per-limit, per-bundle consumption, per project.
+		"limits":           s.globalEntitlementLimits(),
+		"protocol_bundles": s.bundleConsumption(""),
+		"by_project":       s.byProjectEntitlements(),
+	})
+}
+
+// handleGetProjectEntitlementsUsage projects one project's entitlement limits and
+// per-bundle consumption — the per-project scoping of the read-only entitlements
+// surface (a project-scoped role can read its own project without global view).
+func (s *Server) handleGetProjectEntitlementsUsage(w http.ResponseWriter, r *http.Request) {
+	projectID := strings.TrimSpace(r.PathValue("id"))
+	if projectID == "" {
+		writeError(w, http.StatusBadRequest, "project id is required")
+		return
+	}
+	name := ""
+	if s.store != nil {
+		if project, err := s.store.GetProject(normalizeProjectID(projectID)); err == nil && project != nil {
+			name = project.Name
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"project_id":       normalizeProjectID(projectID),
+		"name":             name,
+		"limits":           s.projectEntitlementLimits(projectID),
+		"protocol_bundles": s.bundleConsumption(projectID),
 	})
 }

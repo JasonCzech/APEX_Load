@@ -192,10 +192,10 @@ func buildAPIParityProgram() []ParityStatusArea {
 		{
 			ID:        "entitlements",
 			Name:      "Enterprise Entitlements (Read-Only)",
-			Status:    "partial",
-			Summary:   "Read-only entitlements now project edition, enabled protocol bundles, and operational limits plus current consumption (active tests, service accounts, projects) in one view — surfaced, not enforced.",
-			Evidence:  []string{apiComparisonEvidence, "/api/v1/system/entitlements", "/api/v1/system/entitlements/usage", "pkg/api/handlers_entitlements.go"},
-			Remaining: []string{"Add per-project entitlement scoping and richer per-bundle / per-limit consumption breakdowns."},
+			Status:    "supported",
+			Summary:   "Read-only entitlements project edition, enabled protocol bundles, and operational limits with richer consumption breakdowns: per-limit used-vs-cap (concurrent tests + active VUsers, global and per project), per-bundle historical run consumption, and a per-project view (system /entitlements/usage carries limits/protocol_bundles/by_project; GET /projects/{id}/entitlements/usage scopes to one project). Surfaced for visibility only — never enforced; there is no licensing engine.",
+			Evidence:  []string{apiComparisonEvidence, "/api/v1/system/entitlements", "/api/v1/system/entitlements/usage", "/api/v1/projects/{id}/entitlements/usage", "pkg/api/entitlement_usage.go", "pkg/api/handlers_entitlements.go"},
+			Remaining: []string{"By design, the surface stays read-only: live per-bundle active-test attribution and any tier enforcement are out of scope (no licensing engine)."},
 		},
 		{
 			ID:        "correlation_persistence",

@@ -200,7 +200,8 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
     EndpointTool("correlation_ruleset_apply_to_script", "POST", "/correlation-rulesets/{id}/apply-to-script", f"{WRITE} Apply a ruleset to a script: preview, or with apply=true write the extractors into a new version.", True),
 
     EndpointTool("system_entitlements", "GET", "/system/entitlements", f"{READ} Get edition, enabled protocol bundles, and limits."),
-    EndpointTool("system_entitlements_usage", "GET", "/system/entitlements/usage", f"{READ} Get current consumption vs entitlement limits."),
+    EndpointTool("system_entitlements_usage", "GET", "/system/entitlements/usage", f"{READ} Get current consumption vs entitlement limits (per-limit, per-bundle, and per-project breakdowns)."),
+    EndpointTool("project_entitlements_usage", "GET", "/projects/{id}/entitlements/usage", f"{READ} Get a project's entitlement limits + per-bundle consumption."),
 
     EndpointTool("data_pool_list", "GET", "/data-pools", f"{READ} List shared data pools.", default_project=True),
     EndpointTool("data_pool_create", "POST", "/data-pools", f"{WRITE} Create a shared data pool.", True, False, True),
