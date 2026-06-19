@@ -240,9 +240,17 @@ parameterize proven on real LR/HAR/OpenAPI imports; whole-script PUT save latenc
    opt-in edit toggle, "not all fields shown" banner, per-row "edit as JSON" escape.
 8. **God-component decomposition** — extract the above out of `ScriptEditor.tsx` toward a thin
    orchestrator (continues `refactor/code-quality-pass-2`; reuse the prior AST splitter + verifier).
+9. **Transaction wrapping (shipped, Phase 2.x).** Author transactions in the editor — the core
+   measurement unit (TPS/percentiles/pass-fail; SLAs attach to them) that previously only arrived via
+   import/recording. A per-action "Transaction" field and a multi-select "Wrap N in transaction" both
+   tag actions via the engine's existing `metadata.source_transaction` grouping (no new DSL shape);
+   tagged rows show a transaction pill, so imported/recorded transactions light up too.
 
 **Deferred / Phase 3 (only if data justifies):** granular `PATCH /scripts/{id}/actions/...` if PUT
-latency hurts; D4 optional non-default control-flow **map** view.
+latency hurts; D4 optional non-default control-flow **map** view; **transaction follow-ups** — precise
+wall-clock-**span** timing via `lr_start_transaction`/`lr_end_transaction` marker pairs (metadata
+tagging aggregates per-action, not the span including think time), and a contiguous **transaction
+band** bracketing the rows of a transaction.
 
 ---
 
