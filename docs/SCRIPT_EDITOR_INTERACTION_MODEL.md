@@ -249,9 +249,13 @@ parameterize proven on real LR/HAR/OpenAPI imports; whole-script PUT save latenc
    transaction. Tagged rows show a pill; marker rows show a TXN start/end badge (so imported/recorded
    transactions light up too). Reviewed by a 24-agent adversarial workflow (0 correctness findings).
 
+10. **Transaction band (shipped, Phase 2.x).** A left accent rail brackets the rows of a multi-row
+    transaction in the outline — both a span marker pair (lr_start → members → lr_end) and a
+    contiguous run of metadata-tagged rows; single-action transactions are skipped (their pill marks
+    them). Computed over the filtered rows so it stays correct under the outline filter.
+
 **Deferred / Phase 3 (only if data justifies):** granular `PATCH /scripts/{id}/actions/...` if PUT
-latency hurts; D4 optional non-default control-flow **map** view; a contiguous **transaction band**
-bracketing the rows between a span's start/end markers (and over contiguous tagged rows).
+latency hurts; D4 optional non-default control-flow **map** view.
 
 ---
 
