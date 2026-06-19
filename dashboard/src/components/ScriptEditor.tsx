@@ -2994,6 +2994,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [saveBlockKind, setSaveBlockKind] = useState('request_group')
   const [savingBlock, setSavingBlock] = useState(false)
   const [selectedOutlineParameterName, setSelectedOutlineParameterName] = useState<string | null>(null)
+  // On the Parameters companion page, toggles between the selected parameter's
+  // details and the auto-parameterization view (without dropping the selection).
+  const [parameterPaneShowAuto, setParameterPaneShowAuto] = useState(false)
   const [scriptJsonSidebarTab, setScriptJsonSidebarTab] = useState<ScriptJsonSidebarTab>('map')
   const [activeAutoParameterCandidateId, setActiveAutoParameterCandidateId] = useState<string | null>(null)
   const [activeAutoParameterOccurrenceIndex, setActiveAutoParameterOccurrenceIndex] = useState(0)
@@ -3095,7 +3098,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const activeAutoParameterOccurrence = activeAutoParameterCandidate
     ? activeAutoParameterCandidate.occurrences[normalizedAutoParameterOccurrenceIndex] || null
     : null
-  const autoParameterSidebarActive = scriptJsonSidebarTab === 'auto-params' && !selectedOutlineParameterExists
+  const autoParameterSidebarActive = scriptJsonSidebarTab === 'auto-params' && (!selectedOutlineParameterExists || parameterPaneShowAuto)
   const activeAutoParameterPath = autoParameterSidebarActive
     ? codePathForParameterCandidateOccurrence(activeAutoParameterOccurrence)
     : ''
@@ -3186,6 +3189,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const selectOutlineParameter = useCallback((parameterName: string) => {
     setSelectedOutlineParameterName(parameterName)
     // Show the selected parameter's details in the Parameter companion page.
+    setParameterPaneShowAuto(false)
     setScriptJsonSidebarTab('auto-params')
     openCenterTab(SCRIPT_JSON_TAB_ID)
   }, [openCenterTab])
@@ -6932,7 +6936,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         return { kind: 'parameters', title: 'Parameters', railLabel: 'Parameters' }
       case SCRIPT_JSON_TAB_ID:
         if (activeScriptJsonSidebarTab === 'auto-params') {
-          return { kind: 'auto-parameterization', title: selectedOutlineParameterExists ? 'Parameter' : 'Parameters', railLabel: 'Parameters', wide: true }
+          return { kind: 'auto-parameterization', title: selectedOutlineParameterExists && !parameterPaneShowAuto ? 'Parameter' : 'Parameters', railLabel: 'Parameters', wide: true }
         }
         if (activeScriptJsonSidebarTab === 'details' && activeInspectorAction && activeAction !== null) {
           return { kind: 'inspector', title: 'Action Details', railLabel: 'Details', wide: true }
@@ -6957,19 +6961,51 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   })()
   const renderContextualRightSidebarContent = (): ReactNode => {
     switch (authorRightSidebarContext.kind) {
-      case 'auto-parameterization':
-        if (selectedOutlineParameterExists && selectedOutlineParameter) {
+      case 'auto-parameterization': {
+        const showParameterDetails = selectedOutlineParameterExists && selectedOutlineParameter && !parameterPaneShowAuto
+        const parameterPaneToggle = selectedOutlineParameterExists ? (
+          <div className="parameter-pane-toggle" role="tablist" aria-label="Parameter view">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={!parameterPaneShowAuto}
+              className={!parameterPaneShowAuto ? 'active' : ''}
+              onClick={() => setParameterPaneShowAuto(false)}
+              title={`Show details for ${selectedOutlineParameterName}`}
+            >
+              {selectedOutlineParameterName}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={parameterPaneShowAuto}
+              className={parameterPaneShowAuto ? 'active' : ''}
+              onClick={() => setParameterPaneShowAuto(true)}
+            >
+              Auto Params
+            </button>
+          </div>
+        ) : null
+        if (showParameterDetails) {
           return (
-            <SelectedParameterDetails
-              parameter={selectedOutlineParameter}
-              referenceLines={selectedParameterReferenceLines}
-              onJumpToLine={line => setJsonLineJumpRequest({ line, nonce: Date.now() })}
-              onEdit={() => openEditorSection('parameter-data')}
-              onClear={() => setSelectedOutlineParameterName(null)}
-            />
+            <div className="parameter-pane">
+              {parameterPaneToggle}
+              <SelectedParameterDetails
+                parameter={selectedOutlineParameter}
+                referenceLines={selectedParameterReferenceLines}
+                onJumpToLine={line => setJsonLineJumpRequest({ line, nonce: Date.now() })}
+                onEdit={() => {
+                  const index = (script.parameters || []).findIndex(parameter => parameter.name === selectedOutlineParameterName)
+                  if (index >= 0) selectParameterData(index)
+                  openEditorSection('parameter-data')
+                }}
+              />
+            </div>
           )
         }
         return (
+          <div className="parameter-pane">
+            {parameterPaneToggle}
           <AutoParameterizationSidebar
             activeCandidateId={activeAutoParameterCandidate?.id || null}
             activeOccurrenceIndex={normalizedAutoParameterOccurrenceIndex}
@@ -6984,7 +7020,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             seedRows={autoParamSeedRows}
             onSeedRowsChange={setAutoParamSeedRows}
           />
+          </div>
         )
+      }
       case 'source-map':
         return (
           <JsonSourceMinimap
@@ -12386,12 +12424,11 @@ interface SelectedParameterDetailsProps {
   referenceLines: number[]
   onJumpToLine: (line: number) => void
   onEdit: () => void
-  onClear: () => void
 }
 
 // The Parameter companion page when a parameter is selected in the left list:
 // its type, configuration, and where it is referenced in the script.
-function SelectedParameterDetails({ parameter, referenceLines, onJumpToLine, onEdit, onClear }: SelectedParameterDetailsProps) {
+function SelectedParameterDetails({ parameter, referenceLines, onJumpToLine, onEdit }: SelectedParameterDetailsProps) {
   const configEntries = Object.entries(parameter).filter(
     ([key, value]) => key !== 'name' && key !== 'type' && value !== undefined && value !== null && value !== '',
   )
@@ -12402,7 +12439,6 @@ function SelectedParameterDetails({ parameter, referenceLines, onJumpToLine, onE
           <strong>{parameter.name || 'Parameter'}</strong>
           <span className="selected-parameter-type">{parameter.type || 'list'}</span>
         </div>
-        <button type="button" className="btn btn-sm btn-ghost" onClick={onClear} title="Back to auto-parameterization">← Auto-params</button>
       </div>
 
       <div className="selected-parameter-section">
