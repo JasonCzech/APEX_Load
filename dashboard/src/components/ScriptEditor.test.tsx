@@ -1620,17 +1620,11 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('.debugger-center')).toBeNull()
-    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(true)
-
-    const showDetails = findButtonByTitle(container, 'Show request and response panel')
-    expect(showDetails).toBeDefined()
-    await act(async () => {
-      showDetails?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
+    // The merged detail panel (request/response + variables) is open by default.
     expect(container.querySelector('.debugger-center')).not.toBeNull()
-    const closeDetails = findButtonByTitle(container, 'Close request and response panel')
+    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(false)
+
+    const closeDetails = findButtonByTitle(container, 'Close debug detail panel')
     expect(closeDetails).toBeDefined()
     await act(async () => {
       closeDetails?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1638,6 +1632,13 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.debugger-center')).toBeNull()
     expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(true)
     expect(container.querySelector('[aria-label="Script JSON"]')).not.toBeNull()
+
+    const showDetails = findButtonByTitle(container, 'Show detail panel (request/response + variables)')
+    expect(showDetails).toBeDefined()
+    await act(async () => {
+      showDetails?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.debugger-center')).not.toBeNull()
   })
 
   it('collapses and restores the right sidebars from Author and Debug modes', async () => {
@@ -1672,22 +1673,24 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('.debugger-variables-panel')).toBeNull()
-    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-variables-collapsed')).toBe(true)
-    const showDebugSidebar = findButtonByTitle(container, 'Show right sidebar')
-    expect(showDebugSidebar).toBeDefined()
-    await act(async () => {
-      showDebugSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(container.querySelector('.debugger-variables-panel')).not.toBeNull()
+    // Debug detail panel (request/response + variables tabs) is open by default.
+    expect(container.querySelector('.debugger-center')).not.toBeNull()
+    expect(Array.from(container.querySelectorAll('.debugger-center-tablist button')).some(button => button.textContent?.trim() === 'Variables')).toBe(true)
 
-    const collapseDebugSidebar = container.querySelector('.debugger-variables-panel button[aria-label="Collapse right sidebar"]') as HTMLButtonElement | null
+    const collapseDebugSidebar = container.querySelector('.debugger-center button[aria-label="Close debug detail panel"]') as HTMLButtonElement | null
     expect(collapseDebugSidebar).not.toBeNull()
     await act(async () => {
       collapseDebugSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('.debugger-variables-panel')).toBeNull()
-    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-variables-collapsed')).toBe(true)
+    expect(container.querySelector('.debugger-center')).toBeNull()
+    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(true)
+
+    const showDebugSidebar = findButtonByTitle(container, 'Show detail panel (request/response + variables)')
+    expect(showDebugSidebar).toBeDefined()
+    await act(async () => {
+      showDebugSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.debugger-center')).not.toBeNull()
   })
 
   it('opens action details in the Script JSON right sidebar and keeps the map available', async () => {
@@ -4302,41 +4305,33 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[aria-label="Resize variables panel"]')).toBeNull()
-    const showDebugSidebar = findButtonByTitle(container, 'Show right sidebar')
-    expect(showDebugSidebar).toBeDefined()
-    await act(async () => {
-      showDebugSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
-
+    // The merged detail panel is open by default, so its resizer is present.
     const actionsResizer = container.querySelector('[aria-label="Resize actions panel"]') as HTMLDivElement | null
-    let variablesResizer = container.querySelector('[aria-label="Resize variables panel"]') as HTMLDivElement | null
+    const panelResizer = container.querySelector('[aria-label="Resize debug panel"]') as HTMLDivElement | null
     const bottomResizer = container.querySelector('[aria-label="Resize bottom panel"]') as HTMLDivElement | null
     expect(actionsResizer).not.toBeNull()
-    expect(variablesResizer).not.toBeNull()
+    expect(panelResizer).not.toBeNull()
     expect(bottomResizer).not.toBeNull()
-    if (!actionsResizer || !variablesResizer || !bottomResizer) {
+    if (!actionsResizer || !panelResizer || !bottomResizer) {
       return
     }
-    const openVariablesResizer = variablesResizer
 
     expect(actionsResizer.getAttribute('role')).toBe('separator')
     expect(actionsResizer.getAttribute('aria-orientation')).toBe('vertical')
     expect(actionsResizer.getAttribute('aria-valuenow')).toBe('260')
-    expect(openVariablesResizer.getAttribute('aria-valuenow')).toBe('320')
+    expect(panelResizer.getAttribute('aria-valuenow')).toBe('320')
     expect(bottomResizer.getAttribute('aria-orientation')).toBe('horizontal')
     expect(bottomResizer.getAttribute('aria-valuenow')).toBe('220')
 
     await act(async () => {
       actionsResizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
-      openVariablesResizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+      panelResizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
       bottomResizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
       await Promise.resolve()
     })
 
     expect(actionsResizer.getAttribute('aria-valuenow')).toBe('284')
-    expect(openVariablesResizer.getAttribute('aria-valuenow')).toBe('344')
+    expect(panelResizer.getAttribute('aria-valuenow')).toBe('344')
     expect(bottomResizer.getAttribute('aria-valuenow')).toBe('244')
 
     const resetLayoutButton = findButtonByTitle(container, 'Reset debugger layout')
@@ -4350,18 +4345,10 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(actionsResizer.getAttribute('aria-valuenow')).toBe('260')
-    expect(bottomResizer.getAttribute('aria-valuenow')).toBe('220')
-    expect(container.querySelector('[aria-label="Resize variables panel"]')).toBeNull()
-
-    const restoredDebugSidebar = findButtonByTitle(container, 'Show right sidebar')
-    expect(restoredDebugSidebar).toBeDefined()
-    await act(async () => {
-      restoredDebugSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
-    variablesResizer = container.querySelector('[aria-label="Resize variables panel"]') as HTMLDivElement | null
-    expect(variablesResizer?.getAttribute('aria-valuenow')).toBe('320')
+    // Reset restores defaults; the panel stays open (open by default).
+    expect(container.querySelector('[aria-label="Resize actions panel"]')?.getAttribute('aria-valuenow')).toBe('260')
+    expect(container.querySelector('[aria-label="Resize bottom panel"]')?.getAttribute('aria-valuenow')).toBe('220')
+    expect(container.querySelector('[aria-label="Resize debug panel"]')?.getAttribute('aria-valuenow')).toBe('320')
   })
 
   it('surfaces script load failures when fetching by id', async () => {
@@ -5552,6 +5539,12 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Auth Session')
     expect(container.textContent).toContain('Refresh session setup')
 
+    // The variable timeline lives in the merged detail panel's Variables tab.
+    const variablesTab = Array.from(container.querySelectorAll('.debugger-center-tablist button')).find(button => button.textContent?.trim() === 'Variables') as HTMLButtonElement | undefined
+    expect(variablesTab).toBeDefined()
+    await act(async () => {
+      variablesTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
     expect(container.textContent).toContain('Variable Timeline')
     expect(container.textContent).toContain('csrf')
   })
@@ -7333,7 +7326,6 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('SOAP 1.2')
     expect(container.textContent).toContain('Code: env:Sender')
     expect(container.textContent).toContain('Reason: Request validation failed')
-    expect(container.textContent).toContain('Variable Timeline')
     expect(container.textContent).toContain('Extractions')
     expect(container.textContent).toContain('Snapshot Request')
     expect(container.textContent).toContain('Snapshot Response')

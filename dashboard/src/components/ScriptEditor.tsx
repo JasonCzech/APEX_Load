@@ -482,7 +482,7 @@ type ReplaySnapshot = BrowserReplaySnapshot
 type ReplayActionEvent = BrowserReplayEvent
 type ReplayReport = BrowserReplayReport
 type WorkbenchMode = 'author' | 'debug'
-type DebuggerTab = 'request' | 'browser'
+type DebuggerTab = 'request' | 'browser' | 'variables'
 type DebuggerBottomTab = 'console' | 'timeline' | 'problems' | 'output'
 type ScriptJsonSidebarTab = 'map' | 'auto-params' | 'details'
 
@@ -3233,8 +3233,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [authorOutlineCollapsed, setAuthorOutlineCollapsed] = useState(false)
   const [authorRightSidebarCollapsed, setAuthorRightSidebarCollapsed] = useState(false)
   const [sourceMappingWorkspaceMaximized, setSourceMappingWorkspaceMaximized] = useState(false)
-  const [debugDetailCollapsed, setDebugDetailCollapsed] = useState(true)
-  const [debugVariablesCollapsed, setDebugVariablesCollapsed] = useState(true)
+  const [debugDetailCollapsed, setDebugDetailCollapsed] = useState(false)
   const [debuggerBottomTab, setDebuggerBottomTab] = useState<DebuggerBottomTab>('console')
   const [debugRawLevel, setDebugRawLevel] = useState<ScriptDebugLogLevel | 'all'>('all')
   const [debugRawSearch, setDebugRawSearch] = useState('')
@@ -5374,7 +5373,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }, [browserReplaySession?.current_action, replaying, selectedReplayEvent])
   useEffect(() => {
     if (hasReplayVariableInspectorData) {
-      setDebugVariablesCollapsed(false)
+      setDebugDetailCollapsed(false)
     }
   }, [hasReplayVariableInspectorData])
   const currentDebugActionKey = browserReplaySession?.current_action
@@ -5447,8 +5446,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setDebuggerRailWidth(DEBUGGER_LAYOUT_DEFAULTS.rail)
     setDebuggerVarsWidth(DEBUGGER_LAYOUT_DEFAULTS.vars)
     setDebuggerBottomHeight(DEBUGGER_LAYOUT_DEFAULTS.bottom)
-    setDebugDetailCollapsed(true)
-    setDebugVariablesCollapsed(true)
+    setDebugDetailCollapsed(false)
   }
 
   const handleDebuggerResizeKeyDown = (kind: DebuggerResizeKind, event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -7512,28 +7510,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <span>Settings</span>
               </button>
               {workspaceTab === 'debug' && (
-                <>
-                  <button
-                    type="button"
-                    className={`debugger-icon-btn ${!debugDetailCollapsed ? 'active' : ''}`}
-                    title={debugDetailCollapsed ? 'Show request and response panel' : 'Hide request and response panel'}
-                    aria-pressed={!debugDetailCollapsed}
-                    onClick={() => setDebugDetailCollapsed(value => !value)}
-                  >
-                    <span className="debugger-icon" aria-hidden="true">▣</span>
-                    <span>Details</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`debugger-icon-btn ${!debugVariablesCollapsed ? 'active' : ''}`}
-                    title={debugVariablesCollapsed ? 'Show right sidebar' : 'Hide right sidebar'}
-                    aria-pressed={!debugVariablesCollapsed}
-                    onClick={() => setDebugVariablesCollapsed(value => !value)}
-                  >
-                    <span className="debugger-icon" aria-hidden="true">◫</span>
-                    <span>Vars</span>
-                  </button>
-                </>
+                <button
+                  type="button"
+                  className={`debugger-icon-btn ${!debugDetailCollapsed ? 'active' : ''}`}
+                  title={debugDetailCollapsed ? 'Show detail panel (request/response + variables)' : 'Hide detail panel'}
+                  aria-pressed={!debugDetailCollapsed}
+                  onClick={() => setDebugDetailCollapsed(value => !value)}
+                >
+                  <span className="debugger-icon" aria-hidden="true">▣</span>
+                  <span>Panel</span>
+                </button>
               )}
               {replayReport && (
                 <button type="button" className="debugger-icon-btn" title="Download Debug JSON" onClick={handleDownloadBrowserReplayExport}>
@@ -7710,7 +7696,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               )}
 
               <div
-                className={`debugger-shell ${debugDetailCollapsed ? 'debugger-detail-collapsed' : ''} ${debugVariablesCollapsed ? 'debugger-variables-collapsed' : ''} ${activeDebuggerResize ? `resizing resizing-${activeDebuggerResize}` : ''}`}
+                className={`debugger-shell ${debugDetailCollapsed ? 'debugger-detail-collapsed' : ''} ${activeDebuggerResize ? `resizing resizing-${activeDebuggerResize}` : ''}`}
                 style={{
                   '--rail-w': `${debuggerRailWidth}px`,
                   '--vars-w': `${debuggerVarsWidth}px`,
@@ -7875,25 +7861,73 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 {renderCenterWorkbench('debugger-code-center', 'Debugger center workbench', 'debug')}
 
                 {!debugDetailCollapsed && (
-                <section className="debugger-center" aria-label="Action detail">
+                <section className="debugger-center" aria-label="Debug detail">
+                  <div
+                    className={`debugger-resizer debugger-resizer-col debugger-resizer-vars ${activeDebuggerResize === 'vars' ? 'active' : ''}`}
+                    onKeyDown={e => handleDebuggerResizeKeyDown('vars', e)}
+                    onMouseDown={e => startDebuggerDrag('vars', e)}
+                    role="separator"
+                    tabIndex={0}
+                    title="Resize debug panel"
+                    aria-label="Resize debug panel"
+                    aria-orientation="vertical"
+                    aria-valuemax={DEBUGGER_LAYOUT_LIMITS.vars.max}
+                    aria-valuemin={DEBUGGER_LAYOUT_LIMITS.vars.min}
+                    aria-valuenow={debuggerVarsWidth}
+                  />
                   <div className="debugger-center-tabs">
                     <div className="debugger-center-tablist" role="tablist">
                       <button type="button" role="tab" aria-selected={debuggerTab === 'request'} className={debuggerTab === 'request' ? 'active' : ''} onClick={() => setDebuggerTab('request')}>Request / Response</button>
                       {isBrowserScript && (
                         <button type="button" role="tab" aria-selected={debuggerTab === 'browser'} className={debuggerTab === 'browser' ? 'active' : ''} onClick={() => setDebuggerTab('browser')}>Browser Evidence</button>
                       )}
+                      <button type="button" role="tab" aria-selected={debuggerTab === 'variables'} className={debuggerTab === 'variables' ? 'active' : ''} onClick={() => setDebuggerTab('variables')}>{replaying ? 'Live Variables' : 'Variables'}</button>
                     </div>
                     <button
                       type="button"
                       className="debugger-pane-close"
-                      title="Close request and response panel"
-                      aria-label="Close request and response panel"
+                      title="Close debug detail panel"
+                      aria-label="Close debug detail panel"
                       onClick={() => setDebugDetailCollapsed(true)}
                     >
                       ×
                     </button>
                   </div>
                   <div className="debugger-center-body">
+                    {debuggerTab === 'variables' ? (
+                      <div className="debugger-variables-body">
+                        {replayVariableInspector && Object.keys(replayVariableInspector).length > 0 ? (
+                          <SnapshotBodyPreview
+                            body={JSON.stringify(replayVariableInspector, null, 2)}
+                            headers={{ 'Content-Type': 'application/json' }}
+                          />
+                        ) : (
+                          <div className="replay-variables-empty">
+                            {replaying ? 'No replay variables captured yet.' : replayReport ? 'No extracted or seeded variables.' : 'Variables appear here once a debugger session runs.'}
+                          </div>
+                        )}
+                        {replayVariableTimeline.length > 0 && (
+                          <div className="replay-variable-timeline">
+                            <h5>Variable Timeline</h5>
+                            {replayVariableTimeline.map(item => (
+                              <button
+                                key={item.key}
+                                type="button"
+                                className="replay-variable-timeline-row"
+                                onClick={() => {
+                                  setDebuggerTab('request')
+                                  setExpandedReplayEvent(item.index)
+                                }}
+                              >
+                                <span>{item.name}</span>
+                                <strong>{item.action}</strong>
+                                <small>{item.previous ?? 'unset'} {'->'} {item.next}</small>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (<>
                     {!isBrowserScript && debuggerTab !== 'browser' && replayReport && (
                       <CorrelationDiagnosePanel
                         scriptId={scriptId ?? null}
@@ -8259,70 +8293,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     ) : (
                       <div className="debugger-empty">Select an action from the list to inspect its request and response.</div>
                     )}
+                    </>)}
                   </div>
                 </section>
-                )}
-
-                {!debugVariablesCollapsed && (
-                <aside className="debugger-variables-panel" aria-label="Variables">
-                  <div
-                    className={`debugger-resizer debugger-resizer-col debugger-resizer-vars ${activeDebuggerResize === 'vars' ? 'active' : ''}`}
-                    onKeyDown={e => handleDebuggerResizeKeyDown('vars', e)}
-                    onMouseDown={e => startDebuggerDrag('vars', e)}
-                    role="separator"
-                    tabIndex={0}
-                    title="Resize variables panel"
-                    aria-label="Resize variables panel"
-                    aria-orientation="vertical"
-                    aria-valuemax={DEBUGGER_LAYOUT_LIMITS.vars.max}
-                    aria-valuemin={DEBUGGER_LAYOUT_LIMITS.vars.min}
-                    aria-valuenow={debuggerVarsWidth}
-                  />
-                  <div className="debugger-pane-header">
-                    <span>{replaying ? 'Live Variables' : 'Variables'}</span>
-                    <button
-                      type="button"
-                      className="debugger-pane-close"
-                      title="Collapse right sidebar"
-                      aria-label="Collapse right sidebar"
-                      onClick={() => setDebugVariablesCollapsed(true)}
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <div className="debugger-variables-body">
-                    {replayVariableInspector && Object.keys(replayVariableInspector).length > 0 ? (
-                      <SnapshotBodyPreview
-                        body={JSON.stringify(replayVariableInspector, null, 2)}
-                        headers={{ 'Content-Type': 'application/json' }}
-                      />
-                    ) : (
-                      <div className="replay-variables-empty">
-                        {replaying ? 'No replay variables captured yet.' : replayReport ? 'No extracted or seeded variables.' : 'Variables appear here once a debugger session runs.'}
-                      </div>
-                    )}
-                    {replayVariableTimeline.length > 0 && (
-                      <div className="replay-variable-timeline">
-                        <h5>Variable Timeline</h5>
-                        {replayVariableTimeline.map(item => (
-                          <button
-                            key={item.key}
-                            type="button"
-                            className="replay-variable-timeline-row"
-                            onClick={() => {
-                              setDebuggerTab('request')
-                              setExpandedReplayEvent(item.index)
-                            }}
-                          >
-                            <span>{item.name}</span>
-                            <strong>{item.action}</strong>
-                            <small>{item.previous ?? 'unset'} {'->'} {item.next}</small>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </aside>
                 )}
 
                 <section className="debugger-bottom" aria-label="Debug dock">
