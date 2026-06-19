@@ -12482,7 +12482,7 @@ function SelectedParameterDetails({ parameter, parameterIndex, referenceLines, d
     <div className="selected-parameter-details">
       <div className="selected-parameter-header">
         <div className="selected-parameter-title">
-          <input className="selected-parameter-name" value={parameter.name || ''} aria-label="Parameter name" placeholder="parameter_name" onChange={event => onRename(event.target.value)} />
+          <strong title={parameter.name || 'Unnamed parameter'}>{parameter.name || 'Unnamed parameter'}</strong>
           <span className="selected-parameter-type" title="Parameter type (set in Parameter Data)">{parameter.type || 'list'}</span>
         </div>
       </div>
@@ -12494,6 +12494,7 @@ function SelectedParameterDetails({ parameter, parameterIndex, referenceLines, d
             <p className="selected-parameter-stats">{dataInfo.rows} row{dataInfo.rows === 1 ? '' : 's'} · {dataInfo.unique} unique</p>
           )}
           <div className="selected-parameter-form">
+            <label className="selected-parameter-field"><span>File name</span><span className="selected-parameter-static">{dataInfo.fileName || '—'}</span></label>
             <label className="selected-parameter-field"><span>Data Source</span><span className="selected-parameter-static">{parameter.data_source || '—'}</span></label>
             <label className="selected-parameter-field"><span>Column Name</span><span className="selected-parameter-static">{parameter.column || '—'}</span></label>
           </div>
@@ -12503,9 +12504,10 @@ function SelectedParameterDetails({ parameter, parameterIndex, referenceLines, d
       <div className="selected-parameter-section">
         <span className="selected-parameter-section-label">Settings</span>
         <div className="selected-parameter-form">
-          {dataInfo && (
-            <label className="selected-parameter-field"><span>File name</span><span className="selected-parameter-static">{dataInfo.fileName || '—'}</span></label>
-          )}
+          <label className="selected-parameter-field">
+            <span>Parameter Name</span>
+            <input className="selected-parameter-name" value={parameter.name || ''} aria-label="Parameter name" placeholder="parameter_name" onChange={event => onRename(event.target.value)} />
+          </label>
           {settingKeys.map(key => (
             <label key={key} className={`selected-parameter-field ${PARAM_BOOL_KEYS.has(key) ? 'is-bool' : ''}`}>
               <span>{key.replace(/_/g, ' ')}</span>
