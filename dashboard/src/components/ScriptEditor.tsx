@@ -5505,6 +5505,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     try { window.localStorage.setItem('authorRailWidth', String(authorRailWidth)) } catch { /* storage may be unavailable */ }
   }, [authorRailWidth])
 
+  // Double-click the handle to snap the rail to its natural content width
+  // (like double-clicking a column divider). Probes the content's max-content by
+  // sizing the grid track, then sets a fixed px capped so it can't crowd out the
+  // center/utility columns into an overflow.
+  const fitAuthorRailToContent = () => {
+    const el = authorRailRef.current
+    const grid = el?.closest('.actions-content-grid') as HTMLElement | null
+    if (!el || !grid) return
+    grid.style.setProperty('--author-rail-width', 'max-content')
+    const natural = Math.ceil(el.getBoundingClientRect().width)
+    if (authorRailWidth != null) grid.style.setProperty('--author-rail-width', `${authorRailWidth}px`)
+    else grid.style.removeProperty('--author-rail-width')
+    // Reserve room for the center + utility columns at their widest minimums.
+    const cap = Math.min(620, Math.max(280, Math.round(grid.getBoundingClientRect().width - (520 + 320))))
+    setAuthorRailWidth(Math.max(200, Math.min(cap, natural)))
+  }
+
   const scriptEditorShortcuts = useMemo(() => [
     {
       id: 'script.escape',
@@ -10289,9 +10306,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   className={`author-rail-resize ${authorRailResizing ? 'resizing' : ''}`}
                   role="separator"
                   aria-orientation="vertical"
-                  aria-label="Resize outline panel"
-                  title="Drag to resize the outline"
+                  aria-label="Resize outline panel (double-click to fit content)"
+                  title="Drag to resize · double-click to fit content"
                   onMouseDown={startAuthorRailDrag}
+                  onDoubleClick={fitAuthorRailToContent}
                 />
               )}
               <div className={`actions-sidebar ${authorOutlineCollapsed ? 'collapsed' : ''}`} ref={authorRailRef}>
