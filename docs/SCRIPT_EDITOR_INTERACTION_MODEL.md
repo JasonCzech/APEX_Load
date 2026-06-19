@@ -242,15 +242,16 @@ parameterize proven on real LR/HAR/OpenAPI imports; whole-script PUT save latenc
    orchestrator (continues `refactor/code-quality-pass-2`; reuse the prior AST splitter + verifier).
 9. **Transaction wrapping (shipped, Phase 2.x).** Author transactions in the editor — the core
    measurement unit (TPS/percentiles/pass-fail; SLAs attach to them) that previously only arrived via
-   import/recording. A per-action "Transaction" field and a multi-select "Wrap N in transaction" both
-   tag actions via the engine's existing `metadata.source_transaction` grouping (no new DSL shape);
-   tagged rows show a transaction pill, so imported/recorded transactions light up too.
+   import/recording. A per-action "Transaction" field and a multi-select "Wrap N in transaction" with
+   two modes: **Grouped** tags actions via the engine's `metadata.source_transaction` (per-action
+   aggregation), and **Timed span** inserts a balanced `lr_start_transaction`/`lr_end_transaction`
+   marker pair so the engine measures the wall-clock span (incl. think time) — the classic LoadRunner
+   transaction. Tagged rows show a pill; marker rows show a TXN start/end badge (so imported/recorded
+   transactions light up too). Reviewed by a 24-agent adversarial workflow (0 correctness findings).
 
 **Deferred / Phase 3 (only if data justifies):** granular `PATCH /scripts/{id}/actions/...` if PUT
-latency hurts; D4 optional non-default control-flow **map** view; **transaction follow-ups** — precise
-wall-clock-**span** timing via `lr_start_transaction`/`lr_end_transaction` marker pairs (metadata
-tagging aggregates per-action, not the span including think time), and a contiguous **transaction
-band** bracketing the rows of a transaction.
+latency hurts; D4 optional non-default control-flow **map** view; a contiguous **transaction band**
+bracketing the rows between a span's start/end markers (and over contiguous tagged rows).
 
 ---
 
