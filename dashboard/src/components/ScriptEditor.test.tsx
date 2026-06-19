@@ -1120,6 +1120,108 @@ describe('ScriptEditor', () => {
     expect(codeMirrorDispatchMock).toHaveBeenCalled()
   })
 
+  it('expands an http_sequence row in the debug rail to reveal sub-requests', async () => {
+    const sequenceScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [{
+        name: 'Checkout_Txn',
+        type: 'http_sequence',
+        method: 'SEQUENCE',
+        target: '/aura',
+        params: {
+          requests: [
+            { name: 'Sub_One', type: 'POST', method: 'POST', target: '/one' },
+            { name: 'Sub_Two', type: 'GET', method: 'GET', target: '/two' },
+          ],
+        },
+      }],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={sequenceScript} />)
+    })
+    const debugTab = findOpenDebuggerButton(container)
+    await act(async () => {
+      debugTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const railList = container.querySelector('.debugger-rail-list')
+    expect(railList?.textContent).toContain('Checkout_Txn')
+    // Collapsed by default — no child rows until expanded.
+    expect(container.querySelectorAll('.debugger-action-row.child')).toHaveLength(0)
+
+    const parentMain = container.querySelector('.debugger-action-row.container .debugger-action-row-main') as HTMLButtonElement | null
+    expect(parentMain).not.toBeNull()
+    await act(async () => {
+      parentMain?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const childRows = container.querySelectorAll('.debugger-action-row.child')
+    expect(childRows).toHaveLength(2)
+    expect(childRows[0].textContent).toContain('Sub_One')
+    expect(childRows[0].textContent).toContain('Request 1')
+    expect(childRows[1].textContent).toContain('Sub_Two')
+  })
+
+  it('renders control_loop body steps as breakable sub-step rows', async () => {
+    const loopScript = {
+      ...initialScript,
+      actions: [{
+        name: 'Retry_Block', type: 'control_loop',
+        control: { count: 2, steps: [{ name: 'Poll', type: 'GET', method: 'GET', target: '/poll' }] },
+      }],
+    } as unknown as ScriptDefinition
+    await act(async () => { root.render(<ScriptEditor initialScript={loopScript} />) })
+    const debugTab = findOpenDebuggerButton(container)
+    await act(async () => { debugTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await Promise.resolve() })
+
+    const containerRow = container.querySelector('.debugger-action-row.container')
+    expect(containerRow?.textContent).toContain('LOOP')
+    expect(container.querySelectorAll('.debugger-action-row.child')).toHaveLength(0)
+
+    const main = container.querySelector('.debugger-action-row.container .debugger-action-row-main') as HTMLButtonElement | null
+    await act(async () => { main?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+    const childRows = container.querySelectorAll('.debugger-action-row.child')
+    expect(childRows).toHaveLength(1)
+    expect(childRows[0].textContent).toContain('Poll')
+    expect(childRows[0].textContent).toContain('Loop step 1')
+
+    const gutter = childRows[0].querySelector('.debugger-gutter') as HTMLButtonElement | null
+    await act(async () => { gutter?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect((container.querySelector('.debugger-action-row.child .debugger-gutter') as HTMLElement).className).toContain('active')
+    expect((container.querySelector('.debugger-action-row.container .debugger-gutter') as HTMLElement).className).toContain('partial')
+  })
+
+  it('sets a sub-request breakpoint on an http_sequence child via its gutter', async () => {
+    const sequenceScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [{
+        name: 'Checkout_Txn', type: 'http_sequence', method: 'SEQUENCE', target: '/aura',
+        params: { requests: [
+          { name: 'Sub_One', type: 'POST', method: 'POST', target: '/one' },
+          { name: 'Sub_Two', type: 'GET', method: 'GET', target: '/two' },
+        ] },
+      }],
+    }
+    await act(async () => { root.render(<ScriptEditor initialScript={sequenceScript} />) })
+    const debugTab = findOpenDebuggerButton(container)
+    await act(async () => { debugTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await Promise.resolve() })
+
+    const parentMain = container.querySelector('.debugger-action-row.container .debugger-action-row-main') as HTMLButtonElement | null
+    await act(async () => { parentMain?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+    const childGutter = container.querySelector('.debugger-action-row.child .debugger-gutter') as HTMLButtonElement | null
+    expect(childGutter).not.toBeNull()
+    await act(async () => { childGutter?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+    // The clicked child gutter becomes active, and the parent shows the partial
+    // (sub-request breakpoints, no whole-sequence breakpoint) state.
+    expect((container.querySelector('.debugger-action-row.child .debugger-gutter') as HTMLElement).className).toContain('active')
+    expect((container.querySelector('.debugger-action-row.container .debugger-gutter') as HTMLElement).className).toContain('partial')
+  })
+
   it('adds collapsible action and parameter lists to the debug rail', async () => {
     const parameterizedScript: ScriptDefinition = {
       ...initialScript,

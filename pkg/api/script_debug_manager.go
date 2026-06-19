@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,13 @@ const (
 type ScriptDebugBreakpoint struct {
 	Phase       string `json:"phase"`
 	ActionIndex int    `json:"action_index"`
+	// Optional sub-request / sub-step targeting within a container action. When
+	// both are absent the breakpoint is a whole-action breakpoint (stops once, at
+	// the first executed leaf). RequestIndex targets an http_sequence child;
+	// StepPath targets a control-flow leaf by its static path (fires every loop
+	// iteration). RequestIndex is also expressible as StepPath ["requests[i]"].
+	RequestIndex *int     `json:"request_index,omitempty"`
+	StepPath     []string `json:"step_path,omitempty"`
 }
 
 type ScriptDebugLogEntry struct {
@@ -57,6 +65,7 @@ type ScriptDebugSession struct {
 	CurrentAction     *engine.ReplayDebugAction   `json:"current_action,omitempty"`
 	CurrentEvent      *engine.ReplayActionEvent   `json:"current_event,omitempty"`
 	Breakpoints       []ScriptDebugBreakpoint     `json:"breakpoints,omitempty"`
+	BreakOnFailure    bool                        `json:"break_on_failure"`
 	Events            []engine.ReplayActionEvent  `json:"events,omitempty"`
 	Logs              []ScriptDebugLogEntry       `json:"logs,omitempty"`
 	RawOutput         []string                    `json:"raw_output,omitempty"`
@@ -118,6 +127,7 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 		StartedAt:         &now,
 		CurrentEventIndex: -1,
 		Breakpoints:       normalizeDebugBreakpoints(req.Breakpoints),
+		BreakOnFailure:    req.BreakOnFailure,
 		cancel:            cancel,
 	}
 	if req.StartPaused {
@@ -206,7 +216,7 @@ func (m *ScriptDebugManager) handleReplayProgress(session *ScriptDebugSession, e
 		if event.Action != nil {
 			actionCopy := *event.Action
 			session.CurrentAction = &actionCopy
-			session.appendLogLocked("debug", "action", fmt.Sprintf("Started %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName), "", nil)
+			session.appendLogLocked("debug", "action", fmt.Sprintf("Started %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
 		}
 		session.mu.Unlock()
 		m.broadcast("script_debug_action_started", session, event.EventIndex, nil, event.Action, nil)
@@ -354,6 +364,27 @@ func (m *ScriptDebugManager) UpdateBreakpoints(sessionID string, breakpoints []S
 	return snapshot, true
 }
 
+func (m *ScriptDebugManager) SetBreakOnFailure(sessionID string, enabled bool) (*ScriptDebugSession, bool) {
+	m.mu.RLock()
+	session, ok := m.sessions[sessionID]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, false
+	}
+
+	session.mu.Lock()
+	session.BreakOnFailure = enabled
+	state := "disabled"
+	if enabled {
+		state = "enabled"
+	}
+	session.appendLogLocked("info", "control", fmt.Sprintf("Break on failure %s", state), "", nil)
+	snapshot := session.snapshotLocked()
+	session.mu.Unlock()
+	m.broadcast("script_debug_options_updated", snapshot, snapshot.CurrentEventIndex, nil, nil, nil)
+	return snapshot, true
+}
+
 func (m *ScriptDebugManager) Export(sessionID string, format string) ([]byte, string, bool) {
 	session, ok := m.Get(sessionID)
 	if !ok {
@@ -425,6 +456,7 @@ func (s *ScriptDebugSession) snapshotLocked() *ScriptDebugSession {
 		StartedAt:         s.StartedAt,
 		CompletedAt:       s.CompletedAt,
 		CurrentEventIndex: s.CurrentEventIndex,
+		BreakOnFailure:    s.BreakOnFailure,
 		FinalReport:       cloneBrowserReplayReport(s.FinalReport),
 		Error:             s.Error,
 	}
@@ -437,7 +469,18 @@ func (s *ScriptDebugSession) snapshotLocked() *ScriptDebugSession {
 		clone.CurrentEvent = &currentEvent
 	}
 	if len(s.Breakpoints) > 0 {
-		clone.Breakpoints = append([]ScriptDebugBreakpoint(nil), s.Breakpoints...)
+		clone.Breakpoints = make([]ScriptDebugBreakpoint, len(s.Breakpoints))
+		for i, bp := range s.Breakpoints {
+			cloned := bp
+			if bp.RequestIndex != nil {
+				idx := *bp.RequestIndex
+				cloned.RequestIndex = &idx
+			}
+			if len(bp.StepPath) > 0 {
+				cloned.StepPath = append([]string(nil), bp.StepPath...)
+			}
+			clone.Breakpoints[i] = cloned
+		}
 	}
 	if len(s.Events) > 0 {
 		clone.Events = make([]engine.ReplayActionEvent, len(s.Events))
@@ -510,9 +553,9 @@ func (c scriptDebugController) BeforeAction(ctx context.Context, action engine.R
 			if c.session.Status == ScriptDebugRunning && c.session.hasBreakpointLocked(actionCopy) {
 				c.session.Status = ScriptDebugPaused
 				c.session.stepOnce = false
-				c.session.appendLogLocked("info", "breakpoint", fmt.Sprintf("Paused before %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName), "", nil)
+				c.session.appendLogLocked("info", "breakpoint", fmt.Sprintf("Paused before %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
 			} else {
-				c.session.appendLogLocked("debug", "action", fmt.Sprintf("Ready to execute %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName), "", nil)
+				c.session.appendLogLocked("debug", "action", fmt.Sprintf("Ready to execute %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
 			}
 		}
 		status := c.session.Status
@@ -537,13 +580,113 @@ func (c scriptDebugController) BeforeAction(ctx context.Context, action engine.R
 	}
 }
 
+// AfterAction implements engine.ReplayDebugControllerAfter. When break-on-failure
+// is enabled and the action just failed, it pauses the session and holds the
+// replay goroutine here — before the engine applies the stop-on-error policy — so
+// the operator can inspect the failure and then resume, step, or stop. When the
+// session is already paused (e.g. via Step) or break-on-failure is off, control
+// is left to the before-action pause mechanism on the next action.
+func (c scriptDebugController) AfterAction(ctx context.Context, action engine.ReplayDebugAction, event *engine.ReplayActionEvent) error {
+	if c.manager == nil || c.session == nil {
+		return nil
+	}
+	if event == nil || event.Success {
+		return nil
+	}
+
+	c.session.mu.Lock()
+	if !c.session.BreakOnFailure || c.session.Status != ScriptDebugRunning {
+		c.session.mu.Unlock()
+		return nil
+	}
+	c.session.Status = ScriptDebugPaused
+	c.session.stepOnce = false
+	c.session.appendLogLocked("warn", "breakpoint", fmt.Sprintf("Paused after failure in %s[%d] %s", action.Phase, action.ActionIndex, action.ActionName)+debugLeafSuffix(action), "", nil)
+	c.session.mu.Unlock()
+
+	actionCopy := action
+	c.manager.broadcast("script_debug_paused", c.session, actionCopy.EventIndex, nil, &actionCopy, nil)
+
+	for {
+		c.session.mu.Lock()
+		status := c.session.Status
+		c.session.mu.Unlock()
+		if status == ScriptDebugStopped {
+			return context.Canceled
+		}
+		if status != ScriptDebugPaused {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+// debugLeafSuffix renders the sub-request / sub-step identity of a leaf action
+// (child of an http_sequence / control_if / control_loop) for log legibility,
+// e.g. " · checkout · request 43/78 · loop iter 2". Empty for a plain action.
+func debugLeafSuffix(action engine.ReplayDebugAction) string {
+	parts := make([]string, 0, 3)
+	if action.ParentActionName != "" {
+		parts = append(parts, action.ParentActionName)
+	}
+	if action.RequestIndex != nil {
+		if action.RequestCount > 0 {
+			parts = append(parts, fmt.Sprintf("request %d/%d", *action.RequestIndex+1, action.RequestCount))
+		} else {
+			parts = append(parts, fmt.Sprintf("request %d", *action.RequestIndex+1))
+		}
+	}
+	if action.Iteration != nil {
+		parts = append(parts, fmt.Sprintf("loop iter %d", *action.Iteration))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " · " + strings.Join(parts, " · ")
+}
+
 func (s *ScriptDebugSession) hasBreakpointLocked(action engine.ReplayDebugAction) bool {
 	for _, breakpoint := range s.Breakpoints {
-		if breakpoint.Phase == action.Phase && breakpoint.ActionIndex == action.ActionIndex {
-			return true
+		if breakpoint.Phase != action.Phase || breakpoint.ActionIndex != action.ActionIndex {
+			continue
+		}
+		switch {
+		case len(breakpoint.StepPath) > 0:
+			// Control-flow / general sub-step breakpoint: match the leaf's static
+			// path (so it fires on every loop iteration of that step).
+			if stepPathEqual(breakpoint.StepPath, action.StepPath) {
+				return true
+			}
+		case breakpoint.RequestIndex != nil:
+			// http_sequence sub-request breakpoint.
+			if action.RequestIndex != nil && *breakpoint.RequestIndex == *action.RequestIndex {
+				return true
+			}
+		default:
+			// Whole-action breakpoint: stop once, at the first executed leaf, for
+			// any action type (plain action, http_sequence, or control flow).
+			if action.LeafOrdinal == 0 {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+func stepPathEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeDebugBreakpoints(input []ScriptDebugBreakpoint) []ScriptDebugBreakpoint {
@@ -560,12 +703,27 @@ func normalizeDebugBreakpoints(input []ScriptDebugBreakpoint) []ScriptDebugBreak
 		if breakpoint.ActionIndex < 0 {
 			continue
 		}
-		key := fmt.Sprintf("%s:%d", phase, breakpoint.ActionIndex)
+		reqKey := "*"
+		var requestIndex *int
+		if breakpoint.RequestIndex != nil {
+			if *breakpoint.RequestIndex < 0 {
+				continue
+			}
+			idx := *breakpoint.RequestIndex
+			requestIndex = &idx
+			reqKey = strconv.Itoa(idx)
+		}
+		stepKey := strings.Join(breakpoint.StepPath, "/")
+		key := fmt.Sprintf("%s:%d:%s:%s", phase, breakpoint.ActionIndex, reqKey, stepKey)
 		if _, ok := seen[key]; ok {
 			continue
 		}
 		seen[key] = struct{}{}
-		output = append(output, ScriptDebugBreakpoint{Phase: phase, ActionIndex: breakpoint.ActionIndex})
+		normalized := ScriptDebugBreakpoint{Phase: phase, ActionIndex: breakpoint.ActionIndex, RequestIndex: requestIndex}
+		if len(breakpoint.StepPath) > 0 {
+			normalized.StepPath = append([]string(nil), breakpoint.StepPath...)
+		}
+		output = append(output, normalized)
 	}
 	return output
 }

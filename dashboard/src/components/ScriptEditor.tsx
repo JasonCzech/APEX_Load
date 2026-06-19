@@ -155,6 +155,8 @@ import {
   DEBUGGER_LAYOUT_LIMITS,
   SCRIPT_JSON_TAB_ID,
   buildScriptPhaseActionRows,
+  buildDebugRailRenderRows,
+  debugStepPathKey,
   filterScriptPhaseActionRows,
   duplicateActionInList,
   actionTransactionName,
@@ -2316,6 +2318,7 @@ interface ReplayOptionsState {
   groupName: string
   ignoreThinkTime: boolean
   startPaused: boolean
+  breakOnFailure: boolean
   logLevel: ScriptDebugLogLevel
   variablesText: string
 }
@@ -2483,12 +2486,57 @@ function parseKeyValueLines(value: string) {
     }, {})
 }
 
-function debugBreakpointKey(phase: string, actionIndex: number): string {
-  return `${phase}:${actionIndex}`
+function debugBreakpointKey(phase: string, actionIndex: number, requestIndex?: number): string {
+  return requestIndex == null ? `${phase}:${actionIndex}` : `${phase}:${actionIndex}:${requestIndex}`
 }
 
 function normalizeDebugPhase(phase: string): ScriptDebugBreakpoint['phase'] {
   return phase === 'init' || phase === 'teardown' ? phase : 'action'
+}
+
+// humanizeStepSegment turns a static step-path segment into a readable label,
+// e.g. "requests[2]" -> "Request 3", "then[0]" -> "Then 1", "loop[1]" -> "Loop step 2".
+function humanizeStepSegment(seg: string): string {
+  const m = /^(\w+)\[(\d+)\]$/.exec(seg)
+  if (!m) return seg
+  const n = Number(m[2]) + 1
+  switch (m[1]) {
+    case 'requests': return `Request ${n}`
+    case 'then': return `Then ${n}`
+    case 'else': return `Else ${n}`
+    case 'loop': return `Loop step ${n}`
+    default: return `${m[1]} ${n}`
+  }
+}
+
+// normalizeStoredBreakpoints coerces persisted breakpoints, dropping malformed
+// entries and stripping invalid sub-request indices (e.g. legacy negatives).
+function normalizeStoredBreakpoints(raw: unknown): ScriptDebugBreakpoint[] {
+  if (!Array.isArray(raw)) return []
+  const out: ScriptDebugBreakpoint[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const e = entry as Record<string, unknown>
+    const actionIndex = Number(e.action_index)
+    if (!Number.isInteger(actionIndex) || actionIndex < 0) continue
+    const bp: ScriptDebugBreakpoint = { phase: normalizeDebugPhase(String(e.phase ?? 'action')), action_index: actionIndex }
+    if (Number.isInteger(e.request_index) && (e.request_index as number) >= 0) bp.request_index = e.request_index as number
+    if (Array.isArray(e.step_path) && e.step_path.every(s => typeof s === 'string')) bp.step_path = e.step_path as string[]
+    out.push(bp)
+  }
+  return out
+}
+
+// formatDebugLeafSuffix renders the sub-request / sub-step position of a paused
+// leaf (e.g. " · request 43/78", " · loop iter 2"). Empty for a plain action.
+function formatDebugLeafSuffix(leaf: { request_index?: number; request_count?: number; iteration?: number } | null | undefined): string {
+  if (!leaf) return ''
+  const parts: string[] = []
+  if (leaf.request_index != null) {
+    parts.push(leaf.request_count ? `request ${leaf.request_index + 1}/${leaf.request_count}` : `request ${leaf.request_index + 1}`)
+  }
+  if (leaf.iteration != null) parts.push(`loop iter ${leaf.iteration}`)
+  return parts.length ? ` · ${parts.join(' · ')}` : ''
 }
 
 
@@ -3255,6 +3303,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const debugRawOutputRef = useRef<HTMLDivElement | null>(null)
   const [debugRailFilter, setDebugRailFilter] = useState('')
   const [debugRailFailuresOnly, setDebugRailFailuresOnly] = useState(false)
+  // Keys (phase:actionIndex) of http_sequence rows the operator has expanded in
+  // the debugger ACTION LIST to reveal their sub-requests.
+  const [expandedDebugSequences, setExpandedDebugSequences] = useState<Set<string>>(() => new Set())
   const [debuggerRailWidth, setDebuggerRailWidth] = useState(() => {
     try { const val = window.localStorage.getItem('debuggerRailWidth'); return val ? clampDebuggerPaneSize('rail', parseInt(val, 10) || DEBUGGER_LAYOUT_DEFAULTS.rail) : DEBUGGER_LAYOUT_DEFAULTS.rail } catch { return DEBUGGER_LAYOUT_DEFAULTS.rail }
   })
@@ -3981,19 +4032,33 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       return
     }
 
-    if ((msg.type === 'script_debug_paused' || msg.type === 'script_debug_resumed' || msg.type === 'script_debug_breakpoints_updated') && msg.session) {
+    if ((msg.type === 'script_debug_paused' || msg.type === 'script_debug_resumed' || msg.type === 'script_debug_breakpoints_updated' || msg.type === 'script_debug_options_updated') && msg.session) {
       const session = msg.session
       setBrowserReplaySession(session)
       if (msg.type === 'script_debug_breakpoints_updated') {
         setDebugBreakpoints(session.breakpoints || [])
       }
+      // Keep the local toggle in sync with the server's authoritative state.
+      if (typeof session.break_on_failure === 'boolean') {
+        setReplayOptions(prev => prev.breakOnFailure === session.break_on_failure ? prev : { ...prev, breakOnFailure: session.break_on_failure! })
+      }
       const isPaused = msg.type === 'script_debug_paused'
+      const activityId = msg.type === 'script_debug_breakpoints_updated'
+        ? 'breakpoints'
+        : msg.type === 'script_debug_options_updated'
+          ? 'options'
+          : isPaused ? 'paused' : 'resumed'
+      const activityTitle = msg.type === 'script_debug_breakpoints_updated'
+        ? 'Breakpoints updated'
+        : msg.type === 'script_debug_options_updated'
+          ? `Break on failure ${session.break_on_failure ? 'on' : 'off'}`
+          : isPaused ? 'Debugger paused' : 'Debugger resumed'
       setReplayActivity(prev => upsertReplayActivity(prev, {
-        id: msg.type === 'script_debug_breakpoints_updated' ? 'breakpoints' : isPaused ? 'paused' : 'resumed',
+        id: activityId,
         kind: 'event',
-        title: msg.type === 'script_debug_breakpoints_updated' ? 'Breakpoints updated' : isPaused ? 'Debugger paused' : 'Debugger resumed',
+        title: activityTitle,
         detail: session.current_action
-          ? `${formatDebugPhaseLabel(session.current_action.phase)} ${session.current_action.action_index + 1}: ${session.current_action.action_name || 'next action'}`
+          ? `${formatDebugPhaseLabel(session.current_action.phase)} ${session.current_action.action_index + 1}: ${session.current_action.action_name || 'next action'}${formatDebugLeafSuffix(session.current_action)}`
           : session.group || 'script debug',
         timestamp: new Date().toISOString(),
       }))
@@ -4926,6 +4991,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         group_name: replayOptions.groupName.trim() || `${currentScript.name || 'script'}-debug`,
         start_paused: startPaused,
         breakpoints: debugBreakpoints,
+        break_on_failure: replayOptions.breakOnFailure,
         log_level: replayOptions.logLevel,
       }
       const replayGroup = payload.group_name || `${currentScript.name || 'script'}-replay`
@@ -4972,7 +5038,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             kind: 'event',
             title: 'Debugger paused',
             detail: res.session.current_action
-              ? `${formatDebugPhaseLabel(res.session.current_action.phase)} ${res.session.current_action.action_index + 1}: ${res.session.current_action.action_name || 'next action'}`
+              ? `${formatDebugPhaseLabel(res.session.current_action.phase)} ${res.session.current_action.action_index + 1}: ${res.session.current_action.action_name || 'next action'}${formatDebugLeafSuffix(res.session.current_action)}`
               : res.session.group || 'script debug',
             timestamp: new Date().toISOString(),
           }))
@@ -5016,7 +5082,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         setReplaying(false)
       }
     }
-  }, [api, commitJsonDraft, debugBreakpoints, openReplayDebugger, projectId, replayOptions.groupName, replayOptions.ignoreThinkTime, replayOptions.logLevel, replayOptions.startPaused, replayOptions.variablesText, resolveCurrentScript, scriptId, setActiveReplaySessionId, setBrowserReplaySession, setError, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplayScreenshotSelection, setReplaySeedVariables, setReplaying, setSuccess, setWarnings])
+  }, [api, commitJsonDraft, debugBreakpoints, openReplayDebugger, projectId, replayOptions.groupName, replayOptions.ignoreThinkTime, replayOptions.logLevel, replayOptions.startPaused, replayOptions.breakOnFailure, replayOptions.variablesText, resolveCurrentScript, scriptId, setActiveReplaySessionId, setBrowserReplaySession, setError, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplayScreenshotSelection, setReplaySeedVariables, setReplaying, setSuccess, setWarnings])
 
   const handleStopReplay = useCallback(async () => {
     if (!activeReplaySessionId) return
@@ -5075,26 +5141,77 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
   }
 
-  const debugBreakpointKeys = useMemo(() => new Set(debugBreakpoints.map(bp => debugBreakpointKey(bp.phase, bp.action_index))), [debugBreakpoints])
-
-  const toggleDebugBreakpoint = useCallback(async (phase: string, actionIndex: number) => {
-    const normalized: ScriptDebugBreakpoint = { phase: normalizeDebugPhase(phase), action_index: actionIndex }
-    const key = debugBreakpointKey(normalized.phase, normalized.action_index)
-    const nextBreakpoints = debugBreakpointKeys.has(key)
-      ? debugBreakpoints.filter(bp => debugBreakpointKey(bp.phase, bp.action_index) !== key)
-      : [...debugBreakpoints, normalized]
-    setDebugBreakpoints(nextBreakpoints)
+  const setBreakOnFailure = useCallback(async (enabled: boolean) => {
+    setReplayOptions(prev => ({ ...prev, breakOnFailure: enabled }))
+    // Push the change live only while a session is actually running/paused.
     if (!activeReplaySessionId || !browserReplaySession || ['completed', 'failed', 'stopped'].includes(browserReplaySession.status)) {
       return
     }
     try {
-      const res = await api.updateScriptDebugBreakpoints(activeReplaySessionId, nextBreakpoints)
+      const res = await api.updateScriptDebugOptions(activeReplaySessionId, { break_on_failure: enabled })
+      if (res?.session) setBrowserReplaySession(res.session)
+      setError('')
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, 'Failed to update break-on-failure'))
+    }
+  }, [activeReplaySessionId, api, browserReplaySession, setBrowserReplaySession, setError, setReplayOptions])
+
+  const breakpointEntryKey = useCallback((bp: ScriptDebugBreakpoint) =>
+    bp.step_path && bp.step_path.length > 0
+      ? debugStepPathKey(bp.phase, bp.action_index, bp.step_path)
+      : debugBreakpointKey(bp.phase, bp.action_index, bp.request_index), [])
+  const debugBreakpointKeys = useMemo(() => new Set(debugBreakpoints.map(breakpointEntryKey)), [debugBreakpoints, breakpointEntryKey])
+
+  // pushDebugBreakpoints commits a new breakpoint set to state and, when a
+  // session is live, PATCHes it so changes apply mid-run.
+  const pushDebugBreakpoints = useCallback(async (next: ScriptDebugBreakpoint[]) => {
+    setDebugBreakpoints(next)
+    if (!activeReplaySessionId || !browserReplaySession || ['completed', 'failed', 'stopped'].includes(browserReplaySession.status)) {
+      return
+    }
+    try {
+      const res = await api.updateScriptDebugBreakpoints(activeReplaySessionId, next)
       if (res?.session) setBrowserReplaySession(res.session)
       setError('')
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to update debugger breakpoints'))
     }
-  }, [activeReplaySessionId, api, browserReplaySession, debugBreakpointKeys, debugBreakpoints, setBrowserReplaySession, setDebugBreakpoints, setError])
+  }, [activeReplaySessionId, api, browserReplaySession, setBrowserReplaySession, setDebugBreakpoints, setError])
+
+  const toggleDebugBreakpoint = useCallback(async (phase: string, actionIndex: number, requestIndex?: number) => {
+    const normalizedPhase = normalizeDebugPhase(phase)
+    const normalized: ScriptDebugBreakpoint = requestIndex == null
+      ? { phase: normalizedPhase, action_index: actionIndex }
+      : { phase: normalizedPhase, action_index: actionIndex, request_index: requestIndex }
+    const key = debugBreakpointKey(normalized.phase, normalized.action_index, requestIndex)
+    const next = debugBreakpointKeys.has(key)
+      ? debugBreakpoints.filter(bp => breakpointEntryKey(bp) !== key)
+      : [...debugBreakpoints, normalized]
+    await pushDebugBreakpoints(next)
+  }, [breakpointEntryKey, debugBreakpointKeys, debugBreakpoints, pushDebugBreakpoints])
+
+  // Toggle a breakpoint on a control-flow leaf, targeted by its static step path
+  // (fires on every loop iteration of that step).
+  const toggleStepPathBreakpoint = useCallback(async (phase: string, actionIndex: number, stepPath: string[]) => {
+    const normalizedPhase = normalizeDebugPhase(phase)
+    const key = debugStepPathKey(normalizedPhase, actionIndex, stepPath)
+    const next = debugBreakpointKeys.has(key)
+      ? debugBreakpoints.filter(bp => breakpointEntryKey(bp) !== key)
+      : [...debugBreakpoints, { phase: normalizedPhase, action_index: actionIndex, step_path: stepPath }]
+    await pushDebugBreakpoints(next)
+  }, [breakpointEntryKey, debugBreakpointKeys, debugBreakpoints, pushDebugBreakpoints])
+
+  // Set or clear breakpoints on every sub-request of a sequence at once.
+  const setSequenceChildBreakpoints = useCallback(async (phase: string, actionIndex: number, requestCount: number, enabled: boolean) => {
+    const normalizedPhase = normalizeDebugPhase(phase)
+    const withoutChildren = debugBreakpoints.filter(bp => !(bp.phase === normalizedPhase && bp.action_index === actionIndex && bp.request_index != null))
+    if (!enabled) {
+      await pushDebugBreakpoints(withoutChildren)
+      return
+    }
+    const children: ScriptDebugBreakpoint[] = Array.from({ length: requestCount }, (_, i) => ({ phase: normalizedPhase, action_index: actionIndex, request_index: i }))
+    await pushDebugBreakpoints([...withoutChildren, ...children])
+  }, [debugBreakpoints, pushDebugBreakpoints])
 
   const handleDownloadBrowserReplayExport = () => {
     if (!replayReport) return
@@ -5369,10 +5486,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     : replayReport
       ? (replayReport.success ? 'success' : 'error')
       : 'idle'
-  const selectedReplayEventIndex = replayReport && expandedReplayEvent != null && expandedReplayEvent >= 0 && expandedReplayEvent < replayReport.events.length
+  // Debugger event source: prefer whichever of the live session snapshot or the
+  // client-accumulated report has more events. The session snapshot is
+  // authoritative during a paused/live run (and carries sub-request identity),
+  // while replayReport is the final record after completion.
+  const debugEvents = useMemo(() => {
+    const sessionEvents = browserReplaySession?.events
+    const reportEvents = replayReport?.events
+    if (sessionEvents && reportEvents) return sessionEvents.length >= reportEvents.length ? sessionEvents : reportEvents
+    return sessionEvents ?? reportEvents ?? []
+  }, [browserReplaySession?.events, replayReport?.events])
+  const selectedReplayEventIndex = expandedReplayEvent != null && expandedReplayEvent >= 0 && expandedReplayEvent < debugEvents.length
     ? expandedReplayEvent
     : null
-  const selectedReplayEvent = selectedReplayEventIndex != null && replayReport ? replayReport.events[selectedReplayEventIndex] : null
+  const selectedReplayEvent = selectedReplayEventIndex != null ? debugEvents[selectedReplayEventIndex] : null
   useEffect(() => {
     if (selectedReplayEvent || (replaying && browserReplaySession?.current_action)) {
       setDebugDetailCollapsed(false)
@@ -5383,11 +5510,110 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       setDebugDetailCollapsed(false)
     }
   }, [hasReplayVariableInspectorData])
-  const currentDebugActionKey = browserReplaySession?.current_action
-    ? debugBreakpointKey(browserReplaySession.current_action.phase, browserReplaySession.current_action.action_index)
+  const currentDebugAction = browserReplaySession?.current_action
+  const currentDebugActionKey = currentDebugAction
+    ? debugBreakpointKey(currentDebugAction.phase, currentDebugAction.action_index, currentDebugAction.request_index)
     : null
-  const debugRowPositionByKey = new Map(debugActionRows.map((row, position) => [debugBreakpointKey(row.phase, row.actionIndex), position]))
+  // Step-path key of a currently-paused control-flow leaf (no request_index).
+  const currentDebugStepKey = currentDebugAction && (currentDebugAction.step_path?.length ?? 0) > 0
+    ? debugStepPathKey(currentDebugAction.phase, currentDebugAction.action_index, currentDebugAction.step_path as string[])
+    : null
+  // Container nodes to auto-expand so the currently-paused leaf is visible: the
+  // top-level action plus every nested-container prefix of its step path.
+  const currentDebugAncestorKeys = useMemo(() => {
+    const keys = new Set<string>()
+    if (!currentDebugAction) return keys
+    const isLeaf = currentDebugAction.request_index != null || (currentDebugAction.step_path?.length ?? 0) > 0
+    if (!isLeaf) return keys
+    const base = debugBreakpointKey(currentDebugAction.phase, currentDebugAction.action_index)
+    keys.add(base)
+    const path = currentDebugAction.step_path ?? []
+    for (let i = 1; i < path.length; i++) {
+      keys.add(`${base}|${path.slice(0, i).join('/')}`)
+    }
+    // Also auto-expand the looped step's iteration group (keyed by step path).
+    if (path.length > 0) keys.add(debugStepPathKey(currentDebugAction.phase, currentDebugAction.action_index, path))
+    return keys
+  }, [currentDebugAction])
   const debugRailFilterText = debugRailFilter.trim().toLowerCase()
+  // Resolve each replay event by location. Container leaves carry request_index,
+  // so a sub-request maps to its own event; plain actions map by (phase, action).
+  const eventIndexByLocation = useMemo(() => {
+    const map = new Map<string, number>()
+    debugEvents.forEach((event, index) => {
+      if (typeof event.action_index !== 'number') return
+      map.set(debugBreakpointKey(event.phase, event.action_index, event.request_index), index)
+    })
+    return map
+  }, [debugEvents])
+  // First event index per top-level action — drives sequence roll-ups and the
+  // raw-log "jump to event" affordance (which only knows phase + action_index).
+  const debugRowPositionByKey = useMemo(() => {
+    const map = new Map<string, number>()
+    debugEvents.forEach((event, index) => {
+      if (typeof event.action_index !== 'number') return
+      const key = debugBreakpointKey(event.phase, event.action_index)
+      if (!map.has(key)) map.set(key, index)
+    })
+    return map
+  }, [debugEvents])
+  // Control-flow leaves map by static step path; a looped step yields one entry
+  // per iteration, so values are arrays of flat event indices in execution order.
+  const eventsByStepPath = useMemo(() => {
+    const map = new Map<string, number[]>()
+    debugEvents.forEach((event, index) => {
+      if (typeof event.action_index !== 'number' || !event.step_path || event.step_path.length === 0) return
+      const key = debugStepPathKey(event.phase, event.action_index, event.step_path)
+      const existing = map.get(key)
+      if (existing) existing.push(index)
+      else map.set(key, [index])
+    })
+    return map
+  }, [debugEvents])
+  // Sequences to force-open while a text/Failures filter is active so matching /
+  // failing sub-requests are reachable even if the operator hasn't expanded them.
+  const filterForcedDebugSequences = useMemo(() => {
+    const keys = new Set<string>()
+    if (!debugRailFilterText && !debugRailFailuresOnly) return keys
+    // Force-expand a container and every nested-container prefix of an event's
+    // step path so a matching/failing leaf is reachable.
+    const addAncestors = (phase: string, actionIndex: number, stepPath?: string[]) => {
+      const base = debugBreakpointKey(phase, actionIndex)
+      keys.add(base)
+      const path = stepPath ?? []
+      for (let i = 1; i < path.length; i++) keys.add(`${base}|${path.slice(0, i).join('/')}`)
+    }
+    if (debugRailFailuresOnly) {
+      for (const event of debugEvents) {
+        if (typeof event.action_index === 'number' && !event.success) addAncestors(event.phase, event.action_index, event.step_path)
+      }
+    } else {
+      for (const row of debugActionRows) {
+        if (actionRequestCount(row.action) === 0) continue
+        if (httpSequenceRequests(row.action).some(child => `${child.name || ''} ${child.target || ''}`.toLowerCase().includes(debugRailFilterText))) {
+          keys.add(debugBreakpointKey(row.phase, row.actionIndex))
+        }
+      }
+    }
+    return keys
+  }, [debugRailFilterText, debugRailFailuresOnly, debugActionRows, debugEvents])
+  const effectiveExpandedDebugSequences = useMemo(() => {
+    const next = new Set(expandedDebugSequences)
+    currentDebugAncestorKeys.forEach(key => next.add(key))
+    filterForcedDebugSequences.forEach(key => next.add(key))
+    return next
+  }, [expandedDebugSequences, currentDebugAncestorKeys, filterForcedDebugSequences])
+  const toggleDebugSequenceExpanded = useCallback((key: string) => {
+    setExpandedDebugSequences(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }, [])
   const scriptDslDocument = useMemo(() => buildDslDocument({ script }), [script])
   const selectedDebugCodeRow = workspaceTab === 'debug'
     ? debugActionRows[selectedReplayEventIndex ?? 0] || null
@@ -5427,7 +5653,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     if (!breakpointStorageKey) return
     try {
       const raw = window.localStorage.getItem(breakpointStorageKey)
-      if (raw) setDebugBreakpoints(JSON.parse(raw))
+      if (raw) setDebugBreakpoints(normalizeStoredBreakpoints(JSON.parse(raw)))
     } catch { /* ignore malformed persisted breakpoints */ }
     breakpointsLoadedRef.current = true
   }, [breakpointStorageKey])
@@ -6785,6 +7011,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         onClick: toggleSelectedBreakpoint,
       },
       {
+        id: 'break-on-failure',
+        label: 'Break on failure',
+        compactLabel: 'BoF',
+        title: replayOptions.breakOnFailure
+          ? 'Break on failure is on — the debugger pauses on the first failing action'
+          : 'Break on failure: pause automatically when an action fails',
+        tone: 'ghost',
+        pressed: replayOptions.breakOnFailure,
+        onClick: () => { void setBreakOnFailure(!replayOptions.breakOnFailure) },
+      },
+      {
         id: 'settings',
         label: 'Settings',
         compactLabel: 'Set',
@@ -7643,6 +7880,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     />
                     <span>Step through (start paused)</span>
                   </label>
+                  <label className="checkbox-label replay-checkbox" title="Pause the debugger automatically whenever an action fails, so you can inspect it before continuing.">
+                    <input
+                      type="checkbox"
+                      checked={replayOptions.breakOnFailure}
+                      onChange={e => void setBreakOnFailure(e.target.checked)}
+                    />
+                    <span>Break on failure</span>
+                  </label>
                   <div className="full-width replay-variables-field">
                     <span>Session Variables JSON</span>
                     <div className="replay-variables-editor" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden', marginTop: '6px' }}>
@@ -7752,28 +7997,229 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                               e.preventDefault()
                               const dir = e.key === 'ArrowDown' ? 1 : -1
+                              const total = debugEvents.length
+                              if (total === 0) return
                               const current = selectedReplayEventIndex ?? 0
-                              const next = Math.max(0, Math.min(debugActionRows.length - 1, current + dir))
+                              const next = Math.max(0, Math.min(total - 1, current + dir))
                               setExpandedReplayEvent(next)
                             }
                           }}
                         >
                           {(() => {
-                            const rows = debugActionRows.map(({ phase, actionIndex, action }, position) => {
-                              const rowKey = debugBreakpointKey(phase, actionIndex)
+                            const renderRows = buildDebugRailRenderRows(debugActionRows, effectiveExpandedDebugSequences)
+                            const matchesFilter = (text: string) => !debugRailFilterText || text.toLowerCase().includes(debugRailFilterText)
+                            const indentStyle = (depth: number) => depth > 0 ? ({ paddingLeft: `${depth * 14}px` } as React.CSSProperties) : undefined
+                            const out: React.ReactNode[] = []
+                            for (const item of renderRows) {
+                              const { phase, actionIndex, action } = item.row
+                              if (item.kind === 'container') {
+                                const containerKey = item.key
+                                const isTopLevel = item.stepPath.length === 0
+                                const subtreeEvents = debugEvents.filter(ev => ev.phase === phase && ev.action_index === actionIndex && (isTopLevel || (!!ev.step_path && item.stepPath.every((s, i) => ev.step_path![i] === s))))
+                                const anyFail = subtreeEvents.some(ev => !ev.success)
+                                const isCurrent = currentDebugAncestorKeys.has(containerKey)
+                                const rollup = anyFail ? 'fail' : isCurrent ? 'current' : subtreeEvents.length > 0 ? 'pass' : 'pending'
+                                const wholeActive = isTopLevel && debugBreakpointKeys.has(debugBreakpointKey(phase, actionIndex))
+                                const childBpCount = isTopLevel ? debugBreakpoints.filter(bp => bp.phase === phase && bp.action_index === actionIndex && (bp.request_index != null || (!!bp.step_path && bp.step_path.length > 0))).length : 0
+                                const gutterState = wholeActive ? 'active' : childBpCount > 0 ? 'partial' : ''
+                                const typeLabel = item.containerType === 'http_sequence' ? 'SEQ' : item.containerType === 'control_if' ? 'IF' : 'LOOP'
+                                const unitWord = item.containerType === 'http_sequence' ? 'request' : 'step'
+                                if (isTopLevel) {
+                                  const parentVisible = debugRailFailuresOnly
+                                    ? anyFail
+                                    : !debugRailFilterText || matchesFilter(`${action.name || ''} ${action.target || ''}`) || filterForcedDebugSequences.has(containerKey)
+                                  if (!parentVisible) continue
+                                }
+                                out.push(
+                                  <div key={containerKey} className={`debugger-action-row container ${rollup} ${isCurrent ? 'current' : ''}`} style={indentStyle(item.depth)}>
+                                    {isTopLevel ? (
+                                      <button
+                                        type="button"
+                                        className={`debugger-gutter ${gutterState}`}
+                                        title={wholeActive ? `Remove breakpoint (whole ${typeLabel === 'SEQ' ? 'sequence' : 'block'})` : childBpCount > 0 ? `${childBpCount} sub-step breakpoint${childBpCount === 1 ? '' : 's'} — click to break before this block` : 'Break before this block'}
+                                        aria-label={wholeActive ? 'Remove breakpoint' : 'Add breakpoint'}
+                                        onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
+                                      >
+                                        <span className="debugger-breakpoint-dot" />
+                                      </button>
+                                    ) : (
+                                      <span className="debugger-gutter debugger-gutter-spacer" aria-hidden="true" />
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="debugger-action-row-main"
+                                      aria-expanded={item.expanded}
+                                      onClick={() => toggleDebugSequenceExpanded(containerKey)}
+                                    >
+                                      <span className="debugger-action-row-head">
+                                        <span className="replay-event-phase">
+                                          <span aria-hidden="true" className="outline-section-chevron">{item.expanded ? '▾' : '▸'}</span>
+                                          {isTopLevel ? `${formatDebugPhaseLabel(phase)} ${actionIndex + 1}` : typeLabel}
+                                        </span>
+                                        <span className={`debugger-action-status ${rollup}`} aria-hidden="true" />
+                                      </span>
+                                      <strong>{item.name}</strong>
+                                      <small>{typeLabel} · {item.leafCount} {unitWord}{item.leafCount === 1 ? '' : 's'}{childBpCount > 0 ? ` · ${childBpCount} BP` : ''}</small>
+                                    </button>
+                                  </div>
+                                )
+                                if (item.expanded && isTopLevel && item.containerType === 'http_sequence') {
+                                  const allChildBreakpoints = item.leafCount > 0 && childBpCount >= item.leafCount
+                                  out.push(
+                                    <div key={`${containerKey}:controls`} className="debugger-sequence-controls">
+                                      <small>{childBpCount} of {item.leafCount} sub-request breakpoint{item.leafCount === 1 ? '' : 's'}</small>
+                                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => void setSequenceChildBreakpoints(phase, actionIndex, item.leafCount, !allChildBreakpoints)}>
+                                        {allChildBreakpoints ? 'Clear all' : 'Break all'}
+                                      </button>
+                                    </div>
+                                  )
+                                }
+                                continue
+                              }
+                              if (item.kind === 'leaf') {
+                                const isHttpChild = item.requestIndex != null
+                                const stepKey = debugStepPathKey(phase, actionIndex, item.stepPath)
+                                const iterationIndices = isHttpChild ? [] : (eventsByStepPath.get(stepKey) ?? [])
+                                const stepBpKey = isHttpChild ? item.key : stepKey
+                                const stepBpActive = debugBreakpointKeys.has(stepBpKey)
+                                const headLabelBase = isHttpChild ? `Request ${(item.requestIndex ?? 0) + 1}` : humanizeStepSegment(item.stepPath[item.stepPath.length - 1] || '')
+                                // A control-flow step that ran more than once becomes an expandable
+                                // iteration group: one row per loop pass.
+                                if (iterationIndices.length > 1) {
+                                  const groupFail = iterationIndices.some(i => !debugEvents[i].success)
+                                  const isCurrentGroup = currentDebugStepKey != null && currentDebugStepKey === stepKey
+                                  const groupStatus = groupFail ? 'fail' : isCurrentGroup ? 'current' : 'pass'
+                                  if (debugRailFailuresOnly && !groupFail) continue
+                                  if (!debugRailFailuresOnly && !matchesFilter(`${item.name} ${item.target}`)) continue
+                                  const groupExpanded = effectiveExpandedDebugSequences.has(stepKey)
+                                  out.push(
+                                    <div key={stepKey} className={`debugger-action-row child ${groupStatus} ${isCurrentGroup ? 'current' : ''}`} style={indentStyle(item.depth)}>
+                                      <button
+                                        type="button"
+                                        className={`debugger-gutter ${stepBpActive ? 'active' : ''}`}
+                                        title={stepBpActive ? 'Remove sub-step breakpoint' : 'Add sub-step breakpoint (fires every iteration)'}
+                                        aria-label={stepBpActive ? 'Remove sub-step breakpoint' : 'Add sub-step breakpoint'}
+                                        onClick={() => void toggleStepPathBreakpoint(phase, actionIndex, item.stepPath)}
+                                      >
+                                        <span className="debugger-breakpoint-dot" />
+                                      </button>
+                                      <button type="button" className="debugger-action-row-main" aria-expanded={groupExpanded} onClick={() => toggleDebugSequenceExpanded(stepKey)}>
+                                        <span className="debugger-action-row-head">
+                                          <span className="replay-event-phase">
+                                            <span aria-hidden="true" className="outline-section-chevron">{groupExpanded ? '▾' : '▸'}</span>
+                                            {headLabelBase} ·×{iterationIndices.length}
+                                          </span>
+                                          <span className={`debugger-action-status ${groupStatus}`} aria-hidden="true" />
+                                        </span>
+                                        <strong>{item.name || headLabelBase}</strong>
+                                        <small>{item.method || 'request'} {item.target || ''}</small>
+                                      </button>
+                                    </div>
+                                  )
+                                  if (groupExpanded) {
+                                    iterationIndices.forEach((evIdx, k) => {
+                                      const ev = debugEvents[evIdx]
+                                      const iterNum = ev.iteration ?? (k + 1)
+                                      const iterFail = !ev.success
+                                      if (debugRailFailuresOnly && !iterFail) return
+                                      const isCurrentIter = isCurrentGroup && currentDebugAction?.iteration === iterNum
+                                      const isSelectedIter = selectedReplayEventIndex != null && selectedReplayEventIndex === evIdx
+                                      out.push(
+                                        <div
+                                          key={`${stepKey}#iter${k}`}
+                                          className={`debugger-action-row child iteration ${iterFail ? 'fail' : 'pass'} ${isSelectedIter ? 'selected' : ''} ${isCurrentIter ? 'current' : ''}`}
+                                          style={indentStyle(item.depth + 1)}
+                                          ref={node => { replayEventRefs.current[evIdx] = node }}
+                                        >
+                                          <span className="debugger-gutter debugger-gutter-spacer" aria-hidden="true" />
+                                          <button
+                                            type="button"
+                                            className="debugger-action-row-main"
+                                            onClick={() => {
+                                              setExpandedReplayEvent(evIdx)
+                                              setDebugDetailCollapsed(false)
+                                              if (debuggerTab === 'browser' && !isBrowserScript) setDebuggerTab('request')
+                                            }}
+                                          >
+                                            <span className="debugger-action-row-head">
+                                              <span className="replay-event-phase">Iteration {iterNum}</span>
+                                              <span className={`debugger-action-status ${iterFail ? 'fail' : 'pass'}`} aria-hidden="true" />
+                                            </span>
+                                            <small>{(ev.method || item.method || 'request')} {ev.target || item.target || ''}</small>
+                                          </button>
+                                        </div>
+                                      )
+                                    })
+                                  }
+                                  continue
+                                }
+                                const eventIndex = isHttpChild
+                                  ? eventIndexByLocation.get(item.key)
+                                  : (iterationIndices.length ? iterationIndices[iterationIndices.length - 1] : undefined)
+                                const leafEvent = eventIndex != null ? debugEvents[eventIndex] : undefined
+                                const anyFail = isHttpChild ? !!(leafEvent && !leafEvent.success) : iterationIndices.some(i => !debugEvents[i].success)
+                                const bpKey = isHttpChild ? item.key : stepKey
+                                const bpActive = debugBreakpointKeys.has(bpKey)
+                                const isCurrentRow = currentDebugActionKey === item.key || (currentDebugStepKey != null && currentDebugStepKey === stepKey)
+                                const isSelectedRow = selectedReplayEventIndex != null && selectedReplayEventIndex === eventIndex
+                                const hasEvent = leafEvent != null || iterationIndices.length > 0
+                                const rowStatus = hasEvent ? (anyFail ? 'fail' : 'pass') : isCurrentRow ? 'current' : 'pending'
+                                if (debugRailFailuresOnly && !anyFail) continue
+                                if (!debugRailFailuresOnly && !matchesFilter(`${item.name} ${item.target} ${leafEvent?.target || ''}`)) continue
+                                const headLabel = isHttpChild ? `Request ${(item.requestIndex ?? 0) + 1}` : humanizeStepSegment(item.stepPath[item.stepPath.length - 1] || '')
+                                out.push(
+                                  <div
+                                    key={item.key}
+                                    className={`debugger-action-row child ${rowStatus} ${isSelectedRow ? 'selected' : ''} ${isCurrentRow ? 'current' : ''}`}
+                                    style={indentStyle(item.depth)}
+                                    ref={node => { if (eventIndex != null) replayEventRefs.current[eventIndex] = node }}
+                                  >
+                                    <button
+                                      type="button"
+                                      className={`debugger-gutter ${bpActive ? 'active' : ''}`}
+                                      title={bpActive ? 'Remove sub-step breakpoint' : 'Add sub-step breakpoint'}
+                                      aria-label={bpActive ? 'Remove sub-step breakpoint' : 'Add sub-step breakpoint'}
+                                      onClick={() => isHttpChild ? void toggleDebugBreakpoint(phase, actionIndex, item.requestIndex) : void toggleStepPathBreakpoint(phase, actionIndex, item.stepPath)}
+                                    >
+                                      <span className="debugger-breakpoint-dot" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="debugger-action-row-main"
+                                      disabled={eventIndex == null}
+                                      onClick={() => {
+                                        if (eventIndex == null) return
+                                        setExpandedReplayEvent(eventIndex)
+                                        setDebugDetailCollapsed(false)
+                                        if (debuggerTab === 'browser' && !isBrowserScript) setDebuggerTab('request')
+                                      }}
+                                    >
+                                      <span className="debugger-action-row-head">
+                                        <span className="replay-event-phase">{headLabel}{iterationIndices.length > 1 ? ` ·×${iterationIndices.length}` : ''}</span>
+                                        <span className={`debugger-action-status ${rowStatus}`} aria-hidden="true" />
+                                      </span>
+                                      <strong>{item.name || leafEvent?.action_name || headLabel}</strong>
+                                      <small>{(leafEvent?.method || item.method || 'request')} {leafEvent?.target || item.target || ''}</small>
+                                    </button>
+                                  </div>
+                                )
+                                continue
+                              }
+                              const rowKey = item.key
+                              const eventIndex = eventIndexByLocation.get(rowKey)
+                              const rowEvent = eventIndex != null ? debugEvents[eventIndex] : undefined
                               const breakpointActive = debugBreakpointKeys.has(rowKey)
-                              const rowEvent = replayReport?.events[position]
                               const isCurrentRow = currentDebugActionKey === rowKey
-                              const isSelectedRow = selectedReplayEventIndex === position
+                              const isSelectedRow = selectedReplayEventIndex != null && selectedReplayEventIndex === eventIndex
                               const rowStatus = rowEvent ? (rowEvent.success ? 'pass' : 'fail') : isCurrentRow ? 'current' : 'pending'
-                              const haystack = `${action.name || ''} ${action.target || ''} ${action.selector || ''} ${rowEvent?.action_name || ''} ${rowEvent?.target || ''}`.toLowerCase()
-                              if (debugRailFilterText && !haystack.includes(debugRailFilterText)) return null
-                              if (debugRailFailuresOnly && !(rowEvent && !rowEvent.success)) return null
-                              return (
+                              const haystack = `${action.name || ''} ${action.target || ''} ${action.selector || ''} ${rowEvent?.action_name || ''} ${rowEvent?.target || ''}`
+                              if (debugRailFailuresOnly && !(rowEvent && !rowEvent.success)) continue
+                              if (!debugRailFailuresOnly && !matchesFilter(haystack)) continue
+                              out.push(
                                 <div
                                   key={rowKey}
                                   className={`debugger-action-row ${rowStatus} ${isSelectedRow ? 'selected' : ''} ${isCurrentRow ? 'current' : ''}`}
-                                  ref={node => { replayEventRefs.current[position] = node }}
+                                  ref={node => { if (eventIndex != null) replayEventRefs.current[eventIndex] = node }}
                                 >
                                   <button
                                     type="button"
@@ -7790,8 +8236,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                     onDoubleClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
                                     onClick={() => {
                                       if (phase === 'action') setActiveAction(actionIndex)
-                                      if (rowEvent) {
-                                        setExpandedReplayEvent(position)
+                                      if (eventIndex != null) {
+                                        setExpandedReplayEvent(eventIndex)
                                         setDebugDetailCollapsed(false)
                                         if (debuggerTab === 'browser' && !isBrowserScript) setDebuggerTab('request')
                                       }
@@ -7806,8 +8252,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                   </button>
                                 </div>
                               )
-                            }).filter(Boolean)
-                            return rows.length > 0 ? rows : <div className="debugger-rail-empty">No actions match the filter.</div>
+                            }
+                            return out.length > 0 ? out : <div className="debugger-rail-empty">No actions match the filter.</div>
                           })()}
                         </div>
                       )
@@ -8290,8 +8736,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           <div className="debugger-detail debugger-current-action">
                             <span className={`debugger-current-badge ${isReplayPaused ? 'paused' : 'running'}`}>{isReplayPaused ? 'Paused — about to execute' : 'Executing'}</span>
                             <div className="debugger-detail-head">
-                              <span className="replay-event-phase">{formatDebugPhaseLabel(ca.phase)} {ca.action_index + 1}</span>
-                              <strong>{ca.action_name || 'Next action'}</strong>
+                              <span className="replay-event-phase">{formatDebugPhaseLabel(ca.phase)} {ca.action_index + 1}{formatDebugLeafSuffix(ca)}</span>
+                              <strong>{ca.parent_action_name ? `${ca.parent_action_name} › ${ca.action_name || 'sub-request'}` : (ca.action_name || 'Next action')}</strong>
                               <span className="replay-event-target">{ca.method || ca.action_type} {ca.target || ca.selector}</span>
                             </div>
                             {isReplayPaused && <p className="debugger-current-hint">Press Step (F10) to execute this action, or Continue (F5) to run to the next breakpoint.</p>}
@@ -8354,7 +8800,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         ) : (
                           debugFilteredLogs.map(entry => {
                             const jumpPosition = entry.phase ? debugRowPositionByKey.get(debugBreakpointKey(entry.phase, entry.action_index ?? 0)) : undefined
-                            const canJump = jumpPosition != null && !!replayReport?.events[jumpPosition]
+                            const canJump = jumpPosition != null && !!debugEvents[jumpPosition]
                             return (
                               <button
                                 key={entry.id}
@@ -15336,6 +15782,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     groupName: '',
     ignoreThinkTime: true,
     startPaused: false,
+    breakOnFailure: false,
     logLevel: 'info',
     variablesText: '{\n  \n}',
   })

@@ -581,6 +581,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/script-debug/sessions/{session_id}/step", cors(log(scriptDebugSessionEditAuth(http.HandlerFunc(s.handleStepScriptDebugSession)))))
 	s.mux.Handle("POST /api/v1/script-debug/sessions/{session_id}/stop", cors(log(scriptDebugSessionEditAuth(http.HandlerFunc(s.handleStopScriptDebugSession)))))
 	s.mux.Handle("PATCH /api/v1/script-debug/sessions/{session_id}/breakpoints", cors(log(scriptDebugSessionEditAuth(http.HandlerFunc(s.handleUpdateScriptDebugBreakpoints)))))
+	s.mux.Handle("PATCH /api/v1/script-debug/sessions/{session_id}/options", cors(log(scriptDebugSessionEditAuth(http.HandlerFunc(s.handleUpdateScriptDebugOptions)))))
 	s.mux.Handle("GET /api/v1/replay/sessions/{session_id}", cors(log(scriptDebugSessionViewAuth(http.HandlerFunc(s.handleGetScriptDebugSession)))))
 	s.mux.Handle("GET /api/v1/replay/sessions/{session_id}/export", cors(log(scriptDebugSessionViewAuth(http.HandlerFunc(s.handleExportScriptDebugSession)))))
 	s.mux.Handle("POST /api/v1/replay/sessions/{session_id}/pause", cors(log(scriptDebugSessionEditAuth(http.HandlerFunc(s.handlePauseScriptDebugSession)))))
@@ -588,6 +589,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/replay/sessions/{session_id}/step", cors(log(scriptDebugSessionEditAuth(http.HandlerFunc(s.handleStepScriptDebugSession)))))
 	s.mux.Handle("POST /api/v1/replay/sessions/{session_id}/stop", cors(log(scriptDebugSessionEditAuth(http.HandlerFunc(s.handleStopScriptDebugSession)))))
 	s.mux.Handle("PATCH /api/v1/replay/sessions/{session_id}/breakpoints", cors(log(scriptDebugSessionEditAuth(http.HandlerFunc(s.handleUpdateScriptDebugBreakpoints)))))
+	s.mux.Handle("PATCH /api/v1/replay/sessions/{session_id}/options", cors(log(scriptDebugSessionEditAuth(http.HandlerFunc(s.handleUpdateScriptDebugOptions)))))
 
 	// Recording proxy control and artifact retrieval.
 	s.mux.Handle("POST /api/v1/recorder/start", cors(log(recorderCreateAuth(http.HandlerFunc(s.handleStartRecording)))))

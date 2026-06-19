@@ -2230,6 +2230,13 @@ export interface BrowserReplayEvent {
   protocol_evidence?: ProtocolEvidence
   diagnosis?: ReplayDiagnosis
   repair_suggestions?: ReplayRepairSuggestion[]
+  // Sub-request / sub-step identity for leaves of a container action
+  // (http_sequence / control_if / control_loop). Absent for a plain action.
+  parent_action_name?: string
+  request_index?: number
+  request_count?: number
+  step_path?: string[]
+  iteration?: number
 }
 
 export interface BrowserReplayReport {
@@ -2300,6 +2307,10 @@ export type ScriptDebugLogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace'
 export interface ScriptDebugBreakpoint {
   phase: 'init' | 'action' | 'teardown' | string
   action_index: number
+  // Optional sub-request / sub-step targeting within a container action. Absent
+  // = whole-action breakpoint (stops once at the first executed leaf).
+  request_index?: number
+  step_path?: string[]
 }
 
 export interface ScriptDebugLogEntry {
@@ -2325,6 +2336,12 @@ export interface ScriptDebugAction {
   target?: string
   selector?: string
   source_step_id?: string
+  // Sub-request / sub-step identity when paused inside a container action.
+  parent_action_name?: string
+  request_index?: number
+  request_count?: number
+  step_path?: string[]
+  iteration?: number
 }
 
 export interface ScriptDebugSession {
@@ -2344,6 +2361,7 @@ export interface ScriptDebugSession {
   current_action?: ScriptDebugAction
   current_event?: BrowserReplayEvent
   breakpoints?: ScriptDebugBreakpoint[]
+  break_on_failure?: boolean
   events?: BrowserReplayEvent[]
   logs?: ScriptDebugLogEntry[]
   raw_output?: string[]
@@ -2359,6 +2377,7 @@ export interface ScriptDebugStartRequest {
   variables?: Record<string, string>
   start_paused?: boolean
   breakpoints?: ScriptDebugBreakpoint[]
+  break_on_failure?: boolean
   log_level?: ScriptDebugLogLevel
   browser?: BrowserConfig
   ignore_think_time?: boolean

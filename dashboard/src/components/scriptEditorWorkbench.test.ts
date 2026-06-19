@@ -8,6 +8,8 @@ import {
   SCRIPT_JSON_TAB_ID,
   appendActionStep,
   buildScriptPhaseActionRows,
+  buildDebugRailRenderRows,
+  debugSequenceKey,
   clampDebuggerPaneSize,
   codePathForDebugRow,
   actionTransactionMarker,
@@ -165,6 +167,68 @@ describe('phase action rows', () => {
     expect(scriptActionsForPhase(s, 'init').map(a => a.name)).toEqual(['i'])
     expect(scriptActionsForPhase(s, 'action').map(a => a.name)).toEqual(['a'])
     expect(scriptActionsForPhase(s, 'teardown').map(a => a.name)).toEqual(['t'])
+  })
+})
+
+describe('buildDebugRailRenderRows', () => {
+  const seq = {
+    name: 'txn',
+    type: 'http_sequence',
+    params: {
+      requests: [
+        { name: 'r0', method: 'POST', target: '/0' },
+        { name: 'r1', method: 'GET', target: '/1' },
+      ],
+    },
+  } as unknown as ScriptActionDefinition
+  const rows = buildScriptPhaseActionRows(script({ actions: [action('plain'), seq] }))
+
+  it('passes plain actions through and collapses containers by default', () => {
+    const rendered = buildDebugRailRenderRows(rows, new Set())
+    expect(rendered.map(r => r.kind)).toEqual(['action', 'container'])
+    const parent = rendered[1]
+    expect(parent.kind === 'container' && parent.leafCount).toBe(2)
+    expect(parent.kind === 'container' && parent.expanded).toBe(false)
+  })
+
+  it('emits leaf rows when the container key is expanded', () => {
+    const rendered = buildDebugRailRenderRows(rows, new Set([debugSequenceKey('action', 1)]))
+    expect(rendered.map(r => r.kind)).toEqual(['action', 'container', 'leaf', 'leaf'])
+    const leaf = rendered[2]
+    if (leaf.kind !== 'leaf') throw new Error('expected leaf')
+    expect(leaf.requestIndex).toBe(0)
+    expect(leaf.key).toBe('action:1:0')
+    expect(leaf.stepPath).toEqual(['requests[0]'])
+  })
+
+  it('expands control_loop body steps with loop[i] step paths', () => {
+    const loop = {
+      name: 'Retry', type: 'control_loop',
+      control: { count: 3, steps: [
+        { name: 'b0', type: 'GET', target: '/b0' },
+        { name: 'b1', type: 'GET', target: '/b1' },
+      ] },
+    } as unknown as ScriptActionDefinition
+    const loopRows = buildScriptPhaseActionRows(script({ actions: [loop] }))
+    const rendered = buildDebugRailRenderRows(loopRows, new Set([debugSequenceKey('action', 0)]))
+    expect(rendered.map(r => r.kind)).toEqual(['container', 'leaf', 'leaf'])
+    const first = rendered[1]
+    if (first.kind !== 'leaf') throw new Error('expected leaf')
+    expect(first.stepPath).toEqual(['loop[0]'])
+    expect(first.requestIndex).toBeUndefined()
+  })
+
+  it('expands control_if then/else branches with branch step paths', () => {
+    const branch = {
+      name: 'Maybe', type: 'control_if',
+      control: { condition: { op: 'eq', left: 'a', right: 'a' },
+        steps: [{ name: 't0', type: 'GET', target: '/t0' }],
+        else: [{ name: 'e0', type: 'GET', target: '/e0' }] },
+    } as unknown as ScriptActionDefinition
+    const ifRows = buildScriptPhaseActionRows(script({ actions: [branch] }))
+    const rendered = buildDebugRailRenderRows(ifRows, new Set([debugSequenceKey('action', 0)]))
+    const leaves = rendered.filter(r => r.kind === 'leaf')
+    expect(leaves.map(l => (l as { stepPath: string[] }).stepPath[0])).toEqual(['then[0]', 'else[0]'])
   })
 })
 

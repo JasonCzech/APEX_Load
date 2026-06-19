@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -77,6 +78,272 @@ func TestScriptDebugManagerBreakpointsAndStep(t *testing.T) {
 	completed := waitForScriptDebugStatus(t, manager, "debug-step", ScriptDebugCompleted)
 	if len(completed.Events) != 3 {
 		t.Fatalf("events = %d, want 3", len(completed.Events))
+	}
+}
+
+func TestScriptDebugManagerBreakOnFailurePauses(t *testing.T) {
+	var mu sync.Mutex
+	var executed []string
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		mu.Lock()
+		executed = append(executed, action.Name)
+		mu.Unlock()
+		if action.Name == "second" {
+			return &protocol.Result{ActionName: action.Name, Success: false, StatusCode: 500, ErrorMessage: "boom"}, nil
+		}
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+
+	manager := NewScriptDebugManager(NewHub())
+	script := &dsl.Script{
+		Name:     "Break On Failure",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions: []dsl.Action{
+			{Name: "first", Type: "GET", Target: "/first"},
+			{Name: "second", Type: "GET", Target: "/second"},
+			{Name: "third", Type: "GET", Target: "/third"},
+		},
+	}
+	// Continue-on-error so the run resumes past the failure once the operator continues.
+	script.Config.ErrorHandling.ContinueOnError = true
+
+	session := manager.Start("", script, ScriptDebugStartRequest{
+		ReplaySessionID: "debug-bof",
+		BreakOnFailure:  true,
+		LogLevel:        "debug",
+	})
+	if !session.BreakOnFailure {
+		t.Fatalf("session.BreakOnFailure = false, want true")
+	}
+
+	paused := waitForScriptDebugStatus(t, manager, "debug-bof", ScriptDebugPaused)
+	mu.Lock()
+	gotExecuted := append([]string(nil), executed...)
+	mu.Unlock()
+	if !slices.Equal(gotExecuted, []string{"first", "second"}) {
+		t.Fatalf("executed at failure pause = %#v, want first second (third must wait)", gotExecuted)
+	}
+	if len(paused.RawOutput) == 0 || !strings.Contains(strings.Join(paused.RawOutput, "\n"), "Paused after failure") {
+		t.Fatalf("raw output = %#v, want pause-after-failure evidence", paused.RawOutput)
+	}
+
+	resumed, ok, changed := manager.Resume("debug-bof")
+	if !ok || !changed {
+		t.Fatalf("Resume ok=%v changed=%v session=%#v, want changed", ok, changed, resumed)
+	}
+	// Under continue-on-error the run finishes after the failure, but a failed
+	// action makes the terminal status "failed".
+	finished := waitForScriptDebugStatus(t, manager, "debug-bof", ScriptDebugFailed)
+	if len(finished.Events) != 3 {
+		t.Fatalf("events = %d, want 3", len(finished.Events))
+	}
+	mu.Lock()
+	gotExecuted = append([]string(nil), executed...)
+	mu.Unlock()
+	if !slices.Equal(gotExecuted, []string{"first", "second", "third"}) {
+		t.Fatalf("executed after resume = %#v, want all three", gotExecuted)
+	}
+}
+
+func TestHandleUpdateScriptDebugOptions(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	server := NewServer(ServerConfig{})
+	server.scriptDebug.Start("", &dsl.Script{
+		Name:     "Options Draft",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "first", Type: "GET", Target: "/first"}},
+	}, ScriptDebugStartRequest{ReplaySessionID: "debug-options", StartPaused: true})
+	t.Cleanup(func() { _, _ = server.scriptDebug.Stop("debug-options") })
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/script-debug/sessions/debug-options/options", bytes.NewReader([]byte(`{"break_on_failure":true}`)))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload struct {
+		Session ScriptDebugSession `json:"session"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if !payload.Session.BreakOnFailure {
+		t.Fatalf("session.break_on_failure = false, want true")
+	}
+
+	// Missing field is a bad request (partial update with nothing to change).
+	badReq := httptest.NewRequest(http.MethodPatch, "/api/v1/script-debug/sessions/debug-options/options", bytes.NewReader([]byte(`{}`)))
+	badReq.Header.Set("Content-Type", "application/json")
+	badResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(badResp, badReq)
+	if badResp.Code != http.StatusBadRequest {
+		t.Fatalf("missing-field status = %d, want %d body=%s", badResp.Code, http.StatusBadRequest, badResp.Body.String())
+	}
+}
+
+func TestScriptDebugManagerBreakOnFailureAtFailingChild(t *testing.T) {
+	var mu sync.Mutex
+	var executed []string
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		mu.Lock()
+		executed = append(executed, action.Name)
+		mu.Unlock()
+		if action.Name == "child2" {
+			return &protocol.Result{ActionName: action.Name, Success: false, StatusCode: 500, ErrorMessage: "boom"}, nil
+		}
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+
+	manager := NewScriptDebugManager(NewHub())
+	script := &dsl.Script{
+		Name:     "Seq Break On Failure",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions: []dsl.Action{{
+			Name:   "txn",
+			Type:   "http_sequence",
+			Method: "SEQUENCE",
+			Target: "https://example.test",
+			Params: map[string]any{"requests": []dsl.Action{
+				{Name: "child1", Type: "GET", Method: "GET", Target: "/1"},
+				{Name: "child2", Type: "GET", Method: "GET", Target: "/2"},
+				{Name: "child3", Type: "GET", Method: "GET", Target: "/3"},
+			}},
+		}},
+	}
+	// Continue-on-error so the sequence resumes past the failing child on Resume.
+	script.Config.ErrorHandling.ContinueOnError = true
+
+	manager.Start("", script, ScriptDebugStartRequest{
+		ReplaySessionID: "debug-seq-bof",
+		BreakOnFailure:  true,
+		LogLevel:        "debug",
+	})
+
+	paused := waitForScriptDebugStatus(t, manager, "debug-seq-bof", ScriptDebugPaused)
+	mu.Lock()
+	got := append([]string(nil), executed...)
+	mu.Unlock()
+	if !slices.Equal(got, []string{"child1", "child2"}) {
+		t.Fatalf("executed at failure pause = %#v, want child1 child2 (child3 held)", got)
+	}
+	if paused.CurrentAction == nil || paused.CurrentAction.RequestIndex == nil || *paused.CurrentAction.RequestIndex != 1 {
+		t.Fatalf("current action = %#v, want sub-request index 1", paused.CurrentAction)
+	}
+	if !strings.Contains(strings.Join(paused.RawOutput, "\n"), "Paused after failure") {
+		t.Fatalf("raw output = %#v, want pause-after-failure evidence", paused.RawOutput)
+	}
+
+	if _, ok, changed := manager.Resume("debug-seq-bof"); !ok || !changed {
+		t.Fatalf("Resume ok=%v changed=%v, want changed", ok, changed)
+	}
+	finished := waitForScriptDebugStatus(t, manager, "debug-seq-bof", ScriptDebugFailed)
+	if len(finished.Events) != 3 {
+		t.Fatalf("events = %d, want 3 (all children once resumed)", len(finished.Events))
+	}
+	mu.Lock()
+	got = append([]string(nil), executed...)
+	mu.Unlock()
+	if !slices.Equal(got, []string{"child1", "child2", "child3"}) {
+		t.Fatalf("executed after resume = %#v, want all three children", got)
+	}
+}
+
+func TestScriptDebugManagerPausesAtChildBreakpoint(t *testing.T) {
+	var mu sync.Mutex
+	var executed []string
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		mu.Lock()
+		executed = append(executed, action.Name)
+		mu.Unlock()
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+
+	manager := NewScriptDebugManager(NewHub())
+	target := 1
+	manager.Start("", &dsl.Script{
+		Name:     "Seq Child BP",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions: []dsl.Action{{
+			Name: "txn", Type: "http_sequence", Method: "SEQUENCE", Target: "https://example.test",
+			Params: map[string]any{"requests": []dsl.Action{
+				{Name: "c0", Type: "GET", Method: "GET", Target: "/0"},
+				{Name: "c1", Type: "GET", Method: "GET", Target: "/1"},
+				{Name: "c2", Type: "GET", Method: "GET", Target: "/2"},
+			}},
+		}},
+	}, ScriptDebugStartRequest{
+		ReplaySessionID: "debug-child-bp",
+		Breakpoints:     []ScriptDebugBreakpoint{{Phase: "action", ActionIndex: 0, RequestIndex: &target}},
+	})
+
+	paused := waitForScriptDebugStatus(t, manager, "debug-child-bp", ScriptDebugPaused)
+	mu.Lock()
+	got := append([]string(nil), executed...)
+	mu.Unlock()
+	if !slices.Equal(got, []string{"c0"}) {
+		t.Fatalf("executed at breakpoint = %#v, want only c0 (paused before c1)", got)
+	}
+	if paused.CurrentAction == nil || paused.CurrentAction.RequestIndex == nil || *paused.CurrentAction.RequestIndex != 1 {
+		t.Fatalf("current action = %#v, want sub-request index 1", paused.CurrentAction)
+	}
+
+	if _, ok, changed := manager.Resume("debug-child-bp"); !ok || !changed {
+		t.Fatalf("Resume failed")
+	}
+	completed := waitForScriptDebugStatus(t, manager, "debug-child-bp", ScriptDebugCompleted)
+	if len(completed.Events) != 3 {
+		t.Fatalf("events = %d, want 3", len(completed.Events))
+	}
+}
+
+func TestNormalizeDebugBreakpointsSubRequest(t *testing.T) {
+	ri0, ri1, neg := 0, 1, -1
+	out := normalizeDebugBreakpoints([]ScriptDebugBreakpoint{
+		{Phase: "action", ActionIndex: 0},                            // whole-action
+		{Phase: "action", ActionIndex: 0},                            // dup whole-action
+		{Phase: "action", ActionIndex: 0, RequestIndex: &ri0},        // child 0 (distinct from whole)
+		{Phase: "action", ActionIndex: 0, RequestIndex: &ri1},        // child 1
+		{Phase: "action", ActionIndex: 0, RequestIndex: &ri1},        // dup child 1
+		{Phase: "action", ActionIndex: 0, RequestIndex: &neg},        // rejected (negative)
+		{Phase: "action", ActionIndex: 0, StepPath: []string{"then[0]"}}, // control-flow leaf
+	})
+	if len(out) != 4 {
+		t.Fatalf("normalized = %d (%#v), want 4 (whole, child0, child1, then[0])", len(out), out)
+	}
+}
+
+func TestHasBreakpointLockedSubRequest(t *testing.T) {
+	ri0, ri1 := 0, 1
+
+	child := &ScriptDebugSession{Breakpoints: []ScriptDebugBreakpoint{{Phase: "action", ActionIndex: 0, RequestIndex: &ri1}}}
+	if !child.hasBreakpointLocked(engine.ReplayDebugAction{Phase: "action", ActionIndex: 0, RequestIndex: &ri1}) {
+		t.Fatalf("child breakpoint should match request_index 1")
+	}
+	if child.hasBreakpointLocked(engine.ReplayDebugAction{Phase: "action", ActionIndex: 0, RequestIndex: &ri0, LeafOrdinal: 0}) {
+		t.Fatalf("child breakpoint must NOT match request_index 0")
+	}
+
+	whole := &ScriptDebugSession{Breakpoints: []ScriptDebugBreakpoint{{Phase: "action", ActionIndex: 0}}}
+	if !whole.hasBreakpointLocked(engine.ReplayDebugAction{Phase: "action", ActionIndex: 0, LeafOrdinal: 0}) {
+		t.Fatalf("whole-action breakpoint should match the first leaf")
+	}
+	if whole.hasBreakpointLocked(engine.ReplayDebugAction{Phase: "action", ActionIndex: 0, LeafOrdinal: 3}) {
+		t.Fatalf("whole-action breakpoint must NOT match a later leaf (would fire N times)")
+	}
+
+	step := &ScriptDebugSession{Breakpoints: []ScriptDebugBreakpoint{{Phase: "action", ActionIndex: 0, StepPath: []string{"loop[0]"}}}}
+	if !step.hasBreakpointLocked(engine.ReplayDebugAction{Phase: "action", ActionIndex: 0, StepPath: []string{"loop[0]"}, LeafOrdinal: 5}) {
+		t.Fatalf("step-path breakpoint should match loop[0] on any iteration")
+	}
+	if step.hasBreakpointLocked(engine.ReplayDebugAction{Phase: "action", ActionIndex: 0, StepPath: []string{"loop[1]"}}) {
+		t.Fatalf("step-path breakpoint must NOT match a different step")
 	}
 }
 

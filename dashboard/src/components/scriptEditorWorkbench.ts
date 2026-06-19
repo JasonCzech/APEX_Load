@@ -5,6 +5,7 @@ import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import type { ProtocolEvidence } from '../types'
 import { escapeRegExp } from './scriptEditorHelpers'
 import type { ScriptCodeMatchRange } from './scriptCodeDecorations'
+import { httpSequenceRequests } from './scriptActionHelpers'
 
 export type ScriptActionPhase = 'init' | 'action' | 'teardown'
 
@@ -188,6 +189,112 @@ export function buildScriptPhaseActionRows(script: ScriptDefinition): ScriptPhas
     })
   })
   return rows
+}
+
+// debugSequenceKey is the collapse/breakpoint key for a top-level action row
+// (matches debugBreakpointKey(phase, actionIndex) on the React side).
+export function debugSequenceKey(phase: string, actionIndex: number): string {
+  return `${phase}:${actionIndex}`
+}
+
+// debugContainerKind reports which container an action is, mirroring the engine's
+// replayContainerKind (http_sequence + control_if/control_loop).
+export function debugContainerKind(action: ScriptActionDefinition): '' | 'http_sequence' | 'control_if' | 'control_loop' {
+  const t = (action.type || '').toLowerCase().trim()
+  if (t === 'http_sequence') return 'http_sequence'
+  if (t === 'control_if' || t === 'control_loop') return t
+  return ''
+}
+
+// debugStepPathKey is the breakpoint/lookup key for a control-flow leaf, keyed by
+// its static step path (distinct namespace from the http_sequence requestIndex key).
+export function debugStepPathKey(phase: string, actionIndex: number, stepPath: string[]): string {
+  return `${phase}:${actionIndex}#${stepPath.join('/')}`
+}
+
+// containerExpandKey identifies a (possibly nested) container node for expand state.
+function containerExpandKey(phase: string, actionIndex: number, stepPath: string[]): string {
+  return stepPath.length ? `${debugSequenceKey(phase, actionIndex)}|${stepPath.join('/')}` : debugSequenceKey(phase, actionIndex)
+}
+
+// containerChildSteps returns the static child steps of a container action paired
+// with the step-path segment the engine assigns each (requests[i] / then[i] /
+// else[i] / loop[i]).
+function containerChildSteps(action: ScriptActionDefinition, kind: string): Array<{ action: ScriptActionDefinition; segment: string; requestIndex?: number }> {
+  if (kind === 'http_sequence') {
+    return httpSequenceRequests(action).map((child, i) => ({ action: child, segment: `requests[${i}]`, requestIndex: i }))
+  }
+  if (kind === 'control_if') {
+    const then = (action.control?.steps || []).map((child, i) => ({ action: child, segment: `then[${i}]` }))
+    const els = (action.control?.else || []).map((child, i) => ({ action: child, segment: `else[${i}]` }))
+    return [...then, ...els]
+  }
+  if (kind === 'control_loop') {
+    return (action.control?.steps || []).map((child, i) => ({ action: child, segment: `loop[${i}]` }))
+  }
+  return []
+}
+
+// DebugRailRenderRow is the flattened, render-ready row list for the debugger's
+// ACTION LIST. Container actions (http_sequence / control_if / control_loop)
+// become collapsible `container` rows; when expanded they are followed by their
+// child steps (`leaf`, or nested `container`). Plain actions pass through as
+// `action`, so non-container scripts render exactly as before.
+export type DebugRailRenderRow =
+  | { kind: 'action'; key: string; depth: number; row: ScriptPhaseActionRow }
+  | { kind: 'container'; key: string; depth: number; row: ScriptPhaseActionRow; containerType: 'http_sequence' | 'control_if' | 'control_loop'; name: string; leafCount: number; expanded: boolean; stepPath: string[] }
+  | { kind: 'leaf'; key: string; depth: number; row: ScriptPhaseActionRow; name: string; method: string; target: string; stepPath: string[]; requestIndex?: number; childAction: ScriptActionDefinition }
+
+// countContainerLeaves counts the static leaf steps under a container (recursively).
+function countContainerLeaves(action: ScriptActionDefinition): number {
+  const kind = debugContainerKind(action)
+  if (!kind) return 0
+  return containerChildSteps(action, kind).reduce((n, step) => n + (debugContainerKind(step.action) ? countContainerLeaves(step.action) : 1), 0)
+}
+
+export function buildDebugRailRenderRows(rows: ScriptPhaseActionRow[], expandedKeys: Set<string>): DebugRailRenderRow[] {
+  const out: DebugRailRenderRow[] = []
+  const emitContainer = (row: ScriptPhaseActionRow, action: ScriptActionDefinition, kind: 'http_sequence' | 'control_if' | 'control_loop', stepPath: string[], depth: number) => {
+    const expanded = expandedKeys.has(containerExpandKey(row.phase, row.actionIndex, stepPath))
+    out.push({
+      kind: 'container',
+      key: containerExpandKey(row.phase, row.actionIndex, stepPath),
+      depth, row, containerType: kind,
+      name: action.name || (kind === 'http_sequence' ? 'Sequence' : kind === 'control_if' ? 'If / Else' : 'Loop'),
+      leafCount: countContainerLeaves(action),
+      expanded, stepPath,
+    })
+    if (!expanded) return
+    for (const step of containerChildSteps(action, kind)) {
+      const childPath = [...stepPath, step.segment]
+      const childKind = debugContainerKind(step.action)
+      if (childKind) {
+        emitContainer(row, step.action, childKind, childPath, depth + 1)
+      } else {
+        out.push({
+          kind: 'leaf',
+          key: step.requestIndex != null ? `${debugSequenceKey(row.phase, row.actionIndex)}:${step.requestIndex}` : debugStepPathKey(row.phase, row.actionIndex, childPath),
+          depth: depth + 1, row,
+          name: step.action.name || step.segment,
+          method: step.action.method || step.action.type || 'request',
+          target: step.action.target || '',
+          stepPath: childPath,
+          requestIndex: step.requestIndex,
+          childAction: step.action,
+        })
+      }
+    }
+  }
+
+  for (const row of rows) {
+    const kind = debugContainerKind(row.action)
+    if (kind) {
+      emitContainer(row, row.action, kind, [], 0)
+    } else {
+      out.push({ kind: 'action', key: debugSequenceKey(row.phase, row.actionIndex), depth: 0, row })
+    }
+  }
+  return out
 }
 
 // Pure, immutable list helpers for editing a sequence of actions — nested

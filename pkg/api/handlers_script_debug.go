@@ -18,6 +18,7 @@ type ScriptDebugStartRequest struct {
 	RedactionRules  []engine.RedactionRule       `json:"redaction_rules,omitempty"`
 	StartPaused     bool                         `json:"start_paused,omitempty"`
 	Breakpoints     []ScriptDebugBreakpoint      `json:"breakpoints,omitempty"`
+	BreakOnFailure  bool                         `json:"break_on_failure,omitempty"`
 	LogLevel        string                       `json:"log_level,omitempty"`
 	Browser         *dsl.BrowserConfig           `json:"browser,omitempty"`
 	IgnoreThinkTime *bool                        `json:"ignore_think_time,omitempty"`
@@ -237,6 +238,27 @@ func (s *Server) handleUpdateScriptDebugBreakpoints(w http.ResponseWriter, r *ht
 		return
 	}
 	s.recordAuditEvent(r, "script_debug.breakpoints.update", "success", "script_debug_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "breakpoints": len(session.Breakpoints)})
+	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+}
+
+func (s *Server) handleUpdateScriptDebugOptions(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("session_id")
+	var req struct {
+		BreakOnFailure *bool `json:"break_on_failure"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if req.BreakOnFailure == nil {
+		writeError(w, http.StatusBadRequest, "break_on_failure is required")
+		return
+	}
+	session, ok := s.scriptDebug.SetBreakOnFailure(sessionID, *req.BreakOnFailure)
+	if !ok {
+		writeError(w, http.StatusNotFound, "script debug session not found")
+		return
+	}
+	s.recordAuditEvent(r, "script_debug.options.update", "success", "script_debug_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "break_on_failure": session.BreakOnFailure})
 	writeJSON(w, http.StatusOK, map[string]any{"session": session})
 }
 

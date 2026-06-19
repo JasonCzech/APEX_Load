@@ -432,6 +432,12 @@ export function useScriptApi() {
     [],
   )
 
+  const updateScriptDebugOptions = useCallback(
+    (sessionId: string, options: { break_on_failure?: boolean }) =>
+      request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/options`, { method: 'PATCH', body: JSON.stringify(options) }),
+    [],
+  )
+
   const exportScriptDebugSession = useCallback(
     async (sessionId: string, format: 'json' | 'log' = 'json') => {
       const res = await apiFetch(`/script-debug/sessions/${sessionId}/export?format=${encodeURIComponent(format)}`)
@@ -876,6 +882,7 @@ export function useScriptApi() {
       resumeScriptDebugSession,
       stepScriptDebugSession,
       updateScriptDebugBreakpoints,
+      updateScriptDebugOptions,
       exportScriptDebugSession,
       exportScript,
       importEnterpriseArchive,
@@ -953,6 +960,7 @@ export function useScriptApi() {
       resumeScriptDebugSession,
       stepScriptDebugSession,
       updateScriptDebugBreakpoints,
+      updateScriptDebugOptions,
       exportScriptDebugSession,
       exportScript,
       importEnterpriseArchive,
