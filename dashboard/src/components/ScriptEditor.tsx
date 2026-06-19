@@ -3090,19 +3090,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     for (const range of parameterMatchRanges) lines.add(jsonText.slice(0, range.from).split('\n').length)
     return Array.from(lines).sort((a, b) => a - b)
   }, [parameterMatchRanges, jsonText])
-  // Row counts from the selected parameter's data file (inline data sources only).
-  const selectedParameterDataStats = useMemo((): { rows: number; unique: number } | null => {
+  // The selected file/list parameter's data file: its name (path) and, for inline
+  // data sources, the row and unique-value counts. null when there is no source.
+  const selectedParameterDataInfo = useMemo((): { fileName: string; rows: number | null; unique: number | null } | null => {
     const parameter = selectedOutlineParameter
     if (!parameter || !parameter.data_source) return null
     const sourceIndex = findDataSourceIndexByName(script.data_sources, parameter.data_source)
     const source = sourceIndex !== null ? script.data_sources?.[sourceIndex] : null
-    if (!source) return null
+    const fileName = source?.path || source?.name || parameter.data_source || ''
+    if (!source) return { fileName, rows: null, unique: null }
     const parsed = parseInlineData(source)
-    if (parsed.rows.length === 0) return null
+    if (parsed.rows.length === 0) return { fileName, rows: null, unique: null }
     const columnIndex = parameter.column ? parsed.columns.findIndex(column => column === parameter.column) : -1
     const unique = countUniqueColumnValues(parsed, columnIndex >= 0 ? [columnIndex] : [])
-    return { rows: parsed.rows.length, unique }
+    return { fileName, rows: parsed.rows.length, unique }
   }, [selectedOutlineParameter, script.data_sources])
+  // Sibling parameters this one can be pinned to the same data row as.
+  const selectedParameterSameLineOptions = useMemo(() => {
+    const options = getSameLineParameterOptions(script.parameters || [], selectedOutlineParameterIndex)
+    return selectedOutlineParameter ? getSameLineParameterSelectOptions(selectedOutlineParameter, options) : options
+  }, [script.parameters, selectedOutlineParameterIndex, selectedOutlineParameter])
   const activeAutoParameterCandidate = useMemo(
     () => parameterCandidates.find(candidate => candidate.id === activeAutoParameterCandidateId) || parameterCandidates[0] || null,
     [activeAutoParameterCandidateId, parameterCandidates],
@@ -7009,7 +7016,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 parameter={selectedOutlineParameter}
                 parameterIndex={selectedOutlineParameterIndex}
                 referenceLines={selectedParameterReferenceLines}
-                dataStats={selectedParameterDataStats}
+                dataInfo={selectedParameterDataInfo}
+                sameLineOptions={selectedParameterSameLineOptions}
                 saving={saving}
                 onRename={name => {
                   updateParameter(selectedOutlineParameterIndex, 'name', name)
@@ -12423,15 +12431,16 @@ interface AutoParameterizationSidebarProps {
 const PARAM_CHOICE_KEYS = new Set<string>(['update', 'selection', 'on_exhaustion'])
 const PARAM_BOOL_KEYS = new Set<string>(['value_for_each_vuser'])
 const PARAM_NUMBER_KEYS = new Set<string>(['start_row', 'block_size', 'offset_seconds', 'step', 'start', 'min', 'max', 'length', 'padding'])
-// Read-only in the sidebar — these are determined by the data source, not edited here.
-const PARAM_STATIC_KEYS = new Set<string>(['data_source', 'column'])
-const PARAM_FIELD_LABELS: Record<string, string> = { data_source: 'Data Source', column: 'Column Name' }
+// Handled outside the generic Settings loop: data_source/column live under the
+// Data file header; same_line_as is a dropdown; name/type render in the header.
+const PARAM_SETTINGS_EXCLUDED = new Set<string>(['name', 'type', 'data_source', 'column', 'same_line_as'])
 
 interface SelectedParameterDetailsProps {
   parameter: ParameterConfig
   parameterIndex: number
   referenceLines: number[]
-  dataStats: { rows: number; unique: number } | null
+  dataInfo: { fileName: string; rows: number | null; unique: number | null } | null
+  sameLineOptions: { label: string; value: string }[]
   saving: boolean
   onRename: (name: string) => void
   onUpdateParameter: (idx: number, field: keyof ParameterConfig, value: unknown) => void
@@ -12441,21 +12450,18 @@ interface SelectedParameterDetailsProps {
 }
 
 // The Parameter companion page when a parameter is selected in the left list:
-// rename it, edit its runtime settings inline (type / data source / column are
-// read-only), see its data-file row counts, jump to references, and Save.
-function SelectedParameterDetails({ parameter, parameterIndex, referenceLines, dataStats, saving, onRename, onUpdateParameter, onSave, onJumpToLine, onEditInDataTab }: SelectedParameterDetailsProps) {
+// rename it, see its data file (name/source/column + row counts), edit its
+// runtime settings inline, jump to references, and Save.
+function SelectedParameterDetails({ parameter, parameterIndex, referenceLines, dataInfo, sameLineOptions, saving, onRename, onUpdateParameter, onSave, onJumpToLine, onEditInDataTab }: SelectedParameterDetailsProps) {
   const settingKeys = Object.keys(parameter).filter(
-    key => key !== 'name' && key !== 'type'
+    key => !PARAM_SETTINGS_EXCLUDED.has(key)
       && (parameter as unknown as Record<string, unknown>)[key] !== undefined
       && (parameter as unknown as Record<string, unknown>)[key] !== null,
   )
-  const fieldLabel = (key: string) => PARAM_FIELD_LABELS[key] || key.replace(/_/g, ' ')
+  const showSameLine = Boolean(parameter.same_line_as) || sameLineOptions.length > 0
   const renderControl = (key: string) => {
     const value = (parameter as unknown as Record<string, unknown>)[key]
     const field = key as keyof ParameterConfig
-    if (PARAM_STATIC_KEYS.has(key)) {
-      return <span className="selected-parameter-static">{String(value ?? '') || '—'}</span>
-    }
     if (PARAM_CHOICE_KEYS.has(key)) {
       const definition = PARAMETER_CHOICE_DEFINITIONS[key as MutableParameterChoiceField]
       return (
@@ -12481,22 +12487,40 @@ function SelectedParameterDetails({ parameter, parameterIndex, referenceLines, d
         </div>
       </div>
 
-      {dataStats && (
+      {dataInfo && (
         <div className="selected-parameter-section">
           <span className="selected-parameter-section-label">Data file</span>
-          <p className="selected-parameter-stats">{dataStats.rows} row{dataStats.rows === 1 ? '' : 's'} · {dataStats.unique} unique</p>
+          {dataInfo.rows !== null && (
+            <p className="selected-parameter-stats">{dataInfo.rows} row{dataInfo.rows === 1 ? '' : 's'} · {dataInfo.unique} unique</p>
+          )}
+          <div className="selected-parameter-form">
+            <label className="selected-parameter-field"><span>Data Source</span><span className="selected-parameter-static">{parameter.data_source || '—'}</span></label>
+            <label className="selected-parameter-field"><span>Column Name</span><span className="selected-parameter-static">{parameter.column || '—'}</span></label>
+          </div>
         </div>
       )}
 
       <div className="selected-parameter-section">
         <span className="selected-parameter-section-label">Settings</span>
         <div className="selected-parameter-form">
+          {dataInfo && (
+            <label className="selected-parameter-field"><span>File name</span><span className="selected-parameter-static">{dataInfo.fileName || '—'}</span></label>
+          )}
           {settingKeys.map(key => (
             <label key={key} className={`selected-parameter-field ${PARAM_BOOL_KEYS.has(key) ? 'is-bool' : ''}`}>
-              <span>{fieldLabel(key)}</span>
+              <span>{key.replace(/_/g, ' ')}</span>
               {renderControl(key)}
             </label>
           ))}
+          {showSameLine && (
+            <label className="selected-parameter-field">
+              <span>Same line as</span>
+              <select value={parameter.same_line_as || ''} onChange={event => onUpdateParameter(parameterIndex, 'same_line_as', event.target.value || undefined)}>
+                <option value="">(none)</option>
+                {sameLineOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+          )}
         </div>
         <p className="selected-parameter-empty">Editing settings only — change the data values in Parameter Data.</p>
       </div>
