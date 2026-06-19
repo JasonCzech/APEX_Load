@@ -10328,15 +10328,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       </button>
                     </div>
                   </div>
-                  <div className="editor-outline-list">
-                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('config')}>Script Configuration</button>
-                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('runtime')}>Runtime Settings</button>
-                    {importMetadata && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('import')}>Source Mapping</button>}
-                    {importMetadata && <button className="editor-outline-link" type="button" onClick={() => setShowMetadataJsonDialog(true)}>Imported Metadata JSON</button>}
-                    {objectDescriptorReview.rows.length > 0 && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('object-descriptors')}>Object Descriptors</button>}
-                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
-                    {isBrowserScript && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('http-conversion')}>HTTP Conversion Review</button>}
-                  </div>
                 </div>
                 <section className="outline-section">
                   <div className="actions-sidebar-header outline-section-header">
@@ -10736,6 +10727,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     )}
                   </section>
                 )}
+                <div className="editor-outline-nav editor-outline-nav-bottom">
+                  <div className="editor-outline-list">
+                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('config')}>Script Configuration</button>
+                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('runtime')}>Runtime Settings</button>
+                    {importMetadata && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('import')}>Source Mapping</button>}
+                    {importMetadata && <button className="editor-outline-link" type="button" onClick={() => setShowMetadataJsonDialog(true)}>Imported Metadata JSON</button>}
+                    {objectDescriptorReview.rows.length > 0 && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('object-descriptors')}>Object Descriptors</button>}
+                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
+                    {isBrowserScript && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('http-conversion')}>HTTP Conversion Review</button>}
+                  </div>
+                </div>
                 </>
                 )}
               </div>

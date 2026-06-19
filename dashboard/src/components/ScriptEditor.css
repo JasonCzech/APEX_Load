@@ -4163,6 +4163,12 @@
   border-bottom: 1px solid var(--border);
   background: rgba(148, 163, 184, 0.04);
 }
+/* The section-link list, relocated to the bottom of the outline rail. */
+.editor-outline-nav-bottom {
+  margin-top: auto;
+  border-bottom: none;
+  border-top: 1px solid var(--border);
+}
 .editor-outline-header {
   display: flex;
   align-items: center;

@@ -680,7 +680,7 @@ describe('ScriptEditor', () => {
 
     headerActions = container.querySelector('.editor-header .editor-actions')
     expect(headerActions?.textContent).not.toContain('Source Mapping')
-    const outlineButton = Array.from(container.querySelector('.editor-outline-nav')?.querySelectorAll('button') || [])
+    const outlineButton = Array.from(container.querySelector('.actions-sidebar')?.querySelectorAll('button') || [])
       .find(button => button.textContent === 'Source Mapping')
     expect(outlineButton).toBeDefined()
 
@@ -693,7 +693,7 @@ describe('ScriptEditor', () => {
     expect(metadataSection).not.toBeNull()
     // Metadata JSON is no longer a center tab — it opens on demand from the outline.
     expect(findCenterTab(container, 'Metadata JSON')).toBeUndefined()
-    const metadataJsonLink = Array.from(container.querySelector('.editor-outline-nav')?.querySelectorAll('button') || [])
+    const metadataJsonLink = Array.from(container.querySelector('.actions-sidebar')?.querySelectorAll('button') || [])
       .find(button => button.textContent === 'Imported Metadata JSON')
     expect(metadataJsonLink).toBeDefined()
     await act(async () => {
@@ -3068,7 +3068,7 @@ describe('ScriptEditor', () => {
     expect(metadataSection?.querySelector('.metadata-json-pre')).toBeNull()
     // Metadata JSON now opens on demand from the outline rather than a center tab.
     expect(findCenterTab(container, 'Metadata JSON')).toBeUndefined()
-    const metadataJsonLink = Array.from(container.querySelector('.editor-outline-nav')?.querySelectorAll('button') || [])
+    const metadataJsonLink = Array.from(container.querySelector('.actions-sidebar')?.querySelectorAll('button') || [])
       .find(button => button.textContent === 'Imported Metadata JSON')
     expect(metadataJsonLink).toBeDefined()
     await act(async () => {
@@ -3211,7 +3211,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
 
     expect(container.querySelector('.editor-header .editor-actions')?.textContent).not.toContain('Source Mapping')
-    const reopenMetadataButton = Array.from(container.querySelector('.editor-outline-nav')?.querySelectorAll('button') || []).find(button =>
+    const reopenMetadataButton = Array.from(container.querySelector('.actions-sidebar')?.querySelectorAll('button') || []).find(button =>
       button.textContent?.trim() === 'Source Mapping',
     )
     expect(reopenMetadataButton).toBeDefined()
