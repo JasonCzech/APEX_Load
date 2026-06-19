@@ -4085,7 +4085,9 @@
 }
 .actions-content-grid {
   display: grid;
-  --author-rail-width: minmax(210px, 280px);
+  position: relative;
+  /* Default: fit the outline's content (capped), overridden by an inline px once resized. */
+  --author-rail-width: fit-content(360px);
   --author-center-width: minmax(480px, 1fr);
   --author-utility-width: minmax(260px, 320px);
   grid-template-columns: var(--author-rail-width) var(--author-center-width) var(--author-utility-width);
@@ -4109,7 +4111,11 @@
 .actions-content-grid.author-outline-collapsed.author-right-sidebar-collapsed {
   --author-center-width: minmax(560px, 1fr);
 }
-.actions-sidebar { grid-area: author-rail; width: 100%; min-width: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+.actions-sidebar { grid-area: author-rail; width: 100%; min-width: 200px; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+/* Drag handle overlaying the rail's right edge (a grid child, so it stays put as the rail scrolls). */
+.author-rail-resize { position: relative; grid-area: author-rail; justify-self: end; align-self: stretch; width: 7px; margin-right: -3px; cursor: col-resize; z-index: 3; }
+.author-rail-resize::after { content: ''; position: absolute; top: 0; bottom: 0; right: 3px; width: 1px; background: transparent; transition: background 0.12s; }
+.author-rail-resize:hover::after, .author-rail-resize.resizing::after { background: var(--accent); right: 2px; width: 2px; }
 .actions-sidebar.collapsed {
   width: auto;
   min-width: 0;

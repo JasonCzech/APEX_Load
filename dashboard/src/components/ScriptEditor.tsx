@@ -3227,6 +3227,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     try { const val = window.localStorage.getItem('debuggerBottomHeight'); return val ? clampDebuggerPaneSize('bottom', parseInt(val, 10) || DEBUGGER_LAYOUT_DEFAULTS.bottom) : DEBUGGER_LAYOUT_DEFAULTS.bottom } catch { return DEBUGGER_LAYOUT_DEFAULTS.bottom }
   })
   const [activeDebuggerResize, setActiveDebuggerResize] = useState<DebuggerResizeKind | null>(null)
+  // Author outline rail width. null = fit content (CSS fit-content default) until
+  // the user drags it, after which a fixed px is remembered.
+  const authorRailRef = useRef<HTMLDivElement | null>(null)
+  const [authorRailWidth, setAuthorRailWidth] = useState<number | null>(() => {
+    try { const val = window.localStorage.getItem('authorRailWidth'); const n = val ? parseInt(val, 10) : NaN; return Number.isFinite(n) ? n : null } catch { return null }
+  })
+  const [authorRailResizing, setAuthorRailResizing] = useState(false)
 
   const toggleSourceMappingWorkspaceMaximized = useCallback(() => {
     setSourceMappingWorkspaceMaximized(current => {
@@ -5467,6 +5474,36 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     window.addEventListener('mouseup', onUp)
     window.addEventListener('blur', onUp)
   }
+
+  // Floor matches the .actions-sidebar min-width so a narrow drag can't make the
+  // panel content overflow its grid track.
+  const clampAuthorRail = (px: number) => Math.max(200, Math.min(620, Math.round(px)))
+
+  const startAuthorRailDrag = (event: React.MouseEvent) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startW = authorRailRef.current?.offsetWidth ?? authorRailWidth ?? 240
+    setAuthorRailResizing(true)
+    const onMove = (ev: globalThis.MouseEvent) => setAuthorRailWidth(clampAuthorRail(startW + (ev.clientX - startX)))
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('blur', onUp)
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      setAuthorRailResizing(false)
+    }
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    window.addEventListener('blur', onUp)
+  }
+
+  useEffect(() => {
+    if (authorRailWidth == null) return
+    try { window.localStorage.setItem('authorRailWidth', String(authorRailWidth)) } catch { /* storage may be unavailable */ }
+  }, [authorRailWidth])
 
   const scriptEditorShortcuts = useMemo(() => [
     {
@@ -10243,8 +10280,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           {/* Actions List + Detail */}
           {workspaceTab === 'author' && (
           <div className="actions-layout" role="tabpanel" aria-label="Authoring workspace">
-            <div className={`actions-content-grid ${authorOutlineCollapsed ? 'author-outline-collapsed' : ''} ${authorRightSidebarCollapsed ? 'author-right-sidebar-collapsed' : ''} ${authorRightSidebarContext.wide ? 'author-right-sidebar-wide' : ''}`}>
-              <div className={`actions-sidebar ${authorOutlineCollapsed ? 'collapsed' : ''}`}>
+            <div
+              className={`actions-content-grid ${authorOutlineCollapsed ? 'author-outline-collapsed' : ''} ${authorRightSidebarCollapsed ? 'author-right-sidebar-collapsed' : ''} ${authorRightSidebarContext.wide ? 'author-right-sidebar-wide' : ''}`}
+              style={!authorOutlineCollapsed && authorRailWidth != null ? ({ ['--author-rail-width']: `${authorRailWidth}px` } as React.CSSProperties) : undefined}
+            >
+              {!authorOutlineCollapsed && (
+                <div
+                  className={`author-rail-resize ${authorRailResizing ? 'resizing' : ''}`}
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize outline panel"
+                  title="Drag to resize the outline"
+                  onMouseDown={startAuthorRailDrag}
+                />
+              )}
+              <div className={`actions-sidebar ${authorOutlineCollapsed ? 'collapsed' : ''}`} ref={authorRailRef}>
                 {authorOutlineCollapsed ? (
                   <button
                     type="button"
