@@ -171,7 +171,7 @@ import {
   type ScriptActionPhase,
   type ScriptPhaseActionRow,
 } from './scriptEditorWorkbench'
-import { isRecord, asString, httpSequenceRequests, actionRequestCount, actionExtractorCount, actionAssertionCount, isControlAction, isReviewGatedJavaScriptAction, actionRequiresReview, actionSelectorFallbackCount, actionDisplayType, actionDisplayTarget } from './scriptActionHelpers'
+import { isRecord, asString, httpSequenceRequests, actionRequestCount, actionExtractorCount, actionAssertionCount, isControlAction, isReviewGatedJavaScriptAction, actionRequiresReview, actionSelectorFallbackCount, actionDisplayType, actionDisplayTarget, actionTypeSummary, actionRowLabel } from './scriptActionHelpers'
 import { ActionEditor, ActionParameterMenu, ValidationEvidencePanel } from './ScriptEditorActionEditor'
 import { type ParameterFormatPreset, CUSTOM_PARAMETER_FORMAT_VALUE, parameterFormatForType, parameterFormatPresetsForType, isBuiltinParameterType, applyParameterTypeDefaults } from './scriptParameterFormat'
 import './ScriptEditor.css'
@@ -10193,8 +10193,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               <span aria-hidden="true" />
                             </button>
                             <span className="action-phase-label">{phaseLabel}</span>
-                            <span className="action-method" style={{ color: methodColor(a.type) }}>{a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
-                            <span className="action-name-text">{a.name || 'Unnamed'}</span>
+                            <span className="action-method" style={{ color: methodColor(a.type) }} title={actionTypeSummary(a)}>{a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
+                            <span className="action-name-text">{actionRowLabel(a)}</span>
                             <div className="action-item-signals">
                               {(reviewGated || isReviewGatedJavaScriptAction(a)) && (
                                 <span

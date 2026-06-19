@@ -1,4 +1,5 @@
 import type { ScriptActionDefinition } from '../types/scripts'
+import { dslSpecForActionType, type DslActionCatalog } from './dslActionCatalog'
 
 // Action is the editor's working alias for a script action definition.
 type Action = ScriptActionDefinition
@@ -117,4 +118,35 @@ export function actionDisplayTarget(action: Action) {
   if (requests.length === 0) return action.selector || action.target || action.method || ''
   const firstTarget = requests[0]?.target || action.target
   return `${requests.length} requests${firstTarget ? ` • ${firstTarget}` : ''}`
+}
+
+// Humanize a raw DSL action type into a short, readable label, e.g.
+// "source_transaction" -> "Source transaction", "ws_send" -> "Ws send".
+// Used as a fallback so an outline of cryptic types stays legible to
+// less-technical authors before (or without) the action catalog.
+export function humanizeActionType(type: string): string {
+  const cleaned = (type || '').replace(/_/g, ' ').trim()
+  if (!cleaned) return 'Action'
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
+}
+
+// Plain-English description of an action's type, sourced from the DSL action
+// catalog (GET /api/v1/dsl/actions) when it has loaded, falling back to a
+// humanized form of the type. Intended for hover/title text on action rows so
+// authors can read what a step does without decoding the DSL type string.
+export function actionTypeSummary(
+  action: Action,
+  catalog?: DslActionCatalog | null,
+): string {
+  const spec = dslSpecForActionType(action.type, catalog ?? undefined)
+  if (spec?.summary) return spec.summary
+  return humanizeActionType(action.type)
+}
+
+// Readable label for an action row: the author-given name when present,
+// otherwise a humanized label for its type (instead of a bare "Unnamed").
+export function actionRowLabel(action: Action): string {
+  const name = (action.name || '').trim()
+  if (name) return name
+  return humanizeActionType(action.type)
 }
