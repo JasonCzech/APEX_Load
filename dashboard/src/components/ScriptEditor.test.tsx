@@ -908,13 +908,13 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Address_Search_Aura')
     expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Checkout_Aura')
 
-    const mapTab = Array.from(container.querySelectorAll('.script-json-sidebar-tab')).find(button => button.textContent?.trim() === 'Map')
-    expect(mapTab).toBeDefined()
-    await act(async () => {
-      mapTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
-    expect(container.querySelectorAll('.json-source-map-line.active-block').length).toBeGreaterThan(0)
+    expect(Array.from(container.querySelectorAll('.script-json-sidebar-tab')).map(button => button.textContent?.trim())).toEqual([
+      'Insights',
+      'Parameters',
+      'Details',
+    ])
+    expect(container.querySelector('.script-json-sidebar-tab')?.textContent?.trim()).not.toBe('Map')
+    expect(container.querySelector('.json-source-map')).toBeNull()
     expect(container.querySelector('.action-list')?.textContent).toContain('2 req')
     expect(container.querySelector('.action-list')?.textContent).toContain('1 ext')
   })
@@ -1775,7 +1775,7 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('.editor-utility-sidebar')).not.toBeNull()
     expect(Array.from(container.querySelectorAll('.debugger-icon-btn')).some(button => button.textContent?.trim() === 'Map')).toBe(false)
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Insights')
     const collapseAuthorSidebar = container.querySelector('.editor-utility-sidebar button[aria-label="Collapse right sidebar"]') as HTMLButtonElement | null
     expect(collapseAuthorSidebar).not.toBeNull()
     await act(async () => {
@@ -1820,7 +1820,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.debugger-center')).not.toBeNull()
   })
 
-  it('opens action details in the Script JSON right sidebar and keeps the map available', async () => {
+  it('opens action details in the Script JSON right sidebar without exposing the minimap', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
@@ -1832,7 +1832,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('collapsed')).toBe(true)
-    expect(container.querySelector('.utility-sidebar-restore')?.textContent).toContain('Map')
+    expect(container.querySelector('.utility-sidebar-restore')?.textContent).toContain('Insights')
 
     const firstAction = container.querySelector('.action-item')
     await act(async () => {
@@ -1846,243 +1846,35 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
     expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
     expect(Array.from(container.querySelectorAll('.script-json-sidebar-tab')).map(button => button.textContent?.trim())).toEqual([
-      'Map',
+      'Insights',
       'Parameters',
       'Details',
     ])
 
-    const mapTab = Array.from(container.querySelectorAll('.script-json-sidebar-tab')).find(button => button.textContent?.trim() === 'Map')
+    const insightsTab = Array.from(container.querySelectorAll('.script-json-sidebar-tab')).find(button => button.textContent?.trim() === 'Insights')
     await act(async () => {
-      mapTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      insightsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-source-map')).toBe(true)
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
-    expect(container.querySelectorAll('.json-source-map-line.active-block').length).toBeGreaterThan(0)
+    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-signals')).toBe(true)
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Insights')
+    expect(container.querySelector('.json-source-map')).toBeNull()
   })
 
-  it('renders a source map scroll thumb from the Script JSON editor viewport', async () => {
+  it('keeps the Script JSON minimap hidden from the dashboard UI', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
     await flushReact()
 
-    const thumb = container.querySelector('.json-source-map-scroll-thumb') as HTMLButtonElement | null
-    expect(thumb).not.toBeNull()
-    expect(thumb?.getAttribute('role')).toBe('scrollbar')
-    expect(thumb?.getAttribute('aria-valuenow')).toBe('0')
-    expect(Number.parseFloat(thumb?.style.height || '0')).toBeGreaterThan(0)
-    expect(Number.parseFloat(thumb?.style.height || '0')).toBeLessThan(100)
-  })
-
-  it('moves the source map thumb when the Script JSON editor scrolls', async () => {
-    await act(async () => {
-      root.render(<ScriptEditor initialScript={initialScript} />)
-    })
-    await flushReact()
-
-    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
-    const sourceMapLines = container.querySelector('.json-source-map-lines') as HTMLDivElement | null
-    const viewportHighlight = container.querySelector('.json-source-map-viewport-highlight') as HTMLDivElement | null
-    const thumb = container.querySelector('.json-source-map-scroll-thumb') as HTMLButtonElement | null
-    expect(codeArea).not.toBeNull()
-    expect(sourceMapLines).not.toBeNull()
-    expect(viewportHighlight).not.toBeNull()
-    expect(thumb).not.toBeNull()
-    if (!codeArea || !sourceMapLines || !viewportHighlight || !thumb) return
-
-    Object.defineProperty(sourceMapLines, 'clientHeight', { configurable: true, value: 120 })
-    Object.defineProperty(sourceMapLines, 'scrollHeight', { configurable: true, value: 600 })
-
-    const maxScrollTop = codeArea.scrollHeight - codeArea.clientHeight
-    await act(async () => {
-      codeArea.scrollTop = maxScrollTop / 2
-      codeArea.dispatchEvent(new Event('scroll', { bubbles: true }))
-    })
-    await flushReact()
-
-    expect(thumb.getAttribute('aria-valuenow')).toBe('50')
-    const maxSourceMapScrollTop = sourceMapLines.scrollHeight - sourceMapLines.clientHeight
-    expect(sourceMapLines.scrollTop).toBeCloseTo(
-      Math.min(maxSourceMapScrollTop, codeArea.scrollTop * (6.5 / 18)),
-    )
-    expect(Number.parseFloat(viewportHighlight.style.top)).toBeCloseTo(codeArea.scrollTop * (6.5 / 18))
-    expect(Number.parseFloat(viewportHighlight.style.height)).toBeCloseTo(codeArea.clientHeight * (6.5 / 18))
-  })
-
-  it('highlights the selected Script JSON line in the source map', async () => {
-    await act(async () => {
-      root.render(<ScriptEditor initialScript={initialScript} />)
-    })
-    await flushReact()
-
-    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
-    expect(codeArea).not.toBeNull()
-    if (!codeArea) return
-
-    const selectedLine = 24
-    const lineStart = codeArea.value.split('\n').slice(0, selectedLine - 1).reduce((offset, line) => offset + line.length + 1, 0)
-    await act(async () => {
-      codeArea.setSelectionRange(lineStart, lineStart)
-      codeArea.dispatchEvent(new Event('select', { bubbles: true }))
-    })
-    await flushReact()
-
-    const selectedMapLines = Array.from(container.querySelectorAll('.json-source-map-line.selected-line'))
-    expect(selectedMapLines).toHaveLength(1)
-    expect(selectedMapLines[0].querySelector('.json-source-map-line-number')?.textContent).toBe(String(selectedLine))
-  })
-
-  it('routes mouse wheel scrolling over the source map to the Script JSON editor', async () => {
-    await act(async () => {
-      root.render(<ScriptEditor initialScript={initialScript} />)
-    })
-    await flushReact()
-
-    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
-    const sourceMap = container.querySelector('.json-source-map') as HTMLDivElement | null
-    const thumb = container.querySelector('.json-source-map-scroll-thumb') as HTMLButtonElement | null
-    expect(codeArea).not.toBeNull()
-    expect(sourceMap).not.toBeNull()
-    expect(thumb).not.toBeNull()
-    if (!codeArea || !sourceMap || !thumb) return
-
-    const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 180 })
-    await act(async () => {
-      sourceMap.dispatchEvent(wheel)
-    })
-    await flushReact()
-
-    const expectedScrollTop = 180 / (6.5 / 18)
-    expect(codeArea.scrollTop).toBeCloseTo(expectedScrollTop)
-    expect(thumb.getAttribute('aria-valuenow')).toBe(
-      String(Math.round((codeArea.scrollTop / (codeArea.scrollHeight - codeArea.clientHeight)) * 100)),
-    )
-  })
-
-  it('sizes source map rows from wrapped Script JSON line blocks', async () => {
-    const wrappedScript: ScriptDefinition = {
-      ...initialScript,
-      actions: [
-        {
-          ...initialScript.actions[0],
-          body: `WRAPPED_CODEMIRROR_TEST_LINE ${'x'.repeat(240)}`,
-        },
-      ],
-    }
-    await act(async () => {
-      root.render(<ScriptEditor initialScript={wrappedScript} />)
-    })
-    await flushReact()
-
-    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
-    const sourceMapLines = container.querySelector('.json-source-map-lines') as HTMLDivElement | null
-    expect(codeArea).not.toBeNull()
-    expect(sourceMapLines).not.toBeNull()
-    if (!codeArea || !sourceMapLines) return
-
-    expect(sourceMapLines.style.gridTemplateRows).toContain('32.50px')
-
-    Object.defineProperty(sourceMapLines, 'clientHeight', { configurable: true, value: 120 })
-    Object.defineProperty(sourceMapLines, 'scrollHeight', { configurable: true, value: 2000 })
-    const wrappedLineIndex = codeArea.value.split('\n').findIndex(line => line.includes('WRAPPED_CODEMIRROR_TEST_LINE'))
-    expect(wrappedLineIndex).toBeGreaterThanOrEqual(0)
-    const wrappedLineScrollTop = wrappedLineIndex * 18
-    await act(async () => {
-      codeArea.scrollTop = wrappedLineScrollTop + 45
-      codeArea.dispatchEvent(new Event('scroll', { bubbles: true }))
-    })
-    await flushReact()
-
-    expect(sourceMapLines.scrollTop).toBeCloseTo((wrappedLineScrollTop + 45) * (6.5 / 18))
-  })
-
-  it('windows the source map for very large scripts instead of disabling it', async () => {
-    const manyActions = Array.from({ length: 260 }, (_, index) => ({
-      name: `Step ${index + 1}`,
-      type: 'request' as const,
-      method: 'GET' as const,
-      target: `/resource/${index + 1}`,
-      headers: { 'Content-Type': 'application/json', 'X-Trace': `trace-${index + 1}` },
-      body: `{"index":${index + 1}}`,
-      extractors: [],
-      assertions: [{ type: 'status_code', expected: 200 }],
-    }))
-    const largeScript: ScriptDefinition = { ...initialScript, actions: manyActions }
-    await act(async () => {
-      root.render(<ScriptEditor initialScript={largeScript} />)
-    })
-    await flushReact()
-
-    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
-    expect(codeArea).not.toBeNull()
-    if (!codeArea) return
-    // Sanity: this fixture is well past the windowing threshold (SCRIPT_CODE_LINE_LAYOUT_MAX_LINES).
-    expect(codeArea.value.split('\n').length).toBeGreaterThan(4000)
-
-    // The per-line map is windowed, not disabled — the old "Large document" placeholder is gone.
-    const sourceMapLines = container.querySelector('.json-source-map-lines') as HTMLDivElement | null
-    expect(sourceMapLines).not.toBeNull()
-    expect(sourceMapLines?.classList.contains('virtualized')).toBe(true)
-    expect(container.textContent).not.toContain('Line map disabled')
-
-    // The windowed spacer establishes a full scroll height proportional to the line count, so the
-    // scroll thumb and viewport highlight still track the whole document.
-    const virtualSpacer = container.querySelector('.json-source-map-virtual') as HTMLDivElement | null
-    expect(virtualSpacer).not.toBeNull()
-    expect(parseFloat(virtualSpacer?.style.height || '0')).toBeGreaterThan(0)
-  })
-
-  it('drags the source map thumb to scroll the Script JSON editor', async () => {
-    await act(async () => {
-      root.render(<ScriptEditor initialScript={initialScript} />)
-    })
-    await flushReact()
-
-    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
-    const track = container.querySelector('.json-source-map-scroll-track') as HTMLDivElement | null
-    const thumb = container.querySelector('.json-source-map-scroll-thumb') as HTMLButtonElement | null
-    expect(codeArea).not.toBeNull()
-    expect(track).not.toBeNull()
-    expect(thumb).not.toBeNull()
-    if (!codeArea || !track || !thumb) return
-
-    vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({
-      x: 0,
-      y: 0,
-      top: 0,
-      left: 0,
-      bottom: 400,
-      right: 12,
-      width: 12,
-      height: 400,
-      toJSON: () => ({}),
-    } as DOMRect)
-
-    await act(async () => {
-      thumb.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientY: 0 }))
-      thumb.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientY: 200 }))
-      thumb.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, clientY: 200 }))
-    })
-
-    expect(codeArea.scrollTop).toBeGreaterThan(0)
-    expect(codeArea.scrollTop).toBeLessThanOrEqual(codeArea.scrollHeight - codeArea.clientHeight)
-  })
-
-  it('keeps source map line clicks wired to the Script JSON jump behavior', async () => {
-    await act(async () => {
-      root.render(<ScriptEditor initialScript={initialScript} />)
-    })
-    await flushReact()
-
-    codeMirrorDispatchMock.mockClear()
-    const firstMapLine = container.querySelector('.json-source-map-line') as HTMLButtonElement | null
-    expect(firstMapLine).not.toBeNull()
-
-    await act(async () => {
-      firstMapLine?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(codeMirrorDispatchMock).toHaveBeenCalled()
+    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-signals')).toBe(true)
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Insights')
+    expect(Array.from(container.querySelectorAll('.script-json-sidebar-tab')).map(button => button.textContent?.trim())).toEqual([
+      'Insights',
+      'Parameters',
+    ])
+    expect(container.querySelector('.json-source-map')).toBeNull()
+    expect(container.querySelector('.json-source-map-scroll-thumb')).toBeNull()
+    expect(container.querySelector('.json-source-map-line')).toBeNull()
   })
 
   it('persists center tab order and drops unavailable document tabs', async () => {
@@ -2660,13 +2452,14 @@ describe('ScriptEditor', () => {
     expect(utilitySidebar?.textContent).toContain('username')
     expect(utilitySidebar?.textContent).toContain('demo')
 
-    const mapTab = Array.from(utilitySidebar?.querySelectorAll('.script-json-sidebar-tab') || []).find(button => button.textContent?.trim() === 'Map')
-    expect(mapTab).toBeDefined()
+    const insightsTab = Array.from(utilitySidebar?.querySelectorAll('.script-json-sidebar-tab') || []).find(button => button.textContent?.trim() === 'Insights')
+    expect(insightsTab).toBeDefined()
+    expect(Array.from(utilitySidebar?.querySelectorAll('.script-json-sidebar-tab') || []).map(button => button.textContent?.trim())).not.toContain('Map')
     await act(async () => {
-      mapTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      insightsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-source-map')).toBe(true)
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
+    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-signals')).toBe(true)
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Insights')
     expect(container.querySelector('.editor-utility-sidebar')?.textContent).not.toContain('Suggested Fields')
 
     const autoParamsTab = Array.from(container.querySelectorAll('.script-json-sidebar-tab')).find(button => button.textContent?.trim() === 'Parameters')
@@ -3277,10 +3070,10 @@ describe('ScriptEditor', () => {
     expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('[aria-label="Script JSON"]')?.textContent).toContain('actions[1]')
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Insights')
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
     expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
-    expect(container.querySelectorAll('.json-source-map-line.active-block').length).toBeGreaterThan(0)
+    expect(container.querySelector('.json-source-map')).toBeNull()
     const activeSidebarAction = container.querySelector('.action-item.active') as HTMLDivElement | null
     expect(activeSidebarAction?.textContent).toContain('Complete Checkout')
 
@@ -6113,7 +5906,7 @@ describe('ScriptEditor', () => {
     }), undefined, undefined)
   })
 
-  it('renders the action workspace with the source map in the contextual right sidebar', async () => {
+  it('renders the action workspace with insights in the contextual right sidebar', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
@@ -6126,7 +5919,7 @@ describe('ScriptEditor', () => {
     expect(sidebar?.parentElement).toBe(contentGrid)
     expect(utilitySidebar?.parentElement).toBe(contentGrid)
     expect(container.querySelector('.action-detail')).toBeNull()
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Insights')
 
     const firstAction = container.querySelector('.action-item')
     await act(async () => {
@@ -6139,13 +5932,13 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
     expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
 
-    const mapTab = Array.from(container.querySelectorAll('.script-json-sidebar-tab')).find(button => button.textContent?.trim() === 'Map')
+    const insightsTab = Array.from(container.querySelectorAll('.script-json-sidebar-tab')).find(button => button.textContent?.trim() === 'Insights')
     await act(async () => {
-      mapTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      insightsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-source-map')).toBe(true)
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
-    expect(container.querySelectorAll('.json-source-map-line.active-block').length).toBeGreaterThan(0)
+    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-signals')).toBe(true)
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Insights')
+    expect(container.querySelector('.json-source-map')).toBeNull()
   })
 
   it('collapses and restores the outline side panel from the author workspace', async () => {

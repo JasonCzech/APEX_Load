@@ -487,7 +487,12 @@ type ReplayReport = BrowserReplayReport
 type WorkbenchMode = 'author' | 'debug'
 type DebuggerTab = 'request' | 'browser' | 'variables'
 type DebuggerBottomTab = 'console' | 'timeline' | 'problems' | 'output'
-type ScriptJsonSidebarTab = 'map' | 'auto-params' | 'details'
+type ScriptJsonSidebarTab = 'insights' | 'map' | 'auto-params' | 'details'
+
+// The Script JSON minimap is intentionally retained but disabled in the dashboard UI.
+// Do not purge JsonSourceMinimap, its helpers, or CSS: the implementation may be useful later.
+const SCRIPT_JSON_MINIMAP_ENABLED = false
+const SCRIPT_JSON_DEFAULT_COMPANION_TAB: ScriptJsonSidebarTab = SCRIPT_JSON_MINIMAP_ENABLED ? 'map' : 'insights'
 
 interface CenterWorkbenchTabDescriptor {
   id: CenterWorkbenchTabId
@@ -602,8 +607,8 @@ const SCRIPT_CODE_LINE_LAYOUT_MAX_LINES = 4000
 /**
  * Above this document size the inline review-baseline/current-draft JSON diff preview is replaced
  * by a "too large to preview" placeholder (serializing multi-MB JSON inline would jank the panel).
- * The source-map minimap is NOT gated by this — it windows its rows (see virtualizeSourceMap) and
- * renders at any size.
+ * The dormant source-map minimap is NOT gated by this — when re-enabled it windows its rows
+ * (see virtualizeSourceMap) and renders at any size.
  */
 const JSON_SOURCE_MAP_MAX_DOC_CHARS = 250_000
 
@@ -3047,7 +3052,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   // On the Parameters companion page, toggles between the selected parameter's
   // details and the auto-parameterization view (without dropping the selection).
   const [parameterPaneShowAuto, setParameterPaneShowAuto] = useState(false)
-  const [scriptJsonSidebarTab, setScriptJsonSidebarTab] = useState<ScriptJsonSidebarTab>('map')
+  const [scriptJsonSidebarTab, setScriptJsonSidebarTab] = useState<ScriptJsonSidebarTab>(SCRIPT_JSON_DEFAULT_COMPANION_TAB)
   const [activeAutoParameterCandidateId, setActiveAutoParameterCandidateId] = useState<string | null>(null)
   const [activeAutoParameterOccurrenceIndex, setActiveAutoParameterOccurrenceIndex] = useState(0)
   const [jsonLineJumpRequest, setJsonLineJumpRequest] = useState<ScriptCodeLineJumpRequest | null>(null)
@@ -6571,7 +6576,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         setParameterCandidates([])
         setActiveAutoParameterCandidateId(null)
         setActiveAutoParameterOccurrenceIndex(0)
-        setScriptJsonSidebarTab('map')
+        setScriptJsonSidebarTab(SCRIPT_JSON_DEFAULT_COMPANION_TAB)
         setError(parsed.message)
         setSuccess('')
         setDebuggerBottomTab('problems')
@@ -6874,8 +6879,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const activeInspectorAction = activeAction !== null ? script.actions[activeAction] || null : null
   const hasScriptJsonDetailsTab = activeInspectorAction !== null && activeAction !== null
   const activeScriptJsonSidebarTab = scriptJsonSidebarTab === 'details' && !hasScriptJsonDetailsTab
-    ? 'map'
-    : scriptJsonSidebarTab
+    ? SCRIPT_JSON_DEFAULT_COMPANION_TAB
+    : scriptJsonSidebarTab === 'map' && !SCRIPT_JSON_MINIMAP_ENABLED
+      ? SCRIPT_JSON_DEFAULT_COMPANION_TAB
+      : scriptJsonSidebarTab
   const debugEvidenceStatus = replayReport?.completed_at
     ? (replayReport.success ? 'passed' : 'failed')
     : activeReplaySessionId || browserReplaySession
@@ -7220,7 +7227,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         if (activeScriptJsonSidebarTab === 'details' && activeInspectorAction && activeAction !== null) {
           return { kind: 'inspector', title: 'Action Details', railLabel: 'Details', wide: true }
         }
-        return { kind: 'source-map', title: 'Source Map', railLabel: 'Map' }
+        if (activeScriptJsonSidebarTab === 'map' && SCRIPT_JSON_MINIMAP_ENABLED) {
+          return { kind: 'source-map', title: 'Source Map', railLabel: 'Map' }
+        }
+        return { kind: 'signals', title: 'Insights', railLabel: 'Insights' }
       case 'imported-metadata':
         return { kind: 'imported-metadata', title: 'Source Mapping', railLabel: 'Map' }
       case 'object-descriptors':
@@ -11609,12 +11619,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         <button
                           type="button"
                           role="tab"
-                          aria-selected={activeScriptJsonSidebarTab === 'map'}
-                          className={`script-json-sidebar-tab ${activeScriptJsonSidebarTab === 'map' ? 'active' : ''}`}
-                          onClick={() => setScriptJsonSidebarTab('map')}
+                          aria-selected={activeScriptJsonSidebarTab === 'insights'}
+                          className={`script-json-sidebar-tab ${activeScriptJsonSidebarTab === 'insights' ? 'active' : ''}`}
+                          onClick={() => setScriptJsonSidebarTab('insights')}
                         >
-                          Map
+                          Insights
                         </button>
+                        {SCRIPT_JSON_MINIMAP_ENABLED && (
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={activeScriptJsonSidebarTab === 'map'}
+                            className={`script-json-sidebar-tab ${activeScriptJsonSidebarTab === 'map' ? 'active' : ''}`}
+                            onClick={() => setScriptJsonSidebarTab('map')}
+                          >
+                            Map
+                          </button>
+                        )}
                         <button
                           type="button"
                           role="tab"
@@ -16083,4 +16104,3 @@ function useJsonParameterMenu({
     selectionState,
   }
 }
-
