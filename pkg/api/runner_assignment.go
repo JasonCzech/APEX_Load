@@ -174,6 +174,13 @@ func normalizeGroupGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) 
 	if in == nil {
 		return nil, nil
 	}
+	if strings.TrimSpace(in.PoolID) != "" {
+		// Pool membership is expanded to concrete targets only for the test-level
+		// assignment (resolvePoolAssignmentLocked). A group-scoped pool_id is never
+		// resolved, so the group would silently fall back to auto and run
+		// fleet-wide — reject it rather than ignore an explicit isolation directive.
+		return nil, fmt.Errorf("assignment.pool_id is not supported at group scope; set the pool on the test-level assignment")
+	}
 	out, err := normalizeGeneratorAssignmentSettings(in)
 	if err != nil {
 		return nil, err

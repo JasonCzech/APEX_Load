@@ -109,6 +109,75 @@ func completeManagedTest(t *testing.T, runner *TestRunner, id, status string) {
 	runner.completeTestRun(test, status, time.Now().UTC(), "", nil)
 }
 
+// syncFailBackend fails the test at the very top of Run — synchronously, before
+// any await — the way the distributed backend does on "no generator targets
+// configured". This exercises the orchestrator's registration race: the terminal
+// hook can fire before launchNextPlanEntry registers the test→run mapping.
+type syncFailBackend struct{ msg string }
+
+func (b syncFailBackend) Run(tr *TestRunner, test *ManagedTest) {
+	tr.failTestBeforeRun(test, b.msg)
+}
+
+func TestSequentialPlanRunHaltsWhenEntryFailsSynchronously(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	runner := NewTestRunner(10, NewHub(), store)
+	runner.setExecutionBackend(syncFailBackend{msg: "no generator targets configured"})
+
+	scriptID := "script-fail"
+	runner.StoreScript(&dsl.Script{
+		ID: scriptID, Name: "X", Protocol: "http", Version: "1.0.0",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.com", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+	scn, err := runner.StoreScenario(CreateScenarioRequest{
+		Name: "X", Duration: "30s",
+		Groups: []CreateGroupEntry{{Name: "G", ScriptID: scriptID, VUsers: 1, RampUp: "1s"}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario: %v", err)
+	}
+
+	plan := &storage.ExecutionPlan{
+		ID: "exec-plan-fail", ProjectID: "proj-a", Name: "Fails", RunMode: "sequential",
+		Entries: []storage.ExecutionPlanEntry{
+			{Order: 0, ScenarioID: scn.ID},
+			{Order: 1, ScenarioID: scn.ID},
+		},
+	}
+	run, err := runner.StartExecutionPlanRun(plan, "", "")
+	if err != nil {
+		t.Fatalf("StartExecutionPlanRun: %v", err)
+	}
+
+	// The run must reach a terminal state, not stall in "running". With the race,
+	// the terminal hook missed the seqPlanByTest mapping and the run never finished.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		runner.seqMu.Lock()
+		_, stillTracked := runner.seqPlanRuns[run.ID]
+		runner.seqMu.Unlock()
+		if !stillTracked {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("sequential plan run stalled in 'running' after a synchronous entry failure (registration race)")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	persisted, err := store.GetExecutionPlanRun(run.ID)
+	if err != nil {
+		t.Fatalf("GetExecutionPlanRun: %v", err)
+	}
+	if persisted.Status != "halted" {
+		t.Fatalf("plan run status = %q, want halted", persisted.Status)
+	}
+}
+
 func TestSequentialPlanRunGatesOnCompletion(t *testing.T) {
 	runner, spy, ids := newPlanTestRunner(t, "first", "second")
 	plan := &storage.ExecutionPlan{

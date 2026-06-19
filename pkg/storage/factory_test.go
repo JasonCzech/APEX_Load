@@ -58,6 +58,21 @@ func TestRewriteSQLForPostgres(t *testing.T) {
 	if !strings.Contains(got, "TIMESTAMPTZ") || !strings.Contains(got, "BOOLEAN DEFAULT FALSE") {
 		t.Fatalf("rewritten ddl did not normalize timestamp/bool types: %s", got)
 	}
+
+	// Read-side COALESCE defaults on boolean columns must be rewritten to FALSE,
+	// or Postgres rejects COALESCE(boolean, 0) with a type mismatch. Each boolean
+	// column whose DDL is rewritten to BOOLEAN must have a matching COALESCE entry;
+	// the object-repository read (auto_promote_on_heal) regressed without it.
+	for _, col := range []string{"shakeout_enabled", "resource_baseline_enabled", "auto_promote_on_heal", "baseline_pinned"} {
+		sel := "SELECT COALESCE(" + col + ", 0) FROM t"
+		gotSel := rewriteSQL(sel, storeDialectPostgres)
+		if strings.Contains(gotSel, "COALESCE("+col+", 0)") {
+			t.Fatalf("COALESCE(%s, 0) was not rewritten for Postgres: %s", col, gotSel)
+		}
+		if !strings.Contains(gotSel, "COALESCE("+col+", FALSE)") {
+			t.Fatalf("COALESCE(%s, ...) not rewritten to FALSE: %s", col, gotSel)
+		}
+	}
 }
 
 func TestSQLiteInitIsIdempotent(t *testing.T) {

@@ -296,7 +296,7 @@ func (s *Server) handlePinComparisonBaseline(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	s.recordAuditEvent(r, "test.comparison_baseline.pin", "success", "test", id, test.ProjectID, map[string]any{"name": test.Name, "scenario_id": test.ScenarioID, "baseline_pinned": test.BaselinePinned})
-	writeJSON(w, http.StatusOK, test)
+	writeJSON(w, http.StatusOK, maskManagedTest(test))
 }
 
 func (s *Server) handleUnpinComparisonBaseline(w http.ResponseWriter, r *http.Request) {
@@ -311,7 +311,7 @@ func (s *Server) handleUnpinComparisonBaseline(w http.ResponseWriter, r *http.Re
 		return
 	}
 	s.recordAuditEvent(r, "test.comparison_baseline.unpin", "success", "test", id, test.ProjectID, map[string]any{"name": test.Name, "scenario_id": test.ScenarioID, "baseline_pinned": test.BaselinePinned})
-	writeJSON(w, http.StatusOK, test)
+	writeJSON(w, http.StatusOK, maskManagedTest(test))
 }
 
 func (s *Server) handleStopTest(w http.ResponseWriter, r *http.Request) {

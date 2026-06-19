@@ -46,6 +46,23 @@ func validateReservationWindow(start, end time.Time) error {
 	return nil
 }
 
+// reservationCapacityEqual reports whether two requested-capacity envelopes
+// reserve the same generators/VUsers (the admission-relevant terms). Protocol
+// and load-zone labels do not affect reserved capacity and are ignored.
+func reservationCapacityEqual(a, b *storage.CapacityReservationRequest) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return intPtrEqual(a.Generators, b.Generators) && intPtrEqual(a.VUsers, b.VUsers)
+}
+
+func intPtrEqual(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
 // summarizeReservationConflicts counts active (non-rejected) reservations that
 // overlap the window, excluding the reservation being edited. A storage error is
 // logged and treated as "no known conflict" so an advisory check never blocks a
@@ -131,6 +148,9 @@ func (s *Server) handleListCapacityReservations(w http.ResponseWriter, r *http.R
 	if reservations == nil {
 		reservations = []*storage.CapacityReservation{}
 	}
+	for _, res := range reservations {
+		s.refreshReservationBindingStatus(res)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"timeslots": reservations,
 		"count":     len(reservations),
@@ -148,7 +168,30 @@ func (s *Server) handleGetCapacityReservation(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+	s.refreshReservationBindingStatus(reservation)
 	writeJSON(w, http.StatusOK, reservation)
+}
+
+// refreshReservationBindingStatus updates a reservation's surfaced
+// bound_test_status to the bound test's current status. The value is captured
+// once at bind time and never re-persisted, so without this a finished test
+// would be reported as QUEUED/RUNNING forever; if the bound test was deleted the
+// status is reported as DELETED so a dangling binding is visible. This is a
+// display-only refresh on a per-request copy — the stored row is unchanged and
+// the intentional whole-window capacity hold (see timeslot_reservation.go) is
+// unaffected.
+func (s *Server) refreshReservationBindingStatus(res *storage.CapacityReservation) {
+	if res == nil || res.BoundTestID == nil || strings.TrimSpace(*res.BoundTestID) == "" {
+		return
+	}
+	test, err := s.store.GetTest(*res.BoundTestID)
+	if err != nil || test == nil {
+		deleted := "DELETED"
+		res.BoundTestStatus = &deleted
+		return
+	}
+	status := test.Status
+	res.BoundTestStatus = &status
 }
 
 func (s *Server) handleUpdateCapacityReservation(w http.ResponseWriter, r *http.Request) {
@@ -172,14 +215,28 @@ func (s *Server) handleUpdateCapacityReservation(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// Mutable fields only; identity, ownership, binding, creation time, and the
-	// approval state are preserved. Approval transitions go through the dedicated
-	// project-admin approve/reject endpoints, not a general editor update.
+	// The window and reserved capacity are the load-bearing, admin-approved
+	// terms: an approved reservation's generators block other tenants. If an
+	// editor changes any of them, the reservation must be re-approved — otherwise
+	// an editor could enlarge an admin-approved slot (e.g. 2 gen/1h → 40 gen/12h)
+	// and keep it approved+bound. Cosmetic edits (timezone/scenario) do not retrigger approval.
+	termsChanged := !existing.StartAt.Equal(req.StartAt) ||
+		!existing.EndAt.Equal(req.EndAt) ||
+		!reservationCapacityEqual(existing.RequestedCapacity, req.RequestedCapacity)
+
+	// Mutable fields only; identity, ownership, and creation time are preserved.
+	// Approval transitions otherwise go through the dedicated project-admin
+	// approve/reject endpoints, not a general editor update.
 	existing.StartAt = req.StartAt
 	existing.EndAt = req.EndAt
 	existing.Timezone = req.Timezone
 	existing.ScenarioID = req.ScenarioID
 	existing.RequestedCapacity = req.RequestedCapacity
+	if termsChanged && existing.ApprovalState == "approved" {
+		existing.ApprovalState = "pending"
+		existing.BoundTestID = nil
+		existing.BoundTestStatus = nil
+	}
 	_, existing.ConflictSummary = s.summarizeReservationConflicts(existing.ProjectID, existing.ID, existing.StartAt, existing.EndAt)
 
 	if err := s.store.SaveCapacityReservation(existing); err != nil {
@@ -303,6 +360,18 @@ func (s *Server) handleBindCapacityTimeslot(w http.ResponseWriter, r *http.Reque
 	}
 	if normalizeProjectID(test.ProjectID) != normalizeProjectID(reservation.ProjectID) {
 		writeError(w, http.StatusBadRequest, "test belongs to a different project than the timeslot")
+		return
+	}
+	// Enforce the same window-fit and VUser-capacity invariants the create-time
+	// bind applies, so a test cannot be bound to a timeslot it overflows or runs
+	// outside of.
+	start := time.Now()
+	if test.ScheduledStartAt != nil && !test.ScheduledStartAt.IsZero() {
+		start = *test.ScheduledStartAt
+	}
+	end := start.Add(time.Duration(test.Duration))
+	if err := reservationFitError(reservation, start, end, test.TotalVUsers); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	status := test.Status

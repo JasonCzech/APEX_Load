@@ -20,6 +20,10 @@ bin/
 *.test
 *.prof
 dashboard/dist/
+# Build-output binaries (desktop + recording-agent tarballs). These are release
+# artifacts, not source — publish them as GitHub Release/CI assets. Already-tracked
+# tarballs must be untracked once with: git rm --cached -r dist/
+dist/
 pkg/api/static/index.html
 pkg/api/static/assets/
 .playwright-cli/

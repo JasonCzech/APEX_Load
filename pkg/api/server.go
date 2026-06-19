@@ -48,6 +48,11 @@ type Server struct {
 	resultImports      map[string]*storage.ExternalResultImport
 	githubMu           sync.Mutex
 	githubTokens       map[string]githubCachedToken
+	// selfHealMu serializes replay/debug self-heal write-back. Both the browser
+	// replay and script debug managers fire completion hooks into the shared
+	// persistSelfHealToRepository, whose read-modify-write of the whole objects
+	// blob would otherwise lose a concurrently appended candidate.
+	selfHealMu         sync.Mutex
 	collectorMetrics   *collectorMetricStore
 	fleetScaler        fleetPoolScaler
 	leadership         *executionLeadership

@@ -52,6 +52,13 @@ func (s *Server) persistSelfHealToRepository(projectID string, script *dsl.Scrip
 		return
 	}
 
+	// Serialize the load→mutate→save sequence: completion hooks from the browser
+	// replay and script debug managers can run concurrently, and SaveObjectRepository
+	// rewrites the entire objects blob, so an interleaved read-modify-write would
+	// silently drop one session's appended/promoted candidate.
+	s.selfHealMu.Lock()
+	defer s.selfHealMu.Unlock()
+
 	loaded := map[string]*storage.ObjectRepository{}
 	changed := map[string]bool{}
 	for _, heal := range heals {
@@ -144,6 +151,12 @@ func objectRefBindingsByActionName(script *dsl.Script) map[string]objectRefBindi
 	return out
 }
 
+// reasonPromotedByHeal marks a repository candidate that replay self-heal
+// auto-promoted to primary. primarySelectorFromCandidates honors it so a promoted
+// heal becomes the chosen primary even when it is a role/text locator (which
+// PlaywrightSelector alone would skip).
+const reasonPromotedByHeal = "promoted by replay self-heal"
+
 // applyHealToRepositoryObject records the healed locator on the named object and
 // returns true when the repository changed. By default it is conservative — the
 // healed candidate is appended if absent and its confidence only ever raised,
@@ -187,7 +200,7 @@ func applyHealToRepositoryObject(repo *storage.ObjectRepository, logicalName str
 			if obj.Candidates[idx].Confidence < promoted {
 				obj.Candidates[idx].Confidence = promoted
 			}
-			obj.Candidates[idx].Reason = "promoted by replay self-heal"
+			obj.Candidates[idx].Reason = reasonPromotedByHeal
 		}
 		changed := appended || obj.Candidates[idx] != before
 		if changed {

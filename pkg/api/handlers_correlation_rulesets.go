@@ -236,6 +236,14 @@ func (s *Server) handleApplyCorrelationRulesetToScript(w http.ResponseWriter, r 
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	// The route is authorized against the ruleset's project, but the target
+	// script is named only in the request body. Reject a cross-project target so
+	// an editor on the ruleset's project cannot read or rewrite a script that
+	// lives in another project (GetScript/UpdateScript are not project-scoped).
+	if normalizeProjectID(stored.ProjectID) != normalizeProjectID(ruleset.ProjectID) {
+		writeError(w, http.StatusForbidden, "the target script belongs to a different project than the ruleset")
+		return
+	}
 	record, err := s.store.GetScriptRecording(scriptID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load recorded baseline")

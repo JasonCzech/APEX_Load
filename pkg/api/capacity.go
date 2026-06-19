@@ -121,7 +121,12 @@ func (tr *TestRunner) evaluateReservedCapacityBlockLocked(test *ManagedTest, exc
 		return false, ""
 	}
 	now := time.Now()
-	activeSlots := tr.boundTimeslotsActiveAtLocked(now)
+	activeSlots, err := tr.boundTimeslotsActiveAtLocked(now)
+	if err != nil {
+		// Fail closed: hold the test rather than admit it into capacity that a
+		// bound reservation may be protecting but we could not read.
+		return true, "waiting for reservation state to become available"
+	}
 	totalReserved, projectReserved := reservationTotalsWithTimeslots(tr.settings, normalizeProjectID(test.ProjectID), now, activeSlots)
 	if totalReserved <= 0 {
 		return false, "" // no reservations configured -> nothing to protect
@@ -288,7 +293,11 @@ func (tr *TestRunner) pendingFairShareRankLocked(test *ManagedTest) pendingFairS
 	projectID := normalizeProjectID(test.ProjectID)
 	reservationTier := 1
 	now := time.Now()
-	_, projectReserved := reservationTotalsWithTimeslots(tr.settings, projectID, now, tr.boundTimeslotsActiveAtLocked(now))
+	// Fair-share ranking is queue priority, not an admission grant; on a lookup
+	// error (already logged at the source) degrade to settings-only reservations
+	// rather than block ordering.
+	activeSlots, _ := tr.boundTimeslotsActiveAtLocked(now)
+	_, projectReserved := reservationTotalsWithTimeslots(tr.settings, projectID, now, activeSlots)
 	if projectReserved > 0 && tr.countActiveRecommendedGeneratorsForProjectLocked(projectID) < projectReserved {
 		reservationTier = 0
 	}

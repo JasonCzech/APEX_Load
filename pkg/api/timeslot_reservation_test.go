@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,6 +10,22 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+// failingReservationStore makes every reservation lookup error, to exercise the
+// fail-closed admission path.
+type failingReservationStore struct{ err error }
+
+func (f failingReservationStore) GetCapacityReservation(string) (*storage.CapacityReservation, error) {
+	return nil, f.err
+}
+
+func (f failingReservationStore) UpdateCapacityReservationBinding(string, *string, *string, time.Time) (bool, error) {
+	return false, f.err
+}
+
+func (f failingReservationStore) ListCapacityReservationsByTimeRange(string, time.Time, time.Time) ([]*storage.CapacityReservation, error) {
+	return nil, f.err
+}
 
 func reservedInt(v int) *int       { return &v }
 func reservedStr(v string) *string { return &v }
@@ -94,6 +111,27 @@ func TestCreateTestTimeslotStrictRejects(t *testing.T) {
 				t.Fatalf("error = %q, want contains %q", err.Error(), tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestReservationAdmissionFailsClosedOnLookupError(t *testing.T) {
+	runner, _ := storeBackedRunner(t)
+	runner.settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 10
+	// Swap in a store whose reservation lookup always errors (e.g. SQLITE_BUSY).
+	runner.reservationStore = failingReservationStore{err: errors.New("database is locked")}
+
+	test := &ManagedTest{ID: "x", ProjectID: "project-b", TotalVUsers: 100, Status: "QUEUED",
+		CapacityAdvisory: &CapacityAdvisory{RecommendedGenerators: 4}}
+
+	runner.mu.Lock()
+	blocked, reason := runner.evaluateReservedCapacityBlockLocked(test, "")
+	runner.mu.Unlock()
+
+	if !blocked {
+		t.Fatal("admission must fail CLOSED (hold the test) when the reservation lookup errors")
+	}
+	if !strings.Contains(reason, "reservation state") {
+		t.Fatalf("reason = %q, want a transient reservation-state hold", reason)
 	}
 }
 

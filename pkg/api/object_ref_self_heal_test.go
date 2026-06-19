@@ -138,6 +138,30 @@ func TestApplyHealToRepositoryObject(t *testing.T) {
 	})
 }
 
+func TestAutoPromotedRoleHealBecomesPrimary(t *testing.T) {
+	repo := &storage.ObjectRepository{Objects: []storage.RepositoryObject{{
+		LogicalName: "login",
+		Candidates: []storage.RepositoryObjectCandidate{
+			{Kind: "css", Value: "#login", Confidence: 88},
+		},
+	}}}
+	// Baseline: the css candidate is the resolved primary.
+	if before := primarySelectorFromCandidates(candidatesForRepositoryObject(repo.Objects[0])); before != "#login" {
+		t.Fatalf("baseline primary = %q, want #login", before)
+	}
+
+	// Auto-promote a role heal. PlaywrightSelector ignores role candidates, so
+	// before the fix the promoted role would never become primary.
+	roleValue := `role=button[name="Log in"]`
+	if !applyHealToRepositoryObject(repo, "login", selfHealRecord{healed: roleValue, kind: "role", confidence: 70}, true) {
+		t.Fatal("expected the heal to change the repository")
+	}
+	after := primarySelectorFromCandidates(candidatesForRepositoryObject(repo.Objects[0]))
+	if after != roleValue {
+		t.Fatalf("promoted primary = %q, want the role heal %q", after, roleValue)
+	}
+}
+
 func TestPersistSelfHealToRepository_Integration(t *testing.T) {
 	server := recordingTestServer(t)
 	repo := &storage.ObjectRepository{

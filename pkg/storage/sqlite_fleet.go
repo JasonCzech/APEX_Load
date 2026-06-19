@@ -132,24 +132,39 @@ func (s *SQLiteStore) ListFleetPools(limit int, offset int) ([]*FleetPool, error
 
 func (s *SQLiteStore) DeleteFleetPool(id string) error {
 	// Application-level integrity (SQLite FK enforcement is not relied upon):
-	// detach members and generator metadata before removing the pool.
-	if _, err := s.db.Exec(`UPDATE generator_metadata SET fleet_pool_id = NULL, updated_at = ? WHERE fleet_pool_id = ?`, time.Now(), id); err != nil {
+	// detach members and generator metadata before removing the pool. All three
+	// writes run in one transaction so a mid-cascade failure cannot leave orphaned
+	// members or generator_metadata referencing a deleted pool (matches the
+	// DeleteScenario cascade convention).
+	tx, err := s.db.Begin()
+	if err != nil {
 		return err
 	}
-	if _, err := s.db.Exec(`DELETE FROM fleet_pool_members WHERE pool_id = ?`, id); err != nil {
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE generator_metadata SET fleet_pool_id = NULL, updated_at = ? WHERE fleet_pool_id = ?`, time.Now(), id); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`DELETE FROM fleet_pools WHERE id = ?`, id)
-	return err
+	if _, err := tx.Exec(`DELETE FROM fleet_pool_members WHERE pool_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM fleet_pools WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SaveFleetPoolMembers replaces a pool's entire membership: it clears existing
 // rows then inserts the supplied set. The ON CONFLICT clause is not redundant —
 // it tolerates duplicate generator_ids within the input slice. The clear+insert
-// is not wrapped in a transaction; membership edits are infrequent admin
-// operations where a brief intermediate state is acceptable.
+// runs in one transaction so a failed insert cannot leave the pool with the old
+// membership wiped and the new set only partially applied.
 func (s *SQLiteStore) SaveFleetPoolMembers(poolID string, members []*FleetPoolMember) error {
-	if _, err := s.db.Exec(`DELETE FROM fleet_pool_members WHERE pool_id = ?`, poolID); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM fleet_pool_members WHERE pool_id = ?`, poolID); err != nil {
 		return err
 	}
 	for _, m := range members {
@@ -162,7 +177,7 @@ func (s *SQLiteStore) SaveFleetPoolMembers(poolID string, members []*FleetPoolMe
 		if m.Status == "" {
 			m.Status = "provisioned"
 		}
-		if _, err := s.db.Exec(`INSERT INTO fleet_pool_members (id, pool_id, generator_id, target, status, joined_at)
+		if _, err := tx.Exec(`INSERT INTO fleet_pool_members (id, pool_id, generator_id, target, status, joined_at)
 			VALUES (?, ?, ?, ?, ?, ?)
 			ON CONFLICT(pool_id, generator_id) DO UPDATE SET
 				target=excluded.target, status=excluded.status`,
@@ -170,7 +185,7 @@ func (s *SQLiteStore) SaveFleetPoolMembers(poolID string, members []*FleetPoolMe
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) ListFleetPoolMembers(poolID string) ([]*FleetPoolMember, error) {

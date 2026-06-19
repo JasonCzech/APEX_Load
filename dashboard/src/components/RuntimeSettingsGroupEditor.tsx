@@ -257,7 +257,8 @@ export default function RuntimeSettingsGroupEditor({
     if (!o) return false
     switch (field) {
       case 'iterations':
-        return o.iterations !== undefined
+        // Either the legacy top-level field or the promoted run_logic section.
+        return o.iterations !== undefined || o.run_logic?.iterations !== undefined || o.run_logic?.global_iterations !== undefined
       case 'pacing':
         return Boolean(o.pacing?.type)
       case 'think_time':
@@ -265,9 +266,9 @@ export default function RuntimeSettingsGroupEditor({
       case 'browser':
         return Boolean(o.browser)
       case 'log_level':
-        return Boolean(o.log_level)
+        return Boolean(o.log_level) || Boolean(o.log?.level)
       case 'auto_transactions':
-        return Boolean(o.auto_transactions)
+        return Boolean(o.auto_transactions) || Boolean(o.run_logic?.auto_transactions)
       case 'error_handling':
         return Boolean(o.error_handling)
       case 'log':

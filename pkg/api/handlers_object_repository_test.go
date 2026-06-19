@@ -80,6 +80,36 @@ func TestObjectRepositoryCRUDHandlers(t *testing.T) {
 	}
 }
 
+func TestObjectRepositoryObjectsFromScriptExcludesAmbiguousNames(t *testing.T) {
+	script := &dsl.Script{
+		Actions: []dsl.Action{
+			// Two "Continue" buttons with DIFFERENT selectors → ambiguous → excluded,
+			// so neither is silently re-targeted at the other's locator.
+			{Name: "Continue", Type: "browser_click", Selector: "#page1-continue"},
+			{Name: "Continue", Type: "browser_click", Selector: "#page2-continue"},
+			// A uniquely-named element is still collected.
+			{Name: "Submit", Type: "browser_click", Selector: "#submit"},
+			// Same name + SAME selector is the same element → one object, both bind.
+			{Name: "Logout", Type: "browser_click", Selector: "#logout"},
+			{Name: "Logout", Type: "browser_click", Selector: "#logout"},
+		},
+	}
+	objects := objectRepositoryObjectsFromScript(script, "script-x")
+	names := map[string]bool{}
+	for _, o := range objects {
+		names[o.LogicalName] = true
+	}
+	if names["Continue"] {
+		t.Error("ambiguous 'Continue' (two different selectors) must be excluded from the repository")
+	}
+	if !names["Submit"] {
+		t.Error("uniquely-named 'Submit' must be collected")
+	}
+	if !names["Logout"] {
+		t.Error("same-name same-selector 'Logout' must still be collected")
+	}
+}
+
 func TestObjectRepositoryFromScript(t *testing.T) {
 	server := recordingTestServer(t)
 

@@ -166,7 +166,7 @@ func TestRecordingStopControlEventFromToolbar(t *testing.T) {
 	var events []Event
 	r := New(Options{StartURL: "https://app.example/", OnEvent: func(e Event) { events = append(events, e) }})
 
-	r.handleRecordBinding(nil, `{"kind":"recording_stop","ts":1}`)
+	r.handleRecordBinding(nil, `{"kind":"recording_stop","nonce":"`+r.controlNonce+`","ts":1}`)
 	if len(events) != 1 || events[0].Type != EventStopRequested {
 		t.Fatalf("events = %+v, want one stop_requested event", events)
 	}
@@ -459,9 +459,9 @@ func TestSidebarControlEventsRouteToRecorderMethods(t *testing.T) {
 	// Record two steps, then exclude/mark/delete via the sidebar binding.
 	r.handleRecordBinding(nil, `{"kind":"fill","value":"tok","ts":5,"element":{"tag":"input","name":"t","css_path":"#t"}}`)
 	r.handleRecordBinding(nil, `{"kind":"click","ts":6,"element":{"tag":"button","css_path":"#go"}}`)
-	r.handleRecordBinding(nil, `{"kind":"step_exclude","seq":1,"excluded":true,"ts":7}`)
-	r.handleRecordBinding(nil, `{"kind":"step_mark","seq":1,"secret":true,"ts":8}`)
-	r.handleRecordBinding(nil, `{"kind":"delete_last_step","ts":9}`)
+	r.handleRecordBinding(nil, `{"kind":"step_exclude","seq":1,"excluded":true,"nonce":"`+r.controlNonce+`","ts":7}`)
+	r.handleRecordBinding(nil, `{"kind":"step_mark","seq":1,"secret":true,"nonce":"`+r.controlNonce+`","ts":8}`)
+	r.handleRecordBinding(nil, `{"kind":"delete_last_step","nonce":"`+r.controlNonce+`","ts":9}`)
 
 	steps := r.Snapshot().Steps
 	if len(steps) != 2 {
@@ -510,6 +510,98 @@ func TestSidebarControlEventErrorEmitsWarningOnly(t *testing.T) {
 	}
 	if got := len(r.Snapshot().Warnings); got != 0 {
 		t.Errorf("artifact warnings = %d, want 0 (control errors stay transient)", got)
+	}
+}
+
+func TestDestructiveControlEventsRequireSessionNonce(t *testing.T) {
+	var warnings []string
+	var stopRequested bool
+	r := New(Options{StartURL: "https://app.example/", OnEvent: func(e Event) {
+		switch e.Type {
+		case EventWarning:
+			warnings = append(warnings, e.Warning)
+		case EventStopRequested:
+			stopRequested = true
+		}
+	}})
+
+	// Record two steps the way the page would (capture events need no nonce).
+	r.handleRecordBinding(nil, `{"kind":"fill","value":"tok","ts":1,"element":{"tag":"input","name":"t","css_path":"#t"}}`)
+	r.handleRecordBinding(nil, `{"kind":"click","ts":2,"element":{"tag":"button","css_path":"#go"}}`)
+
+	// A recorded page forging destructive control events without (or with the
+	// wrong) closure nonce must be rejected — no step mutation, no stop, only
+	// transient warnings.
+	forged := []string{
+		`{"kind":"delete_last_step","ts":3}`,
+		`{"kind":"step_exclude","seq":1,"excluded":true,"ts":4}`,
+		`{"kind":"step_mark","seq":1,"secret":true,"ts":5}`,
+		`{"kind":"recording_stop","ts":6}`,
+		`{"kind":"step_mark","seq":1,"secret":true,"nonce":"wrong","ts":7}`,
+	}
+	for _, payload := range forged {
+		r.handleRecordBinding(nil, payload)
+	}
+
+	steps := r.Snapshot().Steps
+	if len(steps) != 2 {
+		t.Fatalf("steps = %d, want 2 (forged delete must not apply)", len(steps))
+	}
+	if steps[0].Excluded || steps[0].MarkSecret || steps[1].Deleted {
+		t.Errorf("forged control events mutated steps: %+v", steps)
+	}
+	if stopRequested {
+		t.Error("forged recording_stop should not request a stop")
+	}
+	if len(warnings) != len(forged) {
+		t.Errorf("warnings = %d, want %d untrusted-origin rejections: %v", len(warnings), len(forged), warnings)
+	}
+
+	// With the correct nonce the same action applies.
+	r.handleRecordBinding(nil, `{"kind":"step_exclude","seq":1,"excluded":true,"nonce":"`+r.controlNonce+`","ts":9}`)
+	if !r.Snapshot().Steps[0].Excluded {
+		t.Error("authentic step_exclude (with nonce) did not apply")
+	}
+}
+
+func TestNavigableURLRejectsNonHTTPSchemes(t *testing.T) {
+	cases := []struct {
+		url string
+		ok  bool
+	}{
+		{"https://app.example/login", true},
+		{"http://localhost:3000/", true},
+		{"HTTPS://App.Example/", true},
+		{"file:///etc/passwd", false},
+		{"chrome://settings", false},
+		{"view-source://https://app.example", false},
+		{"about:blank", false},
+		{"", false},
+		{"/relative/path", false},
+	}
+	for _, tc := range cases {
+		err := navigableURL(tc.url)
+		if tc.ok && err != nil {
+			t.Errorf("navigableURL(%q) = %v, want nil", tc.url, err)
+		}
+		if !tc.ok && err == nil {
+			t.Errorf("navigableURL(%q) = nil, want rejection", tc.url)
+		}
+	}
+}
+
+func TestSidebarNavigateControlEventRejectsFileScheme(t *testing.T) {
+	var warnings []string
+	r := New(Options{StartURL: "https://app.example/", OnEvent: func(e Event) {
+		if e.Type == EventWarning {
+			warnings = append(warnings, e.Warning)
+		}
+	}})
+	// A recorded page's JS could call this through the context-wide binding; the
+	// file:// scheme must be rejected with a warning and never reach page.Goto.
+	r.handleRecordBinding(nil, `{"kind":"navigate","url":"file:///etc/passwd","ts":1}`)
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "navigate") {
+		t.Fatalf("warning events = %v, want one navigate scheme warning", warnings)
 	}
 }
 

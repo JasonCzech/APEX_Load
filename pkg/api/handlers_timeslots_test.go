@@ -138,14 +138,17 @@ func TestCapacityReservationBindLifecycle(t *testing.T) {
 	if err := store.SaveProject(&storage.Project{ID: "proj-ts", Name: "TS", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
 		t.Fatalf("save project: %v", err)
 	}
-	if err := store.SaveTest(&storage.TestRecord{ID: "test-1", Name: "run", Status: "PENDING", ProjectID: "proj-ts"}); err != nil {
+	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	scheduled := start
+	// test-1's run window fits inside the reservation window below.
+	if err := store.SaveTest(&storage.TestRecord{ID: "test-1", Name: "run", Status: "PENDING", ProjectID: "proj-ts",
+		ScheduledStartAt: &scheduled, Duration: int64(30 * time.Minute)}); err != nil {
 		t.Fatalf("save test: %v", err)
 	}
 	if err := store.SaveTest(&storage.TestRecord{ID: "test-other", Name: "other", Status: "PENDING", ProjectID: "proj-other"}); err != nil {
 		t.Fatalf("save other test: %v", err)
 	}
 
-	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
 	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots",
 		map[string]any{"project_id": "proj-ts", "start_at": start, "end_at": start.Add(time.Hour)})
 	if create.Code != http.StatusCreated {
@@ -211,6 +214,157 @@ func TestCapacityReservationUpdateCannotSelfApprove(t *testing.T) {
 	}
 	if !updated.EndAt.Equal(start.Add(2 * time.Hour)) {
 		t.Fatalf("update should still change the window: end_at = %v", updated.EndAt)
+	}
+}
+
+func TestCapacityReservationEnlargingApprovedRequiresReapproval(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+
+	// Seed an approved + bound reservation reserving 2 generators for 1h.
+	boundTest := "bound-test"
+	if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+		ID: "ts-grow", ProjectID: "proj-a",
+		StartAt: start, EndAt: start.Add(time.Hour),
+		ApprovalState:     "approved",
+		BoundTestID:       &boundTest,
+		RequestedCapacity: &storage.CapacityReservationRequest{Generators: reservedInt(2)},
+	}); err != nil {
+		t.Fatalf("seed reservation: %v", err)
+	}
+
+	// An editor PUT that enlarges the window+capacity must drop approval and binding.
+	upd := timeslotRequest(t, server, http.MethodPut, "/api/v1/capacity/timeslots/ts-grow",
+		map[string]any{
+			"start_at": start, "end_at": start.Add(12 * time.Hour),
+			"requested_capacity": map[string]any{"generators": 40},
+		})
+	if upd.Code != http.StatusOK {
+		t.Fatalf("update status = %d body=%s", upd.Code, upd.Body.String())
+	}
+	var updated storage.CapacityReservation
+	if err := json.Unmarshal(upd.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if updated.ApprovalState != "pending" {
+		t.Fatalf("approval_state = %q after enlarging an approved reservation, want pending", updated.ApprovalState)
+	}
+	if updated.BoundTestID != nil {
+		t.Fatalf("binding should be cleared on re-approval, got %v", updated.BoundTestID)
+	}
+
+	// A cosmetic edit (timezone only, same window+capacity) must preserve approval.
+	if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+		ID: "ts-keep", ProjectID: "proj-a",
+		StartAt: start, EndAt: start.Add(time.Hour),
+		ApprovalState:     "approved",
+		RequestedCapacity: &storage.CapacityReservationRequest{Generators: reservedInt(2)},
+	}); err != nil {
+		t.Fatalf("seed reservation 2: %v", err)
+	}
+	keep := timeslotRequest(t, server, http.MethodPut, "/api/v1/capacity/timeslots/ts-keep",
+		map[string]any{
+			"start_at": start, "end_at": start.Add(time.Hour), "timezone": "UTC",
+			"requested_capacity": map[string]any{"generators": 2},
+		})
+	if keep.Code != http.StatusOK {
+		t.Fatalf("cosmetic update status = %d body=%s", keep.Code, keep.Body.String())
+	}
+	var kept storage.CapacityReservation
+	if err := json.Unmarshal(keep.Body.Bytes(), &kept); err != nil {
+		t.Fatalf("decode kept: %v", err)
+	}
+	if kept.ApprovalState != "approved" {
+		t.Fatalf("cosmetic edit must preserve approval, got %q", kept.ApprovalState)
+	}
+}
+
+func TestReservationBoundStatusRefreshedOnRead(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	now := time.Now()
+	boundID := "bound-1"
+	if err := store.SaveTest(&storage.TestRecord{ID: boundID, ProjectID: "proj-a", Status: "QUEUED",
+		TotalVUsers: 10, Duration: int64(10 * time.Minute)}); err != nil {
+		t.Fatalf("save test: %v", err)
+	}
+	queued := "QUEUED"
+	if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+		ID: "ts-r", ProjectID: "proj-a",
+		StartAt: now.Add(-time.Hour), EndAt: now.Add(time.Hour),
+		ApprovalState:     "approved",
+		BoundTestID:       &boundID,
+		BoundTestStatus:   &queued, // stale snapshot captured at bind time
+		RequestedCapacity: &storage.CapacityReservationRequest{VUsers: reservedInt(100)},
+	}); err != nil {
+		t.Fatalf("save reservation: %v", err)
+	}
+
+	readStatus := func() *string {
+		get := timeslotRequest(t, server, http.MethodGet, "/api/v1/capacity/timeslots/ts-r", nil)
+		var res storage.CapacityReservation
+		if err := json.Unmarshal(get.Body.Bytes(), &res); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return res.BoundTestStatus
+	}
+
+	// The bound test completes → GET reflects the live status, not stale QUEUED.
+	if err := store.SaveTest(&storage.TestRecord{ID: boundID, ProjectID: "proj-a", Status: "COMPLETE",
+		TotalVUsers: 10, Duration: int64(10 * time.Minute)}); err != nil {
+		t.Fatalf("update test: %v", err)
+	}
+	if got := readStatus(); got == nil || *got != "COMPLETE" {
+		t.Fatalf("bound_test_status = %v, want COMPLETE (refreshed at read)", got)
+	}
+
+	// Deleting the bound test surfaces a DELETED binding rather than a dangling one.
+	if err := store.DeleteTest(boundID); err != nil {
+		t.Fatalf("delete test: %v", err)
+	}
+	if got := readStatus(); got == nil || *got != "DELETED" {
+		t.Fatalf("bound_test_status = %v, want DELETED after the bound test was deleted", got)
+	}
+}
+
+func TestStandaloneBindEnforcesWindowAndCapacity(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	now := time.Now()
+	if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+		ID: "ts-bind", ProjectID: "proj-a",
+		StartAt: now.Add(-time.Hour), EndAt: now.Add(time.Hour),
+		ApprovalState:     "approved",
+		RequestedCapacity: &storage.CapacityReservationRequest{VUsers: reservedInt(100)},
+	}); err != nil {
+		t.Fatalf("save reservation: %v", err)
+	}
+
+	saveTest := func(id string, vusers int, dur time.Duration) {
+		if err := store.SaveTest(&storage.TestRecord{
+			ID: id, ProjectID: "proj-a", Status: "QUEUED",
+			TotalVUsers: vusers, Duration: int64(dur),
+		}); err != nil {
+			t.Fatalf("save test %s: %v", id, err)
+		}
+	}
+	bind := func(testID string) int {
+		return timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots/ts-bind/bind",
+			map[string]any{"test_id": testID}).Code
+	}
+
+	// VUser overflow (500 > 100 reserved) → 400.
+	saveTest("over-vu", 500, 10*time.Minute)
+	if code := bind("over-vu"); code != http.StatusBadRequest {
+		t.Fatalf("VUser-overflow bind = %d, want 400", code)
+	}
+	// Window overflow (3h run, 1h window) → 400.
+	saveTest("over-window", 50, 3*time.Hour)
+	if code := bind("over-window"); code != http.StatusBadRequest {
+		t.Fatalf("window-overflow bind = %d, want 400", code)
+	}
+	// A fitting test binds successfully → 200.
+	saveTest("fits", 50, 10*time.Minute)
+	if code := bind("fits"); code != http.StatusOK {
+		t.Fatalf("fitting bind = %d, want 200", code)
 	}
 }
 

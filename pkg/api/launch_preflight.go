@@ -491,7 +491,13 @@ func (tr *TestRunner) launchCapacityConflictAtLocked(proposal launchCapacityEven
 }
 
 func (tr *TestRunner) launchReservationConflictAtLocked(proposal launchCapacityEvent, byProject map[string]int, sample time.Time, availability int) *LaunchConflict {
-	activeSlots := tr.boundTimeslotsActiveAtLocked(sample)
+	activeSlots, err := tr.boundTimeslotsActiveAtLocked(sample)
+	if err != nil {
+		// Fail closed: report a transient conflict rather than clearing the launch
+		// when reservation state cannot be read.
+		return launchConflictAt("reservation_window", "capacity_reservation", proposal.ProjectID,
+			fmt.Sprintf("Reservation state is temporarily unavailable at %s; try again.", sample.Format(time.RFC3339)), sample, 0, 0)
+	}
 	totalReserved, _ := reservationTotalsWithTimeslots(tr.settings, "", sample, activeSlots)
 	if totalReserved <= 0 {
 		return nil

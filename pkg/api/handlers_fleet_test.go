@@ -522,6 +522,26 @@ func TestNormalizeGeneratorAssignmentSettingsAcceptsLoadZoneWeights(t *testing.T
 	}
 }
 
+func TestNormalizeGroupAssignmentRejectsPoolID(t *testing.T) {
+	// A group-scoped pool_id is never resolved to targets, so it must be rejected
+	// rather than silently fall back to fleet-wide (auto) placement.
+	if _, err := normalizeGroupGeneratorAssignmentSettings(&GeneratorAssignmentSettings{PoolID: "pool-eu"}); err == nil {
+		t.Fatal("expected group-scope pool_id to be rejected")
+	}
+	// The test-level normalize still accepts a pool_id (it is resolved there).
+	out, err := normalizeGeneratorAssignmentSettings(&GeneratorAssignmentSettings{PoolID: "pool-eu"})
+	if err != nil {
+		t.Fatalf("test-level pool_id should be accepted: %v", err)
+	}
+	if out.PoolID != "pool-eu" {
+		t.Fatalf("test-level pool_id not preserved: %#v", out)
+	}
+	// A group assignment without pool_id is still fine.
+	if _, err := normalizeGroupGeneratorAssignmentSettings(&GeneratorAssignmentSettings{Mode: generatorAssignmentModeAuto}); err != nil {
+		t.Fatalf("group auto assignment should be accepted: %v", err)
+	}
+}
+
 func findFleetLoadZone(zones []FleetLoadZone, id string) *FleetLoadZone {
 	for index := range zones {
 		if zones[index].ID == id {

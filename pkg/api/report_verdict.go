@@ -175,11 +175,28 @@ func deriveReportFindings(report *RunArchiveReport) []ReportFinding {
 func normalizeReportFindings(findings []ReportFinding) []ReportFinding {
 	for i := range findings {
 		findings[i].Title = strings.TrimSpace(findings[i].Title)
+		findings[i].Severity = canonicalReportFindingSeverity(findings[i].Severity)
 		if strings.TrimSpace(findings[i].ID) == "" {
 			findings[i].ID = fmt.Sprintf("F-%02d", i+1)
 		}
 	}
 	return findings
+}
+
+// canonicalReportFindingSeverity clamps a finding severity to the report's
+// vocabulary (major/minor/info). An out-of-vocabulary value is surfaced as major
+// rather than silently downgraded to a benign info pill on a sign-off document.
+func canonicalReportFindingSeverity(severity string) string {
+	switch strings.ToLower(strings.TrimSpace(severity)) {
+	case "minor", "warning", "warn", "medium", "low":
+		return "minor"
+	case "info", "informational", "note":
+		return "info"
+	case "":
+		return "info"
+	default:
+		return "major"
+	}
 }
 
 // completenessSeverityToFinding maps a completeness-finding severity onto the

@@ -105,4 +105,30 @@ describe('CorrelationRulesetPanel', () => {
     expect(apiMock.applyCorrelationRulesetToScript).toHaveBeenCalledWith('r1', { script_id: 's9', apply: true })
     expect(container.textContent).toContain('applied 1 rule')
   })
+
+  it('disables Apply once the script id is edited until a fresh Preview', async () => {
+    apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [ruleset({})], count: 1 })
+    apiMock.applyCorrelationRulesetToScript
+      .mockResolvedValueOnce({ ruleset_id: 'r1', script_id: 's9', matched_rules: 1, applied: false, diffs: [{ kind: 'extractor_added', after: 'login' }] })
+
+    await act(async () => { root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />) })
+    await flush()
+    const title = container.querySelector('.pp-row-title-button') as HTMLButtonElement
+    await act(async () => { title.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flush()
+
+    // Preview s9 → Apply becomes enabled and the diff is shown.
+    setInput('Apply to script id…', 's9')
+    await act(async () => { findButton('Preview')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flush()
+    expect(findButton('Apply')!.disabled).toBe(false)
+    expect(container.textContent).toContain('1 rule matched')
+
+    // Edit the script id without re-previewing → Apply must disable and the stale
+    // preview must clear, so Apply can never commit against an unpreviewed script.
+    setInput('Apply to script id…', 's10')
+    await flush()
+    expect(findButton('Apply')!.disabled).toBe(true)
+    expect(container.textContent).not.toContain('1 rule matched')
+  })
 })

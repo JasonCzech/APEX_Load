@@ -17,6 +17,7 @@ import type { EditorState, Extension } from '@codemirror/state'
 import { hoverTooltip, type Tooltip } from '@codemirror/view'
 import type { SyntaxNode } from '@lezer/common'
 
+import { APEX_DSL_SEMANTIC_MAX_DOC_CHARS } from './apexDslSemanticHighlighting'
 import {
   dslActionTypesForProtocol,
   dslSpecForActionType,
@@ -304,30 +305,45 @@ export interface ScriptReferenceModel {
   envKeys: Set<string>
 }
 
+const EMPTY_REFERENCE_MODEL: ScriptReferenceModel = { parameters: [], dataSources: [], envKeys: new Set() }
+
+// Memoize the parsed model per immutable document. CodeMirror's `Text` is replaced
+// on every edit, so a WeakMap keyed on it returns the cached parse for repeated
+// hovers over an unchanged document and lets edited documents be garbage-collected.
+const referenceModelCache = new WeakMap<object, ScriptReferenceModel>()
+
 /** Read the parameter/data-source/env surface from the document JSON. */
 export function readScriptReferenceModel(state: EditorState): ScriptReferenceModel {
-  const empty: ScriptReferenceModel = { parameters: [], dataSources: [], envKeys: new Set() }
+  const doc = state.doc as unknown as object
+  const cached = referenceModelCache.get(doc)
+  if (cached) return cached
+  // Skip the full-document JSON.parse on very large imports — the hover assist is
+  // optional and not worth a multi-MB parse. The semantic-highlight path caps at
+  // the same size (APEX_DSL_SEMANTIC_MAX_DOC_CHARS).
+  if (state.doc.length > APEX_DSL_SEMANTIC_MAX_DOC_CHARS) return EMPTY_REFERENCE_MODEL
   let parsed: unknown
   try {
     parsed = JSON.parse(state.doc.toString())
   } catch {
-    return empty
+    return EMPTY_REFERENCE_MODEL
   }
   if (parsed && typeof parsed === 'object' && 'script' in parsed && typeof (parsed as { script?: unknown }).script === 'object') {
     parsed = (parsed as { script?: unknown }).script
   }
-  if (!parsed || typeof parsed !== 'object') return empty
+  if (!parsed || typeof parsed !== 'object') return EMPTY_REFERENCE_MODEL
   const record = parsed as Record<string, unknown>
   const config = (record.config && typeof record.config === 'object') ? record.config as Record<string, unknown> : {}
   const envKeys = new Set<string>()
   for (const source of [config.environment, config.variables, config.env]) {
     if (source && typeof source === 'object') Object.keys(source as Record<string, unknown>).forEach(key => envKeys.add(key))
   }
-  return {
+  const model: ScriptReferenceModel = {
     parameters: Array.isArray(record.parameters) ? record.parameters as ScriptReferenceModel['parameters'] : [],
     dataSources: Array.isArray(record.data_sources) ? record.data_sources as ScriptReferenceModel['dataSources'] : [],
     envKeys,
   }
+  referenceModelCache.set(doc, model)
+  return model
 }
 
 export interface TemplateReferenceInfo {

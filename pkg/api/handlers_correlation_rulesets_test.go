@@ -55,6 +55,52 @@ func TestCorrelationRulesetCRUD(t *testing.T) {
 	}
 }
 
+// TestCorrelationRulesetApplyRejectsCrossProjectScript verifies that an
+// apply-to-script request authorized against the ruleset's project cannot read
+// or mutate a target script that belongs to a different project.
+func TestCorrelationRulesetApplyRejectsCrossProjectScript(t *testing.T) {
+	server := recordingTestServer(t)
+
+	// Ruleset lives in project p1.
+	createBody := `{"project_id":"p1","name":"Checkout rules","rules":[{"name":"csrf","source":"response_body","extract_type":"boundary","expression":"x"}]}`
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/correlation-rulesets", strings.NewReader(createBody))
+	createResp := httptest.NewRecorder()
+	server.handleCreateCorrelationRuleset(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create ruleset = %d body=%s", createResp.Code, createResp.Body.String())
+	}
+	var ruleset storage.CorrelationRuleset
+	json.NewDecoder(createResp.Body).Decode(&ruleset)
+
+	// Target script lives in a DIFFERENT project (p2).
+	target := server.runner.StoreScript(&dsl.Script{
+		Name:      "Other project script",
+		Protocol:  "http",
+		ProjectID: "p2",
+		Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions:   []dsl.Action{{Name: "login", Type: "request", Method: "POST", Target: "/login"}},
+	})
+
+	applyReq := httptest.NewRequest(http.MethodPost, "/api/v1/correlation-rulesets/"+ruleset.ID+"/apply-to-script", strings.NewReader(`{"script_id":"`+target.ID+`","apply":true}`))
+	applyReq.SetPathValue("id", ruleset.ID)
+	applyResp := httptest.NewRecorder()
+	server.handleApplyCorrelationRulesetToScript(applyResp, applyReq)
+	if applyResp.Code != http.StatusForbidden {
+		t.Fatalf("cross-project apply = %d, want 403; body=%s", applyResp.Code, applyResp.Body.String())
+	}
+
+	// The target script in the other project must be untouched.
+	reloaded, ok := server.runner.GetScript(target.ID)
+	if !ok {
+		t.Fatal("target script missing")
+	}
+	for _, action := range reloaded.Script.Actions {
+		if len(action.Extractors) != 0 {
+			t.Fatalf("cross-project apply mutated the target script")
+		}
+	}
+}
+
 // seedScriptWithCorrelatedBaseline stores an HTTP script whose second action
 // reuses a token that the first action's response produced, plus a matching
 // recorded baseline, so correlate.Detect finds exactly one correlation.

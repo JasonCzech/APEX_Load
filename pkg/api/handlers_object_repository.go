@@ -244,12 +244,70 @@ func bindScriptToObjectRepository(script *dsl.Script, repo *storage.ObjectReposi
 	return bound
 }
 
+// actionLocatorSignature is a stable fingerprint of an action's locator (inline
+// selector plus ranked candidate kinds/values). Two actions with the same
+// signature target the same element; differing signatures mean different elements.
+func actionLocatorSignature(action dsl.Action) string {
+	parts := []string{strings.TrimSpace(action.Selector)}
+	if action.Metadata != nil {
+		for _, c := range selector.FromMetadataValue(action.Metadata[selector.MetadataCandidatesKey]) {
+			parts = append(parts, c.Kind+"="+c.Value)
+		}
+	}
+	return strings.Join(parts, "|")
+}
+
+// ambiguousObjectNames returns the set of logical names that two distinct actions
+// share with different locator signatures, scanning the same scope (top-level
+// init/actions/teardown) that objectRepositoryObjectsFromScript collects from.
+func ambiguousObjectNames(script *dsl.Script) map[string]bool {
+	firstSig := map[string]string{}
+	ambiguous := map[string]bool{}
+	scan := func(actions []dsl.Action) {
+		for _, action := range actions {
+			var candidates []selector.Candidate
+			if action.Metadata != nil {
+				candidates = selector.FromMetadataValue(action.Metadata[selector.MetadataCandidatesKey])
+			}
+			if len(candidates) == 0 && strings.TrimSpace(action.Selector) == "" {
+				continue
+			}
+			logicalName := strings.TrimSpace(action.Name)
+			if logicalName == "" {
+				logicalName = strings.TrimSpace(action.Selector)
+			}
+			if logicalName == "" {
+				continue
+			}
+			sig := actionLocatorSignature(action)
+			if prev, ok := firstSig[logicalName]; ok {
+				if prev != sig {
+					ambiguous[logicalName] = true
+				}
+				continue
+			}
+			firstSig[logicalName] = sig
+		}
+	}
+	scan(script.Init)
+	scan(script.Actions)
+	scan(script.Teardown)
+	return ambiguous
+}
+
 // objectRepositoryObjectsFromScript builds repository objects from a script's
 // actions, one per uniquely-named element that carries a selector or ranked
 // candidates. Reuses pkg/selector so ranking matches authoring/replay.
 func objectRepositoryObjectsFromScript(script *dsl.Script, scriptID string) []storage.RepositoryObject {
 	objects := make([]storage.RepositoryObject, 0)
 	seen := map[string]bool{}
+	// De-dup keeps only the first action's selector for a given logical name, but
+	// binding then points every same-named action at that one object. When two
+	// distinct actions share a name with DIFFERENT locators (e.g. two "Click
+	// Continue" buttons on different pages from the recorder), that silently
+	// re-targets the others. Exclude such ambiguous names entirely so no action is
+	// mis-bound; the colliding actions keep their inline selectors.
+	ambiguous := ambiguousObjectNames(script)
 	collect := func(actions []dsl.Action) {
 		for _, action := range actions {
 			var candidates []selector.Candidate
@@ -263,7 +321,7 @@ func objectRepositoryObjectsFromScript(script *dsl.Script, scriptID string) []st
 			if logicalName == "" {
 				logicalName = strings.TrimSpace(action.Selector)
 			}
-			if logicalName == "" || seen[logicalName] {
+			if logicalName == "" || seen[logicalName] || ambiguous[logicalName] {
 				continue
 			}
 			seen[logicalName] = true

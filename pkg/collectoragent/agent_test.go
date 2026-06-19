@@ -14,21 +14,48 @@ func TestNewValidates(t *testing.T) {
 	if _, err := New(Config{CollectorID: "c", Token: "t"}); err == nil {
 		t.Fatal("expected error for missing controller URL")
 	}
-	if _, err := New(Config{ControllerURL: "http://x", Token: "t"}); err == nil {
+	if _, err := New(Config{ControllerURL: "http://localhost", Token: "t"}); err == nil {
 		t.Fatal("expected error for missing collector id")
 	}
-	if _, err := New(Config{ControllerURL: "http://x", CollectorID: "c"}); err == nil {
+	if _, err := New(Config{ControllerURL: "http://localhost", CollectorID: "c"}); err == nil {
 		t.Fatal("expected error for missing token")
 	}
-	a, err := New(Config{ControllerURL: "http://x/", CollectorID: "c", Token: "t"})
+	a, err := New(Config{ControllerURL: "http://localhost/", CollectorID: "c", Token: "t"})
 	if err != nil {
 		t.Fatalf("valid config: %v", err)
 	}
-	if a.cfg.ControllerURL != "http://x" {
+	if a.cfg.ControllerURL != "http://localhost" {
 		t.Fatalf("trailing slash not trimmed: %q", a.cfg.ControllerURL)
 	}
 	if a.cfg.Interval <= 0 || len(a.cfg.Packs) == 0 {
 		t.Fatalf("defaults not applied: %+v", a.cfg)
+	}
+}
+
+func TestNewRejectsCleartextTokenTransport(t *testing.T) {
+	cases := []struct {
+		name          string
+		url           string
+		allowInsecure bool
+		wantErr       bool
+	}{
+		{"loopback http ok", "http://127.0.0.1:8080", false, false},
+		{"localhost http ok", "http://localhost:8080", false, false},
+		{"https ok", "https://controller.example:8080", false, false},
+		{"non-loopback http rejected", "http://controller.example:8080", false, true},
+		{"non-loopback http allowed with opt-in", "http://controller.example:8080", true, false},
+		{"unknown scheme rejected", "ftp://controller.example", false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := New(Config{ControllerURL: tc.url, CollectorID: "c", Token: "t", AllowInsecure: tc.allowInsecure})
+			if tc.wantErr && err == nil {
+				t.Fatalf("New(%q) = nil error, want rejection", tc.url)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("New(%q) = %v, want accepted", tc.url, err)
+			}
+		})
 	}
 }
 
@@ -43,7 +70,7 @@ func TestHostSamplesNonEmpty(t *testing.T) {
 }
 
 func TestCollectBuildsPackPerName(t *testing.T) {
-	a, _ := New(Config{ControllerURL: "http://x", CollectorID: "c", Token: "t", Packs: []string{"linux-hosts", "jvm"}})
+	a, _ := New(Config{ControllerURL: "http://localhost", CollectorID: "c", Token: "t", Packs: []string{"linux-hosts", "jvm"}})
 	hb := a.collect()
 	if hb.Health != "healthy" || len(hb.Packs) != 2 {
 		t.Fatalf("collect = %+v", hb)

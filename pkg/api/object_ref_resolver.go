@@ -231,10 +231,27 @@ func candidatesForRepositoryObject(obj storage.RepositoryObject) []selector.Cand
 	return selector.Unique(out)
 }
 
-// primarySelectorFromCandidates picks the action selector: the strongest css/
-// xpath candidate (matching authoring/replay convention), falling back to the
-// first otherwise-usable candidate (role/text) when no css/xpath exists.
+// primarySelectorFromCandidates picks the action selector. A replay self-heal
+// that was auto-promoted to primary wins outright — including a role/text locator
+// that PlaywrightSelector would otherwise skip — so the autoPromote contract
+// ("used on the next run without manual intervention") holds for every kind.
+// Absent a promoted heal it keeps the authoring/replay convention: the strongest
+// css/xpath candidate, falling back to the first otherwise-usable candidate.
 func primarySelectorFromCandidates(candidates []selector.Candidate) string {
+	bestPromoted := ""
+	bestPromotedConf := -1
+	for _, c := range candidates {
+		if strings.TrimSpace(c.Reason) != reasonPromotedByHeal {
+			continue
+		}
+		if s, ok := selector.Usable(c); ok && c.Confidence > bestPromotedConf {
+			bestPromotedConf = c.Confidence
+			bestPromoted = s
+		}
+	}
+	if bestPromoted != "" {
+		return bestPromoted
+	}
 	if s := selector.PlaywrightSelector(candidates); s != "" {
 		return s
 	}

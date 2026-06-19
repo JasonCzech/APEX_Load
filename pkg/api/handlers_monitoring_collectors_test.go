@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,44 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+func TestCollectorHeartbeatRejectsOversizedPayload(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/monitoring/collectors",
+		map[string]any{"project_id": "proj-a", "name": "edge", "allowed_metric_packs": []string{"linux-hosts"}})
+	var createResp struct {
+		Collector storage.MonitoringCollector `json:"collector"`
+		Token     string                      `json:"token"`
+	}
+	_ = json.Unmarshal(create.Body.Bytes(), &createResp)
+	id, token := createResp.Collector.ID, createResp.Token
+
+	// Too many packs → 413 (checked before pack-scope, so any names trip it).
+	tooManyPacks := make([]map[string]any, 0, maxCollectorPacks+1)
+	for i := 0; i <= maxCollectorPacks; i++ {
+		tooManyPacks = append(tooManyPacks, map[string]any{"pack": "linux-hosts", "samples": map[string]float64{"x": 1}})
+	}
+	if rec := collectorRequest(t, server, http.MethodPost, "/api/v1/monitoring/collectors/"+id+"/heartbeat", token,
+		map[string]any{"packs": tooManyPacks}); rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("too-many-packs heartbeat = %d, want 413", rec.Code)
+	}
+
+	// Too many samples in one pack → 413.
+	samples := make(map[string]float64, maxCollectorSamplesPerPack+50)
+	for i := 0; i <= maxCollectorSamplesPerPack+10; i++ {
+		samples[fmt.Sprintf("m%d", i)] = float64(i)
+	}
+	if rec := collectorRequest(t, server, http.MethodPost, "/api/v1/monitoring/collectors/"+id+"/heartbeat", token,
+		map[string]any{"packs": []map[string]any{{"pack": "linux-hosts", "samples": samples}}}); rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("too-many-samples heartbeat = %d, want 413", rec.Code)
+	}
+
+	// A normal heartbeat still works.
+	hb := map[string]any{"packs": []map[string]any{{"pack": "linux-hosts", "samples": map[string]float64{"cpu_pct": 9}}}}
+	if rec := collectorRequest(t, server, http.MethodPost, "/api/v1/monitoring/collectors/"+id+"/heartbeat", token, hb); rec.Code != http.StatusOK {
+		t.Fatalf("normal heartbeat = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
 
 // collectorRequest mirrors timeslotRequest but attaches a collector bearer token —
 // the agent-facing heartbeat route is collector-token authenticated, not RBAC.

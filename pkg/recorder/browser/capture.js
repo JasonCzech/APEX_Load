@@ -67,9 +67,17 @@
   const TEST_ATTRS = ['data-testid', 'data-test-id', 'data-test', 'data-cy', 'data-qa'];
   const SAFE_IDENT = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 
+  // Per-session secret substituted by the Go recorder at injection time. It
+  // lives only in this closure, so arbitrary page script (which can still reach
+  // window.__apexloadRecord) cannot read it and therefore cannot forge a
+  // destructive control event (stop/delete/exclude/mark) that the recorder will
+  // accept.
+  const CONTROL_NONCE = '__APEXLOAD_CONTROL_NONCE__';
+
   function send(payload) {
     try {
       if (typeof window.__apexloadRecord === 'function') {
+        if (payload && typeof payload === 'object') payload.nonce = CONTROL_NONCE;
         window.__apexloadRecord(JSON.stringify(payload));
       }
     } catch (e) { /* recorder binding unavailable; drop event */ }

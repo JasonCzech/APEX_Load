@@ -774,6 +774,12 @@ func applyVerdictOverride(status, explanation string, base reportVerdict) report
 		override.Conditional = true
 	case "pass", "passed":
 		override.Status = reportVerdictPass
+	default:
+		// An out-of-vocabulary override (e.g. a direct API client bypassing the
+		// constrained dashboard dropdown) must NOT fall through to clean green
+		// pass styling on a sign-off document. Surface it as a Conditional Pass so
+		// it gets the warn badge while keeping the submitted label visible.
+		override.Conditional = true
 	}
 	if strings.TrimSpace(explanation) != "" {
 		override.Explanation = explanation

@@ -204,9 +204,6 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) {
 
 		req := buildPlanEntryCreateRequest(planName, projectID, timeslot, entry)
 		test, err := tr.CreateTest(req)
-		if err == nil {
-			err = tr.StartTest(test.ID)
-		}
 		if err != nil {
 			if tr.recordPlanEntryFailure(runID, idx, entry, err.Error()) {
 				return // halted
@@ -214,6 +211,13 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) {
 			continue // skip → try the next entry
 		}
 
+		// Register the test→run mapping BEFORE starting the test. StartTest spawns
+		// the run goroutine, whose backend can reach a terminal state synchronously
+		// (e.g. "no generator targets configured" / archive-init failure). The
+		// terminal hook advanceExecutionPlanForTest gates entirely on seqPlanByTest,
+		// so registering afterward races: if the goroutine wins, the hook misses the
+		// mapping and the run stalls in "running" forever. The test is QUEUED until
+		// StartTest, so pre-registering is safe.
 		tr.seqMu.Lock()
 		st, ok = tr.seqPlanRuns[runID]
 		if !ok {
@@ -230,6 +234,22 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) {
 		tr.broadcastExecutionPlanEvent("execution_plan_entry_started", run, &run.Entries[idx])
 		if subject != "" {
 			tr.AttributeTestCreated(test.ID, subject, displayName)
+		}
+
+		if err := tr.StartTest(test.ID); err != nil {
+			// StartTest errors only before spawning the run goroutine, so no
+			// terminal hook can have consumed the mapping yet. Unwind the
+			// pre-registration and apply the entry's failure policy.
+			tr.seqMu.Lock()
+			delete(tr.seqPlanByTest, test.ID)
+			if cur, ok := tr.seqPlanRuns[runID]; ok && idx < len(cur.statuses) {
+				cur.statuses[idx].TestID = ""
+			}
+			tr.seqMu.Unlock()
+			if tr.recordPlanEntryFailure(runID, idx, entry, err.Error()) {
+				return // halted
+			}
+			continue // skip → try the next entry
 		}
 		return
 	}

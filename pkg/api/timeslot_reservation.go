@@ -9,6 +9,7 @@ package api
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -37,12 +38,8 @@ func (tr *TestRunner) validateAndBindTimeslotLocked(timeslotID string, test *Man
 		start = *test.ScheduledStartAt
 	}
 	end := start.Add(test.Duration)
-	if start.Before(reservation.StartAt) || end.After(reservation.EndAt) {
-		return fmt.Errorf("the run window does not fit within the reserved timeslot")
-	}
-	if reservation.RequestedCapacity != nil && reservation.RequestedCapacity.VUsers != nil &&
-		test.TotalVUsers > *reservation.RequestedCapacity.VUsers {
-		return fmt.Errorf("the run requests %d VUsers but the timeslot reserves only %d", test.TotalVUsers, *reservation.RequestedCapacity.VUsers)
+	if err := reservationFitError(reservation, start, end, test.TotalVUsers); err != nil {
+		return err
 	}
 	status := test.Status
 	bound, err := tr.reservationStore.UpdateCapacityReservationBinding(reservation.ID, &test.ID, &status, time.Now())
@@ -56,17 +53,36 @@ func (tr *TestRunner) validateAndBindTimeslotLocked(timeslotID string, test *Man
 	return nil
 }
 
+// reservationFitError reports why a run with the given window and VUser count does
+// not fit a reservation (nil if it fits). Both bind paths — create-time
+// (validateAndBindTimeslotLocked) and the standalone bind endpoint — call it so
+// they enforce identical window-fit and capacity invariants.
+func reservationFitError(reservation *storage.CapacityReservation, start, end time.Time, totalVUsers int) error {
+	if start.Before(reservation.StartAt) || end.After(reservation.EndAt) {
+		return fmt.Errorf("the run window does not fit within the reserved timeslot")
+	}
+	if reservation.RequestedCapacity != nil && reservation.RequestedCapacity.VUsers != nil &&
+		totalVUsers > *reservation.RequestedCapacity.VUsers {
+		return fmt.Errorf("the run requests %d VUsers but the timeslot reserves only %d", totalVUsers, *reservation.RequestedCapacity.VUsers)
+	}
+	return nil
+}
+
 // boundTimeslotsActiveAtLocked returns the approved, bound timeslots whose window
-// contains the instant `at`. Caller holds tr.mu.
-func (tr *TestRunner) boundTimeslotsActiveAtLocked(at time.Time) []*storage.CapacityReservation {
+// contains the instant `at`. Caller holds tr.mu. The error is propagated (not
+// swallowed) so admission can fail CLOSED: silently treating a lookup failure as
+// "no reservations" would drop every timeslot's protection and let other tenants
+// into reserved capacity.
+func (tr *TestRunner) boundTimeslotsActiveAtLocked(at time.Time) ([]*storage.CapacityReservation, error) {
 	if tr.reservationStore == nil {
-		return nil
+		return nil, nil
 	}
 	// Half-open overlap with [at, at+1ns) selects reservations where
 	// start_at <= at < end_at.
 	all, err := tr.reservationStore.ListCapacityReservationsByTimeRange("", at, at.Add(time.Nanosecond))
 	if err != nil {
-		return nil
+		slog.Warn("capacity admission: bound-timeslot lookup failed; failing closed", "error", err, "at", at)
+		return nil, err
 	}
 	out := make([]*storage.CapacityReservation, 0, len(all))
 	for _, ts := range all {
@@ -75,7 +91,7 @@ func (tr *TestRunner) boundTimeslotsActiveAtLocked(at time.Time) []*storage.Capa
 		}
 		out = append(out, ts)
 	}
-	return out
+	return out, nil
 }
 
 // reservationTotalsWithTimeslots returns (totalReserved, projectReserved)

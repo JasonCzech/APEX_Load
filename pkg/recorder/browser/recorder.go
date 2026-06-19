@@ -1,8 +1,11 @@
 package browser
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
 	_ "embed"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -100,6 +103,12 @@ type Recorder struct {
 	controlPages   map[playwright.Page]struct{}
 	openingControl bool
 
+	// controlNonce is a per-session secret baked into the capture script's
+	// closure. Destructive in-page control events (stop/delete/exclude/mark)
+	// must echo it; arbitrary recorded-page JavaScript cannot read a closure
+	// constant, so it cannot forge them against the live recording.
+	controlNonce string
+
 	thumbWG  sync.WaitGroup
 	done     chan struct{}
 	doneOnce sync.Once
@@ -109,6 +118,44 @@ type Recorder struct {
 	// drainer goroutine (started in Start) debounces bursts of events into one
 	// page.Evaluate per open page so rapid capture never floods the browser.
 	sidebarPush chan struct{}
+}
+
+// controlNoncePlaceholder is the literal in capture.js that newControlNonce's
+// value is substituted for at injection time, baking the secret into the
+// script's closure rather than a page-readable window global.
+const controlNoncePlaceholder = "__APEXLOAD_CONTROL_NONCE__"
+
+// newControlNonce returns a per-session secret. Uniqueness is the floor; on the
+// (vanishingly unlikely) crypto/rand failure we degrade to a time-derived value
+// rather than ship an empty nonce, since an empty nonce would disable the gate.
+func newControlNonce() string {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Sprintf("nonce-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(buf)
+}
+
+// trustedControlNonce reports whether an in-page control event carried this
+// session's nonce, using a constant-time compare. An empty session nonce never
+// trusts (fail closed).
+func (r *Recorder) trustedControlNonce(got string) bool {
+	if r.controlNonce == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(r.controlNonce)) == 1
+}
+
+// controlKindRequiresTrust reports whether a control kind mutates or terminates
+// the live recording and therefore must prove it came from the recorder's own
+// sidebar (via the closure nonce) rather than arbitrary recorded-page script.
+func controlKindRequiresTrust(kind string) bool {
+	switch kind {
+	case "recording_stop", "delete_last_step", "step_exclude", "step_mark":
+		return true
+	default:
+		return false
+	}
 }
 
 // EnsureBrowsers downloads the Playwright driver and Chromium if they are not
@@ -126,6 +173,7 @@ func New(opts Options) *Recorder {
 	return &Recorder{
 		opts:           opts,
 		currentSection: normalizeSection(opts.Section),
+		controlNonce:   newControlNonce(),
 		session: &Session{
 			ID:            fmt.Sprintf("rec_%d", time.Now().UnixNano()),
 			StartURL:      strings.TrimSpace(opts.StartURL),
@@ -221,7 +269,10 @@ func (r *Recorder) Start() error {
 		r.cleanup()
 		return fmt.Errorf("inject recorder config: %w", err)
 	}
-	if err := context.AddInitScript(playwright.Script{Content: playwright.String(captureScript)}); err != nil {
+	// Bake this session's control nonce into the capture script's closure so the
+	// sidebar can prove destructive control events originate from it.
+	injectedCapture := strings.Replace(captureScript, controlNoncePlaceholder, r.controlNonce, 1)
+	if err := context.AddInitScript(playwright.Script{Content: playwright.String(injectedCapture)}); err != nil {
 		r.cleanup()
 		return fmt.Errorf("inject capture script: %w", err)
 	}
@@ -243,8 +294,16 @@ func (r *Recorder) Start() error {
 // registerPage wires capture listeners for the initial page and any popup.
 // New pages become the active page (the browser focuses them on open).
 func (r *Recorder) registerPage(page playwright.Page) {
+	// A recorded-site popup (window.open / target=_blank) always has an opener;
+	// the control panel (context.NewPage) never does. Requiring opener == nil for
+	// the control-page paths stops a popup that fires OnPage during control-panel
+	// creation from stealing the openingControl flag — which would permanently
+	// exclude that popup from capture and leak the real control tab's events.
+	opener, _ := page.Opener()
+	isPanelURL := isRecorderControlPanelURL(page.URL())
+
 	r.mu.Lock()
-	if r.openingControl || isRecorderControlPanelURL(page.URL()) {
+	if opener == nil && (r.openingControl || isPanelURL) {
 		r.markControlPageLocked(page)
 		r.openingControl = false
 		r.mu.Unlock()
@@ -555,6 +614,24 @@ func (r *Recorder) isControlPageLocked(page playwright.Page) bool {
 	return isRecorderControlPanelURL(page.URL())
 }
 
+// navigableURL reports whether a navigation target is an absolute http(s) URL.
+// It is the single guard shared by the REST navigate handler and the in-page
+// control binding: the binding is exposed context-wide, so any recorded page's
+// JavaScript could otherwise drive the recording browser to file://, chrome://,
+// view-source:// and similar local-resource schemes.
+func navigableURL(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" {
+		return fmt.Errorf("navigate requires an absolute http(s) URL")
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return nil
+	default:
+		return fmt.Errorf("navigate scheme %q is not allowed; use http or https", parsed.Scheme)
+	}
+}
+
 // Navigate drives the active recording page to a URL (control-panel "go to").
 // While paused this positions the browser off the record — the navigation
 // listener drops the event, which is the point.
@@ -562,6 +639,9 @@ func (r *Recorder) Navigate(targetURL string) error {
 	targetURL = strings.TrimSpace(targetURL)
 	if targetURL == "" {
 		return fmt.Errorf("navigate requires a URL")
+	}
+	if err := navigableURL(targetURL); err != nil {
+		return err
 	}
 	page := r.currentPage()
 	if page == nil {
@@ -706,6 +786,7 @@ type controlEvent struct {
 	Secret   bool   `json:"secret"`
 	Param    bool   `json:"param"`
 	Excluded bool   `json:"excluded"`
+	Nonce    string `json:"nonce"`
 }
 
 // handleControlEvent dispatches an advanced-sidebar action to the matching
@@ -715,6 +796,13 @@ type controlEvent struct {
 func (r *Recorder) handleControlEvent(payload string) {
 	var ev controlEvent
 	if err := json.Unmarshal([]byte(payload), &ev); err != nil {
+		return
+	}
+	// Destructive kinds must carry this session's closure nonce. A recorded page
+	// can reach the context-wide binding but cannot read the nonce, so a forged
+	// stop/delete/exclude/mark is dropped (with a transient warning) here.
+	if controlKindRequiresTrust(ev.Kind) && !r.trustedControlNonce(ev.Nonce) {
+		r.emit(Event{Type: EventWarning, Warning: fmt.Sprintf("recorder control %q rejected: untrusted origin", ev.Kind)})
 		return
 	}
 	var err error
@@ -728,6 +816,13 @@ func (r *Recorder) handleControlEvent(payload string) {
 	case "note_add":
 		_, err = r.AddMarker(MarkerNote, "", ev.Text)
 	case "navigate":
+		// Reject non-http(s) schemes synchronously (with a warning) before
+		// spawning: the binding is reachable by any recorded page's JS, so this
+		// is the trust boundary that stops file:///chrome:// navigation.
+		if verr := navigableURL(ev.URL); verr != nil {
+			err = verr
+			break
+		}
 		// Navigate blocks on page.Goto; run it off the binding callback so the
 		// Playwright event loop is never stalled.
 		go func(target string) { _ = r.Navigate(target) }(ev.URL)

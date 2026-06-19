@@ -10,6 +10,7 @@ package api
 
 import (
 	"crypto/subtle"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -19,6 +20,15 @@ import (
 // collectorStaleAfter is the freshness window after which a collector's latest
 // snapshot is reported stale (≈ a few missed heartbeats at a typical interval).
 const collectorStaleAfter = 90 * time.Second
+
+// Heartbeat ingest bounds. The heartbeat route is collector-token authenticated
+// in-handler and not in the RBAC catalog, so these caps (not the 128 MiB global
+// backstop) bound what a single collector can push and pin in memory.
+const (
+	maxCollectorHeartbeatBytes = 256 << 10 // 256 KiB request body
+	maxCollectorPacks          = 64        // packs per heartbeat
+	maxCollectorSamplesPerPack = 512       // samples per pack
+)
 
 // collectorMetricPack is one scoped metric pack pushed by a collector agent.
 type collectorMetricPack struct {
@@ -83,8 +93,16 @@ func (s *Server) handleCollectorHeartbeat(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// This route is not in the RBAC catalog, so it inherits the 128 MiB global
+	// body backstop. Heartbeats are tiny — cap the body explicitly so a holder of
+	// one valid collector token cannot pin a large allocation in the controller.
+	r.Body = http.MaxBytesReader(w, r.Body, maxCollectorHeartbeatBytes)
 	var req collectorHeartbeatRequest
 	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if len(req.Packs) > maxCollectorPacks {
+		writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("too many metric packs (max %d)", maxCollectorPacks))
 		return
 	}
 	health := strings.TrimSpace(req.Health)
@@ -111,6 +129,10 @@ func (s *Server) handleCollectorHeartbeat(w http.ResponseWriter, r *http.Request
 		}
 		if _, ok := allowed[name]; !ok {
 			writeError(w, http.StatusUnprocessableEntity, "metric pack not allowed for this collector: "+name)
+			return
+		}
+		if len(p.Samples) > maxCollectorSamplesPerPack {
+			writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("metric pack %q has too many samples (max %d)", name, maxCollectorSamplesPerPack))
 			return
 		}
 		ts := p.Timestamp

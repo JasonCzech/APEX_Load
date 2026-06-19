@@ -13,7 +13,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strconv"
@@ -29,6 +31,11 @@ type Config struct {
 	Interval      time.Duration
 	Packs         []string
 	HTTPClient    *http.Client
+	// AllowInsecure permits a non-loopback plain-http controller URL. Off by
+	// default: the agent's bearer token would otherwise be sent in cleartext
+	// across the network. Set it only for a trusted-network deployment, where it
+	// downgrades the hard error to a loud warning.
+	AllowInsecure bool
 }
 
 // Agent pushes heartbeats to the controller on an interval.
@@ -54,6 +61,9 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.ControllerURL == "" {
 		return nil, fmt.Errorf("controller URL is required")
 	}
+	if err := validateControllerURL(cfg.ControllerURL, cfg.AllowInsecure); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(cfg.CollectorID) == "" {
 		return nil, fmt.Errorf("collector id is required")
 	}
@@ -71,6 +81,44 @@ func New(cfg Config) (*Agent, error) {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
 	return &Agent{cfg: cfg, client: client}, nil
+}
+
+// validateControllerURL rejects a controller URL that would leak the collector
+// token: a non-http(s) scheme, or a non-loopback plain-http target (unless the
+// operator explicitly opted into AllowInsecure, which only warns).
+func validateControllerURL(raw string, allowInsecure bool) error {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return fmt.Errorf("controller URL must be an absolute http(s) URL")
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return nil
+	case "http":
+		if isLoopbackHost(parsed.Hostname()) {
+			return nil
+		}
+		if allowInsecure {
+			slog.Warn("collector token will be sent in CLEARTEXT to a non-loopback http controller; use https in production",
+				"controller", raw)
+			return nil
+		}
+		return fmt.Errorf("refusing to send the collector token in cleartext to non-loopback http controller %q; use https (or set -insecure to override)", raw)
+	default:
+		return fmt.Errorf("controller URL scheme %q is not allowed; use http or https", parsed.Scheme)
+	}
+}
+
+// isLoopbackHost reports whether host is localhost or a loopback IP literal.
+func isLoopbackHost(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 // Run pushes a heartbeat immediately, then on every tick until ctx is cancelled.

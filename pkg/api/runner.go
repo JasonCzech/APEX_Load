@@ -757,6 +757,9 @@ type GeneratorAssignmentSettings struct {
 	// PoolID restricts a run to the generators in a managed fleet pool. It is
 	// resolved to the pool's member targets at create time (as specific_hosts),
 	// then enforced leniently at placement (offline members are skipped).
+	// Supported only on the TEST-level assignment; a pool_id on a group-level
+	// assignment is rejected (it would never be resolved — see
+	// normalizeGroupGeneratorAssignmentSettings).
 	PoolID string `json:"pool_id,omitempty"`
 }
 

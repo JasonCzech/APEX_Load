@@ -203,6 +203,17 @@ describe('readScriptReferenceModel', () => {
     const enveloped = `{ "script": ${scriptWithRefs} }`
     expect(readScriptReferenceModel(stateFor(enveloped)).parameters.map(parameter => parameter.name)).toContain('username')
   })
+
+  it('skips the full-document parse for very large imports', () => {
+    // Pad a valid script past the size cap so the optional hover assist does not
+    // run a multi-MB JSON.parse on every hover. Leading whitespace stays valid
+    // JSON, so an empty result proves the cap short-circuited (not a parse error).
+    const big = `${' '.repeat(200_001)}${scriptWithRefs}`
+    const model = readScriptReferenceModel(stateFor(big))
+    expect(model.parameters).toEqual([])
+    expect(model.dataSources).toEqual([])
+    expect(model.envKeys.size).toBe(0)
+  })
 })
 
 describe('describeTemplateReference', () => {

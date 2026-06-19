@@ -348,12 +348,16 @@ export function formatEffectiveRuntimeField(
   fallbackLabel = 'Engine default',
 ): { value: string; source: RuntimeFieldSource } {
   const formatters: Record<RuntimeFieldKey, (o?: RuntimeSettingsOverride) => string | null> = {
-    iterations: (o) => formatIterations(o?.iterations),
+    // iterations/log_level/auto_transactions can be set either as the legacy
+    // top-level field or promoted into the run_logic/log section (the section tab
+    // handlers clear the top-level field when they do). Resolve both so a value
+    // edited in its section tab is still attributed to this layer in the summary.
+    iterations: (o) => formatIterations(o?.iterations ?? o?.run_logic?.iterations ?? o?.run_logic?.global_iterations),
     pacing: (o) => formatPacing(o?.pacing),
     think_time: (o) => formatThinkTime(o?.think_time),
     browser: (o) => formatBrowserSummary(o?.browser),
-    log_level: (o) => formatLogLevel(o?.log_level),
-    auto_transactions: (o) => formatAutoTransactions(o?.auto_transactions),
+    log_level: (o) => formatLogLevel(o?.log_level ?? o?.log?.level),
+    auto_transactions: (o) => formatAutoTransactions(o?.auto_transactions ?? o?.run_logic?.auto_transactions),
     error_handling: (o) => formatErrorHandling(o?.error_handling),
     log: (o) => formatLog(o?.log),
     run_logic: (o) => formatRunLogic(o?.run_logic),

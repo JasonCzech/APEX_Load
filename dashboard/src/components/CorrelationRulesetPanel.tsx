@@ -143,9 +143,9 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
                   )}
                   {canManage && (
                     <div className="pp-field-row">
-                      <input className="pp-field" placeholder="Apply to script id…" value={applyForm.rulesetId === ruleset.id ? applyForm.scriptId : ''} onFocus={() => openApply(ruleset.id)} onChange={e => setApplyForm({ rulesetId: ruleset.id, scriptId: e.target.value })} />
+                      <input className="pp-field" placeholder="Apply to script id…" value={applyForm.rulesetId === ruleset.id ? applyForm.scriptId : ''} onFocus={() => openApply(ruleset.id)} onChange={e => { setApplyForm({ rulesetId: ruleset.id, scriptId: e.target.value }); setApplyResult(null) }} />
                       <button type="button" className="btn btn-secondary btn-sm" disabled={busy || applyForm.rulesetId !== ruleset.id || !applyForm.scriptId.trim()} onClick={() => handleApply(ruleset.id, false)}>Preview</button>
-                      <button type="button" className="btn btn-primary btn-sm" disabled={busy || applyForm.rulesetId !== ruleset.id || !applyForm.scriptId.trim() || !applyResult || applyResult.matched_rules === 0} onClick={() => handleApply(ruleset.id, true)}>Apply</button>
+                      <button type="button" className="btn btn-primary btn-sm" disabled={busy || applyForm.rulesetId !== ruleset.id || !applyForm.scriptId.trim() || !applyResult || applyResult.matched_rules === 0 || applyResult.script_id !== applyForm.scriptId.trim()} onClick={() => handleApply(ruleset.id, true)}>Apply</button>
                     </div>
                   )}
                   {applyResult && applyForm.rulesetId === ruleset.id && (

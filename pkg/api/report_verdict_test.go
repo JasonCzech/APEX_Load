@@ -212,3 +212,38 @@ func TestBuildSLAComplianceRowsNoSLAConfigured(t *testing.T) {
 		t.Fatalf("expected na/— result with no SLA, got %q/%q", rows[0].ResultKind, rows[0].Result)
 	}
 }
+
+func TestApplyVerdictOverrideUnknownStatusIsConditionalNotPass(t *testing.T) {
+	base := reportVerdict{Status: reportVerdictFail, Failed: true, Explanation: "SLA breached"}
+	// An out-of-vocabulary override must not fall through to clean green pass.
+	got := applyVerdictOverride("Blocked", "", base)
+	if got.Failed {
+		t.Fatalf("unknown override should not be Failed: %+v", got)
+	}
+	if !got.Conditional {
+		t.Fatalf("unknown override must be Conditional (warn styling): %+v", got)
+	}
+	if got.Status != "Blocked" {
+		t.Fatalf("submitted label should be preserved, got %q", got.Status)
+	}
+	// Known values still map correctly.
+	if v := applyVerdictOverride("pass", "", base); v.Conditional || v.Failed || v.Status != reportVerdictPass {
+		t.Fatalf("pass override = %+v", v)
+	}
+	if v := applyVerdictOverride("fail", "", base); !v.Failed || v.Status != reportVerdictFail {
+		t.Fatalf("fail override = %+v", v)
+	}
+}
+
+func TestCanonicalReportFindingSeverity(t *testing.T) {
+	cases := map[string]string{
+		"major": "major", "Minor": "minor", "info": "info", "": "info",
+		"critical": "major", "blocker": "major", "high": "major",
+		"warning": "minor", "low": "minor", "weird-value": "major",
+	}
+	for in, want := range cases {
+		if got := canonicalReportFindingSeverity(in); got != want {
+			t.Errorf("canonicalReportFindingSeverity(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

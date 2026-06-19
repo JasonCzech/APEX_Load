@@ -30,6 +30,8 @@ func main() {
 	token := fs.String("token", os.Getenv("APEXLOAD_COLLECTOR_TOKEN"), "Collector token (or APEXLOAD_COLLECTOR_TOKEN)")
 	interval := fs.Duration("interval", 15*time.Second, "Heartbeat interval")
 	packs := fs.String("packs", envOr("APEXLOAD_COLLECTOR_PACKS", "linux-hosts"), "Comma-separated metric pack names (must be in the collector's allow-list)")
+	insecure := fs.Bool("insecure", strings.EqualFold(strings.TrimSpace(os.Getenv("APEXLOAD_COLLECTOR_ALLOW_INSECURE")), "true"),
+		"Permit a non-loopback plain-http controller URL (sends the token in cleartext; use only on a trusted network)")
 	_ = fs.Parse(os.Args[1:])
 
 	agent, err := collectoragent.New(collectoragent.Config{
@@ -38,6 +40,7 @@ func main() {
 		Token:         *token,
 		Interval:      *interval,
 		Packs:         splitPacks(*packs),
+		AllowInsecure: *insecure,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

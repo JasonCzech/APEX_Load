@@ -61,6 +61,25 @@ describe('runtimeSettingsModel', () => {
     expect(formatEffectiveRuntimeField('iterations', undefined, undefined)).toEqual({ value: 'Duration-driven', source: 'engine' })
   })
 
+  it('attributes section-backed iterations/auto_transactions/log_level to the group override', () => {
+    // The Run Logic / Logging tab handlers promote these into run_logic/log and
+    // clear the legacy top-level field. The summary must still credit the group
+    // override rather than fall through to a stale script default.
+    const group = {
+      run_logic: { iterations: 5, auto_transactions: 'per_action' },
+      log: { level: 'extended' },
+    }
+    const scriptDefault = runtimeOverrideFromScriptConfig({
+      base_url: 'https://example.test',
+      run_logic: { iterations: 9 },
+      log: { level: 'standard' },
+    })
+
+    expect(formatEffectiveRuntimeField('iterations', group, undefined, scriptDefault)).toEqual({ value: '5', source: 'group' })
+    expect(formatEffectiveRuntimeField('auto_transactions', group, undefined, scriptDefault)).toEqual({ value: 'per action', source: 'group' })
+    expect(formatEffectiveRuntimeField('log_level', group, undefined, scriptDefault)).toEqual({ value: 'extended', source: 'group' })
+  })
+
   it('resolves the script-config layer to the actual value below group/scenario', () => {
     const scriptDefault = runtimeOverrideFromScriptConfig({
       base_url: 'https://example.test',
