@@ -788,6 +788,12 @@ function ScriptCodePane({
 }: ScriptCodePaneProps) {
   const viewRef = useRef<EditorView | null>(null)
   const lastScrollSnapshotRef = useRef<ScriptCodeScrollSnapshot>(SCRIPT_CODE_SCROLL_EMPTY)
+  // The action list / forms are the primary edit surface; the raw JSON is a
+  // read-only projection of structured state by default. Editing it directly is
+  // an explicit opt-in (the escape hatch for power users / fields the forms
+  // can't express). While read-only it can never go dirty, so it stays a clean
+  // one-way mirror — no bidirectional sync to reconcile.
+  const [jsonEditEnabled, setJsonEditEnabled] = useState(false)
   const [editorReadyVersion, setEditorReadyVersion] = useState(0)
   const activeStartLine = activeRange?.startLine ?? null
   const activeEndLine = activeRange?.endLine ?? null
@@ -1027,6 +1033,9 @@ function ScriptCodePane({
         </div>
         <div className="script-code-status-row">
           <span className={`script-code-status ${status}`}>{statusMessage}</span>
+          {!jsonEditEnabled && (
+            <span className="script-code-readonly-pill" title="The JSON mirrors the structured editor. Click Edit JSON to change it directly.">Read-only</span>
+          )}
           <button type="button" className="btn btn-sm btn-ghost" onClick={handleOpenSearch} title="Find in script (⌘F / Ctrl+F)">Find</button>
           {onRequestParameterize && (
             <button
@@ -1038,23 +1047,36 @@ function ScriptCodePane({
               Parameterize
             </button>
           )}
-          <button type="button" className="btn btn-sm btn-ghost" onClick={onFormat}>Format</button>
-          <button type="button" className="btn btn-sm btn-secondary" onClick={onApply} disabled={status === 'invalid'}>
-            Apply JSON
+          <button
+            type="button"
+            className={`btn btn-sm ${jsonEditEnabled ? 'btn-ghost' : 'btn-secondary'}`}
+            onClick={() => setJsonEditEnabled(enabled => !enabled)}
+            title={jsonEditEnabled ? 'Return the JSON to read-only' : 'Edit the raw JSON directly'}
+          >
+            {jsonEditEnabled ? 'Done' : 'Edit JSON'}
           </button>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={onReset} disabled={!value}>
-            Reset
-          </button>
+          {jsonEditEnabled && (
+            <>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={onFormat}>Format</button>
+              <button type="button" className="btn btn-sm btn-secondary" onClick={onApply} disabled={status === 'invalid'}>
+                Apply JSON
+              </button>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={onReset} disabled={!value}>
+                Reset
+              </button>
+            </>
+          )}
           <button type="button" className="btn btn-sm btn-ghost" onClick={onCopy}>Copy</button>
           <button type="button" className="btn btn-sm btn-ghost" onClick={onDownload}>Download</button>
         </div>
       </div>
-      <div className="script-code-editor" data-dirty={status === 'dirty' ? 'true' : 'false'} data-invalid={status === 'invalid' ? 'true' : 'false'} onContextMenu={handleEditorContextMenu}>
+      <div className="script-code-editor" data-dirty={status === 'dirty' ? 'true' : 'false'} data-invalid={status === 'invalid' ? 'true' : 'false'} data-readonly={jsonEditEnabled ? 'false' : 'true'} onContextMenu={handleEditorContextMenu}>
         <CodeMirror
           value={value}
           onChange={onChange}
           extensions={extensions}
           theme="none"
+          editable={jsonEditEnabled}
           basicSetup={{
             lineNumbers: true,
             foldGutter: true,
