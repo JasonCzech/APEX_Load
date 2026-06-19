@@ -803,20 +803,40 @@ func TestConvertJMXMapsSimpleIfControllerAndReportsScriptSamplers(t *testing.T) 
 		t.Fatalf("ConvertJMX returned error: %v", err)
 	}
 	if result.Stats.ConvertedActions != 1 {
-		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
+		t.Fatalf("converted actions = %d, want 1 (HTTP sampler)", result.Stats.ConvertedActions)
 	}
-	if len(result.Scripts[0].Actions) != 1 || result.Scripts[0].Actions[0].Type != "control_if" {
-		t.Fatalf("actions = %#v, want one control_if", result.Scripts[0].Actions)
+	// The IfController converts to control_if and the standalone JSR223 sampler's
+	// safe vars.put("sig","abc") translates into a source_parameter action.
+	actions := result.Scripts[0].Actions
+	if len(actions) != 2 || actions[0].Type != "control_if" || actions[1].Type != "source_parameter" {
+		t.Fatalf("actions = %#v, want control_if + source_parameter", actions)
 	}
-	control := result.Scripts[0].Actions[0].Control
+	control := actions[0].Control
 	if control == nil || control.Condition == nil || control.Condition.Left != "{{var.isPremium}}" || control.Condition.Op != "exists" || len(control.Steps) != 1 {
 		t.Fatalf("control = %#v, want exists condition with one child", control)
+	}
+	param := actions[1]
+	if param.Params["function"] != "lr_save_string" {
+		t.Fatalf("source_parameter function = %v, want lr_save_string", param.Params["function"])
+	}
+	args, _ := param.Params["args"].([]any)
+	if len(args) != 2 || args[0] != "abc" || args[1] != "sig" {
+		t.Fatalf("source_parameter args = %#v, want [abc sig]", param.Params["args"])
+	}
+	if param.Metadata["jsr223_source"] != `vars.put("sig", "abc")` {
+		t.Fatalf("jsr223_source metadata = %v, want preserved statement", param.Metadata["jsr223_source"])
 	}
 	if result.Stats.TotalSamplers != 2 || result.Stats.SkippedSamplers != 1 {
 		t.Fatalf("sampler accounting = total %d skipped %d, want total 2 skipped 1", result.Stats.TotalSamplers, result.Stats.SkippedSamplers)
 	}
 	if !containsJMeterDiagnostic(result, "JMeter JSR223Sampler") {
-		t.Fatalf("diagnostics = %#v, want JSR223Sampler warning", result.Unsupported)
+		t.Fatalf("diagnostics = %#v, want JSR223Sampler translation note", result.Unsupported)
+	}
+	// The translated sampler is reported as a mapped conversion, not unsupported.
+	for _, name := range result.UnsupportedElements {
+		if name == "JSR223Sampler" {
+			t.Fatalf("JSR223Sampler should not be listed unsupported once translated: %#v", result.UnsupportedElements)
+		}
 	}
 }
 

@@ -659,3 +659,11 @@
     align-items: flex-start;
   }
 }
+
+/* JMeter import coverage categories (mapped / review_required / adapter_required / unsupported). */
+.lr-preserved-card.coverage-mapped { border-left: 3px solid var(--accent); }
+.lr-preserved-card.coverage-review_required { border-left: 3px solid color-mix(in srgb, var(--danger) 50%, var(--accent)); }
+.lr-preserved-card.coverage-adapter_required { border-left: 3px solid var(--danger); }
+.lr-preserved-card.coverage-unsupported { border-left: 3px solid var(--text-muted); }
+.coverage-hint { color: var(--text-muted); font-size: 12px; margin: 4px 0 8px 0; }
+.lr-warnings details[data-coverage="adapter_required"] > summary { color: var(--danger); }

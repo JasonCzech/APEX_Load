@@ -136,6 +136,9 @@ func diagnoseJMeterElement(element *xmlNode, diagnostics *diag.Collector) bool {
 	name := element.Name
 	location := jmeterElementLocation(element)
 	switch {
+	case isJMeterListenerElement(name):
+		diagnostics.Add(diag.Info, "JMeter "+name, location, "listener is reporting-only and does not affect replay; preserved as metadata")
+		return false
 	case isJMeterScriptElement(name):
 		diagnostics.Add(diag.Warning, "JMeter "+name, location, "JSR223/BeanShell/Groovy scripting is not executed by the importer; translate script logic before replay")
 		return true
@@ -153,6 +156,18 @@ func diagnoseJMeterElement(element *xmlNode, diagnostics *diag.Collector) bool {
 func isJMeterScriptElement(name string) bool {
 	lower := strings.ToLower(name)
 	return strings.Contains(lower, "jsr223") || strings.Contains(lower, "beanshell") || strings.Contains(lower, "bsh") || strings.Contains(lower, "groovy")
+}
+
+// isJMeterListenerElement reports whether the element is a reporting-only
+// listener. Listeners do not affect replay and are preserved as metadata rather
+// than blocking the import.
+func isJMeterListenerElement(name string) bool {
+	switch name {
+	case "ResultCollector", "BackendListener", "Summariser", "MailerResultCollector":
+		return true
+	default:
+		return false
+	}
 }
 
 func isKnownJMeterUnsupported(name string) bool {

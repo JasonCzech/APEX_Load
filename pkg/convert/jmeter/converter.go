@@ -48,6 +48,13 @@ type ConvertStats struct {
 	Assertions       int `json:"assertions"`
 	Timers           int `json:"timers"`
 	Unsupported      int `json:"unsupported"`
+	// Four-way classification of converted JMeter elements (samplers and
+	// top-level controllers), derived from the source mappings. Contributors
+	// (extractors/assertions/timers) and informational elements (listeners,
+	// DebugSampler) are not counted here.
+	Mapped          int `json:"mapped"`
+	ReviewRequired  int `json:"review_required"`
+	AdapterRequired int `json:"adapter_required"`
 }
 
 type ImportSummary struct {
@@ -107,6 +114,12 @@ type convertContext struct {
 	assertions      []dsl.Assertion
 	auths           []jmeterAuth
 	transaction     string
+	// scriptProtocol is the protocol resolved for the owning thread group from
+	// its sampler mix. Native sampler converters only emit executable actions
+	// when the script protocol matches; otherwise the sampler is review-gated.
+	scriptProtocol string
+	databaseConfig *dsl.DatabaseConfig
+	networkConfig  *dsl.NetworkConfig
 }
 
 type jmeterAuth struct {
@@ -116,56 +129,6 @@ type jmeterAuth struct {
 	Domain    string
 	Mechanism string
 	Config    dsl.AuthConfig
-}
-
-func GetSupportMatrix() SupportMatrix {
-	return SupportMatrix{
-		Supported: []string{
-			"Test Plan",
-			"Thread Group",
-			"HTTP Request Defaults",
-			"HTTP Header Manager",
-			"HTTP Cookie Manager",
-			"HTTP Cache Manager",
-			"User Defined Variables",
-			"CSV Data Set Config",
-			"HTTP Request samplers",
-			"Constant Timer",
-			"Uniform Random Timer",
-			"Response Assertions",
-			"Regex Extractor",
-			"JSON Extractor",
-			"JMESPath Extractor",
-			"CSS/JQuery Extractor",
-			"XPath Extractor",
-			"Boundary Extractor",
-			"Simple If Controller",
-			"Fixed Loop Controller",
-			"Once Only Controller",
-			"Test Action pauses",
-		},
-		Partial: []string{
-			"Simple controllers mapped to native control_if/control_loop where safe",
-			"Variable substitution across URLs, headers, and bodies",
-			"Scenario drafts derived from thread groups",
-			"Timer behavior approximated as fixed think time when necessary",
-			"SOAP-shaped HTTP Request samplers are promoted to the SOAP protocol when an imported thread group is entirely SOAP-oriented",
-			"XPath2 Extractor mapped into APEX Load XPath when queries fit the shared runtime, including fragment output and custom namespace bindings",
-		},
-		Unsupported: []string{
-			"JSR223 / BeanShell / Groovy scripting",
-			"JMeter plugin samplers, listeners, and controllers",
-			"JMS samplers",
-			"JDBC / FTP / dedicated SOAP plugin samplers / custom protocol plugins",
-			"Complex conditional controller logic",
-			"Full JMeter listener/reporting model",
-			"Distributed engine/controller orchestration settings",
-		},
-		Notes: []string{
-			"Phase 1 targets HTTP-oriented JMX plans and can promote SOAP-shaped HTTP samplers into native APEX Load SOAP scripts.",
-			"Unsupported constructs are reported in the import review instead of being silently ignored.",
-		},
-	}
 }
 
 func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
@@ -206,7 +169,8 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	result.Summary.ThreadGroupCount = len(threadGroups)
 
 	for i, tg := range threadGroups {
-		ctx := convertContext{headers: map[string]string{}, variables: map[string]string{}}
+		groupProtocol, heterogeneous := classifyThreadGroupProtocol(tg)
+		ctx := convertContext{headers: map[string]string{}, variables: map[string]string{}, scriptProtocol: groupProtocol}
 		threadName := attrOr(tg.Element, "testname", fmt.Sprintf("Thread Group %d", i+1))
 		scriptName := opts.ScriptName
 		if scriptName == "" {
@@ -218,7 +182,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		script := &dsl.Script{
 			Name:          scriptName,
 			Version:       "1.0.0",
-			Protocol:      "http",
+			Protocol:      nativeScriptProtocol(groupProtocol),
 			GeneratedBy:   "jmeter-import",
 			GeneratedFrom: "jmeter",
 			Config: dsl.ScriptConfig{
@@ -236,33 +200,42 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 				},
 			}},
 		}
+		if heterogeneous {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s: mixed-protocol thread group converted as %s; samplers from other protocols were review-gated. Split them into separate scripts to run natively.", threadName, script.Protocol))
+			result.Assumptions = append(result.Assumptions, "Mixed-protocol thread groups are not interleaved in one script; the dominant protocol is converted and other-protocol samplers are review-gated.")
+		}
 
 		walkThreadGroup(tg, &ctx, script, opts, result, unsupported, variableNames, csvNames, &diagnostics, sourceFileName, &sourceMappings)
-		if script.Config.BaseURL == "" {
-			script.Config.BaseURL = opts.BaseURL
-		}
-		if script.Config.BaseURL == "" {
-			script.Config.BaseURL = detectBaseURL(script.Actions)
-		}
-		if script.Config.BaseURL == "" && ctx.defaultDomain != "" {
-			script.Config.BaseURL = buildBaseURL(ctx.defaultProtocol, ctx.defaultDomain, ctx.defaultPort)
-		}
-		if len(ctx.headers) > 0 {
-			for k, v := range ctx.headers {
-				script.Config.HTTP.DefaultHeaders[k] = convertVariables(v)
+		if script.Protocol == "http" {
+			if script.Config.BaseURL == "" {
+				script.Config.BaseURL = opts.BaseURL
+			}
+			if script.Config.BaseURL == "" {
+				script.Config.BaseURL = detectBaseURL(script.Actions)
+			}
+			if script.Config.BaseURL == "" && ctx.defaultDomain != "" {
+				script.Config.BaseURL = buildBaseURL(ctx.defaultProtocol, ctx.defaultDomain, ctx.defaultPort)
+			}
+			if len(ctx.headers) > 0 {
+				for k, v := range ctx.headers {
+					script.Config.HTTP.DefaultHeaders[k] = convertVariables(v)
+				}
 			}
 		}
 		if len(script.Config.HTTP.DefaultHeaders) == 0 {
 			script.Config.HTTP.DefaultHeaders = nil
 		}
+		finalizeNativeProtocolScript(script, &ctx, &diagnostics, &sourceMappings, sourceFileName, threadName)
 		if len(ctx.csvSources) > 0 {
 			script.DataSources = append(script.DataSources, ctx.csvSources...)
 		}
 		if len(script.Actions) == 0 {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("%s: no HTTP samplers were converted", threadName))
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s: no executable samplers were converted", threadName))
 			continue
 		}
-		applySOAPProtocolHints(script, &result.Warnings, threadName)
+		if script.Protocol == "http" {
+			applySOAPProtocolHints(script, &result.Warnings, threadName)
+		}
 		result.Scripts = append(result.Scripts, script)
 	}
 
@@ -278,6 +251,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		diagnostics.Add(diag.Warning, "JMeter completeness guard", convertutil.FirstNonEmpty(opts.FileName, "JMX plan"), fmt.Sprintf("%d sampler(s) were detected but not converted or explicitly skipped", gap))
 	}
 	result.Unsupported = diagnostics.Items()
+	result.Stats.Mapped, result.Stats.ReviewRequired, result.Stats.AdapterRequired = tallyJMeterCategories(sourceMappings)
 	for _, script := range result.Scripts {
 		if script.Metadata == nil {
 			script.Metadata = &dsl.ScriptMetadata{}
@@ -490,12 +464,34 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 		case "DebugSampler":
 			diagnostics.Add(diag.Info, "JMeter DebugSampler", jmeterElementLocation(child.Element), "DebugSampler was preserved as diagnostic metadata and does not block executable HTTP import")
 			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "diagnostic", "ignored", "JMeter DebugSampler does not generate an executable APEX Load action."))
+		case "JSR223Sampler", "BeanShellSampler", "BSFSampler":
+			handleJMeterScriptSampler(child, script, result, diagnostics, sourceFileName, sourceMappings)
+			continue
+		case "JDBCDataSource":
+			if cfg, ok := parseJMeterJDBCConnection(child.Element); ok {
+				ctx.databaseConfig = cfg
+			}
+			continue
+		case "JDBCSampler":
+			handleJMeterJDBCSampler(child, ctx, script, result, diagnostics, sourceFileName, sourceMappings)
+			continue
+		case "FTPSampler", "TCPSampler":
+			handleJMeterNetworkSampler(child, ctx, script, result, diagnostics, sourceFileName, sourceMappings)
+			continue
+		case "JMSSampler", "JMSPublisher", "JMSSubscriber", "PublisherSampler", "SubscriberSampler":
+			handleJMeterJMSSampler(child, script, result, diagnostics, sourceFileName, sourceMappings)
+			continue
 		case "hashTree":
 		default:
-			if strings.TrimSpace(child.Element.Name) != "" {
-				unsupported[child.Element.Name] = struct{}{}
-				diagnoseJMeterElement(child.Element, diagnostics)
-				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "unsupported", "review_only", "JMeter element was not converted into executable APEX Load DSL."))
+			if name := strings.TrimSpace(child.Element.Name); name != "" {
+				if isJMeterListenerElement(name) {
+					diagnostics.Add(diag.Info, "JMeter "+name, jmeterElementLocation(child.Element), "listener is reporting-only and does not affect replay; preserved as metadata")
+					*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "diagnostic", "ignored", "JMeter listener is reporting-only and was preserved as metadata."))
+				} else {
+					unsupported[child.Element.Name] = struct{}{}
+					diagnoseJMeterElement(child.Element, diagnostics)
+					*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "unsupported", "review_only", "JMeter element was not converted into executable APEX Load DSL."))
+				}
 			}
 		}
 		if len(child.Children) > 0 && child.Element.Name != "HTTPSamplerProxy" {

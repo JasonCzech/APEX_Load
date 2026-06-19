@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
-import { summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
-import { type JMeterImportResult as ImportResult, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
+import { summarizeImportExtractors, summarizeSupportMatrix, summarizeSupportMatrixEntries } from './jmeterImportUtils'
+import { type JMeterImportResult as ImportResult, type JMeterSupportMatrixEntry, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ParameterizationReview from './ParameterizationReview'
@@ -51,6 +51,8 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [supportMatrix, setSupportMatrix] = useState<SupportMatrix | null>(null)
+  const [supportEntries, setSupportEntries] = useState<JMeterSupportMatrixEntry[]>([])
+  const [supportNotes, setSupportNotes] = useState<string[]>([])
   const [reviewMode, setReviewMode] = useState<ReviewMode | null>(null)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [options, setOptions] = useState({
@@ -60,6 +62,7 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
     scenario_draft: true,
   })
   const supportMatrixSections = summarizeSupportMatrix(supportMatrix)
+  const coverageSections = summarizeSupportMatrixEntries(supportEntries)
   const extractorSummary = summarizeImportExtractors(result?.scripts || [])
   const primaryScript = getPrimaryScript(result)
   const sourceReview = sourceReviewForJMeter(result, primaryScript)
@@ -72,11 +75,15 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
       .then((response: JMeterSupportMatrixResponse) => {
         if (!cancelled) {
           setSupportMatrix(response.support_matrix || null)
+          setSupportEntries(Array.isArray(response.support_matrix_entries) ? response.support_matrix_entries : [])
+          setSupportNotes(Array.isArray(response.notes) ? response.notes : response.support_matrix?.notes || [])
         }
       })
       .catch(() => {
         if (!cancelled) {
           setSupportMatrix(null)
+          setSupportEntries([])
+          setSupportNotes([])
         }
       })
 
@@ -247,13 +254,52 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
       </div>
 
       <div className="settings-notice">
-        JMeter import is still centered on HTTP plans, but SOAP-shaped HTTP Request samplers can now be promoted into SOAP scripts. Dedicated SOAP plugins and Java-over-HTTP style transports remain unsupported until deeper converter and runtime work lands.
+        HTTP plans convert most completely. Homogeneous JDBC, FTP, and TCP thread groups now convert into native database/network scripts, safe JSR223/BeanShell statements are translated, and anything that needs a provider/adapter (such as JMS) or manual review is classified rather than dropped.
       </div>
 
-      {supportMatrix && (
+      {coverageSections.length > 0 ? (
         <div className="lr-preserved">
           <div className="lr-preserved-header">
-            <h4>Phase 1 Coverage</h4>
+            <h4>Import Coverage</h4>
+            <span>Mapped, review-required, adapter-required, and unsupported constructs</span>
+          </div>
+          <div className="lr-preserved-grid">
+            {coverageSections.map(section => (
+              <div className={`lr-preserved-card coverage-${section.key}`} key={section.key}>
+                <span className="lr-preserved-label">{section.title}</span>
+                <strong>{section.items.length} {section.items.length === 1 ? 'construct' : 'constructs'}</strong>
+                <small>{section.preview}</small>
+              </div>
+            ))}
+          </div>
+          <div className="lr-warnings">
+            <h4>Coverage Details</h4>
+            {coverageSections.map(section => (
+              <details key={section.key} data-coverage={section.key}>
+                <summary>{section.title} ({section.items.length})</summary>
+                <p className="coverage-hint">{section.hint}</p>
+                <ul>
+                  {section.items.map(item => (
+                    <li key={item.id}>
+                      <strong>{item.construct}</strong>
+                      {item.notes ? <> — {item.notes}</> : null}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ))}
+          </div>
+          {supportNotes.length > 0 && (
+            <div className="lr-warnings">
+              <h4>Importer Notes</h4>
+              <ul>{supportNotes.map((note, index) => <li key={index}>{note}</li>)}</ul>
+            </div>
+          )}
+        </div>
+      ) : supportMatrix && (
+        <div className="lr-preserved">
+          <div className="lr-preserved-header">
+            <h4>Import Coverage</h4>
             <span>HTTP-first migration with partial SOAP promotion</span>
           </div>
           <div className="lr-preserved-grid">
@@ -274,10 +320,10 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
               </details>
             ))}
           </div>
-          {supportMatrix.notes && supportMatrix.notes.length > 0 && (
+          {supportNotes.length > 0 && (
             <div className="lr-warnings">
               <h4>Importer Notes</h4>
-              <ul>{supportMatrix.notes.map((note: string, index: number) => <li key={index}>{note}</li>)}</ul>
+              <ul>{supportNotes.map((note, index) => <li key={index}>{note}</li>)}</ul>
             </div>
           )}
         </div>

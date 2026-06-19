@@ -102,9 +102,9 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Coverage Details')
-    expect(container.textContent).toContain('JMeter import is still centered on HTTP plans')
-    expect(container.textContent).toContain('SOAP-shaped HTTP Request samplers can now be promoted into SOAP scripts')
-    expect(container.textContent).toContain('Dedicated SOAP plugins and Java-over-HTTP style transports remain unsupported')
+    expect(container.textContent).toContain('HTTP plans convert most completely')
+    expect(container.textContent).toContain('native database/network scripts')
+    expect(container.textContent).toContain('JMS')
 
     const coverageDetails = container.querySelector('details') as HTMLDetailsElement | null
     expect(coverageDetails).not.toBeNull()
@@ -160,6 +160,42 @@ describe('JMeterImport', () => {
     expect(stats).toContain('1HTTP Samplers')
     expect(stats).toContain('2Total Samplers')
     expect(stats).toContain('1Skipped Samplers')
+  })
+
+  it('renders structured coverage categories including adapter_required', async () => {
+    apiMock.getJMeterSupportMatrix.mockResolvedValueOnce({
+      support_matrix: {
+        supported: ['HTTP Request samplers'],
+        partial: [],
+        unsupported: ['JMS Publisher / Subscriber / point-to-point samplers'],
+      },
+      support_matrix_entries: [
+        { id: 'jmeter-http-sampler', area: 'Samplers', construct: 'HTTP Request samplers', status: 'supported', execution_status: 'executable' },
+        { id: 'jmeter-jsr223', area: 'Scripting', construct: 'JSR223 / BeanShell / Groovy scripting', status: 'partial', execution_status: 'review_required', review_required: true },
+        { id: 'jmeter-jdbc', area: 'Samplers', construct: 'JDBC Request samplers', status: 'supported', execution_status: 'executable' },
+        { id: 'jmeter-jms', area: 'Samplers', construct: 'JMS Publisher / Subscriber / point-to-point samplers', status: 'review_only', execution_status: 'adapter_required', review_required: true, notes: 'Requires selecting a JMS provider before running.' },
+      ],
+      notes: ['adapter_required marks constructs that need an operator-supplied adapter or provider.'],
+    })
+
+    await act(async () => {
+      root.render(<JMeterImport />)
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Import Coverage')
+    expect(container.textContent).toContain('Mapped')
+    expect(container.textContent).toContain('Review required')
+    expect(container.textContent).toContain('Adapter required')
+
+    const adapterDetails = container.querySelector('details[data-coverage="adapter_required"]') as HTMLDetailsElement | null
+    expect(adapterDetails).not.toBeNull()
+    expect(adapterDetails?.textContent).toContain('JMS Publisher / Subscriber / point-to-point samplers')
+    expect(adapterDetails?.textContent).toContain('Requires selecting a JMS provider before running')
+    // adapter_required must be a distinct category from generic review.
+    expect(container.querySelector('details[data-coverage="mapped"]')).not.toBeNull()
+    expect(container.querySelector('.lr-preserved-card.coverage-adapter_required')).not.toBeNull()
   })
 
   it('routes the reviewed script through the shared edit handoff', async () => {

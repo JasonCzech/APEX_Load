@@ -63,7 +63,12 @@ func (s *Server) handleValidateJMeterImport(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) handleJMeterSupportMatrix(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
+		// Flat arrays retained for backward compatibility with existing clients.
 		"support_matrix": jmeter.GetSupportMatrix(),
+		// Structured entries (mirrors the AsyncAPI/k6/DevWeb importers) carry
+		// per-construct status, execution_status, and review flags.
+		"support_matrix_entries": jmeter.GetSupportMatrixEntries(),
+		"notes":                  jmeter.GetSupportMatrixNotes(),
 	})
 }
 

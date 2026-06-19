@@ -424,6 +424,9 @@ export interface JMeterConvertStats {
   assertions: number
   timers: number
   unsupported: number
+  mapped?: number
+  review_required?: number
+  adapter_required?: number
 }
 
 export interface JMeterImportSummary {
@@ -660,8 +663,21 @@ export interface BrowserRecordingImportStats {
 
 export type BrowserRecordingImportResult = ScriptImportResult<BrowserRecordingImportStats, unknown>
 
+export interface JMeterSupportMatrixEntry {
+  id: string
+  area: string
+  construct: string
+  status: string
+  execution_status: string
+  review_required?: boolean
+  fields?: string[]
+  notes?: string
+}
+
 export interface JMeterSupportMatrixResponse {
   support_matrix?: SupportMatrix
+  support_matrix_entries?: JMeterSupportMatrixEntry[]
+  notes?: string[]
 }
 
 export interface EnterpriseArchiveSupportMatrixResponse {
