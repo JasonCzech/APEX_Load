@@ -2,7 +2,9 @@ package storage
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -72,6 +74,103 @@ func TestRewriteSQLForPostgres(t *testing.T) {
 		if !strings.Contains(gotSel, "COALESCE("+col+", FALSE)") {
 			t.Fatalf("COALESCE(%s, ...) not rewritten to FALSE: %s", col, gotSel)
 		}
+	}
+}
+
+// looksBooleanColumn reports whether a column name follows one of the project's
+// boolean naming conventions, i.e. it is bound/scanned as a Go bool and therefore
+// must be a Postgres BOOLEAN (not INTEGER). Counters/sizes/versions/flags stored as
+// 0/1 ints (sort_order, revision, desired_count, cordoned, …) intentionally do NOT
+// match — they stay INTEGER in both dialects. Extend this list if a new bool naming
+// convention is introduced.
+func looksBooleanColumn(name string) bool {
+	switch {
+	case strings.HasSuffix(name, "_enabled"),
+		strings.HasSuffix(name, "_disabled"),
+		strings.HasSuffix(name, "_pinned"),
+		strings.HasPrefix(name, "is_"),
+		strings.HasPrefix(name, "has_"),
+		strings.HasPrefix(name, "auto_promote"),
+		name == "active",
+		name == "enabled":
+		return true
+	default:
+		return false
+	}
+}
+
+// TestPostgresSchemaBooleanColumnsRewriteToBoolean drives the REAL schema — every
+// CREATE TABLE plus every ALTER ... ADD COLUMN — through the Postgres dialect rewriter
+// and fails if any conventionally-boolean column survives as INTEGER, or if any
+// COALESCE(bool_col, 0|1) read in the storage package's SQL is not rewritten to a
+// boolean default. There is no separate Postgres schema file: rewriteSQL translates
+// the SQLite DDL/DML on the fly, and its boolean handling is a hardcoded list. This
+// guard makes that list self-policing against the schema so a newly added boolean
+// column can't silently break Postgres (regressed once on auto_promote_on_heal).
+func TestPostgresSchemaBooleanColumnsRewriteToBoolean(t *testing.T) {
+	stmts := append([]string{}, schemaCreateTableStatements()...)
+	for _, m := range schemaColumnMigrations() {
+		stmts = append(stmts, m.query)
+	}
+
+	intColumn := regexp.MustCompile(`(?i)\b([a-z_][a-z0-9_]*)\s+INTEGER\b`)
+
+	// Collect the boolean columns declared anywhere in the live schema.
+	boolCols := map[string]bool{}
+	for _, stmt := range stmts {
+		for _, m := range intColumn.FindAllStringSubmatch(stmt, -1) {
+			if name := strings.ToLower(m[1]); looksBooleanColumn(name) {
+				boolCols[name] = true
+			}
+		}
+	}
+	if len(boolCols) == 0 {
+		t.Fatal("no boolean columns detected in live schema — the schema accessors or naming heuristic are broken")
+	}
+
+	// DDL side: after rewriting, no boolean column may remain INTEGER.
+	for _, stmt := range stmts {
+		rewritten := rewriteSQL(stmt, storeDialectPostgres)
+		for _, m := range intColumn.FindAllStringSubmatch(rewritten, -1) {
+			if name := strings.ToLower(m[1]); looksBooleanColumn(name) {
+				t.Errorf("boolean column %q is still INTEGER after the Postgres rewrite — add a BOOLEAN entry to rewriteSQL.\nstatement: %s", name, strings.TrimSpace(stmt))
+			}
+		}
+	}
+
+	// Read side: every COALESCE(bool_col, 0|1) that actually appears in the storage
+	// package's SQL must be rewritten so the integer default becomes a boolean, or
+	// Postgres rejects COALESCE(boolean, 0) with a type mismatch.
+	coalesce := regexp.MustCompile(`COALESCE\(\s*([a-z_][a-z0-9_]*)\s*,\s*([01])\s*\)`)
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package dir: %v", err)
+	}
+	seen := 0
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for _, m := range coalesce.FindAllStringSubmatch(string(src), -1) {
+			col := strings.ToLower(m[1])
+			if !boolCols[col] {
+				continue
+			}
+			seen++
+			raw := m[0]
+			got := rewriteSQL(raw, storeDialectPostgres)
+			if !strings.Contains(got, "COALESCE("+col+", FALSE)") && !strings.Contains(got, "COALESCE("+col+", TRUE)") {
+				t.Errorf("%s: %q is not rewritten to a boolean default for Postgres — add a COALESCE entry to rewriteSQL. got: %s", name, raw, got)
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("found no COALESCE(bool_col, 0|1) usages to verify — the source scan likely regressed")
 	}
 }
 

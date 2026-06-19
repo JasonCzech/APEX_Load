@@ -11,8 +11,12 @@ import (
 	"time"
 )
 
-func (s *SQLiteStore) init() error {
-	queries := []string{
+// schemaCreateTableStatements returns every CREATE TABLE statement in dependency
+// order. Extracted from init() (rather than an init()-local slice) so the Postgres
+// dialect-rewrite guard test can drive the real schema through rewriteSQL — see
+// TestPostgresSchemaBooleanColumnsRewriteToBoolean.
+func schemaCreateTableStatements() []string {
+	return []string{
 		`CREATE TABLE IF NOT EXISTS domains (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -657,14 +661,14 @@ func (s *SQLiteStore) init() error {
 			updated_at DATETIME NOT NULL
 		)`,
 	}
+}
 
-	for _, q := range queries {
-		if _, err := s.db.Exec(q); err != nil {
-			return fmt.Errorf("failed to run migration query: %w", err)
-		}
-	}
-
-	if err := s.applyOptionalSchemaMigrations([]optionalSchemaMigration{
+// schemaColumnMigrations returns the additive ALTER TABLE ... ADD COLUMN statements
+// applied on every init (idempotent via isDuplicateColumnErr). Extracted alongside
+// schemaCreateTableStatements so the Postgres rewrite guard test can also cover the
+// columns added here (e.g. boolean flags added to existing tables).
+func schemaColumnMigrations() []optionalSchemaMigration {
+	return []optionalSchemaMigration{
 		{name: "tests.runtime_settings_json", query: `ALTER TABLE tests ADD COLUMN runtime_settings_json TEXT`},
 		{name: "tests.scenario_mode", query: `ALTER TABLE tests ADD COLUMN scenario_mode TEXT`},
 		{name: "tests.goal_config_json", query: `ALTER TABLE tests ADD COLUMN goal_config_json TEXT`},
@@ -741,7 +745,17 @@ func (s *SQLiteStore) init() error {
 		{name: "run_archives.ref_key", query: `ALTER TABLE run_archives ADD COLUMN ref_key TEXT`},
 		{name: "github_script_links.remote_blob_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_blob_sha TEXT`},
 		{name: "github_script_links.remote_commit_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_commit_sha TEXT`},
-	}); err != nil {
+	}
+}
+
+func (s *SQLiteStore) init() error {
+	for _, q := range schemaCreateTableStatements() {
+		if _, err := s.db.Exec(q); err != nil {
+			return fmt.Errorf("failed to run migration query: %w", err)
+		}
+	}
+
+	if err := s.applyOptionalSchemaMigrations(schemaColumnMigrations()); err != nil {
 		return err
 	}
 	if _, err := s.db.Exec(`UPDATE github_script_links SET remote_blob_sha = last_commit_sha WHERE (remote_blob_sha IS NULL OR remote_blob_sha = '') AND last_commit_sha IS NOT NULL AND last_commit_sha != ''`); err != nil {
