@@ -1108,7 +1108,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Parameter')
     const paramDetails = container.querySelector('.selected-parameter-details')
     expect(paramDetails).not.toBeNull()
-    expect(paramDetails?.textContent).toContain('session_id')
+    expect((paramDetails?.querySelector('.selected-parameter-name') as HTMLInputElement | null)?.value).toBe('session_id')
     const refButtons = container.querySelectorAll('.selected-parameter-ref')
     expect(refButtons.length).toBeGreaterThan(0)
 

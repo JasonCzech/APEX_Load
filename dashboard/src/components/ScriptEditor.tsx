@@ -3090,6 +3090,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     for (const range of parameterMatchRanges) lines.add(jsonText.slice(0, range.from).split('\n').length)
     return Array.from(lines).sort((a, b) => a - b)
   }, [parameterMatchRanges, jsonText])
+  // Row counts from the selected parameter's data file (inline data sources only).
+  const selectedParameterDataStats = useMemo((): { rows: number; unique: number } | null => {
+    const parameter = selectedOutlineParameter
+    if (!parameter || !parameter.data_source) return null
+    const sourceIndex = findDataSourceIndexByName(script.data_sources, parameter.data_source)
+    const source = sourceIndex !== null ? script.data_sources?.[sourceIndex] : null
+    if (!source) return null
+    const parsed = parseInlineData(source)
+    if (parsed.rows.length === 0) return null
+    const columnIndex = parameter.column ? parsed.columns.findIndex(column => column === parameter.column) : -1
+    const unique = countUniqueColumnValues(parsed, columnIndex >= 0 ? [columnIndex] : [])
+    return { rows: parsed.rows.length, unique }
+  }, [selectedOutlineParameter, script.data_sources])
   const activeAutoParameterCandidate = useMemo(
     () => parameterCandidates.find(candidate => candidate.id === activeAutoParameterCandidateId) || parameterCandidates[0] || null,
     [activeAutoParameterCandidateId, parameterCandidates],
@@ -6998,7 +7011,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 parameter={selectedOutlineParameter}
                 parameterIndex={selectedOutlineParameterIndex}
                 referenceLines={selectedParameterReferenceLines}
+                dataStats={selectedParameterDataStats}
                 saving={saving}
+                onRename={name => {
+                  updateParameter(selectedOutlineParameterIndex, 'name', name)
+                  setSelectedOutlineParameterName(name)
+                }}
                 onUpdateParameter={updateParameter}
                 onSave={handleSave}
                 onJumpToLine={line => setJsonLineJumpRequest({ line, nonce: Date.now() })}
@@ -12432,12 +12450,17 @@ interface AutoParameterizationSidebarProps {
 const PARAM_CHOICE_KEYS = new Set<string>(['update', 'selection', 'on_exhaustion'])
 const PARAM_BOOL_KEYS = new Set<string>(['value_for_each_vuser'])
 const PARAM_NUMBER_KEYS = new Set<string>(['start_row', 'block_size', 'offset_seconds', 'step', 'start', 'min', 'max', 'length', 'padding'])
+// Read-only in the sidebar — these are determined by the data source, not edited here.
+const PARAM_STATIC_KEYS = new Set<string>(['data_source', 'column'])
+const PARAM_FIELD_LABELS: Record<string, string> = { data_source: 'Data Source', column: 'Column Name' }
 
 interface SelectedParameterDetailsProps {
   parameter: ParameterConfig
   parameterIndex: number
   referenceLines: number[]
+  dataStats: { rows: number; unique: number } | null
   saving: boolean
+  onRename: (name: string) => void
   onUpdateParameter: (idx: number, field: keyof ParameterConfig, value: unknown) => void
   onSave: () => void
   onJumpToLine: (line: number) => void
@@ -12445,17 +12468,21 @@ interface SelectedParameterDetailsProps {
 }
 
 // The Parameter companion page when a parameter is selected in the left list:
-// edit its type and settings inline (not the data values), jump to references,
-// and persist with Save.
-function SelectedParameterDetails({ parameter, parameterIndex, referenceLines, saving, onUpdateParameter, onSave, onJumpToLine, onEditInDataTab }: SelectedParameterDetailsProps) {
+// rename it, edit its runtime settings inline (type / data source / column are
+// read-only), see its data-file row counts, jump to references, and Save.
+function SelectedParameterDetails({ parameter, parameterIndex, referenceLines, dataStats, saving, onRename, onUpdateParameter, onSave, onJumpToLine, onEditInDataTab }: SelectedParameterDetailsProps) {
   const settingKeys = Object.keys(parameter).filter(
     key => key !== 'name' && key !== 'type'
       && (parameter as unknown as Record<string, unknown>)[key] !== undefined
       && (parameter as unknown as Record<string, unknown>)[key] !== null,
   )
-  const renderInput = (key: string) => {
+  const fieldLabel = (key: string) => PARAM_FIELD_LABELS[key] || key.replace(/_/g, ' ')
+  const renderControl = (key: string) => {
     const value = (parameter as unknown as Record<string, unknown>)[key]
     const field = key as keyof ParameterConfig
+    if (PARAM_STATIC_KEYS.has(key)) {
+      return <span className="selected-parameter-static">{String(value ?? '') || '—'}</span>
+    }
     if (PARAM_CHOICE_KEYS.has(key)) {
       const definition = PARAMETER_CHOICE_DEFINITIONS[key as MutableParameterChoiceField]
       return (
@@ -12476,23 +12503,25 @@ function SelectedParameterDetails({ parameter, parameterIndex, referenceLines, s
     <div className="selected-parameter-details">
       <div className="selected-parameter-header">
         <div className="selected-parameter-title">
-          <strong>{parameter.name || 'Parameter'}</strong>
+          <input className="selected-parameter-name" value={parameter.name || ''} aria-label="Parameter name" placeholder="parameter_name" onChange={event => onRename(event.target.value)} />
+          <span className="selected-parameter-type" title="Parameter type (set in Parameter Data)">{parameter.type || 'list'}</span>
         </div>
       </div>
+
+      {dataStats && (
+        <div className="selected-parameter-section">
+          <span className="selected-parameter-section-label">Data file</span>
+          <p className="selected-parameter-stats">{dataStats.rows} row{dataStats.rows === 1 ? '' : 's'} · {dataStats.unique} unique</p>
+        </div>
+      )}
 
       <div className="selected-parameter-section">
         <span className="selected-parameter-section-label">Settings</span>
         <div className="selected-parameter-form">
-          <label className="selected-parameter-field">
-            <span>Type</span>
-            <select value={parameter.type || 'list'} onChange={event => onUpdateParameter(parameterIndex, 'type', event.target.value)}>
-              {PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </label>
           {settingKeys.map(key => (
             <label key={key} className={`selected-parameter-field ${PARAM_BOOL_KEYS.has(key) ? 'is-bool' : ''}`}>
-              <span>{key.replace(/_/g, ' ')}</span>
-              {renderInput(key)}
+              <span>{fieldLabel(key)}</span>
+              {renderControl(key)}
             </label>
           ))}
         </div>
