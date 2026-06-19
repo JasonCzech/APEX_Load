@@ -811,3 +811,34 @@ func TestReplayControlLoopRunsBodyPerPass(t *testing.T) {
 		}
 	}
 }
+
+func TestReplayNestedControlLoopIterationPath(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	inner := dsl.Action{Name: "inner", Type: "control_loop", Control: &dsl.ControlFlow{Count: 2, Steps: []dsl.Action{
+		{Name: "body", Type: "GET", Method: "GET", Target: "/b"},
+	}}}
+	outer := dsl.Action{Name: "outer", Type: "control_loop", Control: &dsl.ControlFlow{Count: 2, Steps: []dsl.Action{inner}}}
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name: "Nested", Protocol: protocolName, Actions: []dsl.Action{outer},
+	}, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript error: %v", err)
+	}
+	if len(report.Events) != 4 {
+		t.Fatalf("events=%d want 4 (outer 2 x inner 2)", len(report.Events))
+	}
+	wantPaths := [][]int{{1, 1}, {1, 2}, {2, 1}, {2, 2}}
+	for i, ev := range report.Events {
+		if !slices.Equal(ev.IterationPath, wantPaths[i]) {
+			t.Fatalf("event %d IterationPath=%v want %v", i, ev.IterationPath, wantPaths[i])
+		}
+		if len(ev.StepPath) != 2 || ev.StepPath[0] != "loop[0]" || ev.StepPath[1] != "loop[0]" {
+			t.Fatalf("event %d StepPath=%v want [loop[0] loop[0]]", i, ev.StepPath)
+		}
+		if ev.Iteration == nil || *ev.Iteration != wantPaths[i][1] {
+			t.Fatalf("event %d Iteration=%v want innermost %d", i, ev.Iteration, wantPaths[i][1])
+		}
+	}
+}

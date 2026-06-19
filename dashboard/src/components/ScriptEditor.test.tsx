@@ -830,6 +830,31 @@ describe('ScriptEditor', () => {
     expect(utilitySidebar?.textContent).toContain('1 frame/window blocker')
   })
 
+  it('expands an http_sequence action in the Author outline to reveal sub-request rows', async () => {
+    const sequenceScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [{
+        name: 'Checkout_Txn', type: 'http_sequence', method: 'SEQUENCE', target: '/aura',
+        params: { requests: [
+          { name: 'Sub_One', type: 'POST', method: 'POST', target: '/one' },
+          { name: 'Sub_Two', type: 'GET', method: 'GET', target: '/two' },
+        ] },
+      }],
+    }
+    await act(async () => { root.render(<ScriptEditor initialScript={sequenceScript} />) })
+
+    // Collapsed by default — no nested rows until the container is expanded.
+    expect(container.querySelectorAll('.action-item-nested')).toHaveLength(0)
+    const toggle = container.querySelector('.action-expand-toggle') as HTMLButtonElement | null
+    expect(toggle).not.toBeNull()
+    await act(async () => { toggle?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+    const nested = container.querySelectorAll('.action-item-nested')
+    expect(nested).toHaveLength(2)
+    expect(nested[0].textContent).toContain('Sub_One')
+    expect(nested[1].textContent).toContain('Sub_Two')
+  })
+
   it('renders grouped HTTP sequence actions with child request details', async () => {
     const sequenceScript: ScriptDefinition = {
       ...initialScript,

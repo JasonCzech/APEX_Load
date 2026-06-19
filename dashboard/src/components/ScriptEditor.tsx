@@ -156,6 +156,7 @@ import {
   SCRIPT_JSON_TAB_ID,
   buildScriptPhaseActionRows,
   buildDebugRailRenderRows,
+  type DebugRailRenderRow,
   debugStepPathKey,
   filterScriptPhaseActionRows,
   duplicateActionInList,
@@ -2529,13 +2530,14 @@ function normalizeStoredBreakpoints(raw: unknown): ScriptDebugBreakpoint[] {
 
 // formatDebugLeafSuffix renders the sub-request / sub-step position of a paused
 // leaf (e.g. " · request 43/78", " · loop iter 2"). Empty for a plain action.
-function formatDebugLeafSuffix(leaf: { request_index?: number; request_count?: number; iteration?: number } | null | undefined): string {
+function formatDebugLeafSuffix(leaf: { request_index?: number; request_count?: number; iteration?: number; iteration_path?: number[] } | null | undefined): string {
   if (!leaf) return ''
   const parts: string[] = []
   if (leaf.request_index != null) {
     parts.push(leaf.request_count ? `request ${leaf.request_index + 1}/${leaf.request_count}` : `request ${leaf.request_index + 1}`)
   }
-  if (leaf.iteration != null) parts.push(`loop iter ${leaf.iteration}`)
+  if (leaf.iteration_path && leaf.iteration_path.length) parts.push(`loop iter ${leaf.iteration_path.join('·')}`)
+  else if (leaf.iteration != null) parts.push(`loop iter ${leaf.iteration}`)
   return parts.length ? ` · ${parts.join(' · ')}` : ''
 }
 
@@ -3094,19 +3096,37 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   )
   // Per-row transaction band membership (left rail bracketing a transaction's rows).
   const transactionBands = useMemo(() => computeTransactionBands(filteredActionRows), [filteredActionRows])
+  // Container actions (http_sequence / control_*) the operator has expanded in the
+  // Author outline to reveal their nested sub-requests / steps.
+  const [expandedAuthorContainers, setExpandedAuthorContainers] = useState<Set<string>>(() => new Set())
+  const toggleAuthorContainer = useCallback((key: string) => {
+    setExpandedAuthorContainers(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+  // The flattened, expansion-aware outline rows (containers + their nested children).
+  // Collapsed by default, so a script with no expanded containers renders exactly
+  // the flat top-level list as before.
+  const authorRenderRows = useMemo(
+    () => buildDebugRailRenderRows(filteredActionRows, expandedAuthorContainers),
+    [filteredActionRows, expandedAuthorContainers],
+  )
   // Virtualize the Author Action List so a multi-thousand-action import renders only the
   // visible rows instead of one DOM subtree per action.
   const actionListScrollRef = useRef<HTMLDivElement | null>(null)
-  const virtualizeActions = filteredActionRows.length > LIST_VIRTUALIZE_THRESHOLD
+  const virtualizeActions = authorRenderRows.length > LIST_VIRTUALIZE_THRESHOLD
   const actionListVirtualizer = useVirtualizer({
-    count: filteredActionRows.length,
+    count: authorRenderRows.length,
     getScrollElement: () => actionListScrollRef.current,
     estimateSize: () => 45,
     overscan: 12,
   })
-  const actionRowsToRender: Array<{ row: ScriptPhaseActionRow; virtualItem: VirtualItem | null }> = virtualizeActions
-    ? actionListVirtualizer.getVirtualItems().map(virtualItem => ({ row: filteredActionRows[virtualItem.index], virtualItem }))
-    : filteredActionRows.map(row => ({ row, virtualItem: null }))
+  const actionRowsToRender: Array<{ item: DebugRailRenderRow; virtualItem: VirtualItem | null }> = virtualizeActions
+    ? actionListVirtualizer.getVirtualItems().map(virtualItem => ({ item: authorRenderRows[virtualItem.index], virtualItem }))
+    : authorRenderRows.map(item => ({ item, virtualItem: null }))
   const parameterReferenceCounts = useMemo(() => {
     const counts = new Map<string, number>()
     outlineSummary.actions.forEach(action => {
@@ -8119,10 +8139,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                   if (groupExpanded) {
                                     iterationIndices.forEach((evIdx, k) => {
                                       const ev = debugEvents[evIdx]
-                                      const iterNum = ev.iteration ?? (k + 1)
+                                      // Full iteration vector (outer→inner) disambiguates nested loops;
+                                      // falls back to the innermost pass for single-level loops.
+                                      const iterPath = ev.iteration_path && ev.iteration_path.length ? ev.iteration_path : [ev.iteration ?? (k + 1)]
+                                      const iterLabel = iterPath.join('·')
                                       const iterFail = !ev.success
                                       if (debugRailFailuresOnly && !iterFail) return
-                                      const isCurrentIter = isCurrentGroup && currentDebugAction?.iteration === iterNum
+                                      const curPath = currentDebugAction?.iteration_path
+                                      const isCurrentIter = isCurrentGroup && curPath != null && curPath.length === iterPath.length && curPath.every((n, i) => n === iterPath[i])
                                       const isSelectedIter = selectedReplayEventIndex != null && selectedReplayEventIndex === evIdx
                                       out.push(
                                         <div
@@ -8142,7 +8166,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                             }}
                                           >
                                             <span className="debugger-action-row-head">
-                                              <span className="replay-event-phase">Iteration {iterNum}</span>
+                                              <span className="replay-event-phase">Iteration {iterLabel}</span>
                                               <span className={`debugger-action-status ${iterFail ? 'fail' : 'pass'}`} aria-hidden="true" />
                                             </span>
                                             <small>{(ev.method || item.method || 'request')} {ev.target || item.target || ''}</small>
@@ -10970,8 +10994,78 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     </div>
                     <div className="action-list" ref={actionListScrollRef}>
                       <div className="action-list-virtual" style={virtualizeActions ? { height: actionListVirtualizer.getTotalSize(), position: 'relative' } : undefined}>
-                      {actionRowsToRender.map(({ row, virtualItem }) => {
+                      {actionRowsToRender.map(({ item, virtualItem }) => {
+                        const row = item.row
                         const { action: a, actionIndex: i, phase, phaseLabel } = row
+                        const virtualRowProps = {
+                          'data-index': virtualItem ? virtualItem.index : undefined,
+                          ref: virtualItem ? actionListVirtualizer.measureElement : undefined,
+                          style: virtualItem ? ({ position: 'absolute' as const, top: 0, left: 0, width: '100%', transform: `translateY(${virtualItem.start}px)` }) : undefined,
+                        }
+                        // Nested rows (sub-requests of an http_sequence, control-flow leaves,
+                        // and nested containers) render as lightweight indented rows. Top-level
+                        // rows keep the full editing affordances below.
+                        if (item.kind === 'leaf') {
+                          const indent = { paddingLeft: `${item.depth * 14}px` } as React.CSSProperties
+                          const leafBpKey = item.requestIndex != null
+                            ? debugBreakpointKey(phase, i, item.requestIndex)
+                            : debugStepPathKey(phase, i, item.stepPath)
+                          const leafBpActive = debugBreakpointKeys.has(leafBpKey)
+                          const leafLabel = item.requestIndex != null ? `Request ${item.requestIndex + 1}` : humanizeStepSegment(item.stepPath[item.stepPath.length - 1] || '')
+                          const requestIndex = item.requestIndex
+                          const stepPath = item.stepPath
+                          const leafBpHandler = () => requestIndex != null
+                            ? void toggleDebugBreakpoint(phase, i, requestIndex)
+                            : void toggleStepPathBreakpoint(phase, i, stepPath)
+                          return (
+                            <div key={item.key} {...virtualRowProps} className={`action-item action-item-nested ${leafBpActive ? 'has-breakpoint' : ''}`}>
+                              <div className="action-cell action-cell-gutter">
+                                <button
+                                  type="button"
+                                  className={`action-breakpoint-button ${leafBpActive ? 'active' : ''}`}
+                                  aria-label={`${leafBpActive ? 'Remove' : 'Set'} breakpoint on ${leafLabel}`}
+                                  title={`${leafBpActive ? 'Remove' : 'Set'} breakpoint on ${leafLabel}`}
+                                  onClick={event => { event.stopPropagation(); leafBpHandler() }}
+                                >
+                                  <span aria-hidden="true" />
+                                </button>
+                              </div>
+                              <span className="action-cell action-phase-label" style={indent} title={leafLabel}>{leafLabel}</span>
+                              <span className="action-cell action-method" style={{ color: methodColor(item.method) }} title={item.method}>{item.method}</span>
+                              <span className="action-cell action-name-text" title={item.childAction.name || leafLabel}>{item.childAction.name || leafLabel}</span>
+                              <div className="action-cell action-cell-txn" />
+                              <div className="action-cell action-item-signals" />
+                            </div>
+                          )
+                        }
+                        if (item.kind === 'container' && item.depth > 0) {
+                          const indent = { paddingLeft: `${item.depth * 14}px` } as React.CSSProperties
+                          const containerActive = expandedAuthorContainers.has(item.key)
+                          const typeLabel = item.containerType === 'http_sequence' ? 'SEQ' : item.containerType === 'control_if' ? 'IF' : 'LOOP'
+                          return (
+                            <div key={item.key} {...virtualRowProps} className="action-item action-item-nested lifecycle-action" onClick={() => toggleAuthorContainer(item.key)}>
+                              <div className="action-cell action-cell-gutter"><span className="action-breakpoint-spacer" aria-hidden="true" /></div>
+                              <span className="action-cell action-phase-label" style={indent}>
+                                <button
+                                  type="button"
+                                  className="action-expand-toggle"
+                                  aria-label={containerActive ? 'Collapse sub-steps' : 'Expand sub-steps'}
+                                  aria-expanded={containerActive}
+                                  onClick={event => { event.stopPropagation(); toggleAuthorContainer(item.key) }}
+                                >{containerActive ? '▾' : '▸'}</button>
+                                {typeLabel}
+                              </span>
+                              <span className="action-cell action-method" aria-hidden="true" />
+                              <span className="action-cell action-name-text" title={item.name}>{item.name}</span>
+                              <div className="action-cell action-cell-txn" />
+                              <div className="action-cell action-item-signals">
+                                <span className="action-item-meta"><span className="metric-badge">{item.leafCount} {item.containerType === 'http_sequence' ? 'req' : 'step'}</span></span>
+                              </div>
+                            </div>
+                          )
+                        }
+                        const isContainerRow = item.kind === 'container'
+                        const containerExpanded = isContainerRow && expandedAuthorContainers.has(item.key)
                         const actionBreakpointActive = debugBreakpointKeys.has(debugBreakpointKey(phase, i))
                         const breakpointPhaseLabel = phase === 'action' ? 'action' : phaseLabel
                         const actionBreakpointLabel = `${actionBreakpointActive ? 'Remove' : 'Set'} breakpoint on ${breakpointPhaseLabel} ${i + 1}`
@@ -11024,7 +11118,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                 <span aria-hidden="true" />
                               </button>
                             </div>
-                            <span className="action-cell action-phase-label" title={`${phaseLabel} ${i + 1}`}>{phaseLabel} {i + 1}</span>
+                            <span className="action-cell action-phase-label" title={`${phaseLabel} ${i + 1}`}>
+                              {isContainerRow && (
+                                <button
+                                  type="button"
+                                  className="action-expand-toggle"
+                                  aria-label={containerExpanded ? 'Collapse sub-steps' : 'Expand sub-steps'}
+                                  aria-expanded={containerExpanded}
+                                  onClick={event => { event.stopPropagation(); toggleAuthorContainer(item.key) }}
+                                >{containerExpanded ? '▾' : '▸'}</button>
+                              )}
+                              {phaseLabel} {i + 1}
+                            </span>
                             <span className="action-cell action-method" style={{ color: methodColor(a.type) }} title={actionTypeSummary(a)}>{txnMarker ? 'TXN' : a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
                             <span className="action-cell action-name-text" title={actionRowLabel(a)}>{actionRowLabel(a)}</span>
                             <div className="action-cell action-cell-txn">

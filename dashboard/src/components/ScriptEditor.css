@@ -4474,6 +4474,27 @@
   background: var(--bg-secondary);
   cursor: pointer;
 }
+/* Nested (sub-request / control-flow step) rows in the Author outline. */
+.action-item.action-item-nested .action-name-text {
+  font-weight: 400;
+}
+.action-item.action-item-nested {
+  opacity: 0.95;
+}
+.action-expand-toggle {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 0 4px 0 0;
+  font-size: 11px;
+  line-height: 1;
+}
+.action-breakpoint-spacer {
+  display: inline-flex;
+  flex: 0 0 22px;
+  width: 22px;
+}
 .action-breakpoint-button span {
   display: block;
   width: 8px;

@@ -39,6 +39,9 @@ func cloneReplayDebugAction(action ReplayDebugAction) *ReplayDebugAction {
 	if len(action.StepPath) > 0 {
 		cloned.StepPath = append([]string(nil), action.StepPath...)
 	}
+	if len(action.IterationPath) > 0 {
+		cloned.IterationPath = append([]int(nil), action.IterationPath...)
+	}
 	return &cloned
 }
 
@@ -63,6 +66,9 @@ func cloneReplayActionEvent(event ReplayActionEvent) *ReplayActionEvent {
 	}
 	if len(event.StepPath) > 0 {
 		cloned.StepPath = append([]string(nil), event.StepPath...)
+	}
+	if len(event.IterationPath) > 0 {
+		cloned.IterationPath = append([]int(nil), event.IterationPath...)
 	}
 	if event.Snapshot != nil {
 		snapshot := *event.Snapshot

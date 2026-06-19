@@ -640,7 +640,13 @@ func debugLeafSuffix(action engine.ReplayDebugAction) string {
 			parts = append(parts, fmt.Sprintf("request %d", *action.RequestIndex+1))
 		}
 	}
-	if action.Iteration != nil {
+	if len(action.IterationPath) > 0 {
+		iters := make([]string, len(action.IterationPath))
+		for i, n := range action.IterationPath {
+			iters[i] = strconv.Itoa(n)
+		}
+		parts = append(parts, "loop iter "+strings.Join(iters, "·"))
+	} else if action.Iteration != nil {
 		parts = append(parts, fmt.Sprintf("loop iter %d", *action.Iteration))
 	}
 	if len(parts) == 0 {

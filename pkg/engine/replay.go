@@ -71,6 +71,7 @@ type ReplayDebugAction struct {
 	RequestCount     int      `json:"request_count,omitempty"`
 	StepPath         []string `json:"step_path,omitempty"`
 	Iteration        *int     `json:"iteration,omitempty"`
+	IterationPath    []int    `json:"iteration_path,omitempty"`
 	LeafOrdinal      int      `json:"leaf_ordinal,omitempty"`
 }
 
@@ -148,6 +149,7 @@ type ReplayActionEvent struct {
 	RequestCount     int      `json:"request_count,omitempty"`
 	StepPath         []string `json:"step_path,omitempty"`
 	Iteration        *int     `json:"iteration,omitempty"`
+	IterationPath    []int    `json:"iteration_path,omitempty"`
 	LeafOrdinal      int      `json:"leaf_ordinal,omitempty"`
 }
 
@@ -323,16 +325,16 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 // within the (possibly nested) container tree. A plain top-level action is a unit
 // with no parent and an empty step path.
 type replayUnit struct {
-	action       dsl.Action
-	phase        string
-	actionIndex  int      // top-level action index (shared by all leaves under it)
-	parentName   string   // container action name ("" for a plain top-level action)
-	stepPath     []string // static path to this leaf, e.g. ["requests[42]"], ["loop[0]"]
-	iteration    *int     // loop pass (1-based) for display; nil outside loops
-	requestIndex *int     // leaf ordinal within an http_sequence container; nil otherwise
-	requestCount int      // sibling count within an http_sequence container; 0 otherwise
-	leafOrdinal  int      // 0-based execution order of this leaf within its top-level action
-	synthErr     error    // when set, emit a failed event instead of executing (e.g. parse error)
+	action        dsl.Action
+	phase         string
+	actionIndex   int      // top-level action index (shared by all leaves under it)
+	parentName    string   // container action name ("" for a plain top-level action)
+	stepPath      []string // static path to this leaf, e.g. ["requests[42]"], ["loop[0]"]
+	iterationPath []int    // 1-based pass numbers, one per enclosing loop (outer→inner); nil outside loops
+	requestIndex  *int     // leaf ordinal within an http_sequence container; nil otherwise
+	requestCount  int      // sibling count within an http_sequence container; 0 otherwise
+	leafOrdinal   int      // 0-based execution order of this leaf within its top-level action
+	synthErr      error    // when set, emit a failed event instead of executing (e.g. parse error)
 }
 
 func runReplayPhase(
@@ -386,7 +388,7 @@ func expandReplayAction(
 	actionIndex int,
 	depth int,
 	stepPath []string,
-	iteration *int,
+	iterationPath []int,
 	leafCounter *int,
 	continueOnError bool,
 	ignoreThinkTime bool,
@@ -399,7 +401,7 @@ func expandReplayAction(
 	case "http_sequence":
 		children, err := httpSequenceChildActions(action)
 		if err != nil {
-			unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, parentName: action.Name, stepPath: stepPath, iteration: iteration, synthErr: err}
+			unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, parentName: action.Name, stepPath: stepPath, iterationPath: iterationPath, synthErr: err}
 			_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
 			return shouldContinue, abort
 		}
@@ -407,14 +409,14 @@ func expandReplayAction(
 			idx := childIndex
 			count := len(children)
 			unit := replayUnit{
-				action:       child,
-				phase:        phase,
-				actionIndex:  actionIndex,
-				parentName:   action.Name,
-				stepPath:     appendStepPath(stepPath, fmt.Sprintf("requests[%d]", childIndex)),
-				iteration:    iteration,
-				requestIndex: &idx,
-				requestCount: count,
+				action:        child,
+				phase:         phase,
+				actionIndex:   actionIndex,
+				parentName:    action.Name,
+				stepPath:      appendStepPath(stepPath, fmt.Sprintf("requests[%d]", childIndex)),
+				iterationPath: iterationPath,
+				requestIndex:  &idx,
+				requestCount:  count,
 			}
 			_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
 			if abort {
@@ -437,7 +439,7 @@ func expandReplayAction(
 		}
 		for stepIndex, child := range body {
 			childPath := appendStepPath(stepPath, fmt.Sprintf("%s[%d]", branch, stepIndex))
-			shouldContinue, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, iteration, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+			shouldContinue, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, iterationPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
 			if abort {
 				return false, true
 			}
@@ -474,10 +476,10 @@ func expandReplayAction(
 			} else if pass >= maxPasses || !vu.evalCondition(loop.Condition) {
 				break
 			}
-			iter := pass + 1
+			childIterPath := append(append([]int(nil), iterationPath...), pass+1)
 			for stepIndex, child := range loop.Steps {
 				childPath := appendStepPath(stepPath, fmt.Sprintf("loop[%d]", stepIndex))
-				shouldContinue, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, &iter, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+				shouldContinue, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, childIterPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
 				if abort {
 					return false, true
 				}
@@ -488,7 +490,7 @@ func expandReplayAction(
 		}
 		return true, false
 	default:
-		unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, stepPath: stepPath, iteration: iteration}
+		unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, stepPath: stepPath, iterationPath: iterationPath}
 		_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
 		return shouldContinue, abort
 	}
@@ -620,9 +622,10 @@ func applyReplayUnitIdentityDebug(action *ReplayDebugAction, unit replayUnit) {
 	if len(unit.stepPath) > 0 {
 		action.StepPath = append([]string(nil), unit.stepPath...)
 	}
-	if unit.iteration != nil {
-		it := *unit.iteration
-		action.Iteration = &it
+	if len(unit.iterationPath) > 0 {
+		action.IterationPath = append([]int(nil), unit.iterationPath...)
+		innermost := unit.iterationPath[len(unit.iterationPath)-1]
+		action.Iteration = &innermost
 	}
 }
 
@@ -637,9 +640,10 @@ func applyReplayUnitIdentityEvent(event *ReplayActionEvent, unit replayUnit) {
 	if len(unit.stepPath) > 0 {
 		event.StepPath = append([]string(nil), unit.stepPath...)
 	}
-	if unit.iteration != nil {
-		it := *unit.iteration
-		event.Iteration = &it
+	if len(unit.iterationPath) > 0 {
+		event.IterationPath = append([]int(nil), unit.iterationPath...)
+		innermost := unit.iterationPath[len(unit.iterationPath)-1]
+		event.Iteration = &innermost
 	}
 }
 

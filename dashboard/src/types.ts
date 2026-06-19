@@ -2237,6 +2237,7 @@ export interface BrowserReplayEvent {
   request_count?: number
   step_path?: string[]
   iteration?: number
+  iteration_path?: number[]
 }
 
 export interface BrowserReplayReport {
@@ -2342,6 +2343,7 @@ export interface ScriptDebugAction {
   request_count?: number
   step_path?: string[]
   iteration?: number
+  iteration_path?: number[]
 }
 
 export interface ScriptDebugSession {
