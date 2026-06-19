@@ -1958,6 +1958,16 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
     })
 
+    // The raw JSON pane is a read-only mirror by default; enable direct editing
+    // first, which reveals the Apply JSON / Reset / Format controls.
+    const editJsonButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit JSON')
+    expect(editJsonButton).toBeDefined()
+    if (!editJsonButton) return
+    await act(async () => {
+      editJsonButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
     const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
     expect(codeArea).not.toBeNull()
     if (!codeArea) return
