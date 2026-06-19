@@ -42,6 +42,16 @@ type ReplayDebugController interface {
 	BeforeAction(context.Context, ReplayDebugAction) error
 }
 
+// ReplayDebugControllerAfter is an optional capability for ReplayDebugController
+// implementations. When implemented, AfterAction is invoked once per action
+// after it has executed but before the stop-on-error decision, letting a
+// controller pause (e.g. break-on-failure) and hold execution until the
+// operator resumes, steps, or stops. A non-nil error aborts the replay, mirroring
+// BeforeAction.
+type ReplayDebugControllerAfter interface {
+	AfterAction(context.Context, ReplayDebugAction, *ReplayActionEvent) error
+}
+
 type ReplayDebugAction struct {
 	EventID      string `json:"event_id,omitempty"`
 	Phase        string `json:"phase"`
@@ -53,6 +63,15 @@ type ReplayDebugAction struct {
 	Target       string `json:"target,omitempty"`
 	Selector     string `json:"selector,omitempty"`
 	SourceStepID string `json:"source_step_id,omitempty"`
+	// Sub-request / sub-step identity, set when this leaf is a child of a
+	// container action (http_sequence / control_if / control_loop). Absent for a
+	// plain top-level action so existing payloads are unchanged.
+	ParentActionName string   `json:"parent_action_name,omitempty"`
+	RequestIndex     *int     `json:"request_index,omitempty"`
+	RequestCount     int      `json:"request_count,omitempty"`
+	StepPath         []string `json:"step_path,omitempty"`
+	Iteration        *int     `json:"iteration,omitempty"`
+	LeafOrdinal      int      `json:"leaf_ordinal,omitempty"`
 }
 
 const (
@@ -85,8 +104,8 @@ type ReplayReport struct {
 
 type ReplayActionEvent struct {
 	EventID           string                   `json:"event_id,omitempty"`
-	ActionIndex       int                      `json:"action_index,omitempty"`
-	EventIndex        int                      `json:"event_index,omitempty"`
+	ActionIndex       int                      `json:"action_index"`
+	EventIndex        int                      `json:"event_index"`
 	Phase             string                   `json:"phase"`
 	ActionName        string                   `json:"action_name"`
 	ActionType        string                   `json:"action_type"`
@@ -121,6 +140,15 @@ type ReplayActionEvent struct {
 	SourceProfile     string                   `json:"source_profile,omitempty"`
 	Diagnosis         *ReplayDiagnosis         `json:"diagnosis,omitempty"`
 	RepairSuggestions []ReplayRepairSuggestion `json:"repair_suggestions,omitempty"`
+	// Sub-request / sub-step identity for leaves of a container action
+	// (http_sequence / control_if / control_loop). Absent for a plain top-level
+	// action so existing events serialize unchanged.
+	ParentActionName string   `json:"parent_action_name,omitempty"`
+	RequestIndex     *int     `json:"request_index,omitempty"`
+	RequestCount     int      `json:"request_count,omitempty"`
+	StepPath         []string `json:"step_path,omitempty"`
+	Iteration        *int     `json:"iteration,omitempty"`
+	LeafOrdinal      int      `json:"leaf_ordinal,omitempty"`
 }
 
 type ReplayRuntimeProfile struct {
@@ -291,6 +319,22 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	return report, nil
 }
 
+// replayUnit is one thing the debugger stops at: a leaf action plus its identity
+// within the (possibly nested) container tree. A plain top-level action is a unit
+// with no parent and an empty step path.
+type replayUnit struct {
+	action       dsl.Action
+	phase        string
+	actionIndex  int      // top-level action index (shared by all leaves under it)
+	parentName   string   // container action name ("" for a plain top-level action)
+	stepPath     []string // static path to this leaf, e.g. ["requests[42]"], ["loop[0]"]
+	iteration    *int     // loop pass (1-based) for display; nil outside loops
+	requestIndex *int     // leaf ordinal within an http_sequence container; nil otherwise
+	requestCount int      // sibling count within an http_sequence container; 0 otherwise
+	leafOrdinal  int      // 0-based execution order of this leaf within its top-level action
+	synthErr     error    // when set, emit a failed event instead of executing (e.g. parse error)
+}
+
 func runReplayPhase(
 	ctx context.Context,
 	vu *VUser,
@@ -304,61 +348,299 @@ func runReplayPhase(
 	debugController ReplayDebugController,
 ) bool {
 	for actionIndex, action := range actions {
-		eventIndex := len(report.Events)
-		eventID := replayActionEventID(report.ReplaySessionID, phase, actionIndex, eventIndex)
-		debugAction := replayDebugActionFor(action, phase, actionIndex, eventIndex)
-		debugAction.EventID = eventID
-		if debugController != nil {
-			if err := debugController.BeforeAction(ctx, debugAction); err != nil {
-				report.Success = false
-				if report.Error == "" {
-					report.Error = err.Error()
-				}
-				return false
-			}
+		leafOrdinal := 0
+		shouldContinue, abort := expandReplayAction(ctx, vu, action, phase, actionIndex, 0, nil, nil, &leafOrdinal, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+		if abort {
+			return false
 		}
-		publishReplayProgress(onProgress, ReplayProgressEvent{
-			Type:       ReplayProgressActionStarted,
-			EventID:    eventID,
-			SessionID:  report.ReplaySessionID,
-			Timestamp:  time.Now(),
-			EventIndex: eventIndex,
-			Action:     cloneReplayDebugAction(debugAction),
-		})
-		event, shouldContinue := runReplayAction(ctx, vu, action, phase, actionIndex, eventIndex, eventID, ignoreThinkTime, globalThinkCfg, report)
-		report.Events = append(report.Events, event)
-		actionProgressType := ReplayProgressActionCompleted
-		if !event.Success {
-			actionProgressType = ReplayProgressActionFailed
-		}
-		publishReplayProgress(onProgress, ReplayProgressEvent{
-			Type:       actionProgressType,
-			EventID:    eventID,
-			SessionID:  report.ReplaySessionID,
-			Timestamp:  event.CompletedAt,
-			EventIndex: len(report.Events) - 1,
-			Action:     cloneReplayDebugAction(debugAction),
-			Event:      cloneReplayActionEvent(event),
-		})
-		publishReplayProgress(onProgress, ReplayProgressEvent{
-			Type:       ReplayProgressEventRun,
-			EventID:    eventID,
-			SessionID:  report.ReplaySessionID,
-			Timestamp:  event.CompletedAt,
-			EventIndex: len(report.Events) - 1,
-			Event:      cloneReplayActionEvent(event),
-		})
-		if !shouldContinue {
-			report.Success = false
-			if report.Error == "" {
-				report.Error = event.ErrorMessage
-			}
-			if !continueOnError {
-				return false
-			}
+		if !shouldContinue && !continueOnError {
+			return false
 		}
 	}
 	return true
+}
+
+// replayContainerKind reports whether an action is a container the replay engine
+// must expand into child leaves. It mirrors the load-path dispatch
+// (vuser.go: http_sequence + control_if/control_loop) exactly.
+func replayContainerKind(action dsl.Action) string {
+	switch strings.ToLower(strings.TrimSpace(action.Type)) {
+	case "http_sequence", "control_if", "control_loop":
+		return strings.ToLower(strings.TrimSpace(action.Type))
+	default:
+		return ""
+	}
+}
+
+// expandReplayAction executes one action during replay. Container actions are
+// recursively expanded into child leaves so each sub-request / sub-step flows
+// through the same BeforeAction/AfterAction/progress machinery as a top-level
+// action; leaves bottom out in runReplayUnit. Returns (shouldContinue, abort):
+// abort means a debug controller returned an error (Stop/cancel) and the whole
+// replay must halt.
+func expandReplayAction(
+	ctx context.Context,
+	vu *VUser,
+	action dsl.Action,
+	phase string,
+	actionIndex int,
+	depth int,
+	stepPath []string,
+	iteration *int,
+	leafCounter *int,
+	continueOnError bool,
+	ignoreThinkTime bool,
+	globalThinkCfg protocol.ThinkTimeConfig,
+	report *ReplayReport,
+	onProgress func(ReplayProgressEvent),
+	debugController ReplayDebugController,
+) (bool, bool) {
+	switch replayContainerKind(action) {
+	case "http_sequence":
+		children, err := httpSequenceChildActions(action)
+		if err != nil {
+			unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, parentName: action.Name, stepPath: stepPath, iteration: iteration, synthErr: err}
+			_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+			return shouldContinue, abort
+		}
+		for childIndex, child := range children {
+			idx := childIndex
+			count := len(children)
+			unit := replayUnit{
+				action:       child,
+				phase:        phase,
+				actionIndex:  actionIndex,
+				parentName:   action.Name,
+				stepPath:     appendStepPath(stepPath, fmt.Sprintf("requests[%d]", childIndex)),
+				iteration:    iteration,
+				requestIndex: &idx,
+				requestCount: count,
+			}
+			_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+			if abort {
+				return false, true
+			}
+			if !shouldContinue && !continueOnError {
+				return false, false
+			}
+		}
+		return true, false
+	case "control_if":
+		if action.Control == nil || depth >= maxControlDepth {
+			return true, false
+		}
+		body := action.Control.Else
+		branch := "else"
+		if vu.evalCondition(action.Control.Condition) {
+			body = action.Control.Steps
+			branch = "then"
+		}
+		for stepIndex, child := range body {
+			childPath := appendStepPath(stepPath, fmt.Sprintf("%s[%d]", branch, stepIndex))
+			shouldContinue, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, iteration, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+			if abort {
+				return false, true
+			}
+			if !shouldContinue && !continueOnError {
+				return false, false
+			}
+		}
+		return true, false
+	case "control_loop":
+		if action.Control == nil || depth >= maxControlDepth {
+			return true, false
+		}
+		loop := action.Control
+		maxPasses := controlLoopMaxPasses(loop)
+		fixed := loop.Count > 0
+		outerLoopIndex, hadOuterLoopIndex := vu.Variables["loop_index"]
+		restoreLoopIndex := func() {
+			if hadOuterLoopIndex {
+				vu.Variables["loop_index"] = outerLoopIndex
+			} else {
+				delete(vu.Variables, "loop_index")
+			}
+		}
+		defer restoreLoopIndex()
+		for pass := 0; ; pass++ {
+			if ctx.Err() != nil {
+				return false, true
+			}
+			vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
+			if fixed {
+				if pass >= loop.Count || pass >= maxPasses {
+					break
+				}
+			} else if pass >= maxPasses || !vu.evalCondition(loop.Condition) {
+				break
+			}
+			iter := pass + 1
+			for stepIndex, child := range loop.Steps {
+				childPath := appendStepPath(stepPath, fmt.Sprintf("loop[%d]", stepIndex))
+				shouldContinue, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, &iter, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+				if abort {
+					return false, true
+				}
+				if !shouldContinue && !continueOnError {
+					return false, false
+				}
+			}
+		}
+		return true, false
+	default:
+		unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, stepPath: stepPath, iteration: iteration}
+		_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+		return shouldContinue, abort
+	}
+}
+
+// runReplayUnit runs ONE leaf through the debug-hook + progress + event pipeline
+// (BeforeAction -> execute -> progress events -> AfterAction). It returns
+// (event, shouldContinue, abort) where abort means a controller returned an error
+// and the whole replay must halt.
+func runReplayUnit(
+	ctx context.Context,
+	vu *VUser,
+	unit replayUnit,
+	leafCounter *int,
+	ignoreThinkTime bool,
+	globalThinkCfg protocol.ThinkTimeConfig,
+	report *ReplayReport,
+	onProgress func(ReplayProgressEvent),
+	debugController ReplayDebugController,
+) (ReplayActionEvent, bool, bool) {
+	if leafCounter != nil {
+		unit.leafOrdinal = *leafCounter
+		*leafCounter++
+	}
+	eventIndex := len(report.Events)
+	eventID := replayLeafEventID(report.ReplaySessionID, unit.phase, unit.actionIndex, eventIndex, unit.stepPath)
+	debugAction := replayDebugActionFor(unit.action, unit.phase, unit.actionIndex, eventIndex)
+	debugAction.EventID = eventID
+	applyReplayUnitIdentityDebug(&debugAction, unit)
+
+	if debugController != nil {
+		if err := debugController.BeforeAction(ctx, debugAction); err != nil {
+			report.Success = false
+			if report.Error == "" {
+				report.Error = err.Error()
+			}
+			return ReplayActionEvent{}, false, true
+		}
+	}
+	publishReplayProgress(onProgress, ReplayProgressEvent{
+		Type:       ReplayProgressActionStarted,
+		EventID:    eventID,
+		SessionID:  report.ReplaySessionID,
+		Timestamp:  time.Now(),
+		EventIndex: eventIndex,
+		Action:     cloneReplayDebugAction(debugAction),
+	})
+
+	var event ReplayActionEvent
+	var shouldContinue bool
+	if unit.synthErr != nil {
+		now := time.Now()
+		event = ReplayActionEvent{
+			EventID:      eventID,
+			ActionIndex:  unit.actionIndex,
+			EventIndex:   eventIndex,
+			Phase:        unit.phase,
+			ActionName:   unit.action.Name,
+			ActionType:   unit.action.Type,
+			StartedAt:    now,
+			CompletedAt:  now,
+			Success:      false,
+			ErrorMessage: unit.synthErr.Error(),
+		}
+		applyReplaySourceMetadata(&event, unit.action.Metadata)
+		attachReplayDiagnosis(&event)
+	} else {
+		event, shouldContinue = runReplayAction(ctx, vu, unit.action, unit.phase, unit.actionIndex, eventIndex, eventID, ignoreThinkTime, globalThinkCfg, report)
+	}
+	applyReplayUnitIdentityEvent(&event, unit)
+	report.Events = append(report.Events, event)
+
+	actionProgressType := ReplayProgressActionCompleted
+	if !event.Success {
+		actionProgressType = ReplayProgressActionFailed
+	}
+	publishReplayProgress(onProgress, ReplayProgressEvent{
+		Type:       actionProgressType,
+		EventID:    eventID,
+		SessionID:  report.ReplaySessionID,
+		Timestamp:  event.CompletedAt,
+		EventIndex: len(report.Events) - 1,
+		Action:     cloneReplayDebugAction(debugAction),
+		Event:      cloneReplayActionEvent(event),
+	})
+	publishReplayProgress(onProgress, ReplayProgressEvent{
+		Type:       ReplayProgressEventRun,
+		EventID:    eventID,
+		SessionID:  report.ReplaySessionID,
+		Timestamp:  event.CompletedAt,
+		EventIndex: len(report.Events) - 1,
+		Event:      cloneReplayActionEvent(event),
+	})
+	if after, ok := debugController.(ReplayDebugControllerAfter); ok {
+		if err := after.AfterAction(ctx, debugAction, &event); err != nil {
+			report.Success = false
+			if report.Error == "" {
+				report.Error = err.Error()
+			}
+			return event, shouldContinue, true
+		}
+	}
+	if !shouldContinue {
+		report.Success = false
+		if report.Error == "" {
+			report.Error = event.ErrorMessage
+		}
+	}
+	return event, shouldContinue, false
+}
+
+// appendStepPath returns base + seg as a freshly-allocated slice so recursive
+// callers never share (and clobber) a backing array.
+func appendStepPath(base []string, seg string) []string {
+	next := make([]string, len(base)+1)
+	copy(next, base)
+	next[len(base)] = seg
+	return next
+}
+
+func applyReplayUnitIdentityDebug(action *ReplayDebugAction, unit replayUnit) {
+	action.ParentActionName = unit.parentName
+	action.RequestCount = unit.requestCount
+	action.LeafOrdinal = unit.leafOrdinal
+	if unit.requestIndex != nil {
+		idx := *unit.requestIndex
+		action.RequestIndex = &idx
+	}
+	if len(unit.stepPath) > 0 {
+		action.StepPath = append([]string(nil), unit.stepPath...)
+	}
+	if unit.iteration != nil {
+		it := *unit.iteration
+		action.Iteration = &it
+	}
+}
+
+func applyReplayUnitIdentityEvent(event *ReplayActionEvent, unit replayUnit) {
+	event.ParentActionName = unit.parentName
+	event.RequestCount = unit.requestCount
+	event.LeafOrdinal = unit.leafOrdinal
+	if unit.requestIndex != nil {
+		idx := *unit.requestIndex
+		event.RequestIndex = &idx
+	}
+	if len(unit.stepPath) > 0 {
+		event.StepPath = append([]string(nil), unit.stepPath...)
+	}
+	if unit.iteration != nil {
+		it := *unit.iteration
+		event.Iteration = &it
+	}
 }
 
 func replayDebugActionFor(action dsl.Action, phase string, actionIndex int, eventIndex int) ReplayDebugAction {
@@ -534,6 +816,17 @@ func replaySessionEventID(sessionID string, eventName string) string {
 
 func replayActionEventID(sessionID string, phase string, actionIndex int, eventIndex int) string {
 	return fmt.Sprintf("%s:%s:%03d:%03d", sanitizeReplayEventIDPart(sessionID), sanitizeReplayEventIDPart(phase), actionIndex, eventIndex)
+}
+
+// replayLeafEventID extends the action event ID with the container step path for
+// sub-request / sub-step leaves. A plain action (empty path) keeps the exact
+// legacy ID, so non-container events are unchanged.
+func replayLeafEventID(sessionID string, phase string, actionIndex int, eventIndex int, stepPath []string) string {
+	base := replayActionEventID(sessionID, phase, actionIndex, eventIndex)
+	if len(stepPath) == 0 {
+		return base
+	}
+	return base + ":" + sanitizeReplayEventIDPart(strings.Join(stepPath, "/"))
 }
 
 func sanitizeReplayEventIDPart(value string) string {

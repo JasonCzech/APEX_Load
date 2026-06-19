@@ -6546,6 +6546,23 @@
   border-color: rgba(245, 158, 11, 0.5);
   background: rgba(245, 158, 11, 0.1);
 }
+/* Sub-request / sub-step rows under an expanded container: lighter weight.
+   Depth indentation is applied inline (paddingLeft = depth * 14px). */
+.debugger-action-row.child .debugger-action-row-main strong {
+  font-weight: 500;
+}
+/* Per-iteration rows under an expanded looped step. */
+.debugger-action-row.iteration .replay-event-phase {
+  opacity: 0.85;
+}
+.debugger-gutter-spacer {
+  display: inline-flex;
+  width: 26px;
+  flex-shrink: 0;
+}
+.debugger-action-row.container .outline-section-chevron {
+  margin-right: 4px;
+}
 .debugger-gutter {
   display: flex;
   align-items: center;
@@ -6572,6 +6589,23 @@
 .debugger-gutter.active .debugger-breakpoint-dot {
   background: var(--danger);
   border-color: var(--danger);
+}
+/* Tri-state: sequence has sub-request breakpoints but no whole-sequence one. */
+.debugger-gutter.partial .debugger-breakpoint-dot {
+  border-color: var(--danger);
+  background: radial-gradient(circle, var(--danger) 0 40%, transparent 45%);
+}
+.debugger-sequence-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-left: 18px;
+  padding: 2px 6px 4px 26px;
+}
+.debugger-sequence-controls small {
+  color: var(--text-secondary);
+  font-size: 11px;
 }
 .debugger-action-row-main {
   flex: 1;

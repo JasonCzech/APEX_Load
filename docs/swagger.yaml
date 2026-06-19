@@ -4101,6 +4101,26 @@ paths:
             type: string
       tags:
         - Replay
+  /api/v1/replay/sessions/{session_id}/options:
+    patch:
+      summary: Update Script Debug Options
+      description: |-
+        **Handler:** `handleUpdateScriptDebugOptions`
+
+        **Access Control:** Requires Authentication
+      operationId: handleUpdateScriptDebugOptions
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Replay
   /api/v1/replay/sessions/{session_id}/pause:
     post:
       summary: Pause Script Debug Session
@@ -4726,6 +4746,26 @@ paths:
 
         **Access Control:** Requires Authentication
       operationId: handleExportScriptDebugSession_2
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Script Debug
+  /api/v1/script-debug/sessions/{session_id}/options:
+    patch:
+      summary: Update Script Debug Options
+      description: |-
+        **Handler:** `handleUpdateScriptDebugOptions`
+
+        **Access Control:** Requires Authentication
+      operationId: handleUpdateScriptDebugOptions_2
       responses:
         "200":
           description: Successful operation

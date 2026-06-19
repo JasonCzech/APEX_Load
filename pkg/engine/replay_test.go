@@ -578,3 +578,236 @@ func TestReplayScriptAppliesCustomRedactionRulesToEventsAndSnapshots(t *testing.
 		t.Fatalf("snapshot response body = %q, want redacted response body", event.Snapshot.ResponseBody)
 	}
 }
+
+func httpSequenceTestAction(name string, children ...dsl.Action) dsl.Action {
+	return dsl.Action{
+		Name:   name,
+		Type:   "http_sequence",
+		Method: "SEQUENCE",
+		Target: "https://example.test",
+		Params: map[string]any{"requests": children},
+	}
+}
+
+func TestReplayScriptExpandsHTTPSequenceChildren(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		switch action.Name {
+		case "c_login":
+			return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200, Extractions: map[string]string{"sid": "S9"}}, nil
+		case "c_use":
+			if action.Target != "/use/S9" {
+				return &protocol.Result{ActionName: action.Name, Success: false, StatusCode: 500, ErrorMessage: "not interpolated: " + action.Target}, nil
+			}
+			return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+		default:
+			return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 204}, nil
+		}
+	})
+
+	seq := httpSequenceTestAction("txn",
+		dsl.Action{Name: "c_login", Type: "POST", Method: "POST", Target: "/login"},
+		dsl.Action{Name: "c_use", Type: "GET", Method: "GET", Target: "/use/{{var.sid}}"},
+		dsl.Action{Name: "c_done", Type: "GET", Method: "GET", Target: "/done"},
+	)
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name: "Seq", Protocol: protocolName, Actions: []dsl.Action{seq},
+	}, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript error: %v", err)
+	}
+	if !report.Success {
+		t.Fatalf("report.Success=false err=%q", report.Error)
+	}
+	if len(report.Events) != 3 {
+		t.Fatalf("events=%d want 3", len(report.Events))
+	}
+	for i, ev := range report.Events {
+		if ev.RequestIndex == nil || *ev.RequestIndex != i {
+			t.Fatalf("event %d RequestIndex=%v want %d", i, ev.RequestIndex, i)
+		}
+		if ev.ParentActionName != "txn" {
+			t.Fatalf("event %d ParentActionName=%q want txn", i, ev.ParentActionName)
+		}
+		if ev.RequestCount != 3 {
+			t.Fatalf("event %d RequestCount=%d want 3", i, ev.RequestCount)
+		}
+		if ev.ActionIndex != 0 {
+			t.Fatalf("event %d ActionIndex=%d want 0 (top-level container)", i, ev.ActionIndex)
+		}
+		if ev.EventIndex != i {
+			t.Fatalf("event %d EventIndex=%d want %d (flat)", i, ev.EventIndex, i)
+		}
+		if len(ev.StepPath) != 1 || ev.StepPath[0] != fmt.Sprintf("requests[%d]", i) {
+			t.Fatalf("event %d StepPath=%v want [requests[%d]]", i, ev.StepPath, i)
+		}
+	}
+	if !report.Events[1].Success {
+		t.Fatalf("c_use failed (correlation not threaded): %q", report.Events[1].ErrorMessage)
+	}
+	if report.Events[1].Target != "/use/S9" {
+		t.Fatalf("c_use target=%q want /use/S9 (child->child correlation)", report.Events[1].Target)
+	}
+	if report.Events[0].EventID == report.Events[1].EventID {
+		t.Fatalf("child event IDs not distinct: %q", report.Events[0].EventID)
+	}
+}
+
+func TestReplayHTTPSequenceStopsAtFailingChildWhenStopOnError(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		if action.Name == "c2" {
+			return &protocol.Result{ActionName: action.Name, Success: false, StatusCode: 500, ErrorMessage: "boom"}, nil
+		}
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	seq := httpSequenceTestAction("txn",
+		dsl.Action{Name: "c1", Type: "GET", Method: "GET", Target: "/1"},
+		dsl.Action{Name: "c2", Type: "GET", Method: "GET", Target: "/2"},
+		dsl.Action{Name: "c3", Type: "GET", Method: "GET", Target: "/3"},
+	)
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name: "Seq", Protocol: protocolName,
+		Config:  dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false}},
+		Actions: []dsl.Action{seq},
+	}, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript error: %v", err)
+	}
+	if report.Success {
+		t.Fatalf("report.Success=true want false")
+	}
+	if len(report.Events) != 2 {
+		t.Fatalf("events=%d want 2 (stop at failing child)", len(report.Events))
+	}
+	if report.Events[1].ActionName != "c2" || report.Events[1].Success {
+		t.Fatalf("event[1]=%+v want failed c2", report.Events[1])
+	}
+}
+
+func TestReplayHTTPSequenceContinuesPastFailingChildWhenContinueOnError(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		if action.Name == "c2" {
+			return &protocol.Result{ActionName: action.Name, Success: false, StatusCode: 500, ErrorMessage: "boom"}, nil
+		}
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	seq := httpSequenceTestAction("txn",
+		dsl.Action{Name: "c1", Type: "GET", Method: "GET", Target: "/1"},
+		dsl.Action{Name: "c2", Type: "GET", Method: "GET", Target: "/2"},
+		dsl.Action{Name: "c3", Type: "GET", Method: "GET", Target: "/3"},
+	)
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name: "Seq", Protocol: protocolName,
+		Config:  dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true}},
+		Actions: []dsl.Action{seq},
+	}, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript error: %v", err)
+	}
+	if report.Success {
+		t.Fatalf("report.Success=true want false (a child failed)")
+	}
+	if len(report.Events) != 3 {
+		t.Fatalf("events=%d want 3 (continue past failing child)", len(report.Events))
+	}
+}
+
+func TestReplayHTTPSequenceFiresBeforeActionPerChild(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	seq := httpSequenceTestAction("txn",
+		dsl.Action{Name: "c1", Type: "GET", Method: "GET", Target: "/1"},
+		dsl.Action{Name: "c2", Type: "GET", Method: "GET", Target: "/2"},
+	)
+	var seen []ReplayDebugAction
+	_, err := ReplayScript(context.Background(), &dsl.Script{
+		Name: "Seq", Protocol: protocolName, Actions: []dsl.Action{seq},
+	}, ReplayOptions{IgnoreThinkTime: true, DebugController: replayDebugControllerFunc(func(_ context.Context, a ReplayDebugAction) error {
+		seen = append(seen, a)
+		return nil
+	})})
+	if err != nil {
+		t.Fatalf("ReplayScript error: %v", err)
+	}
+	if len(seen) != 2 {
+		t.Fatalf("BeforeAction calls=%d want 2 (one per child)", len(seen))
+	}
+	for i, a := range seen {
+		if a.RequestIndex == nil || *a.RequestIndex != i {
+			t.Fatalf("BeforeAction[%d] RequestIndex=%v want %d", i, a.RequestIndex, i)
+		}
+		if a.ParentActionName != "txn" {
+			t.Fatalf("BeforeAction[%d] ParentActionName=%q want txn", i, a.ParentActionName)
+		}
+	}
+}
+
+func TestReplayControlIfRunsTakenBranch(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	makeIf := func(cond *dsl.Condition) dsl.Action {
+		return dsl.Action{Name: "branch", Type: "control_if", Control: &dsl.ControlFlow{
+			Condition: cond,
+			Steps:     []dsl.Action{{Name: "then1", Type: "GET", Method: "GET", Target: "/then"}},
+			Else:      []dsl.Action{{Name: "else1", Type: "GET", Method: "GET", Target: "/else"}},
+		}}
+	}
+
+	// True condition -> then branch.
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name: "If", Protocol: protocolName,
+		Actions: []dsl.Action{makeIf(&dsl.Condition{Op: "eq", Left: "a", Right: "a"})},
+	}, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript error: %v", err)
+	}
+	if len(report.Events) != 1 || report.Events[0].ActionName != "then1" {
+		t.Fatalf("events=%#v want only then1", report.Events)
+	}
+	if len(report.Events[0].StepPath) != 1 || report.Events[0].StepPath[0] != "then[0]" {
+		t.Fatalf("then StepPath=%v want [then[0]]", report.Events[0].StepPath)
+	}
+
+	// False condition -> else branch.
+	report, err = ReplayScript(context.Background(), &dsl.Script{
+		Name: "If", Protocol: protocolName,
+		Actions: []dsl.Action{makeIf(&dsl.Condition{Op: "eq", Left: "a", Right: "b"})},
+	}, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript error: %v", err)
+	}
+	if len(report.Events) != 1 || report.Events[0].ActionName != "else1" {
+		t.Fatalf("events=%#v want only else1", report.Events)
+	}
+	if len(report.Events[0].StepPath) != 1 || report.Events[0].StepPath[0] != "else[0]" {
+		t.Fatalf("else StepPath=%v want [else[0]]", report.Events[0].StepPath)
+	}
+}
+
+func TestReplayControlLoopRunsBodyPerPass(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	loop := dsl.Action{Name: "loop", Type: "control_loop", Control: &dsl.ControlFlow{
+		Count: 3,
+		Steps: []dsl.Action{{Name: "body", Type: "GET", Method: "GET", Target: "/b"}},
+	}}
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name: "Loop", Protocol: protocolName, Actions: []dsl.Action{loop},
+	}, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript error: %v", err)
+	}
+	if len(report.Events) != 3 {
+		t.Fatalf("events=%d want 3 (body per pass)", len(report.Events))
+	}
+	for i, ev := range report.Events {
+		if ev.Iteration == nil || *ev.Iteration != i+1 {
+			t.Fatalf("event %d Iteration=%v want %d", i, ev.Iteration, i+1)
+		}
+		if len(ev.StepPath) != 1 || ev.StepPath[0] != "loop[0]" {
+			t.Fatalf("event %d StepPath=%v want [loop[0]] (static, iteration-independent)", i, ev.StepPath)
+		}
+	}
+}

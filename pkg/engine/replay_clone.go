@@ -28,6 +28,17 @@ func cloneAnyMap(input map[string]any) map[string]any {
 
 func cloneReplayDebugAction(action ReplayDebugAction) *ReplayDebugAction {
 	cloned := action
+	if action.RequestIndex != nil {
+		idx := *action.RequestIndex
+		cloned.RequestIndex = &idx
+	}
+	if action.Iteration != nil {
+		it := *action.Iteration
+		cloned.Iteration = &it
+	}
+	if len(action.StepPath) > 0 {
+		cloned.StepPath = append([]string(nil), action.StepPath...)
+	}
 	return &cloned
 }
 
@@ -42,6 +53,17 @@ func cloneReplayActionEvent(event ReplayActionEvent) *ReplayActionEvent {
 	cloned.ProtocolEvidence = cloneAnyMap(event.ProtocolEvidence)
 	cloned.Diagnosis = cloneReplayDiagnosis(event.Diagnosis)
 	cloned.RepairSuggestions = cloneReplayRepairSuggestions(event.RepairSuggestions)
+	if event.RequestIndex != nil {
+		idx := *event.RequestIndex
+		cloned.RequestIndex = &idx
+	}
+	if event.Iteration != nil {
+		it := *event.Iteration
+		cloned.Iteration = &it
+	}
+	if len(event.StepPath) > 0 {
+		cloned.StepPath = append([]string(nil), event.StepPath...)
+	}
 	if event.Snapshot != nil {
 		snapshot := *event.Snapshot
 		snapshot.RequestHeaders = cloneStringMap(event.Snapshot.RequestHeaders)
