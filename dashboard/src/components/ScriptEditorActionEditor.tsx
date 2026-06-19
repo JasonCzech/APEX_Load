@@ -220,6 +220,9 @@ function HTTPSequenceFields({ action, index, onUpdate }: HTTPSequenceFieldsProps
     .map(request => asString(request.metadata?.source_subtransaction) || asString(request.metadata?.source_subtransaction))
     .filter(Boolean)
   const uniqueSubtransactions = [...new Set(subtransactions)]
+  const sequenceExtractors = requests.flatMap((request, requestIndex) =>
+    (request.extractors || []).map((extractor, extractorIndex) => ({ extractor, requestName: request.name, key: `${requestIndex}-${extractorIndex}` })),
+  )
   return (
     <>
       <div className="form-grid">
@@ -274,6 +277,38 @@ function HTTPSequenceFields({ action, index, onUpdate }: HTTPSequenceFieldsProps
           </table>
         </div>
       </div>
+      {sequenceExtractors.length > 0 && (
+        <div className="sub-section http-sequence-section">
+          <div className="sub-header">
+            <h4>Extractors</h4>
+            <span className="sequence-summary">{sequenceExtractors.length} extractor{sequenceExtractors.length === 1 ? '' : 's'}</span>
+          </div>
+          <div className="http-sequence-table-wrap">
+            <table className="http-sequence-table">
+              <thead>
+                <tr>
+                  <th>Variable</th>
+                  <th>Type</th>
+                  <th>Source</th>
+                  <th>Expression</th>
+                  <th>From</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sequenceExtractors.map(({ extractor, requestName, key }) => (
+                  <tr key={key}>
+                    <td><strong>{extractor.name || '—'}</strong></td>
+                    <td><span className="sequence-method">{extractor.type || '—'}</span></td>
+                    <td>{extractor.source || '—'}</td>
+                    <td className="sequence-target cell-mono">{extractor.expression || '—'}</td>
+                    <td>{requestName}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </>
   )
 }

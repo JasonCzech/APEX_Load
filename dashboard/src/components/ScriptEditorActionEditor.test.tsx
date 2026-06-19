@@ -133,4 +133,23 @@ describe('ActionEditor transaction field', () => {
     renderEditor({ name: 'Login', type: 'POST', target: '/login', metadata: { source_transaction: 'Auth', keep: 1 } } as unknown as ScriptActionDefinition)
     expect(labelInput('Transaction')!.value).toBe('Auth')
   })
+
+  it('lists a grouped request\'s extractors for an http_sequence action', () => {
+    renderEditor({
+      name: 'Login Flow',
+      type: 'http_sequence',
+      params: {
+        requests: [
+          { name: 'Login', method: 'POST', target: '/login', extractors: [{ name: 'session_id', source: 'body', type: 'json', expression: '$.token' }] },
+          { name: 'Profile', method: 'GET', target: '/me' },
+        ],
+      },
+    } as unknown as ScriptActionDefinition)
+    const headings = [...container.querySelectorAll('.http-sequence-section h4')].map(h => h.textContent)
+    expect(headings).toContain('Extractors')
+    const text = container.textContent || ''
+    expect(text).toContain('session_id')
+    expect(text).toContain('$.token')
+    expect(text).toContain('json')
+  })
 })
