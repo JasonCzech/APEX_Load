@@ -47,6 +47,8 @@ const apiMock = {
   stopScriptDebugSession: vi.fn(),
   updateScriptDebugBreakpoints: vi.fn(),
   listAuthoringComponents: vi.fn(),
+  createAuthoringComponent: vi.fn(),
+  deleteAuthoringComponent: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -576,6 +578,8 @@ describe('ScriptEditor', () => {
     apiMock.stopScriptDebugSession.mockResolvedValue({ session: { status: 'stopped' } })
     apiMock.updateScriptDebugBreakpoints.mockResolvedValue({ session: { breakpoints: [] } })
     apiMock.listAuthoringComponents.mockResolvedValue({ components: [], count: 0 })
+    apiMock.createAuthoringComponent.mockResolvedValue({ component: { id: 'block-1' } })
+    apiMock.deleteAuthoringComponent.mockResolvedValue(undefined)
   })
 
   afterEach(async () => {
@@ -855,7 +859,99 @@ describe('ScriptEditor', () => {
     expect(nested[1].textContent).toContain('Sub_Two')
   })
 
-  it('renders grouped HTTP sequence actions with child request details', async () => {
+  it('shows selected parent action JSON by default with a full-script override', async () => {
+    const sequenceScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [{
+        name: 'Checkout_Txn', type: 'http_sequence', method: 'SEQUENCE', target: '/aura',
+        params: { requests: [
+          { name: 'Sub_One', type: 'POST', method: 'POST', target: '/one' },
+          { name: 'Sub_Two', type: 'GET', method: 'GET', target: '/two' },
+        ] },
+      }],
+    }
+    await act(async () => { root.render(<ScriptEditor initialScript={sequenceScript} />) })
+
+    const parentRow = Array.from(container.querySelectorAll('.action-item'))
+      .find(item => item.textContent?.includes('Checkout_Txn'))
+    await act(async () => {
+      parentRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const scopedEditor = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
+    expect(container.querySelector('.script-json-scope-bar')?.textContent).toContain('Selected Action')
+    expect(scopedEditor?.value).toContain('"name": "Checkout_Txn"')
+    expect(scopedEditor?.value).toContain('"params"')
+    expect(scopedEditor?.value).not.toContain('"script"')
+
+    const fullScriptButton = findButtonByText(container, 'Full Script JSON')
+    await act(async () => {
+      fullScriptButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const fullEditor = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
+    expect(fullEditor?.value).toContain('"script"')
+    expect(fullEditor?.value).toContain('"Checkout Flow"')
+  })
+
+  it('selects sub-actions for scoped JSON and reusable block saving', async () => {
+    const sequenceScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [{
+        name: 'Checkout_Txn', type: 'http_sequence', method: 'SEQUENCE', target: '/aura',
+        params: { requests: [
+          { name: 'Sub_One', type: 'POST', method: 'POST', target: '/one' },
+          { name: 'Sub_Two', type: 'GET', method: 'GET', target: '/two' },
+        ] },
+      }],
+    }
+    await act(async () => { root.render(<ScriptEditor initialScript={sequenceScript} projectId="project-1" />) })
+
+    const toggle = container.querySelector('.action-expand-toggle') as HTMLButtonElement | null
+    await act(async () => { toggle?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+    const nestedRows = Array.from(container.querySelectorAll('.action-item-nested'))
+    const subTwoRow = nestedRows.find(row => row.textContent?.includes('Sub_Two')) as HTMLElement | undefined
+    expect(subTwoRow).toBeDefined()
+    await act(async () => {
+      subTwoRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const scopedEditor = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
+    expect(container.querySelector('.script-json-scope-bar')?.textContent).toContain('Selected Sub-action')
+    expect(scopedEditor?.value).toContain('"name": "Sub_Two"')
+    expect(scopedEditor?.value).toContain('"target": "/two"')
+    expect(scopedEditor?.value).not.toContain('"Sub_One"')
+
+    const subTwoCheckbox = subTwoRow?.querySelector('.action-block-select') as HTMLInputElement | null
+    await act(async () => {
+      subTwoCheckbox?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(findButtonByText(container, 'Save 1 as block')).toBeDefined()
+    expect(findButtonByText(container, 'Wrap 1 in transaction')).toBeUndefined()
+
+    await act(async () => {
+      findButtonByText(container, 'Save 1 as block')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const blockNameInput = container.querySelector('.save-block-field input') as HTMLInputElement | null
+    expect(blockNameInput).not.toBeNull()
+    if (!blockNameInput) return
+    await act(async () => {
+      changeInputValue(blockNameInput, 'Sub action block')
+    })
+    await act(async () => {
+      findButtonByText(container, 'Save block')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.createAuthoringComponent).toHaveBeenCalledWith(expect.objectContaining({
+      project_id: 'project-1',
+      name: 'Sub action block',
+      actions: [expect.objectContaining({ name: 'Sub_Two', target: '/two' })],
+    }))
+  })
+
+  it('renders grouped HTTP sequence actions with parent summary details', async () => {
     const sequenceScript: ScriptDefinition = {
       ...initialScript,
       actions: [{
@@ -905,8 +1001,10 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action Details')
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
     expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
-    expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Address_Search_Aura')
-    expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Checkout_Aura')
+    expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Sequence Summary')
+    expect(container.querySelector('.editor-utility-sidebar')?.textContent).not.toContain('Grouped Requests')
+    expect(container.querySelector('.editor-utility-sidebar')?.textContent).not.toContain('Address_Search_Aura')
+    expect(container.querySelector('.editor-utility-sidebar')?.textContent).not.toContain('Checkout_Aura')
 
     expect(Array.from(container.querySelectorAll('.script-json-sidebar-tab')).map(button => button.textContent?.trim())).toEqual([
       'Insights',
@@ -5170,6 +5268,13 @@ describe('ScriptEditor', () => {
 
     await act(async () => {
       scriptJsonTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const fullScriptJsonButton = findButtonByText(container, 'Full Script JSON')
+    expect(fullScriptJsonButton).toBeDefined()
+    await act(async () => {
+      fullScriptJsonButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 

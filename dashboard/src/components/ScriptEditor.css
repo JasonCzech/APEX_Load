@@ -182,6 +182,70 @@
   border-bottom: 1px solid var(--border);
   background: var(--bg-secondary);
 }
+.script-json-scope-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  background: var(--bg-secondary);
+}
+.script-json-scope-bar + .script-code-pane {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.script-json-scope-summary {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.script-json-scope-summary strong {
+  flex: 0 0 auto;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.script-json-scope-summary span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.script-json-scope-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+.script-json-scope-toggle button {
+  min-height: 26px;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.script-json-scope-toggle button.active {
+  background: rgba(99, 102, 241, 0.14);
+  color: var(--accent);
+}
+.script-json-scope-toggle button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 .script-code-title {
   min-width: 0;
   display: flex;
@@ -5872,6 +5936,16 @@
     min-height: 420px;
     max-height: 56vh;
   }
+  .script-json-scope-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .script-json-scope-toggle {
+    width: 100%;
+  }
+  .script-json-scope-toggle button {
+    flex: 1 1 0;
+  }
   .author-code-center .cm-editor { min-height: 0; }
   .actions-sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
   .actions-sidebar.collapsed {
@@ -7019,6 +7093,17 @@ button.debugger-problem-row:hover {
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
+}
+.http-sequence-summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sequence-summary-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 .http-sequence-table-wrap {
   overflow: auto;

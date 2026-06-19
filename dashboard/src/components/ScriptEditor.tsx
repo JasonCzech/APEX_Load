@@ -157,6 +157,7 @@ import {
   buildScriptPhaseActionRows,
   buildDebugRailRenderRows,
   type DebugRailRenderRow,
+  debugSequenceKey,
   debugStepPathKey,
   filterScriptPhaseActionRows,
   duplicateActionInList,
@@ -177,6 +178,7 @@ import {
   lookupBrowserDeviceProfile,
   parseScriptJsonDraft,
   readCenterTabsState,
+  scriptActionsForPhase,
   type CenterTabsState,
   type CenterWorkbenchTabId,
   type DebuggerResizeKind,
@@ -191,6 +193,24 @@ import './ScriptEditor.css'
 type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
 type ScriptData = ScriptDefinition
+
+interface AuthorCodeFocus {
+  phase: ScriptActionPhase
+  actionIndex: number
+  stepPath?: string[]
+  key?: string
+  label?: string
+}
+
+interface AuthorJsonScope {
+  action: Action
+  actionIndex: number
+  key: string
+  label: string
+  path: string
+  phase: ScriptActionPhase
+  subAction: boolean
+}
 const SCRIPT_PROTOCOL_OPTIONS = [
   { value: 'http', label: 'HTTP API' },
   { value: 'https', label: 'HTTPS API' },
@@ -761,6 +781,9 @@ interface ScriptCodePaneProps {
   actionCount: number
   assistExtensions?: Extension[]
   className?: string
+  title?: string
+  subtitle?: string
+  allowDirectEdit?: boolean
   jumpToLineRequest?: ScriptCodeLineJumpRequest | null
   candidateMatchRanges?: ScriptCodeMatchRange[]
   parameterMatchRanges?: ScriptCodeMatchRange[]
@@ -788,6 +811,9 @@ function ScriptCodePane({
   actionCount,
   assistExtensions,
   className = '',
+  title = 'Script JSON',
+  subtitle,
+  allowDirectEdit = true,
   jumpToLineRequest,
   candidateMatchRanges = [],
   parameterMatchRanges = [],
@@ -827,6 +853,10 @@ function ScriptCodePane({
   const candidateStatus = activeCandidateName
     ? `Auto parameter: ${activeCandidateName} (${candidateMatchRanges.length} highlighted)`
     : ''
+
+  useEffect(() => {
+    if (!allowDirectEdit && jsonEditEnabled) setJsonEditEnabled(false)
+  }, [allowDirectEdit, jsonEditEnabled])
 
   const emitScrollSnapshot = useCallback(() => {
     const snapshot = readScriptCodeScrollSnapshot(viewRef.current)
@@ -1044,13 +1074,13 @@ function ScriptCodePane({
     <section className={`script-code-pane ${className}`} aria-label="Script JSON">
       <div className="script-code-toolbar">
         <div className="script-code-title">
-          <strong>{'{ }'} Script JSON</strong>
-          <span>{candidateStatus || parameterStatus || activePath || `${actionCount} executable${actionCount === 1 ? '' : 's'}`}</span>
+          <strong>{'{ }'} {title}</strong>
+          <span>{candidateStatus || parameterStatus || subtitle || activePath || `${actionCount} executable${actionCount === 1 ? '' : 's'}`}</span>
         </div>
         <div className="script-code-status-row">
           <span className={`script-code-status ${status}`}>{statusMessage}</span>
           {!jsonEditEnabled && (
-            <span className="script-code-readonly-pill" title="The JSON mirrors the structured editor. Click Edit JSON to change it directly.">Read-only</span>
+            <span className="script-code-readonly-pill" title={allowDirectEdit ? 'The JSON mirrors the structured editor. Click Edit JSON to change it directly.' : 'Switch to Full Script JSON to edit raw JSON directly.'}>Read-only</span>
           )}
           <button type="button" className="btn btn-sm btn-ghost" onClick={handleOpenSearch} title="Find in script (⌘F / Ctrl+F)">Find</button>
           {onRequestParameterize && (
@@ -1063,15 +1093,17 @@ function ScriptCodePane({
               Parameterize
             </button>
           )}
-          <button
-            type="button"
-            className={`btn btn-sm ${jsonEditEnabled ? 'btn-ghost' : 'btn-secondary'}`}
-            onClick={() => setJsonEditEnabled(enabled => !enabled)}
-            title={jsonEditEnabled ? 'Return the JSON to read-only' : 'Edit the raw JSON directly'}
-          >
-            {jsonEditEnabled ? 'Done' : 'Edit JSON'}
-          </button>
-          {jsonEditEnabled && (
+          {allowDirectEdit && (
+            <button
+              type="button"
+              className={`btn btn-sm ${jsonEditEnabled ? 'btn-ghost' : 'btn-secondary'}`}
+              onClick={() => setJsonEditEnabled(enabled => !enabled)}
+              title={jsonEditEnabled ? 'Return the JSON to read-only' : 'Edit the raw JSON directly'}
+            >
+              {jsonEditEnabled ? 'Done' : 'Edit JSON'}
+            </button>
+          )}
+          {allowDirectEdit && jsonEditEnabled && (
             <>
               <button type="button" className="btn btn-sm btn-ghost" onClick={onFormat}>Format</button>
               <button type="button" className="btn btn-sm btn-secondary" onClick={onApply} disabled={status === 'invalid'}>
@@ -1086,13 +1118,13 @@ function ScriptCodePane({
           <button type="button" className="btn btn-sm btn-ghost" onClick={onDownload}>Download</button>
         </div>
       </div>
-      <div className="script-code-editor" data-dirty={status === 'dirty' ? 'true' : 'false'} data-invalid={status === 'invalid' ? 'true' : 'false'} data-readonly={jsonEditEnabled ? 'false' : 'true'} onContextMenu={handleEditorContextMenu}>
+      <div className="script-code-editor" data-dirty={status === 'dirty' ? 'true' : 'false'} data-invalid={status === 'invalid' ? 'true' : 'false'} data-readonly={allowDirectEdit && jsonEditEnabled ? 'false' : 'true'} onContextMenu={handleEditorContextMenu}>
         <CodeMirror
           value={value}
           onChange={onChange}
           extensions={extensions}
           theme="none"
-          editable={jsonEditEnabled}
+          editable={allowDirectEdit && jsonEditEnabled}
           basicSetup={{
             lineNumbers: true,
             foldGutter: true,
@@ -2712,6 +2744,89 @@ function scriptHasAuthoredActions(script: ScriptData): boolean {
   return (script.init?.length || 0) > 0 || script.actions.length > 0 || (script.teardown?.length || 0) > 0
 }
 
+function parseActionStepSegment(segment: string): { name: 'requests' | 'then' | 'else' | 'loop'; index: number } | null {
+  const match = segment.match(/^(requests|then|else|loop)\[(\d+)\]$/)
+  if (!match) return null
+  return { name: match[1] as 'requests' | 'then' | 'else' | 'loop', index: Number.parseInt(match[2], 10) }
+}
+
+function resolveNestedAction(root: Action | undefined, stepPath?: string[]): Action | null {
+  let current = root
+  for (const segment of stepPath || []) {
+    const parsed = parseActionStepSegment(segment)
+    if (!parsed || !current) return null
+    if (parsed.name === 'requests') {
+      current = httpSequenceRequests(current)[parsed.index]
+    } else if (parsed.name === 'else') {
+      current = current.control?.else?.[parsed.index]
+    } else {
+      current = current.control?.steps?.[parsed.index]
+    }
+  }
+  return current || null
+}
+
+function jsonPathForActionStepPath(stepPath?: string[]) {
+  return (stepPath || []).map(segment => {
+    const parsed = parseActionStepSegment(segment)
+    if (!parsed) return ''
+    if (parsed.name === 'requests') return `.params.requests[${parsed.index}]`
+    if (parsed.name === 'else') return `.control.else[${parsed.index}]`
+    return `.control.steps[${parsed.index}]`
+  }).join('')
+}
+
+function authorFocusKey(focus: Pick<AuthorCodeFocus, 'phase' | 'actionIndex' | 'stepPath'>) {
+  const base = `${focus.phase}:${focus.actionIndex}`
+  return focus.stepPath?.length ? `${base}#${focus.stepPath.join('/')}` : base
+}
+
+function authorFocusFromKey(key: string): AuthorCodeFocus | null {
+  const match = key.match(/^(init|action|teardown):(\d+)(?:(:|#|\|)(.+))?$/)
+  if (!match) return null
+  const actionIndex = Number.parseInt(match[2], 10)
+  if (!Number.isInteger(actionIndex) || actionIndex < 0) return null
+  const suffixType = match[3]
+  const suffix = match[4] || ''
+  const stepPath = suffixType === ':'
+    ? [`requests[${Number.parseInt(suffix, 10)}]`]
+    : suffix
+      ? suffix.split('/').filter(Boolean)
+      : undefined
+  return {
+    phase: match[1] as ScriptActionPhase,
+    actionIndex,
+    stepPath,
+    key,
+  }
+}
+
+function codePathForAuthorFocus(focus?: AuthorCodeFocus | null) {
+  if (!focus) return ''
+  return `${codePathForDebugRow(focus)}${jsonPathForActionStepPath(focus.stepPath)}`
+}
+
+function resolveAuthorJsonScope(script: ScriptData, focus?: AuthorCodeFocus | null): AuthorJsonScope | null {
+  if (!focus) return null
+  const root = scriptActionsForPhase(script, focus.phase)[focus.actionIndex]
+  const action = resolveNestedAction(root, focus.stepPath)
+  if (!action) return null
+  const subAction = Boolean(focus.stepPath?.length)
+  return {
+    action,
+    actionIndex: focus.actionIndex,
+    key: focus.key || authorFocusKey(focus),
+    label: focus.label || actionRowLabel(action),
+    path: codePathForAuthorFocus(focus),
+    phase: focus.phase,
+    subAction,
+  }
+}
+
+function resolveAuthorJsonScopeByKey(script: ScriptData, key: string): AuthorJsonScope | null {
+  return resolveAuthorJsonScope(script, authorFocusFromKey(key))
+}
+
 function formatScriptProtocolLabel(protocol: string): string {
   return SCRIPT_PROTOCOL_OPTIONS.find(option => option.value === protocol)?.label || protocol.toUpperCase()
 }
@@ -3023,7 +3138,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [parameterizeChoice, setParameterizeChoice] = useState<ActionEditorParameterDraft | null>(null)
   const [existingParameterChoice, setExistingParameterChoice] = useState<ActionEditorParameterDraft | null>(null)
   const [jsonOccurrenceReview, setJsonOccurrenceReview] = useState<JsonParameterOccurrenceReviewState | null>(null)
-  const [authorCodeFocus, setAuthorCodeFocus] = useState<{ phase: ScriptActionPhase; actionIndex: number } | null>(null)
+  const [authorCodeFocus, setAuthorCodeFocus] = useState<AuthorCodeFocus | null>(null)
+  const [showFullScriptJson, setShowFullScriptJson] = useState(false)
   const [outlineActionListCollapsed, setOutlineActionListCollapsed] = useState(false)
   const [outlineActionFilter, setOutlineActionFilter] = useState('')
   const [outlineParameterListCollapsed, setOutlineParameterListCollapsed] = useState(false)
@@ -3036,8 +3152,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   // How many seed rows the auto_params data source gets. >1 lets each VUser draw a distinct
   // value once the operator fills the extra rows (the first row holds the detected literal).
   const [autoParamSeedRows, setAutoParamSeedRows] = useState(1)
-  // Multi-select of main-phase actions for "Save as block" (project-scoped reusable block).
-  const [blockSelection, setBlockSelection] = useState<Set<number>>(new Set())
+  // Multi-select of outline actions/sub-actions for "Save as block" (project-scoped reusable block).
+  const [blockSelection, setBlockSelection] = useState<Set<string>>(new Set())
   // Inline naming draft when wrapping the block selection in a transaction
   // (null = not naming). Pre-filled with a unique default; null cancels.
   const [txnWrapDraft, setTxnWrapDraft] = useState<string | null>(null)
@@ -3119,6 +3235,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     () => buildDebugRailRenderRows(filteredActionRows, expandedAuthorContainers),
     [filteredActionRows, expandedAuthorContainers],
   )
+  const selectedBlockScopes = useMemo(
+    () => Array.from(blockSelection)
+      .map(key => resolveAuthorJsonScopeByKey(script, key))
+      .filter((scope): scope is AuthorJsonScope => Boolean(scope)),
+    [blockSelection, script],
+  )
+  const selectedTopLevelActionIndices = useMemo(
+    () => selectedBlockScopes
+      .filter(scope => scope.phase === 'action' && !scope.subAction)
+      .map(scope => scope.actionIndex)
+      .sort((a, b) => a - b),
+    [selectedBlockScopes],
+  )
+  const canWrapBlockSelection = selectedBlockScopes.length > 0 && selectedTopLevelActionIndices.length === selectedBlockScopes.length
   // Virtualize the Author Action List so a multi-thousand-action import renders only the
   // visible rows instead of one DOM subtree per action.
   const actionListScrollRef = useRef<HTMLDivElement | null>(null)
@@ -3857,11 +3987,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     hydratedInitialScriptRef.current = { script: initialScript, scriptId }
     hydrateEditorState(initialScript)
     setAuthorCodeFocus(null)
+    setShowFullScriptJson(false)
 
 		const focusedActionIndex = findActionIndexByName(initialScript.actions, initialFocusedActionName)
 		if (focusedActionIndex !== null) {
 			setActiveAction(focusedActionIndex)
       setAuthorCodeFocus({ phase: 'action', actionIndex: focusedActionIndex })
+      setShowFullScriptJson(false)
       setScriptJsonSidebarTab('details')
       setAuthorRightSidebarCollapsed(false)
       setOpenSections(prev => ({ ...prev, import: false }))
@@ -3896,6 +4028,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const selectAuthorAction = (index: number | null) => {
     setActiveAction(index)
     setAuthorCodeFocus(index === null ? null : { phase: 'action', actionIndex: index })
+    setShowFullScriptJson(false)
     if (index !== null && centerTabsState.activeTabId === SCRIPT_JSON_TAB_ID) {
       setScriptJsonSidebarTab('details')
       setAuthorRightSidebarCollapsed(false)
@@ -3929,6 +4062,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     if (sourceReview && centerTabsState.activeTabId === 'imported-metadata') {
       setActiveAction(index)
       setAuthorCodeFocus({ phase: 'action', actionIndex: index })
+      setShowFullScriptJson(false)
       focusSourceMappingForAction(index)
       return
     }
@@ -3942,6 +4076,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
     setActiveAction(null)
     setAuthorCodeFocus({ phase: row.phase, actionIndex: row.actionIndex })
+    setShowFullScriptJson(false)
+  }
+
+  const selectAuthorNestedItem = (item: Extract<DebugRailRenderRow, { kind: 'container' | 'leaf' }>) => {
+    const { row } = item
+    const label = item.kind === 'leaf'
+      ? item.childAction.name || item.name || humanizeStepSegment(item.stepPath[item.stepPath.length - 1] || '')
+      : item.name
+    setActiveAction(null)
+    setAuthorCodeFocus({
+      phase: row.phase,
+      actionIndex: row.actionIndex,
+      stepPath: item.stepPath,
+      key: item.key,
+      label,
+    })
+    setShowFullScriptJson(false)
   }
 
   useEffect(() => {
@@ -3957,6 +4108,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           return
         }
         setAuthorCodeFocus(null)
+        setShowFullScriptJson(false)
         hydrateEditorState(res.script)
       })
       .catch((loadError: unknown) => {
@@ -5648,7 +5800,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     : activeAutoParameterPath
       ? activeAutoParameterPath
       : authorCodeFocus
-      ? codePathForDebugRow(authorCodeFocus)
+      ? codePathForAuthorFocus(authorCodeFocus)
       : activeAction !== null
         ? `script.actions[${activeAction}]`
       : ''
@@ -6779,30 +6931,30 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setError('')
   }
 
-  const toggleBlockSelection = (idx: number) => {
+  const toggleBlockSelection = (key: string) => {
     setBlockSelection(prev => {
       const next = new Set(prev)
-      if (next.has(idx)) next.delete(idx)
-      else next.add(idx)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
   }
 
   const openSaveBlockModal = () => {
-    if (blockSelection.size === 0) return
+    if (selectedBlockScopes.length === 0) return
     setSaveBlockName('')
     setSaveBlockKind('request_group')
     setShowSaveBlockModal(true)
   }
 
   const beginWrapSelectionInTransaction = () => {
-    if (blockSelection.size === 0) return
+    if (!canWrapBlockSelection) return
     setTxnWrapDraft(uniqueTransactionName(script.actions))
   }
 
   const applyWrapSelectionInTransaction = () => {
     const name = (txnWrapDraft || '').trim()
-    const indices = Array.from(blockSelection).filter(i => i >= 0 && i < script.actions.length).sort((a, b) => a - b)
+    const indices = selectedTopLevelActionIndices
     if (!name || indices.length === 0) { setTxnWrapDraft(null); return }
     if (txnWrapMode === 'span') {
       const lo = indices[0]
@@ -6821,7 +6973,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setTxnWrapDraft(null)
   }
 
-  // Capture the selected main actions as a project-scoped reusable block.
+  // Capture the selected outline actions as a project-scoped reusable block.
   const saveSelectedAsBlock = async () => {
     const name = saveBlockName.trim()
     if (!name) {
@@ -6832,12 +6984,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       setError('A project is required to save a reusable block.')
       return
     }
-    const indices = Array.from(blockSelection).filter(i => i >= 0 && i < script.actions.length).sort((a, b) => a - b)
-    if (indices.length === 0) {
+    const actions = selectedBlockScopes.map(scope => JSON.parse(JSON.stringify(scope.action)) as Action)
+    if (actions.length === 0) {
       setError('Select at least one action to save as a block.')
       return
     }
-    const actions = indices.map(i => JSON.parse(JSON.stringify(script.actions[i])))
     setSavingBlock(true)
     try {
       await api.createAuthoringComponent({
@@ -6877,6 +7028,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }
 
   const activeInspectorAction = activeAction !== null ? script.actions[activeAction] || null : null
+  const selectedAuthorJsonScope = useMemo(
+    () => resolveAuthorJsonScope(script, authorCodeFocus),
+    [authorCodeFocus, script],
+  )
+  const selectedAuthorJsonText = useMemo(
+    () => selectedAuthorJsonScope ? JSON.stringify(selectedAuthorJsonScope.action, null, 2) : '',
+    [selectedAuthorJsonScope],
+  )
+  const selectedJsonUnavailable = Boolean(jsonDirty || jsonParseMessage)
+  const showSelectedActionJson = Boolean(
+    workspaceTab === 'author' &&
+    selectedAuthorJsonScope &&
+    !showFullScriptJson &&
+    !selectedJsonUnavailable,
+  )
   const hasScriptJsonDetailsTab = activeInspectorAction !== null && activeAction !== null
   const activeScriptJsonSidebarTab = scriptJsonSidebarTab === 'details' && !hasScriptJsonDetailsTab
     ? SCRIPT_JSON_DEFAULT_COMPANION_TAB
@@ -7146,6 +7312,38 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       </>
     ) : null
   )
+  const renderScriptJsonScopeBar = () => {
+    if (!selectedAuthorJsonScope) return null
+    const selectedLabel = selectedAuthorJsonScope.subAction ? 'Selected Sub-action' : 'Selected Action'
+    return (
+      <div className="script-json-scope-bar" aria-label="Script JSON display scope">
+        <div className="script-json-scope-summary">
+          <strong>{selectedLabel}</strong>
+          <span title={selectedAuthorJsonScope.path}>{selectedAuthorJsonScope.label}</span>
+        </div>
+        <div className="script-json-scope-toggle" role="group" aria-label="JSON display scope">
+          <button
+            type="button"
+            className={!showFullScriptJson && !selectedJsonUnavailable ? 'active' : ''}
+            aria-pressed={!showFullScriptJson && !selectedJsonUnavailable}
+            disabled={selectedJsonUnavailable}
+            title={selectedJsonUnavailable ? 'Resolve or reset raw JSON edits before returning to selected action JSON.' : `Show only ${selectedLabel.toLowerCase()} JSON`}
+            onClick={() => setShowFullScriptJson(false)}
+          >
+            {selectedLabel}
+          </button>
+          <button
+            type="button"
+            className={showFullScriptJson || selectedJsonUnavailable ? 'active' : ''}
+            aria-pressed={showFullScriptJson || selectedJsonUnavailable}
+            onClick={() => setShowFullScriptJson(true)}
+          >
+            Full Script JSON
+          </button>
+        </div>
+      </div>
+    )
+  }
   const renderCenterTabPanel = (tabId: CenterWorkbenchTabId) => {
     if (tabId === BROWSER_REPLAY_TAB_ID && isBrowserScript) {
       return (
@@ -7162,8 +7360,34 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       )
     }
     if (tabId !== SCRIPT_JSON_TAB_ID) return null
+    if (showSelectedActionJson && selectedAuthorJsonScope) {
+      const selectedTitle = selectedAuthorJsonScope.subAction ? 'Selected Sub-action JSON' : 'Selected Action JSON'
+      return (
+        <>
+          {renderScriptJsonScopeBar()}
+          <ScriptCodePane
+            value={selectedAuthorJsonText}
+            status="synced"
+            statusMessage={selectedAuthorJsonScope.subAction ? 'Selected sub-action' : 'Selected action'}
+            activePath={selectedAuthorJsonScope.path}
+            activeRange={null}
+            actionCount={1}
+            allowDirectEdit={false}
+            title={selectedTitle}
+            subtitle={selectedAuthorJsonScope.path.replace(/^script\./, '')}
+            onApply={() => undefined}
+            onChange={() => undefined}
+            onCopy={() => void navigator.clipboard?.writeText(selectedAuthorJsonText)}
+            onDownload={() => downloadTextFile(selectedAuthorJsonText, `${sanitizeDownloadName(selectedAuthorJsonScope.label, 'selected-action')}.json`)}
+            onFormat={() => undefined}
+            onReset={() => undefined}
+          />
+        </>
+      )
+    }
     return (
       <>
+        {renderScriptJsonScopeBar()}
         <ScriptCodePane
           value={jsonText}
           status={jsonStatus}
@@ -7644,7 +7868,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               <div>
                 <h3 className="panel-title">Save as Reusable Block</h3>
                 <p className="editor-dialog-subtitle">
-                  {blockSelection.size} action{blockSelection.size === 1 ? '' : 's'} will be saved to this project's block library.
+                  {selectedBlockScopes.length} action{selectedBlockScopes.length === 1 ? '' : 's'} will be saved to this project's block library.
                 </p>
               </div>
               <button type="button" className="btn btn-sm btn-ghost" disabled={savingBlock} onClick={() => setShowSaveBlockModal(false)}>Close</button>
@@ -10908,18 +11132,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       </span>
                     </button>
                     <div className="actions-sidebar-controls">
-                      {blockSelection.size > 0 && txnWrapDraft === null && (
+                      {selectedBlockScopes.length > 0 && txnWrapDraft === null && (
                         <>
-                          <button className="btn btn-sm btn-secondary" onClick={beginWrapSelectionInTransaction} title="Wrap the selected actions in a named transaction (timed; SLAs attach to it)">
-                            Wrap {blockSelection.size} in transaction
-                          </button>
+                          {canWrapBlockSelection && (
+                            <button className="btn btn-sm btn-secondary" onClick={beginWrapSelectionInTransaction} title="Wrap the selected actions in a named transaction (timed; SLAs attach to it)">
+                              Wrap {selectedBlockScopes.length} in transaction
+                            </button>
+                          )}
                           <button className="btn btn-sm btn-secondary" onClick={openSaveBlockModal} title="Save the selected actions as a reusable block">
-                            Save {blockSelection.size} as block
+                            Save {selectedBlockScopes.length} as block
                           </button>
                         </>
                       )}
                       {txnWrapDraft !== null && (() => {
-                        const wrapSel = Array.from(blockSelection).filter(i => i >= 0 && i < script.actions.length).sort((a, b) => a - b)
+                        const wrapSel = selectedTopLevelActionIndices
                         const wrapLo = wrapSel.length ? wrapSel[0] : 0
                         const wrapHi = wrapSel.length ? wrapSel[wrapSel.length - 1] : 0
                         const wrapBetween = (wrapHi - wrapLo + 1) - wrapSel.length
@@ -11024,12 +11250,27 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           const leafLabel = item.requestIndex != null ? `Request ${item.requestIndex + 1}` : humanizeStepSegment(item.stepPath[item.stepPath.length - 1] || '')
                           const requestIndex = item.requestIndex
                           const stepPath = item.stepPath
+                          const leafActive = authorCodeFocus?.key === item.key
                           const leafBpHandler = () => requestIndex != null
                             ? void toggleDebugBreakpoint(phase, i, requestIndex)
                             : void toggleStepPathBreakpoint(phase, i, stepPath)
                           return (
-                            <div key={item.key} {...virtualRowProps} className={`action-item action-item-nested ${leafBpActive ? 'has-breakpoint' : ''}`}>
+                            <div
+                              key={item.key}
+                              {...virtualRowProps}
+                              className={`action-item action-item-nested ${leafActive ? 'active' : ''} ${leafBpActive ? 'has-breakpoint' : ''}`}
+                              onClick={() => selectAuthorNestedItem(item)}
+                            >
                               <div className="action-cell action-cell-gutter">
+                                <input
+                                  type="checkbox"
+                                  className="action-block-select"
+                                  checked={blockSelection.has(item.key)}
+                                  aria-label={`Select ${item.childAction.name || leafLabel} for a reusable block`}
+                                  title="Select for 'Save as block'"
+                                  onClick={event => event.stopPropagation()}
+                                  onChange={() => toggleBlockSelection(item.key)}
+                                />
                                 <button
                                   type="button"
                                   className={`action-breakpoint-button ${leafBpActive ? 'active' : ''}`}
@@ -11051,10 +11292,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         if (item.kind === 'container' && item.depth > 0) {
                           const indent = { paddingLeft: `${item.depth * 14}px` } as React.CSSProperties
                           const containerActive = expandedAuthorContainers.has(item.key)
+                          const containerSelected = authorCodeFocus?.key === item.key
                           const typeLabel = item.containerType === 'http_sequence' ? 'SEQ' : item.containerType === 'control_if' ? 'IF' : 'LOOP'
                           return (
-                            <div key={item.key} {...virtualRowProps} className="action-item action-item-nested lifecycle-action" onClick={() => toggleAuthorContainer(item.key)}>
-                              <div className="action-cell action-cell-gutter"><span className="action-breakpoint-spacer" aria-hidden="true" /></div>
+                            <div key={item.key} {...virtualRowProps} className={`action-item action-item-nested lifecycle-action ${containerSelected ? 'active' : ''}`} onClick={() => selectAuthorNestedItem(item)}>
+                              <div className="action-cell action-cell-gutter">
+                                <input
+                                  type="checkbox"
+                                  className="action-block-select"
+                                  checked={blockSelection.has(item.key)}
+                                  aria-label={`Select ${item.name} for a reusable block`}
+                                  title="Select for 'Save as block'"
+                                  onClick={event => event.stopPropagation()}
+                                  onChange={() => toggleBlockSelection(item.key)}
+                                />
+                                <span className="action-breakpoint-spacer" aria-hidden="true" />
+                              </div>
                               <span className="action-cell action-phase-label" style={indent}>
                                 <button
                                   type="button"
@@ -11090,8 +11343,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         const reviewGated = actionRequiresReview(a)
                         const controlAction = isControlAction(a)
                         const rowIssues = phase === 'action' ? actionIssueBuckets[i] || [] : []
+                        const rowBlockKey = debugSequenceKey(phase, i)
                         const rowActive = authorCodeFocus
-                          ? authorCodeFocus.phase === phase && authorCodeFocus.actionIndex === i
+                          ? authorCodeFocus.phase === phase && authorCodeFocus.actionIndex === i && !authorCodeFocus.stepPath?.length
                           : phase === 'action' && activeAction === i
                         return (
                           <div
@@ -11108,11 +11362,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                 <input
                                   type="checkbox"
                                   className="action-block-select"
-                                  checked={blockSelection.has(i)}
+                                  checked={blockSelection.has(rowBlockKey)}
                                   aria-label={`Select ${a.name || 'action'} for a reusable block`}
                                   title="Select for 'Save as block'"
                                   onClick={event => event.stopPropagation()}
-                                  onChange={() => toggleBlockSelection(i)}
+                                  onChange={() => toggleBlockSelection(rowBlockKey)}
                                 />
                               )}
                               <button

@@ -134,7 +134,7 @@ describe('ActionEditor transaction field', () => {
     expect(labelInput('Transaction')!.value).toBe('Auth')
   })
 
-  it('lists a grouped request\'s extractors for an http_sequence action', () => {
+  it('summarizes an http_sequence action without listing grouped child requests', () => {
     renderEditor({
       name: 'Login Flow',
       type: 'http_sequence',
@@ -146,10 +146,12 @@ describe('ActionEditor transaction field', () => {
       },
     } as unknown as ScriptActionDefinition)
     const headings = [...container.querySelectorAll('.http-sequence-section h4')].map(h => h.textContent)
-    expect(headings).toContain('Extractors')
+    expect(headings).toEqual(['Sequence Summary'])
     const text = container.textContent || ''
-    expect(text).toContain('session_id')
-    expect(text).toContain('$.token')
-    expect(text).toContain('json')
+    expect(text).toContain('2 req')
+    expect(text).toContain('1 ext')
+    expect(text).not.toContain('Profile')
+    expect(text).not.toContain('/login')
+    expect(text).not.toContain('session_id')
   })
 })

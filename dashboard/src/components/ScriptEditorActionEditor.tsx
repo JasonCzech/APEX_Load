@@ -220,9 +220,9 @@ function HTTPSequenceFields({ action, index, onUpdate }: HTTPSequenceFieldsProps
     .map(request => asString(request.metadata?.source_subtransaction) || asString(request.metadata?.source_subtransaction))
     .filter(Boolean)
   const uniqueSubtransactions = [...new Set(subtransactions)]
-  const sequenceExtractors = requests.flatMap((request, requestIndex) =>
-    (request.extractors || []).map((extractor, extractorIndex) => ({ extractor, requestName: request.name, key: `${requestIndex}-${extractorIndex}` })),
-  )
+  const extractorCount = requests.reduce((count, request) => count + (request.extractors?.length || 0), 0)
+  const assertionCount = requests.reduce((count, request) => count + (request.assertions?.length || 0), 0)
+  const headerCount = requests.reduce((count, request) => count + Object.keys(request.headers || {}).length, 0)
   return (
     <>
       <div className="form-grid">
@@ -232,83 +232,20 @@ function HTTPSequenceFields({ action, index, onUpdate }: HTTPSequenceFieldsProps
       </div>
       <div className="sub-section http-sequence-section">
         <div className="sub-header">
-          <h4>Grouped Requests</h4>
-          <span className="sequence-summary">{requests.length} request{requests.length === 1 ? '' : 's'}{uniqueSubtransactions.length > 0 ? ` • ${uniqueSubtransactions.length} subtransaction${uniqueSubtransactions.length === 1 ? '' : 's'}` : ''}</span>
+          <h4>Sequence Summary</h4>
+          <span className="sequence-summary">{requests.length} request{requests.length === 1 ? '' : 's'}</span>
         </div>
-        <div className="http-sequence-table-wrap">
-          <table className="http-sequence-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Method</th>
-                <th>Name</th>
-                <th>Target</th>
-                <th>Signals</th>
-              </tr>
-            </thead>
-            <tbody>
-              {requests.map((request, requestIndex) => {
-                const subtransaction = asString(request.metadata?.source_subtransaction) || asString(request.metadata?.source_subtransaction)
-                const signalParts = [
-                  request.body ? 'Body' : '',
-                  request.headers && Object.keys(request.headers).length > 0 ? `${Object.keys(request.headers).length} headers` : '',
-                  request.extractors?.length ? `${request.extractors.length} extractors` : '',
-                  request.assertions?.length ? `${request.assertions.length} checks` : '',
-                ].filter(Boolean)
-                return (
-                  <tr key={`${request.name}-${requestIndex}`}>
-                    <td>{requestIndex + 1}</td>
-                    <td><span className="sequence-method">{request.method || request.type}</span></td>
-                    <td>
-                      <strong>{request.name}</strong>
-                      {subtransaction && <small>{subtransaction}</small>}
-                    </td>
-                    <td className="sequence-target">{request.target}</td>
-                    <td>{signalParts.join(', ') || 'Request'}</td>
-                  </tr>
-                )
-              })}
-              {requests.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="sequence-empty">No grouped child requests were found on this action.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="http-sequence-summary-grid">
+          <span className="metric-badge">{requests.length} req</span>
+          {uniqueSubtransactions.length > 0 && <span className="metric-badge">{uniqueSubtransactions.length} subtxn</span>}
+          {headerCount > 0 && <span className="metric-badge">{headerCount} hdr</span>}
+          {extractorCount > 0 && <span className="metric-badge">{extractorCount} ext</span>}
+          {assertionCount > 0 && <span className="metric-badge">{assertionCount} check</span>}
         </div>
-      </div>
-      {sequenceExtractors.length > 0 && (
-        <div className="sub-section http-sequence-section">
-          <div className="sub-header">
-            <h4>Extractors</h4>
-            <span className="sequence-summary">{sequenceExtractors.length} extractor{sequenceExtractors.length === 1 ? '' : 's'}</span>
-          </div>
-          <div className="http-sequence-table-wrap">
-            <table className="http-sequence-table">
-              <thead>
-                <tr>
-                  <th>Variable</th>
-                  <th>Type</th>
-                  <th>Source</th>
-                  <th>Expression</th>
-                  <th>From</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sequenceExtractors.map(({ extractor, requestName, key }) => (
-                  <tr key={key}>
-                    <td><strong>{extractor.name || '—'}</strong></td>
-                    <td><span className="sequence-method">{extractor.type || '—'}</span></td>
-                    <td>{extractor.source || '—'}</td>
-                    <td className="sequence-target cell-mono">{extractor.expression || '—'}</td>
-                    <td>{requestName}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <p className="sequence-summary-note">
+          Expand the sequence in the Author outline to inspect individual requests.
+        </p>
         </div>
-      )}
     </>
   )
 }
