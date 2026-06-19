@@ -10,18 +10,21 @@ import {
   buildScriptPhaseActionRows,
   clampDebuggerPaneSize,
   codePathForDebugRow,
+  actionTransactionMarker,
   actionTransactionName,
   defaultCenterTabsState,
   duplicateActionInList,
   filterScriptPhaseActionRows,
   findParameterReferencesInJson,
   moveActionStep,
+  remapIndexAfterMarkerWrap,
   removeActionStep,
   setActionTransactionName,
   tagActionsTransaction,
   uniqueActionName,
   uniqueTransactionName,
   updateActionStepField,
+  wrapActionsInTransactionMarkers,
   formatBrowserDeviceProfileLabel,
   formatDebugPhaseLabel,
   formatProtocolEvidenceSummary,
@@ -336,6 +339,53 @@ describe('filterScriptPhaseActionRows', () => {
     it('derives a unique default transaction name', () => {
       expect(uniqueTransactionName([])).toBe('Transaction 1')
       expect(uniqueTransactionName([tagged, { metadata: { source_transaction: 'Transaction 1' } } as unknown as ScriptActionDefinition])).toBe('Transaction 2')
+    })
+  })
+
+  describe('transaction marker pairs (span timing)', () => {
+    const acts = (): ScriptActionDefinition[] => ([
+      { name: 'a', type: 'GET' },
+      { name: 'b', type: 'POST' },
+      { name: 'c', type: 'GET' },
+    ] as unknown as ScriptActionDefinition[])
+
+    it('wraps a contiguous span in a balanced lr_start/end marker pair', () => {
+      const next = wrapActionsInTransactionMarkers(acts(), 0, 1, 'Checkout')
+      expect(next.map(a => a.type)).toEqual(['source_transaction', 'GET', 'POST', 'source_transaction', 'GET'])
+      expect(next[0]).toEqual({ name: 'Checkout', type: 'source_transaction', params: { function: 'lr_start_transaction' } })
+      expect(next[3]).toEqual({ name: 'Checkout', type: 'source_transaction', params: { function: 'lr_end_transaction' } })
+    })
+
+    it('wraps a single action (lo === hi)', () => {
+      const next = wrapActionsInTransactionMarkers(acts(), 1, 1, 'One')
+      expect(next.map(a => a.name)).toEqual(['a', 'One', 'b', 'One', 'c'])
+      expect(actionTransactionMarker(next[1])).toEqual({ role: 'start', name: 'One' })
+      expect(actionTransactionMarker(next[3])).toEqual({ role: 'end', name: 'One' })
+    })
+
+    it('spans the whole min..max range, including actions between the endpoints', () => {
+      // wrapping 0..2 brackets b (index 1) too — the classic span semantic
+      const next = wrapActionsInTransactionMarkers(acts(), 2, 0, 'Flow')
+      expect(next.map(a => a.type)).toEqual(['source_transaction', 'GET', 'POST', 'GET', 'source_transaction'])
+    })
+
+    it('is a no-op for empty names or out-of-range indices', () => {
+      const original = acts()
+      expect(wrapActionsInTransactionMarkers(original, 0, 1, '  ')).toBe(original)
+      expect(wrapActionsInTransactionMarkers(original, 0, 9, 'X')).toBe(original)
+      expect(wrapActionsInTransactionMarkers(original, -1, 1, 'X')).toBe(original)
+    })
+
+    it('detects markers and ignores tagged / plain actions', () => {
+      expect(actionTransactionMarker({ type: 'source_transaction', name: 'T', params: { function: 'lr_start_transaction' } } as unknown as ScriptActionDefinition)).toEqual({ role: 'start', name: 'T' })
+      expect(actionTransactionMarker({ type: 'GET', metadata: { source_transaction: 'T' } } as unknown as ScriptActionDefinition)).toBeNull()
+      expect(actionTransactionMarker({ type: 'source_transaction', name: 'T', params: { function: 'lr_set_transaction_status' } } as unknown as ScriptActionDefinition)).toBeNull()
+    })
+
+    it('remaps indices around the inserted marker pair', () => {
+      // wrap [1..2]: start at 1 (1,2 -> +1), end after 2 (>2 -> +2)
+      expect([0, 1, 2].map(i => remapIndexAfterMarkerWrap(i, 1, 2))).toEqual([0, 2, 3])
+      expect(remapIndexAfterMarkerWrap(3, 1, 2)).toBe(5)
     })
   })
 

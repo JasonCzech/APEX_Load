@@ -4356,7 +4356,11 @@
 .control-step-add { align-self: flex-start; }
 .action-txn-pill { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; font-size: 10px; font-weight: 600; border-radius: 999px; color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-border); white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
 .txn-wrap-inline { display: inline-flex; align-items: center; gap: 4px; }
+.txn-wrap-modes { display: inline-flex; gap: 2px; }
+.txn-wrap-hint { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+.txn-wrap-hint.warning { color: var(--warning); }
 .txn-wrap-input { padding: 3px 6px; font-size: 12px; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; min-width: 120px; }
+.action-txn-marker { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; border-radius: 4px; color: var(--success); background: rgba(var(--success-rgb), 0.12); border: 1px solid rgba(var(--success-rgb), 0.5); white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 .action-list { max-height: min(420px, 34vh); overflow-y: auto; }
 .action-item {
   display: flex; align-items: center; gap: 8px; padding: 10px 16px;

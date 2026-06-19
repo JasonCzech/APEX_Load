@@ -158,8 +158,11 @@ import {
   filterScriptPhaseActionRows,
   duplicateActionInList,
   actionTransactionName,
+  actionTransactionMarker,
   tagActionsTransaction,
   uniqueTransactionName,
+  wrapActionsInTransactionMarkers,
+  remapIndexAfterMarkerWrap,
   clampDebuggerPaneSize,
   codePathForDebugRow,
   findParameterReferencesInJson,
@@ -2907,6 +2910,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   // Inline naming draft when wrapping the block selection in a transaction
   // (null = not naming). Pre-filled with a unique default; null cancels.
   const [txnWrapDraft, setTxnWrapDraft] = useState<string | null>(null)
+  // 'span' = lr_start/end_transaction marker pair (wall-clock span incl. think
+  // time); 'grouped' = tag each selected action under one name (per-action).
+  const [txnWrapMode, setTxnWrapMode] = useState<'span' | 'grouped'>('span')
   const [showSaveBlockModal, setShowSaveBlockModal] = useState(false)
   const [saveBlockName, setSaveBlockName] = useState('')
   const [saveBlockKind, setSaveBlockKind] = useState('request_group')
@@ -6378,7 +6384,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     const name = (txnWrapDraft || '').trim()
     const indices = Array.from(blockSelection).filter(i => i >= 0 && i < script.actions.length).sort((a, b) => a - b)
     if (!name || indices.length === 0) { setTxnWrapDraft(null); return }
-    setScript(prev => ({ ...prev, actions: tagActionsTransaction(prev.actions, indices, name) }))
+    if (txnWrapMode === 'span') {
+      const lo = indices[0]
+      const hi = indices[indices.length - 1]
+      setScript(prev => ({ ...prev, actions: wrapActionsInTransactionMarkers(prev.actions, lo, hi, name) }))
+      // Two markers are inserted (start at lo, end after hi); keep breakpoints pinned.
+      setDebugBreakpoints(prev => prev.map(bp => {
+        if (bp.phase !== 'action') return bp
+        const shifted = remapIndexAfterMarkerWrap(bp.action_index, lo, hi)
+        return shifted === bp.action_index ? bp : { ...bp, action_index: shifted }
+      }))
+    } else {
+      setScript(prev => ({ ...prev, actions: tagActionsTransaction(prev.actions, indices, name) }))
+    }
     setBlockSelection(new Set())
     setTxnWrapDraft(null)
   }
@@ -10217,8 +10235,33 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           </button>
                         </>
                       )}
-                      {txnWrapDraft !== null && (
+                      {txnWrapDraft !== null && (() => {
+                        const wrapSel = Array.from(blockSelection).filter(i => i >= 0 && i < script.actions.length).sort((a, b) => a - b)
+                        const wrapLo = wrapSel.length ? wrapSel[0] : 0
+                        const wrapHi = wrapSel.length ? wrapSel[wrapSel.length - 1] : 0
+                        const wrapBetween = (wrapHi - wrapLo + 1) - wrapSel.length
+                        const wrapName = (txnWrapDraft || '').trim()
+                        const wrapNameClash = wrapName.length > 0 && script.actions.some(a => actionTransactionName(a) === wrapName || actionTransactionMarker(a)?.name === wrapName)
+                        return (
                         <span className="txn-wrap-inline">
+                          <span className="txn-wrap-modes" role="group" aria-label="Transaction timing">
+                            <button
+                              type="button"
+                              className={`btn btn-sm ${txnWrapMode === 'span' ? 'btn-secondary' : 'btn-ghost'}`}
+                              onClick={() => setTxnWrapMode('span')}
+                              title="Timed span — lr_start/end_transaction markers measure wall-clock time across the selection (includes think time)"
+                            >
+                              Timed span
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn btn-sm ${txnWrapMode === 'grouped' ? 'btn-secondary' : 'btn-ghost'}`}
+                              onClick={() => setTxnWrapMode('grouped')}
+                              title="Grouped — tag each selected action under one name (per-action response times, no span)"
+                            >
+                              Grouped
+                            </button>
+                          </span>
                           <input
                             autoFocus
                             className="txn-wrap-input"
@@ -10230,8 +10273,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           />
                           <button className="btn btn-sm btn-accent" onClick={applyWrapSelectionInTransaction} disabled={!txnWrapDraft.trim()}>Wrap</button>
                           <button className="btn btn-sm btn-ghost" onClick={() => setTxnWrapDraft(null)}>Cancel</button>
+                          {txnWrapMode === 'span' && (
+                            <span className="txn-wrap-hint" title="Timed span brackets every action between the first and last selected row">
+                              times rows {wrapLo + 1}–{wrapHi + 1}{wrapBetween > 0 ? ` (+${wrapBetween} between)` : ''}
+                            </span>
+                          )}
+                          {wrapNameClash && <span className="txn-wrap-hint warning" title="Another transaction already uses this name">name in use</span>}
                         </span>
-                      )}
+                        )
+                      })()}
                       <button className="btn btn-sm btn-accent" onClick={addAction}>+ Add</button>
                     </div>
                   </div>
@@ -10270,6 +10320,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         const requestCount = actionRequestCount(a)
                         const extractorCount = actionExtractorCount(a)
                         const fallbackCount = actionSelectorFallbackCount(a)
+                        const txnMarker = actionTransactionMarker(a)
                         const reviewGated = actionRequiresReview(a)
                         const controlAction = isControlAction(a)
                         const rowIssues = phase === 'action' ? actionIssueBuckets[i] || [] : []
@@ -10309,12 +10360,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               <span aria-hidden="true" />
                             </button>
                             <span className="action-phase-label">{phaseLabel}</span>
-                            <span className="action-method" style={{ color: methodColor(a.type) }} title={actionTypeSummary(a)}>{a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
+                            <span className="action-method" style={{ color: methodColor(a.type) }} title={actionTypeSummary(a)}>{txnMarker ? 'TXN' : a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
                             <span className="action-name-text">{actionRowLabel(a)}</span>
                             <div className="action-item-signals">
                               {actionTransactionName(a) && (
                                 <span className="action-txn-pill" title={`Transaction: ${actionTransactionName(a)}`}>
                                   ⏱ {actionTransactionName(a)}
+                                </span>
+                              )}
+                              {txnMarker && (
+                                <span
+                                  className={`action-txn-marker ${txnMarker.role}`}
+                                  title={`Transaction ${txnMarker.role === 'start' ? 'start' : 'end'}: ${txnMarker.name}`}
+                                >
+                                  {txnMarker.role === 'start' ? '⟦ TXN' : 'TXN ⟧'} {txnMarker.name}
                                 </span>
                               )}
                               {(reviewGated || isReviewGatedJavaScriptAction(a)) && (

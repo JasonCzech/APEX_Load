@@ -322,6 +322,63 @@ export function uniqueTransactionName(actions: ScriptActionDefinition[]): string
   return `Transaction ${n}`
 }
 
+function transactionMarker(name: string, fn: 'lr_start_transaction' | 'lr_end_transaction'): ScriptActionDefinition {
+  return { name, type: 'source_transaction', params: { function: fn } } as unknown as ScriptActionDefinition
+}
+
+/**
+ * Wrap the contiguous span [startIndex..endIndex] in a balanced
+ * lr_start_transaction / lr_end_transaction marker pair (both named `name`).
+ * Unlike tagging, this measures the wall-clock SPAN of the region at runtime —
+ * including think time and any non-selected actions that fall between the
+ * endpoints — which is the classic LoadRunner transaction semantic. Returns the
+ * list unchanged for an empty name or an out-of-range range.
+ */
+export function wrapActionsInTransactionMarkers(
+  actions: ScriptActionDefinition[],
+  startIndex: number,
+  endIndex: number,
+  name: string,
+): ScriptActionDefinition[] {
+  const trimmed = name.trim()
+  const lo = Math.min(startIndex, endIndex)
+  const hi = Math.max(startIndex, endIndex)
+  if (!trimmed || lo < 0 || hi >= actions.length || lo > hi) return actions
+  return [
+    ...actions.slice(0, lo),
+    transactionMarker(trimmed, 'lr_start_transaction'),
+    ...actions.slice(lo, hi + 1),
+    transactionMarker(trimmed, 'lr_end_transaction'),
+    ...actions.slice(hi + 1),
+  ]
+}
+
+/**
+ * If `action` is a transaction marker (a source_transaction start/end), return
+ * its role and name; otherwise null. Used to render marker rows distinctly.
+ */
+export function actionTransactionMarker(
+  action: ScriptActionDefinition,
+): { role: 'start' | 'end'; name: string } | null {
+  if ((action.type || '').toLowerCase() !== 'source_transaction') return null
+  const fn = String((action.params as Record<string, unknown> | undefined)?.function || '').toLowerCase()
+  const name = (action.name || '').trim()
+  if (fn.includes('start')) return { role: 'start', name }
+  if (fn.includes('end') || fn.includes('stop')) return { role: 'end', name }
+  return null
+}
+
+/**
+ * Remap an action index after a marker wrap of [lo..hi]: a start marker is
+ * inserted at lo (so lo..hi shift +1) and an end marker after hi (so indices
+ * past hi shift +2). Keeps debug breakpoints pinned to their actions.
+ */
+export function remapIndexAfterMarkerWrap(index: number, lo: number, hi: number): number {
+  if (index < lo) return index
+  if (index <= hi) return index + 1
+  return index + 2
+}
+
 /**
  * Filter outline action rows by a free-text query, matching an action's name,
  * type, target, or phase label (case-insensitive). An empty/whitespace query
