@@ -155,6 +155,7 @@ import {
   DEBUGGER_LAYOUT_LIMITS,
   SCRIPT_JSON_TAB_ID,
   buildScriptPhaseActionRows,
+  filterScriptPhaseActionRows,
   clampDebuggerPaneSize,
   codePathForDebugRow,
   findParameterReferencesInJson,
@@ -2864,6 +2865,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [jsonOccurrenceReview, setJsonOccurrenceReview] = useState<JsonParameterOccurrenceReviewState | null>(null)
   const [authorCodeFocus, setAuthorCodeFocus] = useState<{ phase: ScriptActionPhase; actionIndex: number } | null>(null)
   const [outlineActionListCollapsed, setOutlineActionListCollapsed] = useState(false)
+  const [outlineActionFilter, setOutlineActionFilter] = useState('')
   const [outlineParameterListCollapsed, setOutlineParameterListCollapsed] = useState(false)
   const [debugActionListCollapsed, setDebugActionListCollapsed] = useState(false)
   const [debugParameterListCollapsed, setDebugParameterListCollapsed] = useState(false)
@@ -2921,19 +2923,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const logLevelLabel = script.config.log?.level || 'standard'
   const outlineSummary = useMemo(() => buildScriptOutlineSummary(script), [script])
   const scriptPhaseActionRows = useMemo(() => buildScriptPhaseActionRows(script), [script])
+  // The outline filter narrows the rendered rows by name/type/target without
+  // mutating the script; rows keep their original actionIndex so every row
+  // handler (select/move/breakpoint) stays correct over the filtered view.
+  const filteredActionRows = useMemo(
+    () => filterScriptPhaseActionRows(scriptPhaseActionRows, outlineActionFilter),
+    [scriptPhaseActionRows, outlineActionFilter],
+  )
   // Virtualize the Author Action List so a multi-thousand-action import renders only the
   // visible rows instead of one DOM subtree per action.
   const actionListScrollRef = useRef<HTMLDivElement | null>(null)
-  const virtualizeActions = scriptPhaseActionRows.length > LIST_VIRTUALIZE_THRESHOLD
+  const virtualizeActions = filteredActionRows.length > LIST_VIRTUALIZE_THRESHOLD
   const actionListVirtualizer = useVirtualizer({
-    count: scriptPhaseActionRows.length,
+    count: filteredActionRows.length,
     getScrollElement: () => actionListScrollRef.current,
     estimateSize: () => 45,
     overscan: 12,
   })
   const actionRowsToRender: Array<{ row: ScriptPhaseActionRow; virtualItem: VirtualItem | null }> = virtualizeActions
-    ? actionListVirtualizer.getVirtualItems().map(virtualItem => ({ row: scriptPhaseActionRows[virtualItem.index], virtualItem }))
-    : scriptPhaseActionRows.map(row => ({ row, virtualItem: null }))
+    ? actionListVirtualizer.getVirtualItems().map(virtualItem => ({ row: filteredActionRows[virtualItem.index], virtualItem }))
+    : filteredActionRows.map(row => ({ row, virtualItem: null }))
   const parameterReferenceCounts = useMemo(() => {
     const counts = new Map<string, number>()
     outlineSummary.actions.forEach(action => {
@@ -10162,6 +10171,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         <div className="action-empty">No actions yet. Click "+ Add" to create one.</div>
                       </div>
                     ) : (
+                    <>
+                    <div className="action-list-filter">
+                      <input
+                        type="search"
+                        className="action-list-filter-input"
+                        placeholder="Filter actions…"
+                        value={outlineActionFilter}
+                        onChange={event => setOutlineActionFilter(event.target.value)}
+                        aria-label="Filter the action list by name, type, or target"
+                      />
+                      {outlineActionFilter.trim() && (
+                        <span className="action-list-filter-count" aria-live="polite">{filteredActionRows.length}/{scriptPhaseActionRows.length}</span>
+                      )}
+                    </div>
+                    {filteredActionRows.length === 0 ? (
+                      <div className="action-list">
+                        <div className="action-empty">No actions match “{outlineActionFilter.trim()}”.</div>
+                      </div>
+                    ) : (
                     <div className="action-list" ref={actionListScrollRef}>
                       <div className="action-list-virtual" style={virtualizeActions ? { height: actionListVirtualizer.getTotalSize(), position: 'relative' } : undefined}>
                       {actionRowsToRender.map(({ row, virtualItem }) => {
@@ -10253,6 +10281,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       })}
                       </div>
                     </div>
+                    )}
+                    </>
                     )
                   )}
                 </section>

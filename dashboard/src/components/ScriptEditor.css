@@ -4323,6 +4323,10 @@
   color: var(--text-muted);
   font-size: 12px;
 }
+.action-list-filter { display: flex; align-items: center; gap: 6px; padding: 6px 8px; }
+.action-list-filter-input { flex: 1; min-width: 0; padding: 4px 8px; font-size: 12px; color: var(--text); background: var(--bg-input, var(--bg-elevated)); border: 1px solid var(--border); border-radius: 6px; }
+.action-list-filter-input:focus { outline: none; border-color: var(--accent); }
+.action-list-filter-count { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 .action-list { max-height: min(420px, 34vh); overflow-y: auto; }
 .action-item {
   display: flex; align-items: center; gap: 8px; padding: 10px 16px;

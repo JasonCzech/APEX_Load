@@ -190,6 +190,26 @@ export function buildScriptPhaseActionRows(script: ScriptDefinition): ScriptPhas
   return rows
 }
 
+/**
+ * Filter outline action rows by a free-text query, matching an action's name,
+ * type, target, or phase label (case-insensitive). An empty/whitespace query
+ * returns the rows unchanged. Rows keep their original actionIndex/phase so the
+ * outline's select/move/breakpoint handlers stay correct over a filtered view.
+ */
+export function filterScriptPhaseActionRows(
+  rows: ScriptPhaseActionRow[],
+  query: string,
+): ScriptPhaseActionRow[] {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return rows
+  return rows.filter(({ action, phaseLabel }) =>
+    (action.name || '').toLowerCase().includes(needle) ||
+    (action.type || '').toLowerCase().includes(needle) ||
+    (action.target || '').toLowerCase().includes(needle) ||
+    phaseLabel.toLowerCase().includes(needle),
+  )
+}
+
 export function formatProtocolEvidenceSummary(evidence?: ProtocolEvidence): string {
   if (!evidence) return ''
   const parts = [

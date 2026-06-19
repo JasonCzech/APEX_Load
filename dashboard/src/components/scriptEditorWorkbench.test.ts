@@ -10,6 +10,7 @@ import {
   clampDebuggerPaneSize,
   codePathForDebugRow,
   defaultCenterTabsState,
+  filterScriptPhaseActionRows,
   findParameterReferencesInJson,
   formatBrowserDeviceProfileLabel,
   formatDebugPhaseLabel,
@@ -52,6 +53,29 @@ describe('JSON draft round-trip', () => {
     const bad = parseScriptJsonDraft('{ not json')
     expect(bad.ok).toBe(false)
     if (!bad.ok) expect(bad.message).toMatch(/invalid/i)
+  })
+
+  // R1 (make-or-break): the parse <-> serialize round-trip must preserve
+  // unknown / advanced / params.* keys so editing never silently corrupts an
+  // imported script.
+  it('preserves unknown, advanced and params.* keys through a round-trip', () => {
+    const original = {
+      name: 'import',
+      protocol: 'http',
+      actions: [
+        {
+          name: 'login',
+          type: 'POST',
+          target: '/login',
+          params: { lr_unmask: 'abc', max_messages: 5 },
+          vendor_extension: { keep: true },
+        },
+      ],
+      lr_runtime_settings: { unknown_block: [1, 2, 3] },
+    } as unknown as ScriptDefinition
+    const roundTripped = parseScriptJsonDraft(formatScriptJson(original))
+    expect(roundTripped.ok).toBe(true)
+    if (roundTripped.ok) expect(roundTripped.script).toEqual(original)
   })
 })
 
@@ -164,5 +188,39 @@ describe('misc helpers', () => {
     expect(formatBrowserDeviceProfileLabel(webkit)).toContain('(WebKit)')
     const chromium = BROWSER_DEVICE_PROFILES.find(p => p.engine === 'chromium')!
     expect(formatBrowserDeviceProfileLabel(chromium)).not.toContain('(WebKit)')
+  })
+})
+
+describe('filterScriptPhaseActionRows', () => {
+  const rows = buildScriptPhaseActionRows(script({
+    init: [{ name: 'Warmup', type: 'GET', target: '/health' }],
+    actions: [
+      { name: 'Login', type: 'POST', target: '/auth/login' },
+      { name: 'Search products', type: 'GET', target: '/api/catalog' },
+      { name: '', type: 'source_transaction' },
+    ],
+  } as unknown as Partial<ScriptDefinition>))
+
+  it('returns all rows for an empty or whitespace query', () => {
+    expect(filterScriptPhaseActionRows(rows, '')).toHaveLength(rows.length)
+    expect(filterScriptPhaseActionRows(rows, '   ')).toHaveLength(rows.length)
+  })
+
+  it('matches on name, type, target and phase label (case-insensitive)', () => {
+    expect(filterScriptPhaseActionRows(rows, 'login').map(r => r.action.name)).toEqual(['Login'])
+    expect(filterScriptPhaseActionRows(rows, 'POST').map(r => r.action.name)).toEqual(['Login'])
+    expect(filterScriptPhaseActionRows(rows, '/api/catalog').map(r => r.action.name)).toEqual(['Search products'])
+    expect(filterScriptPhaseActionRows(rows, 'transaction').map(r => r.action.type)).toEqual(['source_transaction'])
+    expect(filterScriptPhaseActionRows(rows, 'init')).toHaveLength(1)
+  })
+
+  it('preserves each row\'s original phase and actionIndex in the filtered view', () => {
+    const [match] = filterScriptPhaseActionRows(rows, 'Search products')
+    expect(match.phase).toBe('action')
+    expect(match.actionIndex).toBe(1)
+  })
+
+  it('returns an empty array when nothing matches', () => {
+    expect(filterScriptPhaseActionRows(rows, 'no-such-action')).toEqual([])
   })
 })
