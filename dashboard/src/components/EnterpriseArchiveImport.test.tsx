@@ -815,6 +815,72 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('alpha')
   })
 
+  it('converts every validated archive from the per-item review panel, not just the last-added one', async () => {
+    const onImported = vi.fn()
+    const firstFile = new File(['alpha'], 'alpha.zip', { type: 'application/zip' })
+    const lastFile = new File(['gamma'], 'gamma.zip', { type: 'application/zip' })
+    apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => ({
+      script: {
+        name: file.name.replace(/\.zip$/i, ''),
+        protocol: 'http',
+        actions: [{ name: 'Homepage' }],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      summary: { project_file: file.name, unsupported_function_count: 0 },
+      stats: { total_functions: 1, converted_actions: 1, extractors: 0, think_times: 0, transactions: 0, skipped: 0 },
+    }))
+
+    await act(async () => {
+      root.render(<EnterpriseArchiveImport onImported={onImported} />)
+    })
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    // Add the archives one at a time so the queue selection lands on the LAST-added item,
+    // reproducing the original "only the last script added is imported" report.
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [firstFile] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [lastFile] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('2 ZIP files queued')
+
+    await clickImportAction(container, 'Validate Only')
+    await flushPromises()
+
+    // The per-item review panel renders the last-added (gamma) archive, but its save
+    // button now converts every validated archive in the queue.
+    const reviewSaveButton = container.querySelector('.script-import-review-actions .btn-primary') as HTMLButtonElement | null
+    expect(reviewSaveButton).not.toBeNull()
+    if (!reviewSaveButton) {
+      return
+    }
+    expect(reviewSaveButton.textContent).toContain('Convert 2 Enterprise Script Archives')
+
+    await clickButton(reviewSaveButton)
+    await flushPromises()
+
+    // Both archives are converted and saved — not just the last-added (gamma) one.
+    expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(2)
+    expect(apiMock.importEnterpriseArchive.mock.calls.map(call => (call[0] as File).name)).toEqual(['alpha.zip', 'gamma.zip'])
+    expect(apiMock.createScript).toHaveBeenCalledTimes(2)
+    expect(onImported).toHaveBeenCalledTimes(1)
+    expect(onImported.mock.calls[0][0].scripts).toHaveLength(2)
+  })
+
   it('announces import progress and failed queue item details', async () => {
     const firstFile = new File(['alpha'], 'alpha.zip', { type: 'application/zip' })
     const failedFile = new File(['gamma'], 'gamma.zip', { type: 'application/zip' })
@@ -1159,7 +1225,7 @@ describe('EnterpriseArchiveImport', () => {
       checkboxes[3].dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
     expect(validateButton).toBeDefined()
     if (!validateButton) {
       return
@@ -1322,7 +1388,7 @@ describe('EnterpriseArchiveImport', () => {
       checkboxes[2]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
     expect(validateButton).toBeDefined()
     if (!validateButton) {
       return
@@ -3479,7 +3545,7 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
     expect(validateButton).toBeDefined()
     if (!validateButton) {
       return
@@ -3604,7 +3670,7 @@ describe('EnterpriseArchiveImport', () => {
         fileInput.dispatchEvent(new Event('change', { bubbles: true }))
       })
 
-      const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
+      const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
       expect(validateButton).toBeDefined()
       if (!validateButton) {
         return
@@ -3759,7 +3825,7 @@ describe('EnterpriseArchiveImport', () => {
         fileInput.dispatchEvent(new Event('change', { bubbles: true }))
       })
 
-      const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
+      const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Script(s)'))
       expect(validateButton).toBeDefined()
       if (!validateButton) {
         return

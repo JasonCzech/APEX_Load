@@ -588,7 +588,9 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
   const queuedFileCount = importItems.length
   const runningFileCount = importItems.filter(item => enterpriseArchiveImportStatusIsRunning(item.status)).length
   const failedFileCount = importItems.filter(item => item.status === 'failed').length
-  const validatedFileCount = importItems.filter(item => item.status === 'validated').length
+  const validatedItems = importItems.filter(item => item.status === 'validated')
+  const validatedFileCount = validatedItems.length
+  const validatedItemIds = validatedItems.map(item => item.id)
   const convertedFileCount = importItems.filter(item => item.status === 'converted').length
   const pendingValidationFileCount = Math.max(queuedFileCount - validatedFileCount - convertedFileCount, 0)
   const allQueuedArchivesValidated = queuedFileCount > 0 && importItems.every(item => item.status === 'validated')
@@ -602,7 +604,7 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
   const failedImportMessage = failedFileCount > 0
     ? `${failedFileCount} enterprise script archive${failedFileCount === 1 ? '' : 's'} failed during import review. Failed queue rows show the error details.`
     : ''
-  const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Only'
+  const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Script(s)'
   const convertButtonLabel = queuedFileCount > 1 ? `Convert ${queuedFileCount} Enterprise Script Archives` : 'Convert Enterprise Script Archive'
   const conversionGateMessage = workingMode === 'convert'
     ? 'Conversion is saving validated scripts and will open the saved script in the editor.'
@@ -681,7 +683,7 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
   const saveActionLabel = saveBlockedByProtocolGate
     ? (reviewArtifactSaving ? 'Saving Review Artifact...' : 'Save Review Artifact Instead')
     : (reviewMode === 'validation'
-      ? 'Convert Enterprise Script Archive'
+      ? (validatedFileCount > 1 ? `Convert ${validatedFileCount} Enterprise Script Archives` : 'Convert Enterprise Script Archive')
       : (browserReplayInProgress
       ? 'Draft Browser Replay In Progress'
       : (saveRequiresBrowserReplay
@@ -1724,7 +1726,7 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
             onSave={saveBlockedByProtocolGate && reviewArtifact
               ? handleSaveReviewArtifact
               : reviewMode === 'validation' && selectedItem
-                ? () => convertValidatedItems([selectedItem.id])
+                ? () => convertValidatedItems(validatedItemIds)
                 : handleSaveConverted}
             onEdit={onEdit ? () => openImportedScriptInEditor() : undefined}
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} /> : undefined}
