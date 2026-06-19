@@ -156,6 +156,7 @@ import {
   SCRIPT_JSON_TAB_ID,
   buildScriptPhaseActionRows,
   filterScriptPhaseActionRows,
+  duplicateActionInList,
   clampDebuggerPaneSize,
   codePathForDebugRow,
   findParameterReferencesInJson,
@@ -4299,6 +4300,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       return bp
     }))
     selectAuthorAction(newIdx)
+  }
+
+  const duplicateAction = (idx: number) => {
+    setScript(prev => ({ ...prev, actions: duplicateActionInList(prev.actions, idx) }))
+    // A copy is inserted at idx+1, so breakpoints after it shift down by one.
+    setDebugBreakpoints(prev => prev.map(bp =>
+      bp.phase === 'action' && bp.action_index > idx ? { ...bp, action_index: bp.action_index + 1 } : bp))
   }
 
   const updateAction = (idx: number, field: keyof Action, value: unknown) => {
@@ -10271,9 +10279,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             </div>
                             {phase === 'action' && (
                               <div className="action-item-actions">
-                                <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, -1) }} disabled={i === 0}>↑</button>
-                                <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, 1) }} disabled={i === script.actions.length - 1}>↓</button>
-                                <button className="btn-icon danger" onClick={e => { e.stopPropagation(); removeAction(i) }}>✕</button>
+                                <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, -1) }} disabled={i === 0} aria-label="Move action up" title="Move up">↑</button>
+                                <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, 1) }} disabled={i === script.actions.length - 1} aria-label="Move action down" title="Move down">↓</button>
+                                <button className="btn-icon" onClick={e => { e.stopPropagation(); duplicateAction(i) }} aria-label="Duplicate action" title="Duplicate">⧉</button>
+                                <button className="btn-icon danger" onClick={e => { e.stopPropagation(); removeAction(i) }} aria-label="Delete action" title="Delete">✕</button>
                               </div>
                             )}
                           </div>

@@ -233,6 +233,39 @@ export function updateActionStepField(
 }
 
 /**
+ * A unique action name derived from `base`, avoiding collisions in `existing`.
+ * Duplicate action names are flagged by the importer/validator, so a copied
+ * action needs a fresh name.
+ */
+export function uniqueActionName(base: string, existing: string[]): string {
+  const used = new Set(existing)
+  const root = base || 'action'
+  let candidate = `${root} (copy)`
+  let n = 2
+  while (used.has(candidate)) {
+    candidate = `${root} (copy ${n})`
+    n += 1
+  }
+  return candidate
+}
+
+/**
+ * Insert a deep copy of the action at `index` directly after it, with a unique
+ * name. The clone is a full deep copy (all keys, incl. unknown/params.*, and
+ * nested control steps) so editing it never mutates the original.
+ */
+export function duplicateActionInList(
+  actions: ScriptActionDefinition[],
+  index: number,
+): ScriptActionDefinition[] {
+  const source = actions[index]
+  if (!source) return actions
+  const clone = JSON.parse(JSON.stringify(source)) as ScriptActionDefinition
+  clone.name = uniqueActionName(source.name || source.type || 'action', actions.map(a => a.name || ''))
+  return [...actions.slice(0, index + 1), clone, ...actions.slice(index + 1)]
+}
+
+/**
  * Filter outline action rows by a free-text query, matching an action's name,
  * type, target, or phase label (case-insensitive). An empty/whitespace query
  * returns the rows unchanged. Rows keep their original actionIndex/phase so the

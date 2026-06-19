@@ -11,10 +11,12 @@ import {
   clampDebuggerPaneSize,
   codePathForDebugRow,
   defaultCenterTabsState,
+  duplicateActionInList,
   filterScriptPhaseActionRows,
   findParameterReferencesInJson,
   moveActionStep,
   removeActionStep,
+  uniqueActionName,
   updateActionStepField,
   formatBrowserDeviceProfileLabel,
   formatDebugPhaseLabel,
@@ -258,6 +260,43 @@ describe('filterScriptPhaseActionRows', () => {
       // siblings are returned by reference (untouched)
       expect(next[0]).toBe(original[0])
       expect(next[2]).toBe(original[2])
+    })
+  })
+
+  describe('uniqueActionName', () => {
+    it('appends "(copy)" then numbers to avoid collisions', () => {
+      expect(uniqueActionName('Login', [])).toBe('Login (copy)')
+      expect(uniqueActionName('Login', ['Login', 'Login (copy)'])).toBe('Login (copy 2)')
+      expect(uniqueActionName('Login', ['Login (copy)', 'Login (copy 2)'])).toBe('Login (copy 3)')
+    })
+
+    it('falls back to "action" for an empty base', () => {
+      expect(uniqueActionName('', [])).toBe('action (copy)')
+    })
+  })
+
+  describe('duplicateActionInList', () => {
+    const list = (): ScriptActionDefinition[] => ([
+      { name: 'Login', type: 'POST', target: '/login', params: { mask: 'x' } },
+      { name: 'Search', type: 'GET', target: '/search' },
+    ] as unknown as ScriptActionDefinition[])
+
+    it('inserts a uniquely-named deep copy right after the source', () => {
+      const next = duplicateActionInList(list(), 0)
+      expect(next.map(a => a.name)).toEqual(['Login', 'Login (copy)', 'Search'])
+      expect(next[1]).toEqual({ name: 'Login (copy)', type: 'POST', target: '/login', params: { mask: 'x' } })
+    })
+
+    it('deep-clones so editing the copy never mutates the original', () => {
+      const original = list()
+      const next = duplicateActionInList(original, 0)
+      ;(next[1].params as Record<string, unknown>).mask = 'changed'
+      expect((original[0].params as Record<string, unknown>).mask).toBe('x')
+    })
+
+    it('returns the list unchanged for an out-of-range index', () => {
+      const original = list()
+      expect(duplicateActionInList(original, 9)).toBe(original)
     })
   })
 
