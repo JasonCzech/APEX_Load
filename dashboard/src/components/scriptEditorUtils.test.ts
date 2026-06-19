@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildParameterizeSelectionRequest,
   buildReplayStartPayload,
   countUniqueColumnValues,
   detectInlineDataDelimiter,
@@ -61,6 +62,33 @@ describe('resolveJsonStringSelection', () => {
   it('rejects an empty selection', () => {
     const from = text.indexOf('Order Flow')
     expect(resolveJsonStringSelection(text, from, from).ok).toBe(false)
+  })
+})
+
+describe('buildParameterizeSelectionRequest', () => {
+  const text = JSON.stringify(
+    { script: { name: 'Order Flow', config: { base_url: 'https://api.example.com' } } },
+    null,
+    2,
+  )
+
+  it('returns the clamped range and text for a string-value selection', () => {
+    const from = text.indexOf('api.example.com')
+    const to = from + 'api.example.com'.length
+    const request = buildParameterizeSelectionRequest(text, from, to)
+    expect(request).not.toBeNull()
+    expect(request?.selectedText).toBe('api.example.com')
+    expect(text.slice(request!.start, request!.end)).toBe('api.example.com')
+  })
+
+  it('returns null for a property-key selection', () => {
+    const from = text.indexOf('base_url')
+    expect(buildParameterizeSelectionRequest(text, from, from + 'base_url'.length)).toBeNull()
+  })
+
+  it('returns null for an empty selection', () => {
+    const from = text.indexOf('Order Flow')
+    expect(buildParameterizeSelectionRequest(text, from, from)).toBeNull()
   })
 })
 

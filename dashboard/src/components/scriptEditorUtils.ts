@@ -704,6 +704,22 @@ export function resolveJsonStringSelection(text: string, from: number, to: numbe
   return { ok: true, innerFrom, innerTo, selectedText }
 }
 
+/**
+ * Map a raw editor selection to the (quote-clamped) range and text that can be
+ * parameterized, or null when the selection is not a parameterizable JSON string
+ * value. Shared by the JSON pane's right-click menu and its toolbar button so
+ * both entry points behave identically; callers add screen coordinates.
+ */
+export function buildParameterizeSelectionRequest(
+  text: string,
+  from: number,
+  to: number,
+): { start: number; end: number; selectedText: string } | null {
+  const resolved = resolveJsonStringSelection(text, from, to)
+  if (!resolved.ok) return null
+  return { start: resolved.innerFrom, end: resolved.innerTo, selectedText: resolved.selectedText }
+}
+
 function formatJsonPathKey(key: string): string {
   return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`
 }

@@ -141,7 +141,7 @@ import {
   normalizeHeaders,
   parseReplayVariablesText,
   parseInlineData,
-  resolveJsonStringSelection,
+  buildParameterizeSelectionRequest,
   sanitizeVarName,
   stringifyInlineData,
   summarizeInlineData,
@@ -995,17 +995,25 @@ function ScriptCodePane({
     const view = viewRef.current
     if (!view) return
     const { from, to } = view.state.selection.main
-    if (from === to) return
-    const resolved = resolveJsonStringSelection(view.state.doc.toString(), from, to)
-    if (!resolved.ok) return
+    const request = buildParameterizeSelectionRequest(view.state.doc.toString(), from, to)
+    if (!request) return
     event.preventDefault()
-    onRequestParameterize({
-      start: resolved.innerFrom,
-      end: resolved.innerTo,
-      selectedText: resolved.selectedText,
-      x: event.clientX,
-      y: event.clientY,
-    })
+    onRequestParameterize({ ...request, x: event.clientX, y: event.clientY })
+  }, [onRequestParameterize])
+
+  const parameterizeCurrentSelection = useCallback(() => {
+    const view = viewRef.current
+    if (!onRequestParameterize || !view) return
+    const { from, to } = view.state.selection.main
+    const request = buildParameterizeSelectionRequest(view.state.doc.toString(), from, to)
+    if (!request) {
+      // Nothing parameterizable is selected — focus the editor so the author
+      // can highlight a value, then try again.
+      view.focus()
+      return
+    }
+    const coords = view.coordsAtPos(request.end) ?? view.coordsAtPos(to)
+    onRequestParameterize({ ...request, x: coords?.left ?? 0, y: coords?.bottom ?? 0 })
   }, [onRequestParameterize])
 
   return (
@@ -1018,6 +1026,16 @@ function ScriptCodePane({
         <div className="script-code-status-row">
           <span className={`script-code-status ${status}`}>{statusMessage}</span>
           <button type="button" className="btn btn-sm btn-ghost" onClick={handleOpenSearch} title="Find in script (⌘F / Ctrl+F)">Find</button>
+          {onRequestParameterize && (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={parameterizeCurrentSelection}
+              title="Parameterize the selected value (you can also right-click a selection)"
+            >
+              Parameterize
+            </button>
+          )}
           <button type="button" className="btn btn-sm btn-ghost" onClick={onFormat}>Format</button>
           <button type="button" className="btn btn-sm btn-secondary" onClick={onApply} disabled={status === 'invalid'}>
             Apply JSON
