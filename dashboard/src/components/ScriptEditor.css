@@ -331,27 +331,6 @@
 .json-source-map-empty {
   margin: 0;
 }
-.json-source-map-oversized {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 100%;
-  padding: 12px;
-  text-align: center;
-  color: var(--text-muted);
-}
-.json-source-map-oversized span {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.json-source-map-oversized small {
-  font-size: 10px;
-  line-height: 1.4;
-}
 .json-source-map {
   flex: 1;
   min-height: 0;
@@ -378,6 +357,16 @@
   align-self: stretch;
   overflow: hidden;
   overscroll-behavior: contain;
+}
+/* Windowed (virtualized) large-document minimap: a block scroll container whose single child
+   spacer establishes the full scroll height, with only the visible rows absolutely positioned. */
+.json-source-map-lines.virtualized {
+  display: block;
+}
+.json-source-map-virtual {
+  position: relative;
+  width: 100%;
+  min-width: 0;
 }
 .json-source-map-viewport-highlight {
   position: absolute;

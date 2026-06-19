@@ -1862,6 +1862,42 @@ describe('ScriptEditor', () => {
     expect(sourceMapLines.scrollTop).toBeCloseTo((wrappedLineScrollTop + 45) * (6.5 / 18))
   })
 
+  it('windows the source map for very large scripts instead of disabling it', async () => {
+    const manyActions = Array.from({ length: 260 }, (_, index) => ({
+      name: `Step ${index + 1}`,
+      type: 'request' as const,
+      method: 'GET' as const,
+      target: `/resource/${index + 1}`,
+      headers: { 'Content-Type': 'application/json', 'X-Trace': `trace-${index + 1}` },
+      body: `{"index":${index + 1}}`,
+      extractors: [],
+      assertions: [{ type: 'status_code', expected: 200 }],
+    }))
+    const largeScript: ScriptDefinition = { ...initialScript, actions: manyActions }
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={largeScript} />)
+    })
+    await flushReact()
+
+    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
+    expect(codeArea).not.toBeNull()
+    if (!codeArea) return
+    // Sanity: this fixture is well past the windowing threshold (SCRIPT_CODE_LINE_LAYOUT_MAX_LINES).
+    expect(codeArea.value.split('\n').length).toBeGreaterThan(4000)
+
+    // The per-line map is windowed, not disabled — the old "Large document" placeholder is gone.
+    const sourceMapLines = container.querySelector('.json-source-map-lines') as HTMLDivElement | null
+    expect(sourceMapLines).not.toBeNull()
+    expect(sourceMapLines?.classList.contains('virtualized')).toBe(true)
+    expect(container.textContent).not.toContain('Line map disabled')
+
+    // The windowed spacer establishes a full scroll height proportional to the line count, so the
+    // scroll thumb and viewport highlight still track the whole document.
+    const virtualSpacer = container.querySelector('.json-source-map-virtual') as HTMLDivElement | null
+    expect(virtualSpacer).not.toBeNull()
+    expect(parseFloat(virtualSpacer?.style.height || '0')).toBeGreaterThan(0)
+  })
+
   it('drags the source map thumb to scroll the Script JSON editor', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)

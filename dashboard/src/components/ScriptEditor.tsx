@@ -596,9 +596,10 @@ const JSON_SOURCE_MAP_LINE_HEIGHT_PX = 6.5
 const SCRIPT_CODE_LINE_LAYOUT_MAX_LINES = 4000
 
 /**
- * Above this document size the per-line source-map minimap (one DOM <button> per line)
- * is replaced by a lightweight scrollbar-only minimap. Rendering ~50k buttons for a large
- * imported script otherwise commits hundreds of thousands of DOM nodes in a single pass.
+ * Above this document size the inline review-baseline/current-draft JSON diff preview is replaced
+ * by a "too large to preview" placeholder (serializing multi-MB JSON inline would jank the panel).
+ * The source-map minimap is NOT gated by this — it windows its rows (see virtualizeSourceMap) and
+ * renders at any size.
  */
 const JSON_SOURCE_MAP_MAX_DOC_CHARS = 250_000
 
@@ -1172,14 +1173,15 @@ function MetadataJsonDialog({ metadata, onClose }: { metadata: ScriptImportMetad
   )
 }
 
-interface JsonMinimapLine {
+interface JsonMinimapBaseLine {
   lineNo: number
   textPreview: string
-  isActiveBlock: boolean
-  hasParameterMatch: boolean
-  hasFirstParameterMatch: boolean
-  isSelectedLine: boolean
   widthPct: number
+}
+
+interface JsonMinimapParameterLines {
+  parameterLines: Set<number>
+  firstParameterLine: number | null
 }
 
 interface JsonSourceMinimapProps {
@@ -1211,21 +1213,33 @@ function lineNumberForOffset(lineStarts: number[], offset: number): number {
   return result + 1
 }
 
-function buildJsonMinimapLines(
-  jsonText: string,
-  activeRange: LineRange | null,
-  selectedLineRange: LineRange | null,
-  parameterMatchRanges: ScriptCodeMatchRange[],
-  candidateMatchRanges: ScriptCodeMatchRange[] = [],
-): JsonMinimapLine[] {
+/**
+ * Build the source-map line data in two passes so a large import stays cheap:
+ *  - {@link buildJsonMinimapBaseLines} is the only heavy (one-entry-per-line) pass; it is
+ *    memoized on `jsonText` alone, so cursor moves and parameter selection do NOT rebuild it.
+ *  - The active/selected/parameter flags are computed per *rendered* row instead of being baked
+ *    into every line up front, which is what previously forced a full ~98k-entry rebuild on
+ *    every selection change and motivated disabling the minimap on big docs entirely.
+ */
+function buildJsonMinimapBaseLines(jsonText: string): { baseLines: JsonMinimapBaseLine[]; lineStarts: number[] } {
   const lines = jsonText.split('\n')
   const lineStarts: number[] = []
   let offset = 0
-  lines.forEach(line => {
+  const baseLines = lines.map((line, index) => {
     lineStarts.push(offset)
     offset += line.length + 1
+    const trimmed = line.trim()
+    const widthPct = Math.max(12, Math.min(100, Math.round((trimmed.length / 90) * 100)))
+    return { lineNo: index + 1, textPreview: trimmed || ' ', widthPct }
   })
+  return { baseLines, lineStarts }
+}
 
+function buildJsonMinimapParameterLines(
+  lineStarts: number[],
+  parameterMatchRanges: ScriptCodeMatchRange[],
+  candidateMatchRanges: ScriptCodeMatchRange[] = [],
+): JsonMinimapParameterLines {
   const parameterLines = new Set<number>()
   let firstParameterLine: number | null = null
   const highlightedRanges = [...candidateMatchRanges, ...parameterMatchRanges]
@@ -1237,21 +1251,7 @@ function buildJsonMinimapLines(
     }
     if (index === 0) firstParameterLine = startLine
   })
-
-  return lines.map((line, index) => {
-    const trimmed = line.trim()
-    const widthPct = Math.max(12, Math.min(100, Math.round((trimmed.length / 90) * 100)))
-    const lineNo = index + 1
-    return {
-      lineNo,
-      textPreview: trimmed || ' ',
-      isActiveBlock: Boolean(activeRange && lineNo >= activeRange.startLine && lineNo <= activeRange.endLine),
-      hasParameterMatch: parameterLines.has(lineNo),
-      hasFirstParameterMatch: firstParameterLine === lineNo,
-      isSelectedLine: Boolean(selectedLineRange && lineNo >= selectedLineRange.startLine && lineNo <= selectedLineRange.endLine),
-      widthPct,
-    }
-  })
+  return { parameterLines, firstParameterLine }
 }
 
 function buildMinimapLineOffsets(lineHeights: number[]): number[] {
@@ -1269,6 +1269,25 @@ function minimapOffsetForLinePosition(linePosition: number, lineOffsets: number[
   if (lineIndex >= lineHeights.length) return lineOffsets[lineHeights.length] || 0
   const lineFraction = rawIndex - lineIndex
   return (lineOffsets[lineIndex] || 0) + lineFraction * lineHeights[lineIndex]
+}
+
+/**
+ * Pixel offset of a (fractional) line in the minimap. When per-row heights are measured
+ * (small/wrapped docs) it defers to {@link minimapOffsetForLinePosition}; otherwise rows are a
+ * uniform {@link JSON_SOURCE_MAP_LINE_HEIGHT_PX} tall, so the offset is computed analytically —
+ * this avoids materializing a one-entry-per-line height array for a ~98k-line import. The
+ * uniform branch matches the cumulative offsets the row virtualizer derives from the same
+ * constant row height, so the viewport highlight stays aligned with the rendered rows.
+ */
+function minimapOffsetForLine(
+  linePosition: number,
+  lineCount: number,
+  lineOffsets: number[],
+  lineHeights: number[],
+): number {
+  if (lineHeights.length > 0) return minimapOffsetForLinePosition(linePosition, lineOffsets, lineHeights)
+  const boundedPosition = clampNumber(linePosition, 1, lineCount + 1)
+  return (boundedPosition - 1) * JSON_SOURCE_MAP_LINE_HEIGHT_PX
 }
 
 function JsonSourceMinimap({
@@ -1290,14 +1309,18 @@ function JsonSourceMinimap({
     startLine: Math.min(scrollSnapshot.selectedStartLine, scrollSnapshot.selectedEndLine),
     endLine: Math.max(scrollSnapshot.selectedStartLine, scrollSnapshot.selectedEndLine),
   }), [scrollSnapshot.selectedEndLine, scrollSnapshot.selectedStartLine])
-  // For very large documents the per-line minimap (one DOM button per line) would emit
-  // tens of thousands of nodes and a giant grid-template-rows string, freezing the tab on
-  // mount. Above this size we render a lightweight scrollbar-only minimap instead.
-  const oversized = jsonText.length > JSON_SOURCE_MAP_MAX_DOC_CHARS
-  const lines = useMemo(
-    () => oversized ? [] : buildJsonMinimapLines(jsonText, activeRange, selectedLineRange, parameterMatchRanges, candidateMatchRanges),
-    [oversized, activeRange, candidateMatchRanges, jsonText, parameterMatchRanges, selectedLineRange],
+  // The minimap data is split: the heavy one-entry-per-line pass is memoized on jsonText alone,
+  // while the active/selected/parameter flags are derived per rendered row (see renderSourceMapLine).
+  const { baseLines, lineStarts } = useMemo(() => buildJsonMinimapBaseLines(jsonText), [jsonText])
+  const parameterLineInfo = useMemo(
+    () => buildJsonMinimapParameterLines(lineStarts, parameterMatchRanges, candidateMatchRanges),
+    [lineStarts, parameterMatchRanges, candidateMatchRanges],
   )
+  // Window the per-line minimap (only visible rows hit the DOM) once the doc is large enough that
+  // the editor stops measuring per-line layouts — at that point rows are a uniform height, which
+  // keeps the windowed path simple. Below it, the plain grid render handles ordinary scripts and
+  // test fixtures with their measured (wrapped) row heights, identical to before.
+  const virtualizeSourceMap = baseLines.length > SCRIPT_CODE_LINE_LAYOUT_MAX_LINES
   const activeLabel = selectedParameterName
     ? `${selectedParameterName}: ${parameterMatchRanges.length} occurrence${parameterMatchRanges.length === 1 ? '' : 's'}`
     : activePath || (activeRange ? `Lines ${activeRange.startLine}-${activeRange.endLine}` : 'No selection')
@@ -1305,21 +1328,33 @@ function JsonSourceMinimap({
   const scrollRange = Math.max(0, scrollSnapshot.scrollHeight - scrollSnapshot.clientHeight)
   const hasScrollableEditor = scrollRange > 0 && scrollSnapshot.clientHeight > 0
   const minimapScale = JSON_SOURCE_MAP_LINE_HEIGHT_PX / Math.max(1, scrollSnapshot.baseLineHeight || JSON_SOURCE_MAP_LINE_HEIGHT_PX)
+  // Per-row heights are only materialized when the editor measured per-line layouts (small docs).
+  // Above SCRIPT_CODE_LINE_LAYOUT_MAX_LINES lineLayouts is empty and every row is a uniform
+  // JSON_SOURCE_MAP_LINE_HEIGHT_PX tall, so we skip building a ~98k-entry array entirely.
+  const hasMeasuredRowHeights = scrollSnapshot.lineLayouts.length > 0
   const minimapLineHeights = useMemo(
-    () => lines.map((_, index) => {
-      const editorHeight = scrollSnapshot.lineLayouts[index]?.height || scrollSnapshot.baseLineHeight || JSON_SOURCE_MAP_LINE_HEIGHT_PX
-      return Math.max(JSON_SOURCE_MAP_LINE_HEIGHT_PX, editorHeight * minimapScale)
-    }),
-    [lines, minimapScale, scrollSnapshot.baseLineHeight, scrollSnapshot.lineLayouts],
+    () => hasMeasuredRowHeights
+      ? baseLines.map((_, index) => {
+          const editorHeight = scrollSnapshot.lineLayouts[index]?.height || scrollSnapshot.baseLineHeight || JSON_SOURCE_MAP_LINE_HEIGHT_PX
+          return Math.max(JSON_SOURCE_MAP_LINE_HEIGHT_PX, editorHeight * minimapScale)
+        })
+      : [],
+    [hasMeasuredRowHeights, baseLines, minimapScale, scrollSnapshot.baseLineHeight, scrollSnapshot.lineLayouts],
   )
   const minimapLineOffsets = useMemo(() => buildMinimapLineOffsets(minimapLineHeights), [minimapLineHeights])
+  const sourceMapVirtualizer = useVirtualizer({
+    count: baseLines.length,
+    getScrollElement: () => sourceMapLinesRef.current,
+    estimateSize: index => minimapLineHeights[index] ?? JSON_SOURCE_MAP_LINE_HEIGHT_PX,
+    overscan: 24,
+  })
   const sourceMapGridTemplateRows = useMemo(() => {
-    const fallbackCount = Math.max(lines.length, 1)
+    const fallbackCount = Math.max(baseLines.length, 1)
     if (minimapLineHeights.length === 0) return `repeat(${fallbackCount}, ${JSON_SOURCE_MAP_LINE_HEIGHT_PX}px)`
     const hasWrappedRows = minimapLineHeights.some(height => Math.abs(height - JSON_SOURCE_MAP_LINE_HEIGHT_PX) > 0.01)
     if (!hasWrappedRows) return `repeat(${fallbackCount}, ${JSON_SOURCE_MAP_LINE_HEIGHT_PX}px)`
     return minimapLineHeights.map(height => `${height.toFixed(2)}px`).join(' ')
-  }, [lines.length, minimapLineHeights])
+  }, [baseLines.length, minimapLineHeights])
   const visibleRatio = hasScrollableEditor
     ? clampNumber(scrollSnapshot.clientHeight / scrollSnapshot.scrollHeight, 0.04, 1)
     : 1
@@ -1329,9 +1364,10 @@ function JsonSourceMinimap({
   const scrollPercent = Math.round(scrollRatio * 100)
   const thumbHeightPct = visibleRatio * 100
   const thumbTopPct = scrollRatio * 100
-  const viewportHighlightTop = minimapOffsetForLinePosition(scrollSnapshot.topLine, minimapLineOffsets, minimapLineHeights)
-  const viewportHighlightBottom = minimapOffsetForLinePosition(
+  const viewportHighlightTop = minimapOffsetForLine(scrollSnapshot.topLine, baseLines.length, minimapLineOffsets, minimapLineHeights)
+  const viewportHighlightBottom = minimapOffsetForLine(
     Math.max(scrollSnapshot.topLine, scrollSnapshot.bottomLine),
+    baseLines.length,
     minimapLineOffsets,
     minimapLineHeights,
   )
@@ -1342,7 +1378,7 @@ function JsonSourceMinimap({
     if (!linesElement) return
     const maxScrollTop = Math.max(0, linesElement.scrollHeight - linesElement.clientHeight)
     linesElement.scrollTop = clampNumber(viewportHighlightTop, 0, maxScrollTop)
-  }, [lines.length, viewportHighlightTop])
+  }, [baseLines.length, viewportHighlightTop])
 
   const scrollFromTrackPosition = (clientY: number) => {
     const track = scrollTrackRef.current
@@ -1513,6 +1549,30 @@ function JsonSourceMinimap({
     onScrollTopChange(clampNumber(nextRatio, 0, 1) * scrollRange)
   }
 
+  // Renders one minimap row. The active/selected/parameter flags are derived here (per visible
+  // row) rather than baked into the line data, so they stay cheap for windowed large docs.
+  const renderSourceMapLine = (base: JsonMinimapBaseLine, virtualStyle?: React.CSSProperties) => {
+    const { lineNo } = base
+    const isActiveBlock = Boolean(activeRange && lineNo >= activeRange.startLine && lineNo <= activeRange.endLine)
+    const isSelectedLine = Boolean(selectedLineRange && lineNo >= selectedLineRange.startLine && lineNo <= selectedLineRange.endLine)
+    const hasParameterMatch = parameterLineInfo.parameterLines.has(lineNo)
+    const hasFirstParameterMatch = parameterLineInfo.firstParameterLine === lineNo
+    return (
+      <button
+        key={`json-map-line-${lineNo}`}
+        type="button"
+        className={`json-source-map-line ${isActiveBlock ? 'active-block' : ''} ${hasParameterMatch ? 'parameter-match' : ''} ${hasFirstParameterMatch ? 'first-parameter-match' : ''} ${isSelectedLine ? 'selected-line' : ''}`}
+        style={virtualStyle}
+        onClick={() => onJumpToLine(lineNo)}
+        title={`Line ${lineNo}: ${base.textPreview}`}
+        aria-label={`Jump to JSON line ${lineNo}`}
+      >
+        <span className="json-source-map-line-number">{lineNo}</span>
+        <span className="json-source-map-line-code" style={{ width: `${base.widthPct}%` }}>{base.textPreview}</span>
+      </button>
+    )
+  }
+
   return (
     <div className="json-source-map-panel">
       <div className="json-source-map-summary">
@@ -1527,37 +1587,52 @@ function JsonSourceMinimap({
         <div className={`json-source-map ${hasScrollableEditor ? 'scroll-linked' : ''}`} aria-label="JSON source map" onWheel={handleSourceMapWheel}>
           <div
             ref={sourceMapLinesRef}
-            className="json-source-map-lines"
-            style={{ gridTemplateRows: sourceMapGridTemplateRows }}
+            className={`json-source-map-lines ${virtualizeSourceMap ? 'virtualized' : ''}`}
+            style={virtualizeSourceMap ? undefined : { gridTemplateRows: sourceMapGridTemplateRows }}
           >
-            {hasScrollableEditor && (
+            {virtualizeSourceMap ? (
               <div
-                aria-hidden="true"
-                className="json-source-map-viewport-highlight"
-                style={{
-                  top: `${viewportHighlightTop}px`,
-                  height: `${viewportHighlightHeight}px`,
-                }}
-              />
-            )}
-            {oversized ? (
-              <div className="json-source-map-oversized" aria-hidden="true">
-                <span>Large document</span>
-                <small>Line map disabled — drag the scrollbar to navigate</small>
-              </div>
-            ) : lines.map(line => (
-              <button
-                key={`json-map-line-${line.lineNo}`}
-                type="button"
-                className={`json-source-map-line ${line.isActiveBlock ? 'active-block' : ''} ${line.hasParameterMatch ? 'parameter-match' : ''} ${line.hasFirstParameterMatch ? 'first-parameter-match' : ''} ${line.isSelectedLine ? 'selected-line' : ''}`}
-                onClick={() => onJumpToLine(line.lineNo)}
-                title={`Line ${line.lineNo}: ${line.textPreview}`}
-                aria-label={`Jump to JSON line ${line.lineNo}`}
+                className="json-source-map-virtual"
+                style={{ position: 'relative', height: `${sourceMapVirtualizer.getTotalSize()}px` }}
               >
-                <span className="json-source-map-line-number">{line.lineNo}</span>
-                <span className="json-source-map-line-code" style={{ width: `${line.widthPct}%` }}>{line.textPreview}</span>
-              </button>
-            ))}
+                {hasScrollableEditor && (
+                  <div
+                    aria-hidden="true"
+                    className="json-source-map-viewport-highlight"
+                    style={{
+                      top: `${viewportHighlightTop}px`,
+                      height: `${viewportHighlightHeight}px`,
+                    }}
+                  />
+                )}
+                {sourceMapVirtualizer.getVirtualItems().map(virtualItem => {
+                  const base = baseLines[virtualItem.index]
+                  if (!base) return null
+                  return renderSourceMapLine(base, {
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: `${virtualItem.size}px`,
+                    transform: `translateY(${virtualItem.start}px)`,
+                  })
+                })}
+              </div>
+            ) : (
+              <>
+                {hasScrollableEditor && (
+                  <div
+                    aria-hidden="true"
+                    className="json-source-map-viewport-highlight"
+                    style={{
+                      top: `${viewportHighlightTop}px`,
+                      height: `${viewportHighlightHeight}px`,
+                    }}
+                  />
+                )}
+                {baseLines.map(base => renderSourceMapLine(base))}
+              </>
+            )}
           </div>
           {hasScrollableEditor && (
             <div
