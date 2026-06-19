@@ -4327,6 +4327,20 @@
 .action-list-filter-input { flex: 1; min-width: 0; padding: 4px 8px; font-size: 12px; color: var(--text); background: var(--bg-input, var(--bg-elevated)); border: 1px solid var(--border); border-radius: 6px; }
 .action-list-filter-input:focus { outline: none; border-color: var(--accent); }
 .action-list-filter-count { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.control-branch { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.control-branch-header { display: flex; align-items: center; gap: 8px; }
+.control-branch-header > span { font-weight: 600; font-size: 12px; }
+.control-branch-header > small { color: var(--text-muted); font-size: 11px; }
+.control-branch-modes { margin-left: auto; display: flex; gap: 4px; }
+.control-step-list { display: flex; flex-direction: column; gap: 4px; }
+.control-step-empty { color: var(--text-muted); font-size: 12px; padding: 4px 0; }
+.control-step-row { display: flex; align-items: center; gap: 4px; }
+.control-step-row input { padding: 3px 6px; font-size: 12px; color: var(--text); background: var(--bg-input, var(--bg-elevated)); border: 1px solid var(--border); border-radius: 4px; min-width: 0; }
+.control-step-type { flex: 0 0 88px; }
+.control-step-name { flex: 1 1 30%; }
+.control-step-target { flex: 2 1 40%; }
+.control-step-actions { display: flex; gap: 2px; flex: 0 0 auto; }
+.control-step-add { align-self: flex-start; }
 .action-list { max-height: min(420px, 34vh); overflow-y: auto; }
 .action-item {
   display: flex; align-items: center; gap: 8px; padding: 10px 16px;

@@ -190,6 +190,48 @@ export function buildScriptPhaseActionRows(script: ScriptDefinition): ScriptPhas
   return rows
 }
 
+// Pure, immutable list helpers for editing a sequence of actions — nested
+// control-flow steps and (later) top-level phase actions. Each preserves the
+// other entries verbatim, including unknown/advanced keys (R1), so structured
+// editing never silently drops fields from an imported script.
+
+export function appendActionStep(
+  steps: ScriptActionDefinition[] | undefined,
+  step: ScriptActionDefinition,
+): ScriptActionDefinition[] {
+  return [...(steps || []), step]
+}
+
+export function removeActionStep(
+  steps: ScriptActionDefinition[],
+  index: number,
+): ScriptActionDefinition[] {
+  return steps.filter((_, i) => i !== index)
+}
+
+/** Move the item at `index` by `delta` (-1/+1); out-of-range moves are no-ops. */
+export function moveActionStep(
+  steps: ScriptActionDefinition[],
+  index: number,
+  delta: number,
+): ScriptActionDefinition[] {
+  const target = index + delta
+  if (index < 0 || index >= steps.length || target < 0 || target >= steps.length) return steps
+  const next = [...steps]
+  ;[next[index], next[target]] = [next[target], next[index]]
+  return next
+}
+
+/** Update one field of the step at `index`, preserving its other (incl. unknown) keys. */
+export function updateActionStepField(
+  steps: ScriptActionDefinition[],
+  index: number,
+  field: keyof ScriptActionDefinition,
+  value: unknown,
+): ScriptActionDefinition[] {
+  return steps.map((step, i) => (i === index ? { ...step, [field]: value } : step))
+}
+
 /**
  * Filter outline action rows by a free-text query, matching an action's name,
  * type, target, or phase label (case-insensitive). An empty/whitespace query

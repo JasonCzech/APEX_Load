@@ -6,12 +6,16 @@ import type { ProtocolEvidence } from '../types'
 import {
   BROWSER_DEVICE_PROFILES,
   SCRIPT_JSON_TAB_ID,
+  appendActionStep,
   buildScriptPhaseActionRows,
   clampDebuggerPaneSize,
   codePathForDebugRow,
   defaultCenterTabsState,
   filterScriptPhaseActionRows,
   findParameterReferencesInJson,
+  moveActionStep,
+  removeActionStep,
+  updateActionStepField,
   formatBrowserDeviceProfileLabel,
   formatDebugPhaseLabel,
   formatProtocolEvidenceSummary,
@@ -222,6 +226,39 @@ describe('filterScriptPhaseActionRows', () => {
 
   it('returns an empty array when nothing matches', () => {
     expect(filterScriptPhaseActionRows(rows, 'no-such-action')).toEqual([])
+  })
+
+  describe('action step list mutations', () => {
+    const steps = (): ScriptActionDefinition[] => ([
+      { name: 'a', type: 'GET', target: '/a' },
+      { name: 'b', type: 'POST', target: '/b', params: { keep: 1 } },
+      { name: 'c', type: 'GET', target: '/c' },
+    ] as unknown as ScriptActionDefinition[])
+
+    it('appends to an existing or undefined list', () => {
+      expect(appendActionStep(undefined, { name: 'x' } as ScriptActionDefinition)).toHaveLength(1)
+      expect(appendActionStep(steps(), { name: 'd' } as ScriptActionDefinition).map(s => s.name)).toEqual(['a', 'b', 'c', 'd'])
+    })
+
+    it('removes by index without touching siblings', () => {
+      expect(removeActionStep(steps(), 1).map(s => s.name)).toEqual(['a', 'c'])
+    })
+
+    it('moves an item up/down and no-ops at the edges', () => {
+      expect(moveActionStep(steps(), 0, 1).map(s => s.name)).toEqual(['b', 'a', 'c'])
+      expect(moveActionStep(steps(), 2, -1).map(s => s.name)).toEqual(['a', 'c', 'b'])
+      expect(moveActionStep(steps(), 0, -1).map(s => s.name)).toEqual(['a', 'b', 'c'])
+      expect(moveActionStep(steps(), 2, 1).map(s => s.name)).toEqual(['a', 'b', 'c'])
+    })
+
+    it('updates one field and preserves the step\'s other (unknown) keys', () => {
+      const original = steps()
+      const next = updateActionStepField(original, 1, 'target', '/changed')
+      expect(next[1]).toEqual({ name: 'b', type: 'POST', target: '/changed', params: { keep: 1 } })
+      // siblings are returned by reference (untouched)
+      expect(next[0]).toBe(original[0])
+      expect(next[2]).toBe(original[2])
+    })
   })
 
   // R3: the outline data path must stay O(n) so the action list (which becomes

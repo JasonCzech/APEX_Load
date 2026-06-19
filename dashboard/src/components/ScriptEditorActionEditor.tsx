@@ -3,6 +3,7 @@ import type { ScriptActionDefinition, ScriptAssertionDefinition, ScriptParameter
 import type { ActionEditorParameterDraft, ActionEditorSelectionState } from './ScriptEditor'
 import { sanitizeVarName } from './scriptEditorUtils'
 import { asString, httpSequenceRequests, isControlAction, isReviewGatedJavaScriptAction, actionRequiresReview, actionSelectorFallbackCount } from './scriptActionHelpers'
+import { appendActionStep, moveActionStep, removeActionStep, updateActionStepField } from './scriptEditorWorkbench'
 import { dslActionUsesSelector, dslActionUsesValue } from './dslActionCatalog'
 import { BrowserActionFields, DatabaseActionFields, GrpcActionFields, HttpActionFields, JmsActionFields, NetworkActionFields, WebSocketActionFields } from './scriptActionFields'
 import { type AuthoringIssue } from './scriptAuthoringAssist'
@@ -343,6 +344,76 @@ function parseControlActions(value: string): Action[] | null {
   }
 }
 
+const DEFAULT_CONTROL_STEP: Action = { name: '', type: 'GET', target: '' } as Action
+
+interface ControlBranchEditorProps {
+  label: string
+  steps: Action[] | undefined
+  onChange: (steps: Action[]) => void
+}
+
+// Structured editor for a control block's child steps (then/else). Each step is
+// an editable row (type / name / target) with add / remove / reorder, replacing
+// the raw-JSON textarea. A per-branch "JSON" toggle is the escape hatch for
+// anything the row form can't express (nested control, headers, extractors) —
+// the documented depth boundary. Step edits preserve unknown keys (R1).
+// Exported for focused render tests.
+export function ControlBranchEditor({ label, steps, onChange }: ControlBranchEditorProps) {
+  const list = steps || []
+  const [mode, setMode] = useState<'structured' | 'json'>('structured')
+  const [jsonDraft, setJsonDraft] = useState(() => formatControlActions(list))
+  const [jsonInvalid, setJsonInvalid] = useState(false)
+
+  useEffect(() => {
+    if (mode === 'json') {
+      setJsonDraft(formatControlActions(steps))
+      setJsonInvalid(false)
+    }
+  }, [steps, mode])
+
+  const commitJson = () => {
+    const parsed = parseControlActions(jsonDraft)
+    setJsonInvalid(parsed === null)
+    if (parsed !== null) onChange(parsed)
+  }
+
+  return (
+    <div className="control-branch full-width">
+      <div className="control-branch-header">
+        <span>{label}</span>
+        <small>{list.length} step{list.length === 1 ? '' : 's'}</small>
+        <div className="control-branch-modes">
+          <button type="button" className={`btn btn-sm ${mode === 'structured' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => setMode('structured')}>Steps</button>
+          <button type="button" className={`btn btn-sm ${mode === 'json' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => { setJsonDraft(formatControlActions(list)); setJsonInvalid(false); setMode('json') }}>JSON</button>
+        </div>
+      </div>
+      {mode === 'structured' ? (
+        <div className="control-step-list">
+          {list.length === 0 && <div className="control-step-empty">No steps yet. Add one, or switch to JSON.</div>}
+          {list.map((step, i) => (
+            <div className="control-step-row" key={i}>
+              <input className="control-step-type" value={step.type || ''} placeholder="type" aria-label={`${label} step ${i + 1} type`} onChange={e => onChange(updateActionStepField(list, i, 'type', e.target.value))} />
+              <input className="control-step-name" value={step.name || ''} placeholder="name" aria-label={`${label} step ${i + 1} name`} onChange={e => onChange(updateActionStepField(list, i, 'name', e.target.value))} />
+              <input className="control-step-target" value={step.target || ''} placeholder="target" aria-label={`${label} step ${i + 1} target`} onChange={e => onChange(updateActionStepField(list, i, 'target', e.target.value))} />
+              <div className="control-step-actions">
+                <button type="button" className="btn-icon" disabled={i === 0} aria-label="Move step up" onClick={() => onChange(moveActionStep(list, i, -1))}>↑</button>
+                <button type="button" className="btn-icon" disabled={i === list.length - 1} aria-label="Move step down" onClick={() => onChange(moveActionStep(list, i, 1))}>↓</button>
+                <button type="button" className="btn-icon danger" aria-label="Remove step" onClick={() => onChange(removeActionStep(list, i))}>✕</button>
+              </div>
+            </div>
+          ))}
+          <button type="button" className="btn btn-sm btn-ghost control-step-add" onClick={() => onChange(appendActionStep(list, { ...DEFAULT_CONTROL_STEP }))}>+ Add step</button>
+        </div>
+      ) : (
+        <>
+          <textarea className={`body-textarea ${jsonInvalid ? 'invalid' : ''}`} rows={6} value={jsonDraft} aria-label={`${label} JSON`} onChange={e => setJsonDraft(e.target.value)} onBlur={commitJson} />
+          {jsonInvalid && <div className="browser-config-warning">{label} must be a JSON array.</div>}
+        </>
+      )}
+    </div>
+  )
+}
+
 interface ControlFlowFieldsProps {
   action: Action
   index: number
@@ -352,33 +423,12 @@ interface ControlFlowFieldsProps {
 function ControlFlowFields({ action, index, onUpdate }: ControlFlowFieldsProps) {
   const control = action.control || {}
   const condition = control.condition || {}
-  const [stepsDraft, setStepsDraft] = useState(formatControlActions(control.steps))
-  const [elseDraft, setElseDraft] = useState(formatControlActions(control.else))
-  const [stepsInvalid, setStepsInvalid] = useState(false)
-  const [elseInvalid, setElseInvalid] = useState(false)
-
-  useEffect(() => {
-    setStepsDraft(formatControlActions(control.steps))
-    setElseDraft(formatControlActions(control.else))
-    setStepsInvalid(false)
-    setElseInvalid(false)
-  }, [action.control])
 
   const updateControl = (patch: Record<string, unknown>) => {
     onUpdate(index, 'control', { ...control, ...patch })
   }
   const updateCondition = (patch: Record<string, unknown>) => {
     updateControl({ condition: { ...condition, ...patch } })
-  }
-  const commitStepsDraft = () => {
-    const parsed = parseControlActions(stepsDraft)
-    setStepsInvalid(parsed === null)
-    if (parsed !== null) updateControl({ steps: parsed })
-  }
-  const commitElseDraft = () => {
-    const parsed = parseControlActions(elseDraft)
-    setElseInvalid(parsed === null)
-    if (parsed !== null) updateControl({ else: parsed })
   }
 
   return (
@@ -420,16 +470,10 @@ function ControlFlowFields({ action, index, onUpdate }: ControlFlowFieldsProps) 
             </label>
           </>
         )}
-        <label className="full-width">
-          <span>Then Steps JSON</span>
-          <textarea className={`body-textarea ${stepsInvalid ? 'invalid' : ''}`} rows={6} value={stepsDraft} onChange={e => setStepsDraft(e.target.value)} onBlur={commitStepsDraft} />
-        </label>
-        {stepsInvalid && <div className="browser-config-warning">Then steps must be a JSON array.</div>}
-        <label className="full-width">
-          <span>Else Steps JSON</span>
-          <textarea className={`body-textarea ${elseInvalid ? 'invalid' : ''}`} rows={5} value={elseDraft} onChange={e => setElseDraft(e.target.value)} onBlur={commitElseDraft} />
-        </label>
-        {elseInvalid && <div className="browser-config-warning">Else steps must be a JSON array.</div>}
+        <ControlBranchEditor label={action.type === 'control_loop' ? 'Loop steps' : 'Then steps'} steps={control.steps} onChange={steps => updateControl({ steps })} />
+        {action.type === 'control_if' && (
+          <ControlBranchEditor label="Else steps" steps={control.else} onChange={steps => updateControl({ else: steps })} />
+        )}
       </div>
     </div>
   )
