@@ -3073,6 +3073,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       : [],
     [jsonText, selectedOutlineParameterExists, selectedOutlineParameterName],
   )
+  const selectedOutlineParameter = useMemo(
+    () => (script.parameters || []).find(parameter => parameter.name === selectedOutlineParameterName) || null,
+    [script.parameters, selectedOutlineParameterName],
+  )
+  const selectedParameterReferenceLines = useMemo(() => {
+    if (parameterMatchRanges.length === 0) return [] as number[]
+    const lines = new Set<number>()
+    for (const range of parameterMatchRanges) lines.add(jsonText.slice(0, range.from).split('\n').length)
+    return Array.from(lines).sort((a, b) => a - b)
+  }, [parameterMatchRanges, jsonText])
   const activeAutoParameterCandidate = useMemo(
     () => parameterCandidates.find(candidate => candidate.id === activeAutoParameterCandidateId) || parameterCandidates[0] || null,
     [activeAutoParameterCandidateId, parameterCandidates],
@@ -3085,7 +3095,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const activeAutoParameterOccurrence = activeAutoParameterCandidate
     ? activeAutoParameterCandidate.occurrences[normalizedAutoParameterOccurrenceIndex] || null
     : null
-  const autoParameterSidebarActive = scriptJsonSidebarTab === 'auto-params'
+  const autoParameterSidebarActive = scriptJsonSidebarTab === 'auto-params' && !selectedOutlineParameterExists
   const activeAutoParameterPath = autoParameterSidebarActive
     ? codePathForParameterCandidateOccurrence(activeAutoParameterOccurrence)
     : ''
@@ -3175,7 +3185,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }, [availableCenterTabIds])
   const selectOutlineParameter = useCallback((parameterName: string) => {
     setSelectedOutlineParameterName(parameterName)
-    setScriptJsonSidebarTab('map')
+    // Show the selected parameter's details in the Parameter companion page.
+    setScriptJsonSidebarTab('auto-params')
     openCenterTab(SCRIPT_JSON_TAB_ID)
   }, [openCenterTab])
   const closeCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
@@ -6921,7 +6932,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         return { kind: 'parameters', title: 'Parameters', railLabel: 'Parameters' }
       case SCRIPT_JSON_TAB_ID:
         if (activeScriptJsonSidebarTab === 'auto-params') {
-          return { kind: 'auto-parameterization', title: 'Auto Parameterization', railLabel: 'Auto Params', wide: true }
+          return { kind: 'auto-parameterization', title: selectedOutlineParameterExists ? 'Parameter' : 'Parameters', railLabel: 'Parameters', wide: true }
         }
         if (activeScriptJsonSidebarTab === 'details' && activeInspectorAction && activeAction !== null) {
           return { kind: 'inspector', title: 'Action Details', railLabel: 'Details', wide: true }
@@ -6947,6 +6958,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const renderContextualRightSidebarContent = (): ReactNode => {
     switch (authorRightSidebarContext.kind) {
       case 'auto-parameterization':
+        if (selectedOutlineParameterExists && selectedOutlineParameter) {
+          return (
+            <SelectedParameterDetails
+              parameter={selectedOutlineParameter}
+              referenceLines={selectedParameterReferenceLines}
+              onJumpToLine={line => setJsonLineJumpRequest({ line, nonce: Date.now() })}
+              onEdit={() => openEditorSection('parameter-data')}
+              onClear={() => setSelectedOutlineParameterName(null)}
+            />
+          )
+        }
         return (
           <AutoParameterizationSidebar
             activeCandidateId={activeAutoParameterCandidate?.id || null}
@@ -10577,6 +10599,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         <small>{script.parameters?.length || 0} defined</small>
                       </span>
                     </button>
+                    <div className="parameter-header-actions">
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={scanForAutoParameters} title="Auto Parameterization — quick scan for hardcoded values to externalize">
+                        Auto Params
+                      </button>
+                      {isEditingExisting && (
+                        <button type="button" className="btn btn-sm btn-ghost" onClick={runServerParameterization} disabled={deepScanning} title="Deep scan (server) — backend engine also flags secrets">
+                          {deepScanning ? 'Scanning…' : 'Deep Scan'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {!outlineParameterListCollapsed && (
                     <>
@@ -10603,14 +10635,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         )}
                       </div>
                       <div className="parameter-outline-actions">
-                        <button type="button" className="btn btn-sm btn-ghost" onClick={scanForAutoParameters}>
-                          Auto Parameterization
-                        </button>
-                        {isEditingExisting && (
-                          <button type="button" className="btn btn-sm btn-ghost" onClick={runServerParameterization} disabled={deepScanning}>
-                            {deepScanning ? 'Scanning…' : 'Deep scan (server)'}
-                          </button>
-                        )}
                         <p className="parameter-outline-hint">
                           {isEditingExisting
                             ? 'Quick scan finds hardcoded values; deep scan also flags secrets via the server engine.'
@@ -10989,7 +11013,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           className={`script-json-sidebar-tab ${activeScriptJsonSidebarTab === 'auto-params' ? 'active' : ''}`}
                           onClick={() => setScriptJsonSidebarTab('auto-params')}
                         >
-                          Auto Params
+                          Parameters
                         </button>
                         {hasScriptJsonDetailsTab && (
                           <button
@@ -12355,6 +12379,68 @@ interface AutoParameterizationSidebarProps {
   parameterCandidates: ParameterCandidate[]
   seedRows: number
   onSeedRowsChange: (rows: number) => void
+}
+
+interface SelectedParameterDetailsProps {
+  parameter: ParameterConfig
+  referenceLines: number[]
+  onJumpToLine: (line: number) => void
+  onEdit: () => void
+  onClear: () => void
+}
+
+// The Parameter companion page when a parameter is selected in the left list:
+// its type, configuration, and where it is referenced in the script.
+function SelectedParameterDetails({ parameter, referenceLines, onJumpToLine, onEdit, onClear }: SelectedParameterDetailsProps) {
+  const configEntries = Object.entries(parameter).filter(
+    ([key, value]) => key !== 'name' && key !== 'type' && value !== undefined && value !== null && value !== '',
+  )
+  return (
+    <div className="selected-parameter-details">
+      <div className="selected-parameter-header">
+        <div className="selected-parameter-title">
+          <strong>{parameter.name || 'Parameter'}</strong>
+          <span className="selected-parameter-type">{parameter.type || 'list'}</span>
+        </div>
+        <button type="button" className="btn btn-sm btn-ghost" onClick={onClear} title="Back to auto-parameterization">← Auto-params</button>
+      </div>
+
+      <div className="selected-parameter-section">
+        <span className="selected-parameter-section-label">Configuration</span>
+        {configEntries.length === 0 ? (
+          <p className="selected-parameter-empty">No extra configuration.</p>
+        ) : (
+          <dl className="selected-parameter-config">
+            {configEntries.map(([key, value]) => (
+              <div key={key} className="selected-parameter-config-row">
+                <dt>{key.replace(/_/g, ' ')}</dt>
+                <dd>{String(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </div>
+
+      <div className="selected-parameter-section">
+        <span className="selected-parameter-section-label">References ({referenceLines.length})</span>
+        {referenceLines.length === 0 ? (
+          <p className="selected-parameter-empty">{`Not referenced yet — use {{param.${parameter.name}}} in an action.`}</p>
+        ) : (
+          <div className="selected-parameter-refs">
+            {referenceLines.map(line => (
+              <button key={line} type="button" className="selected-parameter-ref" onClick={() => onJumpToLine(line)} title={`Jump to line ${line}`}>
+                Line {line}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <button type="button" className="btn btn-sm btn-secondary selected-parameter-edit" onClick={onEdit}>
+        Edit in Parameter Data →
+      </button>
+    </div>
+  )
 }
 
 function AutoParameterizationSidebar({

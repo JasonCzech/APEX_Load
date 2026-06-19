@@ -1104,14 +1104,18 @@ describe('ScriptEditor', () => {
     expect(parameterButton?.classList.contains('selected')).toBe(true)
     expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.script-code-title')?.textContent).toContain('Parameter: session_id (2 occurrences)')
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
-    expect(container.querySelectorAll('.json-source-map-line.parameter-match').length).toBeGreaterThan(0)
-    expect(container.querySelectorAll('.json-source-map-line.first-parameter-match')).toHaveLength(1)
+    // Selecting a parameter opens the Parameter companion page showing its details + references.
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Parameter')
+    const paramDetails = container.querySelector('.selected-parameter-details')
+    expect(paramDetails).not.toBeNull()
+    expect(paramDetails?.textContent).toContain('session_id')
+    const refButtons = container.querySelectorAll('.selected-parameter-ref')
+    expect(refButtons.length).toBeGreaterThan(0)
 
     codeMirrorDispatchMock.mockClear()
-    const firstMapLine = container.querySelector('.json-source-map-line') as HTMLButtonElement | null
+    const firstRef = refButtons[0] as HTMLButtonElement
     await act(async () => {
-      firstMapLine?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      firstRef.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(codeMirrorDispatchMock).toHaveBeenCalled()
   })
@@ -1713,7 +1717,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
     expect(Array.from(container.querySelectorAll('.script-json-sidebar-tab')).map(button => button.textContent?.trim())).toEqual([
       'Map',
-      'Auto Params',
+      'Parameters',
       'Details',
     ])
 
@@ -2504,7 +2508,7 @@ describe('ScriptEditor', () => {
       .find(section => section.textContent?.includes('Parameter List'))
     const activePanel = container.querySelector('.center-tab-panel.active') as HTMLDivElement | null
     const autoButton = Array.from(parameterSection?.querySelectorAll('button') || []).find(button =>
-      button.textContent?.trim() === 'Auto Parameterization',
+      button.textContent?.trim() === 'Auto Params',
     )
     expect(activePanel?.textContent).not.toContain('Auto Parameterization')
     expect(parameterSection?.contains(autoButton || null)).toBe(true)
@@ -2520,7 +2524,7 @@ describe('ScriptEditor', () => {
     const utilitySidebar = container.querySelector('.editor-utility-sidebar') as HTMLDivElement | null
     expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
     expect(utilitySidebar?.classList.contains('context-auto-parameterization')).toBe(true)
-    expect(utilitySidebar?.querySelector('.side-pane-header')?.textContent).toContain('Auto Parameterization')
+    expect(utilitySidebar?.querySelector('.side-pane-header')?.textContent).toContain('Parameters')
     expect(activePanel?.textContent).not.toContain('Review Candidates')
     expect(utilitySidebar?.textContent).toContain('Suggested Fields')
     expect(utilitySidebar?.textContent).toContain('username')
@@ -2535,7 +2539,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
     expect(container.querySelector('.editor-utility-sidebar')?.textContent).not.toContain('Suggested Fields')
 
-    const autoParamsTab = Array.from(container.querySelectorAll('.script-json-sidebar-tab')).find(button => button.textContent?.trim() === 'Auto Params')
+    const autoParamsTab = Array.from(container.querySelectorAll('.script-json-sidebar-tab')).find(button => button.textContent?.trim() === 'Parameters')
     expect(autoParamsTab).toBeDefined()
     await act(async () => {
       autoParamsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2590,8 +2594,8 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={multiFieldScript} />)
     })
 
-    const autoButton = Array.from(container.querySelectorAll('.parameter-outline-actions button')).find(button =>
-      button.textContent?.trim() === 'Auto Parameterization',
+    const autoButton = Array.from(container.querySelectorAll('.parameter-header-actions button')).find(button =>
+      button.textContent?.trim() === 'Auto Params',
     )
     expect(autoButton).toBeDefined()
     if (!autoButton) {
