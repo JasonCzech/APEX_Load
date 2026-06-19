@@ -223,4 +223,29 @@ describe('filterScriptPhaseActionRows', () => {
   it('returns an empty array when nothing matches', () => {
     expect(filterScriptPhaseActionRows(rows, 'no-such-action')).toEqual([])
   })
+
+  // R3: the outline data path must stay O(n) so the action list (which becomes
+  // the primary surface in Phase 2) is responsive on large generated imports.
+  // The list itself is virtualized above LIST_VIRTUALIZE_THRESHOLD=100, so only
+  // visible rows render; this guards the build/filter that feed it.
+  it('builds and filters a 10k-action import without quadratic blow-up', () => {
+    const actions = Array.from({ length: 10_000 }, (_, i) => ({
+      name: `Step ${i}`,
+      type: i % 2 ? 'GET' : 'POST',
+      target: `/api/resource/${i}`,
+    }))
+    const bigScript = script({ actions } as unknown as Partial<ScriptDefinition>)
+
+    const start = performance.now()
+    const bigRows = buildScriptPhaseActionRows(bigScript)
+    const filtered = filterScriptPhaseActionRows(bigRows, 'resource/9999')
+    const elapsed = performance.now() - start
+
+    expect(bigRows).toHaveLength(10_000)
+    expect(filtered).toHaveLength(1)
+    expect(filtered[0].actionIndex).toBe(9999)
+    // O(n) build+filter over 10k rows is a few ms; a generous budget catches an
+    // accidental O(n^2) regression without being flaky under load.
+    expect(elapsed).toBeLessThan(1000)
+  })
 })
