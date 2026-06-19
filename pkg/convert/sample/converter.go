@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -111,7 +112,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	case "rest_json":
 		exchanges, warnings, err = parseRESTJSON(req.Content)
 	case "har":
-		exchanges, warnings, filtered, err = parseHAR(req.Content, boolOption(req.Options.IncludeStaticAssets, false), &diagnostics)
+		exchanges, warnings, filtered, err = parseHAR(req.Content, convertutil.BoolOption(req.Options.IncludeStaticAssets, false), &diagnostics)
 	default:
 		return nil, fmt.Errorf("unsupported format %q", req.Format)
 	}
@@ -122,9 +123,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		return nil, errors.New("no requests found in sample input")
 	}
 
-	includeAssertions := boolOption(req.Options.IncludeAssertions, true)
-	inferExtractors := boolOption(req.Options.InferExtractors, true)
-	sanitizeSensitive := boolOption(req.Options.SanitizeSensitive, true)
+	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
+	inferExtractors := convertutil.BoolOption(req.Options.InferExtractors, true)
+	sanitizeSensitive := convertutil.BoolOption(req.Options.SanitizeSensitive, true)
 
 	baseURL := strings.TrimSpace(req.Options.BaseURL)
 	if baseURL == "" {

@@ -3,22 +3,18 @@ package network
 import (
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/textproto"
 	"net/url"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/go-ldap/ldap/v3"
 	"github.com/jasonczech/apexload/pkg/protocol"
-	"github.com/jmespath/go-jmespath"
+	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
 )
 
 func init() {
@@ -56,27 +52,27 @@ type operationResult struct {
 func (n *Network) Name() string { return "network" }
 
 func (n *Network) Init(_ context.Context, config map[string]any) error {
-	n.subprotocol = strings.ToLower(strings.TrimSpace(configString(config, "network_subprotocol")))
-	n.host = strings.TrimSpace(configString(config, "network_host"))
-	n.address = strings.TrimSpace(configString(config, "network_address"))
-	n.port = configInt(config, "network_port")
+	n.subprotocol = strings.ToLower(strings.TrimSpace(protocol.ConfigString(config, "network_subprotocol")))
+	n.host = strings.TrimSpace(protocol.ConfigString(config, "network_host"))
+	n.address = strings.TrimSpace(protocol.ConfigString(config, "network_address"))
+	n.port = protocol.ConfigInt(config, "network_port")
 	n.timeout = 30 * time.Second
-	if timeoutMS := configInt(config, "network_timeout_ms"); timeoutMS > 0 {
+	if timeoutMS := protocol.ConfigInt(config, "network_timeout_ms"); timeoutMS > 0 {
 		n.timeout = time.Duration(timeoutMS) * time.Millisecond
 	}
 	n.useTLS, _ = config["network_tls"].(bool)
-	n.username = configString(config, "network_username")
-	n.password = configString(config, "network_password")
-	n.from = configString(config, "network_from")
-	n.to = configStringSlice(config, "network_to")
-	n.baseDN = configString(config, "network_base_dn")
+	n.username = protocol.ConfigString(config, "network_username")
+	n.password = protocol.ConfigString(config, "network_password")
+	n.from = protocol.ConfigString(config, "network_from")
+	n.to = protocol.ConfigStringSlice(config, "network_to")
+	n.baseDN = protocol.ConfigString(config, "network_base_dn")
 	return nil
 }
 
 func (n *Network) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	start := time.Now()
 	result := &protocol.Result{
-		ActionName:     actionName(action),
+		ActionName:     protocol.ActionName(action),
 		StartTime:      start,
 		DependencyType: "network",
 		Extractions:    make(map[string]string),
@@ -171,7 +167,7 @@ func (n *Network) HealthCheck(ctx context.Context) error {
 func (n *Network) runHealth(ctx context.Context, action *protocol.Action) (*operationResult, error) {
 	switch n.effectiveSubprotocol(action) {
 	case "dns":
-		return n.runDNS(ctx, &protocol.Action{Name: action.Name, Type: "dns_query", Target: firstNonEmpty(action.Target, n.host, n.address, "localhost")})
+		return n.runDNS(ctx, &protocol.Action{Name: action.Name, Type: "dns_query", Target: protocol.FirstNonEmpty(action.Target, n.host, n.address, "localhost")})
 	case "ldap":
 		return n.runLDAP(ctx, &protocol.Action{Name: action.Name, Type: "ldap_bind", Target: action.Target})
 	default:
@@ -199,430 +195,6 @@ func (n *Network) runHealth(ctx context.Context, action *protocol.Action) (*oper
 	}
 }
 
-func (n *Network) runDNS(ctx context.Context, action *protocol.Action) (*operationResult, error) {
-	domain := strings.TrimSpace(firstNonEmpty(action.Target, n.host, n.address))
-	if domain == "" {
-		return nil, errors.New("dns query target is required")
-	}
-	recordType := strings.ToUpper(strings.TrimSpace(actionParamString(action.Params, "record_type")))
-	if recordType == "" {
-		recordType = "A"
-	}
-	start := time.Now()
-	records := map[string]any{"record_type": recordType, "name": domain}
-	switch recordType {
-	case "A", "AAAA":
-		addrs, err := net.DefaultResolver.LookupIPAddr(ctx, domain)
-		if err != nil {
-			return nil, err
-		}
-		values := make([]string, 0, len(addrs))
-		for _, addr := range addrs {
-			if recordType == "A" && addr.IP.To4() == nil {
-				continue
-			}
-			if recordType == "AAAA" && addr.IP.To4() != nil {
-				continue
-			}
-			values = append(values, addr.IP.String())
-		}
-		sort.Strings(values)
-		records["records"] = values
-	case "CNAME":
-		cname, err := net.DefaultResolver.LookupCNAME(ctx, domain)
-		if err != nil {
-			return nil, err
-		}
-		records["records"] = []string{cname}
-	case "MX":
-		mx, err := net.DefaultResolver.LookupMX(ctx, domain)
-		if err != nil {
-			return nil, err
-		}
-		values := make([]map[string]any, 0, len(mx))
-		for _, item := range mx {
-			values = append(values, map[string]any{"host": item.Host, "pref": item.Pref})
-		}
-		records["records"] = values
-	case "NS":
-		ns, err := net.DefaultResolver.LookupNS(ctx, domain)
-		if err != nil {
-			return nil, err
-		}
-		values := make([]string, 0, len(ns))
-		for _, item := range ns {
-			values = append(values, item.Host)
-		}
-		sort.Strings(values)
-		records["records"] = values
-	case "TXT":
-		txt, err := net.DefaultResolver.LookupTXT(ctx, domain)
-		if err != nil {
-			return nil, err
-		}
-		sort.Strings(txt)
-		records["records"] = txt
-	default:
-		return nil, fmt.Errorf("unsupported dns record_type %q", recordType)
-	}
-	records["record_count"] = recordCount(records["records"])
-	payload := encodePayload(records)
-	return &operationResult{
-		payload:       payload,
-		target:        domain,
-		dependency:    "network_dns",
-		bytesReceived: int64(len(payload)),
-		dnsTime:       time.Since(start),
-		messagesSent:  1,
-		messagesRecv:  1,
-	}, nil
-}
-
-func (n *Network) runSocket(ctx context.Context, action *protocol.Action, networkName string) (*operationResult, error) {
-	target, err := n.endpoint(action, defaultPortForSubprotocol(networkName))
-	if err != nil {
-		return nil, err
-	}
-	conn, connectTime, err := n.dial(ctx, networkName, target)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
-	payload := socketPayload(action)
-	var bytesSent int64
-	if len(payload) > 0 {
-		written, err := conn.Write(payload)
-		bytesSent = int64(written)
-		if err != nil {
-			return nil, err
-		}
-	}
-	readLimit := actionParamInt(action.Params, "read_bytes")
-	readRequested := actionParamBool(action.Params, "read") || readLimit > 0
-	if readLimit <= 0 {
-		readLimit = 4096
-	}
-	var response []byte
-	if readRequested {
-		response = make([]byte, readLimit)
-		read, err := conn.Read(response)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return nil, err
-		}
-		response = response[:read]
-	}
-	body := encodePayload(map[string]any{
-		"network":        networkName,
-		"target":         target,
-		"bytes_sent":     bytesSent,
-		"bytes_received": len(response),
-		"response":       string(response),
-	})
-	return &operationResult{
-		payload:       body,
-		target:        target,
-		dependency:    "network_" + networkName,
-		bytesSent:     bytesSent,
-		bytesReceived: int64(len(response)),
-		connectTime:   connectTime,
-		messagesSent:  boolCount(len(payload) > 0),
-		messagesRecv:  boolCount(len(response) > 0),
-	}, nil
-}
-
-func (n *Network) runFTP(ctx context.Context, action *protocol.Action) (*operationResult, error) {
-	target, err := n.endpoint(action, "21")
-	if err != nil {
-		return nil, err
-	}
-	conn, connectTime, err := n.dial(ctx, "tcp", target)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	tp := textproto.NewConn(conn)
-	defer tp.Close()
-
-	lines := []string{}
-	greeting, err := readResponseLine(tp)
-	if err != nil {
-		return nil, err
-	}
-	lines = append(lines, greeting)
-	username := firstNonEmpty(actionParamString(action.Params, "username"), n.username, "anonymous")
-	password := firstNonEmpty(actionParamString(action.Params, "password"), n.password, "apexload@example.invalid")
-	if username != "" {
-		lines = append(lines, n.commandResponse(tp, "USER "+username))
-		if password != "" {
-			lines = append(lines, n.commandResponse(tp, "PASS "+password))
-		}
-	}
-	command := ftpCommand(action)
-	if command == "" {
-		command = "NOOP"
-	}
-	lines = append(lines, n.commandResponse(tp, command))
-	lines = append(lines, n.commandResponse(tp, "QUIT"))
-	payload := encodePayload(map[string]any{"protocol": "ftp", "target": target, "responses": compactLines(lines)})
-	return &operationResult{
-		payload:       payload,
-		target:        target,
-		dependency:    "network_ftp",
-		bytesSent:     int64(len(username) + len(password) + len(command)),
-		bytesReceived: int64(len(payload)),
-		connectTime:   connectTime,
-		messagesSent:  3,
-		messagesRecv:  len(lines),
-	}, firstResponseError(lines)
-}
-
-func (n *Network) runSMTP(ctx context.Context, action *protocol.Action) (*operationResult, error) {
-	target, err := n.endpoint(action, "25")
-	if err != nil {
-		return nil, err
-	}
-	conn, connectTime, err := n.dial(ctx, "tcp", target)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	tp := textproto.NewConn(conn)
-	defer tp.Close()
-
-	lines := []string{}
-	if _, line, err := tp.ReadResponse(220); err == nil {
-		lines = append(lines, line)
-	} else {
-		return nil, err
-	}
-	hostname := firstNonEmpty(actionParamString(action.Params, "helo"), "apexload.local")
-	lines = append(lines, smtpCommandResponse(tp, "EHLO "+hostname, 250))
-	if n.username != "" || actionParamString(action.Params, "username") != "" {
-		username := firstNonEmpty(actionParamString(action.Params, "username"), n.username)
-		password := firstNonEmpty(actionParamString(action.Params, "password"), n.password)
-		auth := base64.StdEncoding.EncodeToString([]byte("\x00" + username + "\x00" + password))
-		lines = append(lines, smtpCommandResponse(tp, "AUTH PLAIN "+auth, 235))
-	}
-	from := firstNonEmpty(actionParamString(action.Params, "from"), n.from)
-	if from == "" {
-		return nil, errors.New("smtp from address is required")
-	}
-	to := actionParamStringSlice(action.Params, "to")
-	if len(to) == 0 {
-		to = n.to
-	}
-	if len(to) == 0 {
-		return nil, errors.New("smtp recipient is required")
-	}
-	lines = append(lines, smtpCommandResponse(tp, "MAIL FROM:<"+from+">", 250))
-	for _, recipient := range to {
-		lines = append(lines, smtpCommandResponse(tp, "RCPT TO:<"+recipient+">", 250))
-	}
-	if err := tp.PrintfLine("DATA"); err != nil {
-		return nil, err
-	}
-	lines = append(lines, mustReadResponse(tp, 354))
-	message := smtpMessage(from, to, action)
-	writer := tp.DotWriter()
-	if _, err := writer.Write([]byte(message)); err != nil {
-		_ = writer.Close()
-		return nil, err
-	}
-	if err := writer.Close(); err != nil {
-		return nil, err
-	}
-	lines = append(lines, mustReadResponse(tp, 250))
-	lines = append(lines, smtpCommandResponse(tp, "QUIT", 221))
-	payload := encodePayload(map[string]any{"protocol": "smtp", "target": target, "from": from, "to": to, "responses": compactLines(lines)})
-	return &operationResult{
-		payload:       payload,
-		target:        target,
-		dependency:    "network_smtp",
-		bytesSent:     int64(len(message)),
-		bytesReceived: int64(len(payload)),
-		connectTime:   connectTime,
-		messagesSent:  len(to) + 5,
-		messagesRecv:  len(lines),
-	}, firstResponseError(lines)
-}
-
-func (n *Network) runPOP3(ctx context.Context, action *protocol.Action) (*operationResult, error) {
-	target, err := n.endpoint(action, "110")
-	if err != nil {
-		return nil, err
-	}
-	conn, connectTime, err := n.dial(ctx, "tcp", target)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	tp := textproto.NewConn(conn)
-	defer tp.Close()
-
-	lines := []string{}
-	greeting, err := readResponseLine(tp)
-	if err != nil {
-		return nil, err
-	}
-	lines = append(lines, greeting)
-	username := firstNonEmpty(actionParamString(action.Params, "username"), n.username)
-	password := firstNonEmpty(actionParamString(action.Params, "password"), n.password)
-	if username != "" {
-		lines = append(lines, n.commandResponse(tp, "USER "+username))
-		if password != "" {
-			lines = append(lines, n.commandResponse(tp, "PASS "+password))
-		}
-	}
-	command := firstNonEmpty(actionParamString(action.Params, "command"), strings.TrimSpace(action.Value), string(action.Body), action.Target)
-	if command == "" || strings.Contains(command, ":") {
-		command = "STAT"
-	}
-	lines = append(lines, n.commandResponse(tp, command))
-	lines = append(lines, n.commandResponse(tp, "QUIT"))
-	payload := encodePayload(map[string]any{"protocol": "pop3", "target": target, "responses": compactLines(lines)})
-	return &operationResult{
-		payload:       payload,
-		target:        target,
-		dependency:    "network_pop3",
-		bytesSent:     int64(len(command)),
-		bytesReceived: int64(len(payload)),
-		connectTime:   connectTime,
-		messagesSent:  2,
-		messagesRecv:  len(lines),
-	}, firstResponseError(lines)
-}
-
-func (n *Network) runIMAP(ctx context.Context, action *protocol.Action) (*operationResult, error) {
-	target, err := n.endpoint(action, "143")
-	if err != nil {
-		return nil, err
-	}
-	conn, connectTime, err := n.dial(ctx, "tcp", target)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	tp := textproto.NewConn(conn)
-	defer tp.Close()
-
-	lines := []string{}
-	greeting, err := readResponseLine(tp)
-	if err != nil {
-		return nil, err
-	}
-	lines = append(lines, greeting)
-	tagID := 1
-	username := firstNonEmpty(actionParamString(action.Params, "username"), n.username)
-	password := firstNonEmpty(actionParamString(action.Params, "password"), n.password)
-	if username != "" {
-		tag := fmt.Sprintf("A%03d", tagID)
-		tagID++
-		if err := tp.PrintfLine("%s LOGIN %s %s", tag, username, password); err != nil {
-			return nil, err
-		}
-		loginLines, err := readIMAPTaggedResponse(tp, tag)
-		if err != nil {
-			return nil, err
-		}
-		lines = append(lines, loginLines...)
-	}
-	command := firstNonEmpty(actionParamString(action.Params, "command"), strings.TrimSpace(action.Value), string(action.Body), "CAPABILITY")
-	tag := fmt.Sprintf("A%03d", tagID)
-	tagID++
-	if err := tp.PrintfLine("%s %s", tag, command); err != nil {
-		return nil, err
-	}
-	commandLines, err := readIMAPTaggedResponse(tp, tag)
-	if err != nil {
-		return nil, err
-	}
-	lines = append(lines, commandLines...)
-	logoutTag := fmt.Sprintf("A%03d", tagID)
-	_ = tp.PrintfLine("%s LOGOUT", logoutTag)
-	logoutLines, _ := readIMAPTaggedResponse(tp, logoutTag)
-	lines = append(lines, logoutLines...)
-	payload := encodePayload(map[string]any{"protocol": "imap", "target": target, "responses": compactLines(lines)})
-	return &operationResult{
-		payload:       payload,
-		target:        target,
-		dependency:    "network_imap",
-		bytesSent:     int64(len(command)),
-		bytesReceived: int64(len(payload)),
-		connectTime:   connectTime,
-		messagesSent:  tagID,
-		messagesRecv:  len(lines),
-	}, firstResponseError(lines)
-}
-
-func (n *Network) runLDAP(ctx context.Context, action *protocol.Action) (*operationResult, error) {
-	_ = ctx
-	address := n.ldapURL(action)
-	start := time.Now()
-	dialer := &net.Dialer{Timeout: n.actionTimeout(action)}
-	conn, err := ldap.DialURL(address, ldap.DialWithDialer(dialer), ldap.DialWithTLSConfig(&tls.Config{MinVersion: tls.VersionTLS12}))
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	connectTime := time.Since(start)
-
-	username := firstNonEmpty(actionParamString(action.Params, "username"), n.username)
-	password := firstNonEmpty(actionParamString(action.Params, "password"), n.password)
-	if username != "" {
-		if err := conn.Bind(username, password); err != nil {
-			return nil, err
-		}
-	}
-	if strings.EqualFold(action.Type, "ldap_bind") {
-		payload := encodePayload(map[string]any{"protocol": "ldap", "target": address, "bound": username != ""})
-		return &operationResult{
-			payload:       payload,
-			target:        address,
-			dependency:    "network_ldap",
-			bytesReceived: int64(len(payload)),
-			connectTime:   connectTime,
-			messagesSent:  boolCount(username != ""),
-			messagesRecv:  1,
-		}, nil
-	}
-
-	baseDN := firstNonEmpty(action.Target, actionParamString(action.Params, "base_dn"), n.baseDN)
-	if baseDN == "" {
-		return nil, errors.New("ldap search base DN is required")
-	}
-	filter := firstNonEmpty(actionParamString(action.Params, "filter"), "(objectClass=*)")
-	attrs := actionParamStringSlice(action.Params, "attributes")
-	maxEntries := actionParamInt(action.Params, "max_entries")
-	if maxEntries <= 0 {
-		maxEntries = 100
-	}
-	searchRequest := ldap.NewSearchRequest(baseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, maxEntries, int(n.actionTimeout(action).Seconds()), false, filter, attrs, nil)
-	searchResult, err := conn.Search(searchRequest)
-	if err != nil {
-		return nil, err
-	}
-	entries := make([]map[string]any, 0, len(searchResult.Entries))
-	for _, entry := range searchResult.Entries {
-		attributes := make(map[string][]string, len(entry.Attributes))
-		for _, attr := range entry.Attributes {
-			attributes[attr.Name] = attr.Values
-		}
-		entries = append(entries, map[string]any{"dn": entry.DN, "attributes": attributes})
-	}
-	payload := encodePayload(map[string]any{"protocol": "ldap", "target": address, "base_dn": baseDN, "filter": filter, "entry_count": len(entries), "entries": entries})
-	return &operationResult{
-		payload:       payload,
-		target:        address,
-		dependency:    "network_ldap",
-		bytesSent:     int64(len(filter)),
-		bytesReceived: int64(len(payload)),
-		connectTime:   connectTime,
-		messagesSent:  1,
-		messagesRecv:  len(entries),
-	}, nil
-}
-
 func (n *Network) dial(ctx context.Context, networkName, target string) (net.Conn, time.Duration, error) {
 	timeout := n.timeout
 	dialer := &net.Dialer{Timeout: timeout}
@@ -645,7 +217,7 @@ func (n *Network) dial(ctx context.Context, networkName, target string) (net.Con
 }
 
 func (n *Network) endpoint(action *protocol.Action, defaultPort string) (string, error) {
-	raw := firstNonEmpty(actionParamString(action.Params, "address"), n.address, action.Target)
+	raw := protocol.FirstNonEmpty(actionParamString(action.Params, "address"), n.address, action.Target)
 	if raw == "" {
 		if n.host == "" {
 			return "", errors.New("network target address is required")
@@ -713,7 +285,7 @@ func (n *Network) effectiveSubprotocol(action *protocol.Action) string {
 }
 
 func (n *Network) ldapURL(action *protocol.Action) string {
-	raw := firstNonEmpty(actionParamString(action.Params, "address"), n.address, action.Target)
+	raw := protocol.FirstNonEmpty(actionParamString(action.Params, "address"), n.address, action.Target)
 	if raw == "" && n.host != "" {
 		port := n.port
 		if port == 0 {
@@ -754,61 +326,6 @@ func (n *Network) commandResponse(tp *textproto.Conn, command string) string {
 		return "ERR " + err.Error()
 	}
 	return line
-}
-
-func actionName(action *protocol.Action) string {
-	if action == nil {
-		return ""
-	}
-	return action.Name
-}
-
-func configString(config map[string]any, key string) string {
-	if config == nil {
-		return ""
-	}
-	if value, ok := config[key].(string); ok {
-		return strings.TrimSpace(value)
-	}
-	return ""
-}
-
-func configStringSlice(config map[string]any, key string) []string {
-	if config == nil {
-		return nil
-	}
-	switch value := config[key].(type) {
-	case []string:
-		return append([]string(nil), value...)
-	case []any:
-		out := make([]string, 0, len(value))
-		for _, item := range value {
-			if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
-				out = append(out, strings.TrimSpace(text))
-			}
-		}
-		return out
-	default:
-		return nil
-	}
-}
-
-func configInt(config map[string]any, key string) int {
-	if config == nil {
-		return 0
-	}
-	switch value := config[key].(type) {
-	case int:
-		return value
-	case int64:
-		return int(value)
-	case float64:
-		return int(value)
-	case float32:
-		return int(value)
-	default:
-		return 0
-	}
 }
 
 func actionParamString(params map[string]any, key string) string {
@@ -885,16 +402,6 @@ func actionParamBool(params map[string]any, key string) bool {
 	return value
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		trimmed := strings.TrimSpace(value)
-		if trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
-}
-
 func defaultPortForSubprotocol(subprotocol string) string {
 	switch strings.ToLower(subprotocol) {
 	case "dns":
@@ -934,7 +441,7 @@ func ftpCommand(action *protocol.Action) string {
 	case "ftp_noop":
 		return "NOOP"
 	default:
-		return firstNonEmpty(actionParamString(action.Params, "command"), strings.TrimSpace(action.Value), string(action.Body), action.Target)
+		return protocol.FirstNonEmpty(actionParamString(action.Params, "command"), strings.TrimSpace(action.Value), string(action.Body), action.Target)
 	}
 }
 
@@ -1067,11 +574,11 @@ func extractNetworkValue(extractor protocol.Extractor, payload map[string]any, b
 	case "", "body", "records":
 		return extractNetworkBodyValue(extractor, body)
 	case "response":
-		return stringifyNetworkExtraction(payload["response"]), nil
+		return jsonextract.Stringify(payload["response"]), nil
 	case "target":
 		return result.DependencyTarget, nil
 	case "record_count", "entry_count":
-		return stringifyNetworkExtraction(payload[strings.ToLower(strings.TrimSpace(extractor.Source))]), nil
+		return jsonextract.Stringify(payload[strings.ToLower(strings.TrimSpace(extractor.Source))]), nil
 	default:
 		return "", fmt.Errorf("unsupported network extraction source: %s", extractor.Source)
 	}
@@ -1080,13 +587,13 @@ func extractNetworkValue(extractor protocol.Extractor, payload map[string]any, b
 func extractNetworkBodyValue(extractor protocol.Extractor, body []byte) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(extractor.Type)) {
 	case "", "json", "jsonpath":
-		return extractNetworkJSONPath(extractor.Expression, body)
+		return jsonextract.JSONPath(extractor.Expression, body)
 	case "jmespath":
-		return extractNetworkJMESPath(extractor.Expression, body)
+		return jsonextract.JMESPath(extractor.Expression, body)
 	case "regex", "regexp":
-		return extractNetworkRegex(extractor.Expression, body)
+		return jsonextract.Regex(extractor.Expression, body)
 	case "boundary":
-		return extractNetworkBoundary(extractor.Expression, body)
+		return jsonextract.Boundary(extractor.Expression, body)
 	default:
 		return "", fmt.Errorf("unsupported network extraction type: %s", extractor.Type)
 	}
@@ -1156,131 +663,6 @@ func decodeNetworkPayload(body string) (map[string]any, error) {
 	return payload, nil
 }
 
-func extractNetworkJSONPath(expr string, body []byte) (string, error) {
-	expr = strings.TrimSpace(expr)
-	if expr == "" {
-		return "", fmt.Errorf("jsonpath expression is required")
-	}
-	expr = strings.TrimPrefix(expr, "$.")
-	expr = strings.TrimPrefix(expr, "$")
-	var current any
-	if err := json.Unmarshal(body, &current); err != nil {
-		return "", err
-	}
-	if expr == "" {
-		return stringifyNetworkExtraction(current), nil
-	}
-	for _, part := range strings.Split(expr, ".") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		key, indexes := splitNetworkPathToken(part)
-		if key != "" {
-			object, ok := current.(map[string]any)
-			if !ok {
-				return "", fmt.Errorf("jsonpath %q expected object", expr)
-			}
-			next, ok := object[key]
-			if !ok {
-				return "", fmt.Errorf("jsonpath %q not found", expr)
-			}
-			current = next
-		}
-		for _, index := range indexes {
-			items, ok := current.([]any)
-			if !ok || index < 0 || index >= len(items) {
-				return "", fmt.Errorf("jsonpath %q index out of range", expr)
-			}
-			current = items[index]
-		}
-	}
-	return stringifyNetworkExtraction(current), nil
-}
-
-func splitNetworkPathToken(token string) (string, []int) {
-	key := token
-	indexes := []int{}
-	if bracket := strings.Index(token, "["); bracket >= 0 {
-		key = token[:bracket]
-		rest := token[bracket:]
-		for strings.HasPrefix(rest, "[") {
-			end := strings.Index(rest, "]")
-			if end <= 1 {
-				break
-			}
-			var index int
-			if _, err := fmt.Sscanf(rest[1:end], "%d", &index); err == nil {
-				indexes = append(indexes, index)
-			}
-			rest = rest[end+1:]
-		}
-	}
-	return key, indexes
-}
-
-func extractNetworkJMESPath(expr string, body []byte) (string, error) {
-	var current any
-	if err := json.Unmarshal(body, &current); err != nil {
-		return "", err
-	}
-	value, err := jmespath.Search(expr, current)
-	if err != nil {
-		return "", err
-	}
-	return stringifyNetworkExtraction(value), nil
-}
-
-func extractNetworkRegex(expr string, body []byte) (string, error) {
-	re, err := regexp.Compile(expr)
-	if err != nil {
-		return "", err
-	}
-	match := re.FindSubmatch(body)
-	if len(match) == 0 {
-		return "", fmt.Errorf("regex %q not found", expr)
-	}
-	if len(match) > 1 {
-		return string(match[1]), nil
-	}
-	return string(match[0]), nil
-}
-
-func extractNetworkBoundary(expr string, body []byte) (string, error) {
-	parts := strings.Split(expr, "|||")
-	if len(parts) != 2 {
-		return "", fmt.Errorf("boundary expression must be left|||right")
-	}
-	text := string(body)
-	start := strings.Index(text, parts[0])
-	if start < 0 {
-		return "", fmt.Errorf("left boundary not found")
-	}
-	start += len(parts[0])
-	end := strings.Index(text[start:], parts[1])
-	if end < 0 {
-		return "", fmt.Errorf("right boundary not found")
-	}
-	return text[start : start+end], nil
-}
-
-func stringifyNetworkExtraction(value any) string {
-	switch typed := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return typed
-	case float64, bool, int, int64:
-		return fmt.Sprint(typed)
-	default:
-		data, err := json.Marshal(typed)
-		if err != nil {
-			return fmt.Sprint(typed)
-		}
-		return string(data)
-	}
-}
-
 func numericNetworkValue(value any) int {
 	out, _ := numericNetworkAssertionValue(value)
 	return out
@@ -1308,7 +690,7 @@ func networkSnapshot(action *protocol.Action, result *protocol.Result) *protocol
 	}
 	return &protocol.ErrorSnapshot{
 		RequestMethod:  action.Type,
-		RequestURL:     firstNonEmpty(result.DependencyTarget, action.Target),
+		RequestURL:     protocol.FirstNonEmpty(result.DependencyTarget, action.Target),
 		RequestHeaders: cloneActionHeaders(action.Headers),
 		RequestBody:    string(action.Body),
 		ResponseStatus: result.StatusCode,

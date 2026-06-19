@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -246,12 +247,12 @@ func convertCustomCallAction(fn ParsedFunction) dsl.Action {
 
 func convertSourceRendezvousAction(fn ParsedFunction) dsl.Action {
 	args := sourceControlArgs(fn)
-	key := firstNonEmpty(fn.StepName, fn.Name)
+	key := convertutil.FirstNonEmpty(fn.StepName, fn.Name)
 	if len(args) > 0 {
 		key = convertSourceMessageExpression(args[0])
 	}
 	action := dsl.Action{
-		Name:     sanitizeName(firstNonEmpty(key, "lr_rendezvous")),
+		Name:     sanitizeName(convertutil.FirstNonEmpty(key, "lr_rendezvous")),
 		Type:     "rendezvous",
 		Metadata: sourceFunctionMetadata(fn),
 		Params: map[string]any{
@@ -283,7 +284,7 @@ func annotateSourceAction(action *dsl.Action, fn ParsedFunction, def SourceFunct
 }
 
 func sourceActionName(fn ParsedFunction) string {
-	base := firstNonEmpty(fn.StepName, firstNonEmptyArg(fn, "Name"), fn.Name, "source_function")
+	base := convertutil.FirstNonEmpty(fn.StepName, firstNonEmptyArg(fn, "Name"), fn.Name, "source_function")
 	name := sanitizeName(base)
 	if name == "" {
 		name = "source_function"

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -199,7 +200,7 @@ func sourceSOAPEndpointPlaceholder(fn ParsedFunction) string {
 		service, _, _ = splitSourceSOAPMethod(strings.TrimSpace(firstNonEmptyArg(fn, "SOAPMethod")))
 	}
 	if service == "" {
-		service = firstNonEmpty(fn.StepName, "soap_service")
+		service = convertutil.FirstNonEmpty(fn.StepName, "soap_service")
 	}
 	key := strings.Trim(sanitizeEnvToken(service), "_")
 	if key == "" {
@@ -231,7 +232,7 @@ func splitSourceSOAPMethod(value string) (service, binding, operation string) {
 }
 
 func generateSourceSOAPBody(fn ParsedFunction, operation string) string {
-	operation = sanitizeXMLName(firstNonEmpty(operation, fn.StepName, "Operation"))
+	operation = sanitizeXMLName(convertutil.FirstNonEmpty(operation, fn.StepName, "Operation"))
 	if operation == "" {
 		return ""
 	}

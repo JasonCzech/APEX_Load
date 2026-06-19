@@ -10,21 +10,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
-func configInt(config map[string]any, key string) int {
-	switch value := config[key].(type) {
-	case int:
-		return value
-	case int64:
-		return int(value)
-	case float64:
-		return int(value)
-	case float32:
-		return int(value)
-	default:
-		return 0
-	}
-}
-
 func actionParamInt(params map[string]any, key string, defaultValue int) int {
 	if params == nil {
 		return defaultValue

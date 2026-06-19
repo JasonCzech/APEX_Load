@@ -10,6 +10,7 @@ import { formatTimeCompact, isValidDurationInput, parseDurationToSeconds } from 
 import './TestHub.css'
 import './CreateTestModal.css'
 import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
+import { SortIndicator } from './SortIndicator'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
 import { isRuntimeFieldApplicable, overrideFromRuntimeDraft, runtimeDraftFromOverride } from './runtimeSettingsModel'
@@ -690,14 +691,6 @@ function scenarioAssignmentSummary(scenario: StoredScenario) {
     }
   }
   return null
-}
-
-function SortIndicator({ active, direction }: { active: boolean, direction: 'asc' | 'desc' }) {
-  return (
-    <span className={`sort-icon ${active ? 'active' : ''}`}>
-      {active ? (direction === 'asc' ? '↑' : '↓') : '↕'}
-    </span>
-  )
 }
 
 function ScenarioModelTooltip({ active, payload, label }: {

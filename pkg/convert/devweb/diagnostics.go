@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -62,7 +63,7 @@ func webRequestCallCovered(offset int, matches [][]int) bool {
 
 func devwebLocation(block namedBlock, offset int) string {
 	line := devwebLine(block, offset)
-	return fmt.Sprintf("%s line %d", firstNonEmpty(block.Name, "DevWebAction"), line)
+	return fmt.Sprintf("%s line %d", convertutil.FirstNonEmpty(block.Name, "DevWebAction"), line)
 }
 
 func devwebLine(block namedBlock, offset int) int {
@@ -121,7 +122,7 @@ func devwebSourceMapping(sourceFile string, step parsedStep, targetPath string) 
 		SourceFile: sourceFile,
 		StartLine:  startLine,
 		EndLine:    endLine,
-		Function:   firstNonEmpty(step.Function, step.Action.Type),
+		Function:   convertutil.FirstNonEmpty(step.Function, step.Action.Type),
 		TargetPath: targetPath,
 		TargetName: step.Action.Name,
 		TargetKind: "action",

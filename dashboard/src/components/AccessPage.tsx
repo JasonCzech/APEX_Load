@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { useApi } from '../hooks/useApi'
+import { SortIndicator as SortIcon } from './SortIndicator'
 import {
   DashboardAuditEvent,
   DashboardAuditEventFilter,
@@ -596,11 +597,6 @@ function detailsSummary(details?: Record<string, unknown>): string {
   const entries = Object.entries(details || {})
   if (entries.length === 0) return 'None'
   return entries.slice(0, 3).map(([key, value]) => `${key}: ${String(value)}`).join(' · ')
-}
-
-function SortIcon({ active, direction }: { active: boolean; direction: SortDirection }) {
-  if (!active) return <span className="sort-icon">↕</span>
-  return <span className="sort-icon active">{direction === 'asc' ? '↑' : '↓'}</span>
 }
 
 function SortHeader<T extends string>({

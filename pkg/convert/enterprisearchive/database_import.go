@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -15,7 +16,7 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 		DetectedProtocol: &detected,
 		Warnings:         append([]string(nil), detected.Warnings...),
 		Script: &dsl.Script{
-			Name:          firstNonEmpty(opts.ScriptName, "Converted_LR_Database_Script"),
+			Name:          convertutil.FirstNonEmpty(opts.ScriptName, "Converted_LR_Database_Script"),
 			Version:       "1.0.0",
 			Protocol:      "database",
 			GeneratedBy:   "apexload-enterprise-script-archive-importer",
@@ -174,11 +175,11 @@ func extractDatabaseBinds(fn ParsedFunction, sql string) []any {
 }
 
 func databaseActionName(fn ParsedFunction, fallback string) string {
-	return sanitizeName(firstNonEmpty(fn.StepName, firstNonEmptyArg(fn, "Name"), fn.Name, fallback))
+	return sanitizeName(convertutil.FirstNonEmpty(fn.StepName, firstNonEmptyArg(fn, "Name"), fn.Name, fallback))
 }
 
 func detectDatabaseDriver(detected DetectedProtocol) string {
-	value := strings.ToLower(firstNonEmpty(detected.SourceType, detected.CanonicalSourceProtocol, detected.DisplayName))
+	value := strings.ToLower(convertutil.FirstNonEmpty(detected.SourceType, detected.CanonicalSourceProtocol, detected.DisplayName))
 	switch {
 	case strings.Contains(value, "oracle"):
 		return "oracle"

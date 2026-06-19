@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/tmpl"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -20,8 +21,8 @@ func applyJMeterCacheManager(node *xmlNode, script *dsl.Script) {
 	if script.Config.WebRuntime.AdditionalAttributes == nil {
 		script.Config.WebRuntime.AdditionalAttributes = map[string]string{}
 	}
-	clearEachIteration := firstNonEmpty(prop(node, "clearEachIteration"), prop(node, "CacheManager.clearEachIteration"))
-	useExpires := firstNonEmpty(prop(node, "useExpires"), prop(node, "CacheManager.useExpires"))
+	clearEachIteration := convertutil.FirstNonEmpty(prop(node, "clearEachIteration"), prop(node, "CacheManager.clearEachIteration"))
+	useExpires := convertutil.FirstNonEmpty(prop(node, "useExpires"), prop(node, "CacheManager.useExpires"))
 	if clearEachIteration != "" {
 		script.Config.WebRuntime.AdditionalAttributes["jmeter.cache_manager.clear_each_iteration"] = strings.ToLower(clearEachIteration)
 	}
@@ -38,17 +39,17 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 	element := node.Element
 	name := sanitizeName(attrOr(element, "testname", "HTTP Request"))
 	location := jmeterElementLocation(element)
-	method := firstNonEmpty(prop(element, "HTTPSampler.method"), "GET")
-	rawPath := convertVariablesWithDiagnostics(firstNonEmpty(prop(element, "HTTPSampler.path"), ctx.defaultPath, "/"), diagnostics, location)
-	protocol := firstNonEmpty(prop(element, "HTTPSampler.protocol"), ctx.defaultProtocol)
-	domain := convertVariablesWithDiagnostics(firstNonEmpty(prop(element, "HTTPSampler.domain"), ctx.defaultDomain), diagnostics, location)
-	port := firstNonEmpty(prop(element, "HTTPSampler.port"), ctx.defaultPort)
+	method := convertutil.FirstNonEmpty(prop(element, "HTTPSampler.method"), "GET")
+	rawPath := convertVariablesWithDiagnostics(convertutil.FirstNonEmpty(prop(element, "HTTPSampler.path"), ctx.defaultPath, "/"), diagnostics, location)
+	protocol := convertutil.FirstNonEmpty(prop(element, "HTTPSampler.protocol"), ctx.defaultProtocol)
+	domain := convertVariablesWithDiagnostics(convertutil.FirstNonEmpty(prop(element, "HTTPSampler.domain"), ctx.defaultDomain), diagnostics, location)
+	port := convertutil.FirstNonEmpty(prop(element, "HTTPSampler.port"), ctx.defaultPort)
 	target := rawPath
 	absoluteURL := rawPath
 	if domain != "" {
 		absolute := buildURL(protocol, domain, port, rawPath)
 		absoluteURL = absolute
-		target = makeRelative(absolute, firstNonEmpty(opts.BaseURL, buildBaseURL(protocol, domain, port)))
+		target = makeRelative(absolute, convertutil.FirstNonEmpty(opts.BaseURL, buildBaseURL(protocol, domain, port)))
 	}
 	action := &dsl.Action{
 		Name:       name,
@@ -151,9 +152,9 @@ func applySamplerFiles(action *dsl.Action, node *xmlNode, diagnostics *diag.Coll
 		action.Headers["Content-Type"] = "multipart/form-data"
 	}
 	for _, file := range files {
-		paramName := firstNonEmpty(prop(file, "File.paramname"), prop(file, "HTTPFileArg.paramname"), "file")
-		filePath := convertVariablesWithDiagnostics(firstNonEmpty(prop(file, "File.path"), prop(file, "HTTPFileArg.path")), diagnostics, location)
-		mimeType := firstNonEmpty(prop(file, "File.mimetype"), prop(file, "HTTPFileArg.mimetype"), "application/octet-stream")
+		paramName := convertutil.FirstNonEmpty(prop(file, "File.paramname"), prop(file, "HTTPFileArg.paramname"), "file")
+		filePath := convertVariablesWithDiagnostics(convertutil.FirstNonEmpty(prop(file, "File.path"), prop(file, "HTTPFileArg.path")), diagnostics, location)
+		mimeType := convertutil.FirstNonEmpty(prop(file, "File.mimetype"), prop(file, "HTTPFileArg.mimetype"), "application/octet-stream")
 		placeholder := "{{file." + sanitizeName(paramName) + "}}"
 		entry := map[string]any{
 			"value":        placeholder,

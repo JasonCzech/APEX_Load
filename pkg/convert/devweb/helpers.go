@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -65,8 +66,8 @@ func devWebHelperRequestTemplatesForModule(module string, content string, ctx co
 		query := objectStringMapField(objectLiteral, "queryString", ctx)
 		headers := objectStringMapField(objectLiteral, "headers", ctx)
 		body, hasBody := objectFieldRaw(objectLiteral, "body")
-		url := firstNonEmpty(objectStringField(objectLiteral, "url", ctx), objectStringField(objectLiteral, "URL", ctx))
-		method := strings.ToUpper(firstNonEmpty(objectStringField(objectLiteral, "method", ctx), "GET"))
+		url := convertutil.FirstNonEmpty(objectStringField(objectLiteral, "url", ctx), objectStringField(objectLiteral, "URL", ctx))
+		method := strings.ToUpper(convertutil.FirstNonEmpty(objectStringField(objectLiteral, "method", ctx), "GET"))
 		template := devWebHelperRequestTemplate{
 			Module:           module,
 			Function:         functionName,

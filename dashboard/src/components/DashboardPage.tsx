@@ -8,6 +8,7 @@ import { TestSummary, MetricsHistoryPoint, Release, RunArchiveReport, GroupLiveM
 import { downloadBlob } from '../utils/fileUtils'
 import { isCompletedTestStatus, isLiveTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { SortIndicator as SortIcon } from './SortIndicator'
 import { LoadComparisonPanel, type LoadComparisonTestOption } from './LoadComparisonPanel'
 import { ReleaseTrendPanel } from './ReleaseTrendPanel'
 import { chartTooltipContentStyle } from './chartTooltipTheme'
@@ -269,11 +270,6 @@ function deriveSelectedIds(current: Set<string>, previousIds: string[], validIds
   const hadAllPreviousIds = previousIds.length > 0 && previousIds.every(id => current.has(id))
   const hasOverlap = previousIds.some(id => valid.has(id))
   return hadNoPreviousIds || hadAllPreviousIds || !hasOverlap ? valid : retained
-}
-
-function SortIcon({ active, direction }: { active: boolean; direction: SortDirection }) {
-  if (!active) return <span className="sort-icon">↕</span>
-  return <span className="sort-icon active">{direction === 'asc' ? '↑' : '↓'}</span>
 }
 
 function buildReleaseTrendStats(entries: PerformanceTrendEntry[]): ReleaseTrendStats {

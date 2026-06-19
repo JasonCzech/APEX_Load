@@ -12,6 +12,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 var (
@@ -86,7 +87,7 @@ func (a *serviceBusAdapter) Consume(ctx context.Context, destination string, tim
 
 func (a *serviceBusAdapter) RequestReply(ctx context.Context, requestDestination string, replyDestination string, request message, timeout time.Duration) (message, message, error) {
 	if request.CorrelationID == "" {
-		request.CorrelationID = firstNonEmpty(request.ID, newJMSMessageID())
+		request.CorrelationID = protocol.FirstNonEmpty(request.ID, newJMSMessageID())
 	}
 	if request.Headers == nil {
 		request.Headers = make(map[string]string)
@@ -345,7 +346,7 @@ func toServiceBusMessage(destination string, msg message) *azservicebus.Message 
 		ReplyTo:               stringPtr(firstMatchingString(msg.Headers, "reply_to", "ReplyTo")),
 		To:                    stringPtr(destination),
 	}
-	if contentType := firstNonEmpty(
+	if contentType := protocol.FirstNonEmpty(
 		firstMatchingString(msg.Headers, "Content-Type", "content-type", "content_type"),
 		firstMatchingString(msg.Properties, "Content-Type", "content-type", "content_type"),
 	); contentType != "" {

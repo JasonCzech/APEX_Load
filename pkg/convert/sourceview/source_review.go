@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 )
 
 const (
@@ -119,8 +121,8 @@ func CoarseMapping(sourceFile string, function string, targetPath string, target
 		TargetPath: targetPath,
 		TargetName: targetName,
 		TargetKind: targetKind,
-		Status:     firstNonEmpty(status, "review_only"),
-		Notes:      firstNonEmpty(notes, "coarse source range; exact child span unavailable"),
+		Status:     convertutil.FirstNonEmpty(status, "review_only"),
+		Notes:      convertutil.FirstNonEmpty(notes, "coarse source range; exact child span unavailable"),
 	}
 }
 
@@ -253,13 +255,4 @@ var sourceRedactors = []sourceRedactor{
 	{regexp.MustCompile(`(?i)((?:password|passwd|pwd|token|access_token|refresh_token|id_token|api[_-]?key|secret)\s*=\s*)([^&\s",;]+)`), `${1}[REDACTED]`},
 	{regexp.MustCompile(`(?i)((?:Authorization|Cookie|Set-Cookie)\s*[:=]\s*)([^\r\n"]+)`), `${1}[REDACTED]`},
 	{regexp.MustCompile(`(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}`), `${1}[REDACTED]`},
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }

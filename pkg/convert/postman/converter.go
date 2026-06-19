@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/convert/tmpl"
@@ -223,7 +224,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	vars := collectionVariables(col.Variable)
 	applyPostmanEventVariables(vars, requests, &diagnostics)
 	baseURL, warnings := deriveBaseURL(requests, vars, req.Options.BaseURL)
-	scriptName := sanitizeName(firstNonEmpty(req.Options.ScriptName, req.Name, col.Info.Name, "Imported_Postman_Collection"))
+	scriptName := sanitizeName(convertutil.FirstNonEmpty(req.Options.ScriptName, req.Name, col.Info.Name, "Imported_Postman_Collection"))
 	authSchemes := sortedAuthSchemes(requests, col.Auth)
 
 	result := &ConvertResult{
@@ -277,8 +278,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		result.Script.Config.HTTP.Auth = authConfig
 	}
 
-	sanitizeSensitive := boolOption(req.Options.SanitizeSensitive, true)
-	includeAssertions := boolOption(req.Options.IncludeAssertions, true)
+	sanitizeSensitive := convertutil.BoolOption(req.Options.SanitizeSensitive, true)
+	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
 	for index, item := range requests {
 		reportPostmanEvents(item, &diagnostics)
 
@@ -288,7 +289,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				continue
 			}
 			scriptContent := strings.Join(ev.Script.Exec, "\n")
-			listenType := firstNonEmpty(ev.Listen, "script")
+			listenType := convertutil.FirstNonEmpty(ev.Listen, "script")
 			filename := fmt.Sprintf("%s_%s_%d.js", sanitizeName(item.Name), listenType, i)
 			sources[filename] = scriptContent
 			sourceMappings = append(sourceMappings, sourceview.Mapping{
@@ -438,7 +439,7 @@ func postmanItemLocation(item requestItem) string {
 	if item.Folder != "" && item.Name != "" {
 		return item.Folder + " / " + item.Name
 	}
-	return firstNonEmpty(item.Name, item.Folder, "Postman request")
+	return convertutil.FirstNonEmpty(item.Name, item.Folder, "Postman request")
 }
 
 func deriveBaseURL(requests []requestItem, vars map[string]string, override string) (string, []string) {
@@ -489,7 +490,7 @@ func pathVariableParameters(requests []requestItem) []dsl.Parameter {
 			if variable.Disabled || strings.TrimSpace(variable.Key) == "" {
 				continue
 			}
-			values[normalizeVariableName(variable.Key)] = firstNonEmpty(variable.Value, "sample-"+normalizeVariableName(variable.Key))
+			values[normalizeVariableName(variable.Key)] = convertutil.FirstNonEmpty(variable.Value, "sample-"+normalizeVariableName(variable.Key))
 		}
 		for _, name := range pathVariableNames(rawURL(item.Request.URL)) {
 			if _, ok := values[normalizeVariableName(name)]; !ok {
@@ -531,7 +532,7 @@ func mergeParameters(existing []dsl.Parameter, extra []dsl.Parameter) []dsl.Para
 func buildAction(index int, item requestItem, baseURL string, vars map[string]string, sanitizeSensitive bool, includeAssertions bool, diagnostics *diag.Collector) (dsl.Action, []string) {
 	req := item.Request
 	location := postmanItemLocation(item)
-	method := strings.ToUpper(firstNonEmpty(req.Method, "GET"))
+	method := strings.ToUpper(convertutil.FirstNonEmpty(req.Method, "GET"))
 	raw := rawURL(req.URL)
 	target := toTarget(raw, baseURL, vars, diagnostics, location)
 	headers := map[string]string{}
@@ -733,18 +734,18 @@ func postmanAuthConfig(value *auth, diagnostics *diag.Collector, location string
 	case "", "noauth", "inherit":
 		return dsl.AuthConfig{}
 	case "bearer":
-		return dsl.AuthConfig{Type: "bearer", Token: firstNonEmpty(authValue(value.Bearer, "token"), "{{env.API_TOKEN}}")}
+		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(authValue(value.Bearer, "token"), "{{env.API_TOKEN}}")}
 	case "basic":
-		return dsl.AuthConfig{Type: "basic", Username: firstNonEmpty(authValue(value.Basic, "username"), "{{env.API_USERNAME}}"), Password: firstNonEmpty(authValue(value.Basic, "password"), "{{env.API_PASSWORD}}")}
+		return dsl.AuthConfig{Type: "basic", Username: convertutil.FirstNonEmpty(authValue(value.Basic, "username"), "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(authValue(value.Basic, "password"), "{{env.API_PASSWORD}}")}
 	case "digest":
-		return dsl.AuthConfig{Type: "digest", Username: firstNonEmpty(authValue(value.Digest, "username"), "{{env.API_USERNAME}}"), Password: firstNonEmpty(authValue(value.Digest, "password"), "{{env.API_PASSWORD}}")}
+		return dsl.AuthConfig{Type: "digest", Username: convertutil.FirstNonEmpty(authValue(value.Digest, "username"), "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(authValue(value.Digest, "password"), "{{env.API_PASSWORD}}")}
 	case "ntlm":
-		return dsl.AuthConfig{Type: "ntlm", Username: firstNonEmpty(authValue(value.NTLM, "username"), "{{env.API_USERNAME}}"), Password: firstNonEmpty(authValue(value.NTLM, "password"), "{{env.API_PASSWORD}}"), Domain: authValue(value.NTLM, "domain")}
+		return dsl.AuthConfig{Type: "ntlm", Username: convertutil.FirstNonEmpty(authValue(value.NTLM, "username"), "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(authValue(value.NTLM, "password"), "{{env.API_PASSWORD}}"), Domain: authValue(value.NTLM, "domain")}
 	case "oauth2":
 		if diagnostics != nil {
 			diagnostics.Add(diag.Warning, "Postman auth", location, "OAuth2 auth was represented as a bearer token placeholder; review token acquisition before replay")
 		}
-		return dsl.AuthConfig{Type: "bearer", Token: firstNonEmpty(authValue(value.OAuth2, "accessToken"), authValue(value.OAuth2, "access_token"), "{{env.API_TOKEN}}")}
+		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(authValue(value.OAuth2, "accessToken"), authValue(value.OAuth2, "access_token"), "{{env.API_TOKEN}}")}
 	case "awsv4", "hawk":
 		if diagnostics != nil {
 			diagnostics.Add(diag.Warning, "Postman auth", location, value.Type+" request signing cannot be executed during import; generated script uses placeholders and requires signing configuration before replay")
@@ -942,7 +943,7 @@ func detectContentType(body string) string {
 }
 
 func actionName(index int, item requestItem) string {
-	name := firstNonEmpty(item.Name, fmt.Sprintf("Request %d", index+1))
+	name := convertutil.FirstNonEmpty(item.Name, fmt.Sprintf("Request %d", index+1))
 	if item.Folder != "" {
 		name = item.Folder + " " + name
 	}
@@ -986,13 +987,6 @@ func isApexExpressionName(value string) bool {
 	return false
 }
 
-func boolOption(value *bool, fallback bool) bool {
-	if value == nil {
-		return fallback
-	}
-	return *value
-}
-
 func firstPositive(values ...int) int {
 	for _, value := range values {
 		if value > 0 {
@@ -1000,13 +994,4 @@ func firstPositive(values ...int) int {
 		}
 	}
 	return 0
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }

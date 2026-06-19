@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/selector"
@@ -42,7 +43,7 @@ func convertPlaywright(content string, opts ConvertOptions) (*ConvertResult, err
 
 	headless := true
 	script := &dsl.Script{
-		Name:        firstNonEmpty(opts.ScriptName, "Imported Playwright Recording"),
+		Name:        convertutil.FirstNonEmpty(opts.ScriptName, "Imported Playwright Recording"),
 		Version:     "1.0",
 		Protocol:    "browser",
 		GeneratedBy: "apexload-recorder-importer",

@@ -26,13 +26,6 @@ func normalizeFormat(format string) string {
 	}
 }
 
-func boolOption(v *bool, defaultValue bool) bool {
-	if v == nil {
-		return defaultValue
-	}
-	return *v
-}
-
 func baseName(value string) string {
 	value = strings.TrimSpace(value)
 	value = strings.TrimRight(value, `/\`)

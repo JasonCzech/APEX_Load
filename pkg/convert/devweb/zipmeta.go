@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"gopkg.in/yaml.v3"
@@ -166,7 +167,7 @@ func applyDevWebParameters(result *ConvertResult, ctx *convertContext, diagnosti
 			result.Script.DataSources = append(result.Script.DataSources, dataSource)
 			result.Stats.DataSources++
 		}
-		column := firstNonEmpty(param.ColumnName, param.Name)
+		column := convertutil.FirstNonEmpty(param.ColumnName, param.Name)
 		if column != "" {
 			ctx.parameterTemplates[param.Name] = fmt.Sprintf("{{data.%s.%s}}", sourceName, column)
 		}

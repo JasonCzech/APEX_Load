@@ -2,6 +2,7 @@ import { Fragment, useState } from 'react'
 
 import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, MetricsHistoryPoint, RunArchiveAnalysisEdge, RunArchiveAnalysisNode, RunArchiveAnalysisResponse, RunArchiveAnalysisStats, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, RunArchiveSOAPPayloadTimelineBucket, RunArchiveTransactionDrilldown, TestSummary, TransactionEvent } from '../types'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
+import { SortIndicator as ArchiveSortIndicator } from './SortIndicator'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
 import {
   BrowserBreakdown,
@@ -108,14 +109,6 @@ function formatArchiveTime(value?: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'n/a'
   return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 } as Intl.DateTimeFormatOptions)
-}
-
-function ArchiveSortIndicator({ active, direction }: { active: boolean, direction?: 'asc' | 'desc' }) {
-  return (
-    <span className={`sort-icon ${active ? 'active' : ''}`}>
-      {active ? (direction === 'asc' ? '↑' : '↓') : '↕'}
-    </span>
-  )
 }
 
 function formatBrowserMetric(value: number | undefined, suffix = '', digits = 1): string {

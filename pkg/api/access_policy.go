@@ -15,6 +15,21 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 	path := r.URL.Path
 	method := r.Method
 
+	// The declarative route catalog (route_catalog.go) is the single source of
+	// truth for every route whose access requirement is fixed by method+path. It
+	// is consulted first and wins. The branches below are the deliberate residue
+	// that the static catalog cannot express:
+	//   1. Query-conditional routes — the requirement depends on query params
+	//      (e.g. list endpoints that are global when project_id/folder_id is
+	//      absent but project-scoped when present: library/catalog, ai/policy,
+	//      recorder/status, ws, applications, scripts, data-pools, tests,
+	//      scenarios list).
+	//   2. Prefix catch-alls — a single rule that uniformly covers a resource's
+	//      {id} path and all of its (open-ended) sub-paths by method (domains,
+	//      projects, applications/{id}, releases/{id}, scenarios/{id}, tests/{id},
+	//      data-pools/{id}, authoring sessions/{id}, scripts/{id}). The catalog's
+	//      exact-segment-count template matcher would require enumerating every
+	//      sub-path, so the catch-all stays here on purpose.
 	if requirement, ok := accessRequirementFromRouteCatalog(method, path); ok {
 		return requirement, true
 	}
@@ -28,32 +43,6 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveProjectIDFromQuery,
 		}, true
-	}
-
-	if strings.HasPrefix(path, "/api/v1/library/remotes/") {
-		if (method == http.MethodPut || method == http.MethodDelete) && !strings.Contains(path, "/catalog") && !strings.Contains(path, "/pull") && !strings.Contains(path, "/push") && !strings.Contains(path, "/diff") {
-			return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
-		}
-		if strings.HasSuffix(path, "/catalog") && method == http.MethodGet {
-			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
-		}
-		if strings.HasSuffix(path, "/diff") && method == http.MethodPost {
-			return accessRequirement{
-				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
-				ProjectLookup: resolveLibraryTransferProjectID,
-			}, true
-		}
-		if strings.HasSuffix(path, "/probe") && method == http.MethodPost {
-			return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
-		}
-		if (strings.HasSuffix(path, "/pull") || strings.HasSuffix(path, "/push")) && method == http.MethodPost {
-			return accessRequirement{
-				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-				ProjectLookup: resolveLibraryTransferProjectID,
-			}, true
-		}
 	}
 
 	if (path == "/api/v1/ai/policy" || path == "/api/v1/ai/review-queue") && method == http.MethodGet {

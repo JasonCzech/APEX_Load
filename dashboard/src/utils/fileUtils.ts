@@ -9,6 +9,11 @@ export function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+// downloadTextFile triggers a download of in-memory text content as a file.
+export function downloadTextFile(content: string, filename: string, type = 'text/plain;charset=utf-8'): void {
+  downloadBlob(new Blob([content], { type }), filename);
+}
+
 // downloadFilenameFromDisposition extracts the filename from a Content-Disposition
 // response header, falling back to fallbackName when absent or unparseable.
 export function downloadFilenameFromDisposition(disposition: string | null, fallbackName: string): string {

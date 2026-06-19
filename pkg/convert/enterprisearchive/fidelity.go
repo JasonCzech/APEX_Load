@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -123,7 +124,7 @@ func buildFidelitySourceFiles(files map[string]string, projectConfig *ProjectCon
 		}
 		if action, ok := sourceActions[strings.ToLower(filepath.Base(name))]; ok {
 			entry.Phase = action.Phase
-			entry.Language = firstNonEmpty(action.Language, entry.Language)
+			entry.Language = convertutil.FirstNonEmpty(action.Language, entry.Language)
 			entry.Role = "lifecycle_action"
 		} else if phase := sourceActionPhase(name); strings.HasSuffix(strings.ToLower(name), ".c") || strings.HasSuffix(strings.ToLower(name), ".java") {
 			entry.Phase = phase

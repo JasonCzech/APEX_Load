@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -25,7 +26,7 @@ func ConvertNetwork(actions []*ParsedAction, opts ConvertOptions, detected Detec
 		DetectedProtocol: &detected,
 		Warnings:         append([]string(nil), detected.Warnings...),
 		Script: &dsl.Script{
-			Name:          firstNonEmpty(opts.ScriptName, "Converted_LR_Network_Script"),
+			Name:          convertutil.FirstNonEmpty(opts.ScriptName, "Converted_LR_Network_Script"),
 			Version:       "1.0.0",
 			Protocol:      "network",
 			GeneratedBy:   "apexload-enterprise-script-archive-importer",
@@ -97,40 +98,40 @@ func convertNetworkFunction(fn ParsedFunction, defaultSubprotocol string) (dsl.A
 	}
 	target := firstNetworkTarget(fn, subprotocol)
 	action := dsl.Action{
-		Name:     sanitizeName(firstNonEmpty(fn.StepName, fn.Name, "network_action")),
+		Name:     sanitizeName(convertutil.FirstNonEmpty(fn.StepName, fn.Name, "network_action")),
 		Target:   target,
 		Metadata: sourceFunctionMetadata(fn),
 	}
 	switch subprotocol {
 	case "dns":
 		action.Type = "dns_query"
-		action.Params = map[string]any{"record_type": firstNonEmpty(networkArg(fn, "RecordType"), "A")}
+		action.Params = map[string]any{"record_type": convertutil.FirstNonEmpty(networkArg(fn, "RecordType"), "A")}
 	case "ftp":
 		action.Type = "ftp_command"
-		action.Value = firstNonEmpty(networkCommandValue(fn), "NOOP")
+		action.Value = convertutil.FirstNonEmpty(networkCommandValue(fn), "NOOP")
 	case "smtp":
 		action.Type = "smtp_send"
-		action.Target = firstNonEmpty(target, "{{network.to}}")
-		action.Body = firstNonEmpty(networkArg(fn, "Body"), networkCommandValue(fn), "Imported SMTP message body")
+		action.Target = convertutil.FirstNonEmpty(target, "{{network.to}}")
+		action.Body = convertutil.FirstNonEmpty(networkArg(fn, "Body"), networkCommandValue(fn), "Imported SMTP message body")
 	case "pop3":
 		action.Type = "pop3_command"
-		action.Value = firstNonEmpty(networkCommandValue(fn), "NOOP")
+		action.Value = convertutil.FirstNonEmpty(networkCommandValue(fn), "NOOP")
 	case "imap":
 		action.Type = "imap_command"
-		action.Value = firstNonEmpty(networkCommandValue(fn), "NOOP")
+		action.Value = convertutil.FirstNonEmpty(networkCommandValue(fn), "NOOP")
 	case "ldap":
 		if strings.Contains(name, "search") {
 			action.Type = "ldap_search"
-			action.Target = firstNonEmpty(target, networkArg(fn, "BaseDN"), "{{network.base_dn}}")
+			action.Target = convertutil.FirstNonEmpty(target, networkArg(fn, "BaseDN"), "{{network.base_dn}}")
 		} else {
 			action.Type = "ldap_bind"
 		}
 	case "udp":
 		action.Type = "udp_request"
-		action.Body = firstNonEmpty(networkCommandValue(fn), fn.Body, "ping")
+		action.Body = convertutil.FirstNonEmpty(networkCommandValue(fn), fn.Body, "ping")
 	case "winsock", "tcp":
 		action.Type = "tcp_request"
-		action.Body = firstNonEmpty(networkCommandValue(fn), fn.Body, "ping")
+		action.Body = convertutil.FirstNonEmpty(networkCommandValue(fn), fn.Body, "ping")
 	default:
 		return dsl.Action{}, false
 	}

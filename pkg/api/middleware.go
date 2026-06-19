@@ -244,19 +244,11 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 	}
 
 	if len(requirement.GlobalRoles) > 0 && user.hasGlobalRole(requirement.GlobalRoles...) {
-		if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
-			writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
-			return false
-		}
-		return true
+		return grantIfScopeAllows(w, r, resolution)
 	}
 
 	if requirement.AuthenticatedOnly {
-		if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
-			writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
-			return false
-		}
-		return true
+		return grantIfScopeAllows(w, r, resolution)
 	}
 
 	if requirement.ProjectLookup != nil {
@@ -266,11 +258,7 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 			return false
 		}
 		if user.hasProjectRole(projectID, requirement.ProjectRoles...) {
-			if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
-				writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
-				return false
-			}
-			return true
+			return grantIfScopeAllows(w, r, resolution)
 		}
 	}
 
@@ -281,11 +269,7 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 			return false
 		}
 		if user.hasDomainRole(domainID, requirement.DomainRoles...) {
-			if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
-				writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
-				return false
-			}
-			return true
+			return grantIfScopeAllows(w, r, resolution)
 		}
 	}
 
@@ -296,16 +280,23 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 			return false
 		}
 		if user.hasRepositoryRole(repositoryID, requirement.RepositoryRoles...) {
-			if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
-				writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
-				return false
-			}
-			return true
+			return grantIfScopeAllows(w, r, resolution)
 		}
 	}
 
 	writeError(w, http.StatusForbidden, "forbidden")
 	return false
+}
+
+// grantIfScopeAllows authorizes a request whose RBAC role check has already
+// passed, enforcing that any service-account token scope permits the operation.
+// It writes a 403 and returns false when the scope disallows the request.
+func grantIfScopeAllows(w http.ResponseWriter, r *http.Request, resolution authResolution) bool {
+	if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
+		writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
+		return false
+	}
+	return true
 }
 
 func decodeRequestBody(r *http.Request, target any) error {

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -16,7 +17,7 @@ import (
 // (web_reg_save_param and variants) to a DSL Extractor, plus warnings for
 // modifiers that cannot be reproduced exactly.
 func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
-	paramName := canonicalSourceParameterName(firstNonEmpty(firstNonEmptyArg(fn, "ParamName"), fn.StepName))
+	paramName := canonicalSourceParameterName(convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "ParamName"), fn.StepName))
 	if paramName == "" {
 		return nil, nil
 	}
@@ -58,7 +59,7 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 	}
 
 	if fn.Name == "web_reg_save_param_json" {
-		expression := firstNonEmpty(firstNonEmptyArg(fn, "QueryString"), firstNonEmptyArg(fn, "JSONPath"), firstNonEmptyArg(fn, "Query"))
+		expression := convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "QueryString"), firstNonEmptyArg(fn, "JSONPath"), firstNonEmptyArg(fn, "Query"))
 		if expression == "" {
 			return nil, warnings
 		}
@@ -76,7 +77,7 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 	}
 
 	if fn.Name == "web_reg_save_param_xpath" {
-		expression := firstNonEmpty(firstNonEmptyArg(fn, "QueryString"), firstNonEmptyArg(fn, "XPath"), firstNonEmptyArg(fn, "Query"))
+		expression := convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "QueryString"), firstNonEmptyArg(fn, "XPath"), firstNonEmptyArg(fn, "Query"))
 		if expression == "" {
 			return nil, warnings
 		}
@@ -174,7 +175,7 @@ func sourceExtractorOnMiss(fn ParsedFunction) string {
 // from a registration function. saveAll reports the "All" form, which saves
 // every match into indexed parameters.
 func sourceExtractorOrdinal(fn ParsedFunction) (ordinal int, saveAll bool) {
-	value := firstNonEmpty(firstNonEmptyArg(fn, "ORD"), firstNonEmptyArg(fn, "Ordinal"))
+	value := convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "ORD"), firstNonEmptyArg(fn, "Ordinal"))
 	if strings.EqualFold(strings.TrimSpace(cleanConfigValue(value)), "all") {
 		return 0, true
 	}
@@ -286,7 +287,7 @@ func convertGlobalVerification(fn ParsedFunction) (*dsl.ContentCheckConfig, stri
 	}
 	return &dsl.ContentCheckConfig{
 		Text:            convertParamReferences(text),
-		Scope:           normalizeSourceContentCheckScope(firstNonEmpty(firstNonEmptyArg(fn, "Search"), firstNonEmptyArg(fn, "Scope"), "any_response")),
+		Scope:           normalizeSourceContentCheckScope(convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "Search"), firstNonEmptyArg(fn, "Scope"), "any_response")),
 		FailIfFound:     &failIfFound,
 		CaseInsensitive: sourceFlagsInclude(flags, "IC"),
 	}, ""

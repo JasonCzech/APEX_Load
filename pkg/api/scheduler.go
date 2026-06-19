@@ -166,15 +166,7 @@ func (tr *TestRunner) applyMissedRunPolicyLocked(schedule *storage.ScenarioSched
 		}
 		return true, nil
 	case "require_operator_decision":
-		occurrence := tr.buildScenarioScheduleOccurrence(schedule, *schedule.NextRunAt, "blocked", "missed_run_requires_decision", "Missed scheduled occurrence requires an operator decision.", nil, now)
-		if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
-			return true, err
-		}
-		schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
-		schedule.NextRequiredAction = "operator_decision_required"
-		schedule.LastError = "missed scheduled occurrence requires operator decision"
-		schedule.UpdatedAt = now
-		if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+		if err := tr.blockScheduleOccurrenceLocked(schedule, *schedule.NextRunAt, "missed_run_requires_decision", "Missed scheduled occurrence requires an operator decision.", "operator_decision_required", "missed scheduled occurrence requires operator decision", now, nil); err != nil {
 			return true, err
 		}
 		return true, nil
@@ -402,44 +394,22 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		return nil, err
 	} else if !allowed {
 		schedule.ConflictSummary = "Environment availability conflict: planned occurrence falls outside allowed schedule windows."
-		occurrence := tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "blocked", "environment_unavailable", schedule.ConflictSummary, nil, now)
-		if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
-			return nil, err
-		}
-		schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
-		schedule.NextRequiredAction = "resolve_conflict"
-		schedule.LastError = schedule.ConflictSummary
-		schedule.UpdatedAt = now
-		if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+		if err := tr.blockScheduleOccurrenceLocked(schedule, plannedAt, "environment_unavailable", schedule.ConflictSummary, "resolve_conflict", schedule.ConflictSummary, now, nil); err != nil {
 			return nil, err
 		}
 		return nil, nil
 	}
 	schedule.ConflictSummary = tr.scenarioScheduleConflictSummaryLocked(schedule, scenario)
 	if strings.TrimSpace(schedule.ConflictSummary) != "" {
-		occurrence := tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "blocked", "schedule_conflict", schedule.ConflictSummary, nil, now)
-		if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
-			return nil, err
-		}
-		schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
-		schedule.NextRequiredAction = "resolve_conflict"
-		schedule.LastError = schedule.ConflictSummary
-		schedule.UpdatedAt = now
-		if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+		if err := tr.blockScheduleOccurrenceLocked(schedule, plannedAt, "schedule_conflict", schedule.ConflictSummary, "resolve_conflict", schedule.ConflictSummary, now, nil); err != nil {
 			return nil, err
 		}
 		return nil, nil
 	}
 	if schedule.NextRequiredAction == "approval_required" && schedule.PendingApprovalID != "" {
-		occurrence := tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "blocked", "approval_required", "Schedule requires approval before materialization.", nil, now)
-		occurrence.ApprovalID = schedule.PendingApprovalID
-		if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
-			return nil, err
-		}
-		schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
-		schedule.LastError = "schedule requires approval"
-		schedule.UpdatedAt = now
-		if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+		if err := tr.blockScheduleOccurrenceLocked(schedule, plannedAt, "approval_required", "Schedule requires approval before materialization.", "", "schedule requires approval", now, func(occurrence *storage.ScenarioScheduleOccurrence) {
+			occurrence.ApprovalID = schedule.PendingApprovalID
+		}); err != nil {
 			return nil, err
 		}
 		return nil, nil
@@ -569,6 +539,28 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 		return true, err
 	}
 	return true, nil
+}
+
+// blockScheduleOccurrenceLocked records a "blocked" occurrence for schedule at
+// plannedAt, persists it, then updates the schedule's LastOccurrence / LastError /
+// UpdatedAt (and NextRequiredAction when non-empty). The optional mutate hook lets
+// callers set extra occurrence fields (e.g. ApprovalID) before persisting. It
+// returns the first persistence error encountered.
+func (tr *TestRunner) blockScheduleOccurrenceLocked(schedule *storage.ScenarioSchedule, plannedAt time.Time, reasonCode, summary, nextRequiredAction, lastError string, now time.Time, mutate func(*storage.ScenarioScheduleOccurrence)) error {
+	occurrence := tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "blocked", reasonCode, summary, nil, now)
+	if mutate != nil {
+		mutate(occurrence)
+	}
+	if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
+		return err
+	}
+	schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
+	if nextRequiredAction != "" {
+		schedule.NextRequiredAction = nextRequiredAction
+	}
+	schedule.LastError = lastError
+	schedule.UpdatedAt = now
+	return tr.saveScenarioScheduleLocked(schedule)
 }
 
 func (tr *TestRunner) buildScenarioScheduleOccurrence(schedule *storage.ScenarioSchedule, plannedAt time.Time, status string, reasonCode string, conflictSummary string, materializedAt *time.Time, now time.Time) *storage.ScenarioScheduleOccurrence {

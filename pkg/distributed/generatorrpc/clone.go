@@ -1,0 +1,101 @@
+package generatorrpc
+
+import (
+	"encoding/json"
+	"time"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
+)
+
+func snapshotJSON(snapshot *protocol.ErrorSnapshot) string {
+	if snapshot == nil {
+		return ""
+	}
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func resultStartTimeUnixMs(startTime time.Time) int64 {
+	if startTime.IsZero() {
+		return 0
+	}
+	return startTime.UnixMilli()
+}
+
+func cloneErrorSnapshot(snapshot *protocol.ErrorSnapshot) *protocol.ErrorSnapshot {
+	if snapshot == nil {
+		return nil
+	}
+	cloned := *snapshot
+	cloned.RequestHeaders = cloneStringMap(snapshot.RequestHeaders)
+	cloned.ResponseHeaders = cloneStringMap(snapshot.ResponseHeaders)
+	cloned.ConsoleEntries = append([]protocol.ConsoleEntry(nil), snapshot.ConsoleEntries...)
+	cloned.NetworkEntries = append([]protocol.NetworkEntry(nil), snapshot.NetworkEntries...)
+	if snapshot.DOMSummary != nil {
+		domSummary := *snapshot.DOMSummary
+		domSummary.VisibleText = append([]string(nil), snapshot.DOMSummary.VisibleText...)
+		cloned.DOMSummary = &domSummary
+	}
+	return &cloned
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func mergeMetricsTelemetry(values map[string]MetricsTelemetry) *MetricsTelemetry {
+	if len(values) == 0 {
+		return nil
+	}
+	combined := &MetricsTelemetry{}
+	hasCollectedAt := false
+	hasPublishedAt := false
+	for _, value := range values {
+		combined.DroppedResults += value.DroppedResults
+		if value.CollectedAtUnixMs > 0 && (!hasCollectedAt || value.CollectedAtUnixMs < combined.CollectedAtUnixMs) {
+			combined.CollectedAtUnixMs = value.CollectedAtUnixMs
+			hasCollectedAt = true
+		}
+		if value.PublishedAtUnixMs > 0 && (!hasPublishedAt || value.PublishedAtUnixMs > combined.PublishedAtUnixMs) {
+			combined.PublishedAtUnixMs = value.PublishedAtUnixMs
+			hasPublishedAt = true
+		}
+		if value.SampleAgeMs > combined.SampleAgeMs {
+			combined.SampleAgeMs = value.SampleAgeMs
+		}
+	}
+	return combined
+}
+
+func cloneServerTelemetry(input *protocol.ServerTelemetry) *ServerTelemetry {
+	if input == nil {
+		return nil
+	}
+	return &ServerTelemetry{
+		ServerProcessingMs:     input.ServerProcessingMs,
+		TransferMs:             input.TransferMs,
+		RequestPayloadKB:       input.RequestPayloadKB,
+		ResponsePayloadKB:      input.ResponsePayloadKB,
+		ConnectionReused:       input.ConnectionReused,
+		RequestSizeClass:       input.RequestSizeClass,
+		ResponseSizeClass:      input.ResponseSizeClass,
+		FirstEventMs:           input.FirstEventMs,
+		EventCount:             int32(input.EventCount),
+		MessageLatencyMs:       input.MessageLatencyMs,
+		MessagesSent:           int32(input.MessagesSent),
+		MessagesReceived:       int32(input.MessagesReceived),
+		MessagesSentPerSec:     input.MessagesSentPerSec,
+		MessagesReceivedPerSec: input.MessagesReceivedPerSec,
+		ConsumerLagMs:          input.ConsumerLagMs,
+	}
+}

@@ -201,15 +201,6 @@ func sanitizeName(value string) string {
 	return value
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
-
 func firstPositive(values ...int) int {
 	for _, value := range values {
 		if value > 0 {

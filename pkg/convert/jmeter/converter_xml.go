@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 )
 
@@ -113,10 +114,10 @@ func applyHTTPDefaults(node *xmlNode, ctx *convertContext) {
 	if node.Attrs["guiclass"] != "HttpDefaultsGui" && prop(node, "HTTPSampler.domain") == "" {
 		return
 	}
-	ctx.defaultProtocol = firstNonEmpty(prop(node, "HTTPSampler.protocol"), ctx.defaultProtocol)
-	ctx.defaultDomain = firstNonEmpty(prop(node, "HTTPSampler.domain"), ctx.defaultDomain)
-	ctx.defaultPort = firstNonEmpty(prop(node, "HTTPSampler.port"), ctx.defaultPort)
-	ctx.defaultPath = firstNonEmpty(prop(node, "HTTPSampler.path"), ctx.defaultPath)
+	ctx.defaultProtocol = convertutil.FirstNonEmpty(prop(node, "HTTPSampler.protocol"), ctx.defaultProtocol)
+	ctx.defaultDomain = convertutil.FirstNonEmpty(prop(node, "HTTPSampler.domain"), ctx.defaultDomain)
+	ctx.defaultPort = convertutil.FirstNonEmpty(prop(node, "HTTPSampler.port"), ctx.defaultPort)
+	ctx.defaultPath = convertutil.FirstNonEmpty(prop(node, "HTTPSampler.path"), ctx.defaultPath)
 }
 
 func parseHeaders(node *xmlNode) map[string]string {

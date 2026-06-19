@@ -211,45 +211,15 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		names = append(names, name)
 		sort.Float64s(durations)
 		allDurations = append(allDurations, durations...)
-		metrics := live.Transactions[name]
-		metrics.AvgDNSMs /= float64(metrics.Count)
-		metrics.AvgConnectMs /= float64(metrics.Count)
-		metrics.AvgTLSMs /= float64(metrics.Count)
-		metrics.AvgTTFBMs /= float64(metrics.Count)
-		metrics.AvgMs /= float64(metrics.Count)
-		finalizeAPIServerTelemetrySummary(metrics.ServerTelemetry)
-		metrics.P50Ms = percentileValue(durations, 0.50)
-		metrics.P90Ms = percentileValue(durations, 0.90)
-		metrics.P95Ms = percentileValue(durations, 0.95)
-		metrics.P99Ms = percentileValue(durations, 0.99)
+		finalizeDistributedTxMetrics(live.Transactions[name], durations)
 	}
 	for dependencyTarget, durations := range durationsByDependencyTarget {
 		sort.Float64s(durations)
-		metrics := live.DependencyHealth[dependencyTarget]
-		metrics.AvgDNSMs /= float64(metrics.Count)
-		metrics.AvgConnectMs /= float64(metrics.Count)
-		metrics.AvgTLSMs /= float64(metrics.Count)
-		metrics.AvgTTFBMs /= float64(metrics.Count)
-		metrics.AvgMs /= float64(metrics.Count)
-		finalizeAPIServerTelemetrySummary(metrics.ServerTelemetry)
-		metrics.P50Ms = percentileValue(durations, 0.50)
-		metrics.P90Ms = percentileValue(durations, 0.90)
-		metrics.P95Ms = percentileValue(durations, 0.95)
-		metrics.P99Ms = percentileValue(durations, 0.99)
+		finalizeDistributedTxMetrics(live.DependencyHealth[dependencyTarget], durations)
 	}
 	for operation, durations := range durationsBySOAPOperation {
 		sort.Float64s(durations)
-		metrics := live.SOAPOperations[operation]
-		metrics.AvgDNSMs /= float64(metrics.Count)
-		metrics.AvgConnectMs /= float64(metrics.Count)
-		metrics.AvgTLSMs /= float64(metrics.Count)
-		metrics.AvgTTFBMs /= float64(metrics.Count)
-		metrics.AvgMs /= float64(metrics.Count)
-		finalizeAPIServerTelemetrySummary(metrics.ServerTelemetry)
-		metrics.P50Ms = percentileValue(durations, 0.50)
-		metrics.P90Ms = percentileValue(durations, 0.90)
-		metrics.P95Ms = percentileValue(durations, 0.95)
-		metrics.P99Ms = percentileValue(durations, 0.99)
+		finalizeDistributedTxMetrics(live.SOAPOperations[operation], durations)
 	}
 	for groupName, durations := range durationsByGroup {
 		sort.Float64s(durations)
@@ -261,10 +231,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		if attempts > 0 {
 			metrics.AvgResponseMs /= float64(attempts)
 		}
-		metrics.P50Ms = percentileValue(durations, 0.50)
-		metrics.P90Ms = percentileValue(durations, 0.90)
-		metrics.P95Ms = percentileValue(durations, 0.95)
-		metrics.P99Ms = percentileValue(durations, 0.99)
+		metrics.P50Ms, metrics.P90Ms, metrics.P95Ms, metrics.P99Ms = percentilesFromSorted(durations)
 		digest := engine.NewTDigest(200)
 		for _, duration := range durations {
 			digest.Add(duration * 1_000_000)
@@ -275,10 +242,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	sort.Strings(names)
 	if len(allDurations) > 0 {
 		sort.Float64s(allDurations)
-		live.P50Ms = percentileValue(allDurations, 0.50)
-		live.P90Ms = percentileValue(allDurations, 0.90)
-		live.P95Ms = percentileValue(allDurations, 0.95)
-		live.P99Ms = percentileValue(allDurations, 0.99)
+		live.P50Ms, live.P90Ms, live.P95Ms, live.P99Ms = percentilesFromSorted(allDurations)
 	}
 	if len(batch.Groups) > 0 {
 		for _, group := range batch.Groups {
@@ -530,4 +494,24 @@ func incrementTelemetryClassCount(values *map[string]int64, key string) {
 
 func percentileValue(sorted []float64, percentile float64) float64 {
 	return percentileFromSortedSamples(sorted, percentile)
+}
+
+// percentilesFromSorted returns the P50/P90/P95/P99 of a pre-sorted sample set,
+// keeping the percentile set defined in a single place.
+func percentilesFromSorted(sorted []float64) (p50, p90, p95, p99 float64) {
+	return percentileValue(sorted, 0.50), percentileValue(sorted, 0.90), percentileValue(sorted, 0.95), percentileValue(sorted, 0.99)
+}
+
+// finalizeDistributedTxMetrics averages the per-attempt accumulators by Count,
+// finalizes the server-telemetry summary, and assigns percentiles from the
+// already-sorted durations. Shared by the per-transaction, per-dependency-target
+// and per-SOAP-operation finalize loops.
+func finalizeDistributedTxMetrics(metrics *TxMetrics, sortedDurations []float64) {
+	metrics.AvgDNSMs /= float64(metrics.Count)
+	metrics.AvgConnectMs /= float64(metrics.Count)
+	metrics.AvgTLSMs /= float64(metrics.Count)
+	metrics.AvgTTFBMs /= float64(metrics.Count)
+	metrics.AvgMs /= float64(metrics.Count)
+	finalizeAPIServerTelemetrySummary(metrics.ServerTelemetry)
+	metrics.P50Ms, metrics.P90Ms, metrics.P95Ms, metrics.P99Ms = percentilesFromSorted(sortedDurations)
 }

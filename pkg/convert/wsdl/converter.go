@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -214,9 +215,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	sourceMappings := make([]sourceview.Mapping, 0)
 	addImportDiagnostics(doc, &diagnostics)
 	baseURL, warnings := deriveBaseURL(doc, req.Options.BaseURL, &diagnostics)
-	soapVersion := firstNonEmpty(req.Options.SOAPVersion, detectSOAPVersion(content), "1.1")
-	serviceName := firstNonEmpty(firstServiceName(doc), doc.Name, "Imported_WSDL_Service")
-	scriptName := sanitizeName(firstNonEmpty(req.Options.ScriptName, req.Name, serviceName))
+	soapVersion := convertutil.FirstNonEmpty(req.Options.SOAPVersion, detectSOAPVersion(content), "1.1")
+	serviceName := convertutil.FirstNonEmpty(firstServiceName(doc), doc.Name, "Imported_WSDL_Service")
+	scriptName := sanitizeName(convertutil.FirstNonEmpty(req.Options.ScriptName, req.Name, serviceName))
 	actions := collectOperations(doc, req.Options.Operations)
 	if len(actions) == 0 {
 		return nil, errors.New("WSDL document contains no supported operations")
@@ -442,7 +443,7 @@ func soapActionTarget(baseURL string) string {
 }
 
 func soapEnvelope(doc definitions, op operationInfo, diagnostics *diag.Collector) string {
-	namespace := firstNonEmpty(doc.TargetNamespace, "urn:service")
+	namespace := convertutil.FirstNonEmpty(doc.TargetNamespace, "urn:service")
 	bodyName, children, ok := soapBodySkeleton(doc, op, diagnostics)
 	if bodyName == "" {
 		bodyName = op.Name
@@ -474,10 +475,10 @@ func soapHeaderSkeleton(doc definitions, op operationInfo, diagnostics *diag.Col
 		part, ok := messagePartByName(doc, headerBinding.Message, headerBinding.Part)
 		if !ok {
 			diagnostics.Add(diag.Warning, "WSDL SOAP header", location,
-				"soap:header part "+firstNonEmpty(headerBinding.Part, headerBinding.Message)+" could not be resolved; add the header manually before replay")
+				"soap:header part "+convertutil.FirstNonEmpty(headerBinding.Part, headerBinding.Message)+" could not be resolved; add the header manually before replay")
 			continue
 		}
-		headerName := localName(firstNonEmpty(part.Element, part.Name))
+		headerName := localName(convertutil.FirstNonEmpty(part.Element, part.Name))
 		if headerName == "" {
 			continue
 		}
@@ -529,13 +530,13 @@ func soapBodySkeleton(doc definitions, op operationInfo, diagnostics *diag.Colle
 		diagnostics.Add(diag.Warning, "WSDL input message", location, "input message/part could not be resolved; generated a placeholder SOAP body")
 		return op.Name, "", false
 	}
-	bodyName := localName(firstNonEmpty(part.Element, part.Name, op.Name))
+	bodyName := localName(convertutil.FirstNonEmpty(part.Element, part.Name, op.Name))
 	if bodyName == "" {
 		bodyName = op.Name
 	}
 	element, found := findXSDElement(doc, bodyName)
 	if !found && part.Type != "" {
-		bodyName = localName(firstNonEmpty(part.Name, op.Name))
+		bodyName = localName(convertutil.FirstNonEmpty(part.Name, op.Name))
 		if fields, ok := xsdFieldsForType(doc, localName(part.Type)); ok {
 			return bodyName, renderXSDFieldSet(doc, fields, diagnostics, location, 3), true
 		}
@@ -571,7 +572,7 @@ func findXSDElement(doc definitions, name string) (xsdElement, bool) {
 	for _, t := range doc.Types {
 		for _, schema := range t.Schemas {
 			for _, element := range schema.Elements {
-				if localName(firstNonEmpty(element.Name, element.Ref)) == name {
+				if localName(convertutil.FirstNonEmpty(element.Name, element.Ref)) == name {
 					return element, true
 				}
 			}
@@ -622,7 +623,7 @@ func xsdFieldsForComplexType(ct xsdComplexType) (xsdFieldSet, bool) {
 		set.Elements = firstChoiceElement(ct.Choice.Elements)
 		set.Model = "choice"
 		if len(set.Elements) > 0 {
-			set.ChoiceName = localName(firstNonEmpty(set.Elements[0].Name, set.Elements[0].Ref))
+			set.ChoiceName = localName(convertutil.FirstNonEmpty(set.Elements[0].Name, set.Elements[0].Ref))
 		}
 	default:
 		return set, len(set.Attributes) > 0
@@ -632,7 +633,7 @@ func xsdFieldsForComplexType(ct xsdComplexType) (xsdFieldSet, bool) {
 
 func firstChoiceElement(elements []xsdElement) []xsdElement {
 	for _, element := range elements {
-		if strings.TrimSpace(firstNonEmpty(element.Name, element.Ref)) != "" {
+		if strings.TrimSpace(convertutil.FirstNonEmpty(element.Name, element.Ref)) != "" {
 			return []xsdElement{element}
 		}
 	}
@@ -649,7 +650,7 @@ func addXSDModelDiagnostics(set xsdFieldSet, diagnostics *diag.Collector, locati
 	case "all":
 		diagnostics.Add(diag.Info, "WSDL XSD all", location, "xsd:all elements were rendered in schema order; validate optional and unordered payload semantics before replay")
 	case "choice":
-		choice := firstNonEmpty(set.ChoiceName, "first available branch")
+		choice := convertutil.FirstNonEmpty(set.ChoiceName, "first available branch")
 		diagnostics.Add(diag.Warning, "WSDL XSD choice", location, "xsd:choice was represented with "+choice+"; choose the correct branch before replay")
 	}
 	if len(set.Attributes) > 0 {
@@ -660,7 +661,7 @@ func addXSDModelDiagnostics(set xsdFieldSet, diagnostics *diag.Collector, locati
 func xsdAttributeNames(attributes []xsdAttribute) string {
 	names := make([]string, 0, len(attributes))
 	for _, attribute := range attributes {
-		name := localName(firstNonEmpty(attribute.Name, attribute.Ref))
+		name := localName(convertutil.FirstNonEmpty(attribute.Name, attribute.Ref))
 		if name == "" {
 			continue
 		}
@@ -696,7 +697,7 @@ func renderXSDFields(doc definitions, fields []xsdElement, diagnostics *diag.Col
 	indent := strings.Repeat("  ", depth)
 	lines := make([]string, 0, len(fields))
 	for _, field := range fields {
-		name := localName(firstNonEmpty(field.Name, field.Ref))
+		name := localName(convertutil.FirstNonEmpty(field.Name, field.Ref))
 		if name == "" {
 			continue
 		}
@@ -751,12 +752,12 @@ func placeholderForXSDType(typeName string, fieldName string) string {
 
 func addImportDiagnostics(doc definitions, diagnostics *diag.Collector) {
 	for _, item := range doc.Imports {
-		diagnostics.Add(diag.Warning, "WSDL import", "definitions", "referenced WSDL import "+firstNonEmpty(item.Location, item.Namespace)+" was not followed; inline or import it separately")
+		diagnostics.Add(diag.Warning, "WSDL import", "definitions", "referenced WSDL import "+convertutil.FirstNonEmpty(item.Location, item.Namespace)+" was not followed; inline or import it separately")
 	}
 	for _, t := range doc.Types {
 		for _, schema := range t.Schemas {
 			for _, item := range schema.Imports {
-				diagnostics.Add(diag.Warning, "XSD import", "types/schema", "referenced XSD import "+firstNonEmpty(item.SchemaLocation, item.Namespace)+" was not followed; inline or import it separately")
+				diagnostics.Add(diag.Warning, "XSD import", "types/schema", "referenced XSD import "+convertutil.FirstNonEmpty(item.SchemaLocation, item.Namespace)+" was not followed; inline or import it separately")
 			}
 			for _, item := range schema.Includes {
 				diagnostics.Add(diag.Warning, "XSD include", "types/schema", "referenced XSD include "+item.SchemaLocation+" was not followed; inline or import it separately")
@@ -791,15 +792,6 @@ func sanitizeName(value string) string {
 		return "Imported_WSDL_Script"
 	}
 	return value
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }
 
 func firstPositive(values ...int) int {

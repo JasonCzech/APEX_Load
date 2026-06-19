@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"gopkg.in/yaml.v3"
@@ -78,8 +79,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if len(doc) == 0 {
 		return nil, fmt.Errorf("RAML document is empty")
 	}
-	baseURL := firstNonEmpty(req.Options.BaseURL, stringValue(doc["baseUri"]), "{{env.BASE_URL}}")
-	name := firstNonEmpty(req.Options.ScriptName, req.Name, stringValue(doc["title"]), "RAML Import")
+	baseURL := convertutil.FirstNonEmpty(req.Options.BaseURL, stringValue(doc["baseUri"]), "{{env.BASE_URL}}")
+	name := convertutil.FirstNonEmpty(req.Options.ScriptName, req.Name, stringValue(doc["title"]), "RAML Import")
 	result := &ConvertResult{
 		Stats: ConvertStats{Format: "raml"},
 		Summary: ReviewSummary{
@@ -158,7 +159,7 @@ func walkResource(resourcePath string, node map[string]any, result *ConvertResul
 		child, _ := node[key].(map[string]any)
 		result.Stats.TotalMethods++
 		action := dsl.Action{
-			Name:   firstNonEmpty(stringValue(child["displayName"]), stringValue(child["description"]), strings.ToUpper(lower)+" "+resourcePath),
+			Name:   convertutil.FirstNonEmpty(stringValue(child["displayName"]), stringValue(child["description"]), strings.ToUpper(lower)+" "+resourcePath),
 			Type:   strings.ToUpper(lower),
 			Method: strings.ToUpper(lower),
 			Target: resourcePath,
@@ -439,15 +440,6 @@ func bodyExampleValue(value any) (string, bool) {
 	default:
 		return jsonBody(typed), true
 	}
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }
 
 func jsonBody(value any) string {

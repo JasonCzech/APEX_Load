@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -64,7 +65,7 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 	}
 	if fn.URL == "" && fn.Name == "web_submit_form" {
 		action.Metadata["inferred_url_from"] = "source_form_context"
-		action.Metadata["inferred_url_source"] = firstNonEmpty(firstNonEmptyArg(fn, "Referer"), previousRequestURL)
+		action.Metadata["inferred_url_source"] = convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "Referer"), previousRequestURL)
 	}
 
 	target := makeRelative(rawURL, baseURL)
@@ -103,7 +104,7 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 			action.Body = maskedBodySecretReference(secretName)
 		}
 		action.Metadata["source_secret_ref"] = secretName
-		action.Metadata["source_secret_function"] = firstNonEmpty(fn.Args[maskedBodyFuncArgKey], "lr_unmask")
+		action.Metadata["source_secret_function"] = convertutil.FirstNonEmpty(fn.Args[maskedBodyFuncArgKey], "lr_unmask")
 		action.Metadata["source_secret_hash"] = fn.Args[maskedBodyHashArgKey]
 		action.Metadata["body_gated_by_secret"] = true
 	}
@@ -279,7 +280,7 @@ func inferSourceSubmitFormURL(fn ParsedFunction, previousRequestURL string) stri
 	if isAbsoluteHTTPURL(candidate) {
 		return candidate
 	}
-	base := firstNonEmpty(firstNonEmptyArg(fn, "Referer"), previousRequestURL)
+	base := convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "Referer"), previousRequestURL)
 	if base == "" {
 		return candidate
 	}

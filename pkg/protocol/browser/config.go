@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func (b *Browser) applyConfig(config map[string]any) error {
@@ -95,16 +97,16 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	if networkPreset, ok := config["web_network_simulation_preset"].(string); ok {
 		b.networkPreset = strings.ToLower(strings.TrimSpace(networkPreset))
 	}
-	if networkBandwidthKB := configInt(config, "web_network_simulation_bandwidth_kbps"); networkBandwidthKB > 0 {
+	if networkBandwidthKB := protocol.ConfigInt(config, "web_network_simulation_bandwidth_kbps"); networkBandwidthKB > 0 {
 		b.networkBandwidthKB = networkBandwidthKB
 	}
-	if networkLatencyMS := configInt(config, "web_network_simulation_latency_ms"); networkLatencyMS > 0 {
+	if networkLatencyMS := protocol.ConfigInt(config, "web_network_simulation_latency_ms"); networkLatencyMS > 0 {
 		b.networkLatencyMS = networkLatencyMS
 	}
 	if downloadResources, ok := config["browser_download_resources"].(string); ok && strings.TrimSpace(downloadResources) != "" {
 		b.downloadResources = strings.ToLower(strings.TrimSpace(downloadResources))
 	}
-	if slowMoMs := configInt(config, "browser_slow_mo_ms"); slowMoMs > 0 {
+	if slowMoMs := protocol.ConfigInt(config, "browser_slow_mo_ms"); slowMoMs > 0 {
 		b.slowMo = time.Duration(slowMoMs) * time.Millisecond
 	}
 	if userAgent, ok := config["browser_user_agent"].(string); ok {
@@ -135,7 +137,7 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	if harCapture, ok := config["browser_har_capture_policy"].(string); ok {
 		b.harCapturePolicy = normalizeHARCapturePolicy(harCapture)
 	}
-	if slaMs := configInt(config, "browser_har_sla_breach_ms"); slaMs > 0 {
+	if slaMs := protocol.ConfigInt(config, "browser_har_sla_breach_ms"); slaMs > 0 {
 		b.harSLABreachThreshold = time.Duration(slaMs) * time.Millisecond
 	}
 	if harDir, ok := config["browser_har_dir"].(string); ok && strings.TrimSpace(harDir) != "" {
@@ -144,10 +146,10 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	if captureScreenshots, ok := config["browser_capture_screenshots"].(string); ok {
 		b.captureScreenshots = captureScreenshots
 	}
-	if viewportW := configInt(config, "browser_viewport_width"); viewportW > 0 {
+	if viewportW := protocol.ConfigInt(config, "browser_viewport_width"); viewportW > 0 {
 		b.viewportW = viewportW
 	}
-	if viewportH := configInt(config, "browser_viewport_height"); viewportH > 0 {
+	if viewportH := protocol.ConfigInt(config, "browser_viewport_height"); viewportH > 0 {
 		b.viewportH = viewportH
 	}
 	if deviceScaleFactor, ok := config["browser_device_scale_factor"].(float64); ok && deviceScaleFactor > 0 {

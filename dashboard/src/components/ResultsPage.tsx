@@ -7,6 +7,7 @@ import { Application, BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, Browse
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
+import { SortIndicator as SortIcon } from './SortIndicator'
 import {
   BrowserBreakdown,
   BrowserBreakdownDatum,
@@ -348,11 +349,6 @@ function comparisonTableDeltaClass(delta: number | undefined, metric: Comparison
   if (delta === undefined || delta === 0) return 'cell-muted'
   if (metric === 'tps') return delta > 0 ? 'text-success' : 'text-danger'
   return delta > 0 ? 'text-danger' : 'text-success'
-}
-
-function SortIcon({ active, direction }: { active: boolean; direction: 'asc' | 'desc' }) {
-  if (!active) return <span className="sort-icon">↕</span>
-  return <span className="sort-icon active">{direction === 'asc' ? '↑' : '↓'}</span>
 }
 
 function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onNavigate, activeApplication, activeRelease }: Props) {

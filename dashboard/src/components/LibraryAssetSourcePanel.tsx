@@ -7,6 +7,7 @@ import {
   shortLibraryHash,
 } from './libraryFederationUtils'
 import LibraryFederationControls from './LibraryFederationControls'
+import { SortIndicator } from './SortIndicator'
 import { useLibraryFederation, type LibraryAssetSourceKind } from './useLibraryFederation'
 
 type LibraryAssetSourcePanelProps = {
@@ -97,14 +98,6 @@ function detailRows(row: LibraryAssetRow) {
     { label: 'Remote ID', value: item.remote_item_id || (source === 'Remote' ? item.id : 'n/a') },
     { label: 'Dependencies', value: dependencyLabel(item) },
   ]
-}
-
-function SortIndicator({ active, direction }: { active: boolean, direction: 'asc' | 'desc' }) {
-  return (
-    <span className={`sort-icon ${active ? 'active' : ''}`}>
-      {active ? (direction === 'asc' ? '↑' : '↓') : '↕'}
-    </span>
-  )
 }
 
 function sortValue(row: LibraryAssetRow, field: LibraryAssetSortField): string | number {

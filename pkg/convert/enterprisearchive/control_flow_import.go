@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -173,7 +174,7 @@ func translateSourceLoopHeader(header string) (sourceLoopTranslation, bool) {
 		return sourceLoopTranslation{}, false
 	}
 	loopVar, start, condVar, op, bound := m[1], m[2], m[3], m[4], strings.TrimSpace(m[5])
-	postVar := firstNonEmpty(m[6], m[7])
+	postVar := convertutil.FirstNonEmpty(m[6], m[7])
 	if loopVar != condVar || loopVar != postVar {
 		return sourceLoopTranslation{}, false
 	}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -98,7 +99,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if content == "" {
 		return nil, fmt.Errorf("content is required")
 	}
-	name := firstNonEmpty(req.Options.ScriptName, req.Name, "Converted k6 HTTP Script")
+	name := convertutil.FirstNonEmpty(req.Options.ScriptName, req.Name, "Converted k6 HTTP Script")
 	result := &ConvertResult{
 		Script: &dsl.Script{
 			Name:          sanitizeName(name),
@@ -109,7 +110,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			GeneratedFrom: "k6",
 			CreatedAt:     time.Now(),
 			Config: dsl.ScriptConfig{
-				BaseURL: firstNonEmpty(strings.TrimSpace(req.Options.BaseURL), detectBaseURL(content)),
+				BaseURL: convertutil.FirstNonEmpty(strings.TrimSpace(req.Options.BaseURL), detectBaseURL(content)),
 				ThinkTime: dsl.ThinkTimeConfig{
 					Type:   "fixed",
 					MeanMs: 1000,
@@ -121,7 +122,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			},
 			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
 				Source:           "k6",
-				SourceScriptName: firstNonEmpty(req.Name, "script.js"),
+				SourceScriptName: convertutil.FirstNonEmpty(req.Name, "script.js"),
 				Preserved:        map[string]any{},
 			}},
 		},
@@ -157,7 +158,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		unsorted = append(unsorted, sortedAction{
 			Action: action,
 			Mapping: sourceview.Mapping{
-				SourceFile:  firstNonEmpty(reqFileName(result), "script.js"),
+				SourceFile:  convertutil.FirstNonEmpty(reqFileName(result), "script.js"),
 				StartLine:   req.StartLine,
 				EndLine:     req.EndLine,
 				Function:    "http." + strings.ToLower(req.Method),
@@ -172,7 +173,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		result.Stats.ConvertedActions++
 	}
 
-	diagnoseUnsupported(content, &diagnostics, &result.Stats, &unsorted, firstNonEmpty(reqFileName(result), "script.js"))
+	diagnoseUnsupported(content, &diagnostics, &result.Stats, &unsorted, convertutil.FirstNonEmpty(reqFileName(result), "script.js"))
 
 	for i := 0; i < len(unsorted); i++ {
 		for j := i + 1; j < len(unsorted); j++ {
@@ -238,7 +239,7 @@ func Export(req ExportRequest) (*ExportResult, error) {
 			result.Unsupported = append(result.Unsupported, fmt.Sprintf("%s uses unsupported action type %q", action.Name, action.Type))
 			continue
 		}
-		method := strings.ToLower(firstNonEmpty(action.Method, "GET"))
+		method := strings.ToLower(convertutil.FirstNonEmpty(action.Method, "GET"))
 		if method != "get" && method != "post" && method != "put" && method != "delete" {
 			result.Unsupported = append(result.Unsupported, fmt.Sprintf("%s uses unsupported HTTP method %q", action.Name, action.Method))
 			continue
@@ -684,7 +685,7 @@ func reqFileName(result *ConvertResult) string {
 	if result == nil || result.Script == nil || result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
 		return "script.js"
 	}
-	return firstNonEmpty(result.Script.Metadata.Import.SourceScriptName, "script.js")
+	return convertutil.FirstNonEmpty(result.Script.Metadata.Import.SourceScriptName, "script.js")
 }
 
 func sanitizeName(name string) string {
@@ -695,14 +696,4 @@ func sanitizeName(name string) string {
 	re := regexp.MustCompile(`[^A-Za-z0-9_.-]+`)
 	name = re.ReplaceAllString(name, "_")
 	return strings.Trim(name, "_")
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }

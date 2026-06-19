@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -192,7 +193,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	variableNames := map[string]struct{}{}
 	csvNames := map[string]struct{}{}
 	var diagnostics diag.Collector
-	sourceFileName := firstNonEmpty(opts.FileName, "import.jmx")
+	sourceFileName := convertutil.FirstNonEmpty(opts.FileName, "import.jmx")
 	sourceMappings := make([]sourceview.Mapping, 0)
 
 	threadGroups := findTreeNodes(trees, "ThreadGroup")
@@ -274,7 +275,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	result.Summary.VariablesDiscovered = sortedKeys(variableNames)
 	result.Summary.CSVSourcesDiscovered = sortedKeys(csvNames)
 	if gap := result.Stats.TotalSamplers - result.Stats.ConvertedActions - result.Stats.SkippedSamplers; gap > 0 {
-		diagnostics.Add(diag.Warning, "JMeter completeness guard", firstNonEmpty(opts.FileName, "JMX plan"), fmt.Sprintf("%d sampler(s) were detected but not converted or explicitly skipped", gap))
+		diagnostics.Add(diag.Warning, "JMeter completeness guard", convertutil.FirstNonEmpty(opts.FileName, "JMX plan"), fmt.Sprintf("%d sampler(s) were detected but not converted or explicitly skipped", gap))
 	}
 	result.Unsupported = diagnostics.Items()
 	for _, script := range result.Scripts {
@@ -404,7 +405,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				steps := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
 				actionIndex := len(script.Actions)
 				script.Actions = append(script.Actions, dsl.Action{
-					Name: strings.TrimSpace(firstNonEmpty(attrOr(child.Element, "testname", ""), "Loop")),
+					Name: strings.TrimSpace(convertutil.FirstNonEmpty(attrOr(child.Element, "testname", ""), "Loop")),
 					Type: "control_loop",
 					Control: &dsl.ControlFlow{
 						Count: val,
@@ -436,7 +437,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				steps := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
 				actionIndex := len(script.Actions)
 				script.Actions = append(script.Actions, dsl.Action{
-					Name:    strings.TrimSpace(firstNonEmpty(attrOr(child.Element, "testname", ""), "If")),
+					Name:    strings.TrimSpace(convertutil.FirstNonEmpty(attrOr(child.Element, "testname", ""), "If")),
 					Type:    "control_if",
 					Control: &dsl.ControlFlow{Condition: &cond, Steps: steps},
 					Metadata: map[string]any{
@@ -461,7 +462,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				steps := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
 				actionIndex := len(script.Actions)
 				script.Actions = append(script.Actions, dsl.Action{
-					Name: strings.TrimSpace(firstNonEmpty(attrOr(child.Element, "testname", ""), "While")),
+					Name: strings.TrimSpace(convertutil.FirstNonEmpty(attrOr(child.Element, "testname", ""), "While")),
 					Type: "control_loop",
 					Control: &dsl.ControlFlow{
 						Condition: &cond,

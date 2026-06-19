@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 )
 
 type ImportMode string
@@ -432,7 +434,7 @@ func NewReviewArtifact(detected DetectedProtocol, files map[string]string, actio
 		sourceFiles = append(sourceFiles, filepath.Base(name))
 	}
 	sort.Strings(sourceFiles)
-	title := firstNonEmpty(detected.DisplayName, detected.CanonicalSourceProtocol, "Enterprise script archive import") + " review artifact"
+	title := convertutil.FirstNonEmpty(detected.DisplayName, detected.CanonicalSourceProtocol, "Enterprise script archive import") + " review artifact"
 	status := string(detected.ImportMode)
 	if status == "" {
 		status = string(ImportModeReviewOnly)

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/selector"
@@ -90,7 +91,7 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 	result := &ConvertResult{Stats: ConvertStats{Format: "chrome_devtools_recorder", TotalSteps: len(recording.Steps)}}
 	unsupported := &diag.Collector{}
 
-	name := firstNonEmpty(opts.ScriptName, recording.Title, "Imported Chrome Recording")
+	name := convertutil.FirstNonEmpty(opts.ScriptName, recording.Title, "Imported Chrome Recording")
 	headless := true
 	script := &dsl.Script{
 		Name:        name,
@@ -384,13 +385,4 @@ func relativeTo(baseURL string, raw string) string {
 		return "/"
 	}
 	return raw
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
 }

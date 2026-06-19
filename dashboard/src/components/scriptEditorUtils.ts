@@ -1,4 +1,5 @@
 import { jsonLanguage } from '@codemirror/lang-json'
+import { downloadTextFile as downloadTextFileBlob } from '../utils/fileUtils'
 import {
   type BrowserReplayStartRequest,
   BrowserReplayConsoleEntry,
@@ -597,15 +598,7 @@ export function dedupeHeaders(columns: string[]): string[] {
 }
 
 export function downloadTextFile(content: string, filename: string) {
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
+  downloadTextFileBlob(content, filename)
 }
 
 export function cloneDataSource(source: DataSourceConfig): DataSourceConfig {

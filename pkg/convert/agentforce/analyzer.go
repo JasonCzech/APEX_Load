@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -80,7 +81,7 @@ func Analyze(script *dsl.Script) *Review {
 		review.Lifecycle = append(review.Lifecycle, LifecycleStep{
 			Step:       step,
 			ActionName: action.Name,
-			Method:     strings.ToUpper(firstNonEmpty(action.Method, action.Type)),
+			Method:     strings.ToUpper(convertutil.FirstNonEmpty(action.Method, action.Type)),
 			Path:       effectivePath(action.Target, basePath),
 		})
 	}
@@ -133,7 +134,7 @@ func classifyAgentforceStep(action dsl.Action, basePath string) string {
 		return "token"
 	}
 	path := strings.ToLower(effectivePath(action.Target, basePath))
-	method := strings.ToUpper(firstNonEmpty(action.Method, action.Type))
+	method := strings.ToUpper(convertutil.FirstNonEmpty(action.Method, action.Type))
 	if strings.Contains(path, "/services/oauth2/token") {
 		return "token"
 	}
@@ -240,13 +241,4 @@ func effectivePath(target, basePath string) string {
 		return targetPath
 	}
 	return strings.TrimRight(basePath, "/") + "/" + strings.TrimLeft(targetPath, "/")
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }

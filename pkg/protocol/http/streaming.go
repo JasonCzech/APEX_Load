@@ -28,13 +28,13 @@ type streamingProfile struct {
 func parseStreamingProfile(config map[string]any) *streamingProfile {
 	mode, _ := config["web_streaming_mode"].(string)
 	bandwidthEstimation, _ := config["web_streaming_bandwidth_estimation"].(string)
-	bufferSizeSeconds := configInt(config, "web_streaming_buffer_size_seconds")
-	fixedBitrateKbps := configInt(config, "web_streaming_fixed_bitrate_kbps")
+	bufferSizeSeconds := protocol.ConfigInt(config, "web_streaming_buffer_size_seconds")
+	fixedBitrateKbps := protocol.ConfigInt(config, "web_streaming_fixed_bitrate_kbps")
 	_, networkBandwidthKbps := resolveNetworkProfile(
 		stringConfig(config, "web_network_simulation_mode"),
 		stringConfig(config, "web_network_simulation_preset"),
-		configInt(config, "web_network_simulation_latency_ms"),
-		configInt(config, "web_network_simulation_bandwidth_kbps"),
+		protocol.ConfigInt(config, "web_network_simulation_latency_ms"),
+		protocol.ConfigInt(config, "web_network_simulation_bandwidth_kbps"),
 	)
 
 	profile := streamingProfile{

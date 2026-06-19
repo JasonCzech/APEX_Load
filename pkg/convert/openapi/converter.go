@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -203,7 +204,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	sourceMappings := make([]sourceview.Mapping, 0)
 	res := resolver{doc: doc, diagnostics: &diagnostics}
 	baseURL, warnings := deriveBaseURL(doc, req.Options.BaseURL)
-	scriptName := firstNonEmpty(req.Options.ScriptName, req.Name, doc.Info.Title, "Imported_OpenAPI_Script")
+	scriptName := convertutil.FirstNonEmpty(req.Options.ScriptName, req.Name, doc.Info.Title, "Imported_OpenAPI_Script")
 	result := &ConvertResult{
 		Script: &dsl.Script{
 			Name:          sanitizeName(scriptName),
@@ -230,7 +231,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		Warnings: warnings,
 		Stats: ConvertStats{
 			Format:         "openapi",
-			OpenAPIVersion: firstNonEmpty(doc.OpenAPI, doc.Swagger),
+			OpenAPIVersion: convertutil.FirstNonEmpty(doc.OpenAPI, doc.Swagger),
 			TotalPaths:     len(doc.Paths),
 		},
 		Summary: ReviewSummary{
@@ -259,7 +260,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				sourceMappings = append(sourceMappings, openAPISourceMapping(sourceFileName, content, path, candidate.method, "", skipped, "operation", "review_only", "OpenAPI operation was filtered or used an unsupported HTTP method."))
 				continue
 			}
-			action, bodyColumns, assertionAdded := buildAction(path, candidate.method, item.Parameters, candidate.op, boolOption(req.Options.IncludeAssertions, true), res)
+			action, bodyColumns, assertionAdded := buildAction(path, candidate.method, item.Parameters, candidate.op, convertutil.BoolOption(req.Options.IncludeAssertions, true), res)
 			actionIndex := len(result.Script.Actions)
 			result.Script.Actions = append(result.Script.Actions, action)
 			sourceMappings = append(sourceMappings, openAPISourceMapping(sourceFileName, content, path, candidate.method, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "OpenAPI operation was converted into a generated APEX Load action."))
@@ -642,7 +643,7 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 		headers["Content-Type"] = contentType
 	}
 	action := dsl.Action{
-		Name:    sanitizeName(firstNonEmpty(op.OperationID, op.Summary, strings.ToUpper(method)+"_"+path)),
+		Name:    sanitizeName(convertutil.FirstNonEmpty(op.OperationID, op.Summary, strings.ToUpper(method)+"_"+path)),
 		Type:    "request",
 		Method:  strings.ToUpper(method),
 		Target:  target,
@@ -1002,7 +1003,7 @@ func parameterExplode(param parameter) bool {
 	if param.Explode != nil {
 		return *param.Explode
 	}
-	return strings.EqualFold(firstNonEmpty(param.Style, "form"), "form")
+	return strings.EqualFold(convertutil.FirstNonEmpty(param.Style, "form"), "form")
 }
 
 func escapeQueryKey(key string) string {
@@ -1054,7 +1055,7 @@ func swagger2RequestBody(params []parameter, op *operation, res resolver, locati
 		if len(bodyParams) > 1 {
 			res.add(diag.Warning, "Swagger 2 body parameters", location, "multiple body parameters were reduced to the first schema")
 		}
-		contentType := firstNonEmpty(firstContentType(op.Consumes), firstContentType(res.doc.Consumes), "application/json")
+		contentType := convertutil.FirstNonEmpty(firstContentType(op.Consumes), firstContentType(res.doc.Consumes), "application/json")
 		return &requestBody{Content: map[string]mediaType{
 			contentType: {Schema: parameterSchema(bodyParams[0]), Example: bodyParams[0].Example},
 		}}
@@ -1062,7 +1063,7 @@ func swagger2RequestBody(params []parameter, op *operation, res resolver, locati
 	if len(formParams) == 0 {
 		return nil
 	}
-	contentType := firstNonEmpty(firstContentType(op.Consumes), firstContentType(res.doc.Consumes), "application/x-www-form-urlencoded")
+	contentType := convertutil.FirstNonEmpty(firstContentType(op.Consumes), firstContentType(res.doc.Consumes), "application/x-www-form-urlencoded")
 	if contentType == "" || strings.Contains(strings.ToLower(contentType), "json") {
 		contentType = "application/x-www-form-urlencoded"
 	}
@@ -1237,7 +1238,7 @@ func serverURLs(doc *document) []string {
 		}
 	}
 	if doc.Host != "" {
-		values = append(values, strings.TrimRight(firstNonEmpty(firstScheme(doc.Schemes), "https")+"://"+doc.Host+"/"+strings.Trim(doc.BasePath, "/"), "/"))
+		values = append(values, strings.TrimRight(convertutil.FirstNonEmpty(firstScheme(doc.Schemes), "https")+"://"+doc.Host+"/"+strings.Trim(doc.BasePath, "/"), "/"))
 	}
 	return values
 }
@@ -1344,22 +1345,6 @@ func sanitizeName(value string) string {
 		return "Imported_OpenAPI_Script"
 	}
 	return value
-}
-
-func boolOption(value *bool, fallback bool) bool {
-	if value == nil {
-		return fallback
-	}
-	return *value
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }
 
 func firstPositive(values ...int) int {

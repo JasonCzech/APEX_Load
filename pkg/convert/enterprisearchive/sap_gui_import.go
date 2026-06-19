@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -21,7 +22,7 @@ func ConvertSAPGUI(actions []*ParsedAction, opts ConvertOptions, detected Detect
 		DetectedProtocol: &detected,
 		Warnings:         append([]string(nil), detected.Warnings...),
 		Script: &dsl.Script{
-			Name:          firstNonEmpty(opts.ScriptName, "Converted_SAP_GUI_Script"),
+			Name:          convertutil.FirstNonEmpty(opts.ScriptName, "Converted_SAP_GUI_Script"),
 			Version:       "1.0.0",
 			Protocol:      "sap_gui",
 			GeneratedBy:   "apexload-enterprise-script-archive-sapgui-importer",
@@ -104,11 +105,11 @@ func convertSAPGUIFunction(result *ConvertResult, state *sapGUIImportState, fn P
 	case "sapgui_open_connection", "sapgui_open_connection_ex":
 		action.Type = "sapgui_connect"
 		action.Target = sapGUIArg(fn, 0, "ConnectionString", "Connection")
-		result.Script.Config.SAPGUI.ConnectionString = firstNonEmpty(result.Script.Config.SAPGUI.ConnectionString, action.Target)
+		result.Script.Config.SAPGUI.ConnectionString = convertutil.FirstNonEmpty(result.Script.Config.SAPGUI.ConnectionString, action.Target)
 	case "sapgui_logon":
 		action.Type = "sapgui_logon"
 		if connection := sapGUILogonConnection(fn); connection != "" {
-			result.Script.Config.SAPGUI.ConnectionString = firstNonEmpty(result.Script.Config.SAPGUI.ConnectionString, connection)
+			result.Script.Config.SAPGUI.ConnectionString = convertutil.FirstNonEmpty(result.Script.Config.SAPGUI.ConnectionString, connection)
 			action.Params["connection_string"] = connection
 		}
 		action.Params["client"] = sapGUILogonClient(fn)
@@ -148,7 +149,7 @@ func convertSAPGUIFunction(result *ConvertResult, state *sapGUIImportState, fn P
 		action.Params["control"] = "checkbox"
 	case "sapgui_window_maximize", "sapgui_window_restore", "sapgui_window_resize", "sapgui_window_close", "sapgui_select_window":
 		action.Type = "sapgui_window"
-		action.Target = firstNonEmpty(sapGUIArg(fn, 0, "Id", "ID", "Target"), "wnd[0]")
+		action.Target = convertutil.FirstNonEmpty(sapGUIArg(fn, 0, "Id", "ID", "Target"), "wnd[0]")
 		action.Params["method"] = sapGUIWindowMethod(name)
 	case "sapgui_sync", "sapgui_wait_for_window", "sapgui_wait_for_status_bar", "sapgui_wait_for_session_idle", "sapgui_wait_for_screen_change":
 		action.Type = "sapgui_sync"
@@ -159,7 +160,7 @@ func convertSAPGUIFunction(result *ConvertResult, state *sapGUIImportState, fn P
 		}
 	case "sapgui_status_bar_get_text", "sapgui_status_bar_check_text", "sapgui_verify_text", "sapgui_verify_property":
 		action.Type = "sapgui_verify"
-		action.Target = firstNonEmpty(sapGUIArg(fn, 0, "Id", "ID", "Target"), "wnd[0]/sbar")
+		action.Target = convertutil.FirstNonEmpty(sapGUIArg(fn, 0, "Id", "ID", "Target"), "wnd[0]/sbar")
 		action.Value = sapGUIArg(fn, 1, "Value", "Text", "Expected")
 		action.Params["method"] = "contains"
 	default:
@@ -192,7 +193,7 @@ func convertSAPGUIFunction(result *ConvertResult, state *sapGUIImportState, fn P
 
 func sapGUIBaseAction(fn ParsedFunction, state *sapGUIImportState) dsl.Action {
 	action := dsl.Action{
-		Name:   sanitizeName(firstNonEmpty(fn.StepName, firstNonEmptyArg(fn, "Name"), fn.Name)),
+		Name:   sanitizeName(convertutil.FirstNonEmpty(fn.StepName, firstNonEmptyArg(fn, "Name"), fn.Name)),
 		Params: map[string]any{},
 		Metadata: map[string]any{
 			"source_function": fn.Name,
@@ -217,7 +218,7 @@ func sapGUIFallbackAction(fn ParsedFunction) (dsl.Action, SourceFunctionSupportM
 		return action, def.SupportMode
 	}
 	action := dsl.Action{
-		Name:   sanitizeName(firstNonEmpty(fn.StepName, fn.Name, "sapgui_call")),
+		Name:   sanitizeName(convertutil.FirstNonEmpty(fn.StepName, fn.Name, "sapgui_call")),
 		Type:   "custom_call",
 		Params: map[string]any{"function": fn.Name, "args": rawArgsAsAny(fn.RawArgs), "support_mode": string(SourceFunctionSupportCustomReview)},
 		Metadata: map[string]any{

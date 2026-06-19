@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -253,7 +254,7 @@ func flattenRequestActions(script *dsl.Script) []actionRef {
 			FlowKind:    classifySalesforceFlow(evidence, descriptor),
 			Descriptor:  descriptor,
 			Object:      classifySalesforceObject(evidence, descriptor),
-			Transaction: firstNonEmpty(metadataString(action.Metadata, "source_transaction"), metadataString(action.Metadata, "source_transaction"), inheritedTransaction),
+			Transaction: convertutil.FirstNonEmpty(metadataString(action.Metadata, "source_transaction"), metadataString(action.Metadata, "source_transaction"), inheritedTransaction),
 		})
 		seq++
 	}
@@ -261,7 +262,7 @@ func flattenRequestActions(script *dsl.Script) []actionRef {
 		for index := range actions {
 			action := &actions[index]
 			if strings.EqualFold(action.Type, "http_sequence") {
-				transaction := firstNonEmpty(metadataString(action.Metadata, "source_transaction"), metadataString(action.Metadata, "source_transaction"))
+				transaction := convertutil.FirstNonEmpty(metadataString(action.Metadata, "source_transaction"), metadataString(action.Metadata, "source_transaction"))
 				children := salesforceSequenceChildren(*action)
 				for childIndex := range children {
 					child := children[childIndex]
@@ -672,7 +673,7 @@ func endpointObservations(refs []actionRef, kind string) []EndpointObservation {
 		current := counts[key]
 		current.Method = ref.Method
 		current.Host = parsed.Host
-		current.Path = firstNonEmpty(parsed.EscapedPath(), "/")
+		current.Path = convertutil.FirstNonEmpty(parsed.EscapedPath(), "/")
 		current.Count++
 		counts[key] = current
 	}
@@ -1213,15 +1214,6 @@ func coveragePct(matches, total int) float64 {
 		return 0
 	}
 	return float64(matches) * 100 / float64(total)
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }
 
 func containsAny(value string, needles ...string) bool {

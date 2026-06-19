@@ -4399,4 +4399,3 @@ func TestConvertUniquifiesRepeatedTransactionWrappers(t *testing.T) {
 	}
 	assertTopLevelNamesFoldedUnique(t, result.Script)
 }
-

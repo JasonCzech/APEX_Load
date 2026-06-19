@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -19,7 +20,7 @@ func parseWebRequest(blockName string, objectLiteral string, ctx convertContext)
 	if rawURL == "" {
 		return dsl.Action{}, false
 	}
-	method := strings.ToUpper(firstNonEmpty(objectStringField(objectLiteral, "method", ctx), "GET"))
+	method := strings.ToUpper(convertutil.FirstNonEmpty(objectStringField(objectLiteral, "method", ctx), "GET"))
 	body := objectStringField(objectLiteral, "body", ctx)
 	if body == "" {
 		body = objectStringField(objectLiteral, "bodyText", ctx)

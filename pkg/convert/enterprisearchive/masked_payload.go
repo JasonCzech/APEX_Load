@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 )
 
 const (
@@ -47,7 +49,7 @@ func findLRUnmaskPayload(fn *ParsedFunction) (secretName string, hash string, ok
 		if !strings.EqualFold(strings.TrimSpace(arg.NestedCall), "lr_unmask") && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(arg.Value)), "lr_unmask") {
 			continue
 		}
-		if payload, found := extractLRUnmaskPayload(firstNonEmpty(arg.Value, arg.Raw)); found {
+		if payload, found := extractLRUnmaskPayload(convertutil.FirstNonEmpty(arg.Value, arg.Raw)); found {
 			secretName, hash = secretNameForLRUnmaskPayload(payload)
 			return secretName, hash, true
 		}

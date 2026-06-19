@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -193,7 +194,7 @@ func buildScenarioDraft(threadGroups []*treeNode, scripts []*dsl.Script) *Scenar
 	}
 	for i, script := range scripts {
 		tg := threadGroups[min(i, len(threadGroups)-1)]
-		vusers := parseInt(firstNonEmpty(prop(tg.Element, "ThreadGroup.num_threads"), "1"))
+		vusers := parseInt(convertutil.FirstNonEmpty(prop(tg.Element, "ThreadGroup.num_threads"), "1"))
 		rampSeconds := parseInt(prop(tg.Element, "ThreadGroup.ramp_time"))
 		durationSeconds := parseInt(prop(tg.Element, "ThreadGroup.duration"))
 		if durationSeconds > 0 {

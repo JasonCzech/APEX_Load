@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -108,11 +109,11 @@ func parseExtractorSource(scope string) string {
 }
 
 func parseJSONExtractors(node *xmlNode) []dsl.Extractor {
-	names := splitDelimitedValues(firstNonEmpty(
+	names := splitDelimitedValues(convertutil.FirstNonEmpty(
 		prop(node, "JSONPostProcessor.referenceNames"),
 		prop(node, "JSONPostProcessor.reference_names"),
 	))
-	expressions := splitDelimitedValues(firstNonEmpty(
+	expressions := splitDelimitedValues(convertutil.FirstNonEmpty(
 		prop(node, "JSONPostProcessor.jsonPathExprs"),
 		prop(node, "JSONPostProcessor.json_path_exprs"),
 	))

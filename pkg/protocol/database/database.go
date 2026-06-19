@@ -6,12 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
-	"github.com/jmespath/go-jmespath"
+	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
 	_ "modernc.org/sqlite"
 )
 
@@ -35,8 +34,8 @@ type Database struct {
 func (d *Database) Name() string { return "database" }
 
 func (d *Database) Init(ctx context.Context, config map[string]any) error {
-	d.driver = normalizeDriver(configString(config, "database_driver"))
-	d.dsn = strings.TrimSpace(configString(config, "database_dsn"))
+	d.driver = normalizeDriver(protocol.ConfigString(config, "database_driver"))
+	d.dsn = strings.TrimSpace(protocol.ConfigString(config, "database_dsn"))
 	if d.driver == "" {
 		return errors.New("database driver is required")
 	}
@@ -47,21 +46,21 @@ func (d *Database) Init(ctx context.Context, config map[string]any) error {
 	if err != nil {
 		return err
 	}
-	if maxOpen := configInt(config, "database_max_open_conns"); maxOpen > 0 {
+	if maxOpen := protocol.ConfigInt(config, "database_max_open_conns"); maxOpen > 0 {
 		db.SetMaxOpenConns(maxOpen)
 	}
-	if maxIdle := configInt(config, "database_max_idle_conns"); maxIdle > 0 {
+	if maxIdle := protocol.ConfigInt(config, "database_max_idle_conns"); maxIdle > 0 {
 		db.SetMaxIdleConns(maxIdle)
 	}
-	if lifetimeMS := configInt(config, "database_conn_max_lifetime_ms"); lifetimeMS > 0 {
+	if lifetimeMS := protocol.ConfigInt(config, "database_conn_max_lifetime_ms"); lifetimeMS > 0 {
 		db.SetConnMaxLifetime(time.Duration(lifetimeMS) * time.Millisecond)
 	}
 	d.queryTimeout = 30 * time.Second
-	if timeoutMS := configInt(config, "database_query_timeout_ms"); timeoutMS > 0 {
+	if timeoutMS := protocol.ConfigInt(config, "database_query_timeout_ms"); timeoutMS > 0 {
 		d.queryTimeout = time.Duration(timeoutMS) * time.Millisecond
 	}
 	d.maxRows = 100
-	if maxRows := configInt(config, "database_max_rows"); maxRows > 0 {
+	if maxRows := protocol.ConfigInt(config, "database_max_rows"); maxRows > 0 {
 		d.maxRows = maxRows
 	}
 	d.readOnly, _ = config["database_read_only"].(bool)
@@ -78,7 +77,7 @@ func (d *Database) Init(ctx context.Context, config map[string]any) error {
 func (d *Database) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	start := time.Now()
 	result := &protocol.Result{
-		ActionName:       actionName(action),
+		ActionName:       protocol.ActionName(action),
 		StartTime:        start,
 		DependencyType:   "database",
 		DependencyTarget: d.driver,
@@ -403,9 +402,9 @@ func extractDatabaseValue(extractor protocol.Extractor, payload map[string]any, 
 	case "", "body", "result", "rows":
 		return extractDatabaseBodyValue(extractor, body)
 	case "scalar":
-		return stringifyDatabaseExtraction(payload["scalar"]), nil
+		return jsonextract.Stringify(payload["scalar"]), nil
 	case "row_count", "rows_affected", "last_insert_id":
-		return stringifyDatabaseExtraction(payload[source]), nil
+		return jsonextract.Stringify(payload[source]), nil
 	default:
 		return "", fmt.Errorf("unsupported database extraction source: %s", extractor.Source)
 	}
@@ -414,13 +413,13 @@ func extractDatabaseValue(extractor protocol.Extractor, payload map[string]any, 
 func extractDatabaseBodyValue(extractor protocol.Extractor, body []byte) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(extractor.Type)) {
 	case "", "json", "jsonpath":
-		return extractDatabaseJSONPath(extractor.Expression, body)
+		return jsonextract.JSONPath(extractor.Expression, body)
 	case "jmespath":
-		return extractDatabaseJMESPath(extractor.Expression, body)
+		return jsonextract.JMESPath(extractor.Expression, body)
 	case "regex", "regexp":
-		return extractDatabaseRegex(extractor.Expression, body)
+		return jsonextract.Regex(extractor.Expression, body)
 	case "boundary":
-		return extractDatabaseBoundary(extractor.Expression, body)
+		return jsonextract.Boundary(extractor.Expression, body)
 	default:
 		return "", fmt.Errorf("unsupported database extraction type: %s", extractor.Type)
 	}
@@ -453,7 +452,7 @@ func evaluateDatabaseAssertions(assertions []protocol.Assertion, result *protoco
 				return fmt.Sprintf("rows_affected assertion failed: got %d, max %d", actual, assertion.Max)
 			}
 		case "scalar_equals":
-			actual := stringifyDatabaseExtraction(payload["scalar"])
+			actual := jsonextract.Stringify(payload["scalar"])
 			expected := strings.TrimSpace(fmt.Sprint(assertion.Expected))
 			if actual != expected {
 				return fmt.Sprintf("scalar_equals assertion failed: got %q, want %q", actual, expected)
@@ -481,131 +480,6 @@ func decodeDatabasePayload(body string) (map[string]any, error) {
 		return nil, fmt.Errorf("decode database response: %w", err)
 	}
 	return payload, nil
-}
-
-func extractDatabaseJSONPath(expr string, body []byte) (string, error) {
-	expr = strings.TrimSpace(expr)
-	if expr == "" {
-		return "", fmt.Errorf("jsonpath expression is required")
-	}
-	expr = strings.TrimPrefix(expr, "$.")
-	expr = strings.TrimPrefix(expr, "$")
-	var current any
-	if err := json.Unmarshal(body, &current); err != nil {
-		return "", err
-	}
-	if expr == "" {
-		return stringifyDatabaseExtraction(current), nil
-	}
-	for _, part := range strings.Split(expr, ".") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		key, indexes := splitDatabasePathToken(part)
-		if key != "" {
-			object, ok := current.(map[string]any)
-			if !ok {
-				return "", fmt.Errorf("jsonpath %q expected object", expr)
-			}
-			next, ok := object[key]
-			if !ok {
-				return "", fmt.Errorf("jsonpath %q not found", expr)
-			}
-			current = next
-		}
-		for _, index := range indexes {
-			items, ok := current.([]any)
-			if !ok || index < 0 || index >= len(items) {
-				return "", fmt.Errorf("jsonpath %q index out of range", expr)
-			}
-			current = items[index]
-		}
-	}
-	return stringifyDatabaseExtraction(current), nil
-}
-
-func splitDatabasePathToken(token string) (string, []int) {
-	key := token
-	indexes := []int{}
-	if bracket := strings.Index(token, "["); bracket >= 0 {
-		key = token[:bracket]
-		rest := token[bracket:]
-		for strings.HasPrefix(rest, "[") {
-			end := strings.Index(rest, "]")
-			if end <= 1 {
-				break
-			}
-			var index int
-			if _, err := fmt.Sscanf(rest[1:end], "%d", &index); err == nil {
-				indexes = append(indexes, index)
-			}
-			rest = rest[end+1:]
-		}
-	}
-	return key, indexes
-}
-
-func extractDatabaseJMESPath(expr string, body []byte) (string, error) {
-	var current any
-	if err := json.Unmarshal(body, &current); err != nil {
-		return "", err
-	}
-	value, err := jmespath.Search(expr, current)
-	if err != nil {
-		return "", err
-	}
-	return stringifyDatabaseExtraction(value), nil
-}
-
-func extractDatabaseRegex(expr string, body []byte) (string, error) {
-	re, err := regexp.Compile(expr)
-	if err != nil {
-		return "", err
-	}
-	match := re.FindSubmatch(body)
-	if len(match) == 0 {
-		return "", fmt.Errorf("regex %q not found", expr)
-	}
-	if len(match) > 1 {
-		return string(match[1]), nil
-	}
-	return string(match[0]), nil
-}
-
-func extractDatabaseBoundary(expr string, body []byte) (string, error) {
-	parts := strings.Split(expr, "|||")
-	if len(parts) != 2 {
-		return "", fmt.Errorf("boundary expression must be left|||right")
-	}
-	text := string(body)
-	start := strings.Index(text, parts[0])
-	if start < 0 {
-		return "", fmt.Errorf("left boundary not found")
-	}
-	start += len(parts[0])
-	end := strings.Index(text[start:], parts[1])
-	if end < 0 {
-		return "", fmt.Errorf("right boundary not found")
-	}
-	return text[start : start+end], nil
-}
-
-func stringifyDatabaseExtraction(value any) string {
-	switch typed := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return typed
-	case float64, bool, int, int64:
-		return fmt.Sprint(typed)
-	default:
-		data, err := json.Marshal(typed)
-		if err != nil {
-			return fmt.Sprint(typed)
-		}
-		return string(data)
-	}
 }
 
 func databaseSnapshot(action *protocol.Action, result *protocol.Result) *protocol.ErrorSnapshot {
@@ -658,44 +532,11 @@ func isMutatingSQL(statement string) bool {
 	}
 }
 
-func actionName(action *protocol.Action) string {
-	if action == nil {
-		return ""
-	}
-	return action.Name
-}
-
-func configString(config map[string]any, key string) string {
-	if value, ok := config[key].(string); ok {
-		return value
-	}
-	return ""
-}
-
-func configInt(config map[string]any, key string) int {
-	value, ok := config[key]
-	if !ok {
-		return 0
-	}
-	switch typed := value.(type) {
-	case int:
-		return typed
-	case int64:
-		return int(typed)
-	case float64:
-		return int(typed)
-	case float32:
-		return int(typed)
-	default:
-		return 0
-	}
-}
-
 func actionParamInt(params map[string]any, key string) int {
 	if params == nil {
 		return 0
 	}
-	return configInt(params, key)
+	return protocol.ConfigInt(params, key)
 }
 
 func sortInts(values []int) {

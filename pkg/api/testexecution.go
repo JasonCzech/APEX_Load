@@ -64,15 +64,42 @@ func (tr *TestRunner) StartTestWithOptions(id string, opts StartTestOptions) err
 	return nil
 }
 
-func (tr *TestRunner) preflightStartBlocksLocked(id string, opts StartTestOptions) (bool, error) {
-	test, ok := tr.tests[id]
-	if !ok {
-		return false, fmt.Errorf("test not found: %s", id)
+// markTestPendingLocked transitions test to PENDING with the given reason and
+// broadcasts the change. Shared by the start-gate evaluators so the pending
+// transition semantics live in one place. The caller must hold tr.mu.
+func (tr *TestRunner) markTestPendingLocked(test *ManagedTest, reason string) {
+	now := time.Now()
+	test.Status = "PENDING"
+	if test.PendingSince == nil || test.PendingSince.IsZero() {
+		test.PendingSince = &now
 	}
-	if !testexec.IsStartableTestStatus(test.Status) {
-		return false, testexec.StartableTestStatusError(test.Status)
-	}
+	test.PendingReason = reason
+	test.QueuePosition = 0
+	test.Error = ""
+	tr.saveManagedTestRecord(test)
+	tr.broadcastEvent("test_pending", test)
+}
 
+// markTestInitializingLocked transitions test to INITIALIZING, clears its pending
+// fields, and binds its execution backend. The caller persists the record because
+// the save timing differs (under the lock for prepare, after unlock for promote).
+func (tr *TestRunner) markTestInitializingLocked(test *ManagedTest) {
+	test.Status = "INITIALIZING"
+	test.PendingSince = nil
+	test.PendingReason = ""
+	test.QueuePosition = 0
+	test.Error = ""
+	test.executionBackend = tr.execution
+	if test.executionBackend == nil {
+		test.executionBackend = localExecutionBackend{}
+	}
+}
+
+// evaluateStartGatesLocked runs the capacity-advisory / governance / launch-window /
+// quota gates for a start attempt. It returns blocked=true (after transitioning the
+// test to PENDING) when a quota block applies, or an error when a gate rejects the
+// start outright. The caller must hold tr.mu and have already validated startability.
+func (tr *TestRunner) evaluateStartGatesLocked(id string, test *ManagedTest, opts StartTestOptions) (bool, error) {
 	tr.refreshCapacityAdvisoryLocked(test)
 	if err := buildStartGovernanceError(id, test.CapacityAdvisory, opts); err != nil {
 		return false, err
@@ -83,19 +110,21 @@ func (tr *TestRunner) preflightStartBlocksLocked(id string, opts StartTestOption
 		}
 	}
 	if blocked, reason := tr.evaluateQuotaBlockLocked(test, ""); blocked {
-		now := time.Now()
-		test.Status = "PENDING"
-		if test.PendingSince == nil || test.PendingSince.IsZero() {
-			test.PendingSince = &now
-		}
-		test.PendingReason = reason
-		test.QueuePosition = 0
-		test.Error = ""
-		tr.saveManagedTestRecord(test)
-		tr.broadcastEvent("test_pending", test)
+		tr.markTestPendingLocked(test, reason)
 		return true, nil
 	}
 	return false, nil
+}
+
+func (tr *TestRunner) preflightStartBlocksLocked(id string, opts StartTestOptions) (bool, error) {
+	test, ok := tr.tests[id]
+	if !ok {
+		return false, fmt.Errorf("test not found: %s", id)
+	}
+	if !testexec.IsStartableTestStatus(test.Status) {
+		return false, testexec.StartableTestStatusError(test.Status)
+	}
+	return tr.evaluateStartGatesLocked(id, test, opts)
 }
 
 func (tr *TestRunner) beginScriptShakeoutIfNeeded(id string, opts StartTestOptions) (*ManagedTest, error) {
@@ -171,38 +200,13 @@ func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (
 		return nil, testexec.StartableTestStatusError(test.Status)
 	}
 
-	tr.refreshCapacityAdvisoryLocked(test)
-	if err := buildStartGovernanceError(id, test.CapacityAdvisory, opts); err != nil {
+	if blocked, err := tr.evaluateStartGatesLocked(id, test, opts); err != nil {
 		return nil, err
-	}
-	if !opts.SkipLaunchWindowPreflight {
-		if err := tr.launchStartWindowErrorLocked(test, time.Now().UTC(), id); err != nil {
-			return nil, err
-		}
-	}
-	if blocked, reason := tr.evaluateQuotaBlockLocked(test, ""); blocked {
-		now := time.Now()
-		test.Status = "PENDING"
-		if test.PendingSince == nil || test.PendingSince.IsZero() {
-			test.PendingSince = &now
-		}
-		test.PendingReason = reason
-		test.QueuePosition = 0
-		test.Error = ""
-		tr.saveManagedTestRecord(test)
-		tr.broadcastEvent("test_pending", test)
+	} else if blocked {
 		return nil, nil
 	}
 
-	test.Status = "INITIALIZING"
-	test.PendingSince = nil
-	test.PendingReason = ""
-	test.QueuePosition = 0
-	test.Error = ""
-	test.executionBackend = tr.execution
-	if test.executionBackend == nil {
-		test.executionBackend = localExecutionBackend{}
-	}
+	tr.markTestInitializingLocked(test)
 	tr.saveManagedTestRecord(test)
 	return test, nil
 }
@@ -231,20 +235,36 @@ func (tr *TestRunner) reloadAndReconcile() {
 	tr.ReconcilePendingTests()
 }
 
+// resolveBackend returns the test's execution backend, falling back to the
+// runner's shared execution backend when the test has none.
+func (tr *TestRunner) resolveBackend(test *ManagedTest) testExecutionBackend {
+	if test.executionBackend != nil {
+		return test.executionBackend
+	}
+	return tr.execution
+}
+
+// lockedTestStatus resolves a possibly-ref-key id and returns the resolved id, the
+// managed test, and its status captured under the read lock. It errors when the
+// test is unknown. Callers must re-acquire the write lock before mutating.
+func (tr *TestRunner) lockedTestStatus(id string) (string, *ManagedTest, string, error) {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	id = tr.resolveRefKeyLocked(id)
+	test, ok := tr.tests[id]
+	if !ok {
+		return id, nil, "", fmt.Errorf("test not found: %s", id)
+	}
+	return id, test, test.Status, nil
+}
+
 func (tr *TestRunner) StopTest(id string) error {
 	if !tr.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
-	tr.mu.RLock()
-	id = tr.resolveRefKeyLocked(id)
-	test, ok := tr.tests[id]
-	status := ""
-	if ok {
-		status = test.Status
-	}
-	tr.mu.RUnlock()
-	if !ok {
-		return fmt.Errorf("test not found: %s", id)
+	id, test, status, err := tr.lockedTestStatus(id)
+	if err != nil {
+		return err
 	}
 	if status == "QUEUED" || status == "PENDING" || status == "RESERVED" || status == "SHAKEOUT" || status == "SHAKEOUT_REVIEW" {
 		tr.mu.Lock()
@@ -269,10 +289,7 @@ func (tr *TestRunner) StopTest(id string) error {
 	tr.cancelAllVUserScaleRampsLocked(test)
 	tr.mu.Unlock()
 	if test.multiEngine == nil {
-		backend := test.executionBackend
-		if backend == nil {
-			backend = tr.execution
-		}
+		backend := tr.resolveBackend(test)
 		if stoppable, ok := backend.(stoppableExecutionBackend); ok {
 			if err := stoppable.StopTest(tr, test); err != nil {
 				return err
@@ -536,10 +553,7 @@ func (tr *TestRunner) scaleVUsersNow(id string, groupName string, targetVUsers i
 		tr.cancelVUserScaleRampLocked(test, groupName)
 	}
 	multiEngine := test.multiEngine
-	backend := test.executionBackend
-	if backend == nil {
-		backend = tr.execution
-	}
+	backend := tr.resolveBackend(test)
 	tr.mu.Unlock()
 
 	if multiEngine == nil {
@@ -680,25 +694,15 @@ func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error
 	if !tr.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
-	tr.mu.RLock()
-	id = tr.resolveRefKeyLocked(id)
-	test, ok := tr.tests[id]
-	status := ""
-	if ok {
-		status = test.Status
-	}
-	tr.mu.RUnlock()
-	if !ok {
-		return fmt.Errorf("test not found: %s", id)
+	id, test, status, err := tr.lockedTestStatus(id)
+	if err != nil {
+		return err
 	}
 	if status != "RUNNING" {
 		return fmt.Errorf("test is %s, must be RUNNING to adjust duration", status)
 	}
 	if test.multiEngine == nil {
-		backend := test.executionBackend
-		if backend == nil {
-			backend = tr.execution
-		}
+		backend := tr.resolveBackend(test)
 		adjustable, ok := backend.(durationAdjustableExecutionBackend)
 		if !ok {
 			return fmt.Errorf("test backend does not support duration changes")
@@ -732,25 +736,15 @@ func (tr *TestRunner) PauseTest(id string) error {
 	if !tr.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
-	tr.mu.RLock()
-	id = tr.resolveRefKeyLocked(id)
-	test, ok := tr.tests[id]
-	status := ""
-	if ok {
-		status = test.Status
-	}
-	tr.mu.RUnlock()
-	if !ok {
-		return fmt.Errorf("test not found: %s", id)
+	id, test, status, err := tr.lockedTestStatus(id)
+	if err != nil {
+		return err
 	}
 	if status != "RUNNING" {
 		return fmt.Errorf("test is %s, must be RUNNING to pause", status)
 	}
 	if test.multiEngine == nil {
-		backend := test.executionBackend
-		if backend == nil {
-			backend = tr.execution
-		}
+		backend := tr.resolveBackend(test)
 		pausable, ok := backend.(pausableExecutionBackend)
 		if !ok {
 			return fmt.Errorf("test backend does not support pause")
@@ -777,25 +771,15 @@ func (tr *TestRunner) ResumeTest(id string) error {
 	if !tr.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
-	tr.mu.RLock()
-	id = tr.resolveRefKeyLocked(id)
-	test, ok := tr.tests[id]
-	status := ""
-	if ok {
-		status = test.Status
-	}
-	tr.mu.RUnlock()
-	if !ok {
-		return fmt.Errorf("test not found: %s", id)
+	id, test, status, err := tr.lockedTestStatus(id)
+	if err != nil {
+		return err
 	}
 	if status != "PAUSED" {
 		return fmt.Errorf("test is %s, must be PAUSED to resume", status)
 	}
 	if test.multiEngine == nil {
-		backend := test.executionBackend
-		if backend == nil {
-			backend = tr.execution
-		}
+		backend := tr.resolveBackend(test)
 		pausable, ok := backend.(pausableExecutionBackend)
 		if !ok {
 			return fmt.Errorf("test backend does not support resume")
@@ -823,10 +807,7 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 	if !tr.isExecutionLeader() {
 		return
 	}
-	backend := test.executionBackend
-	if backend == nil {
-		backend = tr.execution
-	}
+	backend := tr.resolveBackend(test)
 	if backend == nil {
 		backend = localExecutionBackend{}
 	}
@@ -1024,15 +1005,7 @@ func (tr *TestRunner) promotePendingTests() {
 			}
 			pending = current
 		}
-		pending.Status = "INITIALIZING"
-		pending.PendingSince = nil
-		pending.PendingReason = ""
-		pending.QueuePosition = 0
-		pending.Error = ""
-		pending.executionBackend = tr.execution
-		if pending.executionBackend == nil {
-			pending.executionBackend = localExecutionBackend{}
-		}
+		tr.markTestInitializingLocked(pending)
 		tr.mu.Unlock()
 		tr.saveManagedTestRecord(pending)
 		tr.recordSystemTestAudit("test.pending.promote", "success", pending, map[string]any{

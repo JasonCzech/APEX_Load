@@ -328,7 +328,7 @@ func (k *Kafka) resolvePartition(action *protocol.Action, key string) int32 {
 }
 
 func (k *Kafka) topic(action *protocol.Action) string {
-	return paramString(action.Params, "topic", firstNonEmpty(action.Target, k.cfg.Topic))
+	return paramString(action.Params, "topic", protocol.FirstNonEmpty(action.Target, k.cfg.Topic))
 }
 
 func (k *Kafka) timeout(action *protocol.Action) time.Duration {
@@ -670,13 +670,4 @@ func lookupString(key string, values map[string]string, label string) (string, e
 		return "", fmt.Errorf("kafka %s %q not found", label, key)
 	}
 	return value, nil
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }

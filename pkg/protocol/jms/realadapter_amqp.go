@@ -14,6 +14,7 @@ import (
 	"time"
 
 	amqp "github.com/Azure/go-amqp"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func newSolaceAdapter(cfg config) brokerAdapter {
@@ -73,7 +74,7 @@ func (a *solaceAMQPAdapter) Consume(ctx context.Context, destination string, tim
 
 func (a *solaceAMQPAdapter) RequestReply(ctx context.Context, requestDestination string, replyDestination string, request message, timeout time.Duration) (message, message, error) {
 	if request.CorrelationID == "" {
-		request.CorrelationID = firstNonEmpty(request.ID, newJMSMessageID())
+		request.CorrelationID = protocol.FirstNonEmpty(request.ID, newJMSMessageID())
 	}
 	if request.Headers == nil {
 		request.Headers = make(map[string]string)
@@ -315,7 +316,7 @@ func buildTLSRootCAs(caCertSecret string, trustStoreRef string) (*x509.CertPool,
 }
 
 func toAMQPMessage(destination string, msg message) *amqp.Message {
-	id := firstNonEmpty(msg.ID, newJMSMessageID())
+	id := protocol.FirstNonEmpty(msg.ID, newJMSMessageID())
 	createdAt := msg.CreatedAt
 	if createdAt.IsZero() {
 		createdAt = time.Now()

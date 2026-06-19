@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -165,7 +166,7 @@ func buildSourceHTTPSequence(transaction string, requests []dsl.Action) dsl.Acti
 	}
 
 	return dsl.Action{
-		Name:           sanitizeName(firstNonEmpty(transaction, first.Name, "source_transaction")),
+		Name:           sanitizeName(convertutil.FirstNonEmpty(transaction, first.Name, "source_transaction")),
 		Type:           "http_sequence",
 		Method:         "SEQUENCE",
 		Target:         first.Target,
@@ -227,7 +228,7 @@ func actionTransactionName(action dsl.Action) string {
 }
 
 func isHTTPProtocolAction(action dsl.Action) bool {
-	actionType := strings.ToUpper(strings.TrimSpace(firstNonEmpty(action.Method, action.Type)))
+	actionType := strings.ToUpper(strings.TrimSpace(convertutil.FirstNonEmpty(action.Method, action.Type)))
 	switch actionType {
 	case "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS":
 		return strings.TrimSpace(action.Target) != ""

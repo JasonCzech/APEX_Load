@@ -37,15 +37,32 @@ func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 }
 
 func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
-	var test TestRecord
-	var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON string
-
 	query := testSelectColumns() + ` FROM tests WHERE id = ?`
-	err := s.db.QueryRow(query, id).Scan(&test.ID, &test.RefKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON)
+	test, err := scanTest(s.db.QueryRow(query, id))
 	if err != nil {
 		return nil, err
 	}
+	return &test, nil
+}
 
+func testSelectColumns() string {
+	return `SELECT id, COALESCE(ref_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '')`
+}
+
+// rowScanner abstracts *sql.Row and *sql.Rows so scan helpers work with both
+// QueryRow and Query results.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanTest scans a full test row (matching testSelectColumns) and decodes its
+// JSON-encoded fields. Shared by GetTest, ListTests, and ListTestsByContext.
+func scanTest(scanner rowScanner) (TestRecord, error) {
+	var test TestRecord
+	var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON string
+	if err := scanner.Scan(&test.ID, &test.RefKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
+		return test, err
+	}
 	json.Unmarshal([]byte(groupsJSON), &test.Groups)
 	if assignmentJSON != "" && assignmentJSON != "null" {
 		json.Unmarshal([]byte(assignmentJSON), &test.Assignment)
@@ -56,11 +73,7 @@ func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 	if goalConfigJSON != "" && goalConfigJSON != "null" {
 		json.Unmarshal([]byte(goalConfigJSON), &test.GoalConfig)
 	}
-	return &test, nil
-}
-
-func testSelectColumns() string {
-	return `SELECT id, COALESCE(ref_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '')`
+	return test, nil
 }
 
 func (s *SQLiteStore) ListTests(projectID string, folderID *string) ([]*TestRecord, error) {
@@ -91,20 +104,9 @@ func (s *SQLiteStore) ListTests(projectID string, folderID *string) ([]*TestReco
 
 	var tests []*TestRecord
 	for rows.Next() {
-		var test TestRecord
-		var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON string
-		if err := rows.Scan(&test.ID, &test.RefKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
+		test, err := scanTest(rows)
+		if err != nil {
 			return nil, err
-		}
-		json.Unmarshal([]byte(groupsJSON), &test.Groups)
-		if assignmentJSON != "" && assignmentJSON != "null" {
-			json.Unmarshal([]byte(assignmentJSON), &test.Assignment)
-		}
-		if runtimeSettingsJSON != "" && runtimeSettingsJSON != "null" {
-			json.Unmarshal([]byte(runtimeSettingsJSON), &test.RuntimeSettings)
-		}
-		if goalConfigJSON != "" && goalConfigJSON != "null" {
-			json.Unmarshal([]byte(goalConfigJSON), &test.GoalConfig)
 		}
 		tests = append(tests, &test)
 	}
@@ -138,20 +140,9 @@ func (s *SQLiteStore) ListTestsByContext(applicationID string, releaseID string,
 	defer rows.Close()
 	var tests []*TestRecord
 	for rows.Next() {
-		var test TestRecord
-		var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON string
-		if err := rows.Scan(&test.ID, &test.RefKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
+		test, err := scanTest(rows)
+		if err != nil {
 			return nil, err
-		}
-		json.Unmarshal([]byte(groupsJSON), &test.Groups)
-		if assignmentJSON != "" && assignmentJSON != "null" {
-			json.Unmarshal([]byte(assignmentJSON), &test.Assignment)
-		}
-		if runtimeSettingsJSON != "" && runtimeSettingsJSON != "null" {
-			json.Unmarshal([]byte(runtimeSettingsJSON), &test.RuntimeSettings)
-		}
-		if goalConfigJSON != "" && goalConfigJSON != "null" {
-			json.Unmarshal([]byte(goalConfigJSON), &test.GoalConfig)
 		}
 		tests = append(tests, &test)
 	}

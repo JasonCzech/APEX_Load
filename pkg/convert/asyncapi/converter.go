@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -226,7 +227,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		mock = *req.Options.Mock
 	}
 
-	scriptName := firstNonEmpty(req.Options.ScriptName, req.Name, doc.Info.Title, "Imported_AsyncAPI_Script")
+	scriptName := convertutil.FirstNonEmpty(req.Options.ScriptName, req.Name, doc.Info.Title, "Imported_AsyncAPI_Script")
 	result := &ConvertResult{
 		Script: &dsl.Script{
 			Name:          sanitizeName(scriptName),
@@ -272,7 +273,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		result.Warnings = append(result.Warnings, "config.kafka.mock is enabled so the generated script runs against the in-memory broker; disable it once a real Kafka adapter is configured")
 	}
 
-	includeAssertions := boolOption(req.Options.IncludeAssertions, true)
+	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
 	columns := map[string]struct{}{}
 	topics := map[string]struct{}{}
 	operationNames := []string{}
@@ -355,7 +356,7 @@ func deriveBrokers(doc *document, override []string) (brokers []string, protocol
 		if proto == "kafka-secure" {
 			secure = true
 		}
-		host := firstNonEmpty(srv.Host, srv.URL)
+		host := convertutil.FirstNonEmpty(srv.Host, srv.URL)
 		if srv.Host != "" && srv.Pathname != "" {
 			host = srv.Host + srv.Pathname
 		}
@@ -414,7 +415,7 @@ func collectOperations(doc *document, opts ConvertOptions, diagnostics *diag.Col
 				}
 			}
 			ops = append(ops, kafkaOp{
-				name:                firstNonEmpty(opName, op.Title, op.Summary),
+				name:                convertutil.FirstNonEmpty(opName, op.Title, op.Summary),
 				kind:                kind,
 				topic:               topic,
 				replyTopic:          replyTopic,
@@ -441,7 +442,7 @@ func collectOperations(doc *document, opts ConvertOptions, diagnostics *diag.Col
 			msg := derefMessage(doc, messageOf(ch.Publish))
 			recordFormat(msg)
 			ops = append(ops, kafkaOp{
-				name:                firstNonEmpty(ch.Publish.OperationID, ch.Publish.Summary, chName+"_produce"),
+				name:                convertutil.FirstNonEmpty(ch.Publish.OperationID, ch.Publish.Summary, chName+"_produce"),
 				kind:                "produce",
 				topic:               topicWithBinding(topic, ch.Publish.Bindings),
 				payload:             resolvePayload(doc, msg),
@@ -455,7 +456,7 @@ func collectOperations(doc *document, opts ConvertOptions, diagnostics *diag.Col
 			msg := derefMessage(doc, messageOf(ch.Subscribe))
 			recordFormat(msg)
 			ops = append(ops, kafkaOp{
-				name:                firstNonEmpty(ch.Subscribe.OperationID, ch.Subscribe.Summary, chName+"_consume"),
+				name:                convertutil.FirstNonEmpty(ch.Subscribe.OperationID, ch.Subscribe.Summary, chName+"_consume"),
 				kind:                "consume",
 				topic:               topicWithBinding(topic, ch.Subscribe.Bindings),
 				payload:             resolvePayload(doc, msg),
@@ -878,22 +879,6 @@ func filterSet(values []string) map[string]struct{} {
 		return nil
 	}
 	return out
-}
-
-func boolOption(value *bool, fallback bool) bool {
-	if value == nil {
-		return fallback
-	}
-	return *value
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func firstPositive(values ...int) int {

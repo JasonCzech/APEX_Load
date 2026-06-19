@@ -15,6 +15,7 @@ import {
 } from 'recharts'
 
 import { LatencyTarget, LiveMetrics, MetricsHistoryPoint, NetworkLatency, PrometheusGraph } from '../types'
+import { downloadTextFile } from '../utils/fileUtils'
 import { buildGeneratorImpactView, type GeneratorImpactVerdict } from './generatorImpact'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
 import {
@@ -240,21 +241,6 @@ function chartGradientId(chart: ChartConfig, key: string, variant = 'fill') {
 
 function chartGradientFill(chart: ChartConfig, key: string, variant = 'fill') {
   return `url(#${chartGradientId(chart, key, variant)})`
-}
-
-function downloadBlob(filename: string, blob: Blob) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
-
-function downloadTextFile(filename: string, content: string, type = 'text/plain;charset=utf-8') {
-  downloadBlob(filename, new Blob([content], { type }))
 }
 
 function resolveCssVariables(value: string) {
@@ -1122,11 +1108,11 @@ export default function TestExecutionCharts({
     const displayTitle = displayTitleForChart(chart)
     const snapshot = chartSnapshotSvg(card, { ...chart, title: displayTitle })
     if (!snapshot) return
-    downloadTextFile(`${safeFileName(displayTitle)}-snapshot.svg`, snapshot, 'image/svg+xml;charset=utf-8')
+    downloadTextFile(snapshot, `${safeFileName(displayTitle)}-snapshot.svg`, 'image/svg+xml;charset=utf-8')
   }
 
   const exportChartCsv = (chart: ChartConfig) => {
-    downloadTextFile(`${safeFileName(displayTitleForChart(chart))}-data.csv`, graphCsvForChart(chart, chartDataFor(chart), groupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), 'text/csv;charset=utf-8')
+    downloadTextFile(graphCsvForChart(chart, chartDataFor(chart), groupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), `${safeFileName(displayTitleForChart(chart))}-data.csv`, 'text/csv;charset=utf-8')
   }
 
   const copyLatestValues = (chart: ChartConfig) => {

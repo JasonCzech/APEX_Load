@@ -578,125 +578,95 @@ func resolveDataPoolListProjectID(r *http.Request, _ storage.Store) (string, int
 	return normalizeProjectID(projectID), 0, ""
 }
 
-func resolveDataPoolCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
-	var req struct {
-		ProjectID string `json:"project_id,omitempty"`
+// bodyProjectIDResolver returns a resolver that reads {project_id} from the JSON
+// request body, returning requiredMsg when it is absent. Used by project-scoped
+// create endpoints to keep the decode/validate shape in one place.
+func bodyProjectIDResolver(requiredMsg string) func(*http.Request, storage.Store) (string, int, string) {
+	return func(r *http.Request, _ storage.Store) (string, int, string) {
+		var req struct {
+			ProjectID string `json:"project_id,omitempty"`
+		}
+		if err := decodeRequestBody(r, &req); err != nil {
+			return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+		}
+		if strings.TrimSpace(req.ProjectID) == "" {
+			return "", http.StatusBadRequest, requiredMsg
+		}
+		return normalizeProjectID(req.ProjectID), 0, ""
 	}
-	if err := decodeRequestBody(r, &req); err != nil {
-		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
-	}
-	if strings.TrimSpace(req.ProjectID) == "" {
-		return "", http.StatusBadRequest, "project_id is required for project-scoped data pool access"
-	}
-	return normalizeProjectID(req.ProjectID), 0, ""
 }
 
-func resolveDataPoolProjectID(r *http.Request, store storage.Store) (string, int, string) {
-	if store == nil {
-		return "", http.StatusServiceUnavailable, "storage is not configured"
-	}
-	pool, err := store.GetDataPool(r.PathValue("id"))
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", http.StatusNotFound, "data pool not found"
+// entityProjectIDResolver returns a resolver that loads an entity by its path {id}
+// via getProjectID and returns the owning project. notFoundMsg / loadFailMsg shape
+// the standard error responses, keeping the nil-store / ErrNoRows / load-fail shape
+// in one place. Used by {id}-scoped access checks.
+func entityProjectIDResolver(notFoundMsg, loadFailMsg string, getProjectID func(storage.Store, string) (string, error)) func(*http.Request, storage.Store) (string, int, string) {
+	return func(r *http.Request, store storage.Store) (string, int, string) {
+		if store == nil {
+			return "", http.StatusServiceUnavailable, "storage is not configured"
 		}
-		return "", http.StatusInternalServerError, "failed to load data pool"
+		projectID, err := getProjectID(store, r.PathValue("id"))
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return "", http.StatusNotFound, notFoundMsg
+			}
+			return "", http.StatusInternalServerError, loadFailMsg
+		}
+		return normalizeProjectID(projectID), 0, ""
 	}
-	return normalizeProjectID(pool.ProjectID), 0, ""
 }
+
+var resolveDataPoolCreateProjectID = bodyProjectIDResolver("project_id is required for project-scoped data pool access")
+
+var resolveDataPoolProjectID = entityProjectIDResolver("data pool not found", "failed to load data pool", func(store storage.Store, id string) (string, error) {
+	pool, err := store.GetDataPool(id)
+	if err != nil {
+		return "", err
+	}
+	return pool.ProjectID, nil
+})
 
 // resolveTimeslotCreateProjectID extracts the owning project from the request
 // body for capacity-reservation create/availability calls.
-func resolveTimeslotCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
-	var req struct {
-		ProjectID string `json:"project_id,omitempty"`
-	}
-	if err := decodeRequestBody(r, &req); err != nil {
-		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
-	}
-	if strings.TrimSpace(req.ProjectID) == "" {
-		return "", http.StatusBadRequest, "project_id is required for project-scoped capacity reservations"
-	}
-	return normalizeProjectID(req.ProjectID), 0, ""
-}
+var resolveTimeslotCreateProjectID = bodyProjectIDResolver("project_id is required for project-scoped capacity reservations")
 
 // resolveTimeslotProjectID looks up an existing capacity reservation to find the
 // project that owns it, for {id}-scoped access checks.
-func resolveTimeslotProjectID(r *http.Request, store storage.Store) (string, int, string) {
-	if store == nil {
-		return "", http.StatusServiceUnavailable, "storage is not configured"
-	}
-	reservation, err := store.GetCapacityReservation(r.PathValue("id"))
+var resolveTimeslotProjectID = entityProjectIDResolver("timeslot not found", "failed to load timeslot", func(store storage.Store, id string) (string, error) {
+	reservation, err := store.GetCapacityReservation(id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", http.StatusNotFound, "timeslot not found"
-		}
-		return "", http.StatusInternalServerError, "failed to load timeslot"
+		return "", err
 	}
-	return normalizeProjectID(reservation.ProjectID), 0, ""
-}
+	return reservation.ProjectID, nil
+})
 
 // resolveExecutionPlanCreateProjectID reads the owning project from the request
 // body for execution-plan creation.
-func resolveExecutionPlanCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
-	var req struct {
-		ProjectID string `json:"project_id,omitempty"`
-	}
-	if err := decodeRequestBody(r, &req); err != nil {
-		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
-	}
-	if strings.TrimSpace(req.ProjectID) == "" {
-		return "", http.StatusBadRequest, "project_id is required for project-scoped execution plans"
-	}
-	return normalizeProjectID(req.ProjectID), 0, ""
-}
+var resolveExecutionPlanCreateProjectID = bodyProjectIDResolver("project_id is required for project-scoped execution plans")
 
 // resolveExecutionPlanProjectID looks up an existing execution plan to find the
 // project that owns it, for {id}-scoped access checks.
-func resolveExecutionPlanProjectID(r *http.Request, store storage.Store) (string, int, string) {
-	if store == nil {
-		return "", http.StatusServiceUnavailable, "storage is not configured"
-	}
-	plan, err := store.GetExecutionPlan(r.PathValue("id"))
+var resolveExecutionPlanProjectID = entityProjectIDResolver("execution plan not found", "failed to load execution plan", func(store storage.Store, id string) (string, error) {
+	plan, err := store.GetExecutionPlan(id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", http.StatusNotFound, "execution plan not found"
-		}
-		return "", http.StatusInternalServerError, "failed to load execution plan"
+		return "", err
 	}
-	return normalizeProjectID(plan.ProjectID), 0, ""
-}
+	return plan.ProjectID, nil
+})
 
 // resolveObjectRepositoryCreateProjectID reads the owning project from the
 // request body for object-repository creation.
-func resolveObjectRepositoryCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
-	var req struct {
-		ProjectID string `json:"project_id,omitempty"`
-	}
-	if err := decodeRequestBody(r, &req); err != nil {
-		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
-	}
-	if strings.TrimSpace(req.ProjectID) == "" {
-		return "", http.StatusBadRequest, "project_id is required for project-scoped object repositories"
-	}
-	return normalizeProjectID(req.ProjectID), 0, ""
-}
+var resolveObjectRepositoryCreateProjectID = bodyProjectIDResolver("project_id is required for project-scoped object repositories")
 
 // resolveObjectRepositoryProjectID looks up an existing object repository to
 // find the project that owns it, for {id}-scoped access checks.
-func resolveObjectRepositoryProjectID(r *http.Request, store storage.Store) (string, int, string) {
-	if store == nil {
-		return "", http.StatusServiceUnavailable, "storage is not configured"
-	}
-	repo, err := store.GetObjectRepository(r.PathValue("id"))
+var resolveObjectRepositoryProjectID = entityProjectIDResolver("object repository not found", "failed to load object repository", func(store storage.Store, id string) (string, error) {
+	repo, err := store.GetObjectRepository(id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", http.StatusNotFound, "object repository not found"
-		}
-		return "", http.StatusInternalServerError, "failed to load object repository"
+		return "", err
 	}
-	return normalizeProjectID(repo.ProjectID), 0, ""
-}
+	return repo.ProjectID, nil
+})
 
 // resolveObjectRepositoryFromScriptProjectID resolves the project from the
 // source script referenced in the seed-from-script request body.
@@ -725,34 +695,17 @@ func resolveObjectRepositoryFromScriptProjectID(r *http.Request, store storage.S
 
 // resolveCorrelationRulesetCreateProjectID reads the owning project from the
 // request body for correlation-ruleset creation.
-func resolveCorrelationRulesetCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
-	var req struct {
-		ProjectID string `json:"project_id,omitempty"`
-	}
-	if err := decodeRequestBody(r, &req); err != nil {
-		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
-	}
-	if strings.TrimSpace(req.ProjectID) == "" {
-		return "", http.StatusBadRequest, "project_id is required for project-scoped correlation rulesets"
-	}
-	return normalizeProjectID(req.ProjectID), 0, ""
-}
+var resolveCorrelationRulesetCreateProjectID = bodyProjectIDResolver("project_id is required for project-scoped correlation rulesets")
 
 // resolveCorrelationRulesetProjectID looks up an existing correlation ruleset to
 // find the project that owns it, for {id}-scoped access checks.
-func resolveCorrelationRulesetProjectID(r *http.Request, store storage.Store) (string, int, string) {
-	if store == nil {
-		return "", http.StatusServiceUnavailable, "storage is not configured"
-	}
-	ruleset, err := store.GetCorrelationRuleset(r.PathValue("id"))
+var resolveCorrelationRulesetProjectID = entityProjectIDResolver("correlation ruleset not found", "failed to load correlation ruleset", func(store storage.Store, id string) (string, error) {
+	ruleset, err := store.GetCorrelationRuleset(id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", http.StatusNotFound, "correlation ruleset not found"
-		}
-		return "", http.StatusInternalServerError, "failed to load correlation ruleset"
+		return "", err
 	}
-	return normalizeProjectID(ruleset.ProjectID), 0, ""
-}
+	return ruleset.ProjectID, nil
+})
 
 // resolveCorrelationRulesetFromScriptProjectID resolves the project from the
 // source script referenced in the discover-from-script request body.
@@ -781,61 +734,27 @@ func resolveCorrelationRulesetFromScriptProjectID(r *http.Request, store storage
 
 // resolveMonitoringCollectorCreateProjectID reads the owning project from the
 // request body for monitoring-collector creation.
-func resolveMonitoringCollectorCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
-	var req struct {
-		ProjectID string `json:"project_id,omitempty"`
-	}
-	if err := decodeRequestBody(r, &req); err != nil {
-		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
-	}
-	if strings.TrimSpace(req.ProjectID) == "" {
-		return "", http.StatusBadRequest, "project_id is required for project-scoped monitoring collectors"
-	}
-	return normalizeProjectID(req.ProjectID), 0, ""
-}
+var resolveMonitoringCollectorCreateProjectID = bodyProjectIDResolver("project_id is required for project-scoped monitoring collectors")
 
 // resolveMonitoringCollectorProjectID looks up an existing collector to find its
 // owning project, for {id}-scoped access checks.
-func resolveMonitoringCollectorProjectID(r *http.Request, store storage.Store) (string, int, string) {
-	if store == nil {
-		return "", http.StatusServiceUnavailable, "storage is not configured"
-	}
-	collector, err := store.GetMonitoringCollector(r.PathValue("id"))
+var resolveMonitoringCollectorProjectID = entityProjectIDResolver("monitoring collector not found", "failed to load monitoring collector", func(store storage.Store, id string) (string, error) {
+	collector, err := store.GetMonitoringCollector(id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", http.StatusNotFound, "monitoring collector not found"
-		}
-		return "", http.StatusInternalServerError, "failed to load monitoring collector"
+		return "", err
 	}
-	return normalizeProjectID(collector.ProjectID), 0, ""
-}
+	return collector.ProjectID, nil
+})
 
-func resolveReusableBlockCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
-	var req struct {
-		ProjectID string `json:"project_id,omitempty"`
-	}
-	if err := decodeRequestBody(r, &req); err != nil {
-		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
-	}
-	if strings.TrimSpace(req.ProjectID) == "" {
-		return "", http.StatusBadRequest, "project_id is required for project-scoped reusable blocks"
-	}
-	return normalizeProjectID(req.ProjectID), 0, ""
-}
+var resolveReusableBlockCreateProjectID = bodyProjectIDResolver("project_id is required for project-scoped reusable blocks")
 
-func resolveReusableBlockProjectID(r *http.Request, store storage.Store) (string, int, string) {
-	if store == nil {
-		return "", http.StatusServiceUnavailable, "storage is not configured"
-	}
-	block, err := store.GetReusableBlock(r.PathValue("id"))
+var resolveReusableBlockProjectID = entityProjectIDResolver("reusable block not found", "failed to load reusable block", func(store storage.Store, id string) (string, error) {
+	block, err := store.GetReusableBlock(id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", http.StatusNotFound, "reusable block not found"
-		}
-		return "", http.StatusInternalServerError, "failed to load reusable block"
+		return "", err
 	}
-	return normalizeProjectID(block.ProjectID), 0, ""
-}
+	return block.ProjectID, nil
+})
 
 func resolveRecorderListProjectID(r *http.Request) (string, int, string) {
 	projectID := normalizeProjectID(r.URL.Query().Get("project_id"))

@@ -3,6 +3,7 @@ import { Fragment } from 'react'
 import { GitHubScriptStatus, StoredScript, TestSummary } from '../types'
 import { LibraryCatalogItem, LibrarySourceFilter } from '../types/library'
 import { formatLibraryDateTime, shortLibraryHash } from './libraryFederationUtils'
+import { SortIndicator } from './SortIndicator'
 import { ScriptLibrarySortField, ScriptRunSortField } from './useScriptsLibraryModel'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
 
@@ -129,14 +130,6 @@ function remoteItemMetadata(item: LibraryCatalogItem) {
     `Hash ${shortLibraryHash(item.content_hash)}`,
     item.dependencies?.length ? `${item.dependencies.length} dependencies` : '',
   ].filter(Boolean)
-}
-
-function SortIndicator({ active, direction }: { active: boolean, direction: 'asc' | 'desc' }) {
-  return (
-    <span className={`sort-icon ${active ? 'active' : ''}`}>
-      {active ? (direction === 'asc' ? '↑' : '↓') : '↕'}
-    </span>
-  )
 }
 
 export default function ScriptsLibraryTable({

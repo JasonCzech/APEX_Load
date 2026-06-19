@@ -714,7 +714,7 @@ func (j *JMS) buildMessage(action *protocol.Action, destination string) message 
 }
 
 func (j *JMS) destination(action *protocol.Action) string {
-	return paramString(action.Params, "destination", firstNonEmpty(action.Target, j.cfg.Destination))
+	return paramString(action.Params, "destination", protocol.FirstNonEmpty(action.Target, j.cfg.Destination))
 }
 
 func (j *JMS) consumeDestination(action *protocol.Action) string {
@@ -1063,13 +1063,4 @@ func lookupString(key string, values map[string]string, label string) (string, e
 		return "", fmt.Errorf("JMS %s %q not found", label, key)
 	}
 	return value, nil
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }

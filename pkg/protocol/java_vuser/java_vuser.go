@@ -88,7 +88,7 @@ func (j *JavaVuser) Init(_ context.Context, cfg map[string]any) error {
 	operator := config.LoadJavaVuserOperatorConfig()
 	j.cfg = configuration{
 		Enabled:        operator.Enabled,
-		RunnerCommand:  firstNonEmpty(operator.RunnerCommand, defaultRunnerCommand),
+		RunnerCommand:  protocol.FirstNonEmpty(operator.RunnerCommand, defaultRunnerCommand),
 		HarnessJar:     operator.HarnessJar,
 		Classpath:      operator.Classpath,
 		WorkDir:        operator.WorkDir,
@@ -324,13 +324,4 @@ func intParam(params map[string]any, key string, fallback int) int {
 		}
 	}
 	return fallback
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }

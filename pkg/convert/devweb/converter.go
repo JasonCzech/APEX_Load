@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -128,7 +129,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if strings.TrimSpace(req.Content) == "" {
 		return nil, fmt.Errorf("content is required")
 	}
-	return convertSource(firstNonEmpty(req.Name, "Converted_DevWeb_Script"), firstNonEmpty(req.Name, "devweb")+".js", req.Content, req.Options)
+	return convertSource(convertutil.FirstNonEmpty(req.Name, "Converted_DevWeb_Script"), convertutil.FirstNonEmpty(req.Name, "devweb")+".js", req.Content, req.Options)
 }
 
 // Decompression-bomb guards for untrusted DevWeb archive uploads. These also
@@ -165,7 +166,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		return nil, fmt.Errorf("no DevWeb .js file found in archive")
 	}
 	ctx := convertContext{files: files, sourceFileName: sourceFile}
-	return convertSourceWithContext(firstNonEmpty(name, "Converted_DevWeb_Script"), sourceFile, content, opts, ctx)
+	return convertSourceWithContext(convertutil.FirstNonEmpty(name, "Converted_DevWeb_Script"), sourceFile, content, opts, ctx)
 }
 
 func convertSource(name string, sourceFileName string, content string, opts ConvertOptions) (*ConvertResult, error) {

@@ -13,6 +13,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type transportConfig struct {
@@ -152,12 +154,12 @@ func applyNetworkSimulation(transport *http.Transport, config map[string]any) {
 func parseNetworkSimulationProfile(config map[string]any) networkSimulationProfile {
 	mode, _ := config["web_network_simulation_mode"].(string)
 	preset, _ := config["web_network_simulation_preset"].(string)
-	latencyMS, bandwidthKbps := resolveNetworkProfile(mode, preset, configInt(config, "web_network_simulation_latency_ms"), configInt(config, "web_network_simulation_bandwidth_kbps"))
+	latencyMS, bandwidthKbps := resolveNetworkProfile(mode, preset, protocol.ConfigInt(config, "web_network_simulation_latency_ms"), protocol.ConfigInt(config, "web_network_simulation_bandwidth_kbps"))
 	return networkSimulationProfile{
 		latency:          time.Duration(latencyMS) * time.Millisecond,
-		jitter:           time.Duration(configInt(config, "web_network_simulation_jitter_ms")) * time.Millisecond,
+		jitter:           time.Duration(protocol.ConfigInt(config, "web_network_simulation_jitter_ms")) * time.Millisecond,
 		bandwidthBytesPS: bandwidthBytesPerSecond(bandwidthKbps),
-		packetLossPct:    configFloat(config, "web_network_simulation_packet_loss_pct"),
+		packetLossPct:    protocol.ConfigFloat(config, "web_network_simulation_packet_loss_pct"),
 		sleep:            time.Sleep,
 		randFloat64:      defaultRandFloat64,
 	}
@@ -180,26 +182,6 @@ func resolveNetworkProfile(mode, preset string, latencyMS, bandwidthKbps int) (i
 		return latencyMS, bandwidthKbps
 	}
 	return 0, 0
-}
-
-func configInt(config map[string]any, key string) int {
-	if value, ok := config[key].(float64); ok {
-		return int(value)
-	}
-	if value, ok := config[key].(int); ok {
-		return value
-	}
-	return 0
-}
-
-func configFloat(config map[string]any, key string) float64 {
-	if value, ok := config[key].(float64); ok {
-		return value
-	}
-	if value, ok := config[key].(int); ok {
-		return float64(value)
-	}
-	return 0
 }
 
 func bandwidthBytesPerSecond(kbps int) int {

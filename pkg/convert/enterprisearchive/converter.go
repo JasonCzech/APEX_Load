@@ -5,6 +5,7 @@ import (
 	"math"
 	"regexp"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -208,7 +209,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			for k, v := range fn.Headers {
 				pendingHeaders[k] = convertParamReferences(v)
 			}
-			pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", firstNonEmpty(fn.StepName, fn.Name), "headers", "contributor", "Applied to the next converted request action.", SourceFunctionSupportExecutable))
+			pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "headers", "contributor", "Applied to the next converted request action.", SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
@@ -219,7 +220,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			for k, v := range fn.Headers {
 				autoHeaders[k] = convertParamReferences(v)
 			}
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers", firstNonEmpty(fn.StepName, fn.Name), "headers", "converted", "Applied as a persistent auto header until reverted.", SourceFunctionSupportExecutable))
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "headers", "converted", "Applied as a persistent auto header until reverted.", SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
@@ -228,7 +229,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if headerName != "" && autoHeaders != nil {
 				deleteHeaderCaseInsensitive(autoHeaders, headerName)
 			}
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers", firstNonEmpty(headerName, fn.Name), "headers", "converted", "Reverted a persistent source auto header.", SourceFunctionSupportExecutable))
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers", convertutil.FirstNonEmpty(headerName, fn.Name), "headers", "converted", "Reverted a persistent source auto header.", SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
@@ -240,7 +241,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				cookie.Value = convertParamReferences(cookie.Value)
 				persistentCookies = append(persistentCookies, cookie)
 			}
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers.Cookie", firstNonEmpty(fn.StepName, fn.Name), "headers", "converted", "Mapped to Cookie headers on matching downstream HTTP requests.", SourceFunctionSupportExecutable))
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers.Cookie", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "headers", "converted", "Mapped to Cookie headers on matching downstream HTTP requests.", SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
@@ -266,7 +267,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					currentTransaction = parent
 				}
 			}
-			pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", firstNonEmpty(fn.StepName, currentTransaction), "transaction", "contributor", "Applied as a source subtransaction on generated child requests.", SourceFunctionSupportExecutable))
+			pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", convertutil.FirstNonEmpty(fn.StepName, currentTransaction), "transaction", "contributor", "Applied as a source subtransaction on generated child requests.", SourceFunctionSupportExecutable))
 			result.Stats.TransactionMarkers++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
@@ -329,21 +330,21 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		case "web_set_sockets_option":
 			sourceRuntimeControls = append(sourceRuntimeControls, fn)
 			details := applySourceSocketOption(result, fn)
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, stringMapValue(details, "mapped_to", "config.web_runtime.additional_attributes.web_set_sockets_option"), firstNonEmpty(stringMapValue(details, "option", ""), "Socket Option"), "config", "converted", "Mapped from source runtime control.", SourceFunctionSupportExecutable))
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, stringMapValue(details, "mapped_to", "config.web_runtime.additional_attributes.web_set_sockets_option"), convertutil.FirstNonEmpty(stringMapValue(details, "option", ""), "Socket Option"), "config", "converted", "Mapped from source runtime control.", SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
 		case "web_set_timeout":
 			sourceRuntimeControls = append(sourceRuntimeControls, fn)
 			details := applySourceTimeout(result, fn)
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, stringMapValue(details, "mapped_to", "config.web_runtime.additional_attributes.web_set_timeout"), firstNonEmpty(stringMapValue(details, "timeout", ""), "Timeout"), "config", "converted", "Mapped from source runtime control.", SourceFunctionSupportExecutable))
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, stringMapValue(details, "mapped_to", "config.web_runtime.additional_attributes.web_set_timeout"), convertutil.FirstNonEmpty(stringMapValue(details, "timeout", ""), "Timeout"), "config", "converted", "Mapped from source runtime control.", SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
 		case "web_set_user":
 			sourceRuntimeControls = append(sourceRuntimeControls, fn)
 			details := applySourceWebSetUser(result, fn)
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.http.auth", firstNonEmpty(stringMapValue(details, "username", ""), fn.Name), "config", "converted", "Mapped from source web_set_user authentication.", SourceFunctionSupportExecutable))
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.http.auth", convertutil.FirstNonEmpty(stringMapValue(details, "username", ""), fn.Name), "config", "converted", "Mapped from source web_set_user authentication.", SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
@@ -359,7 +360,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if value != "" {
 				setSourceWebRuntimeAttribute(result.Script, "web_set_max_html_param_len", value)
 			}
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.additional_attributes.web_set_max_html_param_len", firstNonEmpty(value, fn.Name), "config", "converted", "Preserved as a source HTTP/HTML runtime compatibility setting.", SourceFunctionSupportNativeNoop))
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.additional_attributes.web_set_max_html_param_len", convertutil.FirstNonEmpty(value, fn.Name), "config", "converted", "Preserved as a source HTTP/HTML runtime compatibility setting.", SourceFunctionSupportNativeNoop))
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportNativeNoop)
 
@@ -469,13 +470,13 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 		default:
 			if isSourceMetadataOnlyContributor(fn.Name) {
-				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.source_contributor_functions", firstNonEmpty(fn.StepName, fn.Name), "review", "review_only", "Preserved as source import metadata; it does not create a visible script action.", SourceFunctionSupportReviewOnly))
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.source_contributor_functions", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "review", "review_only", "Preserved as source import metadata; it does not create a visible script action.", SourceFunctionSupportReviewOnly))
 				result.Stats.ContributorFunctions++
 				recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
 				continue
 			}
 			if def, ok := lookupSourceFunction(fn.Name); ok && def.Family == "transaction" {
-				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.source_transaction_groups", firstNonEmpty(fn.StepName, fn.Name), "transaction", "contributor", "Preserved as a source transaction marker; it does not create a visible script action.", def.SupportMode))
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.source_transaction_groups", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "transaction", "contributor", "Preserved as a source transaction marker; it does not create a visible script action.", def.SupportMode))
 				result.Stats.TransactionMarkers++
 				recordSourceFunctionSupport(result, def.SupportMode)
 				continue

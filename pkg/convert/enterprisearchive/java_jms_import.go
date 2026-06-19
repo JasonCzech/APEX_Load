@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -52,7 +53,7 @@ func convertJavaJMSZip(files map[string]string, opts ConvertOptions, projectConf
 	result := &ConvertResult{
 		Script: &dsl.Script{
 			Version:       "1.0.0",
-			Name:          firstNonEmpty(opts.ScriptName, "Converted_Java_JMS_Solace"),
+			Name:          convertutil.FirstNonEmpty(opts.ScriptName, "Converted_Java_JMS_Solace"),
 			Protocol:      "jms-solace",
 			GeneratedBy:   "apexload-enterprise-script-archive-importer",
 			GeneratedFrom: "enterprise_script_archive",
@@ -116,7 +117,7 @@ func convertJavaJMSZip(files map[string]string, opts ConvertOptions, projectConf
 	}
 
 	action := dsl.Action{
-		Name:    sanitizeName(firstNonEmpty(javaPrimaryActionName(javaSources), "Java_JMS_Solace_Publish")),
+		Name:    sanitizeName(convertutil.FirstNonEmpty(javaPrimaryActionName(javaSources), "Java_JMS_Solace_Publish")),
 		Type:    "jms_publish",
 		Target:  sourceParameterTemplate("requestQueueName"),
 		Body:    convertParamReferences(unescapeSourceCString(body)),

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -34,7 +35,7 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 			lower[strings.ToLower(strings.TrimSpace(key))] = cleanConfigValue(value)
 		}
 
-		name := cleanParameterName(firstNonEmpty(lower["paramname"], lower["name"], sectionName))
+		name := cleanParameterName(convertutil.FirstNonEmpty(lower["paramname"], lower["name"], sectionName))
 		if name == "" || !looksLikeParameterSection(sectionName, lower) {
 			continue
 		}
@@ -42,15 +43,15 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 		selectNextRow := lower["selectnextrow"]
 		param := dsl.Parameter{
 			Name:              name,
-			Update:            mapParameterUpdate(firstNonEmpty(lower["updatevalueon"], lower["generatenewval"])),
+			Update:            mapParameterUpdate(convertutil.FirstNonEmpty(lower["updatevalueon"], lower["generatenewval"])),
 			Selection:         mapParameterSelection(selectNextRow),
-			OnExhaustion:      mapParameterExhaustion(firstNonEmpty(lower["outofvalues"], lower["whenoutofvalues"], lower["outofrangepolicy"])),
+			OnExhaustion:      mapParameterExhaustion(convertutil.FirstNonEmpty(lower["outofvalues"], lower["whenoutofvalues"], lower["outofrangepolicy"])),
 			SameLineAs:        parseParameterSameLineAs(selectNextRow),
-			StartRow:          atoiDefault(firstNonEmpty(lower["startrow"], lower["start_row"]), 0),
-			BlockSize:         atoiDefault(firstNonEmpty(lower["auto_allocate_block_size"], lower["autoallocateblocksize"], lower["blocksize"], lower["block_size"]), 0),
-			ValueForEachVUser: parseBool(firstNonEmpty(lower["value_for_each_vuser"], lower["valueforeachvuser"])),
+			StartRow:          atoiDefault(convertutil.FirstNonEmpty(lower["startrow"], lower["start_row"]), 0),
+			BlockSize:         atoiDefault(convertutil.FirstNonEmpty(lower["auto_allocate_block_size"], lower["autoallocateblocksize"], lower["blocksize"], lower["block_size"]), 0),
+			ValueForEachVUser: parseBool(convertutil.FirstNonEmpty(lower["value_for_each_vuser"], lower["valueforeachvuser"])),
 		}
-		rawType := strings.ToLower(firstNonEmpty(lower["type"], lower["valuetype"], lower["datatype"], lower["paramtype"]))
+		rawType := strings.ToLower(convertutil.FirstNonEmpty(lower["type"], lower["valuetype"], lower["datatype"], lower["paramtype"]))
 		switch {
 		case isSourceVUserIDType(rawType):
 			param.Type = "vuser_id"
@@ -58,55 +59,55 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 		case isSourceCurrentIterationType(rawType):
 			param.Type = "current_iteration"
 			param.Update = "each_iteration"
-			param.Start = atoiDefault(firstNonEmpty(lower["startvalue"], lower["start"]), 1)
-			param.Step = atoiDefault(firstNonEmpty(lower["increment"], lower["step"]), 1)
+			param.Start = atoiDefault(convertutil.FirstNonEmpty(lower["startvalue"], lower["start"]), 1)
+			param.Step = atoiDefault(convertutil.FirstNonEmpty(lower["increment"], lower["step"]), 1)
 			param.PadWidth = sourceIntegerFormatPadWidth(lower["format"])
 		case isSourceHostType(rawType):
 			param.Type = "host"
 			param.Update = "once"
-			if originalValue := firstNonEmpty(lower["originalvalue"]); originalValue != "" {
+			if originalValue := convertutil.FirstNonEmpty(lower["originalvalue"]); originalValue != "" {
 				param.Values = []string{originalValue}
 			}
 		case isSourceRandomNumberType(rawType, lower):
 			param.Type = "random_number"
-			param.Min = atoiDefault(firstNonEmpty(lower["minimumvalue"], lower["minvalue"], lower["min"], lower["startvalue"]), 0)
-			param.Max = atoiDefault(firstNonEmpty(lower["maximumvalue"], lower["maxvalue"], lower["max"], lower["endvalue"]), 100)
+			param.Min = atoiDefault(convertutil.FirstNonEmpty(lower["minimumvalue"], lower["minvalue"], lower["min"], lower["startvalue"]), 0)
+			param.Max = atoiDefault(convertutil.FirstNonEmpty(lower["maximumvalue"], lower["maxvalue"], lower["max"], lower["endvalue"]), 100)
 			param.PadWidth = sourceIntegerFormatPadWidth(lower["format"])
 		case strings.Contains(rawType, "date"):
 			param.Type = "date_time"
-			param.Format = mapSourceTimeFormat(firstNonEmpty(lower["format"], lower["dateformat"], lower["datetimeformat"]))
-			param.Timezone = firstNonEmpty(lower["timezone"], lower["time_zone"])
-			param.OffsetSeconds = atoiDefault(firstNonEmpty(lower["offsetseconds"], lower["offset"]), 0)
+			param.Format = mapSourceTimeFormat(convertutil.FirstNonEmpty(lower["format"], lower["dateformat"], lower["datetimeformat"]))
+			param.Timezone = convertutil.FirstNonEmpty(lower["timezone"], lower["time_zone"])
+			param.OffsetSeconds = atoiDefault(convertutil.FirstNonEmpty(lower["offsetseconds"], lower["offset"]), 0)
 		case strings.Contains(rawType, "timestamp") || strings.Contains(rawType, "time stamp"):
 			param.Type = "timestamp"
-			param.Format = mapSourceTimestampFormat(firstNonEmpty(lower["format"], lower["timestampformat"]))
-			param.Timezone = firstNonEmpty(lower["timezone"], lower["time_zone"])
-			param.OffsetSeconds = atoiDefault(firstNonEmpty(lower["offsetseconds"], lower["offset"]), 0)
+			param.Format = mapSourceTimestampFormat(convertutil.FirstNonEmpty(lower["format"], lower["timestampformat"]))
+			param.Timezone = convertutil.FirstNonEmpty(lower["timezone"], lower["time_zone"])
+			param.OffsetSeconds = atoiDefault(convertutil.FirstNonEmpty(lower["offsetseconds"], lower["offset"]), 0)
 		case isSourceTimeType(rawType):
 			param.Type = "time"
-			param.Format = mapSourceTimeFormat(firstNonEmpty(lower["format"], lower["dateformat"], lower["datetimeformat"]))
-			param.Timezone = firstNonEmpty(lower["timezone"], lower["time_zone"], sourceTimeFormatTimezone(param.Format))
-			param.OffsetSeconds = atoiDefault(firstNonEmpty(lower["offsetseconds"], lower["offset"]), 0)
+			param.Format = mapSourceTimeFormat(convertutil.FirstNonEmpty(lower["format"], lower["dateformat"], lower["datetimeformat"]))
+			param.Timezone = convertutil.FirstNonEmpty(lower["timezone"], lower["time_zone"], sourceTimeFormatTimezone(param.Format))
+			param.OffsetSeconds = atoiDefault(convertutil.FirstNonEmpty(lower["offsetseconds"], lower["offset"]), 0)
 		case strings.Contains(rawType, "counter") || lower["increment"] != "":
 			param.Type = "counter"
-			param.Start = atoiDefault(firstNonEmpty(lower["startvalue"], lower["start"]), 0)
-			param.End = atoiDefault(firstNonEmpty(lower["endvalue"], lower["end"]), 0)
-			param.Step = atoiDefault(firstNonEmpty(lower["increment"], lower["step"]), 1)
+			param.Start = atoiDefault(convertutil.FirstNonEmpty(lower["startvalue"], lower["start"]), 0)
+			param.End = atoiDefault(convertutil.FirstNonEmpty(lower["endvalue"], lower["end"]), 0)
+			param.Step = atoiDefault(convertutil.FirstNonEmpty(lower["increment"], lower["step"]), 1)
 		case strings.Contains(rawType, "uuid"):
 			param.Type = "uuid"
 		case strings.Contains(rawType, "random") && strings.Contains(rawType, "string"):
 			param.Type = "random_string"
-			param.Length = atoiDefault(firstNonEmpty(lower["length"], lower["size"]), 12)
-			param.Charset = firstNonEmpty(lower["charset"], lower["characterset"])
+			param.Length = atoiDefault(convertutil.FirstNonEmpty(lower["length"], lower["size"]), 12)
+			param.Charset = convertutil.FirstNonEmpty(lower["charset"], lower["characterset"])
 		default:
-			valueList := firstNonEmpty(lower["valuelist"], lower["values"], lower["valuelist1"])
-			dataFile := firstNonEmpty(lower["table"], lower["filename"], lower["file"], lower["datafile"], lower["sourcefile"])
+			valueList := convertutil.FirstNonEmpty(lower["valuelist"], lower["values"], lower["valuelist1"])
+			dataFile := convertutil.FirstNonEmpty(lower["table"], lower["filename"], lower["file"], lower["datafile"], lower["sourcefile"])
 			if valueList != "" {
 				param.Type = "list"
 				param.Values = splitListValues(valueList)
 			} else if dataFile != "" {
 				param.Type = "file"
-				column := firstNonEmpty(lower["columnname"], lower["column"], lower["colname"])
+				column := convertutil.FirstNonEmpty(lower["columnname"], lower["column"], lower["colname"])
 				if dataContent, ok := findFile(archiveFiles, dataFile); ok && column != "" {
 					dataSourceName, exists := dataSourceByFile[strings.ToLower(filepath.Base(dataFile))]
 					if !exists {
@@ -157,8 +158,8 @@ func isSourceRandomNumberType(rawType string, values map[string]string) bool {
 	if rawType != "random" {
 		return false
 	}
-	return firstNonEmpty(values["minimumvalue"], values["min"], values["startvalue"], values["minvalue"]) != "" ||
-		firstNonEmpty(values["maximumvalue"], values["max"], values["endvalue"], values["maxvalue"]) != ""
+	return convertutil.FirstNonEmpty(values["minimumvalue"], values["min"], values["startvalue"], values["minvalue"]) != "" ||
+		convertutil.FirstNonEmpty(values["maximumvalue"], values["max"], values["endvalue"], values["maxvalue"]) != ""
 }
 
 func buildParameterDataSource(dataSourceName, dataFile, dataContent, column, delimiter, paramName string) dsl.DataSource {
@@ -457,15 +458,6 @@ func parseParameterDataLine(line, delimiter string) []string {
 		fields[i] = cleanConfigValue(fields[i])
 	}
 	return fields
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }
 
 func atoiDefault(value string, fallback int) int {

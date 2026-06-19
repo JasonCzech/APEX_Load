@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -14,14 +15,14 @@ func parseAuthManager(node *xmlNode, diagnostics *diag.Collector) []jmeterAuth {
 	var auths []jmeterAuth
 	location := jmeterElementLocation(node)
 	for _, element := range descendantsByAttr(node, "elementType", "Authorization") {
-		username := convertVariablesWithDiagnostics(firstNonEmpty(prop(element, "Authorization.username"), prop(element, "username")), diagnostics, location)
-		password := convertVariablesWithDiagnostics(firstNonEmpty(prop(element, "Authorization.password"), prop(element, "password")), diagnostics, location)
-		mechanism := strings.TrimSpace(firstNonEmpty(prop(element, "Authorization.mechanism"), prop(element, "Authorization.Mechanism"), prop(element, "mechanism")))
+		username := convertVariablesWithDiagnostics(convertutil.FirstNonEmpty(prop(element, "Authorization.username"), prop(element, "username")), diagnostics, location)
+		password := convertVariablesWithDiagnostics(convertutil.FirstNonEmpty(prop(element, "Authorization.password"), prop(element, "password")), diagnostics, location)
+		mechanism := strings.TrimSpace(convertutil.FirstNonEmpty(prop(element, "Authorization.mechanism"), prop(element, "Authorization.Mechanism"), prop(element, "mechanism")))
 		auth := jmeterAuth{
-			URL:       convertVariablesWithDiagnostics(firstNonEmpty(prop(element, "Authorization.url"), prop(element, "url")), diagnostics, location),
+			URL:       convertVariablesWithDiagnostics(convertutil.FirstNonEmpty(prop(element, "Authorization.url"), prop(element, "url")), diagnostics, location),
 			Username:  username,
 			Password:  password,
-			Domain:    convertVariablesWithDiagnostics(firstNonEmpty(prop(element, "Authorization.domain"), prop(element, "domain")), diagnostics, location),
+			Domain:    convertVariablesWithDiagnostics(convertutil.FirstNonEmpty(prop(element, "Authorization.domain"), prop(element, "domain")), diagnostics, location),
 			Mechanism: mechanism,
 		}
 		auth.Config = authConfigFromJMeterAuth(auth, diagnostics, location)
@@ -37,14 +38,14 @@ func authConfigFromJMeterAuth(auth jmeterAuth, diagnostics *diag.Collector, loca
 	mechanism := strings.ToLower(strings.TrimSpace(auth.Mechanism))
 	switch {
 	case strings.Contains(mechanism, "bearer") || strings.Contains(mechanism, "token"):
-		return dsl.AuthConfig{Type: "bearer", Token: firstNonEmpty(auth.Password, auth.Username, "{{env.API_TOKEN}}")}
+		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(auth.Password, auth.Username, "{{env.API_TOKEN}}")}
 	case strings.Contains(mechanism, "digest"):
-		return dsl.AuthConfig{Type: "digest", Username: firstNonEmpty(auth.Username, "{{env.API_USERNAME}}"), Password: firstNonEmpty(auth.Password, "{{env.API_PASSWORD}}"), Domain: auth.Domain}
+		return dsl.AuthConfig{Type: "digest", Username: convertutil.FirstNonEmpty(auth.Username, "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(auth.Password, "{{env.API_PASSWORD}}"), Domain: auth.Domain}
 	case mechanism == "" || strings.Contains(mechanism, "basic") || strings.Contains(mechanism, "kerberos"):
 		if strings.Contains(mechanism, "kerberos") && diagnostics != nil {
 			diagnostics.Add(diag.Warning, "JMeter AuthManager", location, "Kerberos auth was approximated as basic credentials; configure native auth before replay")
 		}
-		return dsl.AuthConfig{Type: "basic", Username: firstNonEmpty(auth.Username, "{{env.API_USERNAME}}"), Password: firstNonEmpty(auth.Password, "{{env.API_PASSWORD}}")}
+		return dsl.AuthConfig{Type: "basic", Username: convertutil.FirstNonEmpty(auth.Username, "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(auth.Password, "{{env.API_PASSWORD}}")}
 	default:
 		if diagnostics != nil {
 			diagnostics.Add(diag.Warning, "JMeter AuthManager", location, "auth mechanism "+auth.Mechanism+" was not converted")

@@ -54,8 +54,8 @@ func TestConfigIntAcceptsEngineNumericTypes(t *testing.T) {
 		"missing": 0,
 	}
 	for key, want := range tests {
-		if got := configInt(config, key); got != want {
-			t.Fatalf("configInt(%q) = %d, want %d", key, got, want)
+		if got := protocol.ConfigInt(config, key); got != want {
+			t.Fatalf("protocol.ConfigInt(%q) = %d, want %d", key, got, want)
 		}
 	}
 }

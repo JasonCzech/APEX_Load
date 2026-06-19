@@ -8,6 +8,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -23,7 +24,7 @@ func parseTestActionPauseMs(node *treeNode) int {
 			}
 		}
 	}
-	return parseInt(firstNonEmpty(
+	return parseInt(convertutil.FirstNonEmpty(
 		prop(node.Element, "ActionProcessor.duration"),
 		prop(node.Element, "TestAction.duration"),
 		prop(node.Element, "duration"),
@@ -33,7 +34,7 @@ func parseTestActionPauseMs(node *treeNode) int {
 func parseCSVDataSet(node *xmlNode, sidecarFiles map[string][]byte) dsl.DataSource {
 	filename := prop(node, "filename")
 	variableNames := splitCSVNames(prop(node, "variableNames"))
-	delimiter := firstNonEmpty(prop(node, "delimiter"), ",")
+	delimiter := convertutil.FirstNonEmpty(prop(node, "delimiter"), ",")
 	firstRowHeader := len(variableNames) == 0
 	inlineData := ""
 	if len(variableNames) == 0 {
@@ -42,7 +43,7 @@ func parseCSVDataSet(node *xmlNode, sidecarFiles map[string][]byte) dsl.DataSour
 			inlineData = string(content)
 		}
 	}
-	name := sanitizeName(firstNonEmpty(attrOr(node, "testname", ""), path.Base(filename), "csv_data"))
+	name := sanitizeName(convertutil.FirstNonEmpty(attrOr(node, "testname", ""), path.Base(filename), "csv_data"))
 	strategy := "sequential"
 	if strings.EqualFold(prop(node, "randomOrder"), "true") {
 		strategy = "random"
@@ -125,7 +126,7 @@ func jmeterCSVDelimiter(value string) rune {
 }
 
 func parseTimerMs(node *xmlNode, elementName string) int {
-	delay := parseInt(firstNonEmpty(
+	delay := parseInt(convertutil.FirstNonEmpty(
 		prop(node, "ConstantTimer.delay"),
 		prop(node, "RandomTimer.delay"),
 		prop(node, "GaussianRandomTimer.delay"),
@@ -150,8 +151,8 @@ func parseTimerMs(node *xmlNode, elementName string) int {
 		}
 	}
 	if isThroughputTimer(elementName) {
-		if throughput := parseFloat(firstNonEmpty(prop(node, "throughput"), jmeterNamedValue(node, "throughput"), prop(node, "ConstantThroughputTimer.throughput"), prop(node, "PreciseThroughputTimer.throughput"))); throughput > 0 {
-			period := parseInt(firstNonEmpty(prop(node, "throughputPeriod"), jmeterNamedValue(node, "throughputPeriod"), prop(node, "PreciseThroughputTimer.throughputPeriod")))
+		if throughput := parseFloat(convertutil.FirstNonEmpty(prop(node, "throughput"), jmeterNamedValue(node, "throughput"), prop(node, "ConstantThroughputTimer.throughput"), prop(node, "PreciseThroughputTimer.throughput"))); throughput > 0 {
+			period := parseInt(convertutil.FirstNonEmpty(prop(node, "throughputPeriod"), jmeterNamedValue(node, "throughputPeriod"), prop(node, "PreciseThroughputTimer.throughputPeriod")))
 			if period <= 0 {
 				period = 60
 			}

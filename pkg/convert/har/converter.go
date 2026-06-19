@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
@@ -60,7 +61,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 	artifactMode := normalizeArtifactMode(opts.ArtifactMode)
 	retentionDays := normalizeRetentionDays(opts.RetentionDays)
-	redactionEnabled := boolOption(opts.RedactSensitive, true)
+	redactionEnabled := convertutil.BoolOption(opts.RedactSensitive, true)
 	content := data
 	governanceWarnings := []string{}
 	sensitivity := scrub.SensitivityRaw
@@ -76,7 +77,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 	result, err := sample.Convert(sample.ImportRequest{
-		Name:    firstNonEmpty(opts.ScriptName, "Imported_HAR_Script"),
+		Name:    convertutil.FirstNonEmpty(opts.ScriptName, "Imported_HAR_Script"),
 		Format:  "har",
 		Content: string(content),
 		Options: sample.ConvertOptions{
@@ -118,22 +119,6 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			Warnings:            governanceWarnings,
 		},
 	}, nil
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
-
-func boolOption(value *bool, fallback bool) bool {
-	if value == nil {
-		return fallback
-	}
-	return *value
 }
 
 func normalizeArtifactMode(value string) string {

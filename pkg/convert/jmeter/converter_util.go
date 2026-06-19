@@ -38,15 +38,6 @@ func sortedKeys(set map[string]struct{}) []string {
 	return out
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
-
 func parseInt(value string) int {
 	n, _ := strconv.Atoi(strings.TrimSpace(value))
 	return n
