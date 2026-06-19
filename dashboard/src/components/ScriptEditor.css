@@ -4350,6 +4350,10 @@
 .txn-wrap-hint.warning { color: var(--warning); }
 .txn-wrap-input { padding: 3px 6px; font-size: 12px; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; min-width: 120px; }
 .action-txn-marker { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; border-radius: 4px; color: var(--success); background: rgba(var(--success-rgb), 0.12); border: 1px solid rgba(var(--success-rgb), 0.5); white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+/* Transaction band: a left rail bracketing the rows of one transaction. */
+.action-item.in-txn-band { box-shadow: inset 3px 0 0 var(--accent); background: rgba(var(--accent-rgb), 0.05); }
+.action-item.in-txn-band.txn-band-first { box-shadow: inset 3px 2px 0 -1px var(--accent), inset 3px 0 0 var(--accent); }
+.action-item.in-txn-band.txn-band-last { border-bottom-color: transparent; box-shadow: inset 3px -2px 0 -1px var(--accent), inset 3px 0 0 var(--accent); }
 .action-list { max-height: min(420px, 34vh); overflow-y: auto; }
 .action-item {
   display: flex; align-items: center; gap: 8px; padding: 10px 16px;

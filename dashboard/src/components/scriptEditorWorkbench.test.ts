@@ -12,6 +12,7 @@ import {
   codePathForDebugRow,
   actionTransactionMarker,
   actionTransactionName,
+  computeTransactionBands,
   defaultCenterTabsState,
   duplicateActionInList,
   filterScriptPhaseActionRows,
@@ -386,6 +387,56 @@ describe('filterScriptPhaseActionRows', () => {
       // wrap [1..2]: start at 1 (1,2 -> +1), end after 2 (>2 -> +2)
       expect([0, 1, 2].map(i => remapIndexAfterMarkerWrap(i, 1, 2))).toEqual([0, 2, 3])
       expect(remapIndexAfterMarkerWrap(3, 1, 2)).toBe(5)
+    })
+  })
+
+  describe('computeTransactionBands', () => {
+    const row = (actionIndex: number, action: Record<string, unknown>, phase = 'action') => ({
+      phase, phaseLabel: phase, actionIndex, globalIndex: actionIndex, action,
+    }) as unknown as Parameters<typeof computeTransactionBands>[0][number]
+    const key = (phase: string, i: number) => `${phase}-${i}`
+
+    it('bands a span from the start marker through the end marker', () => {
+      const rows = [
+        row(0, { type: 'GET' }),
+        row(1, { type: 'source_transaction', name: 'Checkout', params: { function: 'lr_start_transaction' } }),
+        row(2, { type: 'GET' }),
+        row(3, { type: 'POST' }),
+        row(4, { type: 'source_transaction', name: 'Checkout', params: { function: 'lr_end_transaction' } }),
+        row(5, { type: 'GET' }),
+      ]
+      const bands = computeTransactionBands(rows)
+      expect(bands.has(key('action', 0))).toBe(false)
+      expect(bands.has(key('action', 5))).toBe(false)
+      expect(bands.get(key('action', 1))).toEqual({ name: 'Checkout', first: true, last: false })
+      expect(bands.get(key('action', 2))).toEqual({ name: 'Checkout', first: false, last: false })
+      expect(bands.get(key('action', 4))).toEqual({ name: 'Checkout', first: false, last: true })
+    })
+
+    it('bands a contiguous run of metadata-tagged rows', () => {
+      const rows = [
+        row(0, { type: 'GET', metadata: { source_transaction: 'Login' } }),
+        row(1, { type: 'POST', metadata: { source_transaction: 'Login' } }),
+        row(2, { type: 'GET' }),
+      ]
+      const bands = computeTransactionBands(rows)
+      expect(bands.get(key('action', 0))).toEqual({ name: 'Login', first: true, last: false })
+      expect(bands.get(key('action', 1))).toEqual({ name: 'Login', first: false, last: true })
+      expect(bands.has(key('action', 2))).toBe(false)
+    })
+
+    it('does not join same-named rows across a phase boundary', () => {
+      const rows = [
+        row(0, { type: 'GET', metadata: { source_transaction: 'T' } }, 'init'),
+        row(0, { type: 'GET', metadata: { source_transaction: 'T' } }, 'action'),
+      ]
+      const bands = computeTransactionBands(rows)
+      expect(bands.get(key('init', 0))).toEqual({ name: 'T', first: true, last: true })
+      expect(bands.get(key('action', 0))).toEqual({ name: 'T', first: true, last: true })
+    })
+
+    it('returns an empty map when there are no transactions', () => {
+      expect(computeTransactionBands([row(0, { type: 'GET' }), row(1, { type: 'POST' })]).size).toBe(0)
     })
   })
 

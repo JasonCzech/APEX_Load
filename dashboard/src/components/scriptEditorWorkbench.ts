@@ -379,6 +379,56 @@ export function remapIndexAfterMarkerWrap(index: number, lo: number, hi: number)
   return index + 2
 }
 
+export interface TransactionBandCell {
+  /** The transaction this row belongs to. */
+  name: string
+  /** First/last row of a contiguous run of the same transaction (for the caps). */
+  first: boolean
+  last: boolean
+}
+
+/**
+ * Annotate a list of action rows with the transaction "band" each belongs to,
+ * so the outline can bracket a transaction's rows with a left rail. Covers both
+ * representations: a span marker pair (the lr_start row, the actions between,
+ * and the lr_end row) and a contiguous run of metadata-tagged rows. Bands pair
+ * only within one phase. Returned map is keyed by `${phase}-${actionIndex}`.
+ */
+export function computeTransactionBands(rows: ScriptPhaseActionRow[]): Map<string, TransactionBandCell> {
+  // Pass 1: the transaction name each row belongs to ('' = none).
+  const bandName: string[] = new Array(rows.length).fill('')
+  const openMarkers: string[] = []
+  let phase: string | null = null
+  rows.forEach((row, i) => {
+    if (row.phase !== phase) { openMarkers.length = 0; phase = row.phase }
+    const marker = actionTransactionMarker(row.action)
+    if (marker?.role === 'start') {
+      bandName[i] = marker.name
+      openMarkers.push(marker.name)
+      return
+    }
+    if (marker?.role === 'end') {
+      bandName[i] = marker.name
+      const at = openMarkers.lastIndexOf(marker.name)
+      if (at >= 0) openMarkers.splice(at, 1)
+      else openMarkers.pop()
+      return
+    }
+    if (openMarkers.length) { bandName[i] = openMarkers[openMarkers.length - 1]; return }
+    bandName[i] = actionTransactionName(row.action)
+  })
+  // Pass 2: caps at the edges of contiguous same-name runs (same phase).
+  const out = new Map<string, TransactionBandCell>()
+  rows.forEach((row, i) => {
+    const name = bandName[i]
+    if (!name) return
+    const prevSame = i > 0 && rows[i - 1].phase === row.phase && bandName[i - 1] === name
+    const nextSame = i < rows.length - 1 && rows[i + 1].phase === row.phase && bandName[i + 1] === name
+    out.set(`${row.phase}-${row.actionIndex}`, { name, first: !prevSame, last: !nextSame })
+  })
+  return out
+}
+
 /**
  * Filter outline action rows by a free-text query, matching an action's name,
  * type, target, or phase label (case-insensitive). An empty/whitespace query

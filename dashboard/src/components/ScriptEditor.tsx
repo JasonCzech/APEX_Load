@@ -159,6 +159,7 @@ import {
   duplicateActionInList,
   actionTransactionName,
   actionTransactionMarker,
+  computeTransactionBands,
   tagActionsTransaction,
   uniqueTransactionName,
   wrapActionsInTransactionMarkers,
@@ -3040,6 +3041,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     () => filterScriptPhaseActionRows(scriptPhaseActionRows, outlineActionFilter),
     [scriptPhaseActionRows, outlineActionFilter],
   )
+  // Per-row transaction band membership (left rail bracketing a transaction's rows).
+  const transactionBands = useMemo(() => computeTransactionBands(filteredActionRows), [filteredActionRows])
   // Virtualize the Author Action List so a multi-thousand-action import renders only the
   // visible rows instead of one DOM subtree per action.
   const actionListScrollRef = useRef<HTMLDivElement | null>(null)
@@ -10396,6 +10399,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         const extractorCount = actionExtractorCount(a)
                         const fallbackCount = actionSelectorFallbackCount(a)
                         const txnMarker = actionTransactionMarker(a)
+                        const txnBandCell = transactionBands.get(`${phase}-${i}`)
+                        // Only bracket multi-row transactions; a single-action transaction is
+                        // already marked by its pill, so a one-row band is just noise.
+                        const txnBand = txnBandCell && !(txnBandCell.first && txnBandCell.last) ? txnBandCell : undefined
                         const reviewGated = actionRequiresReview(a)
                         const controlAction = isControlAction(a)
                         const rowIssues = phase === 'action' ? actionIssueBuckets[i] || [] : []
@@ -10407,7 +10414,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             key={`${phase}-${i}`}
                             data-index={virtualItem ? virtualItem.index : undefined}
                             ref={virtualItem ? actionListVirtualizer.measureElement : undefined}
-                            className={`action-item ${rowActive ? 'active' : ''} ${actionBreakpointActive ? 'has-breakpoint' : ''} ${phase !== 'action' ? 'lifecycle-action' : ''}`}
+                            className={`action-item ${rowActive ? 'active' : ''} ${actionBreakpointActive ? 'has-breakpoint' : ''} ${phase !== 'action' ? 'lifecycle-action' : ''} ${txnBand ? 'in-txn-band' : ''} ${txnBand?.first ? 'txn-band-first' : ''} ${txnBand?.last ? 'txn-band-last' : ''}`}
+                            title={txnBand ? `Transaction: ${txnBand.name}` : undefined}
                             style={virtualItem ? { position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualItem.start}px)` } : undefined}
                             onClick={() => selectAuthorPhaseAction(row)}
                           >
