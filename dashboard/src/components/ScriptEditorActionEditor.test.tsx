@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { ScriptActionDefinition } from '../types/scripts'
-import { ControlBranchEditor } from './ScriptEditorActionEditor'
+import { ActionEditor, ControlBranchEditor } from './ScriptEditorActionEditor'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -76,5 +76,61 @@ describe('ControlBranchEditor', () => {
     const textarea = container.querySelector('textarea') as HTMLTextAreaElement
     expect(textarea).not.toBeNull()
     expect(JSON.parse(textarea.value)).toHaveLength(2)
+  })
+})
+
+describe('ActionEditor transaction field', () => {
+  const labelInput = (labelText: string) =>
+    [...container.querySelectorAll('label')]
+      .find(l => l.querySelector('span')?.textContent === labelText)
+      ?.querySelector('input') as HTMLInputElement | undefined
+
+  const renderEditor = (action: ScriptActionDefinition) => {
+    const updates: Array<[number, string, unknown]> = []
+    const noop = () => {}
+    act(() => {
+      root.render(
+        <ActionEditor
+          action={action}
+          index={0}
+          parameters={[]}
+          onUpdate={(i, f, v) => updates.push([i, f as string, v])}
+          onAddExtractor={noop}
+          onUpdateExtractor={noop}
+          onRemoveExtractor={noop}
+          onAddAssertion={noop}
+          onUpdateAssertion={noop}
+          onRemoveAssertion={noop}
+          onAddHeader={noop}
+          onUpdateHeader={noop}
+          onRemoveHeader={noop}
+          onAddMetadata={noop}
+          onUpdateMetadata={noop}
+          onRemoveMetadata={noop}
+          onBeginParameterEdit={noop}
+          methodColor={() => '#000'}
+          protocol="http"
+          isBrowserScript={false}
+          isJmsScript={false}
+          isSoapScript={false}
+          issues={[]}
+        />,
+      )
+    })
+    return updates
+  }
+
+  it('shows an empty Transaction field and tags the action on input', () => {
+    const updates = renderEditor({ name: 'Login', type: 'POST', target: '/login' } as unknown as ScriptActionDefinition)
+    const input = labelInput('Transaction')!
+    expect(input).toBeTruthy()
+    expect(input.value).toBe('')
+    act(() => { setInputValue(input, 'Checkout') })
+    expect(updates[updates.length - 1]).toEqual([0, 'metadata', { source_transaction: 'Checkout' }])
+  })
+
+  it('prefills the Transaction field from the existing tag', () => {
+    renderEditor({ name: 'Login', type: 'POST', target: '/login', metadata: { source_transaction: 'Auth', keep: 1 } } as unknown as ScriptActionDefinition)
+    expect(labelInput('Transaction')!.value).toBe('Auth')
   })
 })

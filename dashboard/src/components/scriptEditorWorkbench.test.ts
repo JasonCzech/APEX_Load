@@ -10,13 +10,17 @@ import {
   buildScriptPhaseActionRows,
   clampDebuggerPaneSize,
   codePathForDebugRow,
+  actionTransactionName,
   defaultCenterTabsState,
   duplicateActionInList,
   filterScriptPhaseActionRows,
   findParameterReferencesInJson,
   moveActionStep,
   removeActionStep,
+  setActionTransactionName,
+  tagActionsTransaction,
   uniqueActionName,
+  uniqueTransactionName,
   updateActionStepField,
   formatBrowserDeviceProfileLabel,
   formatDebugPhaseLabel,
@@ -297,6 +301,41 @@ describe('filterScriptPhaseActionRows', () => {
     it('returns the list unchanged for an out-of-range index', () => {
       const original = list()
       expect(duplicateActionInList(original, 9)).toBe(original)
+    })
+  })
+
+  describe('transactions', () => {
+    const tagged = { name: 'Login', type: 'POST', metadata: { source_transaction: 'Checkout', note: 'keep' } } as unknown as ScriptActionDefinition
+    const untagged = { name: 'Search', type: 'GET' } as unknown as ScriptActionDefinition
+
+    it('reads the transaction tag, incl. the legacy key', () => {
+      expect(actionTransactionName(tagged)).toBe('Checkout')
+      expect(actionTransactionName(untagged)).toBe('')
+      expect(actionTransactionName({ metadata: { loadrunner_transaction: 'Legacy' } } as unknown as ScriptActionDefinition)).toBe('Legacy')
+    })
+
+    it('sets the tag while preserving other metadata', () => {
+      const next = setActionTransactionName(untagged, 'Browse')
+      expect(next.metadata).toEqual({ source_transaction: 'Browse' })
+      const onExisting = setActionTransactionName(tagged, 'NewName')
+      expect(onExisting.metadata).toEqual({ source_transaction: 'NewName', note: 'keep' })
+    })
+
+    it('clears the tag and drops metadata when it would become empty', () => {
+      expect(setActionTransactionName({ name: 'x', type: 'GET', metadata: { source_transaction: 'A' } } as unknown as ScriptActionDefinition, '').metadata).toBeUndefined()
+      // but keeps other metadata keys
+      expect(setActionTransactionName(tagged, '').metadata).toEqual({ note: 'keep' })
+    })
+
+    it('tags only the selected indices for a group wrap', () => {
+      const actions = [untagged, untagged, untagged] as ScriptActionDefinition[]
+      const next = tagActionsTransaction(actions, [0, 2], 'Group')
+      expect(next.map(actionTransactionName)).toEqual(['Group', '', 'Group'])
+    })
+
+    it('derives a unique default transaction name', () => {
+      expect(uniqueTransactionName([])).toBe('Transaction 1')
+      expect(uniqueTransactionName([tagged, { metadata: { source_transaction: 'Transaction 1' } } as unknown as ScriptActionDefinition])).toBe('Transaction 2')
     })
   })
 

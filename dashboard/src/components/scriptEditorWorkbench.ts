@@ -265,6 +265,63 @@ export function duplicateActionInList(
   return [...actions.slice(0, index + 1), clone, ...actions.slice(index + 1)]
 }
 
+// --- Transactions ----------------------------------------------------------
+// A transaction is a named, timed unit the engine aggregates (TPS, percentiles,
+// pass/fail) and SLAs attach to. The engine groups actions by the
+// `metadata.source_transaction` tag (the same key the recorder and importers
+// emit), so "wrapping" an action in a transaction is just tagging it — no new
+// DSL shape. The legacy `loadrunner_transaction` key is read for back-compat.
+
+const TRANSACTION_META_KEY = 'source_transaction'
+
+/** The transaction name an action is tagged with, or '' if none. */
+export function actionTransactionName(action: ScriptActionDefinition): string {
+  const meta = action.metadata
+  const raw = meta?.[TRANSACTION_META_KEY] ?? meta?.loadrunner_transaction
+  return typeof raw === 'string' ? raw.trim() : ''
+}
+
+/**
+ * Set (or, with an empty name, clear) an action's transaction tag, preserving
+ * every other metadata and action key verbatim (R1). Metadata is dropped
+ * entirely when it would otherwise become empty, to avoid noise in the JSON.
+ */
+export function setActionTransactionName(
+  action: ScriptActionDefinition,
+  name: string,
+): ScriptActionDefinition {
+  const trimmed = name.trim()
+  const meta: Record<string, unknown> = { ...(action.metadata || {}) }
+  if (trimmed) {
+    meta[TRANSACTION_META_KEY] = trimmed
+  } else {
+    delete meta[TRANSACTION_META_KEY]
+    delete meta.loadrunner_transaction
+  }
+  const next: ScriptActionDefinition = { ...action }
+  if (Object.keys(meta).length > 0) next.metadata = meta
+  else delete next.metadata
+  return next
+}
+
+/** Tag the actions at `indices` with one transaction name (used for group wrap). */
+export function tagActionsTransaction(
+  actions: ScriptActionDefinition[],
+  indices: number[],
+  name: string,
+): ScriptActionDefinition[] {
+  const selected = new Set(indices)
+  return actions.map((action, i) => (selected.has(i) ? setActionTransactionName(action, name) : action))
+}
+
+/** A default transaction name not already in use ("Transaction 1", "Transaction 2", ...). */
+export function uniqueTransactionName(actions: ScriptActionDefinition[]): string {
+  const existing = new Set(actions.map(actionTransactionName).filter(Boolean))
+  let n = 1
+  while (existing.has(`Transaction ${n}`)) n += 1
+  return `Transaction ${n}`
+}
+
 /**
  * Filter outline action rows by a free-text query, matching an action's name,
  * type, target, or phase label (case-insensitive). An empty/whitespace query

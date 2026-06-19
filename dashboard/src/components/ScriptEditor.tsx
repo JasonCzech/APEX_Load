@@ -157,6 +157,9 @@ import {
   buildScriptPhaseActionRows,
   filterScriptPhaseActionRows,
   duplicateActionInList,
+  actionTransactionName,
+  tagActionsTransaction,
+  uniqueTransactionName,
   clampDebuggerPaneSize,
   codePathForDebugRow,
   findParameterReferencesInJson,
@@ -2901,6 +2904,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [autoParamSeedRows, setAutoParamSeedRows] = useState(1)
   // Multi-select of main-phase actions for "Save as block" (project-scoped reusable block).
   const [blockSelection, setBlockSelection] = useState<Set<number>>(new Set())
+  // Inline naming draft when wrapping the block selection in a transaction
+  // (null = not naming). Pre-filled with a unique default; null cancels.
+  const [txnWrapDraft, setTxnWrapDraft] = useState<string | null>(null)
   const [showSaveBlockModal, setShowSaveBlockModal] = useState(false)
   const [saveBlockName, setSaveBlockName] = useState('')
   const [saveBlockKind, setSaveBlockKind] = useState('request_group')
@@ -6361,6 +6367,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setSaveBlockName('')
     setSaveBlockKind('request_group')
     setShowSaveBlockModal(true)
+  }
+
+  const beginWrapSelectionInTransaction = () => {
+    if (blockSelection.size === 0) return
+    setTxnWrapDraft(uniqueTransactionName(script.actions))
+  }
+
+  const applyWrapSelectionInTransaction = () => {
+    const name = (txnWrapDraft || '').trim()
+    const indices = Array.from(blockSelection).filter(i => i >= 0 && i < script.actions.length).sort((a, b) => a - b)
+    if (!name || indices.length === 0) { setTxnWrapDraft(null); return }
+    setScript(prev => ({ ...prev, actions: tagActionsTransaction(prev.actions, indices, name) }))
+    setBlockSelection(new Set())
+    setTxnWrapDraft(null)
   }
 
   // Capture the selected main actions as a project-scoped reusable block.
@@ -10187,10 +10207,30 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       </span>
                     </button>
                     <div className="actions-sidebar-controls">
-                      {blockSelection.size > 0 && (
-                        <button className="btn btn-sm btn-secondary" onClick={openSaveBlockModal} title="Save the selected actions as a reusable block">
-                          Save {blockSelection.size} as block
-                        </button>
+                      {blockSelection.size > 0 && txnWrapDraft === null && (
+                        <>
+                          <button className="btn btn-sm btn-secondary" onClick={beginWrapSelectionInTransaction} title="Wrap the selected actions in a named transaction (timed; SLAs attach to it)">
+                            Wrap {blockSelection.size} in transaction
+                          </button>
+                          <button className="btn btn-sm btn-secondary" onClick={openSaveBlockModal} title="Save the selected actions as a reusable block">
+                            Save {blockSelection.size} as block
+                          </button>
+                        </>
+                      )}
+                      {txnWrapDraft !== null && (
+                        <span className="txn-wrap-inline">
+                          <input
+                            autoFocus
+                            className="txn-wrap-input"
+                            value={txnWrapDraft}
+                            placeholder="Transaction name"
+                            aria-label="Transaction name"
+                            onChange={e => setTxnWrapDraft(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') applyWrapSelectionInTransaction(); else if (e.key === 'Escape') setTxnWrapDraft(null) }}
+                          />
+                          <button className="btn btn-sm btn-accent" onClick={applyWrapSelectionInTransaction} disabled={!txnWrapDraft.trim()}>Wrap</button>
+                          <button className="btn btn-sm btn-ghost" onClick={() => setTxnWrapDraft(null)}>Cancel</button>
+                        </span>
                       )}
                       <button className="btn btn-sm btn-accent" onClick={addAction}>+ Add</button>
                     </div>
@@ -10272,6 +10312,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             <span className="action-method" style={{ color: methodColor(a.type) }} title={actionTypeSummary(a)}>{a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
                             <span className="action-name-text">{actionRowLabel(a)}</span>
                             <div className="action-item-signals">
+                              {actionTransactionName(a) && (
+                                <span className="action-txn-pill" title={`Transaction: ${actionTransactionName(a)}`}>
+                                  ⏱ {actionTransactionName(a)}
+                                </span>
+                              )}
                               {(reviewGated || isReviewGatedJavaScriptAction(a)) && (
                                 <span
                                   className="action-signal-pill warning"

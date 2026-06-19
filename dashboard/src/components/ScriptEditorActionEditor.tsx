@@ -3,7 +3,7 @@ import type { ScriptActionDefinition, ScriptAssertionDefinition, ScriptParameter
 import type { ActionEditorParameterDraft, ActionEditorSelectionState } from './ScriptEditor'
 import { sanitizeVarName } from './scriptEditorUtils'
 import { asString, httpSequenceRequests, isControlAction, isReviewGatedJavaScriptAction, actionRequiresReview, actionSelectorFallbackCount } from './scriptActionHelpers'
-import { appendActionStep, moveActionStep, removeActionStep, updateActionStepField } from './scriptEditorWorkbench'
+import { appendActionStep, moveActionStep, removeActionStep, updateActionStepField, actionTransactionName, setActionTransactionName } from './scriptEditorWorkbench'
 import { dslActionUsesSelector, dslActionUsesValue } from './dslActionCatalog'
 import { BrowserActionFields, DatabaseActionFields, GrpcActionFields, HttpActionFields, JmsActionFields, NetworkActionFields, WebSocketActionFields } from './scriptActionFields'
 import { type AuthoringIssue } from './scriptAuthoringAssist'
@@ -558,6 +558,14 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
         <select value={action.type} onChange={e => onUpdate(index, 'type', e.target.value)}>
           {actionTypes.map(type => <option key={type}>{type}</option>)}
         </select>
+      </label>
+      <label><span>Transaction</span>
+        <input
+          value={actionTransactionName(action)}
+          placeholder="(none)"
+          title="Wrap this action in a named transaction — timed and aggregated (TPS, percentiles, pass/fail); SLAs attach to it."
+          onChange={e => onUpdate(index, 'metadata', setActionTransactionName(action, e.target.value).metadata)}
+        />
       </label>
       {isOAuthTokenAction ? (
         <>
