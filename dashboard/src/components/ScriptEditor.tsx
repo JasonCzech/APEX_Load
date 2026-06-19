@@ -3076,9 +3076,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       : [],
     [jsonText, selectedOutlineParameterExists, selectedOutlineParameterName],
   )
-  const selectedOutlineParameter = useMemo(
-    () => (script.parameters || []).find(parameter => parameter.name === selectedOutlineParameterName) || null,
+  const selectedOutlineParameterIndex = useMemo(
+    () => (script.parameters || []).findIndex(parameter => parameter.name === selectedOutlineParameterName),
     [script.parameters, selectedOutlineParameterName],
+  )
+  const selectedOutlineParameter = useMemo(
+    () => (selectedOutlineParameterIndex >= 0 ? (script.parameters || [])[selectedOutlineParameterIndex] : null),
+    [script.parameters, selectedOutlineParameterIndex],
   )
   const selectedParameterReferenceLines = useMemo(() => {
     if (parameterMatchRanges.length === 0) return [] as number[]
@@ -6971,9 +6975,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               aria-selected={!parameterPaneShowAuto}
               className={!parameterPaneShowAuto ? 'active' : ''}
               onClick={() => setParameterPaneShowAuto(false)}
-              title={`Show details for ${selectedOutlineParameterName}`}
+              title={`Settings for ${selectedOutlineParameterName}`}
             >
-              {selectedOutlineParameterName}
+              Parameters
             </button>
             <button
               type="button"
@@ -6992,11 +6996,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               {parameterPaneToggle}
               <SelectedParameterDetails
                 parameter={selectedOutlineParameter}
+                parameterIndex={selectedOutlineParameterIndex}
                 referenceLines={selectedParameterReferenceLines}
+                saving={saving}
+                onUpdateParameter={updateParameter}
+                onSave={handleSave}
                 onJumpToLine={line => setJsonLineJumpRequest({ line, nonce: Date.now() })}
-                onEdit={() => {
-                  const index = (script.parameters || []).findIndex(parameter => parameter.name === selectedOutlineParameterName)
-                  if (index >= 0) selectParameterData(index)
+                onEditInDataTab={() => {
+                  if (selectedOutlineParameterIndex >= 0) selectParameterData(selectedOutlineParameterIndex)
                   openEditorSection('parameter-data')
                 }}
               />
@@ -12419,42 +12426,77 @@ interface AutoParameterizationSidebarProps {
   onSeedRowsChange: (rows: number) => void
 }
 
+// Parameter settings the sidebar edits inline. Choice fields use the shared
+// PARAMETER_CHOICE_DEFINITIONS selects; the rest get a type-appropriate input.
+// The actual data values (CSV rows for file params) are not edited here.
+const PARAM_CHOICE_KEYS = new Set<string>(['update', 'selection', 'on_exhaustion'])
+const PARAM_BOOL_KEYS = new Set<string>(['value_for_each_vuser'])
+const PARAM_NUMBER_KEYS = new Set<string>(['start_row', 'block_size', 'offset_seconds', 'step', 'start', 'min', 'max', 'length', 'padding'])
+
 interface SelectedParameterDetailsProps {
   parameter: ParameterConfig
+  parameterIndex: number
   referenceLines: number[]
+  saving: boolean
+  onUpdateParameter: (idx: number, field: keyof ParameterConfig, value: unknown) => void
+  onSave: () => void
   onJumpToLine: (line: number) => void
-  onEdit: () => void
+  onEditInDataTab: () => void
 }
 
 // The Parameter companion page when a parameter is selected in the left list:
-// its type, configuration, and where it is referenced in the script.
-function SelectedParameterDetails({ parameter, referenceLines, onJumpToLine, onEdit }: SelectedParameterDetailsProps) {
-  const configEntries = Object.entries(parameter).filter(
-    ([key, value]) => key !== 'name' && key !== 'type' && value !== undefined && value !== null && value !== '',
+// edit its type and settings inline (not the data values), jump to references,
+// and persist with Save.
+function SelectedParameterDetails({ parameter, parameterIndex, referenceLines, saving, onUpdateParameter, onSave, onJumpToLine, onEditInDataTab }: SelectedParameterDetailsProps) {
+  const settingKeys = Object.keys(parameter).filter(
+    key => key !== 'name' && key !== 'type'
+      && (parameter as unknown as Record<string, unknown>)[key] !== undefined
+      && (parameter as unknown as Record<string, unknown>)[key] !== null,
   )
+  const renderInput = (key: string) => {
+    const value = (parameter as unknown as Record<string, unknown>)[key]
+    const field = key as keyof ParameterConfig
+    if (PARAM_CHOICE_KEYS.has(key)) {
+      const definition = PARAMETER_CHOICE_DEFINITIONS[key as MutableParameterChoiceField]
+      return (
+        <select value={String(value ?? '')} onChange={event => onUpdateParameter(parameterIndex, field, event.target.value)}>
+          {definition.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      )
+    }
+    if (PARAM_BOOL_KEYS.has(key)) {
+      return <input type="checkbox" checked={Boolean(value)} onChange={event => onUpdateParameter(parameterIndex, field, event.target.checked)} />
+    }
+    if (PARAM_NUMBER_KEYS.has(key)) {
+      return <input type="number" value={value === '' || value === undefined ? '' : Number(value)} onChange={event => onUpdateParameter(parameterIndex, field, event.target.value === '' ? '' : Number(event.target.value))} />
+    }
+    return <input value={String(value ?? '')} onChange={event => onUpdateParameter(parameterIndex, field, event.target.value)} />
+  }
   return (
     <div className="selected-parameter-details">
       <div className="selected-parameter-header">
         <div className="selected-parameter-title">
           <strong>{parameter.name || 'Parameter'}</strong>
-          <span className="selected-parameter-type">{parameter.type || 'list'}</span>
         </div>
       </div>
 
       <div className="selected-parameter-section">
-        <span className="selected-parameter-section-label">Configuration</span>
-        {configEntries.length === 0 ? (
-          <p className="selected-parameter-empty">No extra configuration.</p>
-        ) : (
-          <dl className="selected-parameter-config">
-            {configEntries.map(([key, value]) => (
-              <div key={key} className="selected-parameter-config-row">
-                <dt>{key.replace(/_/g, ' ')}</dt>
-                <dd>{String(value)}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
+        <span className="selected-parameter-section-label">Settings</span>
+        <div className="selected-parameter-form">
+          <label className="selected-parameter-field">
+            <span>Type</span>
+            <select value={parameter.type || 'list'} onChange={event => onUpdateParameter(parameterIndex, 'type', event.target.value)}>
+              {PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          {settingKeys.map(key => (
+            <label key={key} className={`selected-parameter-field ${PARAM_BOOL_KEYS.has(key) ? 'is-bool' : ''}`}>
+              <span>{key.replace(/_/g, ' ')}</span>
+              {renderInput(key)}
+            </label>
+          ))}
+        </div>
+        <p className="selected-parameter-empty">Editing settings only — change the data values in Parameter Data.</p>
       </div>
 
       <div className="selected-parameter-section">
@@ -12472,9 +12514,10 @@ function SelectedParameterDetails({ parameter, referenceLines, onJumpToLine, onE
         )}
       </div>
 
-      <button type="button" className="btn btn-sm btn-secondary selected-parameter-edit" onClick={onEdit}>
-        Edit in Parameter Data →
-      </button>
+      <div className="selected-parameter-actions">
+        <button type="button" className="btn btn-sm btn-accent" onClick={onSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+        <button type="button" className="btn btn-sm btn-ghost" onClick={onEditInDataTab}>Edit in Parameter Data →</button>
+      </div>
     </div>
   )
 }
