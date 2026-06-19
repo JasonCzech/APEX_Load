@@ -10513,6 +10513,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         <div className="action-empty">No actions match “{outlineActionFilter.trim()}”.</div>
                       </div>
                     ) : (
+                    <div className="action-table">
+                    <div className="action-table-head" aria-hidden="true">
+                      <span className="action-cell action-cell-gutter" />
+                      <span className="action-cell action-col-step">Step</span>
+                      <span className="action-cell action-col-type">Type</span>
+                      <span className="action-cell action-col-name">Name</span>
+                      <span className="action-cell action-col-txn">Txn</span>
+                      <span className="action-cell action-col-signals">Info</span>
+                    </div>
                     <div className="action-list" ref={actionListScrollRef}>
                       <div className="action-list-virtual" style={virtualizeActions ? { height: actionListVirtualizer.getTotalSize(), position: 'relative' } : undefined}>
                       {actionRowsToRender.map(({ row, virtualItem }) => {
@@ -10544,33 +10553,35 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             style={virtualItem ? { position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualItem.start}px)` } : undefined}
                             onClick={() => selectAuthorPhaseAction(row)}
                           >
-                            {phase === 'action' && (
-                              <input
-                                type="checkbox"
-                                className="action-block-select"
-                                checked={blockSelection.has(i)}
-                                aria-label={`Select ${a.name || 'action'} for a reusable block`}
-                                title="Select for 'Save as block'"
-                                onClick={event => event.stopPropagation()}
-                                onChange={() => toggleBlockSelection(i)}
-                              />
-                            )}
-                            <button
-                              type="button"
-                              className={`action-breakpoint-button ${actionBreakpointActive ? 'active' : ''}`}
-                              aria-label={actionBreakpointLabel}
-                              title={actionBreakpointLabel}
-                              onClick={event => {
-                                event.stopPropagation()
-                                void toggleDebugBreakpoint(phase, i)
-                              }}
-                            >
-                              <span aria-hidden="true" />
-                            </button>
-                            <span className="action-phase-label">{phaseLabel}</span>
-                            <span className="action-method" style={{ color: methodColor(a.type) }} title={actionTypeSummary(a)}>{txnMarker ? 'TXN' : a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
-                            <span className="action-name-text">{actionRowLabel(a)}</span>
-                            <div className="action-item-signals">
+                            <div className="action-cell action-cell-gutter">
+                              {phase === 'action' && (
+                                <input
+                                  type="checkbox"
+                                  className="action-block-select"
+                                  checked={blockSelection.has(i)}
+                                  aria-label={`Select ${a.name || 'action'} for a reusable block`}
+                                  title="Select for 'Save as block'"
+                                  onClick={event => event.stopPropagation()}
+                                  onChange={() => toggleBlockSelection(i)}
+                                />
+                              )}
+                              <button
+                                type="button"
+                                className={`action-breakpoint-button ${actionBreakpointActive ? 'active' : ''}`}
+                                aria-label={actionBreakpointLabel}
+                                title={actionBreakpointLabel}
+                                onClick={event => {
+                                  event.stopPropagation()
+                                  void toggleDebugBreakpoint(phase, i)
+                                }}
+                              >
+                                <span aria-hidden="true" />
+                              </button>
+                            </div>
+                            <span className="action-cell action-phase-label" title={`${phaseLabel} ${i + 1}`}>{phaseLabel} {i + 1}</span>
+                            <span className="action-cell action-method" style={{ color: methodColor(a.type) }} title={actionTypeSummary(a)}>{txnMarker ? 'TXN' : a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
+                            <span className="action-cell action-name-text" title={actionRowLabel(a)}>{actionRowLabel(a)}</span>
+                            <div className="action-cell action-cell-txn">
                               {actionTransactionName(a) && (
                                 <span className="action-txn-pill" title={`Transaction: ${actionTransactionName(a)}`}>
                                   ⏱ {actionTransactionName(a)}
@@ -10584,6 +10595,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                   {txnMarker.role === 'start' ? '⟦ TXN' : 'TXN ⟧'} {txnMarker.name}
                                 </span>
                               )}
+                            </div>
+                            <div className="action-cell action-item-signals">
                               {(reviewGated || isReviewGatedJavaScriptAction(a)) && (
                                 <span
                                   className="action-signal-pill warning"
@@ -10623,6 +10636,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         )
                       })}
                       </div>
+                    </div>
                     </div>
                     )}
                     </>

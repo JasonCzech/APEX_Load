@@ -4086,8 +4086,11 @@
 .actions-content-grid {
   display: grid;
   position: relative;
-  /* Default: fit the outline's content (capped), overridden by an inline px once resized. */
-  --author-rail-width: fit-content(360px);
+  /* Default rail width, overridden by an inline px once the user drags (or
+     double-clicks the divider to fit content). Fixed rather than fit-content so the
+     action table's columns get a predictable, roomy width — a scrolling list caps
+     fit-content's intrinsic measurement and would crush the flexible columns. */
+  --author-rail-width: 420px;
   --author-center-width: minmax(480px, 1fr);
   --author-utility-width: minmax(260px, 320px);
   grid-template-columns: var(--author-rail-width) var(--author-center-width) var(--author-utility-width);
@@ -4380,18 +4383,66 @@
 .action-item.in-txn-band { box-shadow: inset 3px 0 0 var(--accent); background: rgba(var(--accent-rgb), 0.05); }
 .action-item.in-txn-band.txn-band-first { box-shadow: inset 3px 2px 0 -1px var(--accent), inset 3px 0 0 var(--accent); }
 .action-item.in-txn-band.txn-band-last { border-bottom-color: transparent; box-shadow: inset 3px -2px 0 -1px var(--accent), inset 3px 0 0 var(--accent); }
-.action-list { max-height: min(420px, 34vh); overflow-y: auto; }
+/* Author-mode action list rendered as an aligned table: a header row plus
+   virtualized grid rows that share one column template (--action-grid) so
+   columns line up even though each virtualized row is its own grid. Tracks must
+   stay fixed/fr (never auto/max-content) — independent per-row grids only align
+   when every track resolves to the same width at the same container width. */
+.action-table {
+  /* gutter | step | type | name | transaction | info */
+  --action-grid: 44px 60px 50px minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, 0.95fr);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.action-table-head {
+  display: grid;
+  grid-template-columns: var(--action-grid);
+  column-gap: 8px;
+  align-items: center;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.action-table-head .action-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.action-cell { min-width: 0; }
+.action-cell-gutter { display: flex; align-items: center; gap: 6px; }
+.action-cell-txn { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; }
+/* Reserve a fixed-width scrollbar gutter so the scrolled rows keep the same content
+   width as the (non-scrolling) header, keeping every column aligned. The +10px right
+   padding on the header matches the reserved gutter below. */
+.action-table-head { padding-right: 26px; }
+.action-list { max-height: min(420px, 34vh); overflow-y: auto; scrollbar-gutter: stable; }
+.action-list::-webkit-scrollbar { width: 10px; }
+.action-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.action-list::-webkit-scrollbar-thumb:hover { background: var(--text-muted); background-clip: content-box; }
 .action-item {
-  display: flex; align-items: center; gap: 8px; padding: 10px 16px;
-  border-bottom: 1px solid var(--border); cursor: pointer;
+  display: grid;
+  grid-template-columns: var(--action-grid);
+  column-gap: 8px;
+  align-items: center;
+  padding: 8px 16px;
+  min-height: 40px;
+  position: relative;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
   transition: background 0.12s;
 }
 .action-item:hover { background: var(--bg-hover); }
-.action-item.active { background: rgba(99,102,241,0.1); border-left: 3px solid var(--accent); }
+.action-item.active { background: rgba(99,102,241,0.1); box-shadow: inset 3px 0 0 var(--accent); }
 .action-item.has-breakpoint { background: rgba(239, 68, 68, 0.06); }
 .action-item.lifecycle-action .action-name-text { color: var(--text-secondary); }
 .action-phase-label {
-  flex: 0 0 58px;
   min-width: 0;
   font-size: 10px;
   font-weight: 700;
@@ -4405,14 +4456,12 @@
   font-family: 'SF Mono', monospace;
   font-size: 11px;
   font-weight: 700;
-  min-width: 48px;
-  max-width: 120px;
-  flex: 0 0 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.action-name-text { font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.action-name-text { font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
 .action-breakpoint-button {
   display: inline-flex;
   align-items: center;
@@ -4447,6 +4496,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  overflow: hidden;
 }
 .action-signal-pill {
   display: inline-flex;
@@ -4477,18 +4528,14 @@
   background: rgba(16, 185, 129, 0.14);
   color: #047857;
 }
-/* Quiet, non-interactive metadata cluster on an action row. Revealed on hover/active
-   so the default scan only shows the exceptional signals (review gate, issue count). */
+/* Non-interactive metadata counts (req/ext/fb/ctrl) shown in the Signals column.
+   Visible by default now that they occupy a dedicated table column. */
 .action-item-meta {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.action-item:hover .action-item-meta,
-.action-item.active .action-item-meta {
-  opacity: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 /* Non-interactive count badge. Visually distinct from the bright, tappable-looking
    .action-signal-pill: lower contrast, no uppercase, square-ish corners. */
@@ -4543,8 +4590,21 @@
   opacity: 0.9;
   white-space: pre;
 }
-.action-item-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
-.action-item:hover .action-item-actions { opacity: 1; }
+/* Row actions overlay the right edge on hover (a gradient fade over the Signals
+   column) instead of reserving a permanent table column. */
+.action-item-actions {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 10px 0 22px;
+  background: linear-gradient(to right, transparent, var(--bg-hover) 16px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+.action-item:hover .action-item-actions { opacity: 1; pointer-events: auto; }
 .action-empty { padding: 32px 16px; text-align: center; color: var(--text-muted); font-size: 13px; }
 .parameter-outline-section {
   flex: 0 0 auto;
@@ -5755,6 +5815,20 @@
   .actions-content-grid.author-right-sidebar-collapsed {
     --author-utility-width: 48px;
   }
+  /* Narrow rail (≤1320px viewport → 220–280px rail): collapse to the essential
+     columns — gutter, Type, Name. Step #, Transaction and Info are dropped here;
+     widen the rail (drag the divider) or open the inspector to see the rest. */
+  .action-table { --action-grid: 38px 46px minmax(0, 1fr); }
+  .action-table-head,
+  .action-item { column-gap: 6px; }
+  .action-table-head { padding-left: 12px; padding-right: 18px; }
+  .action-item { padding-left: 12px; padding-right: 8px; }
+  .action-table-head .action-col-step,
+  .action-item .action-phase-label,
+  .action-table-head .action-col-txn,
+  .action-item .action-cell-txn,
+  .action-table-head .action-col-signals,
+  .action-item .action-item-signals { display: none; }
 }
 
 @media (max-width: 900px) {

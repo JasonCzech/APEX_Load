@@ -1510,9 +1510,9 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('.editor-outline-metrics')).toBeNull()
     expect(Array.from(container.querySelectorAll('.action-phase-label')).map(label => label.textContent)).toEqual([
-      'Init',
-      'Action',
-      'Teardown',
+      'Init 1',
+      'Action 1',
+      'Teardown 1',
     ])
 
     const initRow = Array.from(container.querySelectorAll('.action-item')).find(row => row.textContent?.includes('Init Login'))
