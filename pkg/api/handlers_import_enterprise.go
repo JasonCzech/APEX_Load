@@ -82,6 +82,7 @@ func (s *Server) handleEnterpriseArchiveSupportMatrix(w http.ResponseWriter, r *
 		"tested_examples":           enterprisearchive.GetRTSSupportMatrixExamples(),
 		"trueclient_script_types":   trueclient.ScriptTypeScopes(),
 		"trueclient_step_matrix":    trueclient.StepScopes(),
+		"trueclient_step_coverage":  trueclient.StepCoverage(),
 		"web2_profile_capabilities": trueclient.Web2ProfileCapabilityScopes(),
 		"web2_fixture_contract":     trueclient.Web2FixtureContracts(),
 		"protocol_support_matrix":   protocolBundleSupportMatrix(),

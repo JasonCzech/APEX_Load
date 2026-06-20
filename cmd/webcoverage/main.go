@@ -2,8 +2,9 @@
 // embedded function registries and the code-owned coverage detail maps in
 // pkg/convert/enterprisearchive. Run via `go generate ./pkg/convert/enterprisearchive`.
 //
-//	-set web  (default) → docs/LOADRUNNER_WEB_FUNCTION_COVERAGE.md
-//	-set java           → docs/LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md
+//	-set web        (default) → docs/LOADRUNNER_WEB_FUNCTION_COVERAGE.md
+//	-set java                 → docs/LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md
+//	-set trueclient           → docs/LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md
 package main
 
 import (
@@ -12,10 +13,11 @@ import (
 	"os"
 
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
+	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 )
 
 func main() {
-	set := flag.String("set", "web", "coverage set to render: web | java")
+	set := flag.String("set", "web", "coverage set to render: web | java | trueclient")
 	out := flag.String("out", "", "output markdown path (defaults per set)")
 	flag.Parse()
 
@@ -27,8 +29,11 @@ func main() {
 	case "java":
 		content = enterprisearchive.RenderJavaLRFunctionCoverageMarkdown()
 		defaultOut = "docs/LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md"
+	case "trueclient":
+		content = trueclient.RenderStepCoverageMarkdown()
+		defaultOut = "docs/LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md"
 	default:
-		fmt.Fprintf(os.Stderr, "webcoverage: unknown -set %q (want web|java)\n", *set)
+		fmt.Fprintf(os.Stderr, "webcoverage: unknown -set %q (want web|java|trueclient)\n", *set)
 		os.Exit(2)
 	}
 

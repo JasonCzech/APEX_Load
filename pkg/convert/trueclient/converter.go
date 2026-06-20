@@ -22,6 +22,12 @@ type ConvertStats struct {
 	Skipped          int
 	Transactions     int
 	UnsupportedSteps []string
+	// ReviewOnlySteps counts published toolbox steps that were preserved as
+	// review-only source_review actions (not executable, but NOT silently
+	// skipped). Distinct from Skipped/UnsupportedSteps, which are reserved for
+	// genuinely non-toolbox steps.
+	ReviewOnlySteps     int
+	ReviewOnlyStepNames []string
 }
 
 type ConvertResult struct {
@@ -368,6 +374,11 @@ func convertExecutableStep(step truXMLStep, result *ConvertResult, state *truCon
 		}
 		return nil, nil
 	}
+	if strings.EqualFold(strings.TrimSpace(step.Action), "Catch Error") {
+		// No control_try exists in the DSL; preserve a review marker AND convert
+		// the protected child steps in source order so they are not lost.
+		return convertCatchErrorStep(step, result, state)
+	}
 	if strings.EqualFold(strings.TrimSpace(step.Action), "Verify") {
 		assertion, ok, err := convertVerifyStep(step)
 		if err != nil {
@@ -426,7 +437,39 @@ func convertExecutableStep(step truXMLStep, result *ConvertResult, state *truCon
 			state.baseURL = detectBaseURL(action.Target)
 		}
 		out = append(out, action)
-		result.Stats.ConvertedActions++
+		if action.Type == "source_review" {
+			// Preserved review-only toolbox step: counted distinctly so it is
+			// neither overstated as a converted action nor lost in Skipped.
+			result.Stats.ReviewOnlySteps++
+			if name := strings.TrimSpace(step.Action); name != "" {
+				result.Stats.ReviewOnlyStepNames = appendIfMissing(result.Stats.ReviewOnlyStepNames, name)
+			}
+		} else {
+			result.Stats.ConvertedActions++
+		}
 	}
+	return out, nil
+}
+
+// convertCatchErrorStep preserves a TruClient "Catch Error" step as a review
+// marker (no control_try in the DSL) while still converting the protected child
+// steps in source order, so the guarded body is not silently dropped.
+func convertCatchErrorStep(step truXMLStep, result *ConvertResult, state *truConvertState) ([]dsl.Action, error) {
+	scope, _ := LookupStepScope("Catch Error")
+	marker := reviewOnlyStepAction(step, scope)
+	attachSourceStepMetadata(&marker, step, state.currentTransaction, state.descriptors)
+	result.Stats.ReviewOnlySteps++
+	result.Stats.ReviewOnlyStepNames = appendIfMissing(result.Stats.ReviewOnlyStepNames, "Catch Error")
+
+	childState := *state
+	childActions, err := convertStepSequence(step.Steps, result, &childState)
+	if err != nil {
+		return nil, err
+	}
+	state.baseURL = firstNonEmptyString(state.baseURL, childState.baseURL)
+
+	out := make([]dsl.Action, 0, len(childActions)+1)
+	out = append(out, marker)
+	out = append(out, childActions...)
 	return out, nil
 }

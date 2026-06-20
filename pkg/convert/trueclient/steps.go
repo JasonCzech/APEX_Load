@@ -193,6 +193,48 @@ func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action,
 			return []dsl.Action{waitAction}, nil, false, nil
 		}
 		return nil, []string{fmt.Sprintf("TruClient step %q is not supported yet and was skipped during import", strings.TrimSpace(step.Action))}, true, nil
+	case "Drag", "Drag To", "DragTo", "Drag and Drop", "DragAndDrop":
+		return convertDragAndDropStep(step, descriptors)
+	case "Upload":
+		if action, ok, err := convertSetFilesStep(step, descriptors); err != nil {
+			return nil, nil, false, err
+		} else if ok {
+			return []dsl.Action{action}, nil, false, nil
+		}
+		action := unresolvedBrowserStepAction(step, "Upload", "missing_file_path")
+		return []dsl.Action{action}, []string{reviewGatedStepWarning(step, action.Metadata)}, false, nil
+	case "Multi Select", "MultiSelect":
+		return convertMultiSelectStep(step, descriptors)
+	case "Dialog - Confirm", "Dialog Confirm", "Dialog - Prompt", "Dialog Prompt", "Dialog":
+		return convertDialogStep(step)
+	case "Rendezvous":
+		name, err := parseFirstArgumentValue(step.Arguments, "Rendezvous Name", "Name", "name", "Value", "value")
+		if err != nil {
+			return nil, nil, false, fmt.Errorf("parse TruClient Rendezvous step arguments: %w", err)
+		}
+		action := dsl.Action{
+			Name:     stepDisplayName(step, "Rendezvous"),
+			Type:     "rendezvous",
+			Metadata: map[string]any{"source": "truclient_rendezvous"},
+		}
+		if name = trimQuotedValue(name); name != "" {
+			action.Metadata["source_rendezvous_name"] = name
+		}
+		return []dsl.Action{action}, nil, false, nil
+	case "Activate", "Activate Tab", "Add Tab", "Close Tab":
+		context, err := parseFirstArgumentValue(step.Arguments, "Tab", "Tab ID", "Window", "Index", "Target", "Name")
+		if err != nil {
+			return nil, nil, false, fmt.Errorf("parse TruClient %s step arguments: %w", strings.TrimSpace(step.Action), err)
+		}
+		action := switchWindowAction(trimQuotedValue(context), stepDisplayName(step, step.Action))
+		var warnings []string
+		if name := strings.TrimSpace(step.Action); strings.EqualFold(name, "Add Tab") || strings.EqualFold(name, "Close Tab") {
+			action.Metadata["review_reason"] = "tab_lifecycle_not_replayed"
+			warnings = append(warnings, fmt.Sprintf("TruClient %q switches browser focus, but tab open/close lifecycle is not replayed", name))
+		}
+		return []dsl.Action{action}, warnings, false, nil
+	case "Wait for Property":
+		return convertWaitForPropertyStep(step, descriptors)
 	case "Evaluate JavaScript":
 		code, err := parseArgumentValue(step.Arguments, "Code")
 		if err != nil {
@@ -213,7 +255,15 @@ func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action,
 		if actionName == "" {
 			return nil, nil, false, nil
 		}
-		return nil, []string{fmt.Sprintf("TruClient step %q is not supported yet and was skipped during import", actionName)}, true, nil
+		if scope, ok := LookupStepScope(actionName); ok {
+			// A published TruClient toolbox step with no executable browser
+			// equivalent: preserve it as an honest review-only placeholder
+			// (never silently skipped, never fabricated).
+			action := reviewOnlyStepAction(step, scope)
+			return []dsl.Action{action}, []string{reviewOnlyStepWarning(step, scope)}, false, nil
+		}
+		// Genuinely non-toolbox step → clearly-labeled skip.
+		return nil, []string{fmt.Sprintf("TruClient step %q is not a recognized TruClient toolbox step and was skipped during import", actionName)}, true, nil
 	}
 }
 
@@ -636,4 +686,194 @@ func stepDisplayName(step truXMLStep, fallback string) string {
 		return action
 	}
 	return fallback
+}
+
+// reviewOnlyStepAction preserves a published-but-unexecutable TruClient toolbox
+// step as a source_review action (never executed, never silently dropped), keyed
+// to its resolved coverage scope so the disposition is documented and auditable.
+func reviewOnlyStepAction(step truXMLStep, scope StepScope) dsl.Action {
+	actionName := strings.TrimSpace(step.Action)
+	return dsl.Action{
+		Name: stepDisplayName(step, scope.DisplayName),
+		Type: "source_review",
+		Params: map[string]any{
+			"function": actionName,
+			"args":     []any{step.Arguments},
+		},
+		Metadata: map[string]any{
+			"source":            "truclient_" + stableActionToken(actionName),
+			"review_required":   true,
+			"promotion_blocker": true,
+			"review_reason":     scope.Notes,
+			"scope_name":        scope.CanonicalName,
+			"apexload_shape":    scope.APEXLoadShape,
+		},
+	}
+}
+
+func reviewOnlyStepWarning(step truXMLStep, scope StepScope) string {
+	return fmt.Sprintf("TruClient step %q (%s) has no executable browser equivalent and was preserved as a review-only placeholder for manual handling", stepDisplayName(step, scope.DisplayName), scope.CanonicalName)
+}
+
+// convertDragAndDropStep maps Drag / Drag To to a native browser_drag_and_drop.
+func convertDragAndDropStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action, []string, bool, error) {
+	selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element", "Source", "source")
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("parse TruClient Drag step selector arguments: %w", err)
+	}
+	selector = resolveSelector(step, descriptors, trimQuotedValue(selector))
+	dropTarget, err := parseFirstArgumentValue(step.Arguments, "Drop Target", "DropTarget", "drop_target", "Target Element", "To", "to", "Destination", "destination")
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("parse TruClient Drag step drop-target arguments: %w", err)
+	}
+	dropTarget = trimQuotedValue(dropTarget)
+	if selector == "" || dropTarget == "" {
+		action := unresolvedBrowserStepAction(step, "Drag", "missing_selector")
+		return []dsl.Action{action}, []string{reviewGatedStepWarning(step, action.Metadata)}, false, nil
+	}
+	return []dsl.Action{{
+		Name:     stepDisplayName(step, "Drag"),
+		Type:     "browser_drag_and_drop",
+		Target:   selector,
+		Selector: selector,
+		Params:   map[string]any{"target": dropTarget},
+		Metadata: map[string]any{"source": "truclient_drag_and_drop"},
+	}}, nil, false, nil
+}
+
+// convertMultiSelectStep maps Multi Select to browser_select on the primary
+// option, preserving the full option list for replay verification rather than
+// fabricating independent selects.
+func convertMultiSelectStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action, []string, bool, error) {
+	selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("parse TruClient Multi Select step selector arguments: %w", err)
+	}
+	selector = resolveSelector(step, descriptors, trimQuotedValue(selector))
+	value, err := parseFirstArgumentValue(step.Arguments, "Value", "value", "Text", "text", "Option", "option", "Options", "options", "Selection", "selection")
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("parse TruClient Multi Select step value arguments: %w", err)
+	}
+	value = trimQuotedValue(value)
+	if selector == "" || value == "" {
+		action := unresolvedBrowserStepAction(step, "Multi Select", "missing_select_value")
+		if selector != "" {
+			action.Metadata["source_selector"] = selector
+		}
+		return []dsl.Action{action}, []string{reviewGatedStepWarning(step, action.Metadata)}, false, nil
+	}
+	options := splitMultiSelectOptions(value)
+	primary := value
+	if len(options) > 0 {
+		primary = options[0]
+	}
+	action := dsl.Action{
+		Name:     stepDisplayName(step, "Multi Select"),
+		Type:     "browser_select",
+		Target:   selector,
+		Selector: selector,
+		Value:    primary,
+		Metadata: map[string]any{"source": "truclient_multi_select"},
+	}
+	var warnings []string
+	if len(options) > 1 {
+		action.Params = map[string]any{"values": options}
+		action.Metadata["source_multi_select_options"] = options
+		warnings = append(warnings, fmt.Sprintf("TruClient Multi Select step %q selected the primary option only; verify multi-selection of %d options on replay", stepDisplayName(step, "Multi Select"), len(options)))
+	}
+	return []dsl.Action{action}, warnings, false, nil
+}
+
+func splitMultiSelectOptions(value string) []string {
+	fields := strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ';' || r == '|' })
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if trimmed := strings.TrimSpace(field); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+// convertDialogStep maps Dialog - Confirm / Dialog - Prompt to browser_handle_dialog.
+func convertDialogStep(step truXMLStep) ([]dsl.Action, []string, bool, error) {
+	actionName := strings.TrimSpace(step.Action)
+	response, err := parseFirstArgumentValue(step.Arguments, "Action", "action", "Response", "response", "Button", "button", "Answer", "answer")
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("parse TruClient Dialog step arguments: %w", err)
+	}
+	response = strings.ToLower(strings.TrimSpace(trimQuotedValue(response)))
+	dialogAction := "accept"
+	switch response {
+	case "cancel", "dismiss", "false", "no", "reject":
+		dialogAction = "dismiss"
+	}
+	dialogType := "confirm"
+	if strings.Contains(strings.ToLower(actionName), "prompt") {
+		dialogType = "prompt"
+	}
+	params := map[string]any{
+		"action":      dialogAction,
+		"dialog_type": dialogType,
+	}
+	if promptText, err := parseFirstArgumentValue(step.Arguments, "Text", "text", "Value", "value", "Prompt", "prompt", "Input", "input"); err == nil {
+		if promptText = trimQuotedValue(promptText); promptText != "" {
+			params["prompt_text"] = promptText
+		}
+	}
+	var warnings []string
+	if response == "" {
+		warnings = append(warnings, fmt.Sprintf("TruClient Dialog step %q had no explicit response; defaulting to accept", stepDisplayName(step, "Dialog")))
+	}
+	return []dsl.Action{{
+		Name:     stepDisplayName(step, "Dialog"),
+		Type:     "browser_handle_dialog",
+		Params:   params,
+		Metadata: map[string]any{"source": "truclient_dialog"},
+	}}, warnings, false, nil
+}
+
+// convertWaitForPropertyStep maps Wait for Property to browser_wait for
+// visibility/text properties; arbitrary DOM-property waits the runtime cannot
+// poll fall back to an honest review-only disposition.
+func convertWaitForPropertyStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action, []string, bool, error) {
+	property, _ := parseFirstArgumentValue(step.Arguments, "Property", "property", "Attribute", "attribute")
+	property = strings.ToLower(strings.TrimSpace(trimQuotedValue(property)))
+	selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("parse TruClient Wait for Property step arguments: %w", err)
+	}
+	selector = resolveSelector(step, descriptors, trimQuotedValue(selector))
+	timeoutMs := parseTimeoutMs(step.Arguments)
+
+	switch property {
+	case "", "visible", "visibility", "displayed", "exists", "present":
+		if selector != "" {
+			return []dsl.Action{{
+				Name:     stepDisplayName(step, "Wait for Property"),
+				Type:     "browser_wait",
+				Target:   selector,
+				Selector: selector,
+				WaitFor:  &dsl.WaitCondition{Type: "visible", Value: selector, TimeoutMs: timeoutMs},
+			}}, nil, false, nil
+		}
+	case "text", "value", "innertext", "textcontent":
+		if expected, err := parseFirstArgumentValue(step.Arguments, "Value", "value", "Text", "text", "Expected", "expected"); err == nil {
+			if expected = trimQuotedValue(expected); expected != "" {
+				return []dsl.Action{{
+					Name:    stepDisplayName(step, "Wait for Property"),
+					Type:    "browser_wait",
+					WaitFor: &dsl.WaitCondition{Type: "text", Value: expected, TimeoutMs: timeoutMs},
+				}}, nil, false, nil
+			}
+		}
+	}
+	// Unpollable property → honest review-only disposition.
+	if scope, ok := LookupStepScope("Wait for Property"); ok {
+		action := reviewOnlyStepAction(step, scope)
+		action.Metadata["review_reason"] = "unpollable_property"
+		return []dsl.Action{action}, []string{reviewOnlyStepWarning(step, scope)}, false, nil
+	}
+	action := unresolvedBrowserStepAction(step, "Wait for Property", "unpollable_property")
+	return []dsl.Action{action}, []string{reviewGatedStepWarning(step, action.Metadata)}, false, nil
 }

@@ -233,6 +233,155 @@ var stepScopes = []StepScope{
 		APEXLoadShape: "control_break / control_continue",
 		Notes:         "Break and continue convert to native control_break / control_continue engine actions; the nearest enclosing control_loop consumes them (break stops the loop, continue skips to the next pass).",
 	},
+	// --- additional published toolbox steps that map to existing browser/engine actions ---
+	{
+		CanonicalName: "drag_and_drop",
+		DisplayName:   "Drag / Drag To",
+		Status:        ScopeSupported,
+		APEXLoadShape: "browser_drag_and_drop",
+		Notes:         "Drag and Drag To map to a native browser_drag_and_drop using the source selector and the resolved drop-target selector; a missing selector preserves a review-gated placeholder.",
+	},
+	{
+		CanonicalName: "upload",
+		DisplayName:   "Upload",
+		Status:        ScopeSupported,
+		APEXLoadShape: "browser_set_files",
+		Notes:         "Upload (and Set with a file Path) attach a file to a file input via browser_set_files; a missing file path preserves a review-gated placeholder.",
+	},
+	{
+		CanonicalName: "multi_select",
+		DisplayName:   "Multi Select",
+		Status:        ScopeSupported,
+		APEXLoadShape: "browser_select",
+		Notes:         "Multi Select maps to browser_select on the primary option; the full option list is preserved in metadata and flagged for replay verification rather than fabricating independent selects.",
+	},
+	{
+		CanonicalName: "handle_dialog",
+		DisplayName:   "Dialog (Confirm / Prompt)",
+		Status:        ScopeSupported,
+		APEXLoadShape: "browser_handle_dialog",
+		Notes:         "Dialog - Confirm and Dialog - Prompt map to browser_handle_dialog (accept/dismiss + prompt text). Dialog - Authenticate and Dialog - Prompt Password carry credentials and remain review_only with preserved parameter references.",
+	},
+	{
+		CanonicalName: "rendezvous",
+		DisplayName:   "Rendezvous",
+		Status:        ScopeSupported,
+		APEXLoadShape: "rendezvous",
+		Notes:         "Rendezvous maps to the native rendezvous engine action; the rendezvous name is preserved in metadata.",
+	},
+	{
+		CanonicalName: "switch_tab",
+		DisplayName:   "Tab management (Activate / Add / Close Tab)",
+		Status:        ScopeSupported,
+		APEXLoadShape: "browser_switch_window",
+		Notes:         "Activate / Activate Tab change focus via browser_switch_window. Add Tab / Close Tab also switch focus but warn that tab open/close lifecycle is not replayed (no close-window action).",
+	},
+	{
+		CanonicalName: "wait_for_property",
+		DisplayName:   "Wait for Property",
+		Status:        ScopeSupported,
+		APEXLoadShape: "browser_wait",
+		Notes:         "Wait for Property maps to browser_wait for visibility/text properties; arbitrary DOM-property waits the runtime cannot poll remain review_only.",
+	},
+	// --- published toolbox steps with no browser-replay equivalent → honest review_only ---
+	{
+		CanonicalName: "dialog_secure",
+		DisplayName:   "Dialog (Authenticate / Prompt Password)",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review",
+		Notes:         "Authentication and password dialogs carry credentials; they are preserved for review with parameter references intact rather than baking secrets into a replayed dialog.",
+	},
+	{
+		CanonicalName: "evaluate_c",
+		DisplayName:   "Evaluate C",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review",
+		Notes:         "Arbitrary C code has no browser-runtime equivalent; preserved as a review-gated placeholder and never executed.",
+	},
+	{
+		CanonicalName: "generic_api_action",
+		DisplayName:   "Generic API Action",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review",
+		Notes:         "Custom API actions have no deterministic browser translation; preserved for review.",
+	},
+	{
+		CanonicalName: "call_function",
+		DisplayName:   "Call Function",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review",
+		Notes:         "Custom TruClient JavaScript function calls are preserved for review (action-block Call Action is inlined separately during execution flattening).",
+	},
+	{
+		CanonicalName: "catch_error",
+		DisplayName:   "Catch Error",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review (protected body preserved)",
+		Notes:         "There is no control_try in the DSL; a review marker is emitted and the protected child steps are still converted in source order so they are not lost.",
+	},
+	{
+		CanonicalName: "verify_pdf",
+		DisplayName:   "Verify PDF Content",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review",
+		Notes:         "PDF content verification has no browser-runtime equivalent; preserved for review.",
+	},
+	{
+		CanonicalName: "wait_for_download",
+		DisplayName:   "Wait for File Download",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review",
+		Notes:         "File-download waits have no browser-runtime equivalent; preserved for review.",
+	},
+	{
+		CanonicalName: "get_property",
+		DisplayName:   "Get Property",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review",
+		Notes:         "Reading a DOM property into a parameter has no browser-action extractor equivalent; preserved for review.",
+	},
+	{
+		CanonicalName: "set_day",
+		DisplayName:   "Set Day",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review",
+		Notes:         "Datepicker widget interaction is not a generic fill/select; preserved for review.",
+	},
+	{
+		CanonicalName: "seek",
+		DisplayName:   "Seek",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review",
+		Notes:         "Video/audio seek has no media runtime; preserved for review.",
+	},
+	{
+		CanonicalName: "resize",
+		DisplayName:   "Resize",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review",
+		Notes:         "There is no browser_resize action; window resize is preserved for review.",
+	},
+	{
+		CanonicalName: "go_back",
+		DisplayName:   "Go Back",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review",
+		Notes:         "There is no browser history runtime; fabricating a navigate URL would be wrong, so Go Back is preserved for review.",
+	},
+	{
+		CanonicalName: "go_forward",
+		DisplayName:   "Go Forward",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review",
+		Notes:         "There is no browser history runtime; fabricating a navigate URL would be wrong, so Go Forward is preserved for review.",
+	},
+	{
+		CanonicalName: "mouse_button",
+		DisplayName:   "Mouse Down / Mouse Up",
+		Status:        ScopeReviewOnly,
+		APEXLoadShape: "source_review (browser_click / long_press candidate)",
+		Notes:         "A lone Mouse Down/Up is a drag or press-and-hold primitive; mapping it to a full click would fabricate an event that never happened, so it is preserved for review.",
+	},
 }
 
 var web2ProfileCapabilityScopes = []ProfileCapabilityScope{
@@ -390,6 +539,8 @@ func LookupStepScope(stepName string) (StepScope, bool) {
 	switch normalized {
 	case "double_click", "doubleclick", "submit", "check", "uncheck", "select_radio", "select_checkbox", "radio", "checkbox":
 		normalized = "click"
+	case "mouse_over", "mouseover":
+		normalized = "hover"
 	case "set", "type":
 		normalized = "set_type"
 	case "if", "if_block", "if_exists", "if_object_exists", "if_element_exists", "else", "else_if", "elseif":
@@ -398,6 +549,47 @@ func LookupStepScope(stepName string) (StepScope, bool) {
 		normalized = "control_loop"
 	case "break", "continue":
 		normalized = "control_transfer"
+	case "drag", "drag_to":
+		normalized = "drag_and_drop"
+	case "multi_select":
+		normalized = "multi_select"
+	case "dialog_confirm", "dialog_prompt", "dialog":
+		normalized = "handle_dialog"
+	case "dialog_authenticate", "dialog_prompt_password":
+		// Credential-bearing dialogs stay review_only (handled below as their own scope).
+		normalized = "dialog_secure"
+	case "add_tab", "close_tab", "activate_tab", "activate":
+		normalized = "switch_tab"
+	case "wait_for_property":
+		normalized = "wait_for_property"
+	case "mouse_down", "mouse_up":
+		normalized = "mouse_button"
+	case "evaluate_c":
+		normalized = "evaluate_c"
+	case "generic_api_action":
+		normalized = "generic_api_action"
+	case "call_function":
+		normalized = "call_function"
+	case "catch_error":
+		normalized = "catch_error"
+	case "verify_pdf_content":
+		normalized = "verify_pdf"
+	case "wait_for_file_download":
+		normalized = "wait_for_download"
+	case "get_property":
+		normalized = "get_property"
+	case "set_day":
+		normalized = "set_day"
+	case "seek":
+		normalized = "seek"
+	case "resize":
+		normalized = "resize"
+	case "go_back":
+		normalized = "go_back"
+	case "go_forward":
+		normalized = "go_forward"
+	case "upload":
+		normalized = "upload"
 	}
 	for _, scope := range stepScopes {
 		if scope.CanonicalName == normalized {
