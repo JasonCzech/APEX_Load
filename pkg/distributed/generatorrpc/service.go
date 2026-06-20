@@ -52,6 +52,18 @@ type groupExecution struct {
 type transactionBuffer struct {
 	mu           sync.Mutex
 	transactions []TransactionMetric
+	lastDrainAt  time.Time
+}
+
+// windowSecondsFromMs converts a batch window in milliseconds to seconds for
+// rate (TPS, bytes/sec) computation. A non-positive window — e.g. an older
+// generator that does not emit window_ms, or the very first drain — falls back
+// to 1.0s, preserving the historical count≈rate behavior at the 1s publish cadence.
+func windowSecondsFromMs(windowMs int64) float64 {
+	if windowMs <= 0 {
+		return 1.0
+	}
+	return float64(windowMs) / 1000.0
 }
 
 func (b *transactionBuffer) RecordResult(result *protocol.Result) error {
@@ -103,6 +115,28 @@ func (b *transactionBuffer) Drain() []TransactionMetric {
 	out := append([]TransactionMetric(nil), b.transactions...)
 	b.transactions = nil
 	return out
+}
+
+// DrainWindow drains the buffered transactions and returns the elapsed
+// wall-clock window since the previous drain, computed under the buffer lock so
+// it is race-free against concurrent publishers (the periodic ticker and the
+// final post-run publish). The first drain reports the window since the buffer
+// was created (see newTransactionBuffer).
+func (b *transactionBuffer) DrainWindow() ([]TransactionMetric, time.Duration) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := time.Now()
+	var window time.Duration
+	if !b.lastDrainAt.IsZero() {
+		window = now.Sub(b.lastDrainAt)
+	}
+	b.lastDrainAt = now
+	if len(b.transactions) == 0 {
+		return nil, window
+	}
+	out := append([]TransactionMetric(nil), b.transactions...)
+	b.transactions = nil
+	return out, window
 }
 
 type Service struct {
@@ -704,7 +738,7 @@ func (s *Service) PublishMetrics(testID string, groupName string, stats Generato
 		_ = writer.RecordIntervalSummary(archiveIntervalSummary{
 			Timestamp:     time.UnixMilli(batch.TimestampUnixMs),
 			ActiveVUsers:  int64(batch.GetStats().GetActiveVusers()),
-			TPS:           float64(totalSuccess),
+			TPS:           float64(totalSuccess) / windowSecondsFromMs(batch.GetWindowMs()),
 			AvgResponseMs: avgResponse,
 			ErrorPct:      errorPct(totalErrors, totalSuccess+totalErrors),
 			TotalTx:       totalSuccess,
@@ -870,7 +904,9 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 		})
 	}
 	var protoTelemetry *pb.MetricsBatchTelemetry
+	windowMs := int64(0)
 	if telemetry != nil {
+		windowMs = telemetry.WindowMs
 		protoTelemetry = &pb.MetricsBatchTelemetry{
 			DroppedResults:    telemetry.DroppedResults,
 			CollectedAtUnixMs: telemetry.CollectedAtUnixMs,
@@ -882,6 +918,7 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 		TestId:          testID,
 		GeneratorId:     s.generatorID,
 		TimestampUnixMs: time.Now().UnixMilli(),
+		WindowMs:        windowMs,
 		Transactions:    protoTransactions,
 		Stats:           toProtoStats(stats),
 		Groups:          groups,
@@ -954,7 +991,7 @@ func (s *Service) startExecutionLocked(assignment *pb.WorkAssignment) error {
 	if duration <= 0 {
 		duration = time.Second
 	}
-	results := &transactionBuffer{}
+	results := &transactionBuffer{lastDrainAt: time.Now()}
 	writer := s.archiveWriters[assignment.GetTestId()]
 	if writer == nil {
 		archiveWriter, archiveErr := newArchiveRecorder(s.generatorID, assignment.GetTestId(), script.Name)
@@ -1014,7 +1051,7 @@ func (s *Service) publishExecutionSnapshot(testID string, groupName string, exec
 		return
 	}
 	snapshot, ok := exec.engine.LatestSnapshot()
-	transactions := exec.results.Drain()
+	transactions, window := exec.results.DrainWindow()
 	if !ok && len(transactions) == 0 {
 		return
 	}
@@ -1022,7 +1059,7 @@ func (s *Service) publishExecutionSnapshot(testID string, groupName string, exec
 		return
 	}
 	stats := GeneratorStats{GoroutineCount: int32(runtime.NumGoroutine())}
-	telemetry := MetricsTelemetry{}
+	telemetry := MetricsTelemetry{WindowMs: window.Milliseconds()}
 	if ok {
 		stats = generatorStatsFromResources(snapshot.Resources, int32(snapshot.ActiveVUsers))
 		telemetry.CollectedAtUnixMs = snapshot.Timestamp.UnixMilli()

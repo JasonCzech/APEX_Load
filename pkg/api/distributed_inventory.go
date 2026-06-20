@@ -106,6 +106,7 @@ func applyGeneratorStatsToInventory(entry *GeneratorInventoryEntry, stats genera
 func resourcesFromGeneratorStats(stats generatorrpc.GeneratorStats) *engine.SystemResources {
 	return &engine.SystemResources{
 		CPUProcessPct:                     stats.CPUPercent,
+		CPUProcessPctMax:                  stats.CPUProcessPctMax,
 		MemProcessMb:                      float64(stats.MemoryBytes) / (1024 * 1024),
 		CPUUserPct:                        stats.CPUUserPct,
 		CPUSystemPct:                      stats.CPUSystemPct,
@@ -144,45 +145,79 @@ func resourcesFromGeneratorStats(stats generatorrpc.GeneratorStats) *engine.Syst
 	}
 }
 
-func mergeDistributedGeneratorStats(left generatorrpc.GeneratorStats, right generatorrpc.GeneratorStats) generatorrpc.GeneratorStats {
-	left.ActiveVUsers += right.ActiveVUsers
-	left.CPUPercent += right.CPUPercent
-	left.MemoryBytes += right.MemoryBytes
-	left.GoroutineCount += right.GoroutineCount
-	left.ThreadCount += right.ThreadCount
-	left.OpenFDCount += right.OpenFDCount
-	left.GCCountDelta += right.GCCountDelta
-	left.GCPauseMs += right.GCPauseMs
-	left.ContainerCPULimitCores += right.ContainerCPULimitCores
-	left.ContainerCPUThrottledPeriodsDelta += right.ContainerCPUThrottledPeriodsDelta
-	left.ContainerCPUThrottledSecondsRate += right.ContainerCPUThrottledSecondsRate
-	left.ContainerMemoryWorkingSetMB += right.ContainerMemoryWorkingSetMB
-	left.ContainerMemoryLimitMB += right.ContainerMemoryLimitMB
-	left.ContainerMemoryFailCountDelta += right.ContainerMemoryFailCountDelta
-	left.ContainerOOMKillCountDelta += right.ContainerOOMKillCountDelta
-	left.NetDropInPerSec += right.NetDropInPerSec
-	left.NetDropOutPerSec += right.NetDropOutPerSec
-	left.NetErrorInPerSec += right.NetErrorInPerSec
-	left.NetErrorOutPerSec += right.NetErrorOutPerSec
-	left.TCPRetransmitsPerSec += right.TCPRetransmitsPerSec
-	left.TCPEstablished += right.TCPEstablished
-	left.TCPTimeWait += right.TCPTimeWait
-	left.DiskInProgress += right.DiskInProgress
-	left.CPUUserPct = maxFloat(left.CPUUserPct, right.CPUUserPct)
-	left.CPUSystemPct = maxFloat(left.CPUSystemPct, right.CPUSystemPct)
-	left.CPUIOWaitPct = maxFloat(left.CPUIOWaitPct, right.CPUIOWaitPct)
-	left.CPUStealPct = maxFloat(left.CPUStealPct, right.CPUStealPct)
-	left.Load1 = maxFloat(left.Load1, right.Load1)
-	left.Load5 = maxFloat(left.Load5, right.Load5)
-	left.Load15 = maxFloat(left.Load15, right.Load15)
-	left.HeapAllocMB += right.HeapAllocMB
-	left.HeapInUseMB += right.HeapInUseMB
-	left.ContainerCPUUsagePct = maxFloat(left.ContainerCPUUsagePct, right.ContainerCPUUsagePct)
-	left.ContainerMemoryUsagePct = maxFloat(left.ContainerMemoryUsagePct, right.ContainerMemoryUsagePct)
-	left.EphemeralPortUtilizationPct = maxFloat(left.EphemeralPortUtilizationPct, right.EphemeralPortUtilizationPct)
-	left.DiskIOTimePct = maxFloat(left.DiskIOTimePct, right.DiskIOTimePct)
-	left.DiskWeightedIOTimePct = maxFloat(left.DiskWeightedIOTimePct, right.DiskWeightedIOTimePct)
-	return left
+// aggregateDistributedGeneratorStats rolls up per-generator stats into one fleet
+// snapshot, using semantics appropriate to each field:
+//   - additive counters/rates (memory, goroutines, FDs, *Delta, *PerSec, TCP
+//     counts, container capacity totals) are SUMMED;
+//   - saturation gauges (usage %, load averages, disk %, GC pause) take the worst
+//     (MAX) pod;
+//   - process CPU% is AVERAGED across generators actively running VUsers —
+//     summing it would exceed 100% and is meaningless as a single line. The
+//     worst-pod process CPU% is preserved in CPUProcessPctMax.
+//
+// Per-generator detail remains available via the generator-resource snapshots.
+func aggregateDistributedGeneratorStats(stats []generatorrpc.GeneratorStats) generatorrpc.GeneratorStats {
+	combined := generatorrpc.GeneratorStats{}
+	if len(stats) == 0 {
+		return combined
+	}
+	cpuSum := 0.0
+	activeCount := 0
+	for _, s := range stats {
+		combined.ActiveVUsers += s.ActiveVUsers
+		combined.MemoryBytes += s.MemoryBytes
+		combined.GoroutineCount += s.GoroutineCount
+		combined.ThreadCount += s.ThreadCount
+		combined.OpenFDCount += s.OpenFDCount
+		combined.GCCountDelta += s.GCCountDelta
+		combined.ContainerCPULimitCores += s.ContainerCPULimitCores
+		combined.ContainerCPUThrottledPeriodsDelta += s.ContainerCPUThrottledPeriodsDelta
+		combined.ContainerCPUThrottledSecondsRate += s.ContainerCPUThrottledSecondsRate
+		combined.ContainerMemoryWorkingSetMB += s.ContainerMemoryWorkingSetMB
+		combined.ContainerMemoryLimitMB += s.ContainerMemoryLimitMB
+		combined.ContainerMemoryFailCountDelta += s.ContainerMemoryFailCountDelta
+		combined.ContainerOOMKillCountDelta += s.ContainerOOMKillCountDelta
+		combined.NetDropInPerSec += s.NetDropInPerSec
+		combined.NetDropOutPerSec += s.NetDropOutPerSec
+		combined.NetErrorInPerSec += s.NetErrorInPerSec
+		combined.NetErrorOutPerSec += s.NetErrorOutPerSec
+		combined.TCPRetransmitsPerSec += s.TCPRetransmitsPerSec
+		combined.TCPEstablished += s.TCPEstablished
+		combined.TCPTimeWait += s.TCPTimeWait
+		combined.DiskInProgress += s.DiskInProgress
+		combined.HeapAllocMB += s.HeapAllocMB
+		combined.HeapInUseMB += s.HeapInUseMB
+
+		combined.GCPauseMs = maxFloat(combined.GCPauseMs, s.GCPauseMs)
+		combined.CPUProcessPctMax = maxFloat(combined.CPUProcessPctMax, s.CPUPercent)
+		combined.CPUUserPct = maxFloat(combined.CPUUserPct, s.CPUUserPct)
+		combined.CPUSystemPct = maxFloat(combined.CPUSystemPct, s.CPUSystemPct)
+		combined.CPUIOWaitPct = maxFloat(combined.CPUIOWaitPct, s.CPUIOWaitPct)
+		combined.CPUStealPct = maxFloat(combined.CPUStealPct, s.CPUStealPct)
+		combined.Load1 = maxFloat(combined.Load1, s.Load1)
+		combined.Load5 = maxFloat(combined.Load5, s.Load5)
+		combined.Load15 = maxFloat(combined.Load15, s.Load15)
+		combined.ContainerCPUUsagePct = maxFloat(combined.ContainerCPUUsagePct, s.ContainerCPUUsagePct)
+		combined.ContainerMemoryUsagePct = maxFloat(combined.ContainerMemoryUsagePct, s.ContainerMemoryUsagePct)
+		combined.EphemeralPortUtilizationPct = maxFloat(combined.EphemeralPortUtilizationPct, s.EphemeralPortUtilizationPct)
+		combined.DiskIOTimePct = maxFloat(combined.DiskIOTimePct, s.DiskIOTimePct)
+		combined.DiskWeightedIOTimePct = maxFloat(combined.DiskWeightedIOTimePct, s.DiskWeightedIOTimePct)
+
+		if s.ActiveVUsers > 0 {
+			cpuSum += s.CPUPercent
+			activeCount++
+		}
+	}
+	if activeCount > 0 {
+		combined.CPUPercent = cpuSum / float64(activeCount)
+	} else {
+		total := 0.0
+		for _, s := range stats {
+			total += s.CPUPercent
+		}
+		combined.CPUPercent = total / float64(len(stats))
+	}
+	return combined
 }
 
 func (b *distributedExecutionBackend) buildGeneratorResourceSnapshots(test *ManagedTest, batches map[string]generatorrpc.MetricsBatch) map[string]*GeneratorResourceSnapshot {
@@ -192,7 +227,7 @@ func (b *distributedExecutionBackend) buildGeneratorResourceSnapshots(test *Mana
 	out := make(map[string]*GeneratorResourceSnapshot, len(batches))
 	for target, batch := range batches {
 		resources := resourcesFromGeneratorStats(batch.Stats)
-		p95, p99, errorPct, tps := summarizeGeneratorBatchTransactions(batch.Transactions)
+		p95, p99, errorPct, tps := summarizeGeneratorBatchTransactions(batch.Transactions, batch.WindowMs)
 		state, reasons := classifyGeneratorImpact(resources, p95, errorPct)
 		id := firstNonEmpty(batch.GeneratorID, target)
 		timestamp := time.UnixMilli(batch.TimestampUnixMs)

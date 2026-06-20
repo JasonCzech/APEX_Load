@@ -262,7 +262,7 @@ describe('CommandCenterPrototype', () => {
     expect(runtimeGraphs?.querySelector('[role="tablist"][aria-label="Graph groups"]')).not.toBeNull()
     expect(tabNamed('Test Results')?.getAttribute('aria-selected')).toBe('true')
     expect(runtimeGraphs?.textContent).toContain('Transactions Per Second')
-    expect(runtimeGraphs?.textContent).not.toContain('CPU Usage (%)')
+    expect(runtimeGraphs?.textContent).not.toContain('CPU Usage — Fleet (%)')
 
     await click(tabNamed('Under Load'))
 
@@ -297,8 +297,8 @@ describe('CommandCenterPrototype', () => {
     await click(tabNamed('Infrastructure'))
 
     expect(tabNamed('Infrastructure')?.getAttribute('aria-selected')).toBe('true')
-    expect(runtimeGraphs?.textContent).toContain('CPU Usage (%)')
-    expect(runtimeGraphs?.textContent).toContain('Memory Usage (MB)')
+    expect(runtimeGraphs?.textContent).toContain('CPU Usage — Fleet (%)')
+    expect(runtimeGraphs?.textContent).toContain('Memory — Fleet total (MB)')
     expect(runtimeGraphs?.textContent).toContain('Route Latency (ms)')
 
     expect(runtimeGraphs?.getAttribute('data-visible-groups')).toContain('browse')
@@ -596,7 +596,7 @@ describe('CommandCenterPrototype', () => {
 
     await click(buttonNamed('Configure Graphs'))
 
-    const cpuToggle = inputByLabel('Show CPU Usage (%)')
+    const cpuToggle = inputByLabel('Show CPU Usage — Fleet (%)')
     expect(cpuToggle.checked).toBe(true)
 
     await click(cpuToggle)

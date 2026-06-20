@@ -175,7 +175,7 @@ const graphGroupTabs: Array<{ id: GraphGroupTabId; label: string }> = [
   { id: 'prometheus', label: 'Prometheus' },
 ]
 
-const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'generator_impact', 'network_latency'])
+const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'tx_network_phases', 'generator_impact', 'network_latency'])
 const displayWindowAllSliderValue = executionChartMaxMinuteRange + 1
 
 function displayWindowSliderPercent(value: number) {
@@ -1573,7 +1573,7 @@ export default function TestExecutionCharts({
         fillOpacity={1}
         dot={false}
         activeDot={false}
-        connectNulls
+        connectNulls={false}
         legendType="none"
         tooltipType="none"
         isAnimationActive={false}
@@ -1591,7 +1591,7 @@ export default function TestExecutionCharts({
       fillOpacity={1}
       dot={false}
       activeDot={false}
-      connectNulls
+      connectNulls={false}
       legendType="none"
       tooltipType="none"
       isAnimationActive={false}
@@ -1946,6 +1946,12 @@ export default function TestExecutionCharts({
 
       {loadImpactError && <p className="scenario-script-status error">{loadImpactError}</p>}
       {prometheusError && <p className="scenario-script-status error">{prometheusError}</p>}
+
+      {(latestMetrics?.telemetry?.dropped_results ?? 0) > 0 && (
+        <p className="scenario-script-status error" role="alert">
+          {`Metrics under-counted — ${(latestMetrics?.telemetry?.dropped_results ?? 0).toLocaleString()} result${(latestMetrics?.telemetry?.dropped_results ?? 0) === 1 ? '' : 's'} dropped by the telemetry pipeline; rates and totals shown are a floor.`}
+        </p>
+      )}
 
       {displayModeCharts.length === 0 ? (
         <div className="charts-empty">
@@ -2389,7 +2395,7 @@ export default function TestExecutionCharts({
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </ComposedChart>
-            ) : chart.type === 'area-multi' ? (
+            ) : chart.type === 'area-multi' || chart.type === 'area-stacked' ? (
               <ComposedChart
                 data={displayChartData}
                 syncId="metrics"
@@ -2407,7 +2413,7 @@ export default function TestExecutionCharts({
                 <Legend verticalAlign="bottom" height={36} />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {chart.keys!.filter(key => showMetric(key.k)).map((key) => (
-                  <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(key.k)} name={key.n} stroke={key.c} fill={chartGradientFill(chart, key.k)} fillOpacity={1} isAnimationActive={false} />
+                  <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(key.k)} name={key.n} stroke={key.c} fill={chartGradientFill(chart, key.k)} fillOpacity={1} isAnimationActive={false} connectNulls={false} stackId={chart.type === 'area-stacked' ? (chart.stackId ?? 'stack') : undefined} />
                 ))}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {showRefArea && (

@@ -304,9 +304,9 @@ describe('TestExecutionCharts context menu', () => {
     await renderCharts()
 
     const mockCharts = Array.from(container.querySelectorAll('[data-testid="mock-chart"]'))
-    expect(mockCharts).toHaveLength(12)
-    expect(mockCharts.map(chart => chart.getAttribute('data-sync-id'))).toEqual([...Array(9).fill('metrics'), '', '', ''])
-    expect(Array.from(container.querySelectorAll('[data-testid="mock-tooltip"]')).map(tooltip => tooltip.getAttribute('data-label-display'))).toEqual(Array(12).fill('none'))
+    expect(mockCharts).toHaveLength(14)
+    expect(mockCharts.map(chart => chart.getAttribute('data-sync-id'))).toEqual([...Array(11).fill('metrics'), '', '', ''])
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-tooltip"]')).map(tooltip => tooltip.getAttribute('data-label-display'))).toEqual(Array(14).fill('none'))
 
     const tpsChart = mockCharts[1]
     await act(async () => {
@@ -317,33 +317,15 @@ describe('TestExecutionCharts context menu', () => {
     expect(tooltips.map(tooltip => tooltip.getAttribute('data-label-display'))).toEqual([
       'none',
       '',
-      'none',
-      'none',
-      'none',
-      'none',
-      'none',
-      'none',
-      'none',
-      'none',
-      'none',
-      'none',
+      ...Array(12).fill('none'),
     ])
     expect(tooltips.map(tooltip => tooltip.getAttribute('data-label-text'))).toEqual([
       '',
       '10:00:01',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
+      ...Array(12).fill(''),
     ])
     expect(tooltips.map(tooltip => tooltip.getAttribute('data-formatted-value'))).toEqual([
-      ...Array(9).fill('123.46'),
+      ...Array(11).fill('123.46'),
       '123',
       '123',
       '123',
@@ -926,7 +908,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(container.querySelector('.monitor-preset-buttons')).toBeNull()
     expect(container.querySelector('.charts-customize-panel')).toBeNull()
     expect(container.querySelector('.charts-toolbar')?.textContent).toContain('Runtime Graphs')
-    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('13 graphs')
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('15 graphs')
     expect(container.querySelector('.charts-config-drawer')).toBeNull()
 
     await act(async () => {
@@ -975,8 +957,8 @@ describe('TestExecutionCharts context menu', () => {
       errorRateGraphToggle?.click()
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(12)
-    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('12 graphs')
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(14)
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('14 graphs')
     expect(window.localStorage.getItem('apexload.execution.hiddenCharts')).toContain('errors')
 
     await act(async () => {
@@ -1010,7 +992,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(buttonByText('Standard')?.getAttribute('aria-pressed')).toBe('false')
     expect(buttonByText('6 Graphs')?.getAttribute('aria-pressed')).toBe('true')
     expect(window.localStorage.getItem('apexload.execution.chartDensity')).toBe('six_up')
-    expect(Array.from(container.querySelectorAll('[data-testid="mock-responsive-container"]')).map(container => container.getAttribute('data-height'))).toEqual(Array(11).fill('132'))
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-responsive-container"]')).map(container => container.getAttribute('data-height'))).toEqual(Array(13).fill('132'))
     expect(container.querySelector('.chart-metrics-table')).toBeNull()
 
     await act(async () => {
@@ -1035,7 +1017,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.responseTimeNetworkMode')).toBe('application')
     expect(responseChart?.textContent).toContain('82.6ms')
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(12)
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(14)
 
     const resetButton = buttonByText('Reset Graphs')
     expect(resetButton?.className).toContain('btn-chip')
@@ -1044,7 +1026,7 @@ describe('TestExecutionCharts context menu', () => {
       resetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(13)
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(15)
   })
 
   it('changes the graph display window from the minute slider', async () => {

@@ -46,6 +46,16 @@ type MetricsSnapshot struct {
 	P90                    time.Duration
 	P95                    time.Duration
 	P99                    time.Duration
+	// Network-phase averages (ms) over business transactions, from real VU
+	// traffic. Wait is the post-TTFB tail (Duration-TTFB), clamped at 0.
+	AvgDNSMs     float64 `json:"avg_dns_ms,omitempty"`
+	AvgConnectMs float64 `json:"avg_connect_ms,omitempty"`
+	AvgTLSMs     float64 `json:"avg_tls_ms,omitempty"`
+	AvgTTFBMs    float64 `json:"avg_ttfb_ms,omitempty"`
+	AvgWaitMs    float64 `json:"avg_wait_ms,omitempty"`
+	// ErrorsByClass counts failed business transactions by taxonomy class
+	// (timeout/connection/http_4xx/http_5xx/assertion/other).
+	ErrorsByClass          map[string]int64 `json:"errors_by_class,omitempty"`
 	ByAction               map[string]*ActionMetrics
 	ByTransaction          map[string]*ActionMetrics
 	ByDependencyTarget     map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
@@ -120,8 +130,9 @@ type TelemetryMetrics struct {
 }
 
 type SystemResources struct {
-	CPUProcessPct                     float64            `json:"cpu_process_pct"` // CPU used by vuser processes
-	CPUFreePct                        float64            `json:"cpu_free_pct"`    // CPU headroom
+	CPUProcessPct                     float64            `json:"cpu_process_pct"`               // CPU used by vuser processes (fleet average in distributed runs)
+	CPUProcessPctMax                  float64            `json:"cpu_process_pct_max,omitempty"` // worst-pod process CPU% across the fleet (distributed only)
+	CPUFreePct                        float64            `json:"cpu_free_pct"`                  // CPU headroom
 	MemProcessMb                      float64            `json:"mem_process_mb"`  // Memory used by vuser processes
 	MemFreeMb                         float64            `json:"mem_free_mb"`     // Total system memory free
 	NetSentKbps                       float64            `json:"net_sent_kbps"`   // Network egress
@@ -386,6 +397,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		BySOAPOperation:    make(map[string]*ActionMetrics),
 		ByNetworkProfile:   make(map[string]*ActionMetrics),
 		ByGroup:            make(map[string]*GroupMetrics),
+		ErrorsByClass:      make(map[string]int64),
 		BrowserByDevice:    make(map[string]*BrowserDeviceMetrics),
 		Telemetry: &TelemetryMetrics{
 			DroppedResults: mc.current.droppedResults.Load(),
@@ -400,6 +412,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	mc.targetsMu.RUnlock()
 
 	var totalDuration time.Duration
+	var totalDNSMs, totalConnectMs, totalTLSMs, totalTTFBMs, totalWaitMs float64
 	td := NewTDigest(200)
 	transactionDigests := make(map[string]*TDigest)
 	transactionDurationSum := make(map[string]time.Duration)
@@ -420,9 +433,19 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				snap.Transactions++
 			} else {
 				snap.Errors++
+				if class := ClassifyError(r.StatusCode, r.ErrorMessage, false); class != "" {
+					snap.ErrorsByClass[class]++
+				}
 			}
 			totalDuration += r.Duration
 			td.Add(float64(r.Duration))
+			totalDNSMs += durationToMilliseconds(r.DNSTime)
+			totalConnectMs += durationToMilliseconds(r.ConnectTime)
+			totalTLSMs += durationToMilliseconds(r.TLSTime)
+			totalTTFBMs += durationToMilliseconds(r.TTFB)
+			if waitMs := durationToMilliseconds(r.Duration) - durationToMilliseconds(r.TTFB); waitMs > 0 {
+				totalWaitMs += waitMs
+			}
 
 			tm, ok := snap.ByTransaction[r.ActionName]
 			if !ok {
@@ -534,8 +557,14 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 
 	transactionAttempts := snap.Transactions + snap.Errors
 	if transactionAttempts > 0 {
+		attempts := float64(transactionAttempts)
 		snap.AvgDuration = totalDuration / time.Duration(transactionAttempts)
 		snap.TPS = float64(snap.Transactions) / window.Seconds()
+		snap.AvgDNSMs = totalDNSMs / attempts
+		snap.AvgConnectMs = totalConnectMs / attempts
+		snap.AvgTLSMs = totalTLSMs / attempts
+		snap.AvgTTFBMs = totalTTFBMs / attempts
+		snap.AvgWaitMs = totalWaitMs / attempts
 
 		snap.P50 = time.Duration(td.Quantile(0.50))
 		snap.P90 = time.Duration(td.Quantile(0.90))

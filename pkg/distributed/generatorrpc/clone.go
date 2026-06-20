@@ -73,6 +73,11 @@ func mergeMetricsTelemetry(values map[string]MetricsTelemetry) *MetricsTelemetry
 		if value.SampleAgeMs > combined.SampleAgeMs {
 			combined.SampleAgeMs = value.SampleAgeMs
 		}
+		// Groups on one pod publish on the same cadence, so the max per-group
+		// window is the representative batch window.
+		if value.WindowMs > combined.WindowMs {
+			combined.WindowMs = value.WindowMs
+		}
 	}
 	return combined
 }

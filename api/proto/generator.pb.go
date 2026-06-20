@@ -580,8 +580,13 @@ type MetricsBatch struct {
 	LifecycleState  string                 `protobuf:"bytes,7,opt,name=lifecycle_state,json=lifecycleState,proto3" json:"lifecycle_state,omitempty"`
 	LifecycleError  string                 `protobuf:"bytes,8,opt,name=lifecycle_error,json=lifecycleError,proto3" json:"lifecycle_error,omitempty"`
 	Telemetry       *MetricsBatchTelemetry `protobuf:"bytes,9,opt,name=telemetry,proto3" json:"telemetry,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// window_ms is the elapsed wall-clock duration (in milliseconds) that the
+	// transactions in this batch were drained over. The controller divides
+	// per-batch success counts by this window to compute a true per-second rate
+	// (TPS). 0 means "unknown" (e.g. an older generator) and is treated as 1000ms.
+	WindowMs      int64 `protobuf:"varint,10,opt,name=window_ms,json=windowMs,proto3" json:"window_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MetricsBatch) Reset() {
@@ -675,6 +680,13 @@ func (x *MetricsBatch) GetTelemetry() *MetricsBatchTelemetry {
 		return x.Telemetry
 	}
 	return nil
+}
+
+func (x *MetricsBatch) GetWindowMs() int64 {
+	if x != nil {
+		return x.WindowMs
+	}
+	return 0
 }
 
 type MetricsBatchTelemetry struct {
@@ -2071,7 +2083,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\bgraceful\x18\x02 \x01(\bR\bgraceful\"T\n" +
 	"\aStopAck\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x12%\n" +
-	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xb3\x03\n" +
+	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xd0\x03\n" +
 	"\fMetricsBatch\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12!\n" +
 	"\fgenerator_id\x18\x02 \x01(\tR\vgeneratorId\x12*\n" +
@@ -2081,7 +2093,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x06groups\x18\x06 \x03(\v2\x18.apexload.v1.GroupMetricR\x06groups\x12'\n" +
 	"\x0flifecycle_state\x18\a \x01(\tR\x0elifecycleState\x12'\n" +
 	"\x0flifecycle_error\x18\b \x01(\tR\x0elifecycleError\x12@\n" +
-	"\ttelemetry\x18\t \x01(\v2\".apexload.v1.MetricsBatchTelemetryR\ttelemetry\"\xc6\x01\n" +
+	"\ttelemetry\x18\t \x01(\v2\".apexload.v1.MetricsBatchTelemetryR\ttelemetry\x12\x1b\n" +
+	"\twindow_ms\x18\n" +
+	" \x01(\x03R\bwindowMs\"\xc6\x01\n" +
 	"\x15MetricsBatchTelemetry\x12'\n" +
 	"\x0fdropped_results\x18\x01 \x01(\x03R\x0edroppedResults\x12/\n" +
 	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x12/\n" +

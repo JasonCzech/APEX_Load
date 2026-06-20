@@ -342,7 +342,7 @@ func TestPlanDistributedGroupShardsRejectsIncompatibleSpecificHost(t *testing.T)
 }
 
 func TestAggregateDistributedMetricsBatchesSumsDuplicateGroupMetrics(t *testing.T) {
-	batch := aggregateDistributedMetricsBatches("test-1", map[string]generatorrpc.MetricsBatch{
+	batch, _, _ := aggregateDistributedMetricsBatches("test-1", map[string]generatorrpc.MetricsBatch{
 		"gen-a": {
 			TestID: "test-1",
 			Stats:  generatorrpc.GeneratorStats{ActiveVUsers: 8},
@@ -871,7 +871,7 @@ func TestBuildLiveMetricsFromDistributedBatchUsesBatchTelemetry(t *testing.T) {
 			PublishedAtUnixMs: 1_500,
 			SampleAgeMs:       600,
 		},
-	})
+	}, 0, nil)
 
 	if live.Telemetry == nil {
 		t.Fatal("expected telemetry on distributed live metrics")
@@ -914,7 +914,7 @@ func TestBuildLiveMetricsFromDistributedBatchMapsErrorEvidenceAndGroupMetrics(t 
 			},
 			{Name: "POST /orders", Group: "buyers", DurationMs: 280, StatusCode: 500, Success: false, ErrorMessage: "HTTP 500 checkout order 456"},
 		},
-	})
+	}, 0, nil)
 
 	if len(live.ErrorEvidence) != 1 {
 		t.Fatalf("live error evidence = %#v, want one snapshot-backed evidence item", live.ErrorEvidence)
@@ -964,7 +964,7 @@ func TestBuildLiveMetricsFromDistributedBatchAggregatesSOAPOperations(t *testing
 				ServerTelemetry:  &generatorrpc.ServerTelemetry{ServerProcessingMs: 60, TransferMs: 10},
 			},
 		},
-	})
+	}, 0, nil)
 
 	if live.SOAPOperations == nil || live.SOAPOperations["CreateOrder"] == nil {
 		t.Fatalf("expected live SOAP operations, got %#v", live.SOAPOperations)
@@ -1002,7 +1002,7 @@ func TestBuildLiveMetricsFromDistributedBatchAggregatesDependencyHealth(t *testi
 				ServerTelemetry:  &generatorrpc.ServerTelemetry{ServerProcessingMs: 55, TransferMs: 14},
 			},
 		},
-	})
+	}, 0, nil)
 
 	if live.DependencyHealth == nil || live.DependencyHealth["api.example.test"] == nil {
 		t.Fatalf("expected dependency health aggregate, got %#v", live.DependencyHealth)

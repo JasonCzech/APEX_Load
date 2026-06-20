@@ -15,6 +15,19 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 )
 
+// copyErrorClassCounts returns a defensive copy of the error-taxonomy counts, or
+// nil when empty so the field is omitted from JSON.
+func copyErrorClassCounts(in map[string]int64) map[string]int64 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int64, len(in))
+	for class, count := range in {
+		out[class] = count
+	}
+	return out
+}
+
 func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[string]int) *LiveMetrics {
 	live := &LiveMetrics{
 		Timestamp:              snap.Timestamp,
@@ -30,6 +43,12 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		P90Ms:                  float64(snap.P90.Microseconds()) / 1000.0,
 		P95Ms:                  float64(snap.P95.Microseconds()) / 1000.0,
 		P99Ms:                  float64(snap.P99.Microseconds()) / 1000.0,
+		AvgDNSMs:               snap.AvgDNSMs,
+		AvgConnectMs:           snap.AvgConnectMs,
+		AvgTLSMs:               snap.AvgTLSMs,
+		AvgTTFBMs:              snap.AvgTTFBMs,
+		AvgWaitMs:              snap.AvgWaitMs,
+		ErrorBreakdown:         copyErrorClassCounts(snap.ErrorsByClass),
 		Transactions:           make(map[string]*TxMetrics),
 		DependencyHealth:       make(map[string]*TxMetrics),
 		SOAPOperations:         make(map[string]*TxMetrics),

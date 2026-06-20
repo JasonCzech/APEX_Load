@@ -1602,6 +1602,12 @@ export interface LiveMetrics {
   p90_ms: number
   p95_ms: number
   p99_ms: number
+  avg_dns_ms?: number
+  avg_connect_ms?: number
+  avg_tls_ms?: number
+  avg_ttfb_ms?: number
+  avg_wait_ms?: number
+  error_breakdown?: Record<string, number>
   transactions?: Record<string, TxMetrics>
   dependency_health?: Record<string, TxMetrics>
   dependency_map?: LiveDependencyMap
@@ -1765,6 +1771,7 @@ export interface LatencyTarget {
 
 export interface SystemResources {
   cpu_process_pct: number
+  cpu_process_pct_max?: number
   cpu_free_pct: number
   mem_process_mb: number
   mem_free_mb: number
@@ -2453,6 +2460,23 @@ export interface MetricsHistoryPoint {
   diskIOTimePct?: number
   jmsConsumerLagMs?: number
   jmsPeakConsumerLagMs?: number
+  cpuProcessMax?: number
+  // Network-phase breakdown (real VU traffic), ms
+  txDnsMs?: number
+  txConnectMs?: number
+  txTlsMs?: number
+  txTtfbMs?: number
+  txWaitMs?: number
+  // Error taxonomy counts per interval
+  errTimeout?: number
+  errConnection?: number
+  errHttp4xx?: number
+  errHttp5xx?: number
+  errAssertion?: number
+  errOther?: number
+  // Set on synthetic spacer rows inserted at a detected data gap so series
+  // break (rather than interpolate) across missing intervals.
+  isGapBoundary?: number
   [key: string]: string | number | number[] | undefined
 }
 

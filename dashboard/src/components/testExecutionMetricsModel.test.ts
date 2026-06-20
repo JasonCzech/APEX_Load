@@ -2,14 +2,17 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildExecutionChartData,
+  estimateSampleIntervalMs,
   filterExecutionChartData,
   mapArchiveResourceSamples,
   mapArchiveSummarySamples,
   mapExecutionHistory,
+  markDataGaps,
   mergeArchiveResourceHistory,
   summarizeExecutionChartData,
 } from './testExecutionMetricsModel'
 import { latencySeriesKeyForTarget, routeLatencyDetailSeriesKeyForTarget } from './latencySeries'
+import type { MetricsHistoryPoint } from '../types'
 
 describe('testExecutionMetricsModel', () => {
   it('maps backend execution history into chart points with group and latency metrics', () => {
@@ -412,5 +415,48 @@ describe('testExecutionMetricsModel', () => {
     expect(filterExecutionChartData(chartData, '1m', null).map(point => point.time)).toEqual(['10:30:00', '10:31:00'])
     expect(filterExecutionChartData(chartData, '30m', null).map(point => point.time)).toEqual(['10:15:00', '10:30:00', '10:31:00'])
     expect(filterExecutionChartData(chartData, 'all', null)).toBe(chartData)
+  })
+
+  it('marks data gaps with a value-less spacer row without tripping on jitter', () => {
+    const point = (timestampMs: number): MetricsHistoryPoint => ({
+      time: new Date(timestampMs).toLocaleTimeString(),
+      timestampMs,
+      vusers: 5,
+      tps: 5,
+      avgMs: 100,
+      errorPct: 0,
+      p50: 90,
+      p90: 120,
+      p99: 150,
+    })
+    // Six 1s samples, then a 10s gap, then two more 1s samples (jitter on the +1050 step is ignored).
+    const base = 1_000_000
+    const points = [
+      point(base),
+      point(base + 1000),
+      point(base + 2050), // +1050ms jitter — must NOT be flagged
+      point(base + 3050),
+      point(base + 4050),
+      point(base + 5050),
+      point(base + 15_050), // +10s — a real gap
+      point(base + 16_050),
+    ]
+
+    expect(estimateSampleIntervalMs(points)).toBe(1000)
+    const gapped = markDataGaps(points)
+    const spacers = gapped.filter(p => p.isGapBoundary)
+    expect(spacers).toHaveLength(1)
+    // The spacer carries no series values, so every line/area breaks across it.
+    expect(spacers[0].tps).toBeUndefined()
+    expect(spacers[0].avgMs).toBeUndefined()
+    expect(gapped).toHaveLength(points.length + 1)
+  })
+
+  it('leaves short series untouched', () => {
+    const points: MetricsHistoryPoint[] = [
+      { time: 'a', timestampMs: 1, vusers: 1, tps: 1, avgMs: 1, errorPct: 0, p50: 1, p90: 1, p99: 1 },
+      { time: 'b', timestampMs: 2, vusers: 1, tps: 1, avgMs: 1, errorPct: 0, p50: 1, p90: 1, p99: 1 },
+    ]
+    expect(markDataGaps(points)).toBe(points)
   })
 })

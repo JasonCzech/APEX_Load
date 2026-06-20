@@ -303,6 +303,12 @@ type LiveMetrics struct {
 	P90Ms                  float64                               `json:"p90_ms"`
 	P95Ms                  float64                               `json:"p95_ms"`
 	P99Ms                  float64                               `json:"p99_ms"`
+	AvgDNSMs               float64                               `json:"avg_dns_ms,omitempty"`
+	AvgConnectMs           float64                               `json:"avg_connect_ms,omitempty"`
+	AvgTLSMs               float64                               `json:"avg_tls_ms,omitempty"`
+	AvgTTFBMs              float64                               `json:"avg_ttfb_ms,omitempty"`
+	AvgWaitMs              float64                               `json:"avg_wait_ms,omitempty"`
+	ErrorBreakdown         map[string]int64                      `json:"error_breakdown,omitempty"`
 	Transactions           map[string]*TxMetrics                 `json:"transactions,omitempty"`
 	DependencyHealth       map[string]*TxMetrics                 `json:"dependency_health,omitempty"`
 	DependencyMap          *LiveDependencyMap                    `json:"dependency_map,omitempty"`

@@ -11,13 +11,22 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 )
 
-func aggregateDistributedMetricsBatches(testID string, batches map[string]generatorrpc.MetricsBatch) generatorrpc.MetricsBatch {
+// aggregateDistributedMetricsBatches merges per-generator batches into one
+// combined batch. It also returns the fleet TPS and per-(raw-)group TPS computed
+// as a sum of per-generator rates: TPS is a per-second rate and is additive
+// across generators, but each generator's success count must be divided by its
+// OWN window before summing. The combined transaction list collapses to a single
+// representative window, so these rates are computed here, before concatenation.
+func aggregateDistributedMetricsBatches(testID string, batches map[string]generatorrpc.MetricsBatch) (generatorrpc.MetricsBatch, float64, map[string]float64) {
 	combined := generatorrpc.MetricsBatch{TestID: testID, GeneratorID: "distributed"}
 	targets := make([]string, 0, len(batches))
 	hasCollectedAt := false
 	hasPublishedAt := false
 	hasControllerReceivedAt := false
 	groupsByName := make(map[string]int32)
+	fleetTPS := 0.0
+	groupTPS := make(map[string]float64)
+	statsList := make([]generatorrpc.GeneratorStats, 0, len(batches))
 	for target := range batches {
 		targets = append(targets, target)
 	}
@@ -27,8 +36,24 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		if batch.TimestampUnixMs > combined.TimestampUnixMs {
 			combined.TimestampUnixMs = batch.TimestampUnixMs
 		}
-		combined.Stats = mergeDistributedGeneratorStats(combined.Stats, batch.Stats)
+		if batch.WindowMs > combined.WindowMs {
+			combined.WindowMs = batch.WindowMs
+		}
+		statsList = append(statsList, batch.Stats)
 		combined.Transactions = append(combined.Transactions, batch.Transactions...)
+		windowSec := batchWindowSeconds(batch.WindowMs)
+		batchSuccess := 0.0
+		batchGroupSuccess := make(map[string]float64)
+		for _, tx := range batch.Transactions {
+			if tx.Success {
+				batchSuccess++
+				batchGroupSuccess[strings.TrimSpace(tx.Group)]++
+			}
+		}
+		fleetTPS += batchSuccess / windowSec
+		for groupName, success := range batchGroupSuccess {
+			groupTPS[groupName] += success / windowSec
+		}
 		for _, group := range batch.Groups {
 			if group.Name == "" {
 				continue
@@ -65,10 +90,21 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	for _, name := range groupNames {
 		combined.Groups = append(combined.Groups, generatorrpc.GroupMetric{Name: name, ActiveVUsers: groupsByName[name]})
 	}
-	return combined
+	combined.Stats = aggregateDistributedGeneratorStats(statsList)
+	return combined, fleetTPS, groupTPS
 }
 
-func summarizeGeneratorBatchTransactions(transactions []generatorrpc.TransactionMetric) (float64, float64, float64, float64) {
+// batchWindowSeconds converts a batch window (ms) to seconds for rate math.
+// A non-positive window (older generator, or first drain) falls back to 1.0s,
+// preserving the historical count≈rate behavior at the 1s publish cadence.
+func batchWindowSeconds(windowMs int64) float64 {
+	if windowMs <= 0 {
+		return 1.0
+	}
+	return float64(windowMs) / 1000.0
+}
+
+func summarizeGeneratorBatchTransactions(transactions []generatorrpc.TransactionMetric, windowMs int64) (float64, float64, float64, float64) {
 	if len(transactions) == 0 {
 		return 0, 0, 0, 0
 	}
@@ -85,10 +121,11 @@ func summarizeGeneratorBatchTransactions(transactions []generatorrpc.Transaction
 	}
 	sort.Float64s(durations)
 	errorPct := float64(errors) / float64(len(transactions)) * 100
-	return percentileValue(durations, 0.95), percentileValue(durations, 0.99), errorPct, float64(successes)
+	tps := float64(successes) / batchWindowSeconds(windowMs)
+	return percentileValue(durations, 0.95), percentileValue(durations, 0.99), errorPct, tps
 }
 
-func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.MetricsBatch) *LiveMetrics {
+func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.MetricsBatch, fleetTPS float64, groupTPS map[string]float64) *LiveMetrics {
 	timestamp := time.UnixMilli(batch.TimestampUnixMs)
 	if batch.TimestampUnixMs == 0 {
 		timestamp = time.Now()
@@ -137,14 +174,26 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	durationsByGroup := make(map[string][]float64)
 	groupAggregates := make(map[string]*GroupLiveMetrics)
 	transactionAttempts := int64(0)
+	var totalDNSMs, totalConnectMs, totalTLSMs, totalTTFBMs, totalWaitMs float64
+	errorBreakdown := make(map[string]int64)
 	for _, tx := range batch.Transactions {
 		transactionAttempts++
 		if !tx.Success {
 			live.TotalErrors++
+			if class := engine.ClassifyError(int(tx.StatusCode), tx.ErrorMessage, false); class != "" {
+				errorBreakdown[class]++
+			}
 		} else {
 			live.TotalTx++
 		}
 		live.AvgResponseMs += tx.DurationMs
+		totalDNSMs += tx.DNSMs
+		totalConnectMs += tx.ConnectMs
+		totalTLSMs += tx.TLSMs
+		totalTTFBMs += tx.TTFBMs
+		if wait := tx.DurationMs - tx.TTFBMs; wait > 0 {
+			totalWaitMs += wait
+		}
 		durationsByName[tx.Name] = append(durationsByName[tx.Name], tx.DurationMs)
 		if !tx.Success && tx.Snapshot != nil {
 			evidence := liveErrorEvidenceFromTransaction(tx)
@@ -166,7 +215,6 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 				groupMetrics.Errors++
 			} else {
 				groupMetrics.Transactions++
-				groupMetrics.TPS++
 			}
 			groupMetrics.AvgResponseMs += tx.DurationMs
 			durationsByGroup[groupName] = append(durationsByGroup[groupName], tx.DurationMs)
@@ -200,9 +248,31 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 
 	if transactionAttempts > 0 {
-		live.TPS = float64(live.TotalTx)
-		live.ErrorPct = float64(live.TotalErrors) / float64(transactionAttempts) * 100
-		live.AvgResponseMs /= float64(transactionAttempts)
+		attempts := float64(transactionAttempts)
+		live.ErrorPct = float64(live.TotalErrors) / attempts * 100
+		live.AvgResponseMs /= attempts
+		live.AvgDNSMs = totalDNSMs / attempts
+		live.AvgConnectMs = totalConnectMs / attempts
+		live.AvgTLSMs = totalTLSMs / attempts
+		live.AvgTTFBMs = totalTTFBMs / attempts
+		live.AvgWaitMs = totalWaitMs / attempts
+	}
+	live.ErrorBreakdown = copyErrorClassCounts(errorBreakdown)
+	// TPS is a true per-second rate summed across generators (see
+	// aggregateDistributedMetricsBatches), not a per-batch transaction count.
+	live.TPS = fleetTPS
+
+	// Resolve raw per-group rates to configured group names, applying the same
+	// single-group fallback used when bucketing transactions below.
+	resolvedGroupTPS := make(map[string]float64, len(groupTPS))
+	for rawGroup, tps := range groupTPS {
+		name := strings.TrimSpace(rawGroup)
+		if name == "" && len(test.Groups) == 1 {
+			name = test.Groups[0].Name
+		}
+		if name != "" {
+			resolvedGroupTPS[name] += tps
+		}
 	}
 
 	names := make([]string, 0, len(durationsByName))
@@ -231,6 +301,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		if attempts > 0 {
 			metrics.AvgResponseMs /= float64(attempts)
 		}
+		metrics.TPS = resolvedGroupTPS[groupName]
 		metrics.P50Ms, metrics.P90Ms, metrics.P95Ms, metrics.P99Ms = percentilesFromSorted(durations)
 		digest := engine.NewTDigest(200)
 		for _, duration := range durations {

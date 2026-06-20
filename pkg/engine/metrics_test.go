@@ -684,3 +684,37 @@ func assertWithinRange(t *testing.T, name string, got, lo, hi time.Duration) {
 		t.Errorf("%s = %v, want between %v and %v", name, got, lo, hi)
 	}
 }
+
+func TestComputeSnapshotNetworkPhasesAndErrorClasses(t *testing.T) {
+	mc := NewMetricsCollector(100)
+	base := protocol.Result{
+		BusinessTransaction: true,
+		Duration:            150 * time.Millisecond,
+		DNSTime:             12 * time.Millisecond,
+		ConnectTime:         24 * time.Millisecond,
+		TLSTime:             36 * time.Millisecond,
+		TTFB:                90 * time.Millisecond,
+	}
+	success := base
+	success.Success = true
+	httpErr := base
+	httpErr.StatusCode = 500
+	httpErr.ErrorMessage = "boom"
+	timeoutErr := base
+	timeoutErr.ErrorMessage = "context deadline exceeded"
+
+	snap := mc.computeSnapshot([]*protocol.Result{&success, &httpErr, &timeoutErr}, time.Second)
+
+	if snap.Transactions != 1 || snap.Errors != 2 {
+		t.Fatalf("transactions=%d errors=%d, want 1 and 2", snap.Transactions, snap.Errors)
+	}
+	if snap.AvgDNSMs != 12 || snap.AvgConnectMs != 24 || snap.AvgTLSMs != 36 || snap.AvgTTFBMs != 90 {
+		t.Fatalf("phase averages dns=%v connect=%v tls=%v ttfb=%v", snap.AvgDNSMs, snap.AvgConnectMs, snap.AvgTLSMs, snap.AvgTTFBMs)
+	}
+	if snap.AvgWaitMs != 60 { // 150 - 90
+		t.Fatalf("avg wait = %v, want 60", snap.AvgWaitMs)
+	}
+	if snap.ErrorsByClass[ErrorClassHTTP5xx] != 1 || snap.ErrorsByClass[ErrorClassTimeout] != 1 {
+		t.Fatalf("errors by class = %#v, want one http_5xx and one timeout", snap.ErrorsByClass)
+	}
+}

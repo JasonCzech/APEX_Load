@@ -52,6 +52,21 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     netRecv: rounded(metric.resources?.net_recv_kbps),
     diskRead: rounded(metric.resources?.disk_read_kbps),
     diskWrite: rounded(metric.resources?.disk_write_kbps),
+    cpuProcessMax: roundedOptional(metric.resources?.cpu_process_pct_max),
+    // Network-phase breakdown from real VU traffic (kept distinct from the
+    // synthetic route-latency probe). Optional so an absent phase stays a gap.
+    txDnsMs: roundedOptional(metric.avg_dns_ms),
+    txConnectMs: roundedOptional(metric.avg_connect_ms),
+    txTlsMs: roundedOptional(metric.avg_tls_ms),
+    txTtfbMs: roundedOptional(metric.avg_ttfb_ms),
+    txWaitMs: roundedOptional(metric.avg_wait_ms),
+    // Error taxonomy counts (0 is meaningful for a class, so use rounded()).
+    errTimeout: rounded(metric.error_breakdown?.timeout),
+    errConnection: rounded(metric.error_breakdown?.connection),
+    errHttp4xx: rounded(metric.error_breakdown?.http_4xx),
+    errHttp5xx: rounded(metric.error_breakdown?.http_5xx),
+    errAssertion: rounded(metric.error_breakdown?.assertion),
+    errOther: rounded(metric.error_breakdown?.other),
     ...roundedHistoryValues(resourceImpactHistoryValues(metric.resources)),
   }
 
@@ -320,12 +335,71 @@ export function buildExecutionChartData({
       }
 
       if (lastNonZeroIndex !== -1) {
-        return pointsWithRelativeRunTime.slice(0, lastNonZeroIndex + 6)
+        return markDataGaps(pointsWithRelativeRunTime.slice(0, lastNonZeroIndex + 6))
       }
     }
   }
 
-  return pointsWithRelativeRunTime
+  return markDataGaps(pointsWithRelativeRunTime)
+}
+
+const GAP_DETECTION_MIN_POINTS = 6
+// A gap is only flagged when the inter-sample delta exceeds this multiple of the
+// measured median interval — high enough that normal jitter never trips it.
+const GAP_DETECTION_FACTOR = 3
+
+// estimateSampleIntervalMs returns the median delta between consecutive
+// timestamps, a jitter-robust estimate of the sampling cadence.
+export function estimateSampleIntervalMs(points: MetricsHistoryPoint[]): number {
+  const deltas: number[] = []
+  for (let index = 1; index < points.length; index += 1) {
+    const prev = points[index - 1].timestampMs
+    const curr = points[index].timestampMs
+    if (typeof prev === 'number' && typeof curr === 'number') {
+      const delta = curr - prev
+      if (delta > 0) deltas.push(delta)
+    }
+  }
+  if (deltas.length === 0) return 1000
+  deltas.sort((left, right) => left - right)
+  const mid = Math.floor(deltas.length / 2)
+  return deltas.length % 2 === 0 ? (deltas[mid - 1] + deltas[mid]) / 2 : deltas[mid]
+}
+
+// markDataGaps inserts a synthetic value-less spacer row wherever a sampling gap
+// is detected, so every series breaks (rather than interpolating a misleading
+// straight line) across missing intervals. The spacer carries the real midpoint
+// timestamp, so its axis tick reads as a normal — but empty — time slot.
+export function markDataGaps(points: MetricsHistoryPoint[], factor = GAP_DETECTION_FACTOR): MetricsHistoryPoint[] {
+  if (points.length < GAP_DETECTION_MIN_POINTS) return points
+  const intervalMs = estimateSampleIntervalMs(points)
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) return points
+  const threshold = intervalMs * factor
+
+  const result: MetricsHistoryPoint[] = []
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index]
+    if (index > 0) {
+      const prev = points[index - 1]
+      if (typeof prev.timestampMs === 'number' && typeof point.timestampMs === 'number') {
+        const delta = point.timestampMs - prev.timestampMs
+        if (delta > threshold) {
+          const midTs = prev.timestampMs + delta / 2
+          const spacer = {
+            time: new Date(midTs).toLocaleTimeString(),
+            timestampMs: midTs,
+            relativeMs: typeof prev.relativeMs === 'number' && typeof point.relativeMs === 'number'
+              ? prev.relativeMs + (point.relativeMs - prev.relativeMs) / 2
+              : undefined,
+            isGapBoundary: 1,
+          } as unknown as MetricsHistoryPoint
+          result.push(spacer)
+        }
+      }
+    }
+    result.push(point)
+  }
+  return result
 }
 
 function addRelativeRunTime(points: MetricsHistoryPoint[]): MetricsHistoryPoint[] {

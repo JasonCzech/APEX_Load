@@ -334,9 +334,9 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 	// per-target consumeMetrics goroutines — so it must hold tr.mu. The lock is
 	// released BEFORE applyGoalControllerUpdate, which re-locks internally and
 	// issues blocking gRPC scale calls.
-	aggregated := aggregateDistributedMetricsBatches(test.ID, batches)
+	aggregated, fleetTPS, groupTPS := aggregateDistributedMetricsBatches(test.ID, batches)
 	tr.mu.Lock()
-	live := buildLiveMetricsFromDistributedBatch(test, aggregated)
+	live := buildLiveMetricsFromDistributedBatch(test, aggregated, fleetTPS, groupTPS)
 	applyRuntimeGoalTargetsToLiveMetrics(test, live)
 	var (
 		runGoalUpdate   bool

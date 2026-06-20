@@ -64,6 +64,7 @@ type MetricsBatch struct {
 	TestID          string
 	GeneratorID     string
 	TimestampUnixMs int64
+	WindowMs        int64
 	Stats           GeneratorStats
 	Transactions    []TransactionMetric
 	Groups          []GroupMetric
@@ -78,6 +79,10 @@ type MetricsTelemetry struct {
 	PublishedAtUnixMs          int64
 	ControllerReceivedAtUnixMs int64
 	SampleAgeMs                float64
+	// WindowMs is the elapsed wall-clock duration this group's drained
+	// transactions cover. It is generator-internal (merged to the batch's
+	// window_ms) and is not transmitted on the telemetry proto message.
+	WindowMs int64
 }
 
 type GroupMetric struct {
@@ -167,8 +172,12 @@ type HeartbeatResponse struct {
 }
 
 type GeneratorStats struct {
-	ActiveVUsers                      int32
-	CPUPercent                        float64
+	ActiveVUsers int32
+	CPUPercent   float64
+	// CPUProcessPctMax is the worst-pod process CPU% across the fleet. It is
+	// populated controller-side during multi-generator aggregation; per a single
+	// generator it is left zero (the per-pod value is CPUPercent).
+	CPUProcessPctMax                  float64
 	MemoryBytes                       int64
 	GoroutineCount                    int32
 	CPUUserPct                        float64
@@ -483,6 +492,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		TestID:          batch.GetTestId(),
 		GeneratorID:     batch.GetGeneratorId(),
 		TimestampUnixMs: batch.GetTimestampUnixMs(),
+		WindowMs:        batch.GetWindowMs(),
 		Stats:           stats,
 		Transactions:    transactions,
 		Groups:          groups,

@@ -98,6 +98,11 @@ message MetricsBatch {
   string lifecycle_state = 7;
   string lifecycle_error = 8;
   MetricsBatchTelemetry telemetry = 9;
+  // window_ms is the elapsed wall-clock duration (in milliseconds) that the
+  // transactions in this batch were drained over. The controller divides
+  // per-batch success counts by this window to compute a true per-second rate
+  // (TPS). 0 means "unknown" (e.g. an older generator) and is treated as 1000ms.
+  int64 window_ms = 10;
 }
 
 message MetricsBatchTelemetry {

@@ -14,11 +14,12 @@ export type ChartDomain = ComponentProps<typeof YAxis>['domain']
 export interface ChartConfig {
   id: string
   title: string
-  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'line-io' | 'line-network' | 'line-impact' | 'line-prometheus' | 'line-load-impact' | 'line-load-impact-percentiles' | 'load-impact-heatmap'
+  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'area-stacked' | 'line-io' | 'line-network' | 'line-impact' | 'line-prometheus' | 'line-load-impact' | 'line-load-impact-percentiles' | 'load-impact-heatmap'
   dataKey?: string
   color?: string
   totalKey?: string
   keys?: Array<{ k: string; n: string; c: string }>
+  stackId?: string
   domain?: ChartDomain
   defaultMetricKeys?: string[]
   loadImpactMetric?: LoadImpactMetric
@@ -93,24 +94,54 @@ export const chartConfigs: ChartConfig[] = [
   { id: 'errors', title: 'Error Rate (%)', type: 'area', dataKey: 'errorPct', color: 'var(--chart-4)', domain: [0, 'auto'] },
   {
     id: 'cpu',
-    title: 'CPU Usage (%)',
+    title: 'CPU Usage — Fleet (%)',
     type: 'area-multi',
     keys: [
-      { k: 'cpuProcess', n: 'VUsers', c: 'var(--chart-1)' },
-      { k: 'cpuFree', n: 'System', c: 'var(--chart-2)' },
+      { k: 'cpuProcess', n: 'VUser avg %', c: 'var(--chart-1)' },
+      { k: 'cpuFree', n: 'System avg %', c: 'var(--chart-2)' },
+      { k: 'cpuProcessMax', n: 'Worst pod %', c: 'var(--warning)' },
     ],
     domain: [0, 100],
   },
   {
     id: 'mem',
-    title: 'Memory Usage (MB)',
+    title: 'Memory — Fleet total (MB)',
     type: 'area-multi',
     keys: [
-      { k: 'memProcess', n: 'VUsers', c: 'var(--chart-4)' },
-      { k: 'memFree', n: 'System', c: 'var(--chart-5)' },
+      { k: 'memProcess', n: 'VUser total MB', c: 'var(--chart-4)' },
+      { k: 'memFree', n: 'System free MB', c: 'var(--chart-5)' },
     ],
   },
   { id: 'io', title: 'Network & Disk I/O (KB/s)', type: 'line-io' },
+  {
+    id: 'tx_network_phases',
+    title: 'Network Phase Breakdown — Transaction Traffic (ms)',
+    type: 'area-stacked',
+    stackId: 'phases',
+    keys: [
+      { k: 'txDnsMs', n: 'DNS', c: 'var(--chart-5)' },
+      { k: 'txConnectMs', n: 'Connect', c: 'var(--chart-1)' },
+      { k: 'txTlsMs', n: 'TLS', c: 'var(--chart-3)' },
+      { k: 'txTtfbMs', n: 'TTFB', c: 'var(--chart-4)' },
+      { k: 'txWaitMs', n: 'Wait', c: 'var(--chart-2)' },
+    ],
+    domain: [0, 'auto'],
+  },
+  {
+    id: 'error_taxonomy',
+    title: 'Error Taxonomy (stacked)',
+    type: 'area-stacked',
+    stackId: 'errors',
+    keys: [
+      { k: 'errTimeout', n: 'Timeout', c: 'var(--warning)' },
+      { k: 'errConnection', n: 'Connection', c: 'var(--chart-3)' },
+      { k: 'errHttp4xx', n: 'HTTP 4xx', c: 'var(--chart-2)' },
+      { k: 'errHttp5xx', n: 'HTTP 5xx', c: 'var(--danger)' },
+      { k: 'errAssertion', n: 'Assertion', c: 'var(--chart-4)' },
+      { k: 'errOther', n: 'Other', c: 'var(--text-muted)' },
+    ],
+    domain: [0, 'auto'],
+  },
   { id: 'generator_impact', title: 'Generator Impact', type: 'line-impact' },
   { id: 'network_latency', title: 'Route Latency (ms)', type: 'line-network' },
 ]
@@ -295,11 +326,15 @@ export function chartPrimaryYAxisLabel(chart: ChartConfig) {
     case 'errors':
       return 'Error rate (%)'
     case 'cpu':
-      return 'CPU (%)'
+      return 'Fleet CPU (%)'
     case 'mem':
-      return 'Memory (MB)'
+      return 'Fleet memory (MB)'
     case 'io':
       return 'Throughput (KB/s)'
+    case 'tx_network_phases':
+      return 'Phase time (ms)'
+    case 'error_taxonomy':
+      return 'Errors / interval'
     case 'generator_impact':
       return 'Impact metrics'
     case 'network_latency':
@@ -373,10 +408,10 @@ export function defaultHiddenChartIds(charts: ChartConfig[], visibleLoadImpactCh
 }
 
 export const monitorPresets = [
-  { id: 'run_operator', label: 'Run Operator', chartIds: ['vusers', 'tps', 'latency', 'errors'] },
-  { id: 'performance_engineer', label: 'Performance Engineer', chartIds: ['latency', 'tps', 'errors', 'cpu', 'mem', 'io', 'generator_impact', 'network_latency', 'vusers'] },
-  { id: 'platform_admin', label: 'Platform Admin', chartIds: ['cpu', 'mem', 'io', 'generator_impact', 'network_latency', 'vusers', 'tps'] },
-  { id: 'release_approver', label: 'Release Approver', chartIds: ['latency', 'errors', 'tps'] },
+  { id: 'run_operator', label: 'Run Operator', chartIds: ['vusers', 'tps', 'latency', 'errors', 'error_taxonomy'] },
+  { id: 'performance_engineer', label: 'Performance Engineer', chartIds: ['latency', 'tps', 'errors', 'error_taxonomy', 'tx_network_phases', 'cpu', 'mem', 'io', 'generator_impact', 'network_latency', 'vusers'] },
+  { id: 'platform_admin', label: 'Platform Admin', chartIds: ['cpu', 'mem', 'io', 'tx_network_phases', 'generator_impact', 'network_latency', 'vusers', 'tps'] },
+  { id: 'release_approver', label: 'Release Approver', chartIds: ['latency', 'errors', 'error_taxonomy', 'tps'] },
 ] as const
 
 export function sameStringArray(left: string[], right: string[]) {
@@ -594,6 +629,10 @@ export function downsampleGraphData(data: MetricsHistoryPoint[], metricKeys: str
   if (ranges.size === 0) return evenlySampleGraphData(data, target)
 
   const retainedIndexes = new Set<number>([0, data.length - 1])
+  // Always keep gap-boundary spacer rows so visible data gaps survive downsampling.
+  for (let index = 0; index < data.length; index += 1) {
+    if (data[index].isGapBoundary) retainedIndexes.add(index)
+  }
   const bucketCount = Math.max(1, Math.floor((target - 2) / 4))
   const interiorPointCount = data.length - 2
 
@@ -940,13 +979,21 @@ export function chartMetricRows(
     case 'network_latency':
       rows = routeLatencyMetricRowsForMode(latencyKeys, groupColors, routeLatencyMode, selectedRouteLatencyKey)
       break
-    default:
+    default: {
+      const keyedUnit = chart.id === 'cpu'
+        ? '%'
+        : chart.id === 'tx_network_phases'
+          ? 'ms'
+          : chart.id === 'error_taxonomy'
+            ? 'errors'
+            : 'MB'
       rows = chart.keys
-        ? chart.keys.map(key => ({ key: key.k, label: key.n, color: key.c, unit: chart.id === 'cpu' ? '%' : 'MB' }))
+        ? chart.keys.map(key => ({ key: key.k, label: key.n, color: key.c, unit: keyedUnit }))
         : chart.dataKey
           ? [{ key: chart.dataKey, label: 'Total', color: chart.color ?? 'var(--chart-1)' }]
           : []
       break
+    }
   }
   const overlayRows = normalizeOverlayMetricKeys(chart, includeVuserOverlay, overlayMetricKeys)
     .filter(key => !rows.some(row => row.key === key))
