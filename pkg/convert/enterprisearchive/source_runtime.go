@@ -272,7 +272,154 @@ func reapplySourceRuntimeControlConfig(result *ConvertResult, fn ParsedFunction)
 		applySourceSocketOptionConfig(result, fn)
 	case "web_set_timeout":
 		applySourceTimeoutConfig(result, fn)
+	case "web_set_option", "web_set_max_retries", "web_disable_keep_alive", "web_enable_keep_alive",
+		"web_set_certificate_ex", "web_set_proxy", "web_set_secure_proxy", "web_set_proxy_bypass", "web_set_proxy_bypass_local":
+		applySourceWebRuntimeControlConfig(result, fn)
 	}
+}
+
+// applySourceWebRuntimeControl maps a Web (HTTP/HTML) connection/session/TLS/proxy
+// control onto config.http (with a web_runtime attribute for unmapped options) and
+// preserves the original call for round-trip fidelity.
+func applySourceWebRuntimeControl(result *ConvertResult, fn ParsedFunction) map[string]any {
+	details := applySourceWebRuntimeControlConfig(result, fn)
+	preserveSourceRuntimeControl(result.Script, "source_runtime_controls", fn, details)
+	return details
+}
+
+func applySourceWebRuntimeControlConfig(result *ConvertResult, fn ParsedFunction) map[string]any {
+	args := sourceControlArgs(fn)
+	details := map[string]any{}
+
+	switch fn.Name {
+	case "web_disable_keep_alive", "web_enable_keep_alive":
+		keepAlive := fn.Name == "web_enable_keep_alive"
+		result.Script.Config.HTTP.KeepAlive = &keepAlive
+		details["summary"] = fn.Name
+		details["mapped_to"] = "config.http.keep_alive"
+		details["mapped_value"] = keepAlive
+
+	case "web_set_max_retries":
+		value := firstSourceControlArg(fn)
+		setSourceWebRuntimeAttribute(result.Script, "web_set_max_retries", value)
+		details["summary"] = "max_retries=" + value
+		details["mapped_to"] = "config.web_runtime.additional_attributes.web_set_max_retries"
+		if n := parseInt(value); n > 0 {
+			result.Script.Config.ErrorHandling.MaxRetries = n
+			details["mapped_to"] = "config.error_handling.max_retries"
+			details["mapped_value"] = n
+		}
+
+	case "web_set_option":
+		option, value := sourceOptionPair(args)
+		key := "web_set_option"
+		if option != "" {
+			key += "." + option
+		}
+		setSourceWebRuntimeAttribute(result.Script, key, value)
+		details["summary"] = strings.TrimSpace(option + "=" + value)
+		details["mapped_to"] = "config.web_runtime.additional_attributes." + key
+		switch normalizeEnum(option) {
+		case "max_total_connections", "max_connections", "max_connections_per_host":
+			if n := parseInt(value); n > 0 {
+				result.Script.Config.HTTP.MaxConnsPerHost = n
+				details["mapped_to"] = "config.http.max_conns_per_host"
+				details["mapped_value"] = n
+			}
+		}
+
+	case "web_set_certificate_ex":
+		cert := convertParamReferences(firstNonEmptyArg(fn, "CertFilePath"))
+		key := convertParamReferences(firstNonEmptyArg(fn, "KeyFilePath"))
+		if cert != "" {
+			result.Script.Config.HTTP.TLS.ClientCertFile = cert
+			details["mapped_to"] = "config.http.tls.client_cert_file"
+			details["summary"] = cert
+		}
+		if key != "" {
+			result.Script.Config.HTTP.TLS.ClientKeyFile = key
+		}
+		if cert == "" && key == "" {
+			setSourceWebRuntimeAttribute(result.Script, "web_set_certificate_ex", firstSourceControlArg(fn))
+			details["mapped_to"] = "config.web_runtime.additional_attributes.web_set_certificate_ex"
+		}
+
+	case "web_set_proxy", "web_set_secure_proxy":
+		proxy := sourceProxyURL(firstSourceControlArg(fn), fn.Name == "web_set_secure_proxy")
+		if proxy != "" {
+			result.Script.Config.HTTP.ProxyMode = "custom"
+			result.Script.Config.HTTP.Proxy.URL = proxy
+			details["mapped_to"] = "config.http.proxy.url"
+			details["summary"] = proxy
+		}
+
+	case "web_set_proxy_bypass", "web_set_proxy_bypass_local":
+		for _, host := range sourceProxyBypassHosts(args) {
+			result.Script.Config.HTTP.Proxy.NoProxy = appendUniqueString(result.Script.Config.HTTP.Proxy.NoProxy, host)
+		}
+		if fn.Name == "web_set_proxy_bypass_local" {
+			result.Script.Config.HTTP.Proxy.NoProxy = appendUniqueString(result.Script.Config.HTTP.Proxy.NoProxy, "localhost")
+			result.Script.Config.HTTP.Proxy.NoProxy = appendUniqueString(result.Script.Config.HTTP.Proxy.NoProxy, "127.0.0.1")
+		}
+		details["mapped_to"] = "config.http.proxy.no_proxy"
+		details["summary"] = strings.Join(result.Script.Config.HTTP.Proxy.NoProxy, ",")
+	}
+
+	return details
+}
+
+// sourceOptionPair resolves the (key, value) of a web_set_option("Key", "Value")
+// call from its positional arguments.
+func sourceOptionPair(args []string) (string, string) {
+	option := ""
+	value := ""
+	if len(args) > 0 {
+		option = cleanConfigValue(args[0])
+	}
+	if len(args) > 1 {
+		value = cleanConfigValue(args[1])
+	}
+	return option, value
+}
+
+// sourceProxyURL normalizes a web_set_proxy("host:port") argument into a URL. A
+// value that already carries a scheme is kept as-is.
+func sourceProxyURL(raw string, secure bool) string {
+	value := strings.TrimSpace(cleanConfigValue(raw))
+	if value == "" {
+		return ""
+	}
+	if strings.Contains(value, "://") {
+		return convertParamReferences(value)
+	}
+	scheme := "http://"
+	if secure {
+		scheme = "https://"
+	}
+	return scheme + convertParamReferences(value)
+}
+
+func sourceProxyBypassHosts(args []string) []string {
+	hosts := make([]string, 0, len(args))
+	for _, arg := range args {
+		for _, host := range strings.FieldsFunc(cleanConfigValue(arg), func(r rune) bool {
+			return r == ',' || r == ';' || r == ' '
+		}) {
+			if trimmed := strings.TrimSpace(host); trimmed != "" {
+				hosts = append(hosts, convertParamReferences(trimmed))
+			}
+		}
+	}
+	return hosts
+}
+
+func appendUniqueString(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 // convertWebCleanupCookiesAction builds the executable cookie_clear action that

@@ -35,6 +35,43 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 	saveOffset, saveLength, convert, postWarnings := sourceExtractorPostProcessing(fn, paramName)
 	warnings = append(warnings, postWarnings...)
 
+	if fn.Name == "web_reg_save_param_attrib" {
+		// Saves the value of an HTML element attribute. APEX Load's xpath extractor
+		// runs against the (HTML) response body, so map Tag + Attribute to an
+		// //tag/@attribute selector. Element-identification predicates (ID=, Name=,
+		// Value=, ...) and Ordinal narrow the match best-effort; warn on the ones
+		// that are not translated so the fidelity loss is visible.
+		attribute := convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "Attribute"), firstNonEmptyArg(fn, "AttributeName"))
+		if attribute == "" {
+			return nil, append(warnings, fmt.Sprintf("line %d: web_reg_save_param_attrib %q has no Attribute=; preserved for manual review", fn.LineNumber, paramName))
+		}
+		tag := strings.ToLower(strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "Tag"))))
+		node := "//*"
+		if tag != "" {
+			node = "//" + tag
+		}
+		expression := node + "/@" + strings.TrimSpace(cleanConfigValue(attribute))
+		if mode == "" && ordinal > 1 {
+			expression = fmt.Sprintf("(%s)[%d]", expression, ordinal)
+		}
+		for _, predicate := range []string{"ID", "Name", "Value"} {
+			if value := firstNonEmptyArg(fn, predicate); value != "" {
+				warnings = append(warnings, fmt.Sprintf("line %d: web_reg_save_param_attrib %q narrows by %s=%s, which is not translated into the xpath selector; verify the extracted element", fn.LineNumber, paramName, predicate, cleanConfigValue(value)))
+			}
+		}
+		return &dsl.Extractor{
+			Name:       paramName,
+			Source:     "body",
+			Type:       "xpath",
+			Expression: expression,
+			OnMiss:     onMiss,
+			Mode:       mode,
+			SaveOffset: saveOffset,
+			SaveLength: saveLength,
+			Convert:    convert,
+		}, warnings
+	}
+
 	if fn.Name == "web_reg_save_param_regexp" {
 		expression := firstNonEmptyArg(fn, "RegExp")
 		if expression == "" {

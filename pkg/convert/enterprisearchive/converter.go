@@ -158,7 +158,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 	for _, fn := range allFunctions {
 		switch fn.Name {
-		case "web_reg_save_param", "web_reg_save_param_regexp", "web_reg_save_param_json", "web_reg_save_param_xpath", "web_reg_save_param_ex":
+		case "web_reg_save_param", "web_reg_save_param_regexp", "web_reg_save_param_json", "web_reg_save_param_xpath", "web_reg_save_param_ex", "web_reg_save_param_attrib":
 			ext, extractorWarnings := convertExtractor(fn)
 			result.Warnings = append(result.Warnings, extractorWarnings...)
 			if ext != nil {
@@ -181,6 +181,35 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if saveCountExtractor != nil {
 				pendingExtractors = append(pendingExtractors, *saveCountExtractor)
 				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", saveCountExtractor.Name, "extractor", "contributor", "Counts matches for SaveCount and applies the value to the next converted request action.", SourceFunctionSupportExecutable))
+				result.Stats.Extractors++
+				result.Stats.ContributorFunctions++
+				mapped = true
+			}
+			if mapped {
+				recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+			}
+			if warning != "" {
+				result.Warnings = append(result.Warnings, warning)
+			}
+
+		case "web_find":
+			// Deprecated inline verification (predecessor of web_reg_find). It checks
+			// the *previous* response; the source argument is "What=" rather than
+			// web_reg_find's "Text=", so alias it before reusing the same mapping.
+			if fn.Args != nil && fn.Args["Text"] == "" && fn.Args["What"] != "" {
+				fn.Args["Text"] = fn.Args["What"]
+			}
+			assertion, saveCountExtractor, warning := convertFindAssertion(fn)
+			mapped := false
+			if assertion != nil {
+				pendingAssertions = append(pendingAssertions, *assertion)
+				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", assertion.Type, "assertion", "contributor", "Mapped from web_find; applied to the next converted request action.", SourceFunctionSupportExecutable))
+				result.Stats.ContributorFunctions++
+				mapped = true
+			}
+			if saveCountExtractor != nil {
+				pendingExtractors = append(pendingExtractors, *saveCountExtractor)
+				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", saveCountExtractor.Name, "extractor", "contributor", "Counts web_find matches and applies the value to the next converted request action.", SourceFunctionSupportExecutable))
 				result.Stats.Extractors++
 				result.Stats.ContributorFunctions++
 				mapped = true
@@ -224,16 +253,23 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
-		case "web_revert_auto_header":
+		case "web_revert_auto_header", "web_remove_auto_header":
 			headerName := firstSourceControlArg(fn)
 			if headerName != "" && autoHeaders != nil {
 				deleteHeaderCaseInsensitive(autoHeaders, headerName)
 			}
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers", convertutil.FirstNonEmpty(headerName, fn.Name), "headers", "converted", "Reverted a persistent source auto header.", SourceFunctionSupportExecutable))
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers", convertutil.FirstNonEmpty(headerName, fn.Name), "headers", "converted", "Removed a persistent source auto header.", SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
-		case "web_add_cookie":
+		case "web_cleanup_auto_headers":
+			// Drop every persistent auto header so downstream requests stop carrying them.
+			autoHeaders = nil
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers", fn.Name, "headers", "converted", "Cleared all persistent source auto headers.", SourceFunctionSupportExecutable))
+			result.Stats.ContributorFunctions++
+			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+
+		case "web_add_cookie", "web_add_cookie_ex", "web_reg_add_cookie":
 			for _, cookie := range fn.Cookies {
 				if cookie.Name == "" {
 					continue
@@ -242,6 +278,20 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				persistentCookies = append(persistentCookies, cookie)
 			}
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers.Cookie", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "headers", "converted", "Mapped to Cookie headers on matching downstream HTTP requests.", SourceFunctionSupportExecutable))
+			result.Stats.ContributorFunctions++
+			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+
+		case "web_remove_cookie":
+			// Drop a previously-added cookie (or ALL) from the persistent set so it
+			// stops attaching to downstream requests.
+			removed := removePersistentCookie(&persistentCookies, fn)
+			targetPath := "actions[].headers.Cookie"
+			notes := "Removed a source cookie from downstream HTTP requests."
+			if !removed {
+				targetPath = "metadata.import.preserved.source_runtime_controls"
+				notes = "web_remove_cookie referenced a cookie not added earlier in this script; preserved for review."
+			}
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, targetPath, convertutil.FirstNonEmpty(fn.StepName, fn.Name), "headers", "converted", notes, SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
@@ -352,6 +402,47 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
+		case "web_set_option", "web_set_max_retries", "web_disable_keep_alive", "web_enable_keep_alive",
+			"web_set_certificate_ex", "web_set_proxy", "web_set_secure_proxy", "web_set_proxy_bypass", "web_set_proxy_bypass_local":
+			// Connection/session/TLS/proxy controls → config.http (and web_runtime
+			// attributes for unmapped options). Reapplied after opts.HTTPConfig so the
+			// source-declared setting wins, mirroring web_set_timeout/web_set_sockets_option.
+			sourceRuntimeControls = append(sourceRuntimeControls, fn)
+			details := applySourceWebRuntimeControl(result, fn)
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, stringMapValue(details, "mapped_to", "config.web_runtime.additional_attributes."+fn.Name), convertutil.FirstNonEmpty(stringMapValue(details, "summary", ""), fn.Name), "config", "converted", "Mapped from source HTTP runtime control.", SourceFunctionSupportExecutable))
+			result.Stats.ContributorFunctions++
+			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+
+		case "web_add_filter", "web_add_auto_filter", "web_remove_auto_filter", "web_load_cache", "web_dump_cache":
+			// APEX Load fetches only the scripted requests (no auto-resource download)
+			// and keeps no client-side response cache, so download filters and cache
+			// load/dump are guaranteed native no-ops. Preserve as a compatibility
+			// attribute for round-trip fidelity.
+			value := firstSourceControlArg(fn)
+			if value == "" {
+				value = "true"
+			}
+			setSourceWebRuntimeAttribute(result.Script, fn.Name, value)
+			preserveSourceRuntimeControl(result.Script, "source_runtime_controls", fn, map[string]any{
+				"mapped_to": "config.web_runtime.additional_attributes." + fn.Name,
+			})
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.additional_attributes."+fn.Name, fn.Name, "config", "converted", "APEX Load fetches only scripted requests and keeps no client cache; this control is a native no-op.", SourceFunctionSupportNativeNoop))
+			result.Stats.ContributorFunctions++
+			recordSourceFunctionSupport(result, SourceFunctionSupportNativeNoop)
+
+		case "web_concurrent_start", "web_concurrent_end":
+			// APEX Load has no concurrent-request primitive; requests inside a
+			// web_concurrent_start/web_concurrent_end block are emitted and replayed
+			// sequentially. Preserve the markers and warn so the serialization is
+			// explicit rather than silently lost.
+			preserveSourceRuntimeControl(result.Script, "source_concurrent_groups", fn, map[string]any{"marker": fn.Name})
+			if fn.Name == "web_concurrent_start" {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("line %d: web_concurrent_start group is replayed sequentially; APEX Load has no concurrent-request primitive, so the parallel timing of the grouped requests is not preserved", fn.LineNumber))
+			}
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.source_concurrent_groups", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "review", "converted", "Concurrent-request block marker preserved; the inner requests are replayed sequentially.", SourceFunctionSupportNativeNoop))
+			result.Stats.ContributorFunctions++
+			recordSourceFunctionSupport(result, SourceFunctionSupportNativeNoop)
+
 		case "web_convert_param":
 			action := convertWebConvertParamAction(fn)
 			appendSourceAction(result, fn, action, SourceFunctionSupportExecutable, "Converted to an executable source parameter transform.")
@@ -368,7 +459,8 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportNativeNoop)
 
-		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_rest", "web_service_call":
+		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_rest", "web_service_call",
+			"web_link", "web_image", "web_image_check":
 			action, warnings := convertAction(fn, baseURL, currentTransaction, currentSubTransaction, opts, lastRequestURL)
 			if contextURL := sourceRequestContextURL(fn, lastRequestURL); contextURL != "" {
 				lastRequestURL = contextURL
@@ -469,6 +561,14 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				result.Stats.ConvertedActions++
 				result.Stats.RawRequestActions++
 				recordSourceFunctionSupport(result, mappingMode)
+			} else if isHTMLModeNavigationFunction(fn.Name) {
+				// HTML-mode web_link/web_image/web_image_check whose absolute target was
+				// resolved from page context at record time (no URL=/Src= in the static
+				// source). Preserve honestly as review_only instead of dropping it or
+				// inventing a URL. convertAction already appended the "no URL" warning.
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.unresolved_html_navigation", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "review", "review_only", "HTML-mode navigation whose absolute URL is resolved from page context at replay; re-record in URL mode or add an explicit URL/Src to execute it. Preserved for manual review.", SourceFunctionSupportReviewOnly))
+				result.Stats.ContributorFunctions++
+				recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
 			}
 			result.Warnings = append(result.Warnings, warnings...)
 
