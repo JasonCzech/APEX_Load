@@ -86,6 +86,42 @@ describe('ScriptsLibraryTable federation', () => {
     return Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === label) as HTMLButtonElement | undefined
   }
 
+  it('surfaces blocking health inputs ahead of passing validation in expanded details', async () => {
+    const blockedScript = {
+      ...script,
+      id: 'blocked-script',
+      name: 'Imported Upgrade',
+      authoring_health: {
+        score: 57,
+        status: 'blocked',
+        inputs: [
+          { key: 'validation_issues', status: 'pass', count: 0, summary: 'Script validation passed.' },
+          { key: 'warnings', status: 'pass', count: 0, summary: 'No validation warnings.' },
+          { key: 'runtime_parity', status: 'warning', count: 8, summary: 'Runtime parity has partial, compatibility-only, or blocked settings.' },
+          { key: 'data_source_fit', status: 'blocker', count: 1, summary: 'Data-source fit checks found missing columns, missing sources, or insufficient unique rows.' },
+          { key: 'provenance', status: 'pass', summary: 'Source provenance is attached to the draft.' },
+        ],
+      },
+    } as StoredScript
+
+    await act(async () => {
+      root.render(<ScriptsLibraryTable {...baseProps} scripts={[blockedScript]} expandedScriptId="blocked-script" />)
+    })
+
+    const detail = container.querySelector('.script-health-detail')
+    expect(detail).not.toBeNull()
+    const detailText = detail?.textContent || ''
+    expect(detailText).toContain('data source fit · blocker · 1')
+    expect(detailText).toContain('runtime parity · warning · 8')
+    expect(detailText).toContain('Data-source fit checks found missing columns, missing sources, or insufficient unique rows.')
+    expect(detailText).not.toContain('validation issues · pass')
+    expect(detailText).not.toContain('Script validation passed.')
+
+    const chipTexts = Array.from(detail?.querySelectorAll('.archive-chip') || []).map(chip => chip.textContent || '')
+    expect(chipTexts[0]).toContain('data source fit · blocker · 1')
+    expect(chipTexts[1]).toContain('runtime parity · warning · 8')
+  })
+
   it('adds a Source column and renders local and remote rows with transfer actions', async () => {
     const federation = makeFederation()
     await act(async () => {

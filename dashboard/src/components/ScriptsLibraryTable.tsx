@@ -1,6 +1,6 @@
 import { Fragment } from 'react'
 
-import { GitHubScriptStatus, StoredScript, TestSummary } from '../types'
+import { AuthoringHealthInput, GitHubScriptStatus, StoredScript, TestSummary } from '../types'
 import { LibraryCatalogItem, LibrarySourceFilter } from '../types/library'
 import { formatLibraryDateTime, shortLibraryHash } from './libraryFederationUtils'
 import { SortIndicator } from './SortIndicator'
@@ -93,7 +93,10 @@ function authoringHealthSummary(script: StoredScript) {
   const blockers = inputs.filter(input => input.status === 'blocker').length
   const warnings = inputs.filter(input => input.status === 'warning').length
   const reviews = inputs.filter(input => input.status === 'needs_review').length
-  return { blockers, warnings: warnings + reviews, topInputs: inputs.slice(0, 3) }
+  const prioritizedInputs = prioritizeHealthInputs(inputs)
+  const notableInputs = prioritizedInputs.filter(input => input.status !== 'pass' && input.status !== 'info')
+  const detailInputs = notableInputs.length > 0 ? notableInputs : prioritizedInputs.slice(0, 3)
+  return { blockers, warnings: warnings + reviews, detailInputs, summaryInput: detailInputs[0] }
 }
 
 function githubStatusLabel(status?: GitHubScriptStatus) {
@@ -130,6 +133,32 @@ function remoteItemMetadata(item: LibraryCatalogItem) {
     `Hash ${shortLibraryHash(item.content_hash)}`,
     item.dependencies?.length ? `${item.dependencies.length} dependencies` : '',
   ].filter(Boolean)
+}
+
+function healthInputPriority(status?: string) {
+  switch (status) {
+    case 'blocker':
+      return 0
+    case 'warning':
+    case 'needs_review':
+      return 1
+    case 'pass':
+      return 3
+    case 'info':
+      return 4
+    default:
+      return 2
+  }
+}
+
+function prioritizeHealthInputs(inputs: AuthoringHealthInput[]) {
+  return inputs
+    .map((input, index) => ({ input, index }))
+    .sort((left, right) => {
+      const priorityDelta = healthInputPriority(left.input.status) - healthInputPriority(right.input.status)
+      return priorityDelta !== 0 ? priorityDelta : left.index - right.index
+    })
+    .map(({ input }) => input)
 }
 
 export default function ScriptsLibraryTable({
@@ -270,13 +299,13 @@ export default function ScriptsLibraryTable({
                           <div className="script-health-detail">
                             <span className="results-compare-label">Authoring Health Inputs</span>
                             <div className="archive-report-badges">
-                              {healthSummary.topInputs.map(input => (
+                              {healthSummary.detailInputs.map(input => (
                                 <span key={`${input.key}-${input.status}`} className={`archive-chip ${input.status === 'blocker' ? 'danger' : ''}`}>
                                   {input.key.replace(/_/g, ' ')} · {input.status}{input.count !== undefined ? ` · ${input.count}` : ''}
                                 </span>
                               ))}
                             </div>
-                            <div className="cell-muted">{healthSummary.topInputs[0]?.summary}</div>
+                            <div className="cell-muted">{healthSummary.summaryInput?.summary}</div>
                           </div>
                         ) : null}
                         {(scriptRuns[script.id] || []).length === 0 ? (
