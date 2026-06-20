@@ -697,6 +697,9 @@ func inferParameterDataSourceColumns(content, column, delimiter, paramName, data
 		if index < len(fields) && looksLikeParameterHeader(fields[index], paramName, dataFile) {
 			return true, nil
 		}
+		if _, ok := findParameterNameHeader(fields, paramName); ok {
+			return true, nil
+		}
 		return false, generatedParameterColumns(len(fields), index+1)
 	}
 
@@ -710,8 +713,13 @@ func inferParameterDataSourceColumns(content, column, delimiter, paramName, data
 func resolveParameterColumn(content, column, delimiter, paramName, dataFile string) string {
 	column = cleanConfigValue(column)
 	fields := firstParameterDataRowFields(content, delimiter)
-	if index, ok := generatedParameterColumnIndex(column); ok && index < len(fields) && looksLikeParameterHeader(fields[index], paramName, dataFile) {
-		return cleanConfigValue(fields[index])
+	if index, ok := generatedParameterColumnIndex(column); ok {
+		if index < len(fields) && looksLikeParameterHeader(fields[index], paramName, dataFile) {
+			return cleanConfigValue(fields[index])
+		}
+		if header, ok := findParameterNameHeader(fields, paramName); ok {
+			return header
+		}
 	}
 	return column
 }
@@ -790,6 +798,19 @@ func looksLikeParameterHeader(value, paramName, dataFile string) bool {
 	}
 	base := strings.TrimSuffix(filepath.Base(cleanConfigValue(dataFile)), filepath.Ext(cleanConfigValue(dataFile)))
 	return normalized == normalizeParameterHeader(base)
+}
+
+func findParameterNameHeader(fields []string, paramName string) (string, bool) {
+	normalizedParam := normalizeParameterHeader(paramName)
+	if normalizedParam == "" {
+		return "", false
+	}
+	for _, field := range fields {
+		if normalizeParameterHeader(field) == normalizedParam {
+			return cleanConfigValue(field), true
+		}
+	}
+	return "", false
 }
 
 func generatedParameterColumns(fieldCount, minCount int) []string {
