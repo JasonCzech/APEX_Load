@@ -400,4 +400,64 @@ describe('scriptAuthoringAssist', () => {
     expect(withBrowserRepairs.actions[1].selector).toBe('[data-testid="click_submit"]')
     expect(withBrowserRepairs.actions[1].metadata?.original_selector).toContain('nth-child')
   })
+
+  describe('control-flow validation', () => {
+    it('flags a control_loop with no count, condition, or for-each source', () => {
+      const script: ScriptDefinition = {
+        ...importedScript,
+        actions: [
+          { name: 'Loop', type: 'control_loop', target: '', headers: {}, body: '', extractors: [], assertions: [], control: { steps: [] } },
+        ] as unknown as ScriptDefinition['actions'],
+      }
+      const issues = collectAuthoringIssues(script)
+      expect(issues.some((i) => i.actionIndex === 0 && /needs a count, a condition, or a for-each/.test(i.message))).toBe(true)
+    })
+
+    it('flags a control_if with neither then-steps nor else-steps', () => {
+      const script: ScriptDefinition = {
+        ...importedScript,
+        actions: [
+          { name: 'Branch', type: 'control_if', target: '', headers: {}, body: '', extractors: [], assertions: [], control: {} },
+        ] as unknown as ScriptDefinition['actions'],
+      }
+      const issues = collectAuthoringIssues(script)
+      expect(issues.some((i) => i.actionIndex === 0 && /control_if needs then-steps or else-steps/.test(i.message))).toBe(true)
+    })
+
+    it('flags a for-each control_loop missing its data source', () => {
+      const script: ScriptDefinition = {
+        ...importedScript,
+        actions: [
+          { name: 'Loop', type: 'control_loop', target: '', headers: {}, body: '', extractors: [], assertions: [], control: { for_each: { var: 'row' }, steps: [{ name: 's', type: 'GET', target: '/x' }] } },
+        ] as unknown as ScriptDefinition['actions'],
+      }
+      const issues = collectAuthoringIssues(script)
+      expect(issues.some((i) => /for-each loop requires a data source/.test(i.message))).toBe(true)
+    })
+
+    it('accepts a for-each control_loop with a data source', () => {
+      const script: ScriptDefinition = {
+        ...importedScript,
+        actions: [
+          { name: 'Loop', type: 'control_loop', target: '', headers: {}, body: '', extractors: [], assertions: [], control: { for_each: { source: 'users', var: 'row' }, steps: [{ name: 's', type: 'GET', target: '/x' }] } },
+        ] as unknown as ScriptDefinition['actions'],
+      }
+      const issues = collectAuthoringIssues(script)
+      expect(issues.some((i) => /control_loop needs|for-each loop requires/.test(i.message))).toBe(false)
+    })
+
+    it('flags a malformed control block nested inside a control_if', () => {
+      const script: ScriptDefinition = {
+        ...importedScript,
+        actions: [
+          {
+            name: 'Outer', type: 'control_if', target: '', headers: {}, body: '', extractors: [], assertions: [],
+            control: { condition: { left: '{{var.x}}', op: 'eq', right: '1' }, steps: [{ name: 'InnerLoop', type: 'control_loop', target: '', control: { steps: [] } }] },
+          },
+        ] as unknown as ScriptDefinition['actions'],
+      }
+      const issues = collectAuthoringIssues(script)
+      expect(issues.some((i) => i.actionIndex === 0 && /nested step 1 → control_loop needs/.test(i.message))).toBe(true)
+    })
+  })
 })

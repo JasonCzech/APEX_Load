@@ -558,11 +558,22 @@ type Action struct {
 // and control_loop actions. It models TruClient-style If/Else and Loop/While steps
 // as nested action blocks evaluated at runtime.
 type ControlFlow struct {
-	Condition     *Condition `json:"condition,omitempty"`      // branch/while predicate (nil = always true)
-	Steps         []Action   `json:"steps,omitempty"`          // body run when the condition holds / each loop pass
-	Else          []Action   `json:"else,omitempty"`           // control_if: body run when the condition is false
-	Count         int        `json:"count,omitempty"`          // control_loop: fixed pass count (0 = condition-driven)
-	MaxIterations int        `json:"max_iterations,omitempty"` // control_loop: safety cap (0 = engine default)
+	Condition     *Condition   `json:"condition,omitempty"`      // branch/while predicate (nil = always true)
+	Steps         []Action     `json:"steps,omitempty"`          // body run when the condition holds / each loop pass
+	Else          []Action     `json:"else,omitempty"`           // control_if: body run when the condition is false
+	Count         int          `json:"count,omitempty"`          // control_loop: fixed pass count (0 = condition-driven)
+	MaxIterations int          `json:"max_iterations,omitempty"` // control_loop: safety cap (0 = engine default)
+	ForEach       *ForEachLoop `json:"for_each,omitempty"`       // control_loop: data-driven iteration (takes precedence over count/condition)
+}
+
+// ForEachLoop drives a data-driven control_loop: it iterates every row of a data
+// source, binding each row's columns to {{var.<Var>.<col>}} for the loop body.
+// This is a distinct namespace from the per-VUser {{data.src.col}} binding, so a
+// foreach never clobbers the row the VUser selected for its own iteration.
+type ForEachLoop struct {
+	Source    string     `json:"source"`              // data source name to iterate (required)
+	Var       string     `json:"var"`                 // var-namespace prefix each row binds under (e.g. "row" → {{var.row.email}})
+	Condition *Condition `json:"condition,omitempty"` // optional per-row early-exit predicate: iteration stops the first time it is false
 }
 
 // Condition is a deterministic boolean expression over template-expanded operands,

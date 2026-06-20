@@ -36,6 +36,36 @@ type ReplayProgressEvent struct {
 	Action     *ReplayDebugAction
 	Event      *ReplayActionEvent
 	Report     *ReplayReport
+	// Condition is set only on ReplayProgressCondition events: it carries the
+	// evaluated operands and branch outcome of a control_if/control_loop
+	// predicate so the debugger can show *why* a branch was taken. Action
+	// identifies the container (phase/action_index/step_path/iteration_path).
+	Condition *ConditionEvidence
+}
+
+// replayFlow is the per-action signal the replay expander returns, mirroring the
+// load path's actionFlow: continue to the next action, break/continue the
+// enclosing control_loop, or stop the phase after a failure.
+type replayFlow int
+
+const (
+	replayNext replayFlow = iota
+	replayBreak
+	replayContinue
+	replayStop
+)
+
+// leafReplayFlow maps a leaf's (shouldContinue, abort) result onto the replayFlow
+// vocabulary: a failed leaf becomes replayStop (the caller still honors
+// continueOnError), a successful one replayNext.
+func leafReplayFlow(shouldContinue, abort bool) (replayFlow, bool) {
+	if abort {
+		return replayStop, true
+	}
+	if !shouldContinue {
+		return replayStop, false
+	}
+	return replayNext, false
 }
 
 type ReplayDebugController interface {
@@ -82,6 +112,7 @@ const (
 	ReplayProgressActionFailed    = "action_failed"
 	ReplayProgressEventRun        = "replay_event"
 	ReplayProgressComplete        = "replay_complete"
+	ReplayProgressCondition       = "replay_condition"
 )
 
 type ReplayReport struct {
@@ -351,13 +382,15 @@ func runReplayPhase(
 ) bool {
 	for actionIndex, action := range actions {
 		leafOrdinal := 0
-		shouldContinue, abort := expandReplayAction(ctx, vu, action, phase, actionIndex, 0, nil, nil, &leafOrdinal, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+		flow, abort := expandReplayAction(ctx, vu, action, phase, actionIndex, 0, nil, nil, &leafOrdinal, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
 		if abort {
 			return false
 		}
-		if !shouldContinue && !continueOnError {
+		if flow == replayStop && !continueOnError {
 			return false
 		}
+		// A break/continue that escaped to the phase level (no enclosing loop) is
+		// a no-op: fall through to the next top-level action.
 	}
 	return true
 }
@@ -377,9 +410,11 @@ func replayContainerKind(action dsl.Action) string {
 // expandReplayAction executes one action during replay. Container actions are
 // recursively expanded into child leaves so each sub-request / sub-step flows
 // through the same BeforeAction/AfterAction/progress machinery as a top-level
-// action; leaves bottom out in runReplayUnit. Returns (shouldContinue, abort):
-// abort means a debug controller returned an error (Stop/cancel) and the whole
-// replay must halt.
+// action; leaves bottom out in runReplayUnit. It returns (replayFlow, abort):
+// replayFlow mirrors the load path (next/break/continue/stop) so a control_loop
+// can consume a break/continue produced by a nested control_break/control_continue
+// leaf; abort means a debug controller returned an error (Stop/cancel) and the
+// whole replay must halt.
 func expandReplayAction(
 	ctx context.Context,
 	vu *VUser,
@@ -396,14 +431,33 @@ func expandReplayAction(
 	report *ReplayReport,
 	onProgress func(ReplayProgressEvent),
 	debugController ReplayDebugController,
-) (bool, bool) {
+) (replayFlow, bool) {
+	switch strings.ToLower(strings.TrimSpace(action.Type)) {
+	case "control_break", "control_continue":
+		// Loop-control transfer: emit the leaf event (so it shows in the timeline
+		// and honors breakpoints), then return the flow so the enclosing
+		// control_loop can consume it. handleEngineAction treats these as no-ops.
+		unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, stepPath: stepPath, iterationPath: iterationPath}
+		_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+		if abort {
+			return replayStop, true
+		}
+		if !shouldContinue {
+			return replayStop, false
+		}
+		if strings.EqualFold(strings.TrimSpace(action.Type), "control_break") {
+			return replayBreak, false
+		}
+		return replayContinue, false
+	}
+
 	switch replayContainerKind(action) {
 	case "http_sequence":
 		children, err := httpSequenceChildActions(action)
 		if err != nil {
 			unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, parentName: action.Name, stepPath: stepPath, iterationPath: iterationPath, synthErr: err}
 			_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
-			return shouldContinue, abort
+			return leafReplayFlow(shouldContinue, abort)
 		}
 		for childIndex, child := range children {
 			idx := childIndex
@@ -420,41 +474,50 @@ func expandReplayAction(
 			}
 			_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
 			if abort {
-				return false, true
+				return replayStop, true
 			}
 			if !shouldContinue && !continueOnError {
-				return false, false
+				return replayStop, false
 			}
 		}
-		return true, false
+		return replayNext, false
 	case "control_if":
 		if action.Control == nil || depth >= maxControlDepth {
-			return true, false
+			return replayNext, false
 		}
+		ok, evidence := vu.evalConditionEvidence(action.Control.Condition)
 		body := action.Control.Else
 		branch := "else"
-		if vu.evalCondition(action.Control.Condition) {
+		if ok {
 			body = action.Control.Steps
 			branch = "then"
 		}
+		evidence.Branch = branch
+		publishConditionEvidence(onProgress, report, action, phase, actionIndex, stepPath, iterationPath, evidence)
 		for stepIndex, child := range body {
 			childPath := appendStepPath(stepPath, fmt.Sprintf("%s[%d]", branch, stepIndex))
-			shouldContinue, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, iterationPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+			flow, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, iterationPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
 			if abort {
-				return false, true
+				return replayStop, true
 			}
-			if !shouldContinue && !continueOnError {
-				return false, false
+			switch flow {
+			case replayStop:
+				if !continueOnError {
+					return replayStop, false
+				}
+			case replayBreak, replayContinue:
+				// Propagate the transfer up to the enclosing loop; stop running
+				// the rest of this branch.
+				return flow, false
 			}
 		}
-		return true, false
+		return replayNext, false
 	case "control_loop":
 		if action.Control == nil || depth >= maxControlDepth {
-			return true, false
+			return replayNext, false
 		}
 		loop := action.Control
 		maxPasses := controlLoopMaxPasses(loop)
-		fixed := loop.Count > 0
 		outerLoopIndex, hadOuterLoopIndex := vu.Variables["loop_index"]
 		restoreLoopIndex := func() {
 			if hadOuterLoopIndex {
@@ -463,37 +526,143 @@ func expandReplayAction(
 				delete(vu.Variables, "loop_index")
 			}
 		}
+
+		// runPass replays loop.Steps once for a given iteration path, returning the
+		// loop-level signal (next/break/continue) or replayStop when a child failed
+		// under !continueOnError. abort halts the whole replay.
+		runPass := func(childIterPath []int) (replayFlow, bool) {
+			for stepIndex, child := range loop.Steps {
+				childPath := appendStepPath(stepPath, fmt.Sprintf("loop[%d]", stepIndex))
+				flow, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, childIterPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+				if abort {
+					return replayStop, true
+				}
+				switch flow {
+				case replayStop:
+					if !continueOnError {
+						return replayStop, false
+					}
+				case replayBreak, replayContinue:
+					return flow, false
+				}
+			}
+			return replayNext, false
+		}
+
+		// foreach mode (precedence: for_each > count > condition).
+		if loop.ForEach != nil {
+			rows := vu.foreachRows(loop.ForEach)
+			restoreRows := vu.captureForEachRestore(loop.ForEach.Var, rows)
+			defer restoreRows()
+			defer restoreLoopIndex()
+			for pass, row := range rows {
+				if pass >= maxPasses {
+					break
+				}
+				if ctx.Err() != nil {
+					return replayStop, true
+				}
+				vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
+				vu.bindForEachRow(loop.ForEach.Var, row)
+				childIterPath := append(append([]int(nil), iterationPath...), pass+1)
+				if loop.ForEach.Condition != nil {
+					condOK, evidence := vu.evalConditionEvidence(loop.ForEach.Condition)
+					publishConditionEvidence(onProgress, report, action, phase, actionIndex, stepPath, childIterPath, evidence)
+					if !condOK {
+						break
+					}
+				}
+				flow, abort := runPass(childIterPath)
+				if abort {
+					return replayStop, true
+				}
+				if flow == replayStop {
+					return replayStop, false
+				}
+				if flow == replayBreak {
+					break
+				}
+				// replayContinue / replayNext: advance to the next row.
+			}
+			return replayNext, false
+		}
+
 		defer restoreLoopIndex()
+		fixed := loop.Count > 0
 		for pass := 0; ; pass++ {
 			if ctx.Err() != nil {
-				return false, true
+				return replayStop, true
 			}
 			vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
 			if fixed {
 				if pass >= loop.Count || pass >= maxPasses {
 					break
 				}
-			} else if pass >= maxPasses || !vu.evalCondition(loop.Condition) {
-				break
+			} else {
+				if pass >= maxPasses {
+					break
+				}
+				condOK, evidence := vu.evalConditionEvidence(loop.Condition)
+				publishConditionEvidence(onProgress, report, action, phase, actionIndex, stepPath, append(append([]int(nil), iterationPath...), pass+1), evidence)
+				if !condOK {
+					break
+				}
 			}
 			childIterPath := append(append([]int(nil), iterationPath...), pass+1)
-			for stepIndex, child := range loop.Steps {
-				childPath := appendStepPath(stepPath, fmt.Sprintf("loop[%d]", stepIndex))
-				shouldContinue, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, childIterPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
-				if abort {
-					return false, true
-				}
-				if !shouldContinue && !continueOnError {
-					return false, false
-				}
+			flow, abort := runPass(childIterPath)
+			if abort {
+				return replayStop, true
 			}
+			if flow == replayStop {
+				return replayStop, false
+			}
+			if flow == replayBreak {
+				break
+			}
+			// replayContinue / replayNext: advance to the next pass.
 		}
-		return true, false
+		return replayNext, false
 	default:
 		unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, stepPath: stepPath, iterationPath: iterationPath}
 		_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
-		return shouldContinue, abort
+		return leafReplayFlow(shouldContinue, abort)
 	}
+}
+
+// publishConditionEvidence emits a ReplayProgressCondition event describing the
+// evaluated operands and outcome of a control_if/control_loop predicate, keyed
+// (via the carried debug action) by phase/action_index/step_path so the debugger
+// can show why a branch was taken or a loop pass ran.
+func publishConditionEvidence(
+	onProgress func(ReplayProgressEvent),
+	report *ReplayReport,
+	action dsl.Action,
+	phase string,
+	actionIndex int,
+	stepPath []string,
+	iterationPath []int,
+	evidence ConditionEvidence,
+) {
+	if onProgress == nil {
+		return
+	}
+	dbg := &ReplayDebugAction{
+		Phase:         phase,
+		ActionIndex:   actionIndex,
+		ActionName:    action.Name,
+		ActionType:    strings.ToLower(strings.TrimSpace(action.Type)),
+		StepPath:      append([]string(nil), stepPath...),
+		IterationPath: append([]int(nil), iterationPath...),
+	}
+	ev := evidence
+	publishReplayProgress(onProgress, ReplayProgressEvent{
+		Type:       ReplayProgressCondition,
+		SessionID:  report.ReplaySessionID,
+		Timestamp:  time.Now(),
+		EventIndex: -1,
+		Action:     dbg,
+		Condition:  &ev,
+	})
 }
 
 // runReplayUnit runs ONE leaf through the debug-hook + progress + event pipeline

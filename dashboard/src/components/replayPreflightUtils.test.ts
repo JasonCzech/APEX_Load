@@ -208,6 +208,88 @@ describe('buildLocalReplayPreflight', () => {
     expect(preflight.missing_variables).not.toContain('cart_id')
   })
 
+  it('treats loop_index and foreach row bindings inside a loop body as available', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      data_sources: [
+        { name: 'users', type: 'csv', path: '', inline_data: 'email\na@x.com', strategy: 'sequential' },
+      ],
+      actions: [
+        {
+          name: 'Each User',
+          type: 'control_loop',
+          target: '',
+          control: {
+            for_each: { source: 'users', var: 'row' },
+            steps: [
+              { name: 'Greet', type: 'GET', method: 'GET', target: '/u/{{var.row.email}}/pass/{{var.loop_index}}' },
+            ],
+          },
+        },
+      ],
+    })
+
+    expect(preflight.missing_variables).toEqual([])
+    expect(preflight.checks?.find(check => check.id === 'variables')?.status).toBe('pass')
+  })
+
+  it('allows loop_index in a control_loop while-condition', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [
+        {
+          name: 'While',
+          type: 'control_loop',
+          target: '',
+          control: {
+            condition: { left: '{{var.loop_index}}', op: 'lt', right: '3' },
+            steps: [
+              { name: 'Tick', type: 'GET', method: 'GET', target: '/tick' },
+            ],
+          },
+        },
+      ],
+    })
+
+    expect(preflight.missing_variables).toEqual([])
+  })
+
+  it('still flags loop_index referenced outside any loop body', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [
+        { name: 'Stray', type: 'GET', method: 'GET', target: '/x/{{var.loop_index}}' },
+      ],
+    })
+
+    expect(preflight.missing_variables).toEqual(['loop_index'])
+  })
+
+  it('still flags a foreach row binding used outside its loop body', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      data_sources: [
+        { name: 'users', type: 'csv', path: '', inline_data: 'email\na@x.com', strategy: 'sequential' },
+      ],
+      actions: [
+        {
+          name: 'Loop',
+          type: 'control_loop',
+          target: '',
+          control: {
+            for_each: { source: 'users', var: 'row' },
+            steps: [
+              { name: 'In', type: 'GET', method: 'GET', target: '/{{var.row.email}}' },
+            ],
+          },
+        },
+        { name: 'After', type: 'GET', method: 'GET', target: '/{{var.row.email}}' },
+      ],
+    })
+
+    expect(preflight.missing_variables).toEqual(['row.email'])
+  })
+
   it('warns when browser replay screenshot evidence is disabled', () => {
     const preflight = buildLocalReplayPreflight({
       ...baseScript,

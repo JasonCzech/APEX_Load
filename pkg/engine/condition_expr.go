@@ -61,8 +61,23 @@ func (vu *VUser) conditionExprVarMap() map[string]any {
 	if vu == nil {
 		return out
 	}
-	for key, value := range vu.Variables {
+	put := func(key, value string) {
+		// Dotted keys (e.g. foreach bindings "row.email") are exposed as nested
+		// maps so a CEL condition can traverse them as var.row.email, mirroring the
+		// data namespace; plain keys stay flat (var.loop_index).
+		if source, column, ok := strings.Cut(key, "."); ok && strings.TrimSpace(source) != "" && strings.TrimSpace(column) != "" {
+			nested, _ := out[source].(map[string]any)
+			if nested == nil {
+				nested = map[string]any{}
+				out[source] = nested
+			}
+			nested[column] = value
+			return
+		}
 		out[key] = value
+	}
+	for key, value := range vu.Variables {
+		put(key, value)
 	}
 	if vu.Parameters != nil && vu.Script != nil {
 		for _, param := range vu.Script.Parameters {
@@ -71,7 +86,7 @@ func (vu *VUser) conditionExprVarMap() map[string]any {
 				continue
 			}
 			if value, ok := vu.Parameters.ResolveNamed(name); ok {
-				out[name] = value
+				put(name, value)
 			}
 		}
 	}

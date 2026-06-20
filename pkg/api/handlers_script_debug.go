@@ -1,7 +1,10 @@
 package api
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -200,7 +203,20 @@ func (s *Server) handleResumeScriptDebugSession(w http.ResponseWriter, r *http.R
 
 func (s *Server) handleStepScriptDebugSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("session_id")
-	session, ok, changed := s.scriptDebug.Step(sessionID)
+	// The step body is optional: legacy clients send none (step-into). A
+	// {"mode":"into"|"over"|"loop_end"} body selects the step mode.
+	mode := ""
+	if r.Body != nil {
+		var req struct {
+			Mode string `json:"mode"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		mode = req.Mode
+	}
+	session, ok, changed := s.scriptDebug.StepMode(sessionID, mode)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script debug session not found")
 		return
@@ -209,7 +225,7 @@ func (s *Server) handleStepScriptDebugSession(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusConflict, "script debug session is not paused")
 		return
 	}
-	s.recordAuditEvent(r, "script_debug.session.step", "success", "script_debug_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "status": session.Status})
+	s.recordAuditEvent(r, "script_debug.session.step", "success", "script_debug_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "status": session.Status, "mode": mode})
 	writeJSON(w, http.StatusOK, map[string]any{"session": session})
 }
 

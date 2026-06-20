@@ -3,6 +3,7 @@ import {
 } from '../types'
 import {
   type ScriptActionDefinition,
+  type ScriptCondition,
   type ScriptConfig,
   type ScriptDataSource,
   type ScriptDefinition,
@@ -159,6 +160,8 @@ function legacyActionNeedsExplicitTarget(actionType: string): boolean {
     'custom_call',
     'control_if',
     'control_loop',
+    'control_break',
+    'control_continue',
     'rendezvous',
     'error_message',
     'review_required',
@@ -267,6 +270,60 @@ function ensureListParameter(parameters: ScriptParameterDefinition[], name: stri
   })
 }
 
+// collectControlFlowIssues mirrors the server control-flow rules (validate.go):
+// a control_loop needs a positive count, a condition, or a for_each source; a
+// control_if needs then-steps or else-steps. Nested control blocks are checked
+// recursively and reported against the enclosing top-level action.
+function collectControlFlowIssues(action: ScriptActionDefinition, actionIndex: number, issues: AuthoringIssue[]): void {
+  const conditionPresent = (condition?: ScriptCondition): boolean =>
+    !!condition && (!!(condition.expr || '').trim() || !!(condition.left || '').trim())
+
+  const recurse = (node: ScriptActionDefinition, pathKey: string, pathLabel: string): void => {
+    const control = node.control || {}
+    if (node.type === 'control_loop') {
+      const hasForEachSource = !!(control.for_each && (control.for_each.source || '').trim())
+      const hasCount = (control.count ?? 0) > 0
+      if (!hasForEachSource && !hasCount && !conditionPresent(control.condition)) {
+        pushIssue(issues, {
+          id: `action:${actionIndex}:control:${pathKey}:loop-mode`,
+          severity: 'error',
+          actionIndex,
+          message: `${pathLabel}control_loop needs a count, a condition, or a for-each data source.`,
+        })
+      }
+      if (control.for_each && !(control.for_each.source || '').trim()) {
+        pushIssue(issues, {
+          id: `action:${actionIndex}:control:${pathKey}:foreach-source`,
+          severity: 'error',
+          actionIndex,
+          message: `${pathLabel}for-each loop requires a data source.`,
+        })
+      }
+    } else if (node.type === 'control_if') {
+      const stepCount = (control.steps || []).length
+      const elseCount = (control.else || []).length
+      if (stepCount === 0 && elseCount === 0) {
+        pushIssue(issues, {
+          id: `action:${actionIndex}:control:${pathKey}:if-empty`,
+          severity: 'error',
+          actionIndex,
+          message: `${pathLabel}control_if needs then-steps or else-steps.`,
+        })
+      }
+    }
+    const children = [...(control.steps || []), ...(control.else || [])]
+    children.forEach((child, childIndex) => {
+      if (child && (child.type === 'control_if' || child.type === 'control_loop')) {
+        recurse(child, `${pathKey}.${childIndex}`, `${pathLabel}nested step ${childIndex + 1} → `)
+      }
+    })
+  }
+
+  if (action.type === 'control_if' || action.type === 'control_loop') {
+    recurse(action, '0', '')
+  }
+}
+
 export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue[] {
   const issues: AuthoringIssue[] = []
   const parameterNames = new Set((script.parameters || []).map((parameter) => normalizeTokenName(parameter.name || '')).filter(Boolean))
@@ -353,6 +410,8 @@ export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue
         })
       }
     })
+
+    collectControlFlowIssues(action, actionIndex, issues)
 
     for (const value of collectActionStrings(action)) {
       for (const match of value.matchAll(PARAM_TOKEN)) {

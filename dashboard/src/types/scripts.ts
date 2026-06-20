@@ -123,12 +123,23 @@ export interface ScriptCondition {
   right?: string
 }
 
+export interface ScriptForEachLoop {
+  /** Data source name iterated row-by-row. */
+  source?: string
+  /** Var-namespace prefix each row binds under: column c → {{var.<var>.c}}. */
+  var?: string
+  /** Optional per-row early-exit predicate; iteration stops the first row it is false. */
+  condition?: ScriptCondition
+}
+
 export interface ScriptControlFlow {
   condition?: ScriptCondition
   steps?: ScriptActionDefinition[]
   else?: ScriptActionDefinition[]
   count?: number
   max_iterations?: number
+  /** control_loop data-driven mode; takes precedence over count/condition. */
+  for_each?: ScriptForEachLoop
 }
 
 export interface ThinkTimeConfig {

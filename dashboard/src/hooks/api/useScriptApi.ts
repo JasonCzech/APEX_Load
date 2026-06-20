@@ -12,6 +12,7 @@ import {
   BrowserReplayNetworkEntry,
   ScriptDebugBreakpoint,
   ScriptDebugSessionResponse,
+  type ScriptDebugStepMode,
   ScriptDebugStartRequest,
   ScriptDebugStartResponse,
   GeneratorAssignmentSettings,
@@ -422,7 +423,8 @@ export function useScriptApi() {
   )
 
   const stepScriptDebugSession = useCallback(
-    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/step`, { method: 'POST' }),
+    (sessionId: string, mode: ScriptDebugStepMode = 'into') =>
+      request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/step`, { method: 'POST', body: JSON.stringify({ mode }) }),
     [],
   )
 

@@ -25,10 +25,23 @@ func engineActionSpecs() []ActionSpec {
 		{
 			Type:      "control_loop",
 			Protocols: []string{"*"},
-			Summary:   "Loop block: repeats control.steps for a fixed count or while a condition holds.",
+			Summary:   "Loop block: repeats control.steps for a fixed count, for each row of a data source, or while a condition holds.",
 			Fields: []FieldSpec{
-				{Name: "control", Required: true, Kind: FieldKindObject, Doc: "Loop body: {condition, steps, count, max_iterations}. condition may use legacy left/op/right or CEL expr over var/data/env. Requires a positive count or a condition. Each pass exposes a 1-based {{var.loop_index}} to the body and the condition (e.g. expr \"int(var.loop_index) <= int(var.total)\")."},
+				{Name: "control", Required: true, Kind: FieldKindObject, Doc: "Loop body: {condition, steps, count, max_iterations, for_each}. Mode precedence is for_each > count > condition; requires a for_each.source, a positive count, or a condition. condition may use legacy left/op/right or CEL expr over var/data/env. Each pass exposes a 1-based {{var.loop_index}} to the body and the condition (e.g. expr \"int(var.loop_index) <= int(var.total)\")."},
+				{Name: "control.for_each.source", Kind: FieldKindString, Doc: "Data source name to iterate row-by-row. Required when using for_each mode; takes precedence over count and condition."},
+				{Name: "control.for_each.var", Kind: FieldKindString, Doc: "Var-namespace prefix each iterated row binds under: row column c is available to the body as {{var.<var>.c}}. Distinct from the per-VUser {{data.source.c}} binding."},
+				{Name: "control.for_each.condition", Kind: FieldKindObject, Doc: "Optional per-row early-exit predicate {condition}. Iteration stops the first row this evaluates false (the row's columns are bound before it is checked)."},
 			},
+		},
+		{
+			Type:      "control_break",
+			Protocols: []string{"*"},
+			Summary:   "Breaks out of the nearest enclosing control_loop (no-op outside a loop).",
+		},
+		{
+			Type:      "control_continue",
+			Protocols: []string{"*"},
+			Summary:   "Skips to the next pass of the nearest enclosing control_loop (no-op outside a loop).",
 		},
 		{
 			Type:      "rendezvous",

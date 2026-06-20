@@ -229,9 +229,9 @@ var stepScopes = []StepScope{
 	{
 		CanonicalName: "control_transfer",
 		DisplayName:   "Break / Continue",
-		Status:        ScopeReviewOnly,
-		APEXLoadShape: "source_review",
-		Notes:         "Break and continue require review because the DSL control-flow runtime does not expose non-local branch transfer statements.",
+		Status:        ScopeSupported,
+		APEXLoadShape: "control_break / control_continue",
+		Notes:         "Break and continue convert to native control_break / control_continue engine actions; the nearest enclosing control_loop consumes them (break stops the loop, continue skips to the next pass).",
 	},
 }
 

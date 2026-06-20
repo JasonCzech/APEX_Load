@@ -295,7 +295,7 @@ func convertStepSequence(steps []truXMLStep, result *ConvertResult, state *truCo
 			continue
 		}
 		result.Stats.TotalSteps++
-		switch controlKind(actionName) {
+		switch kind := controlKind(actionName); kind {
 		case truControlIf:
 			thenSteps, childElseSteps := splitControlElseChildren(step.Steps)
 			elseSteps := childElseSteps
@@ -337,10 +337,8 @@ func convertStepSequence(steps []truXMLStep, result *ConvertResult, state *truCo
 			actions = append(actions, action)
 			result.Stats.ConvertedActions++
 		case truControlBreak, truControlContinue:
-			actions = append(actions, reviewGatedControlTransferAction(step))
-			result.Warnings = append(result.Warnings, fmt.Sprintf("TruClient %s step %q requires manual review because APEX Load control blocks do not support break/continue.", actionName, stepDisplayName(step, actionName)))
-			result.Stats.Skipped++
-			result.Stats.UnsupportedSteps = appendIfMissing(result.Stats.UnsupportedSteps, actionName)
+			actions = append(actions, controlTransferAction(step, kind))
+			result.Stats.ConvertedActions++
 		default:
 			converted, err := convertExecutableStep(step, result, state, len(actions) > 0, &actions)
 			if err != nil {

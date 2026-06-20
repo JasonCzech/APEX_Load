@@ -179,6 +179,9 @@ export function ActionEditor({ action, index, parameters, onUpdate, onAddExtract
   )
 }
 
+// Control-flow blocks run for any protocol (the engine declares Protocols:["*"]),
+// so they are offered in every protocol's action menu, not just browser scripts.
+const CONTROL_ACTION_TYPES = ['control_if', 'control_loop']
 const BROWSER_ACTION_TYPES = [
   'browser_navigate',
   'browser_click',
@@ -197,15 +200,14 @@ const BROWSER_ACTION_TYPES = [
   'browser_tap',
   'browser_long_press',
   'browser_swipe',
-  'control_if',
-  'control_loop',
+  ...CONTROL_ACTION_TYPES,
 ]
-const JMS_ACTION_TYPES = ['jms_publish', 'jms_consume', 'jms_request_reply', 'jms_ack', 'jms_commit', 'jms_rollback']
-const WEBSOCKET_ACTION_TYPES = ['ws_connect', 'ws_send', 'ws_receive', 'ws_ping', 'ws_close']
-const GRPC_ACTION_TYPES = ['grpc_unary', 'grpc_server_stream', 'grpc_client_stream', 'grpc_bidi_stream']
-const DATABASE_ACTION_TYPES = ['db_health', 'db_begin', 'db_query', 'db_exec', 'db_procedure', 'db_commit', 'db_rollback']
-const NETWORK_ACTION_TYPES = ['network_health', 'dns_query', 'tcp_request', 'udp_request', 'ftp_command', 'smtp_send', 'pop3_command', 'imap_command', 'ldap_bind', 'ldap_search']
-const HTTP_ACTION_TYPES = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'http_oauth2_token']
+const JMS_ACTION_TYPES = ['jms_publish', 'jms_consume', 'jms_request_reply', 'jms_ack', 'jms_commit', 'jms_rollback', ...CONTROL_ACTION_TYPES]
+const WEBSOCKET_ACTION_TYPES = ['ws_connect', 'ws_send', 'ws_receive', 'ws_ping', 'ws_close', ...CONTROL_ACTION_TYPES]
+const GRPC_ACTION_TYPES = ['grpc_unary', 'grpc_server_stream', 'grpc_client_stream', 'grpc_bidi_stream', ...CONTROL_ACTION_TYPES]
+const DATABASE_ACTION_TYPES = ['db_health', 'db_begin', 'db_query', 'db_exec', 'db_procedure', 'db_commit', 'db_rollback', ...CONTROL_ACTION_TYPES]
+const NETWORK_ACTION_TYPES = ['network_health', 'dns_query', 'tcp_request', 'udp_request', 'ftp_command', 'smtp_send', 'pop3_command', 'imap_command', 'ldap_bind', 'ldap_search', ...CONTROL_ACTION_TYPES]
+const HTTP_ACTION_TYPES = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'http_oauth2_token', ...CONTROL_ACTION_TYPES]
 
 interface HTTPSequenceFieldsProps {
   action: Action
@@ -379,21 +381,77 @@ function parseControlActions(value: string): Action[] | null {
   }
 }
 
-const DEFAULT_CONTROL_STEP: Action = { name: '', type: 'GET', target: '' } as Action
+// A new control-block step seeds an empty type so the author picks one matching
+// the script protocol (not a browser/HTTP default).
+const DEFAULT_CONTROL_STEP: Action = { name: '', type: '', target: '' } as Action
+
+// Maximum control-flow nesting the structured editor renders inline; deeper
+// blocks remain editable through each branch's JSON escape hatch.
+const MAX_CONTROL_UI_DEPTH = 4
+
+const CONDITION_OPERATORS: Array<{ value: string; label: string }> = [
+  { value: 'exists', label: 'exists' },
+  { value: 'not_exists', label: 'not exists' },
+  { value: 'eq', label: 'equals' },
+  { value: 'ne', label: 'not equals' },
+  { value: 'contains', label: 'contains' },
+  { value: 'not_contains', label: 'not contains' },
+  { value: 'gt', label: 'greater than' },
+  { value: 'gte', label: 'greater/equal' },
+  { value: 'lt', label: 'less than' },
+  { value: 'lte', label: 'less/equal' },
+]
+
+function isControlContainerType(type?: string): boolean {
+  return type === 'control_if' || type === 'control_loop'
+}
+
+interface ConditionEditorProps {
+  condition: Record<string, any>
+  onChange: (patch: Record<string, unknown>) => void
+  leftLabel?: string
+}
+
+// Reusable left/op/right condition editor, shared by control_if, the while-loop
+// predicate, and the foreach early-exit predicate. (CEL `expr` conditions remain
+// editable through the JSON escape hatch.)
+function ConditionEditor({ condition, onChange, leftLabel = 'Condition Left' }: ConditionEditorProps) {
+  const unary = condition.op === 'exists' || condition.op === 'not_exists'
+  return (
+    <>
+      <label className="full-width">
+        <span>{leftLabel}</span>
+        <input value={condition.left || ''} onChange={e => onChange({ left: e.target.value })} placeholder="{{var.status}}" />
+      </label>
+      <label>
+        <span>Operator</span>
+        <select value={condition.op || 'exists'} onChange={e => onChange({ op: e.target.value })}>
+          {CONDITION_OPERATORS.map(op => <option key={op.value} value={op.value}>{op.label}</option>)}
+        </select>
+      </label>
+      <label>
+        <span>Condition Right</span>
+        <input value={condition.right || ''} disabled={unary} onChange={e => onChange({ right: e.target.value })} placeholder="ready" />
+      </label>
+    </>
+  )
+}
 
 interface ControlBranchEditorProps {
   label: string
   steps: Action[] | undefined
   onChange: (steps: Action[]) => void
+  depth?: number
 }
 
-// Structured editor for a control block's child steps (then/else). Each step is
-// an editable row (type / name / target) with add / remove / reorder, replacing
-// the raw-JSON textarea. A per-branch "JSON" toggle is the escape hatch for
-// anything the row form can't express (nested control, headers, extractors) —
-// the documented depth boundary. Step edits preserve unknown keys (R1).
+// Structured editor for a control block's child steps (then/else/loop). Each step
+// is an editable row (type / name / target) with add / remove / reorder. A step
+// whose type is control_if/control_loop expands inline into a nested control
+// editor (bounded by MAX_CONTROL_UI_DEPTH); control_break / control_continue render
+// as leaf rows. A per-branch "JSON" toggle is the escape hatch for anything the
+// row form can't express. Step edits preserve unknown keys (R1).
 // Exported for focused render tests.
-export function ControlBranchEditor({ label, steps, onChange }: ControlBranchEditorProps) {
+export function ControlBranchEditor({ label, steps, onChange, depth = 0 }: ControlBranchEditorProps) {
   const list = steps || []
   const [mode, setMode] = useState<'structured' | 'json'>('structured')
   const [jsonDraft, setJsonDraft] = useState(() => formatControlActions(list))
@@ -412,6 +470,9 @@ export function ControlBranchEditor({ label, steps, onChange }: ControlBranchEdi
     if (parsed !== null) onChange(parsed)
   }
 
+  const addStep = (step: Action) => onChange(appendActionStep(list, step))
+  const canNest = depth < MAX_CONTROL_UI_DEPTH - 1
+
   return (
     <div className="control-branch full-width">
       <div className="control-branch-header">
@@ -425,19 +486,48 @@ export function ControlBranchEditor({ label, steps, onChange }: ControlBranchEdi
       {mode === 'structured' ? (
         <div className="control-step-list">
           {list.length === 0 && <div className="control-step-empty">No steps yet. Add one, or switch to JSON.</div>}
-          {list.map((step, i) => (
-            <div className="control-step-row" key={i}>
-              <input className="control-step-type" value={step.type || ''} placeholder="type" aria-label={`${label} step ${i + 1} type`} onChange={e => onChange(updateActionStepField(list, i, 'type', e.target.value))} />
-              <input className="control-step-name" value={step.name || ''} placeholder="name" aria-label={`${label} step ${i + 1} name`} onChange={e => onChange(updateActionStepField(list, i, 'name', e.target.value))} />
-              <input className="control-step-target" value={step.target || ''} placeholder="target" aria-label={`${label} step ${i + 1} target`} onChange={e => onChange(updateActionStepField(list, i, 'target', e.target.value))} />
-              <div className="control-step-actions">
-                <button type="button" className="btn-icon" disabled={i === 0} aria-label="Move step up" onClick={() => onChange(moveActionStep(list, i, -1))}>↑</button>
-                <button type="button" className="btn-icon" disabled={i === list.length - 1} aria-label="Move step down" onClick={() => onChange(moveActionStep(list, i, 1))}>↓</button>
-                <button type="button" className="btn-icon danger" aria-label="Remove step" onClick={() => onChange(removeActionStep(list, i))}>✕</button>
+          {list.map((step, i) => {
+            const isContainer = isControlContainerType(step.type)
+            const isLeafControl = step.type === 'control_break' || step.type === 'control_continue'
+            return (
+              <div className={`control-step-row${isContainer ? ' control-step-nested' : ''}`} key={i}>
+                <div className="control-step-fields">
+                  <input className="control-step-type" value={step.type || ''} placeholder="type" aria-label={`${label} step ${i + 1} type`} onChange={e => onChange(updateActionStepField(list, i, 'type', e.target.value))} />
+                  <input className="control-step-name" value={step.name || ''} placeholder="name" aria-label={`${label} step ${i + 1} name`} onChange={e => onChange(updateActionStepField(list, i, 'name', e.target.value))} />
+                  {!isContainer && !isLeafControl && (
+                    <input className="control-step-target" value={step.target || ''} placeholder="target" aria-label={`${label} step ${i + 1} target`} onChange={e => onChange(updateActionStepField(list, i, 'target', e.target.value))} />
+                  )}
+                  <div className="control-step-actions">
+                    <button type="button" className="btn-icon" disabled={i === 0} aria-label="Move step up" onClick={() => onChange(moveActionStep(list, i, -1))}>↑</button>
+                    <button type="button" className="btn-icon" disabled={i === list.length - 1} aria-label="Move step down" onClick={() => onChange(moveActionStep(list, i, 1))}>↓</button>
+                    <button type="button" className="btn-icon danger" aria-label="Remove step" onClick={() => onChange(removeActionStep(list, i))}>✕</button>
+                  </div>
+                </div>
+                {isContainer && depth < MAX_CONTROL_UI_DEPTH && (
+                  <ControlFlowFields
+                    action={step}
+                    index={i}
+                    depth={depth + 1}
+                    onUpdate={(stepIndex, field, value) => onChange(updateActionStepField(list, stepIndex, field, value))}
+                  />
+                )}
+                {isContainer && depth >= MAX_CONTROL_UI_DEPTH && (
+                  <div className="control-step-empty">Nested too deep — edit this block via the JSON view above.</div>
+                )}
               </div>
-            </div>
-          ))}
-          <button type="button" className="btn btn-sm btn-ghost control-step-add" onClick={() => onChange(appendActionStep(list, { ...DEFAULT_CONTROL_STEP }))}>+ Add step</button>
+            )
+          })}
+          <div className="control-step-add-row">
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => addStep({ ...DEFAULT_CONTROL_STEP })}>+ Step</button>
+            {canNest && (
+              <>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => addStep({ name: '', type: 'control_if', target: '', control: { steps: [] } } as Action)}>+ If</button>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => addStep({ name: '', type: 'control_loop', target: '', control: { steps: [] } } as Action)}>+ Loop</button>
+              </>
+            )}
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => addStep({ name: '', type: 'control_break', target: '' } as Action)}>+ Break</button>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => addStep({ name: '', type: 'control_continue', target: '' } as Action)}>+ Continue</button>
+          </div>
         </div>
       ) : (
         <>
@@ -449,15 +539,29 @@ export function ControlBranchEditor({ label, steps, onChange }: ControlBranchEdi
   )
 }
 
+type LoopMode = 'count' | 'while' | 'foreach'
+
+function loopModeOf(control: Record<string, any>): LoopMode {
+  if (control.for_each) return 'foreach'
+  if ((control.count ?? 0) > 0) return 'count'
+  if (control.condition) return 'while'
+  return 'count'
+}
+
 interface ControlFlowFieldsProps {
   action: Action
   index: number
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
+  depth?: number
 }
 
-function ControlFlowFields({ action, index, onUpdate }: ControlFlowFieldsProps) {
-  const control = action.control || {}
-  const condition = control.condition || {}
+export function ControlFlowFields({ action, index, onUpdate, depth = 0 }: ControlFlowFieldsProps) {
+  const control = (action.control || {}) as Record<string, any>
+  const condition = (control.condition || {}) as Record<string, any>
+  const isLoop = action.type === 'control_loop'
+  const loopMode = loopModeOf(control)
+  const forEach = (control.for_each || {}) as Record<string, any>
+  const forEachCondition = (forEach.condition || {}) as Record<string, any>
 
   const updateControl = (patch: Record<string, unknown>) => {
     onUpdate(index, 'control', { ...control, ...patch })
@@ -465,49 +569,74 @@ function ControlFlowFields({ action, index, onUpdate }: ControlFlowFieldsProps) 
   const updateCondition = (patch: Record<string, unknown>) => {
     updateControl({ condition: { ...condition, ...patch } })
   }
+  const updateForEach = (patch: Record<string, unknown>) => {
+    updateControl({ for_each: { ...forEach, ...patch } })
+  }
+  const updateForEachCondition = (patch: Record<string, unknown>) => {
+    updateForEach({ condition: { ...forEachCondition, ...patch } })
+  }
+  const switchLoopMode = (mode: LoopMode) => {
+    if (mode === 'count') {
+      updateControl({ for_each: undefined, count: control.count && control.count > 0 ? control.count : 1 })
+    } else if (mode === 'while') {
+      updateControl({ for_each: undefined, count: 0, condition: control.condition || { op: 'exists' } })
+    } else {
+      updateControl({ count: 0, for_each: control.for_each || { source: '', var: 'row' } })
+    }
+  }
 
   return (
     <div className="sub-section control-flow-section">
-      <div className="sub-header"><h4>Control Flow</h4></div>
+      <div className="sub-header"><h4>{isLoop ? 'Loop' : 'Condition'}</h4></div>
       <div className="form-grid">
-        <label className="full-width">
-          <span>Condition Left</span>
-          <input value={condition.left || ''} onChange={e => updateCondition({ left: e.target.value })} placeholder="{{var.status}}" />
-        </label>
-        <label>
-          <span>Operator</span>
-          <select value={condition.op || 'exists'} onChange={e => updateCondition({ op: e.target.value })}>
-            <option value="exists">exists</option>
-            <option value="not_exists">not exists</option>
-            <option value="eq">equals</option>
-            <option value="ne">not equals</option>
-            <option value="contains">contains</option>
-            <option value="not_contains">not contains</option>
-            <option value="gt">greater than</option>
-            <option value="gte">greater/equal</option>
-            <option value="lt">less than</option>
-            <option value="lte">less/equal</option>
-          </select>
-        </label>
-        <label>
-          <span>Condition Right</span>
-          <input value={condition.right || ''} onChange={e => updateCondition({ right: e.target.value })} placeholder="ready" />
-        </label>
-        {action.type === 'control_loop' && (
+        {isLoop && (
+          <label>
+            <span>Loop Mode</span>
+            <select value={loopMode} onChange={e => switchLoopMode(e.target.value as LoopMode)}>
+              <option value="count">Count</option>
+              <option value="while">While (condition)</option>
+              <option value="foreach">For-each (data source)</option>
+            </select>
+          </label>
+        )}
+
+        {/* control_if branch predicate, or the while-loop predicate. */}
+        {(!isLoop || loopMode === 'while') && (
+          <ConditionEditor condition={condition} onChange={updateCondition} />
+        )}
+
+        {isLoop && loopMode === 'count' && (
+          <label>
+            <span>Loop Count</span>
+            <input type="number" min="0" value={control.count ?? 0} onChange={e => updateControl({ count: Math.max(0, Number(e.target.value) || 0) })} />
+          </label>
+        )}
+
+        {isLoop && loopMode === 'foreach' && (
           <>
             <label>
-              <span>Loop Count</span>
-              <input type="number" min="0" value={control.count ?? 0} onChange={e => updateControl({ count: Math.max(0, Number(e.target.value) || 0) })} />
+              <span>Data Source</span>
+              <input value={forEach.source || ''} onChange={e => updateForEach({ source: e.target.value })} placeholder="users" />
             </label>
             <label>
-              <span>Max Iterations</span>
-              <input type="number" min="0" value={control.max_iterations ?? 0} onChange={e => updateControl({ max_iterations: Math.max(0, Number(e.target.value) || 0) })} />
+              <span>Row Variable</span>
+              <input value={forEach.var || ''} onChange={e => updateForEach({ var: e.target.value })} placeholder="row" />
             </label>
+            <div className="control-foreach-hint full-width">Each row binds as {`{{var.${forEach.var || 'row'}.<column>}}`} for the loop body.</div>
+            <ConditionEditor condition={forEachCondition} onChange={updateForEachCondition} leftLabel="Stop-when Left (optional)" />
           </>
         )}
-        <ControlBranchEditor label={action.type === 'control_loop' ? 'Loop steps' : 'Then steps'} steps={control.steps} onChange={steps => updateControl({ steps })} />
+
+        {isLoop && (
+          <label>
+            <span>Max Iterations</span>
+            <input type="number" min="0" value={control.max_iterations ?? 0} onChange={e => updateControl({ max_iterations: Math.max(0, Number(e.target.value) || 0) })} />
+          </label>
+        )}
+
+        <ControlBranchEditor label={isLoop ? 'Loop steps' : 'Then steps'} steps={control.steps} onChange={steps => updateControl({ steps })} depth={depth} />
         {action.type === 'control_if' && (
-          <ControlBranchEditor label="Else steps" steps={control.else} onChange={steps => updateControl({ else: steps })} />
+          <ControlBranchEditor label="Else steps" steps={control.else} onChange={steps => updateControl({ else: steps })} depth={depth} />
         )}
       </div>
     </div>

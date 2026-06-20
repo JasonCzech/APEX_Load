@@ -71,10 +71,16 @@ type ScriptDebugSession struct {
 	RawOutput         []string                    `json:"raw_output,omitempty"`
 	FinalReport       *engine.ReplayReport        `json:"report,omitempty"`
 	Error             string                      `json:"error,omitempty"`
+	// ConditionEvidence carries the most recent evaluated operands/result for each
+	// control_if / control_loop container, keyed by conditionEvidenceKey, so the
+	// debugger can show why a branch was taken or a loop pass ran.
+	ConditionEvidence map[string]engine.ConditionEvidence `json:"condition_evidence,omitempty"`
 
-	mu       sync.RWMutex
-	cancel   context.CancelFunc
-	stepOnce bool
+	mu           sync.RWMutex
+	cancel       context.CancelFunc
+	stepOnce     bool
+	stepMode     string        // "" | over | loop_end while a step-through is in flight
+	stepBoundary *stepBoundary // resume-through subtree for stepMode
 }
 
 type ScriptDebugManager struct {
@@ -259,6 +265,17 @@ func (m *ScriptDebugManager) handleReplayProgress(session *ScriptDebugSession, e
 		if shouldPauseAfterStep {
 			m.broadcast("script_debug_paused", session, event.EventIndex, nil, nil, nil)
 		}
+	case engine.ReplayProgressCondition:
+		if event.Action != nil && event.Condition != nil {
+			session.mu.Lock()
+			if session.ConditionEvidence == nil {
+				session.ConditionEvidence = make(map[string]engine.ConditionEvidence)
+			}
+			key := conditionEvidenceKey(event.Action.Phase, event.Action.ActionIndex, event.Action.StepPath)
+			session.ConditionEvidence[key] = *event.Condition
+			session.mu.Unlock()
+			m.broadcast("script_debug_condition", session, event.EventIndex, nil, event.Action, nil)
+		}
 	case engine.ReplayProgressComplete:
 		session.mu.Lock()
 		if event.Report != nil {
@@ -290,6 +307,62 @@ func (m *ScriptDebugManager) Step(sessionID string) (*ScriptDebugSession, bool, 
 	return m.updateStatus(sessionID, ScriptDebugRunning, true, "script_debug_resumed", "Debugger stepping one action")
 }
 
+// StepMode advances the debugger using a step mode. "into" (the default) pauses at
+// the next leaf like Step; "over" resumes through the container holding the paused
+// leaf; "loop_end" resumes through the nearest enclosing control_loop. The
+// over/loop_end resume pauses at the first action that falls outside the subtree,
+// and falls back to step-into when no boundary can be derived.
+func (m *ScriptDebugManager) StepMode(sessionID string, mode string) (*ScriptDebugSession, bool, bool) {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode != scriptStepOver && mode != scriptStepLoopEnd {
+		return m.Step(sessionID)
+	}
+	m.mu.RLock()
+	session, ok := m.sessions[sessionID]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, false, false
+	}
+
+	session.mu.Lock()
+	changed := false
+	if session.Status == ScriptDebugPaused {
+		boundary := computeStepBoundary(session.CurrentAction, mode)
+		if boundary == nil {
+			// Nothing to resume through: behave like a single step.
+			session.Status = ScriptDebugRunning
+			session.stepOnce = true
+			session.clearStepLocked()
+			session.appendLogLocked("info", "control", "Debugger stepping one action", "", nil)
+		} else {
+			session.Status = ScriptDebugRunning
+			session.stepOnce = false
+			session.stepMode = mode
+			session.stepBoundary = boundary
+			session.appendLogLocked("info", "control", stepModeLogMessage(mode), "", nil)
+		}
+		changed = true
+	}
+	snapshot := session.snapshotLocked()
+	session.mu.Unlock()
+
+	if changed {
+		m.broadcast("script_debug_resumed", snapshot, snapshot.CurrentEventIndex, nil, nil, nil)
+	}
+	return snapshot, true, changed
+}
+
+func stepModeLogMessage(mode string) string {
+	switch mode {
+	case scriptStepOver:
+		return "Debugger stepping over the current block"
+	case scriptStepLoopEnd:
+		return "Debugger running to end of loop"
+	default:
+		return "Debugger stepping one action"
+	}
+}
+
 func (m *ScriptDebugManager) updateStatus(sessionID string, nextStatus string, stepOnce bool, messageType string, logMessage string) (*ScriptDebugSession, bool, bool) {
 	m.mu.RLock()
 	session, ok := m.sessions[sessionID]
@@ -305,12 +378,14 @@ func (m *ScriptDebugManager) updateStatus(sessionID string, nextStatus string, s
 		if session.Status == ScriptDebugRunning {
 			session.Status = ScriptDebugPaused
 			session.stepOnce = false
+			session.clearStepLocked()
 			changed = true
 		}
 	case ScriptDebugRunning:
 		if session.Status == ScriptDebugPaused {
 			session.Status = ScriptDebugRunning
 			session.stepOnce = stepOnce
+			session.clearStepLocked()
 			changed = true
 		}
 	}
@@ -494,6 +569,12 @@ func (s *ScriptDebugSession) snapshotLocked() *ScriptDebugSession {
 	if len(s.RawOutput) > 0 {
 		clone.RawOutput = append([]string(nil), s.RawOutput...)
 	}
+	if len(s.ConditionEvidence) > 0 {
+		clone.ConditionEvidence = make(map[string]engine.ConditionEvidence, len(s.ConditionEvidence))
+		for key, evidence := range s.ConditionEvidence {
+			clone.ConditionEvidence[key] = evidence
+		}
+	}
 	return clone
 }
 
@@ -550,11 +631,22 @@ func (c scriptDebugController) BeforeAction(ctx context.Context, action engine.R
 		}
 		if !actionBroadcasted {
 			c.session.CurrentAction = &actionCopy
-			if c.session.Status == ScriptDebugRunning && c.session.hasBreakpointLocked(actionCopy) {
+			switch {
+			case c.session.Status != ScriptDebugRunning:
+				c.session.appendLogLocked("debug", "action", fmt.Sprintf("Ready to execute %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
+			case c.session.hasBreakpointLocked(actionCopy):
 				c.session.Status = ScriptDebugPaused
 				c.session.stepOnce = false
+				c.session.clearStepLocked()
 				c.session.appendLogLocked("info", "breakpoint", fmt.Sprintf("Paused before %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
-			} else {
+			case c.session.stepBoundaryExitLocked(actionCopy):
+				// A step-over / finish-loop resume has left its subtree: pause before
+				// the first action outside it.
+				c.session.Status = ScriptDebugPaused
+				c.session.stepOnce = false
+				c.session.clearStepLocked()
+				c.session.appendLogLocked("info", "control", fmt.Sprintf("Stepped to %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
+			default:
 				c.session.appendLogLocked("debug", "action", fmt.Sprintf("Ready to execute %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
 			}
 		}

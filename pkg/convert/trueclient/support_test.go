@@ -65,7 +65,7 @@ func TestLookupStepScope(t *testing.T) {
 		{stepName: "Press Key", wantName: "Press Key", wantStatus: ScopeSupported, wantType: "browser_press_key", wantOK: true},
 		{stepName: "If", wantName: "If / Else / Else If", wantStatus: ScopeSupported, wantType: "control_if", wantOK: true},
 		{stepName: "While", wantName: "Loop / Repeat / While", wantStatus: ScopeSupported, wantType: "control_loop", wantOK: true},
-		{stepName: "Break", wantName: "Break / Continue", wantStatus: ScopeReviewOnly, wantType: "source_review", wantOK: true},
+		{stepName: "Break", wantName: "Break / Continue", wantStatus: ScopeSupported, wantType: "control_break / control_continue", wantOK: true},
 		{stepName: "Unknown Step", wantOK: false},
 	}
 
