@@ -804,7 +804,7 @@ func scriptConfigMatchesRuntimeSettingDefinition(config dsl.ScriptConfig, defini
 	case "browser_download_resources_recorded":
 		return strings.EqualFold(config.Browser.DownloadResources, "recorded")
 	case "additional_attributes":
-		return len(config.WebRuntime.AdditionalAttributes) > 0
+		return hasCompatibilityOnlyAdditionalAttributes(config)
 	case "data_formatting_auto_detect":
 		return config.WebRuntime.DataFormatting.AutoDetect
 	case "data_formatting_chain":
@@ -817,6 +817,72 @@ func scriptConfigMatchesRuntimeSettingDefinition(config dsl.ScriptConfig, defini
 		}
 	}
 	return false
+}
+
+func hasCompatibilityOnlyAdditionalAttributes(config dsl.ScriptConfig) bool {
+	for key, value := range config.WebRuntime.AdditionalAttributes {
+		if runtimeAdditionalAttributeIsNativelyMapped(config, key, value) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func runtimeAdditionalAttributeIsNativelyMapped(config dsl.ScriptConfig, key, value string) bool {
+	switch normalizeRuntimeAttributeKey(key) {
+	case "web_set_sockets_option.ssl_version", "web_set_sockets_option.tls_version":
+		return tlsVersionsEquivalent(config.HTTP.TLS.MinVersion, mapSSLVersion(value))
+	case "web_set_sockets_option.close_keepalive_connections", "web_set_sockets_option.close_keep_alive_connections":
+		closeConnections, ok := parseSourceBool(value)
+		return ok && closeConnections && config.HTTP.KeepAlive != nil && !*config.HTTP.KeepAlive
+	case "web_set_sockets_option.max_connections_per_host", "web_set_sockets_option.max_connections":
+		maxConnections := parseInt(value)
+		return maxConnections > 0 && config.HTTP.MaxConnsPerHost == maxConnections
+	case "web_set_timeout.connect":
+		timeoutMs, ok := parseSourceTimeoutMs(value)
+		return ok && config.HTTP.ConnectTimeoutMs == timeoutMs
+	case "web_set_timeout.receive", "web_set_timeout.response", "web_set_timeout.download", "web_set_timeout.step", "web_set_timeout.step_download", "web_set_timeout.stepdownload":
+		timeoutMs, ok := parseSourceTimeoutMs(value)
+		return ok && config.HTTP.RequestTimeoutMs == timeoutMs
+	case "web_set_timeout.ssl", "web_set_timeout.tls", "web_set_timeout.secure":
+		timeoutMs, ok := parseSourceTimeoutMs(value)
+		return ok && config.HTTP.TLSTimeoutMs == timeoutMs
+	default:
+		return false
+	}
+}
+
+func normalizeRuntimeAttributeKey(key string) string {
+	segments := strings.Split(strings.TrimSpace(key), ".")
+	for index, segment := range segments {
+		segments[index] = normalizeEnum(segment)
+	}
+	return strings.Join(segments, ".")
+}
+
+func tlsVersionsEquivalent(left, right string) bool {
+	left = normalizeTLSVersion(left)
+	right = normalizeTLSVersion(right)
+	return left != "" && right != "" && left == right
+}
+
+func normalizeTLSVersion(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, " ", "")
+	normalized = strings.TrimPrefix(normalized, "tls")
+	switch normalized {
+	case "1.0", "10":
+		return "1.0"
+	case "1.1", "11":
+		return "1.1"
+	case "1.2", "12":
+		return "1.2"
+	case "1.3", "13":
+		return "1.3"
+	default:
+		return ""
+	}
 }
 
 func scriptConfigHasConfiguredField(config dsl.ScriptConfig, fieldPath string) bool {

@@ -167,6 +167,72 @@ func TestValidateScriptTreatsStreamingSettingsAsExecutable(t *testing.T) {
 	}
 }
 
+func TestValidateScriptTreatsNativeMappedSourceRuntimeAttributesAsExecuted(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:     "TLS Source Runtime Metadata",
+		Version:  "1.0.0",
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			HTTP: dsl.HTTPConfig{
+				TLS: dsl.TLSConfig{MinVersion: "1.2"},
+			},
+			WebRuntime: dsl.WebRuntimeConfig{
+				AdditionalAttributes: map[string]string{
+					"web_set_sockets_option.SSL_VERSION": "TLS1.2",
+				},
+			},
+		},
+		Actions: []dsl.Action{{Name: "Homepage", Type: "GET", Target: "/"}},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/validate", bytes.NewReader(nil))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	parity := extractValidationRuntimeSettingParity(t, resp.Body.Bytes())
+	if len(parity) != 1 || parity[0].ID != "tls" || parity[0].Status != enterprisearchive.RuntimeSettingStatusExecuted {
+		t.Fatalf("runtime_settings_parity = %#v, want only executable TLS entry", parity)
+	}
+	counts := extractValidationRuntimeSettingStatusCounts(t, resp.Body.Bytes())
+	if counts["compatibility_only"] != 0 {
+		t.Fatalf("runtime_settings_status_counts = %#v, want no compatibility-only runtime setting", counts)
+	}
+	health := extractValidationAuthoringHealth(t, resp.Body.Bytes())
+	item := authoringHealthItem(t, health, "runtime_parity")
+	if item.Status != "pass" || item.Count != 0 {
+		t.Fatalf("runtime parity health item = %#v, want pass without count", item)
+	}
+}
+
+func TestValidateScriptRuntimeParityHealthCountUsesAffectedSettings(t *testing.T) {
+	response := buildScriptValidationResponse("", &dsl.Script{
+		Name:     "Compatibility Runtime Metadata",
+		Version:  "1.0.0",
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			WebRuntime: dsl.WebRuntimeConfig{
+				AdditionalAttributes: map[string]string{
+					"web_set_max_html_param_len": "4096",
+				},
+			},
+		},
+		Actions: []dsl.Action{{Name: "Homepage", Type: "GET", Target: "/"}},
+	})
+
+	if response.RuntimeSettingsStatusCounts["compatibility_only"] != 1 {
+		t.Fatalf("runtime_settings_status_counts = %#v, want one compatibility-only setting", response.RuntimeSettingsStatusCounts)
+	}
+	item := authoringHealthItem(t, response.AuthoringHealth, "runtime_parity")
+	if item.Status != "warning" || item.Count != 1 {
+		t.Fatalf("runtime parity health item = %#v, want warning count=1", item)
+	}
+}
+
 func TestValidateScriptIncludesRecordedResourceMetadataWarnings(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	stored := server.runner.StoreScript(&dsl.Script{
@@ -470,4 +536,27 @@ func extractValidationMigrationReadiness(t *testing.T, body []byte) *enterprisea
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
 	return payload.MigrationReadiness
+}
+
+func extractValidationAuthoringHealth(t *testing.T, body []byte) AuthoringHealth {
+	t.Helper()
+
+	var payload struct {
+		AuthoringHealth AuthoringHealth `json:"authoring_health"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	return payload.AuthoringHealth
+}
+
+func authoringHealthItem(t *testing.T, health AuthoringHealth, key string) AuthoringHealthItem {
+	t.Helper()
+	for _, item := range health.Inputs {
+		if item.Key == key {
+			return item
+		}
+	}
+	t.Fatalf("authoring health item %q not found in %#v", key, health.Inputs)
+	return AuthoringHealthItem{}
 }

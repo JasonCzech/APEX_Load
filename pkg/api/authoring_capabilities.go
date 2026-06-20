@@ -81,7 +81,7 @@ func buildAuthoringHealth(issues []string, warnings []string, parityCounts map[s
 	parityPenalty := runtimeParityHealthPenalty(parityCounts)
 	if parityPenalty > 0 {
 		score -= parityPenalty
-		inputs[2] = AuthoringHealthItem{Key: "runtime_parity", Status: "warning", Count: parityPenalty, Summary: "Runtime parity has partial, compatibility-only, or blocked settings."}
+		inputs[2] = AuthoringHealthItem{Key: "runtime_parity", Status: "warning", Count: runtimeParityIssueCount(parityCounts), Summary: "Runtime parity has partial, compatibility-only, or blocked settings."}
 	}
 	if dataSourceFit != nil {
 		blocked := dataSourceFit.StatusCounts["blocked"]
@@ -132,6 +132,15 @@ func runtimeParityHealthPenalty(counts map[string]int) int {
 		return 30
 	}
 	return penalty
+}
+
+func runtimeParityIssueCount(counts map[string]int) int {
+	if len(counts) == 0 {
+		return 0
+	}
+	return counts[string(enterprisearchive.RuntimeSettingStatusBlocked)] +
+		counts[string(enterprisearchive.RuntimeSettingStatusPartial)] +
+		counts[string(enterprisearchive.RuntimeSettingStatusCompatibilityOnly)]
 }
 
 func authoringCapabilityResponse() AuthoringCapabilityResponse {
