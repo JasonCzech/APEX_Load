@@ -241,6 +241,10 @@ func (vu *VUser) Run(ctx context.Context) {
 			}
 
 			switch strings.ToLower(strings.TrimSpace(action.Type)) {
+			case "control_break":
+				return flowBreak
+			case "control_continue":
+				return flowContinue
 			case "control_if":
 				if action.Control == nil || depth >= maxControlDepth {
 					if depth >= maxControlDepth {
@@ -252,8 +256,13 @@ func (vu *VUser) Run(ctx context.Context) {
 				if vu.evalCondition(action.Control.Condition) {
 					body = action.Control.Steps
 				}
-				if runActions(body, depth+1) == flowTeardown {
+				// A control_if propagates a break/continue from its body up to the
+				// enclosing loop; a teardown aborts the iteration.
+				switch flow := runActions(body, depth+1); flow {
+				case flowTeardown:
 					return flowTeardown
+				case flowBreak, flowContinue:
+					return flow
 				}
 				applyActionThinkTime(action)
 				return flowNext
@@ -266,7 +275,6 @@ func (vu *VUser) Run(ctx context.Context) {
 				}
 				loop := action.Control
 				maxPasses := controlLoopMaxPasses(loop)
-				fixed := loop.Count > 0
 				// Expose a 1-based {{var.loop_index}} to the loop body and the
 				// condition (set before evaluation so per-pass bounds like
 				// "int(var.loop_index) <= int(var.total)" work). The outer
@@ -279,6 +287,43 @@ func (vu *VUser) Run(ctx context.Context) {
 						delete(vu.Variables, "loop_index")
 					}
 				}
+
+				// foreach mode (precedence: for_each > count > condition). Each row
+				// of the source binds under {{var.<Var>.<col>}} for the body.
+				if loop.ForEach != nil {
+					rows := vu.foreachRows(loop.ForEach)
+					restoreRows := vu.captureForEachRestore(loop.ForEach.Var, rows)
+					restore := func() { restoreRows(); restoreLoopIndex() }
+					for pass, row := range rows {
+						if pass >= maxPasses {
+							break
+						}
+						if iterCtx.Err() != nil {
+							restore()
+							return flowTeardown
+						}
+						vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
+						vu.bindForEachRow(loop.ForEach.Var, row)
+						if loop.ForEach.Condition != nil && !vu.evalCondition(loop.ForEach.Condition) {
+							break
+						}
+						switch runActions(loop.Steps, depth+1) {
+						case flowTeardown:
+							restore()
+							return flowTeardown
+						case flowBreak:
+							restore()
+							applyActionThinkTime(action)
+							return flowNext
+						}
+						// flowContinue / flowNext: proceed to the next row.
+					}
+					restore()
+					applyActionThinkTime(action)
+					return flowNext
+				}
+
+				fixed := loop.Count > 0
 				for pass := 0; ; pass++ {
 					if iterCtx.Err() != nil {
 						restoreLoopIndex()
@@ -292,10 +337,16 @@ func (vu *VUser) Run(ctx context.Context) {
 					} else if pass >= maxPasses || !vu.evalCondition(loop.Condition) {
 						break
 					}
-					if runActions(loop.Steps, depth+1) == flowTeardown {
+					switch runActions(loop.Steps, depth+1) {
+					case flowTeardown:
 						restoreLoopIndex()
 						return flowTeardown
+					case flowBreak:
+						restoreLoopIndex()
+						applyActionThinkTime(action)
+						return flowNext
 					}
+					// flowContinue / flowNext: proceed to the next pass.
 				}
 				restoreLoopIndex()
 				applyActionThinkTime(action)
@@ -399,15 +450,26 @@ func (vu *VUser) Run(ctx context.Context) {
 		}
 		runActions = func(actions []dsl.Action, depth int) actionFlow {
 			for _, action := range actions {
-				if runOne(action, depth) == flowTeardown {
-					return flowTeardown
+				// Any non-flowNext signal (teardown, break, continue) stops the
+				// current slice and bubbles up; the enclosing control_loop
+				// consumes break/continue, while teardown unwinds the iteration.
+				if flow := runOne(action, depth); flow != flowNext {
+					return flow
 				}
 			}
 			return flowNext
 		}
 
-		if runActions(vu.Script.Actions, 0) == flowTeardown {
-			goto teardown
+		// Drive the top-level action list directly (rather than via runActions) so a
+		// stray break/continue with no enclosing control_loop is a no-op that
+		// proceeds to the next action — matching the replay path's runReplayPhase.
+		for _, action := range vu.Script.Actions {
+			switch runOne(action, 0) {
+			case flowTeardown:
+				goto teardown
+			case flowBreak, flowContinue:
+				logger.Warn("control_break/control_continue outside a control_loop was ignored", "phase", "actions")
+			}
 		}
 
 		// Record iteration-level transaction
@@ -482,7 +544,6 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 			}
 			loop := action.Control
 			maxPasses := controlLoopMaxPasses(loop)
-			fixed := loop.Count > 0
 			// Mirror the main iteration loop: expose a 1-based
 			// {{var.loop_index}} to the body and the per-pass condition,
 			// restoring any outer value afterwards.
@@ -494,6 +555,35 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 					delete(vu.Variables, "loop_index")
 				}
 			}
+
+			// foreach mode (precedence: for_each > count > condition).
+			if loop.ForEach != nil {
+				rows := vu.foreachRows(loop.ForEach)
+				restoreRows := vu.captureForEachRestore(loop.ForEach.Var, rows)
+				restore := func() { restoreRows(); restoreLoopIndex() }
+				for pass, row := range rows {
+					if pass >= maxPasses {
+						break
+					}
+					if ctx.Err() != nil {
+						restore()
+						return false
+					}
+					vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
+					vu.bindForEachRow(loop.ForEach.Var, row)
+					if loop.ForEach.Condition != nil && !vu.evalCondition(loop.ForEach.Condition) {
+						break
+					}
+					if !runActions(loop.Steps, depth+1) {
+						restore()
+						return false
+					}
+				}
+				restore()
+				return true
+			}
+
+			fixed := loop.Count > 0
 			for pass := 0; ; pass++ {
 				if ctx.Err() != nil {
 					restoreLoopIndex()

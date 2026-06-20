@@ -24,34 +24,6 @@ function phaseReplayActions(script: ScriptDefinition): ScriptActionDefinition[] 
   ]
 }
 
-function orderedReplayActions(script: ScriptDefinition): ScriptActionDefinition[] {
-  return flattenReplayActionsForReadiness(phaseReplayActions(script), 0)
-}
-
-function flattenReplayActionsForReadiness(actions: ScriptActionDefinition[], depth: number): ScriptActionDefinition[] {
-  const ordered: ScriptActionDefinition[] = []
-  actions.forEach(action => {
-    switch (action.type?.trim().toLowerCase()) {
-      case 'control_if':
-        ordered.push(controlShellAction(action))
-        if (action.control && depth < REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH) {
-          ordered.push(...flattenReplayActionsForReadiness(action.control.steps || [], depth + 1))
-          ordered.push(...flattenReplayActionsForReadiness(action.control.else || [], depth + 1))
-        }
-        break
-      case 'control_loop':
-        ordered.push(controlShellAction(action))
-        if (action.control && depth < REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH) {
-          ordered.push(...flattenReplayActionsForReadiness(action.control.steps || [], depth + 1))
-        }
-        break
-      default:
-        ordered.push(action)
-    }
-  })
-  return ordered
-}
-
 function controlShellAction(action: ScriptActionDefinition): ScriptActionDefinition {
   if (!action.control) return action
   return {
@@ -120,6 +92,67 @@ function collectTemplateRefs(action: ScriptActionDefinition, kind: string): stri
   return sortedValues(refs)
 }
 
+type ReadinessVarContext = {
+  available: Set<string>
+  missing: Set<string>
+  secrets: Set<string>
+  loopDepth: number
+  foreachVars: Set<string>
+}
+
+// isReadinessVarAvailable reports whether a {{var.<name>}} reference resolves to a
+// variable the runtime will provide: a seeded/param/extracted variable, the
+// engine-injected {{var.loop_index}} inside any control_loop body, or a foreach
+// row binding {{var.<V>.<col>}} inside a control_loop whose for_each.var is V.
+function isReadinessVarAvailable(name: string, ctx: ReadinessVarContext): boolean {
+  if (ctx.available.has(name)) return true
+  if (ctx.loopDepth > 0 && (name === 'loop_index' || name.startsWith('loop_index.'))) return true
+  const prefix = name.includes('.') ? name.slice(0, name.indexOf('.')) : name
+  return ctx.foreachVars.has(prefix)
+}
+
+// collectReadinessRefs walks the action tree in execution order, tracking which
+// loop-injected variables are in scope so a control body does not false-flag
+// {{var.loop_index}} or foreach row bindings ({{var.<V>.<col>}}) as missing.
+// Extractor outputs accumulate forward, matching replay's single-pass variable
+// resolution. Container actions contribute only their shell (condition) refs here;
+// their bodies are walked recursively with the loop scope applied.
+function collectReadinessRefs(actions: ScriptActionDefinition[], ctx: ReadinessVarContext, depth: number): void {
+  if (depth > REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH) return
+  actions.forEach(action => {
+    const type = action.type?.trim().toLowerCase()
+    const isLoop = type === 'control_loop'
+    const isIf = type === 'control_if'
+    const refSource = isLoop || isIf ? controlShellAction(action) : action
+    // A control_loop's own while-condition is evaluated each pass with loop_index
+    // already set, so scan the shell with the loop scope applied.
+    const refCtx: ReadinessVarContext = isLoop ? { ...ctx, loopDepth: ctx.loopDepth + 1 } : ctx
+    collectTemplateRefs(refSource, 'var').forEach(name => {
+      if (!isReadinessVarAvailable(name, refCtx)) ctx.missing.add(name)
+    })
+    collectTemplateRefs(refSource, 'env').forEach(name => ctx.secrets.add(name))
+    ;(action.extractors || []).forEach(extractor => {
+      if (extractor.name) ctx.available.add(extractor.name)
+    })
+    if ((isLoop || isIf) && action.control) {
+      const childCtx: ReadinessVarContext = {
+        available: ctx.available,
+        missing: ctx.missing,
+        secrets: ctx.secrets,
+        loopDepth: isLoop ? ctx.loopDepth + 1 : ctx.loopDepth,
+        foreachVars: ctx.foreachVars,
+      }
+      const foreachVar = isLoop ? action.control.for_each?.var?.trim() : ''
+      if (foreachVar) {
+        childCtx.foreachVars = new Set(ctx.foreachVars)
+        childCtx.foreachVars.add(foreachVar)
+      }
+      collectReadinessRefs(action.control.steps || [], childCtx, depth + 1)
+      if (isIf) collectReadinessRefs(action.control.else || [], childCtx, depth + 1)
+    }
+  })
+}
+
 function buildDataWarnings(script: ScriptDefinition): string[] {
   const sourceNames = new Set<string>()
   const warnings: string[] = []
@@ -167,7 +200,6 @@ function browserEvidenceCaptureCheck(script: ScriptDefinition) {
 
 export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: Record<string, string>): ReplayPreflight {
   const phaseActions = phaseReplayActions(script)
-  const orderedActions = orderedReplayActions(script)
   const definitionCount = actionDefinitionCount(phaseActions, 0)
   const expectedCount = expectedReplayActionCount(phaseActions, 0)
   const availableVariables = new Set<string>([
@@ -177,19 +209,13 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
   const missingVariables = new Set<string>()
   const requiredSecrets = new Set<string>()
 
-  orderedActions.forEach(action => {
-    collectTemplateRefs(action, 'var').forEach(name => {
-      if (!availableVariables.has(name)) {
-        missingVariables.add(name)
-      }
-    })
-    collectTemplateRefs(action, 'env').forEach(name => {
-      requiredSecrets.add(name)
-    })
-    ;(action.extractors || []).forEach(extractor => {
-      if (extractor.name) availableVariables.add(extractor.name)
-    })
-  })
+  collectReadinessRefs(phaseActions, {
+    available: availableVariables,
+    missing: missingVariables,
+    secrets: requiredSecrets,
+    loopDepth: 0,
+    foreachVars: new Set<string>(),
+  }, 0)
 
   const dataWarnings = buildDataWarnings(script)
   const missingVariableList = sortedValues(missingVariables)

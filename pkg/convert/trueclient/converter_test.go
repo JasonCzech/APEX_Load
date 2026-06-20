@@ -188,6 +188,49 @@ func TestConvertArchivePreservesCountLoopControlFlow(t *testing.T) {
 	}
 }
 
+func TestConvertArchiveEmitsControlBreakAndContinue(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="control" action="Loop" index="1" arguments="{&quot;Count&quot;:{&quot;value&quot;:&quot;5&quot;}}">
+      <step type="testObject" action="Click" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#retry\&quot;&quot;}}" />
+      <step type="control" action="If" index="3" arguments="{&quot;Condition&quot;:{&quot;value&quot;:&quot;\&quot;done\&quot;&quot;}}">
+        <step type="control" action="Continue" index="4" />
+      </step>
+      <step type="control" action="Break" index="5" />
+    </step>
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Transfer Flow"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "control_loop" {
+		t.Fatalf("actions = %#v, want one control_loop wrapper", result.Script.Actions)
+	}
+	steps := result.Script.Actions[0].Control.Steps
+	// Click, If{Continue}, Break.
+	if len(steps) != 3 {
+		t.Fatalf("loop steps = %#v, want 3 (click, if, break)", steps)
+	}
+	if steps[1].Type != "control_if" || len(steps[1].Control.Steps) != 1 || steps[1].Control.Steps[0].Type != "control_continue" {
+		t.Fatalf("nested if = %#v, want a control_continue inside", steps[1])
+	}
+	if steps[2].Type != "control_break" {
+		t.Fatalf("final step = %#v, want control_break", steps[2])
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("ValidateScriptIssues returned %v, want no issues", issues)
+	}
+	// Break/continue are now first-class conversions, not skipped review items.
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "break/continue") || strings.Contains(w, "do not support") {
+			t.Fatalf("unexpected break/continue downgrade warning: %q", w)
+		}
+	}
+}
+
 func TestConvertArchiveReviewGatesUnrecognizedIfConditionWithoutFlattening(t *testing.T) {
 	result, err := ConvertArchive(map[string]string{
 		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>

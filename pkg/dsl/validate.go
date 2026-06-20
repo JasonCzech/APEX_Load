@@ -384,8 +384,14 @@ func validateControlFlowIssues(protocol string, path string, action Action) []st
 	issues = append(issues, validateConditionIssues(label, action.Control.Condition)...)
 	switch action.Type {
 	case "control_loop":
-		if action.Control.Count <= 0 && action.Control.Condition == nil {
-			issues = append(issues, fmt.Sprintf("%s: control_loop requires a positive count or a condition", label))
+		// Loop mode precedence: for_each > count > condition.
+		if action.Control.ForEach != nil {
+			if strings.TrimSpace(action.Control.ForEach.Source) == "" {
+				issues = append(issues, fmt.Sprintf("%s: control_loop for_each requires a source", label))
+			}
+			issues = append(issues, validateConditionIssues(label, action.Control.ForEach.Condition)...)
+		} else if action.Control.Count <= 0 && action.Control.Condition == nil {
+			issues = append(issues, fmt.Sprintf("%s: control_loop requires a for_each source, a positive count, or a condition", label))
 		}
 	case "control_if":
 		if len(action.Control.Steps) == 0 && len(action.Control.Else) == 0 {

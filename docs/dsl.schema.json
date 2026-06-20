@@ -1549,6 +1549,40 @@
             "properties": {
               "type": {
                 "enum": [
+                  "control_break"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Breaks out of the nearest enclosing control_loop (no-op outside a loop)."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "control_continue"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Skips to the next pass of the nearest enclosing control_loop (no-op outside a loop)."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "control_if"
                 ]
               }
@@ -1584,11 +1618,23 @@
             ]
           },
           "then": {
-            "description": "Loop block: repeats control.steps for a fixed count or while a condition holds.",
+            "description": "Loop block: repeats control.steps for a fixed count, for each row of a data source, or while a condition holds.",
             "properties": {
               "control": {
-                "description": "Loop body: {condition, steps, count, max_iterations}. condition may use legacy left/op/right or CEL expr over var/data/env. Requires a positive count or a condition. Each pass exposes a 1-based {{var.loop_index}} to the body and the condition (e.g. expr \"int(var.loop_index) \u003c= int(var.total)\").",
+                "description": "Loop body: {condition, steps, count, max_iterations, for_each}. Mode precedence is for_each \u003e count \u003e condition; requires a for_each.source, a positive count, or a condition. condition may use legacy left/op/right or CEL expr over var/data/env. Each pass exposes a 1-based {{var.loop_index}} to the body and the condition (e.g. expr \"int(var.loop_index) \u003c= int(var.total)\").",
                 "type": "object"
+              },
+              "control.for_each.condition": {
+                "description": "Optional per-row early-exit predicate {condition}. Iteration stops the first row this evaluates false (the row's columns are bound before it is checked).",
+                "type": "object"
+              },
+              "control.for_each.source": {
+                "description": "Data source name to iterate row-by-row. Required when using for_each mode; takes precedence over count and condition.",
+                "type": "string"
+              },
+              "control.for_each.var": {
+                "description": "Var-namespace prefix each iterated row binds under: row column c is available to the body as {{var.\u003cvar\u003e.c}}. Distinct from the per-VUser {{data.source.c}} binding.",
+                "type": "string"
               }
             },
             "required": [
@@ -4577,6 +4623,8 @@
             "browser_tap",
             "browser_wait",
             "commit",
+            "control_break",
+            "control_continue",
             "control_if",
             "control_loop",
             "custom_call",
@@ -4912,6 +4960,9 @@
           },
           "type": "array"
         },
+        "for_each": {
+          "$ref": "#/$defs/ForEachLoop"
+        },
         "max_iterations": {
           "type": "integer"
         },
@@ -5111,6 +5162,21 @@
           "type": "string"
         },
         "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ForEachLoop": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "$ref": "#/$defs/Condition"
+        },
+        "source": {
+          "type": "string"
+        },
+        "var": {
           "type": "string"
         }
       },

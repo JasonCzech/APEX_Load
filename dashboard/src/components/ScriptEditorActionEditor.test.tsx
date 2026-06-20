@@ -4,8 +4,9 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { useState } from 'react'
 import type { ScriptActionDefinition } from '../types/scripts'
-import { ActionEditor, ControlBranchEditor } from './ScriptEditorActionEditor'
+import { ActionEditor, ControlBranchEditor, ControlFlowFields } from './ScriptEditorActionEditor'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -44,13 +45,35 @@ describe('ControlBranchEditor', () => {
     expect(container.querySelector('.control-branch-header small')?.textContent).toBe('2 steps')
   })
 
-  it('shows an empty hint and adds a default step', () => {
+  it('shows an empty hint and adds a default protocol-agnostic step', () => {
     let last: ScriptActionDefinition[] | null = null
     act(() => { root.render(<ControlBranchEditor label="Then steps" steps={[]} onChange={s => { last = s }} />) })
     expect(container.querySelector('.control-step-empty')).not.toBeNull()
-    act(() => { button('+ Add step')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    act(() => { button('+ Step')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     expect(last).toHaveLength(1)
-    expect(last![0].type).toBe('GET')
+    // The default step seeds an empty type so the author picks one matching the protocol.
+    expect(last![0].type).toBe('')
+  })
+
+  it('adds control_break / control_continue leaf steps', () => {
+    let last: ScriptActionDefinition[] | null = null
+    act(() => { root.render(<ControlBranchEditor label="Loop steps" steps={[]} onChange={s => { last = s }} />) })
+    act(() => { button('+ Break')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(last![0].type).toBe('control_break')
+    act(() => { root.render(<ControlBranchEditor label="Loop steps" steps={last!} onChange={s => { last = s }} />) })
+    act(() => { button('+ Continue')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(last!.map(s => s.type)).toEqual(['control_break', 'control_continue'])
+  })
+
+  it('expands a nested control_loop step inline (recursive editor)', () => {
+    const nested: ScriptActionDefinition[] = [
+      { name: 'inner', type: 'control_loop', target: '', control: { count: 2, steps: [] } },
+    ] as unknown as ScriptActionDefinition[]
+    act(() => { root.render(<ControlBranchEditor label="Then steps" steps={nested} onChange={() => {}} />) })
+    // The nested control step renders its own control-flow editor inline.
+    expect(container.querySelector('.control-step-nested')).not.toBeNull()
+    const headings = [...container.querySelectorAll('.control-flow-section h4')].map(h => h.textContent)
+    expect(headings).toContain('Loop')
   })
 
   it('edits a step field while preserving its other (unknown) keys', () => {
@@ -76,6 +99,50 @@ describe('ControlBranchEditor', () => {
     const textarea = container.querySelector('textarea') as HTMLTextAreaElement
     expect(textarea).not.toBeNull()
     expect(JSON.parse(textarea.value)).toHaveLength(2)
+  })
+})
+
+const labelInputIn = (root: HTMLElement, labelText: string) =>
+  [...root.querySelectorAll('label')]
+    .find(l => l.querySelector('span')?.textContent === labelText)
+    ?.querySelector('input') as HTMLInputElement | undefined
+
+const labelSelectIn = (root: HTMLElement, labelText: string) =>
+  [...root.querySelectorAll('label')]
+    .find(l => l.querySelector('span')?.textContent === labelText)
+    ?.querySelector('select') as HTMLSelectElement | undefined
+
+describe('ControlFlowFields', () => {
+  function Controlled({ initial }: { initial: ScriptActionDefinition }) {
+    const [action, setAction] = useState(initial)
+    return <ControlFlowFields action={action} index={0} onUpdate={(_i, f, v) => setAction(a => ({ ...a, [f]: v }) as ScriptActionDefinition)} />
+  }
+
+  const setSelectValue = (select: HTMLSelectElement, value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!
+    setter.call(select, value)
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+
+  it('renders a condition editor for control_if (works in an HTTP script)', () => {
+    act(() => { root.render(<Controlled initial={{ name: 'Branch', type: 'control_if', target: '', control: { condition: { op: 'eq' }, steps: [] } } as unknown as ScriptActionDefinition} />) })
+    expect(labelInputIn(container, 'Condition Left')).toBeTruthy()
+    expect(labelSelectIn(container, 'Operator')).toBeTruthy()
+    // control_if has no loop-mode selector.
+    expect(labelSelectIn(container, 'Loop Mode')).toBeFalsy()
+  })
+
+  it('offers Count / While / For-each loop modes and reveals foreach inputs', () => {
+    act(() => { root.render(<Controlled initial={{ name: 'Loop', type: 'control_loop', target: '', control: { count: 3, steps: [] } } as unknown as ScriptActionDefinition} />) })
+    const modeSelect = labelSelectIn(container, 'Loop Mode')!
+    expect(modeSelect).toBeTruthy()
+    expect([...modeSelect.options].map(o => o.value)).toEqual(['count', 'while', 'foreach'])
+    expect(labelInputIn(container, 'Loop Count')).toBeTruthy()
+
+    act(() => { setSelectValue(modeSelect, 'foreach') })
+    expect(labelInputIn(container, 'Data Source')).toBeTruthy()
+    expect(labelInputIn(container, 'Row Variable')).toBeTruthy()
+    expect(labelInputIn(container, 'Loop Count')).toBeFalsy()
   })
 })
 

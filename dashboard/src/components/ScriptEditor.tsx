@@ -24,6 +24,8 @@ import {
   ScriptDebugLogEntry,
   ScriptDebugLogLevel,
   ScriptDebugSession,
+  type ConditionEvidence,
+  type ScriptDebugStepMode,
   BrowserReplaySnapshot,
   type AuthoringComponent,
   StoredScript,
@@ -2578,6 +2580,19 @@ function formatDebugLeafSuffix(leaf: { request_index?: number; request_count?: n
   return parts.length ? ` · ${parts.join(' · ')}` : ''
 }
 
+
+// formatConditionEvidence renders a control_if / control_loop predicate's
+// evaluated operands for the debugger rail and inspector, e.g.
+// "admin eq admin → true" or "int(var.i) < 3 → false".
+function formatConditionEvidence(evidence: ConditionEvidence): string {
+  const result = evidence.result ? 'true' : 'false'
+  if (evidence.expr && evidence.expr.trim()) return `${evidence.expr} → ${result}`
+  const op = evidence.op || 'eq'
+  const left = evidence.left ?? ''
+  const unary = op === 'exists' || op === 'not_exists' || op === 'truthy' || op === 'falsy' || op === 'empty'
+  if (unary) return `${left} ${op} → ${result}`
+  return `${left} ${op} ${evidence.right ?? ''} → ${result}`
+}
 
 function debugLogLevelWeight(level: ScriptDebugLogLevel | 'all'): number {
   switch (level) {
@@ -5287,7 +5302,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
   }, [activeReplaySessionId, api, browserReplaySession, setBrowserReplaySession, setError, setSuccess])
 
-  const handleStepReplay = useCallback(async () => {
+  const handleStepReplay = useCallback(async (mode: ScriptDebugStepMode = 'into') => {
     openReplayDebugger(false)
     if (!activeReplaySessionId || !browserReplaySession) {
       await handleReplay({ startPaused: true })
@@ -5295,10 +5310,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
     if (browserReplaySession.status !== 'paused') return
     try {
-      const res = await api.stepScriptDebugSession(activeReplaySessionId)
+      const res = await api.stepScriptDebugSession(activeReplaySessionId, mode)
       if (res?.session) setBrowserReplaySession(res.session)
       setError('')
-      setSuccess('Stepping debugger…')
+      setSuccess(mode === 'over' ? 'Stepping over the current block…' : mode === 'loop_end' ? 'Running to end of loop…' : 'Stepping debugger…')
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to step debugger'))
     }
@@ -6011,7 +6026,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       group: 'Script Editor',
       disabled: !((replaying && isReplayPaused) || (!replaying && !saving && script.name && debugActionRows.length > 0)),
       priority: 850,
-      onTrigger: () => { void handleStepReplay() },
+      onTrigger: () => { void handleStepReplay('into') },
+    },
+    {
+      id: 'script.debug.step_over',
+      label: 'Step over block',
+      keys: 'F11',
+      group: 'Script Editor',
+      disabled: !(replaying && isReplayPaused),
+      priority: 850,
+      onTrigger: () => { void handleStepReplay('over') },
+    },
+    {
+      id: 'script.debug.finish_loop',
+      label: 'Finish loop',
+      keys: 'Shift+F11',
+      group: 'Script Editor',
+      disabled: !(replaying && isReplayPaused),
+      priority: 850,
+      onTrigger: () => { void handleStepReplay('loop_end') },
     },
     {
       id: 'script.debug.breakpoint',
@@ -7183,7 +7216,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         title: 'Step to next action',
         tone: 'secondary',
         disabled: stepReplayDisabled,
-        onClick: () => { void handleStepReplay() },
+        onClick: () => { void handleStepReplay('into') },
+      },
+      {
+        id: 'step-over-debug',
+        label: 'Step Over',
+        compactLabel: 'Over',
+        title: 'Step over the current block (run the rest of it, pause after)',
+        tone: 'secondary',
+        disabled: stepReplayDisabled,
+        onClick: () => { void handleStepReplay('over') },
+      },
+      {
+        id: 'finish-loop-debug',
+        label: 'Finish Loop',
+        compactLabel: 'Loop',
+        title: 'Run to the end of the enclosing loop',
+        tone: 'secondary',
+        disabled: stepReplayDisabled,
+        onClick: () => { void handleStepReplay('loop_end') },
       },
       {
         id: 'stop-debug',
@@ -7980,9 +8031,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <span className="debugger-icon" aria-hidden="true">{isReplayPaused ? '▶' : '⏸'}</span>
                 <span>{isReplayPaused ? 'Continue' : 'Pause'}</span>
               </button>
-              <button type="button" className="debugger-icon-btn" title="Step to next action" onClick={() => void handleStepReplay()} disabled={stepReplayDisabled}>
+              <button type="button" className="debugger-icon-btn" title="Step to next action" onClick={() => void handleStepReplay('into')} disabled={stepReplayDisabled}>
                 <span className="debugger-icon" aria-hidden="true">&#10551;</span>
                 <span>Step</span>
+              </button>
+              <button type="button" className="debugger-icon-btn" title="Step over the current block (run the rest of it, pause after)" onClick={() => void handleStepReplay('over')} disabled={stepReplayDisabled}>
+                <span className="debugger-icon" aria-hidden="true">&#10550;</span>
+                <span>Step Over</span>
+              </button>
+              <button type="button" className="debugger-icon-btn" title="Run to the end of the enclosing loop" onClick={() => void handleStepReplay('loop_end')} disabled={stepReplayDisabled}>
+                <span className="debugger-icon" aria-hidden="true">&#8635;</span>
+                <span>Finish Loop</span>
               </button>
               <button type="button" className="debugger-icon-btn" title="Stop debugger" onClick={handleStopReplay} disabled={!activeReplaySessionId || !replaying}>
                 <span className="debugger-icon" aria-hidden="true">&#9209;</span>
@@ -8261,6 +8320,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         >
                           {(() => {
                             const renderRows = buildDebugRailRenderRows(debugActionRows, effectiveExpandedDebugSequences)
+                            const conditionEvidenceMap = browserReplaySession?.condition_evidence || {}
+                            const conditionEvidenceFor = (p: string, ai: number, sp: string[]) => conditionEvidenceMap[`${p}#${ai}#${sp.join('/')}`]
                             const matchesFilter = (text: string) => !debugRailFilterText || text.toLowerCase().includes(debugRailFilterText)
                             const indentStyle = (depth: number) => depth > 0 ? ({ paddingLeft: `${depth * 14}px` } as React.CSSProperties) : undefined
                             const out: React.ReactNode[] = []
@@ -8278,6 +8339,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                 const gutterState = wholeActive ? 'active' : childBpCount > 0 ? 'partial' : ''
                                 const typeLabel = item.containerType === 'http_sequence' ? 'SEQ' : item.containerType === 'control_if' ? 'IF' : 'LOOP'
                                 const unitWord = item.containerType === 'http_sequence' ? 'request' : 'step'
+                                const controlEvidence = item.containerType === 'control_if' || item.containerType === 'control_loop'
+                                  ? conditionEvidenceFor(phase, actionIndex, item.stepPath)
+                                  : undefined
+                                const branchBadge = item.containerType === 'control_if' && controlEvidence
+                                  ? (controlEvidence.branch === 'then' ? 'THEN' : 'ELSE')
+                                  : null
                                 if (isTopLevel) {
                                   const parentVisible = debugRailFailuresOnly
                                     ? anyFail
@@ -8313,7 +8380,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                         <span className={`debugger-action-status ${rollup}`} aria-hidden="true" />
                                       </span>
                                       <strong>{item.name}</strong>
-                                      <small>{typeLabel} · {item.leafCount} {unitWord}{item.leafCount === 1 ? '' : 's'}{childBpCount > 0 ? ` · ${childBpCount} BP` : ''}</small>
+                                      {branchBadge && (
+                                        <span className={`control-branch-badge ${branchBadge === 'THEN' ? 'taken' : 'skipped'}`} title={`Condition was ${controlEvidence?.result ? 'true' : 'false'} → ${branchBadge.toLowerCase()} branch`}>{branchBadge}</span>
+                                      )}
+                                      <small>{typeLabel} · {item.leafCount} {unitWord}{item.leafCount === 1 ? '' : 's'}{childBpCount > 0 ? ` · ${childBpCount} BP` : ''}{controlEvidence ? ` · ${formatConditionEvidence(controlEvidence)}` : ''}</small>
                                     </button>
                                   </div>
                                 )

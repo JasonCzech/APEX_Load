@@ -295,15 +295,19 @@ func truLoopCount(step truXMLStep) (int, bool) {
 	return count, true
 }
 
-func reviewGatedControlTransferAction(step truXMLStep) dsl.Action {
-	actionName := strings.TrimSpace(step.Action)
+// controlTransferAction converts a TruClient Break/Continue step to the native
+// control_break / control_continue engine action so the migrated script preserves
+// loop-control fidelity instead of degrading to a review placeholder.
+func controlTransferAction(step truXMLStep, kind truControlKind) dsl.Action {
+	actionType := "control_break"
+	display := "Break"
+	if kind == truControlContinue {
+		actionType = "control_continue"
+		display = "Continue"
+	}
 	return dsl.Action{
-		Name: stepDisplayName(step, actionName),
-		Type: "source_review",
-		Params: map[string]any{
-			"function": actionName,
-			"args":     []any{step.Arguments},
-		},
+		Name:     stepDisplayName(step, display),
+		Type:     actionType,
 		Metadata: controlMetadata(step, "truclient_control_transfer", ""),
 	}
 }

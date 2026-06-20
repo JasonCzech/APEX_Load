@@ -2346,6 +2346,20 @@ export interface ScriptDebugAction {
   iteration_path?: number[]
 }
 
+// ConditionEvidence captures the evaluated operands and outcome of a control_if /
+// control_loop predicate so the debugger can show why a branch was taken.
+export interface ConditionEvidence {
+  expr?: string
+  left?: string
+  op?: string
+  right?: string
+  result: boolean
+  branch?: string
+}
+
+// Step modes accepted by POST /script-debug/sessions/{id}/step.
+export type ScriptDebugStepMode = 'into' | 'over' | 'loop_end'
+
 export interface ScriptDebugSession {
   id: string
   mode?: string
@@ -2369,6 +2383,8 @@ export interface ScriptDebugSession {
   raw_output?: string[]
   report?: BrowserReplayReport
   error?: string
+  // Condition evidence keyed by `${phase}#${action_index}#${step_path.join('/')}`.
+  condition_evidence?: Record<string, ConditionEvidence>
 }
 
 export interface ScriptDebugStartRequest {

@@ -241,6 +241,33 @@ func (dp *DataProvider) GetRow(sourceName string, vuserID int) map[string]string
 	return result
 }
 
+// GetAllRows returns every row of a data source in order as raw column→value
+// maps (column names only, with no "source." prefix). Unlike GetRow it never
+// advances the per-VUser/per-source cursor, so foreach control_loop blocks can
+// iterate a source's full contents within a single VUser iteration without
+// disturbing the per-iteration {{data.src.col}} binding. Returns nil when the
+// provider or source is missing.
+func (dp *DataProvider) GetAllRows(sourceName string) []map[string]string {
+	if dp == nil {
+		return nil
+	}
+	ds, ok := dp.sources[sourceName]
+	if !ok || len(ds.rows) == 0 {
+		return nil
+	}
+	rows := make([]map[string]string, 0, len(ds.rows))
+	for _, row := range ds.rows {
+		m := make(map[string]string, len(ds.columns))
+		for i, col := range ds.columns {
+			if i < len(row) {
+				m[col] = strings.TrimSpace(row[i])
+			}
+		}
+		rows = append(rows, m)
+	}
+	return rows
+}
+
 // SourceNames returns the names of all loaded data sources.
 func (dp *DataProvider) SourceNames() []string {
 	names := make([]string, 0, len(dp.sources))

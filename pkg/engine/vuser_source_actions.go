@@ -46,6 +46,13 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 	case "source_external", "source_review", "custom_call":
 		vu.logSourceReviewAction(ctx, action)
 		return true, nil
+	case "control_break", "control_continue":
+		// Loop control transfers are intercepted by the runner switch (load) and
+		// expandReplayAction (replay) to produce a flow signal; reaching here
+		// means the action is being executed as a plain leaf (replay event
+		// emission or a stray break/continue outside a loop) — treat it as a
+		// successful no-op so it surfaces in the timeline without erroring.
+		return true, nil
 	default:
 		return false, nil
 	}
