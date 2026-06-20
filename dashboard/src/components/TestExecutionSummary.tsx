@@ -38,20 +38,29 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
   const dependencySource = dependencyMap?.nodes.find((node) => node.kind === 'source')
   const dependencyNodes = dependencyMap?.nodes.filter((node) => node.kind === 'dependency') ?? []
   const errorPatterns = metrics?.error_patterns?.slice(0, 4) ?? []
-  const jmsTransactions = transactions.filter((tx) => tx.dependency_type?.startsWith('jms_') && tx.server_telemetry)
-  const jmsPayloadProfiles = buildJMSPayloadProfiles(jmsTransactions)
-  const jmsMessagingProfiles = buildJMSMessagingProfiles(jmsTransactions)
-  const jmsPayloadDistribution = buildJMSPayloadDistribution(jmsTransactions)
-  const jmsPayloadHistogram = buildJMSPayloadHistogram(jmsTransactions)
-  const jmsDeadLetterActivity = buildJMSDeadLetterActivity(jmsTransactions)
+  // Messaging panels cover the queue/stream protocols whose telemetry is
+  // protocol-neutral (JMS family, Kafka, Event Hubs). Dead-letter and topic
+  // fan-out below stay JMS-specific (their builders self-filter by jms_ prefix).
+  const messagingTransactions = transactions.filter(
+    (tx) =>
+      (tx.dependency_type?.startsWith('jms_') ||
+        tx.dependency_type?.startsWith('kafka') ||
+        tx.dependency_type?.startsWith('eventhubs')) &&
+      tx.server_telemetry,
+  )
+  const jmsPayloadProfiles = buildJMSPayloadProfiles(messagingTransactions)
+  const jmsMessagingProfiles = buildJMSMessagingProfiles(messagingTransactions)
+  const jmsPayloadDistribution = buildJMSPayloadDistribution(messagingTransactions)
+  const jmsPayloadHistogram = buildJMSPayloadHistogram(messagingTransactions)
+  const jmsDeadLetterActivity = buildJMSDeadLetterActivity(messagingTransactions)
   const jmsDeadLetterProfiles = buildJMSDeadLetterProfiles(jmsDeadLetterActivity)
-  const jmsTopicFanOut = buildJMSTopicFanOut(jmsTransactions)
+  const jmsTopicFanOut = buildJMSTopicFanOut(messagingTransactions)
   const jmsTopicFanOutProfiles = buildJMSTopicFanOutProfiles(jmsTopicFanOut)
   const jmsLagTrend = buildJMSConsumerLagTrend(history)
-  const topJMSPayloads = [...jmsTransactions]
+  const topJMSPayloads = [...messagingTransactions]
     .sort((left, right) => combinedPayloadKB(right) - combinedPayloadKB(left))
     .slice(0, 4)
-  const topJMSMessaging = [...jmsTransactions]
+  const topJMSMessaging = [...messagingTransactions]
     .filter((tx) => hasJMSMessagingTelemetry(tx))
     .sort((left, right) => totalObservedMessages(right) - totalObservedMessages(left))
     .slice(0, 4)
@@ -413,8 +422,8 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
 
       {topJMSPayloads.length > 0 && (
         <div className="tx-section">
-          <h3 className="chart-title">Live JMS Payload Hotspots</h3>
-          <p className="server-telemetry-subtitle">Payload-heavy JMS actions ranked from average request and response sizes. The distribution below reflects live size-class counts from the same telemetry stream.</p>
+          <h3 className="chart-title">Live Messaging Payload Hotspots</h3>
+          <p className="server-telemetry-subtitle">Payload-heavy messaging actions (JMS, Kafka, Event Hubs) ranked from average request and response sizes. The distribution below reflects live size-class counts from the same telemetry stream.</p>
           {jmsPayloadProfiles.length > 0 && (
             <div className="server-telemetry-grid">
               {jmsPayloadProfiles.map((profile) => (
@@ -476,8 +485,8 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
 
       {jmsPayloadDistribution.length > 0 && (
         <div className="tx-section">
-          <h3 className="chart-title">Live JMS Payload Distribution</h3>
-          <p className="server-telemetry-subtitle">Request and response size classes aggregated from live JMS message telemetry.</p>
+          <h3 className="chart-title">Live Messaging Payload Distribution</h3>
+          <p className="server-telemetry-subtitle">Request and response size classes aggregated from live messaging telemetry (JMS, Kafka, Event Hubs).</p>
           <table className="tx-table">
             <thead>
               <tr>
@@ -501,8 +510,8 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
 
       {jmsPayloadHistogram.length > 0 && (
     <div className="tx-section">
-      <h3 className="chart-title">Live JMS Payload Histogram</h3>
-      <p className="server-telemetry-subtitle">Finer payload bands aggregated from exact live JMS request and response sizes.</p>
+      <h3 className="chart-title">Live Messaging Payload Histogram</h3>
+      <p className="server-telemetry-subtitle">Finer payload bands aggregated from exact live messaging request and response sizes (JMS, Kafka, Event Hubs).</p>
       <table className="tx-table">
         <thead>
           <tr>
@@ -648,8 +657,8 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
 
       {topJMSMessaging.length > 0 && (
         <div className="tx-section">
-          <h3 className="chart-title">Live JMS Messaging</h3>
-          <p className="server-telemetry-subtitle">Live message throughput and request-reply latency from aggregated JMS telemetry.</p>
+          <h3 className="chart-title">Live Messaging</h3>
+          <p className="server-telemetry-subtitle">Live message throughput, request-reply latency, and consumer lag from aggregated messaging telemetry (JMS, Kafka, Event Hubs).</p>
           {jmsMessagingProfiles.length > 0 && (
             <div className="server-telemetry-grid">
               {jmsMessagingProfiles.map((profile) => (
@@ -690,6 +699,7 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
                 <th>Avg Receive Rate</th>
                 <th>Msg Latency</th>
                 <th>Lag</th>
+                <th>Offset Lag</th>
                 <th>Target</th>
               </tr>
             </thead>
@@ -703,6 +713,7 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
                   <td>{formatTelemetryValue(tx.server_telemetry?.avg_messages_received_per_sec, ' msg/s')}</td>
                   <td>{formatTelemetryValue(tx.server_telemetry?.avg_message_latency_ms, ' ms')}</td>
                   <td>{formatTelemetryValue(tx.server_telemetry?.avg_consumer_lag_ms, ' ms')}</td>
+                  <td>{formatTelemetryValue(tx.server_telemetry?.avg_consumer_offset_lag, ' msgs')}</td>
                   <td>{tx.dependency_target || tx.dependency_type || 'jms'}</td>
                 </tr>
               ))}

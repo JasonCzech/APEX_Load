@@ -650,7 +650,7 @@ describe('TestExecutionSummary', () => {
 			)
 		})
 
-		expect(container.textContent).toContain('Live JMS Payload Hotspots')
+		expect(container.textContent).toContain('Live Messaging Payload Hotspots')
 		expect(container.textContent).toContain('Largest Request Payload')
 		expect(container.textContent).toContain('PublishOrder')
 		expect(container.textContent).toContain('6.50 KB')
@@ -663,18 +663,18 @@ describe('TestExecutionSummary', () => {
 		expect(container.textContent).toContain('42.0 ms')
 		expect(container.textContent).toContain('orders.in')
 		expect(container.textContent).toContain('quotes.rpc')
-		expect(container.textContent).toContain('Live JMS Payload Distribution')
+		expect(container.textContent).toContain('Live Messaging Payload Distribution')
 		expect(container.textContent).toContain('small')
 		expect(container.textContent).toContain('medium')
 		expect(container.textContent).toContain('17')
 		expect(container.textContent).toContain('32')
-		expect(container.textContent).toContain('Live JMS Payload Histogram')
+		expect(container.textContent).toContain('Live Messaging Payload Histogram')
 		expect(container.textContent).toContain('0-1 KB')
 		expect(container.textContent).toContain('1-4 KB')
 		expect(container.textContent).toContain('4-16 KB')
 		expect(container.textContent).toContain('13')
 		expect(container.textContent).toContain('34')
-		expect(container.textContent).toContain('Live JMS Messaging')
+		expect(container.textContent).toContain('Live Messaging')
 		expect(container.textContent).toContain('Highest Message Latency')
 		expect(container.textContent).toContain('95.0 ms')
 		expect(container.textContent).toContain('Fastest Producer Rate')
@@ -701,6 +701,71 @@ describe('TestExecutionSummary', () => {
 		expect(container.textContent).toContain('Latest Avg Lag')
 		expect(container.textContent).toContain('45.0 ms')
 		expect(container.textContent).toContain('Window Peak')
+	})
+
+	it('renders Kafka transactions in the generalized messaging panels with offset lag', async () => {
+		const kafkaProduce: TxMetrics = {
+			name: 'ProduceOrders',
+			dependency_type: 'kafka_topic',
+			dependency_target: 'orders.events',
+			count: 10,
+			errors: 0,
+			avg_ms: 40,
+			p50_ms: 35,
+			p90_ms: 55,
+			p99_ms: 80,
+			server_telemetry: {
+				samples: 10,
+				avg_transfer_ms: 8,
+				avg_request_payload_kb: 2.5,
+				request_payload_histogram: { '1-4 KB': 10 },
+				messages_sent: 10,
+				avg_messages_sent_per_sec: 20,
+				request_size_classes: { small: 10 },
+			},
+		}
+		const kafkaConsume: TxMetrics = {
+			name: 'ConsumeOrders',
+			dependency_type: 'kafka_consumer_group',
+			dependency_target: 'orders.events',
+			count: 8,
+			errors: 0,
+			avg_ms: 30,
+			p50_ms: 28,
+			p90_ms: 44,
+			p99_ms: 60,
+			server_telemetry: {
+				samples: 8,
+				avg_transfer_ms: 6,
+				avg_response_payload_kb: 2.2,
+				response_payload_histogram: { '1-4 KB': 8 },
+				messages_received: 8,
+				avg_messages_received_per_sec: 16,
+				avg_consumer_lag_ms: 12,
+				avg_consumer_offset_lag: 42,
+				max_consumer_offset_lag: 90,
+				response_size_classes: { small: 8 },
+			},
+		}
+
+		await act(async () => {
+			root.render(
+				<TestExecutionSummary
+					transactions={[kafkaProduce, kafkaConsume]}
+					metrics={{ p50_ms: 30, p90_ms: 50, p95_ms: 60, p99_ms: 80 }}
+				/>,
+			)
+		})
+
+		// Kafka now renders in the generalized (no longer JMS-only) messaging panels.
+		expect(container.textContent).toContain('Live Messaging Payload Hotspots')
+		expect(container.textContent).toContain('Live Messaging')
+		expect(container.textContent).toContain('ProduceOrders')
+		expect(container.textContent).toContain('ConsumeOrders')
+		expect(container.textContent).toContain('orders.events')
+		// The new offset-lag telemetry is surfaced.
+		expect(container.textContent).toContain('Offset Lag')
+		expect(container.textContent).toContain('42.0 msgs')
 	})
 
 	it('renders WebSocket and gRPC stream telemetry when protocol message metrics are available', async () => {

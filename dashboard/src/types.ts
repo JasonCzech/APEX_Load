@@ -873,6 +873,8 @@ export interface ServerTelemetrySummary {
   avg_messages_received_per_sec?: number
   avg_consumer_lag_ms?: number
   max_consumer_lag_ms?: number
+  avg_consumer_offset_lag?: number
+  max_consumer_offset_lag?: number
   avg_first_event_ms?: number
   max_first_event_ms?: number
   event_count?: number
