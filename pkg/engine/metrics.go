@@ -20,6 +20,7 @@ type MetricsCollector struct {
 	done              chan struct{}
 	targetTPS         float64
 	groupTargetTPS    map[string]float64
+	groupActiveFn     func() map[string]int
 }
 
 const throughputGapAlertThresholdPct = 5.0
@@ -265,6 +266,16 @@ func (mc *MetricsCollector) SetActiveVUsers(n int64) {
 	mc.current.activeVUsers.Store(n)
 }
 
+// SetGroupActiveVUsersProvider registers a callback the collector invokes once
+// per snapshot to obtain live per-group active VUser counts. The multi-group
+// engine registers this so group-scoped metrics (and the load-impact x-axis when
+// group-filtered) reflect the live ramp instead of static configured counts.
+func (mc *MetricsCollector) SetGroupActiveVUsersProvider(fn func() map[string]int) {
+	mc.targetsMu.Lock()
+	mc.groupActiveFn = fn
+	mc.targetsMu.Unlock()
+}
+
 func (mc *MetricsCollector) Start(interval time.Duration) {
 	go mc.aggregate(interval)
 }
@@ -409,6 +420,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	for name, target := range mc.groupTargetTPS {
 		groupTargets[name] = target
 	}
+	groupActiveFn := mc.groupActiveFn
 	mc.targetsMu.RUnlock()
 
 	var totalDuration time.Duration
@@ -588,6 +600,20 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			gm.DurationDigest = &digestSnapshot
 		}
 		applyThroughputGap(&gm.TPS, gm.TargetTPS, &gm.ThroughputGapPct, &gm.ThroughputTargetMissed)
+	}
+	// Attach live per-group active VUser counts so group-scoped views (and the
+	// load-impact x-axis when group-filtered) follow the live ramp rather than
+	// static configured counts. Adds active groups that produced no results in
+	// this window so they are still counted when selected.
+	if groupActiveFn != nil {
+		for name, active := range groupActiveFn() {
+			gm, ok := snap.ByGroup[name]
+			if !ok {
+				gm = &GroupMetrics{Name: name}
+				snap.ByGroup[name] = gm
+			}
+			gm.ActiveVUsers = int64(active)
+		}
 	}
 	for name, am := range snap.ByAction {
 		finalizeActionMetrics(am, actionDurationSum[name], actionDigests[name])

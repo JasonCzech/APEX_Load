@@ -28,6 +28,17 @@ func copyErrorClassCounts(in map[string]int64) map[string]int64 {
 	return out
 }
 
+// groupActiveVUsers prefers the engine's live per-group active count so
+// group-scoped metrics follow the live ramp; it falls back to the configured
+// group size when the live count is unavailable (e.g. an engine that does not
+// report per-group counts).
+func groupActiveVUsers(gm *engine.GroupMetrics, configured int) int {
+	if gm != nil && gm.ActiveVUsers > 0 {
+		return int(gm.ActiveVUsers)
+	}
+	return configured
+}
+
 func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[string]int) *LiveMetrics {
 	live := &LiveMetrics{
 		Timestamp:              snap.Timestamp,
@@ -125,7 +136,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 	for name, gm := range snap.ByGroup {
 		live.GroupMetrics[name] = &GroupLiveMetrics{
 			Name:                   name,
-			VUsers:                 groupVUsers[name],
+			VUsers:                 groupActiveVUsers(gm, groupVUsers[name]),
 			Transactions:           gm.Transactions,
 			Errors:                 gm.Errors,
 			TPS:                    gm.TPS,

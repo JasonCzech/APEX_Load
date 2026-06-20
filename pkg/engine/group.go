@@ -103,13 +103,27 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 			cfg.Groups[i].Name = g.Script.Name
 		}
 	}
-	return &MultiGroupEngine{
+	mge := &MultiGroupEngine{
 		groups:       cfg.Groups,
 		duration:     cfg.Duration,
 		preBaseline:  cfg.PreBaseline,
 		postBaseline: cfg.PostBaseline,
 		metrics:      NewMetricsCollector(10000),
-	}, nil
+	}
+	mge.metrics.SetGroupActiveVUsersProvider(mge.activeVUserCountByGroup)
+	return mge, nil
+}
+
+// activeVUserCountByGroup returns the live active VUser count per group, derived
+// from the live vuser→group map. Safe to call concurrently with spawn/teardown.
+func (mge *MultiGroupEngine) activeVUserCountByGroup() map[string]int {
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+	counts := make(map[string]int, len(mge.groups))
+	for _, group := range mge.vuserGroups {
+		counts[group]++
+	}
+	return counts
 }
 
 func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, error) {

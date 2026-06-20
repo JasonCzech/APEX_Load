@@ -685,6 +685,41 @@ func assertWithinRange(t *testing.T, name string, got, lo, hi time.Duration) {
 	}
 }
 
+func TestComputeSnapshotPerGroupActiveVUsers(t *testing.T) {
+	mc := NewMetricsCollector(100)
+	// Group C is active but produced no results in this window.
+	mc.SetGroupActiveVUsersProvider(func() map[string]int {
+		return map[string]int{"A": 7, "B": 3, "C": 5}
+	})
+	results := []*protocol.Result{
+		{BusinessTransaction: true, Success: true, Group: "A", Duration: 10 * time.Millisecond},
+		{BusinessTransaction: true, Success: true, Group: "B", Duration: 20 * time.Millisecond},
+	}
+	snap := mc.computeSnapshot(results, time.Second)
+
+	if snap.ByGroup["A"] == nil || snap.ByGroup["A"].ActiveVUsers != 7 {
+		t.Fatalf("group A active vusers = %#v, want 7", snap.ByGroup["A"])
+	}
+	if snap.ByGroup["B"] == nil || snap.ByGroup["B"].ActiveVUsers != 3 {
+		t.Fatalf("group B active vusers = %#v, want 3", snap.ByGroup["B"])
+	}
+	// Active-but-resultless group is still surfaced so it is counted when selected.
+	if snap.ByGroup["C"] == nil || snap.ByGroup["C"].ActiveVUsers != 5 {
+		t.Fatalf("group C active vusers = %#v, want 5 (active with no results)", snap.ByGroup["C"])
+	}
+}
+
+func TestActiveVUserCountByGroup(t *testing.T) {
+	mge := &MultiGroupEngine{
+		groups:      []GroupConfig{{Name: "A"}, {Name: "B"}},
+		vuserGroups: map[int]string{1: "A", 2: "A", 3: "B"},
+	}
+	counts := mge.activeVUserCountByGroup()
+	if counts["A"] != 2 || counts["B"] != 1 {
+		t.Fatalf("per-group active counts = %#v, want A:2 B:1", counts)
+	}
+}
+
 func TestComputeSnapshotNetworkPhasesAndErrorClasses(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	base := protocol.Result{
