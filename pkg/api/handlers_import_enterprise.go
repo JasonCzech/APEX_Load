@@ -86,6 +86,7 @@ func (s *Server) handleEnterpriseArchiveSupportMatrix(w http.ResponseWriter, r *
 		"web2_fixture_contract":     trueclient.Web2FixtureContracts(),
 		"protocol_support_matrix":   protocolBundleSupportMatrix(),
 		"web_http_function_matrix":  enterprisearchive.WebHTTPFunctionCoverage(),
+		"java_lr_function_matrix":   enterprisearchive.JavaLRFunctionCoverage(),
 		"source_protocol_matrix": []map[string]any{{
 			"canonical_source_protocol": "java_jms_solace",
 			"display_name":              "Java JMS/Solace",

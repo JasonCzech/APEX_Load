@@ -1,0 +1,22 @@
+# OpenText/Micro Focus VuGen 26.1 Java Vuser lr API (lrapi.lr) supplement.
+# Authoritative source: Function Reference > "Alphabetical Listing - Java Utility Functions".
+# Format: name,family,support_mode
+#
+# This file holds ONLY the Java lr methods that have NO snake_case twin in the C
+# baseline (source_c_functions_26_1.txt). The 40 Java lr methods that DO match a C
+# function (lr.start_transaction↔lr_start_transaction, ...) are resolved through the
+# shared C registry by name-normalization in java_import.go and are deliberately not
+# duplicated here (a test enforces this file stays disjoint from the C baseline).
+lr_deserialize,parameter,review_only
+lr_enable_redirection,runtime,native_noop
+lr_eval_data,parameter,review_only
+lr_eval_int,parameter,executable
+lr_get_group_name,info,executable
+lr_get_object,parameter,review_only
+lr_get_scenario_id,info,executable
+lr_get_vuser_id,info,executable
+lr_log,message,executable
+lr_read_xml,xml,review_only
+lr_redirect,runtime,native_noop
+lr_save_data,parameter,review_only
+lr_value_check,parameter,review_only

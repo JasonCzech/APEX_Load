@@ -1,6 +1,9 @@
-// Command webcoverage generates docs/LOADRUNNER_WEB_FUNCTION_COVERAGE.md from the
-// embedded Web (HTTP/HTML) function registry and the code-owned coverage detail
-// map in pkg/convert/enterprisearchive. Run via `go generate ./pkg/convert/enterprisearchive`.
+// Command webcoverage generates the LoadRunner import coverage docs from the
+// embedded function registries and the code-owned coverage detail maps in
+// pkg/convert/enterprisearchive. Run via `go generate ./pkg/convert/enterprisearchive`.
+//
+//	-set web  (default) → docs/LOADRUNNER_WEB_FUNCTION_COVERAGE.md
+//	-set java           → docs/LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md
 package main
 
 import (
@@ -12,13 +15,30 @@ import (
 )
 
 func main() {
-	out := flag.String("out", "docs/LOADRUNNER_WEB_FUNCTION_COVERAGE.md", "output markdown path")
+	set := flag.String("set", "web", "coverage set to render: web | java")
+	out := flag.String("out", "", "output markdown path (defaults per set)")
 	flag.Parse()
 
-	content := enterprisearchive.RenderWebHTTPFunctionCoverageMarkdown()
-	if err := os.WriteFile(*out, []byte(content), 0o644); err != nil {
+	var content, defaultOut string
+	switch *set {
+	case "web":
+		content = enterprisearchive.RenderWebHTTPFunctionCoverageMarkdown()
+		defaultOut = "docs/LOADRUNNER_WEB_FUNCTION_COVERAGE.md"
+	case "java":
+		content = enterprisearchive.RenderJavaLRFunctionCoverageMarkdown()
+		defaultOut = "docs/LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md"
+	default:
+		fmt.Fprintf(os.Stderr, "webcoverage: unknown -set %q (want web|java)\n", *set)
+		os.Exit(2)
+	}
+
+	path := *out
+	if path == "" {
+		path = defaultOut
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "webcoverage: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("wrote %s\n", *out)
+	fmt.Printf("wrote %s\n", path)
 }

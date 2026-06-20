@@ -2,6 +2,7 @@ package enterprisearchive
 
 import (
 	"fmt"
+	"math"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -33,6 +34,17 @@ type javaImportState struct {
 	jmsActions         int
 	configReview       int
 	statementCount     int
+
+	// recognizedLRActions counts lr.* methods that resolved to a documented
+	// disposition (so a fully-classified non-JMS lr script can be reported as
+	// "classified, no executable protocol target" rather than "unmapped").
+	recognizedLRActions int
+	// Transaction / think-time state mirrors the C converter loop so Java
+	// transactions feed Stats and downstream actions are grouped, and
+	// lr.think_time feeds the generated think-time distribution.
+	currentTransaction    string
+	currentSubTransaction string
+	thinkTimes            []float64
 }
 
 func ConvertJava(files map[string]string, opts ConvertOptions, detected DetectedProtocol) (*ConvertResult, error) {
@@ -80,6 +92,7 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 		}
 	}
 	attachJavaTruststoreArtifact(result, files)
+	applyJavaThinkTimeDistribution(result, state)
 
 	if opts.AllowJavaVuserRunner && (state.jmsActions == 0 || state.unrecognizedAction > 0 || state.configReview > 0) {
 		return convertJavaVuserRunnerDraft(files, opts, detected, program, result.Warnings, state), nil
@@ -95,8 +108,16 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 			"jms_actions":                    state.jmsActions,
 			"unrecognized_action_statements": state.unrecognizedAction,
 			"configuration_review_items":     state.configReview,
+			"recognized_lr_actions":          state.recognizedLRActions,
 		})
-		result.Warnings = append(result.Warnings, "Java Vuser import produced a partial JMS draft and remains review-only until unmapped statements are resolved.")
+		// Distinguish "every statement classified but no executable protocol
+		// target" (a pure lr.* script) from genuinely unmapped statements, so the
+		// warning is honest rather than alarming.
+		if state.unrecognizedAction == 0 && state.configReview == 0 && state.recognizedLRActions > 0 {
+			result.Warnings = append(result.Warnings, "Java Vuser import classified every lr.* statement, but the script has no executable APEX protocol target (no JMS actions); it remains review-only.")
+		} else {
+			result.Warnings = append(result.Warnings, "Java Vuser import produced a partial JMS draft and remains review-only until unmapped statements are resolved.")
+		}
 	} else {
 		detected.ImportMode = ImportModeExecutable
 		detected.APEXLoadProtocol = "jms"
@@ -270,11 +291,12 @@ func convertJavaStatement(result *ConvertResult, state *javaImportState, files m
 	if convertJavaMessageProperty(result, state, files, matchStatement) {
 		return nil
 	}
-	if action, ok := convertJavaLRCall(matchStatement); ok {
-		appendJavaAction(result, matchStatement, phase, action, SourceFunctionSupportExecutable, "Mapped Java lr.* call to source-compatible engine action.")
+	if fn, ok := javaLRToParsedFunction(matchStatement, phase); ok {
+		routeJavaLRFunction(result, state, phase, matchStatement, fn)
 		return nil
 	}
 	if action, ok := convertJavaJMSAction(state, files, matchStatement); ok {
+		applyJavaTransactionMetadata(&action, state)
 		appendJavaAction(result, matchStatement, phase, action, SourceFunctionSupportExecutable, "Mapped Java JMS API idiom to native JMS action.")
 		state.jmsActions++
 		return nil
@@ -440,39 +462,140 @@ func convertJavaMessageProperty(result *ConvertResult, state *javaImportState, f
 	return true
 }
 
-func convertJavaLRCall(statement javaStatement) (dsl.Action, bool) {
+// javaLRToParsedFunction turns a matched Java `lr.<method>(args)` statement into a
+// synthetic ParsedFunction so the Java path can reuse the hardened C lr_*
+// registry + family router (lookupSourceFunction / convertSourceFunctionAction)
+// instead of the old coarse name-substring mapping. The LR Java API is snake_case
+// and 1:1 with the C functions, so lr.start_transaction -> lr_start_transaction.
+func javaLRToParsedFunction(statement javaStatement, phase string) (ParsedFunction, bool) {
 	matches := javaLRCallRe.FindStringSubmatch(statement.Text)
 	if len(matches) != 3 {
-		return dsl.Action{}, false
+		return ParsedFunction{}, false
 	}
-	name := "lr_" + javaLRFunctionName(matches[1])
-	args := javaArgsToAny(splitJavaArgs(matches[2]))
-	actionType := "source_review"
-	switch {
-	case strings.Contains(name, "transaction"):
-		actionType = "source_transaction"
-	case strings.Contains(name, "save") || strings.Contains(name, "param"):
-		actionType = "source_parameter"
-	case strings.Contains(name, "message"):
-		actionType = "source_message"
-	case strings.Contains(name, "timer"):
-		actionType = "source_timer"
-	case strings.Contains(name, "think_time") || strings.Contains(name, "exit") || strings.Contains(name, "abort"):
-		actionType = "source_runtime"
+	fn := ParsedFunction{
+		Name:       "lr_" + javaLRFunctionName(matches[1]),
+		Phase:      phase,
+		Filename:   statement.File,
+		LineNumber: statement.StartLine,
+		EndLine:    statement.EndLine,
+		Args:       map[string]string{},
+		Headers:    map[string]string{},
 	}
-	return dsl.Action{
-		Name: sanitizeName(convertutil.FirstNonEmpty(javaFirstStringArg(args), name)),
-		Type: actionType,
-		Params: map[string]any{
-			"function": name,
-			"args":     args,
-		},
-		Metadata: map[string]any{
-			"source":      "java_lr_function",
-			"source_file": statement.File,
-			"source_line": statement.StartLine,
-		},
-	}, true
+	rawArgs := splitJavaArgs(matches[2])
+	for i, raw := range rawArgs {
+		fn.RawArgs = append(fn.RawArgs, strings.TrimSpace(raw))
+		fn.Args[fmt.Sprintf("arg%d", i+1)] = javaArgToSourceArg(raw)
+	}
+	fn.StepName = javaLRStepName(rawArgs)
+	// lr.think_time(n): expose the seconds value under the key the shared
+	// ExtractThinkTimeSeconds() helper reads (the C parser sets it directly).
+	if fn.Name == "lr_think_time" && len(rawArgs) > 0 {
+		fn.Args["seconds"] = strings.TrimSpace(cleanConfigValue(rawArgs[0]))
+	}
+	return fn, true
+}
+
+// routeJavaLRFunction classifies one lr.* call through the shared registry and
+// applies stateful transaction/think-time parity. Unknown lr methods are
+// preserved for review (never custom_call).
+func routeJavaLRFunction(result *ConvertResult, state *javaImportState, phase string, statement javaStatement, fn ParsedFunction) {
+	if _, ok := lookupSourceFunction(fn.Name); !ok {
+		appendJavaLRReview(result, state, statement, phase, fn)
+		return
+	}
+	state.recognizedLRActions++
+
+	// Stateful parity with the C converter loop (converter.go): feed the
+	// transaction counters and think-time distribution so Java transactions
+	// behave like C transactions rather than being inert markers.
+	switch fn.Name {
+	case "lr_start_transaction":
+		state.currentTransaction = fn.StepName
+		state.currentSubTransaction = ""
+		result.Stats.Transactions++
+		result.Stats.TransactionMarkers++
+	case "lr_end_transaction":
+		result.Stats.TransactionMarkers++
+		state.currentTransaction = ""
+		state.currentSubTransaction = ""
+	case "lr_start_sub_transaction":
+		state.currentSubTransaction = fn.StepName
+		result.Stats.TransactionMarkers++
+	case "lr_end_sub_transaction":
+		result.Stats.TransactionMarkers++
+		state.currentSubTransaction = ""
+	case "lr_think_time":
+		if sec, ok := ExtractThinkTimeSeconds(fn); ok {
+			state.thinkTimes = append(state.thinkTimes, sec)
+			result.Stats.ThinkTimes++
+		}
+	}
+
+	action, mode, _ := convertSourceFunctionAction(fn)
+	applyJavaTransactionMetadata(&action, state)
+	appendJavaLRAction(result, statement, phase, fn, action, mode, sourceSupportNotes(fn, mode))
+}
+
+// applyJavaTransactionMetadata stamps the open source transaction onto an action
+// so the dashboard can group Java actions like the C importer groups requests.
+func applyJavaTransactionMetadata(action *dsl.Action, state *javaImportState) {
+	if state.currentTransaction == "" {
+		return
+	}
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
+	action.Metadata["source_transaction"] = state.currentTransaction
+	if state.currentSubTransaction != "" {
+		action.Metadata["source_subtransaction"] = state.currentSubTransaction
+	}
+}
+
+// appendJavaLRAction records the action plus a SourceReview mapping keyed by the
+// real lr_ function name (not the generic "java_statement") so per-method
+// coverage is visible and the completeness test can assert each method's mode.
+func appendJavaLRAction(result *ConvertResult, statement javaStatement, phase string, fn ParsedFunction, action dsl.Action, mode SourceFunctionSupportMode, notes string) {
+	index := actionCountForPhase(result.Script, phase)
+	appendSourceReviewMapping(result, SourceReviewMapping{
+		SourceFile:  statement.File,
+		StartLine:   statement.StartLine,
+		EndLine:     statement.EndLine,
+		Function:    fn.Name,
+		TargetPath:  sourceReviewActionPath(phase, index),
+		TargetName:  action.Name,
+		TargetKind:  "action",
+		Status:      statusForSupportMode(mode),
+		SupportMode: string(mode),
+		Notes:       notes,
+	})
+	appendActionForPhase(result.Script, phase, action)
+	result.Stats.ConvertedActions++
+	recordSourceFunctionSupport(result, mode)
+}
+
+// appendJavaLRReview preserves an unrecognized lr.* method for manual review
+// (keyed by its name) rather than emitting a custom_call stub.
+func appendJavaLRReview(result *ConvertResult, state *javaImportState, statement javaStatement, phase string, fn ParsedFunction) {
+	action := javaSourceReviewAction(statement, phase, "unrecognized_lr_method")
+	index := actionCountForPhase(result.Script, phase)
+	appendSourceReviewMapping(result, SourceReviewMapping{
+		SourceFile:  statement.File,
+		StartLine:   statement.StartLine,
+		EndLine:     statement.EndLine,
+		Function:    fn.Name,
+		TargetPath:  sourceReviewActionPath(phase, index),
+		TargetName:  action.Name,
+		TargetKind:  "action",
+		Status:      "review_only",
+		SupportMode: string(SourceFunctionSupportReviewOnly),
+		Notes:       "Unrecognized lr.* method preserved for manual review.",
+	})
+	appendActionForPhase(result.Script, phase, action)
+	result.Stats.ConvertedActions++
+	recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
+	if phase == "action" {
+		state.unrecognizedAction++
+	}
 }
 
 func javaLRFunctionName(name string) string {
@@ -486,21 +609,57 @@ func javaLRFunctionName(name string) string {
 	return strings.ToLower(b.String())
 }
 
-func javaArgsToAny(args []string) []any {
-	out := make([]any, 0, len(args))
-	for _, arg := range args {
-		if value, ok := parseJavaStringLiteral(arg); ok {
-			out = append(out, convertParamReferences(value))
-			continue
-		}
-		out = append(out, strings.TrimSpace(arg))
+// javaArgToSourceArg renders one Java lr argument as a source-arg string: string
+// literals are unquoted + parameter-converted, a nested lr.eval_string("{x}") is
+// unwrapped to {{var.x}}, and everything else (variables, enum constants like
+// lr.AUTO) passes through trimmed.
+func javaArgToSourceArg(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if value, ok := parseJavaStringLiteral(raw); ok {
+		return convertParamReferences(value)
 	}
-	return out
+	if inner, ok := unwrapJavaEvalString(raw); ok {
+		return inner
+	}
+	return raw
 }
 
-func javaFirstStringArg(args []any) string {
-	for _, arg := range args {
-		if value, ok := arg.(string); ok && strings.TrimSpace(value) != "" && !strings.ContainsAny(value, "()") {
+func unwrapJavaEvalString(raw string) (string, bool) {
+	m := javaLRCallRe.FindStringSubmatch(strings.TrimSpace(raw))
+	if len(m) != 3 || javaLRFunctionName(m[1]) != "eval_string" {
+		return "", false
+	}
+	inner := splitJavaArgs(m[2])
+	if len(inner) == 0 {
+		return "", false
+	}
+	if value, ok := parseJavaStringLiteral(inner[0]); ok {
+		return convertParamReferences(value), true
+	}
+	return "", false
+}
+
+// applyJavaThinkTimeDistribution turns the collected lr.think_time values into a
+// normal think-time distribution on the script config, mirroring the C converter.
+func applyJavaThinkTimeDistribution(result *ConvertResult, state *javaImportState) {
+	if result.Script == nil || len(state.thinkTimes) == 0 {
+		return
+	}
+	mean, std := computeThinkTimeStats(state.thinkTimes)
+	result.Script.Config.ThinkTime = dsl.ThinkTimeConfig{
+		Type:   "normal",
+		MeanMs: mean * 1000,
+		StdMs:  std * 1000,
+		MinMs:  math.Max(0, (mean-2*std)*1000),
+		MaxMs:  (mean + 2*std) * 1000,
+	}
+}
+
+// javaLRStepName returns the first string-literal argument (the transaction/step
+// name), skipping enum constants like lr.AUTO so they never become a step name.
+func javaLRStepName(rawArgs []string) string {
+	for _, raw := range rawArgs {
+		if value, ok := parseJavaStringLiteral(raw); ok {
 			return value
 		}
 	}

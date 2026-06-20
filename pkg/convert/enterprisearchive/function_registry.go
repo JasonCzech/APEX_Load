@@ -30,6 +30,9 @@ var sapGUIFunctionRegistryText string
 //go:embed testdata/web_http_functions_26_1.txt
 var webHTTPFunctionRegistryText string
 
+//go:embed testdata/java_lr_functions_26_1.txt
+var javaLRFunctionRegistryText string
+
 var sourceFunctionRegistry = parseSourceFunctionRegistry(sourceFunctionRegistryText + "\n" + sapGUIFunctionRegistryText)
 
 // webHTTPFunctionRegistry is the complete published LoadRunner Web (HTTP/HTML)
@@ -38,12 +41,22 @@ var sourceFunctionRegistry = parseSourceFunctionRegistry(sourceFunctionRegistryT
 // utility functions, while lookupSourceFunction transparently resolves both.
 var webHTTPFunctionRegistry = parseSourceFunctionRegistry(webHTTPFunctionRegistryText)
 
+// javaLRFunctionRegistry holds the Java-only lrapi.lr methods that have no
+// snake_case twin in the C baseline. The 40 lr methods shared with C resolve
+// through sourceFunctionRegistry; this supplement covers the Java-specific
+// remainder (lr.eval_int, lr.save_data, lr.value_check, ...). Kept separate and
+// test-enforced disjoint from the C baseline.
+var javaLRFunctionRegistry = parseSourceFunctionRegistry(javaLRFunctionRegistryText)
+
 func lookupSourceFunction(name string) (SourceFunctionDefinition, bool) {
 	key := strings.ToLower(strings.TrimSpace(name))
 	if def, ok := sourceFunctionRegistry[key]; ok {
 		return def, true
 	}
-	def, ok := webHTTPFunctionRegistry[key]
+	if def, ok := webHTTPFunctionRegistry[key]; ok {
+		return def, true
+	}
+	def, ok := javaLRFunctionRegistry[key]
 	return def, ok
 }
 
@@ -60,6 +73,17 @@ func allSourceFunctionDefinitions() []SourceFunctionDefinition {
 func allWebHTTPFunctionDefinitions() []SourceFunctionDefinition {
 	defs := make([]SourceFunctionDefinition, 0, len(webHTTPFunctionRegistry))
 	for _, def := range webHTTPFunctionRegistry {
+		defs = append(defs, def)
+	}
+	return defs
+}
+
+// allJavaLRSupplementDefinitions returns the Java-only lr supplement definitions
+// (used by the disjointness test). The full published Java lr surface also
+// includes the 40 methods shared with the C baseline; see allJavaLRFunctionNames.
+func allJavaLRSupplementDefinitions() []SourceFunctionDefinition {
+	defs := make([]SourceFunctionDefinition, 0, len(javaLRFunctionRegistry))
+	for _, def := range javaLRFunctionRegistry {
 		defs = append(defs, def)
 	}
 	return defs
