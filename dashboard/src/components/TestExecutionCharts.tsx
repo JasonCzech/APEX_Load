@@ -57,6 +57,10 @@ import {
   loadImpactPercentilesChart,
   loadImpactChartDataForRow,
   loadImpactChartId,
+  aggregateByGranularity,
+  autoGranularitySeconds,
+  granularityOptionLabel,
+  GRANULARITY_OPTIONS,
   loadImpactPercentileChartData,
   normalizedChartOrder,
   overlayMetricMenuLabels,
@@ -68,6 +72,7 @@ import {
   routeLatencySeriesKeys,
   sameStringArray,
   sameStringSet,
+  sortMetricTableRows,
   rawGraphMetricKey,
   shouldRenderArtStdDevBands,
   smoothingRadiusForGraphDensity,
@@ -78,7 +83,10 @@ import {
   type ChartDensityMode,
   type ChartDomain,
   type ChartMetricRow,
+  type ChartMetricSummary,
   type ChartTimeAxisMode,
+  type MetricTableSort,
+  type MetricTableSortKey,
   type OverlayMetricKey,
   type ResponseTimeNetworkMode,
   type RouteLatencyMode,
@@ -432,6 +440,7 @@ export default function TestExecutionCharts({
   const responseTimeNetworkModeStorageKey = storageKeyFor('responseTimeNetworkMode')
   const artStdDevBandsStorageKey = storageKeyFor('artStdDevBands')
   const routeLatencyModeStorageKey = storageKeyFor('routeLatencyMode')
+  const chartGranularityStorageKey = storageKeyFor('chartGranularity')
   const [hasStoredChartState] = useState(() => Boolean(readStoredString(chartOrderStorageKey) || readStoredString(hiddenChartsStorageKey)))
   const [initialPresetApplied, setInitialPresetApplied] = useState(false)
   const [localActiveCursor, setLocalActiveCursor] = useState<GraphCursorState | null>(null)
@@ -454,6 +463,12 @@ export default function TestExecutionCharts({
   const [responseTimeNetworkMode, setResponseTimeNetworkMode] = useState<ResponseTimeNetworkMode>(() => readStoredResponseTimeNetworkMode(responseTimeNetworkModeStorageKey))
   const [artStdDevBandsEnabled, setArtStdDevBandsEnabled] = useState(() => readStoredString(artStdDevBandsStorageKey) === 'true')
   const [routeLatencyMode, setRouteLatencyMode] = useState<RouteLatencyMode>(() => readStoredRouteLatencyMode(routeLatencyModeStorageKey))
+  const [granularitySeconds, setGranularitySeconds] = useState<number>(() => {
+    const stored = Number(readStoredString(chartGranularityStorageKey))
+    return Number.isFinite(stored) && stored >= 0 ? stored : 0
+  })
+  const [tableSortByChart, setTableSortByChart] = useState<Record<string, MetricTableSort>>({})
+  const [selectedMetricByChart, setSelectedMetricByChart] = useState<Record<string, string | null>>({})
   const [localActiveGraphGroupTab, setLocalActiveGraphGroupTab] = useState<GraphGroupTabId>('test_results')
   const [selectedRouteLatencyKey, setSelectedRouteLatencyKey] = useState('')
   const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
@@ -602,6 +617,10 @@ export default function TestExecutionCharts({
   }, [downsampleChartsStorageKey, downsampleDenseCharts])
 
   useEffect(() => {
+    writeStoredString(chartGranularityStorageKey, String(granularitySeconds))
+  }, [chartGranularityStorageKey, granularitySeconds])
+
+  useEffect(() => {
     writeStoredString(responseTimeNetworkModeStorageKey, responseTimeNetworkMode)
   }, [responseTimeNetworkMode, responseTimeNetworkModeStorageKey])
 
@@ -692,6 +711,21 @@ export default function TestExecutionCharts({
       ? responseTimeDataWithoutNetworkLatency(filteredData, latencyKeys, groupNames)
       : filteredData,
     [filteredData, groupNames, latencyKeys, responseTimeNetworkMode],
+  )
+  // Display granularity: averages the live series into time buckets (Auto adapts
+  // to the visible span). Applied only to the time-series charts; load-impact and
+  // Prometheus charts keep their own cadence.
+  const granularityBucketSeconds = useMemo(
+    () => (granularitySeconds > 0 ? granularitySeconds : autoGranularitySeconds(filteredData)),
+    [granularitySeconds, filteredData],
+  )
+  const granularBaseData = useMemo(
+    () => aggregateByGranularity(filteredData, granularityBucketSeconds),
+    [filteredData, granularityBucketSeconds],
+  )
+  const granularResponseTimeData = useMemo(
+    () => aggregateByGranularity(responseTimeChartData, granularityBucketSeconds),
+    [responseTimeChartData, granularityBucketSeconds],
   )
   const relativeTimeByClockLabel = useMemo(() => {
     const labels = new Map<string, number>()
@@ -809,7 +843,7 @@ export default function TestExecutionCharts({
     if (isPrometheusChart(chart)) {
       return prometheusChartDataById.get(chart.id) ?? []
     }
-    return chart.id === 'latency' ? responseTimeChartData : filteredData
+    return chart.id === 'latency' ? granularResponseTimeData : granularBaseData
   }
   const sharedCursor = activeCursor !== undefined ? activeCursor : localActiveCursor
   const updateSharedCursor = (cursor: GraphCursorState | null) => {
@@ -1039,6 +1073,30 @@ export default function TestExecutionCharts({
       if (nextKeys.length === 0) return prev
       return { ...prev, [chart.id]: nextKeys }
     })
+  }
+
+  // Click a measurement-table header to sort by that column. First click on a
+  // value column sorts descending (largest first); the name column sorts A→Z. A
+  // third click on the active column clears the sort (natural order).
+  const cycleTableSort = (chartId: string, key: MetricTableSortKey) => {
+    const firstDirection = key === 'metric' ? 'asc' : 'desc'
+    setTableSortByChart(prev => {
+      const current = prev[chartId]
+      if (!current || current.key !== key) {
+        return { ...prev, [chartId]: { key, direction: firstDirection } }
+      }
+      if (current.direction === firstDirection) {
+        return { ...prev, [chartId]: { key, direction: firstDirection === 'asc' ? 'desc' : 'asc' } }
+      }
+      const next = { ...prev }
+      delete next[chartId]
+      return next
+    })
+  }
+
+  // Click a measurement row to highlight its line on the chart; click again to clear.
+  const toggleSelectedMetric = (chartId: string, key: string) => {
+    setSelectedMetricByChart(prev => ({ ...prev, [chartId]: prev[chartId] === key ? null : key }))
   }
 
   const openChartMenu = (event: MouseEvent<HTMLElement>, chartId: string) => {
@@ -1344,6 +1402,24 @@ export default function TestExecutionCharts({
       </div>
       <div className="charts-config-panel-section">
         <div>
+          <h4>Granularity</h4>
+          {renderSectionSubtext('Time-bucket averaging')}
+        </div>
+        <select
+          className="chart-granularity-select"
+          aria-label="Graph granularity"
+          value={granularitySeconds}
+          onChange={event => setGranularitySeconds(Number(event.currentTarget.value))}
+        >
+          {GRANULARITY_OPTIONS.map(option => (
+            <option key={option.value} value={option.value}>
+              {option.value === 0 ? `Auto (${granularityOptionLabel(granularityBucketSeconds)})` : option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="charts-config-panel-section">
+        <div>
           <h4>Display Time</h4>
           {renderSectionSubtext('Graph x-axis labels')}
         </div>
@@ -1598,6 +1674,40 @@ export default function TestExecutionCharts({
     />
   ) : null
 
+  // Bold overlay for the row selected in the measurements table. Drawn on top of
+  // the normal (thinner) series so the chosen line reads as highlighted; keeps the
+  // series' dash so its identity is preserved.
+  const renderSelectedSeriesEmphasis = (
+    chart: ChartConfig,
+    metricRows: ChartMetricRow[],
+    visibleMetricKeys: string[],
+    displayMetricKey: (key: string) => string,
+    yAxisId?: string | number,
+  ) => {
+    const selectedKey = selectedMetricByChart[chart.id]
+    if (!selectedKey || !visibleMetricKeys.includes(selectedKey)) return null
+    const row = metricRows.find(candidate => candidate.key === selectedKey)
+    if (!row) return null
+    const presentation = chartMetricLinePresentation(row)
+    return (
+      <Line
+        yAxisId={yAxisId}
+        type="monotone"
+        dataKey={displayMetricKey(selectedKey)}
+        stroke={row.color}
+        strokeWidth={Math.max(3.5, presentation.strokeWidth + 2)}
+        strokeDasharray={presentation.strokeDasharray}
+        strokeOpacity={1}
+        dot={false}
+        activeDot={false}
+        connectNulls={false}
+        legendType="none"
+        tooltipType="none"
+        isAnimationActive={false}
+      />
+    )
+  }
+
   const renderLatencySeriesLegend = (rows: ChartMetricRow[], visibleMetricKeys: string[], includeArtStdDevBand: boolean) => {
     const visibleRows = rows.filter(row => visibleMetricKeys.includes(row.key))
     const transactionRows = visibleRows.filter(row => row.kind === 'transaction')
@@ -1679,6 +1789,24 @@ export default function TestExecutionCharts({
     }
     const canFilter = rows.length > 1
     const allVisible = visibleMetricKeys.length === rows.length
+    const summaries: Record<string, ChartMetricSummary> = {}
+    rows.forEach(row => { summaries[row.key] = chartMetricSummary(chartData, row.key) })
+    const sort = tableSortByChart[chart.id]
+    const sortedRows = sortMetricTableRows(rows, summaries, sort)
+    const selectedKey = selectedMetricByChart[chart.id] ?? null
+    const sortIndicator = (key: MetricTableSortKey) => (sort?.key === key ? (sort.direction === 'asc' ? ' ▲' : ' ▼') : '')
+    const headerCell = (key: MetricTableSortKey, label: string) => (
+      <th>
+        <button
+          type="button"
+          className={`metric-sort-header${sort?.key === key ? ' active' : ''}`}
+          onClick={() => cycleTableSort(chart.id, key)}
+          aria-label={`Sort by ${label}`}
+        >
+          {label}{sortIndicator(key)}
+        </button>
+      </th>
+    )
     return (
       <div className="chart-metrics-table-wrap">
         <div className="chart-metrics-table-toolbar">
@@ -1693,21 +1821,28 @@ export default function TestExecutionCharts({
           <thead>
             <tr>
               {canFilter && <th className="metric-filter-col">Show</th>}
-              <th>Metric</th>
-              <th>Latest</th>
-              <th>Avg</th>
-              <th>Min</th>
-              <th>Max</th>
+              {headerCell('metric', 'Metric')}
+              {headerCell('latest', 'Latest')}
+              {headerCell('average', 'Avg')}
+              {headerCell('min', 'Min')}
+              {headerCell('max', 'Max')}
             </tr>
           </thead>
           <tbody>
-            {rows.map(row => {
-              const summary = chartMetricSummary(chartData, row.key)
+            {sortedRows.map(row => {
+              const summary = summaries[row.key]
               const visible = visibleMetricKeys.includes(row.key)
+              const selected = selectedKey === row.key
               return (
-                <tr key={row.key} className={visible ? '' : 'muted'}>
+                <tr
+                  key={row.key}
+                  className={`metric-row${visible ? '' : ' muted'}${selected ? ' selected' : ''}`}
+                  aria-selected={selected}
+                  title="Click to highlight this line"
+                  onClick={() => toggleSelectedMetric(chart.id, row.key)}
+                >
                   {canFilter && (
-                    <td className="metric-filter-col">
+                    <td className="metric-filter-col" onClick={event => event.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={visible}
@@ -2202,6 +2337,7 @@ export default function TestExecutionCharts({
                   <Area yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(chart.dataKey)} name="Total" stroke={chart.color!} fill={chartGradientFill(chart, chart.dataKey)} fillOpacity={1} isAnimationActive={false} />
                 )}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
+                {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -2334,6 +2470,7 @@ export default function TestExecutionCharts({
                   <Line key={name} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(`${name}_tps`)} name={name} stroke={groupColors[index % groupColors.length]} dot={false} isAnimationActive={false} />
                 ))}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
+                {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -2397,6 +2534,7 @@ export default function TestExecutionCharts({
                     )
                   })}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
+                {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -2422,6 +2560,7 @@ export default function TestExecutionCharts({
                   <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(key.k)} name={key.n} stroke={key.c} fill={chartGradientFill(chart, key.k)} fillOpacity={1} isAnimationActive={false} connectNulls={false} stackId={chart.type === 'area-stacked' ? (chart.stackId ?? 'stack') : undefined} />
                 ))}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
+                {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -2457,6 +2596,7 @@ export default function TestExecutionCharts({
                   />
                 ))}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
+                {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -2494,6 +2634,7 @@ export default function TestExecutionCharts({
                     />
                   ))}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
+                {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -2521,6 +2662,7 @@ export default function TestExecutionCharts({
                 {showMetric('diskRead') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('diskRead')} name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
                 {showMetric('diskWrite') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('diskWrite')} name="Disk Write" stroke="var(--chart-6)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
+                {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}

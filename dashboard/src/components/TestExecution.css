@@ -1570,7 +1570,8 @@
   line-height: 1;
 }
 
-.route-latency-target-select {
+.route-latency-target-select,
+.chart-granularity-select {
   height: 30px;
   max-width: 220px;
   border: 1px solid var(--border);
@@ -2276,6 +2277,43 @@
 
 .chart-metrics-table tr.muted {
   opacity: 0.48;
+}
+
+.chart-metrics-table .metric-sort-header {
+  appearance: none;
+  background: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: inherit;
+  white-space: nowrap;
+}
+
+.chart-metrics-table .metric-sort-header:hover {
+  color: var(--text-secondary);
+}
+
+.chart-metrics-table .metric-sort-header.active {
+  color: var(--text-primary);
+}
+
+.chart-metrics-table tbody tr.metric-row {
+  cursor: pointer;
+}
+
+.chart-metrics-table tbody tr.metric-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chart-metrics-table tbody tr.metric-row.selected {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .chart-metrics-table .metric-filter-col {

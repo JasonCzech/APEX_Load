@@ -51,6 +51,41 @@ export interface ChartMetricSummary {
   samples: number
 }
 
+export type MetricTableSortKey = 'metric' | 'latest' | 'average' | 'min' | 'max'
+
+export interface MetricTableSort {
+  key: MetricTableSortKey
+  direction: 'asc' | 'desc'
+}
+
+// sortMetricTableRows orders the measurement-table rows by a column (the metric
+// name, or one of the latest/avg/min/max summary values). Rows whose summary
+// value is missing always sort to the bottom regardless of direction. Returns the
+// input array unchanged when no sort is active.
+export function sortMetricTableRows(
+  rows: ChartMetricRow[],
+  summaries: Record<string, ChartMetricSummary>,
+  sort: MetricTableSort | undefined,
+): ChartMetricRow[] {
+  if (!sort) return rows
+  const factor = sort.direction === 'asc' ? 1 : -1
+  const valueFor = (row: ChartMetricRow): number | string | undefined => {
+    if (sort.key === 'metric') return row.label.toLowerCase()
+    return summaries[row.key]?.[sort.key]
+  }
+  return [...rows].sort((left, right) => {
+    const a = valueFor(left)
+    const b = valueFor(right)
+    if (a === undefined && b === undefined) return 0
+    if (a === undefined) return 1
+    if (b === undefined) return -1
+    if (typeof a === 'string' || typeof b === 'string') {
+      return factor * String(a).localeCompare(String(b))
+    }
+    return factor * (a - b)
+  })
+}
+
 export type ChartTimeAxisMode = 'clock' | 'relative'
 export type ChartDensityMode = 'standard' | 'six_up' | 'command_center'
 export type ResponseTimeNetworkMode = 'end_to_end' | 'application'
@@ -668,6 +703,113 @@ export function downsampleGraphData(data: MetricsHistoryPoint[], metricKeys: str
   return Array.from(retainedIndexes)
     .sort((left, right) => left - right)
     .map(index => data[index])
+}
+
+// --- Display granularity (time-bucket averaging) -------------------------------
+// Resamples the live series into fixed-width time buckets, averaging each metric
+// within a bucket (a moving "X-second/minute average"). Distinct from the
+// extrema-preserving downsampler: granularity is a user-facing smoothing control.
+
+export interface GranularityOption {
+  value: number // seconds; 0 = Auto
+  label: string
+}
+
+export const GRANULARITY_OPTIONS: GranularityOption[] = [
+  { value: 0, label: 'Auto' },
+  { value: 1, label: '1s' },
+  { value: 5, label: '5s' },
+  { value: 15, label: '15s' },
+  { value: 30, label: '30s' },
+  { value: 60, label: '1m' },
+  { value: 300, label: '5m' },
+  { value: 900, label: '15m' },
+]
+
+const GRANULARITY_NICE_SECONDS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600]
+const AUTO_GRANULARITY_TARGET_BUCKETS = 600
+// Fields that describe a point's position or are flags, not averageable metrics.
+const NON_AVERAGED_POINT_KEYS = new Set(['timestampMs', 'relativeMs', 'isGapBoundary', 'resourceSampleOnly'])
+
+export function granularityOptionLabel(seconds: number): string {
+  const known = GRANULARITY_OPTIONS.find(option => option.value === seconds)
+  if (known) return known.label
+  if (seconds > 0 && seconds % 3600 === 0) return `${seconds / 3600}h`
+  if (seconds > 0 && seconds % 60 === 0) return `${seconds / 60}m`
+  return `${seconds}s`
+}
+
+// autoGranularitySeconds picks the smallest "nice" interval so the visible span
+// fits within ~AUTO_GRANULARITY_TARGET_BUCKETS buckets — near-native for short
+// windows, lightly coarser for long ones. Adapts to the current zoom because it
+// reads the span of the (already time-filtered) points.
+export function autoGranularitySeconds(points: MetricsHistoryPoint[]): number {
+  const times = points
+    .map(point => point.timestampMs)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  if (times.length < 2) return 1
+  const spanSeconds = (Math.max(...times) - Math.min(...times)) / 1000
+  if (spanSeconds <= 0) return 1
+  const target = spanSeconds / AUTO_GRANULARITY_TARGET_BUCKETS
+  return GRANULARITY_NICE_SECONDS.find(nice => nice >= target) ?? GRANULARITY_NICE_SECONDS[GRANULARITY_NICE_SECONDS.length - 1]
+}
+
+// aggregateByGranularity averages consecutive points that fall in the same
+// [t0, t0+bucket) window. Gap-boundary spacer rows are preserved (and flush the
+// current bucket) so breaks survive. Returns the input unchanged for bucket≤0.
+export function aggregateByGranularity(points: MetricsHistoryPoint[], bucketSeconds: number): MetricsHistoryPoint[] {
+  if (bucketSeconds <= 0 || points.length === 0) return points
+  const bucketMs = bucketSeconds * 1000
+  const result: MetricsHistoryPoint[] = []
+  let bucketKey: number | null = null
+  let group: MetricsHistoryPoint[] = []
+
+  const flush = () => {
+    if (group.length === 0) return
+    if (group.length === 1) {
+      result.push(group[0])
+      group = []
+      return
+    }
+    const sums = new Map<string, { total: number; count: number }>()
+    for (const point of group) {
+      for (const [key, value] of Object.entries(point)) {
+        if (NON_AVERAGED_POINT_KEYS.has(key)) continue
+        if (typeof value === 'number' && Number.isFinite(value)) {
+          const agg = sums.get(key) ?? { total: 0, count: 0 }
+          agg.total += value
+          agg.count += 1
+          sums.set(key, agg)
+        }
+      }
+    }
+    // Anchor on the first point so position fields (time/timestampMs/relativeMs)
+    // and any string fields are retained; overwrite only the averaged metrics.
+    const merged: MetricsHistoryPoint = { ...group[0] }
+    sums.forEach((agg, key) => {
+      merged[key] = Math.round((agg.total / agg.count) * 10) / 10
+    })
+    result.push(merged)
+    group = []
+  }
+
+  for (const point of points) {
+    if (point.isGapBoundary) {
+      flush()
+      result.push(point)
+      bucketKey = null
+      continue
+    }
+    const ts = point.timestampMs
+    const key: number | null = typeof ts === 'number' ? Math.floor(ts / bucketMs) : bucketKey
+    if (bucketKey === null || key !== bucketKey) {
+      flush()
+      bucketKey = key
+    }
+    group.push(point)
+  }
+  flush()
+  return result
 }
 
 function smoothingWeightForOffset(offset: number, radius: number) {

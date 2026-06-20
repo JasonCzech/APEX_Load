@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import type { MetricsHistoryPoint, PrometheusGraph } from '../types'
 import {
+  aggregateByGranularity,
+  autoGranularitySeconds,
+  granularityOptionLabel,
+  sortMetricTableRows,
   ART_STD_DEV_BAND_KEY,
   ART_STD_DEV_VALUE_KEY,
   buildArtStdDevBandData,
@@ -531,5 +535,104 @@ describe('chartStateForMonitorPreset', () => {
     expect(smoothedMetricKeysForChart(routeChart, ['latency_edge', 'latency_success_rate_edge', 'tps'])).toEqual(['latency_edge', 'tps'])
     expect(smoothedMetricKeysForChart(latencyChart, ['avgMs', 'Checkout_avgMs', 'p95', 'vusers'])).toEqual(['avgMs', 'Checkout_avgMs', 'p95'])
     expect(smoothedMetricKeysForChart(ioChart, ['netSent', 'diskRead', 'avgMs'])).toEqual(['netSent', 'diskRead', 'avgMs'])
+  })
+})
+
+describe('display granularity', () => {
+  const point = (timestampMs: number, tps: number, avgMs: number): MetricsHistoryPoint => ({
+    time: new Date(timestampMs).toLocaleTimeString(),
+    timestampMs,
+    vusers: 1,
+    tps,
+    avgMs,
+    errorPct: 0,
+    p50: avgMs,
+    p90: avgMs,
+    p99: avgMs,
+  })
+
+  it('averages points that fall in the same time bucket', () => {
+    const base = 1_000_000
+    const points = [
+      point(base + 0, 10, 100),
+      point(base + 1000, 20, 200),
+      point(base + 2000, 30, 300), // next 5s bucket starts here only if bucket<3s; with 5s all three share a bucket
+    ]
+    const out = aggregateByGranularity(points, 5)
+    expect(out).toHaveLength(1)
+    expect(out[0].tps).toBe(20) // (10+20+30)/3
+    expect(out[0].avgMs).toBe(200)
+    // Position fields anchor on the first point in the bucket.
+    expect(out[0].timestampMs).toBe(base)
+  })
+
+  it('keeps separate buckets and is a no-op when finer than the cadence', () => {
+    const base = 2_000_000
+    const points = [point(base, 10, 100), point(base + 60_000, 40, 400)] // 60s apart
+    // 30s buckets → two distinct buckets, values unchanged.
+    const out = aggregateByGranularity(points, 30)
+    expect(out).toHaveLength(2)
+    expect(out.map(p => p.tps)).toEqual([10, 40])
+    // bucket <= 0 returns input untouched.
+    expect(aggregateByGranularity(points, 0)).toBe(points)
+  })
+
+  it('preserves gap-boundary spacers as breaks between buckets', () => {
+    const base = 3_000_000
+    const points: MetricsHistoryPoint[] = [
+      point(base, 10, 100),
+      point(base + 1000, 20, 200),
+      { time: '', timestampMs: base + 30_000, isGapBoundary: 1 } as unknown as MetricsHistoryPoint,
+      point(base + 60_000, 30, 300),
+    ]
+    const out = aggregateByGranularity(points, 5)
+    // first two average into one point, the spacer survives, then the last point.
+    expect(out).toHaveLength(3)
+    expect(out[0].tps).toBe(15)
+    expect(out[1].isGapBoundary).toBe(1)
+    expect(out[2].tps).toBe(30)
+  })
+
+  it('auto-granularity coarsens long spans and stays native for short ones', () => {
+    const oneMinute = Array.from({ length: 61 }, (_, index) => point(index * 1000, 1, 1))
+    expect(autoGranularitySeconds(oneMinute)).toBe(1)
+    const fourHours = [point(0, 1, 1), point(4 * 3600 * 1000, 1, 1)]
+    // span/600 = 24s → smallest nice interval >= 24 is 30s
+    expect(autoGranularitySeconds(fourHours)).toBe(30)
+  })
+
+  it('formats granularity labels', () => {
+    expect(granularityOptionLabel(0)).toBe('Auto')
+    expect(granularityOptionLabel(30)).toBe('30s')
+    expect(granularityOptionLabel(300)).toBe('5m')
+    expect(granularityOptionLabel(120)).toBe('2m')
+    expect(granularityOptionLabel(3600)).toBe('1h')
+  })
+})
+
+describe('sortMetricTableRows', () => {
+  const rows = [
+    { key: 'a', label: 'Bravo', color: '#000' },
+    { key: 'b', label: 'alpha', color: '#000' },
+    { key: 'c', label: 'Charlie', color: '#000' },
+  ]
+  const summaries = {
+    a: { latest: 30, average: 30, min: 30, max: 30, samples: 1 },
+    b: { latest: 10, average: 10, min: 10, max: 10, samples: 1 },
+    c: { latest: undefined, average: undefined, min: undefined, max: undefined, samples: 0 },
+  }
+
+  it('returns the input unchanged when no sort is active', () => {
+    expect(sortMetricTableRows(rows, summaries, undefined)).toBe(rows)
+  })
+
+  it('sorts by metric name case-insensitively', () => {
+    expect(sortMetricTableRows(rows, summaries, { key: 'metric', direction: 'asc' }).map(r => r.key)).toEqual(['b', 'a', 'c'])
+    expect(sortMetricTableRows(rows, summaries, { key: 'metric', direction: 'desc' }).map(r => r.key)).toEqual(['c', 'a', 'b'])
+  })
+
+  it('sorts by a value column with missing values pinned last in both directions', () => {
+    expect(sortMetricTableRows(rows, summaries, { key: 'latest', direction: 'desc' }).map(r => r.key)).toEqual(['a', 'b', 'c'])
+    expect(sortMetricTableRows(rows, summaries, { key: 'latest', direction: 'asc' }).map(r => r.key)).toEqual(['b', 'a', 'c'])
   })
 })
