@@ -175,8 +175,9 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 		e.metrics.SetActiveVUsers(int64(i + 1))
 
 		go func() {
+			defer recoverVUserGoroutine(vuserID)
 			defer wg.Done()
-			defer vuProto.Teardown(context.Background())
+			defer runProtocolTeardown(vuProto)
 
 			vu := &VUser{
 				ID:                   vuserID,
@@ -256,6 +257,7 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 		setActive(1)
 
 		go func(workerID int) {
+			defer recoverVUserGoroutine(workerID)
 			defer wg.Done()
 			defer func() { setActive(-1) }()
 
@@ -268,7 +270,7 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 				slog.Error("failed to init protocol for arrival worker", "arrival", workerID, "err", err)
 				return
 			}
-			defer vuProto.Teardown(context.Background())
+			defer runProtocolTeardown(vuProto)
 
 			vu := &VUser{
 				ID:             workerID,

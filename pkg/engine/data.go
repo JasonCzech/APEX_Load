@@ -16,6 +16,11 @@ import (
 // DataProvider loads and serves rows from CSV/DAT parameter files.
 type DataProvider struct {
 	sources map[string]*dataSource
+	// rng, when non-nil, makes the "random" strategy deterministic (replay). It is
+	// set only via SeedRandom during replay setup (single goroutine); load runs
+	// leave it nil and use the concurrency-safe global rand. rngMu guards rng.
+	rngMu sync.Mutex
+	rng   *rand.Rand
 }
 
 type dataSource struct {
@@ -210,7 +215,7 @@ func (dp *DataProvider) GetRow(sourceName string, vuserID int) map[string]string
 		rowIdx = int(idx) % len(ds.rows)
 
 	case "random":
-		rowIdx = rand.Intn(len(ds.rows))
+		rowIdx = dp.randIntn(len(ds.rows))
 
 	case "unique":
 		// Each VUser gets its own row; wraps around if needed
@@ -239,6 +244,30 @@ func (dp *DataProvider) GetRow(sourceName string, vuserID int) map[string]string
 	}
 
 	return result
+}
+
+// SeedRandom makes the "random" data-selection strategy reproducible by backing
+// it with a deterministically seeded generator, so replaying with the same seed
+// reselects the same rows. Call before execution; load runs never call it.
+func (dp *DataProvider) SeedRandom(seed int64) {
+	if dp == nil {
+		return
+	}
+	dp.rngMu.Lock()
+	dp.rng = rand.New(rand.NewSource(seed))
+	dp.rngMu.Unlock()
+}
+
+// randIntn returns a random index in [0,n). With a deterministic seed installed
+// (replay) it draws from the seeded generator under rngMu; otherwise it uses the
+// global, mutex-safe math/rand source (the load hot path).
+func (dp *DataProvider) randIntn(n int) int {
+	if dp.rng != nil {
+		dp.rngMu.Lock()
+		defer dp.rngMu.Unlock()
+		return dp.rng.Intn(n)
+	}
+	return rand.Intn(n)
 }
 
 // GetAllRows returns every row of a data source in order as raw column→value

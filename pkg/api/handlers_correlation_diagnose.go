@@ -16,6 +16,7 @@ type correlationStep struct {
 	RequestHeaders  map[string]string `json:"request_headers,omitempty"`
 	ResponseBody    string            `json:"response_body,omitempty"`
 	ResponseHeaders map[string]string `json:"response_headers,omitempty"`
+	ResponseStatus  int               `json:"response_status,omitempty"`
 }
 
 type correlationDiagnoseRequest struct {
@@ -86,6 +87,7 @@ func toObservations(steps []correlationStep) []correlate.Observation {
 			RequestHeaders:  step.RequestHeaders,
 			ResponseBody:    step.ResponseBody,
 			ResponseHeaders: step.ResponseHeaders,
+			ResponseStatus:  step.ResponseStatus,
 		})
 	}
 	return observations

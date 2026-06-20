@@ -15,6 +15,10 @@ type Observation struct {
 	RequestHeaders  map[string]string
 	ResponseBody    string
 	ResponseHeaders map[string]string
+	// ResponseStatus is the replay HTTP status (0 if unknown). It lets the
+	// diagnosis flag a step the server rejected (>=400) even when no dynamic
+	// value visibly rotated — e.g. a custom anti-replay token re-sent verbatim.
+	ResponseStatus int
 }
 
 type Correlation struct {

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"log/slog"
+	"math/rand"
 	"regexp"
 	"strconv"
 	"strings"
@@ -39,6 +40,14 @@ type VUser struct {
 	HardStopCtx  context.Context
 	SkipInit     bool
 	SkipTeardown bool
+	// rng, when set, makes random template builtins ({{fn.random}}, {{fake.*}})
+	// deterministic. Set by the replay path; nil in load runs (time-seeded).
+	rng *rand.Rand
+	// unresolvedSecretRefs collects {{secret.*}} references that failed to resolve
+	// during the most recent resolveAction; the execution path fails the action
+	// closed rather than sending the literal placeholder. Per-VUser (single
+	// goroutine), so no locking is needed.
+	unresolvedSecretRefs []string
 }
 
 type PauseController interface {
@@ -292,6 +301,9 @@ func (vu *VUser) Run(ctx context.Context) {
 				// of the source binds under {{var.<Var>.<col>}} for the body.
 				if loop.ForEach != nil {
 					rows := vu.foreachRows(loop.ForEach)
+					if loop.MaxIterations <= 0 && len(rows) > maxPasses {
+						warnLoopTruncation(logger, action.Name, len(rows), maxPasses)
+					}
 					restoreRows := vu.captureForEachRestore(loop.ForEach.Var, rows)
 					restore := func() { restoreRows(); restoreLoopIndex() }
 					for pass, row := range rows {
@@ -324,6 +336,9 @@ func (vu *VUser) Run(ctx context.Context) {
 				}
 
 				fixed := loop.Count > 0
+				if loop.MaxIterations <= 0 && loop.Count > maxPasses {
+					warnLoopTruncation(logger, action.Name, loop.Count, maxPasses)
+				}
 				for pass := 0; ; pass++ {
 					if iterCtx.Err() != nil {
 						restoreLoopIndex()
@@ -484,7 +499,9 @@ func (vu *VUser) Run(ctx context.Context) {
 
 teardown:
 	if !vu.SkipTeardown {
-		vu.runLifecycleActions(context.Background(), vu.Script.Teardown, "teardown", true, logger, logCfg, cfg.ErrorHandling)
+		tctx, tcancel := teardownContext()
+		vu.runLifecycleActions(tctx, vu.Script.Teardown, "teardown", true, logger, logCfg, cfg.ErrorHandling)
+		tcancel()
 	}
 }
 
@@ -559,6 +576,9 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 			// foreach mode (precedence: for_each > count > condition).
 			if loop.ForEach != nil {
 				rows := vu.foreachRows(loop.ForEach)
+				if loop.MaxIterations <= 0 && len(rows) > maxPasses {
+					warnLoopTruncation(logger, action.Name, len(rows), maxPasses)
+				}
 				restoreRows := vu.captureForEachRestore(loop.ForEach.Var, rows)
 				restore := func() { restoreRows(); restoreLoopIndex() }
 				for pass, row := range rows {
@@ -584,6 +604,9 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 			}
 
 			fixed := loop.Count > 0
+			if loop.MaxIterations <= 0 && loop.Count > maxPasses {
+				warnLoopTruncation(logger, action.Name, loop.Count, maxPasses)
+			}
 			for pass := 0; ; pass++ {
 				if ctx.Err() != nil {
 					restoreLoopIndex()
@@ -651,7 +674,9 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 	if vu == nil || vu.Proto == nil || vu.Script == nil {
 		return nil
 	}
-	if err := vu.Proto.Teardown(context.Background()); err != nil {
+	tctx, tcancel := teardownContext()
+	defer tcancel()
+	if err := vu.Proto.Teardown(tctx); err != nil {
 		return err
 	}
 	return vu.Proto.Init(ctx, buildProtoConfig(vu.Script))

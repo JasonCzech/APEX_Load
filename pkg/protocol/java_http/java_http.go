@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -75,6 +76,14 @@ func (j *JavaHTTP) Init(ctx context.Context, config map[string]any) error {
 	}
 	j.requestMapping = coerceStringMap(config["java_http_request_mapping"])
 	j.responseMapping = coerceStringMap(config["java_http_response_mapping"])
+	// Request-side mapping is not implemented in this bounded-codec MVP: the body
+	// is sent verbatim as base64. Warn loudly rather than silently ignoring the
+	// config so an author does not assume field-level request transforms applied.
+	if len(j.requestMapping) > 0 || j.objectSchema != "" {
+		slog.Warn("java_http: java_http_request_mapping/java_http_object_schema are accepted but NOT applied at runtime (bounded codec MVP); the request body is sent as-is",
+			"request_mapping_keys", len(j.requestMapping),
+			"has_object_schema", j.objectSchema != "")
+	}
 	j.http = &httpproto.HTTP{}
 	return j.http.Init(ctx, config)
 }

@@ -150,6 +150,7 @@ func actionLogAttrs(actionName string, resolved *protocol.Action, result *protoc
 }
 
 func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
+	vu.unresolvedSecretRefs = nil
 	target, redactedTarget := vu.interpolateWithSecrets(action.Target)
 	selector, _ := vu.interpolateWithSecrets(action.Selector)
 	value, _ := vu.interpolateWithSecrets(action.Value)
@@ -224,6 +225,9 @@ func (vu *VUser) interpolateWithSecrets(s string) (string, string) {
 		}
 		if value, ok := vu.resolveTemplateValue(expr); ok {
 			return value
+		}
+		if strings.HasPrefix(expr, "secret.") {
+			vu.unresolvedSecretRefs = append(vu.unresolvedSecretRefs, expr)
 		}
 		return token
 	})
@@ -329,7 +333,7 @@ func (vu *VUser) resolveTemplateValue(expr string) (string, bool) {
 		key := strings.TrimSpace(strings.TrimPrefix(expr, "secret."))
 		return resolveSecretTemplateValue(key, vu.secretResolver())
 	case strings.HasPrefix(expr, "fn."), strings.HasPrefix(expr, "fake."):
-		return resolveBuiltinFunction(expr, time.Now)
+		return resolveBuiltinFunction(expr, time.Now, vu.rng)
 	default:
 		return "", false
 	}

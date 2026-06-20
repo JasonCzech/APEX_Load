@@ -543,14 +543,23 @@ func normalizeParameterValues(values []string) []string {
 	return normalized
 }
 
-func resolveBuiltinFunction(expr string, now func() time.Time) (string, bool) {
+// builtinRand returns the deterministic generator when one is supplied (replay)
+// and otherwise a fresh time-seeded generator, preserving load-run behavior.
+func builtinRand(rng *rand.Rand, now func() time.Time) *rand.Rand {
+	if rng != nil {
+		return rng
+	}
+	return rand.New(rand.NewSource(now().UnixNano()))
+}
+
+func resolveBuiltinFunction(expr string, now func() time.Time, rng *rand.Rand) (string, bool) {
 	switch expr {
 	case "fn.uuid()", "fn.uuid", "fn.uuid.v4":
 		return uuid.NewString(), true
 	case "fake.uuid", "fake.uuid()":
 		return uuid.NewString(), true
 	case "fake.email", "fake.email()":
-		generator := rand.New(rand.NewSource(time.Now().UnixNano()))
+		generator := builtinRand(rng, now)
 		localPart := strings.ToLower(generateRandomString(generator, 12, "abcdefghijklmnopqrstuvwxyz0123456789"))
 		return localPart + "@example.test", true
 	case "fn.timestamp.unix":
@@ -574,7 +583,7 @@ func resolveBuiltinFunction(expr string, now func() time.Time) (string, bool) {
 		if err != nil || min > max {
 			return "", false
 		}
-		generator := rand.New(rand.NewSource(time.Now().UnixNano()))
+		generator := builtinRand(rng, now)
 		return strconv.Itoa(generator.Intn(max-min+1) + min), true
 	}
 
@@ -587,7 +596,7 @@ func resolveBuiltinFunction(expr string, now func() time.Time) (string, bool) {
 		if err != nil || length <= 0 {
 			return "", false
 		}
-		generator := rand.New(rand.NewSource(time.Now().UnixNano()))
+		generator := builtinRand(rng, now)
 		return generateRandomString(generator, length, ""), true
 	}
 
