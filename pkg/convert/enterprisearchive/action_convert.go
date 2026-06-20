@@ -248,6 +248,59 @@ func applyPersistentCookies(action *dsl.Action, cookies []ParsedCookie, rawURL s
 	action.Headers["Cookie"] = strings.Join(matches, "; ")
 }
 
+// isHTMLModeNavigationFunction reports whether a request-shaped source function is
+// an HTML-mode navigation step (web_link/web_image/web_image_check) whose target is
+// resolved from page context rather than carried inline.
+func isHTMLModeNavigationFunction(name string) bool {
+	switch name {
+	case "web_link", "web_image", "web_image_check":
+		return true
+	default:
+		return false
+	}
+}
+
+// sourceCookieRemovalName resolves the cookie name targeted by web_remove_cookie.
+// The first positional argument may be a bare name ("SessionID") or a "Name=Value"
+// pair; "ALL" targets the whole jar.
+func sourceCookieRemovalName(fn ParsedFunction) string {
+	args := sourceControlArgs(fn)
+	if len(args) == 0 {
+		return ""
+	}
+	first := cleanConfigValue(args[0])
+	if name, _, ok := strings.Cut(first, "="); ok {
+		return strings.TrimSpace(name)
+	}
+	return strings.TrimSpace(first)
+}
+
+// removePersistentCookie drops the cookie named by web_remove_cookie (or every
+// cookie for "ALL") from the importer's persistent set so it stops attaching to
+// downstream requests. It reports whether anything was removed.
+func removePersistentCookie(cookies *[]ParsedCookie, fn ParsedFunction) bool {
+	name := sourceCookieRemovalName(fn)
+	if name == "" || cookies == nil {
+		return false
+	}
+	if strings.EqualFold(name, "ALL") {
+		had := len(*cookies) > 0
+		*cookies = nil
+		return had
+	}
+	filtered := (*cookies)[:0]
+	removed := false
+	for _, cookie := range *cookies {
+		if strings.EqualFold(cookie.Name, name) {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, cookie)
+	}
+	*cookies = filtered
+	return removed
+}
+
 func cookieMatchesURL(cookie ParsedCookie, rawURL string) bool {
 	if strings.TrimSpace(cookie.Domain) == "" && strings.TrimSpace(cookie.Path) == "" {
 		return true

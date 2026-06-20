@@ -325,23 +325,37 @@ func parseFunctionBlock(block string, filename string, lineNum int, endLine int,
 		parseWebREST(&fn, inner)
 	case "web_service_call":
 		parseWebServiceCall(&fn, inner)
-	case "web_reg_save_param", "web_reg_save_param_json", "web_reg_save_param_xpath", "web_reg_save_param_ex":
+	case "web_reg_save_param", "web_reg_save_param_json", "web_reg_save_param_xpath", "web_reg_save_param_ex", "web_reg_save_param_attrib":
 		parseWebRegSaveParam(&fn, inner)
 	case "web_reg_save_param_regexp":
 		parseWebRegSaveParam(&fn, inner)
-	case "web_reg_find", "web_global_verification":
+	case "web_reg_find", "web_global_verification", "web_find":
 		parseWebRegFind(&fn, inner)
+	case "web_link", "web_image", "web_image_check":
+		parseWebLinkImage(&fn, inner)
 	case "lr_think_time":
 		parseLRThinkTime(&fn, inner)
 	case "lr_start_transaction", "lr_end_transaction":
 		if len(fn.RawArgs) > 0 {
 			fn.StepName = fn.RawArgs[0]
 		}
-	case "lr_continue_on_error", "lr_error_message", "lr_exit", "web_cache_cleanup", "web_cleanup_cookies", "web_set_sockets_option", "web_set_timeout", "web_convert_param", "web_revert_auto_header", "web_set_user":
+	case "lr_continue_on_error", "lr_error_message", "lr_exit",
+		"web_cache_cleanup", "web_cleanup_cookies", "web_set_sockets_option", "web_set_timeout",
+		"web_convert_param", "web_revert_auto_header", "web_set_user",
+		// Web (HTTP/HTML) runtime/correlation controls translated from the published library.
+		"web_remove_auto_header", "web_cleanup_auto_headers", "web_remove_cookie", "web_save_header",
+		"web_set_option", "web_set_max_retries", "web_disable_keep_alive", "web_enable_keep_alive",
+		"web_set_certificate", "web_set_certificate_ex",
+		"web_set_proxy", "web_set_secure_proxy", "web_set_proxy_bypass", "web_set_proxy_bypass_local", "web_set_pac",
+		"web_add_filter", "web_add_auto_filter", "web_remove_auto_filter", "web_load_cache", "web_dump_cache",
+		"web_concurrent_start", "web_concurrent_end",
+		"web_convert_date_param", "web_convert_from_formatted", "web_convert_to_formatted", "web_sjis_to_euc_param",
+		"web_save_param_length", "web_save_timestamp_param", "web_get_int_property",
+		"web_util_set_request_body", "web_util_set_request_url", "web_report_data_point":
 		parseSourceRuntimeControl(&fn, inner)
 	case "web_add_header", "web_add_auto_header":
 		parseWebAddHeader(&fn, inner)
-	case "web_add_cookie":
+	case "web_add_cookie", "web_add_cookie_ex", "web_reg_add_cookie":
 		parseWebAddCookie(&fn, inner)
 	default:
 		if len(fn.RawArgs) > 0 {
@@ -523,6 +537,25 @@ func parseWebURL(fn *ParsedFunction, inner string) {
 
 	// Extract named args
 	extractNamedArgs(fn, inner)
+}
+
+// parseWebLinkImage parses the HTML-mode navigation steps web_link/web_image/
+// web_image_check. In HTML mode the absolute target is resolved from page context
+// at record time, so the static .c usually carries only the element label
+// ("Text="/"Alt="). An explicit "URL=" (URL-mode recording) or an image "Src="
+// gives a usable target; otherwise fn.URL is left empty and the converter
+// preserves the step for review instead of fabricating a request.
+func parseWebLinkImage(fn *ParsedFunction, inner string) {
+	if len(fn.RawArgs) > 0 {
+		fn.StepName = fn.RawArgs[0]
+	}
+	fn.Method = "GET"
+	extractNamedArgs(fn, inner)
+	if v := fn.Args["URL"]; v != "" {
+		fn.URL = v
+	} else if v := fn.Args["Src"]; v != "" {
+		fn.URL = v
+	}
 }
 
 func parseWebSubmitData(fn *ParsedFunction, inner string) {
