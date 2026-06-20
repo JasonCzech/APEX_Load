@@ -1681,6 +1681,7 @@ export interface BrowserDeviceLiveMetrics extends BrowserLiveMetrics {
 
 export interface TelemetryHealth {
   dropped_results?: number
+  shedded_arrivals?: number
   history_points?: number
   websocket_clients?: number
   websocket_dropped_messages?: number

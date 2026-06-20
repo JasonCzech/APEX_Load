@@ -228,6 +228,7 @@ type ManagedTest struct {
 	errorPatterns                map[string]*LiveErrorPattern
 	liveErrorEvidence            map[string][]LiveErrorEvidence
 	vuserScaleRamps              map[string]*vuserScaleRamp
+	openWorkloadSheddingWarned   bool
 }
 
 type ScaleVUsersOptions struct {
@@ -419,6 +420,7 @@ type ServerTelemetrySummary struct {
 
 type TelemetryHealth struct {
 	DroppedResults           int64     `json:"dropped_results,omitempty"`
+	SheddedArrivals          int64     `json:"shedded_arrivals,omitempty"`
 	HistoryPoints            int       `json:"history_points,omitempty"`
 	WebsocketClients         int       `json:"websocket_clients,omitempty"`
 	WebsocketDroppedMessages int64     `json:"websocket_dropped_messages,omitempty"`

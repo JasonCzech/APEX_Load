@@ -75,6 +75,7 @@ type MetricsBatch struct {
 
 type MetricsTelemetry struct {
 	DroppedResults             int64
+	SheddedArrivals            int64
 	CollectedAtUnixMs          int64
 	PublishedAtUnixMs          int64
 	ControllerReceivedAtUnixMs int64
@@ -482,6 +483,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 	if batch.GetTelemetry() != nil {
 		telemetry = &MetricsTelemetry{
 			DroppedResults:    batch.GetTelemetry().GetDroppedResults(),
+			SheddedArrivals:   batch.GetTelemetry().GetSheddedArrivals(),
 			CollectedAtUnixMs: batch.GetTelemetry().GetCollectedAtUnixMs(),
 			PublishedAtUnixMs: batch.GetTelemetry().GetPublishedAtUnixMs(),
 			SampleAgeMs:       batch.GetTelemetry().GetSampleAgeMs(),

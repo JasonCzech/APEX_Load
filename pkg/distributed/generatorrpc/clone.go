@@ -62,6 +62,7 @@ func mergeMetricsTelemetry(values map[string]MetricsTelemetry) *MetricsTelemetry
 	hasPublishedAt := false
 	for _, value := range values {
 		combined.DroppedResults += value.DroppedResults
+		combined.SheddedArrivals += value.SheddedArrivals
 		if value.CollectedAtUnixMs > 0 && (!hasCollectedAt || value.CollectedAtUnixMs < combined.CollectedAtUnixMs) {
 			combined.CollectedAtUnixMs = value.CollectedAtUnixMs
 			hasCollectedAt = true

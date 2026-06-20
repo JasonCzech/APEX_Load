@@ -1953,6 +1953,12 @@ export default function TestExecutionCharts({
         </p>
       )}
 
+      {(latestMetrics?.telemetry?.shedded_arrivals ?? 0) > 0 && (
+        <p className="scenario-script-status error" role="alert">
+          {`Open-model load shed — ${(latestMetrics?.telemetry?.shedded_arrivals ?? 0).toLocaleString()} arrival${(latestMetrics?.telemetry?.shedded_arrivals ?? 0) === 1 ? '' : 's'} dropped because the system under test could not keep up with the offered rate. In-flight workers are capped to protect the generator, so effective throughput is below target — lower the TPS or raise run_logic.max_in_flight.`}
+        </p>
+      )}
+
       {displayModeCharts.length === 0 ? (
         <div className="charts-empty">
           <span>{

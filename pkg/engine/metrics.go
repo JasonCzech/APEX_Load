@@ -30,6 +30,7 @@ type liveCounters struct {
 	totalErrors       atomic.Int64
 	activeVUsers      atomic.Int64
 	droppedResults    atomic.Int64
+	sheddedArrivals   atomic.Int64
 }
 
 type MetricsSnapshot struct {
@@ -127,7 +128,8 @@ type ServerTelemetrySummary struct {
 }
 
 type TelemetryMetrics struct {
-	DroppedResults int64 `json:"dropped_results,omitempty"`
+	DroppedResults  int64 `json:"dropped_results,omitempty"`
+	SheddedArrivals int64 `json:"shedded_arrivals,omitempty"`
 }
 
 type SystemResources struct {
@@ -238,6 +240,17 @@ func (mc *MetricsCollector) SetTargetTPS(target float64) {
 	mc.targetsMu.Lock()
 	defer mc.targetsMu.Unlock()
 	mc.targetTPS = target
+}
+
+// RecordSheddedArrival increments the count of open-workload arrivals dropped
+// because the in-flight worker cap was saturated. Cumulative over the run and
+// surfaced via the snapshot telemetry so operators can see when the offered TPS
+// exceeds achievable throughput.
+func (mc *MetricsCollector) RecordSheddedArrival() {
+	if mc == nil {
+		return
+	}
+	mc.current.sheddedArrivals.Add(1)
 }
 
 func (mc *MetricsCollector) SetGroupTargetTPS(group string, target float64) {
@@ -411,7 +424,8 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		ErrorsByClass:      make(map[string]int64),
 		BrowserByDevice:    make(map[string]*BrowserDeviceMetrics),
 		Telemetry: &TelemetryMetrics{
-			DroppedResults: mc.current.droppedResults.Load(),
+			DroppedResults:  mc.current.droppedResults.Load(),
+			SheddedArrivals: mc.current.sheddedArrivals.Load(),
 		},
 	}
 	mc.targetsMu.RLock()

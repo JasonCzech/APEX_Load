@@ -909,6 +909,7 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 		windowMs = telemetry.WindowMs
 		protoTelemetry = &pb.MetricsBatchTelemetry{
 			DroppedResults:    telemetry.DroppedResults,
+			SheddedArrivals:   telemetry.SheddedArrivals,
 			CollectedAtUnixMs: telemetry.CollectedAtUnixMs,
 			PublishedAtUnixMs: telemetry.PublishedAtUnixMs,
 			SampleAgeMs:       telemetry.SampleAgeMs,
@@ -1068,6 +1069,7 @@ func (s *Service) publishExecutionSnapshot(testID string, groupName string, exec
 		telemetry.SampleAgeMs = float64(now.Sub(snapshot.Timestamp).Microseconds()) / 1000.0
 		if snapshot.Telemetry != nil {
 			telemetry.DroppedResults = snapshot.Telemetry.DroppedResults
+			telemetry.SheddedArrivals = snapshot.Telemetry.SheddedArrivals
 		}
 	}
 	_ = s.PublishMetrics(testID, groupName, stats, transactions, telemetry)

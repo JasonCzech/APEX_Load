@@ -237,6 +237,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 					// closed model. The reserved slot is released by spawnOpenWorker
 					// on every exit path.
 					if !limiter.tryAcquire() {
+						mge.metrics.RecordSheddedArrival()
 						if limiter.shouldWarn() {
 							slog.Warn("open workload shedding arrivals: system under test cannot keep up; capping in-flight workers to protect the generator", "group", group.Name, "max_in_flight", inFlightLimit, "tps", group.Script.Config.Pacing.TPS)
 						}

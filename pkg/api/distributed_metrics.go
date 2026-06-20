@@ -65,6 +65,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 				combined.Telemetry = &generatorrpc.MetricsTelemetry{}
 			}
 			combined.Telemetry.DroppedResults += batch.Telemetry.DroppedResults
+			combined.Telemetry.SheddedArrivals += batch.Telemetry.SheddedArrivals
 			if batch.Telemetry.CollectedAtUnixMs > 0 && (!hasCollectedAt || batch.Telemetry.CollectedAtUnixMs < combined.Telemetry.CollectedAtUnixMs) {
 				combined.Telemetry.CollectedAtUnixMs = batch.Telemetry.CollectedAtUnixMs
 				hasCollectedAt = true
@@ -147,6 +148,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	live.Resources = resourcesFromGeneratorStats(batch.Stats)
 	if batch.Telemetry != nil {
 		live.Telemetry.DroppedResults = batch.Telemetry.DroppedResults
+		live.Telemetry.SheddedArrivals = batch.Telemetry.SheddedArrivals
 		if batch.Telemetry.CollectedAtUnixMs > 0 {
 			live.Telemetry.CollectedAt = time.UnixMilli(batch.Telemetry.CollectedAtUnixMs)
 		}

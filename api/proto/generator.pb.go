@@ -695,8 +695,12 @@ type MetricsBatchTelemetry struct {
 	CollectedAtUnixMs int64                  `protobuf:"varint,2,opt,name=collected_at_unix_ms,json=collectedAtUnixMs,proto3" json:"collected_at_unix_ms,omitempty"`
 	PublishedAtUnixMs int64                  `protobuf:"varint,3,opt,name=published_at_unix_ms,json=publishedAtUnixMs,proto3" json:"published_at_unix_ms,omitempty"`
 	SampleAgeMs       float64                `protobuf:"fixed64,4,opt,name=sample_age_ms,json=sampleAgeMs,proto3" json:"sample_age_ms,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// shedded_arrivals counts open-workload arrivals dropped because the
+	// in-flight worker cap was saturated (the system under test could not keep up
+	// with the offered TPS). Cumulative over the run, per generator.
+	SheddedArrivals int64 `protobuf:"varint,5,opt,name=shedded_arrivals,json=sheddedArrivals,proto3" json:"shedded_arrivals,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *MetricsBatchTelemetry) Reset() {
@@ -753,6 +757,13 @@ func (x *MetricsBatchTelemetry) GetPublishedAtUnixMs() int64 {
 func (x *MetricsBatchTelemetry) GetSampleAgeMs() float64 {
 	if x != nil {
 		return x.SampleAgeMs
+	}
+	return 0
+}
+
+func (x *MetricsBatchTelemetry) GetSheddedArrivals() int64 {
+	if x != nil {
+		return x.SheddedArrivals
 	}
 	return 0
 }
@@ -2095,12 +2106,13 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0flifecycle_error\x18\b \x01(\tR\x0elifecycleError\x12@\n" +
 	"\ttelemetry\x18\t \x01(\v2\".apexload.v1.MetricsBatchTelemetryR\ttelemetry\x12\x1b\n" +
 	"\twindow_ms\x18\n" +
-	" \x01(\x03R\bwindowMs\"\xc6\x01\n" +
+	" \x01(\x03R\bwindowMs\"\xf1\x01\n" +
 	"\x15MetricsBatchTelemetry\x12'\n" +
 	"\x0fdropped_results\x18\x01 \x01(\x03R\x0edroppedResults\x12/\n" +
 	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x12/\n" +
 	"\x14published_at_unix_ms\x18\x03 \x01(\x03R\x11publishedAtUnixMs\x12\"\n" +
-	"\rsample_age_ms\x18\x04 \x01(\x01R\vsampleAgeMs\"F\n" +
+	"\rsample_age_ms\x18\x04 \x01(\x01R\vsampleAgeMs\x12)\n" +
+	"\x10shedded_arrivals\x18\x05 \x01(\x03R\x0fsheddedArrivals\"F\n" +
 	"\vGroupMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
 	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\xaa\x05\n" +

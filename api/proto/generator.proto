@@ -110,6 +110,10 @@ message MetricsBatchTelemetry {
   int64 collected_at_unix_ms = 2;
   int64 published_at_unix_ms = 3;
   double sample_age_ms = 4;
+  // shedded_arrivals counts open-workload arrivals dropped because the
+  // in-flight worker cap was saturated (the system under test could not keep up
+  // with the offered TPS). Cumulative over the run, per generator.
+  int64 shedded_arrivals = 5;
 }
 
 message GroupMetric {

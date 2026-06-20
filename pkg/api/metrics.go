@@ -106,8 +106,9 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 	}
 	if snap.Telemetry != nil {
 		live.Telemetry = &TelemetryHealth{
-			DroppedResults: snap.Telemetry.DroppedResults,
-			CollectedAt:    snap.Timestamp,
+			DroppedResults:  snap.Telemetry.DroppedResults,
+			SheddedArrivals: snap.Telemetry.SheddedArrivals,
+			CollectedAt:     snap.Timestamp,
 		}
 	}
 
@@ -480,6 +481,16 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	if diagnostic != nil {
 		publishDiagnostic = shouldPublishTelemetryDiagnostic(&test.telemetryDiagnostic, diagnosticSignature, now)
 	}
+	// Emit a one-time warning the first time the generator(s) shed open-workload
+	// arrivals — the offered TPS is exceeding achievable throughput, so the
+	// in-flight worker cap is dropping load to protect the generator.
+	emitSheddingWarning := false
+	sheddedArrivals := int64(0)
+	if live.Telemetry != nil && live.Telemetry.SheddedArrivals > 0 && !test.openWorkloadSheddingWarned {
+		test.openWorkloadSheddingWarned = true
+		emitSheddingWarning = true
+		sheddedArrivals = live.Telemetry.SheddedArrivals
+	}
 	snapshot := buildRunLiveStateSnapshotLocked(test, now)
 	tr.mu.Unlock()
 
@@ -506,6 +517,29 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 		})
 	}
 	tr.broadcastTelemetryHealthTransition(test, previousTelemetryRunHealth, telemetryRunHealth, now)
+	if emitSheddingWarning {
+		tr.broadcastOpenWorkloadShedding(test, sheddedArrivals, now)
+	}
+}
+
+// broadcastOpenWorkloadShedding emits a one-time WebSocket warning when an
+// open-model run begins shedding arrivals because the in-flight worker cap is
+// saturated (the system under test cannot keep up with the offered TPS).
+func (tr *TestRunner) broadcastOpenWorkloadShedding(test *ManagedTest, sheddedArrivals int64, now time.Time) {
+	if tr == nil || tr.hub == nil || test == nil {
+		return
+	}
+	tr.hub.BroadcastJSON(map[string]any{
+		"type":       "open_workload_shedding",
+		"test_id":    test.ID,
+		"project_id": normalizeProjectID(test.ProjectID),
+		"test_name":  test.Name,
+		"timestamp":  now,
+		"data": map[string]any{
+			"shedded_arrivals": sheddedArrivals,
+			"message":          "Open-model arrivals are being shed: the system under test cannot keep up with the offered rate. In-flight workers are capped to protect the generator, so effective throughput is below target. Lower the TPS or raise run_logic.max_in_flight.",
+		},
+	})
 }
 
 func buildRunLiveStateSnapshotLocked(test *ManagedTest, updatedAt time.Time) RunLiveStateSnapshot {

@@ -260,6 +260,7 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 		// keep up, so dropping it protects the generator from unbounded
 		// goroutine growth instead of silently throttling to a closed model.
 		if !limiter.tryAcquire() {
+			e.metrics.RecordSheddedArrival()
 			if limiter.shouldWarn() {
 				slog.Warn("open workload shedding arrivals: system under test cannot keep up; capping in-flight workers to protect the generator", "max_in_flight", inFlightLimit, "tps", e.script.Config.Pacing.TPS)
 			}
