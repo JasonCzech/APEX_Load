@@ -22,6 +22,9 @@ type kafkaClient interface {
 	RequestReply(ctx context.Context, reqTopic, replyTopic string, req kafkaRecord, timeout time.Duration) (recordMeta, kafkaRecord, error)
 	Commit(ctx context.Context) error
 	Seek(ctx context.Context, topic, group, target string) error
+	BeginTransaction(ctx context.Context) error
+	CommitTransaction(ctx context.Context) error
+	AbortTransaction(ctx context.Context) error
 	HealthCheck(ctx context.Context) error
 	Teardown(ctx context.Context) error
 }
@@ -205,6 +208,14 @@ func (c mockClient) Seek(_ context.Context, topic, group, target string) error {
 	return err
 }
 
+// Transaction lifecycle is a no-op on the mock: the Kafka protocol buffers
+// transactional produces per-VUser and flushes them on commit (so consumers
+// never see uncommitted records and abort discards them), which provides the
+// observable read_committed semantics without broker-side transaction state.
+func (c mockClient) BeginTransaction(context.Context) error  { return nil }
+func (c mockClient) CommitTransaction(context.Context) error { return nil }
+func (c mockClient) AbortTransaction(context.Context) error  { return nil }
+
 func (c mockClient) HealthCheck(context.Context) error {
 	if c.broker == nil {
 		return fmt.Errorf("in-memory kafka broker is not initialized")
@@ -236,6 +247,10 @@ func (c unavailableClient) RequestReply(context.Context, string, string, kafkaRe
 func (c unavailableClient) Commit(context.Context) error { return c.err() }
 
 func (c unavailableClient) Seek(context.Context, string, string, string) error { return c.err() }
+
+func (c unavailableClient) BeginTransaction(context.Context) error  { return c.err() }
+func (c unavailableClient) CommitTransaction(context.Context) error { return c.err() }
+func (c unavailableClient) AbortTransaction(context.Context) error  { return c.err() }
 
 func (c unavailableClient) HealthCheck(context.Context) error {
 	if len(c.brokers) == 0 {

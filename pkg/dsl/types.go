@@ -234,6 +234,7 @@ type KafkaConfig struct {
 	Topic              string            `json:"topic,omitempty"`                // default topic
 	Acks               string            `json:"acks,omitempty"`                 // none|leader|all
 	Idempotence        string            `json:"idempotence,omitempty"`          // ""(default)|enabled|disabled — idempotent producer (requires acks=all)
+	TransactionalID    string            `json:"transactional_id,omitempty"`     // producer transactional.id; enables Kafka transactions / EOS (requires acks=all)
 	Compression        string            `json:"compression,omitempty"`          // none|gzip|snappy|lz4|zstd
 	PartitionStrategy  string            `json:"partition_strategy,omitempty"`   // key-hash|round-robin|explicit
 	AutoOffsetReset    string            `json:"auto_offset_reset,omitempty"`    // earliest|latest

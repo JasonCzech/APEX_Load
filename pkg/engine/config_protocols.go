@@ -504,6 +504,9 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 	if kafkaCfg.Idempotence != "" {
 		cfg["kafka_idempotence"] = kafkaCfg.Idempotence
 	}
+	if kafkaCfg.TransactionalID != "" {
+		cfg["kafka_transactional_id"] = kafkaCfg.TransactionalID
+	}
 	if kafkaCfg.IsolationLevel != "" {
 		cfg["kafka_isolation_level"] = kafkaCfg.IsolationLevel
 	}

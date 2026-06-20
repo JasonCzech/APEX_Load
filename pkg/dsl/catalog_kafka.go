@@ -55,5 +55,20 @@ func kafkaActionSpecs() []ActionSpec {
 				{Name: "params.partition", Kind: FieldKindInt, Doc: "Partition to seek on."},
 			},
 		},
+		{
+			Type:      "kafka_begin_transaction",
+			Protocols: []string{"kafka"},
+			Summary:   "Begins a producer transaction (requires config.kafka.transactional_id). Subsequent kafka_produce records are buffered until commit.",
+		},
+		{
+			Type:      "kafka_commit_transaction",
+			Protocols: []string{"kafka"},
+			Summary:   "Commits the open producer transaction, making buffered records atomically visible (EOS).",
+		},
+		{
+			Type:      "kafka_abort_transaction",
+			Protocols: []string{"kafka"},
+			Summary:   "Aborts the open producer transaction, discarding buffered records.",
+		},
 	}
 }

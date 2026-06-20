@@ -36,8 +36,17 @@ type Kafka struct {
 	cfg         config
 	client      kafkaClient
 	session     *messaging.Session[string]
-	rrCounter   uint64 // round-robin partition counter
+	txOpen      bool             // a transaction is in progress (per-VUser)
+	txBuffer    []pendingProduce // records produced within the open transaction
+	rrCounter   uint64           // round-robin partition counter
 	initialized bool
+}
+
+// pendingProduce is a record buffered during an open transaction; it is flushed
+// to the broker on commit and discarded on abort.
+type pendingProduce struct {
+	topic string
+	rec   kafkaRecord
 }
 
 type config struct {
@@ -53,6 +62,7 @@ type config struct {
 	Topic             string
 	Acks              string
 	Idempotence       string
+	TransactionalID   string
 	Compression       string
 	PartitionStrategy string
 	AutoOffsetReset   string
@@ -90,6 +100,7 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 		Topic:             stringValue(cfg, "kafka_topic"),
 		Acks:              stringValue(cfg, "kafka_acks"),
 		Idempotence:       strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_idempotence"))),
+		TransactionalID:   stringValue(cfg, "kafka_transactional_id"),
 		Compression:       stringValue(cfg, "kafka_compression"),
 		PartitionStrategy: stringValue(cfg, "kafka_partition_strategy"),
 		AutoOffsetReset:   stringValue(cfg, "kafka_auto_offset_reset"),
@@ -209,6 +220,12 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 			result.Extractions["kafka_operation"] = "kafka_seek"
 			result.Extractions["kafka_seek_offset"] = target
 		}
+	case "kafka_begin_transaction":
+		err = k.beginTransaction(ctx, result)
+	case "kafka_commit_transaction":
+		err = k.commitTransaction(ctx, result)
+	case "kafka_abort_transaction":
+		err = k.abortTransaction(ctx, result)
 	default:
 		err = fmt.Errorf("unsupported kafka action type %q", action.Type)
 	}
@@ -231,6 +248,15 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 func (k *Kafka) Teardown(ctx context.Context) error {
 	if k.client == nil {
 		return nil
+	}
+	// Abort a transaction left open by the script so buffered records are not
+	// silently dropped and the rollback is accounted for.
+	if k.txOpen {
+		_ = k.client.AbortTransaction(ctx)
+		k.txOpen, k.txBuffer = false, nil
+		if k.session != nil {
+			k.session.Rollback()
+		}
 	}
 	return k.client.Teardown(ctx)
 }
@@ -301,6 +327,17 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 	if err := k.checkRecordSize(rec); err != nil {
 		return kafkaRecord{}, err
 	}
+	if k.txOpen {
+		// Transactional produce: buffer until commit so consumers (read_committed)
+		// never see uncommitted records, and an abort discards them atomically.
+		k.txBuffer = append(k.txBuffer, pendingProduce{topic: topic, rec: rec})
+		result.BytesSent = int64(len(rec.Value))
+		result.CorrelationID = rec.CorrelationID
+		addRecordExtractions(result, rec)
+		result.Extractions["kafka_operation"] = "produce"
+		result.Extractions["kafka_transactional"] = "true"
+		return rec, evaluateAssertions(action.Assertions, result, rec)
+	}
 	meta, err := k.client.Produce(ctx, topic, rec)
 	if err != nil {
 		return kafkaRecord{}, err
@@ -313,6 +350,70 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 	addRecordExtractions(result, rec)
 	result.Extractions["kafka_operation"] = "produce"
 	return rec, evaluateAssertions(action.Assertions, result, rec)
+}
+
+// beginTransaction opens a producer transaction (transactional.id required). The
+// franz adapter starts a real Kafka transaction; the mock relies on per-VUser
+// produce buffering for commit/abort visibility.
+func (k *Kafka) beginTransaction(ctx context.Context, result *protocol.Result) error {
+	if k.cfg.TransactionalID == "" {
+		return fmt.Errorf("kafka_begin_transaction requires config.kafka.transactional_id")
+	}
+	if k.txOpen {
+		return fmt.Errorf("a kafka transaction is already open")
+	}
+	if err := k.client.BeginTransaction(ctx); err != nil {
+		return err
+	}
+	k.txOpen = true
+	k.txBuffer = nil
+	result.Extractions["kafka_operation"] = "begin_transaction"
+	return nil
+}
+
+// commitTransaction flushes buffered records to the broker and commits, making
+// them atomically visible; it records a commit on the shared session.
+func (k *Kafka) commitTransaction(ctx context.Context, result *protocol.Result) error {
+	if !k.txOpen {
+		return fmt.Errorf("no open kafka transaction to commit")
+	}
+	for _, p := range k.txBuffer {
+		if _, err := k.client.Produce(ctx, p.topic, p.rec); err != nil {
+			_ = k.client.AbortTransaction(ctx)
+			k.txOpen, k.txBuffer = false, nil
+			return err
+		}
+	}
+	if err := k.client.CommitTransaction(ctx); err != nil {
+		k.txOpen, k.txBuffer = false, nil
+		return err
+	}
+	n := len(k.txBuffer)
+	k.txOpen, k.txBuffer = false, nil
+	k.session.Commit()
+	result.Extractions["kafka_operation"] = "commit_transaction"
+	result.Extractions["kafka_tx_records"] = strconv.Itoa(n)
+	result.ServerTelemetry = &protocol.ServerTelemetry{CommitCount: 1}
+	return nil
+}
+
+// abortTransaction discards buffered records (never sent) and aborts; it records
+// a rollback on the shared session.
+func (k *Kafka) abortTransaction(ctx context.Context, result *protocol.Result) error {
+	if !k.txOpen {
+		return fmt.Errorf("no open kafka transaction to abort")
+	}
+	n := len(k.txBuffer)
+	if err := k.client.AbortTransaction(ctx); err != nil {
+		k.txOpen, k.txBuffer = false, nil
+		return err
+	}
+	k.txOpen, k.txBuffer = false, nil
+	k.session.Rollback()
+	result.Extractions["kafka_operation"] = "abort_transaction"
+	result.Extractions["kafka_tx_records_discarded"] = strconv.Itoa(n)
+	result.ServerTelemetry = &protocol.ServerTelemetry{AbortCount: 1}
+	return nil
 }
 
 // consumerGroup resolves the effective consumer group for an action: the
@@ -344,6 +445,11 @@ func (k *Kafka) consume(ctx context.Context, action *protocol.Action, result *pr
 }
 
 func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, result *protocol.Result) (kafkaRecord, kafkaRecord, error) {
+	if k.txOpen {
+		// request_reply produces + consumes inline, which cannot honor the
+		// transaction buffer's read_committed semantics; disallow it inside a tx.
+		return kafkaRecord{}, kafkaRecord{}, fmt.Errorf("kafka_request_reply is not supported inside an open transaction; commit or abort first")
+	}
 	reqTopic := k.topic(action)
 	if reqTopic == "" {
 		return kafkaRecord{}, kafkaRecord{}, fmt.Errorf("kafka request topic is required")

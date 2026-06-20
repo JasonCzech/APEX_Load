@@ -141,6 +141,34 @@ func TestValidateKafkaScriptIssues(t *testing.T) {
 			wantHas: "config.kafka.isolation_level",
 		},
 		{
+			name: "transactional_id requires acks all",
+			mutate: func(s *Script) {
+				s.Config.Kafka.TransactionalID = "tx-1"
+				s.Config.Kafka.Acks = "leader"
+			},
+			wantHas: "transactional_id requires acks=all",
+		},
+		{
+			name: "transactional_id with acks all is fine",
+			mutate: func(s *Script) {
+				s.Config.Kafka.TransactionalID = "tx-1"
+				s.Config.Kafka.Acks = "all"
+			},
+			wantClean: true,
+		},
+		{
+			name: "transaction actions are valid",
+			mutate: func(s *Script) {
+				s.Config.Kafka.TransactionalID = "tx-1"
+				s.Actions = []Action{
+					{Name: "b", Type: "kafka_begin_transaction"},
+					{Name: "p", Type: "kafka_produce", Body: "{}"},
+					{Name: "c", Type: "kafka_commit_transaction"},
+				}
+			},
+			wantClean: true,
+		},
+		{
 			name: "valid isolation read_committed",
 			mutate: func(s *Script) {
 				s.Config.Kafka.IsolationLevel = "read_committed"

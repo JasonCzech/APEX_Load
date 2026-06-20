@@ -2878,6 +2878,40 @@
             "properties": {
               "type": {
                 "enum": [
+                  "kafka_abort_transaction"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Aborts the open producer transaction, discarding buffered records."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "kafka_begin_transaction"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Begins a producer transaction (requires config.kafka.transactional_id). Subsequent kafka_produce records are buffered until commit."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "kafka_commit"
                 ]
               }
@@ -2888,6 +2922,23 @@
           },
           "then": {
             "description": "Commits consumer group offsets."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "kafka_commit_transaction"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Commits the open producer transaction, making buffered records atomically visible (EOS)."
           }
         },
         {
@@ -4740,7 +4791,10 @@
             "jms_publish",
             "jms_request_reply",
             "jms_rollback",
+            "kafka_abort_transaction",
+            "kafka_begin_transaction",
             "kafka_commit",
+            "kafka_commit_transaction",
             "kafka_consume",
             "kafka_produce",
             "kafka_request_reply",
@@ -5630,6 +5684,9 @@
           "$ref": "#/$defs/KafkaTLSConfig"
         },
         "topic": {
+          "type": "string"
+        },
+        "transactional_id": {
           "type": "string"
         }
       },

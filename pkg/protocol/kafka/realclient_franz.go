@@ -77,6 +77,11 @@ func (c *franzClient) handle() (*kgo.Client, error) {
 		} else if strings.EqualFold(c.cfg.IsolationLevel, "read_uncommitted") {
 			opts = append(opts, kgo.FetchIsolationLevel(kgo.ReadUncommitted()))
 		}
+		if c.cfg.TransactionalID != "" {
+			// A transactional producer requires acks=all + idempotence, which
+			// franz enforces; the validator also requires acks=all.
+			opts = append(opts, kgo.TransactionalID(c.cfg.TransactionalID))
+		}
 		if codec, ok := compressionCodec(c.cfg.Compression); ok {
 			opts = append(opts, kgo.ProducerBatchCompression(codec))
 		}
@@ -203,6 +208,33 @@ func (c *franzClient) Commit(ctx context.Context) error {
 		return cl.CommitUncommittedOffsets(ctx)
 	}
 	return nil
+}
+
+func (c *franzClient) BeginTransaction(_ context.Context) error {
+	cl, err := c.handle()
+	if err != nil {
+		return err
+	}
+	return cl.BeginTransaction()
+}
+
+func (c *franzClient) CommitTransaction(ctx context.Context) error {
+	cl, err := c.handle()
+	if err != nil {
+		return err
+	}
+	if err := cl.Flush(ctx); err != nil {
+		return err
+	}
+	return cl.EndTransaction(ctx, kgo.TryCommit)
+}
+
+func (c *franzClient) AbortTransaction(ctx context.Context) error {
+	cl, err := c.handle()
+	if err != nil {
+		return err
+	}
+	return cl.EndTransaction(ctx, kgo.TryAbort)
 }
 
 func (c *franzClient) Seek(_ context.Context, _, _, _ string) error {

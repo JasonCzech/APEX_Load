@@ -930,9 +930,21 @@ Rolls back the transacted session.
 
 ## Protocol: kafka
 
+### `kafka_abort_transaction`
+
+Aborts the open producer transaction, discarding buffered records.
+
+### `kafka_begin_transaction`
+
+Begins a producer transaction (requires config.kafka.transactional_id). Subsequent kafka_produce records are buffered until commit.
+
 ### `kafka_commit`
 
 Commits consumer group offsets.
+
+### `kafka_commit_transaction`
+
+Commits the open producer transaction, making buffered records atomically visible (EOS).
 
 ### `kafka_consume`
 

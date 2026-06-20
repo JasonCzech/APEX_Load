@@ -916,6 +916,15 @@ func validateKafkaScriptIssues(script *Script) []string {
 	if kafka.IsolationLevel != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(kafka.IsolationLevel)), "read_uncommitted", "read_committed") {
 		issues = append(issues, fmt.Sprintf("config.kafka.isolation_level %q is not supported", kafka.IsolationLevel))
 	}
+	if strings.TrimSpace(kafka.TransactionalID) != "" {
+		// Transactional (EOS) producers require acks=all and idempotence.
+		if acks := strings.ToLower(strings.TrimSpace(kafka.Acks)); acks != "" && acks != "all" {
+			issues = append(issues, fmt.Sprintf("config.kafka.transactional_id requires acks=all, got %q", kafka.Acks))
+		}
+		if strings.ToLower(strings.TrimSpace(kafka.Idempotence)) == "disabled" {
+			issues = append(issues, "config.kafka.transactional_id requires idempotence (remove idempotence: disabled)")
+		}
+	}
 	if kafka.TimeoutMs < 0 {
 		issues = append(issues, "config.kafka.timeout_ms must be zero or greater")
 	}
