@@ -239,6 +239,9 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		if conflict := javaVuserRunnerLaunchConflict(test.Groups); conflict != nil {
 			return nil, fmt.Errorf("%s: %s", conflict.Code, conflict.Message)
 		}
+		if conflict := importPromotionLaunchConflict(test.Groups); conflict != nil {
+			return nil, fmt.Errorf("%s: %s", conflict.Code, conflict.Message)
+		}
 	}
 
 	return test, nil

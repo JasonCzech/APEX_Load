@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -180,8 +181,36 @@ func (vu *VUser) waitAtRendezvous(ctx context.Context, action dsl.Action) error 
 	return vu.Rendezvous.Wait(ctx, key, participants, timeout)
 }
 
+// safeProtoExecute invokes the protocol adapter's Execute, converting a panic
+// into an error. A buggy adapter (nil dereference, index out of range, …) thus
+// fails the action — flowing through the normal error / continue-on-error path,
+// at worst aborting the current iteration to teardown — instead of unwinding the
+// goroutine and crashing the whole generator process along with every other
+// concurrent VUser and test on the pod.
+func (vu *VUser) safeProtoExecute(ctx context.Context, action *protocol.Action) (result *protocol.Result, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = nil
+			actionName := ""
+			if action != nil {
+				actionName = action.Name
+			}
+			protoName := ""
+			if vu.Script != nil {
+				protoName = vu.Script.Protocol
+			}
+			err = fmt.Errorf("protocol %q panicked executing action %q: %v\n%s",
+				protoName, actionName, r, debug.Stack())
+		}
+	}()
+	return vu.Proto.Execute(ctx, action)
+}
+
 // executeWithRetry wraps a single action execution with retry logic.
 func (vu *VUser) executeWithRetry(ctx context.Context, action *protocol.Action, errCfg dsl.ErrorHandlingConfig) (*protocol.Result, error) {
+	if err := vu.checkResolvedSecrets(); err != nil {
+		return nil, err
+	}
 	maxAttempts := 1 + errCfg.MaxRetries
 	if maxAttempts < 1 {
 		maxAttempts = 1
@@ -207,7 +236,7 @@ func (vu *VUser) executeWithRetry(ctx context.Context, action *protocol.Action, 
 			}
 		}
 
-		result, err := vu.Proto.Execute(ctx, action)
+		result, err := vu.safeProtoExecute(ctx, action)
 		if err != nil {
 			return nil, err
 		}

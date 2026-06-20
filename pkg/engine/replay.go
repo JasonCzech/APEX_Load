@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +24,9 @@ type ReplayOptions struct {
 	Variables       map[string]string
 	RedactionRules  []RedactionRule
 	IgnoreThinkTime bool
+	// Seed, when set, makes random data selection and {{fn.random}}/{{fake.*}}
+	// reproducible across replays. Nil uses defaultReplaySeed.
+	Seed            *int64
 	OnProgress      func(ReplayProgressEvent)
 	DebugController ReplayDebugController
 }
@@ -243,6 +247,10 @@ type ReplayDiagnosisSummary struct {
 	FirstFailureCause   string         `json:"first_failure_cause,omitempty"`
 }
 
+// defaultReplaySeed seeds replay's random data selection and random template
+// builtins when ReplayOptions.Seed is not set, so replays are reproducible.
+const defaultReplaySeed int64 = 1
+
 func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (*ReplayReport, error) {
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
@@ -261,7 +269,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if err := proto.Init(ctx, buildProtoConfig(script)); err != nil {
 		return nil, fmt.Errorf("protocol init: %w", err)
 	}
-	defer proto.Teardown(context.Background())
+	defer runProtocolTeardown(proto)
 
 	dataProvider, err := NewDataProvider(script.DataSources)
 	if err != nil {
@@ -312,6 +320,15 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	for key, value := range opts.Variables {
 		vu.Variables[key] = value
 	}
+
+	// Deterministic replay: seed random data selection and random template
+	// builtins so repeated replays of the same script reselect the same data.
+	replaySeed := defaultReplaySeed
+	if opts.Seed != nil {
+		replaySeed = *opts.Seed
+	}
+	dataProvider.SeedRandom(replaySeed)
+	vu.rng = rand.New(rand.NewSource(replaySeed))
 
 	continueOnError := script.Config.ErrorHandling.ContinueOnError
 	globalThinkCfg := protocol.ThinkTimeConfig{

@@ -128,6 +128,13 @@ func DiagnoseReplay(recorded, replay []Observation) []RepairSuggestion {
 		}
 	}
 
+	// A replay step can be rejected (HTTP >=400) without any dynamic value
+	// visibly rotating — e.g. a stale CSRF/nonce the server echoes back unchanged,
+	// or a token the rule catalog does not recognize. The value-diff loop above
+	// cannot see those; this pass flags rejected steps that no suggestion already
+	// explains so they are not silently missed.
+	suggestions = append(suggestions, diagnoseUnexplainedRejections(replay, suggestions)...)
+
 	sort.SliceStable(suggestions, func(i, j int) bool {
 		if suggestions[i].Severity != suggestions[j].Severity {
 			// Errors before warnings.
@@ -139,6 +146,40 @@ func DiagnoseReplay(recorded, replay []Observation) []RepairSuggestion {
 		return suggestions[i].FailingStepID < suggestions[j].FailingStepID
 	})
 	return suggestions
+}
+
+// diagnoseUnexplainedRejections flags replay steps the server rejected (HTTP
+// >=400) that no value-rotation suggestion already explains. It is additive and
+// only fires when callers supply Observation.ResponseStatus (default 0 → no-op),
+// so it never changes behavior for status-less inputs.
+func diagnoseUnexplainedRejections(replay []Observation, existing []RepairSuggestion) []RepairSuggestion {
+	explained := make(map[int]struct{}, len(existing))
+	for _, s := range existing {
+		if s.FailingStepID != 0 {
+			explained[s.FailingStepID] = struct{}{}
+		}
+	}
+	out := make([]RepairSuggestion, 0)
+	for _, o := range replay {
+		if o.ResponseStatus < 400 {
+			continue
+		}
+		if _, ok := explained[o.ID]; ok {
+			continue
+		}
+		out = append(out, RepairSuggestion{
+			RuleID:         "replay_rejected_unexplained",
+			Severity:       SeverityWarning,
+			Title:          "Replay step rejected without a detected correlation cause",
+			Detail:         fmt.Sprintf("Step %d failed on replay (HTTP %d) but no rotated dynamic value was detected — the rejection may stem from a token the rule engine does not recognize (e.g. a custom CSRF/anti-replay header re-sent verbatim).", o.ID, o.ResponseStatus),
+			FailingStepID:  o.ID,
+			Suggestion:     "Inspect this step's request for an auth/CSRF/nonce value that must be re-extracted from an earlier response, even if its value did not visibly change between record and replay.",
+			Confidence:     0.4,
+			ConfidenceBand: confidenceBand(0.4),
+			ReviewAction:   "manual_review_required",
+		})
+	}
+	return out
 }
 
 func ObservationUsageFields(observation Observation, value string) []string {

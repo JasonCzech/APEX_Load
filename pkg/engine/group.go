@@ -257,7 +257,9 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	wg.Wait()
 	for _, group := range atOnceGroups {
 		protoConfig := buildProtoConfig(group.Script)
-		mge.runGroupLifecycleBlock(context.Background(), group, protoConfig, group.Script.Teardown, "teardown")
+		tctx, tcancel := teardownContext()
+		mge.runGroupLifecycleBlock(tctx, group, protoConfig, group.Script.Teardown, "teardown")
+		tcancel()
 	}
 	if err := waitForBaselineWindow(ctx, mge.postBaseline); err != nil {
 		return nil, err
@@ -293,7 +295,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(ctx context.Context, group G
 		slog.Error("failed to init lifecycle protocol", "group", group.Name, "phase", phase, "err", err)
 		return false
 	}
-	defer vuProto.Teardown(context.Background())
+	defer runProtocolTeardown(vuProto)
 
 	vu := &VUser{
 		ID:              -1,
@@ -378,10 +380,11 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 	mge.metrics.SetActiveVUsers(int64(activeVUsers))
 
 	go func() {
+		defer recoverVUserGoroutine(vuserID)
 		defer wg.Done()
 		defer cancelVUser()
 		defer func() {
-			vuProto.Teardown(context.Background())
+			runProtocolTeardown(vuProto)
 			mge.mu.Lock()
 			delete(mge.vuserCancels, vuserID)
 			delete(mge.vuserGroups, vuserID)
@@ -469,10 +472,11 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 	iterationScript := cloneSingleIterationScript(group.Script)
 	wg.Add(1)
 	go func() {
+		defer recoverVUserGoroutine(vuserID)
 		defer wg.Done()
 		defer cancelVUser()
 		defer func() {
-			vuProto.Teardown(context.Background())
+			runProtocolTeardown(vuProto)
 			mge.mu.Lock()
 			delete(mge.vuserCancels, vuserID)
 			delete(mge.vuserGroups, vuserID)
