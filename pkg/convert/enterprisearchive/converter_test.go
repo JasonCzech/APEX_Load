@@ -3179,6 +3179,68 @@ func TestBuildRTSParityReportFromScriptClassifiesConfiguredScriptSettings(t *tes
 	assertRuntimeSettingParityStatus(t, parity, "streaming", RuntimeSettingStatusExecuted)
 }
 
+func TestBuildRTSParityReportFromScriptSkipsNativeMappedAdditionalAttributes(t *testing.T) {
+	keepAlive := false
+	script := &dsl.Script{
+		Name:     "Native Mapped Runtime Draft",
+		Version:  "1.0.0",
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			HTTP: dsl.HTTPConfig{
+				ConnectTimeoutMs: 30000,
+				RequestTimeoutMs: 45000,
+				TLSTimeoutMs:     10000,
+				MaxConnsPerHost:  12,
+				KeepAlive:        &keepAlive,
+				TLS:              dsl.TLSConfig{MinVersion: "1.2"},
+			},
+			WebRuntime: dsl.WebRuntimeConfig{
+				AdditionalAttributes: map[string]string{
+					"web_set_sockets_option.SSL_VERSION":                 "TLS1.2",
+					"web_set_sockets_option.CLOSE_KEEPALIVE_CONNECTIONS": "1",
+					"web_set_sockets_option.MAX_CONNECTIONS_PER_HOST":    "12",
+					"web_set_timeout.CONNECT":                            "30",
+					"web_set_timeout.RECEIVE":                            "45",
+					"web_set_timeout.SSL":                                "10",
+				},
+			},
+		},
+	}
+
+	parity := BuildRTSParityReportFromScript(script)
+	assertRuntimeSettingParityStatus(t, parity, "http_transport", RuntimeSettingStatusExecuted)
+	assertRuntimeSettingParityStatus(t, parity, "tls", RuntimeSettingStatusExecuted)
+	if runtimeSettingParityHasID(parity, "additional_attributes") {
+		t.Fatalf("parity = %#v, want native-mapped source runtime attributes excluded from additional_attributes", parity)
+	}
+	counts := RuntimeSettingStatusCounts(parity)
+	if counts[string(RuntimeSettingStatusCompatibilityOnly)] != 0 {
+		t.Fatalf("status counts = %#v, want no compatibility-only additional attribute", counts)
+	}
+}
+
+func TestBuildRTSParityReportFromScriptRetainsUnmappedAdditionalAttributes(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "Compatibility Runtime Draft",
+		Version:  "1.0.0",
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			WebRuntime: dsl.WebRuntimeConfig{
+				AdditionalAttributes: map[string]string{
+					"web_set_max_html_param_len": "4096",
+				},
+			},
+		},
+	}
+
+	parity := BuildRTSParityReportFromScript(script)
+	assertRuntimeSettingParityStatus(t, parity, "additional_attributes", RuntimeSettingStatusCompatibilityOnly)
+	counts := RuntimeSettingStatusCounts(parity)
+	if counts[string(RuntimeSettingStatusCompatibilityOnly)] != 1 {
+		t.Fatalf("status counts = %#v, want one compatibility-only additional attribute", counts)
+	}
+}
+
 func TestBuildRTSParityReportFromScriptSkipsDefaultCompatibilityNoise(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "Default Draft",
@@ -3351,6 +3413,15 @@ func assertRuntimeSettingParityStatus(t *testing.T, entries []RuntimeSettingPari
 		return
 	}
 	t.Fatalf("parity entry %q not found in %#v", wantID, entries)
+}
+
+func runtimeSettingParityHasID(entries []RuntimeSettingParityEntry, wantID string) bool {
+	for _, entry := range entries {
+		if entry.ID == wantID {
+			return true
+		}
+	}
+	return false
 }
 
 func TestConvertZipMapsMobileBrowserRuntimeSettings(t *testing.T) {

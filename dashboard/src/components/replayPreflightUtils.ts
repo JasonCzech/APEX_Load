@@ -92,6 +92,14 @@ function collectTemplateRefs(action: ScriptActionDefinition, kind: string): stri
   return sortedValues(refs)
 }
 
+function sequenceChildExtractors(action: ScriptActionDefinition) {
+  if (action.type?.trim().toLowerCase() !== 'http_sequence') return []
+  const requests = action.params && Array.isArray(action.params.requests)
+    ? action.params.requests
+    : []
+  return requests.flatMap(request => Array.isArray(request?.extractors) ? request.extractors : [])
+}
+
 type ReadinessVarContext = {
   available: Set<string>
   missing: Set<string>
@@ -124,6 +132,9 @@ function collectReadinessRefs(actions: ScriptActionDefinition[], ctx: ReadinessV
     const isLoop = type === 'control_loop'
     const isIf = type === 'control_if'
     const refSource = isLoop || isIf ? controlShellAction(action) : action
+    sequenceChildExtractors(action).forEach(extractor => {
+      if (extractor.name) ctx.available.add(extractor.name)
+    })
     // A control_loop's own while-condition is evaluated each pass with loop_index
     // already set, so scan the shell with the loop scope applied.
     const refCtx: ReadinessVarContext = isLoop ? { ...ctx, loopDepth: ctx.loopDepth + 1 } : ctx

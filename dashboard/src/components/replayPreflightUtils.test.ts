@@ -208,6 +208,103 @@ describe('buildLocalReplayPreflight', () => {
     expect(preflight.missing_variables).not.toContain('cart_id')
   })
 
+  it('treats http_sequence child extractors as available replay variables', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [
+        {
+          name: 'Create BAN',
+          type: 'http_sequence',
+          method: 'SEQUENCE',
+          target: '/create',
+          params: {
+            requests: [
+              {
+                name: 'Submit',
+                method: 'POST',
+                target: '/create',
+                extractors: [
+                  { name: 'bannumber', source: 'body', type: 'regex', expression: 'BAN=(\\d+)' },
+                  { name: 'error_message', source: 'body', type: 'regex', expression: 'Error=(.+)' },
+                ],
+              },
+              {
+                name: 'Confirm',
+                method: 'POST',
+                target: '/confirm',
+                body: 'ban={{var.bannumber}}',
+              },
+            ],
+          },
+        },
+        {
+          name: 'Use BAN',
+          type: 'POST',
+          method: 'POST',
+          target: '/ban',
+          body: 'ban={{var.bannumber}}&message={{var.error_message}}',
+        },
+      ],
+    })
+
+    expect(preflight.missing_variables).toEqual([])
+    expect(preflight.checks?.find(check => check.id === 'variables')?.status).toBe('pass')
+  })
+
+  it('walks http_sequence child extractors inside control-flow bodies', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [
+        {
+          name: 'Reserve Products',
+          type: 'control_loop',
+          target: '',
+          control: {
+            count: 1,
+            steps: [
+              {
+                name: 'Get Available Sub List',
+                type: 'http_sequence',
+                method: 'SEQUENCE',
+                target: '/available',
+                params: {
+                  requests: [
+                    {
+                      name: 'Submit',
+                      method: 'POST',
+                      target: '/available',
+                      extractors: [
+                        { name: 'subno', source: 'body', type: 'regex_ordinal', expression: 'SUB=(\\d+)' },
+                      ],
+                    },
+                  ],
+                },
+              },
+              {
+                name: 'Set Product Number',
+                type: 'http_sequence',
+                method: 'SEQUENCE',
+                target: '/set-product',
+                params: {
+                  requests: [
+                    {
+                      name: 'Submit',
+                      method: 'POST',
+                      target: '/set-product',
+                      body: 'subNo={{var.subno}}',
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      ],
+    })
+
+    expect(preflight.missing_variables).toEqual([])
+  })
+
   it('treats loop_index and foreach row bindings inside a loop body as available', () => {
     const preflight = buildLocalReplayPreflight({
       ...baseScript,
