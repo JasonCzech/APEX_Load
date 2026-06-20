@@ -60,11 +60,22 @@ func (c *franzClient) handle() (*kgo.Client, error) {
 		}
 		switch strings.ToLower(c.cfg.Acks) {
 		case "none":
+			// Idempotence requires acks=all; non-all acks must disable it.
 			opts = append(opts, kgo.RequiredAcks(kgo.NoAck()), kgo.DisableIdempotentWrite())
 		case "leader":
 			opts = append(opts, kgo.RequiredAcks(kgo.LeaderAck()), kgo.DisableIdempotentWrite())
 		default:
 			opts = append(opts, kgo.RequiredAcks(kgo.AllISRAcks()))
+			// franz enables idempotent writes by default at acks=all; honor an
+			// explicit opt-out (config.kafka.idempotence: disabled).
+			if c.cfg.Idempotence == "disabled" {
+				opts = append(opts, kgo.DisableIdempotentWrite())
+			}
+		}
+		if strings.EqualFold(c.cfg.IsolationLevel, "read_committed") {
+			opts = append(opts, kgo.FetchIsolationLevel(kgo.ReadCommitted()))
+		} else if strings.EqualFold(c.cfg.IsolationLevel, "read_uncommitted") {
+			opts = append(opts, kgo.FetchIsolationLevel(kgo.ReadUncommitted()))
 		}
 		if codec, ok := compressionCodec(c.cfg.Compression); ok {
 			opts = append(opts, kgo.ProducerBatchCompression(codec))

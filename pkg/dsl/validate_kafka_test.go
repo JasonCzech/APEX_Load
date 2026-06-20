@@ -111,6 +111,43 @@ func TestValidateKafkaScriptIssues(t *testing.T) {
 			wantHas: "config.kafka.compression",
 		},
 		{
+			name: "bad idempotence",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Idempotence = "sometimes"
+			},
+			wantHas: "config.kafka.idempotence",
+		},
+		{
+			name: "idempotence enabled requires acks all",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Idempotence = "enabled"
+				s.Config.Kafka.Acks = "leader"
+			},
+			wantHas: "requires acks=all",
+		},
+		{
+			name: "idempotence enabled with acks all is fine",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Idempotence = "enabled"
+				s.Config.Kafka.Acks = "all"
+			},
+			wantClean: true,
+		},
+		{
+			name: "bad isolation level",
+			mutate: func(s *Script) {
+				s.Config.Kafka.IsolationLevel = "read_whatever"
+			},
+			wantHas: "config.kafka.isolation_level",
+		},
+		{
+			name: "valid isolation read_committed",
+			mutate: func(s *Script) {
+				s.Config.Kafka.IsolationLevel = "read_committed"
+			},
+			wantClean: true,
+		},
+		{
 			name: "bad partition strategy",
 			mutate: func(s *Script) {
 				s.Config.Kafka.PartitionStrategy = "psychic"

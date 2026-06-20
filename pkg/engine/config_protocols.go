@@ -501,6 +501,12 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 	if kafkaCfg.Acks != "" {
 		cfg["kafka_acks"] = kafkaCfg.Acks
 	}
+	if kafkaCfg.Idempotence != "" {
+		cfg["kafka_idempotence"] = kafkaCfg.Idempotence
+	}
+	if kafkaCfg.IsolationLevel != "" {
+		cfg["kafka_isolation_level"] = kafkaCfg.IsolationLevel
+	}
 	if kafkaCfg.Compression != "" {
 		cfg["kafka_compression"] = kafkaCfg.Compression
 	}

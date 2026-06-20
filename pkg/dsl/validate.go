@@ -902,6 +902,20 @@ func validateKafkaScriptIssues(script *Script) []string {
 	if kafka.AutoOffsetReset != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(kafka.AutoOffsetReset)), "earliest", "latest") {
 		issues = append(issues, fmt.Sprintf("config.kafka.auto_offset_reset %q is not supported", kafka.AutoOffsetReset))
 	}
+	if kafka.Idempotence != "" {
+		idem := strings.ToLower(strings.TrimSpace(kafka.Idempotence))
+		if !isAllowedValue(idem, "enabled", "disabled") {
+			issues = append(issues, fmt.Sprintf("config.kafka.idempotence %q is not supported (use enabled or disabled)", kafka.Idempotence))
+		} else if idem == "enabled" {
+			// Idempotent writes require acks=all (the default when acks is unset).
+			if acks := strings.ToLower(strings.TrimSpace(kafka.Acks)); acks != "" && acks != "all" {
+				issues = append(issues, fmt.Sprintf("config.kafka.idempotence enabled requires acks=all, got %q", kafka.Acks))
+			}
+		}
+	}
+	if kafka.IsolationLevel != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(kafka.IsolationLevel)), "read_uncommitted", "read_committed") {
+		issues = append(issues, fmt.Sprintf("config.kafka.isolation_level %q is not supported", kafka.IsolationLevel))
+	}
 	if kafka.TimeoutMs < 0 {
 		issues = append(issues, "config.kafka.timeout_ms must be zero or greater")
 	}

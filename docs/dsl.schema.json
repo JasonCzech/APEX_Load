@@ -5581,6 +5581,12 @@
         "consumer_group": {
           "type": "string"
         },
+        "idempotence": {
+          "type": "string"
+        },
+        "isolation_level": {
+          "type": "string"
+        },
         "max_message_bytes": {
           "type": "integer"
         },

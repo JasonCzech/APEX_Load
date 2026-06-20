@@ -60,6 +60,26 @@ func TestKafkaEventHubsProfilePreservesExplicitValues(t *testing.T) {
 	}
 }
 
+// TestKafkaProducerConsumerKnobsFlowToConfig verifies the P2.1 idempotence and
+// isolation-level knobs are parsed into the runtime config.
+func TestKafkaProducerConsumerKnobsFlowToConfig(t *testing.T) {
+	k := &Kafka{name: "kafka"}
+	if err := k.Init(context.Background(), map[string]any{
+		"kafka_topic":           "events",
+		"kafka_mock":            true,
+		"kafka_idempotence":     "disabled",
+		"kafka_isolation_level": "read_committed",
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if k.cfg.Idempotence != "disabled" {
+		t.Errorf("idempotence = %q, want disabled", k.cfg.Idempotence)
+	}
+	if k.cfg.IsolationLevel != "read_committed" {
+		t.Errorf("isolation_level = %q, want read_committed", k.cfg.IsolationLevel)
+	}
+}
+
 // TestKafkaMaxMessageBytesGuard verifies the producer-side size guard rejects
 // records over the cap and admits records under it.
 func TestKafkaMaxMessageBytesGuard(t *testing.T) {

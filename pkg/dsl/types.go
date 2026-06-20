@@ -233,9 +233,11 @@ type KafkaConfig struct {
 	ConsumerGroup      string            `json:"consumer_group,omitempty"`       // consumer group id for kafka_consume
 	Topic              string            `json:"topic,omitempty"`                // default topic
 	Acks               string            `json:"acks,omitempty"`                 // none|leader|all
+	Idempotence        string            `json:"idempotence,omitempty"`          // ""(default)|enabled|disabled — idempotent producer (requires acks=all)
 	Compression        string            `json:"compression,omitempty"`          // none|gzip|snappy|lz4|zstd
 	PartitionStrategy  string            `json:"partition_strategy,omitempty"`   // key-hash|round-robin|explicit
 	AutoOffsetReset    string            `json:"auto_offset_reset,omitempty"`    // earliest|latest
+	IsolationLevel     string            `json:"isolation_level,omitempty"`      // ""(default)|read_uncommitted|read_committed (consumer)
 	Partitions         int               `json:"partitions,omitempty"`           // partition count hint for the mock broker
 	TimeoutMs          int               `json:"timeout_ms,omitempty"`           // default consume/request timeout
 	MaxMessageBytes    int               `json:"max_message_bytes,omitempty"`    // producer-side max record size; Event Hubs caps at 1 MiB (Std/Prem), 20 MiB (Dedicated)

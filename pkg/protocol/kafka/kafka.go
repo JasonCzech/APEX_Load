@@ -52,9 +52,11 @@ type config struct {
 	ConsumerGroup     string
 	Topic             string
 	Acks              string
+	Idempotence       string
 	Compression       string
 	PartitionStrategy string
 	AutoOffsetReset   string
+	IsolationLevel    string
 	Partitions        int32
 	Timeout           time.Duration
 	Properties        map[string]string
@@ -87,9 +89,11 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 		ConsumerGroup:     stringValue(cfg, "kafka_consumer_group"),
 		Topic:             stringValue(cfg, "kafka_topic"),
 		Acks:              stringValue(cfg, "kafka_acks"),
+		Idempotence:       strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_idempotence"))),
 		Compression:       stringValue(cfg, "kafka_compression"),
 		PartitionStrategy: stringValue(cfg, "kafka_partition_strategy"),
 		AutoOffsetReset:   stringValue(cfg, "kafka_auto_offset_reset"),
+		IsolationLevel:    strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_isolation_level"))),
 		Partitions:        int32(intValue(cfg, "kafka_partitions", defaultMockPartitions)),
 		Timeout:           durationValue(cfg, "kafka_timeout_ms", 5*time.Second),
 		Properties:        stringMapValue(cfg, "kafka_properties"),
