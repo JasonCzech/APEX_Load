@@ -887,8 +887,11 @@ Consumes the next message from a queue or topic.
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string |  | Source queue/topic; falls back to config.jms.destination. |
+| `params.destination` | string |  | Source alternative to target; falls back to config.jms.destination. |
+| `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
 | `params.subscription` | string |  | Azure Service Bus topic subscription; falls back to config.jms.subscription. |
 | `params.timeout_ms` | int |  | Consume timeout in milliseconds; falls back to config.jms.timeout_ms. |
+| `params.dead_letter` | bool |  | Consume from / classify the dead-letter destination. |
 
 ### `jms_publish`
 
@@ -900,6 +903,10 @@ Publishes a message to a queue or topic.
 | `body` | string |  | Message payload; template variables are expanded. |
 | `body_file` | string |  | Local file containing the message payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Message properties/headers. |
+| `params.destination` | string |  | Destination alternative to target; falls back to config.jms.destination. |
+| `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
+| `params.correlation_id` | string |  | Correlation ID set on the outgoing message. |
+| `params.dead_letter` | bool |  | Marks this action as targeting a dead-letter destination (drives dead-letter classification). |
 
 ### `jms_request_reply`
 
@@ -913,6 +920,9 @@ Sends a request message and waits for the correlated reply.
 | `params.reply_to` | string |  | Reply destination; required unless config.jms.reply_to is set. |
 | `params.subscription` | string |  | Azure Service Bus topic subscription for consuming replies from a topic; falls back to config.jms.subscription. |
 | `params.timeout_ms` | int |  | Reply timeout in milliseconds. |
+| `params.destination` | string |  | Request destination alternative to target; falls back to config.jms.destination. |
+| `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
+| `params.correlation_id` | string |  | Correlation ID for matching the reply; defaults to the request message ID. |
 
 ### `jms_rollback`
 

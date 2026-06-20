@@ -837,8 +837,16 @@ type ServerTelemetry struct {
 	MessagesReceivedPerSec float64                `protobuf:"fixed64,13,opt,name=messages_received_per_sec,json=messagesReceivedPerSec,proto3" json:"messages_received_per_sec,omitempty"`
 	FirstEventMs           float64                `protobuf:"fixed64,14,opt,name=first_event_ms,json=firstEventMs,proto3" json:"first_event_ms,omitempty"`
 	EventCount             int32                  `protobuf:"varint,15,opt,name=event_count,json=eventCount,proto3" json:"event_count,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	// Messaging reliability counters (P1.1).
+	SendFailureCount  int32 `protobuf:"varint,16,opt,name=send_failure_count,json=sendFailureCount,proto3" json:"send_failure_count,omitempty"`
+	RedeliveryCount   int32 `protobuf:"varint,17,opt,name=redelivery_count,json=redeliveryCount,proto3" json:"redelivery_count,omitempty"`
+	DeadLetteredCount int32 `protobuf:"varint,18,opt,name=dead_lettered_count,json=deadLetteredCount,proto3" json:"dead_lettered_count,omitempty"`
+	DuplicateCount    int32 `protobuf:"varint,19,opt,name=duplicate_count,json=duplicateCount,proto3" json:"duplicate_count,omitempty"`
+	OutOfOrderCount   int32 `protobuf:"varint,20,opt,name=out_of_order_count,json=outOfOrderCount,proto3" json:"out_of_order_count,omitempty"`
+	CommitCount       int32 `protobuf:"varint,21,opt,name=commit_count,json=commitCount,proto3" json:"commit_count,omitempty"`
+	AbortCount        int32 `protobuf:"varint,22,opt,name=abort_count,json=abortCount,proto3" json:"abort_count,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ServerTelemetry) Reset() {
@@ -972,6 +980,55 @@ func (x *ServerTelemetry) GetFirstEventMs() float64 {
 func (x *ServerTelemetry) GetEventCount() int32 {
 	if x != nil {
 		return x.EventCount
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetSendFailureCount() int32 {
+	if x != nil {
+		return x.SendFailureCount
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetRedeliveryCount() int32 {
+	if x != nil {
+		return x.RedeliveryCount
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetDeadLetteredCount() int32 {
+	if x != nil {
+		return x.DeadLetteredCount
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetDuplicateCount() int32 {
+	if x != nil {
+		return x.DuplicateCount
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetOutOfOrderCount() int32 {
+	if x != nil {
+		return x.OutOfOrderCount
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetCommitCount() int32 {
+	if x != nil {
+		return x.CommitCount
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetAbortCount() int32 {
+	if x != nil {
+		return x.AbortCount
 	}
 	return 0
 }
@@ -2115,7 +2172,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x10shedded_arrivals\x18\x05 \x01(\x03R\x0fsheddedArrivals\"F\n" +
 	"\vGroupMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
-	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\xaa\x05\n" +
+	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\xcd\a\n" +
 	"\x0fServerTelemetry\x120\n" +
 	"\x14server_processing_ms\x18\x01 \x01(\x01R\x12serverProcessingMs\x12\x1f\n" +
 	"\vtransfer_ms\x18\x02 \x01(\x01R\n" +
@@ -2134,7 +2191,15 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x19messages_received_per_sec\x18\r \x01(\x01R\x16messagesReceivedPerSec\x12$\n" +
 	"\x0efirst_event_ms\x18\x0e \x01(\x01R\ffirstEventMs\x12\x1f\n" +
 	"\vevent_count\x18\x0f \x01(\x05R\n" +
-	"eventCount\"\xa9\x05\n" +
+	"eventCount\x12,\n" +
+	"\x12send_failure_count\x18\x10 \x01(\x05R\x10sendFailureCount\x12)\n" +
+	"\x10redelivery_count\x18\x11 \x01(\x05R\x0fredeliveryCount\x12.\n" +
+	"\x13dead_lettered_count\x18\x12 \x01(\x05R\x11deadLetteredCount\x12'\n" +
+	"\x0fduplicate_count\x18\x13 \x01(\x05R\x0eduplicateCount\x12+\n" +
+	"\x12out_of_order_count\x18\x14 \x01(\x05R\x0foutOfOrderCount\x12!\n" +
+	"\fcommit_count\x18\x15 \x01(\x05R\vcommitCount\x12\x1f\n" +
+	"\vabort_count\x18\x16 \x01(\x05R\n" +
+	"abortCount\"\xa9\x05\n" +
 	"\x11TransactionMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
 	"\x12start_time_unix_ms\x18\x02 \x01(\x03R\x0fstartTimeUnixMs\x12\x1f\n" +

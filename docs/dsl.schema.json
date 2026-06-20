@@ -2698,6 +2698,22 @@
             "properties": {
               "params": {
                 "properties": {
+                  "dead_letter": {
+                    "description": "Consume from / classify the dead-letter destination.",
+                    "type": "boolean"
+                  },
+                  "destination": {
+                    "description": "Source alternative to target; falls back to config.jms.destination.",
+                    "type": "string"
+                  },
+                  "destination_type": {
+                    "description": "Destination kind; falls back to config.jms.destination_type.",
+                    "enum": [
+                      "queue",
+                      "topic"
+                    ],
+                    "type": "string"
+                  },
                   "subscription": {
                     "description": "Azure Service Bus topic subscription; falls back to config.jms.subscription.",
                     "type": "string"
@@ -2744,6 +2760,31 @@
                 "description": "Message properties/headers.",
                 "type": "object"
               },
+              "params": {
+                "properties": {
+                  "correlation_id": {
+                    "description": "Correlation ID set on the outgoing message.",
+                    "type": "string"
+                  },
+                  "dead_letter": {
+                    "description": "Marks this action as targeting a dead-letter destination (drives dead-letter classification).",
+                    "type": "boolean"
+                  },
+                  "destination": {
+                    "description": "Destination alternative to target; falls back to config.jms.destination.",
+                    "type": "string"
+                  },
+                  "destination_type": {
+                    "description": "Destination kind; falls back to config.jms.destination_type.",
+                    "enum": [
+                      "queue",
+                      "topic"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
               "target": {
                 "description": "Destination queue/topic; falls back to config.jms.destination.",
                 "type": "string"
@@ -2777,6 +2818,22 @@
               },
               "params": {
                 "properties": {
+                  "correlation_id": {
+                    "description": "Correlation ID for matching the reply; defaults to the request message ID.",
+                    "type": "string"
+                  },
+                  "destination": {
+                    "description": "Request destination alternative to target; falls back to config.jms.destination.",
+                    "type": "string"
+                  },
+                  "destination_type": {
+                    "description": "Destination kind; falls back to config.jms.destination_type.",
+                    "enum": [
+                      "queue",
+                      "topic"
+                    ],
+                    "type": "string"
+                  },
                   "reply_to": {
                     "description": "Reply destination; required unless config.jms.reply_to is set.",
                     "type": "string"

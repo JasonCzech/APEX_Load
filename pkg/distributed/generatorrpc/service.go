@@ -879,6 +879,13 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 				MessagesSentPerSec:     tx.ServerTelemetry.MessagesSentPerSec,
 				MessagesReceivedPerSec: tx.ServerTelemetry.MessagesReceivedPerSec,
 				ConsumerLagMs:          tx.ServerTelemetry.ConsumerLagMs,
+				SendFailureCount:       tx.ServerTelemetry.SendFailureCount,
+				RedeliveryCount:        tx.ServerTelemetry.RedeliveryCount,
+				DeadLetteredCount:      tx.ServerTelemetry.DeadLetteredCount,
+				DuplicateCount:         tx.ServerTelemetry.DuplicateCount,
+				OutOfOrderCount:        tx.ServerTelemetry.OutOfOrderCount,
+				CommitCount:            tx.ServerTelemetry.CommitCount,
+				AbortCount:             tx.ServerTelemetry.AbortCount,
 			}
 		}
 		protoTransactions = append(protoTransactions, &pb.TransactionMetric{

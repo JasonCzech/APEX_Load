@@ -439,6 +439,13 @@ func cloneEngineServerTelemetrySummary(summary *engine.ServerTelemetrySummary) *
 		AvgMessagesReceivedPerSec: summary.AvgMessagesReceivedPerSec,
 		AvgConsumerLagMs:          summary.AvgConsumerLagMs,
 		MaxConsumerLagMs:          summary.MaxConsumerLagMs,
+		SendFailureCount:          summary.SendFailureCount,
+		RedeliveryCount:           summary.RedeliveryCount,
+		DeadLetteredCount:         summary.DeadLetteredCount,
+		DuplicateCount:            summary.DuplicateCount,
+		OutOfOrderCount:           summary.OutOfOrderCount,
+		CommitCount:               summary.CommitCount,
+		AbortCount:                summary.AbortCount,
 		RequestSizeClasses:        cloneTelemetryClassCounts(summary.RequestSizeClasses),
 		ResponseSizeClasses:       cloneTelemetryClassCounts(summary.ResponseSizeClasses),
 		ConnectionReusedCount:     summary.ConnectionReusedCount,
@@ -452,6 +459,20 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 	}
 	if metrics.ServerTelemetry == nil {
 		metrics.ServerTelemetry = &ServerTelemetrySummary{}
+	}
+	// Reliability counters are run totals and accumulate for every record,
+	// including control-only ops (commit/rollback) that carry no measured sample.
+	metrics.ServerTelemetry.SendFailureCount += int64(telemetry.SendFailureCount)
+	metrics.ServerTelemetry.RedeliveryCount += int64(telemetry.RedeliveryCount)
+	metrics.ServerTelemetry.DeadLetteredCount += int64(telemetry.DeadLetteredCount)
+	metrics.ServerTelemetry.DuplicateCount += int64(telemetry.DuplicateCount)
+	metrics.ServerTelemetry.OutOfOrderCount += int64(telemetry.OutOfOrderCount)
+	metrics.ServerTelemetry.CommitCount += int64(telemetry.CommitCount)
+	metrics.ServerTelemetry.AbortCount += int64(telemetry.AbortCount)
+	// Control-only ops must not contribute to the averaging divisor or they would
+	// dilute the average payload/latency/throughput.
+	if !generatorTelemetryHasMeasuredSample(telemetry) {
+		return
 	}
 	metrics.ServerTelemetry.Samples++
 	metrics.ServerTelemetry.AvgServerProcessingMs += telemetry.ServerProcessingMs
@@ -482,6 +503,21 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 	if telemetry.ConnectionReused {
 		metrics.ServerTelemetry.ConnectionReusedCount++
 	}
+}
+
+// generatorTelemetryHasMeasuredSample mirrors protocol.ServerTelemetry.HasMeasuredSample
+// for the gRPC transport struct: it reports whether the record carries a measured
+// transfer/latency/payload sample (vs. a control-only op carrying only reliability
+// counters), so control ops do not dilute the averaged telemetry.
+func generatorTelemetryHasMeasuredSample(t *generatorrpc.ServerTelemetry) bool {
+	if t == nil {
+		return false
+	}
+	return t.ServerProcessingMs != 0 || t.TransferMs != 0 || t.RequestPayloadKB != 0 ||
+		t.ResponsePayloadKB != 0 || t.FirstEventMs != 0 || t.EventCount != 0 ||
+		t.MessageLatencyMs != 0 || t.MessagesSent != 0 || t.MessagesReceived != 0 ||
+		t.MessagesSentPerSec != 0 || t.MessagesReceivedPerSec != 0 || t.ConsumerLagMs != 0 ||
+		t.RequestSizeClass != "" || t.ResponseSizeClass != "" || t.ConnectionReused
 }
 
 func finalizeAPIServerTelemetrySummary(summary *ServerTelemetrySummary) {

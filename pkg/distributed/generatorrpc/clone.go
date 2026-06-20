@@ -103,5 +103,12 @@ func cloneServerTelemetry(input *protocol.ServerTelemetry) *ServerTelemetry {
 		MessagesSentPerSec:     input.MessagesSentPerSec,
 		MessagesReceivedPerSec: input.MessagesReceivedPerSec,
 		ConsumerLagMs:          input.ConsumerLagMs,
+		SendFailureCount:       int32(input.SendFailureCount),
+		RedeliveryCount:        int32(input.RedeliveryCount),
+		DeadLetteredCount:      int32(input.DeadLetteredCount),
+		DuplicateCount:         int32(input.DuplicateCount),
+		OutOfOrderCount:        int32(input.OutOfOrderCount),
+		CommitCount:            int32(input.CommitCount),
+		AbortCount:             int32(input.AbortCount),
 	}
 }

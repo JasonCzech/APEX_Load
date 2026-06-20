@@ -121,6 +121,13 @@ type ServerTelemetrySummary struct {
 	AvgMessagesReceivedPerSec float64          `json:"avg_messages_received_per_sec,omitempty"`
 	AvgConsumerLagMs          float64          `json:"avg_consumer_lag_ms,omitempty"`
 	MaxConsumerLagMs          float64          `json:"max_consumer_lag_ms,omitempty"`
+	SendFailureCount          int64            `json:"send_failure_count,omitempty"`
+	RedeliveryCount           int64            `json:"redelivery_count,omitempty"`
+	DeadLetteredCount         int64            `json:"dead_lettered_count,omitempty"`
+	DuplicateCount            int64            `json:"duplicate_count,omitempty"`
+	OutOfOrderCount           int64            `json:"out_of_order_count,omitempty"`
+	CommitCount               int64            `json:"commit_count,omitempty"`
+	AbortCount                int64            `json:"abort_count,omitempty"`
 	RequestSizeClasses        map[string]int64 `json:"request_size_classes,omitempty"`
 	ResponseSizeClasses       map[string]int64 `json:"response_size_classes,omitempty"`
 	ConnectionReusedCount     int64            `json:"connection_reused_count,omitempty"`
@@ -800,6 +807,20 @@ func mergeBrowserMetricsSummary(summary *BrowserMetricsSummary, metrics *protoco
 
 func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *protocol.ServerTelemetry) {
 	if summary == nil || telemetry == nil {
+		return
+	}
+	// Reliability counters are run totals and accumulate for every record,
+	// including control-only ops (commit/rollback) that carry no measured sample.
+	summary.SendFailureCount += int64(telemetry.SendFailureCount)
+	summary.RedeliveryCount += int64(telemetry.RedeliveryCount)
+	summary.DeadLetteredCount += int64(telemetry.DeadLetteredCount)
+	summary.DuplicateCount += int64(telemetry.DuplicateCount)
+	summary.OutOfOrderCount += int64(telemetry.OutOfOrderCount)
+	summary.CommitCount += int64(telemetry.CommitCount)
+	summary.AbortCount += int64(telemetry.AbortCount)
+	// Control-only ops must not contribute to the averaging divisor or they would
+	// dilute the average payload/latency/throughput.
+	if !telemetry.HasMeasuredSample() {
 		return
 	}
 	summary.Samples++

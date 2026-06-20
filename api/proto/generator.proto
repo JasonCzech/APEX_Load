@@ -137,6 +137,14 @@ message ServerTelemetry {
   double messages_received_per_sec = 13;
   double first_event_ms = 14;
   int32 event_count = 15;
+  // Messaging reliability counters (P1.1).
+  int32 send_failure_count = 16;
+  int32 redelivery_count = 17;
+  int32 dead_lettered_count = 18;
+  int32 duplicate_count = 19;
+  int32 out_of_order_count = 20;
+  int32 commit_count = 21;
+  int32 abort_count = 22;
 }
 
 message TransactionMetric {

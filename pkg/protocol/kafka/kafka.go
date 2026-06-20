@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 )
 
 func init() {
@@ -34,6 +35,7 @@ type Kafka struct {
 	name        string
 	cfg         config
 	client      kafkaClient
+	session     *messaging.Session[string]
 	rrCounter   uint64 // round-robin partition counter
 	initialized bool
 }
@@ -151,12 +153,16 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 		// -tags kafka_real to compile in the franz-go-backed client.
 		k.client = newRealClient(k.cfg)
 	}
+	k.session = messaging.New[string](messaging.ParseAckMode(""))
 	k.initialized = true
 	return nil
 }
 
 func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	start := time.Now()
+	if k.session == nil {
+		k.session = messaging.New[string](messaging.ParseAckMode(""))
+	}
 	topic := k.topic(action)
 	result := &protocol.Result{
 		ActionName:       action.Name,
@@ -185,14 +191,22 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 		requestRec, responseRec, err = k.requestReply(ctx, action, result)
 		hasRequest = err == nil
 		hasResponse = err == nil
-	case "kafka_commit", "kafka_seek":
-		result.Extractions["kafka_operation"] = action.Type
+	case "kafka_commit":
+		// Offset commit: record a commit on the shared session so it feeds the
+		// unified commit accounting (no redelivery semantics for Kafka offsets).
+		k.session.Commit()
+		result.Extractions["kafka_operation"] = "kafka_commit"
+		result.ServerTelemetry = &protocol.ServerTelemetry{CommitCount: 1}
+	case "kafka_seek":
+		result.Extractions["kafka_operation"] = "kafka_seek"
 	default:
 		err = fmt.Errorf("unsupported kafka action type %q", action.Type)
 	}
 
 	result.Duration = time.Since(start)
-	result.ServerTelemetry = finalizeKafkaServerTelemetry(result, requestRec, hasRequest, responseRec, hasResponse)
+	if result.ServerTelemetry == nil {
+		result.ServerTelemetry = finalizeKafkaServerTelemetry(result, requestRec, hasRequest, responseRec, hasResponse)
+	}
 	if err != nil {
 		result.Success = false
 		if result.StatusCode == 0 || result.StatusCode == 200 {

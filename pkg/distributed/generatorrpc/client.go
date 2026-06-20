@@ -107,6 +107,13 @@ type ServerTelemetry struct {
 	MessagesSentPerSec     float64
 	MessagesReceivedPerSec float64
 	ConsumerLagMs          float64
+	SendFailureCount       int32
+	RedeliveryCount        int32
+	DeadLetteredCount      int32
+	DuplicateCount         int32
+	OutOfOrderCount        int32
+	CommitCount            int32
+	AbortCount             int32
 }
 
 type TransactionMetric struct {
@@ -438,6 +445,13 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 				MessagesSentPerSec:     tx.GetServerTelemetry().GetMessagesSentPerSec(),
 				MessagesReceivedPerSec: tx.GetServerTelemetry().GetMessagesReceivedPerSec(),
 				ConsumerLagMs:          tx.GetServerTelemetry().GetConsumerLagMs(),
+				SendFailureCount:       tx.GetServerTelemetry().GetSendFailureCount(),
+				RedeliveryCount:        tx.GetServerTelemetry().GetRedeliveryCount(),
+				DeadLetteredCount:      tx.GetServerTelemetry().GetDeadLetteredCount(),
+				DuplicateCount:         tx.GetServerTelemetry().GetDuplicateCount(),
+				OutOfOrderCount:        tx.GetServerTelemetry().GetOutOfOrderCount(),
+				CommitCount:            tx.GetServerTelemetry().GetCommitCount(),
+				AbortCount:             tx.GetServerTelemetry().GetAbortCount(),
 			}
 		}
 		var snapshot *protocol.ErrorSnapshot

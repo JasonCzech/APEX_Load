@@ -9,12 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 )
 
 // sidecarCommandEnv is the operator-owned environment variable that supplies the
@@ -22,6 +24,11 @@ import (
 // script-supplied properties: a script is user-controlled JSON, so honoring a
 // script-supplied command would allow arbitrary command execution on generators.
 const sidecarCommandEnv = "APEXLOAD_JMS_SIDECAR_COMMAND"
+
+// redeliveredProperty marks a message that a transacted/client rollback requeued
+// onto the in-memory mock broker, so a later consume can count it as a
+// redelivery. Real brokers carry their own redelivery metadata.
+const redeliveredProperty = "jms_redelivered"
 
 func init() {
 	protocol.Register("jms-solace", func() protocol.Protocol {
@@ -40,6 +47,7 @@ type JMS struct {
 	provider    string
 	cfg         config
 	adapter     brokerAdapter
+	session     *messaging.Session[message]
 	initialized bool
 }
 
@@ -161,6 +169,7 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 	if j.cfg.Timeout <= 0 {
 		j.cfg.Timeout = 5 * time.Second
 	}
+	j.session = messaging.New[message](messaging.ParseAckMode(j.cfg.Acknowledgement))
 	if j.cfg.Mock {
 		j.adapter = memoryAdapter{broker: broker}
 	} else {
@@ -205,6 +214,9 @@ func (j *JMS) selectAdapter() (brokerAdapter, error) {
 
 func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	start := time.Now()
+	if j.session == nil {
+		j.session = messaging.New[message](messaging.ParseAckMode(j.cfg.Acknowledgement))
+	}
 	destination := j.destination(action)
 	isDeadLetter := j.isDeadLetterAction(action, destination)
 	result := &protocol.Result{
@@ -238,13 +250,15 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 		hasRequestMsg = err == nil
 		hasResponseMsg = err == nil
 	case "jms_ack", "jms_commit", "jms_rollback":
-		result.Extractions["jms_operation"] = action.Type
+		j.settle(action, result)
 	default:
 		err = fmt.Errorf("unsupported JMS action type %q", action.Type)
 	}
 
 	result.Duration = time.Since(start)
-	result.ServerTelemetry = finalizeJMSServerTelemetry(result, requestMsg, hasRequestMsg, responseMsg, hasResponseMsg)
+	if result.ServerTelemetry == nil {
+		result.ServerTelemetry = finalizeJMSServerTelemetry(result, requestMsg, hasRequestMsg, responseMsg, hasResponseMsg)
+	}
 	if err != nil {
 		result.Success = false
 		if result.StatusCode == 0 || result.StatusCode == 200 {
@@ -304,12 +318,66 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 		return message{}, err
 	}
 	result.BytesReceived = int64(len(msg.Body))
+	if msg.Destination == "" {
+		msg.Destination = destination
+	}
 	addMessageExtractions(result, msg)
 	result.Extractions["jms_operation"] = "consume"
+	// The emitted RedeliveryCount telemetry is derived from the message marker in
+	// finalizeJMSServerTelemetry; the session retains the message only for
+	// settlement (ack/commit/rollback).
+	j.session.Track(msg)
 	if err := runExtractors(action.Extractors, result, msg); err != nil {
 		return message{}, err
 	}
 	return msg, evaluateAssertions(action.Assertions, result, msg)
+}
+
+// settle handles jms_ack / jms_commit / jms_rollback against the per-VUser
+// session, replacing the former no-ops. ack settles client-acknowledged
+// messages; commit/rollback drive the transaction with commit/abort accounting,
+// and rollback requeues pending messages for redelivery on the in-memory mock
+// broker. Real-adapter broker settlement (Service Bus complete/abandon, Solace
+// client-ack) is wired per provider in later work; the accounting is shared.
+func (j *JMS) settle(action *protocol.Action, result *protocol.Result) {
+	switch strings.ToLower(action.Type) {
+	case "jms_ack":
+		settled := j.session.Ack()
+		result.Extractions["jms_operation"] = "ack"
+		result.Extractions["jms_settled"] = strconv.Itoa(len(settled))
+	case "jms_commit":
+		settled := j.session.Commit()
+		result.Extractions["jms_operation"] = "commit"
+		result.Extractions["jms_settled"] = strconv.Itoa(len(settled))
+		// Control op: carry only the reliability counter so it does not dilute the
+		// averaged transfer/latency telemetry (see ServerTelemetry.HasMeasuredSample).
+		result.ServerTelemetry = &protocol.ServerTelemetry{CommitCount: 1}
+	case "jms_rollback":
+		toRedeliver := j.session.Rollback()
+		if j.cfg.Mock {
+			j.requeueForRedelivery(toRedeliver)
+		}
+		result.Extractions["jms_operation"] = "rollback"
+		result.Extractions["jms_redelivered_scheduled"] = strconv.Itoa(len(toRedeliver))
+		result.ServerTelemetry = &protocol.ServerTelemetry{AbortCount: 1}
+	}
+}
+
+// requeueForRedelivery re-publishes rolled-back messages to the mock broker with
+// the redelivered marker set so the next consume reports a redelivery.
+func (j *JMS) requeueForRedelivery(msgs []message) {
+	for _, msg := range msgs {
+		if msg.Destination == "" {
+			continue
+		}
+		props := make(map[string]string, len(msg.Properties)+1)
+		for k, v := range msg.Properties {
+			props[k] = v
+		}
+		props[redeliveredProperty] = "true"
+		msg.Properties = props
+		broker.publish(msg.Destination, msg)
+	}
 }
 
 func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, message, error) {
@@ -759,6 +827,9 @@ func finalizeJMSServerTelemetry(result *protocol.Result, request message, hasReq
 		observedAt := result.StartTime.Add(result.Duration)
 		if !response.CreatedAt.IsZero() && !observedAt.Before(response.CreatedAt) {
 			telemetry.ConsumerLagMs = durationToNonNegativeMilliseconds(observedAt.Sub(response.CreatedAt))
+		}
+		if response.Properties[redeliveredProperty] == "true" {
+			telemetry.RedeliveryCount = 1
 		}
 	}
 	if hasRequest {

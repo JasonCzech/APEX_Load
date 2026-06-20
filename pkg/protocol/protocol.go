@@ -189,7 +189,36 @@ type ServerTelemetry struct {
 	MessagesSentPerSec     float64 `json:"messages_sent_per_sec,omitempty"`
 	MessagesReceivedPerSec float64 `json:"messages_received_per_sec,omitempty"`
 	ConsumerLagMs          float64 `json:"consumer_lag_ms,omitempty"`
+	// Messaging reliability counters (per-transaction; the engine/controller sum
+	// them into run totals). Populated by the messaging protocols (JMS family,
+	// Kafka, Event Hubs) for honest queue-test reliability accounting.
+	SendFailureCount       int     `json:"send_failure_count,omitempty"`  // failed produce/publish attempts
+	RedeliveryCount        int     `json:"redelivery_count,omitempty"`    // messages delivered more than once (JMSXDeliveryCount/DeliveryCount > 1)
+	DeadLetteredCount      int     `json:"dead_lettered_count,omitempty"` // messages routed to / received from a dead-letter destination
+	DuplicateCount         int     `json:"duplicate_count,omitempty"`     // duplicate messages detected (by message id / dedup window)
+	OutOfOrderCount        int     `json:"out_of_order_count,omitempty"`  // messages observed out of expected order
+	CommitCount            int     `json:"commit_count,omitempty"`        // transaction / ack commits
+	AbortCount             int     `json:"abort_count,omitempty"`         // transaction rollbacks / aborts
 	ConnectionReused       bool    `json:"connection_reused"`
+}
+
+// HasMeasuredSample reports whether the telemetry carries an actual measured
+// transfer/latency/payload sample, as opposed to a control-only record that
+// carries only reliability counters (e.g. a jms_commit/jms_rollback/kafka_commit
+// op). Aggregators sum the reliability counters unconditionally but must only
+// count measured samples toward the averaging divisor, so control ops do not
+// dilute average payload/latency/throughput.
+func (t *ServerTelemetry) HasMeasuredSample() bool {
+	if t == nil {
+		return false
+	}
+	return t.ServerProcessingMs != 0 || t.TransferMs != 0 || t.SerializationMs != 0 ||
+		t.DeserializationMs != 0 || t.RequestPayloadKB != 0 || t.ResponsePayloadKB != 0 ||
+		t.EnvelopeOverheadKB != 0 || t.RedirectMs != 0 || t.RedirectCount != 0 ||
+		t.FirstEventMs != 0 || t.EventCount != 0 || t.MessageLatencyMs != 0 ||
+		t.MessagesSent != 0 || t.MessagesReceived != 0 || t.MessagesSentPerSec != 0 ||
+		t.MessagesReceivedPerSec != 0 || t.ConsumerLagMs != 0 ||
+		t.RequestSizeClass != "" || t.ResponseSizeClass != "" || t.ConnectionReused
 }
 
 // Extractor extracts a value from the response for use in later templates or variables.

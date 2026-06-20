@@ -711,6 +711,15 @@ func validateJMSScriptIssues(script *Script) []string {
 			issues = append(issues, "real Azure Service Bus JMS adapter is not available in this build; enable config.jms.mock for replay or build with -tags jms_servicebus_real")
 		}
 	}
+	if jms.DeliveryMode != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(jms.DeliveryMode)), "persistent", "non_persistent") {
+		issues = append(issues, fmt.Sprintf("config.jms.delivery_mode %q is not supported", jms.DeliveryMode))
+	}
+	if jms.Acknowledgement != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(jms.Acknowledgement)), "auto", "client", "dups_ok", "transacted") {
+		issues = append(issues, fmt.Sprintf("config.jms.acknowledgement %q is not supported", jms.Acknowledgement))
+	}
+	if jms.DestinationType != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(jms.DestinationType)), "queue", "topic") {
+		issues = append(issues, fmt.Sprintf("config.jms.destination_type %q is not supported", jms.DestinationType))
+	}
 	if jms.Destination == "" {
 		usesActionDestinations := true
 		for _, action := range script.Actions {
