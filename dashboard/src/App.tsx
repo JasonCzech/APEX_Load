@@ -744,6 +744,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               testId={view.testId}
               history={view.testId ? metricsHistory[view.testId] || [] : []}
               statusOverride={view.testId ? testStatuses[view.testId] : undefined}
+              applicationId={activeApplication?.id}
+              projectId={activeProject?.id}
               onOpenExecution={navigateToTest}
               onOpenArchive={navigateToTestArchive}
               onOpenResults={() => handleNavigate('results')}

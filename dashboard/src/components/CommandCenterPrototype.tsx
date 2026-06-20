@@ -14,6 +14,7 @@ import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
 import { useApi } from '../hooks/useApi'
 import { isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
+import { isLiveTestStatus } from '../utils/testStatusUtils'
 import type { BrowserReplaySnapshot, GroupLiveMetrics, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, TestGroup, TestStatus, TestSummary, TransactionEvent, VUserRampStatus } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
@@ -41,6 +42,8 @@ interface CommandCenterPrototypeProps {
   history?: MetricsHistoryPoint[]
   statusOverride?: string
   initialTest?: TestSummary
+  applicationId?: string
+  projectId?: string
   onOpenExecution?: (testId: string) => void
   onOpenArchive?: (testId: string) => void
   onOpenResults?: () => void
@@ -897,16 +900,26 @@ function buildGroupsWithTargets(targets: Record<string, number>) {
 }
 
 export default function CommandCenterPrototype({
-  testId,
+  testId: testIdProp,
   history = [],
   statusOverride,
   initialTest,
+  applicationId,
+  projectId,
   onOpenExecution,
   onOpenArchive,
   onOpenResults,
   prototypeMode = false,
 }: CommandCenterPrototypeProps = {}) {
   const api = useApi()
+  // When the Command Center is opened without an explicit run on the route
+  // (e.g. via the sidebar nav rather than from a run chip), we discover the
+  // live runs in scope and pick one. `testId` below is the effective run the
+  // view renders: the routed run if present, otherwise the auto-selected one.
+  const [autoSelectedTestId, setAutoSelectedTestId] = useState<string | null>(null)
+  const [liveRunOptions, setLiveRunOptions] = useState<TestSummary[]>([])
+  const [discoveringRuns, setDiscoveringRuns] = useState(false)
+  const testId = testIdProp || autoSelectedTestId || undefined
   const [variant, setVariant] = useState<VariantId>('ops')
   const [liveTest, setLiveTest] = useState<TestSummary | null>(() => initialTest || null)
   const [loadError, setLoadError] = useState('')
@@ -967,6 +980,47 @@ export default function CommandCenterPrototype({
       window.clearInterval(interval)
     }
   }, [api, initialTest, testId])
+
+  // Auto-discover live runs when the view is opened without a selected run.
+  // A single live run is selected automatically; multiple live runs surface a
+  // picker (see CommandCenterEmptyState). Skipped for the local prototype and
+  // once a run is routed/selected. Polls so a run that starts while the empty
+  // state is open gets picked up.
+  useEffect(() => {
+    if (prototypeMode || testIdProp || initialTest || autoSelectedTestId) {
+      setLiveRunOptions([])
+      setDiscoveringRuns(false)
+      return undefined
+    }
+    let cancelled = false
+    const discover = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return
+      }
+      setDiscoveringRuns(true)
+      try {
+        const res = await api.listTests({ application_id: applicationId, project_id: projectId })
+        if (cancelled) return
+        const liveRuns = (res.tests || []).filter(test => isLiveTestStatus(test.status))
+        if (liveRuns.length === 1) {
+          setAutoSelectedTestId(liveRuns[0].id)
+          setLiveRunOptions([])
+        } else {
+          setLiveRunOptions(liveRuns)
+        }
+      } catch {
+        if (!cancelled) setLiveRunOptions([])
+      } finally {
+        if (!cancelled) setDiscoveringRuns(false)
+      }
+    }
+    void discover()
+    const interval = window.setInterval(() => { void discover() }, 5000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [api, applicationId, autoSelectedTestId, initialTest, projectId, prototypeMode, testIdProp])
 
   const streamStatus = liveTest
     ? coerceTestStatus(isHistoricalRunStatus(liveTest.status) ? liveTest.status : statusOverride || liveTest.status, liveTest.status)
@@ -1444,7 +1498,12 @@ export default function CommandCenterPrototype({
   return (
     <div className="page command-center-page">
       {emptyMode ? (
-        <CommandCenterEmptyState onOpenResults={onOpenResults} />
+        <CommandCenterEmptyState
+          onOpenResults={onOpenResults}
+          liveRuns={liveRunOptions}
+          discovering={discoveringRuns}
+          onSelectRun={setAutoSelectedTestId}
+        />
       ) : (
         <>
       <RunControlShelf
@@ -1541,15 +1600,49 @@ export default function CommandCenterPrototype({
   )
 }
 
-function CommandCenterEmptyState({ onOpenResults }: { onOpenResults?: () => void }) {
+function CommandCenterEmptyState({
+  onOpenResults,
+  liveRuns = [],
+  discovering = false,
+  onSelectRun,
+}: {
+  onOpenResults?: () => void
+  liveRuns?: TestSummary[]
+  discovering?: boolean
+  onSelectRun?: (testId: string) => void
+}) {
+  const hasRuns = liveRuns.length > 0
   return (
     <section className="command-empty-state" aria-label="No active command center run">
       <div>
-        <h2>No active run selected</h2>
-        <p>
-          Start a test or open the Command Center from an active run to see live controls and metrics.
-          Historical results can be opened from the Results folder.
-        </p>
+        <h2>{hasRuns ? 'Select an active run' : 'No active run selected'}</h2>
+        {hasRuns ? (
+          <>
+            <p>
+              {liveRuns.length} active runs are in progress. Choose one to open its live command center.
+            </p>
+            <ul className="command-empty-run-list" aria-label="Active runs">
+              {liveRuns.map(run => (
+                <li key={run.id}>
+                  <button
+                    type="button"
+                    className="command-empty-run-option"
+                    onClick={() => onSelectRun?.(run.id)}
+                  >
+                    <span className="command-empty-run-name">{run.name || run.ref_key || run.id}</span>
+                    <StatusBadge status={run.status} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p>
+            {discovering
+              ? 'Looking for active runs…'
+              : 'Start a test or open the Command Center from an active run to see live controls and metrics. Historical results can be opened from the Results folder.'}
+          </p>
+        )}
         {onOpenResults && (
           <div className="command-empty-actions">
             <button type="button" className="btn btn-sm btn-secondary" onClick={onOpenResults}>

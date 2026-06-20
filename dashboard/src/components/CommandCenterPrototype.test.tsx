@@ -164,11 +164,14 @@ describe('CommandCenterPrototype', () => {
     }))
   })
 
-  it('does not show the prototype run when no live run is selected', async () => {
+  it('shows the empty state (not the prototype run) when discovery finds no live runs', async () => {
     const openResults = vi.fn()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ tests: [], count: 0 }))
+
     await act(async () => {
       root.render(<CommandCenterPrototype onOpenResults={openResults} />)
     })
+    await flush()
 
     expect(container.textContent).toContain('No active run selected')
     expect(container.textContent).toContain('Historical results can be opened from the Results folder.')
@@ -180,6 +183,56 @@ describe('CommandCenterPrototype', () => {
     await click(buttonNamed('Open Results'))
 
     expect(openResults).toHaveBeenCalledOnce()
+  })
+
+  it('auto-selects the only live run when opened without a testId', async () => {
+    const liveRun = buildLiveVuserTest()
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = requestUrl(input)
+      if (url.includes('/tests/live-vuser-1/')) return Promise.resolve(jsonResponse({}))
+      if (url.includes('/tests/live-vuser-1')) return Promise.resolve(jsonResponse(liveRun))
+      if (url.includes('/tests')) return Promise.resolve(jsonResponse({ tests: [liveRun], count: 1 }))
+      return Promise.resolve(jsonResponse({}))
+    })
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype />)
+    })
+    await flush()
+
+    expect(container.querySelector('[aria-label="No active command center run"]')).toBeNull()
+    expect(container.textContent).toContain('Live VUser Checkout')
+    expect(container.querySelector('[aria-label="Command center run controls"]')).not.toBeNull()
+  })
+
+  it('shows a picker when several live runs exist and opens the chosen one', async () => {
+    const runA: TestSummary = { ...buildLiveVuserTest(), id: 'run-a', name: 'Checkout Soak' }
+    const runB: TestSummary = { ...buildLiveVuserTest(), id: 'run-b', name: 'Search Spike' }
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = requestUrl(input)
+      if (url.includes('/tests/run-a/')) return Promise.resolve(jsonResponse({}))
+      if (url.includes('/tests/run-a')) return Promise.resolve(jsonResponse(runA))
+      if (url.includes('/tests')) return Promise.resolve(jsonResponse({ tests: [runA, runB], count: 2 }))
+      return Promise.resolve(jsonResponse({}))
+    })
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype />)
+    })
+    await flush()
+
+    // Multiple live runs => no guessing; a picker is shown.
+    expect(container.textContent).toContain('Select an active run')
+    expect(container.textContent).toContain('2 active runs are in progress')
+    expect(container.textContent).toContain('Checkout Soak')
+    expect(container.textContent).toContain('Search Spike')
+    expect(container.querySelector('[aria-label="No active command center run"]')).not.toBeNull()
+
+    await click(buttonNamed('Checkout Soak'))
+    await flush()
+
+    expect(container.querySelector('[aria-label="No active command center run"]')).toBeNull()
+    expect(container.textContent).toContain('Checkout Soak')
   })
 
   it('switches between the OPS View and Graph Wall variants from the sidebar', async () => {
@@ -1043,6 +1096,29 @@ describe('CommandCenterPrototype', () => {
     await act(async () => {
       element.click()
     })
+  }
+
+  function jsonResponse(body: unknown) {
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
+  function requestUrl(input: RequestInfo | URL) {
+    if (typeof input === 'string') return input
+    if (input instanceof URL) return input.toString()
+    return input.url
+  }
+
+  // Flush the chained async effects (discover -> select -> load) plus their
+  // re-renders. A few act() turns covers the microtask hops between them.
+  async function flush(times = 5) {
+    for (let i = 0; i < times; i++) {
+      await act(async () => {
+        await Promise.resolve()
+      })
+    }
   }
 
   async function changeNumberInput(input: HTMLInputElement, value: string) {
