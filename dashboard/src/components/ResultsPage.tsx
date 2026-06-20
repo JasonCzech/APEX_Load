@@ -43,6 +43,7 @@ import type { LibraryCatalogItem } from '../types/library'
 interface Props {
   testStatuses: Record<string, string>
   onSelectTest: (id: string) => void
+  onOpenCommandCenter?: (id: string) => void
   onOpenTestArchive?: (id: string) => void
   onNavigate?: (page: NavPage) => void
   activeApplication?: Application | null
@@ -351,7 +352,7 @@ function comparisonTableDeltaClass(delta: number | undefined, metric: Comparison
   return delta > 0 ? 'text-danger' : 'text-success'
 }
 
-function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onNavigate, activeApplication, activeRelease }: Props) {
+function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTestArchive, onNavigate, activeApplication, activeRelease }: Props) {
   const api = useApi()
   const [tests, setTests] = useState<TestSummary[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -1512,7 +1513,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onNavigate
                                     )}
                                   </>
                                 )}
-                                <button className="btn btn-sm btn-primary" onClick={event => { event.stopPropagation(); onSelectTest(test.id) }}>
+                                <button className="btn btn-sm btn-primary" onClick={event => { event.stopPropagation(); (onOpenCommandCenter ?? onSelectTest)(test.id) }}>
                                   Run Dashboard
                                 </button>
                                 <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)}>
