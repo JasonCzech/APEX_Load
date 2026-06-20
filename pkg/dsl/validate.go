@@ -851,7 +851,29 @@ func validateKafkaScriptIssues(script *Script) []string {
 		if len(kafka.Brokers) == 0 {
 			issues = append(issues, "config.kafka.brokers is required when mock mode is disabled")
 		}
-		issues = append(issues, "real Kafka network adapter is not available in this build; enable config.kafka.mock for replay")
+		if !KafkaRealAdapterAvailable() {
+			issues = append(issues, "real Kafka network adapter is not available in this build; enable config.kafka.mock for replay or build with -tags kafka_real")
+		}
+	}
+	profile := strings.ToLower(strings.TrimSpace(kafka.Profile))
+	if profile != "" && profile != "eventhubs" {
+		issues = append(issues, fmt.Sprintf("config.kafka.profile %q is not supported (use \"eventhubs\")", kafka.Profile))
+	}
+	if profile == "eventhubs" && !kafka.Mock {
+		// Azure Event Hubs requires TLS (sasl_ssl) and rejects plaintext transport.
+		if secProto := strings.ToLower(strings.TrimSpace(kafka.SecurityProtocol)); secProto != "" && secProto != "sasl_ssl" {
+			issues = append(issues, fmt.Sprintf("config.kafka.profile eventhubs requires security_protocol sasl_ssl, got %q", kafka.SecurityProtocol))
+		}
+		switch strings.ToLower(strings.TrimSpace(kafka.SASLMechanism)) {
+		case "", "plain":
+			if kafka.SASLPassword == "" && kafka.SASLPasswordSecret == "" {
+				issues = append(issues, "config.kafka.profile eventhubs with PLAIN auth requires config.kafka.sasl_password or sasl_password_secret (the namespace connection string)")
+			}
+		case "oauthbearer":
+			// Microsoft Entra ID / OAUTHBEARER auth is implemented in EH.2; allowed here so scripts can be authored ahead of it.
+		default:
+			issues = append(issues, fmt.Sprintf("config.kafka.profile eventhubs supports sasl_mechanism plain or oauthbearer, got %q", kafka.SASLMechanism))
+		}
 	}
 	if kafka.SecurityProtocol != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(kafka.SecurityProtocol)), "plaintext", "ssl", "sasl_ssl", "sasl_plaintext") {
 		issues = append(issues, fmt.Sprintf("config.kafka.security_protocol %q is not supported", kafka.SecurityProtocol))
@@ -876,6 +898,9 @@ func validateKafkaScriptIssues(script *Script) []string {
 	}
 	if kafka.Partitions < 0 {
 		issues = append(issues, "config.kafka.partitions must be zero or greater")
+	}
+	if kafka.MaxMessageBytes < 0 {
+		issues = append(issues, "config.kafka.max_message_bytes must be zero or greater")
 	}
 
 	for i, action := range script.Actions {

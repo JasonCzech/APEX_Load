@@ -40,6 +40,8 @@ type Kafka struct {
 
 type config struct {
 	Brokers           []string
+	Profile           string
+	MaxMessageBytes   int
 	SecurityProtocol  string
 	SASLMechanism     string
 	SASLUsername      string
@@ -73,6 +75,8 @@ func (k *Kafka) Name() string { return k.name }
 func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 	k.cfg = config{
 		Brokers:           stringSliceValue(cfg, "kafka_brokers"),
+		Profile:           strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_profile"))),
+		MaxMessageBytes:   intValue(cfg, "kafka_max_message_bytes", 0),
 		SecurityProtocol:  stringValue(cfg, "kafka_security_protocol"),
 		SASLMechanism:     stringValue(cfg, "kafka_sasl_mechanism"),
 		SASLUsername:      stringValue(cfg, "kafka_sasl_username"),
@@ -98,6 +102,25 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 	// (`{{secret.NAME}}`); honor the dedicated secret field as a fallback.
 	if k.cfg.SASLPassword == "" {
 		k.cfg.SASLPassword = stringValue(cfg, "kafka_sasl_password_secret")
+	}
+	if k.cfg.Profile == "eventhubs" {
+		// Azure Event Hubs Kafka endpoint: TLS is mandatory and SAS auth uses
+		// PLAIN with the literal username "$ConnectionString" and the namespace
+		// connection string as the password. (OAUTHBEARER/Entra ID lands in EH.2.)
+		// These are defaults only — an explicit operator value is preserved and
+		// the validator (not the runtime) rejects conflicting choices.
+		if k.cfg.SecurityProtocol == "" {
+			k.cfg.SecurityProtocol = "sasl_ssl"
+		}
+		if k.cfg.SASLMechanism == "" {
+			k.cfg.SASLMechanism = "plain"
+		}
+		if k.cfg.SASLMechanism == "plain" && k.cfg.SASLUsername == "" {
+			k.cfg.SASLUsername = "$ConnectionString"
+		}
+		if k.cfg.MaxMessageBytes <= 0 {
+			k.cfg.MaxMessageBytes = 1 << 20 // 1 MiB (Standard/Premium tier cap)
+		}
 	}
 	if k.cfg.SecurityProtocol == "" {
 		k.cfg.SecurityProtocol = "plaintext"
@@ -201,12 +224,35 @@ func (k *Kafka) HealthCheck(ctx context.Context) error {
 	return k.client.HealthCheck(ctx)
 }
 
+// checkRecordSize is a conservative pre-flight guard for the broker message-size
+// cap (config.kafka.max_message_bytes; defaulted to 1 MiB by the eventhubs
+// profile). It counts value + key + header bytes — an approximation of the
+// encoded record size, not the exact wire size, so it errs toward catching
+// oversized records early. The franz adapter additionally enforces the cap
+// authoritatively via kgo.ProducerBatchMaxBytes on the real network path.
+func (k *Kafka) checkRecordSize(rec kafkaRecord) error {
+	if k.cfg.MaxMessageBytes <= 0 {
+		return nil
+	}
+	size := len(rec.Value) + len(rec.Key)
+	for hk, hv := range rec.Headers {
+		size += len(hk) + len(hv)
+	}
+	if size > k.cfg.MaxMessageBytes {
+		return fmt.Errorf("record %d bytes (value+key+headers) exceeds max_message_bytes %d (broker message-size cap)", size, k.cfg.MaxMessageBytes)
+	}
+	return nil
+}
+
 func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *protocol.Result) (kafkaRecord, error) {
 	topic := k.topic(action)
 	if topic == "" {
 		return kafkaRecord{}, fmt.Errorf("kafka topic is required")
 	}
 	rec := k.buildRecord(action, topic)
+	if err := k.checkRecordSize(rec); err != nil {
+		return kafkaRecord{}, err
+	}
 	meta, err := k.client.Produce(ctx, topic, rec)
 	if err != nil {
 		return kafkaRecord{}, err
@@ -258,6 +304,9 @@ func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, resul
 		request.Headers = make(map[string]string)
 	}
 	request.Headers["kafka_correlation_id"] = request.CorrelationID
+	if err := k.checkRecordSize(request); err != nil {
+		return kafkaRecord{}, kafkaRecord{}, err
+	}
 
 	meta, response, err := k.client.RequestReply(ctx, reqTopic, replyTopic, request, k.timeout(action))
 	if err != nil {

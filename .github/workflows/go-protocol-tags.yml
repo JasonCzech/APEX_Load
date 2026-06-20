@@ -29,3 +29,22 @@ jobs:
 
       - name: Test tagged Solace adapter compile path
         run: go test -tags jms_solace_real ./pkg/protocol/jms
+
+  kafka-real:
+    name: Kafka franz-go build tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: Test default Kafka + DSL packages
+        run: go test ./pkg/protocol/kafka ./pkg/dsl
+
+      - name: Test tagged franz-go adapter compile path
+        run: go test -tags kafka_real ./pkg/protocol/kafka ./pkg/dsl

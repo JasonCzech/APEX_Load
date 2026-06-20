@@ -252,6 +252,56 @@ operations:
 	}
 }
 
+func TestConvertDetectsEventHubsKafkaEndpoint(t *testing.T) {
+	doc := `
+asyncapi: 3.0.0
+info:
+  title: EH
+  version: 1.0.0
+servers:
+  eh:
+    host: myns.servicebus.windows.net:9093
+    protocol: kafka-secure
+channels:
+  c:
+    address: telemetry
+    messages:
+      m:
+        payload:
+          type: object
+          properties:
+            id:
+              type: string
+operations:
+  send:
+    action: send
+    channel:
+      $ref: '#/channels/c'
+`
+	result, err := Convert(ImportRequest{Content: doc})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script.Config.Kafka.Profile != "eventhubs" {
+		t.Fatalf("profile = %q, want eventhubs", result.Script.Config.Kafka.Profile)
+	}
+	if result.Script.Config.Kafka.SecurityProtocol != "sasl_ssl" {
+		t.Fatalf("security_protocol = %q, want sasl_ssl", result.Script.Config.Kafka.SecurityProtocol)
+	}
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "Event Hubs") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected an Event Hubs warning, got %v", result.Warnings)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("generated Event Hubs script failed validation: %v", issues)
+	}
+}
+
 func TestConvertErrors(t *testing.T) {
 	if _, err := Convert(ImportRequest{Content: ""}); err == nil {
 		t.Fatal("expected error for empty content")

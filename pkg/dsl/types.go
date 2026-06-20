@@ -222,6 +222,7 @@ type JMSTLSConfig struct {
 // KafkaConfig holds broker, security, and producer/consumer settings for Kafka scripts.
 type KafkaConfig struct {
 	Brokers            []string          `json:"brokers,omitempty"`              // bootstrap brokers, e.g. ["broker:9092"]
+	Profile            string            `json:"profile,omitempty"`              // ""|eventhubs — Azure Event Hubs Kafka-endpoint profile (forces sasl_ssl + $ConnectionString PLAIN, 1 MiB cap)
 	SecurityProtocol   string            `json:"security_protocol,omitempty"`    // plaintext|ssl|sasl_ssl|sasl_plaintext
 	SASLMechanism      string            `json:"sasl_mechanism,omitempty"`       // plain|scram-sha-256|scram-sha-512|oauthbearer
 	SASLUsername       string            `json:"sasl_username,omitempty"`        // SASL username
@@ -237,6 +238,7 @@ type KafkaConfig struct {
 	AutoOffsetReset    string            `json:"auto_offset_reset,omitempty"`    // earliest|latest
 	Partitions         int               `json:"partitions,omitempty"`           // partition count hint for the mock broker
 	TimeoutMs          int               `json:"timeout_ms,omitempty"`           // default consume/request timeout
+	MaxMessageBytes    int               `json:"max_message_bytes,omitempty"`    // producer-side max record size; Event Hubs caps at 1 MiB (Std/Prem), 20 MiB (Dedicated)
 	Properties         map[string]string `json:"properties,omitempty"`           // additional client properties
 	Mock               bool              `json:"mock,omitempty"`                 // use in-memory broker for local shakeout
 }

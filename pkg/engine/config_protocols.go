@@ -454,6 +454,12 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 	if len(kafkaCfg.Brokers) > 0 {
 		cfg["kafka_brokers"] = kafkaCfg.Brokers
 	}
+	if kafkaCfg.Profile != "" {
+		cfg["kafka_profile"] = kafkaCfg.Profile
+	}
+	if kafkaCfg.MaxMessageBytes > 0 {
+		cfg["kafka_max_message_bytes"] = float64(kafkaCfg.MaxMessageBytes)
+	}
 	if kafkaCfg.SecurityProtocol != "" {
 		cfg["kafka_security_protocol"] = kafkaCfg.SecurityProtocol
 	}

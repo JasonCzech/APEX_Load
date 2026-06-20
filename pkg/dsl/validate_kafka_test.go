@@ -55,12 +55,39 @@ func TestValidateKafkaScriptIssues(t *testing.T) {
 			wantHas: "config.kafka.brokers is required",
 		},
 		{
-			name: "real mode is flagged unavailable",
+			name: "bad profile value",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Profile = "kinesis"
+			},
+			wantHas: "config.kafka.profile",
+		},
+		{
+			name: "eventhubs profile on mock skips enforcement",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Profile = "eventhubs"
+			},
+			wantClean: true,
+		},
+		{
+			name: "eventhubs profile rejects plaintext",
 			mutate: func(s *Script) {
 				s.Config.Kafka.Mock = false
-				s.Config.Kafka.Brokers = []string{"broker:9092"}
+				s.Config.Kafka.Profile = "eventhubs"
+				s.Config.Kafka.Brokers = []string{"ns.servicebus.windows.net:9093"}
+				s.Config.Kafka.SecurityProtocol = "plaintext"
+				s.Config.Kafka.SASLPasswordSecret = "eh_conn"
 			},
-			wantHas: "real Kafka network adapter is not available",
+			wantHas: "requires security_protocol sasl_ssl",
+		},
+		{
+			name: "eventhubs profile requires credentials",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Mock = false
+				s.Config.Kafka.Profile = "eventhubs"
+				s.Config.Kafka.Brokers = []string{"ns.servicebus.windows.net:9093"}
+				s.Config.Kafka.SecurityProtocol = "sasl_ssl"
+			},
+			wantHas: "requires config.kafka.sasl_password",
 		},
 		{
 			name: "bad security protocol",

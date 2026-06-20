@@ -5524,6 +5524,9 @@
         "consumer_group": {
           "type": "string"
         },
+        "max_message_bytes": {
+          "type": "integer"
+        },
         "mock": {
           "type": "boolean"
         },
@@ -5532,6 +5535,9 @@
         },
         "partitions": {
           "type": "integer"
+        },
+        "profile": {
+          "type": "string"
         },
         "properties": {
           "additionalProperties": {

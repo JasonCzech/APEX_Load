@@ -38,6 +38,14 @@ type franzClient struct {
 // fails; connection problems surface on first use / HealthCheck instead.
 func (c *franzClient) handle() (*kgo.Client, error) {
 	c.once.Do(func() {
+		if strings.EqualFold(c.cfg.SASLMechanism, "oauthbearer") {
+			// OAUTHBEARER (Microsoft Entra ID) token wiring lands in EH.2. Fail
+			// fast with a clear message rather than silently downgrading to PLAIN
+			// (the default branch of saslMechanism) and failing opaquely at the
+			// SASL handshake.
+			c.err = fmt.Errorf("kafka SASL mechanism %q is not yet supported at runtime (planned EH.2); use sasl_mechanism=plain with a connection string", c.cfg.SASLMechanism)
+			return
+		}
 		opts := []kgo.Opt{kgo.SeedBrokers(c.cfg.Brokers...)}
 		if c.cfg.ClientID != "" {
 			opts = append(opts, kgo.ClientID(c.cfg.ClientID))
@@ -60,6 +68,12 @@ func (c *franzClient) handle() (*kgo.Client, error) {
 		}
 		if codec, ok := compressionCodec(c.cfg.Compression); ok {
 			opts = append(opts, kgo.ProducerBatchCompression(codec))
+		}
+		if c.cfg.MaxMessageBytes > 0 {
+			// Authoritative client-side cap (e.g. Event Hubs' 1 MiB limit): franz
+			// rejects any record exceeding the batch-max, complementing the
+			// conservative pre-flight guard in kafka.go checkRecordSize.
+			opts = append(opts, kgo.ProducerBatchMaxBytes(int32(c.cfg.MaxMessageBytes)))
 		}
 		if mech := c.saslMechanism(); mech != nil {
 			opts = append(opts, kgo.SASL(mech))

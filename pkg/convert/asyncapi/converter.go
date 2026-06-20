@@ -217,6 +217,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	brokers, protocols, securityProtocol, brokerWarnings := deriveBrokers(doc, req.Options.Brokers)
 
+	// Azure Event Hubs exposes a Kafka-protocol endpoint; when the bootstrap host
+	// is *.servicebus.windows.net, pre-set the Event Hubs profile and its
+	// mandatory sasl_ssl transport so the generated script targets it once mock is
+	// disabled and credentials ($ConnectionString / Entra ID) are supplied.
+	kafkaProfile := ""
+	if detectEventHubsProfile(brokers) {
+		kafkaProfile = "eventhubs"
+		securityProtocol = "sasl_ssl"
+	}
+
 	ops, schemaFormats, opWarnings := collectOperations(doc, req.Options, &diagnostics, &mappings, sourceFile)
 	if len(ops) == 0 {
 		return nil, errors.New("no supported Kafka operations found in AsyncAPI document")
@@ -247,6 +257,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				Log:           dsl.LogConfig{Level: "standard"},
 				Kafka: dsl.KafkaConfig{
 					Brokers:          brokers,
+					Profile:          kafkaProfile,
 					SecurityProtocol: securityProtocol,
 					Acks:             "all",
 					Mock:             mock,
@@ -268,6 +279,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		},
 	}
 	result.Warnings = append(result.Warnings, brokerWarnings...)
+	if kafkaProfile == "eventhubs" {
+		result.Warnings = append(result.Warnings, "an Azure Event Hubs Kafka endpoint was detected; config.kafka.profile was set to eventhubs (sasl_ssl). Supply sasl_username \"$ConnectionString\" and sasl_password_secret (the namespace connection string), or use Entra ID, before running against the live namespace")
+	}
 	result.Warnings = append(result.Warnings, opWarnings...)
 	if mock {
 		result.Warnings = append(result.Warnings, "config.kafka.mock is enabled so the generated script runs against the in-memory broker; disable it once a real Kafka adapter is configured")
@@ -372,6 +386,22 @@ func deriveBrokers(doc *document, override []string) (brokers []string, protocol
 		securityProtocol = "plaintext"
 	}
 	return brokers, protocols, securityProtocol, warnings
+}
+
+// detectEventHubsProfile reports whether any bootstrap broker points at an Azure
+// Event Hubs Kafka endpoint (*.servicebus.windows.net), so the importer can
+// pre-set the Event Hubs profile and its mandatory sasl_ssl transport.
+func detectEventHubsProfile(brokers []string) bool {
+	for _, b := range brokers {
+		host := strings.ToLower(strings.TrimSpace(b))
+		if i := strings.IndexByte(host, ':'); i >= 0 {
+			host = host[:i]
+		}
+		if strings.HasSuffix(host, ".servicebus.windows.net") {
+			return true
+		}
+	}
+	return false
 }
 
 func collectOperations(doc *document, opts ConvertOptions, diagnostics *diag.Collector, mappings *[]sourceview.Mapping, sourceFile string) ([]kafkaOp, []string, []string) {
