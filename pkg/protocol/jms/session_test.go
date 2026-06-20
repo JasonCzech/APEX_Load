@@ -81,3 +81,29 @@ func TestJMSAutoModeDoesNotRetain(t *testing.T) {
 		t.Fatalf("auto mode retained %d pending messages, want 0", p.session.Pending())
 	}
 }
+
+// TestJMSDeadLetterCountPopulated verifies a dead-letter action populates the
+// DeadLetteredCount reliability counter (P1.5 makes the P1.1 counter live).
+func TestJMSDeadLetterCountPopulated(t *testing.T) {
+	ctx := context.Background()
+	p := &JMS{name: "jms-solace", provider: "solace"}
+	if err := p.Init(ctx, map[string]any{
+		"jms_destination": "dlq.test",
+		"jms_mock":        true,
+		"jms_timeout_ms":  float64(250),
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	res, err := p.Execute(ctx, &protocol.Action{
+		Name:   "pub-dlq",
+		Type:   "jms_publish",
+		Body:   []byte("x"),
+		Params: map[string]any{"dead_letter": true},
+	})
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if res.ServerTelemetry == nil || res.ServerTelemetry.DeadLetteredCount != 1 {
+		t.Fatalf("DeadLetteredCount = %+v, want 1", res.ServerTelemetry)
+	}
+}

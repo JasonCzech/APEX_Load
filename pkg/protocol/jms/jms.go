@@ -854,6 +854,9 @@ func finalizeJMSServerTelemetry(result *protocol.Result, request message, hasReq
 	}
 	telemetry.MessagesSentPerSec = messagesPerSecond(telemetry.MessagesSent, result.Duration)
 	telemetry.MessagesReceivedPerSec = messagesPerSecond(telemetry.MessagesReceived, result.Duration)
+	if (hasRequest || hasResponse) && result.Extractions["jms_dead_letter"] == "true" {
+		telemetry.DeadLetteredCount = 1
+	}
 	return telemetry
 }
 

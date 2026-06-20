@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 )
 
 var (
@@ -110,9 +111,13 @@ func (a *serviceBusAdapter) RequestReply(ctx context.Context, requestDestination
 		if err != nil {
 			return sent, message{}, err
 		}
-		if request.CorrelationID == "" || reply.CorrelationID == "" || reply.CorrelationID == request.CorrelationID {
+		if messaging.CorrelationMatches(request.CorrelationID, reply.CorrelationID) {
 			return sent, reply, nil
 		}
+		// NOTE: an uncorrelated reply has already been completed by Consume
+		// (peek-lock auto-complete) and is therefore lost rather than requeued.
+		// Requeue-safety needs client-controlled settlement (abandon), which lands
+		// with the Service Bus settlement work (P2.4).
 	}
 	return sent, message{}, fmt.Errorf("no correlated JMS reply received from %q within %s", replyDestination, timeout)
 }

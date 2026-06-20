@@ -121,6 +121,8 @@ type ServerTelemetrySummary struct {
 	AvgMessagesReceivedPerSec float64          `json:"avg_messages_received_per_sec,omitempty"`
 	AvgConsumerLagMs          float64          `json:"avg_consumer_lag_ms,omitempty"`
 	MaxConsumerLagMs          float64          `json:"max_consumer_lag_ms,omitempty"`
+	AvgConsumerOffsetLag      float64          `json:"avg_consumer_offset_lag,omitempty"`
+	MaxConsumerOffsetLag      int64            `json:"max_consumer_offset_lag,omitempty"`
 	SendFailureCount          int64            `json:"send_failure_count,omitempty"`
 	RedeliveryCount           int64            `json:"redelivery_count,omitempty"`
 	DeadLetteredCount         int64            `json:"dead_lettered_count,omitempty"`
@@ -847,6 +849,10 @@ func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *pro
 	if telemetry.ConsumerLagMs > summary.MaxConsumerLagMs {
 		summary.MaxConsumerLagMs = telemetry.ConsumerLagMs
 	}
+	summary.AvgConsumerOffsetLag += float64(telemetry.ConsumerOffsetLag)
+	if telemetry.ConsumerOffsetLag > summary.MaxConsumerOffsetLag {
+		summary.MaxConsumerOffsetLag = telemetry.ConsumerOffsetLag
+	}
 	incrementTelemetryClassCount(&summary.RequestSizeClasses, telemetry.RequestSizeClass)
 	incrementTelemetryClassCount(&summary.ResponseSizeClasses, telemetry.ResponseSizeClass)
 	if telemetry.ConnectionReused {
@@ -868,6 +874,7 @@ func finalizeServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	summary.AvgMessagesSentPerSec /= divisor
 	summary.AvgMessagesReceivedPerSec /= divisor
 	summary.AvgConsumerLagMs /= divisor
+	summary.AvgConsumerOffsetLag /= divisor
 	summary.ConnectionReusedPct = float64(summary.ConnectionReusedCount) / divisor * 100
 	if len(summary.RequestSizeClasses) == 0 {
 		summary.RequestSizeClasses = nil

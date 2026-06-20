@@ -34,3 +34,19 @@ func TestBuildProtocolEvidenceLabelsJMSGenerically(t *testing.T) {
 		t.Fatalf("protocol evidence = %#v, want provider-neutral jms", evidence)
 	}
 }
+
+func TestBuildProtocolEvidenceSurfacesConsumerOffsetLag(t *testing.T) {
+	evidence := BuildProtocolEvidence(&Action{Type: "kafka_consume", Target: "orders"}, &Result{
+		Success:          true,
+		DependencyType:   "kafka_topic",
+		DependencyTarget: "orders",
+		ServerTelemetry:  &ServerTelemetry{MessagesReceived: 1, ConsumerOffsetLag: 5},
+	})
+	messages, ok := evidence["messages"].(map[string]any)
+	if !ok {
+		t.Fatalf("evidence has no messages map: %#v", evidence)
+	}
+	if messages["consumer_offset_lag"] != int64(5) {
+		t.Fatalf("consumer_offset_lag = %#v, want int64(5)", messages["consumer_offset_lag"])
+	}
+}

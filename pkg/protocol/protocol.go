@@ -189,6 +189,7 @@ type ServerTelemetry struct {
 	MessagesSentPerSec     float64 `json:"messages_sent_per_sec,omitempty"`
 	MessagesReceivedPerSec float64 `json:"messages_received_per_sec,omitempty"`
 	ConsumerLagMs          float64 `json:"consumer_lag_ms,omitempty"`
+	ConsumerOffsetLag      int64   `json:"consumer_offset_lag,omitempty"` // offset/sequence backlog behind the partition tail (Kafka/Event Hubs); a count, not a duration
 	// Messaging reliability counters (per-transaction; the engine/controller sum
 	// them into run totals). Populated by the messaging protocols (JMS family,
 	// Kafka, Event Hubs) for honest queue-test reliability accounting.
@@ -217,7 +218,7 @@ func (t *ServerTelemetry) HasMeasuredSample() bool {
 		t.EnvelopeOverheadKB != 0 || t.RedirectMs != 0 || t.RedirectCount != 0 ||
 		t.FirstEventMs != 0 || t.EventCount != 0 || t.MessageLatencyMs != 0 ||
 		t.MessagesSent != 0 || t.MessagesReceived != 0 || t.MessagesSentPerSec != 0 ||
-		t.MessagesReceivedPerSec != 0 || t.ConsumerLagMs != 0 ||
+		t.MessagesReceivedPerSec != 0 || t.ConsumerLagMs != 0 || t.ConsumerOffsetLag != 0 ||
 		t.RequestSizeClass != "" || t.ResponseSizeClass != "" || t.ConnectionReused
 }
 

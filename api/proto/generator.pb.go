@@ -845,6 +845,7 @@ type ServerTelemetry struct {
 	OutOfOrderCount   int32 `protobuf:"varint,20,opt,name=out_of_order_count,json=outOfOrderCount,proto3" json:"out_of_order_count,omitempty"`
 	CommitCount       int32 `protobuf:"varint,21,opt,name=commit_count,json=commitCount,proto3" json:"commit_count,omitempty"`
 	AbortCount        int32 `protobuf:"varint,22,opt,name=abort_count,json=abortCount,proto3" json:"abort_count,omitempty"`
+	ConsumerOffsetLag int64 `protobuf:"varint,23,opt,name=consumer_offset_lag,json=consumerOffsetLag,proto3" json:"consumer_offset_lag,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1029,6 +1030,13 @@ func (x *ServerTelemetry) GetCommitCount() int32 {
 func (x *ServerTelemetry) GetAbortCount() int32 {
 	if x != nil {
 		return x.AbortCount
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetConsumerOffsetLag() int64 {
+	if x != nil {
+		return x.ConsumerOffsetLag
 	}
 	return 0
 }
@@ -2172,7 +2180,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x10shedded_arrivals\x18\x05 \x01(\x03R\x0fsheddedArrivals\"F\n" +
 	"\vGroupMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
-	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\xcd\a\n" +
+	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\xfd\a\n" +
 	"\x0fServerTelemetry\x120\n" +
 	"\x14server_processing_ms\x18\x01 \x01(\x01R\x12serverProcessingMs\x12\x1f\n" +
 	"\vtransfer_ms\x18\x02 \x01(\x01R\n" +
@@ -2199,7 +2207,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x12out_of_order_count\x18\x14 \x01(\x05R\x0foutOfOrderCount\x12!\n" +
 	"\fcommit_count\x18\x15 \x01(\x05R\vcommitCount\x12\x1f\n" +
 	"\vabort_count\x18\x16 \x01(\x05R\n" +
-	"abortCount\"\xa9\x05\n" +
+	"abortCount\x12.\n" +
+	"\x13consumer_offset_lag\x18\x17 \x01(\x03R\x11consumerOffsetLag\"\xa9\x05\n" +
 	"\x11TransactionMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
 	"\x12start_time_unix_ms\x18\x02 \x01(\x03R\x0fstartTimeUnixMs\x12\x1f\n" +

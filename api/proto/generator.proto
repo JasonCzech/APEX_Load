@@ -145,6 +145,7 @@ message ServerTelemetry {
   int32 out_of_order_count = 20;
   int32 commit_count = 21;
   int32 abort_count = 22;
+  int64 consumer_offset_lag = 23;
 }
 
 message TransactionMetric {

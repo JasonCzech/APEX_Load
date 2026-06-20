@@ -114,6 +114,7 @@ type ServerTelemetry struct {
 	OutOfOrderCount        int32
 	CommitCount            int32
 	AbortCount             int32
+	ConsumerOffsetLag      int64
 }
 
 type TransactionMetric struct {
@@ -452,6 +453,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 				OutOfOrderCount:        tx.GetServerTelemetry().GetOutOfOrderCount(),
 				CommitCount:            tx.GetServerTelemetry().GetCommitCount(),
 				AbortCount:             tx.GetServerTelemetry().GetAbortCount(),
+				ConsumerOffsetLag:      tx.GetServerTelemetry().GetConsumerOffsetLag(),
 			}
 		}
 		var snapshot *protocol.ErrorSnapshot

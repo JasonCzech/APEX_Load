@@ -439,6 +439,8 @@ func cloneEngineServerTelemetrySummary(summary *engine.ServerTelemetrySummary) *
 		AvgMessagesReceivedPerSec: summary.AvgMessagesReceivedPerSec,
 		AvgConsumerLagMs:          summary.AvgConsumerLagMs,
 		MaxConsumerLagMs:          summary.MaxConsumerLagMs,
+		AvgConsumerOffsetLag:      summary.AvgConsumerOffsetLag,
+		MaxConsumerOffsetLag:      summary.MaxConsumerOffsetLag,
 		SendFailureCount:          summary.SendFailureCount,
 		RedeliveryCount:           summary.RedeliveryCount,
 		DeadLetteredCount:         summary.DeadLetteredCount,
@@ -498,6 +500,10 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 	if telemetry.ConsumerLagMs > metrics.ServerTelemetry.MaxConsumerLagMs {
 		metrics.ServerTelemetry.MaxConsumerLagMs = telemetry.ConsumerLagMs
 	}
+	metrics.ServerTelemetry.AvgConsumerOffsetLag += float64(telemetry.ConsumerOffsetLag)
+	if telemetry.ConsumerOffsetLag > metrics.ServerTelemetry.MaxConsumerOffsetLag {
+		metrics.ServerTelemetry.MaxConsumerOffsetLag = telemetry.ConsumerOffsetLag
+	}
 	incrementTelemetryClassCount(&metrics.ServerTelemetry.RequestSizeClasses, telemetry.RequestSizeClass)
 	incrementTelemetryClassCount(&metrics.ServerTelemetry.ResponseSizeClasses, telemetry.ResponseSizeClass)
 	if telemetry.ConnectionReused {
@@ -517,6 +523,7 @@ func generatorTelemetryHasMeasuredSample(t *generatorrpc.ServerTelemetry) bool {
 		t.ResponsePayloadKB != 0 || t.FirstEventMs != 0 || t.EventCount != 0 ||
 		t.MessageLatencyMs != 0 || t.MessagesSent != 0 || t.MessagesReceived != 0 ||
 		t.MessagesSentPerSec != 0 || t.MessagesReceivedPerSec != 0 || t.ConsumerLagMs != 0 ||
+		t.ConsumerOffsetLag != 0 ||
 		t.RequestSizeClass != "" || t.ResponseSizeClass != "" || t.ConnectionReused
 }
 
@@ -534,6 +541,7 @@ func finalizeAPIServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	summary.AvgMessagesSentPerSec /= divisor
 	summary.AvgMessagesReceivedPerSec /= divisor
 	summary.AvgConsumerLagMs /= divisor
+	summary.AvgConsumerOffsetLag /= divisor
 	summary.ConnectionReusedPct = float64(summary.ConnectionReusedCount) / divisor * 100
 	if len(summary.RequestSizeClasses) == 0 {
 		summary.RequestSizeClasses = nil

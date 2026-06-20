@@ -450,6 +450,11 @@ func finalizeKafkaServerTelemetry(result *protocol.Result, request kafkaRecord, 
 		if !response.Timestamp.IsZero() && !observedAt.Before(response.Timestamp) {
 			telemetry.ConsumerLagMs = durationToNonNegativeMilliseconds(observedAt.Sub(response.Timestamp))
 		}
+		// Surface the broker offset backlog (highWatermark - offset - 1) that the
+		// consume path records, instead of discarding it to a string extraction.
+		if lag, err := strconv.ParseInt(result.Extractions["kafka_consumer_lag"], 10, 64); err == nil && lag > 0 {
+			telemetry.ConsumerOffsetLag = lag
+		}
 	}
 	if hasRequest && hasResponse && !request.Timestamp.IsZero() && !response.Timestamp.IsZero() && !response.Timestamp.Before(request.Timestamp) {
 		latency := response.Timestamp.Sub(request.Timestamp)

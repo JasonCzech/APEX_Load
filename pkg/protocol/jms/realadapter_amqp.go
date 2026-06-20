@@ -15,6 +15,7 @@ import (
 
 	amqp "github.com/Azure/go-amqp"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 )
 
 func newSolaceAdapter(cfg config) brokerAdapter {
@@ -122,13 +123,10 @@ func (a *solaceAMQPAdapter) RequestReply(ctx context.Context, requestDestination
 }
 
 // correlationMatches reports whether an observed reply correlation id satisfies a
-// request correlation id. When either side is empty the match is treated as
-// permissive (no correlation to enforce); otherwise an exact match is required.
+// request correlation id, delegating to the shared messaging matcher (permissive
+// when either side is empty).
 func correlationMatches(requestCorrelationID, replyCorrelationID string) bool {
-	if requestCorrelationID == "" || replyCorrelationID == "" {
-		return true
-	}
-	return requestCorrelationID == replyCorrelationID
+	return messaging.CorrelationMatches(requestCorrelationID, replyCorrelationID)
 }
 
 func (a *solaceAMQPAdapter) HealthCheck(ctx context.Context) error {

@@ -412,6 +412,8 @@ type ServerTelemetrySummary struct {
 	AvgMessagesReceivedPerSec float64          `json:"avg_messages_received_per_sec,omitempty"`
 	AvgConsumerLagMs          float64          `json:"avg_consumer_lag_ms,omitempty"`
 	MaxConsumerLagMs          float64          `json:"max_consumer_lag_ms,omitempty"`
+	AvgConsumerOffsetLag      float64          `json:"avg_consumer_offset_lag,omitempty"`
+	MaxConsumerOffsetLag      int64            `json:"max_consumer_offset_lag,omitempty"`
 	SendFailureCount          int64            `json:"send_failure_count,omitempty"`
 	RedeliveryCount           int64            `json:"redelivery_count,omitempty"`
 	DeadLetteredCount         int64            `json:"dead_lettered_count,omitempty"`

@@ -110,5 +110,6 @@ func cloneServerTelemetry(input *protocol.ServerTelemetry) *ServerTelemetry {
 		OutOfOrderCount:        int32(input.OutOfOrderCount),
 		CommitCount:            int32(input.CommitCount),
 		AbortCount:             int32(input.AbortCount),
+		ConsumerOffsetLag:      input.ConsumerOffsetLag,
 	}
 }

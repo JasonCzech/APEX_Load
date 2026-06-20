@@ -886,6 +886,7 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 				OutOfOrderCount:        tx.ServerTelemetry.OutOfOrderCount,
 				CommitCount:            tx.ServerTelemetry.CommitCount,
 				AbortCount:             tx.ServerTelemetry.AbortCount,
+				ConsumerOffsetLag:      tx.ServerTelemetry.ConsumerOffsetLag,
 			}
 		}
 		protoTransactions = append(protoTransactions, &pb.TransactionMetric{

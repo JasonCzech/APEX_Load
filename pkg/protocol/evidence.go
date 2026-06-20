@@ -126,6 +126,9 @@ func evidenceMessages(result *Result) map[string]any {
 		if result.ServerTelemetry.ConsumerLagMs > 0 {
 			messages["consumer_lag_ms"] = result.ServerTelemetry.ConsumerLagMs
 		}
+		if result.ServerTelemetry.ConsumerOffsetLag > 0 {
+			messages["consumer_offset_lag"] = result.ServerTelemetry.ConsumerOffsetLag
+		}
 		if result.ServerTelemetry.MessageLatencyMs > 0 {
 			messages["latency_ms"] = result.ServerTelemetry.MessageLatencyMs
 		}
