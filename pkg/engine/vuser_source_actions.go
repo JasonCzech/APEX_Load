@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	protocolhttp "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
@@ -29,6 +30,8 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 		return true, nil
 	case "source_runtime":
 		return true, vu.handleSourceRuntimeAction(ctx, action)
+	case "cookie_clear":
+		return true, vu.clearProtocolCookies(ctx)
 	case "http_oauth2_token":
 		return true, vu.handleHTTPOAuth2TokenAction(ctx, action)
 	case "source_transaction":
@@ -56,6 +59,21 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 	default:
 		return false, nil
 	}
+}
+
+// clearProtocolCookies dispatches a cookie_clear action to the active protocol
+// when it exposes the protocol.CookieController capability (HTTP does). It is a
+// safe no-op when the VUser has no protocol bound yet (e.g. the catalog
+// dispatch cross-check) or the protocol keeps no cookie store.
+func (vu *VUser) clearProtocolCookies(ctx context.Context) error {
+	if vu == nil || vu.Proto == nil {
+		return nil
+	}
+	controller, ok := vu.Proto.(protocol.CookieController)
+	if !ok {
+		return nil
+	}
+	return controller.ClearCookies(ctx)
 }
 
 func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Action) error {

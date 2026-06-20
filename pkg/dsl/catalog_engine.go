@@ -53,6 +53,11 @@ func engineActionSpecs() []ActionSpec {
 			},
 		},
 		{
+			Type:      "cookie_clear",
+			Protocols: []string{"*"},
+			Summary:   "Clears every cookie in the VUser's HTTP session at this point (imported from web_cleanup_cookies). Protocols without a cookie store treat it as a no-op.",
+		},
+		{
 			Type:         "error_message",
 			Protocols:    []string{"*"},
 			Summary:      "Logs an error-level message rendered from value or a printf-style format.",

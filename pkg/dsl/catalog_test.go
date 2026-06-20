@@ -75,7 +75,7 @@ func TestActionCatalogHasNoDuplicateTypesOrAliases(t *testing.T) {
 func TestEngineActionTypeMembership(t *testing.T) {
 	expected := []string{
 		"control_if", "control_loop", "control_break", "control_continue",
-		"rendezvous", "error_message",
+		"rendezvous", "cookie_clear", "error_message",
 		"source_message", "source_runtime", "source_transaction", "source_timer",
 		"source_metric", "source_parameter", "source_json", "source_xml",
 		"source_database", "source_secret", "source_external", "source_review",

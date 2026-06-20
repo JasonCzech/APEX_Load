@@ -53,6 +53,17 @@ type Protocol interface {
 	HealthCheck(ctx context.Context) error
 }
 
+// CookieController is an optional capability for protocols that maintain a
+// per-VUser cookie store. The engine invokes ClearCookies when it dispatches a
+// cookie_clear action (imported from web_cleanup_cookies), discarding every
+// cookie the VUser has accumulated so far. Protocols that do not implement this
+// interface treat cookie_clear as a no-op, which is the correct behavior for
+// protocols that keep no cookies.
+type CookieController interface {
+	// ClearCookies discards all cookies currently held by the VUser session.
+	ClearCookies(ctx context.Context) error
+}
+
 // Action represents a single operation (HTTP request, message, etc.) to execute.
 type Action struct {
 	Name            string                 `json:"name"`

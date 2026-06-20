@@ -268,13 +268,30 @@ func reapplySourceRuntimeControlConfig(result *ConvertResult, fn ParsedFunction)
 		}
 	case "web_cache_cleanup":
 		setSourceWebRuntimeAttribute(result.Script, "web_cache_cleanup", "true")
-	case "web_cleanup_cookies":
-		setSourceWebRuntimeAttribute(result.Script, "web_cleanup_cookies", "true")
 	case "web_set_sockets_option":
 		applySourceSocketOptionConfig(result, fn)
 	case "web_set_timeout":
 		applySourceTimeoutConfig(result, fn)
 	}
+}
+
+// convertWebCleanupCookiesAction builds the executable cookie_clear action that
+// an imported web_cleanup_cookies() call maps to. The engine dispatches it to
+// the protocol's CookieController (HTTP) so cookies are actually cleared at this
+// point in the flow, rather than being preserved as a non-executed attribute.
+func convertWebCleanupCookiesAction(fn ParsedFunction) dsl.Action {
+	action := dsl.Action{
+		Name:     sourceActionName(fn),
+		Type:     "cookie_clear",
+		Metadata: sourceFunctionMetadata(fn),
+		Params: map[string]any{
+			"function":     "web_cleanup_cookies",
+			"family":       "runtime",
+			"support_mode": string(SourceFunctionSupportExecutable),
+		},
+	}
+	action.Metadata["support_mode"] = string(SourceFunctionSupportExecutable)
+	return action
 }
 
 func setSourceWebRuntimeAttribute(script *dsl.Script, key, value string) {

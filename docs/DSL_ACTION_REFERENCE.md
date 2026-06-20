@@ -53,6 +53,10 @@ Loop block: repeats control.steps for a fixed count, for each row of a data sour
 | `control.for_each.var` | string |  | Var-namespace prefix each iterated row binds under: row column c is available to the body as {{var.<var>.c}}. Distinct from the per-VUser {{data.source.c}} binding. |
 | `control.for_each.condition` | object |  | Optional per-row early-exit predicate {condition}. Iteration stops the first row this evaluates false (the row's columns are bound before it is checked). |
 
+### `cookie_clear`
+
+Clears every cookie in the VUser's HTTP session at this point (imported from web_cleanup_cookies). Protocols without a cookie store treat it as a no-op.
+
 ### `custom_call`
 
 Imported custom/user C function; logged for manual review during replay.

@@ -848,6 +848,16 @@ func runtimeAdditionalAttributeIsNativelyMapped(config dsl.ScriptConfig, key, va
 	case "web_set_timeout.ssl", "web_set_timeout.tls", "web_set_timeout.secure":
 		timeoutMs, ok := parseSourceTimeoutMs(value)
 		return ok && config.HTTP.TLSTimeoutMs == timeoutMs
+	case "web_cache_cleanup":
+		// APEX Load's HTTP runtime keeps no response cache, so an imported
+		// cache-cleanup control is a guaranteed native no-op (every fetch is
+		// already fresh). Preserved for round-trip fidelity, never a parity gap.
+		return true
+	case "web_set_max_html_param_len":
+		// APEX Load imposes no captured-parameter length cap (full-value capture,
+		// a superset of the source limit), so this control has no executable
+		// equivalent and is treated as a native no-op rather than a parity gap.
+		return true
 	default:
 		return false
 	}

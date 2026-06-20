@@ -308,24 +308,28 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			}
 
 		case "web_cache_cleanup":
+			// APEX Load's HTTP runtime keeps no response cache, so a cache-cleanup
+			// control is a guaranteed native no-op (every fetch is already fresh).
+			// Preserved as a compatibility attribute for round-trip fidelity but
+			// classified native so it never counts as a runtime-parity gap.
 			sourceRuntimeControls = append(sourceRuntimeControls, fn)
 			setSourceWebRuntimeAttribute(result.Script, "web_cache_cleanup", "true")
 			preserveSourceRuntimeControl(result.Script, "source_runtime_controls", fn, map[string]any{
 				"mapped_to": "config.web_runtime.additional_attributes.web_cache_cleanup",
 			})
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.additional_attributes.web_cache_cleanup", "Web Cache Cleanup", "config", "converted", "Mapped from source runtime control.", SourceFunctionSupportExecutable))
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.additional_attributes.web_cache_cleanup", "Web Cache Cleanup", "config", "converted", "APEX Load keeps no HTTP response cache; cache cleanup is a native no-op.", SourceFunctionSupportNativeNoop))
 			result.Stats.ContributorFunctions++
-			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+			recordSourceFunctionSupport(result, SourceFunctionSupportNativeNoop)
 
 		case "web_cleanup_cookies":
-			sourceRuntimeControls = append(sourceRuntimeControls, fn)
-			setSourceWebRuntimeAttribute(result.Script, "web_cleanup_cookies", "true")
+			// Cookie cleanup is behavioral: emit a positional, executable
+			// cookie_clear action so the clear happens exactly where the source
+			// called it, instead of flattening it into a non-executed attribute.
+			action := convertWebCleanupCookiesAction(fn)
 			preserveSourceRuntimeControl(result.Script, "source_runtime_controls", fn, map[string]any{
-				"mapped_to": "config.web_runtime.additional_attributes.web_cleanup_cookies",
+				"mapped_to": "actions[].cookie_clear",
 			})
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.additional_attributes.web_cleanup_cookies", "Web Cleanup Cookies", "config", "converted", "Mapped from source runtime control.", SourceFunctionSupportExecutable))
-			result.Stats.ContributorFunctions++
-			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+			appendSourceAction(result, fn, action, SourceFunctionSupportExecutable, "Converted to an executable cookie_clear action.")
 
 		case "web_set_sockets_option":
 			sourceRuntimeControls = append(sourceRuntimeControls, fn)

@@ -1647,6 +1647,23 @@
             "properties": {
               "type": {
                 "enum": [
+                  "cookie_clear"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Clears every cookie in the VUser's HTTP session at this point (imported from web_cleanup_cookies). Protocols without a cookie store treat it as a no-op."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "custom_call"
                 ]
               }
@@ -4627,6 +4644,7 @@
             "control_continue",
             "control_if",
             "control_loop",
+            "cookie_clear",
             "custom_call",
             "database_begin",
             "database_commit",

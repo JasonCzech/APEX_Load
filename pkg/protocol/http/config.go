@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -258,6 +259,24 @@ func buildCookieJar(config map[string]any) http.CookieJar {
 
 	jar, _ := cookiejar.New(nil)
 	return jar
+}
+
+// ClearCookies satisfies protocol.CookieController. It replaces the client's
+// cookie jar with a fresh, empty one, discarding every cookie this VUser has
+// accumulated — the runtime equivalent of an imported web_cleanup_cookies call.
+// Go's cookiejar has no in-place clear, so swapping in a new jar is the
+// idiomatic reset. When cookies are disabled the client has no jar and this is
+// a no-op.
+func (h *HTTP) ClearCookies(ctx context.Context) error {
+	if h.client == nil || h.client.Jar == nil {
+		return nil
+	}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return err
+	}
+	h.client.Jar = jar
+	return nil
 }
 
 func parseMaxRedirects(config map[string]any) int {

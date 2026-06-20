@@ -668,8 +668,11 @@ Action()
 		t.Fatalf("keep_alive = %#v, want false", result.Script.Config.HTTP.KeepAlive)
 	}
 	attrs := result.Script.Config.WebRuntime.AdditionalAttributes
-	if attrs["web_cache_cleanup"] != "true" || attrs["web_cleanup_cookies"] != "true" {
-		t.Fatalf("web runtime attrs = %#v, want cleanup controls", attrs)
+	if attrs["web_cache_cleanup"] != "true" {
+		t.Fatalf("web runtime attrs = %#v, want web_cache_cleanup preserved as a native no-op", attrs)
+	}
+	if _, ok := attrs["web_cleanup_cookies"]; ok {
+		t.Fatalf("web runtime attrs = %#v, want web_cleanup_cookies emitted as a cookie_clear action, not an attribute", attrs)
 	}
 	if attrs["web_set_sockets_option.SSL_VERSION"] != "TLS1.2" {
 		t.Fatalf("socket option attrs = %#v, want SSL_VERSION TLS1.2", attrs)
@@ -680,10 +683,17 @@ Action()
 	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
 		t.Fatal("expected import metadata for preserved runtime controls")
 	}
-	if len(result.Script.Actions) != 3 {
-		t.Fatalf("actions = %#v, want native error_message, lr_exit, and Homepage request", result.Script.Actions)
+	if len(result.Script.Actions) != 4 {
+		t.Fatalf("actions = %#v, want cookie_clear, error_message, lr_exit, and Homepage request", result.Script.Actions)
 	}
-	errorAction := result.Script.Actions[0]
+	cookieAction := result.Script.Actions[0]
+	if cookieAction.Type != "cookie_clear" || cookieAction.Params["function"] != "web_cleanup_cookies" {
+		t.Fatalf("cookie action = %#v, want executable cookie_clear from web_cleanup_cookies", cookieAction)
+	}
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_cleanup_cookies", "actions[0]", "converted")
+	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "web_cleanup_cookies", SourceFunctionSupportExecutable)
+	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "web_cache_cleanup", SourceFunctionSupportNativeNoop)
+	errorAction := result.Script.Actions[1]
 	if errorAction.Type != "error_message" || errorAction.Value != "Imported error message" {
 		t.Fatalf("error action = %#v, want native error_message action", errorAction)
 	}
@@ -693,8 +703,8 @@ Action()
 	if errorAction.Metadata["source_function"] != "lr_error_message" {
 		t.Fatalf("error action metadata = %#v, want source_function lr_error_message", errorAction.Metadata)
 	}
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_error_message", "actions[0]", "converted")
-	if exitAction := result.Script.Actions[1]; exitAction.Type != "source_runtime" || exitAction.Params["function"] != "lr_exit" {
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_error_message", "actions[1]", "converted")
+	if exitAction := result.Script.Actions[2]; exitAction.Type != "source_runtime" || exitAction.Params["function"] != "lr_exit" {
 		t.Fatalf("exit action = %#v, want native lr_exit runtime action", exitAction)
 	}
 	preserved := result.Script.Metadata.Import.Preserved
@@ -3227,7 +3237,9 @@ func TestBuildRTSParityReportFromScriptRetainsUnmappedAdditionalAttributes(t *te
 		Config: dsl.ScriptConfig{
 			WebRuntime: dsl.WebRuntimeConfig{
 				AdditionalAttributes: map[string]string{
-					"web_set_max_html_param_len": "4096",
+					// An arbitrary imported RTS attribute with no native APEX
+					// equivalent stays compatibility-only.
+					"BusinessProcess": "Checkout",
 				},
 			},
 		},
@@ -3238,6 +3250,34 @@ func TestBuildRTSParityReportFromScriptRetainsUnmappedAdditionalAttributes(t *te
 	counts := RuntimeSettingStatusCounts(parity)
 	if counts[string(RuntimeSettingStatusCompatibilityOnly)] != 1 {
 		t.Fatalf("status counts = %#v, want one compatibility-only additional attribute", counts)
+	}
+}
+
+func TestBuildRTSParityReportFromScriptTreatsNativeNoopAttributesAsNonGaps(t *testing.T) {
+	// web_set_max_html_param_len (no capture-length cap in APEX) and
+	// web_cache_cleanup (no HTTP response cache in APEX) are honest native
+	// no-ops: preserved for fidelity but never a runtime-parity gap.
+	script := &dsl.Script{
+		Name:     "Native No-op Runtime Draft",
+		Version:  "1.0.0",
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			WebRuntime: dsl.WebRuntimeConfig{
+				AdditionalAttributes: map[string]string{
+					"web_set_max_html_param_len": "99999",
+					"web_cache_cleanup":          "true",
+				},
+			},
+		},
+	}
+
+	parity := BuildRTSParityReportFromScript(script)
+	if runtimeSettingParityHasID(parity, "additional_attributes") {
+		t.Fatalf("parity = %#v, want native no-op attributes excluded from additional_attributes", parity)
+	}
+	counts := RuntimeSettingStatusCounts(parity)
+	if counts[string(RuntimeSettingStatusCompatibilityOnly)] != 0 {
+		t.Fatalf("status counts = %#v, want no compatibility-only additional attribute", counts)
 	}
 }
 

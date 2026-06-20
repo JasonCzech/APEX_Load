@@ -217,7 +217,9 @@ func TestValidateScriptRuntimeParityHealthCountUsesAffectedSettings(t *testing.T
 		Config: dsl.ScriptConfig{
 			WebRuntime: dsl.WebRuntimeConfig{
 				AdditionalAttributes: map[string]string{
-					"web_set_max_html_param_len": "4096",
+					// An arbitrary imported RTS attribute with no native APEX
+					// equivalent stays compatibility-only and docks parity health.
+					"BusinessProcess": "Checkout",
 				},
 			},
 		},
