@@ -46,3 +46,49 @@ func TestKafkaConsumerOffsetLagSurfaced(t *testing.T) {
 		t.Fatalf("ConsumerOffsetLag = %+v, want 2 (3 produced, 1 consumed)", res.ServerTelemetry)
 	}
 }
+
+// TestKafkaSeekRepositionsConsumer verifies kafka_seek is no longer a no-op:
+// the offset-based mock broker lets a consumer replay from earliest and skip to
+// latest. (Pre-P2.1 the mock was destructive FIFO and could not seek.)
+func TestKafkaSeekRepositionsConsumer(t *testing.T) {
+	ctx := context.Background()
+	k := newMockKafka(t, map[string]any{"kafka_topic": "seek.events"})
+	for _, body := range []string{"m0", "m1", "m2"} {
+		if _, err := k.Execute(ctx, &protocol.Action{Name: "p", Type: "kafka_produce", Body: []byte(body)}); err != nil {
+			t.Fatalf("produce %s: %v", body, err)
+		}
+	}
+	// Consume m0 and m1 (cursor now at offset 2).
+	for i := 0; i < 2; i++ {
+		if _, err := k.Execute(ctx, &protocol.Action{Name: "c", Type: "kafka_consume"}); err != nil {
+			t.Fatalf("consume: %v", err)
+		}
+	}
+	// Seek back to earliest; the next consume replays from offset 0 (lag 2 again).
+	sk, err := k.Execute(ctx, &protocol.Action{Name: "s", Type: "kafka_seek", Params: map[string]any{"offset": "earliest"}})
+	if err != nil {
+		t.Fatalf("seek: %v", err)
+	}
+	if !sk.Success {
+		t.Fatalf("seek failed: %s", sk.ErrorMessage)
+	}
+	replay, err := k.Execute(ctx, &protocol.Action{Name: "r", Type: "kafka_consume"})
+	if err != nil {
+		t.Fatalf("replay consume: %v", err)
+	}
+	if replay.ServerTelemetry == nil || replay.ServerTelemetry.ConsumerOffsetLag != 2 {
+		t.Fatalf("after seek-earliest the replay lag = %+v, want 2 (cursor reset to offset 0)", replay.ServerTelemetry)
+	}
+
+	// Seek to latest; the next consume finds nothing (caught up to the tail).
+	if _, err := k.Execute(ctx, &protocol.Action{Name: "sl", Type: "kafka_seek", Params: map[string]any{"offset": "latest"}}); err != nil {
+		t.Fatalf("seek latest: %v", err)
+	}
+	tail, err := k.Execute(ctx, &protocol.Action{Name: "ct", Type: "kafka_consume"})
+	if err != nil {
+		t.Fatalf("consume after seek latest: %v", err)
+	}
+	if tail.Success {
+		t.Fatal("expected no record after seek to latest (consumer at tail)")
+	}
+}

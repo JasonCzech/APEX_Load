@@ -205,6 +205,13 @@ func (c *franzClient) Commit(ctx context.Context) error {
 	return nil
 }
 
+func (c *franzClient) Seek(_ context.Context, _, _, _ string) error {
+	// Real-broker seek (kgo SetOffsets across the topic's partitions, honoring
+	// earliest/latest/explicit offsets) lands with the P2.1 part-2 real-broker
+	// work; the in-memory mock supports seek/replay today for shakeout and CI.
+	return fmt.Errorf("kafka_seek is not yet supported on the real (kafka_real) adapter; use config.kafka.mock for seek/replay shakeout")
+}
+
 func (c *franzClient) HealthCheck(ctx context.Context) error {
 	if len(c.cfg.Brokers) == 0 {
 		return fmt.Errorf("kafka brokers are not configured")

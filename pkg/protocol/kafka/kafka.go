@@ -202,7 +202,13 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 		result.Extractions["kafka_operation"] = "kafka_commit"
 		result.ServerTelemetry = &protocol.ServerTelemetry{CommitCount: 1}
 	case "kafka_seek":
-		result.Extractions["kafka_operation"] = "kafka_seek"
+		target := seekTarget(action.Params)
+		if seekErr := k.client.Seek(ctx, k.topic(action), k.consumerGroup(action), target); seekErr != nil {
+			err = seekErr
+		} else {
+			result.Extractions["kafka_operation"] = "kafka_seek"
+			result.Extractions["kafka_seek_offset"] = target
+		}
 	default:
 		err = fmt.Errorf("unsupported kafka action type %q", action.Type)
 	}
@@ -240,6 +246,30 @@ func (k *Kafka) HealthCheck(ctx context.Context) error {
 		return fmt.Errorf("kafka client is not initialized")
 	}
 	return k.client.HealthCheck(ctx)
+}
+
+// seekTarget resolves the kafka_seek "offset" param (a number, "earliest", or
+// "latest") to a string the client Seek understands; defaults to earliest.
+func seekTarget(params map[string]any) string {
+	v, ok := params["offset"]
+	if !ok {
+		return "earliest"
+	}
+	switch t := v.(type) {
+	case string:
+		if strings.TrimSpace(t) == "" {
+			return "earliest"
+		}
+		return t
+	case float64:
+		return strconv.FormatInt(int64(t), 10)
+	case int:
+		return strconv.Itoa(t)
+	case int64:
+		return strconv.FormatInt(t, 10)
+	default:
+		return "earliest"
+	}
 }
 
 // checkRecordSize is a conservative pre-flight guard for the broker message-size
@@ -285,12 +315,20 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 	return rec, evaluateAssertions(action.Assertions, result, rec)
 }
 
+// consumerGroup resolves the effective consumer group for an action: the
+// per-action consumer_group param falls back to config.kafka.consumer_group.
+// Using it consistently keeps the broker cursor key aligned with the dependency
+// type classified in classifyKafkaDependencyType.
+func (k *Kafka) consumerGroup(action *protocol.Action) string {
+	return paramString(action.Params, "consumer_group", k.cfg.ConsumerGroup)
+}
+
 func (k *Kafka) consume(ctx context.Context, action *protocol.Action, result *protocol.Result) (kafkaRecord, error) {
 	topic := k.topic(action)
 	if topic == "" {
 		return kafkaRecord{}, fmt.Errorf("kafka topic is required")
 	}
-	rec, lag, err := k.client.Consume(ctx, topic, k.cfg.ConsumerGroup, k.timeout(action))
+	rec, lag, err := k.client.Consume(ctx, topic, k.consumerGroup(action), k.timeout(action))
 	if err != nil {
 		result.StatusCode = 204
 		return kafkaRecord{}, err
