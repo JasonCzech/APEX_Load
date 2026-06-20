@@ -228,6 +228,7 @@ type KafkaConfig struct {
 	SASLUsername       string            `json:"sasl_username,omitempty"`        // SASL username
 	SASLPassword       string            `json:"sasl_password,omitempty"`        // SASL password (inline)
 	SASLPasswordSecret string            `json:"sasl_password_secret,omitempty"` // secret reference resolved at runtime
+	OAuthScope         string            `json:"oauth_scope,omitempty"`          // OAUTHBEARER token scope; defaults to https://<broker-host>/.default (Event Hubs / Entra ID). Credentials come from the Azure environment (DefaultAzureCredential), not the script.
 	TLS                *KafkaTLSConfig   `json:"tls,omitempty"`                  // TLS material for ssl/sasl_ssl
 	ClientID           string            `json:"client_id,omitempty"`            // Kafka client.id
 	ConsumerGroup      string            `json:"consumer_group,omitempty"`       // consumer group id for kafka_consume

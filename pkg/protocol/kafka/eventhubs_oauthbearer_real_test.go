@@ -2,37 +2,26 @@
 
 package kafka
 
-import (
-	"context"
-	"strings"
-	"testing"
+import "testing"
 
-	"github.com/jasonczech/apexload/pkg/protocol"
-)
-
-// TestEventHubsOAuthBearerFailsFastUnderTag verifies that an eventhubs+oauthbearer
-// script fails fast with a clear "not yet supported (EH.2)" error under the real
-// (kafka_real) adapter instead of silently downgrading to PLAIN and failing
-// opaquely at the SASL handshake.
-func TestEventHubsOAuthBearerFailsFastUnderTag(t *testing.T) {
-	k := &Kafka{name: "kafka"}
-	if err := k.Init(context.Background(), map[string]any{
-		"kafka_profile":        "eventhubs",
-		"kafka_brokers":        []string{"ns.servicebus.windows.net:9093"},
-		"kafka_sasl_mechanism": "oauthbearer",
-		"kafka_topic":          "events",
-		"kafka_mock":           false,
-	}); err != nil {
-		t.Fatalf("Init: %v", err)
+// TestEventHubsOAuthScope verifies the OAUTHBEARER token scope resolution (EH.2):
+// an explicit oauth_scope wins, otherwise it is derived from the first broker
+// host (the Event Hubs / Entra ID convention).
+func TestEventHubsOAuthScope(t *testing.T) {
+	cases := []struct {
+		name     string
+		brokers  []string
+		explicit string
+		want     string
+	}{
+		{"explicit scope wins", []string{"ns.servicebus.windows.net:9093"}, "https://custom.example/.default", "https://custom.example/.default"},
+		{"derive from event hubs host", []string{"ns.servicebus.windows.net:9093"}, "", "https://ns.servicebus.windows.net/.default"},
+		{"host without port", []string{"broker.example.com"}, "", "https://broker.example.com/.default"},
+		{"no brokers, no explicit", nil, "", ""},
 	}
-	res, err := k.Execute(context.Background(), &protocol.Action{Name: "p", Type: "kafka_produce", Body: []byte("x")})
-	if err != nil {
-		t.Fatalf("Execute returned transport error: %v", err)
-	}
-	if res.Success {
-		t.Fatal("expected oauthbearer produce to fail fast under kafka_real")
-	}
-	if !strings.Contains(res.ErrorMessage, "oauthbearer") || !strings.Contains(res.ErrorMessage, "not yet supported") {
-		t.Fatalf("error message %q should explain oauthbearer is not yet supported", res.ErrorMessage)
+	for _, c := range cases {
+		if got := eventHubsOAuthScope(c.brokers, c.explicit); got != c.want {
+			t.Errorf("%s: eventHubsOAuthScope(%v, %q) = %q, want %q", c.name, c.brokers, c.explicit, got, c.want)
+		}
 	}
 }

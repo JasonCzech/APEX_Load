@@ -69,6 +69,7 @@ func TestKafkaProducerConsumerKnobsFlowToConfig(t *testing.T) {
 		"kafka_mock":            true,
 		"kafka_idempotence":     "disabled",
 		"kafka_isolation_level": "read_committed",
+		"kafka_oauth_scope":     "https://ns.servicebus.windows.net/.default",
 	}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -77,6 +78,9 @@ func TestKafkaProducerConsumerKnobsFlowToConfig(t *testing.T) {
 	}
 	if k.cfg.IsolationLevel != "read_committed" {
 		t.Errorf("isolation_level = %q, want read_committed", k.cfg.IsolationLevel)
+	}
+	if k.cfg.OAuthScope != "https://ns.servicebus.windows.net/.default" {
+		t.Errorf("oauth_scope = %q, want the Event Hubs scope", k.cfg.OAuthScope)
 	}
 }
 

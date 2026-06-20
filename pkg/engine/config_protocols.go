@@ -475,6 +475,9 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 	if kafkaCfg.SASLPasswordSecret != "" {
 		cfg["kafka_sasl_password_secret"] = kafkaCfg.SASLPasswordSecret
 	}
+	if kafkaCfg.OAuthScope != "" {
+		cfg["kafka_oauth_scope"] = kafkaCfg.OAuthScope
+	}
 	if kafkaCfg.TLS != nil {
 		if kafkaCfg.TLS.InsecureSkipVerify {
 			cfg["kafka_tls_insecure_skip_verify"] = true

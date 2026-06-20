@@ -157,6 +157,29 @@ func TestValidateKafkaScriptIssues(t *testing.T) {
 			wantClean: true,
 		},
 		{
+			name: "oauthbearer requires tls",
+			mutate: func(s *Script) {
+				s.Config.Kafka.SASLMechanism = "oauthbearer"
+			},
+			wantHas: "oauthbearer requires a TLS",
+		},
+		{
+			name: "oauthbearer with sasl_ssl is fine",
+			mutate: func(s *Script) {
+				s.Config.Kafka.SASLMechanism = "oauthbearer"
+				s.Config.Kafka.SecurityProtocol = "sasl_ssl"
+			},
+			wantClean: true,
+		},
+		{
+			name: "eventhubs profile oauthbearer is fine",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Profile = "eventhubs"
+				s.Config.Kafka.SASLMechanism = "oauthbearer"
+			},
+			wantClean: true,
+		},
+		{
 			name: "transaction actions are valid",
 			mutate: func(s *Script) {
 				s.Config.Kafka.TransactionalID = "tx-1"

@@ -57,6 +57,7 @@ type config struct {
 	SASLMechanism     string
 	SASLUsername      string
 	SASLPassword      string
+	OAuthScope        string
 	ClientID          string
 	ConsumerGroup     string
 	Topic             string
@@ -95,6 +96,7 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 		SASLMechanism:     stringValue(cfg, "kafka_sasl_mechanism"),
 		SASLUsername:      stringValue(cfg, "kafka_sasl_username"),
 		SASLPassword:      stringValue(cfg, "kafka_sasl_password"),
+		OAuthScope:        stringValue(cfg, "kafka_oauth_scope"),
 		ClientID:          stringValue(cfg, "kafka_client_id"),
 		ConsumerGroup:     stringValue(cfg, "kafka_consumer_group"),
 		Topic:             stringValue(cfg, "kafka_topic"),

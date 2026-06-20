@@ -879,9 +879,19 @@ func validateKafkaScriptIssues(script *Script) []string {
 				issues = append(issues, "config.kafka.profile eventhubs with PLAIN auth requires config.kafka.sasl_password or sasl_password_secret (the namespace connection string)")
 			}
 		case "oauthbearer":
-			// Microsoft Entra ID / OAUTHBEARER auth is implemented in EH.2; allowed here so scripts can be authored ahead of it.
+			// Microsoft Entra ID / OAUTHBEARER auth (EH.2): credentials come from
+			// the Azure environment (DefaultAzureCredential), so no SAS password
+			// is required here.
 		default:
 			issues = append(issues, fmt.Sprintf("config.kafka.profile eventhubs supports sasl_mechanism plain or oauthbearer, got %q", kafka.SASLMechanism))
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(kafka.SASLMechanism), "oauthbearer") {
+		// OAUTHBEARER must run over TLS. The eventhubs profile forces sasl_ssl at
+		// runtime, so accept it even when security_protocol is left unset.
+		eventHubsProfile := strings.EqualFold(strings.TrimSpace(kafka.Profile), "eventhubs")
+		if !eventHubsProfile && !strings.Contains(strings.ToLower(kafka.SecurityProtocol), "ssl") {
+			issues = append(issues, "config.kafka.sasl_mechanism oauthbearer requires a TLS security_protocol (e.g. sasl_ssl)")
 		}
 	}
 	if kafka.SecurityProtocol != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(kafka.SecurityProtocol)), "plaintext", "ssl", "sasl_ssl", "sasl_plaintext") {
