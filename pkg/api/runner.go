@@ -734,6 +734,7 @@ const (
 	maxLiveErrorEvidencePerSignature        = 50
 	defaultLiveErrorEvidenceLimit           = 20
 	maxLiveErrorEvidenceLimit               = 100
+	maxLiveErrorPatternsPerRun              = 256
 	slowTransactionDiagnosticThresholdMs    = 1000.0
 	jmsBrokerPressureMinLagMs               = 200.0
 	jmsBrokerPressureLagMultiplier          = 2.0

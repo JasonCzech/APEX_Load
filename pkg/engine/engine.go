@@ -247,18 +247,31 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 		e.metrics.SetActiveVUsers(activeWorkers.Add(delta))
 	}
 
+	inFlightLimit := openWorkloadInFlightLimit(e.script)
+	limiter := newInFlightLimiter(inFlightLimit)
+
 	runArrivalScheduler(loopCtx, e.script.Config.Pacing.TPS, func() int {
 		if bounded {
 			return arrivals
 		}
 		return 0
 	}(), nil, func(arrival int) {
+		// Shed the arrival when the in-flight set is saturated: the SUT cannot
+		// keep up, so dropping it protects the generator from unbounded
+		// goroutine growth instead of silently throttling to a closed model.
+		if !limiter.tryAcquire() {
+			if limiter.shouldWarn() {
+				slog.Warn("open workload shedding arrivals: system under test cannot keep up; capping in-flight workers to protect the generator", "max_in_flight", inFlightLimit, "tps", e.script.Config.Pacing.TPS)
+			}
+			return
+		}
 		wg.Add(1)
 		setActive(1)
 
 		go func(workerID int) {
 			defer recoverVUserGoroutine(workerID)
 			defer wg.Done()
+			defer limiter.release()
 			defer func() { setActive(-1) }()
 
 			vuProto, err := protocol.Get(e.script.Protocol)
@@ -283,6 +296,10 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 			vu.Run(loopCtx)
 		}(arrival)
 	})
+
+	if shed := limiter.Shed(); shed > 0 {
+		slog.Warn("open workload shed arrivals over the run (offered TPS exceeded achievable throughput)", "shed", shed, "max_in_flight", inFlightLimit)
+	}
 
 	wg.Wait()
 	elapsed := time.Since(start)

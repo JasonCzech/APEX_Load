@@ -458,6 +458,7 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	live.CapacityStatus = buildLiveCapacityStatus(test, live, tests)
 	tr.appendLiveErrorEvidenceLocked(test, live.ErrorEvidence)
 	test.errorPatterns = updateLiveErrorPatterns(test.errorPatterns, live, test.ID)
+	trimLiveErrorPatternsLocked(test.errorPatterns)
 	enrichLiveErrorPatternsWithEvidence(test, test.errorPatterns)
 	live.ErrorPatterns = liveErrorPatternsList(test.errorPatterns)
 	live.ErrorEvidence = nil

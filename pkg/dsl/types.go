@@ -370,6 +370,7 @@ type RunLogicConfig struct {
 	GlobalIterations int      `json:"global_iterations,omitempty"` // 0 = no shared iteration cap across VUsers
 	MaxTransactions  int64    `json:"max_transactions,omitempty"`  // 0 = no shared transaction cap across VUsers
 	WorkloadModel    string   `json:"workload_model,omitempty"`    // "closed" (default), "open"
+	MaxInFlight      int      `json:"max_in_flight,omitempty"`     // open model only: max concurrent in-flight arrival workers (0 = derive a safe default from TPS)
 	AutoTransactions string   `json:"auto_transactions,omitempty"` // "none" (default), "per_action", "per_iteration"
 	BlockScheduling  string   `json:"block_scheduling,omitempty"`  // "sequential", "random", "percentage"
 	ActionSequence   []string `json:"action_sequence,omitempty"`   // e.g. ["init", "action", "teardown"]

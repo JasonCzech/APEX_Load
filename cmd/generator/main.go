@@ -10,6 +10,7 @@ import (
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/debugserver"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	_ "github.com/jasonczech/apexload/pkg/protocol/browser"
 	_ "github.com/jasonczech/apexload/pkg/protocol/database"
@@ -27,6 +28,13 @@ import (
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+
+	// Optional pprof debug server (disabled unless APEXLOAD_PPROF_ADDR is set).
+	if pprofSrv, err := debugserver.StartPprofFromEnv(os.Getenv); err != nil {
+		slog.Error("failed to start pprof debug server", "err", err)
+	} else if pprofSrv != nil {
+		defer pprofSrv.Close()
+	}
 
 	cfg := config.DefaultGeneratorConfig()
 	_ = cfg

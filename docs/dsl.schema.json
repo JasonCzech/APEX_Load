@@ -5866,6 +5866,9 @@
         "iterations": {
           "type": "integer"
         },
+        "max_in_flight": {
+          "type": "integer"
+        },
         "max_transactions": {
           "type": "integer"
         },

@@ -67,6 +67,42 @@ func updateLiveErrorPatterns(existing map[string]*LiveErrorPattern, live *LiveMe
 	return existing
 }
 
+// trimLiveErrorPatternsLocked bounds the per-run error-pattern map so a long run
+// against a target whose error messages carry high-cardinality identifiers
+// (alphanumeric IDs, hashes, distinct URL slugs that survive signature
+// normalization) cannot grow it without limit — each distinct normalized
+// signature otherwise mints a permanent map entry for the whole run. It mirrors
+// trimLiveErrorEvidenceLocked: when the map exceeds maxLiveErrorPatternsPerRun
+// it evicts the lowest-value patterns first — fewest occurrences, then oldest
+// last-seen — which are exactly the ones liveErrorPatternsList (sorted by Count
+// desc) never surfaces. Callers must hold tr.mu.
+func trimLiveErrorPatternsLocked(patterns map[string]*LiveErrorPattern) {
+	if len(patterns) <= maxLiveErrorPatternsPerRun {
+		return
+	}
+	signatures := make([]string, 0, len(patterns))
+	for signature := range patterns {
+		signatures = append(signatures, signature)
+	}
+	sort.Slice(signatures, func(left, right int) bool {
+		lp := patterns[signatures[left]]
+		rp := patterns[signatures[right]]
+		if lp == nil || rp == nil {
+			return lp == nil && rp != nil
+		}
+		if lp.Count != rp.Count {
+			return lp.Count < rp.Count
+		}
+		if !lp.LatestSeen.Equal(rp.LatestSeen) {
+			return lp.LatestSeen.Before(rp.LatestSeen)
+		}
+		return signatures[left] < signatures[right]
+	})
+	for i := 0; len(patterns) > maxLiveErrorPatternsPerRun && i < len(signatures); i++ {
+		delete(patterns, signatures[i])
+	}
+}
+
 func liveErrorPatternSource(tx *TxMetrics) string {
 	if tx == nil {
 		return "transaction failed"

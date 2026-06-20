@@ -225,19 +225,35 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		}
 		if isOpenWorkload(group.Script) {
 			arrivals, bounded := boundedArrivalLimit(group.Script, group.VUsers)
+			inFlightLimit := openWorkloadInFlightLimit(group.Script)
+			limiter := newInFlightLimiter(inFlightLimit)
 			wg.Add(1)
-			go func(group GroupConfig, protoConfig map[string]any, totalArrivals int) {
+			go func(group GroupConfig, protoConfig map[string]any, totalArrivals int, limiter *inFlightLimiter, inFlightLimit int) {
 				defer wg.Done()
 				runArrivalScheduler(mge.loopCtx, group.Script.Config.Pacing.TPS, totalArrivals, mge.WaitIfPaused, func(int) {
+					// Shed the arrival when the in-flight set is saturated: the SUT
+					// cannot keep up, so dropping it protects the generator from
+					// unbounded goroutine growth instead of silently throttling to a
+					// closed model. The reserved slot is released by spawnOpenWorker
+					// on every exit path.
+					if !limiter.tryAcquire() {
+						if limiter.shouldWarn() {
+							slog.Warn("open workload shedding arrivals: system under test cannot keep up; capping in-flight workers to protect the generator", "group", group.Name, "max_in_flight", inFlightLimit, "tps", group.Script.Config.Pacing.TPS)
+						}
+						return
+					}
 					vuserID := mge.allocateVUserID()
-					mge.spawnOpenWorker(vuserID, group, protoConfig, &wg)
+					mge.spawnOpenWorker(vuserID, group, protoConfig, &wg, limiter.release)
 				})
+				if shed := limiter.Shed(); shed > 0 {
+					slog.Warn("open workload shed arrivals over the run (offered TPS exceeded achievable throughput)", "group", group.Name, "shed", shed, "max_in_flight", inFlightLimit)
+				}
 			}(group, protoConfig, func() int {
 				if bounded {
 					return arrivals
 				}
 				return 0
-			}())
+			}(), limiter, inFlightLimit)
 			continue
 		}
 
@@ -441,7 +457,13 @@ func (mge *MultiGroupEngine) allocateVUserID() int {
 	return id
 }
 
-func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup) {
+func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, release func()) {
+	// release returns the in-flight slot reserved by the caller; it must run
+	// exactly once across every exit path (including the early protocol
+	// failures below) so the limiter does not leak capacity.
+	if release == nil {
+		release = func() {}
+	}
 	parentCtx := mge.loopCtx
 	if parentCtx == nil {
 		parentCtx = mge.baseCtx
@@ -470,6 +492,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		delete(mge.vuserGroups, vuserID)
 		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 		mge.mu.Unlock()
+		release()
 		return
 	}
 	if err := vuProto.Init(vuCtx, vuserProtoConfig(protoConfig, vuserID)); err != nil {
@@ -480,6 +503,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		delete(mge.vuserGroups, vuserID)
 		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 		mge.mu.Unlock()
+		release()
 		return
 	}
 
@@ -488,6 +512,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 	go func() {
 		defer recoverVUserGoroutine(vuserID)
 		defer wg.Done()
+		defer release()
 		defer cancelVUser()
 		defer func() {
 			runProtocolTeardown(vuProto)
