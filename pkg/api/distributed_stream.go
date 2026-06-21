@@ -286,6 +286,23 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 	if test.remoteMetricsBatchesByTarget == nil {
 		test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
 	}
+	// A terminal lifecycle batch (COMPLETE/FAILED) is a state signal that the
+	// generator emits with no transaction window (metricsBatchForState). Don't let
+	// it erase the transactions/groups already reported for this target: otherwise
+	// live metrics reset to zero at completion. Under load the controller can drain
+	// the last metrics batch and this terminal batch from the stream in a single
+	// burst, so a poller (and the dashboard) could otherwise never observe the
+	// run's transactions before they are wiped. Carry the prior snapshot forward.
+	if batch.LifecycleState == "COMPLETE" || batch.LifecycleState == "FAILED" {
+		if prior, ok := test.remoteMetricsBatchesByTarget[target]; ok {
+			if len(batch.Transactions) == 0 {
+				batch.Transactions = prior.Transactions
+			}
+			if len(batch.Groups) == 0 {
+				batch.Groups = prior.Groups
+			}
+		}
+	}
 	test.remoteMetricsBatchesByTarget[target] = batch
 	batches := make(map[string]generatorrpc.MetricsBatch, len(test.remoteMetricsBatchesByTarget))
 	for key, value := range test.remoteMetricsBatchesByTarget {

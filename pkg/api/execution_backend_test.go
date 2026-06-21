@@ -3253,3 +3253,61 @@ func TestDistributedExecutionBackendScalesGroupOnOwningGenerator(t *testing.T) {
 		t.Fatalf("generator B pending vusers = %d, want 7", stopB.PendingVUsers)
 	}
 }
+
+// TestApplyRemoteMetricsBatchTerminalBatchPreservesTransactions guards the fix
+// for a flaky distributed-execution race: the generator emits the terminal
+// COMPLETE/FAILED lifecycle batch with no transaction window (metricsBatchForState),
+// and under load the controller can drain the last metrics batch and the terminal
+// batch from the stream in a single burst. Without preserving the prior snapshot,
+// the terminal batch resets live TotalTx to zero and a poller never observes the
+// run's transactions.
+func TestApplyRemoteMetricsBatchTerminalBatchPreservesTransactions(t *testing.T) {
+	hub := NewHub()
+	tr := NewTestRunner(1, hub, nil)
+	b := newDistributedExecutionBackend([]string{"gen-1"}, 5*time.Second, nil)
+	const target = "gen-1"
+	test := &ManagedTest{
+		ID:                    "t-terminal-preserve",
+		Groups:                []TestGroup{{Name: "buyers", VUsers: 1}, {Name: "admins", VUsers: 1}},
+		remoteClientsByTarget: map[string]generatorClient{target: nil},
+	}
+
+	running := generatorrpc.MetricsBatch{
+		TestID:         test.ID,
+		LifecycleState: "RUNNING",
+		WindowMs:       1000,
+		Stats:          generatorrpc.GeneratorStats{ActiveVUsers: 2},
+		Groups:         []generatorrpc.GroupMetric{{Name: "buyers", ActiveVUsers: 1}, {Name: "admins", ActiveVUsers: 1}},
+		Transactions: []generatorrpc.TransactionMetric{
+			{Name: "Buyers", Group: "buyers", DurationMs: 10, StatusCode: 200, Success: true},
+			{Name: "Admins", Group: "admins", DurationMs: 12, StatusCode: 200, Success: true},
+		},
+	}
+	live, finalStatus, _ := b.applyRemoteMetricsBatch(tr, test, target, running)
+	if finalStatus != "" {
+		t.Fatalf("running batch finalStatus = %q, want empty", finalStatus)
+	}
+	if live.TotalTx == 0 {
+		t.Fatal("expected TotalTx>0 from the running batch")
+	}
+
+	// Terminal COMPLETE batch with no transaction window (as the generator emits).
+	complete := generatorrpc.MetricsBatch{
+		TestID:         test.ID,
+		LifecycleState: "COMPLETE",
+		Stats:          generatorrpc.GeneratorStats{ActiveVUsers: 0},
+	}
+	liveDone, finalStatusDone, _ := b.applyRemoteMetricsBatch(tr, test, target, complete)
+	if finalStatusDone != "COMPLETE" {
+		t.Fatalf("complete batch finalStatus = %q, want COMPLETE", finalStatusDone)
+	}
+	if liveDone.TotalTx == 0 {
+		t.Fatal("terminal COMPLETE batch must not reset live TotalTx to zero — the run's transactions must persist")
+	}
+	if liveDone.Transactions["Buyers"] == nil || liveDone.Transactions["Admins"] == nil {
+		t.Fatalf("terminal batch must preserve per-action transactions, got %#v", liveDone.Transactions)
+	}
+	if liveDone.GroupMetrics["buyers"] == nil || liveDone.GroupMetrics["admins"] == nil {
+		t.Fatalf("terminal batch must preserve group metrics, got %#v", liveDone.GroupMetrics)
+	}
+}
