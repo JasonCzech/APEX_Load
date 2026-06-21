@@ -65,6 +65,12 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
     .filter((tx) => tx.dependency_type?.startsWith('eventhubs') && hasEventHubsProducerTelemetry(tx))
     .sort((left, right) => eventHubsThrottleTotal(right) - eventHubsThrottleTotal(left))
     .slice(0, 6)
+  // Cross-protocol reliability: redelivery / dead-letter / duplicate / commit /
+  // abort for any messaging dependency that reported a reliability signal (P4.1).
+  const messagingReliability = Object.values(metrics?.dependency_health ?? {})
+    .filter((tx) => isMessagingDependency(tx) && hasReliabilitySignal(tx))
+    .sort((left, right) => messagingReliabilityWeight(right) - messagingReliabilityWeight(left))
+    .slice(0, 8)
   const topJMSPayloads = [...messagingTransactions]
     .sort((left, right) => combinedPayloadKB(right) - combinedPayloadKB(left))
     .slice(0, 4)
@@ -690,6 +696,44 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
                     <td>{formatTelemetryValue(st?.avg_end_to_end_latency_ms, ' ms')} / {formatTelemetryValue(st?.max_end_to_end_latency_ms, ' ms')}</td>
                     <td>{formatTelemetryValue(st?.partition_skew_pct, '%', 1)}</td>
                     <td>{partitions.length > 0 ? partitions.map((p) => `${p.partition}:${p.events}`).join('  ') : '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {messagingReliability.length > 0 && (
+        <div className="tx-section">
+          <h3 className="chart-title">Messaging Reliability</h3>
+          <p className="server-telemetry-subtitle">Per-dependency reliability signals across JMS, Kafka, and Event Hubs: redelivery, dead-letter, duplicate, out-of-order, and transaction commit/abort counts, with rates as a percent of received messages.</p>
+          <table className="tx-table">
+            <thead>
+              <tr>
+                <th>Dependency</th>
+                <th>Protocol</th>
+                <th>Redelivered</th>
+                <th>Dead-Lettered</th>
+                <th>Duplicate</th>
+                <th>Out-of-Order</th>
+                <th>Commit / Abort</th>
+              </tr>
+            </thead>
+            <tbody>
+              {messagingReliability.map((tx) => {
+                const st = tx.server_telemetry
+                const withRate = (count?: number, rate?: number) =>
+                  (count ?? 0) > 0 ? `${count ?? 0}${(rate ?? 0) > 0 ? ` (${(rate ?? 0).toFixed(1)}%)` : ''}` : '—'
+                return (
+                  <tr key={tx.name}>
+                    <td className="tx-name">{tx.dependency_target || tx.name}</td>
+                    <td>{formatProtocolLabel(tx.dependency_type)}</td>
+                    <td>{withRate(st?.redelivery_count, st?.redelivery_rate_pct)}</td>
+                    <td>{withRate(st?.dead_lettered_count, st?.dead_letter_rate_pct)}</td>
+                    <td>{withRate(st?.duplicate_count, st?.duplicate_rate_pct)}</td>
+                    <td>{(st?.out_of_order_count ?? 0) > 0 ? st?.out_of_order_count : '—'}</td>
+                    <td>{st?.commit_count ?? 0} / {st?.abort_count ?? 0}</td>
                   </tr>
                 )
               })}
@@ -1476,6 +1520,40 @@ function topEventHubsPartitions(transaction: TxMetrics, limit = 6): Array<{ part
     .map(([partition, count]) => ({ partition, events: count }))
     .sort((left, right) => right.events - left.events)
     .slice(0, limit)
+}
+
+// isMessagingDependency reports whether a dependency belongs to a queue/stream
+// protocol (JMS family, Kafka, Event Hubs).
+function isMessagingDependency(transaction: TxMetrics): boolean {
+  const dt = transaction.dependency_type
+  return !!dt && (dt.startsWith('jms_') || dt.startsWith('kafka') || dt.startsWith('eventhubs'))
+}
+
+// hasReliabilitySignal reports whether a dependency reported any messaging
+// reliability event worth surfacing.
+function hasReliabilitySignal(transaction: TxMetrics): boolean {
+  const st = transaction.server_telemetry
+  if (!st) {
+    return false
+  }
+  return (st.redelivery_count ?? 0) > 0
+    || (st.dead_lettered_count ?? 0) > 0
+    || (st.duplicate_count ?? 0) > 0
+    || (st.out_of_order_count ?? 0) > 0
+    || (st.send_failure_count ?? 0) > 0
+    || (st.commit_count ?? 0) > 0
+    || (st.abort_count ?? 0) > 0
+}
+
+// messagingReliabilityWeight ranks dependencies by total problem signal (failures
+// first), so the busiest reliability hotspots sort to the top.
+function messagingReliabilityWeight(transaction: TxMetrics): number {
+  const st = transaction.server_telemetry
+  if (!st) {
+    return 0
+  }
+  return (st.dead_lettered_count ?? 0) + (st.redelivery_count ?? 0) + (st.duplicate_count ?? 0)
+    + (st.out_of_order_count ?? 0) + (st.send_failure_count ?? 0) + (st.abort_count ?? 0)
 }
 
 function formatProtocolLabel(dependencyType?: string): string {

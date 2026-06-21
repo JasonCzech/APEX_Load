@@ -886,6 +886,70 @@ describe('TestExecutionSummary', () => {
 		expect(container.textContent).toContain('0:1600')
 	})
 
+	it('renders the cross-protocol messaging reliability panel from dependency_health', async () => {
+		const jmsDep: TxMetrics = {
+			name: 'orders.dlq',
+			dependency_type: 'jms_consume',
+			dependency_target: 'orders.dlq',
+			count: 500,
+			errors: 0,
+			avg_ms: 5,
+			p50_ms: 4,
+			p90_ms: 8,
+			p99_ms: 12,
+			server_telemetry: {
+				samples: 500,
+				messages_received: 500,
+				redelivery_count: 25,
+				dead_lettered_count: 5,
+				duplicate_count: 2,
+				out_of_order_count: 1,
+				commit_count: 480,
+				abort_count: 20,
+				redelivery_rate_pct: 5,
+				dead_letter_rate_pct: 1,
+				duplicate_rate_pct: 0.4,
+			},
+		}
+		await act(async () => {
+			root.render(
+				<TestExecutionSummary
+					transactions={[]}
+					metrics={{ p50_ms: 0, p90_ms: 0, p95_ms: 0, p99_ms: 0, dependency_health: { 'orders.dlq': jmsDep } }}
+				/>,
+			)
+		})
+		expect(container.textContent).toContain('Messaging Reliability')
+		expect(container.textContent).toContain('orders.dlq')
+		expect(container.textContent).toContain('25 (5.0%)')
+		expect(container.textContent).toContain('5 (1.0%)')
+		expect(container.textContent).toContain('480 / 20')
+	})
+
+	it('omits the messaging reliability panel when no reliability signal is present', async () => {
+		const cleanDep: TxMetrics = {
+			name: 'orders.in',
+			dependency_type: 'kafka_topic',
+			dependency_target: 'orders.in',
+			count: 100,
+			errors: 0,
+			avg_ms: 2,
+			p50_ms: 1,
+			p90_ms: 3,
+			p99_ms: 5,
+			server_telemetry: { samples: 100, messages_received: 100 },
+		}
+		await act(async () => {
+			root.render(
+				<TestExecutionSummary
+					transactions={[]}
+					metrics={{ p50_ms: 0, p90_ms: 0, p95_ms: 0, p99_ms: 0, dependency_health: { 'orders.in': cleanDep } }}
+				/>,
+			)
+		})
+		expect(container.textContent).not.toContain('Messaging Reliability')
+	})
+
 	it('omits the Event Hubs producer panel when there is no eventhubs telemetry', async () => {
 		const httpDep: TxMetrics = {
 			name: 'GET /',

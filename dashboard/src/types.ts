@@ -878,6 +878,17 @@ export interface ServerTelemetrySummary {
   avg_first_event_ms?: number
   max_first_event_ms?: number
   event_count?: number
+  // Messaging reliability counters (P1.1) + derived rates (P4.1).
+  send_failure_count?: number
+  redelivery_count?: number
+  dead_lettered_count?: number
+  duplicate_count?: number
+  out_of_order_count?: number
+  commit_count?: number
+  abort_count?: number
+  redelivery_rate_pct?: number
+  dead_letter_rate_pct?: number
+  duplicate_rate_pct?: number
   // Event Hubs / streaming ingestion (EH.4).
   total_throttled_requests?: number
   total_server_busy_count?: number
