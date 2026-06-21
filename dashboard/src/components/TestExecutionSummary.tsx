@@ -57,6 +57,14 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
   const jmsTopicFanOut = buildJMSTopicFanOut(messagingTransactions)
   const jmsTopicFanOutProfiles = buildJMSTopicFanOutProfiles(jmsTopicFanOut)
   const jmsLagTrend = buildJMSConsumerLagTrend(history)
+  // Event Hubs producer hotspots: streaming-ingestion signals (throttle / E2E
+  // latency / partition skew) that only the eventhubs protocol emits. Messaging
+  // server-telemetry is dependency-scoped, so it lives in dependency_health
+  // (keyed by event hub), mirroring topHTTPDependencyHealth.
+  const eventHubsProducers = Object.values(metrics?.dependency_health ?? {})
+    .filter((tx) => tx.dependency_type?.startsWith('eventhubs') && hasEventHubsProducerTelemetry(tx))
+    .sort((left, right) => eventHubsThrottleTotal(right) - eventHubsThrottleTotal(left))
+    .slice(0, 6)
   const topJMSPayloads = [...messagingTransactions]
     .sort((left, right) => combinedPayloadKB(right) - combinedPayloadKB(left))
     .slice(0, 4)
@@ -650,6 +658,41 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
                   <td>{topic.actionCount}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {eventHubsProducers.length > 0 && (
+        <div className="tx-section">
+          <h3 className="chart-title">Event Hubs (Producer)</h3>
+          <p className="server-telemetry-subtitle">Ingestion-pressure signals from live Event Hubs producer telemetry: throttle / ServerBusy / quota responses, producer→observed-consume end-to-end latency, and per-partition produce skew (coefficient of variation).</p>
+          <table className="tx-table">
+            <thead>
+              <tr>
+                <th>Event Hub</th>
+                <th>Throttled</th>
+                <th>Too Large</th>
+                <th>E2E Latency (avg / max)</th>
+                <th>Partition Skew</th>
+                <th>Top Partitions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {eventHubsProducers.map((tx) => {
+                const st = tx.server_telemetry
+                const partitions = topEventHubsPartitions(tx)
+                return (
+                  <tr key={tx.name}>
+                    <td className="tx-name">{tx.dependency_target || tx.name}</td>
+                    <td>{eventHubsThrottleTotal(tx)}</td>
+                    <td>{st?.total_event_too_large_count ?? 0}</td>
+                    <td>{formatTelemetryValue(st?.avg_end_to_end_latency_ms, ' ms')} / {formatTelemetryValue(st?.max_end_to_end_latency_ms, ' ms')}</td>
+                    <td>{formatTelemetryValue(st?.partition_skew_pct, '%', 1)}</td>
+                    <td>{partitions.length > 0 ? partitions.map((p) => `${p.partition}:${p.events}`).join('  ') : '—'}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -1396,6 +1439,43 @@ function hasJMSMessagingTelemetry(transaction: TxMetrics): boolean {
     || (transaction.server_telemetry?.avg_message_latency_ms ?? 0) > 0
     || (transaction.server_telemetry?.avg_messages_sent_per_sec ?? 0) > 0
     || (transaction.server_telemetry?.avg_messages_received_per_sec ?? 0) > 0
+}
+
+// eventHubsThrottleTotal sums the streaming backpressure counters (throttle +
+// ServerBusy + quota) a transaction's producer telemetry reported.
+function eventHubsThrottleTotal(transaction: TxMetrics): number {
+  const st = transaction.server_telemetry
+  if (!st) {
+    return 0
+  }
+  return (st.total_throttled_requests ?? 0) + (st.total_server_busy_count ?? 0) + (st.total_quota_exceeded_count ?? 0)
+}
+
+// hasEventHubsProducerTelemetry reports whether a transaction carries any of the
+// producer-side ingestion signals worth surfacing in the Event Hubs panel.
+function hasEventHubsProducerTelemetry(transaction: TxMetrics): boolean {
+  const st = transaction.server_telemetry
+  if (!st) {
+    return false
+  }
+  return eventHubsThrottleTotal(transaction) > 0
+    || (st.total_event_too_large_count ?? 0) > 0
+    || (st.avg_end_to_end_latency_ms ?? 0) > 0
+    || (st.partition_skew_pct ?? 0) > 0
+    || ((st.messages_sent ?? 0) > 0)
+}
+
+// topEventHubsPartitions returns the busiest partitions by produce volume for the
+// per-partition breakdown, sorted descending.
+function topEventHubsPartitions(transaction: TxMetrics, limit = 6): Array<{ partition: string; events: number }> {
+  const events = transaction.server_telemetry?.partition_events
+  if (!events) {
+    return []
+  }
+  return Object.entries(events)
+    .map(([partition, count]) => ({ partition, events: count }))
+    .sort((left, right) => right.events - left.events)
+    .slice(0, limit)
 }
 
 function formatProtocolLabel(dependencyType?: string): string {

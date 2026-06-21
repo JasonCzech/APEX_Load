@@ -878,6 +878,15 @@ export interface ServerTelemetrySummary {
   avg_first_event_ms?: number
   max_first_event_ms?: number
   event_count?: number
+  // Event Hubs / streaming ingestion (EH.4).
+  total_throttled_requests?: number
+  total_server_busy_count?: number
+  total_quota_exceeded_count?: number
+  total_event_too_large_count?: number
+  avg_end_to_end_latency_ms?: number
+  max_end_to_end_latency_ms?: number
+  partition_skew_pct?: number
+  partition_events?: Record<string, number>
   request_size_classes?: Record<string, number>
   response_size_classes?: Record<string, number>
   connection_reused_count?: number

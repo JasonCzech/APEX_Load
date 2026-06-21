@@ -834,6 +834,81 @@ describe('TestExecutionSummary', () => {
 		expect(container.textContent).toContain('stream.example.test/ws')
 		expect(container.textContent).toContain('grpc.example.test:443')
 	})
+
+	it('renders the Event Hubs producer panel from dependency_health', async () => {
+		// Messaging server-telemetry is dependency-scoped, so the panel sources it
+		// from metrics.dependency_health, not the transactions array.
+		const eventHub: TxMetrics = {
+			name: 'telemetry',
+			dependency_type: 'eventhubs',
+			dependency_target: 'telemetry',
+			count: 3000,
+			errors: 0,
+			avg_ms: 0.003,
+			p50_ms: 0.001,
+			p90_ms: 0.002,
+			p99_ms: 0.01,
+			server_telemetry: {
+				samples: 3000,
+				messages_sent: 3000,
+				total_throttled_requests: 4,
+				total_server_busy_count: 1,
+				total_event_too_large_count: 2,
+				avg_end_to_end_latency_ms: 12,
+				max_end_to_end_latency_ms: 40,
+				partition_skew_pct: 18.5,
+				partition_events: { '0': 1600, '1': 900, '2': 500 },
+			},
+		}
+
+		await act(async () => {
+			root.render(
+				<TestExecutionSummary
+					transactions={[]}
+					metrics={{ p50_ms: 0, p90_ms: 0, p95_ms: 0, p99_ms: 0, dependency_health: { telemetry: eventHub } }}
+				/>,
+			)
+		})
+
+		expect(container.textContent).toContain('Event Hubs (Producer)')
+		expect(container.textContent).toContain('Event Hub')
+		expect(container.textContent).toContain('Partition Skew')
+		expect(container.textContent).toContain('telemetry')
+		// Throttle total = throttled(4) + serverBusy(1) + quota(0) = 5.
+		expect(container.textContent).toContain('5')
+		// Too-large count.
+		expect(container.textContent).toContain('2')
+		// E2E avg / max.
+		expect(container.textContent).toContain('12.0 ms / 40.0 ms')
+		// Partition skew (CV%) rounded to one decimal.
+		expect(container.textContent).toContain('18.5%')
+		// Busiest partition first in the breakdown.
+		expect(container.textContent).toContain('0:1600')
+	})
+
+	it('omits the Event Hubs producer panel when there is no eventhubs telemetry', async () => {
+		const httpDep: TxMetrics = {
+			name: 'GET /',
+			dependency_type: 'http',
+			dependency_target: 'https://example.test',
+			count: 10,
+			errors: 0,
+			avg_ms: 100,
+			p50_ms: 90,
+			p90_ms: 120,
+			p99_ms: 150,
+			server_telemetry: { samples: 10, avg_server_processing_ms: 40 },
+		}
+		await act(async () => {
+			root.render(
+				<TestExecutionSummary
+					transactions={[]}
+					metrics={{ p50_ms: 0, p90_ms: 0, p95_ms: 0, p99_ms: 0, dependency_health: { http: httpDep } }}
+				/>,
+			)
+		})
+		expect(container.textContent).not.toContain('Event Hubs (Producer)')
+	})
 })
 
 function cssRule(css: string, selector: string) {
