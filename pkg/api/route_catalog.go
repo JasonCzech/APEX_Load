@@ -125,6 +125,8 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/selectors/diagnose", accessRequirement{AuthenticatedOnly: true}),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/asyncapi", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveImportProjectIDFromJSONOrForm, MaxBodyBytes: webAPIImportMaxBodyBytes}),
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/asyncapi/support-matrix", viewerGlobalAccess()),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/eventhubs-capture", editorImportAccess(resolveImportProjectIDFromForm, webAPIImportMaxBodyBytes)),
+	routeAuth(http.MethodGet, "/api/v1/scripts/import/eventhubs-capture/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/raml/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/fleet/alerts", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/fleet/capacity", viewerGlobalAccess()),

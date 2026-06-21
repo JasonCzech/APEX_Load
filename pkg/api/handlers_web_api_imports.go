@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/agentforce"
 	"github.com/jasonczech/apexload/pkg/convert/asyncapi"
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
+	"github.com/jasonczech/apexload/pkg/convert/eventhubscapture"
 	"github.com/jasonczech/apexload/pkg/convert/mulesoft"
 	"github.com/jasonczech/apexload/pkg/convert/openapi"
 	"github.com/jasonczech/apexload/pkg/convert/postman"
@@ -416,6 +418,103 @@ func (s *Server) handleImportAsyncAPI(w http.ResponseWriter, r *http.Request) {
 		SourceReview:        result.SourceReview,
 		Parameterization:    buildImportParameterization(result.Script, nil),
 	}))
+}
+
+func (s *Server) handleEventHubsCaptureSupportMatrix(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"support_matrix": eventhubscapture.GetSupportMatrix(),
+		"notes":          eventhubscapture.GetSupportMatrixNotes(),
+	})
+}
+
+// handleImportEventHubsCapture imports an Event Hubs Capture Avro file (binary)
+// into a native eventhubs producer script. Accepts a multipart file upload or a
+// raw binary body.
+func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
+
+	var (
+		data      []byte
+		name      string
+		projectID string
+		ok        bool
+	)
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		var filename string
+		data, filename, ok = readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
+		if !ok {
+			return
+		}
+		name = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+		projectID = r.FormValue("project_id")
+	} else {
+		data, ok = readImportBody(w, r)
+		if !ok {
+			return
+		}
+		filename := r.URL.Query().Get("filename")
+		name = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+		projectID = r.URL.Query().Get("project_id")
+	}
+
+	maxEvents := 0
+	if v := strings.TrimSpace(r.URL.Query().Get("max_events")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			maxEvents = n
+		}
+	}
+
+	result, err := eventhubscapture.Convert(eventhubscapture.ConvertRequest{
+		Name:      name,
+		ProjectID: projectID,
+		EventHub:  strings.TrimSpace(r.URL.Query().Get("event_hub")),
+		Data:      data,
+		MaxEvents: maxEvents,
+	})
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
+		return
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(projectID)
+	}
+	if issues := validateScript(result.Script); len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+		Result:           result,
+		Script:           result.Script,
+		Warnings:         result.Warnings,
+		Stats:            result.Stats,
+		Summary:          result.Summary,
+		ReviewSections:   buildEventHubsCaptureReviewSections(result),
+		Parameterization: buildImportParameterization(result.Script, nil),
+	}))
+}
+
+func buildEventHubsCaptureReviewSections(result *eventhubscapture.ConvertResult) []scriptImportReviewSection {
+	if result == nil {
+		return nil
+	}
+	severity := "info"
+	if result.Stats.PartitionKeys == 0 || result.Stats.EmptyBodies > 0 {
+		severity = "warning"
+	}
+	items := []string{
+		fmt.Sprintf("Events read: %d", result.Stats.RecordsRead),
+		fmt.Sprintf("Produce actions seeded: %d", result.Stats.ActionsEmitted),
+		fmt.Sprintf("Partition keys captured: %d", result.Stats.PartitionKeys),
+	}
+	if result.Stats.EmptyBodies > 0 {
+		items = append(items, fmt.Sprintf("Empty bodies: %d", result.Stats.EmptyBodies))
+	}
+	return []scriptImportReviewSection{{
+		Key:      "eventhubs_capture",
+		Title:    "Event Hubs Capture",
+		Severity: severity,
+		Summary:  "Captured events seeded as eventhubs_produce actions (mock mode; set a namespace and build -tags eventhubs_real to run live).",
+		Items:    items,
+	}}
 }
 
 func buildAsyncAPIReviewSections(result *asyncapi.ConvertResult) []scriptImportReviewSection {

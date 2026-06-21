@@ -5577,6 +5577,34 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
         - Scripts
+  /api/v1/scripts/import/eventhubs-capture:
+    post:
+      summary: Import Event Hubs Capture
+      description: |-
+        **Handler:** `handleImportEventHubsCapture`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleImportEventHubsCapture
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Scripts
+  /api/v1/scripts/import/eventhubs-capture/support-matrix:
+    get:
+      summary: Event Hubs Capture Support Matrix
+      description: |-
+        **Handler:** `handleEventHubsCaptureSupportMatrix`
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin
+      operationId: handleEventHubsCaptureSupportMatrix
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+        - Scripts
   /api/v1/scripts/import/github:
     post:
       summary: Import Git Hub
