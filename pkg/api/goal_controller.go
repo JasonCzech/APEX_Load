@@ -100,6 +100,14 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 		value := *config.MaxPartitionSkewPct
 		clone.MaxPartitionSkewPct = &value
 	}
+	if config.MaxRedeliveryRatePct != nil {
+		value := *config.MaxRedeliveryRatePct
+		clone.MaxRedeliveryRatePct = &value
+	}
+	if config.MaxDeadLetterRatePct != nil {
+		value := *config.MaxDeadLetterRatePct
+		clone.MaxDeadLetterRatePct = &value
+	}
 	return &clone
 }
 
@@ -128,6 +136,8 @@ func hasGoalConfig(config *GoalConfig) bool {
 		config.MaxThrottledRequests != nil ||
 		config.MaxEndToEndLatencyMs != nil ||
 		config.MaxPartitionSkewPct != nil ||
+		config.MaxRedeliveryRatePct != nil ||
+		config.MaxDeadLetterRatePct != nil ||
 		config.StopOnSLABreach ||
 		config.StopOnMaxErrors ||
 		config.SLABreachWindow != ""
@@ -171,6 +181,12 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		partitionSkew: hasServerTelemetryBreach(live, config.MaxPartitionSkewPct, func(summary *ServerTelemetrySummary) float64 {
 			return summary.PartitionSkewPct
 		}),
+		redeliveryRate: hasServerTelemetryBreach(live, config.MaxRedeliveryRatePct, func(summary *ServerTelemetrySummary) float64 {
+			return summary.RedeliveryRatePct
+		}),
+		deadLetterRate: hasServerTelemetryBreach(live, config.MaxDeadLetterRatePct, func(summary *ServerTelemetrySummary) float64 {
+			return summary.DeadLetterRatePct
+		}),
 	}
 	status.LatencyBreached = breaches.latency
 	status.ErrorBreached = breaches.errors
@@ -183,9 +199,12 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 	status.ThrottledRequestsBreached = breaches.throttledRequests
 	status.EndToEndLatencyBreached = breaches.endToEndLatency
 	status.PartitionSkewBreached = breaches.partitionSkew
+	status.RedeliveryRateBreached = breaches.redeliveryRate
+	status.DeadLetterRateBreached = breaches.deadLetterRate
 	status.BreachActive = breaches.latency || breaches.errors || breaches.serverProcessing || breaches.transfer ||
 		breaches.lcp || breaches.inp || breaches.cls ||
-		breaches.throttledRequests || breaches.endToEndLatency || breaches.partitionSkew
+		breaches.throttledRequests || breaches.endToEndLatency || breaches.partitionSkew ||
+		breaches.redeliveryRate || breaches.deadLetterRate
 
 	if status.BreachActive {
 		if state != nil && state.breachStartedAt == nil {
@@ -507,6 +526,8 @@ type goalBreachSet struct {
 	throttledRequests bool
 	endToEndLatency   bool
 	partitionSkew     bool
+	redeliveryRate    bool
+	deadLetterRate    bool
 }
 
 // totalServerTelemetryThrottles sums the run-total throttle/ServerBusy/quota
@@ -569,6 +590,10 @@ func goalStopReason(breaches goalBreachSet) string {
 		return "Event Hubs end-to-end latency SLA breached"
 	case breaches.partitionSkew:
 		return "Event Hubs partition skew SLA breached"
+	case breaches.redeliveryRate:
+		return "messaging redelivery rate SLA breached"
+	case breaches.deadLetterRate:
+		return "messaging dead-letter rate SLA breached"
 	default:
 		return "SLA breached"
 	}

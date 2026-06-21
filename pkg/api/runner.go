@@ -421,6 +421,10 @@ type ServerTelemetrySummary struct {
 	OutOfOrderCount           int64            `json:"out_of_order_count,omitempty"`
 	CommitCount               int64            `json:"commit_count,omitempty"`
 	AbortCount                int64            `json:"abort_count,omitempty"`
+	// Derived reliability rates (P4.1), percent of received messages.
+	RedeliveryRatePct float64 `json:"redelivery_rate_pct,omitempty"`
+	DeadLetterRatePct float64 `json:"dead_letter_rate_pct,omitempty"`
+	DuplicateRatePct  float64 `json:"duplicate_rate_pct,omitempty"`
 	// Event Hubs / streaming ingestion aggregates (EH.4).
 	TotalThrottledRequests  int64            `json:"total_throttled_requests,omitempty"`
 	TotalServerBusyCount    int64            `json:"total_server_busy_count,omitempty"`
@@ -517,6 +521,8 @@ type GoalStatus struct {
 	ThrottledRequestsBreached bool       `json:"throttled_requests_breached,omitempty"`
 	EndToEndLatencyBreached   bool       `json:"end_to_end_latency_breached,omitempty"`
 	PartitionSkewBreached     bool       `json:"partition_skew_breached,omitempty"`
+	RedeliveryRateBreached    bool       `json:"redelivery_rate_breached,omitempty"`
+	DeadLetterRateBreached    bool       `json:"dead_letter_rate_breached,omitempty"`
 	BreachActive              bool       `json:"breach_active,omitempty"`
 	BreachDurationSec         int        `json:"breach_duration_sec,omitempty"`
 	StopTriggered             bool       `json:"stop_triggered,omitempty"`
@@ -1017,6 +1023,8 @@ type GoalConfig struct {
 	MaxThrottledRequests *int     `json:"max_throttled_requests,omitempty"`    // run-total throttle/ServerBusy/quota responses
 	MaxEndToEndLatencyMs *float64 `json:"max_end_to_end_latency_ms,omitempty"` // avg producer->observed-consume latency
 	MaxPartitionSkewPct  *float64 `json:"max_partition_skew_pct,omitempty"`    // coefficient of variation of per-partition produce volume
+	MaxRedeliveryRatePct *float64 `json:"max_redelivery_rate_pct,omitempty"`   // percent of received messages redelivered
+	MaxDeadLetterRatePct *float64 `json:"max_dead_letter_rate_pct,omitempty"`  // percent of received messages dead-lettered
 
 	StopOnSLABreach bool   `json:"stop_on_sla_breach,omitempty"`
 	StopOnMaxErrors bool   `json:"stop_on_max_errors,omitempty"`

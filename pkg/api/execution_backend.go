@@ -262,6 +262,14 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 			slaBreached = true
 			slaDetails = append(slaDetails, "Event Hubs partition skew breached")
 		}
+		if gs.RedeliveryRateBreached {
+			slaBreached = true
+			slaDetails = append(slaDetails, "Messaging redelivery rate breached")
+		}
+		if gs.DeadLetterRateBreached {
+			slaBreached = true
+			slaDetails = append(slaDetails, "Messaging dead-letter rate breached")
+		}
 	}
 
 	archiveRecord, archiveErr := a.recorder.Finalize(finalStatus, endTime, finalError, slaBreached, slaDetails)

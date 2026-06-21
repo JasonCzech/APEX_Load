@@ -448,6 +448,9 @@ func cloneEngineServerTelemetrySummary(summary *engine.ServerTelemetrySummary) *
 		OutOfOrderCount:           summary.OutOfOrderCount,
 		CommitCount:               summary.CommitCount,
 		AbortCount:                summary.AbortCount,
+		RedeliveryRatePct:         summary.RedeliveryRatePct,
+		DeadLetterRatePct:         summary.DeadLetterRatePct,
+		DuplicateRatePct:          summary.DuplicateRatePct,
 		TotalThrottledRequests:    summary.TotalThrottledRequests,
 		TotalServerBusyCount:      summary.TotalServerBusyCount,
 		TotalQuotaExceededCount:   summary.TotalQuotaExceededCount,
@@ -572,6 +575,10 @@ func finalizeAPIServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	// Skew is recomputed POST-merge from the pooled per-partition map, not averaged
 	// from per-generator skews (the min/max may come from different generators).
 	summary.PartitionSkewPct = engine.ComputePartitionSkewPct(summary.PartitionEvents)
+	// Reliability rates recomputed from pooled counts (not averaged per-generator).
+	summary.RedeliveryRatePct = engine.MessagingRatePct(summary.RedeliveryCount, summary.MessagesReceived)
+	summary.DeadLetterRatePct = engine.MessagingRatePct(summary.DeadLetteredCount, summary.MessagesReceived)
+	summary.DuplicateRatePct = engine.MessagingRatePct(summary.DuplicateCount, summary.MessagesReceived)
 	summary.ConnectionReusedPct = float64(summary.ConnectionReusedCount) / divisor * 100
 	if len(summary.PartitionEvents) == 0 {
 		summary.PartitionEvents = nil

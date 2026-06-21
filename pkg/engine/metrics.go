@@ -131,6 +131,12 @@ type ServerTelemetrySummary struct {
 	OutOfOrderCount           int64            `json:"out_of_order_count,omitempty"`
 	CommitCount               int64            `json:"commit_count,omitempty"`
 	AbortCount                int64            `json:"abort_count,omitempty"`
+	// Derived reliability rates (P4.1): percent of received messages that were
+	// redelivered / dead-lettered / duplicate. Computed at finalize from the
+	// counts above ÷ MessagesReceived (post-merge, so distributed runs are pooled).
+	RedeliveryRatePct float64 `json:"redelivery_rate_pct,omitempty"`
+	DeadLetterRatePct float64 `json:"dead_letter_rate_pct,omitempty"`
+	DuplicateRatePct  float64 `json:"duplicate_rate_pct,omitempty"`
 	// Event Hubs / streaming ingestion aggregates (EH.4).
 	TotalThrottledRequests  int64            `json:"total_throttled_requests,omitempty"`
 	TotalServerBusyCount    int64            `json:"total_server_busy_count,omitempty"`
@@ -912,6 +918,11 @@ func finalizeServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	summary.AvgConsumerOffsetLag /= divisor
 	summary.AvgEndToEndLatencyMs /= divisor
 	summary.PartitionSkewPct = ComputePartitionSkewPct(summary.PartitionEvents)
+	// Reliability rates are derived from pooled counts ÷ messages received (not
+	// averaged per-generator), so they stay correct under the distributed merge.
+	summary.RedeliveryRatePct = MessagingRatePct(summary.RedeliveryCount, summary.MessagesReceived)
+	summary.DeadLetterRatePct = MessagingRatePct(summary.DeadLetteredCount, summary.MessagesReceived)
+	summary.DuplicateRatePct = MessagingRatePct(summary.DuplicateCount, summary.MessagesReceived)
 	summary.ConnectionReusedPct = float64(summary.ConnectionReusedCount) / divisor * 100
 	if len(summary.PartitionEvents) == 0 {
 		summary.PartitionEvents = nil
@@ -928,6 +939,17 @@ func finalizeServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	if len(summary.ResponsePayloadHistogram) == 0 {
 		summary.ResponsePayloadHistogram = nil
 	}
+}
+
+// MessagingRatePct returns count/received × 100, guarding divide-by-zero. Used
+// for derived reliability rates (redelivery/dead-letter/duplicate). Exported so
+// the controller's distributed merge recomputes rates from pooled counts rather
+// than averaging per-generator rates.
+func MessagingRatePct(count, received int64) float64 {
+	if received <= 0 || count <= 0 {
+		return 0
+	}
+	return float64(count) / float64(received) * 100
 }
 
 // ComputePartitionSkewPct returns the coefficient of variation (stddev/mean ×
