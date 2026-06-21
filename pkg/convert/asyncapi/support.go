@@ -17,7 +17,9 @@ func GetSupportMatrix() []SupportMatrixEntry {
 	return []SupportMatrixEntry{
 		{ID: "asyncapi-version", Area: "Document", Construct: "asyncapi 2.x / 3.x", Status: "supported", ExecutionStatus: "executable", Fields: []string{"asyncapi", "info"}, Notes: "Both major versions are parsed; 3.x send/receive and 2.x publish/subscribe are normalized."},
 		{ID: "asyncapi-servers-kafka", Area: "Servers", Construct: "server.protocol kafka/kafka-secure", Status: "supported", ExecutionStatus: "executable", Fields: []string{"host", "url", "protocol"}, Notes: "Kafka servers become config.kafka.brokers; kafka-secure defaults security_protocol to sasl_ssl for review."},
-		{ID: "asyncapi-servers-other", Area: "Servers", Construct: "mqtt/amqp/ws/http servers", Status: "review_only", ExecutionStatus: "not_executable", ReviewRequired: true, Notes: "Non-Kafka servers are ignored; APEX Load converts the Kafka binding only."},
+		{ID: "asyncapi-servers-amqp", Area: "Servers", Construct: "amqp/amqps/jms/solace servers", Status: "supported", ExecutionStatus: "executable", Fields: []string{"host", "url", "protocol"}, Notes: "When no Kafka server is present, AMQP/JMS servers target the jms-solace adapter; server host becomes config.jms.broker_url."},
+		{ID: "asyncapi-servers-mqtt", Area: "Servers", Construct: "mqtt servers", Status: "partial", ExecutionStatus: "review_required", ReviewRequired: true, Notes: "MQTT has no native APEX Load runtime; the import targets jms-solace (AMQP) as a best-effort starting point and is flagged for review."},
+		{ID: "asyncapi-servers-other", Area: "Servers", Construct: "ws/http servers", Status: "review_only", ExecutionStatus: "not_executable", ReviewRequired: true, Notes: "Non-messaging servers are ignored; APEX Load converts the Kafka or AMQP/JMS binding only."},
 		{ID: "asyncapi-channels", Area: "Channels", Construct: "channels + kafka binding topic", Status: "supported", ExecutionStatus: "executable", Fields: []string{"address", "bindings.kafka.topic"}, Notes: "Topic resolves from the kafka binding, then channel address (3.x), then channel name."},
 		{ID: "asyncapi-operations-3x", Area: "Operations", Construct: "operation.action send/receive", Status: "supported", ExecutionStatus: "executable", Fields: []string{"action", "channel", "reply"}, Notes: "send -> kafka_produce, receive -> kafka_consume; an operation reply yields kafka_request_reply."},
 		{ID: "asyncapi-operations-2x", Area: "Operations", Construct: "channel publish/subscribe", Status: "supported", ExecutionStatus: "executable", Fields: []string{"publish", "subscribe"}, Notes: "publish -> kafka_produce, subscribe -> kafka_consume (external-client perspective)."},
@@ -32,7 +34,7 @@ func GetSupportMatrix() []SupportMatrixEntry {
 // GetSupportMatrixNotes returns top-level caveats for the AsyncAPI importer.
 func GetSupportMatrixNotes() []string {
 	return []string{
-		"AsyncAPI import targets the Kafka protocol binding; other bindings are review-only.",
+		"AsyncAPI import targets Kafka when a Kafka server is present, otherwise AMQP/JMS servers (jms-solace); MQTT is best-effort review; other bindings are review-only.",
 		"Generated scripts default to config.kafka.mock so they validate and run immediately; disable mock once a real cluster is configured.",
 		"JSON Schema payloads are sampled into request bodies; Avro/Protobuf and Schema Registry remain a documented follow-on.",
 		"AsyncAPI 2.x publish/subscribe is normalized from the external-client perspective (publish=produce, subscribe=consume).",

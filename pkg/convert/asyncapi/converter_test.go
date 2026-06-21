@@ -252,6 +252,110 @@ operations:
 	}
 }
 
+func TestConvertAMQPServerYieldsJMSScript(t *testing.T) {
+	doc := `
+asyncapi: 3.0.0
+info:
+  title: Orders AMQP
+  version: 1.0.0
+servers:
+  broker:
+    host: amqp.example.test:5671
+    protocol: amqp
+channels:
+  orderCreated:
+    address: orders.created
+    messages:
+      m:
+        payload:
+          type: object
+          properties:
+            orderId:
+              type: string
+operations:
+  send:
+    action: send
+    channel:
+      $ref: '#/channels/orderCreated'
+  receive:
+    action: receive
+    channel:
+      $ref: '#/channels/orderCreated'
+`
+	result, err := Convert(ImportRequest{Content: doc})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script.Protocol != "jms-solace" {
+		t.Fatalf("protocol = %q, want jms-solace", result.Script.Protocol)
+	}
+	if result.Script.Config.JMS.Provider != "solace" || !result.Script.Config.JMS.Mock {
+		t.Fatalf("unexpected jms config: %+v", result.Script.Config.JMS)
+	}
+	if result.Script.Config.JMS.BrokerURL != "amqp.example.test:5671" {
+		t.Fatalf("broker_url = %q, want amqp.example.test:5671", result.Script.Config.JMS.BrokerURL)
+	}
+	if result.Script.Config.Kafka.Brokers != nil {
+		t.Fatalf("kafka config should be empty for a JMS target, got %+v", result.Script.Config.Kafka)
+	}
+	types := map[string]int{}
+	for _, a := range result.Script.Actions {
+		types[a.Type]++
+	}
+	if types["jms_publish"] == 0 || types["jms_consume"] == 0 {
+		t.Fatalf("expected jms_publish + jms_consume actions, got %v", types)
+	}
+	for _, a := range result.Script.Actions {
+		if a.Type == "kafka_produce" || a.Type == "kafka_consume" {
+			t.Fatalf("JMS target must not emit kafka actions: %s", a.Type)
+		}
+	}
+}
+
+func TestConvertMQTTServerYieldsJMSWithReview(t *testing.T) {
+	doc := `
+asyncapi: 3.0.0
+info:
+  title: Sensors
+  version: 1.0.0
+servers:
+  broker:
+    host: mqtt.example.test:8883
+    protocol: mqtt
+channels:
+  reading:
+    address: sensors/reading
+    messages:
+      m:
+        payload:
+          type: object
+          properties:
+            temp:
+              type: number
+operations:
+  send:
+    action: send
+    channel:
+      $ref: '#/channels/reading'
+`
+	result, err := Convert(ImportRequest{Content: doc})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script.Protocol != "jms-solace" {
+		t.Fatalf("protocol = %q, want jms-solace", result.Script.Protocol)
+	}
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "MQTT") && strings.Contains(w, "no native MQTT runtime") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected an MQTT review warning, got %v", result.Warnings)
+	}
+}
+
 func TestConvertDetectsEventHubsKafkaEndpoint(t *testing.T) {
 	doc := `
 asyncapi: 3.0.0

@@ -227,9 +227,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		securityProtocol = "sasl_ssl"
 	}
 
+	// When the servers are AMQP/JMS (and not Kafka), target the JMS family instead
+	// of Kafka so the import is executable (jms-solace) rather than review-only.
+	useJMS, jmsBroker, jmsWarnings := false, "", []string(nil)
+	if len(brokers) == 0 {
+		useJMS, jmsBroker, jmsWarnings = detectJMSTarget(doc)
+	}
+
 	ops, schemaFormats, opWarnings := collectOperations(doc, req.Options, &diagnostics, &mappings, sourceFile)
 	if len(ops) == 0 {
-		return nil, errors.New("no supported Kafka operations found in AsyncAPI document")
+		return nil, errors.New("no supported operations found in AsyncAPI document")
 	}
 
 	mock := true
@@ -238,31 +245,42 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	scriptName := convertutil.FirstNonEmpty(req.Options.ScriptName, req.Name, doc.Info.Title, "Imported_AsyncAPI_Script")
+	cfg := dsl.ScriptConfig{
+		ThinkTime: dsl.ThinkTimeConfig{
+			Type:   "fixed",
+			MeanMs: float64(firstPositive(req.Options.DefaultThinkTimeMs, 1000)),
+		},
+		Pacing:        dsl.PacingConfig{Type: "none"},
+		RunLogic:      dsl.RunLogicConfig{Iterations: 0, AutoTransactions: "none"},
+		ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false},
+		Log:           dsl.LogConfig{Level: "standard"},
+	}
+	protocol := "kafka"
+	if useJMS {
+		protocol = "jms-solace"
+		cfg.JMS = dsl.JMSConfig{
+			BrokerURL: jmsBroker,
+			Provider:  "solace",
+			Mock:      mock,
+		}
+	} else {
+		cfg.Kafka = dsl.KafkaConfig{
+			Brokers:          brokers,
+			Profile:          kafkaProfile,
+			SecurityProtocol: securityProtocol,
+			Acks:             "all",
+			Mock:             mock,
+		}
+	}
 	result := &ConvertResult{
 		Script: &dsl.Script{
 			Name:          sanitizeName(scriptName),
 			Version:       "1.0.0",
-			Protocol:      "kafka",
+			Protocol:      protocol,
 			GeneratedBy:   "apexload-asyncapi-converter",
 			GeneratedFrom: "asyncapi",
 			CreatedAt:     time.Now(),
-			Config: dsl.ScriptConfig{
-				ThinkTime: dsl.ThinkTimeConfig{
-					Type:   "fixed",
-					MeanMs: float64(firstPositive(req.Options.DefaultThinkTimeMs, 1000)),
-				},
-				Pacing:        dsl.PacingConfig{Type: "none"},
-				RunLogic:      dsl.RunLogicConfig{Iterations: 0, AutoTransactions: "none"},
-				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false},
-				Log:           dsl.LogConfig{Level: "standard"},
-				Kafka: dsl.KafkaConfig{
-					Brokers:          brokers,
-					Profile:          kafkaProfile,
-					SecurityProtocol: securityProtocol,
-					Acks:             "all",
-					Mock:             mock,
-				},
-			},
+			Config:        cfg,
 		},
 		Stats: ConvertStats{
 			Format:          "asyncapi",
@@ -283,8 +301,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		result.Warnings = append(result.Warnings, "an Azure Event Hubs Kafka endpoint was detected; config.kafka.profile was set to eventhubs (sasl_ssl). Supply sasl_username \"$ConnectionString\" and sasl_password_secret (the namespace connection string), or use Entra ID, before running against the live namespace")
 	}
 	result.Warnings = append(result.Warnings, opWarnings...)
+	result.Warnings = append(result.Warnings, jmsWarnings...)
+	if useJMS {
+		result.Warnings = append(result.Warnings, "AMQP/JMS servers were detected; the import targets the jms-solace adapter (executable with -tags jms_solace_real). Confirm the destination type (queue/topic) and credentials")
+	}
 	if mock {
-		result.Warnings = append(result.Warnings, "config.kafka.mock is enabled so the generated script runs against the in-memory broker; disable it once a real Kafka adapter is configured")
+		if useJMS {
+			result.Warnings = append(result.Warnings, "config.jms.mock is enabled so the generated script runs against the in-memory broker; disable it once a real JMS adapter is configured")
+		} else {
+			result.Warnings = append(result.Warnings, "config.kafka.mock is enabled so the generated script runs against the in-memory broker; disable it once a real Kafka adapter is configured")
+		}
 	}
 
 	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
@@ -293,10 +319,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	operationNames := []string{}
 
 	for i, op := range ops {
-		action, bodyColumns := buildAction(op, includeAssertions)
+		var action dsl.Action
+		var bodyColumns []string
+		if useJMS {
+			action, bodyColumns = buildJMSAction(op, includeAssertions)
+		} else {
+			action, bodyColumns = buildAction(op, includeAssertions)
+		}
 		idx := len(result.Script.Actions)
 		result.Script.Actions = append(result.Script.Actions, action)
-		mappings = append(mappings, sourceview.CoarseMapping(sourceFile, op.channelName+" ("+op.kind+")", fmt.Sprintf("actions[%d]", idx), action.Name, "action", "converted", "AsyncAPI operation was converted into a generated APEX Load Kafka action."))
+		mappings = append(mappings, sourceview.CoarseMapping(sourceFile, op.channelName+" ("+op.kind+")", fmt.Sprintf("actions[%d]", idx), action.Name, "action", "converted", "AsyncAPI operation was converted into a generated APEX Load action."))
 		result.Stats.ConvertedActions++
 		switch op.kind {
 		case "produce":
@@ -326,7 +358,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if len(dataColumns) > 0 {
 		result.Script.DataSources = []dsl.DataSource{dataSource(dataColumns)}
 	}
-	if len(brokers) == 0 {
+	if useJMS {
+		if jmsBroker == "" {
+			result.Warnings = append(result.Warnings, "no broker URL was derived from servers; set config.jms.broker_url before running against a real broker")
+		}
+	} else if len(brokers) == 0 {
 		result.Warnings = append(result.Warnings, "no Kafka brokers were derived from servers; set config.kafka.brokers before running against a real cluster")
 	}
 
@@ -402,6 +438,62 @@ func detectEventHubsProfile(brokers []string) bool {
 		}
 	}
 	return false
+}
+
+// detectJMSTarget reports whether the document's servers indicate a JMS/AMQP
+// target (and no Kafka — Kafka takes precedence to preserve existing behavior).
+// AMQP/JMS map to the executable jms-solace adapter; MQTT is accepted best-effort
+// with a review note (APEX Load has no native MQTT runtime).
+func detectJMSTarget(doc *document) (isJMS bool, brokerURL string, warnings []string) {
+	for _, name := range sortedServerKeys(doc.Servers) {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(doc.Servers[name].Protocol)), "kafka") {
+			return false, "", nil
+		}
+	}
+	for _, name := range sortedServerKeys(doc.Servers) {
+		srv := doc.Servers[name]
+		proto := strings.ToLower(strings.TrimSpace(srv.Protocol))
+		host := convertutil.FirstNonEmpty(srv.URL, srv.Host)
+		if srv.Host != "" && srv.Pathname != "" {
+			host = srv.Host + srv.Pathname
+		}
+		switch proto {
+		case "amqp", "amqps", "jms", "solace":
+			return true, host, nil
+		case "mqtt", "mqtts", "secure-mqtt":
+			return true, host, []string{fmt.Sprintf("server %q uses MQTT; APEX Load has no native MQTT runtime — the import targets the JMS-over-AMQP adapter as a best-effort starting point and needs review", name)}
+		}
+	}
+	return false, "", nil
+}
+
+// buildJMSAction mirrors buildAction for the JMS protocol family: produce ->
+// jms_publish, consume -> jms_consume, request_reply -> jms_request_reply.
+func buildJMSAction(op kafkaOp, includeAssertion bool) (dsl.Action, []string) {
+	action := dsl.Action{
+		Name:   sanitizeName(op.name),
+		Target: op.topic,
+		Metadata: map[string]any{
+			"asyncapi_channel": op.channelName,
+		},
+	}
+	var columns []string
+	switch op.kind {
+	case "produce":
+		action.Type = "jms_publish"
+		action.Body, columns = sampleBody(op.payload)
+	case "request_reply":
+		action.Type = "jms_request_reply"
+		action.Body, columns = sampleBody(op.payload)
+		action.Params = map[string]any{"reply_to": op.replyTopic}
+	default:
+		action.Type = "jms_consume"
+	}
+	columns = applyCorrelationID(&action, op, columns)
+	if includeAssertion {
+		action.Assertions = []dsl.Assertion{{Type: "message_received"}}
+	}
+	return action, columns
 }
 
 func collectOperations(doc *document, opts ConvertOptions, diagnostics *diag.Collector, mappings *[]sourceview.Mapping, sourceFile string) ([]kafkaOp, []string, []string) {
