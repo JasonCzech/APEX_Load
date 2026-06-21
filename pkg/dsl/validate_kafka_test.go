@@ -180,6 +180,36 @@ func TestValidateKafkaScriptIssues(t *testing.T) {
 			wantClean: true,
 		},
 		{
+			name: "bad serialization",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Serialization = "thrift"
+			},
+			wantHas: "config.kafka.serialization",
+		},
+		{
+			name: "json_schema requires registry or id",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Serialization = "json_schema"
+			},
+			wantHas: "requires config.kafka.schema_registry_url or schema_id",
+		},
+		{
+			name: "json_schema with schema_id is fine",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Serialization = "json_schema"
+				s.Config.Kafka.SchemaID = 42
+			},
+			wantClean: true,
+		},
+		{
+			name: "json_schema with registry url is fine",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Serialization = "json_schema"
+				s.Config.Kafka.SchemaRegistryURL = "http://registry:8081"
+			},
+			wantClean: true,
+		},
+		{
 			name: "transaction actions are valid",
 			mutate: func(s *Script) {
 				s.Config.Kafka.TransactionalID = "tx-1"

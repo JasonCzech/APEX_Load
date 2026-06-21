@@ -935,6 +935,17 @@ func validateKafkaScriptIssues(script *Script) []string {
 			issues = append(issues, "config.kafka.transactional_id requires idempotence (remove idempotence: disabled)")
 		}
 	}
+	if kafka.Serialization != "" {
+		switch strings.ToLower(strings.TrimSpace(kafka.Serialization)) {
+		case "raw":
+		case "json_schema":
+			if strings.TrimSpace(kafka.SchemaRegistryURL) == "" && kafka.SchemaID <= 0 {
+				issues = append(issues, "config.kafka.serialization json_schema requires config.kafka.schema_registry_url or schema_id")
+			}
+		default:
+			issues = append(issues, fmt.Sprintf("config.kafka.serialization %q is not supported (raw or json_schema; avro/protobuf in a later release)", kafka.Serialization))
+		}
+	}
 	if kafka.TimeoutMs < 0 {
 		issues = append(issues, "config.kafka.timeout_ms must be zero or greater")
 	}

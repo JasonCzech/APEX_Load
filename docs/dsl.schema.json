@@ -5677,7 +5677,22 @@
         "sasl_username": {
           "type": "string"
         },
+        "schema": {
+          "type": "string"
+        },
+        "schema_id": {
+          "type": "integer"
+        },
+        "schema_registry_url": {
+          "type": "string"
+        },
         "security_protocol": {
+          "type": "string"
+        },
+        "serialization": {
+          "type": "string"
+        },
+        "subject": {
           "type": "string"
         },
         "timeout_ms": {

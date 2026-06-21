@@ -460,6 +460,21 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 	if kafkaCfg.MaxMessageBytes > 0 {
 		cfg["kafka_max_message_bytes"] = float64(kafkaCfg.MaxMessageBytes)
 	}
+	if kafkaCfg.Serialization != "" {
+		cfg["kafka_serialization"] = kafkaCfg.Serialization
+	}
+	if kafkaCfg.SchemaRegistryURL != "" {
+		cfg["kafka_schema_registry_url"] = kafkaCfg.SchemaRegistryURL
+	}
+	if kafkaCfg.Subject != "" {
+		cfg["kafka_subject"] = kafkaCfg.Subject
+	}
+	if kafkaCfg.Schema != "" {
+		cfg["kafka_schema"] = kafkaCfg.Schema
+	}
+	if kafkaCfg.SchemaID > 0 {
+		cfg["kafka_schema_id"] = float64(kafkaCfg.SchemaID)
+	}
 	if kafkaCfg.SecurityProtocol != "" {
 		cfg["kafka_security_protocol"] = kafkaCfg.SecurityProtocol
 	}

@@ -36,6 +36,7 @@ type Kafka struct {
 	cfg         config
 	client      kafkaClient
 	session     *messaging.Session[string]
+	valueSerde  serde            // record-value (de)serializer; rawSerde by default
 	txOpen      bool             // a transaction is in progress (per-VUser)
 	txBuffer    []pendingProduce // records produced within the open transaction
 	rrCounter   uint64           // round-robin partition counter
@@ -70,6 +71,11 @@ type config struct {
 	IsolationLevel    string
 	Partitions        int32
 	Timeout           time.Duration
+	Serialization     string
+	SchemaRegistryURL string
+	Subject           string
+	Schema            string
+	SchemaID          int
 	Properties        map[string]string
 	Mock              bool
 
@@ -109,6 +115,11 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 		IsolationLevel:    strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_isolation_level"))),
 		Partitions:        int32(intValue(cfg, "kafka_partitions", defaultMockPartitions)),
 		Timeout:           durationValue(cfg, "kafka_timeout_ms", 5*time.Second),
+		Serialization:     strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_serialization"))),
+		SchemaRegistryURL: stringValue(cfg, "kafka_schema_registry_url"),
+		Subject:           stringValue(cfg, "kafka_subject"),
+		Schema:            stringValue(cfg, "kafka_schema"),
+		SchemaID:          intValue(cfg, "kafka_schema_id", 0),
 		Properties:        stringMapValue(cfg, "kafka_properties"),
 		Mock:              boolValue(cfg, "kafka_mock"),
 
@@ -170,15 +181,51 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 		// -tags kafka_real to compile in the franz-go-backed client.
 		k.client = newRealClient(k.cfg)
 	}
+	valueSerde, err := buildSerde(k.cfg)
+	if err != nil {
+		return err
+	}
+	k.valueSerde = valueSerde
 	k.session = messaging.New[string](messaging.ParseAckMode(""))
 	k.initialized = true
 	return nil
+}
+
+// buildSerde constructs the record-value serde from config. Default is raw
+// (passthrough). json_schema frames the value (treated as serialized JSON bytes)
+// in the Confluent wire format using a schema id from either a Schema Registry
+// (schema_registry_url) or a static schema_id. Avro/Protobuf land in P2.2 part 2.
+func buildSerde(cfg config) (serde, error) {
+	switch cfg.Serialization {
+	case "", "raw":
+		return rawSerde{}, nil
+	case "json_schema":
+		subjectFor := func(topic string) string {
+			if cfg.Subject != "" {
+				return cfg.Subject
+			}
+			return topicNameSubject(topic)
+		}
+		switch {
+		case cfg.SchemaRegistryURL != "":
+			return confluentSerde{resolver: newSchemaRegistryClient(cfg.SchemaRegistryURL, cfg.Schema, "JSON"), subjectForTopic: subjectFor}, nil
+		case cfg.SchemaID > 0:
+			return confluentSerde{resolver: staticSchemaID(cfg.SchemaID), subjectForTopic: subjectFor}, nil
+		default:
+			return nil, fmt.Errorf("kafka serialization json_schema requires config.kafka.schema_registry_url or schema_id")
+		}
+	default:
+		return nil, fmt.Errorf("kafka serialization %q is not supported", cfg.Serialization)
+	}
 }
 
 func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	start := time.Now()
 	if k.session == nil {
 		k.session = messaging.New[string](messaging.ParseAckMode(""))
+	}
+	if k.valueSerde == nil {
+		k.valueSerde = rawSerde{}
 	}
 	topic := k.topic(action)
 	result := &protocol.Result{
@@ -326,6 +373,11 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 		return kafkaRecord{}, fmt.Errorf("kafka topic is required")
 	}
 	rec := k.buildRecord(action, topic)
+	framed, serr := k.valueSerde.Serialize(ctx, topic, rec.Value)
+	if serr != nil {
+		return kafkaRecord{}, serr
+	}
+	rec.Value = framed
 	if err := k.checkRecordSize(rec); err != nil {
 		return kafkaRecord{}, err
 	}
@@ -436,6 +488,12 @@ func (k *Kafka) consume(ctx context.Context, action *protocol.Action, result *pr
 		result.StatusCode = 204
 		return kafkaRecord{}, err
 	}
+	payload, derr := k.valueSerde.Deserialize(ctx, rec.Value)
+	if derr != nil {
+		result.StatusCode = 422
+		return kafkaRecord{}, derr
+	}
+	rec.Value = payload
 	result.BytesReceived = int64(len(rec.Value))
 	addRecordExtractions(result, rec)
 	result.Extractions["kafka_operation"] = "consume"
