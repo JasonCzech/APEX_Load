@@ -180,25 +180,3 @@ func TestEventHubsUnsupportedAction(t *testing.T) {
 		t.Fatalf("unexpected error: %q", result.ErrorMessage)
 	}
 }
-
-func TestEventHubsNonMockFailsClosed(t *testing.T) {
-	ctx := context.Background()
-	e := &EventHubs{name: eventHubsProtocolName}
-	if err := e.Init(ctx, map[string]any{
-		"eventhubs_namespace": "ns.servicebus.windows.net",
-		"eventhubs_event_hub": "h",
-		// no eventhubs_mock -> non-mock path -> unavailable stub in the default build
-	}); err != nil {
-		t.Fatalf("Init returned error: %v", err)
-	}
-	result, err := e.Execute(ctx, &protocol.Action{Name: "p", Type: "eventhubs_produce", Body: []byte("x")})
-	if err != nil {
-		t.Fatalf("Execute returned transport error: %v", err)
-	}
-	if result.Success {
-		t.Fatal("non-mock produce succeeded in the default build, want fail-closed")
-	}
-	if !strings.Contains(result.ErrorMessage, "eventhubs_real") {
-		t.Fatalf("expected fail-closed guidance naming eventhubs_real, got: %q", result.ErrorMessage)
-	}
-}

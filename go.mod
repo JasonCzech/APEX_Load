@@ -3,6 +3,7 @@ module github.com/jasonczech/apexload
 go 1.26.4
 
 require (
+	github.com/Azure/azure-sdk-for-go/sdk/messaging/azeventhubs/v2 v2.0.2
 	github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus v1.10.0
 	github.com/Azure/go-amqp v1.7.0
 	github.com/PuerkitoBio/goquery v1.10.3

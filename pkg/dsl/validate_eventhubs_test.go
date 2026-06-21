@@ -24,18 +24,6 @@ func TestValidateEventHubsMockHappyPath(t *testing.T) {
 	}
 }
 
-func TestValidateEventHubsNonMockFailsClosed(t *testing.T) {
-	// Default build: real adapter unavailable, so non-mock must fail closed even
-	// with a valid namespace.
-	s := eventHubsScript(func(s *Script) {
-		s.Config.EventHubs = EventHubsConfig{Namespace: "ns.servicebus.windows.net", EventHub: "telemetry"}
-	})
-	issues := ValidateScriptIssues(s)
-	if !hasIssueContaining(issues, "eventhubs_real") {
-		t.Fatalf("expected fail-closed issue naming eventhubs_real, got: %v", issues)
-	}
-}
-
 func TestValidateEventHubsNonMockRequiresEndpoint(t *testing.T) {
 	s := eventHubsScript(func(s *Script) {
 		s.Config.EventHubs = EventHubsConfig{EventHub: "telemetry"} // no namespace, no conn string, not mock
@@ -100,11 +88,5 @@ func TestValidateEventHubsUnknownActionType(t *testing.T) {
 	issues := ValidateScriptIssues(s)
 	if !hasIssueContaining(issues, "unsupported Event Hubs action type") {
 		t.Fatalf("expected unsupported-action issue, got: %v", issues)
-	}
-}
-
-func TestEventHubsRealAdapterUnavailableInDefaultBuild(t *testing.T) {
-	if EventHubsRealAdapterAvailable() {
-		t.Fatal("EventHubsRealAdapterAvailable() = true in default build, want false")
 	}
 }
