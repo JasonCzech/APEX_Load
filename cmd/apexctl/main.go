@@ -13,6 +13,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/engine"
 	_ "github.com/jasonczech/apexload/pkg/protocol/browser"
+	_ "github.com/jasonczech/apexload/pkg/protocol/eventhubs"
 	_ "github.com/jasonczech/apexload/pkg/protocol/grpc"
 	_ "github.com/jasonczech/apexload/pkg/protocol/http"
 	_ "github.com/jasonczech/apexload/pkg/protocol/java_vuser"

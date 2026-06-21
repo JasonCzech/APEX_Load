@@ -551,6 +551,40 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 	}
 }
 
+func appendEventHubsConfig(cfg map[string]any, script *dsl.Script) {
+	ehCfg := script.Config.EventHubs
+	if ehCfg.Namespace != "" {
+		cfg["eventhubs_namespace"] = ehCfg.Namespace
+	}
+	if ehCfg.EventHub != "" {
+		cfg["eventhubs_event_hub"] = ehCfg.EventHub
+	}
+	if ehCfg.ConnectionString != "" {
+		cfg["eventhubs_connection_string"] = ehCfg.ConnectionString
+	}
+	if ehCfg.ConnectionStringSecret != "" {
+		cfg["eventhubs_connection_string_secret"] = ehCfg.ConnectionStringSecret
+	}
+	if ehCfg.ConsumerGroup != "" {
+		cfg["eventhubs_consumer_group"] = ehCfg.ConsumerGroup
+	}
+	if ehCfg.PartitionKey != "" {
+		cfg["eventhubs_partition_key"] = ehCfg.PartitionKey
+	}
+	if ehCfg.PartitionID != "" {
+		cfg["eventhubs_partition_id"] = ehCfg.PartitionID
+	}
+	if ehCfg.AuthType != "" {
+		cfg["eventhubs_auth_type"] = ehCfg.AuthType
+	}
+	if ehCfg.TimeoutMs > 0 {
+		cfg["eventhubs_timeout_ms"] = float64(ehCfg.TimeoutMs)
+	}
+	if ehCfg.Mock {
+		cfg["eventhubs_mock"] = true
+	}
+}
+
 func appendHTTPSecurityConfig(cfg map[string]any, script *dsl.Script) {
 	httpCfg := script.Config.HTTP
 	// TLS

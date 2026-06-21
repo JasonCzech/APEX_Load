@@ -55,6 +55,71 @@ func TestBuildProtoConfig_Kafka(t *testing.T) {
 	}
 }
 
+func TestBuildProtoConfig_EventHubs(t *testing.T) {
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			EventHubs: dsl.EventHubsConfig{
+				Namespace:     "ns.servicebus.windows.net",
+				EventHub:      "telemetry",
+				ConsumerGroup: "probe",
+				PartitionKey:  "device-1",
+				AuthType:      "aad",
+				TimeoutMs:     1500,
+				Mock:          true,
+			},
+		},
+	}
+
+	cfg := buildProtoConfig(script)
+
+	if cfg["eventhubs_namespace"] != "ns.servicebus.windows.net" {
+		t.Fatalf("eventhubs_namespace = %v", cfg["eventhubs_namespace"])
+	}
+	if cfg["eventhubs_event_hub"] != "telemetry" {
+		t.Fatalf("eventhubs_event_hub = %v", cfg["eventhubs_event_hub"])
+	}
+	if cfg["eventhubs_consumer_group"] != "probe" {
+		t.Fatalf("eventhubs_consumer_group = %v", cfg["eventhubs_consumer_group"])
+	}
+	if cfg["eventhubs_partition_key"] != "device-1" {
+		t.Fatalf("eventhubs_partition_key = %v", cfg["eventhubs_partition_key"])
+	}
+	if cfg["eventhubs_auth_type"] != "aad" {
+		t.Fatalf("eventhubs_auth_type = %v", cfg["eventhubs_auth_type"])
+	}
+	if cfg["eventhubs_timeout_ms"] != float64(1500) {
+		t.Fatalf("eventhubs_timeout_ms = %v, want 1500", cfg["eventhubs_timeout_ms"])
+	}
+	if cfg["eventhubs_mock"] != true {
+		t.Fatalf("eventhubs_mock = %v, want true", cfg["eventhubs_mock"])
+	}
+}
+
+func TestBuildProtoConfig_EventHubsConnectionStringSecret(t *testing.T) {
+	resolver := SecretResolverFunc(func(name string) (string, bool) {
+		if name == "eh_conn" {
+			return "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKey=runtime", true
+		}
+		return "", false
+	})
+
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			EventHubs: dsl.EventHubsConfig{
+				EventHub:               "telemetry",
+				ConnectionStringSecret: "{{secret.eh_conn}}",
+				Mock:                   true,
+			},
+		},
+	}
+
+	cfg := buildProtoConfigWithSecretResolver(script, resolver)
+	got, _ := cfg["eventhubs_connection_string_secret"].(string)
+	if got != "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKey=runtime" {
+		t.Fatalf("eventhubs_connection_string_secret = %q, want resolved connection string", got)
+	}
+}
+
 func TestBuildProtoConfig_KafkaSASLPasswordSecret(t *testing.T) {
 	resolver := SecretResolverFunc(func(name string) (string, bool) {
 		if name == "kafka_pw" {

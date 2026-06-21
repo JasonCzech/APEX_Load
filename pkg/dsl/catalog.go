@@ -103,6 +103,7 @@ func actionCatalogSeeds() []ActionSpec {
 	seeds = append(seeds, javaVuserActionSpecs()...)
 	seeds = append(seeds, jmsActionSpecs()...)
 	seeds = append(seeds, kafkaActionSpecs()...)
+	seeds = append(seeds, eventHubsActionSpecs()...)
 	return seeds
 }
 

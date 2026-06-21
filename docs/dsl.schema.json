@@ -2080,6 +2080,98 @@
             "properties": {
               "type": {
                 "enum": [
+                  "eventhubs_consume"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Reads the next event (read-only observer probe for end-to-end latency / backlog).",
+            "properties": {
+              "params": {
+                "properties": {
+                  "consumer_group": {
+                    "description": "Consumer group; falls back to config.eventhubs.consumer_group ($Default).",
+                    "type": "string"
+                  },
+                  "event_hub": {
+                    "description": "Event hub alternative to target.",
+                    "type": "string"
+                  },
+                  "timeout_ms": {
+                    "description": "Receive timeout in milliseconds; falls back to config.eventhubs.timeout_ms.",
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Event hub; falls back to config.eventhubs.event_hub or params.event_hub.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "eventhubs_produce"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Publishes an event to an event hub (the primary ingestion action).",
+            "properties": {
+              "body": {
+                "description": "Event body; template variables are expanded.",
+                "type": "string"
+              },
+              "body_file": {
+                "description": "Local file containing the event body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
+                "type": "string"
+              },
+              "headers": {
+                "description": "Application properties set on the event.",
+                "type": "object"
+              },
+              "params": {
+                "properties": {
+                  "event_hub": {
+                    "description": "Event hub alternative to target.",
+                    "type": "string"
+                  },
+                  "partition_id": {
+                    "description": "Explicit partition id (mutually exclusive with partition_key); falls back to config.eventhubs.partition_id.",
+                    "type": "string"
+                  },
+                  "partition_key": {
+                    "description": "Partition key (hash-routes co-located events); falls back to config.eventhubs.partition_key.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Event hub; falls back to config.eventhubs.event_hub or params.event_hub.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "ftp_command"
                 ]
               }
@@ -4771,6 +4863,8 @@
             "dns_lookup",
             "dns_query",
             "error_message",
+            "eventhubs_consume",
+            "eventhubs_produce",
             "exec",
             "execute",
             "ftp_command",
@@ -5235,6 +5329,42 @@
         },
         "snapshot_on_error": {
           "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "EventHubsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "auth_type": {
+          "type": "string"
+        },
+        "connection_string": {
+          "type": "string"
+        },
+        "connection_string_secret": {
+          "type": "string"
+        },
+        "consumer_group": {
+          "type": "string"
+        },
+        "event_hub": {
+          "type": "string"
+        },
+        "mock": {
+          "type": "boolean"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "partition_id": {
+          "type": "string"
+        },
+        "partition_key": {
+          "type": "string"
+        },
+        "timeout_ms": {
+          "type": "integer"
         }
       },
       "type": "object"
@@ -6238,6 +6368,9 @@
         },
         "error_handling": {
           "$ref": "#/$defs/ErrorHandlingConfig"
+        },
+        "eventhubs": {
+          "$ref": "#/$defs/EventHubsConfig"
         },
         "grpc": {
           "$ref": "#/$defs/GRPCConfig"

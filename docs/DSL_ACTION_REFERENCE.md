@@ -535,6 +535,33 @@ Rolls back the open transaction.
 
 Aliases: `database_rollback`, `rollback`
 
+## Protocol: eventhubs
+
+### `eventhubs_consume`
+
+Reads the next event (read-only observer probe for end-to-end latency / backlog).
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Event hub; falls back to config.eventhubs.event_hub or params.event_hub. |
+| `params.event_hub` | string |  | Event hub alternative to target. |
+| `params.consumer_group` | string |  | Consumer group; falls back to config.eventhubs.consumer_group ($Default). |
+| `params.timeout_ms` | int |  | Receive timeout in milliseconds; falls back to config.eventhubs.timeout_ms. |
+
+### `eventhubs_produce`
+
+Publishes an event to an event hub (the primary ingestion action).
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Event hub; falls back to config.eventhubs.event_hub or params.event_hub. |
+| `body` | string |  | Event body; template variables are expanded. |
+| `body_file` | string |  | Local file containing the event body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
+| `headers` | object |  | Application properties set on the event. |
+| `params.event_hub` | string |  | Event hub alternative to target. |
+| `params.partition_key` | string |  | Partition key (hash-routes co-located events); falls back to config.eventhubs.partition_key. |
+| `params.partition_id` | string |  | Explicit partition id (mutually exclusive with partition_key); falls back to config.eventhubs.partition_id. |
+
 ## Protocol: grpc
 
 ### `grpc_bidi_stream`

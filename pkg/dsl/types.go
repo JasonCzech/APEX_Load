@@ -65,6 +65,7 @@ type ScriptConfig struct {
 	SAPGUI        SAPGUIConfig        `json:"sapgui,omitempty"`
 	JMS           JMSConfig           `json:"jms,omitempty"`
 	Kafka         KafkaConfig         `json:"kafka,omitempty"`
+	EventHubs     EventHubsConfig     `json:"eventhubs,omitempty"`
 	ErrorHandling ErrorHandlingConfig `json:"error_handling,omitempty"`
 	RunLogic      RunLogicConfig      `json:"run_logic,omitempty"`
 	Observability ObservabilityConfig `json:"observability,omitempty"`
@@ -258,6 +259,22 @@ type KafkaTLSConfig struct {
 	ClientCertFile     string `json:"client_cert_file,omitempty"`
 	ClientKeyFile      string `json:"client_key_file,omitempty"`
 	CACertFile         string `json:"ca_cert_file,omitempty"`
+}
+
+// EventHubsConfig configures the native Azure Event Hubs protocol (distinct from
+// the Kafka-endpoint profile under config.kafka). The real azeventhubs adapter is
+// opt-in (build -tags eventhubs_real); the default build uses the in-memory mock.
+type EventHubsConfig struct {
+	Namespace              string `json:"namespace,omitempty"`                // <ns>.servicebus.windows.net (AAD auth)
+	EventHub               string `json:"event_hub,omitempty"`                // default event hub (the "topic")
+	ConnectionString       string `json:"connection_string,omitempty"`        // SAS connection string (inline)
+	ConnectionStringSecret string `json:"connection_string_secret,omitempty"` // secret reference resolved at runtime
+	ConsumerGroup          string `json:"consumer_group,omitempty"`           // consumer group for the observer probe; defaults to $Default
+	PartitionKey           string `json:"partition_key,omitempty"`            // default partition key (hash routing)
+	PartitionID            string `json:"partition_id,omitempty"`             // default explicit partition id
+	AuthType               string `json:"auth_type,omitempty"`                // connection_string | aad
+	TimeoutMs              int    `json:"timeout_ms,omitempty"`               // default send/receive timeout
+	Mock                   bool   `json:"mock,omitempty"`                     // use in-memory broker for local shakeout
 }
 
 type BrowserConfig struct {

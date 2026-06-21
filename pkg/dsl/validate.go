@@ -25,6 +25,10 @@ func ValidateScriptIssues(script *Script) []string {
 		return validateKafkaScriptIssues(script)
 	}
 
+	if strings.TrimSpace(script.Protocol) == "eventhubs" {
+		return validateEventHubsScriptIssues(script)
+	}
+
 	var issues []string
 	if strings.TrimSpace(script.Name) == "" {
 		issues = append(issues, "script name is required")
@@ -186,7 +190,7 @@ func firstNonEmptyString(values ...string) string {
 
 func protocolAllowsEmptyBaseURL(protocolName string) bool {
 	switch strings.TrimSpace(protocolName) {
-	case "browser", "database", "network", "kafka", "sap_gui", "java_vuser":
+	case "browser", "database", "network", "kafka", "eventhubs", "sap_gui", "java_vuser":
 		return true
 	default:
 		return false
@@ -982,6 +986,68 @@ func validateKafkaScriptIssues(script *Script) []string {
 			replyTo, _ := action.Params["reply_to"].(string)
 			if strings.TrimSpace(replyTo) == "" {
 				issues = append(issues, fmt.Sprintf("actions[%d] %q: missing reply_to topic", i, action.Name))
+			}
+		}
+	}
+
+	return issues
+}
+
+// validateEventHubsScriptIssues validates the native Azure Event Hubs protocol
+// (config.eventhubs + eventhubs_* actions). It is producer-first: eventhubs_produce
+// is the primary action, eventhubs_consume is a read-only observer probe.
+func validateEventHubsScriptIssues(script *Script) []string {
+	var issues []string
+	if strings.TrimSpace(script.Name) == "" {
+		issues = append(issues, "script name is required")
+	}
+	if strings.TrimSpace(script.Protocol) == "" {
+		issues = append(issues, "script protocol is required")
+	}
+	if len(script.Actions) == 0 {
+		issues = append(issues, "script must have at least one action")
+	}
+
+	eh := script.Config.EventHubs
+	if !eh.Mock {
+		// A non-mock run needs a reachable namespace and a real adapter. The
+		// connection string may be supplied inline or via a secret reference.
+		hasNamespace := strings.TrimSpace(eh.Namespace) != ""
+		hasConnString := strings.TrimSpace(eh.ConnectionString) != "" || strings.TrimSpace(eh.ConnectionStringSecret) != ""
+		if !hasNamespace && !hasConnString {
+			issues = append(issues, "config.eventhubs requires namespace (AAD) or connection_string/connection_string_secret (SAS) when mock mode is disabled")
+		}
+		if !EventHubsRealAdapterAvailable() {
+			issues = append(issues, "real Azure Event Hubs adapter is not available in this build; enable config.eventhubs.mock for shakeout or build with -tags eventhubs_real")
+		}
+	}
+	if eh.AuthType != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(eh.AuthType)), "connection_string", "aad") {
+		issues = append(issues, fmt.Sprintf("config.eventhubs.auth_type %q is not supported (use connection_string or aad)", eh.AuthType))
+	}
+	if eh.TimeoutMs < 0 {
+		issues = append(issues, "config.eventhubs.timeout_ms must be zero or greater")
+	}
+
+	for i, action := range script.Actions {
+		if strings.TrimSpace(action.Name) == "" {
+			issues = append(issues, fmt.Sprintf("actions[%d]: missing name", i))
+		}
+		issues = append(issues, validateBodyFileIssues(fmt.Sprintf("actions[%d]", i), action)...)
+		if action.Type == "" {
+			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing type", i, action.Name))
+		} else if _, ok := protocolActionSpec("eventhubs", action.Type); !ok {
+			issues = append(issues, fmt.Sprintf("actions[%d] %q: unsupported Event Hubs action type %q", i, action.Name, action.Type))
+		}
+		if action.Type == "eventhubs_produce" || action.Type == "eventhubs_consume" {
+			eventHub, _ := action.Params["event_hub"].(string)
+			if strings.TrimSpace(action.Target) == "" && strings.TrimSpace(eventHub) == "" && strings.TrimSpace(eh.EventHub) == "" {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: missing event hub (set target, params.event_hub, or config.eventhubs.event_hub)", i, action.Name))
+			}
+		}
+		// partition_key and partition_id are mutually exclusive routing controls.
+		if pk, _ := action.Params["partition_key"].(string); strings.TrimSpace(pk) != "" {
+			if pid, _ := action.Params["partition_id"].(string); strings.TrimSpace(pid) != "" {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: partition_key and partition_id are mutually exclusive", i, action.Name))
 			}
 		}
 	}
