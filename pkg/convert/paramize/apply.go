@@ -121,6 +121,21 @@ func replaceInField(action *dsl.Action, location Location) (before, after string
 			return before, updated, true
 		}
 	default:
+		if paramKey, isParam := strings.CutPrefix(location.Field, "params."); isParam {
+			raw, exists := action.Params[paramKey]
+			if !exists {
+				return "", "", false
+			}
+			current, isStr := raw.(string)
+			if !isStr {
+				return "", "", false
+			}
+			if updated, changed := replace(current); changed {
+				action.Params[paramKey] = updated
+				return current, updated, true
+			}
+			return "", "", false
+		}
 		headerKey, isHeader := strings.CutPrefix(location.Field, "headers.")
 		if !isHeader {
 			return "", "", false

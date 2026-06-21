@@ -2,6 +2,7 @@ package paramize
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
@@ -91,10 +92,36 @@ func correlationLocations(action *dsl.Action, index int, value, template string)
 	appendLocation("target", action.Target)
 	appendLocation("body", action.Body)
 	appendLocation("value", action.Value)
-	for headerKey, headerValue := range action.Headers {
-		appendLocation("headers."+headerKey, headerValue)
+	for _, headerKey := range sortedKeys(action.Headers) {
+		appendLocation("headers."+headerKey, action.Headers[headerKey])
+	}
+	// Messaging actions carry correlatable values (correlation_id, key, ...) in
+	// Params rather than Headers; scan string-valued params so a correlation can
+	// be located and replaced there too.
+	for _, paramKey := range sortedAnyKeys(action.Params) {
+		if str, ok := action.Params[paramKey].(string); ok {
+			appendLocation("params."+paramKey, str)
+		}
 	}
 	return locations
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedAnyKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // preAppliedSuggestions surfaces correlations a converter already wired into

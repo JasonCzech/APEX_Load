@@ -32,8 +32,45 @@ func dataParamSuggestions(script *dsl.Script, names *nameRegistry, claimed map[s
 		collectQueryParams(collector, section, index, action)
 		collectBodyParams(collector, section, index, action)
 		collectFillParams(collector, section, index, action)
+		collectMessagingParams(collector, section, index, action)
 	})
 	return collector.suggestions()
+}
+
+// messagingParamKeys are per-message identifier params carried in action.Params
+// on kafka_*/jms_*/eventhubs_* actions. Binding them to a data source gives each
+// VUser a distinct value instead of replaying one recorded literal — a fixed
+// correlation_id or key across all VUsers cross-matches replies and skews
+// partitioning. Structural params (destination_type, timeout_ms, consumer_group,
+// partition, offset, subscription, ...) are intentionally excluded.
+var messagingParamKeys = []string{"correlation_id", "key", "partition_key", "message_id"}
+
+// collectMessagingParams surfaces hardcoded per-message identifiers in a
+// messaging action's Params map. The generic data-param scanners only look at
+// target/body/value/headers, so without this pass these values are invisible to
+// parameterization (action.Params is where kafka/jms carry them).
+func collectMessagingParams(collector *dataParamCollector, section string, index int, action *dsl.Action) {
+	if !isMessagingActionType(action.Type) || len(action.Params) == 0 {
+		return
+	}
+	for _, key := range messagingParamKeys {
+		raw, ok := action.Params[key]
+		if !ok {
+			continue
+		}
+		value, ok := raw.(string)
+		if !ok || value == "" || isTemplated(value) {
+			continue
+		}
+		collector.add(key, value, "message "+key, section, index, action,
+			"params."+key, value, func(template string) string { return template })
+	}
+}
+
+func isMessagingActionType(actionType string) bool {
+	return strings.HasPrefix(actionType, "kafka_") ||
+		strings.HasPrefix(actionType, "jms_") ||
+		strings.HasPrefix(actionType, "eventhubs_")
 }
 
 func collectQueryParams(collector *dataParamCollector, section string, index int, action *dsl.Action) {
