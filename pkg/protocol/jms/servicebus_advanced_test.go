@@ -87,6 +87,59 @@ func TestJMSSettleMissingTokenFailsFast(t *testing.T) {
 	}
 }
 
+func TestJMSSessionVerbsRequireServiceBusAdapter(t *testing.T) {
+	ctx := context.Background()
+	p := newMockJMS(t)
+	cases := []*protocol.Action{
+		{Name: "accept", Type: "jms_session_accept", Target: "orders.test"},
+		{Name: "state", Type: "jms_session_state", Params: map[string]any{"session_token": "sbsession-1"}},
+		{Name: "deferred", Type: "jms_receive_deferred", Target: "orders.test", Params: map[string]any{"sequence_numbers": []any{float64(5)}}},
+		{Name: "cancel", Type: "jms_cancel_scheduled", Target: "orders.test", Params: map[string]any{"sequence_numbers": []any{float64(5)}}},
+	}
+	for _, action := range cases {
+		res, err := p.Execute(ctx, action)
+		if err != nil {
+			t.Fatalf("%s transport error: %v", action.Type, err)
+		}
+		if res.Success || !strings.Contains(res.ErrorMessage, "jms_servicebus_real") {
+			t.Fatalf("%s should fail closed, got success=%v msg=%q", action.Type, res.Success, res.ErrorMessage)
+		}
+	}
+}
+
+func TestParseSequenceNumbers(t *testing.T) {
+	cases := []struct {
+		name string
+		in   any
+		want []int64
+	}{
+		{"nil", nil, nil},
+		{"float array", []any{float64(1), float64(2), float64(3)}, []int64{1, 2, 3}},
+		{"csv string", "10, 20 ,30", []int64{10, 20, 30}},
+		{"single number", float64(7), []int64{7}},
+		{"int64 slice", []int64{4, 5}, []int64{4, 5}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := parseSequenceNumbers(c.in)
+			if err != nil {
+				t.Fatalf("parseSequenceNumbers(%v): %v", c.in, err)
+			}
+			if len(got) != len(c.want) {
+				t.Fatalf("got %v, want %v", got, c.want)
+			}
+			for i := range got {
+				if got[i] != c.want[i] {
+					t.Fatalf("got %v, want %v", got, c.want)
+				}
+			}
+		})
+	}
+	if _, err := parseSequenceNumbers([]any{"not-a-number"}); err == nil {
+		t.Fatal("expected error for non-numeric array entry")
+	}
+}
+
 func TestBuildMessagePopulatesServiceBusSendFields(t *testing.T) {
 	p := newMockJMS(t)
 	action := &protocol.Action{

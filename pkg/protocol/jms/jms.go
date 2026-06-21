@@ -112,18 +112,32 @@ type message struct {
 // untouched; providers that don't implement it report the verb as unsupported.
 type settlementAdapter interface {
 	// ConsumeAdvanced receives with deferred settlement and/or from a sub-queue
-	// (dead-letter), stashing the in-flight message under a settlement token.
+	// (dead-letter) or an accepted session, stashing the in-flight message under a
+	// settlement token.
 	ConsumeAdvanced(ctx context.Context, destination string, opts consumeOptions, timeout time.Duration) (message, error)
 	// Settle resolves a previously consumed peek-locked message by token.
 	Settle(ctx context.Context, token string, disposition string, opts settleOptions) error
 	// RenewLock extends the broker-side lock on a peek-locked message.
 	RenewLock(ctx context.Context, token string) error
+	// AcceptSession opens a session receiver (specific sessionID, or the next
+	// available when sessionID is empty) and returns a session token + the resolved
+	// session id.
+	AcceptSession(ctx context.Context, destination, sessionID string) (sessionToken string, resolvedSessionID string, err error)
+	// SessionState gets (set=false) or sets (set=true) the session state for an
+	// accepted session token.
+	SessionState(ctx context.Context, sessionToken string, state []byte, set bool) ([]byte, error)
+	// ReceiveDeferred fetches previously deferred messages by sequence number; the
+	// returned messages are peek-locked and carry settlement tokens.
+	ReceiveDeferred(ctx context.Context, destination string, sequenceNumbers []int64, timeout time.Duration) ([]message, error)
+	// CancelScheduled cancels scheduled (future-enqueue) messages by sequence number.
+	CancelScheduled(ctx context.Context, destination string, sequenceNumbers []int64) error
 }
 
 // consumeOptions carries Service Bus advanced consume controls.
 type consumeOptions struct {
-	SubQueue string // "", "dead_letter", "transfer_dead_letter"
-	PeekLock bool   // defer settlement (stash token) instead of auto-completing
+	SubQueue     string // "", "dead_letter", "transfer_dead_letter"
+	PeekLock     bool   // defer settlement (stash token) instead of auto-completing
+	SessionToken string // consume from a previously accepted session (jms_session_accept)
 }
 
 // settleOptions carries disposition detail for Settle (dead-letter reason etc.).
@@ -291,6 +305,8 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 		j.settle(action, result)
 	case "jms_settle", "jms_renew_lock":
 		err = j.settleAdvanced(ctx, action, result)
+	case "jms_session_accept", "jms_session_state", "jms_receive_deferred", "jms_cancel_scheduled":
+		responseMsg, hasResponseMsg, err = j.sessionAdvanced(ctx, action, result)
 	default:
 		err = fmt.Errorf("unsupported JMS action type %q", action.Type)
 	}
@@ -343,6 +359,11 @@ func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *prot
 	result.BytesSent = int64(len(published.Body))
 	addMessageExtractions(result, published)
 	result.Extractions["jms_operation"] = "publish"
+	if published.SequenceNumber != 0 {
+		// Scheduled (future-enqueue) send: surface the sequence so a later
+		// jms_cancel_scheduled can reference it.
+		result.Extractions["jms_scheduled_sequence"] = strconv.FormatInt(published.SequenceNumber, 10)
+	}
 	return published, evaluateAssertions(action.Assertions, result, published)
 }
 
@@ -355,14 +376,15 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 	// Advanced consume (dead-letter sub-queue or deferred settlement) requires a
 	// settlementAdapter (Service Bus); fall back to the plain Consume otherwise.
 	opts := consumeOptions{
-		SubQueue: normalizeSubQueue(paramString(action.Params, "sub_queue", "")),
-		PeekLock: boolParam(action.Params, "peek_lock", false),
+		SubQueue:     normalizeSubQueue(paramString(action.Params, "sub_queue", "")),
+		PeekLock:     boolParam(action.Params, "peek_lock", false),
+		SessionToken: paramString(action.Params, "session_token", ""),
 	}
 	var (
 		msg message
 		err error
 	)
-	if opts.SubQueue != "" || opts.PeekLock {
+	if opts.SubQueue != "" || opts.PeekLock || opts.SessionToken != "" {
 		sb, ok := j.adapter.(settlementAdapter)
 		if !ok {
 			return message{}, fmt.Errorf("jms_consume sub_queue/peek_lock requires the Service Bus adapter (build -tags jms_servicebus_real)")
@@ -493,6 +515,155 @@ func normalizeDisposition(value string) string {
 		return "defer"
 	default:
 		return "complete"
+	}
+}
+
+// sessionAdvanced handles the Service Bus session, deferred-receive, and
+// scheduled-cancel verbs. Like settleAdvanced it requires a settlementAdapter and
+// fails closed elsewhere. It returns the received message (for jms_receive_deferred)
+// so the standard telemetry/assertion path applies.
+func (j *JMS) sessionAdvanced(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, bool, error) {
+	sb, ok := j.adapter.(settlementAdapter)
+	if !ok {
+		return message{}, false, fmt.Errorf("%s requires the Azure Service Bus adapter (build -tags jms_servicebus_real)", action.Type)
+	}
+	switch strings.ToLower(action.Type) {
+	case "jms_session_accept":
+		destination := j.consumeDestination(action)
+		if destination == "" {
+			return message{}, false, fmt.Errorf("jms_session_accept requires a destination")
+		}
+		token, resolved, err := sb.AcceptSession(ctx, destination, paramString(action.Params, "session_id", ""))
+		if err != nil {
+			return message{}, false, err
+		}
+		result.Extractions["jms_operation"] = "session_accept"
+		result.Extractions["jms_session_token"] = token
+		result.Extractions["jms_session_id"] = resolved
+		return message{}, false, nil
+	case "jms_session_state":
+		token := paramString(action.Params, "session_token", "")
+		if token == "" {
+			return message{}, false, fmt.Errorf("jms_session_state requires params.session_token")
+		}
+		var state []byte
+		set := false
+		if raw := paramString(action.Params, "session_state", ""); raw != "" {
+			state = []byte(raw)
+			set = true
+		}
+		got, err := sb.SessionState(ctx, token, state, set)
+		if err != nil {
+			return message{}, false, err
+		}
+		result.Extractions["jms_operation"] = "session_state"
+		if set {
+			result.Extractions["jms_session_state_set"] = "true"
+		} else {
+			result.Extractions["jms_session_state"] = string(got)
+		}
+		return message{}, false, nil
+	case "jms_receive_deferred":
+		destination := j.consumeDestination(action)
+		seqs, err := parseSequenceNumbers(action.Params["sequence_numbers"])
+		if err != nil {
+			return message{}, false, err
+		}
+		if len(seqs) == 0 {
+			return message{}, false, fmt.Errorf("jms_receive_deferred requires params.sequence_numbers")
+		}
+		msgs, err := sb.ReceiveDeferred(ctx, destination, seqs, j.timeout(action))
+		if err != nil {
+			return message{}, false, err
+		}
+		result.Extractions["jms_operation"] = "receive_deferred"
+		result.Extractions["jms_deferred_received"] = strconv.Itoa(len(msgs))
+		if len(msgs) == 0 {
+			return message{}, false, nil
+		}
+		first := msgs[0]
+		result.BytesReceived = int64(len(first.Body))
+		addMessageExtractions(result, first)
+		if first.SettlementToken != "" {
+			result.Extractions["jms_settlement_token"] = first.SettlementToken
+		}
+		return first, true, evaluateAssertions(action.Assertions, result, first)
+	case "jms_cancel_scheduled":
+		destination := j.destination(action)
+		if destination == "" {
+			return message{}, false, fmt.Errorf("jms_cancel_scheduled requires a destination")
+		}
+		seqs, err := parseSequenceNumbers(action.Params["sequence_numbers"])
+		if err != nil {
+			return message{}, false, err
+		}
+		if len(seqs) == 0 {
+			return message{}, false, fmt.Errorf("jms_cancel_scheduled requires params.sequence_numbers")
+		}
+		if err := sb.CancelScheduled(ctx, destination, seqs); err != nil {
+			return message{}, false, err
+		}
+		result.Extractions["jms_operation"] = "cancel_scheduled"
+		result.Extractions["jms_cancelled"] = strconv.Itoa(len(seqs))
+		return message{}, false, nil
+	}
+	return message{}, false, fmt.Errorf("unsupported session action %q", action.Type)
+}
+
+// parseSequenceNumbers parses a sequence-number list from a DSL param: a JSON
+// array of numbers ([]any of float64/int/json.Number) or a comma-separated string.
+func parseSequenceNumbers(raw any) ([]int64, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	var out []int64
+	switch v := raw.(type) {
+	case []int64:
+		return v, nil
+	case []any:
+		for _, item := range v {
+			n, err := toInt64(item)
+			if err != nil {
+				return nil, fmt.Errorf("invalid sequence_numbers entry %v: %w", item, err)
+			}
+			out = append(out, n)
+		}
+	case string:
+		for _, part := range strings.Split(v, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			n, err := strconv.ParseInt(part, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid sequence_numbers entry %q: %w", part, err)
+			}
+			out = append(out, n)
+		}
+	default:
+		if n, err := toInt64(raw); err == nil {
+			out = append(out, n)
+		} else {
+			return nil, fmt.Errorf("sequence_numbers must be a list of numbers")
+		}
+	}
+	return out, nil
+}
+
+func toInt64(v any) (int64, error) {
+	switch n := v.(type) {
+	case float64:
+		return int64(n), nil
+	case int:
+		return int64(n), nil
+	case int64:
+		return n, nil
+	case json.Number:
+		return n.Int64()
+	case string:
+		return strconv.ParseInt(strings.TrimSpace(n), 10, 64)
+	default:
+		return 0, fmt.Errorf("not a number: %T", v)
 	}
 }
 

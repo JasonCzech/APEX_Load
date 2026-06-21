@@ -784,6 +784,16 @@ func validateJMSScriptIssues(script *Script) []string {
 				issues = append(issues, fmt.Sprintf("actions[%d] %q: settlement_token is required", i, action.Name))
 			}
 		}
+		if action.Type == "jms_session_state" {
+			if tok, _ := actionParamStringValue(action.Params, "session_token"); strings.TrimSpace(tok) == "" {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: session_token is required", i, action.Name))
+			}
+		}
+		if action.Type == "jms_receive_deferred" || action.Type == "jms_cancel_scheduled" {
+			if _, ok := action.Params["sequence_numbers"]; !ok {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: sequence_numbers is required", i, action.Name))
+			}
+		}
 	}
 
 	return issues

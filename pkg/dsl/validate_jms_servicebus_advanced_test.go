@@ -68,9 +68,31 @@ func TestValidateJMSConsumeSubQueueEnum(t *testing.T) {
 }
 
 func TestValidateJMSSettleActionTypeKnown(t *testing.T) {
-	// jms_settle / jms_renew_lock are recognized action types (not "unsupported").
-	s := jmsAdvancedScript([]Action{{Name: "settle", Type: "jms_settle", Params: map[string]any{"settlement_token": "t"}}})
-	if issuesContainSubstr(ValidateScriptIssues(s), "unsupported JMS action type") {
-		t.Fatalf("jms_settle reported as unsupported: %v", ValidateScriptIssues(s))
+	// All P2.4 advanced verbs are recognized action types (not "unsupported").
+	for _, typ := range []string{"jms_settle", "jms_renew_lock", "jms_session_accept", "jms_session_state", "jms_receive_deferred", "jms_cancel_scheduled"} {
+		s := jmsAdvancedScript([]Action{{Name: "a", Type: typ, Target: "orders.in", Params: map[string]any{"settlement_token": "t", "session_token": "s", "sequence_numbers": []any{float64(1)}}}})
+		if issuesContainSubstr(ValidateScriptIssues(s), "unsupported JMS action type") {
+			t.Fatalf("%s reported as unsupported: %v", typ, ValidateScriptIssues(s))
+		}
+	}
+}
+
+func TestValidateJMSSessionStateRequiresToken(t *testing.T) {
+	s := jmsAdvancedScript([]Action{{Name: "st", Type: "jms_session_state", Params: map[string]any{}}})
+	if !issuesContainSubstr(ValidateScriptIssues(s), "session_token is required") {
+		t.Fatalf("expected session_token-required, got %v", ValidateScriptIssues(s))
+	}
+}
+
+func TestValidateJMSDeferredAndCancelRequireSequenceNumbers(t *testing.T) {
+	for _, typ := range []string{"jms_receive_deferred", "jms_cancel_scheduled"} {
+		s := jmsAdvancedScript([]Action{{Name: "a", Type: typ, Target: "orders.in", Params: map[string]any{}}})
+		if !issuesContainSubstr(ValidateScriptIssues(s), "sequence_numbers is required") {
+			t.Fatalf("%s: expected sequence_numbers-required, got %v", typ, ValidateScriptIssues(s))
+		}
+		ok := jmsAdvancedScript([]Action{{Name: "a", Type: typ, Target: "orders.in", Params: map[string]any{"sequence_numbers": []any{float64(1)}}}})
+		if issuesContainSubstr(ValidateScriptIssues(ok), "sequence_numbers is required") {
+			t.Fatalf("%s: valid sequence_numbers wrongly rejected: %v", typ, ValidateScriptIssues(ok))
+		}
 	}
 }

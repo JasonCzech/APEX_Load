@@ -91,5 +91,43 @@ func jmsActionSpecs() []ActionSpec {
 				{Name: "params.settlement_token", Kind: FieldKindString, Doc: "Token from a peek_lock jms_consume identifying the in-flight message."},
 			},
 		},
+		{
+			Type:      "jms_session_accept",
+			Protocols: []string{"jms"},
+			Summary:   "Accepts an Azure Service Bus session (specific or next available), returning a session token. Requires jms_servicebus_real.",
+			Fields: []FieldSpec{
+				{Name: "target", Kind: FieldKindString, Doc: "Session-enabled queue/topic; falls back to config.jms.destination."},
+				{Name: "params.session_id", Kind: FieldKindString, Doc: "Specific session id to accept; empty accepts the next available session."},
+				{Name: "params.subscription", Kind: FieldKindString, Doc: "Topic subscription when the destination is a topic."},
+			},
+		},
+		{
+			Type:      "jms_session_state",
+			Protocols: []string{"jms"},
+			Summary:   "Gets or sets the session state for an accepted Azure Service Bus session. Requires jms_servicebus_real.",
+			Fields: []FieldSpec{
+				{Name: "params.session_token", Kind: FieldKindString, Doc: "Token from jms_session_accept."},
+				{Name: "params.session_state", Kind: FieldKindString, Doc: "When set, stores this as the session state; when absent, the current state is read into the jms_session_state extraction."},
+			},
+		},
+		{
+			Type:      "jms_receive_deferred",
+			Protocols: []string{"jms"},
+			Summary:   "Receives previously deferred Azure Service Bus messages by sequence number (peek-locked). Requires jms_servicebus_real.",
+			Fields: []FieldSpec{
+				{Name: "target", Kind: FieldKindString, Doc: "Source queue/topic; falls back to config.jms.destination."},
+				{Name: "params.sequence_numbers", Kind: FieldKindArray, Doc: "Sequence numbers (array of numbers, or comma-separated string) to fetch."},
+				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Receive timeout in milliseconds."},
+			},
+		},
+		{
+			Type:      "jms_cancel_scheduled",
+			Protocols: []string{"jms"},
+			Summary:   "Cancels scheduled (future-enqueue) Azure Service Bus messages by sequence number. Requires jms_servicebus_real.",
+			Fields: []FieldSpec{
+				{Name: "target", Kind: FieldKindString, Doc: "Destination the messages were scheduled to; falls back to config.jms.destination."},
+				{Name: "params.sequence_numbers", Kind: FieldKindArray, Doc: "Scheduled sequence numbers (from jms_scheduled_sequence) to cancel."},
+			},
+		},
 	}
 }

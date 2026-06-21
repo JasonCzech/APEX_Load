@@ -903,6 +903,15 @@ Runs a LoadRunner Java Vuser lifecycle through the governed JVM sidecar runner.
 
 Acknowledges the last consumed message (client acknowledgement mode).
 
+### `jms_cancel_scheduled`
+
+Cancels scheduled (future-enqueue) Azure Service Bus messages by sequence number. Requires jms_servicebus_real.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Destination the messages were scheduled to; falls back to config.jms.destination. |
+| `params.sequence_numbers` | array |  | Scheduled sequence numbers (from jms_scheduled_sequence) to cancel. |
+
 ### `jms_commit`
 
 Commits the transacted session.
@@ -942,6 +951,16 @@ Publishes a message to a queue or topic.
 | `params.scheduled_enqueue_ms` | int |  | Azure Service Bus scheduled enqueue delay in milliseconds (the broker holds the message until then). |
 | `params.time_to_live_ms` | int |  | Message time-to-live in milliseconds before the broker expires it. |
 
+### `jms_receive_deferred`
+
+Receives previously deferred Azure Service Bus messages by sequence number (peek-locked). Requires jms_servicebus_real.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Source queue/topic; falls back to config.jms.destination. |
+| `params.sequence_numbers` | array |  | Sequence numbers (array of numbers, or comma-separated string) to fetch. |
+| `params.timeout_ms` | int |  | Receive timeout in milliseconds. |
+
 ### `jms_renew_lock`
 
 Renews the broker lock on a peek-locked Azure Service Bus message. Requires jms_servicebus_real.
@@ -969,6 +988,25 @@ Sends a request message and waits for the correlated reply.
 ### `jms_rollback`
 
 Rolls back the transacted session.
+
+### `jms_session_accept`
+
+Accepts an Azure Service Bus session (specific or next available), returning a session token. Requires jms_servicebus_real.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Session-enabled queue/topic; falls back to config.jms.destination. |
+| `params.session_id` | string |  | Specific session id to accept; empty accepts the next available session. |
+| `params.subscription` | string |  | Topic subscription when the destination is a topic. |
+
+### `jms_session_state`
+
+Gets or sets the session state for an accepted Azure Service Bus session. Requires jms_servicebus_real.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.session_token` | string |  | Token from jms_session_accept. |
+| `params.session_state` | string |  | When set, stores this as the session state; when absent, the current state is read into the jms_session_state extraction. |
 
 ### `jms_settle`
 

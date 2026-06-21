@@ -6,6 +6,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 )
 
 func TestToServiceBusMessageMapsAdvancedSendFields(t *testing.T) {
@@ -53,7 +55,15 @@ func TestServiceBusSettleUnknownTokenFailsOffline(t *testing.T) {
 }
 
 func TestServiceBusConfigErrorAdapterImplementsSettlement(t *testing.T) {
-	// The config-error adapter must satisfy settlementAdapter so config errors
-	// surface (rather than a misleading build-tag message).
+	// Both the real adapter and the config-error adapter must satisfy the full
+	// settlementAdapter capability (settle + sessions + deferred + cancel).
 	var _ settlementAdapter = serviceBusConfigErrorAdapter{}
+	var _ settlementAdapter = (*serviceBusAdapter)(nil)
+}
+
+func TestServiceBusSessionStateUnknownTokenFailsOffline(t *testing.T) {
+	a := &serviceBusAdapter{sessions: make(map[string]*azservicebus.SessionReceiver)}
+	if _, err := a.SessionState(context.Background(), "missing", nil, false); err == nil {
+		t.Fatal("SessionState with unknown token should error")
+	}
 }

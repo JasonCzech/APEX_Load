@@ -39,6 +39,7 @@ func newServiceBusAdapter(cfg config) brokerAdapter {
 		handle:    handle,
 		receivers: make(map[string]*azservicebus.Receiver),
 		inflight:  make(map[string]inflightMessage),
+		sessions:  make(map[string]*azservicebus.SessionReceiver),
 	}
 }
 
@@ -52,11 +53,36 @@ type serviceBusAdapter struct {
 	// / jms_renew_lock), keyed by a per-VUser settlement token. The SDK settles via
 	// the *ReceivedMessage on the SAME receiver it came from, so both are stored.
 	inflight map[string]inflightMessage
+	// sessions holds accepted SessionReceivers keyed by a per-VUser session token
+	// (jms_session_accept), reused for session consume + session-state get/set.
+	sessions   map[string]*azservicebus.SessionReceiver
+	sessionSeq atomic.Uint64
+}
+
+// sbMessageSettler is the message-settlement method set shared by *Receiver and
+// *SessionReceiver, so an in-flight message settles through whichever it came
+// from. (RenewMessageLock is NOT here: session messages are locked by the session
+// lock, not per-message, so lock renewal is carried as a closure on inflightMessage.)
+type sbMessageSettler interface {
+	CompleteMessage(context.Context, *azservicebus.ReceivedMessage, *azservicebus.CompleteMessageOptions) error
+	AbandonMessage(context.Context, *azservicebus.ReceivedMessage, *azservicebus.AbandonMessageOptions) error
+	DeadLetterMessage(context.Context, *azservicebus.ReceivedMessage, *azservicebus.DeadLetterOptions) error
+	DeferMessage(context.Context, *azservicebus.ReceivedMessage, *azservicebus.DeferMessageOptions) error
+}
+
+// sbReceiveSettler adds ReceiveMessages so ConsumeAdvanced can read from either a
+// plain receiver or a session receiver uniformly.
+type sbReceiveSettler interface {
+	sbMessageSettler
+	ReceiveMessages(context.Context, int, *azservicebus.ReceiveMessagesOptions) ([]*azservicebus.ReceivedMessage, error)
 }
 
 type inflightMessage struct {
 	received *azservicebus.ReceivedMessage
-	receiver *azservicebus.Receiver
+	settler  sbMessageSettler
+	// renew extends the lock; RenewMessageLock for plain receivers, RenewSessionLock
+	// for session receivers.
+	renew func(context.Context) error
 }
 
 func (a *serviceBusAdapter) Publish(ctx context.Context, destination string, msg message) (message, error) {
@@ -65,7 +91,20 @@ func (a *serviceBusAdapter) Publish(ctx context.Context, destination string, msg
 		return message{}, err
 	}
 	outgoing := normalizeServiceBusOutgoingMessage(destination, msg)
-	if err := sender.SendMessage(ctx, toServiceBusMessage(destination, outgoing), nil); err != nil {
+	sbMsg := toServiceBusMessage(destination, outgoing)
+	// Scheduled enqueue goes through ScheduleMessages so the broker returns a
+	// sequence number the script can later cancel (jms_cancel_scheduled).
+	if !outgoing.ScheduledEnqueueAt.IsZero() {
+		seqs, err := sender.ScheduleMessages(ctx, []*azservicebus.Message{sbMsg}, outgoing.ScheduledEnqueueAt, nil)
+		if err != nil {
+			return message{}, err
+		}
+		if len(seqs) > 0 {
+			outgoing.SequenceNumber = seqs[0]
+		}
+		return outgoing, nil
+	}
+	if err := sender.SendMessage(ctx, sbMsg, nil); err != nil {
 		return message{}, err
 	}
 	return outgoing, nil
@@ -148,6 +187,8 @@ func (a *serviceBusAdapter) Teardown(ctx context.Context) error {
 	a.mu.Lock()
 	receivers := a.receivers
 	a.receivers = make(map[string]*azservicebus.Receiver)
+	sessions := a.sessions
+	a.sessions = make(map[string]*azservicebus.SessionReceiver)
 	a.inflight = make(map[string]inflightMessage)
 	handle := a.handle
 	a.handle = nil
@@ -156,6 +197,11 @@ func (a *serviceBusAdapter) Teardown(ctx context.Context) error {
 	var firstErr error
 	for _, receiver := range receivers {
 		if err := receiver.Close(ctx); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	for _, sr := range sessions {
+		if err := sr.Close(ctx); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
@@ -206,19 +252,39 @@ func (a *serviceBusAdapter) receiverFor(destination, subQueue string) (*azservic
 }
 
 // ConsumeAdvanced implements settlementAdapter: receive from an optional
-// dead-letter sub-queue and, when PeekLock is set, defer settlement by stashing
-// the message under a returned token instead of auto-completing.
+// dead-letter sub-queue or an accepted session and, when PeekLock is set, defer
+// settlement by stashing the message under a returned token instead of
+// auto-completing.
 func (a *serviceBusAdapter) ConsumeAdvanced(ctx context.Context, destination string, opts consumeOptions, timeout time.Duration) (message, error) {
-	receiver, err := a.receiverFor(destination, opts.SubQueue)
-	if err != nil {
-		return message{}, err
+	var (
+		src       sbReceiveSettler
+		renewLock func(ctx context.Context, rm *azservicebus.ReceivedMessage) error
+	)
+	if opts.SessionToken != "" {
+		a.mu.Lock()
+		sr := a.sessions[opts.SessionToken]
+		a.mu.Unlock()
+		if sr == nil {
+			return message{}, fmt.Errorf("unknown session token %q (accept a session with jms_session_accept first)", opts.SessionToken)
+		}
+		src = sr
+		renewLock = func(ctx context.Context, _ *azservicebus.ReceivedMessage) error { return sr.RenewSessionLock(ctx, nil) }
+	} else {
+		receiver, err := a.receiverFor(destination, opts.SubQueue)
+		if err != nil {
+			return message{}, err
+		}
+		src = receiver
+		renewLock = func(ctx context.Context, rm *azservicebus.ReceivedMessage) error {
+			return receiver.RenewMessageLock(ctx, rm, nil)
+		}
 	}
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
 	receiveCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	messages, err := receiver.ReceiveMessages(receiveCtx, 1, nil)
+	messages, err := src.ReceiveMessages(receiveCtx, 1, nil)
 	if err != nil {
 		return message{}, fmt.Errorf("no JMS message received from %q within %s: %w", destination, timeout, err)
 	}
@@ -229,19 +295,107 @@ func (a *serviceBusAdapter) ConsumeAdvanced(ctx context.Context, destination str
 	receiveAndDelete := serviceBusReceiveMode(a.cfg.Acknowledgement, a.cfg.Properties) == "receive_and_delete"
 	if opts.PeekLock && !receiveAndDelete {
 		// Defer settlement: hand the caller a token to settle later.
-		token := hex.EncodeToString(messages[0].LockToken[:])
+		rm := messages[0]
+		token := hex.EncodeToString(rm.LockToken[:])
 		a.mu.Lock()
-		a.inflight[token] = inflightMessage{received: messages[0], receiver: receiver}
+		a.inflight[token] = inflightMessage{received: rm, settler: src, renew: func(ctx context.Context) error { return renewLock(ctx, rm) }}
 		a.mu.Unlock()
 		converted.SettlementToken = token
 		return converted, nil
 	}
 	if !receiveAndDelete {
-		if err := receiver.CompleteMessage(ctx, messages[0], nil); err != nil {
+		if err := src.CompleteMessage(ctx, messages[0], nil); err != nil {
 			return converted, fmt.Errorf("complete Service Bus message from %q: %w", destination, err)
 		}
 	}
 	return converted, nil
+}
+
+// AcceptSession implements settlementAdapter: open a session receiver (specific
+// session, or the next available) and cache it under a returned token.
+func (a *serviceBusAdapter) AcceptSession(ctx context.Context, destination, sessionID string) (string, string, error) {
+	var (
+		sr  *azservicebus.SessionReceiver
+		err error
+	)
+	if topic, subscription, ok := splitServiceBusSubscription(destination); ok {
+		if sessionID == "" {
+			sr, err = a.handle.client.AcceptNextSessionForSubscription(ctx, topic, subscription, nil)
+		} else {
+			sr, err = a.handle.client.AcceptSessionForSubscription(ctx, topic, subscription, sessionID, nil)
+		}
+	} else {
+		if sessionID == "" {
+			sr, err = a.handle.client.AcceptNextSessionForQueue(ctx, destination, nil)
+		} else {
+			sr, err = a.handle.client.AcceptSessionForQueue(ctx, destination, sessionID, nil)
+		}
+	}
+	if err != nil {
+		return "", "", err
+	}
+	token := fmt.Sprintf("sbsession-%d", a.sessionSeq.Add(1))
+	a.mu.Lock()
+	a.sessions[token] = sr
+	a.mu.Unlock()
+	return token, sr.SessionID(), nil
+}
+
+// SessionState implements settlementAdapter: get or set the session state blob.
+func (a *serviceBusAdapter) SessionState(ctx context.Context, sessionToken string, state []byte, set bool) ([]byte, error) {
+	a.mu.Lock()
+	sr := a.sessions[sessionToken]
+	a.mu.Unlock()
+	if sr == nil {
+		return nil, fmt.Errorf("unknown session token %q (accept a session with jms_session_accept first)", sessionToken)
+	}
+	if set {
+		return nil, sr.SetSessionState(ctx, state, nil)
+	}
+	return sr.GetSessionState(ctx, nil)
+}
+
+// ReceiveDeferred implements settlementAdapter: fetch deferred messages by
+// sequence number. They are peek-locked, so each carries a settlement token.
+func (a *serviceBusAdapter) ReceiveDeferred(ctx context.Context, destination string, sequenceNumbers []int64, timeout time.Duration) ([]message, error) {
+	receiver, err := a.receiverFor(destination, "")
+	if err != nil {
+		return nil, err
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	receiveCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	received, err := receiver.ReceiveDeferredMessages(receiveCtx, sequenceNumbers, nil)
+	if err != nil {
+		return nil, fmt.Errorf("receive deferred Service Bus messages from %q: %w", destination, err)
+	}
+	receiveAndDelete := serviceBusReceiveMode(a.cfg.Acknowledgement, a.cfg.Properties) == "receive_and_delete"
+	out := make([]message, 0, len(received))
+	for _, rm := range received {
+		rm := rm
+		converted := fromServiceBusMessage(destination, rm)
+		if !receiveAndDelete {
+			token := hex.EncodeToString(rm.LockToken[:])
+			a.mu.Lock()
+			a.inflight[token] = inflightMessage{received: rm, settler: receiver, renew: func(ctx context.Context) error { return receiver.RenewMessageLock(ctx, rm, nil) }}
+			a.mu.Unlock()
+			converted.SettlementToken = token
+		}
+		out = append(out, converted)
+	}
+	return out, nil
+}
+
+// CancelScheduled implements settlementAdapter: cancel scheduled (future-enqueue)
+// messages by sequence number.
+func (a *serviceBusAdapter) CancelScheduled(ctx context.Context, destination string, sequenceNumbers []int64) error {
+	sender, err := a.handle.sender(destination)
+	if err != nil {
+		return err
+	}
+	return sender.CancelScheduledMessages(ctx, sequenceNumbers, nil)
 }
 
 // Settle implements settlementAdapter: resolve a peek-locked message by token.
@@ -255,7 +409,7 @@ func (a *serviceBusAdapter) Settle(ctx context.Context, token string, dispositio
 	var err error
 	switch disposition {
 	case "abandon":
-		err = entry.receiver.AbandonMessage(ctx, entry.received, nil)
+		err = entry.settler.AbandonMessage(ctx, entry.received, nil)
 	case "dead_letter":
 		dlOpts := &azservicebus.DeadLetterOptions{}
 		if opts.DeadLetterReason != "" {
@@ -264,11 +418,11 @@ func (a *serviceBusAdapter) Settle(ctx context.Context, token string, dispositio
 		if opts.DeadLetterDescription != "" {
 			dlOpts.ErrorDescription = stringPtr(opts.DeadLetterDescription)
 		}
-		err = entry.receiver.DeadLetterMessage(ctx, entry.received, dlOpts)
+		err = entry.settler.DeadLetterMessage(ctx, entry.received, dlOpts)
 	case "defer":
-		err = entry.receiver.DeferMessage(ctx, entry.received, nil)
+		err = entry.settler.DeferMessage(ctx, entry.received, nil)
 	case "complete":
-		err = entry.receiver.CompleteMessage(ctx, entry.received, nil)
+		err = entry.settler.CompleteMessage(ctx, entry.received, nil)
 	default:
 		// Defensive: never silently complete (acknowledge+remove) on an unknown
 		// disposition. The caller normalizes, so this is unreachable in practice.
@@ -293,7 +447,10 @@ func (a *serviceBusAdapter) RenewLock(ctx context.Context, token string) error {
 	if !ok {
 		return fmt.Errorf("unknown settlement_token %q (already settled or never peek-locked)", token)
 	}
-	if err := entry.receiver.RenewMessageLock(ctx, entry.received, nil); err != nil {
+	if entry.renew == nil {
+		return fmt.Errorf("settlement_token %q has no renewable lock", token)
+	}
+	if err := entry.renew(ctx); err != nil {
 		return fmt.Errorf("renew Service Bus message lock: %w", err)
 	}
 	return nil
@@ -334,6 +491,22 @@ func (a serviceBusConfigErrorAdapter) Settle(context.Context, string, string, se
 }
 
 func (a serviceBusConfigErrorAdapter) RenewLock(context.Context, string) error {
+	return a.err
+}
+
+func (a serviceBusConfigErrorAdapter) AcceptSession(context.Context, string, string) (string, string, error) {
+	return "", "", a.err
+}
+
+func (a serviceBusConfigErrorAdapter) SessionState(context.Context, string, []byte, bool) ([]byte, error) {
+	return nil, a.err
+}
+
+func (a serviceBusConfigErrorAdapter) ReceiveDeferred(context.Context, string, []int64, time.Duration) ([]message, error) {
+	return nil, a.err
+}
+
+func (a serviceBusConfigErrorAdapter) CancelScheduled(context.Context, string, []int64) error {
 	return a.err
 }
 
