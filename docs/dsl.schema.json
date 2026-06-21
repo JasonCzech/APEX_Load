@@ -2760,6 +2760,58 @@
             "properties": {
               "type": {
                 "enum": [
+                  "jms_browse"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Browses a queue non-destructively (JMS QueueBrowser); messages are not consumed.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "destination": {
+                    "description": "Queue alternative to target; falls back to config.jms.destination.",
+                    "type": "string"
+                  },
+                  "destination_type": {
+                    "description": "Destination kind; falls back to config.jms.destination_type.",
+                    "enum": [
+                      "queue",
+                      "topic"
+                    ],
+                    "type": "string"
+                  },
+                  "max": {
+                    "description": "Maximum messages to browse (default 10).",
+                    "type": "integer"
+                  },
+                  "selector": {
+                    "description": "JMS message selector (SQL-92 subset) restricting which messages are browsed.",
+                    "type": "string"
+                  },
+                  "timeout_ms": {
+                    "description": "Browse timeout in milliseconds; falls back to config.jms.timeout_ms.",
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "Queue to browse; falls back to config.jms.destination.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "jms_cancel_scheduled"
                 ]
               }
@@ -2841,6 +2893,10 @@
                   "peek_lock": {
                     "description": "Azure Service Bus: defer settlement instead of auto-completing, returning a settlement_token for a later jms_settle (requires jms_servicebus_real).",
                     "type": "boolean"
+                  },
+                  "selector": {
+                    "description": "JMS message selector (SQL-92 subset over headers/properties) — only matching messages are consumed. Supported by Solace/AMQP and the mock; Azure Service Bus uses subscription rules instead.",
+                    "type": "string"
                   },
                   "sub_queue": {
                     "description": "Azure Service Bus sub-queue to receive from (requires jms_servicebus_real).",
@@ -3115,6 +3171,10 @@
                   },
                   "reply_to": {
                     "description": "Reply destination; required unless config.jms.reply_to is set.",
+                    "type": "string"
+                  },
+                  "selector": {
+                    "description": "JMS message selector applied when consuming the reply (Solace/AMQP or the mock).",
                     "type": "string"
                   },
                   "stream_body": {
@@ -5185,6 +5245,7 @@
             "insert",
             "java_vuser_run",
             "jms_ack",
+            "jms_browse",
             "jms_cancel_scheduled",
             "jms_commit",
             "jms_consume",

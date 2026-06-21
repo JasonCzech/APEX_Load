@@ -137,3 +137,152 @@ func TestExplicitBodyNotOverwrittenByTypedBody(t *testing.T) {
 		t.Fatal("MapBody should still be populated for adapter fidelity")
 	}
 }
+
+func TestConsumeWithSelectorMock(t *testing.T) {
+	ctx := context.Background()
+	p := newP23JMS(t, map[string]any{"jms_destination": "sel.q"})
+	for _, r := range []string{"us", "eu", "ap"} {
+		if _, err := p.Execute(ctx, &protocol.Action{
+			Name: "pub", Type: "jms_publish", Body: []byte(r),
+			Headers: map[string]string{"region": r},
+		}); err != nil {
+			t.Fatalf("publish %s: %v", r, err)
+		}
+	}
+	// Selector picks the matching message out of the middle of the queue.
+	consumed, _ := p.Execute(ctx, &protocol.Action{
+		Name: "consume", Type: "jms_consume",
+		Params: map[string]any{"selector": "region = 'eu'"},
+	})
+	if !consumed.Success {
+		t.Fatalf("selector consume failed: %s", consumed.ErrorMessage)
+	}
+	if consumed.Extractions["jms_body"] != "eu" {
+		t.Fatalf("selected body = %q, want eu", consumed.Extractions["jms_body"])
+	}
+	// us and ap remain (non-matching messages were not consumed).
+	remaining := map[string]bool{}
+	for i := 0; i < 2; i++ {
+		c, _ := p.Execute(ctx, &protocol.Action{Name: "c", Type: "jms_consume"})
+		if !c.Success {
+			t.Fatalf("expected remaining message, iter %d: %s", i, c.ErrorMessage)
+		}
+		remaining[c.Extractions["jms_body"]] = true
+	}
+	if !remaining["us"] || !remaining["ap"] {
+		t.Fatalf("remaining = %v, want us+ap", remaining)
+	}
+}
+
+func TestBrowseNonDestructiveMock(t *testing.T) {
+	ctx := context.Background()
+	p := newP23JMS(t, map[string]any{"jms_destination": "browse.q"})
+	for _, b := range []string{"m1", "m2", "m3"} {
+		if _, err := p.Execute(ctx, &protocol.Action{Name: "pub", Type: "jms_publish", Body: []byte(b)}); err != nil {
+			t.Fatalf("publish: %v", err)
+		}
+	}
+	br, _ := p.Execute(ctx, &protocol.Action{Name: "browse", Type: "jms_browse"})
+	if !br.Success {
+		t.Fatalf("browse failed: %s", br.ErrorMessage)
+	}
+	if br.Extractions["jms_operation"] != "browse" {
+		t.Fatalf("jms_operation = %q, want browse", br.Extractions["jms_operation"])
+	}
+	if br.Extractions["jms_browse_count"] != "3" {
+		t.Fatalf("jms_browse_count = %q, want 3", br.Extractions["jms_browse_count"])
+	}
+	// All three messages must still be consumable (browse did not remove them).
+	for i := 0; i < 3; i++ {
+		c, _ := p.Execute(ctx, &protocol.Action{Name: "c", Type: "jms_consume"})
+		if !c.Success {
+			t.Fatalf("message %d missing after browse: %s", i, c.ErrorMessage)
+		}
+	}
+}
+
+func TestBrowseWithSelectorMock(t *testing.T) {
+	ctx := context.Background()
+	p := newP23JMS(t, map[string]any{"jms_destination": "bsel.q"})
+	for _, r := range []string{"us", "eu", "eu", "ap"} {
+		p.Execute(ctx, &protocol.Action{Name: "pub", Type: "jms_publish", Body: []byte(r), Headers: map[string]string{"region": r}})
+	}
+	br, _ := p.Execute(ctx, &protocol.Action{
+		Name: "browse", Type: "jms_browse",
+		Params: map[string]any{"selector": "region = 'eu'"},
+	})
+	if !br.Success {
+		t.Fatalf("browse failed: %s", br.ErrorMessage)
+	}
+	if br.Extractions["jms_browse_count"] != "2" {
+		t.Fatalf("selector browse count = %q, want 2", br.Extractions["jms_browse_count"])
+	}
+}
+
+func TestConsumeSelectorInvalidFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	p := newP23JMS(t, map[string]any{"jms_destination": "bad.q"})
+	res, _ := p.Execute(ctx, &protocol.Action{
+		Name: "c", Type: "jms_consume",
+		Params: map[string]any{"selector": "region =="},
+	})
+	if res.Success {
+		t.Fatal("invalid selector should fail the action")
+	}
+	if res.StatusCode != 400 {
+		t.Fatalf("status = %d, want 400 for a malformed selector", res.StatusCode)
+	}
+}
+
+func TestMockImplementsSelectorAndBrowser(t *testing.T) {
+	var a brokerAdapter = memoryAdapter{broker: broker}
+	if _, ok := a.(selectiveConsumer); !ok {
+		t.Fatal("mock must implement selectiveConsumer")
+	}
+	if _, ok := a.(messageBrowser); !ok {
+		t.Fatal("mock must implement messageBrowser")
+	}
+}
+
+func TestConsumeSelectorRejectsAdvancedCombo(t *testing.T) {
+	ctx := context.Background()
+	p := newP23JMS(t, map[string]any{"jms_destination": "combo.q"})
+	res, _ := p.Execute(ctx, &protocol.Action{
+		Name: "c", Type: "jms_consume",
+		Params: map[string]any{"selector": "region = 'eu'", "peek_lock": true},
+	})
+	if res.Success {
+		t.Fatal("selector + peek_lock must be rejected, not silently mishandled")
+	}
+	if res.StatusCode != 400 {
+		t.Fatalf("status = %d, want 400", res.StatusCode)
+	}
+}
+
+func TestBrowseDoesNotAliasBrokerState(t *testing.T) {
+	ctx := context.Background()
+	p := newP23JMS(t, map[string]any{"jms_destination": "alias.q"})
+	if _, err := p.Execute(ctx, &protocol.Action{
+		Name: "pub", Type: "jms_publish", Body: []byte("original"),
+		Headers: map[string]string{"k": "v"},
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	// Browse the queue and mutate the returned copy's reference fields.
+	browsed := broker.browse("alias.q", nil, 10)
+	if len(browsed) != 1 {
+		t.Fatalf("expected 1 browsed message, got %d", len(browsed))
+	}
+	browsed[0].Headers["k"] = "mutated"
+	if len(browsed[0].Body) > 0 {
+		browsed[0].Body[0] = 'X'
+	}
+	// A subsequent destructive consume must see the untouched original.
+	consumed, _ := p.Execute(ctx, &protocol.Action{Name: "c", Type: "jms_consume"})
+	if !consumed.Success {
+		t.Fatalf("consume failed: %s", consumed.ErrorMessage)
+	}
+	if consumed.Extractions["jms_body"] != "original" {
+		t.Fatalf("browse mutated the queued body: got %q", consumed.Extractions["jms_body"])
+	}
+}

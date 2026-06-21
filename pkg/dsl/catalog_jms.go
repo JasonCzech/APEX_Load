@@ -44,6 +44,20 @@ func jmsActionSpecs() []ActionSpec {
 				{Name: "params.dead_letter", Kind: FieldKindBool, Doc: "Consume from / classify the dead-letter destination."},
 				{Name: "params.sub_queue", Kind: FieldKindEnum, Enum: []string{"none", "dead_letter", "transfer_dead_letter"}, Doc: "Azure Service Bus sub-queue to receive from (requires jms_servicebus_real)."},
 				{Name: "params.peek_lock", Kind: FieldKindBool, Doc: "Azure Service Bus: defer settlement instead of auto-completing, returning a settlement_token for a later jms_settle (requires jms_servicebus_real)."},
+				{Name: "params.selector", Kind: FieldKindString, Doc: "JMS message selector (SQL-92 subset over headers/properties) — only matching messages are consumed. Supported by Solace/AMQP and the mock; Azure Service Bus uses subscription rules instead."},
+			},
+		},
+		{
+			Type:      "jms_browse",
+			Protocols: []string{"jms"},
+			Summary:   "Browses a queue non-destructively (JMS QueueBrowser); messages are not consumed.",
+			Fields: []FieldSpec{
+				{Name: "target", Kind: FieldKindString, Doc: "Queue to browse; falls back to config.jms.destination."},
+				{Name: "params.destination", Kind: FieldKindString, Doc: "Queue alternative to target; falls back to config.jms.destination."},
+				{Name: "params.destination_type", Kind: FieldKindEnum, Enum: []string{"queue", "topic"}, Doc: "Destination kind; falls back to config.jms.destination_type."},
+				{Name: "params.selector", Kind: FieldKindString, Doc: "JMS message selector (SQL-92 subset) restricting which messages are browsed."},
+				{Name: "params.max", Kind: FieldKindInt, Doc: "Maximum messages to browse (default 10)."},
+				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Browse timeout in milliseconds; falls back to config.jms.timeout_ms."},
 			},
 		},
 		{
@@ -60,6 +74,7 @@ func jmsActionSpecs() []ActionSpec {
 				{Name: "params.destination", Kind: FieldKindString, Doc: "Request destination alternative to target; falls back to config.jms.destination."},
 				{Name: "params.destination_type", Kind: FieldKindEnum, Enum: []string{"queue", "topic"}, Doc: "Destination kind; falls back to config.jms.destination_type."},
 				{Name: "params.correlation_id", Kind: FieldKindString, Doc: "Correlation ID for matching the reply; defaults to the request message ID."},
+				{Name: "params.selector", Kind: FieldKindString, Doc: "JMS message selector applied when consuming the reply (Solace/AMQP or the mock)."},
 				{Name: "params.message_type", Kind: FieldKindEnum, Enum: []string{"text", "bytes", "map", "stream", "object"}, Doc: "JMS message type of the request. map/stream read params.map_body/params.stream_body; text/bytes/object use body."},
 				{Name: "params.map_body", Kind: FieldKindObject, Doc: "Named values for a MapMessage request (message_type=map); JSON-encoded into the body for replay."},
 				{Name: "params.stream_body", Kind: FieldKindArray, Doc: "Ordered values for a StreamMessage request (message_type=stream); JSON-encoded into the body for replay."},

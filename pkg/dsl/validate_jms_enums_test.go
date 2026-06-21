@@ -113,3 +113,42 @@ func TestValidateJMSSendControls(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateJMSBrowseAction(t *testing.T) {
+	// Browse with a destination (config.jms.destination) validates clean.
+	clean := &Script{
+		Name: "jms-browse", Protocol: "jms-solace",
+		Config:  ScriptConfig{JMS: JMSConfig{Provider: "solace", Destination: "orders.in", Mock: true}},
+		Actions: []Action{{Name: "browse", Type: "jms_browse", Params: map[string]any{"selector": "region = 'eu'", "max": 5}}},
+	}
+	if issues := ValidateScriptIssues(clean); len(issues) > 0 {
+		t.Fatalf("clean jms_browse script has issues: %v", issues)
+	}
+	// Browse with no destination anywhere is flagged.
+	noDest := &Script{
+		Name: "jms-browse", Protocol: "jms-solace",
+		Config:  ScriptConfig{JMS: JMSConfig{Provider: "solace", Mock: true}},
+		Actions: []Action{{Name: "browse", Type: "jms_browse"}},
+	}
+	if !hasIssueContaining(ValidateScriptIssues(noDest), "missing destination") {
+		t.Fatalf("expected missing-destination issue for jms_browse without a destination")
+	}
+}
+
+func TestValidateJMSSelectorConflicts(t *testing.T) {
+	script := func(params map[string]any) *Script {
+		return &Script{
+			Name: "jms-sel", Protocol: "jms-solace",
+			Config:  ScriptConfig{JMS: JMSConfig{Provider: "solace", Destination: "q", Mock: true}},
+			Actions: []Action{{Name: "c", Type: "jms_consume", Params: params}},
+		}
+	}
+	// selector alone is fine.
+	if issues := ValidateScriptIssues(script(map[string]any{"selector": "a = 'b'"})); hasIssueContaining(issues, "selector cannot be combined") {
+		t.Fatalf("selector alone should be valid: %v", issues)
+	}
+	// selector + peek_lock conflicts.
+	if !hasIssueContaining(ValidateScriptIssues(script(map[string]any{"selector": "a = 'b'", "peek_lock": true})), "selector cannot be combined") {
+		t.Fatal("expected selector+peek_lock conflict issue")
+	}
+}

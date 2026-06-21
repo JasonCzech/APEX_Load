@@ -204,6 +204,73 @@ func (a *solaceAMQPAdapter) receiver(ctx context.Context, destination string) (*
 	return receiver, nil
 }
 
+// openReceiver opens a fresh, uncached receiver with the supplied options. Used
+// for selector-filtered and copy-mode (browse) links, which are NOT cached: a
+// parameterized selector produces a distinct filter string per VUser iteration,
+// so caching one link per string would leak broker links across a load test.
+// The caller must Close the receiver.
+func (a *solaceAMQPAdapter) openReceiver(ctx context.Context, destination string, opts *amqp.ReceiverOptions) (*amqp.Receiver, error) {
+	session, err := a.handle(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return session.NewReceiver(ctx, destination, opts)
+}
+
+// ConsumeSelective consumes the next message matching a JMS selector via a
+// server-side AMQP selector-filter link (P2.3). The link is opened per call and
+// closed on return (selectors are often parameterized; a per-string cache leaks).
+func (a *solaceAMQPAdapter) ConsumeSelective(ctx context.Context, destination, selector string, timeout time.Duration) (message, error) {
+	receiver, err := a.openReceiver(ctx, destination, &amqp.ReceiverOptions{
+		Filters: []amqp.LinkFilter{amqp.NewSelectorFilter(selector)},
+	})
+	if err != nil {
+		return message{}, err
+	}
+	defer receiver.Close(context.Background())
+	receiveCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	msg, err := receiver.Receive(receiveCtx, nil)
+	if err != nil {
+		return message{}, fmt.Errorf("no JMS message matching selector received from %q within %s: %w", destination, timeout, err)
+	}
+	converted := fromAMQPMessage(destination, msg)
+	if err := receiver.AcceptMessage(ctx, msg); err != nil {
+		return converted, fmt.Errorf("accept JMS message from %q: %w", destination, err)
+	}
+	return converted, nil
+}
+
+// Browse performs a non-destructive read via a copy-distribution-mode AMQP link
+// (the standard AMQP queue-browse) — received messages are released so the source
+// queue is left intact (P2.3). The link is opened per call and closed on return.
+func (a *solaceAMQPAdapter) Browse(ctx context.Context, destination, selector string, max int, timeout time.Duration) ([]message, error) {
+	opts := &amqp.ReceiverOptions{SourceDistributionMode: amqp.SourceDistributionModeCopy}
+	if selector != "" {
+		opts.Filters = []amqp.LinkFilter{amqp.NewSelectorFilter(selector)}
+	}
+	receiver, err := a.openReceiver(ctx, destination, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer receiver.Close(context.Background())
+	if max <= 0 {
+		max = 10
+	}
+	var out []message
+	for i := 0; i < max; i++ {
+		receiveCtx, cancel := context.WithTimeout(ctx, timeout)
+		msg, err := receiver.Receive(receiveCtx, nil)
+		cancel()
+		if err != nil {
+			break // timeout / no further messages
+		}
+		out = append(out, fromAMQPMessage(destination, msg))
+		_ = receiver.ReleaseMessage(ctx, msg)
+	}
+	return out, nil
+}
+
 func (a *solaceAMQPAdapter) handle(ctx context.Context) (*amqp.Session, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

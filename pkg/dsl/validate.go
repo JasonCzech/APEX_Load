@@ -751,7 +751,7 @@ func validateJMSScriptIssues(script *Script) []string {
 		} else if _, ok := protocolActionSpec("jms", action.Type); !ok {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: unsupported JMS action type %q", i, action.Name, action.Type))
 		}
-		if (action.Type == "jms_publish" || action.Type == "jms_consume" || action.Type == "jms_request_reply") && action.Target == "" && jms.Destination == "" {
+		if (action.Type == "jms_publish" || action.Type == "jms_consume" || action.Type == "jms_request_reply" || action.Type == "jms_browse") && action.Target == "" && jms.Destination == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing destination", i, action.Name))
 		}
 		if action.Type == "jms_request_reply" && jms.ReplyTo == "" {
@@ -784,6 +784,16 @@ func validateJMSScriptIssues(script *Script) []string {
 			if sq, ok := actionParamStringValue(action.Params, "sub_queue"); ok && strings.TrimSpace(sq) != "" &&
 				!isAllowedValue(strings.ToLower(strings.TrimSpace(sq)), "none", "dead_letter", "transfer_dead_letter") {
 				issues = append(issues, fmt.Sprintf("actions[%d] %q: sub_queue %q is not supported", i, action.Name, sq))
+			}
+			// A selector (Solace/AMQP data-plane filter) is mutually exclusive with
+			// the Service Bus advanced-consume controls (P2.3).
+			if sel, ok := actionParamStringValue(action.Params, "selector"); ok && strings.TrimSpace(sel) != "" {
+				_, hasSubQueue := actionParamStringValue(action.Params, "sub_queue")
+				_, hasSession := actionParamStringValue(action.Params, "session_token")
+				peekLock, _ := action.Params["peek_lock"].(bool)
+				if hasSubQueue || hasSession || peekLock {
+					issues = append(issues, fmt.Sprintf("actions[%d] %q: selector cannot be combined with peek_lock, sub_queue, or session_token", i, action.Name))
+				}
 			}
 		}
 		if action.Type == "jms_settle" {

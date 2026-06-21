@@ -256,3 +256,13 @@ func TestAMQPMessageTypeAndHeaderRoundTrip(t *testing.T) {
 		t.Fatalf("TTL header = %v, want 1.5s", amqpMsg.Header.TTL)
 	}
 }
+
+func TestSolaceImplementsSelectorAndBrowser(t *testing.T) {
+	var a brokerAdapter = &solaceAMQPAdapter{}
+	if _, ok := a.(selectiveConsumer); !ok {
+		t.Fatal("Solace/AMQP must implement selectiveConsumer (server-side selector filter)")
+	}
+	if _, ok := a.(messageBrowser); !ok {
+		t.Fatal("Solace/AMQP must implement messageBrowser (copy-mode browse)")
+	}
+}

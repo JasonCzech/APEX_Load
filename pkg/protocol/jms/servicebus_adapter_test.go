@@ -137,3 +137,16 @@ func TestServiceBusSubjectAndPriorityRoundTrip(t *testing.T) {
 		t.Fatalf("Type round-trip = %q, want map", out.Type)
 	}
 }
+
+func TestServiceBusImplementsBrowserNotSelector(t *testing.T) {
+	var a brokerAdapter = &serviceBusAdapter{}
+	if _, ok := a.(messageBrowser); !ok {
+		t.Fatal("Service Bus must implement messageBrowser (PeekMessages)")
+	}
+	// Selectors are admin-plane subscription rules on Service Bus, not a data-plane
+	// per-consume filter — the adapter must NOT advertise selectiveConsumer so a
+	// selector consume fails closed with an honest error.
+	if _, ok := a.(selectiveConsumer); ok {
+		t.Fatal("Service Bus must NOT implement selectiveConsumer")
+	}
+}

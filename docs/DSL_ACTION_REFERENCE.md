@@ -903,6 +903,19 @@ Runs a LoadRunner Java Vuser lifecycle through the governed JVM sidecar runner.
 
 Acknowledges the last consumed message (client acknowledgement mode).
 
+### `jms_browse`
+
+Browses a queue non-destructively (JMS QueueBrowser); messages are not consumed.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Queue to browse; falls back to config.jms.destination. |
+| `params.destination` | string |  | Queue alternative to target; falls back to config.jms.destination. |
+| `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
+| `params.selector` | string |  | JMS message selector (SQL-92 subset) restricting which messages are browsed. |
+| `params.max` | int |  | Maximum messages to browse (default 10). |
+| `params.timeout_ms` | int |  | Browse timeout in milliseconds; falls back to config.jms.timeout_ms. |
+
 ### `jms_cancel_scheduled`
 
 Cancels scheduled (future-enqueue) Azure Service Bus messages by sequence number. Requires jms_servicebus_real.
@@ -930,6 +943,7 @@ Consumes the next message from a queue or topic.
 | `params.dead_letter` | bool |  | Consume from / classify the dead-letter destination. |
 | `params.sub_queue` | enum: none\|dead_letter\|transfer_dead_letter |  | Azure Service Bus sub-queue to receive from (requires jms_servicebus_real). |
 | `params.peek_lock` | bool |  | Azure Service Bus: defer settlement instead of auto-completing, returning a settlement_token for a later jms_settle (requires jms_servicebus_real). |
+| `params.selector` | string |  | JMS message selector (SQL-92 subset over headers/properties) — only matching messages are consumed. Supported by Solace/AMQP and the mock; Azure Service Bus uses subscription rules instead. |
 
 ### `jms_publish`
 
@@ -989,6 +1003,7 @@ Sends a request message and waits for the correlated reply.
 | `params.destination` | string |  | Request destination alternative to target; falls back to config.jms.destination. |
 | `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
 | `params.correlation_id` | string |  | Correlation ID for matching the reply; defaults to the request message ID. |
+| `params.selector` | string |  | JMS message selector applied when consuming the reply (Solace/AMQP or the mock). |
 | `params.message_type` | enum: text\|bytes\|map\|stream\|object |  | JMS message type of the request. map/stream read params.map_body/params.stream_body; text/bytes/object use body. |
 | `params.map_body` | object |  | Named values for a MapMessage request (message_type=map); JSON-encoded into the body for replay. |
 | `params.stream_body` | array |  | Ordered values for a StreamMessage request (message_type=stream); JSON-encoded into the body for replay. |

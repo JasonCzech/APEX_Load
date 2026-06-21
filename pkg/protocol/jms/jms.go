@@ -157,6 +157,22 @@ type settleOptions struct {
 	DeadLetterDescription string
 }
 
+// selectiveConsumer is an OPTIONAL capability for JMS message selectors on
+// consume (P2.3). Implemented by the in-memory mock and the AMQP/Solace adapter
+// (server-side selector-filter link). Azure Service Bus does NOT implement it —
+// Service Bus selectors are admin-plane subscription rules, not a data-plane
+// per-consume filter — so a selector consume against Service Bus fails closed.
+type selectiveConsumer interface {
+	ConsumeSelective(ctx context.Context, destination, selector string, timeout time.Duration) (message, error)
+}
+
+// messageBrowser is an OPTIONAL capability for non-destructive queue browse
+// (JMS QueueBrowser, P2.3). Implemented by the in-memory mock, the AMQP/Solace
+// adapter (copy-distribution receiver), and Azure Service Bus (PeekMessages).
+type messageBrowser interface {
+	Browse(ctx context.Context, destination, selector string, max int, timeout time.Duration) ([]message, error)
+}
+
 var broker = &memoryBroker{queues: make(map[string][]message)}
 
 type memoryBroker struct {
@@ -188,6 +204,49 @@ func (b *memoryBroker) hasMessages(destination string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return len(b.queues[destination]) > 0
+}
+
+// consumeMatching pops the first message satisfying the selector (a nil selector
+// matches the head, preserving plain-FIFO behavior). Non-matching messages stay
+// in the queue for other consumers.
+func (b *memoryBroker) consumeMatching(destination string, sel *selector) (message, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	queue := b.queues[destination]
+	for i, msg := range queue {
+		if sel.matches(msg.Headers, msg.Properties) {
+			// Three-index slice on the head keeps the backing array intact for the
+			// retained tail.
+			b.queues[destination] = append(queue[:i:i], queue[i+1:]...)
+			return msg, true
+		}
+	}
+	return message{}, false
+}
+
+// browse returns copies of the messages matching the selector without removing
+// them (JMS QueueBrowser semantics). max <= 0 means no limit.
+func (b *memoryBroker) browse(destination string, sel *selector, max int) []message {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var out []message
+	for _, msg := range b.queues[destination] {
+		if sel.matches(msg.Headers, msg.Properties) {
+			// Deep-copy reference fields so a browsed message can never alias (and
+			// thus mutate) the queued message — browse must be non-destructive.
+			copied := msg
+			copied.Headers = cloneStringMap(msg.Headers)
+			copied.Properties = cloneStringMap(msg.Properties)
+			if msg.Body != nil {
+				copied.Body = append([]byte(nil), msg.Body...)
+			}
+			out = append(out, copied)
+			if max > 0 && len(out) >= max {
+				break
+			}
+		}
+	}
+	return out
 }
 
 func (j *JMS) Name() string {
@@ -308,6 +367,8 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 	case "jms_consume":
 		responseMsg, err = j.consume(ctx, action, result)
 		hasResponseMsg = err == nil
+	case "jms_browse":
+		responseMsg, hasResponseMsg, err = j.browse(ctx, action, result)
 	case "jms_request_reply":
 		requestMsg, responseMsg, err = j.requestReply(ctx, action, result)
 		hasRequestMsg = err == nil
@@ -395,13 +456,35 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 		msg message
 		err error
 	)
-	if opts.SubQueue != "" || opts.PeekLock || opts.SessionToken != "" {
+	selectorExpr := paramString(action.Params, "selector", "")
+	switch {
+	case selectorExpr != "":
+		// Selector is incompatible with the Service Bus advanced-consume controls
+		// (peek-lock settlement / sub-queue / session); reject the combo explicitly
+		// rather than silently dropping one side.
+		if opts.SubQueue != "" || opts.PeekLock || opts.SessionToken != "" {
+			result.StatusCode = 400
+			return message{}, fmt.Errorf("jms_consume selector cannot be combined with peek_lock, sub_queue, or session_token")
+		}
+		// A message selector requires a provider with data-plane selector support
+		// (Solace/AMQP or the mock). Compile up front so a bad selector fails with a
+		// clear 400 before any broker call.
+		if _, cErr := compileSelector(selectorExpr); cErr != nil {
+			result.StatusCode = 400
+			return message{}, cErr
+		}
+		sc, ok := j.adapter.(selectiveConsumer)
+		if !ok {
+			return message{}, fmt.Errorf("jms_consume selector requires a provider with message-selector support (Solace/AMQP or the mock); Azure Service Bus uses subscription rules instead")
+		}
+		msg, err = sc.ConsumeSelective(ctx, destination, selectorExpr, j.timeout(action))
+	case opts.SubQueue != "" || opts.PeekLock || opts.SessionToken != "":
 		sb, ok := j.adapter.(settlementAdapter)
 		if !ok {
 			return message{}, fmt.Errorf("jms_consume sub_queue/peek_lock requires the Service Bus adapter (build -tags jms_servicebus_real)")
 		}
 		msg, err = sb.ConsumeAdvanced(ctx, destination, opts, j.timeout(action))
-	} else {
+	default:
 		msg, err = j.adapter.Consume(ctx, destination, j.timeout(action))
 	}
 	if err != nil {
@@ -429,6 +512,50 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 		return message{}, err
 	}
 	return msg, evaluateAssertions(action.Assertions, result, msg)
+}
+
+// browse performs a non-destructive JMS QueueBrowser read (P2.3). It returns the
+// first matching message (for extraction/assertion) plus a jms_browse_count of
+// all matches, and never settles or tracks the messages.
+func (j *JMS) browse(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, bool, error) {
+	destination := j.consumeDestination(action)
+	result.DependencyTarget = destination
+	selectorExpr := paramString(action.Params, "selector", "")
+	if selectorExpr != "" {
+		if _, cErr := compileSelector(selectorExpr); cErr != nil {
+			result.StatusCode = 400
+			return message{}, false, cErr
+		}
+	}
+	br, ok := j.adapter.(messageBrowser)
+	if !ok {
+		return message{}, false, fmt.Errorf("jms_browse requires a provider with browse support (Solace/AMQP, Azure Service Bus, or the mock)")
+	}
+	max := 10
+	if m, ok := intParam(action.Params, "max"); ok && m > 0 {
+		max = m
+	}
+	msgs, err := br.Browse(ctx, destination, selectorExpr, max, j.timeout(action))
+	if err != nil {
+		result.StatusCode = 204
+		return message{}, false, err
+	}
+	result.Extractions["jms_operation"] = "browse"
+	result.Extractions["jms_browse_count"] = strconv.Itoa(len(msgs))
+	if len(msgs) == 0 {
+		return message{}, false, nil
+	}
+	first := msgs[0]
+	if first.Destination == "" {
+		first.Destination = destination
+	}
+	result.BytesReceived = int64(len(first.Body))
+	addMessageExtractions(result, first)
+	// Non-destructive: do NOT Track for settlement.
+	if err := runExtractors(action.Extractors, result, first); err != nil {
+		return message{}, false, err
+	}
+	return first, true, evaluateAssertions(action.Assertions, result, first)
 }
 
 // settle handles jms_ack / jms_commit / jms_rollback against the per-VUser
@@ -791,6 +918,39 @@ func (a memoryAdapter) HealthCheck(context.Context) error {
 
 func (a memoryAdapter) Teardown(context.Context) error {
 	return nil
+}
+
+// ConsumeSelective polls for the first message matching the selector (P2.3).
+func (a memoryAdapter) ConsumeSelective(ctx context.Context, destination, selectorExpr string, timeout time.Duration) (message, error) {
+	sel, err := compileSelector(selectorExpr)
+	if err != nil {
+		return message{}, err
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if msg, ok := a.broker.consumeMatching(destination, sel); ok {
+			return msg, nil
+		}
+		select {
+		case <-ctx.Done():
+			return message{}, ctx.Err()
+		case <-deadline.C:
+			return message{}, fmt.Errorf("no JMS message matching the selector received from %q within %s", destination, timeout)
+		case <-tick.C:
+		}
+	}
+}
+
+// Browse returns matching messages without consuming them (P2.3).
+func (a memoryAdapter) Browse(_ context.Context, destination, selectorExpr string, max int, _ time.Duration) ([]message, error) {
+	sel, err := compileSelector(selectorExpr)
+	if err != nil {
+		return nil, err
+	}
+	return a.broker.browse(destination, sel, max), nil
 }
 
 type sidecarAdapter struct {

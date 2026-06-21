@@ -215,6 +215,59 @@ func (a *serviceBusAdapter) receiver(destination string) (*azservicebus.Receiver
 	return a.receiverFor(destination, "")
 }
 
+// Browse performs a non-destructive read via Service Bus PeekMessages (P2.3).
+// Service Bus has no server-side browse selector (selectors are admin-plane
+// subscription rules), so when a selector is supplied it is applied client-side
+// over a widened peek window — best-effort, documented as such.
+func (a *serviceBusAdapter) Browse(ctx context.Context, destination, selectorExpr string, max int, timeout time.Duration) ([]message, error) {
+	receiver, err := a.receiverFor(destination, "")
+	if err != nil {
+		return nil, err
+	}
+	if max <= 0 {
+		max = 10
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	var sel *selector
+	if selectorExpr != "" {
+		if sel, err = compileSelector(selectorExpr); err != nil {
+			return nil, err
+		}
+	}
+	peekCount := max
+	if sel != nil {
+		peekCount = max * 8
+		if peekCount > 250 {
+			peekCount = 250
+		}
+	}
+	receiveCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	// PeekMessages with no FromSequenceNumber advances an internal cursor on the
+	// (cached) receiver, so repeated jms_browse calls would walk forward off the
+	// queue. Pin to sequence 0 (the head of available messages) so browse is
+	// repeatable-from-head, matching JMS QueueBrowser semantics.
+	fromSeq := int64(0)
+	peeked, err := receiver.PeekMessages(receiveCtx, peekCount, &azservicebus.PeekMessagesOptions{FromSequenceNumber: &fromSeq})
+	if err != nil {
+		return nil, fmt.Errorf("peek Service Bus messages from %q: %w", destination, err)
+	}
+	out := make([]message, 0, len(peeked))
+	for _, m := range peeked {
+		converted := fromServiceBusMessage(destination, m)
+		if sel != nil && !sel.matches(converted.Headers, converted.Properties) {
+			continue
+		}
+		out = append(out, converted)
+		if len(out) >= max {
+			break
+		}
+	}
+	return out, nil
+}
+
 // receiverFor returns a cached receiver for a destination + optional sub-queue
 // (dead_letter / transfer_dead_letter). Receivers are cached per (destination,
 // subQueue) so Teardown closes them all.
