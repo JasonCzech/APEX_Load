@@ -173,11 +173,49 @@ type messageBrowser interface {
 	Browse(ctx context.Context, destination, selector string, max int, timeout time.Duration) ([]message, error)
 }
 
-var broker = &memoryBroker{queues: make(map[string][]message)}
+// topicAdapter is an OPTIONAL capability for JMS topic fan-out + durable/shared
+// subscriptions (P2.3). A topic publish reaches every registered subscription;
+// each subscription consumes with an independent cursor. Implemented by the mock
+// and the AMQP/Solace adapter (durable receiver). Azure Service Bus is NOT routed
+// here — its topic/subscription addressing is handled by the standard path — so
+// the Service Bus adapter does not implement it.
+type topicAdapter interface {
+	PublishTopic(ctx context.Context, topic string, msg message) error
+	ConsumeTopic(ctx context.Context, topic, subscription, selector string, durable bool, timeout time.Duration) (message, error)
+	BrowseTopic(ctx context.Context, topic, subscription, selector string, max int, timeout time.Duration) ([]message, error)
+}
+
+var broker = &memoryBroker{
+	queues: make(map[string][]message),
+	topics: make(map[string]map[string][]message),
+}
 
 type memoryBroker struct {
 	mu     sync.Mutex
 	queues map[string][]message
+	// topics models JMS topic fan-out: topic name -> subscription name -> that
+	// subscription's independent message queue. A topic publish appends a copy to
+	// every registered subscription; each subscription consumes its own copy with
+	// an independent cursor.
+	topics map[string]map[string][]message
+}
+
+// cloneMessageValue returns a copy of msg with its reference fields (maps, body)
+// deep-copied so callers cannot mutate shared broker state.
+func cloneMessageValue(msg message) message {
+	out := msg
+	out.Headers = cloneStringMap(msg.Headers)
+	out.Properties = cloneStringMap(msg.Properties)
+	if msg.MapBody != nil {
+		out.MapBody = cloneStringMap(msg.MapBody)
+	}
+	if msg.StreamBody != nil {
+		out.StreamBody = append([]string(nil), msg.StreamBody...)
+	}
+	if msg.Body != nil {
+		out.Body = append([]byte(nil), msg.Body...)
+	}
+	return out
 }
 
 func (b *memoryBroker) publish(destination string, msg message) {
@@ -229,24 +267,80 @@ func (b *memoryBroker) consumeMatching(destination string, sel *selector) (messa
 func (b *memoryBroker) browse(destination string, sel *selector, max int) []message {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return browseMatching(b.queues[destination], sel, max)
+}
+
+// browseMatching returns deep copies of the messages in queue matching sel, so a
+// browsed message can never alias (and thus mutate) broker state. max <= 0 means
+// no limit.
+func browseMatching(queue []message, sel *selector, max int) []message {
 	var out []message
-	for _, msg := range b.queues[destination] {
+	for _, msg := range queue {
 		if sel.matches(msg.Headers, msg.Properties) {
-			// Deep-copy reference fields so a browsed message can never alias (and
-			// thus mutate) the queued message — browse must be non-destructive.
-			copied := msg
-			copied.Headers = cloneStringMap(msg.Headers)
-			copied.Properties = cloneStringMap(msg.Properties)
-			if msg.Body != nil {
-				copied.Body = append([]byte(nil), msg.Body...)
-			}
-			out = append(out, copied)
+			out = append(out, cloneMessageValue(msg))
 			if max > 0 && len(out) >= max {
 				break
 			}
 		}
 	}
 	return out
+}
+
+// subscribe registers a topic subscription (idempotently) so subsequent topic
+// publishes fan out to it. A subscription registered at connect time (Init, when
+// config.jms.subscription is set) collects every later publish; one registered
+// lazily on first consume only collects publishes after that point. The mock has
+// no long-lived connection, so it does not model a durable subscriber collecting
+// messages published before it ever registered.
+func (b *memoryBroker) subscribe(topic, subscription string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.topics[topic] == nil {
+		b.topics[topic] = make(map[string][]message)
+	}
+	if _, ok := b.topics[topic][subscription]; !ok {
+		b.topics[topic][subscription] = nil
+	}
+}
+
+// publishTopic fans a message out to every registered subscription on the topic,
+// each receiving its own deep copy. A topic with no subscriptions drops the
+// message (standard topic semantics — only subscribers receive).
+func (b *memoryBroker) publishTopic(topic string, msg message) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for sub := range b.topics[topic] {
+		b.topics[topic][sub] = append(b.topics[topic][sub], cloneMessageValue(msg))
+	}
+}
+
+// consumeTopic pops the first message matching the selector from a subscription's
+// independent queue.
+func (b *memoryBroker) consumeTopic(topic, subscription string, sel *selector) (message, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.topics[topic] == nil {
+		return message{}, false
+	}
+	queue := b.topics[topic][subscription]
+	for i, m := range queue {
+		if sel.matches(m.Headers, m.Properties) {
+			b.topics[topic][subscription] = append(queue[:i:i], queue[i+1:]...)
+			return m, true
+		}
+	}
+	return message{}, false
+}
+
+// browseTopic returns deep copies of a subscription's matching messages without
+// consuming them.
+func (b *memoryBroker) browseTopic(topic, subscription string, sel *selector, max int) []message {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.topics[topic] == nil {
+		return nil
+	}
+	return browseMatching(b.topics[topic][subscription], sel, max)
 }
 
 func (j *JMS) Name() string {
@@ -294,6 +388,15 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 	j.session = messaging.New[message](messaging.ParseAckMode(j.cfg.Acknowledgement))
 	if j.cfg.Mock {
 		j.adapter = memoryAdapter{broker: broker}
+		// Pre-register a configured topic subscription at connect time so a topic
+		// publish that lands before the subscriber's first consume is still captured
+		// (durable-subscription semantics). Without this, the mock only retains
+		// messages published after the first consume registers the subscription.
+		if !strings.EqualFold(strings.TrimSpace(j.provider), "servicebus") &&
+			strings.EqualFold(strings.TrimSpace(j.cfg.DestinationType), "topic") &&
+			strings.TrimSpace(j.cfg.Subscription) != "" && strings.TrimSpace(j.cfg.Destination) != "" {
+			broker.subscribe(j.cfg.Destination, j.cfg.Subscription)
+		}
 	} else {
 		adapter, err := j.selectAdapter()
 		if err != nil {
@@ -424,7 +527,15 @@ func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *prot
 		return message{}, fmt.Errorf("JMS destination is required")
 	}
 	msg := j.buildMessage(action, destination)
-	published, err := j.adapter.Publish(ctx, destination, msg)
+	var published message
+	var err error
+	if topic, ok := j.adapter.(topicAdapter); ok && j.useTopicFanout(action) {
+		// Topic publish fans out to every registered subscription.
+		err = topic.PublishTopic(ctx, destination, msg)
+		published = msg
+	} else {
+		published, err = j.adapter.Publish(ctx, destination, msg)
+	}
 	if err != nil {
 		return message{}, err
 	}
@@ -457,7 +568,21 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 		err error
 	)
 	selectorExpr := paramString(action.Params, "selector", "")
+	topic, isTopicCap := j.adapter.(topicAdapter)
 	switch {
+	case isTopicCap && j.useTopicFanout(action):
+		// Topic fan-out: consume from a named subscription's independent queue.
+		sub := j.subscriptionName(action)
+		if sub == "" {
+			return message{}, fmt.Errorf("jms_consume from a topic requires a subscription (params.subscription or config.jms.subscription)")
+		}
+		if selectorExpr != "" {
+			if _, cErr := compileSelector(selectorExpr); cErr != nil {
+				result.StatusCode = 400
+				return message{}, cErr
+			}
+		}
+		msg, err = topic.ConsumeTopic(ctx, destination, sub, selectorExpr, j.isDurableSubscription(action), j.timeout(action))
 	case selectorExpr != "":
 		// Selector is incompatible with the Service Bus advanced-consume controls
 		// (peek-lock settlement / sub-queue / session); reject the combo explicitly
@@ -527,15 +652,27 @@ func (j *JMS) browse(ctx context.Context, action *protocol.Action, result *proto
 			return message{}, false, cErr
 		}
 	}
-	br, ok := j.adapter.(messageBrowser)
-	if !ok {
-		return message{}, false, fmt.Errorf("jms_browse requires a provider with browse support (Solace/AMQP, Azure Service Bus, or the mock)")
-	}
 	max := 10
 	if m, ok := intParam(action.Params, "max"); ok && m > 0 {
 		max = m
 	}
-	msgs, err := br.Browse(ctx, destination, selectorExpr, max, j.timeout(action))
+	var (
+		msgs []message
+		err  error
+	)
+	if topic, ok := j.adapter.(topicAdapter); ok && j.useTopicFanout(action) {
+		sub := j.subscriptionName(action)
+		if sub == "" {
+			return message{}, false, fmt.Errorf("jms_browse on a topic requires a subscription (params.subscription or config.jms.subscription)")
+		}
+		msgs, err = topic.BrowseTopic(ctx, destination, sub, selectorExpr, max, j.timeout(action))
+	} else {
+		br, ok := j.adapter.(messageBrowser)
+		if !ok {
+			return message{}, false, fmt.Errorf("jms_browse requires a provider with browse support (Solace/AMQP, Azure Service Bus, or the mock)")
+		}
+		msgs, err = br.Browse(ctx, destination, selectorExpr, max, j.timeout(action))
+	}
 	if err != nil {
 		result.StatusCode = 204
 		return message{}, false, err
@@ -953,6 +1090,51 @@ func (a memoryAdapter) Browse(_ context.Context, destination, selectorExpr strin
 	return a.broker.browse(destination, sel, max), nil
 }
 
+// PublishTopic fans a message out to every registered subscription (P2.3).
+func (a memoryAdapter) PublishTopic(_ context.Context, topic string, msg message) error {
+	a.broker.publishTopic(topic, msg)
+	return nil
+}
+
+// ConsumeTopic registers the subscription (so future publishes fan out to it,
+// even across timed-out polls) then consumes its next matching message (P2.3).
+// The mock retains messages for durable and non-durable subscriptions alike (it
+// has no long-lived consumer connection to model a non-durable drop).
+func (a memoryAdapter) ConsumeTopic(ctx context.Context, topic, subscription, selectorExpr string, _ bool, timeout time.Duration) (message, error) {
+	a.broker.subscribe(topic, subscription)
+	sel, err := compileSelector(selectorExpr)
+	if err != nil {
+		return message{}, err
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if msg, ok := a.broker.consumeTopic(topic, subscription, sel); ok {
+			return msg, nil
+		}
+		select {
+		case <-ctx.Done():
+			return message{}, ctx.Err()
+		case <-deadline.C:
+			return message{}, fmt.Errorf("no JMS message received on topic %q subscription %q within %s", topic, subscription, timeout)
+		case <-tick.C:
+		}
+	}
+}
+
+// BrowseTopic registers the subscription then non-destructively reads its
+// matching messages (P2.3).
+func (a memoryAdapter) BrowseTopic(_ context.Context, topic, subscription, selectorExpr string, max int, _ time.Duration) ([]message, error) {
+	a.broker.subscribe(topic, subscription)
+	sel, err := compileSelector(selectorExpr)
+	if err != nil {
+		return nil, err
+	}
+	return a.broker.browseTopic(topic, subscription, sel, max), nil
+}
+
 type sidecarAdapter struct {
 	command string
 	cfg     config
@@ -1317,6 +1499,30 @@ func (j *JMS) destination(action *protocol.Action) string {
 
 func (j *JMS) consumeDestination(action *protocol.Action) string {
 	return j.serviceBusConsumeDestination(action, j.destination(action))
+}
+
+// useTopicFanout reports whether this action routes through the topic fan-out
+// capability: destination_type=topic on a non-Service-Bus provider. Service Bus
+// encodes topic/subscription in the destination string and uses the standard
+// path, so it is excluded.
+func (j *JMS) useTopicFanout(action *protocol.Action) bool {
+	if strings.EqualFold(strings.TrimSpace(j.provider), "servicebus") {
+		return false
+	}
+	destType := paramString(action.Params, "destination_type", j.cfg.DestinationType)
+	return strings.EqualFold(strings.TrimSpace(destType), "topic")
+}
+
+// subscriptionName resolves the topic subscription identifier (params.subscription
+// then config.jms.subscription).
+func (j *JMS) subscriptionName(action *protocol.Action) string {
+	return paramString(action.Params, "subscription", j.cfg.Subscription)
+}
+
+// isDurableSubscription reports whether subscription_mode requests a durable
+// subscription (applied by the AMQP/Solace adapter; the mock retains either way).
+func (j *JMS) isDurableSubscription(action *protocol.Action) bool {
+	return strings.EqualFold(strings.TrimSpace(paramString(action.Params, "subscription_mode", "")), "durable")
 }
 
 func (j *JMS) serviceBusConsumeDestination(action *protocol.Action, destination string) string {

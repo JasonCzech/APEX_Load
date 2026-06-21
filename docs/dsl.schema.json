@@ -2793,6 +2793,10 @@
                     "description": "JMS message selector (SQL-92 subset) restricting which messages are browsed.",
                     "type": "string"
                   },
+                  "subscription": {
+                    "description": "Topic subscription name to browse (required when browsing a topic).",
+                    "type": "string"
+                  },
                   "timeout_ms": {
                     "description": "Browse timeout in milliseconds; falls back to config.jms.timeout_ms.",
                     "type": "integer"
@@ -2908,7 +2912,16 @@
                     "type": "string"
                   },
                   "subscription": {
-                    "description": "Azure Service Bus topic subscription; falls back to config.jms.subscription.",
+                    "description": "Topic subscription name (also the Azure Service Bus topic subscription); falls back to config.jms.subscription. Required to consume from a topic.",
+                    "type": "string"
+                  },
+                  "subscription_mode": {
+                    "description": "Topic subscription mode. A subscription is identified by name: multiple consumers using the same subscription name compete for its messages (shared), while distinct names each get their own copy (fan-out). durable persists the named subscription on Solace/AMQP; non_durable/shared do not. Service Bus subscriptions are natively durable.",
+                    "enum": [
+                      "non_durable",
+                      "durable",
+                      "shared"
+                    ],
                     "type": "string"
                   },
                   "timeout_ms": {

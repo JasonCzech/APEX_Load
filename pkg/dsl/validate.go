@@ -785,6 +785,11 @@ func validateJMSScriptIssues(script *Script) []string {
 				!isAllowedValue(strings.ToLower(strings.TrimSpace(sq)), "none", "dead_letter", "transfer_dead_letter") {
 				issues = append(issues, fmt.Sprintf("actions[%d] %q: sub_queue %q is not supported", i, action.Name, sq))
 			}
+			// Topic subscription mode enum (P2.3).
+			if sm, ok := actionParamStringValue(action.Params, "subscription_mode"); ok &&
+				!isAllowedValue(strings.ToLower(strings.TrimSpace(sm)), "non_durable", "durable", "shared") {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: subscription_mode %q is not supported", i, action.Name, sm))
+			}
 			// A selector (Solace/AMQP data-plane filter) is mutually exclusive with
 			// the Service Bus advanced-consume controls (P2.3).
 			if sel, ok := actionParamStringValue(action.Params, "selector"); ok && strings.TrimSpace(sel) != "" {
@@ -793,6 +798,23 @@ func validateJMSScriptIssues(script *Script) []string {
 				peekLock, _ := action.Params["peek_lock"].(bool)
 				if hasSubQueue || hasSession || peekLock {
 					issues = append(issues, fmt.Sprintf("actions[%d] %q: selector cannot be combined with peek_lock, sub_queue, or session_token", i, action.Name))
+				}
+			}
+		}
+		// Topic consume/browse on a non-Service-Bus provider requires a subscription
+		// (P2.3). Service Bus has its own topic-without-subscription check above.
+		if (action.Type == "jms_consume" || action.Type == "jms_browse") && !serviceBus {
+			destType := jms.DestinationType
+			if dt, ok := actionParamStringValue(action.Params, "destination_type"); ok {
+				destType = dt
+			}
+			if strings.EqualFold(strings.TrimSpace(destType), "topic") {
+				sub := jms.Subscription
+				if s, ok := actionParamStringValue(action.Params, "subscription"); ok {
+					sub = s
+				}
+				if strings.TrimSpace(sub) == "" {
+					issues = append(issues, fmt.Sprintf("actions[%d] %q: consuming from a topic requires a subscription", i, action.Name))
 				}
 			}
 		}

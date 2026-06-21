@@ -271,6 +271,74 @@ func (a *solaceAMQPAdapter) Browse(ctx context.Context, destination, selector st
 	return out, nil
 }
 
+// PublishTopic publishes to a topic address; the broker fans out to its
+// subscriptions (P2.3).
+func (a *solaceAMQPAdapter) PublishTopic(ctx context.Context, topic string, msg message) error {
+	_, err := a.Publish(ctx, topic, msg)
+	return err
+}
+
+// ConsumeTopic consumes from a (optionally durable) named topic subscription via
+// an AMQP receiver with a durable, named source (P2.3). The link is opened per
+// call and closed on return; a durable subscription persists broker-side by name.
+func (a *solaceAMQPAdapter) ConsumeTopic(ctx context.Context, topic, subscription, selector string, durable bool, timeout time.Duration) (message, error) {
+	opts := &amqp.ReceiverOptions{Name: subscription}
+	if durable {
+		// Persist the subscription's source across the per-call link detach so a
+		// durable subscriber that disconnects between polls keeps its undelivered
+		// messages (the link is opened per call to avoid per-selector link leaks).
+		opts.Durability = amqp.DurabilityUnsettledState
+		opts.ExpiryPolicy = amqp.ExpiryPolicyNever
+	}
+	if selector != "" {
+		opts.Filters = []amqp.LinkFilter{amqp.NewSelectorFilter(selector)}
+	}
+	receiver, err := a.openReceiver(ctx, topic, opts)
+	if err != nil {
+		return message{}, err
+	}
+	defer receiver.Close(context.Background())
+	receiveCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	msg, err := receiver.Receive(receiveCtx, nil)
+	if err != nil {
+		return message{}, fmt.Errorf("no JMS message on topic %q subscription %q within %s: %w", topic, subscription, timeout, err)
+	}
+	converted := fromAMQPMessage(topic, msg)
+	if err := receiver.AcceptMessage(ctx, msg); err != nil {
+		return converted, fmt.Errorf("accept topic message from %q: %w", topic, err)
+	}
+	return converted, nil
+}
+
+// BrowseTopic non-destructively reads a topic subscription via a copy-mode link.
+func (a *solaceAMQPAdapter) BrowseTopic(ctx context.Context, topic, subscription, selector string, max int, timeout time.Duration) ([]message, error) {
+	opts := &amqp.ReceiverOptions{Name: subscription, SourceDistributionMode: amqp.SourceDistributionModeCopy}
+	if selector != "" {
+		opts.Filters = []amqp.LinkFilter{amqp.NewSelectorFilter(selector)}
+	}
+	receiver, err := a.openReceiver(ctx, topic, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer receiver.Close(context.Background())
+	if max <= 0 {
+		max = 10
+	}
+	var out []message
+	for i := 0; i < max; i++ {
+		receiveCtx, cancel := context.WithTimeout(ctx, timeout)
+		msg, err := receiver.Receive(receiveCtx, nil)
+		cancel()
+		if err != nil {
+			break
+		}
+		out = append(out, fromAMQPMessage(topic, msg))
+		_ = receiver.ReleaseMessage(ctx, msg)
+	}
+	return out, nil
+}
+
 func (a *solaceAMQPAdapter) handle(ctx context.Context) (*amqp.Session, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

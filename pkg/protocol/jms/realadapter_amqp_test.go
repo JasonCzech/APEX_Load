@@ -266,3 +266,10 @@ func TestSolaceImplementsSelectorAndBrowser(t *testing.T) {
 		t.Fatal("Solace/AMQP must implement messageBrowser (copy-mode browse)")
 	}
 }
+
+func TestSolaceImplementsTopicAdapter(t *testing.T) {
+	var a brokerAdapter = &solaceAMQPAdapter{}
+	if _, ok := a.(topicAdapter); !ok {
+		t.Fatal("Solace/AMQP must implement topicAdapter (durable topic subscriptions)")
+	}
+}

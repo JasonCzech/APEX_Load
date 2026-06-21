@@ -152,3 +152,40 @@ func TestValidateJMSSelectorConflicts(t *testing.T) {
 		t.Fatal("expected selector+peek_lock conflict issue")
 	}
 }
+
+func TestValidateJMSSubscriptionMode(t *testing.T) {
+	script := func(mode string) *Script {
+		return &Script{
+			Name: "jms-sub", Protocol: "jms-solace",
+			Config:  ScriptConfig{JMS: JMSConfig{Provider: "solace", Destination: "t", DestinationType: "topic", Mock: true}},
+			Actions: []Action{{Name: "c", Type: "jms_consume", Params: map[string]any{"subscription": "s", "subscription_mode": mode}}},
+		}
+	}
+	if issues := ValidateScriptIssues(script("durable")); hasIssueContaining(issues, "subscription_mode") {
+		t.Fatalf("durable should be valid: %v", issues)
+	}
+	if !hasIssueContaining(ValidateScriptIssues(script("forever")), "subscription_mode") {
+		t.Fatal("expected subscription_mode enum issue for an invalid mode")
+	}
+}
+
+func TestValidateJMSTopicRequiresSubscription(t *testing.T) {
+	// Topic consume on a non-Service-Bus provider with no subscription is flagged.
+	noSub := &Script{
+		Name: "jms-topic", Protocol: "jms-solace",
+		Config:  ScriptConfig{JMS: JMSConfig{Provider: "solace", Destination: "t", DestinationType: "topic", Mock: true}},
+		Actions: []Action{{Name: "c", Type: "jms_consume"}},
+	}
+	if !hasIssueContaining(ValidateScriptIssues(noSub), "topic requires a subscription") {
+		t.Fatalf("expected topic-requires-subscription issue, got %v", ValidateScriptIssues(noSub))
+	}
+	// With a subscription it validates clean.
+	withSub := &Script{
+		Name: "jms-topic", Protocol: "jms-solace",
+		Config:  ScriptConfig{JMS: JMSConfig{Provider: "solace", Destination: "t", DestinationType: "topic", Subscription: "s", Mock: true}},
+		Actions: []Action{{Name: "c", Type: "jms_consume"}},
+	}
+	if hasIssueContaining(ValidateScriptIssues(withSub), "topic requires a subscription") {
+		t.Fatalf("topic consume with a subscription should be clean: %v", ValidateScriptIssues(withSub))
+	}
+}

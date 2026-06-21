@@ -150,3 +150,12 @@ func TestServiceBusImplementsBrowserNotSelector(t *testing.T) {
 		t.Fatal("Service Bus must NOT implement selectiveConsumer")
 	}
 }
+
+func TestServiceBusDoesNotImplementTopicAdapter(t *testing.T) {
+	var a brokerAdapter = &serviceBusAdapter{}
+	// Service Bus topic/subscription addressing is handled by the standard path,
+	// not the fan-out capability, so the adapter must NOT implement topicAdapter.
+	if _, ok := a.(topicAdapter); ok {
+		t.Fatal("Service Bus must NOT implement topicAdapter")
+	}
+}

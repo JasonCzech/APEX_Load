@@ -912,6 +912,7 @@ Browses a queue non-destructively (JMS QueueBrowser); messages are not consumed.
 | `target` | string |  | Queue to browse; falls back to config.jms.destination. |
 | `params.destination` | string |  | Queue alternative to target; falls back to config.jms.destination. |
 | `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
+| `params.subscription` | string |  | Topic subscription name to browse (required when browsing a topic). |
 | `params.selector` | string |  | JMS message selector (SQL-92 subset) restricting which messages are browsed. |
 | `params.max` | int |  | Maximum messages to browse (default 10). |
 | `params.timeout_ms` | int |  | Browse timeout in milliseconds; falls back to config.jms.timeout_ms. |
@@ -938,7 +939,8 @@ Consumes the next message from a queue or topic.
 | `target` | string |  | Source queue/topic; falls back to config.jms.destination. |
 | `params.destination` | string |  | Source alternative to target; falls back to config.jms.destination. |
 | `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
-| `params.subscription` | string |  | Azure Service Bus topic subscription; falls back to config.jms.subscription. |
+| `params.subscription` | string |  | Topic subscription name (also the Azure Service Bus topic subscription); falls back to config.jms.subscription. Required to consume from a topic. |
+| `params.subscription_mode` | enum: non_durable\|durable\|shared |  | Topic subscription mode. A subscription is identified by name: multiple consumers using the same subscription name compete for its messages (shared), while distinct names each get their own copy (fan-out). durable persists the named subscription on Solace/AMQP; non_durable/shared do not. Service Bus subscriptions are natively durable. |
 | `params.timeout_ms` | int |  | Consume timeout in milliseconds; falls back to config.jms.timeout_ms. |
 | `params.dead_letter` | bool |  | Consume from / classify the dead-letter destination. |
 | `params.sub_queue` | enum: none\|dead_letter\|transfer_dead_letter |  | Azure Service Bus sub-queue to receive from (requires jms_servicebus_real). |

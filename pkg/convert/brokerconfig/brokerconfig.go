@@ -148,6 +148,12 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 	names := map[string]int{}
 	var actions []dsl.Action
 	for _, d := range emitted {
+		consumeParams := map[string]any{"destination_type": d.Kind, "timeout_ms": 1000}
+		// A topic consume requires a subscription; seed a per-destination name so
+		// the generated skeleton validates and is runnable.
+		if d.Kind == "topic" {
+			consumeParams["subscription"] = sanitizeName(d.Name) + "-sub"
+		}
 		actions = append(actions,
 			dsl.Action{
 				Name:   uniqueActionName(names, "publish-"+d.Name),
@@ -160,7 +166,7 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 				Name:   uniqueActionName(names, "consume-"+d.Name),
 				Type:   "jms_consume",
 				Target: d.Name,
-				Params: map[string]any{"destination_type": d.Kind, "timeout_ms": 1000},
+				Params: consumeParams,
 			},
 		)
 	}
