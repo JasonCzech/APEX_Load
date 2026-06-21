@@ -524,6 +524,100 @@ operations:
 	assertReviewSection(t, result.ReviewSections, "asyncapi_operations", "info", "send")
 }
 
+func TestHandleImportBrokerConfigMQSC(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	mqsc := "DEFINE QLOCAL('ORDER.REQUEST') MAXDEPTH(5000)\nDEFINE TOPIC('EVENTS') TOPICSTR('events/orders')\n"
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/broker-config?filename=qm.mqsc&project_id=proj-mq", bytes.NewReader([]byte(mqsc)))
+	req.Header.Set("Content-Type", "text/plain")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			ProjectID string `json:"project_id"`
+			Protocol  string `json:"protocol"`
+			Actions   []struct {
+				Type   string `json:"type"`
+				Target string `json:"target"`
+			} `json:"actions"`
+		} `json:"script"`
+		ReviewSections []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.ProjectID != "proj-mq" || result.Script.Protocol != "jms-ibmmq" {
+		t.Fatalf("script = %+v", result.Script)
+	}
+	if len(result.Script.Actions) != 4 { // 2 destinations x publish+consume
+		t.Fatalf("expected 4 actions, got %+v", result.Script.Actions)
+	}
+	assertReviewSection(t, result.ReviewSections, "broker_config", "warning", "Format: mqsc")
+}
+
+func TestHandleImportBrokerConfigJNDI(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	jndi := "connectionFactory.cf = amqps://broker.example.test:5671\nqueue.OrderQueue = ORDER.QUEUE\n"
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/broker-config?filename=jndi.properties", bytes.NewReader([]byte(jndi)))
+	req.Header.Set("Content-Type", "text/plain")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			Protocol string `json:"protocol"`
+		} `json:"script"`
+		ReviewSections []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "jms-solace" {
+		t.Fatalf("protocol = %q, want jms-solace", result.Script.Protocol)
+	}
+	assertReviewSection(t, result.ReviewSections, "broker_config", "info", "Format: jndi")
+}
+
+func TestHandleBrokerConfigSupportMatrix(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/broker-config/support-matrix", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		SupportMatrix []struct {
+			ID string `json:"id"`
+		} `json:"support_matrix"`
+		Notes []string `json:"notes"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.SupportMatrix) == 0 || len(result.Notes) == 0 {
+		t.Fatalf("expected non-empty support matrix and notes, got %+v", result)
+	}
+}
+
 func TestHandleAsyncAPISupportMatrix(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/asyncapi/support-matrix", nil)

@@ -14,6 +14,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/agentforce"
 	"github.com/jasonczech/apexload/pkg/convert/asyncapi"
+	"github.com/jasonczech/apexload/pkg/convert/brokerconfig"
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
 	"github.com/jasonczech/apexload/pkg/convert/eventhubscapture"
 	"github.com/jasonczech/apexload/pkg/convert/mulesoft"
@@ -513,6 +514,104 @@ func buildEventHubsCaptureReviewSections(result *eventhubscapture.ConvertResult)
 		Title:    "Event Hubs Capture",
 		Severity: severity,
 		Summary:  "Captured events seeded as eventhubs_produce actions (mock mode; set a namespace and build -tags eventhubs_real to run live).",
+		Items:    items,
+	}}
+}
+
+func (s *Server) handleBrokerConfigSupportMatrix(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"support_matrix": brokerconfig.GetSupportMatrix(),
+		"notes":          brokerconfig.GetSupportMatrixNotes(),
+	})
+}
+
+// handleImportBrokerConfig imports a standalone messaging broker-config artifact
+// (IBM MQ MQSC script or JMS JNDI .properties file) into a JMS script skeleton
+// seeded from the broker's queue/topic topology. Accepts a multipart file upload
+// or a raw body; the format auto-detects but can be pinned via ?format=mqsc|jndi.
+func (s *Server) handleImportBrokerConfig(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
+
+	var (
+		data      []byte
+		name      string
+		projectID string
+		ok        bool
+	)
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		var filename string
+		data, filename, ok = readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
+		if !ok {
+			return
+		}
+		name = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+		projectID = r.FormValue("project_id")
+	} else {
+		data, ok = readImportBody(w, r)
+		if !ok {
+			return
+		}
+		filename := r.URL.Query().Get("filename")
+		name = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+		projectID = r.URL.Query().Get("project_id")
+	}
+
+	maxDest := 0
+	if v := strings.TrimSpace(r.URL.Query().Get("max_destinations")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			maxDest = n
+		}
+	}
+
+	result, err := brokerconfig.Convert(brokerconfig.ConvertRequest{
+		Name:            name,
+		ProjectID:       projectID,
+		Data:            data,
+		Format:          strings.TrimSpace(r.URL.Query().Get("format")),
+		MaxDestinations: maxDest,
+	})
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
+		return
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(projectID)
+	}
+	if issues := validateScript(result.Script); len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+		Result:           result,
+		Script:           result.Script,
+		Warnings:         result.Warnings,
+		Stats:            result.Stats,
+		Summary:          result.Summary,
+		ReviewSections:   buildBrokerConfigReviewSections(result),
+		Parameterization: buildImportParameterization(result.Script, nil),
+	}))
+}
+
+func buildBrokerConfigReviewSections(result *brokerconfig.ConvertResult) []scriptImportReviewSection {
+	if result == nil {
+		return nil
+	}
+	severity := "info"
+	summary := "JNDI bindings seeded as jms-solace destinations (executable with -tags jms_solace_real)."
+	if result.Format == brokerconfig.FormatMQSC {
+		severity = "warning"
+		summary = "MQSC objects seeded as jms-ibmmq destinations; the IBM MQ runtime adapter is not built in, so execution is mock-only/review."
+	}
+	items := []string{
+		fmt.Sprintf("Format: %s", result.Stats.Format),
+		fmt.Sprintf("Queues discovered: %d", result.Stats.Queues),
+		fmt.Sprintf("Topics discovered: %d", result.Stats.Topics),
+		fmt.Sprintf("Actions seeded: %d", result.Stats.ActionsEmitted),
+	}
+	return []scriptImportReviewSection{{
+		Key:      "broker_config",
+		Title:    "Broker Config",
+		Severity: severity,
+		Summary:  summary,
 		Items:    items,
 	}}
 }

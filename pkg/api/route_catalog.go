@@ -127,6 +127,8 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/asyncapi/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/eventhubs-capture", editorImportAccess(resolveImportProjectIDFromForm, webAPIImportMaxBodyBytes)),
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/eventhubs-capture/support-matrix", viewerGlobalAccess()),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/broker-config", editorImportAccess(resolveImportProjectIDFromForm, webAPIImportMaxBodyBytes)),
+	routeAuth(http.MethodGet, "/api/v1/scripts/import/broker-config/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/raml/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/fleet/alerts", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/fleet/capacity", viewerGlobalAccess()),

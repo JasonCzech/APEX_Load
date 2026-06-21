@@ -5507,6 +5507,34 @@ paths:
       x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
       tags:
         - Scripts
+  /api/v1/scripts/import/broker-config:
+    post:
+      summary: Import Broker Config
+      description: |-
+        **Handler:** `handleImportBrokerConfig`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleImportBrokerConfig
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Scripts
+  /api/v1/scripts/import/broker-config/support-matrix:
+    get:
+      summary: Broker Config Support Matrix
+      description: |-
+        **Handler:** `handleBrokerConfigSupportMatrix`
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin
+      operationId: handleBrokerConfigSupportMatrix
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+        - Scripts
   /api/v1/scripts/import/devweb:
     post:
       summary: Import Dev Web

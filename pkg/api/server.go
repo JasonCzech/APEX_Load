@@ -25,29 +25,29 @@ var StaticFS embed.FS
 var dashboardAssetRefPattern = regexp.MustCompile(`(?:href|src)="/(assets/[^"]+\.(?:css|js))"`)
 
 type Server struct {
-	httpServer         *http.Server
-	hub                *Hub
-	runner             *TestRunner
-	scheduler          *scenarioScheduler
-	browserReplay      *BrowserReplayManager
-	scriptDebug        *ScriptDebugManager
-	browserRecording   *BrowserRecordingManager
-	browserInstall     *browserInstallState
-	recorder           *recorder.Recorder
-	store              storage.Store
-	cache              CacheBackend
-	controllerID       string
-	authoringMu        sync.Mutex
-	authoring          map[string]*storage.AuthoringSession
-	libraryMu          sync.Mutex
-	libraryRemotes     map[string]*LibraryRemote
-	libraryLinks       map[string]*librarySyncLink
-	libraryCreds       LibraryCredentialStore
-	c4Mu               sync.Mutex
-	slaWaivers         map[string][]*storage.ReleaseSLAWaiver
-	resultImports      map[string]*storage.ExternalResultImport
-	githubMu           sync.Mutex
-	githubTokens       map[string]githubCachedToken
+	httpServer       *http.Server
+	hub              *Hub
+	runner           *TestRunner
+	scheduler        *scenarioScheduler
+	browserReplay    *BrowserReplayManager
+	scriptDebug      *ScriptDebugManager
+	browserRecording *BrowserRecordingManager
+	browserInstall   *browserInstallState
+	recorder         *recorder.Recorder
+	store            storage.Store
+	cache            CacheBackend
+	controllerID     string
+	authoringMu      sync.Mutex
+	authoring        map[string]*storage.AuthoringSession
+	libraryMu        sync.Mutex
+	libraryRemotes   map[string]*LibraryRemote
+	libraryLinks     map[string]*librarySyncLink
+	libraryCreds     LibraryCredentialStore
+	c4Mu             sync.Mutex
+	slaWaivers       map[string][]*storage.ReleaseSLAWaiver
+	resultImports    map[string]*storage.ExternalResultImport
+	githubMu         sync.Mutex
+	githubTokens     map[string]githubCachedToken
 	// selfHealMu serializes replay/debug self-heal write-back. Both the browser
 	// replay and script debug managers fire completion hooks into the shared
 	// persistSelfHealToRepository, whose read-modify-write of the whole objects
@@ -562,6 +562,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scripts/import/asyncapi/support-matrix", cors(log(auth(http.HandlerFunc(s.handleAsyncAPISupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/eventhubs-capture", cors(log(auth(http.HandlerFunc(s.handleImportEventHubsCapture)))))
 	s.mux.Handle("GET /api/v1/scripts/import/eventhubs-capture/support-matrix", cors(log(auth(http.HandlerFunc(s.handleEventHubsCaptureSupportMatrix)))))
+	s.mux.Handle("POST /api/v1/scripts/import/broker-config", cors(log(auth(http.HandlerFunc(s.handleImportBrokerConfig)))))
+	s.mux.Handle("GET /api/v1/scripts/import/broker-config/support-matrix", cors(log(auth(http.HandlerFunc(s.handleBrokerConfigSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/parameterize/apply", cors(log(auth(http.HandlerFunc(s.handleApplyImportParameterization)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/parameterize/suggest", cors(log(auth(http.HandlerFunc(s.handleSuggestScriptParameterization)))))
 
