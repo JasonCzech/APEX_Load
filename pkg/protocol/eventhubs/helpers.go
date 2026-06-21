@@ -107,9 +107,11 @@ func classifyProduceError(err error) (throttle, serverBusy, quota, tooLarge int)
 	switch {
 	case strings.Contains(msg, "too large"):
 		tooLarge = 1
-	case strings.Contains(msg, "resource-limit-exceeded") || strings.Contains(msg, "server busy") || strings.Contains(msg, "serverbusy"):
+	case strings.Contains(msg, "server-busy") || strings.Contains(msg, "server busy") || strings.Contains(msg, "serverbusy"):
+		// Event Hubs throttling surfaces as the AMQP condition
+		// `com.microsoft:server-busy` (rendered with a hyphen by go-amqp).
 		serverBusy, throttle = 1, 1
-	case strings.Contains(msg, "quota"):
+	case strings.Contains(msg, "resource-limit-exceeded") || strings.Contains(msg, "quota"):
 		quota, throttle = 1, 1
 	case strings.Contains(msg, "throttl") || strings.Contains(msg, "429"):
 		throttle = 1

@@ -69,6 +69,15 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 		severity = maxDiagnosticSeverity(severity, dlqSeverity)
 	}
 
+	ehSamples, ehConditions, ehSummaries, ehSeverity, ehSignature := sampleEventHubsThrottleDiagnostics(live)
+	if len(ehConditions) > 0 {
+		samples = append(samples, ehSamples...)
+		conditions = append(conditions, ehConditions...)
+		summaries = append(summaries, ehSummaries...)
+		signatureParts = append(signatureParts, ehSignature...)
+		severity = maxDiagnosticSeverity(severity, ehSeverity)
+	}
+
 	if len(conditions) == 0 {
 		return &TelemetryDiagnostic{
 			Severity:  "healthy",
@@ -316,6 +325,81 @@ func sampleJMSBrokerDiagnostics(live *LiveMetrics) ([]DiagnosticSample, []string
 	conditions := []string{"jms_broker_pressure"}
 	summaries := []string{fmt.Sprintf("sampled %d JMS broker pressure hotspots where consumer lag materially exceeds request-reply latency", len(samples))}
 	signatureParts = append(signatureParts, "condition:jms_broker_pressure")
+	return samples, conditions, summaries, "warning", signatureParts
+}
+
+// sampleEventHubsThrottleDiagnostics flags Event Hubs producer transactions under
+// ingestion pressure: throttle / ServerBusy / quota responses (the namespace is
+// shedding load) or a hot-partition skew that will throttle one partition before
+// the aggregate budget is hit. End-to-end latency is reported alongside but is
+// not a trigger on its own (it has no fixed baseline without a goal threshold).
+func sampleEventHubsThrottleDiagnostics(live *LiveMetrics) ([]DiagnosticSample, []string, []string, string, []string) {
+	if live == nil || len(live.Transactions) == 0 {
+		return nil, nil, nil, "healthy", nil
+	}
+
+	type candidate struct {
+		sample DiagnosticSample
+		key    string
+	}
+
+	candidates := make([]candidate, 0, len(live.Transactions))
+	for name, tx := range live.Transactions {
+		if tx == nil || !strings.HasPrefix(tx.DependencyType, "eventhubs") || tx.ServerTelemetry == nil {
+			continue
+		}
+		telemetry := tx.ServerTelemetry
+		throttled := telemetry.TotalThrottledRequests
+		skew := telemetry.PartitionSkewPct
+		if throttled == 0 && skew < eventHubsPartitionSkewWarnPct {
+			continue
+		}
+		candidates = append(candidates, candidate{
+			sample: DiagnosticSample{
+				Issue:                "eventhubs_throttle",
+				Transaction:          name,
+				DependencyType:       tx.DependencyType,
+				DependencyTarget:     tx.DependencyTarget,
+				CorrelationIDs:       append([]string(nil), tx.CorrelationIDs...),
+				Count:                tx.Count,
+				AvgMs:                tx.AvgMs,
+				P99Ms:                tx.P99Ms,
+				AvgEndToEndLatencyMs: telemetry.AvgEndToEndLatencyMs,
+				ThrottledRequests:    throttled,
+				PartitionSkewPct:     skew,
+			},
+			key: name,
+		})
+	}
+
+	if len(candidates) == 0 {
+		return nil, nil, nil, "healthy", nil
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].sample.ThrottledRequests != candidates[j].sample.ThrottledRequests {
+			return candidates[i].sample.ThrottledRequests > candidates[j].sample.ThrottledRequests
+		}
+		if candidates[i].sample.PartitionSkewPct != candidates[j].sample.PartitionSkewPct {
+			return candidates[i].sample.PartitionSkewPct > candidates[j].sample.PartitionSkewPct
+		}
+		return strings.Compare(candidates[i].key, candidates[j].key) < 0
+	})
+
+	limit := maxTelemetryDiagnosticSamples
+	if len(candidates) < limit {
+		limit = len(candidates)
+	}
+	samples := make([]DiagnosticSample, 0, limit)
+	signatureParts := make([]string, 0, limit+1)
+	for _, candidate := range candidates[:limit] {
+		samples = append(samples, candidate.sample)
+		signatureParts = append(signatureParts, fmt.Sprintf("eventhubs_throttle:%s:%d:%.1f", candidate.sample.Transaction, candidate.sample.ThrottledRequests, candidate.sample.PartitionSkewPct))
+	}
+
+	conditions := []string{"eventhubs_throttle_pressure"}
+	summaries := []string{fmt.Sprintf("sampled %d Event Hubs producer hotspots with throttling or hot-partition skew", len(samples))}
+	signatureParts = append(signatureParts, "condition:eventhubs_throttle_pressure")
 	return samples, conditions, summaries, "warning", signatureParts
 }
 

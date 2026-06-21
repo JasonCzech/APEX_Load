@@ -88,6 +88,18 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 		value := *config.MaxCLS
 		clone.MaxCLS = &value
 	}
+	if config.MaxThrottledRequests != nil {
+		value := *config.MaxThrottledRequests
+		clone.MaxThrottledRequests = &value
+	}
+	if config.MaxEndToEndLatencyMs != nil {
+		value := *config.MaxEndToEndLatencyMs
+		clone.MaxEndToEndLatencyMs = &value
+	}
+	if config.MaxPartitionSkewPct != nil {
+		value := *config.MaxPartitionSkewPct
+		clone.MaxPartitionSkewPct = &value
+	}
 	return &clone
 }
 
@@ -113,6 +125,9 @@ func hasGoalConfig(config *GoalConfig) bool {
 		config.MaxLCPMs != nil ||
 		config.MaxINPMs != nil ||
 		config.MaxCLS != nil ||
+		config.MaxThrottledRequests != nil ||
+		config.MaxEndToEndLatencyMs != nil ||
+		config.MaxPartitionSkewPct != nil ||
 		config.StopOnSLABreach ||
 		config.StopOnMaxErrors ||
 		config.SLABreachWindow != ""
@@ -148,6 +163,14 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		lcp:        hasBrowserVitalsBreach(live, config.MaxLCPMs, func(browser *BrowserLiveMetrics) float64 { return browser.AvgLCPMs }),
 		inp:        hasBrowserVitalsBreach(live, config.MaxINPMs, func(browser *BrowserLiveMetrics) float64 { return browser.AvgINPMs }),
 		cls:        hasBrowserVitalsBreach(live, config.MaxCLS, func(browser *BrowserLiveMetrics) float64 { return browser.AvgCLSScore }),
+		throttledRequests: config.MaxThrottledRequests != nil &&
+			totalServerTelemetryThrottles(live) > int64(*config.MaxThrottledRequests),
+		endToEndLatency: hasServerTelemetryBreach(live, config.MaxEndToEndLatencyMs, func(summary *ServerTelemetrySummary) float64 {
+			return summary.AvgEndToEndLatencyMs
+		}),
+		partitionSkew: hasServerTelemetryBreach(live, config.MaxPartitionSkewPct, func(summary *ServerTelemetrySummary) float64 {
+			return summary.PartitionSkewPct
+		}),
 	}
 	status.LatencyBreached = breaches.latency
 	status.ErrorBreached = breaches.errors
@@ -157,8 +180,12 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 	status.LCPBreached = breaches.lcp
 	status.INPBreached = breaches.inp
 	status.CLSBreached = breaches.cls
+	status.ThrottledRequestsBreached = breaches.throttledRequests
+	status.EndToEndLatencyBreached = breaches.endToEndLatency
+	status.PartitionSkewBreached = breaches.partitionSkew
 	status.BreachActive = breaches.latency || breaches.errors || breaches.serverProcessing || breaches.transfer ||
-		breaches.lcp || breaches.inp || breaches.cls
+		breaches.lcp || breaches.inp || breaches.cls ||
+		breaches.throttledRequests || breaches.endToEndLatency || breaches.partitionSkew
 
 	if status.BreachActive {
 		if state != nil && state.breachStartedAt == nil {
@@ -469,14 +496,35 @@ func goalBreachWindow(config *GoalConfig) time.Duration {
 // goalBreachSet captures which SLA thresholds are currently exceeded so stop
 // decisions and reason strings derive from one evaluation pass.
 type goalBreachSet struct {
-	latency          bool
-	errors           bool
-	serverProcessing bool
-	transfer         bool
-	errorCount       bool
-	lcp              bool
-	inp              bool
-	cls              bool
+	latency           bool
+	errors            bool
+	serverProcessing  bool
+	transfer          bool
+	errorCount        bool
+	lcp               bool
+	inp               bool
+	cls               bool
+	throttledRequests bool
+	endToEndLatency   bool
+	partitionSkew     bool
+}
+
+// totalServerTelemetryThrottles sums the run-total throttle/ServerBusy/quota
+// signal across every transaction's messaging telemetry. Throttling is a
+// backpressure count, so the SLA binds on the aggregate, not a per-transaction
+// average.
+func totalServerTelemetryThrottles(live *LiveMetrics) int64 {
+	if live == nil {
+		return 0
+	}
+	var total int64
+	for _, tx := range live.Transactions {
+		if tx == nil || tx.ServerTelemetry == nil {
+			continue
+		}
+		total += tx.ServerTelemetry.TotalThrottledRequests
+	}
+	return total
 }
 
 func (b goalBreachSet) vitals() bool {
@@ -515,6 +563,12 @@ func goalStopReason(breaches goalBreachSet) string {
 		return "INP experience SLA breached"
 	case breaches.cls:
 		return "CLS experience SLA breached"
+	case breaches.throttledRequests:
+		return "Event Hubs throttled-request SLA breached"
+	case breaches.endToEndLatency:
+		return "Event Hubs end-to-end latency SLA breached"
+	case breaches.partitionSkew:
+		return "Event Hubs partition skew SLA breached"
 	default:
 		return "SLA breached"
 	}

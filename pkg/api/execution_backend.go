@@ -250,6 +250,18 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 			slaBreached = true
 			slaDetails = append(slaDetails, "Total error count breached")
 		}
+		if gs.ThrottledRequestsBreached {
+			slaBreached = true
+			slaDetails = append(slaDetails, "Event Hubs throttled requests breached")
+		}
+		if gs.EndToEndLatencyBreached {
+			slaBreached = true
+			slaDetails = append(slaDetails, "Event Hubs end-to-end latency breached")
+		}
+		if gs.PartitionSkewBreached {
+			slaBreached = true
+			slaDetails = append(slaDetails, "Event Hubs partition skew breached")
+		}
 	}
 
 	archiveRecord, archiveErr := a.recorder.Finalize(finalStatus, endTime, finalError, slaBreached, slaDetails)

@@ -495,29 +495,32 @@ type LatencyTarget struct {
 }
 
 type GoalStatus struct {
-	Mode                     string     `json:"mode"`
-	CurrentTPS               float64    `json:"current_tps"`
-	CurrentTotalVUsers       int        `json:"current_total_vusers"`
-	TargetAverageTPS         *float64   `json:"target_average_tps,omitempty"`
-	MaxErrorCount            *int       `json:"max_error_count,omitempty"`
-	MinVUsers                *int       `json:"min_vusers,omitempty"`
-	MaxVUsers                *int       `json:"max_vusers,omitempty"`
-	SuggestedTotalVUsers     int        `json:"suggested_total_vusers,omitempty"`
-	LastScaleDirection       string     `json:"last_scale_direction,omitempty"`
-	LastScaleReason          string     `json:"last_scale_reason,omitempty"`
-	LastScaleAt              *time.Time `json:"last_scale_at,omitempty"`
-	LatencyBreached          bool       `json:"latency_breached,omitempty"`
-	ErrorBreached            bool       `json:"error_breached,omitempty"`
-	ServerProcessingBreached bool       `json:"server_processing_breached,omitempty"`
-	TransferBreached         bool       `json:"transfer_breached,omitempty"`
-	ErrorCountBreached       bool       `json:"error_count_breached,omitempty"`
-	LCPBreached              bool       `json:"lcp_breached,omitempty"`
-	INPBreached              bool       `json:"inp_breached,omitempty"`
-	CLSBreached              bool       `json:"cls_breached,omitempty"`
-	BreachActive             bool       `json:"breach_active,omitempty"`
-	BreachDurationSec        int        `json:"breach_duration_sec,omitempty"`
-	StopTriggered            bool       `json:"stop_triggered,omitempty"`
-	StopReason               string     `json:"stop_reason,omitempty"`
+	Mode                      string     `json:"mode"`
+	CurrentTPS                float64    `json:"current_tps"`
+	CurrentTotalVUsers        int        `json:"current_total_vusers"`
+	TargetAverageTPS          *float64   `json:"target_average_tps,omitempty"`
+	MaxErrorCount             *int       `json:"max_error_count,omitempty"`
+	MinVUsers                 *int       `json:"min_vusers,omitempty"`
+	MaxVUsers                 *int       `json:"max_vusers,omitempty"`
+	SuggestedTotalVUsers      int        `json:"suggested_total_vusers,omitempty"`
+	LastScaleDirection        string     `json:"last_scale_direction,omitempty"`
+	LastScaleReason           string     `json:"last_scale_reason,omitempty"`
+	LastScaleAt               *time.Time `json:"last_scale_at,omitempty"`
+	LatencyBreached           bool       `json:"latency_breached,omitempty"`
+	ErrorBreached             bool       `json:"error_breached,omitempty"`
+	ServerProcessingBreached  bool       `json:"server_processing_breached,omitempty"`
+	TransferBreached          bool       `json:"transfer_breached,omitempty"`
+	ErrorCountBreached        bool       `json:"error_count_breached,omitempty"`
+	LCPBreached               bool       `json:"lcp_breached,omitempty"`
+	INPBreached               bool       `json:"inp_breached,omitempty"`
+	CLSBreached               bool       `json:"cls_breached,omitempty"`
+	ThrottledRequestsBreached bool       `json:"throttled_requests_breached,omitempty"`
+	EndToEndLatencyBreached   bool       `json:"end_to_end_latency_breached,omitempty"`
+	PartitionSkewBreached     bool       `json:"partition_skew_breached,omitempty"`
+	BreachActive              bool       `json:"breach_active,omitempty"`
+	BreachDurationSec         int        `json:"breach_duration_sec,omitempty"`
+	StopTriggered             bool       `json:"stop_triggered,omitempty"`
+	StopReason                string     `json:"stop_reason,omitempty"`
 }
 
 type GoalTargetStatus struct {
@@ -558,6 +561,9 @@ type DiagnosticSample struct {
 	AvgConsumerLagMs          float64  `json:"avg_consumer_lag_ms,omitempty"`
 	AvgMessagesSentPerSec     float64  `json:"avg_messages_sent_per_sec,omitempty"`
 	AvgMessagesReceivedPerSec float64  `json:"avg_messages_received_per_sec,omitempty"`
+	AvgEndToEndLatencyMs      float64  `json:"avg_end_to_end_latency_ms,omitempty"`
+	ThrottledRequests         int64    `json:"throttled_requests,omitempty"`
+	PartitionSkewPct          float64  `json:"partition_skew_pct,omitempty"`
 }
 
 type goalControllerState struct {
@@ -759,8 +765,12 @@ const (
 	jmsBrokerPressureMinLagMs               = 200.0
 	jmsBrokerPressureLagMultiplier          = 2.0
 	jmsBrokerPressureSendRecvRatio          = 1.5
-	latencyStabilityWindowSize              = 12
-	latencyRouteCacheTTL                    = 5 * time.Minute
+	// eventHubsPartitionSkewWarnPct flags a producer transaction whose per-partition
+	// produce volume has a coefficient of variation at/above this percent — a hot
+	// partition that will throttle before the namespace aggregate does.
+	eventHubsPartitionSkewWarnPct = 50.0
+	latencyStabilityWindowSize    = 12
+	latencyRouteCacheTTL          = 5 * time.Minute
 )
 
 type latencyProbeSample struct {
@@ -1001,6 +1011,12 @@ type GoalConfig struct {
 	MaxLCPMs *float64 `json:"max_lcp_ms,omitempty"`
 	MaxINPMs *float64 `json:"max_inp_ms,omitempty"`
 	MaxCLS   *float64 `json:"max_cls,omitempty"`
+
+	// Streaming-ingestion thresholds (EH.4), evaluated against the messaging
+	// server-telemetry summary (Event Hubs / Kafka producer runs).
+	MaxThrottledRequests *int     `json:"max_throttled_requests,omitempty"`    // run-total throttle/ServerBusy/quota responses
+	MaxEndToEndLatencyMs *float64 `json:"max_end_to_end_latency_ms,omitempty"` // avg producer->observed-consume latency
+	MaxPartitionSkewPct  *float64 `json:"max_partition_skew_pct,omitempty"`    // coefficient of variation of per-partition produce volume
 
 	StopOnSLABreach bool   `json:"stop_on_sla_breach,omitempty"`
 	StopOnMaxErrors bool   `json:"stop_on_max_errors,omitempty"`

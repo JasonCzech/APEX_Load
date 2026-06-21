@@ -17,7 +17,10 @@ func TestClassifyProduceError(t *testing.T) {
 	}{
 		{"nil", nil, 0, 0, 0, 0},
 		{"too large", errors.New("event exceeds the Event Hubs batch size limit: too large for the batch"), 0, 0, 0, 1},
-		{"server busy", errors.New("amqp:resource-limit-exceeded: ServerBusy"), 1, 1, 0, 0},
+		{"server busy (legacy phrasing)", errors.New("amqp: ServerBusy"), 1, 1, 0, 0},
+		// The real go-amqp rendering of the Event Hubs throttle condition.
+		{"server-busy (real amqp condition)", errors.New("*Error{Condition: com.microsoft:server-busy, Description: , Info: map[]}"), 1, 1, 0, 0},
+		{"resource limit / quota", errors.New("amqp:resource-limit-exceeded"), 1, 0, 1, 0},
 		{"quota", errors.New("quota exceeded for namespace"), 1, 0, 1, 0},
 		{"throttled 429", errors.New("request was throttled (429)"), 1, 0, 0, 0},
 		{"unrelated", errors.New("no event received within 5s"), 0, 0, 0, 0},
@@ -67,7 +70,9 @@ func TestFinalizeTelemetryConsumeSetsEndToEndLatency(t *testing.T) {
 
 func TestFinalizeTelemetryEmitsOnThrottleEvenWithoutSample(t *testing.T) {
 	result := &protocol.Result{StartTime: time.Now(), Duration: time.Millisecond, Extractions: map[string]string{}}
-	tel := finalizeTelemetry(result, event{}, false, event{}, false, errors.New("amqp:resource-limit-exceeded"))
+	// The real go-amqp rendering of the Event Hubs throttle condition.
+	tel := finalizeTelemetry(result, event{}, false, event{}, false,
+		errors.New("*Error{Condition: com.microsoft:server-busy, Description: , Info: map[]}"))
 	if tel == nil {
 		t.Fatal("telemetry should be emitted for a throttled produce even with no sent/received")
 	}
