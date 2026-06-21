@@ -55,7 +55,11 @@ func TestJavaVuserRunnerInvokesConfiguredCommand(t *testing.T) {
 
 	var runner JavaVuser
 	if err := runner.Init(context.Background(), map[string]any{
-		"java_vuser_action_timeout_ms": float64(2000),
+		// Generous ceiling, not a behavior under test: the runner uses this as the
+		// spawned-process context deadline, and a tight 2s budget flaked under
+		// parallel CPU load (process spawn + stdin/stdout round-trip racing the
+		// deadline). The assertions below check invocation + success, not timeout.
+		"java_vuser_action_timeout_ms": float64(60000),
 	}); err != nil {
 		t.Fatalf("Init returned error: %v", err)
 	}
