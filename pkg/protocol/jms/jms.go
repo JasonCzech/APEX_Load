@@ -92,6 +92,44 @@ type message struct {
 	Properties    map[string]string `json:"properties,omitempty"`
 	Body          []byte            `json:"body,omitempty"`
 	CreatedAt     time.Time         `json:"created_at,omitempty"`
+	// Azure Service Bus advanced fields (P2.4). Send-side: SessionID/PartitionKey
+	// routing, ScheduledEnqueueAt deferred enqueue, TimeToLive expiry. Receive-side:
+	// SettlementToken keys the in-flight peek-locked message for later Settle, and
+	// SequenceNumber identifies a deferred message. Empty/zero on providers that
+	// don't use them.
+	SessionID          string        `json:"session_id,omitempty"`
+	PartitionKey       string        `json:"partition_key,omitempty"`
+	ScheduledEnqueueAt time.Time     `json:"scheduled_enqueue_at,omitempty"`
+	TimeToLive         time.Duration `json:"time_to_live,omitempty"`
+	SettlementToken    string        `json:"settlement_token,omitempty"`
+	SequenceNumber     int64         `json:"sequence_number,omitempty"`
+}
+
+// settlementAdapter is an OPTIONAL capability some brokerAdapters implement for
+// stateful, client-controlled message settlement and advanced consume modes
+// (Azure Service Bus). It is type-asserted at dispatch time (like CookieController)
+// so the core brokerAdapter interface — and every other adapter — stays
+// untouched; providers that don't implement it report the verb as unsupported.
+type settlementAdapter interface {
+	// ConsumeAdvanced receives with deferred settlement and/or from a sub-queue
+	// (dead-letter), stashing the in-flight message under a settlement token.
+	ConsumeAdvanced(ctx context.Context, destination string, opts consumeOptions, timeout time.Duration) (message, error)
+	// Settle resolves a previously consumed peek-locked message by token.
+	Settle(ctx context.Context, token string, disposition string, opts settleOptions) error
+	// RenewLock extends the broker-side lock on a peek-locked message.
+	RenewLock(ctx context.Context, token string) error
+}
+
+// consumeOptions carries Service Bus advanced consume controls.
+type consumeOptions struct {
+	SubQueue string // "", "dead_letter", "transfer_dead_letter"
+	PeekLock bool   // defer settlement (stash token) instead of auto-completing
+}
+
+// settleOptions carries disposition detail for Settle (dead-letter reason etc.).
+type settleOptions struct {
+	DeadLetterReason      string
+	DeadLetterDescription string
 }
 
 var broker = &memoryBroker{queues: make(map[string][]message)}
@@ -251,6 +289,8 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 		hasResponseMsg = err == nil
 	case "jms_ack", "jms_commit", "jms_rollback":
 		j.settle(action, result)
+	case "jms_settle", "jms_renew_lock":
+		err = j.settleAdvanced(ctx, action, result)
 	default:
 		err = fmt.Errorf("unsupported JMS action type %q", action.Type)
 	}
@@ -312,7 +352,25 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 		return message{}, fmt.Errorf("JMS destination is required")
 	}
 	result.DependencyTarget = destination
-	msg, err := j.adapter.Consume(ctx, destination, j.timeout(action))
+	// Advanced consume (dead-letter sub-queue or deferred settlement) requires a
+	// settlementAdapter (Service Bus); fall back to the plain Consume otherwise.
+	opts := consumeOptions{
+		SubQueue: normalizeSubQueue(paramString(action.Params, "sub_queue", "")),
+		PeekLock: boolParam(action.Params, "peek_lock", false),
+	}
+	var (
+		msg message
+		err error
+	)
+	if opts.SubQueue != "" || opts.PeekLock {
+		sb, ok := j.adapter.(settlementAdapter)
+		if !ok {
+			return message{}, fmt.Errorf("jms_consume sub_queue/peek_lock requires the Service Bus adapter (build -tags jms_servicebus_real)")
+		}
+		msg, err = sb.ConsumeAdvanced(ctx, destination, opts, j.timeout(action))
+	} else {
+		msg, err = j.adapter.Consume(ctx, destination, j.timeout(action))
+	}
 	if err != nil {
 		result.StatusCode = 204
 		return message{}, err
@@ -323,6 +381,13 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 	}
 	addMessageExtractions(result, msg)
 	result.Extractions["jms_operation"] = "consume"
+	if msg.SettlementToken != "" {
+		// Peek-locked: the script settles it later with jms_settle referencing this.
+		result.Extractions["jms_settlement_token"] = msg.SettlementToken
+	}
+	if msg.SequenceNumber != 0 {
+		result.Extractions["jms_sequence_number"] = strconv.FormatInt(msg.SequenceNumber, 10)
+	}
 	// The emitted RedeliveryCount telemetry is derived from the message marker in
 	// finalizeJMSServerTelemetry; the session retains the message only for
 	// settlement (ack/commit/rollback).
@@ -360,6 +425,74 @@ func (j *JMS) settle(action *protocol.Action, result *protocol.Result) {
 		result.Extractions["jms_operation"] = "rollback"
 		result.Extractions["jms_redelivered_scheduled"] = strconv.Itoa(len(toRedeliver))
 		result.ServerTelemetry = &protocol.ServerTelemetry{AbortCount: 1}
+	}
+}
+
+// settleAdvanced handles the Service Bus client-settlement verbs (jms_settle,
+// jms_renew_lock). They require a settlementAdapter (only the real Service Bus
+// adapter implements it), so on any other provider/build they fail closed with
+// an actionable message rather than silently succeeding.
+func (j *JMS) settleAdvanced(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+	sb, ok := j.adapter.(settlementAdapter)
+	if !ok {
+		return fmt.Errorf("%s requires the Azure Service Bus adapter (build -tags jms_servicebus_real)", action.Type)
+	}
+	token := paramString(action.Params, "settlement_token", "")
+	if token == "" {
+		return fmt.Errorf("%s requires params.settlement_token (from a peek_lock jms_consume)", action.Type)
+	}
+	switch strings.ToLower(action.Type) {
+	case "jms_renew_lock":
+		if err := sb.RenewLock(ctx, token); err != nil {
+			return err
+		}
+		result.Extractions["jms_operation"] = "renew_lock"
+		return nil
+	case "jms_settle":
+		disposition := normalizeDisposition(paramString(action.Params, "disposition", "complete"))
+		opts := settleOptions{
+			DeadLetterReason:      paramString(action.Params, "dead_letter_reason", ""),
+			DeadLetterDescription: paramString(action.Params, "dead_letter_description", ""),
+		}
+		if err := sb.Settle(ctx, token, disposition, opts); err != nil {
+			return err
+		}
+		result.Extractions["jms_operation"] = "settle"
+		result.Extractions["jms_disposition"] = disposition
+		// Dead-lettering is a reliability event; carry the counter (control-op style).
+		if disposition == "dead_letter" {
+			result.ServerTelemetry = &protocol.ServerTelemetry{DeadLetteredCount: 1}
+		}
+		return nil
+	}
+	return fmt.Errorf("unsupported settlement action %q", action.Type)
+}
+
+// normalizeSubQueue maps the DSL sub_queue enum to the canonical token; "" / "none"
+// mean the main entity.
+func normalizeSubQueue(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "dead_letter":
+		return "dead_letter"
+	case "transfer_dead_letter":
+		return "transfer_dead_letter"
+	default:
+		return ""
+	}
+}
+
+// normalizeDisposition canonicalizes the jms_settle disposition, defaulting to
+// complete.
+func normalizeDisposition(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "abandon":
+		return "abandon"
+	case "dead_letter":
+		return "dead_letter"
+	case "defer":
+		return "defer"
+	default:
+		return "complete"
 	}
 }
 
@@ -770,15 +903,28 @@ func (j *JMS) buildMessage(action *protocol.Action, destination string) message 
 			properties[k] = s
 		}
 	}
-	return message{
-		ID:            uuid.NewString(),
+	id := paramString(action.Params, "message_id", "")
+	if id == "" {
+		id = uuid.NewString()
+	}
+	msg := message{
+		ID:            id,
 		CorrelationID: correlationID,
 		Destination:   destination,
 		Headers:       cloneStringMap(action.Headers),
 		Properties:    properties,
 		Body:          action.Body,
 		CreatedAt:     time.Now(),
+		// Service Bus advanced send fields (P2.4); ignored by providers that don't
+		// support them.
+		SessionID:    paramString(action.Params, "session_id", ""),
+		PartitionKey: paramString(action.Params, "partition_key", ""),
+		TimeToLive:   durationParam(action.Params, "time_to_live_ms", 0),
 	}
+	if delay := durationParam(action.Params, "scheduled_enqueue_ms", 0); delay > 0 {
+		msg.ScheduledEnqueueAt = msg.CreatedAt.Add(delay)
+	}
+	return msg
 }
 
 func (j *JMS) destination(action *protocol.Action) string {

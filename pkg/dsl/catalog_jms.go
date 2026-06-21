@@ -19,6 +19,11 @@ func jmsActionSpecs() []ActionSpec {
 				{Name: "params.destination_type", Kind: FieldKindEnum, Enum: []string{"queue", "topic"}, Doc: "Destination kind; falls back to config.jms.destination_type."},
 				{Name: "params.correlation_id", Kind: FieldKindString, Doc: "Correlation ID set on the outgoing message."},
 				{Name: "params.dead_letter", Kind: FieldKindBool, Doc: "Marks this action as targeting a dead-letter destination (drives dead-letter classification)."},
+				{Name: "params.message_id", Kind: FieldKindString, Doc: "Explicit message ID (Service Bus duplicate detection uses it); defaults to a generated UUID."},
+				{Name: "params.session_id", Kind: FieldKindString, Doc: "Azure Service Bus session ID for session-enabled entities (ignored by other providers)."},
+				{Name: "params.partition_key", Kind: FieldKindString, Doc: "Azure Service Bus partition key (co-locates messages on one partition)."},
+				{Name: "params.scheduled_enqueue_ms", Kind: FieldKindInt, Doc: "Azure Service Bus scheduled enqueue delay in milliseconds (the broker holds the message until then)."},
+				{Name: "params.time_to_live_ms", Kind: FieldKindInt, Doc: "Message time-to-live in milliseconds before the broker expires it."},
 			},
 		},
 		{
@@ -32,6 +37,8 @@ func jmsActionSpecs() []ActionSpec {
 				{Name: "params.subscription", Kind: FieldKindString, Doc: "Azure Service Bus topic subscription; falls back to config.jms.subscription."},
 				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Consume timeout in milliseconds; falls back to config.jms.timeout_ms."},
 				{Name: "params.dead_letter", Kind: FieldKindBool, Doc: "Consume from / classify the dead-letter destination."},
+				{Name: "params.sub_queue", Kind: FieldKindEnum, Enum: []string{"none", "dead_letter", "transfer_dead_letter"}, Doc: "Azure Service Bus sub-queue to receive from (requires jms_servicebus_real)."},
+				{Name: "params.peek_lock", Kind: FieldKindBool, Doc: "Azure Service Bus: defer settlement instead of auto-completing, returning a settlement_token for a later jms_settle (requires jms_servicebus_real)."},
 			},
 		},
 		{
@@ -64,6 +71,25 @@ func jmsActionSpecs() []ActionSpec {
 			Type:      "jms_rollback",
 			Protocols: []string{"jms"},
 			Summary:   "Rolls back the transacted session.",
+		},
+		{
+			Type:      "jms_settle",
+			Protocols: []string{"jms"},
+			Summary:   "Settles a peek-locked Azure Service Bus message (complete/abandon/dead-letter/defer). Requires jms_servicebus_real.",
+			Fields: []FieldSpec{
+				{Name: "params.settlement_token", Kind: FieldKindString, Doc: "Token from a peek_lock jms_consume identifying the in-flight message."},
+				{Name: "params.disposition", Kind: FieldKindEnum, Enum: []string{"complete", "abandon", "dead_letter", "defer"}, Doc: "How to settle the message (default complete)."},
+				{Name: "params.dead_letter_reason", Kind: FieldKindString, Doc: "Reason recorded when disposition=dead_letter."},
+				{Name: "params.dead_letter_description", Kind: FieldKindString, Doc: "Description recorded when disposition=dead_letter."},
+			},
+		},
+		{
+			Type:      "jms_renew_lock",
+			Protocols: []string{"jms"},
+			Summary:   "Renews the broker lock on a peek-locked Azure Service Bus message. Requires jms_servicebus_real.",
+			Fields: []FieldSpec{
+				{Name: "params.settlement_token", Kind: FieldKindString, Doc: "Token from a peek_lock jms_consume identifying the in-flight message."},
+			},
 		},
 	}
 }

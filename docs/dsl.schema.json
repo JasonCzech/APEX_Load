@@ -2806,6 +2806,19 @@
                     ],
                     "type": "string"
                   },
+                  "peek_lock": {
+                    "description": "Azure Service Bus: defer settlement instead of auto-completing, returning a settlement_token for a later jms_settle (requires jms_servicebus_real).",
+                    "type": "boolean"
+                  },
+                  "sub_queue": {
+                    "description": "Azure Service Bus sub-queue to receive from (requires jms_servicebus_real).",
+                    "enum": [
+                      "none",
+                      "dead_letter",
+                      "transfer_dead_letter"
+                    ],
+                    "type": "string"
+                  },
                   "subscription": {
                     "description": "Azure Service Bus topic subscription; falls back to config.jms.subscription.",
                     "type": "string"
@@ -2873,6 +2886,26 @@
                       "topic"
                     ],
                     "type": "string"
+                  },
+                  "message_id": {
+                    "description": "Explicit message ID (Service Bus duplicate detection uses it); defaults to a generated UUID.",
+                    "type": "string"
+                  },
+                  "partition_key": {
+                    "description": "Azure Service Bus partition key (co-locates messages on one partition).",
+                    "type": "string"
+                  },
+                  "scheduled_enqueue_ms": {
+                    "description": "Azure Service Bus scheduled enqueue delay in milliseconds (the broker holds the message until then).",
+                    "type": "integer"
+                  },
+                  "session_id": {
+                    "description": "Azure Service Bus session ID for session-enabled entities (ignored by other providers).",
+                    "type": "string"
+                  },
+                  "time_to_live_ms": {
+                    "description": "Message time-to-live in milliseconds before the broker expires it.",
+                    "type": "integer"
                   }
                 },
                 "type": "object"
@@ -2880,6 +2913,34 @@
               "target": {
                 "description": "Destination queue/topic; falls back to config.jms.destination.",
                 "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "jms_renew_lock"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Renews the broker lock on a peek-locked Azure Service Bus message. Requires jms_servicebus_real.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "settlement_token": {
+                    "description": "Token from a peek_lock jms_consume identifying the in-flight message.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
               }
             }
           }
@@ -2963,6 +3024,52 @@
           },
           "then": {
             "description": "Rolls back the transacted session."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "jms_settle"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Settles a peek-locked Azure Service Bus message (complete/abandon/dead-letter/defer). Requires jms_servicebus_real.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "dead_letter_description": {
+                    "description": "Description recorded when disposition=dead_letter.",
+                    "type": "string"
+                  },
+                  "dead_letter_reason": {
+                    "description": "Reason recorded when disposition=dead_letter.",
+                    "type": "string"
+                  },
+                  "disposition": {
+                    "description": "How to settle the message (default complete).",
+                    "enum": [
+                      "complete",
+                      "abandon",
+                      "dead_letter",
+                      "defer"
+                    ],
+                    "type": "string"
+                  },
+                  "settlement_token": {
+                    "description": "Token from a peek_lock jms_consume identifying the in-flight message.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
           }
         },
         {
@@ -4883,8 +4990,10 @@
             "jms_commit",
             "jms_consume",
             "jms_publish",
+            "jms_renew_lock",
             "jms_request_reply",
             "jms_rollback",
+            "jms_settle",
             "kafka_abort_transaction",
             "kafka_begin_transaction",
             "kafka_commit",

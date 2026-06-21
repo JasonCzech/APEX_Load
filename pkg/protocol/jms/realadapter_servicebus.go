@@ -4,6 +4,7 @@ package jms
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"sync"
@@ -37,6 +38,7 @@ func newServiceBusAdapter(cfg config) brokerAdapter {
 		conn:      conn,
 		handle:    handle,
 		receivers: make(map[string]*azservicebus.Receiver),
+		inflight:  make(map[string]inflightMessage),
 	}
 }
 
@@ -46,6 +48,15 @@ type serviceBusAdapter struct {
 	handle    *serviceBusPoolEntry
 	mu        sync.Mutex
 	receivers map[string]*azservicebus.Receiver
+	// inflight holds peek-locked messages awaiting explicit settlement (jms_settle
+	// / jms_renew_lock), keyed by a per-VUser settlement token. The SDK settles via
+	// the *ReceivedMessage on the SAME receiver it came from, so both are stored.
+	inflight map[string]inflightMessage
+}
+
+type inflightMessage struct {
+	received *azservicebus.ReceivedMessage
+	receiver *azservicebus.Receiver
 }
 
 func (a *serviceBusAdapter) Publish(ctx context.Context, destination string, msg message) (message, error) {
@@ -137,6 +148,7 @@ func (a *serviceBusAdapter) Teardown(ctx context.Context) error {
 	a.mu.Lock()
 	receivers := a.receivers
 	a.receivers = make(map[string]*azservicebus.Receiver)
+	a.inflight = make(map[string]inflightMessage)
 	handle := a.handle
 	a.handle = nil
 	a.mu.Unlock()
@@ -154,12 +166,29 @@ func (a *serviceBusAdapter) Teardown(ctx context.Context) error {
 }
 
 func (a *serviceBusAdapter) receiver(destination string) (*azservicebus.Receiver, error) {
+	return a.receiverFor(destination, "")
+}
+
+// receiverFor returns a cached receiver for a destination + optional sub-queue
+// (dead_letter / transfer_dead_letter). Receivers are cached per (destination,
+// subQueue) so Teardown closes them all.
+func (a *serviceBusAdapter) receiverFor(destination, subQueue string) (*azservicebus.Receiver, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if receiver := a.receivers[destination]; receiver != nil {
+	key := destination
+	if subQueue != "" {
+		key = destination + "|" + subQueue
+	}
+	if receiver := a.receivers[key]; receiver != nil {
 		return receiver, nil
 	}
 	options := &azservicebus.ReceiverOptions{ReceiveMode: serviceBusAZReceiveMode(a.cfg.Acknowledgement, a.cfg.Properties)}
+	switch subQueue {
+	case "dead_letter":
+		options.SubQueue = azservicebus.SubQueueDeadLetter
+	case "transfer_dead_letter":
+		options.SubQueue = azservicebus.SubQueueTransfer
+	}
 	var (
 		receiver *azservicebus.Receiver
 		err      error
@@ -172,8 +201,102 @@ func (a *serviceBusAdapter) receiver(destination string) (*azservicebus.Receiver
 	if err != nil {
 		return nil, err
 	}
-	a.receivers[destination] = receiver
+	a.receivers[key] = receiver
 	return receiver, nil
+}
+
+// ConsumeAdvanced implements settlementAdapter: receive from an optional
+// dead-letter sub-queue and, when PeekLock is set, defer settlement by stashing
+// the message under a returned token instead of auto-completing.
+func (a *serviceBusAdapter) ConsumeAdvanced(ctx context.Context, destination string, opts consumeOptions, timeout time.Duration) (message, error) {
+	receiver, err := a.receiverFor(destination, opts.SubQueue)
+	if err != nil {
+		return message{}, err
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	receiveCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	messages, err := receiver.ReceiveMessages(receiveCtx, 1, nil)
+	if err != nil {
+		return message{}, fmt.Errorf("no JMS message received from %q within %s: %w", destination, timeout, err)
+	}
+	if len(messages) == 0 {
+		return message{}, fmt.Errorf("no JMS message received from %q within %s", destination, timeout)
+	}
+	converted := fromServiceBusMessage(destination, messages[0])
+	receiveAndDelete := serviceBusReceiveMode(a.cfg.Acknowledgement, a.cfg.Properties) == "receive_and_delete"
+	if opts.PeekLock && !receiveAndDelete {
+		// Defer settlement: hand the caller a token to settle later.
+		token := hex.EncodeToString(messages[0].LockToken[:])
+		a.mu.Lock()
+		a.inflight[token] = inflightMessage{received: messages[0], receiver: receiver}
+		a.mu.Unlock()
+		converted.SettlementToken = token
+		return converted, nil
+	}
+	if !receiveAndDelete {
+		if err := receiver.CompleteMessage(ctx, messages[0], nil); err != nil {
+			return converted, fmt.Errorf("complete Service Bus message from %q: %w", destination, err)
+		}
+	}
+	return converted, nil
+}
+
+// Settle implements settlementAdapter: resolve a peek-locked message by token.
+func (a *serviceBusAdapter) Settle(ctx context.Context, token string, disposition string, opts settleOptions) error {
+	a.mu.Lock()
+	entry, ok := a.inflight[token]
+	a.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("unknown settlement_token %q (already settled or never peek-locked)", token)
+	}
+	var err error
+	switch disposition {
+	case "abandon":
+		err = entry.receiver.AbandonMessage(ctx, entry.received, nil)
+	case "dead_letter":
+		dlOpts := &azservicebus.DeadLetterOptions{}
+		if opts.DeadLetterReason != "" {
+			dlOpts.Reason = stringPtr(opts.DeadLetterReason)
+		}
+		if opts.DeadLetterDescription != "" {
+			dlOpts.ErrorDescription = stringPtr(opts.DeadLetterDescription)
+		}
+		err = entry.receiver.DeadLetterMessage(ctx, entry.received, dlOpts)
+	case "defer":
+		err = entry.receiver.DeferMessage(ctx, entry.received, nil)
+	case "complete":
+		err = entry.receiver.CompleteMessage(ctx, entry.received, nil)
+	default:
+		// Defensive: never silently complete (acknowledge+remove) on an unknown
+		// disposition. The caller normalizes, so this is unreachable in practice.
+		return fmt.Errorf("unknown settle disposition %q", disposition)
+	}
+	if err != nil {
+		return fmt.Errorf("settle Service Bus message (%s): %w", disposition, err)
+	}
+	// Settled (or deferred): the token is no longer live.
+	a.mu.Lock()
+	delete(a.inflight, token)
+	a.mu.Unlock()
+	return nil
+}
+
+// RenewLock implements settlementAdapter: extend the broker lock on a peek-locked
+// message so a long-running settlement decision doesn't lose it.
+func (a *serviceBusAdapter) RenewLock(ctx context.Context, token string) error {
+	a.mu.Lock()
+	entry, ok := a.inflight[token]
+	a.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("unknown settlement_token %q (already settled or never peek-locked)", token)
+	}
+	if err := entry.receiver.RenewMessageLock(ctx, entry.received, nil); err != nil {
+		return fmt.Errorf("renew Service Bus message lock: %w", err)
+	}
+	return nil
 }
 
 type serviceBusConfigErrorAdapter struct {
@@ -198,6 +321,20 @@ func (a serviceBusConfigErrorAdapter) HealthCheck(context.Context) error {
 
 func (a serviceBusConfigErrorAdapter) Teardown(context.Context) error {
 	return nil
+}
+
+// settlementAdapter capability: surface the underlying config error rather than a
+// misleading "requires build tag" message (this IS the jms_servicebus_real build).
+func (a serviceBusConfigErrorAdapter) ConsumeAdvanced(context.Context, string, consumeOptions, time.Duration) (message, error) {
+	return message{}, a.err
+}
+
+func (a serviceBusConfigErrorAdapter) Settle(context.Context, string, string, settleOptions) error {
+	return a.err
+}
+
+func (a serviceBusConfigErrorAdapter) RenewLock(context.Context, string) error {
+	return a.err
 }
 
 type serviceBusClientPool struct {
@@ -357,6 +494,22 @@ func toServiceBusMessage(destination string, msg message) *azservicebus.Message 
 	); contentType != "" {
 		out.ContentType = &contentType
 	}
+	// P2.4 advanced send fields: session routing, partition co-location, scheduled
+	// enqueue, and TTL.
+	if msg.SessionID != "" {
+		out.SessionID = stringPtr(msg.SessionID)
+	}
+	if msg.PartitionKey != "" {
+		out.PartitionKey = stringPtr(msg.PartitionKey)
+	}
+	if !msg.ScheduledEnqueueAt.IsZero() {
+		enqueue := msg.ScheduledEnqueueAt
+		out.ScheduledEnqueueTime = &enqueue
+	}
+	if msg.TimeToLive > 0 {
+		ttl := msg.TimeToLive
+		out.TimeToLive = &ttl
+	}
 	return out
 }
 
@@ -383,6 +536,15 @@ func fromServiceBusMessage(destination string, msg *azservicebus.ReceivedMessage
 	}
 	if msg.EnqueuedTime != nil {
 		out.CreatedAt = *msg.EnqueuedTime
+	}
+	if msg.SessionID != nil {
+		out.SessionID = *msg.SessionID
+	}
+	if msg.PartitionKey != nil {
+		out.PartitionKey = *msg.PartitionKey
+	}
+	if msg.SequenceNumber != nil {
+		out.SequenceNumber = *msg.SequenceNumber
 	}
 	for k, v := range msg.ApplicationProperties {
 		out.Properties[k] = anyToString(v)

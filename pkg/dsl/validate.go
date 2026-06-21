@@ -763,6 +763,27 @@ func validateJMSScriptIssues(script *Script) []string {
 		if serviceBus && (action.Type == "jms_consume" || action.Type == "jms_request_reply") && jmsActionUsesServiceBusTopicWithoutSubscription(jms, action) {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: subscription required to consume from a Service Bus topic", i, action.Name))
 		}
+		// Service Bus advanced verbs (P2.4): validate enums + required tokens.
+		if action.Type == "jms_consume" {
+			if sq, ok := actionParamStringValue(action.Params, "sub_queue"); ok && strings.TrimSpace(sq) != "" &&
+				!isAllowedValue(strings.ToLower(strings.TrimSpace(sq)), "none", "dead_letter", "transfer_dead_letter") {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: sub_queue %q is not supported", i, action.Name, sq))
+			}
+		}
+		if action.Type == "jms_settle" {
+			if disp, ok := actionParamStringValue(action.Params, "disposition"); ok && strings.TrimSpace(disp) != "" &&
+				!isAllowedValue(strings.ToLower(strings.TrimSpace(disp)), "complete", "abandon", "dead_letter", "defer") {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: disposition %q is not supported", i, action.Name, disp))
+			}
+			if tok, _ := actionParamStringValue(action.Params, "settlement_token"); strings.TrimSpace(tok) == "" {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: settlement_token is required", i, action.Name))
+			}
+		}
+		if action.Type == "jms_renew_lock" {
+			if tok, _ := actionParamStringValue(action.Params, "settlement_token"); strings.TrimSpace(tok) == "" {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: settlement_token is required", i, action.Name))
+			}
+		}
 	}
 
 	return issues

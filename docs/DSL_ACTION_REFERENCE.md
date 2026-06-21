@@ -919,6 +919,8 @@ Consumes the next message from a queue or topic.
 | `params.subscription` | string |  | Azure Service Bus topic subscription; falls back to config.jms.subscription. |
 | `params.timeout_ms` | int |  | Consume timeout in milliseconds; falls back to config.jms.timeout_ms. |
 | `params.dead_letter` | bool |  | Consume from / classify the dead-letter destination. |
+| `params.sub_queue` | enum: none\|dead_letter\|transfer_dead_letter |  | Azure Service Bus sub-queue to receive from (requires jms_servicebus_real). |
+| `params.peek_lock` | bool |  | Azure Service Bus: defer settlement instead of auto-completing, returning a settlement_token for a later jms_settle (requires jms_servicebus_real). |
 
 ### `jms_publish`
 
@@ -934,6 +936,19 @@ Publishes a message to a queue or topic.
 | `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
 | `params.correlation_id` | string |  | Correlation ID set on the outgoing message. |
 | `params.dead_letter` | bool |  | Marks this action as targeting a dead-letter destination (drives dead-letter classification). |
+| `params.message_id` | string |  | Explicit message ID (Service Bus duplicate detection uses it); defaults to a generated UUID. |
+| `params.session_id` | string |  | Azure Service Bus session ID for session-enabled entities (ignored by other providers). |
+| `params.partition_key` | string |  | Azure Service Bus partition key (co-locates messages on one partition). |
+| `params.scheduled_enqueue_ms` | int |  | Azure Service Bus scheduled enqueue delay in milliseconds (the broker holds the message until then). |
+| `params.time_to_live_ms` | int |  | Message time-to-live in milliseconds before the broker expires it. |
+
+### `jms_renew_lock`
+
+Renews the broker lock on a peek-locked Azure Service Bus message. Requires jms_servicebus_real.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.settlement_token` | string |  | Token from a peek_lock jms_consume identifying the in-flight message. |
 
 ### `jms_request_reply`
 
@@ -954,6 +969,17 @@ Sends a request message and waits for the correlated reply.
 ### `jms_rollback`
 
 Rolls back the transacted session.
+
+### `jms_settle`
+
+Settles a peek-locked Azure Service Bus message (complete/abandon/dead-letter/defer). Requires jms_servicebus_real.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.settlement_token` | string |  | Token from a peek_lock jms_consume identifying the in-flight message. |
+| `params.disposition` | enum: complete\|abandon\|dead_letter\|defer |  | How to settle the message (default complete). |
+| `params.dead_letter_reason` | string |  | Reason recorded when disposition=dead_letter. |
+| `params.dead_letter_description` | string |  | Description recorded when disposition=dead_letter. |
 
 ## Protocol: kafka
 
