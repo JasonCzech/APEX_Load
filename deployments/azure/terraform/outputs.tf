@@ -68,6 +68,16 @@ output "key_vault_url" {
   value       = azurerm_key_vault.main.vault_uri
 }
 
+output "eventhubs_namespace" {
+  description = "APEXLOAD_EVENTHUBS_NAMESPACE (FQDN) for the data-platform ConfigMap; null when eventhubs_enabled=false."
+  value       = var.eventhubs_enabled ? "${azurerm_eventhub_namespace.main[0].name}.servicebus.windows.net" : null
+}
+
+output "eventhubs_name" {
+  description = "Event hub name for config.eventhubs.event_hub; null when eventhubs_enabled=false."
+  value       = var.eventhubs_enabled ? azurerm_eventhub.main[0].name : null
+}
+
 output "kubeconfig_command" {
   value = "az aks get-credentials --resource-group ${azurerm_resource_group.main.name} --name ${azurerm_kubernetes_cluster.main.name}"
 }

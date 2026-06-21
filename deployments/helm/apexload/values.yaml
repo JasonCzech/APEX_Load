@@ -33,6 +33,13 @@ dataPlatform:
   redisFanoutChannel: telemetry:fanout
   keyVaultUrl: https://change-me.vault.azure.net
   keyVaultAuth: azure_identity
+  # Azure Event Hubs is configured per-script (config.eventhubs), not via these
+  # platform values. Provision a namespace with the terraform module
+  # (eventhubs_enabled=true), then either set config.eventhubs.auth_type=aad with
+  # the granted workload identity, or reference the Key Vault SAS secrets from
+  # config.eventhubs.connection_string_secret. The native eventhubs adapter needs
+  # images built with -tags eventhubs_real (image.tag); the default image
+  # fail-closes on non-mock Event Hubs scripts.
   generators: dns://apexload-generator.apexload.svc.cluster.local:9090
   generatorDiscoveryInterval: 15s
   generatorTimeout: 10s

@@ -115,7 +115,81 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 			}
 		}
 	}
+	writeMessagingMetrics(&body, tests)
 	_, _ = w.Write([]byte(body.String()))
+}
+
+// writeMessagingMetrics exposes per-test, per-protocol queue/stream telemetry
+// (JMS, Kafka, Event Hubs) as Prometheus gauges. Messaging server-telemetry is
+// dependency-scoped, so it is read from each running test's dependency_health,
+// labeled by test_id, protocol, and target (event hub / topic / queue).
+func writeMessagingMetrics(body *strings.Builder, tests []*ManagedTest) {
+	type row struct {
+		testID   string
+		protocol string
+		target   string
+		st       *ServerTelemetrySummary
+	}
+	var rows []row
+	for _, test := range tests {
+		if test == nil || test.LiveMetrics == nil {
+			continue
+		}
+		for _, dep := range test.LiveMetrics.DependencyHealth {
+			if dep == nil || dep.ServerTelemetry == nil {
+				continue
+			}
+			protocol, ok := messagingProtocolLabel(dep.DependencyType)
+			if !ok {
+				continue
+			}
+			rows = append(rows, row{testID: test.ID, protocol: protocol, target: dep.DependencyTarget, st: dep.ServerTelemetry})
+		}
+	}
+	if len(rows) == 0 {
+		return
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].testID != rows[j].testID {
+			return rows[i].testID < rows[j].testID
+		}
+		if rows[i].protocol != rows[j].protocol {
+			return rows[i].protocol < rows[j].protocol
+		}
+		return rows[i].target < rows[j].target
+	})
+
+	writeGauge := func(name, help string, pick func(*ServerTelemetrySummary) float64) {
+		fmt.Fprintf(body, "# HELP %s %s\n# TYPE %s gauge\n", name, help, name)
+		for _, r := range rows {
+			fmt.Fprintf(body, "%s{test_id=%q,protocol=%q,target=%q} %g\n", name, r.testID, r.protocol, r.target, pick(r.st))
+		}
+	}
+	writeGauge("apexload_messaging_consumer_lag_ms", "Average consumer lag in milliseconds by test, protocol, and target.", func(st *ServerTelemetrySummary) float64 { return st.AvgConsumerLagMs })
+	writeGauge("apexload_messaging_consumer_offset_lag", "Average consumer offset/sequence backlog by test, protocol, and target.", func(st *ServerTelemetrySummary) float64 { return st.AvgConsumerOffsetLag })
+	writeGauge("apexload_messaging_e2e_latency_ms", "Average producer->observed-consume end-to-end latency in milliseconds (Event Hubs probe).", func(st *ServerTelemetrySummary) float64 { return st.AvgEndToEndLatencyMs })
+	writeGauge("apexload_messaging_partition_skew_pct", "Per-partition produce skew (coefficient of variation, percent).", func(st *ServerTelemetrySummary) float64 { return st.PartitionSkewPct })
+	writeGauge("apexload_messaging_throttled_total", "Throttle / ServerBusy / quota responses (run total) by test, protocol, and target.", func(st *ServerTelemetrySummary) float64 {
+		return float64(st.TotalThrottledRequests + st.TotalServerBusyCount + st.TotalQuotaExceededCount)
+	})
+	writeGauge("apexload_messaging_dead_lettered_total", "Dead-lettered messages (run total) by test, protocol, and target.", func(st *ServerTelemetrySummary) float64 { return float64(st.DeadLetteredCount) })
+	writeGauge("apexload_messaging_messages_sent_per_sec", "Average messages sent per second by test, protocol, and target.", func(st *ServerTelemetrySummary) float64 { return st.AvgMessagesSentPerSec })
+	writeGauge("apexload_messaging_messages_received_per_sec", "Average messages received per second by test, protocol, and target.", func(st *ServerTelemetrySummary) float64 { return st.AvgMessagesReceivedPerSec })
+}
+
+// messagingProtocolLabel maps a dependency type to a coarse messaging protocol
+// label, returning false for non-messaging dependencies.
+func messagingProtocolLabel(dependencyType string) (string, bool) {
+	switch {
+	case strings.HasPrefix(dependencyType, "jms_"):
+		return "jms", true
+	case strings.HasPrefix(dependencyType, "kafka"):
+		return "kafka", true
+	case strings.HasPrefix(dependencyType, "eventhubs"):
+		return "eventhubs", true
+	default:
+		return "", false
+	}
 }
 
 func boolMetric(value bool) int {

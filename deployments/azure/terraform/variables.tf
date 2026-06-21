@@ -93,6 +93,36 @@ variable "acr_sku" {
   default     = "Standard"
 }
 
+variable "eventhubs_enabled" {
+  description = "Provision an Azure Event Hubs namespace + hub for messaging load tests (opt-in)."
+  type        = bool
+  default     = false
+}
+
+variable "eventhubs_name" {
+  description = "Event hub (entity) name created in the namespace."
+  type        = string
+  default     = "apexload-load"
+}
+
+variable "eventhubs_sku" {
+  description = "Event Hubs namespace SKU (Basic, Standard, Premium)."
+  type        = string
+  default     = "Standard"
+}
+
+variable "eventhubs_capacity" {
+  description = "Event Hubs throughput units (Standard) / processing units."
+  type        = number
+  default     = 1
+}
+
+variable "eventhubs_partition_count" {
+  description = "Partition count for the event hub (drives per-partition skew testing)."
+  type        = number
+  default     = 4
+}
+
 variable "authorized_ip_ranges" {
   description = "CIDRs allowed to reach the AKS API server. Empty list = unrestricted (not recommended for prod)."
   type        = list(string)

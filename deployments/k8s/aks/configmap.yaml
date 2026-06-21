@@ -39,6 +39,20 @@ data:
   APEXLOAD_AZURE_KEY_VAULT_URL: https://change-me.vault.azure.net # CHANGE-ME: terraform output key_vault_url
   APEXLOAD_AZURE_KEY_VAULT_AUTH: azure_identity
 
+  # --- Azure Event Hubs (optional; terraform eventhubs_enabled=true) ---
+  # Event Hubs connectivity is per-script (config.eventhubs), not controller env.
+  # Two supported auth modes once the terraform module provisions a namespace:
+  #   1. AAD / workload identity (recommended): set config.eventhubs.auth_type=aad
+  #      and config.eventhubs.namespace to `terraform output eventhubs_namespace`.
+  #      Terraform already grants the controller/generator identities the
+  #      "Azure Event Hubs Data Sender" (+ "Data Receiver" for the probe) roles.
+  #   2. SAS connection string: reference the Key Vault secrets terraform writes
+  #      ({{secret.eventhubs-send-connection-string}} /
+  #      {{secret.eventhubs-listen-connection-string}}) from
+  #      config.eventhubs.connection_string_secret.
+  # The native eventhubs adapter requires generator/controller images built with
+  # -tags eventhubs_real; the default image fail-closes on non-mock scripts.
+
   # --- Generator fleet: DNS discovery against the headless service ---
   # The dns:// scheme makes the controller re-resolve the headless service on
   # an interval, so generators added/removed by KEDA are tracked automatically.

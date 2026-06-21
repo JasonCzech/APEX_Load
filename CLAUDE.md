@@ -79,7 +79,11 @@ bounded codec MVP), Java Vuser sidecar bridge (`java_vuser`, external-runner; go
 disabled unless runner config enables it), WebSocket, gRPC, JMS Solace, JMS IBM MQ,
 JMS Azure Service Bus (real adapter opt-in via `-tags jms_servicebus_real`),
 Kafka (produce/consume/request-reply; in-memory mock broker by default, real
-franz-go network adapter opt-in via `-tags kafka_real`), database (SQL query/exec/transactions),
+franz-go network adapter opt-in via `-tags kafka_real`; Event Hubs Kafka-endpoint
+via `config.kafka.profile: eventhubs`), Azure Event Hubs (native `eventhubs`
+protocol, producer-first: `eventhubs_produce` + observer-probe `eventhubs_consume`;
+in-memory mock by default, real azeventhubs/AMQP adapter opt-in via
+`-tags eventhubs_real`), database (SQL query/exec/transactions),
 network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP),
 and browser (replay + canary diagnostics). `apexctl` bundles the same set except
 database, java_http, and network. (`sap_gui` actions are authorable/importable via the DSL
