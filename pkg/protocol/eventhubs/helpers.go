@@ -52,8 +52,10 @@ func paramString(params map[string]any, key, fallback string) string {
 
 // ---- telemetry ----
 
-func finalizeTelemetry(result *protocol.Result, sent event, hasSent bool, received event, hasReceived bool) *protocol.ServerTelemetry {
-	if result == nil || (!hasSent && !hasReceived) {
+func finalizeTelemetry(result *protocol.Result, sent event, hasSent bool, received event, hasReceived bool, opErr error) *protocol.ServerTelemetry {
+	throttle, serverBusy, quota, tooLarge := classifyProduceError(opErr)
+	hasErrSignal := throttle != 0 || serverBusy != 0 || quota != 0 || tooLarge != 0
+	if result == nil || (!hasSent && !hasReceived && !hasErrSignal) {
 		return nil
 	}
 	t := &protocol.ServerTelemetry{TransferMs: durationToMs(result.Duration)}
@@ -61,6 +63,11 @@ func finalizeTelemetry(result *protocol.Result, sent event, hasSent bool, receiv
 		t.MessagesSent = 1
 		t.RequestPayloadKB = bytesToKB(len(sent.Body))
 		t.RequestSizeClass = protocol.ClassifyPayloadSize(int64(len(sent.Body)))
+		// PartitionID is populated only when the script pins an explicit partition;
+		// partition-key routing is resolved broker-side and left empty (no skew).
+		if sent.PartitionID != "" {
+			t.PartitionID = sent.PartitionID
+		}
 	}
 	if hasReceived {
 		t.MessagesReceived = 1
@@ -68,15 +75,46 @@ func finalizeTelemetry(result *protocol.Result, sent event, hasSent bool, receiv
 		t.ResponseSizeClass = protocol.ClassifyPayloadSize(int64(len(received.Body)))
 		observedAt := result.StartTime.Add(result.Duration)
 		if !received.EnqueuedAt.IsZero() && !observedAt.Before(received.EnqueuedAt) {
-			t.ConsumerLagMs = durationToMs(observedAt.Sub(received.EnqueuedAt))
+			lagMs := durationToMs(observedAt.Sub(received.EnqueuedAt))
+			t.ConsumerLagMs = lagMs
+			// For the observer probe, enqueue->observe IS the end-to-end latency.
+			t.EndToEndLatencyMs = lagMs
 		}
 		if lag, err := strconv.ParseInt(result.Extractions["eventhubs_consumer_lag"], 10, 64); err == nil && lag > 0 {
 			t.ConsumerOffsetLag = lag
 		}
 	}
+	t.ThrottledRequests = throttle
+	t.ServerBusyCount = serverBusy
+	t.QuotaExceededCount = quota
+	t.EventTooLargeCount = tooLarge
 	t.MessagesSentPerSec = perSec(t.MessagesSent, result.Duration)
 	t.MessagesReceivedPerSec = perSec(t.MessagesReceived, result.Duration)
 	return t
+}
+
+// classifyProduceError maps a produce/consume transport error to Event Hubs
+// ingestion-pressure counters. It is intentionally string-based and
+// build-agnostic: the real azeventhubs adapter surfaces these as AMQP error
+// conditions (amqp:resource-limit-exceeded / ServerBusy / quota) and the
+// size-cap rejection as "too large"; the mock/stub builds produce none of these
+// strings, so their counters stay honestly zero.
+func classifyProduceError(err error) (throttle, serverBusy, quota, tooLarge int) {
+	if err == nil {
+		return 0, 0, 0, 0
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "too large"):
+		tooLarge = 1
+	case strings.Contains(msg, "resource-limit-exceeded") || strings.Contains(msg, "server busy") || strings.Contains(msg, "serverbusy"):
+		serverBusy, throttle = 1, 1
+	case strings.Contains(msg, "quota"):
+		quota, throttle = 1, 1
+	case strings.Contains(msg, "throttl") || strings.Contains(msg, "429"):
+		throttle = 1
+	}
+	return throttle, serverBusy, quota, tooLarge
 }
 
 func durationToMs(d time.Duration) float64 {

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -57,17 +58,17 @@ type MetricsSnapshot struct {
 	AvgWaitMs    float64 `json:"avg_wait_ms,omitempty"`
 	// ErrorsByClass counts failed business transactions by taxonomy class
 	// (timeout/connection/http_4xx/http_5xx/assertion/other).
-	ErrorsByClass          map[string]int64 `json:"errors_by_class,omitempty"`
-	ByAction               map[string]*ActionMetrics
-	ByTransaction          map[string]*ActionMetrics
-	ByDependencyTarget     map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
-	BySOAPOperation        map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
-	ByNetworkProfile       map[string]*ActionMetrics `json:"by_network_profile,omitempty"`
-	ByGroup                map[string]*GroupMetrics
-	Browser                *BrowserMetricsSummary           `json:"browser,omitempty"`
-	BrowserByDevice        map[string]*BrowserDeviceMetrics `json:"browser_by_device,omitempty"`
-	Telemetry              *TelemetryMetrics                `json:"telemetry,omitempty"`
-	Resources              *SystemResources                 `json:"resources,omitempty"`
+	ErrorsByClass      map[string]int64 `json:"errors_by_class,omitempty"`
+	ByAction           map[string]*ActionMetrics
+	ByTransaction      map[string]*ActionMetrics
+	ByDependencyTarget map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
+	BySOAPOperation    map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
+	ByNetworkProfile   map[string]*ActionMetrics `json:"by_network_profile,omitempty"`
+	ByGroup            map[string]*GroupMetrics
+	Browser            *BrowserMetricsSummary           `json:"browser,omitempty"`
+	BrowserByDevice    map[string]*BrowserDeviceMetrics `json:"browser_by_device,omitempty"`
+	Telemetry          *TelemetryMetrics                `json:"telemetry,omitempty"`
+	Resources          *SystemResources                 `json:"resources,omitempty"`
 }
 
 type BrowserMetricsSummary struct {
@@ -130,10 +131,19 @@ type ServerTelemetrySummary struct {
 	OutOfOrderCount           int64            `json:"out_of_order_count,omitempty"`
 	CommitCount               int64            `json:"commit_count,omitempty"`
 	AbortCount                int64            `json:"abort_count,omitempty"`
-	RequestSizeClasses        map[string]int64 `json:"request_size_classes,omitempty"`
-	ResponseSizeClasses       map[string]int64 `json:"response_size_classes,omitempty"`
-	ConnectionReusedCount     int64            `json:"connection_reused_count,omitempty"`
-	ConnectionReusedPct       float64          `json:"connection_reused_pct,omitempty"`
+	// Event Hubs / streaming ingestion aggregates (EH.4).
+	TotalThrottledRequests  int64            `json:"total_throttled_requests,omitempty"`
+	TotalServerBusyCount    int64            `json:"total_server_busy_count,omitempty"`
+	TotalQuotaExceededCount int64            `json:"total_quota_exceeded_count,omitempty"`
+	TotalEventTooLargeCount int64            `json:"total_event_too_large_count,omitempty"`
+	AvgEndToEndLatencyMs    float64          `json:"avg_end_to_end_latency_ms,omitempty"`
+	MaxEndToEndLatencyMs    float64          `json:"max_end_to_end_latency_ms,omitempty"`
+	PartitionEvents         map[string]int64 `json:"partition_events,omitempty"`   // produce volume per partition (skew source)
+	PartitionSkewPct        float64          `json:"partition_skew_pct,omitempty"` // coefficient of variation of PartitionEvents (× 100)
+	RequestSizeClasses      map[string]int64 `json:"request_size_classes,omitempty"`
+	ResponseSizeClasses     map[string]int64 `json:"response_size_classes,omitempty"`
+	ConnectionReusedCount   int64            `json:"connection_reused_count,omitempty"`
+	ConnectionReusedPct     float64          `json:"connection_reused_pct,omitempty"`
 }
 
 type TelemetryMetrics struct {
@@ -145,12 +155,12 @@ type SystemResources struct {
 	CPUProcessPct                     float64            `json:"cpu_process_pct"`               // CPU used by vuser processes (fleet average in distributed runs)
 	CPUProcessPctMax                  float64            `json:"cpu_process_pct_max,omitempty"` // worst-pod process CPU% across the fleet (distributed only)
 	CPUFreePct                        float64            `json:"cpu_free_pct"`                  // CPU headroom
-	MemProcessMb                      float64            `json:"mem_process_mb"`  // Memory used by vuser processes
-	MemFreeMb                         float64            `json:"mem_free_mb"`     // Total system memory free
-	NetSentKbps                       float64            `json:"net_sent_kbps"`   // Network egress
-	NetRecvKbps                       float64            `json:"net_recv_kbps"`   // Network ingress
-	DiskReadKbps                      float64            `json:"disk_read_kbps"`  // Disk Read I/O
-	DiskWriteKbps                     float64            `json:"disk_write_kbps"` // Disk Write I/O
+	MemProcessMb                      float64            `json:"mem_process_mb"`                // Memory used by vuser processes
+	MemFreeMb                         float64            `json:"mem_free_mb"`                   // Total system memory free
+	NetSentKbps                       float64            `json:"net_sent_kbps"`                 // Network egress
+	NetRecvKbps                       float64            `json:"net_recv_kbps"`                 // Network ingress
+	DiskReadKbps                      float64            `json:"disk_read_kbps"`                // Disk Read I/O
+	DiskWriteKbps                     float64            `json:"disk_write_kbps"`               // Disk Write I/O
 	CPUUserPct                        float64            `json:"cpu_user_pct,omitempty"`
 	CPUSystemPct                      float64            `json:"cpu_system_pct,omitempty"`
 	CPUIOWaitPct                      float64            `json:"cpu_iowait_pct,omitempty"`
@@ -389,7 +399,15 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 				}
 			}
 		process:
-			if len(batch) == 0 && (!mc.emitIdleSnapshots || mc.current.activeVUsers.Load() > 0) {
+			// An empty window still gets a zero-valued, correctly-timestamped
+			// snapshot while the run is live (active VUsers) or during a
+			// configured baseline (emitIdleSnapshots) — so a stall, a long
+			// think-time/pacing window, or an idle baseline renders as a flat
+			// zero line in the runtime graphs instead of a gap. Only a truly
+			// idle window — no active VUsers and no baseline — is skipped, so we
+			// don't emit leading/trailing zeros before ramp-up starts or after
+			// ramp-down completes.
+			if len(batch) == 0 && !mc.emitIdleSnapshots && mc.current.activeVUsers.Load() == 0 {
 				continue
 			}
 			snap := mc.computeSnapshot(batch, interval)
@@ -820,6 +838,11 @@ func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *pro
 	summary.OutOfOrderCount += int64(telemetry.OutOfOrderCount)
 	summary.CommitCount += int64(telemetry.CommitCount)
 	summary.AbortCount += int64(telemetry.AbortCount)
+	// Streaming-ingestion counters are run totals too (EH.4).
+	summary.TotalThrottledRequests += int64(telemetry.ThrottledRequests)
+	summary.TotalServerBusyCount += int64(telemetry.ServerBusyCount)
+	summary.TotalQuotaExceededCount += int64(telemetry.QuotaExceededCount)
+	summary.TotalEventTooLargeCount += int64(telemetry.EventTooLargeCount)
 	// Control-only ops must not contribute to the averaging divisor or they would
 	// dilute the average payload/latency/throughput.
 	if !telemetry.HasMeasuredSample() {
@@ -853,6 +876,18 @@ func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *pro
 	if telemetry.ConsumerOffsetLag > summary.MaxConsumerOffsetLag {
 		summary.MaxConsumerOffsetLag = telemetry.ConsumerOffsetLag
 	}
+	summary.AvgEndToEndLatencyMs += telemetry.EndToEndLatencyMs
+	if telemetry.EndToEndLatencyMs > summary.MaxEndToEndLatencyMs {
+		summary.MaxEndToEndLatencyMs = telemetry.EndToEndLatencyMs
+	}
+	// Bucket produce volume per partition (skew source). Producer-only: a consume
+	// probe leaves MessagesSent == 0 and is excluded so it can't pollute skew.
+	if telemetry.PartitionID != "" && telemetry.MessagesSent > 0 {
+		if summary.PartitionEvents == nil {
+			summary.PartitionEvents = make(map[string]int64)
+		}
+		summary.PartitionEvents[telemetry.PartitionID] += int64(telemetry.MessagesSent)
+	}
 	incrementTelemetryClassCount(&summary.RequestSizeClasses, telemetry.RequestSizeClass)
 	incrementTelemetryClassCount(&summary.ResponseSizeClasses, telemetry.ResponseSizeClass)
 	if telemetry.ConnectionReused {
@@ -875,7 +910,12 @@ func finalizeServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	summary.AvgMessagesReceivedPerSec /= divisor
 	summary.AvgConsumerLagMs /= divisor
 	summary.AvgConsumerOffsetLag /= divisor
+	summary.AvgEndToEndLatencyMs /= divisor
+	summary.PartitionSkewPct = ComputePartitionSkewPct(summary.PartitionEvents)
 	summary.ConnectionReusedPct = float64(summary.ConnectionReusedCount) / divisor * 100
+	if len(summary.PartitionEvents) == 0 {
+		summary.PartitionEvents = nil
+	}
 	if len(summary.RequestSizeClasses) == 0 {
 		summary.RequestSizeClasses = nil
 	}
@@ -888,6 +928,34 @@ func finalizeServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	if len(summary.ResponsePayloadHistogram) == 0 {
 		summary.ResponsePayloadHistogram = nil
 	}
+}
+
+// ComputePartitionSkewPct returns the coefficient of variation (stddev/mean ×
+// 100) of per-partition produce volume — a unit-free measure of how unevenly
+// events are spread across partitions. It is 0 for fewer than two partitions (no
+// skew possible) and 0 when the mean is zero. Exported so the controller's
+// distributed merge recomputes skew from the pooled map (not by averaging
+// per-generator skews).
+func ComputePartitionSkewPct(events map[string]int64) float64 {
+	n := len(events)
+	if n < 2 {
+		return 0
+	}
+	var sum float64
+	for _, v := range events {
+		sum += float64(v)
+	}
+	mean := sum / float64(n)
+	if mean == 0 {
+		return 0
+	}
+	var variance float64
+	for _, v := range events {
+		d := float64(v) - mean
+		variance += d * d
+	}
+	variance /= float64(n)
+	return math.Sqrt(variance) / mean * 100
 }
 
 func incrementTelemetryClassCount(values *map[string]int64, key string) {

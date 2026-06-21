@@ -111,5 +111,11 @@ func cloneServerTelemetry(input *protocol.ServerTelemetry) *ServerTelemetry {
 		CommitCount:            int32(input.CommitCount),
 		AbortCount:             int32(input.AbortCount),
 		ConsumerOffsetLag:      input.ConsumerOffsetLag,
+		ThrottledRequests:      int32(input.ThrottledRequests),
+		ServerBusyCount:        int32(input.ServerBusyCount),
+		QuotaExceededCount:     int32(input.QuotaExceededCount),
+		EventTooLargeCount:     int32(input.EventTooLargeCount),
+		EndToEndLatencyMs:      input.EndToEndLatencyMs,
+		PartitionID:            input.PartitionID,
 	}
 }

@@ -132,6 +132,24 @@ func evidenceMessages(result *Result) map[string]any {
 		if result.ServerTelemetry.MessageLatencyMs > 0 {
 			messages["latency_ms"] = result.ServerTelemetry.MessageLatencyMs
 		}
+		if result.ServerTelemetry.EndToEndLatencyMs > 0 {
+			messages["end_to_end_latency_ms"] = result.ServerTelemetry.EndToEndLatencyMs
+		}
+		if result.ServerTelemetry.PartitionID != "" {
+			messages["partition_id"] = result.ServerTelemetry.PartitionID
+		}
+		if result.ServerTelemetry.ThrottledRequests > 0 {
+			messages["throttled_requests"] = result.ServerTelemetry.ThrottledRequests
+		}
+		if result.ServerTelemetry.ServerBusyCount > 0 {
+			messages["server_busy_count"] = result.ServerTelemetry.ServerBusyCount
+		}
+		if result.ServerTelemetry.QuotaExceededCount > 0 {
+			messages["quota_exceeded_count"] = result.ServerTelemetry.QuotaExceededCount
+		}
+		if result.ServerTelemetry.EventTooLargeCount > 0 {
+			messages["event_too_large_count"] = result.ServerTelemetry.EventTooLargeCount
+		}
 	}
 	return messages
 }

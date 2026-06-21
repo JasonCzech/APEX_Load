@@ -448,6 +448,14 @@ func cloneEngineServerTelemetrySummary(summary *engine.ServerTelemetrySummary) *
 		OutOfOrderCount:           summary.OutOfOrderCount,
 		CommitCount:               summary.CommitCount,
 		AbortCount:                summary.AbortCount,
+		TotalThrottledRequests:    summary.TotalThrottledRequests,
+		TotalServerBusyCount:      summary.TotalServerBusyCount,
+		TotalQuotaExceededCount:   summary.TotalQuotaExceededCount,
+		TotalEventTooLargeCount:   summary.TotalEventTooLargeCount,
+		AvgEndToEndLatencyMs:      summary.AvgEndToEndLatencyMs,
+		MaxEndToEndLatencyMs:      summary.MaxEndToEndLatencyMs,
+		PartitionEvents:           cloneTelemetryClassCounts(summary.PartitionEvents),
+		PartitionSkewPct:          summary.PartitionSkewPct,
 		RequestSizeClasses:        cloneTelemetryClassCounts(summary.RequestSizeClasses),
 		ResponseSizeClasses:       cloneTelemetryClassCounts(summary.ResponseSizeClasses),
 		ConnectionReusedCount:     summary.ConnectionReusedCount,
@@ -471,6 +479,11 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 	metrics.ServerTelemetry.OutOfOrderCount += int64(telemetry.OutOfOrderCount)
 	metrics.ServerTelemetry.CommitCount += int64(telemetry.CommitCount)
 	metrics.ServerTelemetry.AbortCount += int64(telemetry.AbortCount)
+	// Streaming-ingestion counters are run totals too (EH.4).
+	metrics.ServerTelemetry.TotalThrottledRequests += int64(telemetry.ThrottledRequests)
+	metrics.ServerTelemetry.TotalServerBusyCount += int64(telemetry.ServerBusyCount)
+	metrics.ServerTelemetry.TotalQuotaExceededCount += int64(telemetry.QuotaExceededCount)
+	metrics.ServerTelemetry.TotalEventTooLargeCount += int64(telemetry.EventTooLargeCount)
 	// Control-only ops must not contribute to the averaging divisor or they would
 	// dilute the average payload/latency/throughput.
 	if !generatorTelemetryHasMeasuredSample(telemetry) {
@@ -504,6 +517,18 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 	if telemetry.ConsumerOffsetLag > metrics.ServerTelemetry.MaxConsumerOffsetLag {
 		metrics.ServerTelemetry.MaxConsumerOffsetLag = telemetry.ConsumerOffsetLag
 	}
+	metrics.ServerTelemetry.AvgEndToEndLatencyMs += telemetry.EndToEndLatencyMs
+	if telemetry.EndToEndLatencyMs > metrics.ServerTelemetry.MaxEndToEndLatencyMs {
+		metrics.ServerTelemetry.MaxEndToEndLatencyMs = telemetry.EndToEndLatencyMs
+	}
+	// Bucket produce volume per partition across generators (skew source).
+	// Producer-only: a consume probe leaves MessagesSent == 0 and is excluded.
+	if telemetry.PartitionID != "" && telemetry.MessagesSent > 0 {
+		if metrics.ServerTelemetry.PartitionEvents == nil {
+			metrics.ServerTelemetry.PartitionEvents = make(map[string]int64)
+		}
+		metrics.ServerTelemetry.PartitionEvents[telemetry.PartitionID] += int64(telemetry.MessagesSent)
+	}
 	incrementTelemetryClassCount(&metrics.ServerTelemetry.RequestSizeClasses, telemetry.RequestSizeClass)
 	incrementTelemetryClassCount(&metrics.ServerTelemetry.ResponseSizeClasses, telemetry.ResponseSizeClass)
 	if telemetry.ConnectionReused {
@@ -523,7 +548,8 @@ func generatorTelemetryHasMeasuredSample(t *generatorrpc.ServerTelemetry) bool {
 		t.ResponsePayloadKB != 0 || t.FirstEventMs != 0 || t.EventCount != 0 ||
 		t.MessageLatencyMs != 0 || t.MessagesSent != 0 || t.MessagesReceived != 0 ||
 		t.MessagesSentPerSec != 0 || t.MessagesReceivedPerSec != 0 || t.ConsumerLagMs != 0 ||
-		t.ConsumerOffsetLag != 0 ||
+		t.ConsumerOffsetLag != 0 || t.ThrottledRequests != 0 || t.ServerBusyCount != 0 ||
+		t.QuotaExceededCount != 0 || t.EventTooLargeCount != 0 || t.EndToEndLatencyMs != 0 ||
 		t.RequestSizeClass != "" || t.ResponseSizeClass != "" || t.ConnectionReused
 }
 
@@ -542,7 +568,14 @@ func finalizeAPIServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	summary.AvgMessagesReceivedPerSec /= divisor
 	summary.AvgConsumerLagMs /= divisor
 	summary.AvgConsumerOffsetLag /= divisor
+	summary.AvgEndToEndLatencyMs /= divisor
+	// Skew is recomputed POST-merge from the pooled per-partition map, not averaged
+	// from per-generator skews (the min/max may come from different generators).
+	summary.PartitionSkewPct = engine.ComputePartitionSkewPct(summary.PartitionEvents)
 	summary.ConnectionReusedPct = float64(summary.ConnectionReusedCount) / divisor * 100
+	if len(summary.PartitionEvents) == 0 {
+		summary.PartitionEvents = nil
+	}
 	if len(summary.RequestSizeClasses) == 0 {
 		summary.RequestSizeClasses = nil
 	}

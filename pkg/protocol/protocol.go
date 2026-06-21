@@ -193,14 +193,23 @@ type ServerTelemetry struct {
 	// Messaging reliability counters (per-transaction; the engine/controller sum
 	// them into run totals). Populated by the messaging protocols (JMS family,
 	// Kafka, Event Hubs) for honest queue-test reliability accounting.
-	SendFailureCount       int     `json:"send_failure_count,omitempty"`  // failed produce/publish attempts
-	RedeliveryCount        int     `json:"redelivery_count,omitempty"`    // messages delivered more than once (JMSXDeliveryCount/DeliveryCount > 1)
-	DeadLetteredCount      int     `json:"dead_lettered_count,omitempty"` // messages routed to / received from a dead-letter destination
-	DuplicateCount         int     `json:"duplicate_count,omitempty"`     // duplicate messages detected (by message id / dedup window)
-	OutOfOrderCount        int     `json:"out_of_order_count,omitempty"`  // messages observed out of expected order
-	CommitCount            int     `json:"commit_count,omitempty"`        // transaction / ack commits
-	AbortCount             int     `json:"abort_count,omitempty"`         // transaction rollbacks / aborts
-	ConnectionReused       bool    `json:"connection_reused"`
+	SendFailureCount  int `json:"send_failure_count,omitempty"`  // failed produce/publish attempts
+	RedeliveryCount   int `json:"redelivery_count,omitempty"`    // messages delivered more than once (JMSXDeliveryCount/DeliveryCount > 1)
+	DeadLetteredCount int `json:"dead_lettered_count,omitempty"` // messages routed to / received from a dead-letter destination
+	DuplicateCount    int `json:"duplicate_count,omitempty"`     // duplicate messages detected (by message id / dedup window)
+	OutOfOrderCount   int `json:"out_of_order_count,omitempty"`  // messages observed out of expected order
+	CommitCount       int `json:"commit_count,omitempty"`        // transaction / ack commits
+	AbortCount        int `json:"abort_count,omitempty"`         // transaction rollbacks / aborts
+	// Event Hubs / streaming ingestion signals (EH.4). Counters are summed into
+	// run totals; EndToEndLatencyMs is averaged like ConsumerLagMs; PartitionID
+	// lets the aggregator bucket produce volume per partition to derive skew.
+	ThrottledRequests  int     `json:"throttled_requests,omitempty"`    // throttle / 429 responses (broker backpressure)
+	ServerBusyCount    int     `json:"server_busy_count,omitempty"`     // ServerBusy (amqp:resource-limit-exceeded) errors
+	QuotaExceededCount int     `json:"quota_exceeded_count,omitempty"`  // quota-exceeded errors
+	EventTooLargeCount int     `json:"event_too_large_count,omitempty"` // events rejected for exceeding the size cap
+	EndToEndLatencyMs  float64 `json:"end_to_end_latency_ms,omitempty"` // producer-enqueue -> observed-consume latency
+	PartitionID        string  `json:"partition_id,omitempty"`          // partition this event was produced to (skew bucketing)
+	ConnectionReused   bool    `json:"connection_reused"`
 }
 
 // HasMeasuredSample reports whether the telemetry carries an actual measured
@@ -219,6 +228,8 @@ func (t *ServerTelemetry) HasMeasuredSample() bool {
 		t.FirstEventMs != 0 || t.EventCount != 0 || t.MessageLatencyMs != 0 ||
 		t.MessagesSent != 0 || t.MessagesReceived != 0 || t.MessagesSentPerSec != 0 ||
 		t.MessagesReceivedPerSec != 0 || t.ConsumerLagMs != 0 || t.ConsumerOffsetLag != 0 ||
+		t.ThrottledRequests != 0 || t.ServerBusyCount != 0 || t.QuotaExceededCount != 0 ||
+		t.EventTooLargeCount != 0 || t.EndToEndLatencyMs != 0 ||
 		t.RequestSizeClass != "" || t.ResponseSizeClass != "" || t.ConnectionReused
 }
 

@@ -146,6 +146,13 @@ message ServerTelemetry {
   int32 commit_count = 21;
   int32 abort_count = 22;
   int64 consumer_offset_lag = 23;
+  // Event Hubs / streaming ingestion signals (EH.4).
+  int32 throttled_requests = 24;
+  int32 server_busy_count = 25;
+  int32 quota_exceeded_count = 26;
+  int32 event_too_large_count = 27;
+  double end_to_end_latency_ms = 28;
+  string partition_id = 29;
 }
 
 message TransactionMetric {

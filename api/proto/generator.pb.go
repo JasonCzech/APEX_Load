@@ -846,8 +846,15 @@ type ServerTelemetry struct {
 	CommitCount       int32 `protobuf:"varint,21,opt,name=commit_count,json=commitCount,proto3" json:"commit_count,omitempty"`
 	AbortCount        int32 `protobuf:"varint,22,opt,name=abort_count,json=abortCount,proto3" json:"abort_count,omitempty"`
 	ConsumerOffsetLag int64 `protobuf:"varint,23,opt,name=consumer_offset_lag,json=consumerOffsetLag,proto3" json:"consumer_offset_lag,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Event Hubs / streaming ingestion signals (EH.4).
+	ThrottledRequests  int32   `protobuf:"varint,24,opt,name=throttled_requests,json=throttledRequests,proto3" json:"throttled_requests,omitempty"`
+	ServerBusyCount    int32   `protobuf:"varint,25,opt,name=server_busy_count,json=serverBusyCount,proto3" json:"server_busy_count,omitempty"`
+	QuotaExceededCount int32   `protobuf:"varint,26,opt,name=quota_exceeded_count,json=quotaExceededCount,proto3" json:"quota_exceeded_count,omitempty"`
+	EventTooLargeCount int32   `protobuf:"varint,27,opt,name=event_too_large_count,json=eventTooLargeCount,proto3" json:"event_too_large_count,omitempty"`
+	EndToEndLatencyMs  float64 `protobuf:"fixed64,28,opt,name=end_to_end_latency_ms,json=endToEndLatencyMs,proto3" json:"end_to_end_latency_ms,omitempty"`
+	PartitionId        string  `protobuf:"bytes,29,opt,name=partition_id,json=partitionId,proto3" json:"partition_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ServerTelemetry) Reset() {
@@ -1039,6 +1046,48 @@ func (x *ServerTelemetry) GetConsumerOffsetLag() int64 {
 		return x.ConsumerOffsetLag
 	}
 	return 0
+}
+
+func (x *ServerTelemetry) GetThrottledRequests() int32 {
+	if x != nil {
+		return x.ThrottledRequests
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetServerBusyCount() int32 {
+	if x != nil {
+		return x.ServerBusyCount
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetQuotaExceededCount() int32 {
+	if x != nil {
+		return x.QuotaExceededCount
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetEventTooLargeCount() int32 {
+	if x != nil {
+		return x.EventTooLargeCount
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetEndToEndLatencyMs() float64 {
+	if x != nil {
+		return x.EndToEndLatencyMs
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetPartitionId() string {
+	if x != nil {
+		return x.PartitionId
+	}
+	return ""
 }
 
 type TransactionMetric struct {
@@ -2180,7 +2229,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x10shedded_arrivals\x18\x05 \x01(\x03R\x0fsheddedArrivals\"F\n" +
 	"\vGroupMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
-	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\xfd\a\n" +
+	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\x92\n" +
+	"\n" +
 	"\x0fServerTelemetry\x120\n" +
 	"\x14server_processing_ms\x18\x01 \x01(\x01R\x12serverProcessingMs\x12\x1f\n" +
 	"\vtransfer_ms\x18\x02 \x01(\x01R\n" +
@@ -2208,7 +2258,13 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\fcommit_count\x18\x15 \x01(\x05R\vcommitCount\x12\x1f\n" +
 	"\vabort_count\x18\x16 \x01(\x05R\n" +
 	"abortCount\x12.\n" +
-	"\x13consumer_offset_lag\x18\x17 \x01(\x03R\x11consumerOffsetLag\"\xa9\x05\n" +
+	"\x13consumer_offset_lag\x18\x17 \x01(\x03R\x11consumerOffsetLag\x12-\n" +
+	"\x12throttled_requests\x18\x18 \x01(\x05R\x11throttledRequests\x12*\n" +
+	"\x11server_busy_count\x18\x19 \x01(\x05R\x0fserverBusyCount\x120\n" +
+	"\x14quota_exceeded_count\x18\x1a \x01(\x05R\x12quotaExceededCount\x121\n" +
+	"\x15event_too_large_count\x18\x1b \x01(\x05R\x12eventTooLargeCount\x120\n" +
+	"\x15end_to_end_latency_ms\x18\x1c \x01(\x01R\x11endToEndLatencyMs\x12!\n" +
+	"\fpartition_id\x18\x1d \x01(\tR\vpartitionId\"\xa9\x05\n" +
 	"\x11TransactionMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
 	"\x12start_time_unix_ms\x18\x02 \x01(\x03R\x0fstartTimeUnixMs\x12\x1f\n" +

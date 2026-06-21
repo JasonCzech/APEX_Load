@@ -421,10 +421,19 @@ type ServerTelemetrySummary struct {
 	OutOfOrderCount           int64            `json:"out_of_order_count,omitempty"`
 	CommitCount               int64            `json:"commit_count,omitempty"`
 	AbortCount                int64            `json:"abort_count,omitempty"`
-	RequestSizeClasses        map[string]int64 `json:"request_size_classes,omitempty"`
-	ResponseSizeClasses       map[string]int64 `json:"response_size_classes,omitempty"`
-	ConnectionReusedCount     int64            `json:"connection_reused_count,omitempty"`
-	ConnectionReusedPct       float64          `json:"connection_reused_pct,omitempty"`
+	// Event Hubs / streaming ingestion aggregates (EH.4).
+	TotalThrottledRequests  int64            `json:"total_throttled_requests,omitempty"`
+	TotalServerBusyCount    int64            `json:"total_server_busy_count,omitempty"`
+	TotalQuotaExceededCount int64            `json:"total_quota_exceeded_count,omitempty"`
+	TotalEventTooLargeCount int64            `json:"total_event_too_large_count,omitempty"`
+	AvgEndToEndLatencyMs    float64          `json:"avg_end_to_end_latency_ms,omitempty"`
+	MaxEndToEndLatencyMs    float64          `json:"max_end_to_end_latency_ms,omitempty"`
+	PartitionEvents         map[string]int64 `json:"partition_events,omitempty"`
+	PartitionSkewPct        float64          `json:"partition_skew_pct,omitempty"`
+	RequestSizeClasses      map[string]int64 `json:"request_size_classes,omitempty"`
+	ResponseSizeClasses     map[string]int64 `json:"response_size_classes,omitempty"`
+	ConnectionReusedCount   int64            `json:"connection_reused_count,omitempty"`
+	ConnectionReusedPct     float64          `json:"connection_reused_pct,omitempty"`
 }
 
 type TelemetryHealth struct {

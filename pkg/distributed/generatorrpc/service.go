@@ -887,6 +887,12 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 				CommitCount:            tx.ServerTelemetry.CommitCount,
 				AbortCount:             tx.ServerTelemetry.AbortCount,
 				ConsumerOffsetLag:      tx.ServerTelemetry.ConsumerOffsetLag,
+				ThrottledRequests:      tx.ServerTelemetry.ThrottledRequests,
+				ServerBusyCount:        tx.ServerTelemetry.ServerBusyCount,
+				QuotaExceededCount:     tx.ServerTelemetry.QuotaExceededCount,
+				EventTooLargeCount:     tx.ServerTelemetry.EventTooLargeCount,
+				EndToEndLatencyMs:      tx.ServerTelemetry.EndToEndLatencyMs,
+				PartitionId:            tx.ServerTelemetry.PartitionID,
 			}
 		}
 		protoTransactions = append(protoTransactions, &pb.TransactionMetric{

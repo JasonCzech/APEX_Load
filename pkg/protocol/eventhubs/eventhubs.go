@@ -113,7 +113,7 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 	}
 
 	result.Duration = time.Since(start)
-	result.ServerTelemetry = finalizeTelemetry(result, sent, hasSent, received, hasReceived)
+	result.ServerTelemetry = finalizeTelemetry(result, sent, hasSent, received, hasReceived, err)
 	if err != nil {
 		result.Success = false
 		if result.StatusCode == 0 || result.StatusCode == 200 {

@@ -115,6 +115,12 @@ type ServerTelemetry struct {
 	CommitCount            int32
 	AbortCount             int32
 	ConsumerOffsetLag      int64
+	ThrottledRequests      int32
+	ServerBusyCount        int32
+	QuotaExceededCount     int32
+	EventTooLargeCount     int32
+	EndToEndLatencyMs      float64
+	PartitionID            string
 }
 
 type TransactionMetric struct {
@@ -454,6 +460,12 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 				CommitCount:            tx.GetServerTelemetry().GetCommitCount(),
 				AbortCount:             tx.GetServerTelemetry().GetAbortCount(),
 				ConsumerOffsetLag:      tx.GetServerTelemetry().GetConsumerOffsetLag(),
+				ThrottledRequests:      tx.GetServerTelemetry().GetThrottledRequests(),
+				ServerBusyCount:        tx.GetServerTelemetry().GetServerBusyCount(),
+				QuotaExceededCount:     tx.GetServerTelemetry().GetQuotaExceededCount(),
+				EventTooLargeCount:     tx.GetServerTelemetry().GetEventTooLargeCount(),
+				EndToEndLatencyMs:      tx.GetServerTelemetry().GetEndToEndLatencyMs(),
+				PartitionID:            tx.GetServerTelemetry().GetPartitionId(),
 			}
 		}
 		var snapshot *protocol.ErrorSnapshot
