@@ -942,8 +942,15 @@ func validateKafkaScriptIssues(script *Script) []string {
 			if strings.TrimSpace(kafka.SchemaRegistryURL) == "" && kafka.SchemaID <= 0 {
 				issues = append(issues, "config.kafka.serialization json_schema requires config.kafka.schema_registry_url or schema_id")
 			}
+		case "avro":
+			if strings.TrimSpace(kafka.SchemaRegistryURL) == "" && kafka.SchemaID <= 0 {
+				issues = append(issues, "config.kafka.serialization avro requires config.kafka.schema_registry_url or schema_id")
+			}
+			if strings.TrimSpace(kafka.Schema) == "" {
+				issues = append(issues, "config.kafka.serialization avro requires config.kafka.schema (the Avro schema)")
+			}
 		default:
-			issues = append(issues, fmt.Sprintf("config.kafka.serialization %q is not supported (raw or json_schema; avro/protobuf in a later release)", kafka.Serialization))
+			issues = append(issues, fmt.Sprintf("config.kafka.serialization %q is not supported (raw, json_schema, or avro; protobuf in a later release)", kafka.Serialization))
 		}
 	}
 	if kafka.TimeoutMs < 0 {

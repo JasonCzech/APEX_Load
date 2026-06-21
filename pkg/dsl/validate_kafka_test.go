@@ -210,6 +210,23 @@ func TestValidateKafkaScriptIssues(t *testing.T) {
 			wantClean: true,
 		},
 		{
+			name: "avro requires schema",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Serialization = "avro"
+				s.Config.Kafka.SchemaID = 7
+			},
+			wantHas: "avro requires config.kafka.schema",
+		},
+		{
+			name: "avro with schema and id is fine",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Serialization = "avro"
+				s.Config.Kafka.SchemaID = 7
+				s.Config.Kafka.Schema = `{"type":"record","name":"R","fields":[]}`
+			},
+			wantClean: true,
+		},
+		{
 			name: "transaction actions are valid",
 			mutate: func(s *Script) {
 				s.Config.Kafka.TransactionalID = "tx-1"

@@ -196,26 +196,46 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 // in the Confluent wire format using a schema id from either a Schema Registry
 // (schema_registry_url) or a static schema_id. Avro/Protobuf land in P2.2 part 2.
 func buildSerde(cfg config) (serde, error) {
-	switch cfg.Serialization {
-	case "", "raw":
+	if cfg.Serialization == "" || cfg.Serialization == "raw" {
 		return rawSerde{}, nil
+	}
+	subjectFor := func(topic string) string {
+		if cfg.Subject != "" {
+			return cfg.Subject
+		}
+		return topicNameSubject(topic)
+	}
+	resolver, err := schemaResolver(cfg, cfg.Serialization)
+	if err != nil {
+		return nil, err
+	}
+	switch cfg.Serialization {
 	case "json_schema":
-		subjectFor := func(topic string) string {
-			if cfg.Subject != "" {
-				return cfg.Subject
-			}
-			return topicNameSubject(topic)
+		return confluentSerde{resolver: resolver, subjectForTopic: subjectFor}, nil
+	case "avro":
+		if cfg.Schema == "" {
+			return nil, fmt.Errorf("kafka serialization avro requires config.kafka.schema (the Avro schema)")
 		}
-		switch {
-		case cfg.SchemaRegistryURL != "":
-			return confluentSerde{resolver: newSchemaRegistryClient(cfg.SchemaRegistryURL, cfg.Schema, "JSON"), subjectForTopic: subjectFor}, nil
-		case cfg.SchemaID > 0:
-			return confluentSerde{resolver: staticSchemaID(cfg.SchemaID), subjectForTopic: subjectFor}, nil
-		default:
-			return nil, fmt.Errorf("kafka serialization json_schema requires config.kafka.schema_registry_url or schema_id")
-		}
+		return newAvroSerde(cfg.Schema, resolver, subjectFor)
 	default:
 		return nil, fmt.Errorf("kafka serialization %q is not supported", cfg.Serialization)
+	}
+}
+
+// schemaResolver picks the schema id source for a registry serde: a Schema
+// Registry client (schema_registry_url) or a static schema_id.
+func schemaResolver(cfg config, format string) (schemaIDResolver, error) {
+	registryType := "JSON"
+	if format == "avro" {
+		registryType = "AVRO"
+	}
+	switch {
+	case cfg.SchemaRegistryURL != "":
+		return newSchemaRegistryClient(cfg.SchemaRegistryURL, cfg.Schema, registryType), nil
+	case cfg.SchemaID > 0:
+		return staticSchemaID(cfg.SchemaID), nil
+	default:
+		return nil, fmt.Errorf("kafka serialization %s requires config.kafka.schema_registry_url or schema_id", format)
 	}
 }
 
