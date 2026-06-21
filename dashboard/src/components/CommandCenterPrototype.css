@@ -488,6 +488,24 @@
   text-transform: uppercase;
 }
 
+/* Keep the averaged label + "10s avg" hint on one line without affecting the
+   other (un-hinted) metric labels. */
+.command-hero-metric.has-hint span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.command-hero-metric .command-hero-hint {
+  margin-left: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
 .command-hero-metric strong {
   color: var(--text-primary);
   font-size: 21px;

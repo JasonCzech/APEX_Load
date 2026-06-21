@@ -30,6 +30,7 @@ import {
   loadImpactPercentilesChart,
   prometheusChartData,
   rawGraphMetricKey,
+  resolveSharedCursorTime,
   responseTimeDataWithoutNetworkLatency,
   rollingArtStdDevWindowForRadius,
   routeLatencySeriesKeys,
@@ -634,5 +635,43 @@ describe('sortMetricTableRows', () => {
   it('sorts by a value column with missing values pinned last in both directions', () => {
     expect(sortMetricTableRows(rows, summaries, { key: 'latest', direction: 'desc' }).map(r => r.key)).toEqual(['a', 'b', 'c'])
     expect(sortMetricTableRows(rows, summaries, { key: 'latest', direction: 'asc' }).map(r => r.key)).toEqual(['b', 'a', 'c'])
+  })
+})
+
+describe('resolveSharedCursorTime', () => {
+  const points = (specs: Array<[string, number]>) => specs.map(([time, timestampMs]) => ({ time, timestampMs }))
+
+  it('returns the exact label when the hovered clock time is present (shared time domain)', () => {
+    const data = points([['T0', 0], ['T1', 1000], ['T2', 2000]])
+    expect(resolveSharedCursorTime(data, { label: 'T1', timestampMs: 1000 })).toBe('T1')
+  })
+
+  it('resolves by nearest timestamp — not a positional index — when the label is absent (the drift fix)', () => {
+    // Hovered on a chart of 4 coarse points; this chart was downsampled to 7
+    // finer points so the hovered clock label is not a member.
+    const denser = points([
+      ['F0', 0], ['F1', 500], ['F2', 1000], ['F3', 1500], ['F4', 2000], ['F5', 2500], ['F6', 3000],
+    ])
+    const cursor = { label: 'C3', timestampMs: 3000 }
+
+    // Correct: lands on the t=3000 sample at the right edge.
+    expect(resolveSharedCursorTime(denser, cursor)).toBe('F6')
+    // The old index-based fallback would have used index 3 ('F3', t=1500) —
+    // i.e. drifted progressively left as the pointer moved right. Guard against
+    // regressing to that.
+    expect(resolveSharedCursorTime(denser, cursor)).not.toBe('F3')
+  })
+
+  it('snaps to the closest sample when the timestamp falls between points', () => {
+    const data = points([['T0', 0], ['T1', 1000], ['T2', 2000]])
+    expect(resolveSharedCursorTime(data, { timestampMs: 1400 })).toBe('T1')
+    expect(resolveSharedCursorTime(data, { timestampMs: 1600 })).toBe('T2')
+  })
+
+  it('draws nothing rather than a misleading cursor when neither label nor timestamp can resolve', () => {
+    const data = points([['T0', 0], ['T1', 1000]])
+    expect(resolveSharedCursorTime(data, { label: 'missing' })).toBeUndefined()
+    expect(resolveSharedCursorTime([], { label: 'T0', timestampMs: 0 })).toBeUndefined()
+    expect(resolveSharedCursorTime(data, null)).toBeUndefined()
   })
 })

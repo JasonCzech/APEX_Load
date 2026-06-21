@@ -18,18 +18,20 @@ class MockWebSocket {
   onclose: ((event: CloseEvent) => void) | null = null
   onerror: ((event: Event) => void) | null = null
   onmessage: ((event: MessageEvent<string>) => void) | null = null
+  closed = false
 
   constructor(public readonly url: string) {
     MockWebSocket.instances.push(this)
   }
 
   close() {
+    this.closed = true
     this.onclose?.(new CloseEvent('close'))
   }
 }
 
-function Harness({ projectId, bridge }: { projectId?: string; bridge?: any }) {
-  const { connected, connectionState } = useWebSocket({ projectId, bridge })
+function Harness({ projectId, bridge, onOpen }: { projectId?: string; bridge?: any; onOpen?: () => void }) {
+  const { connected, connectionState } = useWebSocket({ projectId, bridge, onOpen })
 
   return (
     <div
@@ -54,6 +56,20 @@ describe('useWebSocket', () => {
 
   function state() {
     return container.querySelector('[data-testid="state"]')
+  }
+
+  function dispatchVisibility(value: DocumentVisibilityState) {
+    act(() => {
+      visibilityState = value
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+  }
+
+  async function openSocket() {
+    flushDebounce()
+    await act(async () => {
+      MockWebSocket.instances[MockWebSocket.instances.length - 1]?.onopen?.(new Event('open'))
+    })
   }
 
   beforeEach(() => {
@@ -125,16 +141,74 @@ describe('useWebSocket', () => {
     expect(MockWebSocket.instances[0]?.url).toBe('ws://127.0.0.1:49152/api/v1/ws?bridge_session_id=ws-1')
   })
 
-  it('reports disconnected (not stuck connecting) and opens no socket when the tab is hidden', async () => {
+  it('still connects when the tab is hidden so the live stream is not interrupted by tab blur', async () => {
     visibilityState = 'hidden'
 
     await act(async () => {
       root.render(<Harness />)
     })
-    flushDebounce()
 
+    // Hidden or visible, we advertise connecting and open a socket so metrics
+    // keep streaming while the dashboard tab is backgrounded.
+    expect(state()?.getAttribute('data-connection-state')).toBe('connecting')
+    flushDebounce()
+    expect(MockWebSocket.instances).toHaveLength(1)
+  })
+
+  it('keeps the open socket alive when the tab is backgrounded', async () => {
+    await act(async () => {
+      root.render(<Harness />)
+    })
+    await openSocket()
+    expect(state()?.getAttribute('data-connection-state')).toBe('connected')
+
+    dispatchVisibility('hidden')
+
+    // The socket must NOT be torn down on blur — that is exactly what produced
+    // the multi-minute graph gaps.
+    expect(MockWebSocket.instances).toHaveLength(1)
+    expect(MockWebSocket.instances[0]?.closed).toBe(false)
+    expect(state()?.getAttribute('data-connection-state')).toBe('connected')
+  })
+
+  it('reconnects immediately when the tab becomes visible and the socket had dropped', async () => {
+    await act(async () => {
+      root.render(<Harness />)
+    })
+    await openSocket()
+
+    // Simulate the browser closing the frozen/backgrounded tab's socket.
+    await act(async () => {
+      MockWebSocket.instances[0]?.onclose?.(new CloseEvent('close'))
+    })
     expect(state()?.getAttribute('data-connection-state')).toBe('disconnected')
-    expect(MockWebSocket.instances).toHaveLength(0)
+    expect(MockWebSocket.instances).toHaveLength(1)
+
+    // Returning to the tab reconnects right away, without waiting out the 3s
+    // backoff (which the browser may have throttled while hidden).
+    dispatchVisibility('visible')
+    expect(MockWebSocket.instances).toHaveLength(2)
+  })
+
+  it('invokes onOpen each time a socket opens so consumers can backfill', async () => {
+    const onOpen = vi.fn()
+    await act(async () => {
+      root.render(<Harness onOpen={onOpen} />)
+    })
+    await openSocket()
+    expect(onOpen).toHaveBeenCalledTimes(1)
+
+    // A drop + reconnect fires onOpen again.
+    await act(async () => {
+      MockWebSocket.instances[0]?.onclose?.(new CloseEvent('close'))
+    })
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+    await act(async () => {
+      MockWebSocket.instances[1]?.onopen?.(new Event('open'))
+    })
+    expect(onOpen).toHaveBeenCalledTimes(2)
   })
 
   it('coalesces rapid projectId changes into a single socket', async () => {

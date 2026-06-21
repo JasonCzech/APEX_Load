@@ -22,7 +22,7 @@ vi.mock('recharts', () => {
     children?: ReactNode
     data?: unknown[]
     syncId?: string
-    onMouseMove?: (event: { activeLabel?: string; activeTooltipIndex?: number }) => void
+    onMouseMove?: (event: { activeLabel?: string; activeTooltipIndex?: number; activePayload?: Array<{ payload?: { timestampMs?: number } }> }) => void
   }) => (
     <svg
       data-testid="mock-chart"
@@ -30,7 +30,7 @@ vi.mock('recharts', () => {
       data-sync-id={syncId ?? ''}
       width="640"
       height="200"
-      onMouseMove={() => onMouseMove?.({ activeLabel: '10:00:01', activeTooltipIndex: 1 })}
+      onMouseMove={() => onMouseMove?.({ activeLabel: '10:00:01', activeTooltipIndex: 1, activePayload: [{ payload: { timestampMs: 1_000 } }] })}
     >
       {children}
     </svg>
@@ -1155,7 +1155,7 @@ describe('TestExecutionCharts context menu', () => {
           surface="command-center"
           storageScope="apexload.commandCenter.ops"
           defaultDensity="command_center"
-          activeCursor={{ label: '10:00:01', index: 1 }}
+          activeCursor={{ label: '10:00:01', timestampMs: 1_000 }}
           onActiveCursorChange={onActiveCursorChange}
         />,
       )
@@ -1216,7 +1216,10 @@ describe('TestExecutionCharts context menu', () => {
       container.querySelector<SVGElement>('[data-testid="mock-chart"]')?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
     })
 
-    expect(onActiveCursorChange).toHaveBeenCalledWith({ label: '10:00:01', index: 1 })
+    // The shared cursor is keyed by the hovered sample's timestamp (from the
+    // Recharts active payload), not a positional index — that is what keeps the
+    // crosshair aligned across differently-downsampled charts.
+    expect(onActiveCursorChange).toHaveBeenCalledWith({ label: '10:00:01', timestampMs: 1_000 })
   })
 
   it('toggles gradient underlays and dense chart downsampling from graph options', async () => {

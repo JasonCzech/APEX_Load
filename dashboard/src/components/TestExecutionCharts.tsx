@@ -74,6 +74,7 @@ import {
   sameStringSet,
   sortMetricTableRows,
   rawGraphMetricKey,
+  resolveSharedCursorTime,
   shouldRenderArtStdDevBands,
   smoothingRadiusForGraphDensity,
   smoothedGraphMetricKey,
@@ -168,16 +169,19 @@ const EMPTY_PROMETHEUS_GRAPHS: PrometheusGraph[] = []
 
 export interface GraphCursorState {
   label?: string | number
-  index?: number
+  // The hovered sample's timestamp. Charts resolve the crosshair by this (not by
+  // a positional index) so it stays aligned across differently-downsampled charts.
+  timestampMs?: number
 }
 
 interface RechartsMouseEvent {
   activeLabel?: string | number
   activeTooltipIndex?: number
+  activePayload?: Array<{ payload?: { timestampMs?: number } }>
 }
 
 const graphGroupTabs: Array<{ id: GraphGroupTabId; label: string }> = [
-  { id: 'test_results', label: 'Test Results' },
+  { id: 'test_results', label: 'Live Metrics' },
   { id: 'under_load', label: 'Under Load' },
   { id: 'infrastructure', label: 'Infrastructure' },
   { id: 'prometheus', label: 'Prometheus' },
@@ -854,17 +858,7 @@ export default function TestExecutionCharts({
     }
   }
 
-  const cursorXForChart = (chartData: MetricsHistoryPoint[]) => {
-    if (!sharedCursor || chartData.length === 0) return undefined
-    if (sharedCursor.label !== undefined && chartData.some(point => point.time === sharedCursor.label)) {
-      return sharedCursor.label
-    }
-    if (typeof sharedCursor.index === 'number' && Number.isFinite(sharedCursor.index)) {
-      const index = Math.max(0, Math.min(chartData.length - 1, Math.round(sharedCursor.index)))
-      return chartData[index]?.time
-    }
-    return undefined
-  }
+  const cursorXForChart = (chartData: MetricsHistoryPoint[]) => resolveSharedCursorTime(chartData, sharedCursor)
 
   const renderSharedCursor = (chartData: MetricsHistoryPoint[], yAxisId?: string | number) => {
     if (surface !== 'command-center') return null
@@ -954,8 +948,12 @@ export default function TestExecutionCharts({
     setHoveredChartId(current => current === chartId ? current : chartId)
     const activeLabel = event?.activeLabel
     if (surface === 'command-center') {
-      const nextCursor = activeLabel !== undefined || typeof event?.activeTooltipIndex === 'number'
-        ? { label: activeLabel, index: event?.activeTooltipIndex }
+      // Key the shared crosshair on the hovered sample's timestamp (from the
+      // Recharts active payload), not a positional index — so it lines up on
+      // every chart regardless of how each was downsampled.
+      const timestampMs = event?.activePayload?.[0]?.payload?.timestampMs
+      const nextCursor = activeLabel !== undefined || typeof timestampMs === 'number'
+        ? { label: activeLabel, timestampMs }
         : null
       updateSharedCursor(nextCursor)
     }

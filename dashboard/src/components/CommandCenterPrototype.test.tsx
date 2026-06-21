@@ -313,7 +313,7 @@ describe('CommandCenterPrototype', () => {
     expect(runtimeGraphs?.querySelector('.charts-toolbar-title-row')?.textContent).toContain('Runtime Graphs')
     expect(runtimeGraphs?.querySelector('.charts-toolbar-title-row')?.textContent).toContain('Configure Graphs')
     expect(runtimeGraphs?.querySelector('[role="tablist"][aria-label="Graph groups"]')).not.toBeNull()
-    expect(tabNamed('Test Results')?.getAttribute('aria-selected')).toBe('true')
+    expect(tabNamed('Live Metrics')?.getAttribute('aria-selected')).toBe('true')
     expect(runtimeGraphs?.textContent).toContain('Transactions Per Second')
     expect(runtimeGraphs?.textContent).not.toContain('CPU Usage — Fleet (%)')
 

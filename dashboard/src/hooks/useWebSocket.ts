@@ -10,6 +10,9 @@ interface UseWebSocketOptions {
   projectId?: string
   enabled?: boolean
   onMessage?: (msg: WSMessage) => void
+  // Fired every time a socket opens — initial connect and every reconnect.
+  // Consumers use this to backfill any window missed while disconnected.
+  onOpen?: () => void
   bridge?: BrowserRecorderBridgeConnection | null
 }
 
@@ -17,30 +20,31 @@ interface UseWebSocketOptions {
 // undefined to the resolved active project during initial load — into a single
 // socket, so the connection indicator doesn't flap through connecting/disconnected.
 const CONNECT_DEBOUNCE_MS = 150
+const RECONNECT_DELAY_MS = 3000
 
-function pageVisible() {
-  return typeof document === 'undefined' || document.visibilityState === 'visible'
-}
-
-export function useWebSocket({ testId, projectId, enabled = true, onMessage, bridge }: UseWebSocketOptions = {}) {
+export function useWebSocket({ testId, projectId, enabled = true, onMessage, onOpen, bridge }: UseWebSocketOptions = {}) {
   const [connectionState, setConnectionState] = useState<WebSocketConnectionState>(
-    enabled && pageVisible() ? 'connecting' : 'disconnected',
+    enabled ? 'connecting' : 'disconnected',
   )
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<number | null>(null)
   const shouldReconnectRef = useRef(true)
-  const isPageVisibleRef = useRef(pageVisible())
   const onMessageRef = useRef(onMessage)
   onMessageRef.current = onMessage
+  const onOpenRef = useRef(onOpen)
+  onOpenRef.current = onOpen
 
   const connect = useCallback(() => {
-    // The page can become hidden (or the hook disabled) between scheduling and
+    // The hook may have been disabled (or torn down) between scheduling and
     // firing — reflect that as disconnected rather than leaving a stale
     // "connecting" the socket will never resolve.
-    if (!enabled || !shouldReconnectRef.current || !isPageVisibleRef.current) {
+    if (!enabled || !shouldReconnectRef.current) {
       setConnectionState('disconnected')
       return
     }
+    // A live socket already exists (e.g. a visibility-triggered reconnect raced
+    // the backoff timer) — never open a second one.
+    if (wsRef.current) return
 
     const query = !testId && projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''
     const path = testId ? `/api/v1/tests/${testId}/stream` : `/api/v1/ws${query}`
@@ -56,6 +60,7 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, bri
         clearTimeout(reconnectTimer.current)
         reconnectTimer.current = null
       }
+      onOpenRef.current?.()
     }
 
     ws.onmessage = (event) => {
@@ -72,10 +77,10 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, bri
       if (wsRef.current === ws) {
         wsRef.current = null
       }
-      if (!shouldReconnectRef.current || !isPageVisibleRef.current) return
+      if (!shouldReconnectRef.current) return
       reconnectTimer.current = window.setTimeout(() => {
-        if (shouldReconnectRef.current && isPageVisibleRef.current) connect()
-      }, 3000)
+        if (shouldReconnectRef.current) connect()
+      }, RECONNECT_DELAY_MS)
     }
 
     ws.onerror = () => {
@@ -85,15 +90,10 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, bri
 
   useEffect(() => {
     shouldReconnectRef.current = true
-
-    // Only advertise "connecting" when we are actually going to open a socket.
-    // A hidden tab waits for the visibilitychange handler to connect, so showing
-    // "connecting" there would stick forever.
-    const willConnect = enabled && isPageVisibleRef.current
-    setConnectionState(willConnect ? 'connecting' : 'disconnected')
+    setConnectionState(enabled ? 'connecting' : 'disconnected')
 
     let debounceTimer: number | null = null
-    if (willConnect) {
+    if (enabled) {
       debounceTimer = window.setTimeout(connect, CONNECT_DEBOUNCE_MS)
     }
 
@@ -115,30 +115,24 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, bri
     }
   }, [connect, enabled])
 
+  // The socket is intentionally kept open while the tab is in the background so
+  // live metrics keep streaming (and the graphs don't develop a gap the length
+  // of the time the tab was unfocused). The only thing we do on visibility
+  // change is recover: a tab the browser froze/discarded — or a machine that
+  // slept — may have had its socket closed and its reconnect timer throttled, so
+  // when we become visible again, reconnect immediately instead of waiting out
+  // the backoff.
   useEffect(() => {
     if (typeof document === 'undefined') return
 
     const handleVisibilityChange = () => {
-      isPageVisibleRef.current = document.visibilityState === 'visible'
-
-      if (!isPageVisibleRef.current) {
-        if (reconnectTimer.current) {
-          clearTimeout(reconnectTimer.current)
-          reconnectTimer.current = null
-        }
-        const ws = wsRef.current
-        wsRef.current = null
-        if (ws) {
-          ws.onclose = null
-          ws.close()
-        }
-        setConnectionState('disconnected')
-        return
+      if (document.visibilityState !== 'visible') return
+      if (!enabled || !shouldReconnectRef.current || wsRef.current) return
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current)
+        reconnectTimer.current = null
       }
-
-      if (enabled && shouldReconnectRef.current && !wsRef.current) {
-        connect()
-      }
+      connect()
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)

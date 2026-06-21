@@ -133,6 +133,104 @@ func TestMetricsCollector_AggregateProducesIdleSnapshot(t *testing.T) {
 	}
 }
 
+// TestMetricsCollector_EmptyWindowSnapshotEmission pins down when an empty
+// aggregation window (no completed transactions) still produces a zero-valued,
+// timestamped snapshot. The key case is "active VUsers but nothing completing"
+// — a stall, long think-time, or blocked downstream — which must emit so the
+// runtime graphs draw a flat zero line rather than a multi-minute gap.
+func TestMetricsCollector_EmptyWindowSnapshotEmission(t *testing.T) {
+	tests := []struct {
+		name          string
+		idleSnapshots bool
+		activeVUsers  int64
+		wantSnapshot  bool
+	}{
+		{name: "active vusers with no completed transactions emits (stall)", idleSnapshots: false, activeVUsers: 8, wantSnapshot: true},
+		{name: "active vusers with baseline configured also emits", idleSnapshots: true, activeVUsers: 8, wantSnapshot: true},
+		{name: "baseline window with no vusers emits", idleSnapshots: true, activeVUsers: 0, wantSnapshot: true},
+		{name: "idle window with no vusers and no baseline is skipped", idleSnapshots: false, activeVUsers: 0, wantSnapshot: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := NewMetricsCollector(100)
+			mc.EnableIdleSnapshots(tt.idleSnapshots)
+			mc.SetActiveVUsers(tt.activeVUsers)
+			mc.Start(20 * time.Millisecond)
+			defer mc.Stop()
+
+			// Several ticks elapse with nothing recorded — every window is empty.
+			time.Sleep(90 * time.Millisecond)
+
+			snap, ok := mc.LatestSnapshot()
+			if ok != tt.wantSnapshot {
+				t.Fatalf("LatestSnapshot ok = %v, want %v", ok, tt.wantSnapshot)
+			}
+			if !tt.wantSnapshot {
+				return
+			}
+			if snap.Transactions != 0 || snap.Errors != 0 {
+				t.Errorf("empty-window snapshot tx/err = %d/%d, want 0/0", snap.Transactions, snap.Errors)
+			}
+			if snap.TPS != 0 {
+				t.Errorf("empty-window TPS = %v, want 0", snap.TPS)
+			}
+			if snap.ActiveVUsers != tt.activeVUsers {
+				t.Errorf("snapshot ActiveVUsers = %d, want %d", snap.ActiveVUsers, tt.activeVUsers)
+			}
+			if snap.Timestamp.IsZero() {
+				t.Error("empty-window snapshot must carry a timestamp")
+			}
+		})
+	}
+}
+
+// TestMetricsCollector_NonEmptyWindowUnaffected confirms a window that does
+// contain completed transactions is still aggregated normally — the empty-window
+// emission change must not alter the populated path.
+func TestMetricsCollector_NonEmptyWindowUnaffected(t *testing.T) {
+	mc := NewMetricsCollector(100)
+	mc.SetActiveVUsers(4)
+
+	// Buffer both results before starting the aggregator so they drain into the
+	// same window deterministically.
+	mc.RecordTransaction("checkout", 12*time.Millisecond, true, "buyers")
+	mc.RecordTransaction("checkout", 8*time.Millisecond, false, "buyers")
+
+	mc.Start(20 * time.Millisecond)
+	defer mc.Stop()
+
+	time.Sleep(90 * time.Millisecond)
+
+	if got := mc.TotalTransactions(); got != 1 {
+		t.Errorf("total transactions = %d, want 1", got)
+	}
+	if got := mc.TotalErrors(); got != 1 {
+		t.Errorf("total errors = %d, want 1", got)
+	}
+
+	// The completed transactions must appear in some emitted window with the
+	// real values (later empty windows now emit zeros too, so scan history).
+	mc.snapshotsMu.RLock()
+	defer mc.snapshotsMu.RUnlock()
+	var found *MetricsSnapshot
+	for i := range mc.snapshots {
+		if mc.snapshots[i].Transactions == 1 && mc.snapshots[i].Errors == 1 {
+			found = &mc.snapshots[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("no snapshot captured the completed transaction window; snapshots=%d", len(mc.snapshots))
+	}
+	if found.AvgDuration <= 0 {
+		t.Errorf("populated-window AvgDuration = %v, want > 0", found.AvgDuration)
+	}
+	if buyers := found.ByGroup["buyers"]; buyers == nil || buyers.Transactions != 1 {
+		t.Errorf("populated-window group 'buyers' = %#v, want 1 transaction", buyers)
+	}
+}
+
 func TestMetricsCollector_ByAction(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	mc.Start(50 * time.Millisecond)

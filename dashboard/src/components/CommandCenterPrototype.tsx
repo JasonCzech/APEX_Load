@@ -19,7 +19,7 @@ import type { BrowserReplaySnapshot, GroupLiveMetrics, IntervalSummaryRecord, Li
 import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
 import type { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
-import { mapArchiveSummarySamples, mapExecutionHistory, mapExecutionMetricToHistoryPoint } from './testExecutionMetricsModel'
+import { mapArchiveSummarySamples, mapExecutionHistory, mapExecutionMetricToHistoryPoint, recentMetricAverages } from './testExecutionMetricsModel'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
@@ -1537,6 +1537,7 @@ export default function CommandCenterPrototype({
           onVariantChange={changeVariant}
           groups={groups}
           metrics={displayTest.live_metrics}
+          metricsHistory={liveMode ? localMetricsHistory : []}
           errorPatterns={errorPatterns}
           selectedError={selectedError}
           selectedErrorEvidence={selectedErrorEvidence}
@@ -1833,6 +1834,7 @@ interface OpsCockpitViewProps {
   onVariantChange: (variant: VariantId) => void
   groups: CommandGroup[]
   metrics?: LiveMetrics
+  metricsHistory?: MetricsHistoryPoint[]
   errorPatterns: ErrorPattern[]
   selectedError?: ErrorPattern
   selectedErrorEvidence: LiveErrorEvidence[]
@@ -1868,6 +1870,7 @@ function OpsCockpitView({
   onVariantChange,
   groups,
   metrics,
+  metricsHistory,
   errorPatterns,
   selectedError,
   selectedErrorEvidence,
@@ -1892,7 +1895,7 @@ function OpsCockpitView({
   return (
     <section className="command-layout command-layout-ops" aria-label="Ops cockpit mockup">
       <div className="command-primary-column">
-        <HeroMetricStrip groups={groups} metrics={metrics} />
+        <HeroMetricStrip groups={groups} metrics={metrics} metricsHistory={metricsHistory} />
         <div className="command-load-model-row">
           <GroupLoadTable
             groups={groups}
@@ -3252,11 +3255,14 @@ function CommandRuntimeGraphs({
   )
 }
 
-function HeroMetricStrip({ groups, metrics }: { groups: CommandGroup[]; metrics?: LiveMetrics }) {
-  const totalTps = metrics?.tps ?? groups.reduce((sum, group) => sum + group.tps, 0)
+function HeroMetricStrip({ groups, metrics, metricsHistory = [] }: { groups: CommandGroup[]; metrics?: LiveMetrics; metricsHistory?: MetricsHistoryPoint[] }) {
   const totalTransactions = groups.reduce((sum, group) => sum + group.transactions, 0)
   const weightedArt = totalTransactions > 0 ? groups.reduce((sum, group) => sum + group.art * group.transactions, 0) / totalTransactions : 0
-  const avgArt = metrics?.avg_response_ms ?? weightedArt
+  // TPS and ART read as a trailing 10-second average (smoother than a single 1s
+  // sample), falling back to the instantaneous value before any history exists.
+  const averages = recentMetricAverages(metricsHistory)
+  const totalTps = averages.tps ?? metrics?.tps ?? groups.reduce((sum, group) => sum + group.tps, 0)
+  const avgArt = averages.art ?? metrics?.avg_response_ms ?? weightedArt
   const groupedErrorPct = totalTransactions > 0 ? groups.reduce((sum, group) => sum + group.errors, 0) / totalTransactions * 100 : 0
   const errorPct = metrics?.error_pct ?? groupedErrorPct
   const activeVUsers = metrics?.active_vusers ?? groups.reduce((sum, group) => sum + group.current, 0)
@@ -3264,8 +3270,8 @@ function HeroMetricStrip({ groups, metrics }: { groups: CommandGroup[]; metrics?
   const targetValue = groups.reduce((sum, group) => sum + group.target, 0)
   return (
     <div className="command-hero-strip" aria-label="Top line live metrics">
-      <HeroMetric label="TPS" value={formatNumber(totalTps, 1)} tone="accent" />
-      <HeroMetric label="ART" value={`${formatNumber(avgArt)} ms`} tone="default" />
+      <HeroMetric label="TPS" value={formatNumber(totalTps, 1)} tone="accent" hint={averages.tps !== undefined ? '10s avg' : undefined} />
+      <HeroMetric label="ART" value={`${formatNumber(avgArt)} ms`} tone="default" hint={averages.art !== undefined ? '10s avg' : undefined} />
       <HeroMetric label="Error Rate" value={formatPercent(errorPct)} tone="danger" />
       <HeroMetric label="Active VUsers" value={formatNumber(activeVUsers)} tone="info" />
       <HeroMetric label={targetMode === 'tps' ? 'Target TPS' : 'Target VUsers'} value={formatNumber(targetValue, targetMode === 'tps' ? 1 : 0)} tone="success" />
@@ -3273,10 +3279,10 @@ function HeroMetricStrip({ groups, metrics }: { groups: CommandGroup[]; metrics?
   )
 }
 
-function HeroMetric({ label, value, tone }: { label: string; value: string; tone: 'default' | 'accent' | 'danger' | 'info' | 'success' }) {
+function HeroMetric({ label, value, tone, hint }: { label: string; value: string; tone: 'default' | 'accent' | 'danger' | 'info' | 'success'; hint?: string }) {
   return (
-    <div className={`command-hero-metric ${tone}`}>
-      <span>{label}</span>
+    <div className={`command-hero-metric ${tone}${hint ? ' has-hint' : ''}`} title={hint ? `${label} — ${hint}` : undefined}>
+      <span>{label}{hint ? <small className="command-hero-hint">{hint}</small> : null}</span>
       <strong>{value}</strong>
     </div>
   )

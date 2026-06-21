@@ -11,12 +11,17 @@ import { useExecutionMetricsStream } from './useExecutionMetricsStream'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const useWebSocketMock = vi.fn()
+const getTestMock = vi.fn()
 const edgeLatencyKey = latencySeriesKeyForTarget({ name: 'edge', endpoint: 'https://example.test' })
 const edgeDnsKey = routeLatencyDetailSeriesKeyForTarget({ name: 'edge', endpoint: 'https://example.test' }, 'dns')
 const edgeSuccessRateKey = routeLatencyDetailSeriesKeyForTarget({ name: 'edge', endpoint: 'https://example.test' }, 'successRate')
 
 vi.mock('../hooks/useWebSocket', () => ({
   useWebSocket: (...args: unknown[]) => useWebSocketMock(...args),
+}))
+
+vi.mock('../hooks/useApi', () => ({
+  useApi: () => ({ getTest: getTestMock }),
 }))
 
 function MetricsStreamHarness({ status = 'RUNNING', testId = 'test-1' }: { status?: 'RUNNING' | 'COMPLETE'; testId?: string }) {
@@ -49,13 +54,16 @@ describe('useExecutionMetricsStream', () => {
   let container: HTMLDivElement
   let root: Root
   let onMessage: ((msg: WSMessage) => void) | undefined
+  let onOpen: (() => void) | undefined
 
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-05-12T20:05:01.250Z'))
-    useWebSocketMock.mockImplementation(({ onMessage: handler }: { onMessage?: (msg: WSMessage) => void }) => {
+    getTestMock.mockResolvedValue({ history: [] })
+    useWebSocketMock.mockImplementation(({ onMessage: handler, onOpen: openHandler }: { onMessage?: (msg: WSMessage) => void; onOpen?: () => void }) => {
       onMessage = handler
-      return { connected: true }
+      onOpen = openHandler
+      return { connected: true, connectionState: 'connected' }
     })
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -68,6 +76,7 @@ describe('useExecutionMetricsStream', () => {
     })
     container.remove()
     onMessage = undefined
+    onOpen = undefined
     vi.useRealTimers()
     vi.clearAllMocks()
   })
@@ -259,9 +268,50 @@ describe('useExecutionMetricsStream', () => {
     expect(readTestId('tps')).toBe('-1')
   })
 
+  it('backfills the missed window from server history when the stream reconnects', async () => {
+    // Server has recorded two snapshots; the client only saw the first live.
+    getTestMock.mockResolvedValueOnce({
+      history: [
+        { timestamp: '2026-05-12T20:05:00Z', tps: 9, active_vusers: 5, avg_response_ms: 100, error_pct: 0, p50_ms: 1, p90_ms: 1, p95_ms: 1, p99_ms: 1 },
+        { timestamp: '2026-05-12T20:06:00Z', tps: 99, active_vusers: 5, avg_response_ms: 100, error_pct: 0, p50_ms: 1, p90_ms: 1, p95_ms: 1, p99_ms: 1 },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<MetricsStreamHarness />)
+    })
+
+    // First open: nothing has been missed, so no backfill fetch happens.
+    await triggerOpen()
+    expect(getTestMock).not.toHaveBeenCalled()
+
+    await emit({
+      type: 'metrics_update',
+      timestamp: '2026-05-12T20:05:00Z',
+      data: { active_vusers: 5, tps: 9, avg_response_ms: 100, error_pct: 0, p50_ms: 1, p90_ms: 1, p99_ms: 1 },
+    } as WSMessage)
+    expect(readTestId('count')).toBe('1')
+
+    // Reconnect: the 20:06:00 snapshot the client missed is merged in.
+    await triggerOpen()
+
+    expect(getTestMock).toHaveBeenCalledWith('test-1')
+    expect(readTestId('count')).toBe('2')
+    expect(readTestId('tps')).toBe('99')
+  })
+
   async function emit(message: WSMessage) {
     await act(async () => {
       onMessage?.(message)
+    })
+  }
+
+  async function triggerOpen() {
+    await act(async () => {
+      onOpen?.()
+      // Flush the getTest() promise chain that the backfill kicks off.
+      await Promise.resolve()
+      await Promise.resolve()
     })
   }
 

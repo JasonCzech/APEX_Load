@@ -9,6 +9,8 @@ import {
   mapExecutionHistory,
   markDataGaps,
   mergeArchiveResourceHistory,
+  mergeMetricsHistory,
+  recentMetricAverages,
   summarizeExecutionChartData,
 } from './testExecutionMetricsModel'
 import { latencySeriesKeyForTarget, routeLatencyDetailSeriesKeyForTarget } from './latencySeries'
@@ -458,5 +460,80 @@ describe('testExecutionMetricsModel', () => {
       { time: 'b', timestampMs: 2, vusers: 1, tps: 1, avgMs: 1, errorPct: 0, p50: 1, p90: 1, p99: 1 },
     ]
     expect(markDataGaps(points)).toBe(points)
+  })
+
+  it('merges server history into the live series, filling missed windows in time order', () => {
+    const live: MetricsHistoryPoint[] = [
+      { time: 'a', timestampMs: 1000, vusers: 1, tps: 10, avgMs: 1, errorPct: 0, p50: 1, p90: 1, p99: 1 },
+      { time: 'b', timestampMs: 2000, vusers: 1, tps: 11, avgMs: 1, errorPct: 0, p50: 1, p90: 1, p99: 1 },
+    ]
+    // Server history overlaps t=2000 (dup) and adds the missed t=3000/4000.
+    const backfill: MetricsHistoryPoint[] = [
+      { time: 'b-server', timestampMs: 2000, vusers: 9, tps: 999, avgMs: 9, errorPct: 9, p50: 9, p90: 9, p99: 9 },
+      { time: 'c', timestampMs: 3000, vusers: 1, tps: 12, avgMs: 1, errorPct: 0, p50: 1, p90: 1, p99: 1 },
+      { time: 'd', timestampMs: 4000, vusers: 1, tps: 13, avgMs: 1, errorPct: 0, p50: 1, p90: 1, p99: 1 },
+    ]
+
+    const merged = mergeMetricsHistory(live, backfill)
+
+    expect(merged.map((p) => p.timestampMs)).toEqual([1000, 2000, 3000, 4000])
+    // The existing live point wins on conflict (keeps client-side enrichment).
+    expect(merged[1].tps).toBe(11)
+    expect(merged[1].time).toBe('b')
+  })
+
+  it('returns the original series reference when the backfill adds nothing new', () => {
+    const live: MetricsHistoryPoint[] = [
+      { time: 'a', timestampMs: 1000, vusers: 1, tps: 10, avgMs: 1, errorPct: 0, p50: 1, p90: 1, p99: 1 },
+    ]
+    expect(mergeMetricsHistory(live, [])).toBe(live)
+    expect(mergeMetricsHistory(live, [{ ...live[0], tps: 999 }])).toBe(live)
+  })
+})
+
+describe('recentMetricAverages', () => {
+  const pt = (timestampMs: number, tps: number, avgMs: number): MetricsHistoryPoint => ({
+    time: String(timestampMs), timestampMs, vusers: 0, tps, avgMs, errorPct: 0, p50: 0, p90: 0, p99: 0,
+  })
+
+  it('averages TPS over the trailing 10s window, anchored on the latest sample', () => {
+    const history = [pt(0, 1, 100), pt(5_000, 2, 100), pt(10_000, 3, 100), pt(15_000, 4, 100), pt(20_000, 5, 100)]
+    // Anchor 20_000 → cutoff 10_000 → window is the t=10/15/20s points: tps 3,4,5.
+    const { tps } = recentMetricAverages(history)
+    expect(tps).toBe(4)
+  })
+
+  it('weights ART by throughput so busy seconds count more', () => {
+    const history = [pt(0, 1, 100), pt(1_000, 9, 200)]
+    const { art, tps } = recentMetricAverages(history)
+    // (100*1 + 200*9) / (1 + 9) = 190, not the unweighted mean of 150.
+    expect(art).toBe(190)
+    expect(tps).toBe(5)
+  })
+
+  it('falls back to a simple ART mean when the window has no throughput', () => {
+    const history = [pt(0, 0, 50), pt(1_000, 0, 150)]
+    const { art, tps } = recentMetricAverages(history)
+    expect(art).toBe(100)
+    expect(tps).toBe(0)
+  })
+
+  it('honours a custom window and excludes samples outside it', () => {
+    const history = [pt(0, 100, 100), pt(9_000, 2, 200), pt(10_000, 4, 200)]
+    // 2s window anchored at 10_000 → cutoff 8_000 → only the 9s and 10s points.
+    const { tps, art } = recentMetricAverages(history, 2_000)
+    expect(tps).toBe(3)
+    expect(art).toBe(200)
+  })
+
+  it('ignores value-less gap-spacer rows and returns empty for empty history', () => {
+    const spacer = { time: 'gap', timestampMs: 15_000 } as unknown as MetricsHistoryPoint
+    const history = [pt(0, 2, 100), pt(10_000, 4, 100), spacer]
+    // Anchor skips the spacer (no tps) → anchors at 10_000, cutoff 0 → both real
+    // points included; the spacer contributes nothing.
+    const { tps, art } = recentMetricAverages(history)
+    expect(tps).toBe(3)
+    expect(art).toBe(100)
+    expect(recentMetricAverages([])).toEqual({})
   })
 })

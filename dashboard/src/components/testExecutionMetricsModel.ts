@@ -131,6 +131,111 @@ export function mapExecutionHistory(history: LiveMetrics[] | undefined): Metrics
   return history.map(mapExecutionMetricToHistoryPoint)
 }
 
+// Trailing window for the Ops View top-line TPS/ART averages.
+export const HERO_METRIC_AVERAGE_WINDOW_MS = 10_000
+
+export interface RecentMetricAverages {
+  tps?: number
+  art?: number
+}
+
+// recentMetricAverages computes trailing-window (default 10s) averages of TPS and
+// ART from the live metrics history, so the Ops View top-line cards read as a
+// smoothed 10-second average instead of a single jittery 1-second sample.
+//
+// The window is anchored on the most recent real sample's timestamp (data-
+// relative, not wall-clock, so it works for replayed/paused streams too). TPS is
+// the mean of per-second throughput across the window. ART is throughput-weighted
+// — each window's average response time is weighted by its TPS, a proxy for the
+// number of completed transactions — so busy seconds count more than quiet ones;
+// it falls back to a plain mean when the window had no throughput. Gap-spacer and
+// value-less rows are ignored. Returns undefined fields when the window has no
+// usable samples so callers can fall back to the instantaneous value.
+export function recentMetricAverages(
+  history: ReadonlyArray<MetricsHistoryPoint>,
+  windowMs: number = HERO_METRIC_AVERAGE_WINDOW_MS,
+): RecentMetricAverages {
+  let anchorTs: number | undefined
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const point = history[index]
+    if (typeof point.timestampMs === 'number' && typeof point.tps === 'number') {
+      anchorTs = point.timestampMs
+      break
+    }
+  }
+  if (anchorTs === undefined) return {}
+  const cutoff = anchorTs - windowMs
+
+  let tpsSum = 0
+  let tpsCount = 0
+  let artWeightedSum = 0
+  let artWeight = 0
+  let artSimpleSum = 0
+  let artSimpleCount = 0
+  for (const point of history) {
+    if (typeof point.timestampMs !== 'number' || point.timestampMs < cutoff) continue
+    if (typeof point.tps === 'number') {
+      tpsSum += point.tps
+      tpsCount += 1
+    }
+    if (typeof point.avgMs === 'number') {
+      artSimpleSum += point.avgMs
+      artSimpleCount += 1
+      if (typeof point.tps === 'number' && point.tps > 0) {
+        artWeightedSum += point.avgMs * point.tps
+        artWeight += point.tps
+      }
+    }
+  }
+
+  const result: RecentMetricAverages = {}
+  if (tpsCount > 0) result.tps = tpsSum / tpsCount
+  if (artWeight > 0) result.art = artWeightedSum / artWeight
+  else if (artSimpleCount > 0) result.art = artSimpleSum / artSimpleCount
+  return result
+}
+
+// historyPointKey identifies a sample by timestamp (falling back to its display
+// time), matching the de-duplication identity used when histories are combined
+// for charting.
+function historyPointKey(point: MetricsHistoryPoint): string {
+  return typeof point.timestampMs === 'number' ? `ts:${point.timestampMs}` : `time:${point.time}`
+}
+
+// mergeMetricsHistory folds server-supplied history points into an existing
+// (live-streamed) series, filling any window the client missed while the
+// WebSocket was disconnected — e.g. while the dashboard tab was backgrounded or
+// the machine slept. Existing points win on conflict (they carry client-side
+// enrichments such as latency targets and telemetry timing), so a reconnect
+// backfill only adds the genuinely-missing samples. The result is returned in
+// ascending timestamp order.
+export function mergeMetricsHistory(
+  existing: MetricsHistoryPoint[],
+  incoming: MetricsHistoryPoint[],
+): MetricsHistoryPoint[] {
+  if (incoming.length === 0) return existing
+
+  const byKey = new Map<string, MetricsHistoryPoint>()
+  for (const point of existing) {
+    byKey.set(historyPointKey(point), point)
+  }
+  let added = false
+  for (const point of incoming) {
+    const key = historyPointKey(point)
+    if (!byKey.has(key)) {
+      byKey.set(key, point)
+      added = true
+    }
+  }
+  if (!added) return existing
+
+  return Array.from(byKey.values()).sort((left, right) => {
+    const leftTs = typeof left.timestampMs === 'number' ? left.timestampMs : 0
+    const rightTs = typeof right.timestampMs === 'number' ? right.timestampMs : 0
+    return leftTs - rightTs
+  })
+}
+
 export function mapArchiveResourceSamples(samples: ResourceSample[] | undefined): MetricsHistoryPoint[] {
   if (!samples?.length) {
     return []

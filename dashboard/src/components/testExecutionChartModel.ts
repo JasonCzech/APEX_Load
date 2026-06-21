@@ -86,6 +86,62 @@ export function sortMetricTableRows(
   })
 }
 
+// SharedCursorRef identifies the point the user is hovering, independent of any
+// single chart's array layout: a clock-time label plus the underlying sample
+// timestamp. The timestamp is what makes the shared crosshair line up across
+// charts that were downsampled to different lengths.
+export interface SharedCursorRef {
+  label?: string | number
+  timestampMs?: number
+}
+
+interface CursorResolvablePoint {
+  time?: string | number
+  timestampMs?: number
+}
+
+// resolveSharedCursorTime maps a shared hover cursor onto a specific chart's
+// data, returning the x-axis category value (the point's `time`) where the
+// crosshair should sit — or undefined to draw nothing.
+//
+// It resolves by IDENTITY (exact label, else nearest timestamp), never by a
+// positional index. Indexing one chart's cursor position into another chart's
+// differently-sized array is what made the crosshair drift progressively away
+// from the pointer as it moved right: when the rendered chart held more points
+// than the hovered one, index i landed at a smaller fraction of the width.
+// Matching on timestamp keeps every chart aligned regardless of downsampling.
+export function resolveSharedCursorTime(
+  chartData: ReadonlyArray<CursorResolvablePoint>,
+  cursor: SharedCursorRef | null | undefined,
+): string | number | undefined {
+  if (!cursor || chartData.length === 0) return undefined
+
+  // Fast path: the hovered clock label is present verbatim — the common case
+  // when charts share the same time domain.
+  if (cursor.label !== undefined && chartData.some(point => point.time === cursor.label)) {
+    return cursor.label
+  }
+
+  // Otherwise land on the sample closest in time. This covers charts that were
+  // downsampled differently (so the exact hovered label isn't a member) without
+  // borrowing a meaningless positional index.
+  if (typeof cursor.timestampMs === 'number' && Number.isFinite(cursor.timestampMs)) {
+    let bestTime: string | number | undefined
+    let bestDelta = Infinity
+    for (const point of chartData) {
+      if (typeof point.timestampMs !== 'number') continue
+      const delta = Math.abs(point.timestampMs - cursor.timestampMs)
+      if (delta < bestDelta) {
+        bestDelta = delta
+        bestTime = point.time
+      }
+    }
+    if (bestTime !== undefined) return bestTime
+  }
+
+  return undefined
+}
+
 export type ChartTimeAxisMode = 'clock' | 'relative'
 export type ChartDensityMode = 'standard' | 'six_up' | 'command_center'
 export type ResponseTimeNetworkMode = 'end_to_end' | 'application'
