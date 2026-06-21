@@ -950,6 +950,11 @@ Publishes a message to a queue or topic.
 | `params.partition_key` | string |  | Azure Service Bus partition key (co-locates messages on one partition). |
 | `params.scheduled_enqueue_ms` | int |  | Azure Service Bus scheduled enqueue delay in milliseconds (the broker holds the message until then). |
 | `params.time_to_live_ms` | int |  | Message time-to-live in milliseconds before the broker expires it. |
+| `params.message_type` | enum: text\|bytes\|map\|stream\|object |  | JMS message type. map/stream read params.map_body/params.stream_body; text/bytes/object use body. |
+| `params.map_body` | object |  | Named values for a MapMessage (message_type=map); JSON-encoded into the body for replay. |
+| `params.stream_body` | array |  | Ordered values for a StreamMessage (message_type=stream); JSON-encoded into the body for replay. |
+| `params.delivery_mode` | enum: persistent\|non_persistent |  | Per-message delivery mode; falls back to config.jms.delivery_mode. Applied by the AMQP/Solace adapter. |
+| `params.priority` | int |  | JMS message priority 0-9; applied by the AMQP/Solace adapter (Azure Service Bus carries it as a JMSPriority property but does not honor priority ordering). |
 
 ### `jms_receive_deferred`
 
@@ -984,6 +989,11 @@ Sends a request message and waits for the correlated reply.
 | `params.destination` | string |  | Request destination alternative to target; falls back to config.jms.destination. |
 | `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
 | `params.correlation_id` | string |  | Correlation ID for matching the reply; defaults to the request message ID. |
+| `params.message_type` | enum: text\|bytes\|map\|stream\|object |  | JMS message type of the request. map/stream read params.map_body/params.stream_body; text/bytes/object use body. |
+| `params.map_body` | object |  | Named values for a MapMessage request (message_type=map); JSON-encoded into the body for replay. |
+| `params.stream_body` | array |  | Ordered values for a StreamMessage request (message_type=stream); JSON-encoded into the body for replay. |
+| `params.delivery_mode` | enum: persistent\|non_persistent |  | Per-message delivery mode of the request; falls back to config.jms.delivery_mode. |
+| `params.priority` | int |  | JMS message priority 0-9 of the request; applied by the AMQP/Solace adapter. |
 
 ### `jms_rollback`
 

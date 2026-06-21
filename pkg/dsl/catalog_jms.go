@@ -24,6 +24,11 @@ func jmsActionSpecs() []ActionSpec {
 				{Name: "params.partition_key", Kind: FieldKindString, Doc: "Azure Service Bus partition key (co-locates messages on one partition)."},
 				{Name: "params.scheduled_enqueue_ms", Kind: FieldKindInt, Doc: "Azure Service Bus scheduled enqueue delay in milliseconds (the broker holds the message until then)."},
 				{Name: "params.time_to_live_ms", Kind: FieldKindInt, Doc: "Message time-to-live in milliseconds before the broker expires it."},
+				{Name: "params.message_type", Kind: FieldKindEnum, Enum: []string{"text", "bytes", "map", "stream", "object"}, Doc: "JMS message type. map/stream read params.map_body/params.stream_body; text/bytes/object use body."},
+				{Name: "params.map_body", Kind: FieldKindObject, Doc: "Named values for a MapMessage (message_type=map); JSON-encoded into the body for replay."},
+				{Name: "params.stream_body", Kind: FieldKindArray, Doc: "Ordered values for a StreamMessage (message_type=stream); JSON-encoded into the body for replay."},
+				{Name: "params.delivery_mode", Kind: FieldKindEnum, Enum: []string{"persistent", "non_persistent"}, Doc: "Per-message delivery mode; falls back to config.jms.delivery_mode. Applied by the AMQP/Solace adapter."},
+				{Name: "params.priority", Kind: FieldKindInt, Doc: "JMS message priority 0-9; applied by the AMQP/Solace adapter (Azure Service Bus carries it as a JMSPriority property but does not honor priority ordering)."},
 			},
 		},
 		{
@@ -55,6 +60,11 @@ func jmsActionSpecs() []ActionSpec {
 				{Name: "params.destination", Kind: FieldKindString, Doc: "Request destination alternative to target; falls back to config.jms.destination."},
 				{Name: "params.destination_type", Kind: FieldKindEnum, Enum: []string{"queue", "topic"}, Doc: "Destination kind; falls back to config.jms.destination_type."},
 				{Name: "params.correlation_id", Kind: FieldKindString, Doc: "Correlation ID for matching the reply; defaults to the request message ID."},
+				{Name: "params.message_type", Kind: FieldKindEnum, Enum: []string{"text", "bytes", "map", "stream", "object"}, Doc: "JMS message type of the request. map/stream read params.map_body/params.stream_body; text/bytes/object use body."},
+				{Name: "params.map_body", Kind: FieldKindObject, Doc: "Named values for a MapMessage request (message_type=map); JSON-encoded into the body for replay."},
+				{Name: "params.stream_body", Kind: FieldKindArray, Doc: "Ordered values for a StreamMessage request (message_type=stream); JSON-encoded into the body for replay."},
+				{Name: "params.delivery_mode", Kind: FieldKindEnum, Enum: []string{"persistent", "non_persistent"}, Doc: "Per-message delivery mode of the request; falls back to config.jms.delivery_mode."},
+				{Name: "params.priority", Kind: FieldKindInt, Doc: "JMS message priority 0-9 of the request; applied by the AMQP/Solace adapter."},
 			},
 		},
 		{

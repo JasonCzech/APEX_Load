@@ -103,6 +103,17 @@ type message struct {
 	TimeToLive         time.Duration `json:"time_to_live,omitempty"`
 	SettlementToken    string        `json:"settlement_token,omitempty"`
 	SequenceNumber     int64         `json:"sequence_number,omitempty"`
+	// JMS message-type model + delivery controls (P2.3). Type discriminates the
+	// JMS body kind (text/bytes/map/stream/object); MapBody/StreamBody carry the
+	// structured payload for map/stream messages (also JSON-encoded into Body so
+	// extractors and the mock see one wire form). DeliveryMode (persistent/
+	// non_durable) and Priority (0-9) are applied on send by the AMQP/Solace
+	// adapter; the mock carries them for fidelity. Empty/nil when unset.
+	Type         string            `json:"type,omitempty"`
+	MapBody      map[string]string `json:"map_body,omitempty"`
+	StreamBody   []string          `json:"stream_body,omitempty"`
+	DeliveryMode string            `json:"delivery_mode,omitempty"`
+	Priority     *uint8            `json:"priority,omitempty"`
 }
 
 // settlementAdapter is an OPTIONAL capability some brokerAdapters implement for
@@ -1091,11 +1102,53 @@ func (j *JMS) buildMessage(action *protocol.Action, destination string) message 
 		SessionID:    paramString(action.Params, "session_id", ""),
 		PartitionKey: paramString(action.Params, "partition_key", ""),
 		TimeToLive:   durationParam(action.Params, "time_to_live_ms", 0),
+		// JMS message-type + delivery controls (P2.3). delivery_mode falls back to
+		// the connection default (closing the previously-dead config.jms.delivery_mode).
+		Type:         strings.ToLower(paramString(action.Params, "message_type", "")),
+		DeliveryMode: strings.ToLower(paramString(action.Params, "delivery_mode", j.cfg.DeliveryMode)),
 	}
+	if p, ok := intParam(action.Params, "priority"); ok {
+		if p < 0 {
+			p = 0
+		}
+		if p > 9 {
+			p = 9
+		}
+		pr := uint8(p)
+		msg.Priority = &pr
+	}
+	applyTypedBody(&msg, action.Params)
 	if delay := durationParam(action.Params, "scheduled_enqueue_ms", 0); delay > 0 {
 		msg.ScheduledEnqueueAt = msg.CreatedAt.Add(delay)
 	}
 	return msg
+}
+
+// applyTypedBody fills the structured map/stream payload for a MapMessage or
+// StreamMessage and JSON-encodes it into Body (when an explicit body was not
+// already supplied) so the mock broker, sidecar, and extractors all observe a
+// single canonical wire form. Text/Bytes/Object messages keep the raw Body.
+func applyTypedBody(msg *message, params map[string]any) {
+	switch msg.Type {
+	case "map":
+		if mapBody := stringMapParam(params, "map_body"); len(mapBody) > 0 {
+			msg.MapBody = mapBody
+			if len(msg.Body) == 0 {
+				if encoded, err := json.Marshal(mapBody); err == nil {
+					msg.Body = encoded
+				}
+			}
+		}
+	case "stream":
+		if streamBody := stringSliceParam(params, "stream_body"); len(streamBody) > 0 {
+			msg.StreamBody = streamBody
+			if len(msg.Body) == 0 {
+				if encoded, err := json.Marshal(streamBody); err == nil {
+					msg.Body = encoded
+				}
+			}
+		}
+	}
 }
 
 func (j *JMS) destination(action *protocol.Action) string {
@@ -1121,6 +1174,9 @@ func addMessageExtractions(result *protocol.Result, msg message) {
 	result.Extractions["jms_correlation_id"] = msg.CorrelationID
 	result.Extractions["jms_destination"] = msg.Destination
 	result.Extractions["jms_body"] = string(msg.Body)
+	if msg.Type != "" {
+		result.Extractions["jms_message_type"] = msg.Type
+	}
 	if reason, ok := firstMatchingMapValue(msg.Properties, "dead_letter_reason", "dlq_reason", "x-dead-letter-reason"); ok {
 		result.Extractions["jms_dead_letter_reason"] = reason
 	}
@@ -1379,6 +1435,63 @@ func boolParam(params map[string]any, key string, fallback bool) bool {
 		return fallback
 	}
 	return value
+}
+
+// intParam coerces an int-like param (int/int64/float64, or a numeric string)
+// and reports whether the key was present and parseable.
+func intParam(params map[string]any, key string) (int, bool) {
+	if params == nil {
+		return 0, false
+	}
+	switch v := params[key].(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	case string:
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
+// stringMapParam reads an object param (map[string]any) and stringifies its
+// values for a JMS MapMessage body.
+func stringMapParam(params map[string]any, key string) map[string]string {
+	if params == nil {
+		return nil
+	}
+	raw, ok := params[key].(map[string]any)
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(raw))
+	for k, v := range raw {
+		out[k] = anyToString(v)
+	}
+	return out
+}
+
+// stringSliceParam reads an array param ([]any or []string) and stringifies its
+// elements for a JMS StreamMessage body.
+func stringSliceParam(params map[string]any, key string) []string {
+	if params == nil {
+		return nil
+	}
+	switch raw := params[key].(type) {
+	case []string:
+		return raw
+	case []any:
+		out := make([]string, 0, len(raw))
+		for _, v := range raw {
+			out = append(out, anyToString(v))
+		}
+		return out
+	}
+	return nil
 }
 
 func cloneStringMap(in map[string]string) map[string]string {

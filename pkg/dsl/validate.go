@@ -763,6 +763,22 @@ func validateJMSScriptIssues(script *Script) []string {
 		if serviceBus && (action.Type == "jms_consume" || action.Type == "jms_request_reply") && jmsActionUsesServiceBusTopicWithoutSubscription(jms, action) {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: subscription required to consume from a Service Bus topic", i, action.Name))
 		}
+		// JMS message-type model + delivery controls (P2.3) on send actions.
+		if action.Type == "jms_publish" || action.Type == "jms_request_reply" {
+			if mt, ok := actionParamStringValue(action.Params, "message_type"); ok &&
+				!isAllowedValue(strings.ToLower(strings.TrimSpace(mt)), "text", "bytes", "map", "stream", "object") {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: message_type %q is not supported", i, action.Name, mt))
+			}
+			if dm, ok := actionParamStringValue(action.Params, "delivery_mode"); ok &&
+				!isAllowedValue(strings.ToLower(strings.TrimSpace(dm)), "persistent", "non_persistent") {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: delivery_mode %q is not supported", i, action.Name, dm))
+			}
+			if _, present := action.Params["priority"]; present {
+				if p, ok := actionParamIntValue(action.Params, "priority"); !ok || p < 0 || p > 9 {
+					issues = append(issues, fmt.Sprintf("actions[%d] %q: priority must be an integer 0-9", i, action.Name))
+				}
+			}
+		}
 		// Service Bus advanced verbs (P2.4): validate enums + required tokens.
 		if action.Type == "jms_consume" {
 			if sq, ok := actionParamStringValue(action.Params, "sub_queue"); ok && strings.TrimSpace(sq) != "" &&

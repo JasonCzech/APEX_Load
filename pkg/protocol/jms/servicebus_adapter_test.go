@@ -120,3 +120,20 @@ func TestServiceBusClientPoolRefcountAcquireRelease(t *testing.T) {
 		t.Fatal("pool entry still present after final release")
 	}
 }
+
+func TestServiceBusSubjectAndPriorityRoundTrip(t *testing.T) {
+	pr := uint8(6)
+	in := message{ID: "m1", Type: "map", Body: []byte(`{"a":1}`), Priority: &pr}
+	mapped := toServiceBusMessage("orders.q", in)
+	if mapped.Subject == nil || *mapped.Subject != "map" {
+		t.Fatalf("Subject = %v, want map", mapped.Subject)
+	}
+	if v, ok := mapped.ApplicationProperties["JMSPriority"].(int64); !ok || v != 6 {
+		t.Fatalf("JMSPriority application property = %v, want int64 6", mapped.ApplicationProperties["JMSPriority"])
+	}
+	subj := "map"
+	out := fromServiceBusMessage("orders.q", &azservicebus.ReceivedMessage{Subject: &subj, Body: []byte(`{"a":1}`)})
+	if out.Type != "map" {
+		t.Fatalf("Type round-trip = %q, want map", out.Type)
+	}
+}

@@ -2907,6 +2907,14 @@
                     "description": "Marks this action as targeting a dead-letter destination (drives dead-letter classification).",
                     "type": "boolean"
                   },
+                  "delivery_mode": {
+                    "description": "Per-message delivery mode; falls back to config.jms.delivery_mode. Applied by the AMQP/Solace adapter.",
+                    "enum": [
+                      "persistent",
+                      "non_persistent"
+                    ],
+                    "type": "string"
+                  },
                   "destination": {
                     "description": "Destination alternative to target; falls back to config.jms.destination.",
                     "type": "string"
@@ -2919,13 +2927,32 @@
                     ],
                     "type": "string"
                   },
+                  "map_body": {
+                    "description": "Named values for a MapMessage (message_type=map); JSON-encoded into the body for replay.",
+                    "type": "object"
+                  },
                   "message_id": {
                     "description": "Explicit message ID (Service Bus duplicate detection uses it); defaults to a generated UUID.",
+                    "type": "string"
+                  },
+                  "message_type": {
+                    "description": "JMS message type. map/stream read params.map_body/params.stream_body; text/bytes/object use body.",
+                    "enum": [
+                      "text",
+                      "bytes",
+                      "map",
+                      "stream",
+                      "object"
+                    ],
                     "type": "string"
                   },
                   "partition_key": {
                     "description": "Azure Service Bus partition key (co-locates messages on one partition).",
                     "type": "string"
+                  },
+                  "priority": {
+                    "description": "JMS message priority 0-9; applied by the AMQP/Solace adapter (Azure Service Bus carries it as a JMSPriority property but does not honor priority ordering).",
+                    "type": "integer"
                   },
                   "scheduled_enqueue_ms": {
                     "description": "Azure Service Bus scheduled enqueue delay in milliseconds (the broker holds the message until then).",
@@ -2934,6 +2961,10 @@
                   "session_id": {
                     "description": "Azure Service Bus session ID for session-enabled entities (ignored by other providers).",
                     "type": "string"
+                  },
+                  "stream_body": {
+                    "description": "Ordered values for a StreamMessage (message_type=stream); JSON-encoded into the body for replay.",
+                    "type": "array"
                   },
                   "time_to_live_ms": {
                     "description": "Message time-to-live in milliseconds before the broker expires it.",
@@ -3043,6 +3074,14 @@
                     "description": "Correlation ID for matching the reply; defaults to the request message ID.",
                     "type": "string"
                   },
+                  "delivery_mode": {
+                    "description": "Per-message delivery mode of the request; falls back to config.jms.delivery_mode.",
+                    "enum": [
+                      "persistent",
+                      "non_persistent"
+                    ],
+                    "type": "string"
+                  },
                   "destination": {
                     "description": "Request destination alternative to target; falls back to config.jms.destination.",
                     "type": "string"
@@ -3055,9 +3094,32 @@
                     ],
                     "type": "string"
                   },
+                  "map_body": {
+                    "description": "Named values for a MapMessage request (message_type=map); JSON-encoded into the body for replay.",
+                    "type": "object"
+                  },
+                  "message_type": {
+                    "description": "JMS message type of the request. map/stream read params.map_body/params.stream_body; text/bytes/object use body.",
+                    "enum": [
+                      "text",
+                      "bytes",
+                      "map",
+                      "stream",
+                      "object"
+                    ],
+                    "type": "string"
+                  },
+                  "priority": {
+                    "description": "JMS message priority 0-9 of the request; applied by the AMQP/Solace adapter.",
+                    "type": "integer"
+                  },
                   "reply_to": {
                     "description": "Reply destination; required unless config.jms.reply_to is set.",
                     "type": "string"
+                  },
+                  "stream_body": {
+                    "description": "Ordered values for a StreamMessage request (message_type=stream); JSON-encoded into the body for replay.",
+                    "type": "array"
                   },
                   "subscription": {
                     "description": "Azure Service Bus topic subscription for consuming replies from a topic; falls back to config.jms.subscription.",

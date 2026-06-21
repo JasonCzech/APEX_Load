@@ -206,3 +206,53 @@ func generateSelfSignedPEM(t *testing.T) string {
 	}
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
 }
+
+func TestAMQPMessageTypeAndHeaderRoundTrip(t *testing.T) {
+	cases := []struct {
+		typ       string
+		body      string
+		wantValue bool
+	}{
+		{"text", "hello world", true},
+		{"map", `{"a":"1"}`, false},
+		{"bytes", "rawbytes", false},
+	}
+	for _, tc := range cases {
+		in := message{ID: "m1", Type: tc.typ, Body: []byte(tc.body), DeliveryMode: "persistent"}
+		amqpMsg := toAMQPMessage("orders.q", in)
+		if amqpMsg.Properties == nil || amqpMsg.Properties.Subject == nil || *amqpMsg.Properties.Subject != tc.typ {
+			t.Fatalf("%s: Subject not set to message type", tc.typ)
+		}
+		if tc.wantValue {
+			if s, ok := amqpMsg.Value.(string); !ok || s != tc.body {
+				t.Fatalf("%s: text body should ride Value, got %#v", tc.typ, amqpMsg.Value)
+			}
+		} else if len(amqpMsg.Data) == 0 {
+			t.Fatalf("%s: non-text body should ride Data", tc.typ)
+		}
+		out := fromAMQPMessage("orders.q", amqpMsg)
+		if out.Type != tc.typ {
+			t.Fatalf("%s: Type round-trip = %q", tc.typ, out.Type)
+		}
+		if string(out.Body) != tc.body {
+			t.Fatalf("%s: Body round-trip = %q, want %q", tc.typ, string(out.Body), tc.body)
+		}
+	}
+
+	// delivery_mode/priority/TTL map onto the AMQP header.
+	pr := uint8(7)
+	in := message{Type: "bytes", Body: []byte("x"), DeliveryMode: "non_persistent", Priority: &pr, TimeToLive: 1500 * time.Millisecond}
+	amqpMsg := toAMQPMessage("orders.q", in)
+	if amqpMsg.Header == nil {
+		t.Fatal("expected an AMQP message header")
+	}
+	if amqpMsg.Header.Durable {
+		t.Fatal("non_persistent must set Durable=false")
+	}
+	if amqpMsg.Header.Priority != 7 {
+		t.Fatalf("Priority header = %d, want 7", amqpMsg.Header.Priority)
+	}
+	if amqpMsg.Header.TTL != 1500*time.Millisecond {
+		t.Fatalf("TTL header = %v, want 1.5s", amqpMsg.Header.TTL)
+	}
+}

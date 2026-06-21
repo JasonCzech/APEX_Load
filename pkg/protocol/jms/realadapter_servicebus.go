@@ -667,6 +667,16 @@ func toServiceBusMessage(destination string, msg message) *azservicebus.Message 
 	); contentType != "" {
 		out.ContentType = &contentType
 	}
+	// JMS message type (JMSType) maps to the Service Bus Subject (P2.3).
+	if msg.Type != "" {
+		out.Subject = stringPtr(msg.Type)
+	}
+	// Azure Service Bus has no native message priority and does not honor JMS
+	// priority ordering. Carry it as a JMSPriority application property for
+	// parity/visibility only — do NOT claim priority delivery on Service Bus.
+	if msg.Priority != nil {
+		out.ApplicationProperties["JMSPriority"] = int64(*msg.Priority)
+	}
 	// P2.4 advanced send fields: session routing, partition co-location, scheduled
 	// enqueue, and TTL.
 	if msg.SessionID != "" {
@@ -703,6 +713,11 @@ func fromServiceBusMessage(destination string, msg *azservicebus.ReceivedMessage
 	}
 	if msg.ContentType != nil {
 		out.Headers["Content-Type"] = *msg.ContentType
+	}
+	// Restore the JMS message type from the Service Bus Subject so the type
+	// survives a publish->consume round-trip (P2.3).
+	if msg.Subject != nil && *msg.Subject != "" {
+		out.Type = *msg.Subject
 	}
 	if msg.ReplyTo != nil {
 		out.Headers["reply_to"] = *msg.ReplyTo

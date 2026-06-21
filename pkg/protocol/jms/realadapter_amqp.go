@@ -330,6 +330,11 @@ func toAMQPMessage(destination string, msg message) *amqp.Message {
 	if contentType := firstMatchingString(msg.Headers, "Content-Type", "content-type"); contentType != "" {
 		properties.ContentType = &contentType
 	}
+	// JMS message type (JMSType) maps to the AMQP Subject property (P2.3).
+	if msg.Type != "" {
+		subject := msg.Type
+		properties.Subject = &subject
+	}
 	// Mirror any reply destination into the protocol-level ReplyTo property so
 	// brokers and standards-compliant consumers route replies correctly. The
 	// reply destination may arrive via headers or application properties; keep
@@ -349,11 +354,29 @@ func toAMQPMessage(destination string, msg message) *amqp.Message {
 		}
 		appProps[k] = v
 	}
-	return &amqp.Message{
+	// Apply JMS delivery mode (durable), priority, and TTL via the AMQP message
+	// header (P2.3). delivery_mode defaults to persistent, so Durable is true
+	// unless explicitly non_persistent. Priority/TTL are set only when supplied.
+	header := &amqp.MessageHeader{Durable: !strings.EqualFold(msg.DeliveryMode, "non_persistent")}
+	if msg.Priority != nil {
+		header.Priority = *msg.Priority
+	}
+	if msg.TimeToLive > 0 {
+		header.TTL = msg.TimeToLive
+	}
+	out := &amqp.Message{
+		Header:                header,
 		Properties:            properties,
 		ApplicationProperties: appProps,
-		Data:                  [][]byte{msg.Body},
 	}
+	// A JMS TextMessage rides the AMQP value body as a string; bytes/map/stream/
+	// object (and the untyped default) use the data section.
+	if strings.EqualFold(msg.Type, "text") {
+		out.Value = string(msg.Body)
+	} else {
+		out.Data = [][]byte{msg.Body}
+	}
+	return out
 }
 
 func fromAMQPMessage(destination string, msg *amqp.Message) message {
@@ -375,6 +398,11 @@ func fromAMQPMessage(destination string, msg *amqp.Message) message {
 		}
 		if msg.Properties.ContentType != nil {
 			out.Headers["Content-Type"] = *msg.Properties.ContentType
+		}
+		// Restore the JMS message type from the AMQP Subject so the type survives
+		// a publish->consume / request->reply round-trip (P2.3).
+		if msg.Properties.Subject != nil && *msg.Properties.Subject != "" {
+			out.Type = *msg.Properties.Subject
 		}
 	}
 	for k, v := range msg.ApplicationProperties {
