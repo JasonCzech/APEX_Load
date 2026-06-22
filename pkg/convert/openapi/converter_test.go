@@ -153,11 +153,47 @@ func TestConvertOpenAPIServerVariablesStyleExplodeAndOperationSecurity(t *testin
 		}
 	}
 	public := openAPIActionFull(result, "publicStatus")
-	if public.Auth != nil {
-		t.Fatalf("public auth = %#v, want no operation auth", public.Auth)
+	if public.Auth == nil || public.Auth.Type != "none" {
+		t.Fatalf("public auth = %#v, want explicit anonymous override (type none) for security:[]", public.Auth)
 	}
 	if !strings.Contains(result.Script.DataSources[0].InlineData, "filter_owner") || !strings.Contains(result.Script.DataSources[0].InlineData, "filter_status") {
 		t.Fatalf("data source = %q", result.Script.DataSources[0].InlineData)
+	}
+}
+
+// TestConvertOpenAPIAnonymousSecurityOverrideSuppressesGlobalAuth guards the A1
+// fix: when a document-level security scheme sets a global Authorization header,
+// an operation that opts out via "security": [] must emit an explicit anonymous
+// auth override (type "none") so the runtime suppresses the global header for
+// that operation rather than leaking it. Operations that inherit keep the auth.
+func TestConvertOpenAPIAnonymousSecurityOverrideSuppressesGlobalAuth(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "openapi": "3.0.3",
+  "info": {"title": "Mixed", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "components": {"securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer"}}},
+  "security": [{"bearerAuth": []}],
+  "paths": {
+    "/secured": {"get": {"operationId": "securedPing", "responses": {"200": {}}}},
+    "/public": {"get": {"operationId": "publicPing", "security": [], "responses": {"200": {}}}}
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert error: %v", err)
+	}
+	// A global Authorization header is in effect (the credential that would leak).
+	if result.Script.Config.HTTP.Auth.Type != "bearer" {
+		t.Fatalf("global auth = %#v, want bearer document-level default", result.Script.Config.HTTP.Auth)
+	}
+	secured := openAPIActionFull(result, "securedPing")
+	if secured.Auth == nil || secured.Auth.Type != "bearer" {
+		t.Fatalf("securedPing auth = %#v, want inherited bearer", secured.Auth)
+	}
+	public := openAPIActionFull(result, "publicPing")
+	if public.Auth == nil || public.Auth.Type != "none" {
+		t.Fatalf("publicPing auth = %#v, want anonymous override (type none) to suppress global auth", public.Auth)
 	}
 }
 

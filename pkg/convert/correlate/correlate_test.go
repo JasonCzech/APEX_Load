@@ -69,3 +69,41 @@ func TestDetectSetCookieValue(t *testing.T) {
 		t.Fatalf("unexpected expression: %q", corr.Expression)
 	}
 }
+
+// TestAuraAppPatternRequiresDescriptorShape guards the A6 fix: the Salesforce Aura
+// app-descriptor detector must only fire on values shaped like a real descriptor
+// (markup:// or namespace:name), not on any generic "app":"..." JSON field, which
+// would otherwise produce spurious 0.9-confidence correlations in mixed HARs.
+func TestAuraAppPatternRequiresDescriptorShape(t *testing.T) {
+	hasAuraApp := func(body string) (bool, string) {
+		for _, c := range Candidates(body, nil) {
+			if c.RuleID == RuleSalesforceAuraAppDescriptor {
+				return true, c.Value
+			}
+		}
+		return false, ""
+	}
+
+	for _, body := range []string{
+		`{"app":"MyMobileApp"}`,
+		`{"app":"checkout"}`,
+		`{"app":"dashboard-v2"}`,
+	} {
+		if found, value := hasAuraApp(body); found {
+			t.Fatalf("body %q produced spurious Aura app descriptor %q", body, value)
+		}
+	}
+
+	for _, tc := range []struct {
+		body string
+		want string
+	}{
+		{`{"app":"markup://one:one"}`, "markup://one:one"},
+		{`{"app":"siteforce:communityApp"}`, "siteforce:communityApp"},
+	} {
+		found, value := hasAuraApp(tc.body)
+		if !found || value != tc.want {
+			t.Fatalf("body %q -> found=%v value=%q, want descriptor %q", tc.body, found, value, tc.want)
+		}
+	}
+}

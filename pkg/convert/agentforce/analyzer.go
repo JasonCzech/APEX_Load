@@ -111,6 +111,10 @@ func Analyze(script *dsl.Script) *Review {
 			Step:   "send_message",
 			Detail: "Assert the response carries a non-empty agent message and does not contain a guardrail/refusal marker (e.g. \"I can't help with that\").",
 		})
+		review.NextActions = append(review.NextActions,
+			"Give each agent message a unique, increasing sequenceId within the session (the id is per-session, so a fresh session each iteration restarts it); parameterize it (e.g. {{fn.timestamp.unix()}} or a counter source) so replayed turns are not rejected as stale.",
+			"Reuse the session id from the session-start response in the message and end-session request paths ({{var.agent_session_id}}), not a recorded literal.",
+		)
 	}
 
 	if !steps["token"] {

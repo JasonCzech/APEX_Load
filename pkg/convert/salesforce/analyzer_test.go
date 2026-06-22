@@ -406,6 +406,92 @@ func TestAnalyzeNativePreviewReplacesEncodedAuraCorrelation(t *testing.T) {
 	}
 }
 
+// TestAnalyzeNativePreviewHandlesDualRawAndEncodedReuse guards the A2 fix for a
+// correlated value reused BOTH raw (a JSON body) and percent-encoded (a form
+// /aura body). A single variable cannot resolve both ways, so the builder must
+// emit a raw extractor plus a url_encode sibling and route each occurrence to the
+// matching variable, leaving neither occurrence stale.
+func TestAnalyzeNativePreviewHandlesDualRawAndEncodedReuse(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "SF Dual Reuse",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{{
+			Name:   "Login",
+			Type:   "GET",
+			Method: "GET",
+			Target: "https://acme.my.salesforce.com/login",
+		}, {
+			Name:    "Aura",
+			Type:    "POST",
+			Method:  "POST",
+			Target:  "https://acme.lightning.force.com/aura",
+			Headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+			Body:    `aura.token=tok%2B%2F%3D%3D&message=%7B%22actions%22%3A%5B%5D%7D`,
+		}, {
+			Name:    "Composite",
+			Type:    "POST",
+			Method:  "POST",
+			Target:  "https://acme.my.salesforce.com/services/data/v59.0/sobjects/Account",
+			Headers: map[string]string{"Content-Type": "application/json"},
+			Body:    `{"token":"tok+/=="}`,
+		}},
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {
+	        "request": {"method": "GET", "url": "https://acme.my.salesforce.com/login", "headers": []},
+	        "response": {"headers": [], "content": {"text": "{\"access_token\":\"tok+/==\"}"}}
+	      },
+	      {
+	        "request": {"method": "POST", "url": "https://acme.lightning.force.com/aura", "headers": [{"name":"content-type","value":"application/x-www-form-urlencoded"}], "postData": {"text": "aura.token=tok%2B%2F%3D%3D&message=%7B%22actions%22%3A%5B%5D%7D"}},
+	        "response": {"headers": [], "content": {"text": "{\"actions\":[{\"state\":\"SUCCESS\"}]}"}}
+	      },
+	      {
+	        "request": {"method": "POST", "url": "https://acme.my.salesforce.com/services/data/v59.0/sobjects/Account", "headers": [{"name":"content-type","value":"application/json"}], "postData": {"text": "{\"token\":\"tok+/==\"}"}},
+	        "response": {"headers": [], "content": {"text": "{\"success\":true}"}}
+	      }
+	    ]
+	  }
+	}`)
+
+	review, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if review.NativePreview == nil || review.NativePreview.Script == nil {
+		t.Fatal("NativePreview = nil, want script")
+	}
+	login := review.NativePreview.Script.Actions[0]
+	var rawConvert, encodedConvert string
+	var sawRaw, sawEncoded bool
+	for _, ext := range login.Extractors {
+		switch ext.Name {
+		case "corr_access_token":
+			sawRaw = true
+			rawConvert = ext.Convert
+		case "corr_access_token_encoded":
+			sawEncoded = true
+			encodedConvert = ext.Convert
+		}
+	}
+	if !sawRaw || rawConvert != "" {
+		t.Fatalf("login extractors = %#v, want a raw corr_access_token (no convert)", login.Extractors)
+	}
+	if !sawEncoded || encodedConvert != "url_encode" {
+		t.Fatalf("login extractors = %#v, want a url_encode corr_access_token_encoded sibling", login.Extractors)
+	}
+	auraBody := review.NativePreview.Script.Actions[1].Body
+	if strings.Contains(auraBody, "tok%2B%2F%3D%3D") || !strings.Contains(auraBody, "{{var.corr_access_token_encoded}}") {
+		t.Fatalf("aura body = %q, want encoded occurrence routed to the url_encode sibling variable", auraBody)
+	}
+	compositeBody := review.NativePreview.Script.Actions[2].Body
+	if strings.Contains(compositeBody, `"tok+/=="`) || !strings.Contains(compositeBody, "{{var.corr_access_token}}") {
+		t.Fatalf("composite body = %q, want raw occurrence routed to the raw variable", compositeBody)
+	}
+}
+
 func TestAnalyzeClassifiesBroadenedSalesforceSurface(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "SF Broad Surface",

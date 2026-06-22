@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type StoredScript } from '../types'
-import { type AgentforceReview, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type HARImportSummary, type MulesoftReview, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
+import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type HARImportSummary, type MulesoftReview, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
@@ -192,11 +192,13 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [soapVersion, setSoapVersion] = useState('1.1')
   const [includeStaticAssets, setIncludeStaticAssets] = useState(false)
   const [redactSensitive, setRedactSensitive] = useState(true)
+  const [agentforceReplayReady, setAgentforceReplayReady] = useState(false)
   const [retentionDays, setRetentionDays] = useState(7)
   const [messageError, setMessageError] = useState('')
   const [reviewMode, setReviewMode] = useState<'conversion' | 'validation'>('conversion')
   const [ramlSupport, setRamlSupport] = useState<{ entries: RAMLSupportMatrixEntry[]; notes: string[] } | null>(null)
   const labels = copy[kind]
+  const supportsAgentforceTransform = kind === 'openapi' || kind === 'raml' || kind === 'postman' || kind === 'salesforce'
 
   useEffect(() => {
     if (kind !== 'raml') return
@@ -230,11 +232,11 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
           retention_days: retentionDays,
           redact_sensitive: redactSensitive,
         })
-        if (kind === 'salesforce') return api.importSalesforce(file, options)
+        if (kind === 'salesforce') return api.importSalesforce(file, { ...options, agentforce_transform: agentforceReplayReady })
         if (kind === 'recorder-export') return api.importBrowserRecording(file, options)
-        if (kind === 'openapi') return api.importOpenAPI(file, options)
-        if (kind === 'raml') return api.importRAML(file, options)
-        if (kind === 'postman') return api.importPostman(file, options)
+        if (kind === 'openapi') return api.importOpenAPI(file, { ...options, agentforce_transform: agentforceReplayReady })
+        if (kind === 'raml') return api.importRAML(file, { ...options, agentforce_transform: agentforceReplayReady })
+        if (kind === 'postman') return api.importPostman(file, { ...options, agentforce_transform: agentforceReplayReady })
         if (kind === 'asyncapi') return api.importAsyncAPI(file, { name: options.name, project_id: options.project_id })
         return api.importWSDL(file, { ...options, soap_version: soapVersion })
       }, { clearValue: true })
@@ -251,6 +253,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const salesforceReview = kind === 'salesforce' ? salesforceReviewForImport(result, reviewedScript) : null
   const mulesoftReview = preservedReviewForImport<MulesoftReview>(reviewedScript, 'mulesoft_review')
   const agentforceReview = preservedReviewForImport<AgentforceReview>(reviewedScript, 'agentforce_review')
+  const agentforceTransformChanges = (reviewedScript?.metadata?.import?.preserved?.agentforce_transform as AgentforceTransformChange[] | undefined) ?? []
   const ramlSummary = kind === 'raml' ? (result as RAMLImportResult | null | undefined)?.summary : undefined
   const harDiff = harSummary?.har_diff
 
@@ -333,6 +336,12 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
                 Include static assets
               </label>
             </>
+          )}
+          {supportsAgentforceTransform && (
+            <label className="sample-toggle sample-import-span-2" title="If an Agentforce Agent API conversation is detected, rewrite the script to acquire an OAuth2 token, correlate the session id, consume SSE, and end the session.">
+              <input type="checkbox" checked={agentforceReplayReady} onChange={event => setAgentforceReplayReady(event.target.checked)} />
+              Make Agentforce replay-ready (if an Agent API flow is detected)
+            </label>
           )}
         </div>
       </div>
@@ -600,6 +609,16 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
             {agentforceReview && (
               <div className="sample-import-review-block">
                 <h4>Agentforce Agent API Review {agentforceReview.streaming ? <span className="tag-chip">streaming (SSE)</span> : null}</h4>
+                {agentforceTransformChanges.length > 0 && (
+                  <>
+                    <p className="sample-import-subtitle">Applied replay-readiness changes ({agentforceTransformChanges.length})</p>
+                    <ul className="sample-import-findings">
+                      {agentforceTransformChanges.map((change, index) => (
+                        <li key={`af-change-${index}`}><strong>{change.step}</strong>{change.action_name ? ` — ${change.action_name}` : ''}: {change.detail}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
                 {(agentforceReview.lifecycle?.length || 0) > 0 && (
                   <>
                     <p className="sample-import-subtitle">Conversation lifecycle</p>

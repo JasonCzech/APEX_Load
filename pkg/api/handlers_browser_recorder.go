@@ -462,7 +462,7 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 			}
 		}
 		_ = attachMuleSoftReview(result.Script, "browser_recording_har", nil)
-		_ = attachAgentforceReview(result.Script, "browser_recording_har", nil)
+		_ = attachAgentforceReview(result.Script, "browser_recording_har", nil, false)
 	}
 	return result.Script, result.Warnings, nil
 }

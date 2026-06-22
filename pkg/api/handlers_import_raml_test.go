@@ -174,6 +174,125 @@ baseUri: https://api.salesforce.com/einstein/ai-agent/v1/agents/0XxAGENT
 	t.Fatalf("review sections = %#v, want agentforce_review", result.ReviewSections)
 }
 
+func TestHandleImportRAMLAppliesAgentforceTransformWhenRequested(t *testing.T) {
+	ramlContent := `#%RAML 1.0
+title: Agent API
+version: v1
+baseUri: https://api.salesforce.com/einstein/ai-agent/v1/agents/0XxAGENT
+/sessions:
+  post:
+    displayName: Start Session
+/sessions/{sessionId}/messages/stream:
+  post:
+    displayName: Stream Message
+`
+	type importedScript struct {
+		Script struct {
+			Init []struct {
+				Type   string         `json:"type"`
+				Params map[string]any `json:"params"`
+			} `json:"init"`
+			Actions []struct {
+				Target  string            `json:"target"`
+				Headers map[string]string `json:"headers"`
+			} `json:"actions"`
+			Teardown []struct {
+				Method string `json:"method"`
+				Target string `json:"target"`
+			} `json:"teardown"`
+			Metadata struct {
+				Import struct {
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		ReviewSections []struct {
+			Key   string   `json:"key"`
+			Items []string `json:"items"`
+		} `json:"review_sections"`
+	}
+
+	doImport := func(t *testing.T, url string) importedScript {
+		t.Helper()
+		server := NewServer(ServerConfig{})
+		body, err := json.Marshal(map[string]any{"name": "Agent API", "project_id": "proj-agent", "content": ramlContent})
+		if err != nil {
+			t.Fatalf("json.Marshal returned error: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPost, url, strings.NewReader(string(body)))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		var result importedScript
+		if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+			t.Fatalf("json.Unmarshal returned error: %v", err)
+		}
+		return result
+	}
+
+	hasTokenInit := func(s importedScript) bool {
+		for _, action := range s.Script.Init {
+			if action.Type == "http_oauth2_token" {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Default import is non-destructive: review attached, but no transform.
+	base := doImport(t, "/api/v1/scripts/import/raml")
+	if hasTokenInit(base) {
+		t.Fatalf("default import added a token action without opt-in: %#v", base.Script.Init)
+	}
+	if base.Script.Metadata.Import.Preserved["agentforce_transform"] != nil {
+		t.Fatal("default import recorded a transform without opt-in")
+	}
+
+	// Opt-in transform rewrites the script to be replay-ready.
+	transformed := doImport(t, "/api/v1/scripts/import/raml?agentforce_transform=true")
+	if !hasTokenInit(transformed) {
+		t.Fatalf("opt-in transform did not prepend a token action: %#v", transformed.Script.Init)
+	}
+	if transformed.Script.Metadata.Import.Preserved["agentforce_transform"] == nil {
+		t.Fatalf("preserved metadata missing agentforce_transform: %#v", transformed.Script.Metadata.Import.Preserved)
+	}
+	streamRewritten := false
+	for _, action := range transformed.Script.Actions {
+		if strings.Contains(action.Target, "/messages/stream") {
+			if !strings.Contains(action.Target, "{{var.agent_session_id}}") {
+				t.Fatalf("stream action target = %q, want session variable", action.Target)
+			}
+			if action.Headers["Accept"] != "text/event-stream" {
+				t.Fatalf("stream action Accept = %q, want text/event-stream", action.Headers["Accept"])
+			}
+			streamRewritten = true
+		}
+	}
+	if !streamRewritten {
+		t.Fatalf("no streaming message action found in transformed script: %#v", transformed.Script.Actions)
+	}
+	if len(transformed.Script.Teardown) == 0 || transformed.Script.Teardown[0].Method != "DELETE" {
+		t.Fatalf("teardown = %#v, want a DELETE end-session action", transformed.Script.Teardown)
+	}
+	appliedItem := false
+	for _, section := range transformed.ReviewSections {
+		if section.Key != "agentforce_review" {
+			continue
+		}
+		for _, item := range section.Items {
+			if strings.HasPrefix(item, "Applied (") {
+				appliedItem = true
+			}
+		}
+	}
+	if !appliedItem {
+		t.Fatalf("agentforce review section missing applied-change items: %#v", transformed.ReviewSections)
+	}
+}
+
 func TestHandleImportRAMLZipResolvesIncludesAndNamesFromMainEntry(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

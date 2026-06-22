@@ -1144,7 +1144,13 @@ func applyOperationSecurity(action *dsl.Action, requirements []map[string][]stri
 		return
 	}
 	if len(requirements) == 0 {
-		action.Auth = nil
+		// An explicit empty security requirement ("security": []) means the
+		// operation opts out of the document-level security scheme. Emit an
+		// explicit anonymous auth override so the runtime suppresses any global
+		// Authorization header (a nil Auth would instead inherit it). See
+		// pkg/protocol/http buildActionAuthHeader and
+		// TestConvertOpenAPIAnonymousSecurityOverrideSuppressesGlobalAuth.
+		action.Auth = &dsl.AuthConfig{Type: "none"}
 		return
 	}
 	for _, requirement := range requirements {

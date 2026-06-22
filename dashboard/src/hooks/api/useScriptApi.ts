@@ -642,14 +642,14 @@ export function useScriptApi() {
   )
 
   const importSalesforce = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<SalesforceImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string; agentforce_transform?: boolean }): Promise<SalesforceImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
       if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
-      const res = await apiFetch('/scripts/import/salesforce', { method: 'POST', body: formData })
+      const res = await apiFetch(`/scripts/import/salesforce${options?.agentforce_transform ? '?agentforce_transform=true' : ''}`, { method: 'POST', body: formData })
       if (!res.ok) {
         throw new Error(await errorMessageFromResponse(res))
       }
@@ -676,14 +676,14 @@ export function useScriptApi() {
   )
 
   const importOpenAPI = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<OpenAPIImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string; agentforce_transform?: boolean }): Promise<OpenAPIImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('script_name', options.name)
       if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
-      const res = await apiFetch('/scripts/import/openapi', { method: 'POST', body: formData })
+      const res = await apiFetch(`/scripts/import/openapi${options?.agentforce_transform ? '?agentforce_transform=true' : ''}`, { method: 'POST', body: formData })
       if (!res.ok) {
         throw new Error(await errorMessageFromResponse(res))
       }
@@ -693,14 +693,14 @@ export function useScriptApi() {
   )
 
   const importRAML = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<RAMLImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string; agentforce_transform?: boolean }): Promise<RAMLImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('script_name', options.name)
       if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
-      const res = await apiFetch('/scripts/import/raml', { method: 'POST', body: formData })
+      const res = await apiFetch(`/scripts/import/raml${options?.agentforce_transform ? '?agentforce_transform=true' : ''}`, { method: 'POST', body: formData })
       if (!res.ok) {
         throw new Error(await errorMessageFromResponse(res))
       }
@@ -710,14 +710,14 @@ export function useScriptApi() {
   )
 
   const importPostman = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<PostmanImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string; agentforce_transform?: boolean }): Promise<PostmanImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('script_name', options.name)
       if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
-      const res = await apiFetch('/scripts/import/postman', { method: 'POST', body: formData })
+      const res = await apiFetch(`/scripts/import/postman${options?.agentforce_transform ? '?agentforce_transform=true' : ''}`, { method: 'POST', body: formData })
       if (!res.ok) {
         throw new Error(await errorMessageFromResponse(res))
       }

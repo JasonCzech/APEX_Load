@@ -606,6 +606,79 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('chrome_recorder_step:scroll')
   })
 
+  it('opts into the Agentforce replay-readiness transform and renders applied changes', async () => {
+    apiMock.importOpenAPI.mockResolvedValueOnce({
+      scripts: [],
+      script: {
+        name: 'Agent API',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://api.salesforce.com' },
+        init: [{ name: 'Acquire Agent API Token', type: 'http_oauth2_token', target: '', params: { save_as: 'agent_access_token' } }],
+        actions: [
+          { name: 'Start Session', type: 'request', method: 'POST', target: '/einstein/ai-agent/v1/agents/0Xx/sessions' },
+        ],
+        metadata: {
+          import: {
+            preserved: {
+              agentforce_review: {
+                detected: true,
+                streaming: true,
+                lifecycle: [{ step: 'session_start', method: 'POST', path: '/einstein/ai-agent/v1/sessions' }],
+              },
+              agentforce_transform: [
+                { step: 'token', action_name: 'Acquire Agent API Token', detail: 'Prepended an http_oauth2_token init action saving {{var.agent_access_token}}.' },
+                { step: 'session', action_name: 'Send Message', detail: 'Rewrote the session id in the request path to {{var.agent_session_id}}.' },
+              ],
+            },
+          },
+        },
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: { format: 'openapi', converted_actions: 1 },
+      summary: { title: 'Agent API' },
+    })
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="openapi" projectId="project-1" />)
+    })
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+
+    const file = new File(['{"openapi":"3.0.3"}'], 'agent.yaml', { type: 'application/yaml' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const transformToggle = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('Make Agentforce replay-ready')) as HTMLInputElement | undefined
+    expect(transformToggle).toBeDefined()
+    if (!transformToggle) return
+    await act(async () => {
+      transformToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert OpenAPI'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importOpenAPI).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1', agentforce_transform: true }))
+    expect(container.textContent).toContain('Applied replay-readiness changes (2)')
+    expect(container.textContent).toContain('Prepended an http_oauth2_token init action')
+    expect(container.textContent).toContain('Rewrote the session id in the request path')
+  })
+
   it('converts WSDL files with SOAP-specific options and renders the SOAP review', async () => {
     await act(async () => {
       root.render(<ProtocolAssetImport kind="wsdl" projectId="project-1" />)

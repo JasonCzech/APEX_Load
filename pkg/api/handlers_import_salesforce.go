@@ -66,7 +66,7 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 		})
 	}
 	reviewSections = attachMuleSoftReview(script, "salesforce_har", reviewSections)
-	reviewSections = attachAgentforceReview(script, "salesforce_har", reviewSections)
+	reviewSections = attachAgentforceReview(script, "salesforce_har", reviewSections, agentforceTransformRequested(r))
 	summary := harImportSummary(result)
 	summary["generation_mode"] = "salesforce_native_http"
 	summary["protocol_scope"] = "salesforce_http_family"

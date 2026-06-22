@@ -98,7 +98,7 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
 	}
-	reviewSections = attachAgentforceReview(result.Script, "openapi", reviewSections)
+	reviewSections = attachAgentforceReview(result.Script, "openapi", reviewSections, agentforceTransformRequested(r))
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
@@ -165,7 +165,7 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 			reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
 		}
 	}
-	reviewSections = attachAgentforceReview(result.Script, "raml", reviewSections)
+	reviewSections = attachAgentforceReview(result.Script, "raml", reviewSections, agentforceTransformRequested(r))
 
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
@@ -267,19 +267,30 @@ func mulesoftReviewSection(review *mulesoft.Review) scriptImportReviewSection {
 
 // attachAgentforceReview runs the Agentforce analyzer and, when an Agent API
 // conversation is detected, preserves the review on the script and returns the
-// review section appended to the supplied sections.
-func attachAgentforceReview(script *dsl.Script, source string, sections []scriptImportReviewSection) []scriptImportReviewSection {
+// review section appended to the supplied sections. When transform is true it
+// also rewrites the script in place to be replay-ready (token acquisition,
+// session correlation, SSE, end-session teardown) and records the applied
+// changes; transform is opt-in so default imports stay non-destructive.
+func attachAgentforceReview(script *dsl.Script, source string, sections []scriptImportReviewSection, transform bool) []scriptImportReviewSection {
 	review := agentforce.Analyze(script)
 	if !review.Detected {
 		return sections
 	}
-	if script != nil {
-		ensureScriptImportPreserved(script, source)["agentforce_review"] = review
+	var changes []agentforce.Change
+	if transform && script != nil {
+		changes = agentforce.Transform(script)
 	}
-	return append(sections, agentforceReviewSection(review))
+	if script != nil {
+		preserved := ensureScriptImportPreserved(script, source)
+		preserved["agentforce_review"] = review
+		if len(changes) > 0 {
+			preserved["agentforce_transform"] = changes
+		}
+	}
+	return append(sections, agentforceReviewSection(review, changes))
 }
 
-func agentforceReviewSection(review *agentforce.Review) scriptImportReviewSection {
+func agentforceReviewSection(review *agentforce.Review, changes []agentforce.Change) scriptImportReviewSection {
 	severity := "info"
 	if len(review.Blockers) > 0 {
 		severity = "warning"
@@ -300,16 +311,43 @@ func agentforceReviewSection(review *agentforce.Review) scriptImportReviewSectio
 	for _, action := range review.NextActions {
 		items = append(items, "Next action: "+action)
 	}
+	for _, change := range changes {
+		if change.ActionName != "" {
+			items = append(items, fmt.Sprintf("Applied (%s): %s — %s", change.Step, change.ActionName, change.Detail))
+		} else {
+			items = append(items, fmt.Sprintf("Applied (%s): %s", change.Step, change.Detail))
+		}
+	}
 	streaming := "non-streaming"
 	if review.Streaming {
 		streaming = "streaming (SSE)"
+	}
+	summary := fmt.Sprintf("Detected an Agentforce Agent API conversation (%s) across %d lifecycle step(s).", streaming, len(review.Lifecycle))
+	if len(changes) > 0 {
+		summary += fmt.Sprintf(" Applied %d replay-readiness change(s).", len(changes))
 	}
 	return scriptImportReviewSection{
 		Key:      "agentforce_review",
 		Title:    "Agentforce Agent API Review",
 		Severity: severity,
-		Summary:  fmt.Sprintf("Detected an Agentforce Agent API conversation (%s) across %d lifecycle step(s).", streaming, len(review.Lifecycle)),
+		Summary:  summary,
 		Items:    items,
+	}
+}
+
+// agentforceTransformRequested reports whether the caller opted into the
+// Agentforce replay-readiness transform via ?agentforce_transform=true. It reads
+// the query string (independent of the JSON/multipart body) so every import entry
+// point can honor it uniformly.
+func agentforceTransformRequested(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("agentforce_transform"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -377,7 +415,7 @@ func (s *Server) handleImportPostman(w http.ResponseWriter, r *http.Request) {
 		}
 		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
 	}
-	reviewSections = attachAgentforceReview(result.Script, "postman", reviewSections)
+	reviewSections = attachAgentforceReview(result.Script, "postman", reviewSections, agentforceTransformRequested(r))
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,

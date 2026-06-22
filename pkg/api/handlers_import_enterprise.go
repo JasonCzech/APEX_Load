@@ -58,7 +58,7 @@ func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.C
 		return
 	}
 	_ = attachMuleSoftReview(result.Script, "enterprise_script_archive", nil)
-	_ = attachAgentforceReview(result.Script, "enterprise_script_archive", nil)
+	_ = attachAgentforceReview(result.Script, "enterprise_script_archive", nil, false)
 	if !importReq.SalesforceNative && len(importReq.HARData) == 0 {
 		return
 	}
@@ -494,7 +494,7 @@ func buildEnterpriseArchiveImportReviewSections(warnings []string, result *enter
 		sections = append(sections, mulesoftReviewSection(summary.MuleSoftReview))
 	}
 	if summary.AgentforceReview != nil {
-		sections = append(sections, agentforceReviewSection(summary.AgentforceReview))
+		sections = append(sections, agentforceReviewSection(summary.AgentforceReview, nil))
 	}
 
 	return sections

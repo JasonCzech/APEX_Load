@@ -73,7 +73,11 @@ var (
 	xmlAttrTokenPattern    = regexp.MustCompile(`(?is)\b(?:[A-Za-z0-9_.-]+:)?([A-Za-z0-9_.-]*(?:token|session|csrf|xsrf|nonce|state|messageid|relatesto|correlationid|correlation|requestid|id)[A-Za-z0-9_.-]*)\s*=\s*"([^"]{6,})"`)
 	auraTokenPattern       = regexp.MustCompile(`(?i)(?:^|[&{,"\s])aura\.token["']?\s*[:=]\s*["']?([^"&',}\s]{6,})`)
 	auraFWUIDPattern       = regexp.MustCompile(`(?i)"fwuid"\s*:\s*"([^"]{6,})"`)
-	auraAppPattern         = regexp.MustCompile(`(?i)"app"\s*:\s*"([^"]{4,})"`)
+	// auraAppPattern only matches values shaped like a Salesforce Aura app
+	// descriptor — a markup:// reference or a "namespace:name" descriptor — so a
+	// generic "app":"SomeName" field in unrelated JSON (analytics, feature flags)
+	// is not mis-detected as an Aura correlation. See TestAuraAppPatternRequiresDescriptorShape.
+	auraAppPattern         = regexp.MustCompile(`(?i)"app"\s*:\s*"(markup://[^"]+|[A-Za-z][\w$.-]*:[A-Za-z][\w$./-]*)"`)
 	auraLoadedPattern      = regexp.MustCompile(`(?i)"loaded"\s*:\s*(\{[^}]{6,}\})`)
 	auraPageURIPattern     = regexp.MustCompile(`(?i)(?:"pageURI"\s*:\s*"([^"]{4,})"|aura\.pageURI\s*=\s*([^&\s]{4,}))`)
 	auraPageScopeIDPattern = regexp.MustCompile(`(?i)"pageScopeId"\s*:\s*"([^"]{6,})"`)

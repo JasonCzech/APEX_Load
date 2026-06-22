@@ -846,20 +846,48 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 		if foundRef == nil || foundRef.Action == nil {
 			continue
 		}
-		convert := ""
-		if correlationUsedOnlyEncoded(corr, harIDToRef) {
-			convert = "url_encode"
-			if corr.Value != "" {
-				encodedValues[corr.Value] = true
-			}
-		}
-		addExtractorIfMissing(foundRef.Action, dsl.Extractor{
+		usage := correlationUsage(corr, harIDToRef)
+		value := correlationValue(corr)
+		base := dsl.Extractor{
 			Name:       corr.Name,
 			Source:     corr.Source,
 			Type:       corr.ExtractType,
 			Expression: corr.Expression,
-			Convert:    convert,
-		})
+		}
+		switch {
+		case usage.encoded && !usage.raw:
+			// Value is only ever reused percent-encoded (e.g. aura.token inside a
+			// form-urlencoded /aura body): extract it pre-encoded and substitute the
+			// encoded occurrences with the variable.
+			base.Convert = "url_encode"
+			addExtractorIfMissing(foundRef.Action, base)
+			if value != "" {
+				encodedValues[value] = true
+			}
+		case usage.encoded && usage.raw:
+			// Value is reused BOTH raw (e.g. a JSON body/header) AND percent-encoded
+			// (a form body). A single variable can only resolve one way, so emit a raw
+			// extractor for the raw occurrences plus a url_encode sibling, and route
+			// the percent-encoded literals to the sibling variable.
+			addExtractorIfMissing(foundRef.Action, base)
+			encodedName := corr.Name + "_encoded"
+			addExtractorIfMissing(foundRef.Action, dsl.Extractor{
+				Name:       encodedName,
+				Source:     corr.Source,
+				Type:       corr.ExtractType,
+				Expression: corr.Expression,
+				Convert:    "url_encode",
+			})
+			if value != "" {
+				for _, encoded := range encodedFormsOf(value) {
+					vars[encoded] = "{{var." + encodedName + "}}"
+				}
+			}
+		default:
+			// Value reused only raw (or not reused in a correlated surface): a single
+			// raw extractor is sufficient.
+			addExtractorIfMissing(foundRef.Action, base)
+		}
 	}
 	for index := range cloneRefs {
 		action := cloneRefs[index].Action
@@ -874,16 +902,22 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 	}, nil
 }
 
-func correlationUsedOnlyEncoded(corr correlate.Correlation, refs map[int]*actionRef) bool {
-	value := corr.Value
-	if value == "" {
-		value = corr.SampleValue
-	}
+// correlationUse records how a correlated value is reused across later requests:
+// raw (verbatim) and/or percent-encoded (e.g. inside a form-urlencoded body). The
+// two are not mutually exclusive — a value can appear raw in one request and
+// encoded in another, which requires both a raw and a url_encode extractor.
+type correlationUse struct {
+	raw     bool
+	encoded bool
+}
+
+func correlationUsage(corr correlate.Correlation, refs map[int]*actionRef) correlationUse {
+	use := correlationUse{}
+	value := correlationValue(corr)
 	if strings.TrimSpace(value) == "" {
-		return false
+		return use
 	}
-	encodedForms := []string{url.QueryEscape(value), url.PathEscape(value)}
-	sawEncoded := false
+	encodedForms := encodedFormsOf(value)
 	for _, harID := range corr.UsedInIDs {
 		ref := refs[harID]
 		if ref == nil || ref.Action == nil {
@@ -891,16 +925,47 @@ func correlationUsedOnlyEncoded(corr correlate.Correlation, refs map[int]*action
 		}
 		for _, candidate := range actionCorrelationSurfaces(ref.Action) {
 			if strings.Contains(candidate, value) {
-				return false
+				use.raw = true
 			}
 			for _, encoded := range encodedForms {
-				if encoded != "" && encoded != value && strings.Contains(candidate, encoded) {
-					sawEncoded = true
+				if strings.Contains(candidate, encoded) {
+					use.encoded = true
 				}
 			}
 		}
 	}
-	return sawEncoded
+	return use
+}
+
+// correlationValue returns the concrete value a correlation substitutes, mirroring
+// correlate.BuildVarMap (Value, falling back to the truncated SampleValue).
+func correlationValue(corr correlate.Correlation) string {
+	if corr.Value != "" {
+		return corr.Value
+	}
+	return corr.SampleValue
+}
+
+// encodedFormsOf returns the distinct percent-encoded representations of value that
+// differ from the raw value (query- and path-escaped).
+func encodedFormsOf(value string) []string {
+	forms := make([]string, 0, 2)
+	for _, encoded := range []string{url.QueryEscape(value), url.PathEscape(value)} {
+		if encoded == "" || encoded == value {
+			continue
+		}
+		seen := false
+		for _, existing := range forms {
+			if existing == encoded {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			forms = append(forms, encoded)
+		}
+	}
+	return forms
 }
 
 func actionCorrelationSurfaces(action *dsl.Action) []string {

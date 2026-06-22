@@ -363,6 +363,15 @@ export interface AgentforceReview {
   next_actions?: string[]
 }
 
+// AgentforceTransformChange records one replay-readiness rewrite applied by the
+// opt-in Agentforce transform, preserved on the script under the
+// `agentforce_transform` import metadata key.
+export interface AgentforceTransformChange {
+  step: string
+  action_name?: string
+  detail: string
+}
+
 export interface EnterpriseArchiveProtocolSupportEntry {
   id: string
   bundle?: string
