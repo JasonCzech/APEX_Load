@@ -36,6 +36,7 @@ const (
 	RuleSalesforceFrontdoorSID      = "salesforce.frontdoor_sid"
 	RuleSalesforceConfirmationToken = "salesforce.confirmation_token"
 	RuleSalesforceNextRecordsURL    = "salesforce.next_records_url"
+	RuleSalesforceBulkContentURL    = "salesforce.bulk_content_url"
 )
 
 // ResponseFamily groups rules by the kind of response they inspect.
@@ -77,6 +78,7 @@ func RuleCatalog() []RuleInfo {
 		{RuleSalesforcePageScopeID, FamilyForm, "Salesforce pageScopeId", "Per-page pageScopeId values from aura.context that bind a Lightning page instance and are echoed in later requests.", 0.85},
 		{RuleSalesforceFrontdoorSID, FamilyForm, "Salesforce frontdoor sid", "sid/frontdoor session values passed through Salesforce frontdoor redirects.", 0.85},
 		{RuleSalesforceNextRecordsURL, FamilyForm, "Salesforce SOQL nextRecordsUrl", "SOQL REST Query API pagination cursor (nextRecordsUrl) reused verbatim as the next page request URL.", 0.9},
+		{RuleSalesforceBulkContentURL, FamilyForm, "Salesforce Bulk contentUrl", "Bulk API 2.0 ingest job contentUrl — the relative path the CSV batch is PUT to.", 0.9},
 		{RuleASPNetState, FamilyHTML, "ASP.NET state field", "WebForms __VIEWSTATE / __EVENTVALIDATION style hidden fields that change every request.", 0.95},
 		{RuleHTMLHiddenToken, FamilyHTML, "Hidden anti-CSRF/state token", "Hidden form inputs named like csrf, xsrf, token, nonce, state, viewstate, authenticity.", 0.9},
 		{RuleJSONCSRFToken, FamilyJSON, "JSON CSRF token", "JSON fields whose name contains csrf/xsrf.", 0.9},

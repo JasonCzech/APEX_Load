@@ -90,6 +90,12 @@ var (
 	// vXX/query/01g...-2000",...} and the client must GET that relative URL to page.
 	// It is extracted via JSONPath and reused verbatim as the next request's target.
 	salesforceNextRecordsURLPattern = regexp.MustCompile(`(?i)"nextRecordsUrl"\s*:\s*"([^"]+)"`)
+	// salesforceBulkContentURLPattern matches the Bulk API 2.0 ingest job-create
+	// response field {"id":"750...","contentUrl":"services/data/vXX/jobs/ingest/
+	// 750.../batches",...}. contentUrl is the relative path the client PUTs the CSV
+	// batch to, and it must be reused as the upload request target. It is keyed
+	// narrowly on the exact field name so generic url fields are not over-matched.
+	salesforceBulkContentURLPattern = regexp.MustCompile(`(?i)"contentUrl"\s*:\s*"([^"]+)"`)
 )
 
 func Detect(observations []Observation) []Correlation {
@@ -359,6 +365,7 @@ func salesforceRegexCandidates(body string) []Candidate {
 		}
 	}
 	addJSONPath(salesforceNextRecordsURLPattern, "salesforce_soql_next_records_url", RuleSalesforceNextRecordsURL, "$.nextRecordsUrl", "Salesforce SOQL pagination nextRecordsUrl cursor", 0.9)
+	addJSONPath(salesforceBulkContentURLPattern, "salesforce_bulk_content_url", RuleSalesforceBulkContentURL, "$.contentUrl", "Salesforce Bulk API ingest contentUrl upload target", 0.9)
 	return candidates
 }
 

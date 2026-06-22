@@ -551,6 +551,103 @@ func TestAnalyzeNativePreviewCorrelatesSOQLPagination(t *testing.T) {
 	}
 }
 
+// TestAnalyzeNativePreviewSynthesizesBulkPollLoop proves the A5 Bulk API 2.0
+// lifecycle: the recorded job-status GET is rewritten into a control_loop that
+// polls until the job reaches a terminal state, the CSV-upload target reuses the
+// extracted contentUrl, and the result download is left untouched.
+func TestAnalyzeNativePreviewSynthesizesBulkPollLoop(t *testing.T) {
+	const (
+		base       = "https://acme.my.salesforce.com"
+		jobID      = "7508c00000ARgV6AAL"
+		contentURL = "services/data/v59.0/jobs/ingest/7508c00000ARgV6AAL/batches"
+	)
+	script := &dsl.Script{
+		Name:     "SF Bulk Ingest",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: base},
+		Actions: []dsl.Action{
+			{Name: "Create Job", Type: "POST", Method: "POST", Target: base + "/services/data/v59.0/jobs/ingest", Body: `{"object":"Account","operation":"insert","contentType":"CSV"}`},
+			{Name: "Upload Batch", Type: "PUT", Method: "PUT", Target: base + "/" + contentURL, Body: "Name\nAcme"},
+			{Name: "Close Job", Type: "PATCH", Method: "PATCH", Target: base + "/services/data/v59.0/jobs/ingest/" + jobID, Body: `{"state":"UploadComplete"}`},
+			{Name: "Job Status", Type: "GET", Method: "GET", Target: base + "/services/data/v59.0/jobs/ingest/" + jobID},
+			{Name: "Results", Type: "GET", Method: "GET", Target: base + "/services/data/v59.0/jobs/ingest/" + jobID + "/successfulResults"},
+		},
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {"request": {"method": "POST", "url": "` + base + `/services/data/v59.0/jobs/ingest", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"id\":\"` + jobID + `\",\"state\":\"Open\",\"object\":\"Account\",\"contentUrl\":\"` + contentURL + `\"}"}}},
+	      {"request": {"method": "PUT", "url": "` + base + `/` + contentURL + `", "headers": []},
+	       "response": {"headers": [], "content": {"text": ""}}},
+	      {"request": {"method": "PATCH", "url": "` + base + `/services/data/v59.0/jobs/ingest/` + jobID + `", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"id\":\"` + jobID + `\",\"state\":\"UploadComplete\"}"}}},
+	      {"request": {"method": "GET", "url": "` + base + `/services/data/v59.0/jobs/ingest/` + jobID + `", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"id\":\"` + jobID + `\",\"state\":\"JobComplete\",\"numberRecordsProcessed\":1}"}}},
+	      {"request": {"method": "GET", "url": "` + base + `/services/data/v59.0/jobs/ingest/` + jobID + `/successfulResults", "headers": []},
+	       "response": {"headers": [], "content": {"text": "sf__Id,Name\n001,Acme"}}}
+	    ]
+	  }
+	}`)
+
+	review, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if review.NativePreview == nil || review.NativePreview.Script == nil {
+		t.Fatal("NativePreview = nil, want script")
+	}
+	actions := review.NativePreview.Script.Actions
+
+	// The CSV-upload target reuses the extracted contentUrl variable.
+	if strings.Contains(actions[1].Target, "/batches") && !strings.Contains(actions[1].Target, "{{var.corr_salesforce_bulk_content_url}}") {
+		t.Fatalf("upload target = %q, want it to reuse the contentUrl variable", actions[1].Target)
+	}
+
+	// The job-status GET is rewritten into a poll loop.
+	poll := actions[3]
+	if poll.Type != "control_loop" || poll.Control == nil {
+		t.Fatalf("job-status action = %#v, want a control_loop", poll)
+	}
+	if poll.Control.MaxIterations != 60 {
+		t.Fatalf("loop max_iterations = %d, want 60", poll.Control.MaxIterations)
+	}
+	if poll.Control.Condition == nil || !strings.Contains(poll.Control.Condition.Expr, "JobComplete") || !strings.Contains(poll.Control.Condition.Expr, "has(var.bulk_job_state)") {
+		t.Fatalf("loop condition = %#v, want a null-safe JobComplete predicate", poll.Control.Condition)
+	}
+	if len(poll.Control.Steps) != 1 {
+		t.Fatalf("loop steps = %d, want 1", len(poll.Control.Steps))
+	}
+	step := poll.Control.Steps[0]
+	var stateExt *dsl.Extractor
+	for i := range step.Extractors {
+		if step.Extractors[i].Name == "bulk_job_state" {
+			stateExt = &step.Extractors[i]
+		}
+	}
+	if stateExt == nil || stateExt.Expression != "$.state" {
+		t.Fatalf("loop step extractors = %#v, want a bulk_job_state $.state extractor", step.Extractors)
+	}
+	if !step.ThinkTimeAfter || step.ThinkTime.Type == "" {
+		t.Fatalf("loop step = %#v, want a poll-interval think time (think_time_after)", step)
+	}
+	if strings.Contains(step.Target, jobID) {
+		t.Fatalf("loop step target = %q, still carries the recorded job id literal", step.Target)
+	}
+
+	// The result download is NOT wrapped in a loop.
+	if actions[4].Type == "control_loop" {
+		t.Fatalf("result-download action was wrongly wrapped in a loop: %#v", actions[4])
+	}
+
+	// The synthesized control_loop must be valid DSL.
+	for _, issue := range dsl.ValidateScriptIssues(review.NativePreview.Script) {
+		if strings.Contains(strings.ToLower(issue), "control") || strings.Contains(strings.ToLower(issue), "condition") {
+			t.Fatalf("synthesized loop failed validation: %s", issue)
+		}
+	}
+}
+
 func TestAnalyzeClassifiesBroadenedSalesforceSurface(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "SF Broad Surface",

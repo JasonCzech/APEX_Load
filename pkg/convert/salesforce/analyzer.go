@@ -896,10 +896,122 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 		action.Headers = correlate.ApplyVarsToHeadersWithEncodedValues(action.Headers, vars, encodedValues)
 	}
 
+	synthesizeBulkPollLoops(cloneRefs)
+
 	return &NativePreview{
 		Script:       clone,
 		Correlations: correlationSummaries(correlations),
 	}, nil
+}
+
+// Bulk API 2.0 ingest poll-loop synthesis.
+const (
+	bulkStateVar          = "bulk_job_state"
+	bulkPollMaxIterations = 60
+	bulkPollIntervalMs    = 2000
+	// bulkPollConditionExpr keeps polling while the job is non-terminal. It is
+	// null-safe for the first pass: the state var is unset until the loop body's
+	// status GET runs, so !has(...) makes the condition true initially and the loop
+	// always executes at least once (a bare comparison on an unset var errors and
+	// the engine treats an errored condition as false, which would skip the poll).
+	bulkPollConditionExpr = `!has(var.bulk_job_state) || (var.bulk_job_state != "JobComplete" && var.bulk_job_state != "Failed" && var.bulk_job_state != "Aborted")`
+)
+
+// synthesizeBulkPollLoops rewrites a recorded Bulk API 2.0 ingest status GET into
+// a control_loop that polls until the job reaches a terminal state, so the native
+// preview waits for completion under load instead of issuing a single recorded
+// status check. It only fires when a Bulk ingest job-create request is also
+// present (so a stray job-status GET is not wrapped), and it is idempotent.
+func synthesizeBulkPollLoops(refs []actionRef) {
+	hasCreate := false
+	for i := range refs {
+		if isBulkIngestCreate(&refs[i]) {
+			hasCreate = true
+			break
+		}
+	}
+	if !hasCreate {
+		return
+	}
+	for i := range refs {
+		if isBulkIngestStatusPoll(&refs[i]) {
+			wrapBulkStatusPollInLoop(refs[i].Action)
+		}
+	}
+}
+
+func refMethod(ref *actionRef) string {
+	if ref.Method != "" {
+		return strings.ToUpper(ref.Method)
+	}
+	if ref.Action != nil {
+		return strings.ToUpper(ref.Action.Method)
+	}
+	return ""
+}
+
+// isBulkIngestCreate matches POST .../jobs/ingest (the job-create call, which has
+// no job-id path segment).
+func isBulkIngestCreate(ref *actionRef) bool {
+	if ref.Kind != "bulk_data" || ref.Action == nil || refMethod(ref) != "POST" {
+		return false
+	}
+	lower := strings.ToLower(ref.Action.Target)
+	return strings.Contains(lower, "/jobs/ingest") && !strings.Contains(lower, "/jobs/ingest/")
+}
+
+// isBulkIngestStatusPoll matches the bare GET .../jobs/ingest/<id> job-status
+// request, excluding the CSV upload (/batches) and result-download endpoints.
+func isBulkIngestStatusPoll(ref *actionRef) bool {
+	if ref.Kind != "bulk_data" || ref.Action == nil || refMethod(ref) != "GET" {
+		return false
+	}
+	lower := strings.ToLower(ref.Action.Target)
+	if !strings.Contains(lower, "/jobs/ingest/") {
+		return false
+	}
+	for _, suffix := range []string{"successfulresults", "failedresults", "unprocessedrecords", "/batches"} {
+		if strings.Contains(lower, suffix) {
+			return false
+		}
+	}
+	return true
+}
+
+// wrapBulkStatusPollInLoop rewrites a job-status GET in place into a control_loop
+// that re-issues the GET (with a state extractor and a poll interval) until the
+// job reaches a terminal state or the iteration cap is hit.
+func wrapBulkStatusPollInLoop(action *dsl.Action) {
+	if action == nil || strings.EqualFold(action.Type, "control_loop") {
+		return
+	}
+	inner := *action
+	addExtractorIfMissing(&inner, dsl.Extractor{
+		Name:       bulkStateVar,
+		Source:     "body",
+		Type:       "jsonpath",
+		Expression: "$.state",
+		OnMiss:     "fail",
+	})
+	if inner.ThinkTime.Type == "" {
+		inner.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: bulkPollIntervalMs}
+	}
+	inner.ThinkTimeAfter = true
+	*action = dsl.Action{
+		Name: strings.TrimSpace(inner.Name) + " (poll until JobComplete)",
+		Type: "control_loop",
+		Control: &dsl.ControlFlow{
+			Condition:     &dsl.Condition{Expr: bulkPollConditionExpr},
+			Steps:         []dsl.Action{inner},
+			MaxIterations: bulkPollMaxIterations,
+		},
+		Metadata: map[string]any{
+			"salesforce": map[string]any{
+				"flow_kind":   "bulk_data",
+				"synthesized": "bulk_ingest_poll_loop",
+			},
+		},
+	}
 }
 
 // correlationUse records how a correlated value is reused across later requests:

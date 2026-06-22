@@ -242,6 +242,41 @@ func TestDetectSalesforceSinglePageQueryEmitsNoCursor(t *testing.T) {
 	}
 }
 
+func TestDetectSalesforceBulkContentURL(t *testing.T) {
+	const contentURL = "services/data/v59.0/jobs/ingest/7508c00000ARgV6AAL/batches"
+	observations := []Observation{
+		{
+			ID:           1,
+			RequestURL:   "https://acme.my.salesforce.com/services/data/v59.0/jobs/ingest",
+			ResponseBody: `{"id":"7508c00000ARgV6AAL","state":"Open","object":"Account","contentUrl":"` + contentURL + `"}`,
+		},
+		{
+			ID:         2,
+			RequestURL: "https://acme.my.salesforce.com/" + contentURL,
+		},
+	}
+
+	var content *Correlation
+	for _, c := range Detect(observations) {
+		if c.RuleID == RuleSalesforceBulkContentURL {
+			cc := c
+			content = &cc
+		}
+	}
+	if content == nil {
+		t.Fatal("no contentUrl correlation detected")
+	}
+	if content.ExtractType != "jsonpath" || content.Expression != "$.contentUrl" {
+		t.Fatalf("contentUrl extractor = %s %q, want jsonpath $.contentUrl", content.ExtractType, content.Expression)
+	}
+	if content.Value != contentURL {
+		t.Fatalf("contentUrl value = %q, want %q", content.Value, contentURL)
+	}
+	if len(content.UsedInIDs) != 1 || content.UsedInIDs[0] != 2 {
+		t.Fatalf("contentUrl used-in = %v, want [2]", content.UsedInIDs)
+	}
+}
+
 func TestDetectSalesforceLoginTokensFromDecodedForms(t *testing.T) {
 	observations := []Observation{
 		{
