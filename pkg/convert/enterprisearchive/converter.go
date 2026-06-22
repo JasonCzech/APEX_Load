@@ -151,6 +151,11 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	var currentTransaction string
 	var currentSubTransaction string
 	var lastRequestURL string
+	// Track the last emitted request action (phase + index) so a deprecated
+	// web_find — which checks the PREVIOUS response — can attach its assertion to
+	// that request rather than forward onto the next one.
+	var lastRequestPhase string
+	lastRequestIndex := -1
 	var thinkTimes []float64
 	var sourceRuntimeControls []ParsedFunction
 
@@ -200,16 +205,34 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				fn.Args["Text"] = fn.Args["What"]
 			}
 			assertion, saveCountExtractor, warning := convertFindAssertion(fn)
+			// web_find validates the previous response, so attach to the LAST emitted
+			// request action. pendingAssertions/pendingExtractors would flush forward
+			// onto the NEXT request, validating the wrong response.
+			prev := actionAtPhaseIndex(result.Script, lastRequestPhase, lastRequestIndex)
+			prevPath := sourceReviewActionPath(lastRequestPhase, lastRequestIndex)
 			mapped := false
 			if assertion != nil {
-				pendingAssertions = append(pendingAssertions, *assertion)
-				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", assertion.Type, "assertion", "contributor", "Mapped from web_find; applied to the next converted request action.", SourceFunctionSupportExecutable))
+				if prev != nil {
+					prev.Assertions = append(prev.Assertions, *assertion)
+					appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, prevPath, assertion.Type, "assertion", "contributor", "Mapped from web_find; applied to the preceding request's response (web_find checks the previous page).", SourceFunctionSupportExecutable))
+				} else {
+					// No preceding request: preserve the check by attaching forward, and
+					// warn so the relocation is not silent.
+					pendingAssertions = append(pendingAssertions, *assertion)
+					pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", assertion.Type, "assertion", "contributor", "Mapped from web_find with no preceding request; applied to the next converted request action.", SourceFunctionSupportExecutable))
+					result.Warnings = append(result.Warnings, fmt.Sprintf("line %d: web_find has no preceding request; its content check was attached to the following request", fn.LineNumber))
+				}
 				result.Stats.ContributorFunctions++
 				mapped = true
 			}
 			if saveCountExtractor != nil {
-				pendingExtractors = append(pendingExtractors, *saveCountExtractor)
-				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", saveCountExtractor.Name, "extractor", "contributor", "Counts web_find matches and applies the value to the next converted request action.", SourceFunctionSupportExecutable))
+				if prev != nil {
+					prev.Extractors = append(prev.Extractors, *saveCountExtractor)
+					appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, prevPath, saveCountExtractor.Name, "extractor", "contributor", "Counts web_find matches against the preceding request's response.", SourceFunctionSupportExecutable))
+				} else {
+					pendingExtractors = append(pendingExtractors, *saveCountExtractor)
+					pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", saveCountExtractor.Name, "extractor", "contributor", "Counts web_find matches and applies the value to the next converted request action.", SourceFunctionSupportExecutable))
+				}
 				result.Stats.Extractors++
 				result.Stats.ContributorFunctions++
 				mapped = true
@@ -558,6 +581,8 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 				tagSourceFlowMetadata(result, fn, action)
 				appendActionForPhase(result.Script, fn.Phase, *action)
+				lastRequestPhase = fn.Phase
+				lastRequestIndex = actionCountForPhase(result.Script, fn.Phase) - 1
 				result.Stats.ConvertedActions++
 				result.Stats.RawRequestActions++
 				recordSourceFunctionSupport(result, mappingMode)

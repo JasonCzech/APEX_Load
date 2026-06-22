@@ -38,8 +38,10 @@ func TestDetectDatabaseDriverAndDSN(t *testing.T) {
 		wantDSN    string
 		wantOK     bool
 	}{
-		{"jdbc:postgresql://db:5432/orders", "postgres", "postgres://app:pw@db:5432/orders", true},
-		{"jdbc:mysql://db:3306/shop", "mysql", "app:pw@tcp(db:3306)/shop", true},
+		// The cleartext password must never be embedded: it is replaced with the
+		// {{secret.db_password}} governed reference resolved at runtime.
+		{"jdbc:postgresql://db:5432/orders", "postgres", "postgres://app:{{secret.db_password}}@db:5432/orders", true},
+		{"jdbc:mysql://db:3306/shop", "mysql", "app:{{secret.db_password}}@tcp(db:3306)/shop", true},
 		{"jdbc:sqlite:/tmp/test.db", "sqlite", "/tmp/test.db", true},
 		{"jdbc:redis://nope", "", "", false},
 	}
@@ -48,6 +50,21 @@ func TestDetectDatabaseDriverAndDSN(t *testing.T) {
 		if driver != tc.wantDriver || ok != tc.wantOK || (tc.wantOK && dsn != tc.wantDSN) {
 			t.Fatalf("detect(%q) = (%q,%q,%v), want (%q,%q,%v)", tc.url, driver, dsn, ok, tc.wantDriver, tc.wantDSN, tc.wantOK)
 		}
+		if strings.Contains(dsn, "pw") && !strings.Contains(dsn, "{{secret") {
+			t.Fatalf("detect(%q) leaked cleartext password into DSN %q", tc.url, dsn)
+		}
+	}
+}
+
+func TestDetectDatabaseDSNOmitsCredentialsWhenNoPassword(t *testing.T) {
+	// No password supplied: the username may appear but no secret placeholder is
+	// injected, and nothing cleartext leaks.
+	driver, dsn, ok := detectDatabaseDriverAndDSN("jdbc:postgresql://db:5432/orders", "app", "")
+	if !ok || driver != "postgres" {
+		t.Fatalf("detect = (%q,%q,%v), want postgres ok", driver, dsn, ok)
+	}
+	if strings.Contains(dsn, "{{secret") {
+		t.Fatalf("dsn = %q, want no secret placeholder when no password present", dsn)
 	}
 }
 
@@ -106,12 +123,31 @@ func TestConvertJMXJDBCThreadGroupBecomesExecutableDatabaseScript(t *testing.T) 
 	if !strings.Contains(script.Config.Database.DSN, "db.example.com:5432/orders") {
 		t.Fatalf("database dsn = %q, want host+db", script.Config.Database.DSN)
 	}
+	// The cleartext JMX password ("secret") must not leak into the exportable DSL.
+	if strings.Contains(script.Config.Database.DSN, "app:secret@") {
+		t.Fatalf("database dsn = %q leaked the cleartext JMX password", script.Config.Database.DSN)
+	}
+	if !strings.Contains(script.Config.Database.DSN, "{{secret.db_password}}") {
+		t.Fatalf("database dsn = %q, want password replaced with {{secret.db_password}}", script.Config.Database.DSN)
+	}
 	if result.Stats.AdapterRequired < 1 {
 		t.Fatalf("adapter_required stat = %d, want >= 1 (connection)", result.Stats.AdapterRequired)
 	}
 	// The generated database script must be executable (pass DSL validation).
 	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
 		t.Fatalf("generated database script failed validation: %#v", issues)
+	}
+	// Accounting (convert-other-2): the two converted JDBC samplers must be counted
+	// as converted, not silently reported as skipped with zero converted actions.
+	if result.Stats.ConvertedActions != 2 {
+		t.Fatalf("ConvertedActions = %d, want 2 (both JDBC samplers converted)", result.Stats.ConvertedActions)
+	}
+	if result.Stats.SkippedSamplers != 0 {
+		t.Fatalf("SkippedSamplers = %d, want 0 (converted samplers must not be reported skipped)", result.Stats.SkippedSamplers)
+	}
+	if gap := result.Stats.TotalSamplers - result.Stats.ConvertedActions - result.Stats.SkippedSamplers; gap != 0 {
+		t.Fatalf("sampler accounting gap = %d, want 0 (total=%d converted=%d skipped=%d)",
+			gap, result.Stats.TotalSamplers, result.Stats.ConvertedActions, result.Stats.SkippedSamplers)
 	}
 }
 

@@ -362,19 +362,50 @@ func TestWebLinkWithoutURLIsReviewedNotFabricated(t *testing.T) {
 	}
 }
 
+func webFindAssertionPresent(assertions []dsl.Assertion, value string) bool {
+	for _, a := range assertions {
+		if a.Type == "body_contains" && a.Value == value {
+			return true
+		}
+	}
+	return false
+}
+
 func TestWebFindConvertsToAssertion(t *testing.T) {
+	// web_find checks the PREVIOUS response, so its assertion must land on the
+	// request that came before it (Home) — not the following request (Next).
 	result := convertSingleWebSource(t, `
+	web_url("Home", "URL=https://example.test/home", LAST);
 	web_find("Verify", "What=Welcome back", LAST);
+	web_url("Next", "URL=https://example.test/next", LAST);`)
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("expected 2 request actions, got %d", len(result.Script.Actions))
+	}
+	if !webFindAssertionPresent(result.Script.Actions[0].Assertions, "Welcome back") {
+		t.Fatalf("web_find assertion did not attach to the preceding request (Home): %#v", result.Script.Actions[0].Assertions)
+	}
+	if webFindAssertionPresent(result.Script.Actions[1].Assertions, "Welcome back") {
+		t.Fatalf("web_find assertion wrongly attached to the FOLLOWING request (Next): %#v", result.Script.Actions[1].Assertions)
+	}
+}
+
+func TestWebFindBeforeAnyRequestAttachesForwardWithWarning(t *testing.T) {
+	// No preceding request: the check is preserved by attaching forward, and a
+	// warning flags the relocation rather than dropping it silently.
+	result := convertSingleWebSource(t, `
+	web_find("Verify", "What=Welcome", LAST);
 	web_url("Home", "URL=https://example.test/home", LAST);`)
-	action := result.Script.Actions[0]
+	if !webFindAssertionPresent(result.Script.Actions[0].Assertions, "Welcome") {
+		t.Fatalf("fallback: web_find assertion should attach forward to Home: %#v", result.Script.Actions[0].Assertions)
+	}
 	found := false
-	for _, assertion := range action.Assertions {
-		if assertion.Type == "body_contains" && assertion.Value == "Welcome back" {
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "web_find") && strings.Contains(w, "no preceding request") {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("web_find did not produce a body_contains assertion: %#v", action.Assertions)
+		t.Fatalf("expected a warning about web_find with no preceding request, got: %v", result.Warnings)
 	}
 }
 

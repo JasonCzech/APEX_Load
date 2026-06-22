@@ -159,6 +159,19 @@ func handleJMeterJDBCSampler(node *treeNode, ctx *convertContext, script *dsl.Sc
 	actionIndex := len(script.Actions)
 	script.Actions = append(script.Actions, action)
 	*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, element, "JDBCSampler", fmt.Sprintf("actions[%d]", actionIndex), label, "action", "converted", fmt.Sprintf("JMeter JDBC sampler was converted into a %s action.", actionType)))
+	countNativeSamplerConversion(result)
+}
+
+// countNativeSamplerConversion records that a non-HTTP sampler converted into an
+// executable action. countJMeterSamplerElements pre-counts every non-HTTP sampler
+// as skipped, so a successful conversion is one more ConvertedActions and one
+// fewer SkippedSamplers — keeping the completeness accounting honest (a converted
+// sampler is no longer reported as skipped with zero converted actions).
+func countNativeSamplerConversion(result *ConvertResult) {
+	result.Stats.ConvertedActions++
+	if result.Stats.SkippedSamplers > 0 {
+		result.Stats.SkippedSamplers--
+	}
 }
 
 // jdbcQueryActionType maps a JMeter JDBC queryType onto a database action type.
@@ -194,11 +207,21 @@ func parseJMeterJDBCConnection(element *xmlNode) (*dsl.DatabaseConfig, bool) {
 	return cfg, true
 }
 
+// importedDBPasswordSecret is the governed secret reference substituted for a
+// JMX cleartext password so the credential is never baked into the exported DSL.
+const importedDBPasswordSecret = "{{secret.db_password}}"
+
 // detectDatabaseDriverAndDSN converts a JDBC URL into an APEX Load driver + DSN.
+// The cleartext JMX password is never embedded: the generated script is
+// exportable/downloadable/pushable, so the password is replaced with a governed
+// secret reference resolved at runtime.
 func detectDatabaseDriverAndDSN(dbURL, username, password string) (string, string, bool) {
 	raw := strings.TrimSpace(dbURL)
 	lower := strings.ToLower(raw)
 	hostPort, database := splitJDBCURL(raw)
+	if strings.TrimSpace(password) != "" {
+		password = importedDBPasswordSecret
+	}
 	switch {
 	case strings.HasPrefix(lower, "jdbc:postgresql:"):
 		base := "postgres://" + hostPort + "/" + database
@@ -319,6 +342,7 @@ func handleJMeterNetworkSampler(node *treeNode, ctx *convertContext, script *dsl
 	actionIndex := len(script.Actions)
 	script.Actions = append(script.Actions, action)
 	*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, element, name, fmt.Sprintf("actions[%d]", actionIndex), label, "action", "converted", fmt.Sprintf("JMeter %s was converted into a %s action.", name, action.Type)))
+	countNativeSamplerConversion(result)
 }
 
 // handleJMeterJMSSampler captures a JMS sampler as adapter_required. JMeter JMS

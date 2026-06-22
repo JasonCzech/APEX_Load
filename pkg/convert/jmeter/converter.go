@@ -470,6 +470,9 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 		case "JDBCDataSource":
 			if cfg, ok := parseJMeterJDBCConnection(child.Element); ok {
 				ctx.databaseConfig = cfg
+				if strings.TrimSpace(prop(child.Element, "password")) != "" {
+					diagnostics.Add(diag.Warning, "JMeter JDBCDataSource", jmeterElementLocation(child.Element), "database password was replaced with {{secret.db_password}}; supply it as a governed secret before replay (the cleartext JMX password is not stored in the imported script)")
+				}
 			}
 			continue
 		case "JDBCSampler":

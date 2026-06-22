@@ -36,6 +36,32 @@ func actionCountForPhase(script *dsl.Script, phase string) int {
 	}
 }
 
+// actionAtPhaseIndex returns a pointer to the action at index i within the given
+// phase, or nil when out of range. The pointer aliases the slice element so the
+// caller can amend the action in place (used to attach a web_find assertion to
+// the preceding request). Resolve and use it immediately — a later append to the
+// same phase may reallocate the slice and invalidate the pointer.
+func actionAtPhaseIndex(script *dsl.Script, phase string, i int) *dsl.Action {
+	if script == nil || i < 0 {
+		return nil
+	}
+	switch normalizeSourcePhase(phase) {
+	case "init":
+		if i < len(script.Init) {
+			return &script.Init[i]
+		}
+	case "teardown":
+		if i < len(script.Teardown) {
+			return &script.Teardown[i]
+		}
+	default:
+		if i < len(script.Actions) {
+			return &script.Actions[i]
+		}
+	}
+	return nil
+}
+
 func appendActionForPhase(script *dsl.Script, phase string, action dsl.Action) {
 	if script == nil {
 		return
