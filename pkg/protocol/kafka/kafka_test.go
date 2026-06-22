@@ -32,6 +32,31 @@ func TestKafkaProtocolIsRegistered(t *testing.T) {
 	}
 }
 
+func TestKafkaProduceFailureSetsSendFailureCount(t *testing.T) {
+	ctx := context.Background()
+	k := newMockKafka(t, nil) // no default topic -> produce fails
+
+	res, err := k.Execute(ctx, &protocol.Action{Name: "p", Type: "kafka_produce", Body: []byte("x")})
+	if err != nil {
+		t.Fatalf("Execute returned transport error: %v", err)
+	}
+	if res.Success {
+		t.Fatal("expected produce to fail with no topic configured")
+	}
+	if res.ServerTelemetry == nil || res.ServerTelemetry.SendFailureCount != 1 {
+		t.Fatalf("SendFailureCount = %+v, want 1", res.ServerTelemetry)
+	}
+
+	// A failed consume must NOT be counted as a send failure.
+	cres, err := k.Execute(ctx, &protocol.Action{Name: "c", Type: "kafka_consume"})
+	if err != nil {
+		t.Fatalf("Execute returned transport error: %v", err)
+	}
+	if cres.ServerTelemetry != nil && cres.ServerTelemetry.SendFailureCount != 0 {
+		t.Fatalf("consume SendFailureCount = %d, want 0", cres.ServerTelemetry.SendFailureCount)
+	}
+}
+
 func TestKafkaProduceConsumeWithExtractionAndAssertion(t *testing.T) {
 	ctx := context.Background()
 	k := newMockKafka(t, map[string]any{

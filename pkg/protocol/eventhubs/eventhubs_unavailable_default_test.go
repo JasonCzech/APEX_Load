@@ -35,4 +35,8 @@ func TestEventHubsNonMockFailsClosed(t *testing.T) {
 	if !strings.Contains(result.ErrorMessage, "eventhubs_real") {
 		t.Fatalf("expected fail-closed guidance naming eventhubs_real, got: %q", result.ErrorMessage)
 	}
+	// A failed produce must be counted as a send failure for messaging reliability.
+	if result.ServerTelemetry == nil || result.ServerTelemetry.SendFailureCount != 1 {
+		t.Fatalf("SendFailureCount = %+v, want 1 on a failed produce", result.ServerTelemetry)
+	}
 }

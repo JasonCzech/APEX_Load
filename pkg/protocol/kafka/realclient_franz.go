@@ -141,7 +141,15 @@ func (c *franzClient) Produce(ctx context.Context, topic string, rec kafkaRecord
 	}, nil
 }
 
-func (c *franzClient) Consume(ctx context.Context, topic string, _ string, timeout time.Duration) (kafkaRecord, int64, error) {
+func (c *franzClient) Consume(ctx context.Context, topic string, group string, timeout time.Duration) (kafkaRecord, int64, error) {
+	// franz binds a single consumer group per client (set at handle() time from
+	// config.kafka.consumer_group). A per-action group that differs cannot be
+	// honored without a distinct client, so fail loudly rather than silently
+	// consuming under the configured group (the mock honors per-action groups, so
+	// this keeps mock and real from diverging unannounced).
+	if group != "" && group != c.cfg.ConsumerGroup {
+		return kafkaRecord{}, 0, fmt.Errorf("per-action consumer_group %q differs from the configured config.kafka.consumer_group %q; the real Kafka adapter binds one group per client", group, c.cfg.ConsumerGroup)
+	}
 	cl, err := c.handle()
 	if err != nil {
 		return kafkaRecord{}, 0, err

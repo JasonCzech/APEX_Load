@@ -24,6 +24,25 @@ func TestJMSProtocolsAreRegistered(t *testing.T) {
 	}
 }
 
+func TestJMSPublishFailureSetsSendFailureCount(t *testing.T) {
+	ctx := context.Background()
+	p := &JMS{name: "jms-solace", provider: "solace"}
+	if err := p.Init(ctx, map[string]any{"jms_mock": true}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	// No destination configured or supplied -> publish fails.
+	res, err := p.Execute(ctx, &protocol.Action{Name: "pub", Type: "jms_publish", Body: []byte("x")})
+	if err != nil {
+		t.Fatalf("Execute returned transport error: %v", err)
+	}
+	if res.Success {
+		t.Fatal("expected publish to fail with no destination")
+	}
+	if res.ServerTelemetry == nil || res.ServerTelemetry.SendFailureCount != 1 {
+		t.Fatalf("SendFailureCount = %+v, want 1", res.ServerTelemetry)
+	}
+}
+
 func TestJMSPublishConsumeWithExtractionAndAssertion(t *testing.T) {
 	ctx := context.Background()
 	p := &JMS{name: "jms-solace", provider: "solace"}

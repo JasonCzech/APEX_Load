@@ -2,11 +2,48 @@ package eventhubscapture
 
 import (
 	"bytes"
+	"encoding/base64"
 	"strings"
 	"testing"
 
 	"github.com/hamba/avro/v2/ocf"
 )
+
+// TestConvertCaptureBase64EncodesBinaryBody covers eventhubs-3 (import half): a
+// non-UTF-8 (binary) capture body must be base64-encoded with body_encoding set,
+// not stored as a raw Go string (which JSON would corrupt via U+FFFD).
+func TestConvertCaptureBase64EncodesBinaryBody(t *testing.T) {
+	binary := "\xff\xfe\x00\x01\x02avro-ish"
+	data := writeCapture(t, []map[string]any{captureRecord(1, "device-9", "sensor", binary)})
+
+	res, err := Convert(ConvertRequest{Name: "bin", Data: data})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if res.Stats.BinaryBodies != 1 {
+		t.Fatalf("BinaryBodies = %d, want 1", res.Stats.BinaryBodies)
+	}
+	a := res.Script.Actions[0]
+	if a.BodyEncoding != "base64" {
+		t.Fatalf("BodyEncoding = %q, want base64", a.BodyEncoding)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(a.Body)
+	if err != nil {
+		t.Fatalf("body is not valid base64: %v", err)
+	}
+	if string(decoded) != binary {
+		t.Fatalf("decoded body = %q, want original binary payload", decoded)
+	}
+	found := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "binary") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a binary-body warning, got: %v", res.Warnings)
+	}
+}
 
 // captureSchema is the well-known Event Hubs Capture Avro record schema.
 const captureSchema = `{

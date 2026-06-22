@@ -83,6 +83,12 @@ func finalizeTelemetry(result *protocol.Result, sent event, hasSent bool, receiv
 		if lag, err := strconv.ParseInt(result.Extractions["eventhubs_consumer_lag"], 10, 64); err == nil && lag > 0 {
 			t.ConsumerOffsetLag = lag
 		}
+		if result.Extractions["eventhubs_duplicate"] == "1" {
+			t.DuplicateCount = 1
+		}
+		if result.Extractions["eventhubs_out_of_order"] == "1" {
+			t.OutOfOrderCount = 1
+		}
 	}
 	t.ThrottledRequests = throttle
 	t.ServerBusyCount = serverBusy

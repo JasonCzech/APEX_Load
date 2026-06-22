@@ -114,6 +114,12 @@ type message struct {
 	StreamBody   []string          `json:"stream_body,omitempty"`
 	DeliveryMode string            `json:"delivery_mode,omitempty"`
 	Priority     *uint8            `json:"priority,omitempty"`
+	// sourceTopic / sourceSubscription record a topic-subscription origin so a
+	// transacted/client rollback requeues the message back to that subscription's
+	// queue (not into the unrelated queue map). Unexported: mock-internal routing
+	// state, never serialized; re-stamped by the topic consume path on redelivery.
+	sourceTopic        string
+	sourceSubscription string
 }
 
 // settlementAdapter is an OPTIONAL capability some brokerAdapters implement for
@@ -198,6 +204,21 @@ type memoryBroker struct {
 	// every registered subscription; each subscription consumes its own copy with
 	// an independent cursor.
 	topics map[string]map[string][]message
+	// seqLast is a monotonic broker sequence assigned to published messages that
+	// carry none, so consumers can detect duplicate / out-of-order delivery (real
+	// brokers assign sequence numbers; the mock mirrors that for fidelity). A
+	// redelivered message keeps its original sequence (it is non-zero), so a
+	// rollback redelivery is not mistaken for a new message.
+	seqLast int64
+}
+
+// assignSequenceLocked stamps a monotonic sequence on a message that doesn't
+// already carry one. The caller must hold b.mu.
+func (b *memoryBroker) assignSequenceLocked(msg *message) {
+	if msg.SequenceNumber == 0 {
+		b.seqLast++
+		msg.SequenceNumber = b.seqLast
+	}
 }
 
 // cloneMessageValue returns a copy of msg with its reference fields (maps, body)
@@ -221,6 +242,7 @@ func cloneMessageValue(msg message) message {
 func (b *memoryBroker) publish(destination string, msg message) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.assignSequenceLocked(&msg)
 	b.queues[destination] = append(b.queues[destination], msg)
 }
 
@@ -309,9 +331,23 @@ func (b *memoryBroker) subscribe(topic, subscription string) {
 func (b *memoryBroker) publishTopic(topic string, msg message) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.assignSequenceLocked(&msg)
 	for sub := range b.topics[topic] {
 		b.topics[topic][sub] = append(b.topics[topic][sub], cloneMessageValue(msg))
 	}
+}
+
+// requeueTopic re-appends a rolled-back message to a specific subscription's
+// queue for redelivery. Unlike publishTopic it targets only the subscription the
+// message was consumed from, so a transacted/client rollback redelivers to that
+// subscription rather than fanning out to every subscriber.
+func (b *memoryBroker) requeueTopic(topic, subscription string, msg message) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.topics[topic] == nil {
+		b.topics[topic] = make(map[string][]message)
+	}
+	b.topics[topic][subscription] = append(b.topics[topic][subscription], cloneMessageValue(msg))
 }
 
 // consumeTopic pops the first message matching the selector from a subscription's
@@ -496,9 +532,27 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 			result.StatusCode = 500
 		}
 		result.ErrorMessage = err.Error()
+		if isJMSSendAction(action.Type) {
+			// Count a failed publish/send attempt so the messaging reliability
+			// telemetry reflects send failures instead of always reading zero.
+			if result.ServerTelemetry == nil {
+				result.ServerTelemetry = &protocol.ServerTelemetry{}
+			}
+			result.ServerTelemetry.SendFailureCount++
+		}
 	}
 	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 	return result, nil
+}
+
+// isJMSSendAction reports whether the action attempts a publish/send, so a
+// failure can be counted as a failed publish attempt (SendFailureCount).
+func isJMSSendAction(actionType string) bool {
+	switch strings.ToLower(actionType) {
+	case "jms_publish", "jms_request_reply":
+		return true
+	}
+	return false
 }
 
 func (j *JMS) Teardown(ctx context.Context) error {
@@ -583,6 +637,11 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 			}
 		}
 		msg, err = topic.ConsumeTopic(ctx, destination, sub, selectorExpr, j.isDurableSubscription(action), j.timeout(action))
+		if err == nil {
+			// Record the topic origin so a later rollback requeues to this
+			// subscription rather than into the unrelated queue map.
+			msg.sourceTopic, msg.sourceSubscription = destination, sub
+		}
 	case selectorExpr != "":
 		// Selector is incompatible with the Service Bus advanced-consume controls
 		// (peek-lock settlement / sub-queue / session); reject the combo explicitly
@@ -633,6 +692,19 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 	// finalizeJMSServerTelemetry; the session retains the message only for
 	// settlement (ack/commit/rollback).
 	j.session.Track(msg)
+	// Reliability detection by broker sequence. A legitimate rollback-redelivery
+	// carries the same sequence; it is tracked as a redelivery, NOT a broker
+	// duplicate, so skip Observe for redelivered messages.
+	if msg.SequenceNumber > 0 && !isRedeliveredMessage(msg) {
+		if dup, ooo := j.session.Observe(msg.SequenceNumber); dup || ooo {
+			if dup {
+				result.Extractions["jms_duplicate"] = "1"
+			}
+			if ooo {
+				result.Extractions["jms_out_of_order"] = "1"
+			}
+		}
+	}
 	if err := runExtractors(action.Extractors, result, msg); err != nil {
 		return message{}, err
 	}
@@ -955,6 +1027,14 @@ func (j *JMS) requeueForRedelivery(msgs []message) {
 		}
 		props[redeliveredProperty] = "true"
 		msg.Properties = props
+		if msg.sourceTopic != "" {
+			// Topic-origin message: requeue to the originating subscription's queue.
+			// broker.publish would land it in the unrelated queue map (keyed by the
+			// topic name), where the topic consume path never looks, so it would
+			// never be redelivered.
+			broker.requeueTopic(msg.sourceTopic, msg.sourceSubscription, msg)
+			continue
+		}
 		broker.publish(msg.Destination, msg)
 	}
 }
@@ -1551,6 +1631,21 @@ func addMessageExtractions(result *protocol.Result, msg message) {
 	}
 }
 
+// isRedeliveredMessage reports whether a consumed message is a redelivery — a
+// rolled-back message re-consumed (redeliveredProperty) or a broker delivery_count
+// greater than one — which must be counted as a redelivery, not a duplicate.
+func isRedeliveredMessage(msg message) bool {
+	if msg.Properties[redeliveredProperty] == "true" {
+		return true
+	}
+	if dc, ok := firstMatchingMapValue(msg.Properties, "delivery_count", "x-delivery-count", "JMSXDeliveryCount"); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(dc)); err == nil && n > 1 {
+			return true
+		}
+	}
+	return false
+}
+
 func finalizeJMSServerTelemetry(result *protocol.Result, request message, hasRequest bool, response message, hasResponse bool) *protocol.ServerTelemetry {
 	if result == nil || (!hasRequest && !hasResponse) {
 		return nil
@@ -1569,6 +1664,12 @@ func finalizeJMSServerTelemetry(result *protocol.Result, request message, hasReq
 		}
 		if response.Properties[redeliveredProperty] == "true" {
 			telemetry.RedeliveryCount = 1
+		}
+		if result.Extractions["jms_duplicate"] == "1" {
+			telemetry.DuplicateCount = 1
+		}
+		if result.Extractions["jms_out_of_order"] == "1" {
+			telemetry.OutOfOrderCount = 1
 		}
 	}
 	if hasRequest {

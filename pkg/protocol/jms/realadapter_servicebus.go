@@ -83,6 +83,31 @@ type inflightMessage struct {
 	// renew extends the lock; RenewMessageLock for plain receivers, RenewSessionLock
 	// for session receivers.
 	renew func(context.Context) error
+	// lockedUntil is the broker-side peek-lock expiry. After it passes the lock is
+	// lost server-side and the token can never be settled, so the entry is evicted
+	// to avoid pinning the message (and its body) until VUser Teardown.
+	lockedUntil time.Time
+}
+
+// lockedUntilOf returns a received message's peek-lock expiry, or the zero time
+// when the broker did not supply one.
+func lockedUntilOf(rm *azservicebus.ReceivedMessage) time.Time {
+	if rm != nil && rm.LockedUntil != nil {
+		return *rm.LockedUntil
+	}
+	return time.Time{}
+}
+
+// evictExpiredInflightLocked drops peek-locked entries whose broker lock has
+// already expired. Called lazily on each new peek-lock insert so a script that
+// peek-locks without settling (or whose lock expires before the settle decision)
+// cannot grow a.inflight without bound. The caller must hold a.mu.
+func (a *serviceBusAdapter) evictExpiredInflightLocked(now time.Time) {
+	for tok, e := range a.inflight {
+		if !e.lockedUntil.IsZero() && now.After(e.lockedUntil) {
+			delete(a.inflight, tok)
+		}
+	}
 }
 
 func (a *serviceBusAdapter) Publish(ctx context.Context, destination string, msg message) (message, error) {
@@ -351,7 +376,8 @@ func (a *serviceBusAdapter) ConsumeAdvanced(ctx context.Context, destination str
 		rm := messages[0]
 		token := hex.EncodeToString(rm.LockToken[:])
 		a.mu.Lock()
-		a.inflight[token] = inflightMessage{received: rm, settler: src, renew: func(ctx context.Context) error { return renewLock(ctx, rm) }}
+		a.evictExpiredInflightLocked(time.Now())
+		a.inflight[token] = inflightMessage{received: rm, settler: src, lockedUntil: lockedUntilOf(rm), renew: func(ctx context.Context) error { return renewLock(ctx, rm) }}
 		a.mu.Unlock()
 		converted.SettlementToken = token
 		return converted, nil
@@ -432,7 +458,8 @@ func (a *serviceBusAdapter) ReceiveDeferred(ctx context.Context, destination str
 		if !receiveAndDelete {
 			token := hex.EncodeToString(rm.LockToken[:])
 			a.mu.Lock()
-			a.inflight[token] = inflightMessage{received: rm, settler: receiver, renew: func(ctx context.Context) error { return receiver.RenewMessageLock(ctx, rm, nil) }}
+			a.evictExpiredInflightLocked(time.Now())
+			a.inflight[token] = inflightMessage{received: rm, settler: receiver, lockedUntil: lockedUntilOf(rm), renew: func(ctx context.Context) error { return receiver.RenewMessageLock(ctx, rm, nil) }}
 			a.mu.Unlock()
 			converted.SettlementToken = token
 		}
@@ -482,6 +509,12 @@ func (a *serviceBusAdapter) Settle(ctx context.Context, token string, dispositio
 		return fmt.Errorf("unknown settle disposition %q", disposition)
 	}
 	if err != nil {
+		// A terminal settle failure (typically the broker lock was already lost)
+		// means this token can never be settled by us again, so drop it rather than
+		// letting a permanently-unsettleable entry pin the message until Teardown.
+		a.mu.Lock()
+		delete(a.inflight, token)
+		a.mu.Unlock()
 		return fmt.Errorf("settle Service Bus message (%s): %w", disposition, err)
 	}
 	// Settled (or deferred): the token is no longer live.

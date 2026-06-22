@@ -276,11 +276,16 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 		hasRequest = err == nil
 		hasResponse = err == nil
 	case "kafka_commit":
-		// Offset commit: record a commit on the shared session so it feeds the
-		// unified commit accounting (no redelivery semantics for Kafka offsets).
-		k.session.Commit()
-		result.Extractions["kafka_operation"] = "kafka_commit"
-		result.ServerTelemetry = &protocol.ServerTelemetry{CommitCount: 1}
+		// Synchronously commit consumer offsets on the broker, then record the
+		// commit on the shared session for unified accounting. The mock Commit is a
+		// no-op; the real adapter flushes + commits offsets and surfaces failures.
+		if cerr := k.client.Commit(ctx); cerr != nil {
+			err = cerr
+		} else {
+			k.session.Commit()
+			result.Extractions["kafka_operation"] = "kafka_commit"
+			result.ServerTelemetry = &protocol.ServerTelemetry{CommitCount: 1}
+		}
 	case "kafka_seek":
 		target := seekTarget(action.Params)
 		if seekErr := k.client.Seek(ctx, k.topic(action), k.consumerGroup(action), target); seekErr != nil {
@@ -309,9 +314,28 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 			result.StatusCode = 500
 		}
 		result.ErrorMessage = err.Error()
+		if isKafkaSendAction(action.Type) {
+			// Count a failed produce/publish attempt so the messaging reliability
+			// telemetry reflects send failures instead of always reading zero.
+			if result.ServerTelemetry == nil {
+				result.ServerTelemetry = &protocol.ServerTelemetry{}
+			}
+			result.ServerTelemetry.SendFailureCount++
+		}
 	}
 	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 	return result, nil
+}
+
+// isKafkaSendAction reports whether the action attempts a produce/publish, so a
+// failure is counted as a failed produce attempt (SendFailureCount). A failed
+// transactional commit also fails the buffered-record flush, i.e. a send.
+func isKafkaSendAction(actionType string) bool {
+	switch strings.ToLower(actionType) {
+	case "kafka_produce", "kafka_request_reply", "kafka_commit_transaction":
+		return true
+	}
+	return false
 }
 
 func (k *Kafka) Teardown(ctx context.Context) error {
@@ -518,6 +542,17 @@ func (k *Kafka) consume(ctx context.Context, action *protocol.Action, result *pr
 	addRecordExtractions(result, rec)
 	result.Extractions["kafka_operation"] = "consume"
 	result.Extractions["kafka_consumer_lag"] = strconv.FormatInt(lag, 10)
+	// Reliability detection: flag a duplicate / out-of-order delivery by broker
+	// offset. Kafka uses auto-ack with no rollback model, so every consume is a
+	// fresh delivery (there is no redelivery to exclude).
+	if dup, ooo := k.session.Observe(rec.Offset); dup || ooo {
+		if dup {
+			result.Extractions["kafka_duplicate"] = "1"
+		}
+		if ooo {
+			result.Extractions["kafka_out_of_order"] = "1"
+		}
+	}
 	if err := runExtractors(action.Extractors, result, rec); err != nil {
 		return kafkaRecord{}, err
 	}
@@ -682,6 +717,12 @@ func finalizeKafkaServerTelemetry(result *protocol.Result, request kafkaRecord, 
 		// consume path records, instead of discarding it to a string extraction.
 		if lag, err := strconv.ParseInt(result.Extractions["kafka_consumer_lag"], 10, 64); err == nil && lag > 0 {
 			telemetry.ConsumerOffsetLag = lag
+		}
+		if result.Extractions["kafka_duplicate"] == "1" {
+			telemetry.DuplicateCount = 1
+		}
+		if result.Extractions["kafka_out_of_order"] == "1" {
+			telemetry.OutOfOrderCount = 1
 		}
 	}
 	if hasRequest && hasResponse && !request.Timestamp.IsZero() && !response.Timestamp.IsZero() && !response.Timestamp.Before(request.Timestamp) {

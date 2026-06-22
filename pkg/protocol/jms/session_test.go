@@ -59,6 +59,53 @@ func TestJMSTransactedRollbackRedelivery(t *testing.T) {
 	}
 }
 
+// TestJMSTransactedTopicRollbackRedelivery covers jms-1: a transacted message
+// consumed from a topic subscription and then rolled back must be redelivered to
+// that subscription. Before the fix it was requeued into the unrelated queue map
+// (keyed by the topic name), so the topic consume path never saw it again.
+func TestJMSTransactedTopicRollbackRedelivery(t *testing.T) {
+	ctx := context.Background()
+	p := &JMS{name: "jms-solace", provider: "solace"}
+	if err := p.Init(ctx, map[string]any{
+		"jms_destination":      "orders.topic.tx.test",
+		"jms_destination_type": "topic",
+		"jms_subscription":     "sub-1",
+		"jms_mock":             true,
+		"jms_acknowledgement":  "transacted",
+		"jms_timeout_ms":       float64(250),
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if _, err := p.Execute(ctx, &protocol.Action{Name: "pub", Type: "jms_publish", Body: []byte(`{"id":1}`)}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	first, err := p.Execute(ctx, &protocol.Action{Name: "c1", Type: "jms_consume"})
+	if err != nil || !first.Success {
+		t.Fatalf("first topic consume failed: err=%v msg=%s", err, first.ErrorMessage)
+	}
+
+	rb, err := p.Execute(ctx, &protocol.Action{Name: "rb", Type: "jms_rollback"})
+	if err != nil {
+		t.Fatalf("rollback: %v", err)
+	}
+	if rb.ServerTelemetry == nil || rb.ServerTelemetry.AbortCount != 1 {
+		t.Fatalf("rollback AbortCount = %+v, want 1", rb.ServerTelemetry)
+	}
+
+	second, err := p.Execute(ctx, &protocol.Action{Name: "c2", Type: "jms_consume"})
+	if err != nil {
+		t.Fatalf("second consume err: %v", err)
+	}
+	if !second.Success {
+		t.Fatalf("rolled-back topic message was not redelivered to the subscription: %s", second.ErrorMessage)
+	}
+	if second.ServerTelemetry == nil || second.ServerTelemetry.RedeliveryCount != 1 {
+		t.Fatalf("second consume RedeliveryCount = %+v, want 1", second.ServerTelemetry)
+	}
+}
+
 // TestJMSAutoModeDoesNotRetain confirms auto acknowledgement (the default) does
 // not retain pending messages, so a rollback has nothing to redeliver.
 func TestJMSAutoModeDoesNotRetain(t *testing.T) {

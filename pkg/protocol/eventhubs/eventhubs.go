@@ -8,12 +8,14 @@ package eventhubs
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 )
 
 const (
@@ -45,6 +47,10 @@ type EventHubs struct {
 	cfg         config
 	client      eventHubsClient
 	initialized bool
+	// observer detects duplicate / out-of-order events by sequence number on the
+	// consume probe. Event Hubs has no ack/rollback model, so the session is used
+	// only for its bounded sequence observer (lazily created on first consume).
+	observer *messaging.Session[struct{}]
 }
 
 func (e *EventHubs) Name() string { return e.name }
@@ -120,6 +126,14 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 			result.StatusCode = 500
 		}
 		result.ErrorMessage = err.Error()
+		if strings.EqualFold(action.Type, "eventhubs_produce") {
+			// Count a failed produce attempt so the messaging reliability telemetry
+			// reflects send failures instead of always reading zero.
+			if result.ServerTelemetry == nil {
+				result.ServerTelemetry = &protocol.ServerTelemetry{}
+			}
+			result.ServerTelemetry.SendFailureCount++
+		}
 	}
 	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 	return result, nil
@@ -174,6 +188,19 @@ func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result
 	addEventExtractions(result, ev)
 	result.Extractions["eventhubs_operation"] = "consume"
 	result.Extractions["eventhubs_consumer_lag"] = strconv.FormatInt(lag, 10)
+	// Reliability detection by sequence number. The consume probe has no
+	// rollback/redelivery model, so every observation is a fresh delivery.
+	if e.observer == nil {
+		e.observer = messaging.New[struct{}](messaging.AckAuto)
+	}
+	if dup, ooo := e.observer.Observe(ev.SequenceNum); dup || ooo {
+		if dup {
+			result.Extractions["eventhubs_duplicate"] = "1"
+		}
+		if ooo {
+			result.Extractions["eventhubs_out_of_order"] = "1"
+		}
+	}
 	if err := runExtractors(action.Extractors, result, ev); err != nil {
 		return event{}, err
 	}
@@ -185,6 +212,12 @@ func (e *EventHubs) hub(action *protocol.Action) string {
 }
 
 func (e *EventHubs) timeout(action *protocol.Action) time.Duration {
+	// timeout_ms is a catalog int and arrives as a JSON number (float64), so a
+	// string read never matches it. durationValue handles the numeric form; the
+	// string path stays as a fallback for hand-authored string values.
+	if d := durationValue(action.Params, "timeout_ms", 0); d > 0 {
+		return d
+	}
 	if ms := paramString(action.Params, "timeout_ms", ""); ms != "" {
 		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
 			return time.Duration(n) * time.Millisecond
@@ -201,10 +234,30 @@ func (e *EventHubs) buildEvent(action *protocol.Action) event {
 	for k, v := range action.Headers {
 		props[k] = v
 	}
+	// partition_key and partition_id are mutually exclusive — the real adapter
+	// rejects an event that carries both. Use the action's explicit routing
+	// control; only fall back to config defaults when the action sets neither,
+	// preferring the key to keep the choice deterministic.
+	pKey := paramString(action.Params, "partition_key", "")
+	pID := paramString(action.Params, "partition_id", "")
+	if pKey == "" && pID == "" {
+		pKey, pID = e.cfg.PartitionKey, e.cfg.PartitionID
+		if pKey != "" {
+			pID = ""
+		}
+	}
+	// Decode a base64-encoded body (e.g. binary capture payloads) back to raw
+	// bytes so non-UTF-8 events round-trip losslessly.
+	body := action.Body
+	if strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") && len(action.Body) > 0 {
+		if decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(action.Body))); err == nil {
+			body = decoded
+		}
+	}
 	return event{
-		Body:         action.Body,
-		PartitionKey: paramString(action.Params, "partition_key", e.cfg.PartitionKey),
-		PartitionID:  paramString(action.Params, "partition_id", e.cfg.PartitionID),
+		Body:         body,
+		PartitionKey: pKey,
+		PartitionID:  pID,
 		Properties:   props,
 	}
 }

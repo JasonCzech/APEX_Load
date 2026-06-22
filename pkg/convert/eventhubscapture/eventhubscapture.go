@@ -8,8 +8,10 @@ package eventhubscapture
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/hamba/avro/v2/ocf"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -39,6 +41,7 @@ type Stats struct {
 	ActionsEmitted int `json:"actions_emitted"`
 	PartitionKeys  int `json:"partition_keys"`
 	EmptyBodies    int `json:"empty_bodies"`
+	BinaryBodies   int `json:"binary_bodies"`
 }
 
 // ConvertResult is the import output (mirrors the other importer result shapes).
@@ -75,6 +78,7 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 		recordsRead   int
 		partitionKeys int
 		emptyBodies   int
+		binaryBodies  int
 	)
 	for dec.HasNext() {
 		var rec map[string]any
@@ -98,8 +102,18 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 			Name:     fmt.Sprintf("publish-captured-%d", len(actions)+1),
 			Type:     "eventhubs_produce",
 			Target:   eventHub,
-			Body:     string(body),
 			Metadata: map[string]any{"eventhubs_capture": true},
+		}
+		// Binary payloads (Avro/protobuf/compressed) would be irreversibly mangled
+		// by JSON's invalid-UTF-8 -> U+FFFD replacement when the draft is returned.
+		// base64-encode them so the body round-trips losslessly; the eventhubs
+		// runtime base64-decodes body_encoding=base64 on send.
+		if len(body) > 0 && !utf8.Valid(body) {
+			action.Body = base64.StdEncoding.EncodeToString(body)
+			action.BodyEncoding = "base64"
+			binaryBodies++
+		} else {
+			action.Body = string(body)
 		}
 		if seq, ok := rec["SequenceNumber"]; ok {
 			action.Metadata["source_sequence_number"] = seq
@@ -127,6 +141,9 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 	if emptyBodies > 0 {
 		warnings = append(warnings, fmt.Sprintf("%d captured event(s) had an empty body", emptyBodies))
 	}
+	if binaryBodies > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d captured event(s) had a non-UTF-8 (binary) body; imported as base64 (body_encoding=base64) so the payload round-trips losslessly — verify before promotion", binaryBodies))
+	}
 	if partitionKeys == 0 {
 		warnings = append(warnings, "no partition keys found in the capture; produced events use namespace default routing (set params.partition_id to measure per-partition skew)")
 	}
@@ -146,7 +163,7 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 	return &ConvertResult{
 		Script:   script,
 		Warnings: warnings,
-		Stats:    Stats{RecordsRead: recordsRead, ActionsEmitted: len(actions), PartitionKeys: partitionKeys, EmptyBodies: emptyBodies},
+		Stats:    Stats{RecordsRead: recordsRead, ActionsEmitted: len(actions), PartitionKeys: partitionKeys, EmptyBodies: emptyBodies, BinaryBodies: binaryBodies},
 		Summary:  fmt.Sprintf("Imported %d of %d captured Event Hubs events into produce actions for event hub %q (mock mode).", len(actions), recordsRead, eventHub),
 	}, nil
 }

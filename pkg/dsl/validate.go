@@ -678,6 +678,17 @@ func actionParamStringValue(params map[string]any, key string) (string, bool) {
 	return trimmed, true
 }
 
+// actionHasJMSDestination reports whether a JMS action carries a destination via
+// its target or the catalog-documented params.destination alternative (the
+// runtime resolves params.destination -> target -> config.jms.destination).
+func actionHasJMSDestination(action Action) bool {
+	if strings.TrimSpace(action.Target) != "" {
+		return true
+	}
+	pd, ok := actionParamStringValue(action.Params, "destination")
+	return ok && pd != ""
+}
+
 // ValidateScriptError returns the first validation issue as an error.
 func ValidateScriptError(script *Script) error {
 	issues := ValidateScriptIssues(script)
@@ -728,8 +739,8 @@ func validateJMSScriptIssues(script *Script) []string {
 		usesActionDestinations := true
 		for _, action := range script.Actions {
 			switch action.Type {
-			case "jms_publish", "jms_consume", "jms_request_reply":
-				if action.Target == "" {
+			case "jms_publish", "jms_consume", "jms_request_reply", "jms_browse":
+				if !actionHasJMSDestination(action) {
 					usesActionDestinations = false
 				}
 			}
@@ -751,7 +762,7 @@ func validateJMSScriptIssues(script *Script) []string {
 		} else if _, ok := protocolActionSpec("jms", action.Type); !ok {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: unsupported JMS action type %q", i, action.Name, action.Type))
 		}
-		if (action.Type == "jms_publish" || action.Type == "jms_consume" || action.Type == "jms_request_reply" || action.Type == "jms_browse") && action.Target == "" && jms.Destination == "" {
+		if (action.Type == "jms_publish" || action.Type == "jms_consume" || action.Type == "jms_request_reply" || action.Type == "jms_browse") && jms.Destination == "" && !actionHasJMSDestination(action) {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing destination", i, action.Name))
 		}
 		if action.Type == "jms_request_reply" && jms.ReplyTo == "" {
@@ -793,7 +804,10 @@ func validateJMSScriptIssues(script *Script) []string {
 			// A selector (Solace/AMQP data-plane filter) is mutually exclusive with
 			// the Service Bus advanced-consume controls (P2.3).
 			if sel, ok := actionParamStringValue(action.Params, "selector"); ok && strings.TrimSpace(sel) != "" {
-				_, hasSubQueue := actionParamStringValue(action.Params, "sub_queue")
+				// Mirror the runtime's normalizeSubQueue: sub_queue:"none" means the
+				// main queue (no sub-queue), so it does not conflict with a selector.
+				sq, _ := actionParamStringValue(action.Params, "sub_queue")
+				hasSubQueue := strings.TrimSpace(sq) != "" && !strings.EqualFold(strings.TrimSpace(sq), "none")
 				_, hasSession := actionParamStringValue(action.Params, "session_token")
 				peekLock, _ := action.Params["peek_lock"].(bool)
 				if hasSubQueue || hasSession || peekLock {
