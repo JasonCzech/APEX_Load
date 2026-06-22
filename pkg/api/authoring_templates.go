@@ -293,7 +293,7 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 					BaseURL: "{{env.BASE_URL}}",
 					JavaHTTP: dsl.JavaHTTPConfig{
 						Codec:        "java_serialized_object_base64",
-						HelperMode:   "sidecar",
+						HelperMode:   "embedded",
 						BodyEncoding: "base64",
 					},
 					RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},

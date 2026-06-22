@@ -1,6 +1,6 @@
 {
   "script": {
-    "name": "Simple_Java_HTTP_Sidecar",
+    "name": "Simple_Java_HTTP_Byte_Preserving",
     "version": "1.0.0",
     "protocol": "java_http",
 
@@ -9,19 +9,13 @@
       "think_time": { "type": "fixed", "mean_ms": 1000 },
       "java_http": {
         "codec": "java_serialized_object_base64",
-        "helper_mode": "sidecar",
+        "helper_mode": "embedded",
         "content_type": "application/x-java-serialized-object",
         "accept": "application/x-java-serialized-object",
         "body_encoding": "base64",
-        "object_schema": "com.example.session.RefreshRequest",
-        "request_mapping": {
-          "tenant": "accountId",
-          "sessionId": "opaqueSessionId"
-        },
         "response_mapping": {
           "refreshToken": "nextToken"
         },
-        "extractor_type": "opaque",
         "preserve_binary_result": true
       }
     },

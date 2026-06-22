@@ -1,6 +1,7 @@
 package correlate
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -212,6 +213,41 @@ func ApplyVarsWithEncodedValues(value string, vars map[string]string, encodedVal
 	return value
 }
 
+func EncodedFormsOf(value string) []string {
+	forms := make([]string, 0, 2)
+	for _, encoded := range []string{url.QueryEscape(value), url.PathEscape(value)} {
+		if encoded == "" || encoded == value {
+			continue
+		}
+		seen := false
+		for _, existing := range forms {
+			if existing == encoded {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			forms = append(forms, encoded)
+		}
+	}
+	return forms
+}
+
+func DetectEncodedValueUsage(value string, surfaces []string) bool {
+	encodedForms := EncodedFormsOf(value)
+	if len(encodedForms) == 0 {
+		return false
+	}
+	for _, surface := range surfaces {
+		for _, encoded := range encodedForms {
+			if strings.Contains(surface, encoded) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func ApplyVarsToHeadersWithEncodedValues(headers map[string]string, vars map[string]string, encodedValues map[string]bool) map[string]string {
 	if len(headers) == 0 {
 		return headers
@@ -387,6 +423,9 @@ func urlDecoded(raw string) string {
 }
 
 func jsonCandidates(body string) []Candidate {
+	if parsed := jsonCandidatesFromParsedBody(body); len(parsed) > 0 {
+		return parsed
+	}
 	candidates := make([]Candidate, 0)
 	for _, match := range jsonStringTokenPattern.FindAllStringSubmatch(body, -1) {
 		if len(match) < 3 {
@@ -422,6 +461,112 @@ func jsonCandidates(body string) []Candidate {
 		})
 	}
 	return candidates
+}
+
+func jsonCandidatesFromParsedBody(body string) []Candidate {
+	var value any
+	if err := json.Unmarshal([]byte(body), &value); err != nil {
+		return nil
+	}
+	candidates := make([]Candidate, 0)
+	walkJSONCandidates(value, "$", &candidates)
+	return candidates
+}
+
+func walkJSONCandidates(value any, path string, candidates *[]Candidate) {
+	switch typed := value.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			walkJSONCandidates(typed[key], jsonPathChild(path, key), candidates)
+		}
+	case []any:
+		for index, item := range typed {
+			walkJSONCandidates(item, fmt.Sprintf("%s[%d]", path, index), candidates)
+		}
+	case string:
+		key := jsonPathLastKey(path)
+		if key == "" || len(typed) < 6 || !dynamicJSONKey(key) {
+			return
+		}
+		ruleID, base := classifyJSONKey(key)
+		*candidates = append(*candidates, Candidate{
+			Name:           "corr_" + Slug(key),
+			Value:          typed,
+			Source:         "body",
+			ExtractType:    "jsonpath",
+			Expression:     path,
+			RuleID:         ruleID,
+			BaseConfidence: base,
+			Reason:         "JSON field " + key + " looks like a dynamic token/identifier",
+		})
+	case float64:
+		key := jsonPathLastKey(path)
+		if key == "" || !dynamicJSONKey(key) {
+			return
+		}
+		number := fmt.Sprintf("%.0f", typed)
+		if typed != float64(int64(typed)) {
+			number = fmt.Sprint(typed)
+		}
+		*candidates = append(*candidates, Candidate{
+			Name:           "corr_" + Slug(key),
+			Value:          number,
+			Source:         "body",
+			ExtractType:    "jsonpath",
+			Expression:     path,
+			RuleID:         RuleJSONNumericID,
+			BaseConfidence: 0.5,
+			Reason:         "JSON numeric id field " + key,
+		})
+	}
+}
+
+func dynamicJSONKey(key string) bool {
+	lower := strings.ToLower(key)
+	return strings.Contains(lower, "token") ||
+		strings.Contains(lower, "access_token") ||
+		strings.Contains(lower, "id_token") ||
+		strings.Contains(lower, "refresh_token") ||
+		strings.Contains(lower, "session_id") ||
+		strings.Contains(lower, "sessionid") ||
+		strings.Contains(lower, "sid") ||
+		strings.Contains(lower, "csrf") ||
+		strings.Contains(lower, "_token") ||
+		strings.Contains(lower, "xsrf") ||
+		strings.Contains(lower, "auth") ||
+		strings.HasSuffix(lower, "id")
+}
+
+func jsonPathChild(parent string, key string) string {
+	if jsonPathIdentifier.MatchString(key) {
+		return parent + "." + key
+	}
+	return parent + `["` + strings.ReplaceAll(key, `"`, `\"`) + `"]`
+}
+
+var jsonPathIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func jsonPathLastKey(path string) string {
+	if strings.HasSuffix(path, `"]`) {
+		start := strings.LastIndex(path, `["`)
+		if start >= 0 {
+			return strings.ReplaceAll(path[start+2:len(path)-2], `\"`, `"`)
+		}
+	}
+	lastDot := strings.LastIndex(path, ".")
+	if lastDot >= 0 && lastDot+1 < len(path) {
+		key := path[lastDot+1:]
+		if bracket := strings.Index(key, "["); bracket >= 0 {
+			key = key[:bracket]
+		}
+		return key
+	}
+	return ""
 }
 
 // classifyJSONKey picks the most specific rule (and base confidence) for a JSON
@@ -731,6 +876,11 @@ func dynamicHeaderName(lowerKey string) bool {
 		strings.Contains(lowerKey, "location") ||
 		strings.Contains(lowerKey, "id") ||
 		strings.Contains(lowerKey, "auth") ||
+		strings.Contains(lowerKey, "api-key") ||
+		strings.Contains(lowerKey, "apikey") ||
+		strings.Contains(lowerKey, "secret") ||
+		strings.HasSuffix(lowerKey, "-key") ||
+		strings.HasSuffix(lowerKey, "_key") ||
 		strings.Contains(lowerKey, "csrf") ||
 		strings.Contains(lowerKey, "xsrf")
 }

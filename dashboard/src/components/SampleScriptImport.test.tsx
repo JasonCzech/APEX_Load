@@ -10,6 +10,7 @@ import SampleScriptImport from './SampleScriptImport'
 
 const apiMock = {
   importSample: vi.fn(),
+  uploadImportAsset: vi.fn(),
   createScript: vi.fn(),
 }
 
@@ -77,6 +78,24 @@ describe('SampleScriptImport', () => {
       version: script.version || '1.0.0',
       created_at: '2026-05-17T00:00:00Z',
     }))
+    apiMock.uploadImportAsset.mockResolvedValue({
+      import_id: 'sample-import',
+      name: 'upload_bin',
+      file_name: 'upload.bin',
+      content_type: 'application/octet-stream',
+      size_bytes: 3,
+      sha256: 'abc123',
+      storage_ref: 'file:///tmp/upload.bin',
+      data_source: {
+        name: 'upload_bin',
+        type: 'file',
+        file_name: 'upload.bin',
+        content_type: 'application/octet-stream',
+        storage_ref: 'file:///tmp/upload.bin',
+        strategy: 'sequential',
+      },
+      uploaded_at: '2026-06-22T00:00:00Z',
+    })
   })
 
   afterEach(async () => {
@@ -236,6 +255,95 @@ describe('SampleScriptImport', () => {
     }))
     expect(container.textContent).toContain('Filtered assets')
     expect(container.textContent).toContain('2')
+  })
+
+  it('uploads missing imported file assets before saving the generated script', async () => {
+    apiMock.importSample.mockResolvedValueOnce({
+      script: {
+        name: 'Multipart Upload',
+        protocol: 'http',
+        config: { base_url: 'https://api.example.com' },
+        actions: [{ name: 'POST upload', type: 'request', method: 'POST', target: '/upload', body: '{{file.upload_bin}}' }],
+        data_sources: [{
+          name: 'upload_bin',
+          type: 'file',
+          file_name: 'upload.bin',
+          content_type: 'application/octet-stream',
+          strategy: 'sequential',
+        }],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: {
+        format: 'har',
+        total_requests: 1,
+        converted_actions: 1,
+        assertions: 0,
+        extractors: 0,
+        correlations_detected: 0,
+      },
+      preflight: {
+        valid: false,
+        action_count: 1,
+        expected_action_count: 1,
+        data_source_count: 1,
+        parameter_count: 0,
+        warnings: ['Data source upload_bin needs an uploaded governed asset.'],
+        checks: [{
+          id: 'data_sources',
+          label: 'Data source readiness',
+          status: 'fail',
+          detail: 'Data source upload_bin needs an uploaded governed asset.',
+        }],
+      },
+    })
+
+    await act(async () => {
+      root.render(<SampleScriptImport projectId="project-1" />)
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Import Assets')
+    expect(container.textContent).toContain('Missing asset')
+    expect(container.textContent).toContain('0/1 ready')
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save To Script Library')) as HTMLButtonElement | undefined
+    expect(saveButton?.disabled).toBe(true)
+
+    const uploadInput = container.querySelector('input[aria-label="Upload asset for upload_bin"]') as HTMLInputElement | null
+    expect(uploadInput).not.toBeNull()
+    if (!uploadInput) return
+
+    const file = new File(['abc'], 'upload.bin', { type: 'application/octet-stream' })
+    Object.defineProperty(uploadInput, 'files', {
+      configurable: true,
+      value: [file],
+    })
+    await act(async () => {
+      uploadInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.uploadImportAsset).toHaveBeenCalledWith('Multipart Upload', file, expect.objectContaining({
+      project_id: 'project-1',
+      name: 'upload_bin',
+      content_type: 'application/octet-stream',
+    }))
+    expect(container.textContent).toContain('1/1 ready')
+    expect(container.textContent).toContain('file:///tmp/upload.bin')
+    expect(saveButton?.disabled).toBe(false)
   })
 
   it('promotes Java-over-HTTP sample imports into java_http drafts with bounded warnings', async () => {

@@ -97,6 +97,7 @@ func RuleCatalog() []RuleInfo {
 var (
 	highEntropyChars = regexp.MustCompile(`[^A-Za-z0-9]`)
 	allDigits        = regexp.MustCompile(`^\d+$`)
+	base64TokenChars = regexp.MustCompile(`^[A-Za-z0-9+/_-]{16,}={0,2}$`)
 )
 
 // scoreConfidence combines a candidate's rule base confidence with runtime
@@ -130,6 +131,12 @@ func scoreConfidence(candidate Candidate, usageCount int) (float64, []string) {
 	// tokens; short all-digit values are weaker signals (could be static ids).
 	value := candidate.Value
 	switch {
+	case looksJWTLike(value):
+		score += 0.08
+		reasons = append(reasons, "JWT-shaped token")
+	case looksBase64TokenLike(value):
+		score += 0.06
+		reasons = append(reasons, "base64-shaped opaque token")
 	case len(value) >= 24 && highEntropyChars.MatchString(value):
 		score += 0.06
 		reasons = append(reasons, "long, high-entropy value")
@@ -142,6 +149,48 @@ func scoreConfidence(candidate Candidate, usageCount int) (float64, []string) {
 	}
 
 	return clampConfidence(score), reasons
+}
+
+func looksJWTLike(value string) bool {
+	parts := strings.Split(strings.TrimSpace(value), ".")
+	if len(parts) != 3 {
+		return false
+	}
+	total := 0
+	for _, part := range parts {
+		if len(part) < 6 || !base64TokenChars.MatchString(part) {
+			return false
+		}
+		total += len(part)
+	}
+	return total >= 24
+}
+
+func looksBase64TokenLike(value string) bool {
+	value = strings.TrimSpace(value)
+	if !base64TokenChars.MatchString(value) {
+		return false
+	}
+	hasUpper := false
+	hasLower := false
+	hasDigit := false
+	hasSymbol := false
+	for _, r := range value {
+		if r >= '0' && r <= '9' {
+			hasDigit = true
+			continue
+		}
+		if r >= 'A' && r <= 'Z' {
+			hasUpper = true
+			continue
+		}
+		if r >= 'a' && r <= 'z' {
+			hasLower = true
+			continue
+		}
+		hasSymbol = true
+	}
+	return len(value) >= 24 && (hasSymbol || (hasUpper && hasLower && hasDigit))
 }
 
 func clampConfidence(score float64) float64 {

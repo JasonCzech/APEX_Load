@@ -141,8 +141,20 @@ func (w *WebSocket) connect(ctx context.Context, action *protocol.Action, result
 	result.DependencyTarget = dependencyTarget(target)
 
 	headers := cloneHeader(w.defaultHeaders)
+	headerListNames := websocketHeaderListNameSet(action.HeaderList)
 	for key, value := range action.Headers {
+		if _, exists := headerListNames[strings.ToLower(strings.TrimSpace(key))]; exists {
+			continue
+		}
 		headers.Set(key, value)
+	}
+	for name := range headerListNames {
+		headers.Del(name)
+	}
+	for _, header := range action.HeaderList {
+		if strings.TrimSpace(header.Name) != "" {
+			headers.Add(header.Name, header.Value)
+		}
 	}
 	if w.origin != "" && headers.Get("Origin") == "" {
 		headers.Set("Origin", w.origin)
@@ -405,6 +417,20 @@ func (w *WebSocket) resolveURL(target string) (string, error) {
 		return "", err
 	}
 	return parsedBase.ResolveReference(relative).String(), nil
+}
+
+func websocketHeaderListNameSet(headers protocol.HeaderList) map[string]struct{} {
+	if len(headers) == 0 {
+		return nil
+	}
+	names := make(map[string]struct{}, len(headers))
+	for _, header := range headers {
+		name := strings.ToLower(strings.TrimSpace(header.Name))
+		if name != "" {
+			names[name] = struct{}{}
+		}
+	}
+	return names
 }
 
 func buildDefaultHeaders(config map[string]any) http.Header {

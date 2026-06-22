@@ -19,9 +19,18 @@ import (
 // where running with a literal placeholder is intentional (e.g. a smoke test
 // with no secret backend wired).
 const allowUnresolvedSecretsEnv = "APEXLOAD_ALLOW_UNRESOLVED_SECRETS"
+const allowUnresolvedFilesEnv = "APEXLOAD_ALLOW_UNRESOLVED_FILES"
 
 func allowUnresolvedSecrets() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(allowUnresolvedSecretsEnv))) {
+	return allowUnresolvedTemplateRefs(allowUnresolvedSecretsEnv)
+}
+
+func allowUnresolvedFiles() bool {
+	return allowUnresolvedTemplateRefs(allowUnresolvedFilesEnv)
+}
+
+func allowUnresolvedTemplateRefs(envName string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(envName))) {
 	case "1", "true", "yes", "on":
 		return true
 	default:
@@ -35,13 +44,21 @@ func allowUnresolvedSecrets() bool {
 // was resolved, so the placeholder is never sent to the protocol.
 func (vu *VUser) checkResolvedSecrets() error {
 	if len(vu.unresolvedSecretRefs) == 0 || allowUnresolvedSecrets() {
-		return nil
+		return vu.checkResolvedFiles()
 	}
-	refs := strings.Join(dedupeSecretRefs(vu.unresolvedSecretRefs), ", ")
+	refs := strings.Join(dedupeTemplateRefs(vu.unresolvedSecretRefs), ", ")
 	return fmt.Errorf("unresolved secret reference(s) %s: refusing to run with placeholder values (set %s=true to override)", refs, allowUnresolvedSecretsEnv)
 }
 
-func dedupeSecretRefs(in []string) []string {
+func (vu *VUser) checkResolvedFiles() error {
+	if len(vu.unresolvedFileRefs) == 0 || allowUnresolvedFiles() {
+		return nil
+	}
+	refs := strings.Join(dedupeTemplateRefs(vu.unresolvedFileRefs), ", ")
+	return fmt.Errorf("unresolved file asset reference(s) %s: refusing to run with placeholder values (upload or attach the referenced file asset, or set %s=true to override)", refs, allowUnresolvedFilesEnv)
+}
+
+func dedupeTemplateRefs(in []string) []string {
 	seen := make(map[string]struct{}, len(in))
 	out := make([]string, 0, len(in))
 	for _, v := range in {

@@ -86,6 +86,9 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.dataFormattingAutoDetect = parseDataFormattingAutoDetect(config)
 	h.dataFormattingChain = parseDataFormattingChain(config)
 	h.streaming = parseStreamingProfile(config)
+	if err := validateAuthType(protocol.ConfigString(config, "auth_type")); err != nil {
+		return err
+	}
 	h.authType, h.authHeader = buildAuthHeader(config)
 
 	h.bufPool = sync.Pool{
@@ -149,11 +152,17 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 
 	// Apply default headers first
 	for k, v := range h.defaultHeaders {
-		req.Header.Set(k, v)
+		setRequestHeader(req, k, v)
 	}
 
 	authHeader := h.authHeader
-	actionAuthHeader, actionAuthOverride := buildActionAuthHeader(action.Auth)
+	actionAuthHeader, actionAuthOverride, actionAuthErr := buildActionAuthHeader(action.Auth)
+	if actionAuthErr != nil {
+		result.Duration = time.Since(result.StartTime)
+		result.ErrorMessage = actionAuthErr.Error()
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
+		return result, nil
+	}
 	if actionAuthOverride {
 		authHeader = actionAuthHeader
 	}
@@ -163,9 +172,17 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		typedAuthApplied = actionAuthOverride
 	}
 
+	headerListNames := headerListNameSet(action.HeaderList)
 	// Apply per-action headers (override defaults)
 	for k, v := range action.Headers {
-		req.Header.Set(k, v)
+		if _, exists := headerListNames[strings.ToLower(strings.TrimSpace(k))]; exists {
+			continue
+		}
+		setRequestHeader(req, k, v)
+	}
+	deleteRequestHeaders(req, headerListNames)
+	for _, header := range action.HeaderList {
+		addRequestHeader(req, header.Name, header.Value)
 	}
 	typedAuthApplied = typedAuthApplied && req.Header.Get("Authorization") == actionAuthHeader
 	redactedAuthHeader := buildRedactedActionAuthHeader(action.RedactedAuth)
@@ -175,6 +192,8 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	redactedRequestHeaders := redactedRequestHeadersForSnapshot(req.Header, action.RedactedHeaders, typedAuthApplied, redactedAuthHeader)
 	explicitCorrelationID := correlationIDFromHTTPHeader(req.Header)
 	generatedTraceparent := ensureTraceparentHeader(req.Header)
+	redactedRequestHeaders = requestHeadersWithRedactedHeaderList(redactedRequestHeaders, action.RedactedHeaderList)
+	redactedRequestHeaders = requestHeadersWithHostForSnapshot(req.Header, redactedRequestHeaders, req.Host, action.RedactedHeaders)
 
 	// httptrace callbacks run on the transport's connection goroutines, so every
 	// field they touch must be guarded. They write into traceMu-protected locals;
@@ -546,6 +565,46 @@ func newTraceparent() string {
 	return "00-" + hex.EncodeToString(traceID) + "-" + hex.EncodeToString(spanID) + "-01"
 }
 
+func setRequestHeader(req *http.Request, key string, value string) {
+	if strings.EqualFold(strings.TrimSpace(key), "Host") {
+		req.Host = strings.TrimSpace(value)
+		return
+	}
+	req.Header.Set(key, value)
+}
+
+func addRequestHeader(req *http.Request, key string, value string) {
+	if strings.EqualFold(strings.TrimSpace(key), "Host") {
+		req.Host = strings.TrimSpace(value)
+		return
+	}
+	req.Header.Add(key, value)
+}
+
+func headerListNameSet(headers protocol.HeaderList) map[string]struct{} {
+	if len(headers) == 0 {
+		return nil
+	}
+	names := make(map[string]struct{}, len(headers))
+	for _, header := range headers {
+		name := strings.ToLower(strings.TrimSpace(header.Name))
+		if name != "" {
+			names[name] = struct{}{}
+		}
+	}
+	return names
+}
+
+func deleteRequestHeaders(req *http.Request, names map[string]struct{}) {
+	for name := range names {
+		if name == "host" {
+			req.Host = ""
+			continue
+		}
+		req.Header.Del(name)
+	}
+}
+
 func (h *HTTP) Teardown(_ context.Context) error {
 	h.transport.CloseIdleConnections()
 	return nil
@@ -702,6 +761,57 @@ func redactedRequestHeadersForSnapshot(headers http.Header, redactedHeaders map[
 	}
 	out["Authorization"] = redactedAuthorization
 	return out
+}
+
+func requestHeadersWithHostForSnapshot(headers http.Header, snapshotHeaders map[string]string, host string, redactedHeaders map[string]string) map[string]string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return snapshotHeaders
+	}
+	out := cloneStringMap(snapshotHeaders)
+	if out == nil {
+		out = cloneHTTPHeaders(headers)
+	}
+	if out == nil {
+		out = map[string]string{}
+	}
+	if redactedHost := redactedHeaderValue(redactedHeaders, "Host"); redactedHost != "" {
+		out["Host"] = redactedHost
+	} else {
+		out["Host"] = host
+	}
+	return out
+}
+
+func requestHeadersWithRedactedHeaderList(snapshotHeaders map[string]string, redactedHeaderList protocol.HeaderList) map[string]string {
+	if len(redactedHeaderList) == 0 {
+		return snapshotHeaders
+	}
+	out := cloneStringMap(snapshotHeaders)
+	if out == nil {
+		out = map[string]string{}
+	}
+	for _, header := range redactedHeaderList {
+		name := strings.TrimSpace(header.Name)
+		if name == "" {
+			continue
+		}
+		if existing := out[name]; existing != "" {
+			out[name] = existing + ", " + header.Value
+		} else {
+			out[name] = header.Value
+		}
+	}
+	return out
+}
+
+func redactedHeaderValue(headers map[string]string, key string) string {
+	for headerKey, value := range headers {
+		if strings.EqualFold(headerKey, key) {
+			return value
+		}
+	}
+	return ""
 }
 
 func cloneStringMap(values map[string]string) map[string]string {

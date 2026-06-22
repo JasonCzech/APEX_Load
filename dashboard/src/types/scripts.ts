@@ -41,6 +41,11 @@ export interface ScriptAssertionDefinition {
   max?: number
 }
 
+export interface ScriptHeaderEntry {
+  name: string
+  value: string
+}
+
 // --- Correlation diagnose (record-vs-replay) -------------------------------
 
 export interface CorrelationStep {
@@ -97,6 +102,7 @@ export interface ScriptActionDefinition {
   object_ref?: string
   value?: string
   headers?: Record<string, string>
+  header_list?: ScriptHeaderEntry[]
   body?: string
   body_encoding?: string
   params?: Record<string, unknown>
@@ -530,8 +536,12 @@ export interface GRPCConfig {
 export interface ScriptDataSource {
   name: string
   type: string
-  path: string
+  path?: string
   inline_data?: string
+  encoding?: string
+  file_name?: string
+  content_type?: string
+  storage_ref?: string
   strategy: string
   delimiter?: string
   first_row_header?: boolean

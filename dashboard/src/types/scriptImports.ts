@@ -1,5 +1,5 @@
 import { type StoredScenario, type StoredScript } from '../types'
-import { type SourceReview, type ScriptDefinition } from './scripts'
+import { type ReplayPreflight, type ScriptDataSource, type SourceReview, type ScriptDefinition } from './scripts'
 
 export interface SupportMatrix {
   supported: string[]
@@ -118,6 +118,19 @@ export interface ScriptImportResult<
   source_review?: SourceReview
   trueclient2_compat_report?: TrueClient2CompatReport
   parameterization?: Parameterization
+  preflight?: ReplayPreflight
+}
+
+export interface ImportAssetUploadResponse {
+  import_id: string
+  name: string
+  file_name: string
+  content_type?: string
+  size_bytes: number
+  sha256: string
+  storage_ref: string
+  data_source: ScriptDataSource
+  uploaded_at: string
 }
 
 export interface DetectedSourceProtocol {

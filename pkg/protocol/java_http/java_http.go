@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -55,6 +54,9 @@ func (j *JavaHTTP) Init(ctx context.Context, config map[string]any) error {
 	if j.helperMode != "embedded" && j.helperMode != "sidecar" {
 		return fmt.Errorf("unsupported java_http helper mode: %s", j.helperMode)
 	}
+	if j.helperMode == "sidecar" {
+		return fmt.Errorf("java_http helper mode sidecar is not wired; use java_vuser for governed sidecar execution or embedded byte-preserving java_http")
+	}
 	j.contentType = "application/x-java-serialized-object"
 	if value, ok := config["java_http_content_type"].(string); ok && strings.TrimSpace(value) != "" {
 		j.contentType = strings.TrimSpace(value)
@@ -76,13 +78,8 @@ func (j *JavaHTTP) Init(ctx context.Context, config map[string]any) error {
 	}
 	j.requestMapping = coerceStringMap(config["java_http_request_mapping"])
 	j.responseMapping = coerceStringMap(config["java_http_response_mapping"])
-	// Request-side mapping is not implemented in this bounded-codec MVP: the body
-	// is sent verbatim as base64. Warn loudly rather than silently ignoring the
-	// config so an author does not assume field-level request transforms applied.
 	if len(j.requestMapping) > 0 || j.objectSchema != "" {
-		slog.Warn("java_http: java_http_request_mapping/java_http_object_schema are accepted but NOT applied at runtime (bounded codec MVP); the request body is sent as-is",
-			"request_mapping_keys", len(j.requestMapping),
-			"has_object_schema", j.objectSchema != "")
+		return fmt.Errorf("java_http request_mapping/object_schema are not applied by embedded byte-preserving java_http; use java_vuser sidecar import or remove these fields")
 	}
 	j.http = &httpproto.HTTP{}
 	return j.http.Init(ctx, config)
@@ -103,20 +100,35 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 	if firstHeaderValue(prepared.Headers, "Accept") == "" {
 		prepared.Headers["Accept"] = j.accept
 	}
-	serializationDuration := time.Duration(0)
+	bodyEncoding := strings.TrimSpace(action.BodyEncoding)
+	if bodyEncoding == "" {
+		bodyEncoding = j.bodyEncoding
+	}
+	base64DecodeDuration := time.Duration(0)
 	if len(action.Body) > 0 {
 		startedAt := time.Now()
+		if bodyEncoding != "base64" {
+			base64DecodeDuration = time.Since(startedAt)
+			return &protocol.Result{
+				ActionName:      action.Name,
+				StartTime:       startedAt,
+				Duration:        base64DecodeDuration,
+				DependencyType:  "java_http",
+				ErrorMessage:    fmt.Sprintf("unsupported java_http action body encoding: %s", bodyEncoding),
+				ServerTelemetry: &protocol.ServerTelemetry{SerializationMs: durationToMilliseconds(base64DecodeDuration)},
+				Snapshot:        buildJavaHTTPPreflightSnapshot(j.baseURL, &prepared),
+			}, nil
+		}
 		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(action.Body)))
-		serializationDuration = time.Since(startedAt)
+		base64DecodeDuration = time.Since(startedAt)
 		if err != nil {
 			return &protocol.Result{
 				ActionName:      action.Name,
 				StartTime:       startedAt,
-				Duration:        serializationDuration,
+				Duration:        base64DecodeDuration,
 				DependencyType:  "java_http",
-				BytesSent:       int64(len(action.Body)),
 				ErrorMessage:    fmt.Sprintf("invalid base64 java_http body: %v", err),
-				ServerTelemetry: &protocol.ServerTelemetry{SerializationMs: durationToMilliseconds(serializationDuration)},
+				ServerTelemetry: &protocol.ServerTelemetry{SerializationMs: durationToMilliseconds(base64DecodeDuration)},
 				Snapshot:        buildJavaHTTPPreflightSnapshot(j.baseURL, &prepared),
 			}, nil
 		}
@@ -142,7 +154,7 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 		if result.ServerTelemetry == nil {
 			result.ServerTelemetry = &protocol.ServerTelemetry{}
 		}
-		result.ServerTelemetry.SerializationMs = durationToMilliseconds(serializationDuration)
+		result.ServerTelemetry.SerializationMs = durationToMilliseconds(base64DecodeDuration)
 		result.ServerTelemetry.DeserializationMs = durationToMilliseconds(deserializationDuration)
 		if result.Extractions == nil {
 			result.Extractions = make(map[string]string)
@@ -210,11 +222,7 @@ func applyResponseMapping(mapping map[string]string, body string) map[string]str
 		}
 		re, err := regexp.Compile(expr)
 		if err != nil {
-			// Not a valid regex — fall back to a literal substring presence check.
-			if strings.Contains(body, expr) {
-				out[name] = expr
-			}
-			continue
+			re = regexp.MustCompile(regexp.QuoteMeta(expr))
 		}
 		m := re.FindStringSubmatch(body)
 		if m == nil {

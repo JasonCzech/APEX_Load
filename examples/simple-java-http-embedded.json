@@ -13,15 +13,9 @@
         "content_type": "application/x-java-serialized-object",
         "accept": "application/x-java-serialized-object",
         "body_encoding": "base64",
-        "object_schema": "com.example.orders.OrderLookupRequest",
-        "request_mapping": {
-          "customerId": "principal",
-          "correlationId": "requestId"
-        },
         "response_mapping": {
           "sessionToken": "token"
         },
-        "extractor_type": "opaque",
         "preserve_binary_result": true
       }
     },

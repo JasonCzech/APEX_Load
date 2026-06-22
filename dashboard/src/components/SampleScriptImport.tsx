@@ -14,12 +14,14 @@ import {
 } from './sampleImportUtils'
 import { type SampleImportResult } from '../types/scriptImports'
 import { type StoredScript } from '../types'
-import { type ScriptDefinition, type SourceReview } from '../types/scripts'
+import { type ReplayPreflight, type ScriptDataSource, type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { createJavaHttpDraft } from './scriptDraftFactories'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
 import SourceMappingReview from './SourceMappingReview'
+import ReplayPreflightCard from './ReplayPreflightCard'
+import { buildLocalReplayPreflight } from './replayPreflightUtils'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
@@ -52,6 +54,8 @@ type SampleImportOptions = {
 type SampleImportOptionsAction =
   | { type: 'update'; field: keyof SampleImportOptions; value: SampleImportOptions[keyof SampleImportOptions] }
   | { type: 'reset' }
+
+type AssetUploadState = Record<string, { pending?: boolean; error?: string; fileName?: string }>
 
 interface Props {
   projectId?: string
@@ -248,6 +252,72 @@ function sourceReviewForSample(result?: SampleImportResult | null, script?: Scri
   return review
 }
 
+function fileAssetSources(script?: ScriptDefinition | null): ScriptDataSource[] {
+  return (script?.data_sources || []).filter(source => source.type === 'file')
+}
+
+function isFileAssetReady(source: ScriptDataSource): boolean {
+  return Boolean(source.storage_ref?.trim() || source.path?.trim() || source.inline_data?.trim())
+}
+
+function assetUploadKey(source: ScriptDataSource): string {
+  return source.name || source.file_name || 'file'
+}
+
+function importAssetID(script: ScriptDefinition): string {
+  return script.id || script.ref_key || script.name || 'sample-import'
+}
+
+function mergeUploadedFileAsset(script: ScriptDefinition, targetName: string, uploaded: ScriptDataSource): ScriptDefinition {
+  const nextSources = [...(script.data_sources || [])]
+  const sourceIndex = nextSources.findIndex(source => source.name === targetName)
+  const existing = sourceIndex >= 0 ? nextSources[sourceIndex] : undefined
+  const merged: ScriptDataSource = {
+    ...(existing || {}),
+    ...uploaded,
+    name: existing?.name || uploaded.name || targetName,
+    type: 'file',
+    strategy: uploaded.strategy || existing?.strategy || 'sequential',
+  }
+  if (sourceIndex >= 0) {
+    nextSources[sourceIndex] = merged
+  } else {
+    nextSources.push(merged)
+  }
+  return {
+    ...script,
+    data_sources: nextSources,
+  }
+}
+
+function attachReplayPreflight(script: ScriptDefinition, preflight: ReplayPreflight): ScriptDefinition {
+  return {
+    ...script,
+    metadata: {
+      ...(script.metadata || {}),
+      import: {
+        ...(script.metadata?.import || {}),
+        preserved: {
+          ...(script.metadata?.import?.preserved || {}),
+          replay_preflight: preflight,
+        },
+      },
+    },
+  }
+}
+
+function replaceImportResultScript(result: SampleImportResult, script: ScriptDefinition, preflight: ReplayPreflight): SampleImportResult {
+  const scripts = result.scripts?.length
+    ? result.scripts.map((entry, index) => (index === 0 || entry.name === script.name ? script : entry))
+    : [script]
+  return {
+    ...result,
+    script,
+    scripts,
+    preflight,
+  }
+}
+
 const initialOptions: SampleImportOptions = {
   name: '',
   base_url: '',
@@ -303,6 +373,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
   const convertTask = useAsyncTask<SampleImportResult>()
   const saveTask = useAsyncTask<StoredScript>()
   const [options, dispatchOptions] = useReducer(sampleImportOptionsReducer, initialOptions)
+  const [assetUploads, setAssetUploads] = useState<AssetUploadState>({})
 
   const updateOption = <K extends keyof SampleImportOptions>(field: K, value: SampleImportOptions[K]) => {
     dispatchOptions({ type: 'update', field, value })
@@ -316,6 +387,9 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
   const isJavaHttpPreset = preset === 'java-http'
   const reviewedScript = result?.script || result?.scripts?.[0] || null
   const sourceReview = sourceReviewForSample(result, reviewedScript)
+  const importFileAssets = fileAssetSources(reviewedScript)
+  const hasMissingFileAssets = importFileAssets.some(source => !isFileAssetReady(source))
+  const replayPreflight = reviewedScript ? (result?.preflight || buildLocalReplayPreflight(reviewedScript)) : null
 
   const handleFormatChange = (nextFormat: SampleFormat) => {
     const template = getSampleTemplate(preset, nextFormat)
@@ -331,6 +405,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
     convertTask.reset()
     saveTask.clearError()
     setMessageError('')
+    setAssetUploads({})
   }
 
   const handleFilesLoad = async (files: File[], target: 'primary' | 'secondary') => {
@@ -475,6 +550,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
         },
         { clearValue: true },
       )
+      setAssetUploads({})
     } catch (error: unknown) {
       setMessageError(getErrorMessage(error, 'Sample conversion failed'))
     }
@@ -496,7 +572,42 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
 
   const handleParameterizationApplied = (parameterizedScript: ScriptDefinition) => {
     if (!result) return
-    convertTask.setValue({ ...result, script: parameterizedScript })
+    const preflight = buildLocalReplayPreflight(parameterizedScript)
+    convertTask.setValue(replaceImportResultScript(result, attachReplayPreflight(parameterizedScript, preflight), preflight))
+  }
+
+  const handleAssetUpload = async (source: ScriptDataSource, file: File) => {
+    if (!result || !reviewedScript) return
+    const key = assetUploadKey(source)
+    setMessageError('')
+    setAssetUploads(prev => ({
+      ...prev,
+      [key]: { pending: true, fileName: file.name },
+    }))
+    try {
+      const uploaded = await api.uploadImportAsset(importAssetID(reviewedScript), file, {
+        project_id: projectId,
+        name: source.name,
+        content_type: source.content_type || file.type || undefined,
+      })
+      const mergedScript = mergeUploadedFileAsset(reviewedScript, source.name, uploaded.data_source)
+      const preflight = buildLocalReplayPreflight(mergedScript)
+      const scriptWithPreflight = attachReplayPreflight(mergedScript, preflight)
+      convertTask.setValue(replaceImportResultScript(result, scriptWithPreflight, preflight))
+      setAssetUploads(prev => ({
+        ...prev,
+        [key]: { pending: false, fileName: file.name },
+      }))
+    } catch (error: unknown) {
+      setAssetUploads(prev => ({
+        ...prev,
+        [key]: {
+          pending: false,
+          fileName: file.name,
+          error: getErrorMessage(error, 'Asset upload failed'),
+        },
+      }))
+    }
   }
 
   return (
@@ -724,10 +835,65 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
             parameterization={result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}
             saving={saving}
+            saveDisabled={hasMissingFileAssets}
             onSave={handleSave}
             onEdit={onEdit ? () => onEdit(reviewedScript) : undefined}
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
           >
+            {replayPreflight && (
+              <div className="sample-import-preflight">
+                <ReplayPreflightCard preflight={replayPreflight} />
+              </div>
+            )}
+
+            {importFileAssets.length > 0 && (
+              <div className="sample-import-assets">
+                <div className="sample-import-assets-header">
+                  <div>
+                    <h4>Import Assets</h4>
+                    <p>{hasMissingFileAssets ? 'Upload the captured binary or multipart files before saving this script.' : 'All imported file assets are ready for replay.'}</p>
+                  </div>
+                  <span>{importFileAssets.filter(isFileAssetReady).length}/{importFileAssets.length} ready</span>
+                </div>
+                <div className="sample-import-assets-list">
+                  {importFileAssets.map(source => {
+                    const ready = isFileAssetReady(source)
+                    const key = assetUploadKey(source)
+                    const uploadState = assetUploads[key]
+                    return (
+                      <div key={key} className={`sample-import-asset-row ${ready ? 'ready' : 'missing'}`}>
+                        <div className="sample-import-asset-main">
+                          <strong>{source.file_name || source.name}</strong>
+                          <small>{source.content_type || 'application/octet-stream'} · {source.name}</small>
+                          {ready && <small>{source.storage_ref || source.path || 'Inline asset data'}</small>}
+                          {uploadState?.error && <small className="sample-import-asset-error">{uploadState.error}</small>}
+                          {uploadState?.fileName && !uploadState.error && <small>Uploaded {uploadState.fileName}</small>}
+                        </div>
+                        <div className="sample-import-asset-controls">
+                          <span className={`sample-import-asset-status ${ready ? 'ready' : 'missing'}`}>{ready ? 'Ready' : 'Missing asset'}</span>
+                          {!ready && (
+                            <label className="btn btn-secondary btn-sm">
+                              {uploadState?.pending ? 'Uploading...' : 'Upload Asset'}
+                              <input
+                                type="file"
+                                aria-label={`Upload asset for ${source.name}`}
+                                disabled={uploadState?.pending}
+                                hidden
+                                onChange={event => {
+                                  const file = event.target.files?.[0]
+                                  event.target.value = ''
+                                  if (file) void handleAssetUpload(source, file)
+                                }}
+                              />
+                            </label>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="sample-import-stats-grid">
               <div className="sample-stat"><span className="sample-stat-value">{result.stats.converted_actions}</span><span className="sample-stat-label">Actions</span></div>

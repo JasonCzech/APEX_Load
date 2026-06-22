@@ -263,6 +263,7 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/jmeter/validate", editorImportAccess(resolveImportProjectIDFromForm, jmeterImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/github", editorProjectAccess(resolveImportProjectIDFromJSON)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/sample", editorProjectAccess(resolveImportProjectIDFromJSON)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/{id}/assets/upload", editorImportAccess(resolveImportProjectIDFromForm, harImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/oracle-ebusiness/review", editorImportAccess(resolveImportProjectIDFromJSONOrForm, oracleReviewImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/k6", editorImportAccess(resolveImportProjectIDFromJSONOrForm, k6ImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/har", editorImportAccess(resolveImportProjectIDFromJSONOrForm, harImportMaxBodyBytes)),

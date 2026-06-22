@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func normalizeFormat(format string) string {
@@ -173,4 +174,27 @@ func headerListToMap(value any, diagnostics *diag.Collector, location string) ma
 		diagnostics.Add(diag.Info, "duplicate Set-Cookie headers", location, "multiple Set-Cookie headers were folded into one comma-joined header value; validate cookie replay behavior")
 	}
 	return result
+}
+
+func headerListEntries(value any) dsl.HeaderList {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	headers := make(dsl.HeaderList, 0, len(items))
+	for _, item := range items {
+		mapped, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := stringValue(mapped["name"])
+		if name == "" {
+			continue
+		}
+		headers = append(headers, dsl.HeaderEntry{Name: name, Value: stringValue(mapped["value"])})
+	}
+	if len(headers) == 0 {
+		return nil
+	}
+	return headers
 }

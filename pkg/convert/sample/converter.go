@@ -63,9 +63,13 @@ type ConvertResult struct {
 type exchange struct {
 	Method       string
 	URL          string
+	HTTPVersion  string
 	Headers      map[string]string
+	HeaderList   dsl.HeaderList
 	Body         string
 	BodyEncoding string
+	FileAssets   []dsl.DataSource
+	Metadata     map[string]any
 	Response     *response
 	StartedAt    time.Time
 	HasStartedAt bool
@@ -137,6 +141,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	correlations := []Correlation{}
 	correlationVars := map[string]string{}
+	encodedCorrelationValues := map[string]bool{}
 	if inferExtractors {
 		correlations = detectCorrelations(exchanges)
 		for _, corr := range correlations {
@@ -146,6 +151,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			}
 			correlationVars[value] = "{{var." + corr.Name + "}}"
 		}
+		encodedCorrelationValues = detectEncodedCorrelationValues(exchanges, correlations)
 		if len(correlations) == 0 {
 			warnings = append(warnings, "no reusable correlation values were detected across the provided samples")
 		}
@@ -190,27 +196,39 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			FilteredAssets: filtered,
 		},
 	}
+	if javaHTTPConfig, ok := detectJavaHTTPConfig(exchanges); ok {
+		result.Script.Protocol = "java_http"
+		result.Script.Config.JavaHTTP = javaHTTPConfig
+		result.Warnings = append(result.Warnings, "Java-over-HTTP serialized-object traffic was imported in byte-preserving embedded mode; request/object mappings are not applied without a governed java_vuser sidecar flow")
+	}
 	sourceFiles := sampleSourceFiles(format, req.Content, req.ResponseContent)
 	redactedSourceFiles := redactSourceReviewSecrets(sourceFiles, exchanges)
 	sourceLocations := sampleSourceLocations(format, req.Content, req.ResponseContent, exchanges)
 	sourceMappings := make([]sourceview.Mapping, 0, len(exchanges))
 
 	for idx, ex := range exchanges {
+		mergeFileAssets(result.Script, ex.FileAssets)
 		target := relativeTarget(ex.URL, baseURL)
 		headers := cloneHeaders(ex.Headers)
-		if sanitizeSensitive {
-			headers = sanitizeHeaders(headers)
+		headerList := cloneHeaderList(ex.HeaderList)
+		if len(headerList) == 0 {
+			headerList = dsl.HeaderListFromMap(headers)
 		}
 
 		body := ex.Body
 		if ex.BodyEncoding == "" {
-			body = applyCorrelationVars(body, correlationVars)
+			body = applyCorrelationVars(body, correlationVars, encodedCorrelationValues)
 			if sanitizeSensitive {
 				body = sanitizeBody(body)
 			}
 		}
-		target = applyCorrelationVars(target, correlationVars)
-		headers = applyCorrelationVarsToHeaders(headers, correlationVars)
+		target = applyCorrelationVars(target, correlationVars, encodedCorrelationValues)
+		headers = applyCorrelationVarsToHeaders(headers, correlationVars, encodedCorrelationValues)
+		headerList = applyCorrelationVarsToHeaderList(headerList, correlationVars, encodedCorrelationValues)
+		if sanitizeSensitive {
+			headers = sanitizeHeaders(headers)
+			headerList = sanitizeHeaderList(headerList)
+		}
 
 		action := dsl.Action{
 			Name:         actionName(idx, ex.Method, ex.URL),
@@ -218,11 +236,17 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			Method:       strings.ToUpper(ex.Method),
 			Target:       target,
 			Headers:      headers,
+			HeaderList:   headerList,
 			Body:         body,
 			BodyEncoding: ex.BodyEncoding,
+			Metadata:     cloneMetadata(ex.Metadata),
 		}
 		if ex.TimeoutMs > 0 {
 			action.TimeoutMs = ex.TimeoutMs
+		}
+		if isExplicitRedirectStep(ex) {
+			zero := 0
+			action.MaxRedirects = &zero
 		}
 		if thinkTimeMs, ok := thinkTimeAfter(exchanges, idx); ok {
 			action.ThinkTimeAfter = true
@@ -266,6 +290,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 							Source:     corr.Source,
 							Type:       extractorTypeForCorrelation(corr),
 							Expression: corr.Expression,
+							OnMiss:     "fail",
 						})
 						if location := responseSourceLocation(sourceLocations, idx); location.SourceFile != "" {
 							sourceMappings = append(sourceMappings, sourceview.Mapping{
@@ -320,6 +345,56 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	return result, nil
 }
 
+func isExplicitRedirectStep(ex exchange) bool {
+	if ex.Response == nil || ex.Response.Status < 300 || ex.Response.Status > 399 {
+		return false
+	}
+	return headerLookup(ex.Response.Headers, "Location") != ""
+}
+
+func mergeFileAssets(script *dsl.Script, assets []dsl.DataSource) {
+	if script == nil || len(assets) == 0 {
+		return
+	}
+	byName := make(map[string]int, len(script.DataSources))
+	for i, source := range script.DataSources {
+		byName[strings.TrimSpace(source.Name)] = i
+	}
+	for _, asset := range assets {
+		asset.Name = strings.TrimSpace(asset.Name)
+		if asset.Name == "" {
+			continue
+		}
+		asset.Type = "file"
+		if existingIndex, ok := byName[asset.Name]; ok {
+			existing := script.DataSources[existingIndex]
+			if existing.FileName == "" {
+				existing.FileName = asset.FileName
+			}
+			if existing.ContentType == "" {
+				existing.ContentType = asset.ContentType
+			}
+			if existing.Path == "" {
+				existing.Path = asset.Path
+			}
+			if existing.StorageRef == "" {
+				existing.StorageRef = asset.StorageRef
+			}
+			if existing.InlineData == "" {
+				existing.InlineData = asset.InlineData
+			}
+			if existing.Encoding == "" {
+				existing.Encoding = asset.Encoding
+			}
+			existing.Type = "file"
+			script.DataSources[existingIndex] = existing
+			continue
+		}
+		byName[asset.Name] = len(script.DataSources)
+		script.DataSources = append(script.DataSources, asset)
+	}
+}
+
 func thinkTimeAfter(exchanges []exchange, index int) (float64, bool) {
 	if index < 0 || index >= len(exchanges)-1 {
 		return 0, false
@@ -367,17 +442,33 @@ func relativeTarget(rawURL, baseURL string) string {
 	if baseURL == "" {
 		return rawURL
 	}
-	if strings.HasPrefix(rawURL, baseURL) {
-		target := strings.TrimPrefix(rawURL, baseURL)
+	parsedRaw, rawErr := url.Parse(rawURL)
+	parsedBase, baseErr := url.Parse(baseURL)
+	if rawErr == nil && baseErr == nil && parsedRaw.Scheme != "" && parsedBase.Scheme != "" &&
+		strings.EqualFold(parsedRaw.Scheme, parsedBase.Scheme) &&
+		strings.EqualFold(parsedRaw.Hostname(), parsedBase.Hostname()) &&
+		effectivePort(parsedRaw) == effectivePort(parsedBase) {
+		target := parsedRaw.RequestURI()
 		if target == "" {
 			return "/"
-		}
-		if !strings.HasPrefix(target, "/") {
-			target = "/" + target
 		}
 		return target
 	}
 	return rawURL
+}
+
+func effectivePort(parsed *url.URL) string {
+	if port := parsed.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
 }
 
 func defaultScriptName(exchanges []exchange) string {

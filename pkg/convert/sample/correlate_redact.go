@@ -10,6 +10,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -45,6 +46,44 @@ func detectCorrelations(exchanges []exchange) []Correlation {
 	return correlations
 }
 
+func detectEncodedCorrelationValues(exchanges []exchange, correlations []Correlation) map[string]bool {
+	encodedValues := map[string]bool{}
+	if len(exchanges) == 0 || len(correlations) == 0 {
+		return encodedValues
+	}
+	for _, corr := range correlations {
+		value := corr.Value
+		if value == "" {
+			value = corr.SampleValue
+		}
+		if value == "" || len(corr.UsedInSteps) == 0 {
+			continue
+		}
+		surfaces := make([]string, 0)
+		for _, step := range corr.UsedInSteps {
+			if step <= 0 || step > len(exchanges) {
+				continue
+			}
+			surfaces = append(surfaces, exchangeSurfaces(exchanges[step-1])...)
+		}
+		if correlate.DetectEncodedValueUsage(value, surfaces) {
+			encodedValues[value] = true
+		}
+	}
+	return encodedValues
+}
+
+func exchangeSurfaces(ex exchange) []string {
+	surfaces := []string{ex.URL, ex.Body}
+	for _, value := range ex.Headers {
+		surfaces = append(surfaces, value)
+	}
+	for _, header := range ex.HeaderList {
+		surfaces = append(surfaces, header.Value)
+	}
+	return surfaces
+}
+
 func cloneHeaders(input map[string]string) map[string]string {
 	if len(input) == 0 {
 		return nil
@@ -56,13 +95,45 @@ func cloneHeaders(input map[string]string) map[string]string {
 	return cloned
 }
 
+func cloneHeaderList(input dsl.HeaderList) dsl.HeaderList {
+	if len(input) == 0 {
+		return nil
+	}
+	cloned := make(dsl.HeaderList, len(input))
+	copy(cloned, input)
+	return cloned
+}
+
+func cloneMetadata(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	cloned := make(map[string]any, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
+}
+
 func sanitizeHeaders(input map[string]string) map[string]string {
 	if len(input) == 0 {
 		return input
 	}
 	for key := range input {
-		if paramize.SensitiveHeaderKey(key) {
+		if paramize.SensitiveHeaderKey(key) && !isTemplatedValue(input[key]) {
 			input[key] = "{{secret." + sanitizeIdentifier(strings.ToLower(key)) + "}}"
+		}
+	}
+	return input
+}
+
+func sanitizeHeaderList(input dsl.HeaderList) dsl.HeaderList {
+	if len(input) == 0 {
+		return input
+	}
+	for index := range input {
+		if paramize.SensitiveHeaderKey(input[index].Name) && !isTemplatedValue(input[index].Value) {
+			input[index].Value = "{{secret." + sanitizeIdentifier(strings.ToLower(input[index].Name)) + "}}"
 		}
 	}
 	return input
@@ -163,12 +234,23 @@ func jsonEscapeString(value string) string {
 	return encoded[1 : len(encoded)-1]
 }
 
-func applyCorrelationVars(value string, vars map[string]string) string {
-	return correlate.ApplyVars(value, vars)
+func applyCorrelationVars(value string, vars map[string]string, encodedValues map[string]bool) string {
+	return correlate.ApplyVarsWithEncodedValues(value, vars, encodedValues)
 }
 
-func applyCorrelationVarsToHeaders(headers map[string]string, vars map[string]string) map[string]string {
-	return correlate.ApplyVarsToHeaders(headers, vars)
+func applyCorrelationVarsToHeaders(headers map[string]string, vars map[string]string, encodedValues map[string]bool) map[string]string {
+	return correlate.ApplyVarsToHeadersWithEncodedValues(headers, vars, encodedValues)
+}
+
+func applyCorrelationVarsToHeaderList(headers dsl.HeaderList, vars map[string]string, encodedValues map[string]bool) dsl.HeaderList {
+	if len(headers) == 0 {
+		return headers
+	}
+	for index := range headers {
+		headers[index].Name = correlate.ApplyVarsWithEncodedValues(headers[index].Name, vars, encodedValues)
+		headers[index].Value = correlate.ApplyVarsWithEncodedValues(headers[index].Value, vars, encodedValues)
+	}
+	return headers
 }
 
 func extractorTypeForCorrelation(corr Correlation) string {
@@ -197,4 +279,8 @@ func sanitizeIdentifier(value string) string {
 		return "value"
 	}
 	return value
+}
+
+func isTemplatedValue(value string) bool {
+	return strings.Contains(value, "{{") && strings.Contains(value, "}}")
 }

@@ -70,6 +70,31 @@ func TestDetectSetCookieValue(t *testing.T) {
 	}
 }
 
+func TestDetectNestedJSONPathToken(t *testing.T) {
+	observations := []Observation{
+		{
+			ID:           1,
+			ResponseBody: `{"auth":{"access_token":"tok-abcdef123456"}}`,
+		},
+		{
+			ID:             2,
+			RequestHeaders: map[string]string{"Authorization": "Bearer tok-abcdef123456"},
+		},
+	}
+
+	correlations := Detect(observations)
+	if len(correlations) != 1 {
+		t.Fatalf("correlation count = %d, want 1: %#v", len(correlations), correlations)
+	}
+	corr := correlations[0]
+	if corr.Name != "corr_access_token" || corr.ExtractType != "jsonpath" || corr.Expression != "$.auth.access_token" {
+		t.Fatalf("unexpected correlation: %#v", corr)
+	}
+	if corr.RuleID != RuleJSONAuthToken {
+		t.Fatalf("rule = %q, want %q", corr.RuleID, RuleJSONAuthToken)
+	}
+}
+
 // TestAuraAppPatternRequiresDescriptorShape guards the A6 fix: the Salesforce Aura
 // app-descriptor detector must only fire on values shaped like a real descriptor
 // (markup:// or namespace:name), not on any generic "app":"..." JSON field, which

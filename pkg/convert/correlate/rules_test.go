@@ -93,6 +93,39 @@ func TestScoreConfidenceClampAndSignals(t *testing.T) {
 	}
 }
 
+func TestScoreConfidenceCreditsOpaqueTokenShapes(t *testing.T) {
+	tests := []struct {
+		name       string
+		value      string
+		wantReason string
+	}{
+		{
+			name:       "jwt",
+			value:      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTYifQ.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+			wantReason: "JWT-shaped token",
+		},
+		{
+			name:       "base64",
+			value:      "QWxhZGRpbjpvcGVuIHNlc2FtZTEyMzQ1",
+			wantReason: "base64-shaped opaque token",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			score, reasons := scoreConfidence(Candidate{Value: tt.value, BaseConfidence: 0.5}, 1)
+			if score < 0.6 {
+				t.Fatalf("score = %.2f, want opaque token boost", score)
+			}
+			for _, reason := range reasons {
+				if reason == tt.wantReason {
+					return
+				}
+			}
+			t.Fatalf("reasons = %#v, want %q", reasons, tt.wantReason)
+		})
+	}
+}
+
 func TestRuleCatalogAndFamily(t *testing.T) {
 	catalog := RuleCatalog()
 	if len(catalog) == 0 {

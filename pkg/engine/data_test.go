@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"encoding/base64"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -359,6 +361,52 @@ func TestDataProvider_InlineDataPreferredOverPath(t *testing.T) {
 	row := dp.GetRow("users", 0)
 	if row["users.username"] != "inline" {
 		t.Fatalf("expected inline data to win, got %#v", row)
+	}
+}
+
+func TestDataProvider_FileDataSourceInlineBase64(t *testing.T) {
+	payload := []byte{0x00, 0x01, 'A', 'P', 'E', 'X'}
+	dp, err := NewDataProvider([]dsl.DataSource{{
+		Name:       "payload",
+		Type:       "file",
+		InlineData: base64.StdEncoding.EncodeToString(payload),
+		Encoding:   "base64",
+		FileName:   "payload.bin",
+	}})
+	if err != nil {
+		t.Fatalf("NewDataProvider file inline base64: %v", err)
+	}
+	got, ok := dp.GetFileContent("payload")
+	if !ok {
+		t.Fatal("expected file content")
+	}
+	if string(payload) != got {
+		t.Fatalf("file content = %v, want %v", []byte(got), payload)
+	}
+	if row := dp.GetRow("payload", 0); row != nil {
+		t.Fatalf("file data source should not be exposed as tabular rows: %#v", row)
+	}
+}
+
+func TestDataProvider_FileDataSourceStorageRef(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "upload.txt")
+	if err := os.WriteFile(path, []byte("asset bytes"), 0o600); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+	ref := (&url.URL{Scheme: "file", Path: path}).String()
+	dp, err := NewDataProvider([]dsl.DataSource{{
+		Name:       "upload",
+		Type:       "file",
+		StorageRef: ref,
+		FileName:   "upload.txt",
+	}})
+	if err != nil {
+		t.Fatalf("NewDataProvider file storage_ref: %v", err)
+	}
+	got, ok := dp.GetFileContent("upload")
+	if !ok || got != "asset bytes" {
+		t.Fatalf("file content = %q/%v, want asset bytes/true", got, ok)
 	}
 }
 

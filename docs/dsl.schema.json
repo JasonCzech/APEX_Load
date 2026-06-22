@@ -5144,6 +5144,9 @@
           },
           "type": "array"
         },
+        "header_list": {
+          "$ref": "#/$defs/HeaderList"
+        },
         "headers": {
           "additionalProperties": {
             "type": "string"
@@ -5623,7 +5626,16 @@
           },
           "type": "array"
         },
+        "content_type": {
+          "type": "string"
+        },
         "delimiter": {
+          "type": "string"
+        },
+        "encoding": {
+          "type": "string"
+        },
+        "file_name": {
           "type": "string"
         },
         "first_row_header": {
@@ -5636,6 +5648,9 @@
           "type": "string"
         },
         "path": {
+          "type": "string"
+        },
+        "storage_ref": {
           "type": "string"
         },
         "strategy": {
@@ -5967,6 +5982,24 @@
         }
       },
       "type": "object"
+    },
+    "HeaderEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "HeaderList": {
+      "items": {
+        "$ref": "#/$defs/HeaderEntry"
+      },
+      "type": "array"
     },
     "ImportMetadata": {
       "additionalProperties": false,

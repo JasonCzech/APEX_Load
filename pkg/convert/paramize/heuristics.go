@@ -50,7 +50,30 @@ var sensitiveHeaderKeys = map[string]bool{
 
 // SensitiveHeaderKey reports whether a header carries credentials.
 func SensitiveHeaderKey(key string) bool {
-	return sensitiveHeaderKeys[strings.ToLower(strings.TrimSpace(key))]
+	lower := strings.ToLower(strings.TrimSpace(key))
+	if sensitiveHeaderKeys[lower] {
+		return true
+	}
+	if strings.Contains(lower, "authorization") ||
+		strings.Contains(lower, "api-key") ||
+		strings.Contains(lower, "apikey") ||
+		strings.Contains(lower, "token") ||
+		strings.Contains(lower, "secret") ||
+		strings.Contains(lower, "credential") ||
+		strings.Contains(lower, "csrf") ||
+		lower == "key" ||
+		strings.HasSuffix(lower, "-key") ||
+		strings.HasSuffix(lower, "_key") {
+		return true
+	}
+	for _, part := range strings.FieldsFunc(lower, func(r rune) bool {
+		return r == '-' || r == '_' || r == '.' || r == ' '
+	}) {
+		if part == "auth" || part == "key" {
+			return true
+		}
+	}
+	return false
 }
 
 var envKeyInvalidChars = regexp.MustCompile(`[^A-Z0-9_]+`)

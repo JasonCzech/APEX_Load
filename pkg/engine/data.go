@@ -1,10 +1,12 @@
 package engine
 
 import (
+	"encoding/base64"
 	"encoding/csv"
 	"fmt"
 	"io"
 	"math/rand"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -16,6 +18,7 @@ import (
 // DataProvider loads and serves rows from CSV/DAT parameter files.
 type DataProvider struct {
 	sources map[string]*dataSource
+	files   map[string]*fileDataSource
 	// rng, when non-nil, makes the "random" strategy deterministic (replay). It is
 	// set only via SeedRandom during replay setup (single goroutine); load runs
 	// leave it nil and use the concurrency-safe global rand. rngMu guards rng.
@@ -32,13 +35,30 @@ type dataSource struct {
 	mu       sync.Mutex
 }
 
+type fileDataSource struct {
+	name        string
+	fileName    string
+	contentType string
+	storageRef  string
+	body        []byte
+}
+
 // NewDataProvider creates a provider from DSL DataSource definitions.
 func NewDataProvider(sources []dsl.DataSource) (*DataProvider, error) {
 	dp := &DataProvider{
 		sources: make(map[string]*dataSource),
+		files:   make(map[string]*fileDataSource),
 	}
 
 	for _, src := range sources {
+		if strings.EqualFold(strings.TrimSpace(src.Type), "file") {
+			fileSource, err := loadFileDataSource(src)
+			if err != nil {
+				return nil, fmt.Errorf("file data source %q: %w", src.Name, err)
+			}
+			dp.files[src.Name] = fileSource
+			continue
+		}
 		ds, err := loadDataSource(src)
 		if err != nil {
 			return nil, fmt.Errorf("data source %q: %w", src.Name, err)
@@ -47,6 +67,26 @@ func NewDataProvider(sources []dsl.DataSource) (*DataProvider, error) {
 	}
 
 	return dp, nil
+}
+
+func loadFileDataSource(src dsl.DataSource) (*fileDataSource, error) {
+	readerSource, err := openFileDataSourceReader(src)
+	if err != nil {
+		return nil, err
+	}
+	defer readerSource.Close()
+
+	content, err := io.ReadAll(readerSource)
+	if err != nil {
+		return nil, fmt.Errorf("read file asset: %w", err)
+	}
+	return &fileDataSource{
+		name:        src.Name,
+		fileName:    src.FileName,
+		contentType: src.ContentType,
+		storageRef:  src.StorageRef,
+		body:        content,
+	}, nil
 }
 
 func loadDataSource(src dsl.DataSource) (*dataSource, error) {
@@ -195,6 +235,49 @@ func openDataSourceReader(src dsl.DataSource) (io.ReadCloser, error) {
 	return f, nil
 }
 
+func openFileDataSourceReader(src dsl.DataSource) (io.ReadCloser, error) {
+	if strings.TrimSpace(src.InlineData) != "" {
+		switch strings.ToLower(strings.TrimSpace(src.Encoding)) {
+		case "", "text":
+			return io.NopCloser(strings.NewReader(src.InlineData)), nil
+		case "base64":
+			decoded, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(src.InlineData), ""))
+			if err != nil {
+				return nil, fmt.Errorf("decode inline_data base64: %w", err)
+			}
+			return io.NopCloser(strings.NewReader(string(decoded))), nil
+		default:
+			return nil, fmt.Errorf("unsupported file encoding %q", src.Encoding)
+		}
+	}
+	if strings.TrimSpace(src.Path) != "" {
+		return openFileAssetPath(src.Path)
+	}
+	if strings.TrimSpace(src.StorageRef) != "" {
+		return openFileAssetStorageRef(src.StorageRef)
+	}
+	return nil, fmt.Errorf("inline_data, path, or storage_ref is required")
+}
+
+func openFileAssetPath(path string) (io.ReadCloser, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open file asset %s: %w", path, err)
+	}
+	return f, nil
+}
+
+func openFileAssetStorageRef(ref string) (io.ReadCloser, error) {
+	parsed, err := url.Parse(strings.TrimSpace(ref))
+	if err != nil {
+		return nil, fmt.Errorf("parse storage_ref: %w", err)
+	}
+	if parsed.Scheme == "file" {
+		return openFileAssetPath(parsed.Path)
+	}
+	return nil, fmt.Errorf("unsupported storage_ref scheme %q", parsed.Scheme)
+}
+
 // GetRow returns a set of variable name → value pairs for the given VUser.
 // The row selection depends on the strategy:
 //   - sequential: round-robin through rows
@@ -341,4 +424,18 @@ func (dp *DataProvider) GetColumnValues(sourceName, column string) ([]string, bo
 		values = append(values, strings.TrimSpace(row[columnIndex]))
 	}
 	return values, true
+}
+
+// GetFileContent returns the bytes for a file data source as a Go string. Go
+// strings can carry arbitrary bytes, which lets template expansion splice the
+// original asset into HTTP bodies without UTF-8 coercion.
+func (dp *DataProvider) GetFileContent(name string) (string, bool) {
+	if dp == nil {
+		return "", false
+	}
+	fileSource, ok := dp.files[strings.TrimSpace(name)]
+	if !ok || fileSource == nil {
+		return "", false
+	}
+	return string(fileSource.body), true
 }

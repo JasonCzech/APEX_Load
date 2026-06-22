@@ -32,6 +32,109 @@ func TestValidateScriptIssues_RendezvousValidation(t *testing.T) {
 	assertIssue(t, issues, `actions[0] "sync-buyers": rendezvous timeout_ms must be zero or greater`)
 }
 
+func TestValidateScriptIssues_Base64BodyEncodingTemplates(t *testing.T) {
+	cases := []struct {
+		name      string
+		body      string
+		wantIssue bool
+	}{
+		{name: "literal base64", body: "AP8=", wantIssue: false},
+		{name: "trusted env full body", body: "{{env.BINARY_PAYLOAD}}", wantIssue: false},
+		{name: "trusted secret full body", body: "{{ secret.BINARY_PAYLOAD }}", wantIssue: false},
+		{name: "partial template rejected", body: "AP8={{var.token}}", wantIssue: true},
+		{name: "var full body rejected", body: "{{var.payload}}", wantIssue: true},
+		{name: "invalid literal rejected", body: "not base64!", wantIssue: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			script := &Script{
+				Name:     "base64-template-validation",
+				Protocol: "http",
+				Config:   ScriptConfig{BaseURL: "https://example.test"},
+				Actions: []Action{{
+					Name:         "Upload",
+					Type:         "request",
+					Method:       "POST",
+					Target:       "/upload",
+					Body:         tc.body,
+					BodyEncoding: "base64",
+				}},
+			}
+			issues := ValidateScriptIssues(script)
+			hasIssue := false
+			for _, issue := range issues {
+				if strings.Contains(issue, "body_encoding base64") {
+					hasIssue = true
+				}
+			}
+			if hasIssue != tc.wantIssue {
+				t.Fatalf("base64 issue present = %v, want %v; issues=%v", hasIssue, tc.wantIssue, issues)
+			}
+		})
+	}
+}
+
+func TestValidateScriptIssues_FileAssetReferences(t *testing.T) {
+	base := func(source DataSource) *Script {
+		script := &Script{
+			Name:     "file-assets",
+			Protocol: "http",
+			Config:   ScriptConfig{BaseURL: "https://example.test"},
+			Actions: []Action{{
+				Name:   "Upload",
+				Type:   "request",
+				Method: "POST",
+				Target: "/upload",
+				Body:   "payload={{file.upload}}",
+			}},
+		}
+		if source.Name != "" || source.Type != "" {
+			script.DataSources = []DataSource{source}
+		}
+		return script
+	}
+
+	tests := []struct {
+		name      string
+		source    DataSource
+		wantIssue string
+	}{
+		{
+			name:      "unknown asset",
+			wantIssue: `actions[0] "Upload": references unknown file asset "upload"`,
+		},
+		{
+			name:      "declared without bytes",
+			source:    DataSource{Name: "upload", Type: "file", FileName: "upload.bin"},
+			wantIssue: `actions[0] "Upload": references file asset "upload" without inline_data, path, or storage_ref`,
+		},
+		{
+			name:   "inline file asset",
+			source: DataSource{Name: "upload", Type: "file", InlineData: "bytes", FileName: "upload.bin"},
+		},
+		{
+			name:   "storage ref file asset",
+			source: DataSource{Name: "upload", Type: "file", StorageRef: "file:///tmp/upload.bin", FileName: "upload.bin"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			issues := ValidateScriptIssues(base(tc.source))
+			if tc.wantIssue == "" {
+				for _, issue := range issues {
+					if strings.Contains(issue, "file asset") || strings.Contains(issue, "file data source") {
+						t.Fatalf("unexpected file issue: %v", issues)
+					}
+				}
+				return
+			}
+			assertIssue(t, issues, tc.wantIssue)
+		})
+	}
+}
+
 func TestValidateScriptIssues_ErrorMessageValidation(t *testing.T) {
 	script := &Script{
 		Name:     "error-message-valid",

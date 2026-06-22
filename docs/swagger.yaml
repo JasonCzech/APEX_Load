@@ -5479,6 +5479,26 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
         - Scripts
+  /api/v1/scripts/import/{id}/assets/upload:
+    post:
+      summary: Upload Import Asset
+      description: |-
+        **Handler:** `handleUploadImportAsset`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleUploadImportAsset
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scripts
   /api/v1/scripts/import/asyncapi:
     post:
       summary: Import Async A P I

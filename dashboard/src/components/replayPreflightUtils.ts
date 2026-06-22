@@ -171,8 +171,12 @@ function buildDataWarnings(script: ScriptDefinition): string[] {
   ;(script.data_sources || []).forEach(source => {
     const name = source.name?.trim()
     if (name) sourceNames.add(name)
-    if (!source.path?.trim() && !source.inline_data?.trim()) {
-      warnings.push(`Data source ${name || 'unnamed'} needs a file path or inline data.`)
+    const hasInlineData = Boolean(source.inline_data?.trim())
+    const hasPath = Boolean(source.path?.trim())
+    const hasStorageRef = Boolean(source.storage_ref?.trim())
+    if (!hasPath && !hasInlineData && !hasStorageRef) {
+      const requirement = source.type === 'file' ? 'an uploaded governed asset' : 'a file path or inline data'
+      warnings.push(`Data source ${name || 'unnamed'} needs ${requirement}.`)
     }
   })
 

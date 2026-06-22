@@ -1,6 +1,9 @@
 package dsl
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type Script struct {
 	ID            string          `json:"id"`
@@ -471,7 +474,7 @@ type ProxyConfig struct {
 
 // AuthConfig defines default authentication applied to all requests.
 type AuthConfig struct {
-	Type     string `json:"type,omitempty"`     // "basic", "bearer", "ntlm", "digest"
+	Type     string `json:"type,omitempty"`     // "basic" or "bearer"; imported "ntlm"/"digest"/"kerberos"/"negotiate" are review-only and fail closed at HTTP runtime
 	Username string `json:"username,omitempty"` // for basic/ntlm/digest
 	Password string `json:"password,omitempty"`
 	Token    string `json:"token,omitempty"`  // for bearer
@@ -511,9 +514,13 @@ type PacingConfig struct {
 
 type DataSource struct {
 	Name           string   `json:"name"`
-	Type           string   `json:"type"` // "csv", "dat"
+	Type           string   `json:"type"` // "csv", "dat", "file"
 	Path           string   `json:"path,omitempty"`
 	InlineData     string   `json:"inline_data,omitempty"` // optional inline CSV/DAT content
+	Encoding       string   `json:"encoding,omitempty"`    // for file inline_data: "text" (default) or "base64"
+	FileName       string   `json:"file_name,omitempty"`   // original asset filename for file data sources
+	ContentType    string   `json:"content_type,omitempty"`
+	StorageRef     string   `json:"storage_ref,omitempty"` // governed asset reference, e.g. file://...
 	Strategy       string   `json:"strategy"`              // "sequential", "random", "unique", "pop"
 	Delimiter      string   `json:"delimiter,omitempty"`   // default ","; accepts "auto", "comma", "tab"
 	FirstRowHeader bool     `json:"first_row_header,omitempty"`
@@ -548,6 +555,44 @@ type Parameter struct {
 	Seed              *int64   `json:"seed,omitempty"`
 }
 
+// HeaderEntry preserves a single header occurrence. The legacy Headers map
+// remains a single-value summary; HeaderList carries duplicate/order-sensitive
+// headers for wire-faithful HTTP-style replay.
+type HeaderEntry struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type HeaderList []HeaderEntry
+
+func HeaderListFromMap(headers map[string]string) HeaderList {
+	if len(headers) == 0 {
+		return nil
+	}
+	list := make(HeaderList, 0, len(headers))
+	for name, value := range headers {
+		list = append(list, HeaderEntry{Name: name, Value: value})
+	}
+	return list
+}
+
+func (headers HeaderList) ToMap() map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(headers))
+	for _, header := range headers {
+		if strings.TrimSpace(header.Name) == "" {
+			continue
+		}
+		out[header.Name] = header.Value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 type Action struct {
 	Name     string `json:"name"`
 	Type     string `json:"type"`
@@ -563,6 +608,7 @@ type Action struct {
 	ObjectRef      string                 `json:"object_ref,omitempty"`
 	Value          string                 `json:"value,omitempty"`
 	Headers        map[string]string      `json:"headers,omitempty"`
+	HeaderList     HeaderList             `json:"header_list,omitempty"`
 	Body           string                 `json:"body,omitempty"`
 	BodyFile       string                 `json:"body_file,omitempty"`
 	BodyEncoding   string                 `json:"body_encoding,omitempty"`

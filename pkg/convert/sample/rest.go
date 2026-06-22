@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -74,11 +75,48 @@ func parseRESTItem(item map[string]any) (exchange, error) {
 		return exchange{}, errors.New("REST JSON request entries must include method and url")
 	}
 	if responseData, ok := item["response"].(map[string]any); ok {
+		status, err := restResponseStatus(responseData["status"])
+		if err != nil {
+			return exchange{}, err
+		}
 		ex.Response = &response{
-			Status:  intValue(responseData["status"]),
+			Status:  status,
 			Headers: mapValueToStringMap(responseData["headers"]),
 			Body:    bodyValue(responseData["body"]),
 		}
 	}
 	return ex, nil
+}
+
+func restResponseStatus(value any) (int, error) {
+	if value == nil {
+		return 0, nil
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed, nil
+	case float64:
+		if typed != float64(int(typed)) {
+			return 0, fmt.Errorf("REST JSON response status must be an integer, got %v", typed)
+		}
+		return int(typed), nil
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return 0, fmt.Errorf("REST JSON response status must be an integer, got %q", typed.String())
+		}
+		return int(parsed), nil
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return 0, nil
+		}
+		parsed, err := strconv.Atoi(trimmed)
+		if err != nil {
+			return 0, fmt.Errorf("REST JSON response status must be an integer, got %q", typed)
+		}
+		return parsed, nil
+	default:
+		return 0, fmt.Errorf("REST JSON response status must be an integer, got %T", value)
+	}
 }

@@ -41,6 +41,8 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
+	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
+	attachImportReplayPreflight(result.Script, "har", preflight)
 
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
@@ -53,6 +55,7 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		SourceReview:        result.SourceReview,
 		Summary:             harImportSummary(result),
 		Parameterization:    buildImportParameterization(result.Script, sampleCorrelationsToPreApplied(result.Correlations)),
+		Preflight:           preflight,
 	}))
 }
 

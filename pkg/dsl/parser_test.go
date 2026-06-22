@@ -570,9 +570,9 @@ func TestParse_JavaHTTPExampleFiles(t *testing.T) {
 			helperMode: "embedded",
 		},
 		{
-			name:       "sidecar helper example",
+			name:       "byte-preserving helper example",
 			path:       filepath.Join("..", "..", "examples", "simple-java-http-sidecar.json"),
-			helperMode: "sidecar",
+			helperMode: "embedded",
 		},
 	}
 

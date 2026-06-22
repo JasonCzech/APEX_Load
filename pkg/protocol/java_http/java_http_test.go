@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -148,6 +149,38 @@ func TestJavaHTTPExecuteRejectsInvalidBase64(t *testing.T) {
 	if result.Snapshot.RequestBody != "not-base64%%" {
 		t.Fatalf("Snapshot.RequestBody = %q, want original encoded body", result.Snapshot.RequestBody)
 	}
+	if result.BytesSent != 0 {
+		t.Fatalf("BytesSent = %d, want 0 because request was not sent", result.BytesSent)
+	}
+}
+
+func TestJavaHTTPExecuteRejectsUnsupportedActionBodyEncoding(t *testing.T) {
+	p := &JavaHTTP{}
+	if err := p.Init(context.Background(), map[string]any{
+		"base_url":                "https://example.com",
+		"java_http_codec":         supportedCodec,
+		"java_http_helper_mode":   "embedded",
+		"java_http_body_encoding": "base64",
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	result, err := p.Execute(context.Background(), &protocol.Action{
+		Name:         "raw",
+		Method:       "POST",
+		Target:       "/invoke",
+		BodyEncoding: "raw",
+		Body:         []byte("not-base64"),
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result == nil || !strings.Contains(result.ErrorMessage, "unsupported java_http action body encoding") {
+		t.Fatalf("result = %#v, want body encoding error", result)
+	}
+	if result.BytesSent != 0 {
+		t.Fatalf("BytesSent = %d, want 0 because request was not sent", result.BytesSent)
+	}
 }
 
 func TestResolveJavaHTTPURLNormalizesAbsoluteURLBoundaryWhitespace(t *testing.T) {
@@ -207,6 +240,13 @@ func TestJavaHTTPResponseMappingExtractsFromRawPayload(t *testing.T) {
 	}
 }
 
+func TestJavaHTTPResponseMappingInvalidRegexFallsBackToLiteral(t *testing.T) {
+	got := applyResponseMapping(map[string]string{"literal": "[session"}, "prefix [session suffix")
+	if got["literal"] != "[session" {
+		t.Fatalf("literal extraction = %#v, want invalid regex treated literally", got)
+	}
+}
+
 func TestJavaHTTPResponseMappingEmptyIsNoop(t *testing.T) {
 	responsePayload := []byte{0xac, 0xed, 0x00, 0x05, 'o', 'k'}
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -232,17 +272,15 @@ func TestJavaHTTPResponseMappingEmptyIsNoop(t *testing.T) {
 	}
 }
 
-func TestJavaHTTPInitAllowsSidecarHelperMode(t *testing.T) {
+func TestJavaHTTPInitRejectsSidecarHelperMode(t *testing.T) {
 	p := &JavaHTTP{}
-	if err := p.Init(context.Background(), map[string]any{
+	err := p.Init(context.Background(), map[string]any{
 		"base_url":                "https://example.com",
 		"java_http_codec":         supportedCodec,
 		"java_http_helper_mode":   "sidecar",
 		"java_http_body_encoding": "base64",
-	}); err != nil {
-		t.Fatalf("Init returned error: %v", err)
-	}
-	if p.helperMode != "sidecar" {
-		t.Fatalf("helperMode = %q, want sidecar", p.helperMode)
+	})
+	if err == nil || !strings.Contains(err.Error(), "sidecar is not wired") {
+		t.Fatalf("Init error = %v, want sidecar rejection", err)
 	}
 }

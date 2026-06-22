@@ -165,6 +165,18 @@ func TestHTTP_Init_BearerAuth(t *testing.T) {
 	}
 }
 
+func TestHTTP_Init_UnsupportedAuthFailsClosed(t *testing.T) {
+	for _, authType := range []string{"ntlm", "digest", "kerberos", "negotiate"} {
+		t.Run(authType, func(t *testing.T) {
+			h := &HTTP{}
+			err := h.Init(context.Background(), map[string]any{"auth_type": authType})
+			if err == nil || !strings.Contains(err.Error(), "unsupported HTTP auth type") {
+				t.Fatalf("Init error = %v, want unsupported auth error", err)
+			}
+		})
+	}
+}
+
 func TestHTTP_Init_NoRedirects(t *testing.T) {
 	h := initHTTP(t, map[string]any{
 		"max_redirects": float64(-1),
@@ -655,6 +667,93 @@ func TestHTTP_Execute_InvalidBase64BodyFailsBeforeSend(t *testing.T) {
 	}
 	if result.ErrorMessage == "" || !strings.Contains(result.ErrorMessage, "invalid base64 http body") {
 		t.Fatalf("ErrorMessage = %q, want invalid base64 error", result.ErrorMessage)
+	}
+}
+
+func TestHTTP_Execute_HostHeaderOverridesRequestHost(t *testing.T) {
+	var seenHost string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenHost = r.Host
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:    "host-override",
+		Method:  "GET",
+		Target:  "/",
+		Headers: map[string]string{"Host": "tenant.example.test"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Success = false, error: %s", result.ErrorMessage)
+	}
+	if seenHost != "tenant.example.test" {
+		t.Fatalf("request Host = %q, want tenant.example.test", seenHost)
+	}
+}
+
+func TestHTTP_Execute_HeaderListPreservesDuplicateHeaders(t *testing.T) {
+	var seenDuplicate []string
+	var seenMapOnly string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenDuplicate = append([]string(nil), r.Header.Values("X-Duplicate")...)
+		seenMapOnly = r.Header.Get("X-Map-Only")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:    "duplicate-headers",
+		Method:  "GET",
+		Target:  "/",
+		Headers: map[string]string{"X-Duplicate": "summary", "X-Map-Only": "kept"},
+		HeaderList: protocol.HeaderList{
+			{Name: "X-Duplicate", Value: "one"},
+			{Name: "X-Duplicate", Value: "two"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Success = false, error: %s", result.ErrorMessage)
+	}
+	if strings.Join(seenDuplicate, ",") != "one,two" {
+		t.Fatalf("X-Duplicate values = %#v, want one/two without map summary", seenDuplicate)
+	}
+	if seenMapOnly != "kept" {
+		t.Fatalf("X-Map-Only = %q, want kept", seenMapOnly)
+	}
+}
+
+func TestHTTP_Execute_UnsupportedActionAuthFailsBeforeSend(t *testing.T) {
+	called := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "bad-auth",
+		Method: "GET",
+		Target: "/",
+		Auth:   &protocol.AuthConfig{Type: "digest", Username: "alice", Password: "secret"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if called {
+		t.Fatal("server should not be called for unsupported action auth")
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "unsupported HTTP auth type") {
+		t.Fatalf("result = %#v, want unsupported auth failure", result)
 	}
 }
 

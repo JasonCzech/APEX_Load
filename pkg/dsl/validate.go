@@ -1,10 +1,12 @@
 package dsl
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -73,6 +75,8 @@ func ValidateScriptIssues(script *Script) []string {
 	}
 
 	issues = append(issues, validateParameterIssues(script)...)
+	issues = append(issues, validateDataSourceIssues(script)...)
+	issues = append(issues, validateFileReferenceIssues(script)...)
 	issues = append(issues, validateBrowserConfigIssues(script)...)
 	issues = append(issues, validateWebSocketConfigIssues(script)...)
 	issues = append(issues, validateGRPCConfigIssues(script)...)
@@ -82,6 +86,8 @@ func ValidateScriptIssues(script *Script) []string {
 
 	return issues
 }
+
+var fileTemplateRefPattern = regexp.MustCompile(`\{\{\s*file\.([^{}\s]+)\s*\}\}`)
 
 func validateHTTPSequenceActionIssues(index int, action Action) []string {
 	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
@@ -262,6 +268,7 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 		issues = append(issues, fmt.Sprintf("%s: missing name", path))
 	}
 	issues = append(issues, validateBodyFileIssues(path, action)...)
+	issues = append(issues, validateBase64BodyEncodingIssues(path, action)...)
 	issues = append(issues, validateExtractorIssues(path, action)...)
 	if strings.TrimSpace(action.Type) == "" {
 		return append(issues, fmt.Sprintf("%s: missing type", actionLabel(path, action)))
@@ -309,6 +316,32 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	return issues
 }
 
+func validateBase64BodyEncodingIssues(path string, action Action) []string {
+	if !strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") || strings.TrimSpace(action.Body) == "" {
+		return nil
+	}
+	label := actionLabel(path, action)
+	body := strings.TrimSpace(action.Body)
+	if strings.Contains(body, "{{") || strings.Contains(body, "}}") {
+		if isTrustedFullBodyBase64Template(body) {
+			return nil
+		}
+		return []string{fmt.Sprintf("%s: body_encoding base64 cannot contain partial or untrusted templates; use literal base64 or a full-body {{env.*}}/{{secret.*}} template", label)}
+	}
+	if _, err := base64.StdEncoding.DecodeString(body); err != nil {
+		return []string{fmt.Sprintf("%s: body_encoding base64 body must be valid standard base64: %v", label, err)}
+	}
+	return nil
+}
+
+func isTrustedFullBodyBase64Template(body string) bool {
+	if !strings.HasPrefix(body, "{{") || !strings.HasSuffix(body, "}}") {
+		return false
+	}
+	expr := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(body, "{{"), "}}"))
+	return strings.HasPrefix(expr, "env.") || strings.HasPrefix(expr, "secret.")
+}
+
 func validateBodyFileIssues(path string, action Action) []string {
 	if strings.TrimSpace(action.BodyFile) == "" {
 		return nil
@@ -320,6 +353,160 @@ func validateBodyFileIssues(path string, action Action) []string {
 	}
 	issues = append(issues, fmt.Sprintf("%s: body_file is only supported when loading scripts from a local file; inline body is required for API uploads", label))
 	return issues
+}
+
+func validateDataSourceIssues(script *Script) []string {
+	if script == nil || len(script.DataSources) == 0 {
+		return nil
+	}
+	issues := make([]string, 0)
+	seen := make(map[string]struct{}, len(script.DataSources))
+	for i, source := range script.DataSources {
+		label := fmt.Sprintf("data_sources[%d]", i)
+		name := strings.TrimSpace(source.Name)
+		if name == "" {
+			issues = append(issues, label+": name is required")
+		} else {
+			if _, ok := seen[name]; ok {
+				issues = append(issues, fmt.Sprintf("%s %q: duplicate name", label, name))
+			}
+			seen[name] = struct{}{}
+		}
+		sourceType := strings.ToLower(strings.TrimSpace(source.Type))
+		switch sourceType {
+		case "", "csv", "dat":
+			continue
+		case "file":
+			if !fileDataSourceHasContent(source) {
+				issues = append(issues, fmt.Sprintf("%s %q: file data source requires inline_data, path, or storage_ref", label, name))
+			}
+			switch strings.ToLower(strings.TrimSpace(source.Encoding)) {
+			case "", "text", "base64":
+			default:
+				issues = append(issues, fmt.Sprintf("%s %q: file data source encoding must be text or base64", label, name))
+			}
+		default:
+			issues = append(issues, fmt.Sprintf("%s %q: unsupported type %q", label, name, source.Type))
+		}
+	}
+	return issues
+}
+
+func validateFileReferenceIssues(script *Script) []string {
+	if script == nil {
+		return nil
+	}
+	fileSources := make(map[string]DataSource, len(script.DataSources))
+	for _, source := range script.DataSources {
+		if strings.EqualFold(strings.TrimSpace(source.Type), "file") && strings.TrimSpace(source.Name) != "" {
+			fileSources[strings.TrimSpace(source.Name)] = source
+		}
+	}
+	issues := make([]string, 0)
+	for i, action := range script.Init {
+		issues = append(issues, validateActionFileReferences(fmt.Sprintf("init[%d]", i), action, fileSources)...)
+	}
+	for i, action := range script.Actions {
+		issues = append(issues, validateActionFileReferences(fmt.Sprintf("actions[%d]", i), action, fileSources)...)
+	}
+	for i, action := range script.Teardown {
+		issues = append(issues, validateActionFileReferences(fmt.Sprintf("teardown[%d]", i), action, fileSources)...)
+	}
+	return issues
+}
+
+func validateActionFileReferences(path string, action Action, fileSources map[string]DataSource) []string {
+	refs := collectActionFileReferences(action)
+	if len(refs) == 0 {
+		return nil
+	}
+	issues := make([]string, 0)
+	seen := make(map[string]struct{}, len(refs))
+	label := actionLabel(path, action)
+	for _, ref := range refs {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		if _, ok := seen[ref]; ok {
+			continue
+		}
+		seen[ref] = struct{}{}
+		source, ok := fileSources[ref]
+		if !ok {
+			issues = append(issues, fmt.Sprintf("%s: references unknown file asset %q", label, ref))
+			continue
+		}
+		if !fileDataSourceHasContent(source) {
+			issues = append(issues, fmt.Sprintf("%s: references file asset %q without inline_data, path, or storage_ref", label, ref))
+		}
+	}
+	return issues
+}
+
+func collectActionFileReferences(action Action) []string {
+	refs := make([]string, 0)
+	refs = appendFileTemplateRefs(refs, action.Target)
+	refs = appendFileTemplateRefs(refs, action.Selector)
+	refs = appendFileTemplateRefs(refs, action.Value)
+	refs = appendFileTemplateRefs(refs, action.Body)
+	refs = appendFileTemplateRefsFromStringMap(refs, action.Headers)
+	for _, header := range action.HeaderList {
+		refs = appendFileTemplateRefs(refs, header.Name)
+		refs = appendFileTemplateRefs(refs, header.Value)
+	}
+	refs = appendFileTemplateRefsFromAny(refs, action.Params)
+	if action.Auth != nil {
+		refs = appendFileTemplateRefs(refs, action.Auth.Username)
+		refs = appendFileTemplateRefs(refs, action.Auth.Password)
+		refs = appendFileTemplateRefs(refs, action.Auth.Token)
+		refs = appendFileTemplateRefs(refs, action.Auth.Domain)
+	}
+	return refs
+}
+
+func appendFileTemplateRefsFromStringMap(refs []string, values map[string]string) []string {
+	for key, value := range values {
+		refs = appendFileTemplateRefs(refs, key)
+		refs = appendFileTemplateRefs(refs, value)
+	}
+	return refs
+}
+
+func appendFileTemplateRefsFromAny(refs []string, value any) []string {
+	switch typed := value.(type) {
+	case string:
+		return appendFileTemplateRefs(refs, typed)
+	case []any:
+		for _, item := range typed {
+			refs = appendFileTemplateRefsFromAny(refs, item)
+		}
+	case []map[string]any:
+		for _, item := range typed {
+			refs = appendFileTemplateRefsFromAny(refs, item)
+		}
+	case map[string]any:
+		for key, item := range typed {
+			refs = appendFileTemplateRefs(refs, key)
+			refs = appendFileTemplateRefsFromAny(refs, item)
+		}
+	}
+	return refs
+}
+
+func appendFileTemplateRefs(refs []string, value string) []string {
+	for _, match := range fileTemplateRefPattern.FindAllStringSubmatch(value, -1) {
+		if len(match) > 1 {
+			refs = append(refs, strings.TrimSpace(match[1]))
+		}
+	}
+	return refs
+}
+
+func fileDataSourceHasContent(source DataSource) bool {
+	return strings.TrimSpace(source.InlineData) != "" ||
+		strings.TrimSpace(source.Path) != "" ||
+		strings.TrimSpace(source.StorageRef) != ""
 }
 
 // validateExtractorIssues checks the optional extractor behavior fields so
@@ -1440,11 +1627,20 @@ func validateJavaHTTPScriptIssues(script *Script) []string {
 	} else if javaCfg.Codec != "java_serialized_object_base64" {
 		issues = append(issues, fmt.Sprintf("config.java_http.codec %q is not supported", javaCfg.Codec))
 	}
-	if javaCfg.HelperMode != "" && !isAllowedValue(javaCfg.HelperMode, "embedded", "sidecar") {
-		issues = append(issues, "config.java_http.helper_mode must be embedded or sidecar")
+	if javaCfg.HelperMode != "" && !isAllowedValue(javaCfg.HelperMode, "embedded") {
+		issues = append(issues, "config.java_http.helper_mode must be embedded; sidecar is not wired for java_http")
 	}
 	if javaCfg.BodyEncoding != "" && !isAllowedValue(javaCfg.BodyEncoding, "base64") {
 		issues = append(issues, "config.java_http.body_encoding must be base64")
+	}
+	if strings.TrimSpace(javaCfg.ObjectSchema) != "" {
+		issues = append(issues, "config.java_http.object_schema is not supported by embedded java_http")
+	}
+	if len(javaCfg.RequestMapping) > 0 {
+		issues = append(issues, "config.java_http.request_mapping is not supported by embedded java_http")
+	}
+	if strings.TrimSpace(javaCfg.ExtractorType) != "" {
+		issues = append(issues, "config.java_http.extractor_type is not supported by embedded java_http")
 	}
 	return issues
 }

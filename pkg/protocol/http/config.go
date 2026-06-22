@@ -329,15 +329,29 @@ func buildAuthHeader(config map[string]any) (string, string) {
 	return authType, authHeaderFromParts(authType, authStringConfig(config, "auth_username"), authStringConfig(config, "auth_password"), authStringConfig(config, "auth_token"))
 }
 
-func buildActionAuthHeader(auth *protocol.AuthConfig) (string, bool) {
+func validateAuthType(authType string) error {
+	switch strings.ToLower(strings.TrimSpace(authType)) {
+	case "", "none", "noauth", "inherit", "basic", "bearer":
+		return nil
+	case "ntlm", "digest", "kerberos", "negotiate":
+		return fmt.Errorf("unsupported HTTP auth type %q: configure an external auth flow or remove the auth setting", authType)
+	default:
+		return fmt.Errorf("unsupported HTTP auth type %q", authType)
+	}
+}
+
+func buildActionAuthHeader(auth *protocol.AuthConfig) (string, bool, error) {
 	if auth == nil {
-		return "", false
+		return "", false, nil
 	}
 	switch strings.ToLower(strings.TrimSpace(auth.Type)) {
 	case "", "none", "noauth", "inherit":
-		return "", true
+		return "", true, nil
 	default:
-		return authHeaderFromParts(auth.Type, auth.Username, auth.Password, auth.Token), true
+		if err := validateAuthType(auth.Type); err != nil {
+			return "", true, err
+		}
+		return authHeaderFromParts(auth.Type, auth.Username, auth.Password, auth.Token), true, nil
 	}
 }
 
@@ -361,9 +375,6 @@ func authHeaderFromParts(authType, username, password, token string) string {
 		return "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
 	case "bearer":
 		return "Bearer " + token
-	case "ntlm":
-		fmt.Println("[WARN] NTLM authentication is not yet fully supported; using basic auth fallback")
-		return "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
 	default:
 		return ""
 	}

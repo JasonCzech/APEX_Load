@@ -25,6 +25,14 @@ func ensureScriptImportPreserved(script *dsl.Script, source string) map[string]a
 	return script.Metadata.Import.Preserved
 }
 
+func attachImportReplayPreflight(script *dsl.Script, source string, preflight *ReplayPreflight) {
+	if script == nil || preflight == nil {
+		return
+	}
+	preserved := ensureScriptImportPreserved(script, source)
+	preserved["replay_preflight"] = cloneReplayPreflight(preflight)
+}
+
 func (s *Server) handleAuthoringCapabilities(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, authoringCapabilityResponse())
 }

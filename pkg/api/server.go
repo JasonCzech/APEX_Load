@@ -74,6 +74,7 @@ type Server struct {
 	recordingBridge    *BrowserRecordingBridge
 	desktopAppData     string
 	desktopLogPath     string
+	importAssetDir     string
 	bindScope          string
 	boundAddr          string
 	boundAddrMu        sync.RWMutex
@@ -106,6 +107,7 @@ type ServerConfig struct {
 	BridgeMode         bool
 	DesktopAppDataPath string
 	DesktopLogPath     string
+	ImportAssetDir     string
 	// HAExecutionLeadership enables leader election so that, when multiple
 	// controller replicas run against a shared database, only the lease holder
 	// performs test execution. Requires a store that supports scheduler leases
@@ -196,6 +198,7 @@ func NewServer(cfg ServerConfig) *Server {
 		bridgeMode:       cfg.BridgeMode,
 		desktopAppData:   cfg.DesktopAppDataPath,
 		desktopLogPath:   cfg.DesktopLogPath,
+		importAssetDir:   resolveImportAssetDir(cfg),
 		bindScope:        cfg.BindScope,
 
 		generatorDiscovery: discovery,
@@ -543,6 +546,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scripts/import/jmeter/support-matrix", cors(log(auth(http.HandlerFunc(s.handleJMeterSupportMatrix)))))
 	s.mux.Handle("GET /api/v1/scripts/web-api/support-matrix", cors(log(auth(http.HandlerFunc(s.handleWebAPIExecutionSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/sample", cors(log(auth(http.HandlerFunc(s.handleImportSample)))))
+	s.mux.Handle("POST /api/v1/scripts/import/{id}/assets/upload", cors(log(auth(http.HandlerFunc(s.handleUploadImportAsset)))))
 	s.mux.Handle("POST /api/v1/scripts/import/k6", cors(log(auth(http.HandlerFunc(s.handleImportK6)))))
 	s.mux.Handle("POST /api/v1/scripts/export/k6", cors(log(auth(http.HandlerFunc(s.handleExportK6)))))
 	s.mux.Handle("GET /api/v1/scripts/import/k6/support-matrix", cors(log(auth(http.HandlerFunc(s.handleK6SupportMatrix)))))

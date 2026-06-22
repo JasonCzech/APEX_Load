@@ -36,7 +36,7 @@ export interface ScriptRecordingStatus {
   sensitivity?: string
   captured_at?: string
 }
-import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type Parameterization, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type Parameterization, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type ImportAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -593,6 +593,27 @@ export function useScriptApi() {
     [],
   )
 
+  const uploadImportAsset = useCallback(
+    async (importId: string, file: File, options?: { project_id?: string; name?: string; asset_name?: string; content_type?: string }): Promise<ImportAssetUploadResponse> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.name) formData.append('name', options.name)
+      if (options?.asset_name) formData.append('asset_name', options.asset_name)
+      if (options?.content_type) formData.append('content_type', options.content_type)
+      const query = options?.project_id ? `?project_id=${encodeURIComponent(options.project_id)}` : ''
+      const res = await apiFetch(`/scripts/import/${encodeURIComponent(importId)}/assets/upload${query}`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (!res.ok) {
+        throw new Error(await errorMessageFromResponse(res))
+      }
+      return res.json() as Promise<ImportAssetUploadResponse>
+    },
+    [],
+  )
+
   const importDevWeb = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<DevWebImportResult> => {
       const formData = new FormData()
@@ -896,6 +917,7 @@ export function useScriptApi() {
       getRAMLSupportMatrix,
       saveJMeterImport,
       importSample,
+      uploadImportAsset,
       importDevWeb,
       importHAR,
       importSalesforce,
@@ -974,6 +996,7 @@ export function useScriptApi() {
       getRAMLSupportMatrix,
       saveJMeterImport,
       importSample,
+      uploadImportAsset,
       importDevWeb,
       importHAR,
       importSalesforce,

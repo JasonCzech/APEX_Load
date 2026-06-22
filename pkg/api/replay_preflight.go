@@ -312,6 +312,12 @@ func replayDataSourceWarnings(script *dsl.Script) []string {
 		if name != "" {
 			sourceNames[name] = struct{}{}
 		}
+		if strings.EqualFold(strings.TrimSpace(source.Type), "file") {
+			if strings.TrimSpace(source.Path) == "" && strings.TrimSpace(source.InlineData) == "" && strings.TrimSpace(source.StorageRef) == "" {
+				warnings = append(warnings, fmt.Sprintf("file data source %q has no inline_data, path, or storage_ref", nonEmptyLabel(name, "unnamed")))
+			}
+			continue
+		}
 		if strings.TrimSpace(source.Path) == "" && strings.TrimSpace(source.InlineData) == "" {
 			warnings = append(warnings, fmt.Sprintf("data source %q has no path or inline data", nonEmptyLabel(name, "unnamed")))
 		}

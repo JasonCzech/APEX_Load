@@ -9,9 +9,12 @@ func TestValidateScriptIssues_JavaHTTP(t *testing.T) {
 		Config: ScriptConfig{
 			BaseURL: "https://example.com",
 			JavaHTTP: JavaHTTPConfig{
-				Codec:        "mystery",
-				HelperMode:   "sidecar",
-				BodyEncoding: "raw",
+				Codec:          "mystery",
+				HelperMode:     "sidecar",
+				BodyEncoding:   "raw",
+				ObjectSchema:   "com.example.Order",
+				RequestMapping: map[string]string{"field": "value"},
+				ExtractorType:  "java",
 			},
 		},
 		Actions: []Action{{Name: "invoke", Type: "request", Target: "/call"}},
@@ -19,10 +22,14 @@ func TestValidateScriptIssues_JavaHTTP(t *testing.T) {
 
 	issues := ValidateScriptIssues(script)
 	assertIssue(t, issues, "config.java_http.codec \"mystery\" is not supported")
+	assertIssueContains(t, issues, "config.java_http.helper_mode must be embedded")
 	assertIssue(t, issues, "config.java_http.body_encoding must be base64")
+	assertIssueContains(t, issues, "config.java_http.object_schema is not supported")
+	assertIssueContains(t, issues, "config.java_http.request_mapping is not supported")
+	assertIssueContains(t, issues, "config.java_http.extractor_type is not supported")
 }
 
-func TestValidateScriptIssues_JavaHTTPAllowsSidecarHelperMode(t *testing.T) {
+func TestValidateScriptIssues_JavaHTTPRejectsSidecarHelperMode(t *testing.T) {
 	script := &Script{
 		Name:     "java-http-sidecar",
 		Protocol: "java_http",
@@ -38,9 +45,7 @@ func TestValidateScriptIssues_JavaHTTPAllowsSidecarHelperMode(t *testing.T) {
 	}
 
 	issues := ValidateScriptIssues(script)
-	if len(issues) != 0 {
-		t.Fatalf("issues = %v, want none", issues)
-	}
+	assertIssueContains(t, issues, "config.java_http.helper_mode must be embedded")
 }
 
 func TestValidateScriptIssues_JavaHTTPAllowsCurrentMVP(t *testing.T) {

@@ -5,8 +5,12 @@ package sample
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net/http/httputil"
 	"strconv"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func parseRawHTTP(content, responseContent, baseURL string) ([]exchange, []string, error) {
@@ -67,25 +71,48 @@ func parseRawRequest(content, baseURL string) (exchange, error) {
 	if len(parts) < 2 {
 		return exchange{}, errors.New("raw HTTP request line must contain method and target")
 	}
+	headers, headerList := parseHeaderLines(unfoldHeaderLines(lines[1:]))
+	if strings.Contains(strings.ToLower(headerLookup(headers, "Transfer-Encoding")), "chunked") {
+		decoded, err := decodeRawChunkedBody(body)
+		if err != nil {
+			return exchange{}, fmt.Errorf("invalid chunked raw HTTP request body: %w", err)
+		}
+		body = decoded
+		deleteHeader(headers, "Transfer-Encoding")
+		headerList = filterHeaderList(headerList, "Transfer-Encoding")
+	}
+	metadata := map[string]any{}
+	if len(parts) >= 3 {
+		metadata["http_version"] = parts[2]
+	}
+	if parts[1] == "*" || (!strings.HasPrefix(parts[1], "/") && !strings.HasPrefix(parts[1], "http://") && !strings.HasPrefix(parts[1], "https://")) {
+		metadata["raw_request_target"] = parts[1]
+	}
 	ex := exchange{
-		Method:  strings.ToUpper(parts[0]),
-		URL:     parts[1],
-		Headers: parseHeaderLines(lines[1:]),
-		Body:    body,
+		Method:      strings.ToUpper(parts[0]),
+		URL:         parts[1],
+		HTTPVersion: stringMapValue(metadata, "http_version"),
+		Headers:     headers,
+		HeaderList:  headerList,
+		Body:        body,
+		Metadata:    metadata,
 	}
 	if !strings.HasPrefix(ex.URL, "http://") && !strings.HasPrefix(ex.URL, "https://") {
 		host := headerLookup(ex.Headers, "host")
 		if baseURL != "" {
-			ex.URL = strings.TrimRight(baseURL, "/") + ensureLeadingSlash(ex.URL)
+			ex.URL = resolveRawHTTPRelativeTarget(baseURL, ex.Method, ex.URL)
 		} else if host != "" {
 			scheme := "https"
 			if strings.Contains(host, "localhost") || strings.Contains(host, "127.0.0.1") {
 				scheme = "http"
 			}
-			ex.URL = scheme + "://" + host + ensureLeadingSlash(ex.URL)
+			ex.URL = resolveRawHTTPRelativeTarget(scheme+"://"+host, ex.Method, ex.URL)
 		} else {
 			return exchange{}, errors.New("raw HTTP request must include an absolute URL, Host header, or base_url option")
 		}
+	}
+	if len(metadata) == 0 {
+		ex.Metadata = nil
 	}
 	return ex, nil
 }
@@ -111,7 +138,16 @@ func parseRawResponse(content string) (*response, []string, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid HTTP response status %q", parts[1])
 	}
-	return &response{Status: status, Headers: parseHeaderLines(lines[1:]), Body: body}, nil, nil
+	headers, _ := parseHeaderLines(unfoldHeaderLines(lines[1:]))
+	if strings.Contains(strings.ToLower(headerLookup(headers, "Transfer-Encoding")), "chunked") {
+		decoded, err := decodeRawChunkedBody(body)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid chunked raw HTTP response body: %w", err)
+		}
+		body = decoded
+		deleteHeader(headers, "Transfer-Encoding")
+	}
+	return &response{Status: status, Headers: headers, Body: body}, nil, nil
 }
 
 func splitHTTPMessage(content string) (string, string) {
@@ -139,15 +175,32 @@ func splitLines(content string) []string {
 	return filtered
 }
 
-func parseHeaderLines(lines []string) map[string]string {
+func parseHeaderLines(lines []string) (map[string]string, dsl.HeaderList) {
 	headers := map[string]string{}
+	headerList := dsl.HeaderList{}
 	for _, line := range lines {
 		key, value, ok := splitHeader(line)
 		if ok {
 			headers[key] = value
+			headerList = append(headerList, dsl.HeaderEntry{Name: key, Value: value})
 		}
 	}
-	return headers
+	return headers, headerList
+}
+
+func unfoldHeaderLines(lines []string) []string {
+	unfolded := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			if len(unfolded) == 0 {
+				continue
+			}
+			unfolded[len(unfolded)-1] += " " + strings.TrimSpace(line)
+			continue
+		}
+		unfolded = append(unfolded, line)
+	}
+	return unfolded
 }
 
 func splitHeader(value string) (string, string, bool) {
@@ -163,6 +216,60 @@ func headerLookup(headers map[string]string, key string) string {
 		if strings.EqualFold(headerKey, key) {
 			return value
 		}
+	}
+	return ""
+}
+
+func decodeRawChunkedBody(body string) (string, error) {
+	decoded, err := io.ReadAll(httputil.NewChunkedReader(strings.NewReader(body)))
+	if err != nil {
+		return "", err
+	}
+	return string(decoded), nil
+}
+
+func deleteHeader(headers map[string]string, key string) {
+	for headerKey := range headers {
+		if strings.EqualFold(headerKey, key) {
+			delete(headers, headerKey)
+		}
+	}
+}
+
+func filterHeaderList(headers dsl.HeaderList, key string) dsl.HeaderList {
+	if len(headers) == 0 {
+		return headers
+	}
+	filtered := headers[:0]
+	for _, header := range headers {
+		if strings.EqualFold(header.Name, key) {
+			continue
+		}
+		filtered = append(filtered, header)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
+func resolveRawHTTPRelativeTarget(baseURL string, method string, target string) string {
+	if target == "*" {
+		return strings.TrimRight(baseURL, "/") + "/"
+	}
+	if !strings.HasPrefix(target, "/") && (strings.EqualFold(method, "CONNECT") || strings.Contains(target, ":")) {
+		scheme := "https"
+		if before, _, ok := strings.Cut(baseURL, "://"); ok && before != "" {
+			scheme = before
+		}
+		return scheme + "://" + target
+	}
+	return strings.TrimRight(baseURL, "/") + ensureLeadingSlash(target)
+}
+
+func stringMapValue(values map[string]any, key string) string {
+	if value, ok := values[key].(string); ok {
+		return value
 	}
 	return ""
 }

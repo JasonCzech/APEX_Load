@@ -151,40 +151,59 @@ func actionLogAttrs(actionName string, resolved *protocol.Action, result *protoc
 
 func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	vu.unresolvedSecretRefs = nil
+	vu.unresolvedFileRefs = nil
 	target, redactedTarget := vu.interpolateWithSecrets(action.Target)
 	selector, _ := vu.interpolateWithSecrets(action.Selector)
 	value, _ := vu.interpolateWithSecrets(action.Value)
 	headers, redactedHeaders := vu.interpolateMapWithSecrets(action.Headers)
+	headerList, redactedHeaderList := vu.interpolateHeaderListWithSecrets(action.HeaderList)
 	body, redactedBody := vu.interpolateWithSecrets(action.Body)
 	auth, redactedAuth := toProtocolAuthConfig(action.Auth, vu)
 	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
 	return &protocol.Action{
-		Name:            action.Name,
-		Type:            action.Type,
-		Method:          action.Method,
-		Target:          target,
-		RedactedTarget:  redactedTarget,
-		Selector:        selector,
-		Value:           value,
-		Headers:         headers,
-		RedactedHeaders: redactedHeaders,
-		Body:            []byte(body),
-		BodyEncoding:    action.BodyEncoding,
-		RedactedBody:    []byte(redactedBody),
-		Params:          vu.interpolateAnyMap(action.Params),
-		WaitFor:         toProtocolWaitCondition(action.WaitFor, vu),
-		Sync:            toProtocolBrowserSyncPolicy(action.Sync, vu),
-		Capture:         toProtocolCaptureOptions(action.Capture),
-		Metadata:        vu.interpolateAnyMap(action.Metadata),
-		Extractors:      toProtocolExtractors(action.Extractors),
-		Assertions:      toProtocolAssertions(action.Assertions),
-		Auth:            auth,
-		RedactedAuth:    redactedAuth,
-		TimeoutMs:       action.TimeoutMs,
-		MaxRedirects:    cloneIntPtr(action.MaxRedirects),
-		SOAP:            soapAction,
-		RedactedSOAP:    redactedSOAPAction,
+		Name:               action.Name,
+		Type:               action.Type,
+		Method:             action.Method,
+		Target:             target,
+		RedactedTarget:     redactedTarget,
+		Selector:           selector,
+		Value:              value,
+		Headers:            headers,
+		HeaderList:         headerList,
+		RedactedHeaders:    redactedHeaders,
+		RedactedHeaderList: redactedHeaderList,
+		Body:               []byte(body),
+		BodyEncoding:       action.BodyEncoding,
+		RedactedBody:       []byte(redactedBody),
+		Params:             vu.interpolateAnyMap(action.Params),
+		WaitFor:            toProtocolWaitCondition(action.WaitFor, vu),
+		Sync:               toProtocolBrowserSyncPolicy(action.Sync, vu),
+		Capture:            toProtocolCaptureOptions(action.Capture),
+		Metadata:           vu.interpolateAnyMap(action.Metadata),
+		Extractors:         toProtocolExtractors(action.Extractors),
+		Assertions:         toProtocolAssertions(action.Assertions),
+		Auth:               auth,
+		RedactedAuth:       redactedAuth,
+		TimeoutMs:          action.TimeoutMs,
+		MaxRedirects:       cloneIntPtr(action.MaxRedirects),
+		SOAP:               soapAction,
+		RedactedSOAP:       redactedSOAPAction,
 	}
+}
+
+func (vu *VUser) interpolateHeaderListWithSecrets(headers dsl.HeaderList) (protocol.HeaderList, protocol.HeaderList) {
+	if len(headers) == 0 {
+		return nil, nil
+	}
+	resolved := make(protocol.HeaderList, 0, len(headers))
+	redacted := make(protocol.HeaderList, 0, len(headers))
+	for _, header := range headers {
+		name, redactedName := vu.interpolateWithSecrets(header.Name)
+		value, redactedValue := vu.interpolateWithSecrets(header.Value)
+		resolved = append(resolved, protocol.HeaderEntry{Name: name, Value: value})
+		redacted = append(redacted, protocol.HeaderEntry{Name: redactedName, Value: redactedValue})
+	}
+	return resolved, redacted
 }
 
 func toProtocolAuthConfig(auth *dsl.AuthConfig, vu *VUser) (*protocol.AuthConfig, *protocol.AuthConfig) {
@@ -267,6 +286,9 @@ func (vu *VUser) interpolateWithSecrets(s string) (string, string) {
 		if strings.HasPrefix(expr, "secret.") {
 			vu.unresolvedSecretRefs = append(vu.unresolvedSecretRefs, expr)
 		}
+		if strings.HasPrefix(expr, "file.") {
+			vu.unresolvedFileRefs = append(vu.unresolvedFileRefs, expr)
+		}
 		return token
 	})
 	redacted := templatePattern.ReplaceAllStringFunc(s, func(token string) string {
@@ -277,6 +299,14 @@ func (vu *VUser) interpolateWithSecrets(s string) (string, string) {
 		if strings.HasPrefix(expr, "secret.") {
 			hasSecret = true
 			return "[REDACTED]"
+		}
+		if strings.HasPrefix(expr, "file.") {
+			hasSecret = true
+			if value, ok := vu.resolveTemplateValue(expr); ok {
+				_ = value
+				return "[FILE:" + strings.TrimSpace(strings.TrimPrefix(expr, "file.")) + "]"
+			}
+			return token
 		}
 		if value, ok := vu.resolveTemplateValue(expr); ok {
 			return value
@@ -370,6 +400,12 @@ func (vu *VUser) resolveTemplateValue(expr string) (string, bool) {
 	case strings.HasPrefix(expr, "secret."):
 		key := strings.TrimSpace(strings.TrimPrefix(expr, "secret."))
 		return resolveSecretTemplateValue(key, vu.secretResolver())
+	case strings.HasPrefix(expr, "file."):
+		if vu.DataProvider == nil {
+			return "", false
+		}
+		key := strings.TrimSpace(strings.TrimPrefix(expr, "file."))
+		return vu.DataProvider.GetFileContent(key)
 	case strings.HasPrefix(expr, "fn."), strings.HasPrefix(expr, "fake."):
 		return resolveBuiltinFunction(expr, time.Now, vu.rng)
 	default:

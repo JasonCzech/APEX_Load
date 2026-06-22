@@ -59,8 +59,14 @@ func TestSensitiveHeaderKey(t *testing.T) {
 		{"Cookie", true},
 		{"X-Api-Key", true},
 		{"api-key", true},
+		{"X-Auth", true},
+		{"X-CSRF-Token", true},
+		{"Client-Secret", true},
+		{"X-Credential-Id", true},
+		{"Subscription-Key", true},
 		{"Content-Type", false},
 		{"Accept", false},
+		{"X-Author", false},
 	}
 	for _, tt := range tests {
 		if got := SensitiveHeaderKey(tt.key); got != tt.want {
@@ -123,6 +129,21 @@ func TestSanitizeBodySecrets(t *testing.T) {
 			name: "form token redacted",
 			body: "token=abc&x=1",
 			want: "token={{secret.redacted}}&x=1",
+		},
+		{
+			name: "json client secret redacted",
+			body: `{"client_secret": "top-secret"}`,
+			want: `{"client_secret": "{{secret.redacted}}"}`,
+		},
+		{
+			name: "json hyphen api key redacted",
+			body: `{"api-key": "k-123"}`,
+			want: `{"api-key": "{{secret.redacted}}"}`,
+		},
+		{
+			name: "form bearer token redacted",
+			body: "bearer_token=abc&x=1",
+			want: "bearer_token={{secret.redacted}}&x=1",
 		},
 		{
 			name: "already templated untouched",

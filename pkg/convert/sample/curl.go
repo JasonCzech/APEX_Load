@@ -3,6 +3,7 @@ package sample
 // curl.go — split from converter.go (same package, behavior-preserving).
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type curlFormPart struct {
@@ -31,6 +33,7 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 	ex := exchange{Method: "GET", Headers: map[string]string{}}
 	formParts := []curlFormPart{}
 	dataParts := []string{}
+	fileAssets := []dsl.DataSource{}
 	dataAsQuery := false
 	methodExplicit := false
 	location := "curl command"
@@ -55,11 +58,11 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 			if index >= len(tokens) {
 				return nil, nil, errors.New("curl sample is missing a header value after -H/--header")
 			}
-			addCurlHeader(ex.Headers, tokens[index])
+			addCurlHeader(&ex, tokens[index])
 		case strings.HasPrefix(token, "--header="):
-			addCurlHeader(ex.Headers, strings.TrimPrefix(token, "--header="))
+			addCurlHeader(&ex, strings.TrimPrefix(token, "--header="))
 		case strings.HasPrefix(token, "-H") && token != "-H":
-			addCurlHeader(ex.Headers, strings.TrimPrefix(token, "-H"))
+			addCurlHeader(&ex, strings.TrimPrefix(token, "-H"))
 		case isCurlDataFlag(token):
 			index++
 			if index >= len(tokens) {
@@ -68,17 +71,17 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 			if isCurlDataURLEncodeFlag(token) {
 				dataParts = append(dataParts, encodeCurlDataValue(tokens[index], diagnostics, location))
 			} else {
-				dataParts = append(dataParts, tokens[index])
+				dataParts = append(dataParts, curlDataValue(token, tokens[index], diagnostics, location, &fileAssets))
 			}
 		case isCurlDataFlagWithValue(token):
-			_, value, _ := strings.Cut(token, "=")
-			if strings.HasPrefix(token, "--data-urlencode=") {
+			flag, value, _ := strings.Cut(token, "=")
+			if flag == "--data-urlencode" {
 				dataParts = append(dataParts, encodeCurlDataValue(value, diagnostics, location))
 			} else {
-				dataParts = append(dataParts, value)
+				dataParts = append(dataParts, curlDataValue(flag, value, diagnostics, location, &fileAssets))
 			}
 		case strings.HasPrefix(token, "-d") && token != "-d":
-			dataParts = append(dataParts, strings.TrimPrefix(token, "-d"))
+			dataParts = append(dataParts, curlDataValue("-d", strings.TrimPrefix(token, "-d"), diagnostics, location, &fileAssets))
 		case token == "--json":
 			index++
 			if index >= len(tokens) {
@@ -96,13 +99,13 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 			if index >= len(tokens) {
 				return nil, nil, errors.New("curl sample is missing a form value after -F/--form")
 			}
-			formParts = append(formParts, parseCurlFormPart(tokens[index], token == "--form-string", diagnostics, location))
+			formParts = append(formParts, parseCurlFormPart(tokens[index], token == "--form-string", diagnostics, location, &fileAssets))
 		case strings.HasPrefix(token, "--form="):
-			formParts = append(formParts, parseCurlFormPart(strings.TrimPrefix(token, "--form="), false, diagnostics, location))
+			formParts = append(formParts, parseCurlFormPart(strings.TrimPrefix(token, "--form="), false, diagnostics, location, &fileAssets))
 		case strings.HasPrefix(token, "--form-string="):
-			formParts = append(formParts, parseCurlFormPart(strings.TrimPrefix(token, "--form-string="), true, diagnostics, location))
+			formParts = append(formParts, parseCurlFormPart(strings.TrimPrefix(token, "--form-string="), true, diagnostics, location, &fileAssets))
 		case strings.HasPrefix(token, "-F") && token != "-F":
-			formParts = append(formParts, parseCurlFormPart(strings.TrimPrefix(token, "-F"), false, diagnostics, location))
+			formParts = append(formParts, parseCurlFormPart(strings.TrimPrefix(token, "-F"), false, diagnostics, location, &fileAssets))
 		case token == "--url":
 			index++
 			if index >= len(tokens) {
@@ -148,19 +151,23 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 		case token == "-u" || token == "--user":
 			index++
 			if index < len(tokens) {
-				ex.Headers["Authorization"] = "Basic " + tokens[index]
-				diagnostics.Add(diag.Info, "cURL basic auth", location, "basic auth credentials were preserved as a placeholder-style Authorization header; validate secret handling before replay")
+				ex.Headers["Authorization"] = curlBasicAuthHeader(tokens[index])
+				diagnostics.Add(diag.Info, "cURL basic auth", location, "basic auth credentials were converted to a Basic Authorization header; validate secret handling before replay")
 			}
 		case strings.HasPrefix(token, "--user="):
-			ex.Headers["Authorization"] = "Basic " + strings.TrimPrefix(token, "--user=")
-			diagnostics.Add(diag.Info, "cURL basic auth", location, "basic auth credentials were preserved as a placeholder-style Authorization header; validate secret handling before replay")
+			ex.Headers["Authorization"] = curlBasicAuthHeader(strings.TrimPrefix(token, "--user="))
+			diagnostics.Add(diag.Info, "cURL basic auth", location, "basic auth credentials were converted to a Basic Authorization header; validate secret handling before replay")
 		case strings.HasPrefix(token, "-u") && token != "-u":
-			ex.Headers["Authorization"] = "Basic " + strings.TrimPrefix(token, "-u")
-			diagnostics.Add(diag.Info, "cURL basic auth", location, "basic auth credentials were preserved as a placeholder-style Authorization header; validate secret handling before replay")
+			ex.Headers["Authorization"] = curlBasicAuthHeader(strings.TrimPrefix(token, "-u"))
+			diagnostics.Add(diag.Info, "cURL basic auth", location, "basic auth credentials were converted to a Basic Authorization header; validate secret handling before replay")
 		case token == "-I" || token == "--head":
 			ex.Method = "HEAD"
 		case token == "-L" || token == "--location" || token == "--location-trusted":
 			diagnostics.Add(diag.Info, "cURL redirect option", location, "redirect-following option "+token+" is not modeled in the generated script; configure redirect policy before replay if required")
+		case token == "--compressed":
+			if headerLookup(ex.Headers, "Accept-Encoding") == "" {
+				ex.Headers["Accept-Encoding"] = "gzip, deflate, br"
+			}
 		case isCurlFlag(token):
 			diagnostics.Add(diag.Warning, "cURL option", location, "option "+token+" is not modeled by the sample importer; review equivalent runtime behavior before replay")
 			if curlFlagLikelyTakesValue(token) && index+1 < len(tokens) && !isCurlFlag(tokens[index+1]) {
@@ -183,6 +190,10 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 			if !methodExplicit {
 				ex.Method = "GET"
 			}
+			if ex.Method == "GET" {
+				deleteHeader(ex.Headers, "Content-Type")
+				ex.HeaderList = filterHeaderList(ex.HeaderList, "Content-Type")
+			}
 		} else {
 			ex.Body = strings.Join(dataParts, "&")
 			if !methodExplicit && ex.Method == "GET" {
@@ -194,10 +205,10 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 		if strings.TrimSpace(ex.Body) != "" {
 			diagnostics.Add(diag.Warning, "cURL mixed body", location, "both data and multipart form flags were present; multipart form body was used and data flags require review")
 		}
-		ex.Body = curlMultipartBody(formParts)
-		if headerLookup(ex.Headers, "Content-Type") == "" {
-			ex.Headers["Content-Type"] = "multipart/form-data; boundary=----apexload-curl-boundary"
-		}
+		contentType := headerLookup(ex.Headers, "Content-Type")
+		boundary := multipartBoundaryOrDefault(contentType, defaultCurlMultipartBoundary)
+		ex.Body = curlMultipartBody(formParts, boundary)
+		ensureMultipartContentTypeBoundary(ex.Headers, boundary)
 		if ex.Method == "GET" {
 			ex.Method = "POST"
 		}
@@ -211,13 +222,19 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 		ex.Response = resp
 		warnings = append(warnings, respWarnings...)
 	}
+	ex.FileAssets = fileAssets
 	return []exchange{ex}, warnings, nil
 }
 
-func addCurlHeader(headers map[string]string, raw string) {
+func curlBasicAuthHeader(credentials string) string {
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(credentials))
+}
+
+func addCurlHeader(ex *exchange, raw string) {
 	key, value, ok := splitHeader(raw)
 	if ok {
-		headers[key] = value
+		ex.Headers[key] = value
+		ex.HeaderList = append(ex.HeaderList, dsl.HeaderEntry{Name: key, Value: value})
 	}
 }
 
@@ -248,6 +265,29 @@ func isCurlDataURLEncodeFlag(token string) bool {
 func isCurlDataFlag(token string) bool {
 	switch token {
 	case "-d", "--data", "--data-raw", "--data-binary", "--data-ascii", "--data-urlencode":
+		return true
+	default:
+		return false
+	}
+}
+
+func curlDataValue(flag string, raw string, diagnostics *diag.Collector, location string, assets *[]dsl.DataSource) string {
+	if curlDataFlagReadsFile(flag) && strings.HasPrefix(raw, "@") {
+		source := strings.TrimPrefix(raw, "@")
+		name := sanitizeIdentifier(strings.TrimSuffix(baseName(source), fileExtension(baseName(source))))
+		if name == "" || name == "value" {
+			name = "body"
+		}
+		appendFileAsset(assets, fileAssetDataSource(name, baseName(source), ""))
+		diagnostics.Add(diag.Warning, "cURL data file", location, "data flag "+flag+" references local file "+source+"; file bytes are not embedded in the sample and must be supplied before replay")
+		return "{{file." + name + "}}"
+	}
+	return raw
+}
+
+func curlDataFlagReadsFile(flag string) bool {
+	switch flag {
+	case "-d", "--data", "--data-binary", "--data-ascii":
 		return true
 	default:
 		return false
@@ -298,7 +338,14 @@ func isCurlDataFlagWithValue(token string) bool {
 	return false
 }
 
-func parseCurlFormPart(raw string, forceLiteral bool, diagnostics *diag.Collector, location string) curlFormPart {
+func fileExtension(name string) string {
+	if index := strings.LastIndex(name, "."); index >= 0 {
+		return name[index:]
+	}
+	return ""
+}
+
+func parseCurlFormPart(raw string, forceLiteral bool, diagnostics *diag.Collector, location string, assets *[]dsl.DataSource) curlFormPart {
 	name, value, ok := strings.Cut(raw, "=")
 	name = strings.TrimSpace(name)
 	if !ok || name == "" {
@@ -331,6 +378,7 @@ func parseCurlFormPart(raw string, forceLiteral bool, diagnostics *diag.Collecto
 		}
 		part.Value = "{{file." + sanitizeIdentifier(name) + "}}"
 		part.File = true
+		appendFileAsset(assets, fileAssetDataSource(name, part.Filename, part.ContentType))
 		diagnostics.Add(diag.Warning, "cURL multipart file", location, "form part "+name+" references local file "+source+"; file bytes are not embedded in the sample and must be supplied before replay")
 		return part
 	}
@@ -338,8 +386,7 @@ func parseCurlFormPart(raw string, forceLiteral bool, diagnostics *diag.Collecto
 	return part
 }
 
-func curlMultipartBody(parts []curlFormPart) string {
-	const boundary = "----apexload-curl-boundary"
+func curlMultipartBody(parts []curlFormPart, boundary string) string {
 	var b strings.Builder
 	for _, part := range parts {
 		name := escapeMultipartQuoted(part.Name)
@@ -357,6 +404,24 @@ func curlMultipartBody(parts []curlFormPart) string {
 	}
 	b.WriteString("--" + boundary + "--\r\n")
 	return b.String()
+}
+
+func appendFileAsset(assets *[]dsl.DataSource, asset dsl.DataSource) {
+	if assets == nil || strings.TrimSpace(asset.Name) == "" {
+		return
+	}
+	for i := range *assets {
+		if strings.EqualFold(strings.TrimSpace((*assets)[i].Name), strings.TrimSpace(asset.Name)) {
+			if (*assets)[i].FileName == "" {
+				(*assets)[i].FileName = asset.FileName
+			}
+			if (*assets)[i].ContentType == "" {
+				(*assets)[i].ContentType = asset.ContentType
+			}
+			return
+		}
+	}
+	*assets = append(*assets, asset)
 }
 
 func escapeMultipartQuoted(value string) string {
@@ -381,6 +446,7 @@ func curlFlagLikelyTakesValue(token string) bool {
 }
 
 func shellSplit(input string) ([]string, error) {
+	input = normalizeCurlContinuations(input)
 	var tokens []string
 	var current strings.Builder
 	var quote rune
@@ -425,4 +491,9 @@ func shellSplit(input string) ([]string, error) {
 	}
 	flush()
 	return tokens, nil
+}
+
+func normalizeCurlContinuations(input string) string {
+	input = strings.ReplaceAll(input, "\\\r\n", " ")
+	return strings.ReplaceAll(input, "\\\n", " ")
 }

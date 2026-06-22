@@ -26,6 +26,7 @@ type scriptImportResponseOptions struct {
 	TrueClient2Compat   any
 	ProtocolCompat      any
 	Parameterization    *paramize.Result
+	Preflight           any
 }
 
 type scriptImportReviewSection struct {
@@ -114,6 +115,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"trueclient2_compat_report": opts.TrueClient2Compat,
 		"protocol_compat_report":    opts.ProtocolCompat,
 		"parameterization":          parameterization,
+		"preflight":                 opts.Preflight,
 	}
 	if opts.Result != nil {
 		response["result"] = opts.Result

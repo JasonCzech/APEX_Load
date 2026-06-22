@@ -477,6 +477,82 @@ func TestHandleImportSample(t *testing.T) {
 	}
 }
 
+func TestHandleImportSampleReturnsReplayPreflightForMissingFileAsset(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"format":  "curl",
+		"content": "curl --data-binary @/tmp/payload.bin https://api.example.com/upload",
+		"options": map[string]any{
+			"infer_extractors": false,
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			DataSources []struct {
+				Name     string `json:"name"`
+				Type     string `json:"type"`
+				FileName string `json:"file_name"`
+			} `json:"data_sources"`
+			Metadata struct {
+				Import struct {
+					Preserved map[string]json.RawMessage `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		Warnings  []string `json:"warnings"`
+		Preflight struct {
+			Valid           bool `json:"valid"`
+			DataSourceCount int  `json:"data_source_count"`
+			Checks          []struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+			} `json:"checks"`
+		} `json:"preflight"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Script.DataSources) != 1 || result.Script.DataSources[0].Name != "payload" || result.Script.DataSources[0].Type != "file" {
+		t.Fatalf("data_sources = %#v, want payload file asset", result.Script.DataSources)
+	}
+	if len(result.Script.Metadata.Import.Preserved["replay_preflight"]) == 0 {
+		t.Fatalf("metadata preserved = %#v, want replay_preflight evidence", result.Script.Metadata.Import.Preserved)
+	}
+	if result.Preflight.Valid {
+		t.Fatalf("preflight valid = true, want missing file asset to block replay")
+	}
+	if result.Preflight.DataSourceCount != 1 {
+		t.Fatalf("preflight data_source_count = %d, want 1", result.Preflight.DataSourceCount)
+	}
+	if !containsStringContaining(result.Warnings, "file data source requires inline_data, path, or storage_ref") {
+		t.Fatalf("warnings = %#v, want missing file data source warning", result.Warnings)
+	}
+	dataSourceStatus := ""
+	for _, check := range result.Preflight.Checks {
+		if check.ID == "data_sources" {
+			dataSourceStatus = check.Status
+			break
+		}
+	}
+	if dataSourceStatus != "fail" {
+		t.Fatalf("preflight checks = %#v, want data_sources failure", result.Preflight.Checks)
+	}
+}
+
 func TestHandleImportSamplePreservedSourceReviewRedactsSecrets(t *testing.T) {
 	const (
 		authValue     = "Basic dXNlcjpodW50ZXIyc2VjcmV0"

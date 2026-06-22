@@ -1016,12 +1016,15 @@ func detectCorrelations(entries []harEntry) []correlate.Correlation {
 			ResponseHeaders: entry.ResponseHeaders,
 		})
 	}
-	correlations := correlate.Detect(observations)
-	seenValues := make(map[string]bool, len(correlations))
-	for _, corr := range correlations {
+	seenValues := make(map[string]bool)
+	correlations := detectNestedJSONCorrelations(observations, seenValues)
+	for _, corr := range correlate.Detect(observations) {
+		if seenValues[corr.Value] {
+			continue
+		}
 		seenValues[corr.Value] = true
+		correlations = append(correlations, corr)
 	}
-	correlations = append(correlations, detectNestedJSONCorrelations(observations, seenValues)...)
 	sort.SliceStable(correlations, func(i, j int) bool {
 		if correlations[i].Confidence != correlations[j].Confidence {
 			return correlations[i].Confidence > correlations[j].Confidence

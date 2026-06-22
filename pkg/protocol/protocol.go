@@ -20,6 +20,7 @@ package protocol
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -65,33 +66,59 @@ type CookieController interface {
 }
 
 // Action represents a single operation (HTTP request, message, etc.) to execute.
+type HeaderEntry struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type HeaderList []HeaderEntry
+
+func (headers HeaderList) ToMap() map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(headers))
+	for _, header := range headers {
+		if strings.TrimSpace(header.Name) == "" {
+			continue
+		}
+		out[header.Name] = header.Value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 type Action struct {
-	Name            string                 `json:"name"`
-	Type            string                 `json:"type"`
-	Method          string                 `json:"method,omitempty"`
-	Target          string                 `json:"target"`
-	RedactedTarget  string                 `json:"-"`
-	Selector        string                 `json:"selector,omitempty"`
-	Value           string                 `json:"value,omitempty"`
-	Headers         map[string]string      `json:"headers,omitempty"`
-	RedactedHeaders map[string]string      `json:"-"`
-	Body            []byte                 `json:"body,omitempty"`
-	BodyEncoding    string                 `json:"body_encoding,omitempty"`
-	RedactedBody    []byte                 `json:"-"`
-	Params          map[string]any         `json:"params,omitempty"`
-	WaitFor         *WaitCondition         `json:"wait_for,omitempty"`
-	Sync            *BrowserSyncPolicy     `json:"sync,omitempty"`
-	Capture         *BrowserCaptureOptions `json:"capture,omitempty"`
-	Metadata        map[string]any         `json:"metadata,omitempty"`
-	Extractors      []Extractor            `json:"extractors,omitempty"`
-	Assertions      []Assertion            `json:"assertions,omitempty"`
-	ThinkTime       ThinkTimeConfig        `json:"think_time,omitempty"`
-	Auth            *AuthConfig            `json:"auth,omitempty"`
-	RedactedAuth    *AuthConfig            `json:"-"`
-	TimeoutMs       int                    `json:"timeout_ms,omitempty"`
-	MaxRedirects    *int                   `json:"max_redirects,omitempty"`
-	SOAP            *SOAPActionConfig      `json:"soap,omitempty"`
-	RedactedSOAP    *SOAPActionConfig      `json:"-"`
+	Name               string                 `json:"name"`
+	Type               string                 `json:"type"`
+	Method             string                 `json:"method,omitempty"`
+	Target             string                 `json:"target"`
+	RedactedTarget     string                 `json:"-"`
+	Selector           string                 `json:"selector,omitempty"`
+	Value              string                 `json:"value,omitempty"`
+	Headers            map[string]string      `json:"headers,omitempty"`
+	HeaderList         HeaderList             `json:"header_list,omitempty"`
+	RedactedHeaders    map[string]string      `json:"-"`
+	RedactedHeaderList HeaderList             `json:"-"`
+	Body               []byte                 `json:"body,omitempty"`
+	BodyEncoding       string                 `json:"body_encoding,omitempty"`
+	RedactedBody       []byte                 `json:"-"`
+	Params             map[string]any         `json:"params,omitempty"`
+	WaitFor            *WaitCondition         `json:"wait_for,omitempty"`
+	Sync               *BrowserSyncPolicy     `json:"sync,omitempty"`
+	Capture            *BrowserCaptureOptions `json:"capture,omitempty"`
+	Metadata           map[string]any         `json:"metadata,omitempty"`
+	Extractors         []Extractor            `json:"extractors,omitempty"`
+	Assertions         []Assertion            `json:"assertions,omitempty"`
+	ThinkTime          ThinkTimeConfig        `json:"think_time,omitempty"`
+	Auth               *AuthConfig            `json:"auth,omitempty"`
+	RedactedAuth       *AuthConfig            `json:"-"`
+	TimeoutMs          int                    `json:"timeout_ms,omitempty"`
+	MaxRedirects       *int                   `json:"max_redirects,omitempty"`
+	SOAP               *SOAPActionConfig      `json:"soap,omitempty"`
+	RedactedSOAP       *SOAPActionConfig      `json:"-"`
 }
 
 type AuthConfig struct {

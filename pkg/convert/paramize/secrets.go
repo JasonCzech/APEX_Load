@@ -11,8 +11,9 @@ import (
 // Secret-bearing body fields, lifted from the sample importer's sanitization
 // pass so all importers share one definition.
 var (
-	jsonSecretPattern = regexp.MustCompile(`(?i)("(password|token|access_token|refresh_token|api_key)"\s*:\s*")([^"]+)(")`)
-	formSecretPattern = regexp.MustCompile(`(?i)((?:^|[&\s])(password|token|access_token|refresh_token|api_key)=)([^&\s]+)`)
+	secretFieldNames  = `password|passcode|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|bearer[_-]?token|api[_-]?token|api[_-]?key|apikey|client[_-]?secret|secret|credential|credentials`
+	jsonSecretPattern = regexp.MustCompile(`(?i)("(` + secretFieldNames + `)"\s*:\s*")([^"]+)(")`)
+	formSecretPattern = regexp.MustCompile(`(?i)((?:^|[&\s])(` + secretFieldNames + `)=)([^&\s]+)`)
 )
 
 // SanitizeBodySecrets redacts known secret fields in JSON or form-encoded
