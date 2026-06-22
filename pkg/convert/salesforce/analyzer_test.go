@@ -492,6 +492,65 @@ func TestAnalyzeNativePreviewHandlesDualRawAndEncodedReuse(t *testing.T) {
 	}
 }
 
+// TestAnalyzeNativePreviewCorrelatesSOQLPagination proves the A5 SOQL-pagination
+// rule flows end-to-end through the native preview: the first query gets a
+// $.nextRecordsUrl extractor and the follow-up query's URL is rewritten to reuse
+// the extracted cursor variable instead of the recorded literal.
+func TestAnalyzeNativePreviewCorrelatesSOQLPagination(t *testing.T) {
+	const nextURL = "/services/data/v59.0/query/01gRT0000004ABC-2000"
+	script := &dsl.Script{
+		Name:     "SF SOQL Pagination",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "Query", Type: "GET", Method: "GET", Target: "https://acme.my.salesforce.com/services/data/v59.0/query?q=SELECT+Id+FROM+Account"},
+			{Name: "Query More", Type: "GET", Method: "GET", Target: "https://acme.my.salesforce.com" + nextURL},
+		},
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {
+	        "request": {"method": "GET", "url": "https://acme.my.salesforce.com/services/data/v59.0/query?q=SELECT+Id+FROM+Account", "headers": []},
+	        "response": {"headers": [], "content": {"text": "{\"totalSize\":4000,\"done\":false,\"nextRecordsUrl\":\"` + nextURL + `\",\"records\":[{\"Id\":\"001RT0000012345AAA\"}]}"}}
+	      },
+	      {
+	        "request": {"method": "GET", "url": "https://acme.my.salesforce.com` + nextURL + `", "headers": []},
+	        "response": {"headers": [], "content": {"text": "{\"totalSize\":4000,\"done\":true,\"records\":[]}"}}
+	      }
+	    ]
+	  }
+	}`)
+
+	review, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if review.NativePreview == nil || review.NativePreview.Script == nil {
+		t.Fatal("NativePreview = nil, want script")
+	}
+	query := review.NativePreview.Script.Actions[0]
+	var cursor *dsl.Extractor
+	for i := range query.Extractors {
+		if query.Extractors[i].Expression == "$.nextRecordsUrl" {
+			cursor = &query.Extractors[i]
+		}
+	}
+	if cursor == nil {
+		t.Fatalf("query extractors = %#v, want a $.nextRecordsUrl extractor", query.Extractors)
+	}
+	if cursor.Type != "jsonpath" || cursor.Convert != "" {
+		t.Fatalf("cursor extractor = %#v, want jsonpath with no convert", cursor)
+	}
+	more := review.NativePreview.Script.Actions[1].Target
+	if strings.Contains(more, "01gRT0000004ABC-2000") {
+		t.Fatalf("query-more target = %q, still carries the recorded cursor literal", more)
+	}
+	if !strings.Contains(more, "{{var."+cursor.Name+"}}") {
+		t.Fatalf("query-more target = %q, want it to reuse {{var.%s}}", more, cursor.Name)
+	}
+}
+
 func TestAnalyzeClassifiesBroadenedSalesforceSurface(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "SF Broad Surface",

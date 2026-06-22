@@ -85,6 +85,11 @@ var (
 	visualforcePattern     = regexp.MustCompile(`(?i)<input[^>]*\bname="((?:com\.salesforce\.visualforce\.)?ViewState(?:MAC|Version|CSRF)?)"[^>]*\bvalue="([^"]{4,})"`)
 	confirmationPattern    = regexp.MustCompile(`(?i)(?:^|[&{,"\s])_CONFIRMATIONTOKEN["']?\s*[:=]\s*["']?([^"&',}\s]{6,})`)
 	frontdoorSIDPattern    = regexp.MustCompile(`(?i)(?:^|[?&{,"\s])sid(?:_Client(?:_id)?)?["']?\s*[:=]\s*["']?([A-Za-z0-9!._-]{8,})`)
+	// salesforceNextRecordsURLPattern matches the SOQL REST Query API pagination
+	// cursor: the response carries {"done":false,"nextRecordsUrl":"/services/data/
+	// vXX/query/01g...-2000",...} and the client must GET that relative URL to page.
+	// It is extracted via JSONPath and reused verbatim as the next request's target.
+	salesforceNextRecordsURLPattern = regexp.MustCompile(`(?i)"nextRecordsUrl"\s*:\s*"([^"]+)"`)
 )
 
 func Detect(observations []Observation) []Correlation {
@@ -332,6 +337,28 @@ func salesforceRegexCandidates(body string) []Candidate {
 	addMatches(visualforcePattern, "salesforce_viewstate", RuleSalesforceViewState, "Salesforce Visualforce ViewState field", 0.94)
 	addMatches(confirmationPattern, "salesforce_confirmation_token", RuleSalesforceConfirmationToken, "Salesforce confirmation token", 0.93)
 	addMatches(frontdoorSIDPattern, "salesforce_frontdoor_sid", RuleSalesforceFrontdoorSID, "Salesforce frontdoor sid/session value", 0.85)
+	// addJSONPath emits a clean JSONPath extractor (not a brittle regex one) for
+	// values that live at a well-known top-level JSON field, so the generated
+	// extractor reads $.<field> at replay rather than re-running the match regex.
+	addJSONPath := func(pattern *regexp.Regexp, name, ruleID, expression, reason string, confidence float64) {
+		for _, match := range pattern.FindAllStringSubmatch(body, -1) {
+			value := lastNonEmptyMatch(match)
+			if value == "" {
+				continue
+			}
+			candidates = append(candidates, Candidate{
+				Name:           "corr_" + Slug(name),
+				Value:          value,
+				Source:         "body",
+				ExtractType:    "jsonpath",
+				Expression:     expression,
+				RuleID:         ruleID,
+				BaseConfidence: confidence,
+				Reason:         reason,
+			})
+		}
+	}
+	addJSONPath(salesforceNextRecordsURLPattern, "salesforce_soql_next_records_url", RuleSalesforceNextRecordsURL, "$.nextRecordsUrl", "Salesforce SOQL pagination nextRecordsUrl cursor", 0.9)
 	return candidates
 }
 

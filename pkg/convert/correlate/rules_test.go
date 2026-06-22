@@ -1,6 +1,9 @@
 package correlate
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestDetectASPNetState(t *testing.T) {
 	observations := []Observation{
@@ -180,6 +183,61 @@ func TestDetectSalesforceAuraAndVisualforceCorrelation(t *testing.T) {
 	for rule, found := range wantRules {
 		if !found {
 			t.Fatalf("missing Salesforce rule %s in correlations: %#v", rule, correlations)
+		}
+	}
+}
+
+func TestDetectSalesforceSOQLPaginationCursor(t *testing.T) {
+	const nextURL = "/services/data/v59.0/query/01gRT0000004ABC-2000"
+	observations := []Observation{
+		{
+			ID:           1,
+			RequestURL:   "https://acme.my.salesforce.com/services/data/v59.0/query?q=SELECT+Id+FROM+Account",
+			ResponseBody: `{"totalSize":4000,"done":false,"nextRecordsUrl":"` + nextURL + `","records":[{"attributes":{"type":"Account"},"Id":"001RT0000012345AAA"}]}`,
+		},
+		{
+			ID:         2,
+			RequestURL: "https://acme.my.salesforce.com" + nextURL,
+		},
+	}
+
+	correlations := Detect(observations)
+	var cursor *Correlation
+	for i := range correlations {
+		if correlations[i].RuleID == RuleSalesforceNextRecordsURL {
+			cursor = &correlations[i]
+		}
+		// The static per-record row Id is not the pagination cursor and is not
+		// reused on the next page, so it must not be correlated.
+		if strings.Contains(correlations[i].Value, "001RT0000012345AAA") {
+			t.Fatalf("row Id was wrongly correlated: %#v", correlations[i])
+		}
+	}
+	if cursor == nil {
+		t.Fatalf("no nextRecordsUrl correlation detected: %#v", correlations)
+	}
+	if cursor.ExtractType != "jsonpath" || cursor.Expression != "$.nextRecordsUrl" {
+		t.Fatalf("cursor extractor = %s %q, want jsonpath $.nextRecordsUrl", cursor.ExtractType, cursor.Expression)
+	}
+	if cursor.Value != nextURL {
+		t.Fatalf("cursor value = %q, want %q", cursor.Value, nextURL)
+	}
+	if len(cursor.UsedInIDs) != 1 || cursor.UsedInIDs[0] != 2 {
+		t.Fatalf("cursor used-in = %v, want [2]", cursor.UsedInIDs)
+	}
+	if cursor.Confidence < 0.9 {
+		t.Fatalf("cursor confidence = %.2f, want >= 0.9 (unambiguous, reused)", cursor.Confidence)
+	}
+}
+
+func TestDetectSalesforceSinglePageQueryEmitsNoCursor(t *testing.T) {
+	observations := []Observation{
+		{ID: 1, ResponseBody: `{"totalSize":1,"done":true,"records":[{"attributes":{"type":"Account"},"Id":"001RT0000012345AAA"}]}`},
+		{ID: 2, RequestURL: "https://acme.my.salesforce.com/services/data/v59.0/sobjects/Account/001RT0000012345AAA"},
+	}
+	for _, c := range Detect(observations) {
+		if c.RuleID == RuleSalesforceNextRecordsURL {
+			t.Fatalf("single-page (done:true) response must not emit a pagination cursor: %#v", c)
 		}
 	}
 }
