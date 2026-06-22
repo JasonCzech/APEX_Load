@@ -25,12 +25,14 @@ type ImportRequest struct {
 }
 
 type ConvertOptions struct {
-	ScriptName         string   `json:"script_name,omitempty"`
-	BaseURL            string   `json:"base_url,omitempty"`
-	IncludeAssertions  *bool    `json:"include_assertions,omitempty"`
-	OperationIDs       []string `json:"operation_ids,omitempty"`
-	Tags               []string `json:"tags,omitempty"`
-	DefaultThinkTimeMs int      `json:"default_think_time_ms,omitempty"`
+	ScriptName                   string   `json:"script_name,omitempty"`
+	BaseURL                      string   `json:"base_url,omitempty"`
+	IncludeAssertions            *bool    `json:"include_assertions,omitempty"`
+	OperationIDs                 []string `json:"operation_ids,omitempty"`
+	Tags                         []string `json:"tags,omitempty"`
+	DefaultThinkTimeMs           int      `json:"default_think_time_ms,omitempty"`
+	SynthesizeOAuthTokenInit     *bool    `json:"synthesize_oauth_token_init,omitempty"`
+	SynthesizeOAuthPasswordGrant *bool    `json:"synthesize_oauth_password_grant,omitempty"`
 }
 
 type ConvertStats struct {
@@ -41,6 +43,8 @@ type ConvertStats struct {
 	ConvertedActions    int      `json:"converted_actions"`
 	RequestBodies       int      `json:"request_bodies"`
 	Assertions          int      `json:"assertions"`
+	Extractors          int      `json:"extractors,omitempty"`
+	Correlations        int      `json:"correlations,omitempty"`
 	ParametersDetected  int      `json:"parameters_detected"`
 	AuthSchemesDetected []string `json:"auth_schemes_detected,omitempty"`
 	SkippedOperations   []string `json:"skipped_operations,omitempty"`
@@ -60,25 +64,37 @@ type ConvertResult struct {
 	Script       *dsl.Script        `json:"script"`
 	Warnings     []string           `json:"warnings,omitempty"`
 	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
+	Correlations []Correlation      `json:"correlations,omitempty"`
 	Stats        ConvertStats       `json:"stats"`
 	Summary      ReviewSummary      `json:"summary"`
 	SourceReview *sourceview.Review `json:"source_review,omitempty"`
 }
 
+type Correlation struct {
+	Name        string `json:"name"`
+	Source      string `json:"source"`
+	Expression  string `json:"expression"`
+	ExtractType string `json:"extract_type"`
+	SampleValue string `json:"sample_value,omitempty"`
+	FoundInStep int    `json:"found_in_step"`
+	UsedInSteps []int  `json:"used_in_steps"`
+}
+
 type document struct {
-	OpenAPI     string                `json:"openapi,omitempty" yaml:"openapi,omitempty"`
-	Swagger     string                `json:"swagger,omitempty" yaml:"swagger,omitempty"`
-	Info        info                  `json:"info,omitempty" yaml:"info,omitempty"`
-	Servers     []server              `json:"servers,omitempty" yaml:"servers,omitempty"`
-	Schemes     []string              `json:"schemes,omitempty" yaml:"schemes,omitempty"`
-	Host        string                `json:"host,omitempty" yaml:"host,omitempty"`
-	BasePath    string                `json:"basePath,omitempty" yaml:"basePath,omitempty"`
-	Consumes    []string              `json:"consumes,omitempty" yaml:"consumes,omitempty"`
-	Paths       map[string]pathItem   `json:"paths,omitempty" yaml:"paths,omitempty"`
-	Components  components            `json:"components,omitempty" yaml:"components,omitempty"`
-	Security    []map[string][]string `json:"security,omitempty" yaml:"security,omitempty"`
-	Definitions map[string]schema     `json:"definitions,omitempty" yaml:"definitions,omitempty"`
-	Parameters  map[string]parameter  `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	OpenAPI             string                    `json:"openapi,omitempty" yaml:"openapi,omitempty"`
+	Swagger             string                    `json:"swagger,omitempty" yaml:"swagger,omitempty"`
+	Info                info                      `json:"info,omitempty" yaml:"info,omitempty"`
+	Servers             []server                  `json:"servers,omitempty" yaml:"servers,omitempty"`
+	Schemes             []string                  `json:"schemes,omitempty" yaml:"schemes,omitempty"`
+	Host                string                    `json:"host,omitempty" yaml:"host,omitempty"`
+	BasePath            string                    `json:"basePath,omitempty" yaml:"basePath,omitempty"`
+	Consumes            []string                  `json:"consumes,omitempty" yaml:"consumes,omitempty"`
+	Paths               map[string]pathItem       `json:"paths,omitempty" yaml:"paths,omitempty"`
+	Components          components                `json:"components,omitempty" yaml:"components,omitempty"`
+	SecurityDefinitions map[string]securityScheme `json:"securityDefinitions,omitempty" yaml:"securityDefinitions,omitempty"`
+	Security            []map[string][]string     `json:"security,omitempty" yaml:"security,omitempty"`
+	Definitions         map[string]schema         `json:"definitions,omitempty" yaml:"definitions,omitempty"`
+	Parameters          map[string]parameter      `json:"parameters,omitempty" yaml:"parameters,omitempty"`
 }
 
 type info struct {
@@ -104,11 +120,28 @@ type components struct {
 }
 
 type securityScheme struct {
-	Type         string `json:"type,omitempty" yaml:"type,omitempty"`
-	Scheme       string `json:"scheme,omitempty" yaml:"scheme,omitempty"`
-	Name         string `json:"name,omitempty" yaml:"name,omitempty"`
-	In           string `json:"in,omitempty" yaml:"in,omitempty"`
-	BearerFormat string `json:"bearerFormat,omitempty" yaml:"bearerFormat,omitempty"`
+	Type             string            `json:"type,omitempty" yaml:"type,omitempty"`
+	Scheme           string            `json:"scheme,omitempty" yaml:"scheme,omitempty"`
+	Name             string            `json:"name,omitempty" yaml:"name,omitempty"`
+	In               string            `json:"in,omitempty" yaml:"in,omitempty"`
+	BearerFormat     string            `json:"bearerFormat,omitempty" yaml:"bearerFormat,omitempty"`
+	OpenIDConnectURL string            `json:"openIdConnectUrl,omitempty" yaml:"openIdConnectUrl,omitempty"`
+	Flow             string            `json:"flow,omitempty" yaml:"flow,omitempty"`
+	TokenURL         string            `json:"tokenUrl,omitempty" yaml:"tokenUrl,omitempty"`
+	Scopes           map[string]string `json:"scopes,omitempty" yaml:"scopes,omitempty"`
+	Flows            oauthFlows        `json:"flows,omitempty" yaml:"flows,omitempty"`
+}
+
+type oauthFlows struct {
+	ClientCredentials oauthFlow `json:"clientCredentials,omitempty" yaml:"clientCredentials,omitempty"`
+	Password          oauthFlow `json:"password,omitempty" yaml:"password,omitempty"`
+	AuthorizationCode oauthFlow `json:"authorizationCode,omitempty" yaml:"authorizationCode,omitempty"`
+	Implicit          oauthFlow `json:"implicit,omitempty" yaml:"implicit,omitempty"`
+}
+
+type oauthFlow struct {
+	TokenURL string            `json:"tokenUrl,omitempty" yaml:"tokenUrl,omitempty"`
+	Scopes   map[string]string `json:"scopes,omitempty" yaml:"scopes,omitempty"`
 }
 
 type pathItem struct {
@@ -160,30 +193,139 @@ type mediaType struct {
 }
 
 type schema struct {
-	Ref           string            `json:"$ref,omitempty" yaml:"$ref,omitempty"`
-	Type          string            `json:"type,omitempty" yaml:"type,omitempty"`
-	Format        string            `json:"format,omitempty" yaml:"format,omitempty"`
-	Properties    map[string]schema `json:"properties,omitempty" yaml:"properties,omitempty"`
-	Required      []string          `json:"required,omitempty" yaml:"required,omitempty"`
-	Items         *schema           `json:"items,omitempty" yaml:"items,omitempty"`
-	Example       any               `json:"example,omitempty" yaml:"example,omitempty"`
-	Enum          []any             `json:"enum,omitempty" yaml:"enum,omitempty"`
-	OneOf         []schema          `json:"oneOf,omitempty" yaml:"oneOf,omitempty"`
-	AnyOf         []schema          `json:"anyOf,omitempty" yaml:"anyOf,omitempty"`
-	AllOf         []schema          `json:"allOf,omitempty" yaml:"allOf,omitempty"`
-	Discriminator map[string]any    `json:"discriminator,omitempty" yaml:"discriminator,omitempty"`
+	Ref                  string            `json:"$ref,omitempty" yaml:"$ref,omitempty"`
+	Type                 string            `json:"type,omitempty" yaml:"type,omitempty"`
+	Format               string            `json:"format,omitempty" yaml:"format,omitempty"`
+	Properties           map[string]schema `json:"properties,omitempty" yaml:"properties,omitempty"`
+	Required             []string          `json:"required,omitempty" yaml:"required,omitempty"`
+	Items                *schema           `json:"items,omitempty" yaml:"items,omitempty"`
+	Example              any               `json:"example,omitempty" yaml:"example,omitempty"`
+	Enum                 []any             `json:"enum,omitempty" yaml:"enum,omitempty"`
+	Nullable             bool              `json:"nullable,omitempty" yaml:"nullable,omitempty"`
+	AdditionalProperties any               `json:"additionalProperties,omitempty" yaml:"additionalProperties,omitempty"`
+	OneOf                []schema          `json:"oneOf,omitempty" yaml:"oneOf,omitempty"`
+	AnyOf                []schema          `json:"anyOf,omitempty" yaml:"anyOf,omitempty"`
+	AllOf                []schema          `json:"allOf,omitempty" yaml:"allOf,omitempty"`
+	Discriminator        map[string]any    `json:"discriminator,omitempty" yaml:"discriminator,omitempty"`
+	XML                  *xmlObject        `json:"xml,omitempty" yaml:"xml,omitempty"`
+}
+
+type xmlObject struct {
+	Name      string `json:"name,omitempty" yaml:"name,omitempty"`
+	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Prefix    string `json:"prefix,omitempty" yaml:"prefix,omitempty"`
+	Attribute bool   `json:"attribute,omitempty" yaml:"attribute,omitempty"`
+	Wrapped   bool   `json:"wrapped,omitempty" yaml:"wrapped,omitempty"`
+}
+
+func (s *schema) UnmarshalJSON(data []byte) error {
+	type alias schema
+	aux := struct {
+		Type any `json:"type,omitempty"`
+		*alias
+	}{alias: (*alias)(s)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	s.Type = normalizeSchemaType(aux.Type, s.Type)
+	return nil
+}
+
+func (s *schema) UnmarshalYAML(value *yaml.Node) error {
+	type alias schema
+	aux := struct {
+		Type any `yaml:"type,omitempty"`
+		*alias
+	}{alias: (*alias)(s)}
+	if err := value.Decode(&aux); err != nil {
+		return err
+	}
+	s.Type = normalizeSchemaType(aux.Type, s.Type)
+	return nil
+}
+
+func normalizeSchemaType(raw any, fallback string) string {
+	switch typed := raw.(type) {
+	case string:
+		if strings.TrimSpace(typed) != "" && !strings.EqualFold(strings.TrimSpace(typed), "null") {
+			return strings.TrimSpace(typed)
+		}
+	case []any:
+		for _, item := range typed {
+			if value, ok := item.(string); ok && strings.TrimSpace(value) != "" && !strings.EqualFold(strings.TrimSpace(value), "null") {
+				return strings.TrimSpace(value)
+			}
+		}
+	case []string:
+		for _, value := range typed {
+			if strings.TrimSpace(value) != "" && !strings.EqualFold(strings.TrimSpace(value), "null") {
+				return strings.TrimSpace(value)
+			}
+		}
+	}
+	return fallback
 }
 
 // responseObject is the subset of an OpenAPI response we inspect when deriving
 // body assertions. Swagger 2 puts the schema at the top level; OpenAPI 3 nests
 // it under content -> media type.
 type responseObject struct {
-	Content map[string]mediaType `json:"content,omitempty" yaml:"content,omitempty"`
-	Schema  *schema              `json:"schema,omitempty" yaml:"schema,omitempty"`
+	Content map[string]mediaType      `json:"content,omitempty" yaml:"content,omitempty"`
+	Schema  *schema                   `json:"schema,omitempty" yaml:"schema,omitempty"`
+	Headers map[string]responseHeader `json:"headers,omitempty" yaml:"headers,omitempty"`
+}
+
+type responseHeader struct {
+	Schema schema `json:"schema,omitempty" yaml:"schema,omitempty"`
 }
 
 var supportedMethods = map[string]bool{
-	"get": true, "post": true, "put": true, "patch": true, "delete": true,
+	"get": true, "post": true, "put": true, "patch": true, "delete": true, "head": true, "options": true,
+}
+
+type builtOperation struct {
+	Index          int
+	Method         string
+	RawPath        string
+	Operation      *operation
+	PathParams     []parameter
+	ActionName     string
+	SuccessStatus  int
+	SuccessSchema  *schema
+	LocationHeader bool
+	Produced       []producedValue
+}
+
+type producedValue struct {
+	VarName     string
+	Resource    string
+	FieldName   string
+	Role        string
+	Source      string
+	Expression  string
+	ExtractType string
+	ActionIndex int
+}
+
+type columnRegistry map[string]string
+
+func (r columnRegistry) add(name string, s schema) {
+	name = sanitizeColumnName(name)
+	if name == "" {
+		return
+	}
+	if _, ok := r[name]; ok {
+		return
+	}
+	r[name] = sampleValueForSchema(s, name)
+}
+
+func (r columnRegistry) sample(name string) string {
+	name = sanitizeColumnName(name)
+	if value := r[name]; value != "" {
+		return value
+	}
+	return sampleColumnValue(name)
 }
 
 func Convert(req ImportRequest) (*ConvertResult, error) {
@@ -242,13 +384,15 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		},
 	}
 
-	authSchemes := sortedAuthSchemeNames(doc.Components.SecuritySchemes)
+	schemes := normalizedSecuritySchemes(doc)
+	authSchemes := sortedAuthSchemeNames(schemes)
 	result.Stats.AuthSchemesDetected = authSchemes
 	result.Summary.AuthSchemes = authSchemes
-	applyAuthDefaults(result.Script, doc.Components.SecuritySchemes, &result.Warnings)
 
-	columns := map[string]struct{}{}
+	columns := columnRegistry{}
 	operationNames := []string{}
+	built := make([]builtOperation, 0)
+	auth := newAuthContext(result.Script, schemes, baseURL, req.Options, &result.Warnings, res)
 	for _, path := range sortedPathKeys(doc.Paths) {
 		item := doc.Paths[path]
 		for _, candidate := range operationsForPath(item) {
@@ -260,9 +404,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				sourceMappings = append(sourceMappings, openAPISourceMapping(sourceFileName, content, path, candidate.method, "", skipped, "operation", "review_only", "OpenAPI operation was filtered or used an unsupported HTTP method."))
 				continue
 			}
-			action, bodyColumns, assertionAdded := buildAction(path, candidate.method, item.Parameters, candidate.op, convertutil.BoolOption(req.Options.IncludeAssertions, true), res)
+			action, bodyColumns, assertionAdded, opInfo := buildAction(path, candidate.method, item.Parameters, candidate.op, convertutil.BoolOption(req.Options.IncludeAssertions, true), res, columns, auth)
 			actionIndex := len(result.Script.Actions)
+			opInfo.Index = actionIndex
+			opInfo.ActionName = action.Name
 			result.Script.Actions = append(result.Script.Actions, action)
+			built = append(built, opInfo)
 			sourceMappings = append(sourceMappings, openAPISourceMapping(sourceFileName, content, path, candidate.method, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "OpenAPI operation was converted into a generated APEX Load action."))
 			result.Stats.ConvertedActions++
 			result.Stats.ParametersDetected += len(item.Parameters) + len(candidate.op.Parameters)
@@ -274,12 +421,14 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			}
 			operationNames = append(operationNames, action.Name)
 			for _, name := range bodyColumns {
-				columns[name] = struct{}{}
+				if _, ok := columns[name]; !ok {
+					columns[name] = sampleColumnValue(name)
+				}
 			}
 			for _, param := range append(item.Parameters, candidate.op.Parameters...) {
 				param = res.resolveParameter(param, strings.ToUpper(candidate.method)+" "+path)
 				if param.Name != "" && !strings.EqualFold(param.In, "body") {
-					columns[sanitizeColumnName(param.Name)] = struct{}{}
+					columns.add(param.Name, parameterSchema(param))
 				}
 			}
 		}
@@ -288,11 +437,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if len(result.Script.Actions) == 0 {
 		return nil, errors.New("no supported OpenAPI operations found")
 	}
+	result.Stats.Extractors += applyResponseExtractors(result.Script, built, res)
+	result.Correlations = applyOperationChaining(result.Script, built, res)
+	result.Stats.Correlations = len(result.Correlations)
 	result.Summary.OperationNames = operationNames
-	dataColumns := sortedMapKeys(columns)
+	dataColumns := openAPIDataColumnsFromScript(result.Script)
 	result.Summary.DataColumns = dataColumns
 	if len(dataColumns) > 0 {
-		result.Script.DataSources = []dsl.DataSource{openAPIDataSource(dataColumns)}
+		result.Script.DataSources = append([]dsl.DataSource{openAPIDataSource(dataColumns, columns)}, openAPIFileDataSources(result.Script)...)
+	} else {
+		result.Script.DataSources = openAPIFileDataSources(result.Script)
 	}
 	if result.Script.Config.BaseURL == "" {
 		result.Warnings = append(result.Warnings, "base URL could not be derived; set options.base_url before saving the script")
@@ -624,24 +778,25 @@ func copySeen(input map[string]bool) map[string]bool {
 	return out
 }
 
-func buildAction(path, method string, pathParams []parameter, op *operation, includeAssertion bool, res resolver) (dsl.Action, []string, bool) {
+func buildAction(path, method string, pathParams []parameter, op *operation, includeAssertion bool, res resolver, columns columnRegistry, auth *authContext) (dsl.Action, []string, bool, builtOperation) {
 	params := append([]parameter{}, pathParams...)
 	params = append(params, op.Parameters...)
 	location := strings.ToUpper(method) + " " + path
 	for i := range params {
 		params[i] = res.resolveParameter(params[i], location)
 	}
-	target, paramColumns := templatePath(path, params, res, location)
+	target, paramColumns := templatePath(path, params, res, location, columns)
 	headers := map[string]string{"Accept": "application/json"}
-	applyHeaderAndCookieParams(headers, params)
+	applyHeaderAndCookieParams(headers, params, columns)
 	bodySource := res.resolveRequestBody(op.RequestBody, location)
 	if bodySource == nil {
 		bodySource = swagger2RequestBody(params, op, res, location)
 	}
-	body, contentType, bodyColumns := requestBodyExample(bodySource, res, location)
+	body, contentType, bodyColumns := requestBodyExample(bodySource, res, location, columns)
 	if contentType != "" {
 		headers["Content-Type"] = contentType
 	}
+	operationKey := strings.ToUpper(method) + " " + path
 	action := dsl.Action{
 		Name:    sanitizeName(convertutil.FirstNonEmpty(op.OperationID, op.Summary, strings.ToUpper(method)+"_"+path)),
 		Type:    "request",
@@ -652,6 +807,12 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 		Metadata: map[string]any{
 			"openapi_operation_id": op.OperationID,
 			"openapi_tags":         op.Tags,
+			"openapi": map[string]any{
+				"operation_id":  op.OperationID,
+				"method":        strings.ToUpper(method),
+				"path":          path,
+				"operation_key": operationKey,
+			},
 		},
 	}
 	securityRequirements := op.Security
@@ -660,48 +821,36 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 		// document-level requirement (OpenAPI semantics).
 		securityRequirements = res.doc.Security
 	}
-	applyOperationSecurity(&action, securityRequirements, res.doc.Components.SecuritySchemes, res, location)
+	applyOperationSecurity(&action, securityRequirements, auth, res, location)
+	status, hasStatus := firstSuccessStatus(op.Responses)
+	successSchema, responseObject := successResponseSchema(op.Responses, status, res, location)
+	opInfo := builtOperation{
+		Method:         method,
+		RawPath:        path,
+		Operation:      op,
+		PathParams:     params,
+		SuccessStatus:  status,
+		SuccessSchema:  successSchema,
+		LocationHeader: responseDeclaresLocation(status, responseObject),
+	}
 	if includeAssertion {
-		if status, ok := firstSuccessStatus(op.Responses); ok {
+		if hasStatus {
 			action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: status}}
-			action.Assertions = append(action.Assertions, responseBodyAssertions(op.Responses, status, res, location)...)
-			return action, uniqueSorted(append(bodyColumns, paramColumns...)), true
+			action.Assertions = append(action.Assertions, responseBodyAssertions(successSchema)...)
+			return action, uniqueSorted(append(bodyColumns, paramColumns...)), true, opInfo
 		}
 	}
-	return action, uniqueSorted(append(bodyColumns, paramColumns...)), false
+	return action, uniqueSorted(append(bodyColumns, paramColumns...)), false, opInfo
 }
 
 // responseBodyAssertions derives body_contains assertions from the declared
 // success-response schema: each required top-level property of a JSON response
 // must appear (as a quoted key) in the body. Capped to keep assertion noise low.
-func responseBodyAssertions(responses map[string]any, status int, res resolver, location string) []dsl.Assertion {
+func responseBodyAssertions(resolved *schema) []dsl.Assertion {
 	const maxBodyAssertions = 3
-	raw, ok := responses[fmt.Sprintf("%d", status)]
-	if !ok {
-		raw, ok = responses["default"]
-	}
-	if !ok || raw == nil {
+	if resolved == nil {
 		return nil
 	}
-	encoded, err := json.Marshal(raw)
-	if err != nil {
-		return nil
-	}
-	var response responseObject
-	if err := json.Unmarshal(encoded, &response); err != nil {
-		return nil
-	}
-	responseSchema := response.Schema
-	if responseSchema == nil {
-		contentTypes := sortedMapKeys(response.Content)
-		preferred := preferredContentType(contentTypes)
-		if !strings.Contains(strings.ToLower(preferred), "json") {
-			return nil
-		}
-		media := response.Content[preferred]
-		responseSchema = &media.Schema
-	}
-	resolved := res.resolveSchema(*responseSchema, location+" response", nil)
 	required := resolved.Required
 	if len(required) == 0 {
 		return nil
@@ -724,7 +873,9 @@ func responseBodyAssertions(responses map[string]any, status int, res resolver, 
 	return assertions
 }
 
-func requestBodyExample(body *requestBody, res resolver, location string) (string, string, []string) {
+type rawJSONTemplate string
+
+func requestBodyExample(body *requestBody, res resolver, location string, columns columnRegistry) (string, string, []string) {
 	if body == nil || len(body.Content) == 0 {
 		return "", "", nil
 	}
@@ -738,50 +889,62 @@ func requestBodyExample(body *requestBody, res resolver, location string) (strin
 		return renderExample(media.Schema.Example, preferred), preferred, nil
 	}
 	if strings.Contains(preferred, "application/x-www-form-urlencoded") {
-		return formURLEncodedExample(media.Schema, res, location), preferred, formColumns(media.Schema, res, location)
+		return formURLEncodedExample(media.Schema, res, location, columns), preferred, formColumns(media.Schema, res, location, columns)
 	}
 	if strings.Contains(preferred, "multipart/form-data") {
-		body, columns := multipartFormExample(media.Schema, res, location)
+		body, cols := multipartFormExample(media.Schema, res, location, columns)
 		contentType := preferred
 		if !strings.Contains(strings.ToLower(contentType), "boundary=") {
 			contentType += "; boundary=----apexload-openapi-boundary"
 		}
-		return body, contentType, columns
+		return body, contentType, cols
 	}
-	payload, columns := sampleForSchema(media.Schema, res, location, map[string]bool{})
+	payload, cols := sampleForSchema(media.Schema, res, location, map[string]bool{}, columns)
 	if payload == nil {
 		return "", preferred, nil
 	}
 	if strings.Contains(preferred, "xml") {
-		return "<request/>", preferred, columns
+		return xmlForSchema(media.Schema, res, location, columns), preferred, cols
 	}
 	encoded, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
-		return "", preferred, columns
+		return "", preferred, cols
 	}
-	return string(encoded), preferred, columns
+	return expandRawJSONTemplates(string(encoded)), preferred, cols
 }
 
-func sampleForSchema(s schema, res resolver, location string, seen map[string]bool) (any, []string) {
+func sampleForSchema(s schema, res resolver, location string, seen map[string]bool, columns columnRegistry) (any, []string) {
 	s = res.resolveSchema(s, location, seen)
 	if len(s.Properties) > 0 || s.Type == "object" {
 		result := map[string]any{}
-		columns := []string{}
+		out := []string{}
 		for _, name := range sortedSchemaPropertyKeys(s.Properties) {
 			prop := res.resolveSchema(s.Properties[name], location+"."+name, copySeen(seen))
-			value, nested := sampleForSchema(prop, res, location+"."+name, copySeen(seen))
+			value, nested := sampleForSchema(prop, res, location+"."+name, copySeen(seen), columns)
 			column := sanitizeColumnName(name)
 			if scalarSchema(prop) {
-				value = "{{data.openapi." + column + "}}"
-				columns = append(columns, column)
+				columns.add(column, prop)
+				placeholder := "{{data.openapi." + column + "}}"
+				if schemaNeedsRawJSONPlaceholder(prop) {
+					value = rawJSONTemplate(rawJSONTemplateMarker(column))
+				} else {
+					value = placeholder
+				}
+				out = append(out, column)
 			}
 			result[name] = value
-			columns = append(columns, nested...)
+			out = append(out, nested...)
 		}
-		return result, uniqueSorted(columns)
+		if s.AdditionalProperties != nil {
+			column := "additional_value"
+			result["additionalProperty"] = "{{data.openapi." + column + "}}"
+			columns.add(column, schema{Type: "string"})
+			out = append(out, column)
+		}
+		return result, uniqueSorted(out)
 	}
 	if s.Items != nil || s.Type == "array" {
-		value, columns := sampleForSchema(valueOrEmptySchema(s.Items), res, location+"[]", copySeen(seen))
+		value, columns := sampleForSchema(valueOrEmptySchema(s.Items), res, location+"[]", copySeen(seen), columns)
 		return []any{value}, columns
 	}
 	switch strings.ToLower(s.Type) {
@@ -825,32 +988,40 @@ func sampleForSchema(s schema, res resolver, location string, seen map[string]bo
 	}
 }
 
-func formURLEncodedExample(s schema, res resolver, location string) string {
-	values := url.Values{}
-	for _, field := range schemaFieldNames(s, res, location) {
-		values.Set(field, "{{data.openapi."+sanitizeColumnName(field)+"}}")
-	}
-	return values.Encode()
-}
-
-func formColumns(s schema, res resolver, location string) []string {
+func formURLEncodedExample(s schema, res resolver, location string, columns columnRegistry) string {
 	fields := schemaFieldNames(s, res, location)
-	columns := make([]string, 0, len(fields))
-	for _, field := range fields {
-		columns = append(columns, sanitizeColumnName(field))
+	parts := make([]string, 0, len(fields))
+	for _, field := range schemaFieldNames(s, res, location) {
+		column := sanitizeColumnName(field)
+		prop := res.resolveSchema(s, location, map[string]bool{}).Properties[field]
+		columns.add(column, prop)
+		parts = append(parts, escapeQueryKey(field)+"={{data.openapi."+column+"}}")
 	}
-	return uniqueSorted(columns)
+	return strings.Join(parts, "&")
 }
 
-func multipartFormExample(s schema, res resolver, location string) (string, []string) {
+func formColumns(s schema, res resolver, location string, columns columnRegistry) []string {
+	fields := schemaFieldNames(s, res, location)
+	out := make([]string, 0, len(fields))
+	resolved := res.resolveSchema(s, location, map[string]bool{})
+	for _, field := range fields {
+		column := sanitizeColumnName(field)
+		columns.add(column, resolved.Properties[field])
+		out = append(out, column)
+	}
+	return uniqueSorted(out)
+}
+
+func multipartFormExample(s schema, res resolver, location string, columns columnRegistry) (string, []string) {
 	const boundary = "----apexload-openapi-boundary"
 	fields := res.resolveSchema(s, location, map[string]bool{})
 	var b strings.Builder
-	columns := []string{}
+	out := []string{}
 	for _, name := range sortedSchemaPropertyKeys(fields.Properties) {
 		prop := res.resolveSchema(fields.Properties[name], location+"."+name, map[string]bool{})
 		column := sanitizeColumnName(name)
-		columns = append(columns, column)
+		columns.add(column, prop)
+		out = append(out, column)
 		b.WriteString("--" + boundary + "\r\n")
 		if strings.EqualFold(prop.Format, "binary") {
 			b.WriteString(`Content-Disposition: form-data; name="` + name + `"; filename="{{data.openapi.` + column + `}}"` + "\r\n")
@@ -862,11 +1033,11 @@ func multipartFormExample(s schema, res resolver, location string) (string, []st
 		b.WriteString(`Content-Disposition: form-data; name="` + name + `"` + "\r\n\r\n")
 		b.WriteString("{{data.openapi." + column + "}}\r\n")
 	}
-	if len(columns) == 0 {
+	if len(out) == 0 {
 		return "", nil
 	}
 	b.WriteString("--" + boundary + "--\r\n")
-	return b.String(), uniqueSorted(columns)
+	return b.String(), uniqueSorted(out)
 }
 
 func schemaFieldNames(s schema, res resolver, location string) []string {
@@ -920,9 +1091,9 @@ func firstSuccessStatus(responses map[string]any) (int, bool) {
 	return 0, false
 }
 
-func templatePath(path string, params []parameter, res resolver, location string) (string, []string) {
+func templatePath(path string, params []parameter, res resolver, location string, columns columnRegistry) (string, []string) {
 	target := path
-	columns := []string{}
+	out := []string{}
 	for _, param := range params {
 		name := strings.TrimSpace(param.Name)
 		if name == "" {
@@ -930,22 +1101,23 @@ func templatePath(path string, params []parameter, res resolver, location string
 		}
 		template := "{{data.openapi." + sanitizeColumnName(name) + "}}"
 		if strings.EqualFold(param.In, "path") {
+			columns.add(name, parameterSchema(param))
 			target = strings.ReplaceAll(target, "{"+name+"}", template)
-			columns = append(columns, sanitizeColumnName(name))
+			out = append(out, sanitizeColumnName(name))
 			continue
 		}
 		if strings.EqualFold(param.In, "query") {
-			for _, pair := range queryParamTemplates(param, res, location) {
+			for _, pair := range queryParamTemplates(param, res, location, columns) {
 				separator := "?"
 				if strings.Contains(target, "?") {
 					separator = "&"
 				}
 				target += separator + escapeQueryKey(pair.key) + "=" + pair.value
-				columns = append(columns, pair.columns...)
+				out = append(out, pair.columns...)
 			}
 		}
 	}
-	return target, uniqueSorted(columns)
+	return target, uniqueSorted(out)
 }
 
 type queryTemplatePair struct {
@@ -954,7 +1126,7 @@ type queryTemplatePair struct {
 	columns []string
 }
 
-func queryParamTemplates(param parameter, res resolver, location string) []queryTemplatePair {
+func queryParamTemplates(param parameter, res resolver, location string, columns columnRegistry) []queryTemplatePair {
 	name := strings.TrimSpace(param.Name)
 	if name == "" {
 		return nil
@@ -967,13 +1139,13 @@ func queryParamTemplates(param parameter, res resolver, location string) []query
 	s := res.resolveSchema(parameterSchema(param), location+" query "+name, nil)
 	if (s.Type == "object" || len(s.Properties) > 0) && len(s.Properties) > 0 {
 		properties := sortedSchemaPropertyKeys(s.Properties)
-		columns := make([]string, 0, len(properties))
+		propertyColumns := make([]string, 0, len(properties))
 		pairs := make([]queryTemplatePair, 0, len(properties))
 		switch style {
 		case "deepObject":
 			for _, propName := range properties {
 				column := sanitizeColumnName(name + "_" + propName)
-				columns = append(columns, column)
+				columns.add(column, s.Properties[propName])
 				pairs = append(pairs, queryTemplatePair{key: name + "[" + propName + "]", value: "{{data.openapi." + column + "}}", columns: []string{column}})
 			}
 			return pairs
@@ -981,7 +1153,7 @@ func queryParamTemplates(param parameter, res resolver, location string) []query
 			if explode {
 				for _, propName := range properties {
 					column := sanitizeColumnName(name + "_" + propName)
-					columns = append(columns, column)
+					columns.add(column, s.Properties[propName])
 					pairs = append(pairs, queryTemplatePair{key: propName, value: "{{data.openapi." + column + "}}", columns: []string{column}})
 				}
 				return pairs
@@ -989,13 +1161,15 @@ func queryParamTemplates(param parameter, res resolver, location string) []query
 			parts := make([]string, 0, len(properties)*2)
 			for _, propName := range properties {
 				column := sanitizeColumnName(name + "_" + propName)
-				columns = append(columns, column)
+				columns.add(column, s.Properties[propName])
+				propertyColumns = append(propertyColumns, column)
 				parts = append(parts, propName, "{{data.openapi."+column+"}}")
 			}
-			return []queryTemplatePair{{key: name, value: strings.Join(parts, ","), columns: columns}}
+			return []queryTemplatePair{{key: name, value: strings.Join(parts, ","), columns: propertyColumns}}
 		}
 	}
 	column := sanitizeColumnName(name)
+	columns.add(column, s)
 	return []queryTemplatePair{{key: name, value: "{{data.openapi." + column + "}}", columns: []string{column}}}
 }
 
@@ -1013,7 +1187,7 @@ func escapeQueryKey(key string) string {
 	return escaped
 }
 
-func applyHeaderAndCookieParams(headers map[string]string, params []parameter) {
+func applyHeaderAndCookieParams(headers map[string]string, params []parameter, columns columnRegistry) {
 	var cookies []string
 	for _, param := range params {
 		name := strings.TrimSpace(param.Name)
@@ -1023,8 +1197,10 @@ func applyHeaderAndCookieParams(headers map[string]string, params []parameter) {
 		template := "{{data.openapi." + sanitizeColumnName(name) + "}}"
 		switch strings.ToLower(strings.TrimSpace(param.In)) {
 		case "header":
+			columns.add(name, parameterSchema(param))
 			headers[name] = template
 		case "cookie":
+			columns.add(name, parameterSchema(param))
 			cookies = append(cookies, name+"="+template)
 		}
 	}
@@ -1108,6 +1284,42 @@ func headerValue(headers map[string]string, key string) string {
 	return ""
 }
 
+type authContext struct {
+	script    *dsl.Script
+	schemes   map[string]securityScheme
+	baseURL   string
+	opts      ConvertOptions
+	warnings  *[]string
+	resolver  resolver
+	tokenVars map[string]string
+}
+
+func newAuthContext(script *dsl.Script, schemes map[string]securityScheme, baseURL string, opts ConvertOptions, warnings *[]string, res resolver) *authContext {
+	return &authContext{
+		script:    script,
+		schemes:   schemes,
+		baseURL:   baseURL,
+		opts:      opts,
+		warnings:  warnings,
+		resolver:  res,
+		tokenVars: map[string]string{},
+	}
+}
+
+func normalizedSecuritySchemes(doc *document) map[string]securityScheme {
+	out := map[string]securityScheme{}
+	if doc == nil {
+		return out
+	}
+	for name, scheme := range doc.Components.SecuritySchemes {
+		out[name] = scheme
+	}
+	for name, scheme := range doc.SecurityDefinitions {
+		out[name] = scheme
+	}
+	return out
+}
+
 func applyAuthDefaults(script *dsl.Script, schemes map[string]securityScheme, warnings *[]string) {
 	if len(schemes) == 0 {
 		return
@@ -1139,8 +1351,8 @@ func applyAuthDefaults(script *dsl.Script, schemes map[string]securityScheme, wa
 	}
 }
 
-func applyOperationSecurity(action *dsl.Action, requirements []map[string][]string, schemes map[string]securityScheme, res resolver, location string) {
-	if action == nil || requirements == nil {
+func applyOperationSecurity(action *dsl.Action, requirements []map[string][]string, auth *authContext, res resolver, location string) {
+	if action == nil || requirements == nil || auth == nil {
 		return
 	}
 	if len(requirements) == 0 {
@@ -1154,8 +1366,8 @@ func applyOperationSecurity(action *dsl.Action, requirements []map[string][]stri
 		return
 	}
 	for _, requirement := range requirements {
-		for name := range requirement {
-			scheme, ok := schemes[name]
+		for name, scopes := range requirement {
+			scheme, ok := auth.schemes[name]
 			if !ok {
 				res.add(diag.Warning, "OpenAPI security", location, "operation security scheme "+name+" could not be resolved")
 				continue
@@ -1164,13 +1376,13 @@ func applyOperationSecurity(action *dsl.Action, requirements []map[string][]stri
 			case "http":
 				switch strings.ToLower(scheme.Scheme) {
 				case "bearer":
-					action.Auth = &dsl.AuthConfig{Type: "bearer", Token: "{{env.API_TOKEN}}"}
+					action.Auth = &dsl.AuthConfig{Type: "bearer", Token: "{{secret." + openAPISecretName(name, "BEARER_TOKEN") + "}}"}
 					return
 				case "basic":
-					action.Auth = &dsl.AuthConfig{Type: "basic", Username: "{{env.API_USERNAME}}", Password: "{{env.API_PASSWORD}}"}
+					action.Auth = &dsl.AuthConfig{Type: "basic", Username: "{{env." + openAPISecretName(name, "USERNAME") + "}}", Password: "{{secret." + openAPISecretName(name, "PASSWORD") + "}}"}
 					return
 				case "digest":
-					action.Auth = &dsl.AuthConfig{Type: "digest", Username: "{{env.API_USERNAME}}", Password: "{{env.API_PASSWORD}}"}
+					action.Auth = &dsl.AuthConfig{Type: "digest", Username: "{{env." + openAPISecretName(name, "USERNAME") + "}}", Password: "{{secret." + openAPISecretName(name, "PASSWORD") + "}}"}
 					return
 				}
 			case "apikey":
@@ -1178,7 +1390,7 @@ func applyOperationSecurity(action *dsl.Action, requirements []map[string][]stri
 					if action.Headers == nil {
 						action.Headers = map[string]string{}
 					}
-					action.Headers[scheme.Name] = "{{env.API_KEY}}"
+					action.Headers[scheme.Name] = "{{secret." + openAPISecretName(name, "API_KEY") + "}}"
 					return
 				}
 				if strings.EqualFold(scheme.In, "query") && scheme.Name != "" {
@@ -1186,19 +1398,23 @@ func applyOperationSecurity(action *dsl.Action, requirements []map[string][]stri
 					if strings.Contains(action.Target, "?") {
 						separator = "&"
 					}
-					action.Target += separator + escapeQueryKey(scheme.Name) + "={{env.API_KEY}}"
+					action.Target += separator + escapeQueryKey(scheme.Name) + "={{secret." + openAPISecretName(name, "API_KEY") + "}}"
 					return
 				}
 				if strings.EqualFold(scheme.In, "cookie") && scheme.Name != "" {
 					if action.Headers == nil {
 						action.Headers = map[string]string{}
 					}
-					action.Headers["Cookie"] = scheme.Name + "={{env.API_KEY}}"
+					action.Headers["Cookie"] = scheme.Name + "={{secret." + openAPISecretName(name, "API_KEY") + "}}"
 					res.add(diag.Info, "OpenAPI security", location, "cookie API key "+scheme.Name+" was represented as a Cookie header placeholder")
 					return
 				}
 			case "oauth2", "openidconnect":
-				action.Auth = &dsl.AuthConfig{Type: "bearer", Token: "{{env.API_TOKEN}}"}
+				if tokenVar := auth.ensureOAuthToken(name, scheme, scopes, location); tokenVar != "" {
+					action.Auth = &dsl.AuthConfig{Type: "bearer", Token: "{{var." + tokenVar + "}}"}
+					return
+				}
+				action.Auth = &dsl.AuthConfig{Type: "bearer", Token: "{{secret." + openAPISecretName(name, "BEARER_TOKEN") + "}}"}
 				res.add(diag.Warning, "OpenAPI security", location, "OAuth/OpenID Connect operation security was represented as a bearer token placeholder")
 				return
 			}
@@ -1206,20 +1422,99 @@ func applyOperationSecurity(action *dsl.Action, requirements []map[string][]stri
 	}
 }
 
-func openAPIDataSource(columns []string) dsl.DataSource {
-	values := make([]string, len(columns))
-	for i, column := range columns {
-		values[i] = sampleColumnValue(column)
+func (a *authContext) ensureOAuthToken(name string, scheme securityScheme, scopes []string, location string) string {
+	if a == nil || a.script == nil {
+		return ""
 	}
-	return dsl.DataSource{
-		Name:           "openapi",
-		Type:           "csv",
-		InlineData:     strings.Join(columns, ",") + "\n" + strings.Join(values, ",") + "\n",
-		Strategy:       "sequential",
-		Delimiter:      ",",
-		FirstRowHeader: true,
-		Columns:        columns,
+	if existing := a.tokenVars[name]; existing != "" {
+		return existing
 	}
+	tokenURL, grantType, flowScopes := oauthTokenFlow(scheme, a.opts)
+	if tokenURL == "" {
+		return ""
+	}
+	if !convertutil.BoolOption(a.opts.SynthesizeOAuthTokenInit, true) && grantType == "client_credentials" {
+		return ""
+	}
+	tokenURL = resolveURLAgainstBase(a.baseURL, tokenURL)
+	saveAs := "access_token"
+	if len(a.tokenVars) > 0 || sanitizeColumnName(name) != "oauth2" {
+		saveAs = sanitizeColumnName("access_token_" + name)
+	}
+	scope := strings.Join(scopes, " ")
+	if scope == "" {
+		scope = strings.Join(sortedMapKeys(flowScopes), " ")
+	}
+	action := dsl.Action{
+		Name:   sanitizeName("OAuth2_Token_" + name),
+		Type:   "http_oauth2_token",
+		Target: tokenURL,
+		Params: map[string]any{
+			"token_url":     tokenURL,
+			"grant_type":    grantType,
+			"client_id":     "{{env." + openAPISecretName(name, "CLIENT_ID") + "}}",
+			"client_secret": "{{secret." + openAPISecretName(name, "CLIENT_SECRET") + "}}",
+			"scope":         scope,
+			"save_as":       saveAs,
+		},
+		Metadata: map[string]any{
+			"openapi": map[string]any{
+				"security_scheme": name,
+				"grant_type":      grantType,
+			},
+		},
+	}
+	if grantType == "password" {
+		action.Params["username"] = "{{env." + openAPISecretName(name, "USERNAME") + "}}"
+		action.Params["password"] = "{{secret." + openAPISecretName(name, "PASSWORD") + "}}"
+	}
+	a.script.Init = append(a.script.Init, action)
+	a.tokenVars[name] = saveAs
+	a.resolver.add(diag.Info, "OpenAPI OAuth2", location, "generated "+grantType+" token init action for scheme "+name)
+	return saveAs
+}
+
+func oauthTokenFlow(scheme securityScheme, opts ConvertOptions) (string, string, map[string]string) {
+	if scheme.Flows.ClientCredentials.TokenURL != "" {
+		return scheme.Flows.ClientCredentials.TokenURL, "client_credentials", scheme.Flows.ClientCredentials.Scopes
+	}
+	if strings.EqualFold(scheme.Flow, "application") && scheme.TokenURL != "" {
+		return scheme.TokenURL, "client_credentials", scheme.Scopes
+	}
+	if convertutil.BoolOption(opts.SynthesizeOAuthPasswordGrant, false) {
+		if scheme.Flows.Password.TokenURL != "" {
+			return scheme.Flows.Password.TokenURL, "password", scheme.Flows.Password.Scopes
+		}
+		if strings.EqualFold(scheme.Flow, "password") && scheme.TokenURL != "" {
+			return scheme.TokenURL, "password", scheme.Scopes
+		}
+	}
+	return "", "", nil
+}
+
+func resolveURLAgainstBase(baseURL string, value string) string {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.IsAbs() || strings.TrimSpace(baseURL) == "" {
+		return strings.TrimSpace(value)
+	}
+	base, err := url.Parse(strings.TrimRight(baseURL, "/") + "/")
+	if err != nil {
+		return strings.TrimSpace(value)
+	}
+	return base.ResolveReference(parsed).String()
+}
+
+func openAPISecretName(schemeName string, suffix string) string {
+	base := strings.ToUpper(sanitizeColumnName(schemeName))
+	if base == "" {
+		base = "AUTH"
+	}
+	base = strings.ReplaceAll(base, "_", "")
+	suffix = strings.ToUpper(strings.TrimSpace(suffix))
+	if suffix == "" {
+		return "OPENAPI_" + base
+	}
+	return "OPENAPI_" + base + "_" + suffix
 }
 
 func sampleColumnValue(column string) string {

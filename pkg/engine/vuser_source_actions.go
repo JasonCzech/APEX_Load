@@ -97,6 +97,8 @@ func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Act
 		Subject:      paramString("subject"),
 		PrivateKey:   paramString("private_key"),
 		RefreshToken: paramString("refresh_token"),
+		Username:     paramString("username"),
+		Password:     paramString("password"),
 	})
 	if err != nil {
 		return fmt.Errorf("http_oauth2_token %q: %w", action.Name, err)

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/jasonczech/apexload/pkg/convert/openapi"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/convert/uniquify"
@@ -72,6 +73,22 @@ func paramizeSummary(suggestions []paramize.Suggestion) paramize.Summary {
 // sampleCorrelationsToPreApplied adapts the sample/HAR converter's
 // already-applied correlations into the shared pre-applied shape.
 func sampleCorrelationsToPreApplied(correlations []sample.Correlation) []paramize.PreAppliedCorrelation {
+	preApplied := make([]paramize.PreAppliedCorrelation, 0, len(correlations))
+	for _, corr := range correlations {
+		preApplied = append(preApplied, paramize.PreAppliedCorrelation{
+			Name:        corr.Name,
+			Source:      corr.Source,
+			Expression:  corr.Expression,
+			ExtractType: corr.ExtractType,
+			SampleValue: corr.SampleValue,
+			FoundInStep: corr.FoundInStep,
+			UsedInSteps: corr.UsedInSteps,
+		})
+	}
+	return preApplied
+}
+
+func openAPICorrelationsToPreApplied(correlations []openapi.Correlation) []paramize.PreAppliedCorrelation {
 	preApplied := make([]paramize.PreAppliedCorrelation, 0, len(correlations))
 	for _, corr := range correlations {
 		preApplied = append(preApplied, paramize.PreAppliedCorrelation{

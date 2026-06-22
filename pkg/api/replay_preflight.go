@@ -34,7 +34,7 @@ type ReplayPreflightCheck struct {
 	Detail string `json:"detail,omitempty"`
 }
 
-var replayTemplateRefPattern = regexp.MustCompile(`\{\{\s*(var|env|data|param)\.([a-zA-Z0-9_.-]+)`)
+var replayTemplateRefPattern = regexp.MustCompile(`\{\{\s*(var|env|data|param|secret)\.([a-zA-Z0-9_.-]+)`)
 
 const replayPreflightMaxControlDepth = 32
 
@@ -297,8 +297,23 @@ func replaySecretRefs(script *dsl.Script) ([]string, []string) {
 				missing[ref] = struct{}{}
 			}
 		}
+		for _, ref := range replayTemplateRefs(action, "secret") {
+			required[ref] = struct{}{}
+			if !replaySecretAvailable(ref) {
+				missing[ref] = struct{}{}
+			}
+		}
 	}
 	return sortedSetKeys(required), sortedSetKeys(missing)
+}
+
+func replaySecretAvailable(name string) bool {
+	if _, ok := os.LookupEnv(name); ok {
+		return true
+	}
+	normalized := strings.NewReplacer(".", "_", "-", "_").Replace(strings.ToUpper(name))
+	_, ok := os.LookupEnv("APEXLOAD_SECRET_" + normalized)
+	return ok
 }
 
 func replayDataSourceWarnings(script *dsl.Script) []string {
@@ -315,6 +330,9 @@ func replayDataSourceWarnings(script *dsl.Script) []string {
 		if strings.EqualFold(strings.TrimSpace(source.Type), "file") {
 			if strings.TrimSpace(source.Path) == "" && strings.TrimSpace(source.InlineData) == "" && strings.TrimSpace(source.StorageRef) == "" {
 				warnings = append(warnings, fmt.Sprintf("file data source %q has no inline_data, path, or storage_ref", nonEmptyLabel(name, "unnamed")))
+			}
+			if strings.Contains(source.InlineData, "APEXLOAD_OPENAPI_FILE_PLACEHOLDER") {
+				warnings = append(warnings, fmt.Sprintf("file data source %q contains a generated OpenAPI placeholder; upload the real file before replay", nonEmptyLabel(name, "unnamed")))
 			}
 			continue
 		}

@@ -2559,11 +2559,15 @@
                     "type": "string"
                   },
                   "grant_type": {
-                    "description": "Grant type: client_credentials, jwt_bearer, or refresh_token.",
+                    "description": "Grant type: client_credentials, jwt_bearer, refresh_token, or password.",
                     "type": "string"
                   },
                   "issuer": {
                     "description": "JWT-bearer issuer; defaults to client_id.",
+                    "type": "string"
+                  },
+                  "password": {
+                    "description": "Resource owner password for password grant; prefer a {{secret.NAME}} template.",
                     "type": "string"
                   },
                   "private_key": {
@@ -2588,6 +2592,10 @@
                   },
                   "token_url": {
                     "description": "OAuth2 token endpoint URL.",
+                    "type": "string"
+                  },
+                  "username": {
+                    "description": "Resource owner username for password grant; prefer an {{env.NAME}} template.",
                     "type": "string"
                   }
                 },

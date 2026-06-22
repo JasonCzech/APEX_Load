@@ -91,7 +91,10 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 	attachSourceReviewToScript(result.Script, "openapi", importReq.Name, result.SourceReview)
-	if issues := validateScript(result.Script); len(issues) > 0 {
+	issues := validateScript(result.Script)
+	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
+	attachImportReplayPreflight(result.Script, "openapi", preflight)
+	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
 	reviewSections := appendImportDiagnosticReviewSections(buildOpenAPIReviewSections(result), result.Unsupported)
@@ -109,10 +112,132 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		Stats:               result.Stats,
 		Summary:             result.Summary,
 		UnsupportedElements: result.Unsupported.Strings(),
+		Correlations:        result.Correlations,
 		ReviewSections:      reviewSections,
 		SourceReview:        result.SourceReview,
-		Parameterization:    buildImportParameterization(result.Script, nil),
+		Parameterization:    buildImportParameterization(result.Script, openAPICorrelationsToPreApplied(result.Correlations)),
+		Preflight:           preflight,
 	}))
+}
+
+func (s *Server) handleOpenAPISupportMatrix(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"support_matrix": openapi.GetSupportMatrix(),
+		"notes":          openapi.GetSupportMatrixNotes(),
+	})
+}
+
+type openAPIImportCommitRequest struct {
+	Script         dsl.Script `json:"script"`
+	Mode           string     `json:"mode,omitempty"`
+	TargetScriptID string     `json:"target_script_id,omitempty"`
+	ReplaceMode    string     `json:"replace_mode,omitempty"`
+	DryRun         bool       `json:"dry_run,omitempty"`
+}
+
+type openAPIImportDiff struct {
+	Mode        string   `json:"mode"`
+	ReplaceMode string   `json:"replace_mode,omitempty"`
+	Added       int      `json:"added"`
+	Updated     int      `json:"updated"`
+	Removed     int      `json:"removed"`
+	Preserved   int      `json:"preserved"`
+	Items       []string `json:"items,omitempty"`
+}
+
+func (s *Server) handleCommitOpenAPIImport(w http.ResponseWriter, r *http.Request) {
+	var req openAPIImportCommitRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	script := &req.Script
+	if issues := validateScript(script); len(issues) > 0 {
+		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
+		return
+	}
+	preflight := buildReplayPreflight(script, nil, nil, validationWarnings(script))
+	attachImportReplayPreflight(script, "openapi", preflight)
+
+	mode := strings.ToLower(strings.TrimSpace(req.Mode))
+	if mode == "" {
+		mode = "create"
+	}
+	replaceMode := strings.ToLower(strings.TrimSpace(req.ReplaceMode))
+	if replaceMode == "" {
+		replaceMode = "full"
+	}
+	if mode != "replace" && strings.TrimSpace(req.TargetScriptID) != "" {
+		mode = "replace"
+	}
+	if mode != "create" && mode != "replace" {
+		writeError(w, http.StatusBadRequest, "mode must be create or replace")
+		return
+	}
+	if replaceMode != "full" && replaceMode != "merge_by_operation_id" {
+		writeError(w, http.StatusBadRequest, "replace_mode must be full or merge_by_operation_id")
+		return
+	}
+
+	if mode == "create" {
+		diff := openAPIImportDiff{Mode: "create", Added: len(script.Actions)}
+		if req.DryRun {
+			writeJSON(w, http.StatusOK, map[string]any{"dry_run": true, "diff": diff, "preflight": preflight})
+			return
+		}
+		stored := s.runner.StoreScript(script)
+		s.recordAuditEvent(r, "script.import.openapi.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name})
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"scripts":       []*StoredScript{stored},
+			"script":        stored.Script,
+			"stored_script": stored,
+			"replaced":      false,
+			"dry_run":       false,
+			"diff":          diff,
+			"preflight":     preflight,
+		})
+		return
+	}
+
+	targetID := strings.TrimSpace(req.TargetScriptID)
+	if targetID == "" {
+		targetID = strings.TrimSpace(script.ID)
+	}
+	if targetID == "" {
+		writeError(w, http.StatusBadRequest, "target_script_id is required when replacing an existing OpenAPI import")
+		return
+	}
+	existing, ok := s.runner.GetScript(targetID)
+	if !ok || existing == nil || existing.Script == nil {
+		writeError(w, http.StatusNotFound, "target script not found")
+		return
+	}
+	next := script
+	diff := diffOpenAPIImport(existing.Script, script, replaceMode)
+	diff.Mode = "replace"
+	diff.ReplaceMode = replaceMode
+	if replaceMode == "merge_by_operation_id" {
+		merged := mergeOpenAPIImportScript(existing.Script, script)
+		next = merged
+	}
+	if req.DryRun {
+		writeJSON(w, http.StatusOK, map[string]any{"dry_run": true, "replaced": true, "diff": diff, "preflight": preflight})
+		return
+	}
+	updated, ok := s.runner.UpdateScript(targetID, next)
+	if !ok {
+		writeError(w, http.StatusNotFound, "target script not found")
+		return
+	}
+	s.recordAuditEvent(r, "script.import.openapi.replace", "success", "script", updated.ID, updated.ProjectID, map[string]any{"name": updated.Name, "replace_mode": replaceMode})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"scripts":       []*StoredScript{updated},
+		"script":        updated.Script,
+		"stored_script": updated,
+		"replaced":      true,
+		"dry_run":       false,
+		"diff":          diff,
+		"preflight":     preflight,
+	})
 }
 
 func (s *Server) handleRAMLSupportMatrix(w http.ResponseWriter, r *http.Request) {

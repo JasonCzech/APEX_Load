@@ -20,6 +20,7 @@ const (
 	OAuthGrantClientCredentials = "client_credentials"
 	OAuthGrantJWTBearer         = "jwt_bearer"
 	OAuthGrantRefreshToken      = "refresh_token"
+	OAuthGrantPassword          = "password"
 
 	jwtBearerGrantURN     = "urn:ietf:params:oauth:grant-type:jwt-bearer"
 	defaultTokenCacheTTL  = 5 * time.Minute
@@ -48,6 +49,8 @@ type OAuthTokenRequest struct {
 	Subject      string
 	PrivateKey   string
 	RefreshToken string
+	Username     string
+	Password     string
 }
 
 type OAuthToken struct {
@@ -102,6 +105,8 @@ func normalizeOAuthGrant(grant string) string {
 		return OAuthGrantJWTBearer
 	case OAuthGrantRefreshToken, "refresh":
 		return OAuthGrantRefreshToken
+	case OAuthGrantPassword:
+		return OAuthGrantPassword
 	default:
 		return strings.ToLower(strings.TrimSpace(grant))
 	}
@@ -131,6 +136,13 @@ func validateOAuthTokenRequest(req OAuthTokenRequest) error {
 		if strings.TrimSpace(req.RefreshToken) == "" {
 			return fmt.Errorf("refresh_token is required for refresh_token grant")
 		}
+	case OAuthGrantPassword:
+		if strings.TrimSpace(req.Username) == "" {
+			return fmt.Errorf("username is required for password grant")
+		}
+		if strings.TrimSpace(req.Password) == "" {
+			return fmt.Errorf("password is required for password grant")
+		}
 	default:
 		return fmt.Errorf("unsupported OAuth2 grant_type %q", req.GrantType)
 	}
@@ -158,6 +170,17 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 		form.Set("grant_type", OAuthGrantRefreshToken)
 		form.Set("client_id", req.ClientID)
 		form.Set("refresh_token", req.RefreshToken)
+		if strings.TrimSpace(req.ClientSecret) != "" {
+			form.Set("client_secret", req.ClientSecret)
+		}
+		if strings.TrimSpace(req.Scope) != "" {
+			form.Set("scope", strings.TrimSpace(req.Scope))
+		}
+	case OAuthGrantPassword:
+		form.Set("grant_type", OAuthGrantPassword)
+		form.Set("client_id", req.ClientID)
+		form.Set("username", req.Username)
+		form.Set("password", req.Password)
 		if strings.TrimSpace(req.ClientSecret) != "" {
 			form.Set("client_secret", req.ClientSecret)
 		}
@@ -224,7 +247,7 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 
 // redactOAuthErrorDescription bounds the length of an OAuth endpoint's
 // error_description and replaces any occurrence of the request's own secrets
-// (client_secret, refresh_token, private_key) with a placeholder so a
+// (client_secret, refresh_token, private_key, password) with a placeholder so a
 // misbehaving or malicious endpoint cannot echo our credentials back into a
 // logged error string.
 func redactOAuthErrorDescription(desc string, req OAuthTokenRequest) string {
@@ -232,7 +255,7 @@ func redactOAuthErrorDescription(desc string, req OAuthTokenRequest) string {
 	if desc == "" {
 		return ""
 	}
-	for _, secret := range []string{req.ClientSecret, req.PrivateKey, req.RefreshToken} {
+	for _, secret := range []string{req.ClientSecret, req.PrivateKey, req.RefreshToken, req.Password} {
 		secret = strings.TrimSpace(secret)
 		if secret != "" {
 			desc = strings.ReplaceAll(desc, secret, "[redacted]")
@@ -279,8 +302,10 @@ func oauthTokenCacheKey(req OAuthTokenRequest) string {
 		strings.TrimSpace(req.Issuer),
 		strings.TrimSpace(req.Subject),
 		strings.TrimSpace(req.RefreshToken),
+		strings.TrimSpace(req.Username),
 		secretFingerprint(req.ClientSecret),
 		secretFingerprint(req.PrivateKey),
+		secretFingerprint(req.Password),
 	}
 	return strings.Join(parts, "\x00")
 }

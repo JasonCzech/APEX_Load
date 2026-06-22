@@ -557,9 +557,21 @@ export interface OpenAPIImportStats {
   converted_actions: number
   request_bodies: number
   assertions: number
+  extractors?: number
+  correlations?: number
   parameters_detected: number
   auth_schemes_detected?: string[]
   skipped_operations?: string[]
+}
+
+export interface OpenAPICorrelation {
+  name: string
+  source: string
+  expression: string
+  extract_type: string
+  sample_value?: string
+  found_in_step: number
+  used_in_steps: number[]
 }
 
 export interface PostmanImportStats {
@@ -630,7 +642,7 @@ export type SampleImportResult = ScriptImportResult<SampleImportStats, SampleCor
 export type DevWebImportResult = ScriptImportResult<DevWebImportStats, unknown>
 export type HARImportResult = ScriptImportResult<HARImportStats, SampleCorrelation, ScriptDefinition, unknown, HARImportSummary>
 export type SalesforceImportResult = ScriptImportResult<HARImportStats, SalesforceCorrelationCandidate, ScriptDefinition, unknown, HARImportSummary & { salesforce_review?: SalesforceReview }>
-export type OpenAPIImportResult = ScriptImportResult<OpenAPIImportStats, unknown>
+export type OpenAPIImportResult = ScriptImportResult<OpenAPIImportStats, OpenAPICorrelation>
 export type PostmanImportResult = ScriptImportResult<PostmanImportStats, unknown>
 export type WSDLImportResult = ScriptImportResult<WSDLImportStats, unknown>
 export type AsyncAPIImportResult = ScriptImportResult<AsyncAPIImportStats, unknown>
@@ -672,6 +684,13 @@ export interface RAMLSupportMatrixEntry {
 
 export interface RAMLSupportMatrixResponse {
   support_matrix?: RAMLSupportMatrixEntry[]
+  notes?: string[]
+}
+
+export type OpenAPISupportMatrixEntry = RAMLSupportMatrixEntry
+
+export interface OpenAPISupportMatrixResponse {
+  support_matrix?: OpenAPISupportMatrixEntry[]
   notes?: string[]
 }
 
@@ -732,5 +751,33 @@ export interface SavePostmanImportResponse {
   script?: ScriptDefinition
   stored_script?: StoredScript
   replaced?: boolean
+  preflight?: ReplayPreflight
+}
+
+export interface OpenAPIImportDiff {
+  mode: 'create' | 'replace' | string
+  replace_mode?: 'full' | 'merge_by_operation_id' | string
+  added: number
+  updated: number
+  removed: number
+  preserved: number
+  items?: string[]
+}
+
+export interface CommitOpenAPIImportRequest {
+  script: ScriptDefinition
+  mode?: 'create' | 'replace'
+  target_script_id?: string
+  replace_mode?: 'full' | 'merge_by_operation_id'
+  dry_run?: boolean
+}
+
+export interface CommitOpenAPIImportResponse {
+  scripts?: StoredScript[]
+  script?: ScriptDefinition
+  stored_script?: StoredScript
+  replaced?: boolean
+  dry_run?: boolean
+  diff?: OpenAPIImportDiff
   preflight?: ReplayPreflight
 }

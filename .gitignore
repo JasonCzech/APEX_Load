@@ -27,6 +27,7 @@ dist/
 pkg/api/static/index.html
 pkg/api/static/assets/
 .playwright-cli/
+.vite/
 
 # OS specific
 .DS_Store
@@ -58,6 +59,8 @@ apexctl ([0-9])
 *.swo
 *~
 .history/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Node.js
 node_modules/
@@ -75,6 +78,10 @@ dashboard/vite.log
 # Go
 coverage.out
 coverage.html
+coverage/
+*.coverprofile
+*.pprof
+*.lcov
 vendor/
 .env
 *.pem
@@ -82,6 +89,25 @@ vendor/
 # Python
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
 
 # Data and Logs
 *.db
@@ -101,7 +127,9 @@ examples/sample-import-*.json
 examples/loadrunner/
 
 # Playwright screenshot output
-output/playwright/
+output/
+playwright-report/
+test-results/
 
 # Generated deck output (source is deck_build/gen.js)
 deck_build/*.pptx

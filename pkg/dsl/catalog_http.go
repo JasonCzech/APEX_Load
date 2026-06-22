@@ -43,7 +43,7 @@ func httpActionSpecs() []ActionSpec {
 		Summary:   "Fetch and cache an OAuth2 access token for later HTTP requests.",
 		Fields: []FieldSpec{
 			{Name: "params.token_url", Required: true, Kind: FieldKindString, Doc: "OAuth2 token endpoint URL."},
-			{Name: "params.grant_type", Required: true, Kind: FieldKindString, Doc: "Grant type: client_credentials, jwt_bearer, or refresh_token."},
+			{Name: "params.grant_type", Required: true, Kind: FieldKindString, Doc: "Grant type: client_credentials, jwt_bearer, refresh_token, or password."},
 			{Name: "params.client_id", Required: true, Kind: FieldKindString, Doc: "OAuth2 client ID or Salesforce connected-app consumer key."},
 			{Name: "params.client_secret", Kind: FieldKindString, Doc: "OAuth2 client secret when required by the grant; prefer a {{secret.NAME}} template."},
 			{Name: "params.scope", Kind: FieldKindString, Doc: "Space-delimited OAuth2 scopes."},
@@ -52,6 +52,8 @@ func httpActionSpecs() []ActionSpec {
 			{Name: "params.subject", Kind: FieldKindString, Doc: "JWT-bearer subject, usually the Salesforce integration username."},
 			{Name: "params.private_key", Kind: FieldKindString, Doc: "PEM-encoded RSA private key for JWT-bearer assertions; prefer a {{secret.NAME}} template."},
 			{Name: "params.refresh_token", Kind: FieldKindString, Doc: "Refresh token for refresh_token grant; prefer a {{secret.NAME}} template."},
+			{Name: "params.username", Kind: FieldKindString, Doc: "Resource owner username for password grant; prefer an {{env.NAME}} template."},
+			{Name: "params.password", Kind: FieldKindString, Doc: "Resource owner password for password grant; prefer a {{secret.NAME}} template."},
 			{Name: "params.save_as", Kind: FieldKindString, Doc: "VUser variable name for the access token; defaults to access_token."},
 		},
 	})

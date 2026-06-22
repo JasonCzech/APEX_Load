@@ -3,11 +3,12 @@ import { useEffect, useState } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type StoredScript } from '../types'
-import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type HARImportSummary, type MulesoftReview, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
+import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type HARImportSummary, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
 import ImportRuntimeOptions from './ImportRuntimeOptions'
+import ReplayPreflightCard from './ReplayPreflightCard'
 import ScriptImportReview from './ScriptImportReview'
 import SelectorCandidatesReview from './SelectorCandidatesReview'
 import SourceMappingReview from './SourceMappingReview'
@@ -198,6 +199,11 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [messageError, setMessageError] = useState('')
   const [reviewMode, setReviewMode] = useState<'conversion' | 'validation'>('conversion')
   const [ramlSupport, setRamlSupport] = useState<{ entries: RAMLSupportMatrixEntry[]; notes: string[] } | null>(null)
+  const [openAPISupport, setOpenAPISupport] = useState<{ entries: OpenAPISupportMatrixEntry[]; notes: string[] } | null>(null)
+  const [openAPISaveMode, setOpenAPISaveMode] = useState<'create' | 'replace'>('create')
+  const [openAPIReplaceScriptId, setOpenAPIReplaceScriptId] = useState('')
+  const [openAPIReplaceMode, setOpenAPIReplaceMode] = useState<'full' | 'merge_by_operation_id'>('full')
+  const [openAPIScripts, setOpenAPIScripts] = useState<StoredScript[]>([])
   const [postmanSaveMode, setPostmanSaveMode] = useState<'create' | 'replace'>('create')
   const [postmanReplaceScriptId, setPostmanReplaceScriptId] = useState('')
   const [postmanScripts, setPostmanScripts] = useState<StoredScript[]>([])
@@ -212,6 +218,28 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
       .catch(() => { if (!cancelled) setRamlSupport(null) })
     return () => { cancelled = true }
   }, [api, kind])
+
+  useEffect(() => {
+    if (kind !== 'openapi') return
+    let cancelled = false
+    api.getOpenAPISupportMatrix()
+      .then(response => { if (!cancelled) setOpenAPISupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
+      .catch(() => { if (!cancelled) setOpenAPISupport(null) })
+    return () => { cancelled = true }
+  }, [api, kind])
+
+  useEffect(() => {
+    if (kind !== 'openapi') return
+    let cancelled = false
+    api.listScripts(projectId)
+      .then(response => {
+        if (!cancelled) setOpenAPIScripts(response.scripts || [])
+      })
+      .catch(() => {
+        if (!cancelled) setOpenAPIScripts([])
+      })
+    return () => { cancelled = true }
+  }, [api, kind, projectId])
 
   useEffect(() => {
     if (kind !== 'postman') return
@@ -276,11 +304,32 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const agentforceTransformChanges = (reviewedScript?.metadata?.import?.preserved?.agentforce_transform as AgentforceTransformChange[] | undefined) ?? []
   const ramlSummary = kind === 'raml' ? (result as RAMLImportResult | null | undefined)?.summary : undefined
   const harDiff = harSummary?.har_diff
+  const replayPreflight = result?.preflight || (reviewedScript?.metadata?.import?.preserved?.replay_preflight as OpenAPIImportResult['preflight'] | undefined) || null
+  const openAPICorrelations: OpenAPICorrelation[] = kind === 'openapi' ? ((result as OpenAPIImportResult | null | undefined)?.correlations || []) : []
 
   const handleSave = async () => {
     if (!reviewedScript) return
     setMessageError('')
     try {
+      if (kind === 'openapi') {
+        if (openAPISaveMode === 'replace' && !openAPIReplaceScriptId) {
+          setMessageError('Select a script to replace.')
+          return
+        }
+        const savedScript = await saveTask.run(async () => {
+          const response = await api.commitOpenAPIImport({
+            script: reviewedScript,
+            mode: openAPISaveMode,
+            target_script_id: openAPISaveMode === 'replace' ? openAPIReplaceScriptId : undefined,
+            replace_mode: openAPISaveMode === 'replace' ? openAPIReplaceMode : undefined,
+          })
+          const storedScript = response.stored_script || response.scripts?.[0]
+          if (!storedScript) throw new Error('OpenAPI import commit did not return a stored script')
+          return storedScript
+        })
+        onImported?.({ scripts: [withFallbackPersistedScript(savedScript, reviewedScript)] })
+        return
+      }
       if (kind === 'postman') {
         if (postmanSaveMode === 'replace' && !postmanReplaceScriptId) {
           setMessageError('Select a script to replace.')
@@ -422,6 +471,24 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
         </details>
       )}
 
+      {kind === 'openapi' && openAPISupport && openAPISupport.entries.length > 0 && (
+        <details className="sample-import-support-matrix">
+          <summary>OpenAPI import coverage ({openAPISupport.entries.length} constructs)</summary>
+          <ul className="sample-import-findings">
+            {openAPISupport.entries.map(entry => (
+              <li key={entry.id}>
+                <strong>{entry.construct}</strong> — {entry.status}{entry.review_required ? ' (review)' : ''}{entry.notes ? `: ${entry.notes}` : ''}
+              </li>
+            ))}
+          </ul>
+          {openAPISupport.notes.length > 0 && (
+            <ul className="sample-import-findings">
+              {openAPISupport.notes.map((note, index) => <li key={`openapi-note-${index}`}>{note}</li>)}
+            </ul>
+          )}
+        </details>
+      )}
+
       {(messageError || convertTask.error) && <div className="sample-import-error">{messageError || convertTask.error}</div>}
 
       {result && reviewedScript && (
@@ -429,7 +496,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
           <ScriptImportReview
             title={reviewMode === 'validation' ? 'Validation Review' : 'Review Generated Script'}
             subtitle={`${actionCount} action(s) generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
-            saveLabel={kind === 'postman' && postmanSaveMode === 'replace' ? 'Replace Script' : reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save To Script Library'}
+            saveLabel={(kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace Script' : reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save To Script Library'}
             script={reviewedScript}
             warnings={result.warnings}
             unsupportedElements={result.unsupported_elements}
@@ -437,7 +504,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
             parameterization={result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}
             saving={saveTask.pending}
-            saveDisabled={kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceScriptId}
+            saveDisabled={(kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceScriptId) || (kind === 'openapi' && openAPISaveMode === 'replace' && !openAPIReplaceScriptId)}
             onSave={handleSave}
             onEdit={onEdit ? () => onEdit(reviewedScript) : undefined}
             previewAside={kind === 'recorder-export'
@@ -452,6 +519,57 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
                 </div>
               ))}
             </div>
+            {kind === 'openapi' && replayPreflight && (
+              <div className="sample-import-preflight">
+                <ReplayPreflightCard preflight={replayPreflight} />
+              </div>
+            )}
+            {kind === 'openapi' && openAPICorrelations.length > 0 && (
+              <div className="sample-import-review-block">
+                <h4>Correlation Review</h4>
+                <ul className="sample-import-findings">
+                  {openAPICorrelations.slice(0, 8).map(correlation => (
+                    <li key={`${correlation.name}-${correlation.found_in_step}`}>
+                      <strong>{correlation.name}</strong> step {correlation.found_in_step} → {correlation.used_in_steps.join(', ')} <code>{correlation.expression}</code>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {kind === 'openapi' && (
+              <div className="sample-import-review-block">
+                <h4>Save Target</h4>
+                <div className="sample-import-grid">
+                  <label className="sample-import-field">
+                    <span>Mode</span>
+                    <select value={openAPISaveMode} onChange={event => setOpenAPISaveMode(event.target.value as 'create' | 'replace')}>
+                      <option value="create">Create new script</option>
+                      <option value="replace">Replace existing script</option>
+                    </select>
+                  </label>
+                  {openAPISaveMode === 'replace' && (
+                    <>
+                      <label className="sample-import-field">
+                        <span>Script</span>
+                        <select value={openAPIReplaceScriptId} onChange={event => setOpenAPIReplaceScriptId(event.target.value)}>
+                          <option value="">Select script</option>
+                          {openAPIScripts.map(script => (
+                            <option key={script.id} value={script.id}>{script.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="sample-import-field">
+                        <span>Replace Mode</span>
+                        <select value={openAPIReplaceMode} onChange={event => setOpenAPIReplaceMode(event.target.value as 'full' | 'merge_by_operation_id')}>
+                          <option value="full">Full replacement</option>
+                          <option value="merge_by_operation_id">Merge by operation id</option>
+                        </select>
+                      </label>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
             {kind === 'postman' && (
               <div className="sample-import-review-block">
                 <h4>Save Target</h4>

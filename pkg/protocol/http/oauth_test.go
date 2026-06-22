@@ -85,6 +85,52 @@ func TestFetchOAuth2TokenClientCredentials(t *testing.T) {
 	}
 }
 
+func TestFetchOAuth2TokenPasswordGrant(t *testing.T) {
+	resetOAuthTokenCacheForTest()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		form := mustParseForm(t, r)
+		if got := form.Get("grant_type"); got != OAuthGrantPassword {
+			t.Fatalf("grant_type = %q", got)
+		}
+		if got := form.Get("client_id"); got != "client-1" {
+			t.Fatalf("client_id = %q", got)
+		}
+		if got := form.Get("username"); got != "operator@example.test" {
+			t.Fatalf("username = %q", got)
+		}
+		if got := form.Get("password"); got != "secret-password" {
+			t.Fatalf("password = %q", got)
+		}
+		if got := form.Get("client_secret"); got != "client-secret" {
+			t.Fatalf("client_secret = %q", got)
+		}
+		if got := form.Get("scope"); got != "orders:read" {
+			t.Fatalf("scope = %q", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "password-token",
+			"expires_in":   300,
+		})
+	}))
+	defer server.Close()
+
+	token, err := FetchOAuth2Token(context.Background(), OAuthTokenRequest{
+		TokenURL:     server.URL,
+		GrantType:    OAuthGrantPassword,
+		ClientID:     "client-1",
+		ClientSecret: "client-secret",
+		Username:     "operator@example.test",
+		Password:     "secret-password",
+		Scope:        "orders:read",
+	})
+	if err != nil {
+		t.Fatalf("FetchOAuth2Token returned error: %v", err)
+	}
+	if token.AccessToken != "password-token" {
+		t.Fatalf("access token = %q", token.AccessToken)
+	}
+}
+
 func TestFetchOAuth2TokenSharesConcurrentRefresh(t *testing.T) {
 	resetOAuthTokenCacheForTest()
 	var calls int32

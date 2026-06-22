@@ -15,9 +15,11 @@ const apiMock = {
   importBrowserRecording: vi.fn(),
   importOpenAPI: vi.fn(),
   importRAML: vi.fn(),
+  getOpenAPISupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   getRAMLSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   importPostman: vi.fn(),
   validatePostmanImport: vi.fn(),
+  commitOpenAPIImport: vi.fn(),
   savePostmanImport: vi.fn(),
   importWSDL: vi.fn(),
   importAsyncAPI: vi.fn(),
@@ -50,6 +52,7 @@ describe('ProtocolAssetImport', () => {
       })
     }
     apiMock.listScripts.mockResolvedValue({ scripts: [], count: 0 })
+    apiMock.getOpenAPISupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     const postmanResult = {
       scripts: [],
       script: {
@@ -130,6 +133,19 @@ describe('ProtocolAssetImport', () => {
       ],
       repair_suggestions: [],
       correlations: [],
+      preflight: {
+        valid: false,
+        action_count: 1,
+        expected_action_count: 1,
+        data_source_count: 1,
+        parameter_count: 0,
+        browser_required: false,
+        warnings: ['file data source "file" is a generated OpenAPI placeholder and needs uploaded bytes before replay'],
+        checks: [
+          { id: 'validation', label: 'Script validation', status: 'pass' },
+          { id: 'data_sources', label: 'Data source readiness', status: 'fail', detail: 'missing file bytes' },
+        ],
+      },
       stats: {
         format: 'openapi',
         total_paths: 1,
@@ -137,6 +153,8 @@ describe('ProtocolAssetImport', () => {
         converted_actions: 1,
         request_bodies: 1,
         assertions: 1,
+        extractors: 1,
+        correlations: 0,
         parameters_detected: 0,
       },
       summary: {
@@ -147,6 +165,25 @@ describe('ProtocolAssetImport', () => {
         source_files: [{ path: 'openapi.json', language: 'json', content: '{"paths":{"/orders":{"post":{}}}}' }],
         mappings: [{ id: 'openapi-post', source_file: 'openapi.json', start_line: 1, function: 'POST /orders', target_path: 'actions[0]', target_name: 'Create Order', target_kind: 'action', status: 'converted' }],
       },
+    })
+    apiMock.commitOpenAPIImport.mockResolvedValue({
+      stored_script: {
+        id: 'script-openapi',
+        name: 'Imported Orders API',
+        protocol: 'http',
+        version: '1.0.0',
+        project_id: 'project-1',
+        created_at: '2026-01-01T00:00:00Z',
+        script: {
+          name: 'Imported Orders API',
+          version: '1.0.0',
+          protocol: 'http',
+          config: { base_url: 'https://api.example.test' },
+          actions: [{ name: 'Create Order', type: 'request', method: 'POST', target: '/orders' }],
+        },
+      },
+      replaced: false,
+      dry_run: false,
     })
     apiMock.importHAR.mockResolvedValue({
       scripts: [],
@@ -464,9 +501,155 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('schema reference external.yaml')
     expect(container.textContent).toContain('Import Review (1)')
     expect(container.textContent).toContain('file bytes must be supplied before replay')
+    expect(container.textContent).toContain('Needs attention')
+    expect(container.textContent).toContain('Data source readiness')
+    expect(container.textContent).toContain('missing file bytes')
     expect(container.textContent).toContain('Source Comparison')
     expect(container.textContent).toContain('POST /orders')
     expect(container.textContent).toContain('actions[0]')
+  })
+
+  it('reviews OpenAPI correlations and replaces by operation id', async () => {
+    const onImported = vi.fn()
+    apiMock.getOpenAPISupportMatrix.mockResolvedValueOnce({
+      support_matrix: [{ id: 'openapi-chaining', area: 'Replay', construct: 'cross-operation chaining', status: 'supported' }],
+      notes: ['Correlation is spec-inferred.'],
+    })
+    apiMock.listScripts.mockResolvedValueOnce({
+      scripts: [{
+        id: 'script-openapi-existing',
+        name: 'Existing Orders API',
+        protocol: 'http',
+        version: '1.0.0',
+        project_id: 'project-1',
+        created_at: '2026-01-01T00:00:00Z',
+        script: {
+          name: 'Existing Orders API',
+          version: '1.0.0',
+          protocol: 'http',
+          config: { base_url: 'https://api.example.test' },
+          actions: [],
+        },
+      }],
+      count: 1,
+    })
+    apiMock.importOpenAPI.mockResolvedValueOnce({
+      scripts: [],
+      script: {
+        name: 'Imported Orders API',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://api.example.test' },
+        actions: [
+          { name: 'Create Order', type: 'request', method: 'POST', target: '/orders', extractors: [{ name: 'order_id', source: 'body', type: 'jsonpath', expression: '$.id' }] },
+          { name: 'Get Order', type: 'request', method: 'GET', target: '/orders/{{var.order_id}}' },
+        ],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [{ name: 'order_id', source: 'body', expression: '$.id', extract_type: 'jsonpath', found_in_step: 1, used_in_steps: [2] }],
+      preflight: {
+        valid: true,
+        action_count: 2,
+        expected_action_count: 2,
+        data_source_count: 0,
+        parameter_count: 0,
+        browser_required: false,
+        checks: [{ id: 'variables', label: 'Variable readiness', status: 'pass', detail: 'All replay variables are seeded or extracted before use.' }],
+      },
+      stats: { format: 'openapi', converted_actions: 2, extractors: 1, correlations: 1 },
+      summary: { title: 'Orders API' },
+    })
+    apiMock.commitOpenAPIImport.mockResolvedValueOnce({
+      stored_script: {
+        id: 'script-openapi-existing',
+        name: 'Imported Orders API',
+        protocol: 'http',
+        version: '1.0.0',
+        project_id: 'project-1',
+        created_at: '2026-01-01T00:00:00Z',
+        script: {
+          name: 'Imported Orders API',
+          version: '1.0.0',
+          protocol: 'http',
+          config: { base_url: 'https://api.example.test' },
+          actions: [{ name: 'Get Order', type: 'request', method: 'GET', target: '/orders/{{var.order_id}}' }],
+        },
+      },
+      replaced: true,
+    })
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="openapi" projectId="project-1" onImported={onImported} />)
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('OpenAPI import coverage')
+    expect(container.textContent).toContain('cross-operation chaining')
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+
+    const file = new File(['{"openapi":"3.0.3"}'], 'orders.yaml', { type: 'application/yaml' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert OpenAPI'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Ready')
+    expect(container.textContent).toContain('Correlation Review')
+    expect(container.textContent).toContain('order_id')
+    expect(container.textContent).toContain('$.id')
+
+    const modeSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Mode')) as HTMLSelectElement | undefined
+    expect(modeSelect).toBeDefined()
+    if (!modeSelect) return
+    await act(async () => {
+      modeSelect.value = 'replace'
+      modeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const scriptSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Script')) as HTMLSelectElement | undefined
+    const replaceModeSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Replace Mode')) as HTMLSelectElement | undefined
+    expect(scriptSelect).toBeDefined()
+    expect(replaceModeSelect).toBeDefined()
+    if (!scriptSelect || !replaceModeSelect) return
+    await act(async () => {
+      scriptSelect.value = 'script-openapi-existing'
+      scriptSelect.dispatchEvent(new Event('change', { bubbles: true }))
+      replaceModeSelect.value = 'merge_by_operation_id'
+      replaceModeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Replace Script'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.commitOpenAPIImport).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'replace',
+      target_script_id: 'script-openapi-existing',
+      replace_mode: 'merge_by_operation_id',
+      script: expect.objectContaining({ name: 'Imported Orders API' }),
+    }))
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ id: 'script-openapi-existing', name: 'Imported Orders API' })],
+    }))
   })
 
   it('passes the HAR include static assets toggle to the API', async () => {

@@ -95,6 +95,36 @@ func TestHandleDevWebSupportMatrix(t *testing.T) {
 	}
 }
 
+func TestHandleOpenAPISupportMatrix(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/openapi/support-matrix", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		SupportMatrix []struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		} `json:"support_matrix"`
+		Notes []string `json:"notes"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	for _, id := range []string{"openapi-chaining", "openapi-extractors", "openapi-security", "openapi-replay-readiness"} {
+		if !openAPIMatrixContains(result.SupportMatrix, id) {
+			t.Fatalf("support matrix missing %s: %#v", id, result.SupportMatrix)
+		}
+	}
+	if len(result.Notes) == 0 {
+		t.Fatal("expected support matrix notes")
+	}
+}
+
 func TestHandleImportOpenAPI(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	payload := map[string]any{
@@ -146,7 +176,8 @@ func TestHandleImportOpenAPI(t *testing.T) {
 			Severity string   `json:"severity"`
 			Items    []string `json:"items"`
 		} `json:"review_sections"`
-		SourceReview map[string]any `json:"source_review"`
+		SourceReview map[string]any   `json:"source_review"`
+		Preflight    *ReplayPreflight `json:"preflight"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -163,7 +194,279 @@ func TestHandleImportOpenAPI(t *testing.T) {
 	if result.Script.Metadata.Import.Preserved["source_review"] == nil {
 		t.Fatalf("script metadata missing preserved source_review: %#v", result.Script.Metadata.Import.Preserved)
 	}
+	if result.Preflight == nil || !result.Preflight.Valid || result.Preflight.ActionCount != 1 {
+		t.Fatalf("preflight = %+v, want valid one-action replay preflight", result.Preflight)
+	}
+	if result.Script.Metadata.Import.Preserved["replay_preflight"] == nil {
+		t.Fatalf("script metadata missing preserved replay_preflight: %#v", result.Script.Metadata.Import.Preserved)
+	}
 	assertReviewSection(t, result.ReviewSections, "openapi_operations", "info", "getOrder")
+}
+
+func TestHandleImportOpenAPIReturnsPreflightAndCorrelations(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name":       "Orders CRUD",
+		"project_id": "proj-api",
+		"content": `{
+  "openapi": "3.0.3",
+  "info": {"title": "Orders", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "paths": {
+    "/orders": {
+      "post": {
+        "operationId": "createOrder",
+        "responses": {"201": {
+          "description": "created",
+          "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"id": {"type": "string"}}
+          }}}
+        }}
+      }
+    },
+    "/orders/{orderId}": {
+      "get": {
+        "operationId": "getOrder",
+        "parameters": [{"name": "orderId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "ok"}}
+      }
+    }
+  }
+}`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			Actions []struct {
+				Name       string `json:"name"`
+				Target     string `json:"target"`
+				Extractors []struct {
+					Name       string `json:"name"`
+					Expression string `json:"expression"`
+				} `json:"extractors"`
+			} `json:"actions"`
+		} `json:"script"`
+		Correlations []struct {
+			Name        string `json:"name"`
+			FoundInStep int    `json:"found_in_step"`
+			UsedInSteps []int  `json:"used_in_steps"`
+		} `json:"correlations"`
+		Parameterization struct {
+			Suggestions []struct {
+				Status string `json:"status"`
+			} `json:"suggestions"`
+		} `json:"parameterization"`
+		Preflight *ReplayPreflight `json:"preflight"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %+v, want create and get", result.Script.Actions)
+	}
+	if !openAPIImportExtractorContains(result.Script.Actions[0].Extractors, "order_id", "$.id") {
+		t.Fatalf("create extractors = %+v, want order_id", result.Script.Actions[0].Extractors)
+	}
+	if !strings.Contains(result.Script.Actions[1].Target, "{{var.order_id}}") {
+		t.Fatalf("get target = %q, want chained var", result.Script.Actions[1].Target)
+	}
+	if len(result.Correlations) != 1 || result.Correlations[0].Name != "order_id" || result.Correlations[0].FoundInStep != 1 || len(result.Correlations[0].UsedInSteps) != 1 || result.Correlations[0].UsedInSteps[0] != 2 {
+		t.Fatalf("correlations = %+v, want order_id found in step 1 and used by step 2", result.Correlations)
+	}
+	if result.Preflight == nil || !result.Preflight.Valid || result.Preflight.ActionCount != 2 {
+		t.Fatalf("preflight = %+v, want valid two-action preflight", result.Preflight)
+	}
+}
+
+func TestHandleCommitOpenAPIImportCreateReplaceAndDryRun(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	createPayload := map[string]any{
+		"script": openAPICommitTestScript("Created OpenAPI", "proj-api", []dsl.Action{
+			openAPICommitTestAction("ListOrders", "GET", "/orders", "GET /orders"),
+		}),
+	}
+	createBody, err := json.Marshal(createPayload)
+	if err != nil {
+		t.Fatalf("json.Marshal create returned error: %v", err)
+	}
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi/commit", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createResp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(createResp, createReq)
+
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created struct {
+		StoredScript StoredScript      `json:"stored_script"`
+		Replaced     bool              `json:"replaced"`
+		DryRun       bool              `json:"dry_run"`
+		Diff         openAPIImportDiff `json:"diff"`
+		Preflight    *ReplayPreflight  `json:"preflight"`
+	}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal create returned error: %v", err)
+	}
+	if created.StoredScript.ID == "" || created.Replaced || created.DryRun || created.Diff.Added != 1 || created.Preflight == nil || !created.Preflight.Valid {
+		t.Fatalf("created response = %+v", created)
+	}
+
+	dryRunPayload := map[string]any{
+		"mode":             "replace",
+		"target_script_id": created.StoredScript.ID,
+		"replace_mode":     "full",
+		"dry_run":          true,
+		"script": openAPICommitTestScript("Dry Run OpenAPI", "proj-api", []dsl.Action{
+			openAPICommitTestAction("ListOrders", "GET", "/orders?dry=1", "GET /orders"),
+		}),
+	}
+	dryRunBody, err := json.Marshal(dryRunPayload)
+	if err != nil {
+		t.Fatalf("json.Marshal dry-run returned error: %v", err)
+	}
+	dryRunReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi/commit", bytes.NewReader(dryRunBody))
+	dryRunReq.Header.Set("Content-Type", "application/json")
+	dryRunResp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(dryRunResp, dryRunReq)
+
+	if dryRunResp.Code != http.StatusOK {
+		t.Fatalf("dry-run status = %d, want %d body=%s", dryRunResp.Code, http.StatusOK, dryRunResp.Body.String())
+	}
+	var dryRun struct {
+		DryRun bool              `json:"dry_run"`
+		Diff   openAPIImportDiff `json:"diff"`
+	}
+	if err := json.Unmarshal(dryRunResp.Body.Bytes(), &dryRun); err != nil {
+		t.Fatalf("json.Unmarshal dry-run returned error: %v", err)
+	}
+	if !dryRun.DryRun || dryRun.Diff.ReplaceMode != "full" || dryRun.Diff.Added != 1 || dryRun.Diff.Removed != 1 {
+		t.Fatalf("dry-run response = %+v", dryRun)
+	}
+	stillCreated, ok := server.runner.GetScript(created.StoredScript.ID)
+	if !ok || stillCreated.Name != "Created OpenAPI" {
+		t.Fatalf("dry-run mutated stored script: %+v ok=%v", stillCreated, ok)
+	}
+
+	fullReplacePayload := map[string]any{
+		"mode":             "replace",
+		"target_script_id": created.StoredScript.ID,
+		"replace_mode":     "full",
+		"script": openAPICommitTestScript("Full Replace OpenAPI", "proj-api", []dsl.Action{
+			openAPICommitTestAction("CreateOrder", "POST", "/orders", "POST /orders"),
+		}),
+	}
+	fullReplaceBody, err := json.Marshal(fullReplacePayload)
+	if err != nil {
+		t.Fatalf("json.Marshal full replace returned error: %v", err)
+	}
+	fullReplaceReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi/commit", bytes.NewReader(fullReplaceBody))
+	fullReplaceReq.Header.Set("Content-Type", "application/json")
+	fullReplaceResp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(fullReplaceResp, fullReplaceReq)
+
+	if fullReplaceResp.Code != http.StatusOK {
+		t.Fatalf("full replace status = %d, want %d body=%s", fullReplaceResp.Code, http.StatusOK, fullReplaceResp.Body.String())
+	}
+	var fullReplaced struct {
+		StoredScript StoredScript      `json:"stored_script"`
+		Replaced     bool              `json:"replaced"`
+		Diff         openAPIImportDiff `json:"diff"`
+	}
+	if err := json.Unmarshal(fullReplaceResp.Body.Bytes(), &fullReplaced); err != nil {
+		t.Fatalf("json.Unmarshal full replace returned error: %v", err)
+	}
+	if !fullReplaced.Replaced || fullReplaced.StoredScript.ID != created.StoredScript.ID || fullReplaced.StoredScript.Name != "Full Replace OpenAPI" || fullReplaced.Diff.ReplaceMode != "full" {
+		t.Fatalf("full replace response = %+v", fullReplaced)
+	}
+
+	existing := openAPICommitTestScript("Merge Target", "proj-api", []dsl.Action{
+		openAPICommitTestAction("GetOrder", "GET", "/orders/{{data.openapi.orderid}}", "GET /orders/{orderId}"),
+		{Name: "CustomAudit", Type: "request", Method: "GET", Target: "/custom-audit"},
+	})
+	storedExisting := server.runner.StoreScript(&existing)
+	mergePayload := map[string]any{
+		"mode":             "replace",
+		"target_script_id": storedExisting.ID,
+		"replace_mode":     "merge_by_operation_id",
+		"script": openAPICommitTestScript("Merged OpenAPI", "proj-api", []dsl.Action{
+			openAPICommitTestAction("GetOrderUpdated", "GET", "/orders/{{var.order_id}}", "GET /orders/{orderId}"),
+			openAPICommitTestAction("CreateOrder", "POST", "/orders", "POST /orders"),
+		}),
+	}
+	mergeBody, err := json.Marshal(mergePayload)
+	if err != nil {
+		t.Fatalf("json.Marshal merge returned error: %v", err)
+	}
+	mergeReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi/commit", bytes.NewReader(mergeBody))
+	mergeReq.Header.Set("Content-Type", "application/json")
+	mergeResp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(mergeResp, mergeReq)
+
+	if mergeResp.Code != http.StatusOK {
+		t.Fatalf("merge status = %d, want %d body=%s", mergeResp.Code, http.StatusOK, mergeResp.Body.String())
+	}
+	var merged struct {
+		StoredScript StoredScript      `json:"stored_script"`
+		Diff         openAPIImportDiff `json:"diff"`
+	}
+	if err := json.Unmarshal(mergeResp.Body.Bytes(), &merged); err != nil {
+		t.Fatalf("json.Unmarshal merge returned error: %v", err)
+	}
+	if merged.Diff.Updated != 1 || merged.Diff.Added != 1 || merged.Diff.Preserved != 1 {
+		t.Fatalf("merge diff = %+v, want updated/added/preserved", merged.Diff)
+	}
+	if len(merged.StoredScript.Script.Actions) != 3 || merged.StoredScript.Script.Actions[2].Name != "CustomAudit" {
+		t.Fatalf("merged actions = %+v, want custom action preserved after imported operations", merged.StoredScript.Script.Actions)
+	}
+
+	notFoundPayload := map[string]any{
+		"mode":             "replace",
+		"target_script_id": "does-not-exist",
+		"script":           openAPICommitTestScript("Missing Target", "proj-api", []dsl.Action{openAPICommitTestAction("ListOrders", "GET", "/orders", "GET /orders")}),
+	}
+	notFoundBody, err := json.Marshal(notFoundPayload)
+	if err != nil {
+		t.Fatalf("json.Marshal not-found returned error: %v", err)
+	}
+	notFoundReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi/commit", bytes.NewReader(notFoundBody))
+	notFoundReq.Header.Set("Content-Type", "application/json")
+	notFoundResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(notFoundResp, notFoundReq)
+	if notFoundResp.Code != http.StatusNotFound {
+		t.Fatalf("not-found status = %d, want %d body=%s", notFoundResp.Code, http.StatusNotFound, notFoundResp.Body.String())
+	}
+
+	invalidPayload := map[string]any{
+		"script": dsl.Script{Name: "Invalid OpenAPI", Protocol: "http", Actions: []dsl.Action{{Name: "Broken", Type: "request", Method: "GET"}}},
+	}
+	invalidBody, err := json.Marshal(invalidPayload)
+	if err != nil {
+		t.Fatalf("json.Marshal invalid returned error: %v", err)
+	}
+	invalidReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi/commit", bytes.NewReader(invalidBody))
+	invalidReq.Header.Set("Content-Type", "application/json")
+	invalidResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(invalidResp, invalidReq)
+	if invalidResp.Code != http.StatusBadRequest {
+		t.Fatalf("invalid status = %d, want %d body=%s", invalidResp.Code, http.StatusBadRequest, invalidResp.Body.String())
+	}
 }
 
 func TestHandleImportOpenAPIRawJSONDocument(t *testing.T) {
@@ -637,6 +940,63 @@ func stringSliceContains(values []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func openAPIMatrixContains(entries []struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}, id string) bool {
+	for _, entry := range entries {
+		if entry.ID == id && entry.Status != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func openAPIImportExtractorContains(entries []struct {
+	Name       string `json:"name"`
+	Expression string `json:"expression"`
+}, name string, expression string) bool {
+	for _, entry := range entries {
+		if entry.Name == name && entry.Expression == expression {
+			return true
+		}
+	}
+	return false
+}
+
+func openAPICommitTestScript(name string, projectID string, actions []dsl.Action) dsl.Script {
+	return dsl.Script{
+		Name:      name,
+		Version:   "1.0.0",
+		Protocol:  "http",
+		ProjectID: projectID,
+		Config:    dsl.ScriptConfig{BaseURL: "https://api.example.test"},
+		Actions:   actions,
+	}
+}
+
+func openAPICommitTestAction(name string, method string, target string, operationKey string) dsl.Action {
+	parts := strings.SplitN(operationKey, " ", 2)
+	path := target
+	if len(parts) == 2 {
+		path = parts[1]
+	}
+	return dsl.Action{
+		Name:   name,
+		Type:   "request",
+		Method: method,
+		Target: target,
+		Metadata: map[string]any{
+			"openapi": map[string]any{
+				"operation_id":  name,
+				"method":        method,
+				"path":          path,
+				"operation_key": operationKey,
+			},
+		},
+	}
 }
 
 func webAPIMatrixContains(entries []struct {

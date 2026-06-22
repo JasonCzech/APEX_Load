@@ -36,7 +36,7 @@ export interface ScriptRecordingStatus {
   sensitivity?: string
   captured_at?: string
 }
-import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type Parameterization, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type ImportAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type Parameterization, type AsyncAPIImportResult, type BrowserRecordingImportResult, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type HARImportResult, type ImportAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -577,6 +577,11 @@ export function useScriptApi() {
     [],
   )
 
+  const getOpenAPISupportMatrix = useCallback(
+    () => request<OpenAPISupportMatrixResponse>('/scripts/import/openapi/support-matrix'),
+    [],
+  )
+
   const saveJMeterImport = useCallback(
     (payload: SaveJMeterImportRequest) =>
       request<SaveJMeterImportResponse>('/scripts/import/jmeter/save', { method: 'POST', body: JSON.stringify(payload) }),
@@ -586,6 +591,12 @@ export function useScriptApi() {
   const savePostmanImport = useCallback(
     (payload: SavePostmanImportRequest) =>
       request<SavePostmanImportResponse>('/scripts/import/postman/save', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
+  const commitOpenAPIImport = useCallback(
+    (payload: CommitOpenAPIImportRequest) =>
+      request<CommitOpenAPIImportResponse>('/scripts/import/openapi/commit', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
 
@@ -942,8 +953,10 @@ export function useScriptApi() {
       validateJMeterImport,
       getJMeterSupportMatrix,
       getRAMLSupportMatrix,
+      getOpenAPISupportMatrix,
       saveJMeterImport,
       savePostmanImport,
+      commitOpenAPIImport,
       importSample,
       uploadImportAsset,
       importDevWeb,
@@ -1023,8 +1036,10 @@ export function useScriptApi() {
       validateJMeterImport,
       getJMeterSupportMatrix,
       getRAMLSupportMatrix,
+      getOpenAPISupportMatrix,
       saveJMeterImport,
       savePostmanImport,
+      commitOpenAPIImport,
       importSample,
       uploadImportAsset,
       importDevWeb,

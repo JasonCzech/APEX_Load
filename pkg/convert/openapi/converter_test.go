@@ -61,8 +61,8 @@ func TestConvertOpenAPIJSONBuildsExecutableHTTPScript(t *testing.T) {
 	if result.Script.Config.BaseURL != "https://api.example.test" {
 		t.Fatalf("BaseURL = %q", result.Script.Config.BaseURL)
 	}
-	if result.Script.Config.HTTP.Auth.Type != "bearer" {
-		t.Fatalf("Auth.Type = %q, want bearer", result.Script.Config.HTTP.Auth.Type)
+	if result.Script.Config.HTTP.Auth.Type != "" {
+		t.Fatalf("Auth.Type = %q, want no auth when scheme is defined but unused", result.Script.Config.HTTP.Auth.Type)
 	}
 	if len(result.Script.Actions) != 2 {
 		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
@@ -161,12 +161,125 @@ func TestConvertOpenAPIServerVariablesStyleExplodeAndOperationSecurity(t *testin
 	}
 }
 
-// TestConvertOpenAPIAnonymousSecurityOverrideSuppressesGlobalAuth guards the A1
-// fix: when a document-level security scheme sets a global Authorization header,
-// an operation that opts out via "security": [] must emit an explicit anonymous
-// auth override (type "none") so the runtime suppresses the global header for
-// that operation rather than leaking it. Operations that inherit keep the auth.
-func TestConvertOpenAPIAnonymousSecurityOverrideSuppressesGlobalAuth(t *testing.T) {
+func TestConvertOpenAPICRUDChainExtractsAndPrunesDataSeeds(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "openapi": "3.0.3",
+  "info": {"title": "Orders", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "paths": {
+    "/orders": {
+      "post": {
+        "operationId": "createOrder",
+        "requestBody": {
+          "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {
+              "customerId": {"type": "string"},
+              "quantity": {"type": "integer"}
+            }
+          }}}
+        },
+        "responses": {"201": {
+          "description": "created",
+          "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {
+              "id": {"type": "string"},
+              "href": {"type": "string", "format": "uri"},
+              "status": {"type": "string"}
+            }
+          }}}
+        }}
+      }
+    },
+    "/orders/{orderId}": {
+      "get": {
+        "operationId": "getOrder",
+        "parameters": [{"name": "orderId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "ok"}}
+      },
+      "put": {
+        "operationId": "updateOrder",
+        "parameters": [{"name": "orderId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "requestBody": {"content": {"application/json": {"schema": {
+          "type": "object",
+          "properties": {"status": {"type": "string"}}
+        }}}},
+        "responses": {"200": {"description": "ok"}}
+      },
+      "delete": {
+        "operationId": "deleteOrder",
+        "parameters": [{"name": "orderId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"204": {"description": "deleted"}}
+      }
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	create := openAPIActionFull(result, "createOrder")
+	if !strings.Contains(create.Body, `"quantity": {{data.openapi.quantity}}`) {
+		t.Fatalf("create body = %s, want unquoted numeric placeholder", create.Body)
+	}
+	orderIDExtractor := openAPIExtractorByName(create.Extractors, "order_id")
+	if orderIDExtractor == nil || orderIDExtractor.Source != "body" || orderIDExtractor.Type != "jsonpath" || orderIDExtractor.Expression != "$.id" || orderIDExtractor.OnMiss != "empty" {
+		t.Fatalf("create extractors = %#v, want order_id jsonpath extractor", create.Extractors)
+	}
+	for _, name := range []string{"getOrder", "updateOrder", "deleteOrder"} {
+		action := openAPIActionFull(result, name)
+		if !strings.Contains(action.Target, "{{var.order_id}}") {
+			t.Fatalf("%s target = %q, want chained order_id var", name, action.Target)
+		}
+		if strings.Contains(action.Target, "{{data.openapi.orderid}}") {
+			t.Fatalf("%s target retained data seed after chaining: %q", name, action.Target)
+		}
+	}
+	if len(result.Correlations) != 1 || result.Correlations[0].Name != "order_id" || len(result.Correlations[0].UsedInSteps) != 3 {
+		t.Fatalf("correlations = %#v, want one order_id correlation used by three consumers", result.Correlations)
+	}
+	if result.Stats.Extractors < 2 || result.Stats.Correlations != 1 {
+		t.Fatalf("stats = %+v, want generated extractors and one correlation", result.Stats)
+	}
+	if len(result.Script.DataSources) != 1 || strings.Contains(result.Script.DataSources[0].InlineData, "orderid") {
+		t.Fatalf("data source = %#v, want dead orderId CSV seed pruned", result.Script.DataSources)
+	}
+	if !strings.Contains(result.Script.DataSources[0].InlineData, "quantity") || !strings.Contains(result.Script.DataSources[0].InlineData, "42") {
+		t.Fatalf("data source = %q, want schema-aware numeric sample", result.Script.DataSources[0].InlineData)
+	}
+}
+
+func TestConvertOpenAPILocationHeaderExtractor(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "openapi": "3.0.3",
+  "info": {"title": "Orders", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "paths": {
+    "/orders": {
+      "post": {
+        "operationId": "createOrder",
+        "responses": {"201": {"description": "created"}}
+      }
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "createOrder")
+	if len(action.Extractors) != 1 || action.Extractors[0].Source != "header" || action.Extractors[0].Type != "header" || action.Extractors[0].Expression != "Location" || action.Extractors[0].Name != "order_location" {
+		t.Fatalf("extractors = %#v, want Location header extractor", action.Extractors)
+	}
+}
+
+// TestConvertOpenAPIAnonymousSecurityOverrideSuppressesInheritedAuth guards
+// operation-level OpenAPI security semantics: document-level security is applied
+// to inherited operations only, while security: [] remains explicitly anonymous.
+func TestConvertOpenAPIAnonymousSecurityOverrideSuppressesInheritedAuth(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Content: `{
   "openapi": "3.0.3",
@@ -183,12 +296,11 @@ func TestConvertOpenAPIAnonymousSecurityOverrideSuppressesGlobalAuth(t *testing.
 	if err != nil {
 		t.Fatalf("Convert error: %v", err)
 	}
-	// A global Authorization header is in effect (the credential that would leak).
-	if result.Script.Config.HTTP.Auth.Type != "bearer" {
-		t.Fatalf("global auth = %#v, want bearer document-level default", result.Script.Config.HTTP.Auth)
+	if result.Script.Config.HTTP.Auth.Type != "" {
+		t.Fatalf("global auth = %#v, want imported auth to remain per-action", result.Script.Config.HTTP.Auth)
 	}
 	secured := openAPIActionFull(result, "securedPing")
-	if secured.Auth == nil || secured.Auth.Type != "bearer" {
+	if secured.Auth == nil || secured.Auth.Type != "bearer" || secured.Auth.Token != "{{secret.OPENAPI_BEARERAUTH_BEARER_TOKEN}}" {
 		t.Fatalf("securedPing auth = %#v, want inherited bearer", secured.Auth)
 	}
 	public := openAPIActionFull(result, "publicPing")
@@ -328,6 +440,9 @@ func TestConvertOpenAPIResolvesRefsAndReportsUnsupportedConstructs(t *testing.T)
 	upload := openAPIAction(result, "uploadDocument")
 	if !strings.Contains(upload.Body, "{{file.file}}") || !strings.Contains(upload.Headers["Content-Type"], "boundary=----apexload-openapi-boundary") {
 		t.Fatalf("multipart upload action = %#v", upload)
+	}
+	if !openAPIHasFileDataSource(result, "file") {
+		t.Fatalf("data sources = %#v, want generated file asset placeholder", result.Script.DataSources)
 	}
 	composed := openAPIAction(result, "createComposed")
 	if !strings.Contains(composed.Body, "{{data.openapi.baseid}}") || !strings.Contains(composed.Body, "{{data.openapi.linecount}}") {
@@ -530,9 +645,9 @@ func TestConvertOpenAPIFormURLEncodedAndVariantSchemas(t *testing.T) {
 	if session.Headers["Content-Type"] != "application/x-www-form-urlencoded" {
 		t.Fatalf("form content type = %q", session.Headers["Content-Type"])
 	}
-	if !strings.Contains(session.Body, "password=%7B%7Bdata.openapi.password%7D%7D") ||
-		!strings.Contains(session.Body, "username=%7B%7Bdata.openapi.username%7D%7D") {
-		t.Fatalf("form body = %q, want encoded data placeholders", session.Body)
+	if !strings.Contains(session.Body, "password={{data.openapi.password}}") ||
+		!strings.Contains(session.Body, "username={{data.openapi.username}}") {
+		t.Fatalf("form body = %q, want raw data placeholders", session.Body)
 	}
 
 	variant := openAPIAction(result, "createVariant")
@@ -572,6 +687,24 @@ type dslActionForTest struct {
 	Body    string
 	Headers map[string]string
 	Target  string
+}
+
+func openAPIHasFileDataSource(result *ConvertResult, name string) bool {
+	for _, source := range result.Script.DataSources {
+		if source.Name == name && source.Type == "file" && strings.Contains(source.InlineData, "APEXLOAD_OPENAPI_FILE_PLACEHOLDER") {
+			return true
+		}
+	}
+	return false
+}
+
+func openAPIExtractorByName(extractors []dsl.Extractor, name string) *dsl.Extractor {
+	for i := range extractors {
+		if extractors[i].Name == name {
+			return &extractors[i]
+		}
+	}
+	return nil
 }
 
 func containsOpenAPIDiagnostic(result *ConvertResult, element string) bool {
@@ -696,7 +829,180 @@ func TestConvertOpenAPIQueryAndDocLevelSecurity(t *testing.T) {
 		t.Fatalf("actions = %d, want 1", len(result.Script.Actions))
 	}
 	target := result.Script.Actions[0].Target
-	if !strings.Contains(target, "api_key={{env.API_KEY}}") {
+	if !strings.Contains(target, "api_key={{secret.OPENAPI_QUERYKEY_API_KEY}}") {
 		t.Fatalf("target = %q, want doc-level query api key appended", target)
 	}
+}
+
+func TestConvertOpenAPIOAuthClientCredentialsGeneratesTokenInit(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "openapi": "3.0.3",
+  "info": {"title": "OAuth API", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "security": [{"oauth2": ["orders:read"]}],
+  "components": {
+    "securitySchemes": {
+      "oauth2": {
+        "type": "oauth2",
+        "flows": {
+          "clientCredentials": {
+            "tokenUrl": "/oauth/token",
+            "scopes": {"orders:read": "Read orders", "orders:write": "Write orders"}
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/orders": {
+      "get": {
+        "operationId": "listOrders",
+        "responses": {"200": {"description": "ok"}}
+      }
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Init) != 1 {
+		t.Fatalf("init actions = %#v, want OAuth token init", result.Script.Init)
+	}
+	init := result.Script.Init[0]
+	if init.Type != "http_oauth2_token" || init.Target != "https://api.example.test/oauth/token" || init.Params["grant_type"] != "client_credentials" || init.Params["save_as"] != "access_token" {
+		t.Fatalf("init action = %#v, want client-credentials token init", init)
+	}
+	action := openAPIActionFull(result, "listOrders")
+	if action.Auth == nil || action.Auth.Type != "bearer" || action.Auth.Token != "{{var.access_token}}" {
+		t.Fatalf("listOrders auth = %#v, want token init variable", action.Auth)
+	}
+}
+
+func TestConvertOpenAPIOAuthPasswordGrantIsOptIn(t *testing.T) {
+	content := `{
+  "openapi": "3.0.3",
+  "info": {"title": "OAuth API", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "security": [{"oauth2": ["orders:read"]}],
+  "components": {
+    "securitySchemes": {
+      "oauth2": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "tokenUrl": "/oauth/token",
+            "scopes": {"orders:read": "Read orders"}
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/orders": {
+      "get": {
+        "operationId": "listOrders",
+        "responses": {"200": {"description": "ok"}}
+      }
+    }
+  }
+}`
+	defaultResult, err := Convert(ImportRequest{Content: content})
+	if err != nil {
+		t.Fatalf("Convert default returned error: %v", err)
+	}
+	if len(defaultResult.Script.Init) != 0 {
+		t.Fatalf("default init actions = %#v, want password grant disabled by default", defaultResult.Script.Init)
+	}
+	defaultAction := openAPIActionFull(defaultResult, "listOrders")
+	if defaultAction.Auth == nil || defaultAction.Auth.Token != "{{secret.OPENAPI_OAUTH2_BEARER_TOKEN}}" {
+		t.Fatalf("default action auth = %#v, want bearer token placeholder", defaultAction.Auth)
+	}
+
+	enabledResult, err := Convert(ImportRequest{
+		Content: content,
+		Options: ConvertOptions{
+			SynthesizeOAuthPasswordGrant: boolPtr(true),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Convert enabled returned error: %v", err)
+	}
+	if len(enabledResult.Script.Init) != 1 {
+		t.Fatalf("enabled init actions = %#v, want password token init", enabledResult.Script.Init)
+	}
+	init := enabledResult.Script.Init[0]
+	if init.Type != "http_oauth2_token" || init.Params["grant_type"] != "password" || init.Params["username"] != "{{env.OPENAPI_OAUTH2_USERNAME}}" || init.Params["password"] != "{{secret.OPENAPI_OAUTH2_PASSWORD}}" {
+		t.Fatalf("password init action = %#v", init)
+	}
+	action := openAPIActionFull(enabledResult, "listOrders")
+	if action.Auth == nil || action.Auth.Token != "{{var.access_token}}" {
+		t.Fatalf("enabled action auth = %#v, want token init variable", action.Auth)
+	}
+}
+
+func TestConvertOpenAPIHeadAndOptions(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "openapi": "3.0.3",
+  "info": {"title": "HTTP Methods", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "paths": {
+    "/orders": {
+      "head": {"operationId": "headOrders", "responses": {"200": {}}},
+      "options": {"operationId": "optionsOrders", "responses": {"204": {}}},
+      "trace": {"operationId": "traceOrders", "responses": {"200": {}}}
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %#v, want HEAD and OPTIONS only", result.Script.Actions)
+	}
+	if options := openAPIActionFull(result, "optionsOrders"); options.Method != "OPTIONS" {
+		t.Fatalf("options action = %#v", options)
+	}
+	if head := openAPIActionFull(result, "headOrders"); head.Method != "HEAD" {
+		t.Fatalf("head action = %#v", head)
+	}
+	if len(result.Stats.SkippedOperations) != 1 || result.Stats.SkippedOperations[0] != "TRACE /orders" {
+		t.Fatalf("skipped = %#v, want TRACE unsupported", result.Stats.SkippedOperations)
+	}
+}
+
+func TestOpenAPISupportMatrixDocumentsReplayReadiness(t *testing.T) {
+	matrix := GetSupportMatrix()
+	for _, id := range []string{
+		"openapi-chaining",
+		"openapi-extractors",
+		"openapi-security",
+		"openapi-bodies-xml",
+		"openapi-composition",
+		"openapi-refs",
+		"openapi-replay-readiness",
+	} {
+		if !openAPISupportMatrixContains(matrix, id) {
+			t.Fatalf("support matrix missing %s: %#v", id, matrix)
+		}
+	}
+	if len(GetSupportMatrixNotes()) == 0 {
+		t.Fatal("expected support matrix notes")
+	}
+}
+
+func openAPISupportMatrixContains(entries []SupportMatrixEntry, id string) bool {
+	for _, entry := range entries {
+		if entry.ID == id && entry.Area != "" && entry.Status != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }

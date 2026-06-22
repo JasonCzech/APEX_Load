@@ -5779,6 +5779,34 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
         - Scripts
+  /api/v1/scripts/import/openapi/commit:
+    post:
+      summary: Commit Open A P I Import
+      description: |-
+        **Handler:** `handleCommitOpenAPIImport`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCommitOpenAPIImport
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Scripts
+  /api/v1/scripts/import/openapi/support-matrix:
+    get:
+      summary: Open A P I Support Matrix
+      description: |-
+        **Handler:** `handleOpenAPISupportMatrix`
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin
+      operationId: handleOpenAPISupportMatrix
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+        - Scripts
   /api/v1/scripts/import/oracle-ebusiness/review:
     post:
       summary: Review Oracle E Business Import

@@ -558,6 +558,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/import/salesforce", cors(log(auth(http.HandlerFunc(s.handleImportSalesforce)))))
 	s.mux.Handle("POST /api/v1/scripts/import/recorder", cors(log(auth(http.HandlerFunc(s.handleImportRecorder)))))
 	s.mux.Handle("POST /api/v1/scripts/import/openapi", cors(log(auth(http.HandlerFunc(s.handleImportOpenAPI)))))
+	s.mux.Handle("POST /api/v1/scripts/import/openapi/commit", cors(log(auth(http.HandlerFunc(s.handleCommitOpenAPIImport)))))
+	s.mux.Handle("GET /api/v1/scripts/import/openapi/support-matrix", cors(log(auth(http.HandlerFunc(s.handleOpenAPISupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/raml", cors(log(auth(http.HandlerFunc(s.handleImportRAML)))))
 	s.mux.Handle("GET /api/v1/scripts/import/raml/support-matrix", cors(log(auth(http.HandlerFunc(s.handleRAMLSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/postman", cors(log(auth(http.HandlerFunc(s.handleImportPostman)))))
