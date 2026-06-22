@@ -188,6 +188,10 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const result = convertTask.value
   const [file, setFile] = useState<File | null>(null)
   const [postmanEnvironmentFile, setPostmanEnvironmentFile] = useState<File | null>(null)
+  const [postmanSanitizeSensitive, setPostmanSanitizeSensitive] = useState(true)
+  const [postmanIncludeAssertions, setPostmanIncludeAssertions] = useState(true)
+  const [postmanUseDataSource, setPostmanUseDataSource] = useState(false)
+  const [postmanThinkTimeMs, setPostmanThinkTimeMs] = useState(1000)
   const [secondaryHARFile, setSecondaryHARFile] = useState<File | null>(null)
   const [name, setName] = useState('')
   const [baseURL, setBaseURL] = useState('')
@@ -282,7 +286,15 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
         if (kind === 'openapi') return api.importOpenAPI(file, { ...options, agentforce_transform: agentforceReplayReady })
         if (kind === 'raml') return api.importRAML(file, { ...options, agentforce_transform: agentforceReplayReady })
         if (kind === 'postman') {
-          const postmanOptions = { ...options, environment_file: postmanEnvironmentFile || undefined, agentforce_transform: agentforceReplayReady }
+          const postmanOptions = {
+            ...options,
+            environment_file: postmanEnvironmentFile || undefined,
+            include_assertions: postmanIncludeAssertions,
+            sanitize_sensitive: postmanSanitizeSensitive,
+            use_parameter_data_source: postmanUseDataSource,
+            default_think_time_ms: postmanThinkTimeMs,
+            agentforce_transform: agentforceReplayReady,
+          }
           return mode === 'validation' ? api.validatePostmanImport(file, postmanOptions) : api.importPostman(file, postmanOptions)
         }
         if (kind === 'asyncapi') return api.importAsyncAPI(file, { name: options.name, project_id: options.project_id })
@@ -387,15 +399,33 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
             />
           </div>
           {kind === 'postman' && (
-            <div className="sample-import-field sample-import-span-2">
-              <span>Environment File</span>
-              <ImportDropzone
-                accept=".postman_environment.json,.json,application/json"
-                file={postmanEnvironmentFile}
-                onFile={next => { setPostmanEnvironmentFile(next); setMessageError('') }}
-                dropHint="Drop an optional Postman environment JSON file here"
-              />
-            </div>
+            <>
+              <div className="sample-import-field sample-import-span-2">
+                <span>Environment File</span>
+                <ImportDropzone
+                  accept=".postman_environment.json,.json,application/json"
+                  file={postmanEnvironmentFile}
+                  onFile={next => { setPostmanEnvironmentFile(next); setMessageError('') }}
+                  dropHint="Drop an optional Postman environment JSON file here"
+                />
+              </div>
+              <label className="sample-import-field">
+                <span>Default Think Time (ms)</span>
+                <input type="number" min={0} value={postmanThinkTimeMs} onChange={event => setPostmanThinkTimeMs(Math.max(0, Number(event.target.value) || 0))} />
+              </label>
+              <label className="sample-toggle">
+                <input type="checkbox" checked={postmanSanitizeSensitive} onChange={event => setPostmanSanitizeSensitive(event.target.checked)} />
+                Scrub sensitive fields
+              </label>
+              <label className="sample-toggle">
+                <input type="checkbox" checked={postmanIncludeAssertions} onChange={event => setPostmanIncludeAssertions(event.target.checked)} />
+                Add status assertions
+              </label>
+              <label className="sample-toggle sample-import-span-2" title="Bind detected parameters to a generated CSV data source so each virtual user replays with varying data.">
+                <input type="checkbox" checked={postmanUseDataSource} onChange={event => setPostmanUseDataSource(event.target.checked)} />
+                Generate parameter data source
+              </label>
+            </>
           )}
           <label className="sample-import-field">
             <span>Script Name</span>

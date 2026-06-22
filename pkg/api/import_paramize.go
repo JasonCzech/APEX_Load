@@ -3,6 +3,7 @@ package api
 import (
 	"github.com/jasonczech/apexload/pkg/convert/openapi"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/postman"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -89,6 +90,22 @@ func sampleCorrelationsToPreApplied(correlations []sample.Correlation) []paramiz
 }
 
 func openAPICorrelationsToPreApplied(correlations []openapi.Correlation) []paramize.PreAppliedCorrelation {
+	preApplied := make([]paramize.PreAppliedCorrelation, 0, len(correlations))
+	for _, corr := range correlations {
+		preApplied = append(preApplied, paramize.PreAppliedCorrelation{
+			Name:        corr.Name,
+			Source:      corr.Source,
+			Expression:  corr.Expression,
+			ExtractType: corr.ExtractType,
+			SampleValue: corr.SampleValue,
+			FoundInStep: corr.FoundInStep,
+			UsedInSteps: corr.UsedInSteps,
+		})
+	}
+	return preApplied
+}
+
+func postmanCorrelationsToPreApplied(correlations []postman.Correlation) []paramize.PreAppliedCorrelation {
 	preApplied := make([]paramize.PreAppliedCorrelation, 0, len(correlations))
 	for _, corr := range correlations {
 		preApplied = append(preApplied, paramize.PreAppliedCorrelation{

@@ -469,8 +469,13 @@ func TestConvertJMXAdvancedSamplerFidelity(t *testing.T) {
 	if action.Metadata["transaction"] != "Checkout" {
 		t.Fatalf("metadata = %#v, want transaction", action.Metadata)
 	}
-	if action.Auth == nil || action.Auth.Type != "digest" || action.Auth.Username != "digest-user" {
-		t.Fatalf("action auth = %#v", action.Auth)
+	// Digest auth fails closed at HTTP replay, so it is dropped with a warning
+	// rather than emitted; the sampler falls back to the global basic auth.
+	if action.Auth != nil {
+		t.Fatalf("action auth = %#v, want nil (digest dropped, fails closed at replay)", action.Auth)
+	}
+	if !containsJMeterDiagnostic(result, "Digest auth cannot be executed") {
+		t.Fatalf("diagnostics = %#v, want digest fail-closed warning", result.Unsupported)
 	}
 	if action.TimeoutMs != 15000 {
 		t.Fatalf("timeout = %d, want 15000", action.TimeoutMs)

@@ -47,7 +47,22 @@ type ConvertStats struct {
 	AuthSchemes       []string `json:"auth_schemes,omitempty"`
 	UnsupportedBodies int      `json:"unsupported_bodies"`
 	Assertions        int      `json:"assertions"`
+	Extractors        int      `json:"extractors,omitempty"`
+	Correlations      int      `json:"correlations,omitempty"`
 	SkippedItems      []string `json:"skipped_items,omitempty"`
+}
+
+// Correlation records a response→request chain detected from a Postman test
+// script (pm.<scope>.set("var", pm.response...)). It mirrors the OpenAPI
+// importer's Correlation so the API layer can feed both through paramize.
+type Correlation struct {
+	Name        string `json:"name"`
+	Source      string `json:"source"`
+	Expression  string `json:"expression"`
+	ExtractType string `json:"extract_type"`
+	SampleValue string `json:"sample_value,omitempty"`
+	FoundInStep int    `json:"found_in_step"`
+	UsedInSteps []int  `json:"used_in_steps"`
 }
 
 type ReviewSummary struct {
@@ -62,6 +77,7 @@ type ConvertResult struct {
 	Script       *dsl.Script        `json:"script"`
 	Warnings     []string           `json:"warnings,omitempty"`
 	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
+	Correlations []Correlation      `json:"correlations,omitempty"`
 	Stats        ConvertStats       `json:"stats"`
 	Summary      ReviewSummary      `json:"summary"`
 	SourceReview *sourceview.Review `json:"source_review,omitempty"`
@@ -304,6 +320,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	sanitizeSensitive := convertutil.BoolOption(req.Options.SanitizeSensitive, true)
 	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
+	chainItems := make([]postmanChainItem, 0, len(requests))
 	for index, item := range requests {
 		reportPostmanEvents(item, &diagnostics)
 
@@ -343,12 +360,21 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 		actionIndex := len(result.Script.Actions)
 		result.Script.Actions = append(result.Script.Actions, action)
+		chainItems = append(chainItems, postmanChainItem{ActionIndex: actionIndex, Item: item})
 		sourceMappings = append(sourceMappings, postmanSourceMapping(sourceFileName, content, item, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "Postman request was converted into a generated APEX Load action."))
 		result.Summary.Requests = append(result.Summary.Requests, action.Method+" "+action.Target)
 		result.Stats.ConvertedActions++
 	}
 	if len(result.Script.Actions) == 0 {
 		return nil, errors.New("Postman collection contains no supported requests")
+	}
+	// Turn pm.<scope>.set("var", pm.response...) test-script assignments into
+	// response extractors on the producing action so later {{var.X}} references
+	// resolve at replay (Postman's response→request chaining idiom).
+	result.Correlations = applyPostmanResponseChaining(result.Script, chainItems, &diagnostics)
+	result.Stats.Correlations = len(result.Correlations)
+	for i := range result.Script.Actions {
+		result.Stats.Extractors += len(result.Script.Actions[i].Extractors)
 	}
 	if gap := result.Stats.TotalRequests - result.Stats.ConvertedActions - len(result.Stats.SkippedItems); gap > 0 {
 		diagnostics.Add(diag.Warning, "Postman completeness guard", "collection", fmt.Sprintf("%d request item(s) were present but not converted or explicitly skipped", gap))
@@ -655,7 +681,10 @@ func buildAction(index int, item requestItem, collectionAuth *auth, baseURL stri
 		if h.Disabled || strings.TrimSpace(h.Key) == "" {
 			continue
 		}
-		if sanitizeSensitive && sensitiveHeader(h.Key) {
+		if sanitizeSensitive && sensitiveHeader(h.Key) && !containsTemplateToken(h.Value) {
+			// Only redact hard-coded secrets; a value that references a variable
+			// (e.g. "Bearer {{token}}", incl. a chained/extracted token) is not a
+			// literal secret and must be preserved so the chain resolves at replay.
 			headers[h.Key] = "{{env." + sensitiveEnvName(h.Key) + "}}"
 			continue
 		}
@@ -1150,6 +1179,13 @@ func headerValue(headers map[string]string, key string) string {
 func sensitiveHeader(key string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(key))
 	return normalized == "authorization" || normalized == "proxy-authorization" || normalized == "cookie" || normalized == "x-api-key" || normalized == "api-key"
+}
+
+// containsTemplateToken reports whether a value references a template variable
+// (e.g. "Bearer {{token}}"). Such values are not hard-coded secrets, so
+// sanitization must preserve them rather than masking the whole value.
+func containsTemplateToken(value string) bool {
+	return strings.Contains(value, "{{") && strings.Contains(value, "}}")
 }
 
 func sensitiveEnvName(key string) string {

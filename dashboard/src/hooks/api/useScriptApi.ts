@@ -166,6 +166,10 @@ type PostmanImportOptions = {
   base_url?: string
   project_id?: string
   environment_file?: File
+  include_assertions?: boolean
+  sanitize_sensitive?: boolean
+  use_parameter_data_source?: boolean
+  default_think_time_ms?: number
   agentforce_transform?: boolean
 }
 
@@ -763,6 +767,10 @@ export function useScriptApi() {
       if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.environment_file) formData.append('environment', options.environment_file)
+      if (options?.include_assertions !== undefined) formData.append('include_assertions', String(options.include_assertions))
+      if (options?.sanitize_sensitive !== undefined) formData.append('sanitize_sensitive', String(options.sanitize_sensitive))
+      if (options?.use_parameter_data_source !== undefined) formData.append('use_parameter_data_source', String(options.use_parameter_data_source))
+      if (options?.default_think_time_ms !== undefined) formData.append('default_think_time_ms', String(options.default_think_time_ms))
 
       const res = await apiFetch(`${endpoint}${options?.agentforce_transform ? '?agentforce_transform=true' : ''}`, { method: 'POST', body: formData })
       if (!res.ok) {

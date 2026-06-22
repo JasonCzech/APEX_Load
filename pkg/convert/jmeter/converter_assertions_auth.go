@@ -40,7 +40,13 @@ func authConfigFromJMeterAuth(auth jmeterAuth, diagnostics *diag.Collector, loca
 	case strings.Contains(mechanism, "bearer") || strings.Contains(mechanism, "token"):
 		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(auth.Password, auth.Username, "{{env.API_TOKEN}}")}
 	case strings.Contains(mechanism, "digest"):
-		return dsl.AuthConfig{Type: "digest", Username: convertutil.FirstNonEmpty(auth.Username, "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(auth.Password, "{{env.API_PASSWORD}}"), Domain: auth.Domain}
+		// Digest cannot be executed by the HTTP engine (validateAuthType fails
+		// closed on it), so emitting Type:"digest" would break replay. Drop it
+		// with a warning rather than producing an unrunnable script.
+		if diagnostics != nil {
+			diagnostics.Add(diag.Warning, "JMeter AuthManager", location, "Digest auth cannot be executed at HTTP replay (fails closed); configure native auth before replay")
+		}
+		return dsl.AuthConfig{}
 	case mechanism == "" || strings.Contains(mechanism, "basic") || strings.Contains(mechanism, "kerberos"):
 		if strings.Contains(mechanism, "kerberos") && diagnostics != nil {
 			diagnostics.Add(diag.Warning, "JMeter AuthManager", location, "Kerberos auth was approximated as basic credentials; configure native auth before replay")

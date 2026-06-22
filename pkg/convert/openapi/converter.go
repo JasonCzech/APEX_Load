@@ -989,12 +989,12 @@ func sampleForSchema(s schema, res resolver, location string, seen map[string]bo
 }
 
 func formURLEncodedExample(s schema, res resolver, location string, columns columnRegistry) string {
+	resolved := res.resolveSchema(s, location, map[string]bool{})
 	fields := schemaFieldNames(s, res, location)
 	parts := make([]string, 0, len(fields))
-	for _, field := range schemaFieldNames(s, res, location) {
+	for _, field := range fields {
 		column := sanitizeColumnName(field)
-		prop := res.resolveSchema(s, location, map[string]bool{}).Properties[field]
-		columns.add(column, prop)
+		columns.add(column, resolved.Properties[field])
 		parts = append(parts, escapeQueryKey(field)+"={{data.openapi."+column+"}}")
 	}
 	return strings.Join(parts, "&")
@@ -1320,37 +1320,6 @@ func normalizedSecuritySchemes(doc *document) map[string]securityScheme {
 	return out
 }
 
-func applyAuthDefaults(script *dsl.Script, schemes map[string]securityScheme, warnings *[]string) {
-	if len(schemes) == 0 {
-		return
-	}
-	keys := sortedMapKeys(schemes)
-	for _, key := range keys {
-		scheme := schemes[key]
-		switch strings.ToLower(scheme.Type) {
-		case "http":
-			switch strings.ToLower(scheme.Scheme) {
-			case "bearer":
-				script.Config.HTTP.Auth = dsl.AuthConfig{Type: "bearer", Token: "{{env.API_TOKEN}}"}
-				return
-			case "basic":
-				script.Config.HTTP.Auth = dsl.AuthConfig{Type: "basic", Username: "{{env.API_USERNAME}}", Password: "{{env.API_PASSWORD}}"}
-				return
-			}
-		case "apikey":
-			if strings.EqualFold(scheme.In, "header") && scheme.Name != "" {
-				if script.Config.HTTP.DefaultHeaders == nil {
-					script.Config.HTTP.DefaultHeaders = map[string]string{}
-				}
-				script.Config.HTTP.DefaultHeaders[scheme.Name] = "{{env.API_KEY}}"
-				return
-			}
-		case "oauth2", "openidconnect":
-			*warnings = append(*warnings, "OAuth/OpenID Connect security schemes require environment-provided bearer tokens before execution")
-		}
-	}
-}
-
 func applyOperationSecurity(action *dsl.Action, requirements []map[string][]string, auth *authContext, res resolver, location string) {
 	if action == nil || requirements == nil || auth == nil {
 		return
@@ -1618,6 +1587,12 @@ func stringSet(values []string) map[string]bool {
 }
 
 func scalarSchema(s schema) bool {
+	// Objects (including map-style schemas declared only via additionalProperties)
+	// are not scalars — they must recurse so their fields/representative entries
+	// render, rather than collapsing into a single placeholder.
+	if strings.EqualFold(s.Type, "object") || s.AdditionalProperties != nil {
+		return false
+	}
 	return len(s.Properties) == 0 && s.Items == nil
 }
 

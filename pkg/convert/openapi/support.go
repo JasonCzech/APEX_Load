@@ -32,5 +32,6 @@ func GetSupportMatrixNotes() []string {
 		"OpenAPI import targets HTTP API replay; SOAP-specific behavior belongs in the WSDL importer.",
 		"Generated file placeholders and unresolved secrets are valid draft artifacts but block replay readiness until supplied.",
 		"Correlation is spec-inferred, so high-confidence chains are applied conservatively and shown in the review panel.",
+		"Authentication is applied per operation from operation/document-level security; there is no single collection-level default auth.",
 	}
 }
