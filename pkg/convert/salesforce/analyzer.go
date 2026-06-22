@@ -518,6 +518,8 @@ func classifySalesforceAction(action *dsl.Action, rawURL string) string {
 		return "bulk_data"
 	case strings.Contains(path, "/services/data/"):
 		return "rest_api"
+	case strings.Contains(path, "/cometd") || strings.Contains(body, "/meta/handshake") || strings.Contains(body, "/meta/connect") || strings.Contains(body, "/meta/subscribe"):
+		return "cometd"
 	case isSalesforceLoginRequest(host, path):
 		return "login"
 	case strings.Contains(host, "lightning.force.com"):
@@ -576,6 +578,8 @@ func classifySalesforceFlow(evidence, descriptor string) string {
 	switch {
 	case containsAny(lower, "/einstein/ai-agent", "ai-agent", "agentforce", "copilot"):
 		return "agent_conversation"
+	case containsAny(lower, "/cometd", "/meta/handshake", "/meta/connect", "/meta/subscribe", "pushtopic", "changeevents", "/event/"):
+		return "streaming_subscribe"
 	// Endpoint/path-anchored API shapes are evaluated before the object-name
 	// heuristics below: the request body almost always also mentions a business
 	// object (Account/Contact/...), so checking object names first would steal
@@ -897,11 +901,102 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 	}
 
 	synthesizeBulkPollLoops(cloneRefs)
+	collapseCometdConnectLoops(clone)
 
 	return &NativePreview{
 		Script:       clone,
 		Correlations: correlationSummaries(correlations),
 	}, nil
+}
+
+// collapseCometdConnectLoops folds a contiguous run of CometD Bayeux
+// /meta/connect long-poll requests into a single control_loop, so the native
+// preview models the connect long-poll as one repeatable step the operator can
+// scale (raise the count or swap in a condition) instead of N flattened POSTs.
+// handshake and subscribe requests are left as-is. Runs after correlation/var
+// substitution and rebuilds the action slices, so it must be the last preview
+// transform (it invalidates the cloneRefs pointers).
+func collapseCometdConnectLoops(script *dsl.Script) {
+	script.Init = collapseCometdConnectRun(script.Init)
+	script.Actions = collapseCometdConnectRun(script.Actions)
+	script.Teardown = collapseCometdConnectRun(script.Teardown)
+}
+
+func collapseCometdConnectRun(actions []dsl.Action) []dsl.Action {
+	out := make([]dsl.Action, 0, len(actions))
+	for i := 0; i < len(actions); {
+		if isCometdConnectAction(&actions[i]) {
+			j := i + 1
+			for j < len(actions) && isCometdConnectAction(&actions[j]) {
+				j++
+			}
+			if j-i >= 2 {
+				out = append(out, wrapCometdConnectLoop(actions[i], j-i))
+				i = j
+				continue
+			}
+		}
+		out = append(out, actions[i])
+		i++
+	}
+	return out
+}
+
+func isCometdConnectAction(action *dsl.Action) bool {
+	if action == nil || actionClassification(action) != "cometd" {
+		return false
+	}
+	body := strings.ToLower(action.Body)
+	// Only a request whose Bayeux payload is purely /meta/connect is foldable: a
+	// batched message that also carries /meta/subscribe or /meta/handshake must
+	// stay a discrete step (folding it would repeat the subscribe/handshake).
+	return strings.Contains(body, "/meta/connect") &&
+		!strings.Contains(body, "/meta/subscribe") &&
+		!strings.Contains(body, "/meta/handshake")
+}
+
+func actionClassification(action *dsl.Action) string {
+	if action == nil || action.Metadata == nil {
+		return ""
+	}
+	sf, ok := action.Metadata["salesforce"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	kind, _ := sf["classification"].(string)
+	return kind
+}
+
+// cometdConnectTimeoutMs is the per-action request timeout applied to a folded
+// /meta/connect long-poll. Salesforce holds /meta/connect open up to ~110s
+// (Bayeux advice timeout), so the default 60s client timeout would make every
+// poll spuriously error; this gives headroom above the server hold.
+const cometdConnectTimeoutMs = 130000
+
+// wrapCometdConnectLoop wraps a single /meta/connect request in a control_loop
+// that repeats it the recorded number of times. The count is a starting point —
+// the long-poll is meant to run for the test duration, so the operator should
+// raise the count or replace it with a condition. A per-action TimeoutMs above
+// the server long-poll hold is set (when not already recorded) so each connect
+// does not time out against the default client timeout.
+func wrapCometdConnectLoop(connect dsl.Action, count int) dsl.Action {
+	if connect.TimeoutMs == 0 {
+		connect.TimeoutMs = cometdConnectTimeoutMs
+	}
+	return dsl.Action{
+		Name: strings.TrimSpace(connect.Name) + " (long-poll loop)",
+		Type: "control_loop",
+		Control: &dsl.ControlFlow{
+			Count: count,
+			Steps: []dsl.Action{connect},
+		},
+		Metadata: map[string]any{
+			"salesforce": map[string]any{
+				"flow_kind":   "streaming_subscribe",
+				"synthesized": "cometd_connect_loop",
+			},
+		},
+	}
 }
 
 // Bulk API 2.0 ingest poll-loop synthesis.
@@ -1129,10 +1224,12 @@ func detectCorrelations(entries []harEntry) []correlate.Correlation {
 		})
 	}
 	seenValues := make(map[string]bool)
-	// Composite referenceId chaining is detected first so its precise,
-	// referenceId-scoped JMESPath extractor pre-empts the generic nested-JSON
-	// "$.id" candidate for the same value (dedup is by value via seenValues).
-	correlations := detectCompositeCorrelations(observations, seenValues)
+	// Salesforce-shape-aware passes run first so their precise JMESPath extractors
+	// pre-empt the generic nested-JSON candidate for the same value (dedup is by
+	// value via seenValues): CometD clientId (channel-filtered array lookup) and
+	// composite referenceId (referenceId-scoped lookup).
+	correlations := detectCometdCorrelations(observations, seenValues)
+	correlations = append(correlations, detectCompositeCorrelations(observations, seenValues)...)
 	correlations = append(correlations, detectNestedJSONCorrelations(observations, seenValues)...)
 	for _, corr := range correlate.Detect(observations) {
 		if seenValues[corr.Value] {
@@ -1151,6 +1248,80 @@ func detectCorrelations(entries []harEntry) []correlate.Correlation {
 		return correlations[i].FoundInID < correlations[j].FoundInID
 	})
 	return correlations
+}
+
+// detectCometdCorrelations finds the Bayeux clientId returned by a CometD
+// /meta/handshake response (a JSON array) that a LATER /meta/connect or
+// /meta/subscribe request reuses, and emits a channel-filtered array-aware
+// JMESPath extractor. The handshake response is array-rooted, so a "$.clientId"
+// jsonpath would error at replay; the channel filter is also more robust than a
+// positional [0].clientId when the response carries multiple messages.
+func detectCometdCorrelations(observations []correlate.Observation, seenValues map[string]bool) []correlate.Correlation {
+	correlations := make([]correlate.Correlation, 0)
+	for index, observation := range observations {
+		for _, candidate := range cometdCandidates(observation.ResponseBody) {
+			if candidate.Value == "" || seenValues[candidate.Value] {
+				continue
+			}
+			usedIn := make([]int, 0)
+			for later := index + 1; later < len(observations); later++ {
+				if correlate.ObservationContains(observations[later], candidate.Value) {
+					usedIn = append(usedIn, observations[later].ID)
+				}
+			}
+			if len(usedIn) == 0 {
+				continue
+			}
+			seenValues[candidate.Value] = true
+			correlations = append(correlations, correlate.Correlation{
+				Name:        candidate.Name,
+				Source:      candidate.Source,
+				Expression:  candidate.Expression,
+				ExtractType: candidate.ExtractType,
+				FoundInID:   observation.ID,
+				UsedInIDs:   usedIn,
+				Value:       candidate.Value,
+				SampleValue: correlate.Truncate(candidate.Value, 80),
+				RuleID:      candidate.RuleID,
+				Confidence:  candidate.BaseConfidence,
+				Reasons:     []string{candidate.Reason},
+			})
+		}
+	}
+	return correlations
+}
+
+// cometdCandidates parses a CometD handshake response (a JSON array of Bayeux
+// messages) and emits the clientId from the /meta/handshake message.
+func cometdCandidates(body string) []correlate.Candidate {
+	trimmed := strings.TrimSpace(body)
+	if trimmed == "" || !strings.HasPrefix(trimmed, "[") {
+		return nil
+	}
+	var messages []map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &messages); err != nil {
+		return nil
+	}
+	for _, msg := range messages {
+		if channel, _ := msg["channel"].(string); channel != "/meta/handshake" {
+			continue
+		}
+		clientID, _ := msg["clientId"].(string)
+		if clientID == "" {
+			continue
+		}
+		return []correlate.Candidate{{
+			Name:           "corr_salesforce_cometd_client_id",
+			Value:          clientID,
+			Source:         "body",
+			ExtractType:    "jmespath",
+			Expression:     "[?channel=='/meta/handshake'].clientId | [0]",
+			RuleID:         correlate.RuleSalesforceCometdClientID,
+			BaseConfidence: 0.95,
+			Reason:         "Salesforce CometD Bayeux clientId",
+		}}
+	}
+	return nil
 }
 
 // detectCompositeCorrelations finds server-assigned record ids returned by a

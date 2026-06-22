@@ -122,6 +122,26 @@ func TestExtractCompositeReferenceId(t *testing.T) {
 	}
 }
 
+// TestExtractCometdClientIdArrayRoot guards the A5 CometD contract: a Bayeux
+// /meta/handshake response is a JSON ARRAY, so the clientId must be extracted
+// with an array-aware jmespath — the hand-rolled jsonpath errors on an array
+// root, which is why the importer emits jmespath for this rule.
+func TestExtractCometdClientIdArrayRoot(t *testing.T) {
+	body := []byte(`[{"id":"1","channel":"/meta/handshake","successful":true,"clientId":"3f8k2j9xqz"}]`)
+
+	val, err := extractJMESPath("[?channel=='/meta/handshake'].clientId | [0]", body)
+	if err != nil {
+		t.Fatalf("extractJMESPath array-root: %v", err)
+	}
+	if val != "3f8k2j9xqz" {
+		t.Errorf("got %q, want %q", val, "3f8k2j9xqz")
+	}
+
+	if _, err := extractJSONPath("$.clientId", body); err == nil {
+		t.Fatal("hand-rolled jsonpath unexpectedly extracted from an array root; the importer relies on this failing")
+	}
+}
+
 func TestExtractCSS_Text(t *testing.T) {
 	body := []byte(`<html><body><p class="primary">Alpha</p><p>Beta</p></body></html>`)
 

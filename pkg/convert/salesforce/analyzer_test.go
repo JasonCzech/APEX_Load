@@ -759,6 +759,148 @@ func TestAnalyzeNativePreviewCorrelatesCompositeReferenceId(t *testing.T) {
 	}
 }
 
+// TestClassifySalesforceCometd guards the A5 CometD classification: Bayeux
+// traffic is recognized as "cometd"/"streaming_subscribe" by path or channel,
+// without stealing /services/data REST traffic.
+func TestClassifySalesforceCometd(t *testing.T) {
+	connect := &dsl.Action{Method: "POST", Target: "https://acme.my.salesforce.com/cometd/57.0", Body: `message=[{"channel":"/meta/connect","clientId":"abc"}]`}
+	if got := classifySalesforceAction(connect, connect.Target); got != "cometd" {
+		t.Fatalf("classifySalesforceAction = %q, want cometd", got)
+	}
+	if got := classifySalesforceFlow(salesforceActionEvidence(connect, connect.Target), ""); got != "streaming_subscribe" {
+		t.Fatalf("classifySalesforceFlow = %q, want streaming_subscribe", got)
+	}
+	rest := &dsl.Action{Method: "GET", Target: "https://acme.my.salesforce.com/services/data/v59.0/sobjects/Account/001"}
+	if got := classifySalesforceAction(rest, rest.Target); got == "cometd" {
+		t.Fatalf("REST traffic misclassified as cometd: %q", got)
+	}
+}
+
+// TestCometdCandidatesParsesHandshakeArray covers the CometD clientId parser:
+// it extracts the clientId from the /meta/handshake message in a Bayeux response
+// array, and no-ops on non-array bodies and arrays without a handshake clientId.
+func TestCometdCandidatesParsesHandshakeArray(t *testing.T) {
+	ok := cometdCandidates(`[{"channel":"/meta/handshake","successful":true,"clientId":"abc123"}]`)
+	if len(ok) != 1 || ok[0].Value != "abc123" || ok[0].ExtractType != "jmespath" {
+		t.Fatalf("handshake parse = %#v, want one jmespath clientId candidate", ok)
+	}
+	if ok[0].Expression != "[?channel=='/meta/handshake'].clientId | [0]" {
+		t.Fatalf("expression = %q", ok[0].Expression)
+	}
+	// Not an array (object root) -> nil.
+	if c := cometdCandidates(`{"channel":"/meta/handshake","clientId":"x"}`); c != nil {
+		t.Fatalf("object-root body should yield no candidates: %#v", c)
+	}
+	// Array without a handshake clientId (e.g. a connect response) -> nil.
+	if c := cometdCandidates(`[{"channel":"/meta/connect","successful":true}]`); c != nil {
+		t.Fatalf("non-handshake array should yield no candidates: %#v", c)
+	}
+}
+
+// TestAnalyzeNativePreviewCometdConnectLoop proves the A5 CometD lifecycle: the
+// Bayeux clientId is correlated with an array-root JMESPath and reused in later
+// requests, and the contiguous /meta/connect long-poll run is collapsed into a
+// single control_loop (handshake and subscribe left as discrete steps).
+func TestAnalyzeNativePreviewCometdConnectLoop(t *testing.T) {
+	const (
+		base     = "https://acme.my.salesforce.com"
+		cometd   = base + "/cometd/57.0"
+		clientID = "3f8k2j9xqz0011aa"
+	)
+	connectBody := func(id string) string {
+		return `message=[{"id":"` + id + `","channel":"/meta/connect","clientId":"` + clientID + `","connectionType":"long-polling"}]`
+	}
+	script := &dsl.Script{
+		Name:     "SF Streaming",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: base},
+		Actions: []dsl.Action{
+			{Name: "Handshake", Type: "POST", Method: "POST", Target: cometd, Body: `message=[{"id":"1","channel":"/meta/handshake","supportedConnectionTypes":["long-polling"],"version":"1.0"}]`},
+			{Name: "Subscribe", Type: "POST", Method: "POST", Target: cometd, Body: `message=[{"id":"2","channel":"/meta/subscribe","clientId":"` + clientID + `","subscription":"/event/Order__e"}]`},
+			{Name: "Connect 1", Type: "POST", Method: "POST", Target: cometd, Body: connectBody("3")},
+			{Name: "Connect 2", Type: "POST", Method: "POST", Target: cometd, Body: connectBody("4")},
+		},
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {"request": {"method": "POST", "url": "` + cometd + `", "headers": [], "postData": {"text": "message=[{\"id\":\"1\",\"channel\":\"/meta/handshake\"}]"}},
+	       "response": {"headers": [], "content": {"text": "[{\"id\":\"1\",\"channel\":\"/meta/handshake\",\"successful\":true,\"clientId\":\"` + clientID + `\"}]"}}},
+	      {"request": {"method": "POST", "url": "` + cometd + `", "headers": [], "postData": {"text": "message=[{\"id\":\"2\",\"channel\":\"/meta/subscribe\",\"clientId\":\"` + clientID + `\",\"subscription\":\"/event/Order__e\"}]"}},
+	       "response": {"headers": [], "content": {"text": "[{\"id\":\"2\",\"channel\":\"/meta/subscribe\",\"successful\":true}]"}}},
+	      {"request": {"method": "POST", "url": "` + cometd + `", "headers": [], "postData": {"text": "message=[{\"id\":\"3\",\"channel\":\"/meta/connect\",\"clientId\":\"` + clientID + `\"}]"}},
+	       "response": {"headers": [], "content": {"text": "[{\"id\":\"3\",\"channel\":\"/meta/connect\",\"successful\":true}]"}}},
+	      {"request": {"method": "POST", "url": "` + cometd + `", "headers": [], "postData": {"text": "message=[{\"id\":\"4\",\"channel\":\"/meta/connect\",\"clientId\":\"` + clientID + `\"}]"}},
+	       "response": {"headers": [], "content": {"text": "[{\"id\":\"4\",\"channel\":\"/meta/connect\",\"successful\":true}]"}}}
+	    ]
+	  }
+	}`)
+
+	review, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if review.NativePreview == nil || review.NativePreview.Script == nil {
+		t.Fatal("NativePreview = nil, want script")
+	}
+	actions := review.NativePreview.Script.Actions
+	// handshake, subscribe, and ONE collapsed connect loop (the 2 connects fold).
+	if len(actions) != 3 {
+		t.Fatalf("preview has %d actions, want 3 (handshake, subscribe, connect loop): %#v", len(actions), actions)
+	}
+
+	// clientId extractor on the handshake action, array-root JMESPath.
+	handshake := actions[0]
+	var ext *dsl.Extractor
+	for i := range handshake.Extractors {
+		if handshake.Extractors[i].Type == "jmespath" && strings.Contains(handshake.Extractors[i].Expression, "/meta/handshake") {
+			ext = &handshake.Extractors[i]
+		}
+	}
+	if ext == nil {
+		t.Fatalf("handshake extractors = %#v, want an array-root jmespath clientId extractor", handshake.Extractors)
+	}
+
+	// The connect run is collapsed into a control_loop whose body reuses the var.
+	var loop *dsl.Action
+	for i := range actions {
+		if actions[i].Type == "control_loop" {
+			loop = &actions[i]
+		}
+	}
+	if loop == nil || loop.Control == nil {
+		t.Fatalf("preview actions = %#v, want a collapsed connect control_loop", actions)
+	}
+	if loop.Control.Count != 2 || len(loop.Control.Steps) != 1 {
+		t.Fatalf("connect loop = %#v, want Count=2 with one step", loop.Control)
+	}
+	connectStep := loop.Control.Steps[0]
+	connectBodyOut := connectStep.Body
+	if strings.Contains(connectBodyOut, clientID) || !strings.Contains(connectBodyOut, "{{var."+ext.Name+"}}") {
+		t.Fatalf("connect loop body = %q, want clientId reused via {{var.%s}}", connectBodyOut, ext.Name)
+	}
+	// The folded connect must carry a long-poll-safe timeout (> the ~110s server
+	// hold), or the default client timeout would make every poll error.
+	if connectStep.TimeoutMs <= 110000 {
+		t.Fatalf("connect loop step timeout_ms = %d, want > 110000 for the long-poll hold", connectStep.TimeoutMs)
+	}
+}
+
+// TestIsCometdConnectActionExcludesBatchedMessages guards that a batched Bayeux
+// message (e.g. subscribe+connect in one POST) is NOT treated as a foldable
+// connect — folding it would repeat the subscribe.
+func TestIsCometdConnectActionExcludesBatchedMessages(t *testing.T) {
+	cometdMeta := map[string]any{"salesforce": map[string]any{"classification": "cometd"}}
+	pureConnect := &dsl.Action{Metadata: cometdMeta, Body: `message=[{"channel":"/meta/connect","clientId":"x"}]`}
+	if !isCometdConnectAction(pureConnect) {
+		t.Fatal("a pure /meta/connect request should be foldable")
+	}
+	batched := &dsl.Action{Metadata: cometdMeta, Body: `message=[{"channel":"/meta/subscribe","subscription":"/event/X"},{"channel":"/meta/connect","clientId":"x"}]`}
+	if isCometdConnectAction(batched) {
+		t.Fatal("a batched subscribe+connect request must not be folded as a connect")
+	}
+}
+
 func TestAnalyzeClassifiesBroadenedSalesforceSurface(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "SF Broad Surface",
