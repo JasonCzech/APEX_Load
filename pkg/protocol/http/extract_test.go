@@ -122,6 +122,31 @@ func TestExtractCompositeReferenceId(t *testing.T) {
 	}
 }
 
+func TestExtractCompositeTreeReferenceId(t *testing.T) {
+	body := []byte(`{"hasErrors":false,"results":[{"referenceId":"RootAccount","id":"001TREE","errors":[]},{"referenceId":"ChildContact","id":"003TREE","errors":[]}]}`)
+
+	val, err := extractJMESPath("results[?referenceId=='ChildContact'].id | [0]", body)
+	if err != nil {
+		t.Fatalf("extractJMESPath tree filter: %v", err)
+	}
+	if val != "003TREE" {
+		t.Errorf("jmespath tree filter got %q, want %q", val, "003TREE")
+	}
+}
+
+func TestExtractCompositeGraphReferenceId(t *testing.T) {
+	body := []byte(`{"graphs":[{"graphId":"G1","graphResponse":{"compositeResponse":[{"referenceId":"RootAccount","httpStatusCode":201,"body":{"id":"001G1"}}]}},{"graphId":"G2","graphResponse":{"compositeResponse":[{"referenceId":"RootAccount","httpStatusCode":201,"body":{"id":"001G2"}}]}}]}`)
+
+	expr := "graphs[?graphId=='G2'].graphResponse.compositeResponse[] | [?referenceId=='RootAccount'].body.id | [0]"
+	val, err := extractJMESPath(expr, body)
+	if err != nil {
+		t.Fatalf("extractJMESPath graph filter: %v", err)
+	}
+	if val != "001G2" {
+		t.Errorf("jmespath graph filter got %q, want %q", val, "001G2")
+	}
+}
+
 // TestExtractCometdClientIdArrayRoot guards the A5 CometD contract: a Bayeux
 // /meta/handshake response is a JSON ARRAY, so the clientId must be extracted
 // with an array-aware jmespath — the hand-rolled jsonpath errors on an array

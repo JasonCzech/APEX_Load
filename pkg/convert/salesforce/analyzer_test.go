@@ -1,6 +1,7 @@
 package salesforce
 
 import (
+	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
@@ -551,6 +552,106 @@ func TestAnalyzeNativePreviewCorrelatesSOQLPagination(t *testing.T) {
 	}
 }
 
+func TestDetectBulkQueryLocatorCorrelationFromHeader(t *testing.T) {
+	observations := []correlate.Observation{
+		{
+			ID:              1,
+			RequestURL:      "https://acme.my.salesforce.com/services/data/v60.0/jobs/query/750ABC/results",
+			ResponseHeaders: map[string]string{"Sforce-Locator": "locator-page-2"},
+		},
+		{
+			ID:         2,
+			RequestURL: "https://acme.my.salesforce.com/services/data/v60.0/jobs/query/750ABC/results?locator=locator-page-2&maxRecords=2000",
+		},
+		{
+			ID:              3,
+			RequestURL:      "https://acme.my.salesforce.com/services/data/v60.0/jobs/query/750ABC/results?locator=locator-page-2&maxRecords=2000",
+			ResponseHeaders: map[string]string{"Sforce-Locator": "null"},
+		},
+	}
+
+	correlations := detectBulkQueryLocatorCorrelations(observations, map[string]bool{})
+	if len(correlations) != 1 {
+		t.Fatalf("correlations = %#v, want one non-terminal locator", correlations)
+	}
+	got := correlations[0]
+	if got.RuleID != correlate.RuleSalesforceBulkQueryLocator || got.Source != "header" || got.ExtractType != "header" || got.Expression != "Sforce-Locator" {
+		t.Fatalf("locator correlation = %#v, want Sforce-Locator header extractor", got)
+	}
+	if got.Value != "locator-page-2" || len(got.UsedInIDs) != 2 || got.UsedInIDs[0] != 2 || got.UsedInIDs[1] != 3 {
+		t.Fatalf("locator reuse = value %q ids %#v, want page-2 reused in requests 2 and 3", got.Value, got.UsedInIDs)
+	}
+}
+
+func TestAnalyzeNativePreviewCorrelatesBulkQueryLocatorAndPollLoop(t *testing.T) {
+	const (
+		base    = "https://acme.my.salesforce.com"
+		jobID   = "7508c00000QRYA6AAL"
+		locator = "2WeNtJk4NTE4MDAwMDAwMDAw"
+	)
+	script := &dsl.Script{
+		Name:     "SF Bulk Query",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: base},
+		Actions: []dsl.Action{
+			{Name: "Create Query Job", Type: "POST", Method: "POST", Target: base + "/services/data/v60.0/jobs/query", Body: `{"operation":"query","query":"SELECT Id FROM Account"}`},
+			{Name: "Query Job Status", Type: "GET", Method: "GET", Target: base + "/services/data/v60.0/jobs/query/" + jobID},
+			{Name: "Query Results Page 1", Type: "GET", Method: "GET", Target: base + "/services/data/v60.0/jobs/query/" + jobID + "/results?maxRecords=2"},
+			{Name: "Query Results Page 2", Type: "GET", Method: "GET", Target: base + "/services/data/v60.0/jobs/query/" + jobID + "/results?locator=" + locator + "&maxRecords=2"},
+		},
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {"request": {"method": "POST", "url": "` + base + `/services/data/v60.0/jobs/query", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"id\":\"` + jobID + `\",\"operation\":\"query\",\"state\":\"UploadComplete\"}"}}},
+	      {"request": {"method": "GET", "url": "` + base + `/services/data/v60.0/jobs/query/` + jobID + `", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"id\":\"` + jobID + `\",\"state\":\"JobComplete\"}"}}},
+	      {"request": {"method": "GET", "url": "` + base + `/services/data/v60.0/jobs/query/` + jobID + `/results?maxRecords=2", "headers": []},
+	       "response": {"headers": [{"name":"Sforce-Locator","value":"` + locator + `"}], "content": {"text": "Id\n001A\n001B"}}},
+	      {"request": {"method": "GET", "url": "` + base + `/services/data/v60.0/jobs/query/` + jobID + `/results?locator=` + locator + `&maxRecords=2", "headers": []},
+	       "response": {"headers": [{"name":"Sforce-Locator","value":"null"}], "content": {"text": "Id\n001C"}}}
+	    ]
+	  }
+	}`)
+
+	review, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	actions := review.NativePreview.Script.Actions
+
+	poll := actions[1]
+	if poll.Type != "control_loop" || poll.Control == nil {
+		t.Fatalf("query status action = %#v, want a control_loop", poll)
+	}
+	step := poll.Control.Steps[0]
+	if !strings.Contains(step.Target, "{{var.corr_id}}") {
+		t.Fatalf("poll step target = %q, want correlated query job id", step.Target)
+	}
+
+	results := actions[2]
+	var locatorExt *dsl.Extractor
+	for i := range results.Extractors {
+		if results.Extractors[i].Name == "corr_salesforce_bulk_query_locator" {
+			locatorExt = &results.Extractors[i]
+		}
+	}
+	if locatorExt == nil || locatorExt.Source != "header" || locatorExt.Type != "header" || locatorExt.Expression != "Sforce-Locator" {
+		t.Fatalf("results extractors = %#v, want Sforce-Locator header extractor", results.Extractors)
+	}
+	page2 := actions[3].Target
+	if strings.Contains(page2, locator) {
+		t.Fatalf("page 2 target = %q, still carries recorded locator", page2)
+	}
+	if !strings.Contains(page2, "{{var."+locatorExt.Name+"}}") {
+		t.Fatalf("page 2 target = %q, want locator variable %s", page2, locatorExt.Name)
+	}
+	if actions[2].Type == "control_loop" || actions[3].Type == "control_loop" {
+		t.Fatalf("results actions must not be wrapped as status polls: %#v %#v", actions[2], actions[3])
+	}
+}
+
 // TestAnalyzeNativePreviewSynthesizesBulkPollLoop proves the A5 Bulk API 2.0
 // lifecycle: the recorded job-status GET is rewritten into a control_loop that
 // polls until the job reaches a terminal state, the CSV-upload target reuses the
@@ -705,6 +806,89 @@ func TestCompositeCandidatesDisambiguatesSluggedReferenceIds(t *testing.T) {
 	}
 }
 
+func TestSalesforceIDNormalization(t *testing.T) {
+	const (
+		id15 = "001A0000009z3ZI"
+		id18 = "001A0000009z3ZIIAY"
+	)
+	got15, ok := salesforceID15(id18)
+	if !ok || got15 != id15 {
+		t.Fatalf("salesforceID15(%q) = %q, %v; want %q, true", id18, got15, ok, id15)
+	}
+	got18, ok := salesforceID18(id15)
+	if !ok || got18 != id18 {
+		t.Fatalf("salesforceID18(%q) = %q, %v; want %q, true", id15, got18, ok, id18)
+	}
+	if got18From18, ok := salesforceID18(id18); !ok || got18From18 != id18 {
+		t.Fatalf("salesforceID18(%q) = %q, %v; want unchanged canonical 18-char id", id18, got18From18, ok)
+	}
+	for _, invalid := range []string{"", "not-an-id", "001A0000009z3Z!", "001A0000009z3Z"} {
+		if got, ok := salesforceID15(invalid); ok {
+			t.Fatalf("salesforceID15(%q) = %q, true; want false", invalid, got)
+		}
+		if got, ok := salesforceID18(invalid); ok {
+			t.Fatalf("salesforceID18(%q) = %q, true; want false", invalid, got)
+		}
+	}
+}
+
+func TestCompositeCandidatesParsesTreeReferenceIds(t *testing.T) {
+	body := `{"hasErrors":false,"results":[
+	  {"referenceId":"AccountRoot","id":"001AAA000111","errors":[]},
+	  {"referenceId":"ContactChild","id":"003BBB000222","errors":[]},
+	  {"referenceId":"FailedChild","errors":[{"statusCode":"REQUIRED_FIELD_MISSING"}]}
+	]}`
+	cands := compositeCandidates(body)
+	if len(cands) != 2 {
+		t.Fatalf("got %d candidates, want 2 tree ids: %#v", len(cands), cands)
+	}
+	expr := map[string]string{}
+	for _, c := range cands {
+		expr[c.Value] = c.Expression
+		if !strings.Contains(c.Name, "salesforce_composite_tree") {
+			t.Fatalf("candidate name = %q, want tree-specific name", c.Name)
+		}
+	}
+	if expr["001AAA000111"] != "results[?referenceId=='AccountRoot'].id | [0]" {
+		t.Fatalf("AccountRoot expr = %q", expr["001AAA000111"])
+	}
+	if expr["003BBB000222"] != "results[?referenceId=='ContactChild'].id | [0]" {
+		t.Fatalf("ContactChild expr = %q", expr["003BBB000222"])
+	}
+}
+
+func TestCompositeCandidatesParsesGraphReferenceIds(t *testing.T) {
+	body := `{"graphs":[
+	  {"graphId":"G1","graphResponse":{"compositeResponse":[
+	    {"referenceId":"SharedRef","httpStatusCode":201,"body":{"id":"001AAA000111"}},
+	    {"referenceId":"NoId","httpStatusCode":200,"body":{"totalSize":0}}
+	  ]}},
+	  {"graphId":"G2","graphResponse":{"compositeResponse":[
+	    {"referenceId":"SharedRef","httpStatusCode":201,"body":{"id":"001BBB000222"}},
+	    {"referenceId":"FailedRef","httpStatusCode":400,"body":[{"errorCode":"INVALID_FIELD"}]}
+	  ]}}
+	]}`
+	cands := compositeCandidates(body)
+	if len(cands) != 2 {
+		t.Fatalf("got %d candidates, want 2 graph ids: %#v", len(cands), cands)
+	}
+	if cands[0].Name == cands[1].Name {
+		t.Fatalf("graph candidates reused name %q for repeated referenceId", cands[0].Name)
+	}
+	expr := map[string]string{}
+	for _, c := range cands {
+		expr[c.Value] = c.Expression
+	}
+	wantG1 := "graphs[?graphId=='G1'].graphResponse.compositeResponse[] | [?referenceId=='SharedRef'].body.id | [0]"
+	if expr["001AAA000111"] != wantG1 {
+		t.Fatalf("G1 expr = %q, want %q", expr["001AAA000111"], wantG1)
+	}
+	wantG2 := "graphs[?graphId=='G2'].graphResponse.compositeResponse[] | [?referenceId=='SharedRef'].body.id | [0]"
+	if expr["001BBB000222"] != wantG2 {
+		t.Fatalf("G2 expr = %q, want %q", expr["001BBB000222"], wantG2)
+	}
+}
+
 // TestAnalyzeNativePreviewCorrelatesCompositeReferenceId proves cross-request
 // chaining: a record id created by a /composite subrequest is extracted with a
 // referenceId-scoped JMESPath and reused in a later request's URL.
@@ -756,6 +940,200 @@ func TestAnalyzeNativePreviewCorrelatesCompositeReferenceId(t *testing.T) {
 	}
 	if !strings.Contains(getTarget, "{{var."+ext.Name+"}}") {
 		t.Fatalf("get-account target = %q, want it to reuse {{var.%s}}", getTarget, ext.Name)
+	}
+}
+
+func TestAnalyzeNativePreviewCorrelatesCompositeID18ResponseTo15Request(t *testing.T) {
+	const (
+		base = "https://acme.my.salesforce.com"
+		id15 = "001A0000009z3ZI"
+		id18 = "001A0000009z3ZIIAY"
+	)
+	script := &dsl.Script{
+		Name:     "SF Composite 15 ID",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: base},
+		Actions: []dsl.Action{
+			{Name: "Composite Create", Type: "POST", Method: "POST", Target: base + "/services/data/v60.0/composite", Body: `{"compositeRequest":[{"referenceId":"NewAccount","method":"POST","url":"/services/data/v60.0/sobjects/Account","body":{"Name":"Acme"}}]}`},
+			{Name: "Get Account 15", Type: "GET", Method: "GET", Target: base + "/services/data/v60.0/sobjects/Account/" + id15},
+		},
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {"request": {"method": "POST", "url": "` + base + `/services/data/v60.0/composite", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"compositeResponse\":[{\"referenceId\":\"NewAccount\",\"httpStatusCode\":201,\"body\":{\"id\":\"` + id18 + `\",\"success\":true}}]}"}}},
+	      {"request": {"method": "GET", "url": "` + base + `/services/data/v60.0/sobjects/Account/` + id15 + `", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"Id\":\"` + id18 + `\",\"Name\":\"Acme\"}"}}}
+	    ]
+	  }
+	}`)
+
+	review, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	composite := review.NativePreview.Script.Actions[0]
+	var ext *dsl.Extractor
+	for i := range composite.Extractors {
+		if composite.Extractors[i].Expression == "compositeResponse[?referenceId=='NewAccount'].body.id | [0]" {
+			ext = &composite.Extractors[i]
+		}
+	}
+	if ext == nil || ext.SaveLength != 15 {
+		t.Fatalf("composite extractors = %#v, want SaveLength 15 extractor", composite.Extractors)
+	}
+	getTarget := review.NativePreview.Script.Actions[1].Target
+	if strings.Contains(getTarget, id15) || strings.Contains(getTarget, id18) {
+		t.Fatalf("get-account target = %q, still carries a recorded Salesforce id", getTarget)
+	}
+	if !strings.Contains(getTarget, "{{var."+ext.Name+"}}") {
+		t.Fatalf("get-account target = %q, want 15-char id variable %s", getTarget, ext.Name)
+	}
+}
+
+func TestAnalyzeNativePreviewCorrelatesCompositeIDUsedAs18And15(t *testing.T) {
+	const (
+		base = "https://acme.my.salesforce.com"
+		id15 = "001A0000009z3ZI"
+		id18 = "001A0000009z3ZIIAY"
+	)
+	script := &dsl.Script{
+		Name:     "SF Composite Dual ID",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: base},
+		Actions: []dsl.Action{
+			{Name: "Composite Create", Type: "POST", Method: "POST", Target: base + "/services/data/v60.0/composite", Body: `{"compositeRequest":[{"referenceId":"NewAccount","method":"POST","url":"/services/data/v60.0/sobjects/Account","body":{"Name":"Acme"}}]}`},
+			{Name: "Get Account 18", Type: "GET", Method: "GET", Target: base + "/services/data/v60.0/sobjects/Account/" + id18},
+			{Name: "Get Account 15", Type: "GET", Method: "GET", Target: base + "/services/data/v60.0/sobjects/Account/" + id15},
+		},
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {"request": {"method": "POST", "url": "` + base + `/services/data/v60.0/composite", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"compositeResponse\":[{\"referenceId\":\"NewAccount\",\"httpStatusCode\":201,\"body\":{\"id\":\"` + id18 + `\",\"success\":true}}]}"}}},
+	      {"request": {"method": "GET", "url": "` + base + `/services/data/v60.0/sobjects/Account/` + id18 + `", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"Id\":\"` + id18 + `\",\"Name\":\"Acme\"}"}}},
+	      {"request": {"method": "GET", "url": "` + base + `/services/data/v60.0/sobjects/Account/` + id15 + `", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"Id\":\"` + id18 + `\",\"Name\":\"Acme\"}"}}}
+	    ]
+	  }
+	}`)
+
+	review, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	composite := review.NativePreview.Script.Actions[0]
+	rawName := "corr_salesforce_composite_newaccount"
+	trimName := rawName + "_15"
+	seen := map[string]dsl.Extractor{}
+	for _, ext := range composite.Extractors {
+		seen[ext.Name] = ext
+	}
+	if ext, ok := seen[rawName]; !ok || ext.SaveLength != 0 {
+		t.Fatalf("raw extractor = %#v ok=%v, want untrimmed %s", ext, ok, rawName)
+	}
+	if ext, ok := seen[trimName]; !ok || ext.SaveLength != 15 {
+		t.Fatalf("trimmed extractor = %#v ok=%v, want SaveLength 15 %s", ext, ok, trimName)
+	}
+	if got := review.NativePreview.Script.Actions[1].Target; strings.Contains(got, id18) || !strings.Contains(got, "{{var."+rawName+"}}") {
+		t.Fatalf("18-char target = %q, want raw variable", got)
+	}
+	if got := review.NativePreview.Script.Actions[2].Target; strings.Contains(got, id15) || !strings.Contains(got, "{{var."+trimName+"}}") {
+		t.Fatalf("15-char target = %q, want trimmed variable", got)
+	}
+}
+
+func TestAnalyzeNativePreviewCorrelatesCompositeTreeReferenceId(t *testing.T) {
+	const (
+		base  = "https://acme.my.salesforce.com"
+		newID = "001TREE000111222AAA"
+	)
+	script := &dsl.Script{
+		Name:     "SF Composite Tree",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: base},
+		Actions: []dsl.Action{
+			{Name: "Tree Create", Type: "POST", Method: "POST", Target: base + "/services/data/v60.0/composite/sobjects/tree/Account", Body: `{"records":[{"attributes":{"type":"Account","referenceId":"RootAccount"},"Name":"Acme"}]}`},
+			{Name: "Get Account", Type: "GET", Method: "GET", Target: base + "/services/data/v60.0/sobjects/Account/" + newID},
+		},
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {"request": {"method": "POST", "url": "` + base + `/services/data/v60.0/composite/sobjects/tree/Account", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"hasErrors\":false,\"results\":[{\"referenceId\":\"RootAccount\",\"id\":\"` + newID + `\",\"errors\":[]}]}"}}},
+	      {"request": {"method": "GET", "url": "` + base + `/services/data/v60.0/sobjects/Account/` + newID + `", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"Id\":\"` + newID + `\",\"Name\":\"Acme\"}"}}}
+	    ]
+	  }
+	}`)
+
+	review, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	treeCreate := review.NativePreview.Script.Actions[0]
+	var ext *dsl.Extractor
+	for i := range treeCreate.Extractors {
+		if treeCreate.Extractors[i].Expression == "results[?referenceId=='RootAccount'].id | [0]" {
+			ext = &treeCreate.Extractors[i]
+		}
+	}
+	if ext == nil {
+		t.Fatalf("tree extractors = %#v, want referenceId-scoped tree extractor", treeCreate.Extractors)
+	}
+	getTarget := review.NativePreview.Script.Actions[1].Target
+	if strings.Contains(getTarget, newID) || !strings.Contains(getTarget, "{{var."+ext.Name+"}}") {
+		t.Fatalf("get-account target = %q, want substitution with %s", getTarget, ext.Name)
+	}
+}
+
+func TestAnalyzeNativePreviewCorrelatesCompositeGraphReferenceId(t *testing.T) {
+	const (
+		base  = "https://acme.my.salesforce.com"
+		newID = "001GRAPH00111222AAA"
+	)
+	script := &dsl.Script{
+		Name:     "SF Composite Graph",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: base},
+		Actions: []dsl.Action{
+			{Name: "Graph Create", Type: "POST", Method: "POST", Target: base + "/services/data/v60.0/composite/graph", Body: `{"graphs":[{"graphId":"G1","compositeRequest":[{"referenceId":"RootAccount","method":"POST","url":"/services/data/v60.0/sobjects/Account","body":{"Name":"Acme"}}]}]}`},
+			{Name: "Get Account", Type: "GET", Method: "GET", Target: base + "/services/data/v60.0/sobjects/Account/" + newID},
+		},
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {"request": {"method": "POST", "url": "` + base + `/services/data/v60.0/composite/graph", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"graphs\":[{\"graphId\":\"G1\",\"graphResponse\":{\"compositeResponse\":[{\"referenceId\":\"RootAccount\",\"httpStatusCode\":201,\"body\":{\"id\":\"` + newID + `\",\"success\":true}}]}}]}"}}},
+	      {"request": {"method": "GET", "url": "` + base + `/services/data/v60.0/sobjects/Account/` + newID + `", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"Id\":\"` + newID + `\",\"Name\":\"Acme\"}"}}}
+	    ]
+	  }
+	}`)
+
+	review, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	graphCreate := review.NativePreview.Script.Actions[0]
+	wantExpr := "graphs[?graphId=='G1'].graphResponse.compositeResponse[] | [?referenceId=='RootAccount'].body.id | [0]"
+	var ext *dsl.Extractor
+	for i := range graphCreate.Extractors {
+		if graphCreate.Extractors[i].Expression == wantExpr {
+			ext = &graphCreate.Extractors[i]
+		}
+	}
+	if ext == nil {
+		t.Fatalf("graph extractors = %#v, want graph/referenceId-scoped extractor", graphCreate.Extractors)
+	}
+	getTarget := review.NativePreview.Script.Actions[1].Target
+	if strings.Contains(getTarget, newID) || !strings.Contains(getTarget, "{{var."+ext.Name+"}}") {
+		t.Fatalf("get-account target = %q, want substitution with %s", getTarget, ext.Name)
 	}
 }
 
@@ -879,10 +1257,72 @@ func TestAnalyzeNativePreviewCometdConnectLoop(t *testing.T) {
 	if strings.Contains(connectBodyOut, clientID) || !strings.Contains(connectBodyOut, "{{var."+ext.Name+"}}") {
 		t.Fatalf("connect loop body = %q, want clientId reused via {{var.%s}}", connectBodyOut, ext.Name)
 	}
+	if !strings.Contains(connectBodyOut, cometdLoopIndexTemplate) {
+		t.Fatalf("connect loop body = %q, want Bayeux id rewritten to %s", connectBodyOut, cometdLoopIndexTemplate)
+	}
 	// The folded connect must carry a long-poll-safe timeout (> the ~110s server
 	// hold), or the default client timeout would make every poll error.
 	if connectStep.TimeoutMs <= 110000 {
 		t.Fatalf("connect loop step timeout_ms = %d, want > 110000 for the long-poll hold", connectStep.TimeoutMs)
+	}
+}
+
+func TestWrapCometdConnectLoopRewritesRawMessageID(t *testing.T) {
+	body := `[{"id":"7","channel":"/meta/connect","clientId":"{{var.corr_salesforce_cometd_client_id}}","connectionType":"long-polling"}]`
+	loop := wrapCometdConnectLoop(dsl.Action{Name: "Connect", Body: body}, 3)
+	gotBody := loop.Control.Steps[0].Body
+
+	var messages []map[string]any
+	if err := json.Unmarshal([]byte(gotBody), &messages); err != nil {
+		t.Fatalf("rewritten raw body is not JSON: %v\n%s", err, gotBody)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("messages = %#v, want one connect message", messages)
+	}
+	if messages[0]["id"] != cometdLoopIndexTemplate {
+		t.Fatalf("message id = %#v, want %s", messages[0]["id"], cometdLoopIndexTemplate)
+	}
+	if messages[0]["clientId"] != "{{var.corr_salesforce_cometd_client_id}}" {
+		t.Fatalf("clientId = %#v, want existing variable untouched", messages[0]["clientId"])
+	}
+}
+
+func TestWrapCometdConnectLoopRewritesFormEncodedMessageID(t *testing.T) {
+	message := `[{"id":"8","channel":"/meta/connect","clientId":"{{var.corr_salesforce_cometd_client_id}}","connectionType":"long-polling"}]`
+	body := "message=" + url.QueryEscape(message) + "&timeout=110000"
+	loop := wrapCometdConnectLoop(dsl.Action{Name: "Connect", Body: body}, 2)
+	gotBody := loop.Control.Steps[0].Body
+	if !strings.Contains(gotBody, cometdLoopIndexTemplate) {
+		t.Fatalf("form body = %q, want unescaped loop-index template", gotBody)
+	}
+	if !strings.Contains(gotBody, "{{var.corr_salesforce_cometd_client_id}}") {
+		t.Fatalf("form body = %q, want existing clientId template preserved", gotBody)
+	}
+
+	values, err := url.ParseQuery(gotBody)
+	if err != nil {
+		t.Fatalf("rewritten form body does not parse: %v\n%s", err, gotBody)
+	}
+	var messages []map[string]any
+	if err := json.Unmarshal([]byte(values.Get("message")), &messages); err != nil {
+		t.Fatalf("rewritten message is not JSON: %v\n%s", err, values.Get("message"))
+	}
+	if messages[0]["id"] != cometdLoopIndexTemplate {
+		t.Fatalf("message id = %#v, want %s", messages[0]["id"], cometdLoopIndexTemplate)
+	}
+	if messages[0]["clientId"] != "{{var.corr_salesforce_cometd_client_id}}" {
+		t.Fatalf("clientId = %#v, want existing variable untouched", messages[0]["clientId"])
+	}
+	if values.Get("timeout") != "110000" {
+		t.Fatalf("timeout param = %q, want preserved", values.Get("timeout"))
+	}
+}
+
+func TestWrapCometdConnectLoopLeavesBatchedMessageIDAlone(t *testing.T) {
+	body := `message=[{"id":"7","channel":"/meta/connect","clientId":"x"},{"id":"8","channel":"/meta/connect","clientId":"x"}]`
+	loop := wrapCometdConnectLoop(dsl.Action{Name: "Connect", Body: body}, 2)
+	if got := loop.Control.Steps[0].Body; got != body {
+		t.Fatalf("batched connect body was rewritten:\n got: %s\nwant: %s", got, body)
 	}
 }
 

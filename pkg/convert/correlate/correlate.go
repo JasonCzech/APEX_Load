@@ -27,6 +27,8 @@ type Correlation struct {
 	Source      string
 	Expression  string
 	ExtractType string
+	SaveOffset  int
+	SaveLength  int
 	FoundInID   int
 	UsedInIDs   []int
 	Value       string

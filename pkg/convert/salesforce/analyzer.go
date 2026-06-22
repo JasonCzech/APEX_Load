@@ -857,6 +857,8 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 			Source:     corr.Source,
 			Type:       corr.ExtractType,
 			Expression: corr.Expression,
+			SaveOffset: corr.SaveOffset,
+			SaveLength: corr.SaveLength,
 		}
 		switch {
 		case usage.encoded && !usage.raw:
@@ -880,6 +882,8 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 				Source:     corr.Source,
 				Type:       corr.ExtractType,
 				Expression: corr.Expression,
+				SaveOffset: corr.SaveOffset,
+				SaveLength: corr.SaveLength,
 				Convert:    "url_encode",
 			})
 			if value != "" {
@@ -973,6 +977,8 @@ func actionClassification(action *dsl.Action) string {
 // poll spuriously error; this gives headroom above the server hold.
 const cometdConnectTimeoutMs = 130000
 
+const cometdLoopIndexTemplate = "{{var.loop_index}}"
+
 // wrapCometdConnectLoop wraps a single /meta/connect request in a control_loop
 // that repeats it the recorded number of times. The count is a starting point —
 // the long-poll is meant to run for the test duration, so the operator should
@@ -980,6 +986,7 @@ const cometdConnectTimeoutMs = 130000
 // the server long-poll hold is set (when not already recorded) so each connect
 // does not time out against the default client timeout.
 func wrapCometdConnectLoop(connect dsl.Action, count int) dsl.Action {
+	connect.Body = rewriteCometdConnectLoopID(connect.Body)
 	if connect.TimeoutMs == 0 {
 		connect.TimeoutMs = cometdConnectTimeoutMs
 	}
@@ -999,7 +1006,107 @@ func wrapCometdConnectLoop(connect dsl.Action, count int) dsl.Action {
 	}
 }
 
-// Bulk API 2.0 ingest poll-loop synthesis.
+func rewriteCometdConnectLoopID(body string) string {
+	trimmed := strings.TrimSpace(body)
+	if trimmed == "" {
+		return body
+	}
+	if strings.HasPrefix(trimmed, "[") || strings.HasPrefix(trimmed, "{") {
+		if rewritten, ok := rewriteBayeuxConnectMessageID(trimmed); ok {
+			return rewritten
+		}
+		return body
+	}
+	if rewritten, ok := rewriteFormEncodedCometdMessage(body); ok {
+		return rewritten
+	}
+	return body
+}
+
+func rewriteFormEncodedCometdMessage(body string) (string, bool) {
+	parts := strings.Split(body, "&")
+	messageIndex := -1
+	messageKey := ""
+	messageValue := ""
+	for index, part := range parts {
+		key, value, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		decodedKey, err := url.QueryUnescape(key)
+		if err != nil || decodedKey != "message" {
+			continue
+		}
+		if messageIndex >= 0 {
+			return "", false
+		}
+		decodedValue, err := url.QueryUnescape(value)
+		if err != nil {
+			return "", false
+		}
+		messageIndex = index
+		messageKey = key
+		messageValue = decodedValue
+	}
+	if messageIndex < 0 {
+		return "", false
+	}
+	rewrittenMessage, ok := rewriteBayeuxConnectMessageID(messageValue)
+	if !ok {
+		return "", false
+	}
+	encodedMessage := preserveTemplateBraces(url.QueryEscape(rewrittenMessage))
+	parts[messageIndex] = messageKey + "=" + encodedMessage
+	return strings.Join(parts, "&"), true
+}
+
+func preserveTemplateBraces(value string) string {
+	value = strings.ReplaceAll(value, "%7B%7B", "{{")
+	value = strings.ReplaceAll(value, "%7b%7b", "{{")
+	value = strings.ReplaceAll(value, "%7D%7D", "}}")
+	value = strings.ReplaceAll(value, "%7d%7d", "}}")
+	return value
+}
+
+func rewriteBayeuxConnectMessageID(raw string) (string, bool) {
+	var messages []map[string]any
+	if err := json.Unmarshal([]byte(raw), &messages); err == nil {
+		if len(messages) != 1 || !rewriteSingleBayeuxConnectID(messages[0]) {
+			return "", false
+		}
+		rewritten, err := json.Marshal(messages)
+		if err != nil {
+			return "", false
+		}
+		return string(rewritten), true
+	}
+
+	var message map[string]any
+	if err := json.Unmarshal([]byte(raw), &message); err != nil {
+		return "", false
+	}
+	if !rewriteSingleBayeuxConnectID(message) {
+		return "", false
+	}
+	rewritten, err := json.Marshal(message)
+	if err != nil {
+		return "", false
+	}
+	return string(rewritten), true
+}
+
+func rewriteSingleBayeuxConnectID(message map[string]any) bool {
+	if channel, _ := message["channel"].(string); channel != "/meta/connect" {
+		return false
+	}
+	if _, ok := message["id"]; !ok {
+		return false
+	}
+	message["id"] = cometdLoopIndexTemplate
+	return true
+}
+
+// Bulk API 2.0 poll-loop synthesis.
 const (
 	bulkStateVar          = "bulk_job_state"
 	bulkPollMaxIterations = 60
@@ -1012,24 +1119,24 @@ const (
 	bulkPollConditionExpr = `!has(var.bulk_job_state) || (var.bulk_job_state != "JobComplete" && var.bulk_job_state != "Failed" && var.bulk_job_state != "Aborted")`
 )
 
-// synthesizeBulkPollLoops rewrites a recorded Bulk API 2.0 ingest status GET into
-// a control_loop that polls until the job reaches a terminal state, so the native
-// preview waits for completion under load instead of issuing a single recorded
-// status check. It only fires when a Bulk ingest job-create request is also
-// present (so a stray job-status GET is not wrapped), and it is idempotent.
+// synthesizeBulkPollLoops rewrites a recorded Bulk API 2.0 ingest/query status
+// GET into a control_loop that polls until the job reaches a terminal state, so
+// the native preview waits for completion under load instead of issuing a single
+// recorded status check. It only fires when a matching Bulk job-create request
+// is also present (so a stray job-status GET is not wrapped), and it is
+// idempotent.
 func synthesizeBulkPollLoops(refs []actionRef) {
-	hasCreate := false
+	createKinds := map[string]bool{}
 	for i := range refs {
-		if isBulkIngestCreate(&refs[i]) {
-			hasCreate = true
-			break
+		if kind := bulkJobCreateKind(&refs[i]); kind != "" {
+			createKinds[kind] = true
 		}
 	}
-	if !hasCreate {
+	if len(createKinds) == 0 {
 		return
 	}
 	for i := range refs {
-		if isBulkIngestStatusPoll(&refs[i]) {
+		if kind := bulkJobStatusPollKind(&refs[i]); kind != "" && createKinds[kind] {
 			wrapBulkStatusPollInLoop(refs[i].Action)
 		}
 	}
@@ -1045,32 +1152,40 @@ func refMethod(ref *actionRef) string {
 	return ""
 }
 
-// isBulkIngestCreate matches POST .../jobs/ingest (the job-create call, which has
-// no job-id path segment).
-func isBulkIngestCreate(ref *actionRef) bool {
+// bulkJobCreateKind matches POST .../jobs/{ingest,query} (the job-create call,
+// which has no job-id path segment) and returns the job kind.
+func bulkJobCreateKind(ref *actionRef) string {
 	if ref.Kind != "bulk_data" || ref.Action == nil || refMethod(ref) != "POST" {
-		return false
+		return ""
 	}
 	lower := strings.ToLower(ref.Action.Target)
-	return strings.Contains(lower, "/jobs/ingest") && !strings.Contains(lower, "/jobs/ingest/")
-}
-
-// isBulkIngestStatusPoll matches the bare GET .../jobs/ingest/<id> job-status
-// request, excluding the CSV upload (/batches) and result-download endpoints.
-func isBulkIngestStatusPoll(ref *actionRef) bool {
-	if ref.Kind != "bulk_data" || ref.Action == nil || refMethod(ref) != "GET" {
-		return false
-	}
-	lower := strings.ToLower(ref.Action.Target)
-	if !strings.Contains(lower, "/jobs/ingest/") {
-		return false
-	}
-	for _, suffix := range []string{"successfulresults", "failedresults", "unprocessedrecords", "/batches"} {
-		if strings.Contains(lower, suffix) {
-			return false
+	for _, kind := range []string{"ingest", "query"} {
+		base := "/jobs/" + kind
+		if strings.Contains(lower, base) && !strings.Contains(lower, base+"/") {
+			return kind
 		}
 	}
-	return true
+	return ""
+}
+
+// bulkJobStatusPollKind matches the bare GET .../jobs/{ingest,query}/<id>
+// job-status request, excluding upload and result-download endpoints.
+func bulkJobStatusPollKind(ref *actionRef) string {
+	if ref.Kind != "bulk_data" || ref.Action == nil || refMethod(ref) != "GET" {
+		return ""
+	}
+	lower := strings.ToLower(ref.Action.Target)
+	for _, suffix := range []string{"successfulresults", "failedresults", "unprocessedrecords", "/batches", "/results"} {
+		if strings.Contains(lower, suffix) {
+			return ""
+		}
+	}
+	for _, kind := range []string{"ingest", "query"} {
+		if strings.Contains(lower, "/jobs/"+kind+"/") {
+			return kind
+		}
+	}
+	return ""
 }
 
 // wrapBulkStatusPollInLoop rewrites a job-status GET in place into a control_loop
@@ -1103,7 +1218,7 @@ func wrapBulkStatusPollInLoop(action *dsl.Action) {
 		Metadata: map[string]any{
 			"salesforce": map[string]any{
 				"flow_kind":   "bulk_data",
-				"synthesized": "bulk_ingest_poll_loop",
+				"synthesized": "bulk_poll_loop",
 			},
 		},
 	}
@@ -1226,10 +1341,12 @@ func detectCorrelations(entries []harEntry) []correlate.Correlation {
 	seenValues := make(map[string]bool)
 	// Salesforce-shape-aware passes run first so their precise JMESPath extractors
 	// pre-empt the generic nested-JSON candidate for the same value (dedup is by
-	// value via seenValues): CometD clientId (channel-filtered array lookup) and
-	// composite referenceId (referenceId-scoped lookup).
+	// value via seenValues): CometD clientId (channel-filtered array lookup),
+	// composite referenceId (referenceId-scoped lookup), and Bulk query locator
+	// (header cursor reused as a locator query parameter).
 	correlations := detectCometdCorrelations(observations, seenValues)
 	correlations = append(correlations, detectCompositeCorrelations(observations, seenValues)...)
+	correlations = append(correlations, detectBulkQueryLocatorCorrelations(observations, seenValues)...)
 	correlations = append(correlations, detectNestedJSONCorrelations(observations, seenValues)...)
 	for _, corr := range correlate.Detect(observations) {
 		if seenValues[corr.Value] {
@@ -1260,32 +1377,16 @@ func detectCometdCorrelations(observations []correlate.Observation, seenValues m
 	correlations := make([]correlate.Correlation, 0)
 	for index, observation := range observations {
 		for _, candidate := range cometdCandidates(observation.ResponseBody) {
-			if candidate.Value == "" || seenValues[candidate.Value] {
+			if candidate.Value == "" {
 				continue
 			}
-			usedIn := make([]int, 0)
-			for later := index + 1; later < len(observations); later++ {
-				if correlate.ObservationContains(observations[later], candidate.Value) {
-					usedIn = append(usedIn, observations[later].ID)
+			for _, reuse := range salesforceCandidateReuses(observations, index, candidate.Value) {
+				if seenValues[reuse.value] {
+					continue
 				}
+				seenValues[reuse.value] = true
+				correlations = append(correlations, salesforceCorrelationFromCandidate(candidate, observation, reuse))
 			}
-			if len(usedIn) == 0 {
-				continue
-			}
-			seenValues[candidate.Value] = true
-			correlations = append(correlations, correlate.Correlation{
-				Name:        candidate.Name,
-				Source:      candidate.Source,
-				Expression:  candidate.Expression,
-				ExtractType: candidate.ExtractType,
-				FoundInID:   observation.ID,
-				UsedInIDs:   usedIn,
-				Value:       candidate.Value,
-				SampleValue: correlate.Truncate(candidate.Value, 80),
-				RuleID:      candidate.RuleID,
-				Confidence:  candidate.BaseConfidence,
-				Reasons:     []string{candidate.Reason},
-			})
 		}
 	}
 	return correlations
@@ -1329,9 +1430,7 @@ func cometdCandidates(body string) []correlate.Candidate {
 // request reuses, and emits a referenceId-scoped JMESPath extractor so the live
 // id is correlated rather than the recorded literal. Intra-request @{ref.field}
 // placeholders are resolved server-side and need no handling (the engine only
-// expands {{...}} tokens, so @{...} passes through verbatim). The flat
-// compositeResponse[] shape is handled here; /composite/sobjects/tree and
-// /composite/graph response shapes are a follow-up.
+// expands {{...}} tokens, so @{...} passes through verbatim).
 func detectCompositeCorrelations(observations []correlate.Observation, seenValues map[string]bool) []correlate.Correlation {
 	correlations := make([]correlate.Correlation, 0)
 	for index, observation := range observations {
@@ -1339,40 +1438,25 @@ func detectCompositeCorrelations(observations []correlate.Observation, seenValue
 			continue
 		}
 		for _, candidate := range compositeCandidates(observation.ResponseBody) {
-			if candidate.Value == "" || seenValues[candidate.Value] {
+			if candidate.Value == "" {
 				continue
 			}
-			usedIn := make([]int, 0)
-			for later := index + 1; later < len(observations); later++ {
-				if correlate.ObservationContains(observations[later], candidate.Value) {
-					usedIn = append(usedIn, observations[later].ID)
+			for _, reuse := range salesforceCandidateReuses(observations, index, candidate.Value) {
+				if seenValues[reuse.value] {
+					continue
 				}
+				seenValues[reuse.value] = true
+				correlations = append(correlations, salesforceCorrelationFromCandidate(candidate, observation, reuse))
 			}
-			if len(usedIn) == 0 {
-				continue
-			}
-			seenValues[candidate.Value] = true
-			correlations = append(correlations, correlate.Correlation{
-				Name:        candidate.Name,
-				Source:      candidate.Source,
-				Expression:  candidate.Expression,
-				ExtractType: candidate.ExtractType,
-				FoundInID:   observation.ID,
-				UsedInIDs:   usedIn,
-				Value:       candidate.Value,
-				SampleValue: correlate.Truncate(candidate.Value, 80),
-				RuleID:      candidate.RuleID,
-				Confidence:  candidate.BaseConfidence,
-				Reasons:     []string{candidate.Reason},
-			})
 		}
 	}
 	return correlations
 }
 
-// compositeCandidates parses a /composite response and emits one candidate per
-// subrequest that returns a record id, addressed by its referenceId so the
-// extractor is unambiguous even when multiple subrequests each return an id.
+// compositeCandidates parses Salesforce composite-family response shapes and
+// emits one candidate per subrequest/result that returns a record id, addressed
+// by its referenceId so the extractor is unambiguous even when multiple
+// subrequests each return an id.
 func compositeCandidates(body string) []correlate.Candidate {
 	if strings.TrimSpace(body) == "" {
 		return nil
@@ -1381,16 +1465,21 @@ func compositeCandidates(body string) []correlate.Candidate {
 	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
 		return nil
 	}
-	entries, ok := decoded["compositeResponse"].([]any)
-	if !ok {
-		return nil
-	}
-	candidates := make([]correlate.Candidate, 0, len(entries))
-	// usedNames disambiguates referenceIds that slug to the same name (e.g.
-	// "Acct-1" and "Acct_1" both slug to ..._acct_1). Without this, the second
-	// extractor would be dropped as a duplicate Name and both record ids would be
-	// rewritten to the first referenceId's variable — a silent id mismatch.
 	usedNames := map[string]int{}
+	if entries, ok := decoded["compositeResponse"].([]any); ok {
+		return flatCompositeCandidates(entries, usedNames)
+	}
+	if entries, ok := decoded["results"].([]any); ok {
+		return treeCompositeCandidates(entries, usedNames)
+	}
+	if entries, ok := decoded["graphs"].([]any); ok {
+		return graphCompositeCandidates(entries, usedNames)
+	}
+	return nil
+}
+
+func flatCompositeCandidates(entries []any, usedNames map[string]int) []correlate.Candidate {
+	candidates := make([]correlate.Candidate, 0, len(entries))
 	for _, raw := range entries {
 		sub, ok := raw.(map[string]any)
 		if !ok {
@@ -1411,23 +1500,114 @@ func compositeCandidates(body string) []correlate.Candidate {
 		if id == "" {
 			continue
 		}
-		name := "corr_" + correlate.Slug("salesforce_composite_"+ref)
-		usedNames[name]++
-		if n := usedNames[name]; n > 1 {
-			name = fmt.Sprintf("%s_%d", name, n)
-		}
-		candidates = append(candidates, correlate.Candidate{
-			Name:           name,
-			Value:          id,
-			Source:         "body",
-			ExtractType:    "jmespath",
-			Expression:     "compositeResponse[?referenceId=='" + ref + "'].body.id | [0]",
-			RuleID:         correlate.RuleSalesforceCompositeReference,
-			BaseConfidence: 0.85,
-			Reason:         "Salesforce composite subrequest '" + ref + "' record id",
-		})
+		candidates = append(candidates, compositeRecordIDCandidate(
+			usedNames,
+			"salesforce_composite_"+ref,
+			id,
+			"compositeResponse[?referenceId=='"+ref+"'].body.id | [0]",
+			"Salesforce composite subrequest '"+ref+"' record id",
+		))
 	}
 	return candidates
+}
+
+func treeCompositeCandidates(entries []any, usedNames map[string]int) []correlate.Candidate {
+	candidates := make([]correlate.Candidate, 0, len(entries))
+	for _, raw := range entries {
+		result, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		ref, _ := result["referenceId"].(string)
+		if ref == "" || !safeCompositeReferenceID(ref) {
+			continue
+		}
+		id, _ := result["id"].(string)
+		if id == "" {
+			continue
+		}
+		candidates = append(candidates, compositeRecordIDCandidate(
+			usedNames,
+			"salesforce_composite_tree_"+ref,
+			id,
+			"results[?referenceId=='"+ref+"'].id | [0]",
+			"Salesforce composite tree result '"+ref+"' record id",
+		))
+	}
+	return candidates
+}
+
+func graphCompositeCandidates(graphs []any, usedNames map[string]int) []correlate.Candidate {
+	candidates := make([]correlate.Candidate, 0)
+	for _, rawGraph := range graphs {
+		graph, ok := rawGraph.(map[string]any)
+		if !ok {
+			continue
+		}
+		graphID, _ := graph["graphId"].(string)
+		if graphID == "" || !safeCompositeReferenceID(graphID) {
+			continue
+		}
+		graphResponse, ok := graph["graphResponse"].(map[string]any)
+		if !ok {
+			continue
+		}
+		entries, ok := graphResponse["compositeResponse"].([]any)
+		if !ok {
+			continue
+		}
+		for _, raw := range entries {
+			sub, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			ref, _ := sub["referenceId"].(string)
+			if ref == "" || !safeCompositeReferenceID(ref) {
+				continue
+			}
+			if status, ok := sub["httpStatusCode"].(float64); ok && status >= 300 {
+				continue
+			}
+			bodyObj, ok := sub["body"].(map[string]any)
+			if !ok {
+				continue
+			}
+			id, _ := bodyObj["id"].(string)
+			if id == "" {
+				continue
+			}
+			candidates = append(candidates, compositeRecordIDCandidate(
+				usedNames,
+				"salesforce_composite_graph_"+graphID+"_"+ref,
+				id,
+				"graphs[?graphId=='"+graphID+"'].graphResponse.compositeResponse[] | [?referenceId=='"+ref+"'].body.id | [0]",
+				"Salesforce composite graph '"+graphID+"' subrequest '"+ref+"' record id",
+			))
+		}
+	}
+	return candidates
+}
+
+func compositeRecordIDCandidate(usedNames map[string]int, nameSeed, id, expression, reason string) correlate.Candidate {
+	// usedNames disambiguates ids that slug to the same name (e.g. "Acct-1" and
+	// "Acct_1" both slug to ..._acct_1). Without this, the second extractor
+	// would be dropped as a duplicate Name and both record ids would be rewritten
+	// to the first referenceId's variable — a silent id mismatch.
+	name := "corr_" + correlate.Slug(nameSeed)
+	usedNames[name]++
+	if n := usedNames[name]; n > 1 {
+		name = fmt.Sprintf("%s_%d", name, n)
+	}
+	return correlate.Candidate{
+		Name:           name,
+		Value:          id,
+		Source:         "body",
+		ExtractType:    "jmespath",
+		Expression:     expression,
+		RuleID:         correlate.RuleSalesforceCompositeReference,
+		BaseConfidence: 0.85,
+		Reason:         reason,
+	}
 }
 
 // safeCompositeReferenceID restricts referenceIds embedded in a JMESPath string
@@ -1443,37 +1623,245 @@ func safeCompositeReferenceID(ref string) bool {
 	return true
 }
 
+const salesforceIDChecksumAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+
+func salesforceID15(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if !salesforceIDPattern.MatchString(value) {
+		return "", false
+	}
+	switch len(value) {
+	case 15:
+		return value, true
+	case 18:
+		return value[:15], true
+	default:
+		return "", false
+	}
+}
+
+func salesforceID18(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if !salesforceIDPattern.MatchString(value) {
+		return "", false
+	}
+	base := value
+	if len(base) == 18 {
+		base = base[:15]
+	}
+	if len(base) != 15 {
+		return "", false
+	}
+	var builder strings.Builder
+	builder.Grow(18)
+	builder.WriteString(base)
+	for chunk := 0; chunk < 3; chunk++ {
+		mask := 0
+		for offset := 0; offset < 5; offset++ {
+			c := base[chunk*5+offset]
+			if c >= 'A' && c <= 'Z' {
+				mask |= 1 << offset
+			}
+		}
+		builder.WriteByte(salesforceIDChecksumAlphabet[mask])
+	}
+	return builder.String(), true
+}
+
+type salesforceCandidateReuse struct {
+	value        string
+	nameSuffix   string
+	saveLength   int
+	usedIn       []int
+	reasonSuffix string
+}
+
+func salesforceCandidateReuses(observations []correlate.Observation, startIndex int, value string) []salesforceCandidateReuse {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	exactUsed := make([]int, 0)
+	for later := startIndex + 1; later < len(observations); later++ {
+		if correlate.ObservationContains(observations[later], value) {
+			exactUsed = append(exactUsed, observations[later].ID)
+		}
+	}
+
+	out := make([]salesforceCandidateReuse, 0, 2)
+	if len(exactUsed) > 0 {
+		out = append(out, salesforceCandidateReuse{
+			value:  value,
+			usedIn: exactUsed,
+		})
+	}
+
+	id15, ok := salesforceID15(value)
+	if !ok || len(value) != 18 || id15 == value {
+		return out
+	}
+	truncatedUsed := make([]int, 0)
+	for later := startIndex + 1; later < len(observations); later++ {
+		if observationContainsSalesforceID15(observations[later], id15) {
+			truncatedUsed = append(truncatedUsed, observations[later].ID)
+		}
+	}
+	if len(truncatedUsed) > 0 {
+		nameSuffix := ""
+		if len(exactUsed) > 0 {
+			nameSuffix = "_15"
+		}
+		out = append(out, salesforceCandidateReuse{
+			value:        id15,
+			nameSuffix:   nameSuffix,
+			saveLength:   15,
+			usedIn:       truncatedUsed,
+			reasonSuffix: " (18-character Salesforce id trimmed to 15-character request form)",
+		})
+	}
+	return out
+}
+
+func observationContainsSalesforceID15(observation correlate.Observation, id15 string) bool {
+	for _, surface := range observationRequestSurfaces(observation) {
+		if containsBoundedAlnum(surface, id15) {
+			return true
+		}
+		if decoded, err := url.QueryUnescape(surface); err == nil && decoded != surface && containsBoundedAlnum(decoded, id15) {
+			return true
+		}
+	}
+	return false
+}
+
+func observationRequestSurfaces(observation correlate.Observation) []string {
+	surfaces := []string{observation.RequestURL, observation.RequestBody}
+	for _, value := range observation.RequestHeaders {
+		surfaces = append(surfaces, value)
+	}
+	return surfaces
+}
+
+func containsBoundedAlnum(value, needle string) bool {
+	if needle == "" {
+		return false
+	}
+	start := 0
+	for {
+		index := strings.Index(value[start:], needle)
+		if index < 0 {
+			return false
+		}
+		index += start
+		beforeOK := index == 0 || !asciiAlnum(value[index-1])
+		after := index + len(needle)
+		afterOK := after == len(value) || !asciiAlnum(value[after])
+		if beforeOK && afterOK {
+			return true
+		}
+		start = index + 1
+	}
+}
+
+func asciiAlnum(c byte) bool {
+	return c >= '0' && c <= '9' ||
+		c >= 'A' && c <= 'Z' ||
+		c >= 'a' && c <= 'z'
+}
+
+func salesforceCorrelationFromCandidate(candidate correlate.Candidate, observation correlate.Observation, reuse salesforceCandidateReuse) correlate.Correlation {
+	return correlate.Correlation{
+		Name:        candidate.Name + reuse.nameSuffix,
+		Source:      candidate.Source,
+		Expression:  candidate.Expression,
+		ExtractType: candidate.ExtractType,
+		SaveLength:  reuse.saveLength,
+		FoundInID:   observation.ID,
+		UsedInIDs:   reuse.usedIn,
+		Value:       reuse.value,
+		SampleValue: correlate.Truncate(reuse.value, 80),
+		RuleID:      candidate.RuleID,
+		Confidence:  candidate.BaseConfidence,
+		Reasons:     []string{candidate.Reason + reuse.reasonSuffix},
+	}
+}
+
+func detectBulkQueryLocatorCorrelations(observations []correlate.Observation, seenValues map[string]bool) []correlate.Correlation {
+	correlations := make([]correlate.Correlation, 0)
+	for index, observation := range observations {
+		if !isBulkQueryResultsURL(observation.RequestURL) {
+			continue
+		}
+		locator := bulkQueryLocatorHeader(observation.ResponseHeaders)
+		if locator == "" || seenValues[locator] {
+			continue
+		}
+		usedIn := make([]int, 0)
+		for later := index + 1; later < len(observations); later++ {
+			if correlate.ObservationContains(observations[later], locator) {
+				usedIn = append(usedIn, observations[later].ID)
+			}
+		}
+		if len(usedIn) == 0 {
+			continue
+		}
+		seenValues[locator] = true
+		correlations = append(correlations, correlate.Correlation{
+			Name:        "corr_salesforce_bulk_query_locator",
+			Source:      "header",
+			Expression:  "Sforce-Locator",
+			ExtractType: "header",
+			FoundInID:   observation.ID,
+			UsedInIDs:   usedIn,
+			Value:       locator,
+			SampleValue: correlate.Truncate(locator, 80),
+			RuleID:      correlate.RuleSalesforceBulkQueryLocator,
+			Confidence:  0.9,
+			Reasons:     []string{"Salesforce Bulk API query Sforce-Locator response header"},
+		})
+	}
+	return correlations
+}
+
+func isBulkQueryResultsURL(rawURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed == nil {
+		return false
+	}
+	path := strings.ToLower(parsed.EscapedPath())
+	return strings.Contains(path, "/services/data/") &&
+		strings.Contains(path, "/jobs/query/") &&
+		strings.HasSuffix(path, "/results")
+}
+
+func bulkQueryLocatorHeader(headers map[string]string) string {
+	for key, value := range headers {
+		if !strings.EqualFold(key, "Sforce-Locator") {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if value == "" || strings.EqualFold(value, "null") {
+			return ""
+		}
+		return value
+	}
+	return ""
+}
+
 func detectNestedJSONCorrelations(observations []correlate.Observation, seenValues map[string]bool) []correlate.Correlation {
 	correlations := make([]correlate.Correlation, 0)
 	for index, observation := range observations {
 		candidates := nestedJSONCandidates(observation.ResponseBody)
 		for _, candidate := range candidates {
-			if candidate.Value == "" || seenValues[candidate.Value] {
+			if candidate.Value == "" {
 				continue
 			}
-			usedIn := make([]int, 0)
-			for later := index + 1; later < len(observations); later++ {
-				if correlate.ObservationContains(observations[later], candidate.Value) {
-					usedIn = append(usedIn, observations[later].ID)
+			for _, reuse := range salesforceCandidateReuses(observations, index, candidate.Value) {
+				if seenValues[reuse.value] {
+					continue
 				}
+				seenValues[reuse.value] = true
+				correlations = append(correlations, salesforceCorrelationFromCandidate(candidate, observation, reuse))
 			}
-			if len(usedIn) == 0 {
-				continue
-			}
-			seenValues[candidate.Value] = true
-			correlations = append(correlations, correlate.Correlation{
-				Name:        candidate.Name,
-				Source:      candidate.Source,
-				Expression:  candidate.Expression,
-				ExtractType: candidate.ExtractType,
-				FoundInID:   observation.ID,
-				UsedInIDs:   usedIn,
-				Value:       candidate.Value,
-				SampleValue: correlate.Truncate(candidate.Value, 80),
-				RuleID:      candidate.RuleID,
-				Confidence:  candidate.BaseConfidence,
-				Reasons:     []string{candidate.Reason},
-			})
 		}
 	}
 	return correlations
