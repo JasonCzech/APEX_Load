@@ -1,8 +1,17 @@
 package wsdl
 
 import (
+	"archive/zip"
+	"bytes"
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
+	soapproto "github.com/jasonczech/apexload/pkg/protocol/soap"
 )
 
 func TestConvertWSDLBuildsSOAPScript(t *testing.T) {
@@ -52,6 +61,15 @@ func TestConvertWSDLBuildsSOAPScript(t *testing.T) {
 	if result.Script.Actions[0].SOAP == nil || result.Script.Actions[0].SOAP.Action != "urn:GetAccount" {
 		t.Fatalf("first SOAP config = %#v", result.Script.Actions[0].SOAP)
 	}
+	if result.Script.Actions[0].Target != "https://soap.example.test/account" {
+		t.Fatalf("first target = %q, want absolute soap:address", result.Script.Actions[0].Target)
+	}
+	if _, ok := result.Script.Actions[0].Headers["Content-Type"]; ok {
+		t.Fatalf("converter should not pre-set Content-Type header: %#v", result.Script.Actions[0].Headers)
+	}
+	if _, ok := result.Script.Actions[0].Headers["SOAPAction"]; ok {
+		t.Fatalf("converter should not pre-set SOAPAction header: %#v", result.Script.Actions[0].Headers)
+	}
 	if !strings.Contains(result.Script.Actions[0].Body, "<tns:GetAccount>") {
 		t.Fatalf("body did not include operation envelope: %s", result.Script.Actions[0].Body)
 	}
@@ -87,6 +105,12 @@ func TestConvertWSDLFiltersOperationsAndUsesOverrideURL(t *testing.T) {
 	}
 	if result.Script.Config.SOAP.Version != "1.2" {
 		t.Fatalf("SOAP version = %q, want 1.2", result.Script.Config.SOAP.Version)
+	}
+	if !strings.Contains(result.Script.Actions[0].Body, `http://www.w3.org/2003/05/soap-envelope`) {
+		t.Fatalf("SOAP 1.2 body has wrong envelope namespace: %s", result.Script.Actions[0].Body)
+	}
+	if result.Script.Actions[0].Target != "https://override.example.test/soap" {
+		t.Fatalf("target = %q, want absolute override URL", result.Script.Actions[0].Target)
 	}
 	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Name != "Keep" {
 		t.Fatalf("actions = %+v, want only Keep", result.Script.Actions)
@@ -419,5 +443,198 @@ func TestConvertWSDLHandlesRecursiveTypeWithoutStackOverflow(t *testing.T) {
 	}
 	if len(result.Script.Actions) == 0 || result.Script.Actions[0].Body == "" {
 		t.Fatal("expected a bounded SOAP body for the recursive type")
+	}
+}
+
+func TestConvertWSDLSelectsRequestedBinding(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `<?xml version="1.0"?>
+<definitions name="DualService"
+  targetNamespace="urn:dual"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/"
+  xmlns:tns="urn:dual">
+  <message name="LookupInput"><part name="parameters" type="xsd:string"/></message>
+  <portType name="DualPortType"><operation name="Lookup"><input message="tns:LookupInput"/></operation></portType>
+  <binding name="DualSoap11" type="tns:DualPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Lookup"><soap:operation soapAction="urn:Lookup11"/></operation>
+  </binding>
+  <binding name="DualSoap12" type="tns:DualPortType">
+    <soap12:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Lookup"><soap12:operation soapAction="urn:Lookup12"/></operation>
+  </binding>
+  <service name="DualService">
+    <port name="Soap11Port" binding="tns:DualSoap11"><soap:address location="https://dual.example.test/soap11"/></port>
+    <port name="Soap12Port" binding="tns:DualSoap12"><soap12:address location="https://dual.example.test/soap12"/></port>
+  </service>
+</definitions>`,
+		Options: ConvertOptions{PortName: "Soap12Port"},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Summary.PortName != "Soap12Port" || result.Summary.BindingName != "DualSoap12" {
+		t.Fatalf("summary = %+v, want selected SOAP 1.2 port/binding", result.Summary)
+	}
+	if result.Script.Config.BaseURL != "https://dual.example.test/soap12" {
+		t.Fatalf("BaseURL = %q, want selected endpoint", result.Script.Config.BaseURL)
+	}
+	if result.Script.Config.SOAP.Version != "1.2" {
+		t.Fatalf("SOAP version = %q, want 1.2", result.Script.Config.SOAP.Version)
+	}
+	if result.Script.Actions[0].SOAP.Action != "urn:Lookup12" {
+		t.Fatalf("SOAP action = %q, want selected binding action", result.Script.Actions[0].SOAP.Action)
+	}
+	if len(result.Summary.BindingAlternatives) != 2 {
+		t.Fatalf("BindingAlternatives = %+v, want both candidates", result.Summary.BindingAlternatives)
+	}
+}
+
+func TestConvertWSDLZipResolvesLocalXSDInclude(t *testing.T) {
+	var archive bytes.Buffer
+	zw := zip.NewWriter(&archive)
+	addZipFile := func(name string, content string) {
+		t.Helper()
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("zip create %s: %v", name, err)
+		}
+		if _, err := w.Write([]byte(content)); err != nil {
+			t.Fatalf("zip write %s: %v", name, err)
+		}
+	}
+	addZipFile("svc/service.wsdl", `<?xml version="1.0"?>
+<definitions name="ZipService"
+  targetNamespace="urn:zip"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:tns="urn:zip"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <types>
+    <xsd:schema targetNamespace="urn:zip">
+      <xsd:include schemaLocation="../schema/request.xsd"/>
+    </xsd:schema>
+  </types>
+  <message name="LookupInput"><part name="parameters" element="tns:LookupRequest"/></message>
+  <portType name="ZipPortType"><operation name="Lookup"><input message="tns:LookupInput"/></operation></portType>
+  <binding name="ZipBinding" type="tns:ZipPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Lookup"><soap:operation soapAction="urn:Lookup"/></operation>
+  </binding>
+  <service name="ZipService"><port name="ZipPort" binding="tns:ZipBinding"><soap:address location="https://zip.example.test/soap"/></port></service>
+</definitions>`)
+	addZipFile("schema/request.xsd", `<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:tns="urn:zip" targetNamespace="urn:zip">
+  <xsd:element name="LookupRequest" type="tns:LookupRequestType"/>
+  <xsd:complexType name="LookupRequestType">
+    <xsd:sequence>
+      <xsd:element name="accountId" type="xsd:string"/>
+    </xsd:sequence>
+  </xsd:complexType>
+</xsd:schema>`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip close: %v", err)
+	}
+	root, files, err := FilesFromZip(archive.Bytes())
+	if err != nil {
+		t.Fatalf("FilesFromZip returned error: %v", err)
+	}
+	result, err := Convert(ImportRequest{RootFile: root, Files: files})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	body := result.Script.Actions[0].Body
+	if !strings.Contains(body, `<tns:accountId>{{data.wsdl.accountId}}</tns:accountId>`) {
+		t.Fatalf("body did not resolve included XSD type: %s", body)
+	}
+	if containsWSDLDiagnostic(result, "referenced XSD include") {
+		t.Fatalf("diagnostics = %#v, include should have been resolved", result.Unsupported)
+	}
+}
+
+func TestConvertWSDLReplayRoundTripUsesSingleEndpointPath(t *testing.T) {
+	var seenPath string
+	var seenSOAPAction string
+	var seenContentType string
+	var seenBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenPath = r.URL.Path
+		seenSOAPAction = r.Header.Get("SOAPAction")
+		seenContentType = r.Header.Get("Content-Type")
+		payload, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll returned error: %v", err)
+		}
+		seenBody = string(payload)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><ok/></soapenv:Body></soapenv:Envelope>`))
+	}))
+	defer ts.Close()
+
+	result, err := Convert(ImportRequest{
+		Content: `<?xml version="1.0"?>
+<definitions name="AccountService"
+  targetNamespace="urn:accounts"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:tns="urn:accounts">
+  <portType name="AccountPortType"><operation name="GetAccount"/></portType>
+  <binding name="AccountBinding" type="tns:AccountPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="GetAccount"><soap:operation soapAction="urn:GetAccount"/></operation>
+  </binding>
+  <service name="AccountService"><port name="AccountPort" binding="tns:AccountBinding"><soap:address location="` + ts.URL + `/account"/></port></service>
+</definitions>`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script.Config.BaseURL != ts.URL+"/account" {
+		t.Fatalf("BaseURL = %q", result.Script.Config.BaseURL)
+	}
+	if result.Script.Actions[0].Target != ts.URL+"/account" {
+		t.Fatalf("Target = %q, want absolute endpoint", result.Script.Actions[0].Target)
+	}
+
+	s := &soapproto.SOAP{}
+	if err := s.Init(context.Background(), map[string]any{
+		"base_url":                 result.Script.Config.BaseURL,
+		"soap_version":             result.Script.Config.SOAP.Version,
+		"soap_fault_fail_on_fault": true,
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	replayResult, err := s.Execute(context.Background(), &protocol.Action{
+		Name:    action.Name,
+		Type:    action.Type,
+		Method:  action.Method,
+		Target:  action.Target,
+		Headers: action.Headers,
+		Body:    []byte(action.Body),
+		SOAP: &protocol.SOAPActionConfig{
+			Action:    action.SOAP.Action,
+			Operation: action.SOAP.Operation,
+			BodyMode:  action.SOAP.BodyMode,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if replayResult == nil || !replayResult.Success {
+		t.Fatalf("replay result = %#v, want success", replayResult)
+	}
+	if seenPath != "/account" {
+		t.Fatalf("path = %q, want /account without duplicated path", seenPath)
+	}
+	if seenSOAPAction != `"urn:GetAccount"` {
+		t.Fatalf("SOAPAction = %q, want quoted action", seenSOAPAction)
+	}
+	if seenContentType != "text/xml; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want SOAP 1.1 default", seenContentType)
+	}
+	if !strings.Contains(seenBody, `http://schemas.xmlsoap.org/soap/envelope/`) {
+		t.Fatalf("body = %q, want SOAP 1.1 envelope namespace", seenBody)
 	}
 }

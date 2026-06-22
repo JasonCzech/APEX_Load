@@ -50,3 +50,38 @@ func TestBuildProtocolEvidenceSurfacesConsumerOffsetLag(t *testing.T) {
 		t.Fatalf("consumer_offset_lag = %#v, want int64(5)", messages["consumer_offset_lag"])
 	}
 }
+
+func TestBuildProtocolEvidenceRecognizesSOAPAndRedactsMetadata(t *testing.T) {
+	evidence := BuildProtocolEvidence(&Action{
+		Type:            "request",
+		Target:          "https://soap.example.test/AuthService",
+		Headers:         map[string]string{"SOAPAction": "urn:auth#super-secret"},
+		RedactedHeaders: map[string]string{"SOAPAction": "urn:auth#[REDACTED]"},
+		SOAP:            &SOAPActionConfig{Action: "urn:auth#super-secret", Operation: "Login", BodyMode: "generated"},
+		RedactedSOAP:    &SOAPActionConfig{Action: "urn:auth#[REDACTED]", Operation: "Login", BodyMode: "generated"},
+	}, &Result{
+		Success:          true,
+		DependencyType:   "soap",
+		DependencyTarget: "soap.example.test#Login",
+		StatusCode:       200,
+		Extractions:      map[string]string{"soap_version": "1.1"},
+	})
+	if evidence["protocol"] != "soap" {
+		t.Fatalf("protocol evidence = %#v, want soap", evidence)
+	}
+	if evidence["operation"] != "Login" {
+		t.Fatalf("operation = %#v, want Login", evidence["operation"])
+	}
+	metadata, ok := evidence["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("metadata = %#v", evidence["metadata"])
+	}
+	headers, ok := metadata["headers"].(map[string]string)
+	if !ok || headers["SOAPAction"] != "urn:auth#[REDACTED]" {
+		t.Fatalf("headers = %#v, want redacted SOAPAction", metadata["headers"])
+	}
+	soapMetadata, ok := metadata["soap"].(map[string]any)
+	if !ok || soapMetadata["action"] != "urn:auth#[REDACTED]" {
+		t.Fatalf("soap metadata = %#v, want redacted action", metadata["soap"])
+	}
+}

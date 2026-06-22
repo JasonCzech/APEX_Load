@@ -49,6 +49,8 @@ func inferEvidenceProtocol(action *Action, result *Result) string {
 		actionType = strings.ToLower(strings.TrimSpace(action.Type))
 	}
 	switch {
+	case strings.HasPrefix(dependency, "soap") || (action != nil && action.SOAP != nil):
+		return "soap"
 	case strings.HasPrefix(dependency, "websocket") || strings.HasPrefix(actionType, "ws_"):
 		return "websocket"
 	case strings.HasPrefix(dependency, "grpc") || strings.HasPrefix(actionType, "grpc_"):
@@ -67,6 +69,14 @@ func inferEvidenceProtocol(action *Action, result *Result) string {
 }
 
 func evidenceOperation(action *Action, result *Result) string {
+	if action != nil && action.SOAP != nil {
+		if operation := strings.TrimSpace(action.SOAP.Operation); operation != "" {
+			return operation
+		}
+		if soapAction := strings.TrimSpace(action.SOAP.Action); soapAction != "" {
+			return soapAction
+		}
+	}
 	if action != nil && strings.TrimSpace(action.Type) != "" {
 		return strings.TrimSpace(action.Type)
 	}
@@ -169,8 +179,33 @@ func evidenceMetadata(action *Action, result *Result) map[string]any {
 		metadata["error"] = result.ErrorMessage
 	}
 	if action != nil {
+		if action.SOAP != nil || action.RedactedSOAP != nil {
+			soapCfg := action.SOAP
+			if action.RedactedSOAP != nil {
+				soapCfg = action.RedactedSOAP
+			}
+			soapMetadata := make(map[string]any)
+			if soapCfg != nil {
+				if soapCfg.Action != "" {
+					soapMetadata["action"] = soapCfg.Action
+				}
+				if soapCfg.Operation != "" {
+					soapMetadata["operation"] = soapCfg.Operation
+				}
+				if soapCfg.BodyMode != "" {
+					soapMetadata["body_mode"] = soapCfg.BodyMode
+				}
+			}
+			if len(soapMetadata) > 0 {
+				metadata["soap"] = soapMetadata
+			}
+		}
 		if len(action.Headers) > 0 {
-			metadata["headers"] = cloneEvidenceStringMap(action.Headers)
+			headers := action.Headers
+			if len(action.RedactedHeaders) > 0 {
+				headers = action.RedactedHeaders
+			}
+			metadata["headers"] = cloneEvidenceStringMap(headers)
 		}
 		if len(action.Params) > 0 {
 			metadata["params"] = cloneEvidenceAnyMap(action.Params)

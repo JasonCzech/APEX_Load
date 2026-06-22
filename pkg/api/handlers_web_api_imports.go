@@ -34,6 +34,8 @@ type openAPIImportRequest struct {
 
 type wsdlImportRequest struct {
 	Data      []byte
+	RootFile  string
+	Files     map[string]string
 	ProjectID string
 	Name      string
 	Opts      wsdl.ConvertOptions
@@ -361,6 +363,8 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 		Name:      importReq.Name,
 		ProjectID: importReq.ProjectID,
 		Content:   string(importReq.Data),
+		RootFile:  importReq.RootFile,
+		Files:     importReq.Files,
 		Options:   importReq.Opts,
 	})
 	if err != nil {
@@ -1030,22 +1034,34 @@ func readWSDLImportRequest(w http.ResponseWriter, r *http.Request) (*wsdlImportR
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return nil, false
 		}
-		return &wsdlImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
+		return &wsdlImportRequest{Data: []byte(req.Content), RootFile: req.RootFile, Files: req.Files, ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
 		if !ok {
 			return nil, false
 		}
+		rootFile := ""
+		files := map[string]string(nil)
+		name := strings.TrimSuffix(filename, filepath.Ext(filename))
+		if strings.EqualFold(filepath.Ext(filename), ".zip") {
+			root, archiveFiles, err := wsdl.FilesFromZip(data)
+			if err != nil {
+				writeError(w, http.StatusUnprocessableEntity, "WSDL zip: "+err.Error())
+				return nil, false
+			}
+			rootFile = root
+			files = archiveFiles
+			data = []byte(archiveFiles[root])
+			name = strings.TrimSuffix(path.Base(root), path.Ext(root))
+		}
 		return &wsdlImportRequest{
 			Data:      data,
+			RootFile:  rootFile,
+			Files:     files,
 			ProjectID: r.FormValue("project_id"),
-			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
-			Opts: wsdl.ConvertOptions{
-				BaseURL:     r.FormValue("base_url"),
-				ScriptName:  r.FormValue("script_name"),
-				SOAPVersion: r.FormValue("soap_version"),
-			},
+			Name:      name,
+			Opts:      wsdlConvertOptionsFromValue(r.FormValue),
 		}, true
 	}
 	data, ok := readImportBody(w, r)
@@ -1053,16 +1069,39 @@ func readWSDLImportRequest(w http.ResponseWriter, r *http.Request) (*wsdlImportR
 		return nil, false
 	}
 	filename := r.URL.Query().Get("filename")
+	rootFile := ""
+	files := map[string]string(nil)
+	name := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+	if strings.EqualFold(filepath.Ext(filename), ".zip") || strings.HasPrefix(contentType, "application/zip") || strings.HasPrefix(contentType, "application/x-zip-compressed") {
+		root, archiveFiles, err := wsdl.FilesFromZip(data)
+		if err != nil {
+			writeError(w, http.StatusUnprocessableEntity, "WSDL zip: "+err.Error())
+			return nil, false
+		}
+		rootFile = root
+		files = archiveFiles
+		data = []byte(archiveFiles[root])
+		name = strings.TrimSuffix(path.Base(root), path.Ext(root))
+	}
 	return &wsdlImportRequest{
 		Data:      data,
+		RootFile:  rootFile,
+		Files:     files,
 		ProjectID: r.URL.Query().Get("project_id"),
-		Name:      strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
-		Opts: wsdl.ConvertOptions{
-			BaseURL:     r.URL.Query().Get("base_url"),
-			ScriptName:  r.URL.Query().Get("script_name"),
-			SOAPVersion: r.URL.Query().Get("soap_version"),
-		},
+		Name:      name,
+		Opts:      wsdlConvertOptionsFromValue(r.URL.Query().Get),
 	}, true
+}
+
+func wsdlConvertOptionsFromValue(value func(string) string) wsdl.ConvertOptions {
+	return wsdl.ConvertOptions{
+		BaseURL:     value("base_url"),
+		ScriptName:  value("script_name"),
+		SOAPVersion: value("soap_version"),
+		ServiceName: value("service_name"),
+		PortName:    value("port_name"),
+		BindingName: value("binding_name"),
+	}
 }
 
 func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanImportRequest, bool) {
@@ -1222,6 +1261,59 @@ func buildWSDLReviewSections(result *wsdl.ConvertResult) []scriptImportReviewSec
 			Severity: "info",
 			Summary:  "Target namespace preserved from the WSDL.",
 			Items:    []string{result.Summary.TargetNamespace},
+		})
+	}
+	endpointItems := []string{}
+	if result.Summary.ServiceName != "" {
+		endpointItems = append(endpointItems, "service: "+result.Summary.ServiceName)
+	}
+	if result.Summary.PortName != "" {
+		endpointItems = append(endpointItems, "port: "+result.Summary.PortName)
+	}
+	if result.Summary.BindingName != "" {
+		endpointItems = append(endpointItems, "binding: "+result.Summary.BindingName)
+	}
+	if result.Summary.Endpoint != "" {
+		endpointItems = append(endpointItems, "endpoint: "+result.Summary.Endpoint)
+	}
+	if result.Summary.SOAPVersion != "" {
+		endpointItems = append(endpointItems, "soap: "+result.Summary.SOAPVersion)
+	}
+	if result.Summary.BindingStyle != "" {
+		endpointItems = append(endpointItems, "style: "+result.Summary.BindingStyle)
+	}
+	if result.Summary.BindingUse != "" {
+		endpointItems = append(endpointItems, "use: "+result.Summary.BindingUse)
+	}
+	if len(endpointItems) > 0 {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "wsdl_binding",
+			Title:    "Selected Binding",
+			Severity: "info",
+			Summary:  "WSDL service, port, binding, and endpoint selected for replay.",
+			Items:    endpointItems,
+		})
+	}
+	if len(result.Summary.BindingAlternatives) > 0 {
+		items := make([]string, 0, len(result.Summary.BindingAlternatives))
+		for _, alternative := range result.Summary.BindingAlternatives {
+			label := strings.TrimSpace(strings.Join([]string{
+				alternative.ServiceName,
+				alternative.PortName,
+				alternative.BindingName,
+				alternative.SOAPVersion,
+				alternative.Endpoint,
+			}, " "))
+			if label != "" {
+				items = append(items, label)
+			}
+		}
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "wsdl_binding_alternatives",
+			Title:    "Binding Alternatives",
+			Severity: "warning",
+			Summary:  "Additional SOAP bindings were found; use service_name, port_name, or binding_name to choose one explicitly.",
+			Items:    items,
 		})
 	}
 	return sections

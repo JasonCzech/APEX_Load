@@ -64,8 +64,8 @@ func TestSOAPExecuteAddsSOAP11Defaults(t *testing.T) {
 	if seenContentType != "text/xml; charset=utf-8" {
 		t.Fatalf("content-type = %q, want text/xml; charset=utf-8", seenContentType)
 	}
-	if seenSOAPAction != "urn:auth#Login" {
-		t.Fatalf("SOAPAction = %q, want urn:auth#Login", seenSOAPAction)
+	if seenSOAPAction != `"urn:auth#Login"` {
+		t.Fatalf("SOAPAction = %q, want quoted urn:auth#Login", seenSOAPAction)
 	}
 	if result.DependencyType != "soap" {
 		t.Fatalf("DependencyType = %q, want soap", result.DependencyType)
@@ -350,8 +350,8 @@ func TestSOAPExecuteFlagsSOAP11FaultEnvelope(t *testing.T) {
 	if result.Snapshot.RequestURL != ts.URL+"/AuthService" {
 		t.Fatalf("Snapshot.RequestURL = %q, want %q", result.Snapshot.RequestURL, ts.URL+"/AuthService")
 	}
-	if result.Snapshot.RequestHeaders["SOAPAction"] != "urn:auth#Login" {
-		t.Fatalf("Snapshot.RequestHeaders SOAPAction = %q, want urn:auth#Login", result.Snapshot.RequestHeaders["SOAPAction"])
+	if result.Snapshot.RequestHeaders["SOAPAction"] != `"urn:auth#Login"` {
+		t.Fatalf("Snapshot.RequestHeaders SOAPAction = %q, want quoted urn:auth#Login", result.Snapshot.RequestHeaders["SOAPAction"])
 	}
 	if !strings.Contains(result.Snapshot.RequestHeaders["Content-Type"], "text/xml") {
 		t.Fatalf("Snapshot.RequestHeaders Content-Type = %q, want text/xml", result.Snapshot.RequestHeaders["Content-Type"])
@@ -421,5 +421,156 @@ func TestSOAPExecuteFlagsSOAP12FaultEnvelope(t *testing.T) {
 	}
 	if result.ServerTelemetry == nil || result.ServerTelemetry.SOAPFaultCode != "env:Sender" {
 		t.Fatalf("ServerTelemetry = %#v, want SOAP 1.2 fault code", result.ServerTelemetry)
+	}
+}
+
+func TestSOAPExecuteDoesNotFlagValueOutsideFault(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><LookupResponse><Value>env:Sender</Value><Text>not a fault</Text></LookupResponse></env:Body></env:Envelope>`))
+	}))
+	defer ts.Close()
+
+	s := &SOAP{}
+	if err := s.Init(context.Background(), map[string]any{
+		"base_url":                 ts.URL,
+		"soap_version":             "1.2",
+		"soap_fault_fail_on_fault": true,
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	result, err := s.Execute(context.Background(), &protocol.Action{
+		Name:   "lookup",
+		Target: "/AuthService",
+		Body:   []byte(`<Envelope><Body><Lookup/></Body></Envelope>`),
+		SOAP:   &protocol.SOAPActionConfig{Action: "urn:auth#Lookup"},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("result.Success = false, want non-Fault payload to pass: %#v", result)
+	}
+	if result.Extractions["soap_fault_code"] != "" {
+		t.Fatalf("soap_fault_code = %q, want empty", result.Extractions["soap_fault_code"])
+	}
+}
+
+func TestSOAPExecuteUsesPositiveTimestampTTLWhenConfiguredZero(t *testing.T) {
+	var seenBody string
+	fixedNow := time.Date(2026, time.May, 12, 15, 4, 5, 0, time.UTC)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		payload, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll returned error: %v", err)
+		}
+		seenBody = string(payload)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<Envelope><Body><ok/></Body></Envelope>`))
+	}))
+	defer ts.Close()
+
+	s := &SOAP{now: func() time.Time { return fixedNow }}
+	if err := s.Init(context.Background(), map[string]any{
+		"base_url":                               ts.URL,
+		"soap_ws_security_timestamp_ttl_seconds": float64(0),
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	_, err := s.Execute(context.Background(), &protocol.Action{
+		Name:   "login",
+		Target: "/AuthService",
+		Body:   []byte(`<username>alice</username>`),
+		SOAP: &protocol.SOAPActionConfig{
+			Operation: "Login",
+			BodyMode:  "generated",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !strings.Contains(seenBody, `<wsu:Created>2026-05-12T15:04:05Z</wsu:Created>`) {
+		t.Fatalf("body = %q, want created timestamp", seenBody)
+	}
+	if !strings.Contains(seenBody, `<wsu:Expires>2026-05-12T15:09:05Z</wsu:Expires>`) {
+		t.Fatalf("body = %q, want corrected positive expires timestamp", seenBody)
+	}
+}
+
+func TestSOAPApplySecurityExpandsSelfClosingHeader(t *testing.T) {
+	var seenBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		payload, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll returned error: %v", err)
+		}
+		seenBody = string(payload)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<Envelope><Body><ok/></Body></Envelope>`))
+	}))
+	defer ts.Close()
+
+	s := &SOAP{}
+	if err := s.Init(context.Background(), map[string]any{
+		"base_url":                       ts.URL,
+		"soap_ws_security_username":      "svc-user",
+		"soap_ws_security_password":      "svc-pass",
+		"soap_ws_security_password_type": "text",
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	_, err := s.Execute(context.Background(), &protocol.Action{
+		Name:   "login",
+		Target: "/AuthService",
+		Body:   []byte(`<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Header/><soapenv:Body><Login/></soapenv:Body></soapenv:Envelope>`),
+		SOAP:   &protocol.SOAPActionConfig{Action: "urn:auth#Login", Operation: "Login", BodyMode: "generated"},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !strings.Contains(seenBody, `<soapenv:Header><wsse:Security`) {
+		t.Fatalf("body = %q, want expanded security header", seenBody)
+	}
+}
+
+func TestSOAPExecuteBuildsProtocolEvidence(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<Envelope><Body><ok/></Body></Envelope>`))
+	}))
+	defer ts.Close()
+
+	s := &SOAP{}
+	if err := s.Init(context.Background(), map[string]any{
+		"base_url":     ts.URL,
+		"soap_version": "1.1",
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	result, err := s.Execute(context.Background(), &protocol.Action{
+		Name:   "login",
+		Target: "/AuthService",
+		Body:   []byte(`<Envelope><Body><Login/></Body></Envelope>`),
+		SOAP:   &protocol.SOAPActionConfig{Action: "urn:auth#Login", Operation: "Login", BodyMode: "generated"},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.ProtocolEvidence["protocol"] != "soap" {
+		t.Fatalf("ProtocolEvidence = %#v, want SOAP protocol", result.ProtocolEvidence)
+	}
+	if result.ProtocolEvidence["operation"] != "Login" {
+		t.Fatalf("ProtocolEvidence operation = %#v, want Login", result.ProtocolEvidence["operation"])
+	}
+	metadata, ok := result.ProtocolEvidence["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ProtocolEvidence metadata = %#v", result.ProtocolEvidence["metadata"])
+	}
+	if metadata["status_code"] != 200 {
+		t.Fatalf("status_code = %#v, want 200", metadata["status_code"])
 	}
 }

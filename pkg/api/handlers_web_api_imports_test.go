@@ -1,6 +1,7 @@
 package api
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"mime/multipart"
@@ -512,7 +513,9 @@ func TestHandleImportWSDL(t *testing.T) {
 			ProjectID string `json:"project_id"`
 			Protocol  string `json:"protocol"`
 			Actions   []struct {
-				Body string `json:"body"`
+				Target  string            `json:"target"`
+				Headers map[string]string `json:"headers"`
+				Body    string            `json:"body"`
 			} `json:"actions"`
 		} `json:"script"`
 		ReviewSections []struct {
@@ -530,7 +533,101 @@ func TestHandleImportWSDL(t *testing.T) {
 	if len(result.Script.Actions) != 1 || !strings.Contains(result.Script.Actions[0].Body, "GetAccount") {
 		t.Fatalf("unexpected actions: %+v", result.Script.Actions)
 	}
+	if result.Script.Actions[0].Target != "https://soap.example.test/account" {
+		t.Fatalf("target = %q, want absolute SOAP endpoint", result.Script.Actions[0].Target)
+	}
+	if len(result.Script.Actions[0].Headers) != 0 {
+		t.Fatalf("headers = %#v, converter should leave SOAP transport headers to runtime", result.Script.Actions[0].Headers)
+	}
 	assertReviewSection(t, result.ReviewSections, "import_diagnostics_warning", "warning", "WSDL input message at operation GetAccount [warning]: input message/part could not be resolved; generated a placeholder SOAP body")
+	assertReviewSection(t, result.ReviewSections, "wsdl_binding", "info", "endpoint: https://soap.example.test/account")
+}
+
+func TestHandleImportWSDLMultipartZipWithBindingSelector(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var zipBytes bytes.Buffer
+	zw := zip.NewWriter(&zipBytes)
+	w, err := zw.Create("service.wsdl")
+	if err != nil {
+		t.Fatalf("zip create returned error: %v", err)
+	}
+	if _, err := w.Write([]byte(`<?xml version="1.0"?>
+<definitions name="DualService"
+  targetNamespace="urn:dual"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/"
+  xmlns:tns="urn:dual">
+  <message name="LookupInput"><part name="parameters" type="xsd:string"/></message>
+  <portType name="DualPortType"><operation name="Lookup"><input message="tns:LookupInput"/></operation></portType>
+  <binding name="DualSoap11" type="tns:DualPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Lookup"><soap:operation soapAction="urn:Lookup11"/></operation>
+  </binding>
+  <binding name="DualSoap12" type="tns:DualPortType">
+    <soap12:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Lookup"><soap12:operation soapAction="urn:Lookup12"/></operation>
+  </binding>
+  <service name="DualService">
+    <port name="Soap11Port" binding="tns:DualSoap11"><soap:address location="https://dual.example.test/soap11"/></port>
+    <port name="Soap12Port" binding="tns:DualSoap12"><soap12:address location="https://dual.example.test/soap12"/></port>
+  </service>
+</definitions>`)); err != nil {
+		t.Fatalf("zip write returned error: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip close returned error: %v", err)
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "bundle.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	if _, err := part.Write(zipBytes.Bytes()); err != nil {
+		t.Fatalf("part.Write returned error: %v", err)
+	}
+	if err := writer.WriteField("port_name", "Soap12Port"); err != nil {
+		t.Fatalf("WriteField returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/wsdl", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			Config struct {
+				BaseURL string `json:"base_url"`
+				SOAP    struct {
+					Version string `json:"version"`
+				} `json:"soap"`
+			} `json:"config"`
+			Actions []struct {
+				Target string `json:"target"`
+				SOAP   struct {
+					Action string `json:"action"`
+				} `json:"soap"`
+			} `json:"actions"`
+		} `json:"script"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Config.BaseURL != "https://dual.example.test/soap12" || result.Script.Config.SOAP.Version != "1.2" {
+		t.Fatalf("config = %+v, want selected SOAP 1.2 endpoint", result.Script.Config)
+	}
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Target != "https://dual.example.test/soap12" || result.Script.Actions[0].SOAP.Action != "urn:Lookup12" {
+		t.Fatalf("actions = %+v, want selected SOAP 1.2 action", result.Script.Actions)
+	}
 }
 
 func stringSliceContains(values []string, needle string) bool {

@@ -117,6 +117,8 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		return result, err
 	}
 	result.DependencyType = "soap"
+	result.Extractions["soap_version"] = s.version
+	result.Extractions["soap_endpoint"] = targetURL
 	if envelopeOverheadKB > 0 {
 		if result.ServerTelemetry == nil {
 			result.ServerTelemetry = &protocol.ServerTelemetry{}
@@ -155,6 +157,7 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	} else if s.failOnFault && result.StatusCode >= 500 && result.ErrorMessage == "" {
 		result.ErrorMessage = "soap fault response"
 	}
+	result.ProtocolEvidence = protocol.BuildProtocolEvidence(&prepared, result)
 
 	return result, nil
 }
@@ -205,10 +208,7 @@ func cloneHeaders(headers map[string]string) map[string]string {
 }
 
 func resolveSOAPURL(baseURL, target string) string {
-	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
-		return target
-	}
-	return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(target, "/")
+	return httpproto.ResolveURL(baseURL, target)
 }
 
 func resolveSOAPOperation(action *protocol.Action, body []byte) string {
@@ -338,6 +338,9 @@ func readSecurityConfig(config map[string]any) soapSecurityConfig {
 		security.timestamp = true
 		security.timestampTTL = time.Duration(ttl) * time.Second
 	}
+	if security.timestamp && security.timestampTTL <= 0 {
+		security.timestampTTL = 5 * time.Minute
+	}
 	if security.passwordType == "digest" {
 		security.includeNonce = true
 		security.includeCreated = true
@@ -425,16 +428,20 @@ func (s *SOAP) applySecurity(body []byte) []byte {
 		return body
 	}
 
-	headerOpen := fmt.Sprintf("<%s:Header>", prefix)
-	headerClose := fmt.Sprintf("</%s:Header>", prefix)
-	bodyOpen := fmt.Sprintf("<%s:Body>", prefix)
-
-	if strings.Contains(bodyStr, headerOpen) && strings.Contains(bodyStr, headerClose) {
-		return []byte(strings.Replace(bodyStr, headerClose, securityXML+headerClose, 1))
+	quotedPrefix := regexp.QuoteMeta(prefix)
+	headerClosePattern := regexp.MustCompile(fmt.Sprintf(`(?is)</%s:Header\s*>`, quotedPrefix))
+	if headerClosePattern.MatchString(bodyStr) {
+		return []byte(headerClosePattern.ReplaceAllString(bodyStr, securityXML+"$0"))
 	}
-	if strings.Contains(bodyStr, bodyOpen) {
-		replacement := headerOpen + securityXML + headerClose + bodyOpen
-		return []byte(strings.Replace(bodyStr, bodyOpen, replacement, 1))
+	selfClosingHeaderPattern := regexp.MustCompile(fmt.Sprintf(`(?is)<%s:Header\b([^>]*)/>`, quotedPrefix))
+	if selfClosingHeaderPattern.MatchString(bodyStr) {
+		replacement := fmt.Sprintf(`<%s:Header$1>%s</%s:Header>`, prefix, securityXML, prefix)
+		return []byte(selfClosingHeaderPattern.ReplaceAllString(bodyStr, replacement))
+	}
+	bodyOpenPattern := regexp.MustCompile(fmt.Sprintf(`(?is)<%s:Body\b[^>]*>`, quotedPrefix))
+	if bodyOpen := bodyOpenPattern.FindString(bodyStr); bodyOpen != "" {
+		header := fmt.Sprintf("<%s:Header>%s</%s:Header>", prefix, securityXML, prefix)
+		return []byte(strings.Replace(bodyStr, bodyOpen, header+bodyOpen, 1))
 	}
 	return body
 }
@@ -623,16 +630,17 @@ func detectSOAPFault(body string) (string, string, string, bool) {
 	if !looksLikeSOAPEnvelope(body) {
 		return "", "", "", false
 	}
-	reason := firstSOAPTagText(body, "faultstring")
-	if reason == "" {
-		reason = firstSOAPTagText(body, "Text")
-	}
-	code := firstSOAPTagText(body, "faultcode")
-	if code == "" {
-		code = firstSOAPTagText(body, "Value")
-	}
-	if reason == "" && code == "" {
+	faultXML := firstSOAPTagInnerXML(body, "Fault")
+	if strings.TrimSpace(faultXML) == "" {
 		return "", "", "", false
+	}
+	reason := firstSOAPTagText(faultXML, "faultstring")
+	if reason == "" {
+		reason = firstSOAPTagText(faultXML, "Text")
+	}
+	code := firstSOAPTagText(faultXML, "faultcode")
+	if code == "" {
+		code = firstSOAPTagText(faultXML, "Value")
 	}
 	message := "soap fault"
 	if code != "" && reason != "" {
@@ -695,16 +703,51 @@ func applySOAPDefaults(action *protocol.Action, version, charset string) {
 		soapAction = strings.TrimSpace(action.SOAP.Action)
 	}
 
-	if _, exists := action.Headers["Content-Type"]; !exists {
-		action.Headers["Content-Type"] = defaultSOAPContentType(version, charset, soapAction)
-	}
-	if version == "1.1" && soapAction != "" {
-		if _, exists := action.Headers["SOAPAction"]; !exists {
-			action.Headers["SOAPAction"] = soapAction
+	setHeaderCanonical(action.Headers, "Content-Type", defaultSOAPContentType(version, charset, soapAction))
+	if version == "1.1" {
+		if soapAction == "" {
+			if existing, ok := getHeaderValue(action.Headers, "SOAPAction"); ok {
+				soapAction = strings.Trim(existing, `"`)
+			}
 		}
+		setHeaderCanonical(action.Headers, "SOAPAction", quoteSOAPAction(soapAction))
+	} else {
+		deleteHeaderCanonical(action.Headers, "SOAPAction")
 	}
 	if _, exists := action.Headers["Accept"]; !exists {
 		action.Headers["Accept"] = "text/xml, application/soap+xml"
+	}
+}
+
+func quoteSOAPAction(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, `"`)
+	return `"` + value + `"`
+}
+
+func getHeaderValue(headers map[string]string, name string) (string, bool) {
+	for key, value := range headers {
+		if strings.EqualFold(key, name) {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func setHeaderCanonical(headers map[string]string, name string, value string) {
+	for key := range headers {
+		if strings.EqualFold(key, name) && key != name {
+			delete(headers, key)
+		}
+	}
+	headers[name] = value
+}
+
+func deleteHeaderCanonical(headers map[string]string, name string) {
+	for key := range headers {
+		if strings.EqualFold(key, name) {
+			delete(headers, key)
+		}
 	}
 }
 
