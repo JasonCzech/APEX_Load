@@ -660,6 +660,28 @@ func TestStaticFiltering(t *testing.T) {
 	}
 }
 
+func TestStaticFilteringCanBeDisabled(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		io.WriteString(w, "ok")
+	}))
+	defer backend.Close()
+
+	rec := New(":0")
+	rec.StartSession("test", "Static Capture Test", SessionFilters{ExcludeStatic: false, ExcludeStaticSet: true}, nil)
+
+	for _, path := range []string{"/api/data", "/app.js"} {
+		req, _ := http.NewRequest("GET", backend.URL+path, nil)
+		rr := httptest.NewRecorder()
+		rec.handleProxy(rr, req)
+	}
+
+	session, _ := rec.GetSession("test")
+	if len(session.Requests) != 2 {
+		t.Fatalf("expected static request to be captured, got %d requests", len(session.Requests))
+	}
+}
+
 func TestHostFiltering(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)

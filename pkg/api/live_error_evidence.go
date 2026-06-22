@@ -392,7 +392,7 @@ func cloneProtocolErrorSnapshot(snapshot *protocol.ErrorSnapshot) *protocol.Erro
 	cloned.RequestHeaders = cloneProtocolStringMap(snapshot.RequestHeaders)
 	cloned.ResponseHeaders = cloneProtocolStringMap(snapshot.ResponseHeaders)
 	cloned.ConsoleEntries = append([]protocol.ConsoleEntry(nil), snapshot.ConsoleEntries...)
-	cloned.NetworkEntries = append([]protocol.NetworkEntry(nil), snapshot.NetworkEntries...)
+	cloned.NetworkEntries = protocol.CloneNetworkEntries(snapshot.NetworkEntries)
 	if snapshot.DOMSummary != nil {
 		domSummary := *snapshot.DOMSummary
 		domSummary.VisibleText = append([]string(nil), snapshot.DOMSummary.VisibleText...)

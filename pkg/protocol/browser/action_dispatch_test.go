@@ -21,7 +21,6 @@ func TestDispatchActionValidationFailures(t *testing.T) {
 		{name: "long press selector", action: protocol.Action{Type: "browser_long_press"}, wantError: "browser_long_press requires selector or target"},
 		{name: "swipe selector", action: protocol.Action{Type: "browser_swipe"}, wantError: "browser_swipe requires selector or target"},
 		{name: "fill selector", action: protocol.Action{Type: "browser_fill"}, wantError: "browser_fill requires selector or target"},
-		{name: "fill value", action: protocol.Action{Type: "browser_fill", Selector: "#name"}, wantError: "browser_fill requires value"},
 		{name: "select selector", action: protocol.Action{Type: "browser_select"}, wantError: "browser_select requires selector or target"},
 		{name: "select value", action: protocol.Action{Type: "browser_select", Selector: "#country"}, wantError: "browser_select requires value"},
 		{name: "dblclick selector", action: protocol.Action{Type: "browser_dblclick"}, wantError: "browser_dblclick requires selector or target"},

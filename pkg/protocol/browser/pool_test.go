@@ -73,3 +73,20 @@ func TestChromiumLaunchOptions_ChromeChannelWithoutOverride(t *testing.T) {
 		t.Fatal("expected chrome channel when no executable override is set")
 	}
 }
+
+func TestBrowserPoolKeySeparatesLaunchSettings(t *testing.T) {
+	t.Setenv("APEXLOAD_BROWSER_EXECUTABLE", "")
+	t.Setenv("APEXLOAD_BROWSER_SANDBOX", "")
+
+	headless := browserPoolKey("chromium", true)
+	headed := browserPoolKey("chromium", false)
+	if headless == headed {
+		t.Fatal("browser pool key did not include headless mode")
+	}
+
+	t.Setenv("APEXLOAD_BROWSER_EXECUTABLE", "/usr/bin/chromium")
+	withExecutable := browserPoolKey("chromium", true)
+	if withExecutable == headless {
+		t.Fatal("browser pool key did not include executable override")
+	}
+}

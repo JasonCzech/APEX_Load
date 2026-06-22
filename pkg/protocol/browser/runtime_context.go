@@ -1,12 +1,17 @@
 package browser
 
 import (
+	"encoding/base64"
+	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	playwright "github.com/playwright-community/playwright-go"
 )
+
+const browserNetworkBodyCaptureLimitBytes = 512 * 1024
 
 func (b *Browser) openBrowserContext() error {
 	pwBrowser, err := getBrowserInstance(b.engine, b.headless)
@@ -80,6 +85,14 @@ func (b *Browser) installBrowserContextHandlers(browserContext playwright.Browse
 		policy := b.pendingDialog
 		b.pendingDialog = nil
 		b.dialogMu.Unlock()
+		if policy != nil {
+			if expectedType := strings.TrimSpace(policy.expectedType); expectedType != "" && !strings.EqualFold(dialog.Type(), expectedType) {
+				b.setDialogError(fmt.Errorf("browser dialog type = %q, want %q", dialog.Type(), expectedType))
+			}
+			if expectedMessage := strings.TrimSpace(policy.expectedMessage); expectedMessage != "" && dialog.Message() != expectedMessage {
+				b.setDialogError(fmt.Errorf("browser dialog message = %q, want %q", dialog.Message(), expectedMessage))
+			}
+		}
 		switch {
 		case policy == nil, policy.action == "dismiss":
 			_ = dialog.Dismiss()
@@ -90,7 +103,7 @@ func (b *Browser) installBrowserContextHandlers(browserContext playwright.Browse
 		}
 	})
 	browserContext.OnResponse(func(response playwright.Response) {
-		b.rememberResourceValidator(response.URL(), response.Headers())
+		b.rememberResourceValidator(response.URL(), safeResponseHeaders(response))
 	})
 	browserContext.OnRequestFinished(func(request playwright.Request) {
 		go b.recordNetworkRequest(request, true)
@@ -98,6 +111,23 @@ func (b *Browser) installBrowserContextHandlers(browserContext playwright.Browse
 	browserContext.OnRequestFailed(func(request playwright.Request) {
 		go b.recordNetworkRequest(request, false)
 	})
+}
+
+func (b *Browser) setDialogError(err error) {
+	if err == nil {
+		return
+	}
+	b.dialogMu.Lock()
+	defer b.dialogMu.Unlock()
+	b.dialogErr = err
+}
+
+func (b *Browser) consumeDialogError() error {
+	b.dialogMu.Lock()
+	defer b.dialogMu.Unlock()
+	err := b.dialogErr
+	b.dialogErr = nil
+	return err
 }
 
 // currentPage returns the active page under b.mu. The OnPage handler activates
@@ -136,10 +166,14 @@ func (b *Browser) registerPage(page playwright.Page, activate bool) {
 
 func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool) {
 	statusCode := 0
+	var responseHeaders map[string]string
 	if response, err := request.Response(); err == nil && response != nil {
 		statusCode = response.Status()
-		b.rememberResourceValidator(request.URL(), response.Headers())
+		responseHeaders = safeResponseHeaders(response)
+		b.rememberResourceValidator(request.URL(), responseHeaders)
 	}
+	requestHeaders := safeRequestHeaders(request)
+	requestBody, requestBodyEncoding, requestBodyTruncated := browserRequestBody(request)
 	var bytesReceived int64
 	if sizes, err := request.Sizes(); err == nil && sizes != nil {
 		bytesReceived = int64(sizes.ResponseHeadersSize + sizes.ResponseBodySize)
@@ -151,13 +185,65 @@ func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.networkEntries = append(b.networkEntries, protocol.NetworkEntry{
-		URL:           request.URL(),
-		Method:        request.Method(),
-		StatusCode:    statusCode,
-		ResourceType:  request.ResourceType(),
-		DurationMs:    durationMs,
-		BytesReceived: bytesReceived,
+		URL:                  request.URL(),
+		Method:               request.Method(),
+		StatusCode:           statusCode,
+		ResourceType:         request.ResourceType(),
+		DurationMs:           durationMs,
+		BytesReceived:        bytesReceived,
+		RequestHeaders:       requestHeaders,
+		RequestBody:          requestBody,
+		RequestBodyEncoding:  requestBodyEncoding,
+		RequestBodyTruncated: requestBodyTruncated,
+		ResponseHeaders:      responseHeaders,
 	})
+}
+
+func safeRequestHeaders(request playwright.Request) (headers map[string]string) {
+	defer func() {
+		if recover() != nil {
+			headers = nil
+		}
+	}()
+	if request == nil {
+		return nil
+	}
+	return request.Headers()
+}
+
+func safeResponseHeaders(response playwright.Response) (headers map[string]string) {
+	defer func() {
+		if recover() != nil {
+			headers = nil
+		}
+	}()
+	if response == nil {
+		return nil
+	}
+	return response.Headers()
+}
+
+func browserRequestBody(request playwright.Request) (string, string, bool) {
+	body, err := request.PostDataBuffer()
+	if err != nil || len(body) == 0 {
+		text, textErr := request.PostData()
+		if textErr != nil || text == "" {
+			return "", "", false
+		}
+		if len(text) > browserNetworkBodyCaptureLimitBytes {
+			return text[:browserNetworkBodyCaptureLimitBytes], "", true
+		}
+		return text, "", false
+	}
+	truncated := false
+	if len(body) > browserNetworkBodyCaptureLimitBytes {
+		body = body[:browserNetworkBodyCaptureLimitBytes]
+		truncated = true
+	}
+	if utf8.Valid(body) {
+		return string(body), "", truncated
+	}
+	return base64.StdEncoding.EncodeToString(body), "base64", truncated
 }
 
 func requestDurationMs(timing *playwright.RequestTiming) float64 {

@@ -58,9 +58,6 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		if selector == "" {
 			return nil, failBrowserAction(result, "browser_fill requires selector or target")
 		}
-		if action.Value == "" {
-			return nil, failBrowserAction(result, "browser_fill requires value")
-		}
 		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
 			return b.fillAction(ctx, action, s, action.Value)
 		}), false
@@ -141,6 +138,7 @@ func (b *Browser) dispatchHandleDialog(action *protocol.Action, result *protocol
 	b.pendingDialog = &dialogPolicy{
 		action:          policy,
 		expectedMessage: actionParamString(action.Params, "expected_message", ""),
+		expectedType:    actionParamString(action.Params, "dialog_type", ""),
 		promptText:      actionParamString(action.Params, "prompt_text", ""),
 	}
 	b.dialogMu.Unlock()

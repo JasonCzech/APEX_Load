@@ -11,10 +11,7 @@ import (
 
 var (
 	globalPlaywright *playwright.Playwright
-	globalChromium   playwright.Browser
-	globalWebKit     playwright.Browser
-	globalFirefox    playwright.Browser
-	globalChrome     playwright.Browser
+	globalBrowsers   = make(map[string]playwright.Browser)
 	globalMutex      sync.Mutex
 )
 
@@ -35,53 +32,68 @@ func getBrowserInstance(engine string, headless bool) (playwright.Browser, error
 		engine = "chromium"
 	}
 
+	key := browserPoolKey(engine, headless)
+	if browser := globalBrowsers[key]; browser != nil {
+		return browser, nil
+	}
+
+	var (
+		b   playwright.Browser
+		err error
+	)
 	if engine == "webkit" {
-		if globalWebKit == nil {
-			b, err := globalPlaywright.WebKit.Launch(playwright.BrowserTypeLaunchOptions{
-				Headless: playwright.Bool(headless),
-				Timeout:  playwright.Float(30000),
-			})
-			if err != nil {
-				return nil, err
-			}
-			globalWebKit = b
-		}
-		return globalWebKit, nil
-	}
-
-	if engine == "firefox" {
-		if globalFirefox == nil {
-			b, err := globalPlaywright.Firefox.Launch(playwright.BrowserTypeLaunchOptions{
-				Headless: playwright.Bool(headless),
-				Timeout:  playwright.Float(30000),
-			})
-			if err != nil {
-				return nil, err
-			}
-			globalFirefox = b
-		}
-		return globalFirefox, nil
-	}
-
-	if engine == "chrome" {
-		if globalChrome == nil {
-			b, err := globalPlaywright.Chromium.Launch(chromiumLaunchOptions(headless, "chrome"))
-			if err != nil {
-				return nil, err
-			}
-			globalChrome = b
-		}
-		return globalChrome, nil
-	}
-
-	if globalChromium == nil {
-		b, err := globalPlaywright.Chromium.Launch(chromiumLaunchOptions(headless, ""))
+		b, err = globalPlaywright.WebKit.Launch(playwright.BrowserTypeLaunchOptions{
+			Headless: playwright.Bool(headless),
+			Timeout:  playwright.Float(30000),
+		})
 		if err != nil {
 			return nil, err
 		}
-		globalChromium = b
+		globalBrowsers[key] = b
+		return b, nil
 	}
-	return globalChromium, nil
+
+	if engine == "firefox" {
+		b, err = globalPlaywright.Firefox.Launch(playwright.BrowserTypeLaunchOptions{
+			Headless: playwright.Bool(headless),
+			Timeout:  playwright.Float(30000),
+		})
+		if err != nil {
+			return nil, err
+		}
+		globalBrowsers[key] = b
+		return b, nil
+	}
+
+	if engine == "chrome" {
+		b, err = globalPlaywright.Chromium.Launch(chromiumLaunchOptions(headless, "chrome"))
+		if err != nil {
+			return nil, err
+		}
+		globalBrowsers[key] = b
+		return b, nil
+	}
+
+	b, err = globalPlaywright.Chromium.Launch(chromiumLaunchOptions(headless, ""))
+	if err != nil {
+		return nil, err
+	}
+	globalBrowsers[key] = b
+	return b, nil
+}
+
+func browserPoolKey(engine string, headless bool) string {
+	channel := ""
+	if engine == "chrome" {
+		channel = "chrome"
+	}
+	return strings.Join([]string{
+		engine,
+		fmt.Sprintf("headless=%t", headless),
+		"channel=" + channel,
+		"executable=" + strings.TrimSpace(os.Getenv("APEXLOAD_BROWSER_EXECUTABLE")),
+		fmt.Sprintf("sandbox=%t", envFlagEnabled("APEXLOAD_BROWSER_SANDBOX")),
+	}, "|")
 }
 
 // chromiumLaunchOptions builds the launch configuration for Chromium-family

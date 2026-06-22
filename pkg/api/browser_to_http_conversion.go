@@ -239,7 +239,7 @@ func (s *Server) browserToHTTPNetworkEntries(req BrowserToHTTPPreviewRequest) ([
 			skippedStatic++
 			continue
 		}
-		key := entry.Method + " " + entry.URL
+		key := browserNetworkDedupeKey(entry)
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -261,24 +261,37 @@ func browserNetworkEntriesToHAR(entries []protocol.NetworkEntry) ([]byte, error)
 		if duration <= 0 {
 			duration = 1
 		}
+		requestBodySize := len(entry.RequestBody)
+		requestHeaders := browserHARHeaderEntries(entry.RequestHeaders)
+		request := map[string]any{
+			"method":      firstNonEmpty(entry.Method, http.MethodGet),
+			"url":         entry.URL,
+			"httpVersion": "HTTP/1.1",
+			"headers":     requestHeaders,
+			"queryString": []any{},
+			"cookies":     []any{},
+			"headersSize": -1,
+			"bodySize":    requestBodySize,
+		}
+		if entry.RequestBody != "" {
+			postData := map[string]any{
+				"mimeType": browserHeaderValue(entry.RequestHeaders, "content-type"),
+				"text":     entry.RequestBody,
+			}
+			if entry.RequestBodyEncoding != "" {
+				postData["encoding"] = entry.RequestBodyEncoding
+			}
+			request["postData"] = postData
+		}
 		harEntries = append(harEntries, map[string]any{
 			"startedDateTime": now.Add(time.Duration(index) * time.Second).Format(time.RFC3339Nano),
 			"time":            duration,
-			"request": map[string]any{
-				"method":      firstNonEmpty(entry.Method, http.MethodGet),
-				"url":         entry.URL,
-				"httpVersion": "HTTP/1.1",
-				"headers":     []any{},
-				"queryString": []any{},
-				"cookies":     []any{},
-				"headersSize": -1,
-				"bodySize":    0,
-			},
+			"request":         request,
 			"response": map[string]any{
 				"status":      status,
 				"statusText":  http.StatusText(status),
 				"httpVersion": "HTTP/1.1",
-				"headers":     []any{},
+				"headers":     browserHARHeaderEntries(entry.ResponseHeaders),
 				"cookies":     []any{},
 				"content": map[string]any{
 					"size":     entry.BytesReceived,
@@ -308,6 +321,45 @@ func browserNetworkEntriesToHAR(entries []protocol.NetworkEntry) ([]byte, error)
 		},
 	}
 	return json.Marshal(payload)
+}
+
+func browserNetworkDedupeKey(entry protocol.NetworkEntry) string {
+	headersJSON, _ := json.Marshal(entry.RequestHeaders)
+	return strings.Join([]string{
+		strings.ToUpper(strings.TrimSpace(entry.Method)),
+		strings.TrimSpace(entry.URL),
+		entry.RequestBody,
+		entry.RequestBodyEncoding,
+		string(headersJSON),
+	}, "\x00")
+}
+
+func browserHARHeaderEntries(headers map[string]string) []any {
+	if len(headers) == 0 {
+		return []any{}
+	}
+	keys := make([]string, 0, len(headers))
+	for key := range headers {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	entries := make([]any, 0, len(keys))
+	for _, key := range keys {
+		entries = append(entries, map[string]any{
+			"name":  key,
+			"value": headers[key],
+		})
+	}
+	return entries
+}
+
+func browserHeaderValue(headers map[string]string, name string) string {
+	for key, value := range headers {
+		if strings.EqualFold(key, name) {
+			return value
+		}
+	}
+	return ""
 }
 
 func buildBrowserToHTTPReview(req BrowserToHTTPPreviewRequest, generated *dsl.Script, entries []protocol.NetworkEntry, skippedStatic int) BrowserToHTTPReview {

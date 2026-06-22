@@ -174,6 +174,102 @@ func TestBrowserProtocolPressesKeyOnSelector(t *testing.T) {
 	}
 }
 
+func TestBrowserProtocolClearsInputWithEmptyFill(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html>
+<html>
+  <body>
+    <input id="name" value="prefilled" />
+  </body>
+</html>`))
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open form", Type: "browser_navigate", Target: "/"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Clear name", Type: "browser_fill", Selector: "#name", Value: ""})
+	result := executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name:   "Read name",
+		Type:   "browser_evaluate_js",
+		Target: "document.querySelector('#name').value",
+	})
+	if result.Extractions["result"] != "" {
+		t.Fatalf("name value = %#v, want empty string", result.Extractions)
+	}
+}
+
+func TestBrowserProtocolEvaluatesFrameScopedElementAssertions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/frame":
+			_, _ = w.Write([]byte(`<!doctype html>
+<html><body><div id="status">Frame ready</div></body></html>`))
+		default:
+			_, _ = w.Write([]byte(`<!doctype html>
+<html><body><iframe id="checkout-frame" name="checkout-frame" src="/frame"></iframe></body></html>`))
+		}
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open frame", Type: "browser_navigate", Target: "/"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name:     "Assert frame status",
+		Type:     "browser_wait",
+		Selector: "#status",
+		WaitFor: &protocol.WaitCondition{
+			Type:      "visible",
+			Value:     "#status",
+			TimeoutMs: 3000,
+		},
+		Assertions: []protocol.Assertion{
+			{Type: "element_visible", Value: "#status"},
+			{Type: "element_text_contains", Value: "#status", Expected: "Frame ready"},
+		},
+		Metadata: map[string]any{"source_frame_context": "checkout-frame"},
+	})
+}
+
+func TestBrowserProtocolFailsOnUnexpectedDialogMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html>
+<html>
+  <body>
+    <button id="alert" onclick="alert('actual message')">Alert</button>
+  </body>
+</html>`))
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open alert page", Type: "browser_navigate", Target: "/"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name: "Arm dialog",
+		Type: "browser_handle_dialog",
+		Params: map[string]any{
+			"action":           "accept",
+			"dialog_type":      "alert",
+			"expected_message": "expected message",
+		},
+	})
+	result, err := b.Execute(context.Background(), &protocol.Action{Name: "Trigger alert", Type: "browser_click", Selector: "#alert"})
+	if err != nil {
+		t.Fatalf("Trigger alert returned error: %v", err)
+	}
+	if result.Success {
+		t.Fatal("dialog trigger succeeded, want expected_message mismatch failure")
+	}
+	if !strings.Contains(result.ErrorMessage, "actual message") || !strings.Contains(result.ErrorMessage, "expected message") {
+		t.Fatalf("ErrorMessage = %q, want actual and expected dialog messages", result.ErrorMessage)
+	}
+}
+
 func TestBrowserProtocolExecutesWindowSwitchActions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

@@ -31,7 +31,15 @@ func TestHandlePreviewBrowserToHTTPGeneratesReviewDraftAndScenarioTemplate(t *te
 		NetworkEntries: []protocol.NetworkEntry{
 			{URL: "https://shop.example.test/api/cart?customer_id=123&csrf_token=abcdef0123456789abcdef0123456789", Method: "GET", StatusCode: 200, ResourceType: "fetch", DurationMs: 12},
 			{URL: "https://shop.example.test/assets/app.js", Method: "GET", StatusCode: 200, ResourceType: "script", DurationMs: 4},
-			{URL: "https://shop.example.test/api/orders?order_id=987", Method: "POST", StatusCode: 201, ResourceType: "xhr", DurationMs: 31},
+			{
+				URL:            "https://shop.example.test/api/orders?order_id=987",
+				Method:         "POST",
+				StatusCode:     201,
+				ResourceType:   "xhr",
+				DurationMs:     31,
+				RequestHeaders: map[string]string{"Content-Type": "application/json"},
+				RequestBody:    `{"sku":"sku-123"}`,
+			},
 		},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-to-http/preview", bytes.NewReader(body))
@@ -73,6 +81,10 @@ func TestHandlePreviewBrowserToHTTPGeneratesReviewDraftAndScenarioTemplate(t *te
 	}
 	if payload.Diff.EndpointCoveragePct != 100 || !containsString(payload.Diff.Hosts, "shop.example.test") || !containsString(payload.Diff.Methods, "POST") {
 		t.Fatalf("diff = %#v, want full endpoint coverage for filtered requests", payload.Diff)
+	}
+	post := payload.GeneratedScript.Actions[1]
+	if post.Body != `{"sku":"sku-123"}` || post.Headers["Content-Type"] != "application/json" {
+		t.Fatalf("generated POST action = %#v, want captured body and content type", post)
 	}
 	if !strings.Contains(resp.Body.String(), "conversion_requires_approval") {
 		t.Fatalf("response missing approval metadata: %s", resp.Body.String())

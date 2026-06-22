@@ -38,7 +38,7 @@ func TestEvaluateBrowserAssertionsWithoutPageRuntime(t *testing.T) {
 		PageURL:   "https://example.test/home",
 	}
 
-	err := b.evaluateBrowserAssertions([]protocol.Assertion{
+	err := b.evaluateBrowserAssertions(nil, []protocol.Assertion{
 		{Type: "response_time_ms", Max: 100},
 		{Type: "body_contains", Value: "ready"},
 		{Type: "body_not_contains", Value: "error"},
@@ -49,7 +49,7 @@ func TestEvaluateBrowserAssertionsWithoutPageRuntime(t *testing.T) {
 		t.Fatalf("evaluateBrowserAssertions returned error: %v", err)
 	}
 
-	err = b.evaluateBrowserAssertions([]protocol.Assertion{{Type: "page_title"}}, result)
+	err = b.evaluateBrowserAssertions(nil, []protocol.Assertion{{Type: "page_title"}}, result)
 	if err == nil {
 		t.Fatal("evaluateBrowserAssertions missing page_title value returned nil error")
 	}

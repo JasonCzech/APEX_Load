@@ -625,12 +625,7 @@ func cloneProtocolConsoleEntries(entries []protocol.ConsoleEntry) []protocol.Con
 }
 
 func cloneProtocolNetworkEntries(entries []protocol.NetworkEntry) []protocol.NetworkEntry {
-	if len(entries) == 0 {
-		return nil
-	}
-	cloned := make([]protocol.NetworkEntry, len(entries))
-	copy(cloned, entries)
-	return cloned
+	return protocol.CloneNetworkEntries(entries)
 }
 
 func cloneProtocolDOMSummary(summary *protocol.DOMSummary) *protocol.DOMSummary {

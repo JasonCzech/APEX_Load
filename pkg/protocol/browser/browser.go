@@ -69,6 +69,7 @@ type Browser struct {
 
 	dialogMu      sync.Mutex
 	pendingDialog *dialogPolicy
+	dialogErr     error
 }
 
 // dialogPolicy is armed by a browser_handle_dialog action and consumed by the
@@ -76,6 +77,7 @@ type Browser struct {
 type dialogPolicy struct {
 	action          string // "accept" | "dismiss"
 	expectedMessage string
+	expectedType    string
 	promptText      string
 }
 

@@ -95,6 +95,12 @@ func TestVUser_RecordResultScrubsSensitivePayloads(t *testing.T) {
 	result := &protocol.Result{
 		Success:      false,
 		ResponseBody: `{"access_token":"abc123","status":"ok","ssn":"123-45-6789"}`,
+		NetworkEntries: []protocol.NetworkEntry{{
+			URL:             "https://example.test/api?token=abc123",
+			RequestHeaders:  map[string]string{"Cookie": "sid=abc123", "X-Correlation-ID": "corr-123"},
+			RequestBody:     "password=hunter2",
+			ResponseHeaders: map[string]string{"Set-Cookie": "sid=abc123"},
+		}},
 		Extractions: map[string]string{
 			"session_token": "abc123",
 		},
@@ -105,6 +111,11 @@ func TestVUser_RecordResultScrubsSensitivePayloads(t *testing.T) {
 			ResponseHeaders: map[string]string{"Set-Cookie": "sessionid=abcdef1234567890", "Content-Type": "application/json"},
 			ResponseBody:    `{"patient_id":"p-123","status":"ok"}`,
 			HTML:            `<html><body>token=AbCdEfGh1234567890ijklMN patient=123-45-6789</body></html>`,
+			NetworkEntries: []protocol.NetworkEntry{{
+				URL:             "https://example.test/snapshot?token=abc123",
+				RequestHeaders:  map[string]string{"Authorization": "Bearer abc123"},
+				ResponseHeaders: map[string]string{"Set-Cookie": "sid=abc123"},
+			}},
 		},
 	}
 
@@ -118,6 +129,12 @@ func TestVUser_RecordResultScrubsSensitivePayloads(t *testing.T) {
 	}
 	if sink.result.Snapshot.RequestHeaders["Authorization"] != redactedPayloadValue {
 		t.Fatalf("authorization header = %q, want %q", sink.result.Snapshot.RequestHeaders["Authorization"], redactedPayloadValue)
+	}
+	if sink.result.NetworkEntries[0].RequestHeaders["Cookie"] != redactedPayloadValue {
+		t.Fatalf("network cookie header = %q, want %q", sink.result.NetworkEntries[0].RequestHeaders["Cookie"], redactedPayloadValue)
+	}
+	if sink.result.Snapshot.NetworkEntries[0].RequestHeaders["Authorization"] != redactedPayloadValue {
+		t.Fatalf("snapshot network authorization header = %q, want %q", sink.result.Snapshot.NetworkEntries[0].RequestHeaders["Authorization"], redactedPayloadValue)
 	}
 	if sink.result.Snapshot.RequestHeaders["X-Correlation-ID"] != "corr-123" {
 		t.Fatalf("correlation header = %q, want corr-123", sink.result.Snapshot.RequestHeaders["X-Correlation-ID"])

@@ -58,6 +58,8 @@ func (b *Browser) applyDefaultConfig() {
 	b.harCapturePolicy = HARCaptureOff
 	b.harSLABreachThreshold = 0
 	b.resourceValidators = make(map[string]string)
+	b.pendingDialog = nil
+	b.dialogErr = nil
 }
 
 func (b *Browser) applyConfigOverrides(config map[string]any) {

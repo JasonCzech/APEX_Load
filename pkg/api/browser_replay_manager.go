@@ -452,12 +452,7 @@ func cloneBrowserConsoleEntries(entries []protocol.ConsoleEntry) []protocol.Cons
 }
 
 func cloneBrowserNetworkEntries(entries []protocol.NetworkEntry) []protocol.NetworkEntry {
-	if len(entries) == 0 {
-		return nil
-	}
-	cloned := make([]protocol.NetworkEntry, len(entries))
-	copy(cloned, entries)
-	return cloned
+	return protocol.CloneNetworkEntries(entries)
 }
 
 func cloneBrowserDOMSummary(summary *protocol.DOMSummary) *protocol.DOMSummary {

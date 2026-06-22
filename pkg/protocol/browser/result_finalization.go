@@ -30,6 +30,11 @@ func (b *Browser) finalizeActionResult(ctx context.Context, action *protocol.Act
 		result.ErrorMessage = captureErr.Error()
 		return
 	}
+	if dialogErr := b.consumeDialogError(); dialogErr != nil {
+		result.ErrorMessage = dialogErr.Error()
+		result.Snapshot = browserErrorSnapshot(result)
+		return
+	}
 	if requiresBrowserAssertionHTML(action.Assertions) && result.HTML == "" {
 		html, err := b.captureHTML(ctx)
 		if err != nil {
@@ -38,7 +43,7 @@ func (b *Browser) finalizeActionResult(ctx context.Context, action *protocol.Act
 		}
 		result.HTML = html
 	}
-	if assertionErr := b.evaluateBrowserAssertions(action.Assertions, result); assertionErr != nil {
+	if assertionErr := b.evaluateBrowserAssertions(action, action.Assertions, result); assertionErr != nil {
 		result.ErrorMessage = assertionErr.Error()
 		result.Snapshot = browserErrorSnapshot(result)
 		return

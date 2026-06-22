@@ -146,19 +146,33 @@ func TestPauseToggleControlEventFromToolbar(t *testing.T) {
 	var events []Event
 	r := New(Options{StartURL: "https://app.example/", OnEvent: func(e Event) { events = append(events, e) }})
 
-	r.handleRecordBinding(nil, `{"kind":"pause_toggle","ts":1}`)
+	r.handleRecordBinding(nil, `{"kind":"pause_toggle","ts":0}`)
+	if r.Paused() {
+		t.Fatal("forged pause_toggle without nonce paused the recorder")
+	}
+	r.handleRecordBinding(nil, `{"kind":"pause_toggle","nonce":"`+r.controlNonce+`","ts":1}`)
 	if !r.Paused() {
 		t.Fatal("pause_toggle did not pause the recorder")
 	}
-	r.handleRecordBinding(nil, `{"kind":"pause_toggle","ts":2}`)
+	r.handleRecordBinding(nil, `{"kind":"pause_toggle","nonce":"`+r.controlNonce+`","ts":2}`)
 	if r.Paused() {
 		t.Fatal("second pause_toggle did not resume the recorder")
 	}
-	if len(events) != 2 || events[0].Type != EventPauseState || events[1].Type != EventPauseState {
-		t.Errorf("events = %+v, want two pause_state events", events)
+	var pauseEvents int
+	var warningEvents int
+	for _, event := range events {
+		if event.Type == EventPauseState {
+			pauseEvents++
+		}
+		if event.Type == EventWarning && strings.Contains(event.Warning, "untrusted origin") {
+			warningEvents++
+		}
+	}
+	if pauseEvents != 2 || warningEvents != 1 {
+		t.Errorf("events = %+v, want two pause_state events and one untrusted warning", events)
 	}
 	if warnings := r.Snapshot().Warnings; len(warnings) != 0 {
-		t.Errorf("control events must not produce warnings: %v", warnings)
+		t.Errorf("transient control warnings must not persist on snapshot: %v", warnings)
 	}
 }
 
@@ -396,11 +410,15 @@ func TestPickToggleControlEvent(t *testing.T) {
 			pickEvents = append(pickEvents, e.Picking)
 		}
 	}})
-	r.handleRecordBinding(nil, `{"kind":"pick_toggle","ts":1}`)
+	r.handleRecordBinding(nil, `{"kind":"pick_toggle","ts":0}`)
+	if r.AssertMode() {
+		t.Fatal("forged pick_toggle without nonce enabled assert mode")
+	}
+	r.handleRecordBinding(nil, `{"kind":"pick_toggle","nonce":"`+r.controlNonce+`","ts":1}`)
 	if !r.AssertMode() {
 		t.Fatal("pick_toggle did not enable assert mode")
 	}
-	r.handleRecordBinding(nil, `{"kind":"pick_toggle","ts":2}`)
+	r.handleRecordBinding(nil, `{"kind":"pick_toggle","nonce":"`+r.controlNonce+`","ts":2}`)
 	if r.AssertMode() {
 		t.Fatal("second pick_toggle did not disable assert mode")
 	}
@@ -758,6 +776,7 @@ func TestControlKindRequiresTrustCoversStateMutatingKinds(t *testing.T) {
 	trusted := []string{
 		"recording_stop", "delete_last_step", "step_exclude", "step_mark",
 		"section_set", "transaction_start", "transaction_end", "note_add",
+		"pause_toggle", "pick_toggle",
 	}
 	for _, kind := range trusted {
 		if !controlKindRequiresTrust(kind) {

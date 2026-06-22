@@ -109,6 +109,7 @@ func scrubSensitiveResult(result *protocol.Result, config *RedactionConfig) {
 	}
 
 	result.ResponseBody = scrubSensitiveTextWithConfig(result.ResponseBody, config)
+	result.NetworkEntries = scrubSensitiveNetworkEntries(result.NetworkEntries, config)
 	if result.Snapshot == nil {
 		return
 	}
@@ -119,6 +120,17 @@ func scrubSensitiveResult(result *protocol.Result, config *RedactionConfig) {
 	result.Snapshot.ResponseHeaders = scrubSensitiveHeaders(result.Snapshot.ResponseHeaders, config)
 	result.Snapshot.ResponseBody = scrubSensitiveTextWithConfig(result.Snapshot.ResponseBody, config)
 	result.Snapshot.HTML = scrubSensitiveTextWithConfig(result.Snapshot.HTML, config)
+	result.Snapshot.NetworkEntries = scrubSensitiveNetworkEntries(result.Snapshot.NetworkEntries, config)
+}
+
+func scrubSensitiveNetworkEntries(entries []protocol.NetworkEntry, config *RedactionConfig) []protocol.NetworkEntry {
+	for i := range entries {
+		entries[i].URL = scrubSensitiveTextWithConfig(entries[i].URL, config)
+		entries[i].RequestHeaders = scrubSensitiveHeaders(entries[i].RequestHeaders, config)
+		entries[i].RequestBody = scrubSensitiveTextWithConfig(entries[i].RequestBody, config)
+		entries[i].ResponseHeaders = scrubSensitiveHeaders(entries[i].ResponseHeaders, config)
+	}
+	return entries
 }
 
 func scrubSensitiveHeaders(headers map[string]string, config *RedactionConfig) map[string]string {

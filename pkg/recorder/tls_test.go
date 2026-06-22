@@ -326,6 +326,9 @@ func TestHTTPSInterception(t *testing.T) {
 	if !strings.Contains(recorded.URL, "/api/secure") {
 		t.Fatalf("expected URL containing /api/secure, got %s", recorded.URL)
 	}
+	if !strings.Contains(recorded.URL, backendHost) {
+		t.Fatalf("expected recorded URL to preserve CONNECT host %s, got %s", backendHost, recorded.URL)
+	}
 	if recorded.StatusCode != 200 {
 		t.Fatalf("expected status 200, got %d", recorded.StatusCode)
 	}

@@ -102,6 +102,31 @@ func TestHandleStartRecordingThreadsCaptureCookies(t *testing.T) {
 	}
 }
 
+func TestHandleStartRecordingAllowsStaticCapture(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{
+		"name": "Static Capture",
+		"exclude_static": false
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusCreated, resp.Body.String())
+	}
+	var payload struct {
+		Session recorder.Session `json:"session"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if payload.Session.Filters.ExcludeStatic {
+		t.Fatalf("exclude_static = true, want explicit false: %#v", payload.Session.Filters)
+	}
+}
+
 func TestHandleExportRecordingHAR(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	session, err := server.recorder.StartSession("rec-2", "Checkout HAR", recorder.SessionFilters{}, nil)

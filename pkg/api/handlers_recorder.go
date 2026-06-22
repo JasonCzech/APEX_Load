@@ -16,7 +16,7 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name                  string   `json:"name"`
 		ProjectID             string   `json:"project_id,omitempty"`
-		ExcludeStatic         bool     `json:"exclude_static"`
+		ExcludeStatic         *bool    `json:"exclude_static"`
 		ExcludeHosts          []string `json:"exclude_hosts,omitempty"`
 		IncludeHosts          []string `json:"include_hosts,omitempty"`
 		BodyCaptureLimitBytes int      `json:"body_capture_limit_bytes,omitempty"`
@@ -41,14 +41,19 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	session, err := s.recorder.StartSessionForProject(id, req.Name, normalizeProjectID(req.ProjectID), recorder.SessionFilters{
-		ExcludeStatic:         req.ExcludeStatic,
+	filters := recorder.SessionFilters{
 		ExcludeHosts:          req.ExcludeHosts,
 		IncludeHosts:          req.IncludeHosts,
 		BodyCaptureLimitBytes: req.BodyCaptureLimitBytes,
 		RedactHeaders:         req.RedactHeaders,
 		CaptureCookies:        req.CaptureCookies,
-	}, notify)
+	}
+	if req.ExcludeStatic != nil {
+		filters.ExcludeStatic = *req.ExcludeStatic
+		filters.ExcludeStaticSet = true
+	}
+
+	session, err := s.recorder.StartSessionForProject(id, req.Name, normalizeProjectID(req.ProjectID), filters, notify)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return

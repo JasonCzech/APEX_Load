@@ -123,12 +123,41 @@ type ConsoleEntry struct {
 }
 
 type NetworkEntry struct {
-	URL           string  `json:"url,omitempty"`
-	Method        string  `json:"method,omitempty"`
-	StatusCode    int     `json:"status_code,omitempty"`
-	ResourceType  string  `json:"resource_type,omitempty"`
-	DurationMs    float64 `json:"duration_ms,omitempty"`
-	BytesReceived int64   `json:"bytes_received,omitempty"`
+	URL                  string            `json:"url,omitempty"`
+	Method               string            `json:"method,omitempty"`
+	StatusCode           int               `json:"status_code,omitempty"`
+	ResourceType         string            `json:"resource_type,omitempty"`
+	DurationMs           float64           `json:"duration_ms,omitempty"`
+	BytesReceived        int64             `json:"bytes_received,omitempty"`
+	RequestHeaders       map[string]string `json:"request_headers,omitempty"`
+	RequestBody          string            `json:"request_body,omitempty"`
+	RequestBodyEncoding  string            `json:"request_body_encoding,omitempty"`
+	RequestBodyTruncated bool              `json:"request_body_truncated,omitempty"`
+	ResponseHeaders      map[string]string `json:"response_headers,omitempty"`
+}
+
+func CloneNetworkEntries(entries []NetworkEntry) []NetworkEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cloned := make([]NetworkEntry, len(entries))
+	for i, entry := range entries {
+		cloned[i] = entry
+		cloned[i].RequestHeaders = cloneStringMap(entry.RequestHeaders)
+		cloned[i].ResponseHeaders = cloneStringMap(entry.ResponseHeaders)
+	}
+	return cloned
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 type DOMSummary struct {

@@ -180,6 +180,37 @@ func TestConvertSession_WebSocketMessages(t *testing.T) {
 	}
 }
 
+func TestConvertSession_WebSocketContinuationFramesAreCoalesced(t *testing.T) {
+	s := &Session{
+		ID:      "test",
+		Name:    "Fragmented Socket Flow",
+		BaseURL: "ws://stream.example.com",
+		Requests: []RecordedRequest{
+			{
+				Seq:        1,
+				Method:     "GET",
+				URL:        "ws://stream.example.com/orders",
+				Path:       "/orders",
+				Host:       "stream.example.com",
+				StatusCode: http.StatusSwitchingProtocols,
+				WebSocketMessages: []RecordedWebSocketMessage{
+					{Direction: webSocketDirectionClientToServer, Opcode: webSocketOpcodeText, Payload: "hel"},
+					{Direction: webSocketDirectionClientToServer, Opcode: webSocketOpcodeContinuation, Payload: "lo"},
+				},
+			},
+		},
+	}
+
+	result := ConvertSession(s, "")
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("action count = %d, want connect + coalesced send + close", len(result.Script.Actions))
+	}
+	send := result.Script.Actions[1]
+	if send.Type != "ws_send" || send.Body != "hello" {
+		t.Fatalf("send action = %#v, want coalesced hello payload", send)
+	}
+}
+
 func TestConvertSession_CorrelatesCapturedCookies(t *testing.T) {
 	s := &Session{
 		ID:      "test",
@@ -671,5 +702,41 @@ func TestConvertSession_CorrelationApplied(t *testing.T) {
 	action2 := result.Script.Actions[1]
 	if action2.Target == "http://example.com/api/data?auth=dynamic-token-value-12345678" {
 		t.Fatal("expected correlation var to replace dynamic value in target URL")
+	}
+}
+
+func TestConvertSession_SkippedResponsesDoNotCreateDanglingCorrelationVars(t *testing.T) {
+	s := &Session{
+		ID:      "test",
+		Name:    "Static Corr Test",
+		BaseURL: "http://example.com",
+		Requests: []RecordedRequest{
+			{
+				Seq:          1,
+				Method:       "GET",
+				URL:          "http://example.com/app.js",
+				Path:         "/app.js",
+				Host:         "example.com",
+				StatusCode:   200,
+				IsStatic:     true,
+				ResponseBody: `window.token = "static-token-value-12345678";`,
+			},
+			{
+				Seq:        2,
+				Method:     "POST",
+				URL:        "http://example.com/api/save?token=static-token-value-12345678",
+				Path:       "/api/save",
+				Host:       "example.com",
+				StatusCode: 200,
+			},
+		},
+	}
+
+	result := ConvertSession(s, "")
+	if len(result.Correlations) != 0 {
+		t.Fatalf("correlations = %#v, want none from skipped static response", result.Correlations)
+	}
+	if got := result.Script.Actions[0].Target; strings.Contains(got, "{{var.") {
+		t.Fatalf("target = %q, want literal value because extractor source was skipped", got)
 	}
 }

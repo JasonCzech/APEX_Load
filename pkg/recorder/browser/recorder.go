@@ -158,7 +158,8 @@ func controlKindRequiresTrust(kind string) bool {
 	// markers/notes). The legitimate sidebar stamps the closure nonce on all of
 	// them, so gating rejects only forged events.
 	case "recording_stop", "delete_last_step", "step_exclude", "step_mark",
-		"section_set", "transaction_start", "transaction_end", "note_add":
+		"section_set", "transaction_start", "transaction_end", "note_add",
+		"pause_toggle", "pick_toggle":
 		return true
 	default:
 		return false
@@ -470,18 +471,6 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 	switch kind := controlEventKind(payload); kind {
 	case "":
 		// Not a control event; fall through to step parsing below.
-	case "pause_toggle":
-		r.mu.Lock()
-		paused := r.paused
-		r.mu.Unlock()
-		r.setPaused(!paused)
-		return nil
-	case "pick_toggle":
-		r.mu.Lock()
-		assert := r.assertMode
-		r.mu.Unlock()
-		r.SetAssertMode(!assert)
-		return nil
 	default:
 		r.handleControlEvent(payload)
 		return nil
@@ -814,6 +803,16 @@ func (r *Recorder) handleControlEvent(payload string) {
 	}
 	var err error
 	switch ev.Kind {
+	case "pause_toggle":
+		r.mu.Lock()
+		paused := r.paused
+		r.mu.Unlock()
+		r.setPaused(!paused)
+	case "pick_toggle":
+		r.mu.Lock()
+		assert := r.assertMode
+		r.mu.Unlock()
+		r.SetAssertMode(!assert)
 	case "section_set":
 		r.SetSection(ev.Section)
 	case "transaction_start":

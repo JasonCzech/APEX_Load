@@ -1,6 +1,7 @@
 package recorder
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -64,7 +65,7 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		return result
 	}
 
-	correlations := detectCorrelations(session.Requests)
+	correlations := detectCorrelations(convertibleCorrelationRequests(session.Requests))
 	result.Correlations = correlations
 
 	corrMap := buildCorrelationMap(correlations)
@@ -200,6 +201,17 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	return result
 }
 
+func convertibleCorrelationRequests(requests []RecordedRequest) []RecordedRequest {
+	filtered := make([]RecordedRequest, 0, len(requests))
+	for _, req := range requests {
+		if req.IsStatic || req.Excluded {
+			continue
+		}
+		filtered = append(filtered, req)
+	}
+	return filtered
+}
+
 // SessionBaseline returns the recorded request/response exchanges that the
 // generated HTTP script's actions map to, in action order (ID = action index).
 // It is the recorded side of a record-vs-replay correlation diagnosis and uses
@@ -290,7 +302,7 @@ func convertWebSocketSession(session *Session, name string, requests []RecordedR
 		script.Actions = append(script.Actions, connect)
 		actionSeq++
 
-		for _, msg := range req.WebSocketMessages {
+		for _, msg := range coalesceWebSocketMessages(req.WebSocketMessages) {
 			if msg.Opcode != webSocketOpcodeText && msg.Opcode != webSocketOpcodeBinary {
 				continue
 			}
@@ -330,6 +342,51 @@ func convertWebSocketSession(session *Session, name string, requests []RecordedR
 	}
 
 	return script
+}
+
+func coalesceWebSocketMessages(messages []RecordedWebSocketMessage) []RecordedWebSocketMessage {
+	if len(messages) == 0 {
+		return nil
+	}
+	coalesced := make([]RecordedWebSocketMessage, 0, len(messages))
+	lastByDirection := make(map[string]int)
+	for _, msg := range messages {
+		switch msg.Opcode {
+		case webSocketOpcodeText, webSocketOpcodeBinary:
+			coalesced = append(coalesced, msg)
+			lastByDirection[msg.Direction] = len(coalesced) - 1
+		case webSocketOpcodeContinuation:
+			idx, ok := lastByDirection[msg.Direction]
+			if !ok || idx < 0 || idx >= len(coalesced) {
+				continue
+			}
+			coalesced[idx] = appendWebSocketContinuation(coalesced[idx], msg)
+		}
+	}
+	return coalesced
+}
+
+func appendWebSocketContinuation(base RecordedWebSocketMessage, cont RecordedWebSocketMessage) RecordedWebSocketMessage {
+	base.PayloadSizeBytes += cont.PayloadSizeBytes
+	base.PayloadTruncated = base.PayloadTruncated || cont.PayloadTruncated
+	if base.Opcode == webSocketOpcodeBinary || base.PayloadEncoding == "base64" || cont.PayloadEncoding == "base64" {
+		left := webSocketPayloadBytes(base)
+		right := webSocketPayloadBytes(cont)
+		base.Payload = base64.StdEncoding.EncodeToString(append(left, right...))
+		base.PayloadEncoding = "base64"
+		return base
+	}
+	base.Payload += cont.Payload
+	return base
+}
+
+func webSocketPayloadBytes(msg RecordedWebSocketMessage) []byte {
+	if msg.PayloadEncoding == "base64" {
+		if decoded, err := base64.StdEncoding.DecodeString(msg.Payload); err == nil {
+			return decoded
+		}
+	}
+	return []byte(msg.Payload)
 }
 
 func numberedActionName(seq int, label string) string {

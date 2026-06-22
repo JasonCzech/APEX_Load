@@ -96,6 +96,7 @@ type Session struct {
 
 type SessionFilters struct {
 	ExcludeStatic         bool     `json:"exclude_static"`
+	ExcludeStaticSet      bool     `json:"-"`
 	ExcludeHosts          []string `json:"exclude_hosts,omitempty"`
 	IncludeHosts          []string `json:"include_hosts,omitempty"`
 	BodyCaptureLimitBytes int      `json:"body_capture_limit_bytes,omitempty"`
@@ -187,7 +188,7 @@ func (r *Recorder) StartSessionForProject(id, name, projectID string, filters Se
 		Filters:   filters,
 		notify:    notify,
 	}
-	if filters.ExcludeStatic == false {
+	if !filters.ExcludeStaticSet {
 		s.Filters.ExcludeStatic = true
 	}
 	if s.Filters.BodyCaptureLimitBytes <= 0 {

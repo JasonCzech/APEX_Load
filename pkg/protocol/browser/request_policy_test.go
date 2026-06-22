@@ -119,6 +119,9 @@ func TestRequestPolicyBlocksUnrecordedResources(t *testing.T) {
 	if !b.shouldBlockRequestInfo("https://cdn.example.com/other.js", "script", false) {
 		t.Fatal("unrecorded script was not blocked")
 	}
+	if b.shouldBlockRequestInfo("https://cdn.example.com/api/orders", "xhr", false) {
+		t.Fatal("unrecorded xhr was blocked; recorded resource mode should only constrain static resources")
+	}
 }
 
 func TestRequestPolicyDownloadFiltersApplyToStaticResources(t *testing.T) {

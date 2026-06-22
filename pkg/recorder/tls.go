@@ -468,8 +468,8 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, cl
 	// Set the request URL to the full HTTPS URL for recording before any
 	// streaming response can emit its early recording event.
 	clientReq.URL.Scheme = "https"
-	clientReq.URL.Host = hostname
-	clientReq.Host = hostname
+	clientReq.URL.Host = host
+	clientReq.Host = host
 
 	if isStreamingResponse(resp) {
 		writeHTTPSResponseHeaders(tlsConn, resp, -1, true)

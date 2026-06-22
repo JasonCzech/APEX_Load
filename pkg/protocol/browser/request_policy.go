@@ -147,7 +147,7 @@ func (b *Browser) shouldBlockRequestInfo(rawURL, resourceType string, isNavigati
 	if b.downloadResources == "none" && isBrowserStaticResourceType(resourceType) {
 		return true
 	}
-	if b.shouldBlockUnrecordedRequest(rawURL) {
+	if isBrowserStaticResourceType(resourceType) && b.shouldBlockUnrecordedRequest(rawURL) {
 		return true
 	}
 	if b.hasDownloadFilters() && isBrowserStaticResourceType(resourceType) && b.shouldBlockFilteredRequest(rawURL) {

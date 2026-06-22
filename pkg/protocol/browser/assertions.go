@@ -17,7 +17,7 @@ func requiresBrowserAssertionHTML(assertions []protocol.Assertion) bool {
 	return false
 }
 
-func (b *Browser) evaluateBrowserAssertions(assertions []protocol.Assertion, result *protocol.Result) error {
+func (b *Browser) evaluateBrowserAssertions(action *protocol.Action, assertions []protocol.Assertion, result *protocol.Result) error {
 	for _, assertion := range assertions {
 		switch assertion.Type {
 		case "response_time_ms":
@@ -55,7 +55,7 @@ func (b *Browser) evaluateBrowserAssertions(assertions []protocol.Assertion, res
 			if selector == "" {
 				return fmt.Errorf("element_visible assertion requires selector in value")
 			}
-			visible, err := b.currentPage().IsVisible(selector)
+			visible, err := b.assertionSelectorVisible(action, selector)
 			if err != nil {
 				return fmt.Errorf("failed to check visibility for %q: %v", selector, err)
 			}
@@ -67,7 +67,7 @@ func (b *Browser) evaluateBrowserAssertions(assertions []protocol.Assertion, res
 			if selector == "" {
 				return fmt.Errorf("element_text_equals assertion requires selector in value")
 			}
-			text, err := b.currentPage().TextContent(selector)
+			text, err := b.assertionSelectorText(action, selector)
 			if err != nil {
 				return fmt.Errorf("failed to get text for %q: %v", selector, err)
 			}
@@ -81,7 +81,7 @@ func (b *Browser) evaluateBrowserAssertions(assertions []protocol.Assertion, res
 			if selector == "" {
 				return fmt.Errorf("element_text_contains assertion requires selector in value")
 			}
-			text, err := b.currentPage().TextContent(selector)
+			text, err := b.assertionSelectorText(action, selector)
 			if err != nil {
 				return fmt.Errorf("failed to get text for %q: %v", selector, err)
 			}
@@ -94,4 +94,26 @@ func (b *Browser) evaluateBrowserAssertions(assertions []protocol.Assertion, res
 		}
 	}
 	return nil
+}
+
+func (b *Browser) assertionSelectorVisible(action *protocol.Action, selector string) (bool, error) {
+	if locator, ok := b.actionLocator(action, selector); ok {
+		return locator.IsVisible()
+	}
+	page := b.currentPage()
+	if page == nil {
+		return false, fmt.Errorf("browser page is not initialized")
+	}
+	return page.IsVisible(selector)
+}
+
+func (b *Browser) assertionSelectorText(action *protocol.Action, selector string) (string, error) {
+	if locator, ok := b.actionLocator(action, selector); ok {
+		return locator.TextContent()
+	}
+	page := b.currentPage()
+	if page == nil {
+		return "", fmt.Errorf("browser page is not initialized")
+	}
+	return page.TextContent(selector)
 }
