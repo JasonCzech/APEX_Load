@@ -165,6 +165,25 @@ export function codePathForDebugRow(row?: { phase: string; actionIndex: number }
   return ''
 }
 
+// resolveDebugRowForEvent maps a replay event to its top-level action row by the
+// event's OWN (phase, action_index) rather than by positionally indexing the flat
+// event list with the event index. The two diverge as soon as a script has an
+// http_sequence sub-request or a control-flow iteration before the selection
+// (one event per sub-leaf/iteration, one row per top-level action), which made
+// the code pane highlight — and breakpoints toggle — the wrong action. Returns
+// null when no row matches the event's coordinates.
+export function resolveDebugRowForEvent(
+  rows: ScriptPhaseActionRow[],
+  event: { phase?: unknown; action_index?: unknown } | null | undefined,
+): ScriptPhaseActionRow | null {
+  if (!event) return null
+  const rawPhase = String(event.phase ?? 'action')
+  const phase: ScriptActionPhase = rawPhase === 'init' || rawPhase === 'teardown' ? rawPhase : 'action'
+  const actionIndex = Number(event.action_index)
+  if (!Number.isInteger(actionIndex)) return null
+  return rows.find((r) => r.phase === phase && r.actionIndex === actionIndex) ?? null
+}
+
 export function scriptActionsForPhase(script: ScriptDefinition, phase: ScriptActionPhase): ScriptActionDefinition[] {
   if (phase === 'init') return script.init || []
   if (phase === 'teardown') return script.teardown || []

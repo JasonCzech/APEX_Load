@@ -536,4 +536,26 @@ describe('recentMetricAverages', () => {
     expect(art).toBe(100)
     expect(recentMetricAverages([])).toEqual({})
   })
+
+  it('excludes gap-boundary spacer rows from chart-summary averages (no NaN)', () => {
+    // Two clusters separated by a large time gap so markDataGaps inserts a
+    // value-less spacer row — the scenario that produced literal "NaN" metrics.
+    // (>= GAP_DETECTION_MIN_POINTS real points are required to trigger detection.)
+    const points = [
+      pt(0, 10, 100), pt(1_000, 10, 100), pt(2_000, 10, 100), pt(3_000, 10, 100),
+      pt(120_000, 10, 100), pt(121_000, 10, 100), pt(122_000, 10, 100),
+    ]
+    const withGaps = markDataGaps(points)
+    expect(withGaps.length).toBeGreaterThan(points.length)
+    expect(withGaps.some(point => point.isGapBoundary)).toBe(true)
+
+    const summary = summarizeExecutionChartData(withGaps)
+    expect(summary).not.toBeNull()
+    // Every real point is 10/100/0, so the averages must equal them exactly —
+    // only true if the undefined-valued spacer is excluded from sum AND divisor.
+    expect(Number.isNaN(summary!.avgTps)).toBe(false)
+    expect(summary!.avgTps).toBe(10)
+    expect(summary!.avgLatency).toBe(100)
+    expect(summary!.avgError).toBe(0)
+  })
 })

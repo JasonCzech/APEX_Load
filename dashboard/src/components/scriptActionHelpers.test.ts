@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { actionRowLabel, actionTypeSummary, humanizeActionType } from './scriptActionHelpers'
+import { actionRowLabel, actionTypeSummary, humanizeActionType, httpSequenceRequests, rawHttpSequenceRequest } from './scriptActionHelpers'
 import { setCachedDslActionCatalog, type DslActionCatalog } from './dslActionCatalog'
 import type { ScriptActionDefinition } from '../types/scripts'
 
@@ -19,6 +19,30 @@ const catalog: DslActionCatalog = {
 
 afterEach(() => {
   setCachedDslActionCatalog(null)
+})
+
+describe('rawHttpSequenceRequest', () => {
+  it('preserves unknown/vendor keys that the whitelisted view drops', () => {
+    const seq = action({
+      name: 'Seq',
+      type: 'http_sequence',
+      params: { requests: [{ name: 'r0', method: 'GET', target: '/0', lr_unmask: 'keep-me', vendor_extension: { a: 1 } }] },
+    } as Partial<ScriptActionDefinition>)
+
+    const raw = rawHttpSequenceRequest(seq, 0) as Record<string, unknown> | null
+    expect(raw).not.toBeNull()
+    expect(raw?.lr_unmask).toBe('keep-me')
+    expect(raw?.vendor_extension).toEqual({ a: 1 })
+
+    // The whitelisted view (used for display/counting) drops the unknown keys.
+    const view = httpSequenceRequests(seq)[0] as unknown as Record<string, unknown>
+    expect(view.lr_unmask).toBeUndefined()
+    expect(view.vendor_extension).toBeUndefined()
+
+    // Out-of-range and non-sequence inputs return null.
+    expect(rawHttpSequenceRequest(seq, 5)).toBeNull()
+    expect(rawHttpSequenceRequest(action({ type: 'GET' }), 0)).toBeNull()
+  })
 })
 
 describe('humanizeActionType', () => {

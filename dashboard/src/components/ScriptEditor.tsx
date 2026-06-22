@@ -172,6 +172,7 @@ import {
   remapIndexAfterMarkerWrap,
   clampDebuggerPaneSize,
   codePathForDebugRow,
+  resolveDebugRowForEvent,
   findParameterReferencesInJson,
   formatBrowserDeviceProfileLabel,
   formatDebugPhaseLabel,
@@ -187,7 +188,7 @@ import {
   type ScriptActionPhase,
   type ScriptPhaseActionRow,
 } from './scriptEditorWorkbench'
-import { isRecord, asString, httpSequenceRequests, actionRequestCount, actionExtractorCount, actionAssertionCount, isControlAction, isReviewGatedJavaScriptAction, actionRequiresReview, actionSelectorFallbackCount, actionDisplayType, actionDisplayTarget, actionTypeSummary, actionRowLabel } from './scriptActionHelpers'
+import { isRecord, asString, httpSequenceRequests, rawHttpSequenceRequest, actionRequestCount, actionExtractorCount, actionAssertionCount, isControlAction, isReviewGatedJavaScriptAction, actionRequiresReview, actionSelectorFallbackCount, actionDisplayType, actionDisplayTarget, actionTypeSummary, actionRowLabel } from './scriptActionHelpers'
 import { ActionEditor, ActionParameterMenu, ValidationEvidencePanel } from './ScriptEditorActionEditor'
 import { type ParameterFormatPreset, CUSTOM_PARAMETER_FORMAT_VALUE, parameterFormatForType, parameterFormatPresetsForType, isBuiltinParameterType, applyParameterTypeDefaults } from './scriptParameterFormat'
 import './ScriptEditor.css'
@@ -2771,7 +2772,9 @@ function resolveNestedAction(root: Action | undefined, stepPath?: string[]): Act
     const parsed = parseActionStepSegment(segment)
     if (!parsed || !current) return null
     if (parsed.name === 'requests') {
-      current = httpSequenceRequests(current)[parsed.index]
+      // Resolve the RAW request object (not the whitelisted httpSequenceRequests
+      // view) so the scoped JSON and any saved block preserve every original field.
+      current = rawHttpSequenceRequest(current, parsed.index) ?? undefined
     } else if (parsed.name === 'else') {
       current = current.control?.else?.[parsed.index]
     } else {
@@ -5692,6 +5695,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     ? expandedReplayEvent
     : null
   const selectedReplayEvent = selectedReplayEventIndex != null ? debugEvents[selectedReplayEventIndex] : null
+  // Resolve the top-level action row from the selected event's own (phase,
+  // action_index) rather than positionally indexing debugActionRows with the flat
+  // event index, which diverges for container scripts (http_sequence / loops).
+  const selectedDebugRow = useMemo(
+    () => resolveDebugRowForEvent(debugActionRows, selectedReplayEvent),
+    [debugActionRows, selectedReplayEvent],
+  )
   useEffect(() => {
     if (selectedReplayEvent || (replaying && browserReplaySession?.current_action)) {
       setDebugDetailCollapsed(false)
@@ -5808,7 +5818,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }, [])
   const scriptDslDocument = useMemo(() => buildDslDocument({ script }), [script])
   const selectedDebugCodeRow = workspaceTab === 'debug'
-    ? debugActionRows[selectedReplayEventIndex ?? 0] || null
+    ? (selectedReplayEvent ? selectedDebugRow : (debugActionRows[0] ?? null))
     : null
   const scriptCodeActivePath = workspaceTab === 'debug'
     ? codePathForDebugRow(selectedDebugCodeRow)
@@ -6055,7 +6065,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       priority: 850,
       onTrigger: () => {
         const row = workspaceTab === 'debug'
-          ? debugActionRows[selectedReplayEventIndex ?? 0]
+          ? (selectedReplayEvent ? selectedDebugRow : debugActionRows[0])
           : activeAction !== null
             ? { phase: 'action' as const, actionIndex: activeAction, action: script.actions[activeAction] }
             : debugActionRows[0]
@@ -6075,7 +6085,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     saving,
     script.actions,
     script.name,
-    selectedReplayEventIndex,
+    selectedReplayEvent,
+    selectedDebugRow,
     toggleDebugBreakpoint,
     workspaceTab,
   ])
@@ -7100,7 +7111,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   )
   const toggleSelectedBreakpoint = () => {
     const selectedRow = workspaceTab === 'debug'
-      ? debugActionRows[selectedReplayEventIndex ?? 0]
+      ? (selectedReplayEvent ? selectedDebugRow : debugActionRows[0])
       : activeAction !== null
         ? { phase: 'action', actionIndex: activeAction, action: script.actions[activeAction] }
         : debugActionRows[0]

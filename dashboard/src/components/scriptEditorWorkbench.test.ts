@@ -12,6 +12,7 @@ import {
   debugSequenceKey,
   clampDebuggerPaneSize,
   codePathForDebugRow,
+  resolveDebugRowForEvent,
   actionTransactionMarker,
   actionTransactionName,
   computeTransactionBands,
@@ -238,6 +239,23 @@ describe('misc helpers', () => {
     expect(codePathForDebugRow({ phase: 'init', actionIndex: 0 })).toBe('script.init[0]')
     expect(codePathForDebugRow({ phase: 'teardown', actionIndex: 1 })).toBe('script.teardown[1]')
     expect(codePathForDebugRow(null)).toBe('')
+  })
+
+  it('resolveDebugRowForEvent maps by phase/action_index, not flat event position', () => {
+    const seq = {
+      name: 'Seq', type: 'http_sequence',
+      params: { requests: [{ name: 'r0', method: 'GET', target: '/0' }, { name: 'r1', method: 'GET', target: '/1' }] },
+    } as unknown as ScriptActionDefinition
+    const rows = buildScriptPhaseActionRows(script({ actions: [action('plain'), seq] }))
+    // The http_sequence's 2nd sub-request event (whose flat event index would be 2,
+    // out of the 2-row range) still resolves to the seq's top-level row (index 1).
+    const row = resolveDebugRowForEvent(rows, { phase: 'action', action_index: 1 })
+    expect(row?.actionIndex).toBe(1)
+    expect(codePathForDebugRow(row)).toBe('script.actions[1]')
+    expect(resolveDebugRowForEvent(rows, { phase: 'action', action_index: 0 })?.actionIndex).toBe(0)
+    expect(resolveDebugRowForEvent(rows, { phase: 'action', action_index: 9 })).toBeNull()
+    expect(resolveDebugRowForEvent(rows, null)).toBeNull()
+    expect(resolveDebugRowForEvent(rows, { phase: 'action', action_index: 'x' })).toBeNull()
   })
 
   it('formatDebugPhaseLabel title-cases underscores', () => {

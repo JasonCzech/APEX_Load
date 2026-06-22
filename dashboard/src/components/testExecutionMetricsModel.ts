@@ -559,7 +559,17 @@ export function summarizeExecutionChartData(filteredData: MetricsHistoryPoint[])
     return null
   }
 
-  const sum = filteredData.reduce((acc, point) => ({
+  // Exclude gap-boundary spacer rows inserted by markDataGaps: they carry no
+  // tps/avgMs/errorPct (undefined), so reducing over them yields NaN averages and
+  // inflates the divisor. Average only real, numeric data points.
+  const realPoints = filteredData.filter(
+    point => !point.isGapBoundary && typeof point.tps === 'number',
+  )
+  if (realPoints.length === 0) {
+    return null
+  }
+
+  const sum = realPoints.reduce((acc, point) => ({
     tps: acc.tps + point.tps,
     avgMs: acc.avgMs + point.avgMs,
     errorPct: acc.errorPct + point.errorPct,
@@ -567,9 +577,9 @@ export function summarizeExecutionChartData(filteredData: MetricsHistoryPoint[])
   }), { tps: 0, avgMs: 0, errorPct: 0, vusers: 0 })
 
   return {
-    avgTps: sum.tps / filteredData.length,
-    avgLatency: sum.avgMs / filteredData.length,
-    avgError: sum.errorPct / filteredData.length,
+    avgTps: sum.tps / realPoints.length,
+    avgLatency: sum.avgMs / realPoints.length,
+    avgError: sum.errorPct / realPoints.length,
     maxVusers: sum.vusers,
   }
 }

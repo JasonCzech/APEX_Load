@@ -68,6 +68,18 @@ export function httpSequenceRequests(action: Action): Action[] {
   })
 }
 
+// rawHttpSequenceRequest returns the UNMODIFIED request object at index from an
+// http_sequence's params.requests, preserving every field. Unlike
+// httpSequenceRequests (which rebuilds a whitelisted view for display/counting),
+// this is used when a sub-request is selected for the scoped-JSON view or saved as
+// a reusable block, so vendor/advanced keys the importer kept are not dropped.
+export function rawHttpSequenceRequest(action: Action, index: number): Action | null {
+  const rawRequests = action.params?.requests
+  if (!Array.isArray(rawRequests)) return null
+  const raw = rawRequests[index]
+  return isRecord(raw) ? (raw as unknown as Action) : null
+}
+
 export function actionRequestCount(action: Action) {
   return httpSequenceRequests(action).length
 }
