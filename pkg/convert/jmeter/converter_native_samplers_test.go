@@ -46,7 +46,7 @@ func TestDetectDatabaseDriverAndDSN(t *testing.T) {
 		{"jdbc:redis://nope", "", "", false},
 	}
 	for _, tc := range tests {
-		driver, dsn, ok := detectDatabaseDriverAndDSN(tc.url, "app", "pw")
+		driver, dsn, _, ok := detectDatabaseDriverAndDSN(tc.url, "app", "pw")
 		if driver != tc.wantDriver || ok != tc.wantOK || (tc.wantOK && dsn != tc.wantDSN) {
 			t.Fatalf("detect(%q) = (%q,%q,%v), want (%q,%q,%v)", tc.url, driver, dsn, ok, tc.wantDriver, tc.wantDSN, tc.wantOK)
 		}
@@ -59,12 +59,63 @@ func TestDetectDatabaseDriverAndDSN(t *testing.T) {
 func TestDetectDatabaseDSNOmitsCredentialsWhenNoPassword(t *testing.T) {
 	// No password supplied: the username may appear but no secret placeholder is
 	// injected, and nothing cleartext leaks.
-	driver, dsn, ok := detectDatabaseDriverAndDSN("jdbc:postgresql://db:5432/orders", "app", "")
+	driver, dsn, _, ok := detectDatabaseDriverAndDSN("jdbc:postgresql://db:5432/orders", "app", "")
 	if !ok || driver != "postgres" {
 		t.Fatalf("detect = (%q,%q,%v), want postgres ok", driver, dsn, ok)
 	}
 	if strings.Contains(dsn, "{{secret") {
 		t.Fatalf("dsn = %q, want no secret placeholder when no password present", dsn)
+	}
+}
+
+func TestDetectDatabaseDSNRedactsInlineURLCredentials(t *testing.T) {
+	// Credentials embedded directly in the JDBC URL (no separate password
+	// property) must still be stripped from the stored DSN for every driver
+	// branch, and the inline-credential flag must be set so the importer warns.
+	tests := []struct {
+		name    string
+		url     string
+		secret  string // a cleartext fragment that must NOT appear in the DSN
+		wantDrv string
+	}{
+		{"oracle thin user/pass@", "jdbc:oracle:thin:scott/tiger@//orahost:1521/svc", "tiger", "oracle"},
+		{"oracle SID user/pass@", "jdbc:oracle:thin:scott/tiger@orahost:1521:orcl", "tiger", "oracle"},
+		{"sqlserver ;password=", "jdbc:sqlserver://mssql:1433;databaseName=app;user=sa;password=Sup3rSecret", "Sup3rSecret", "odbc"},
+		{"jtds ;password=", "jdbc:jtds:sqlserver://mssql:1433/app;user=sa;password=Sup3rSecret", "Sup3rSecret", "odbc"},
+		{"mysql userinfo", "jdbc:mysql://root:hunter2@db:3306/shop", "hunter2", "mysql"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			driver, dsn, inlineCred, ok := detectDatabaseDriverAndDSN(tc.url, "", "")
+			if !ok || driver != tc.wantDrv {
+				t.Fatalf("detect(%q) = (%q,_,%v), want driver %q ok", tc.url, driver, ok, tc.wantDrv)
+			}
+			if !inlineCred {
+				t.Fatalf("detect(%q): inlineCred=false, want true (inline credential present)", tc.url)
+			}
+			if strings.Contains(dsn, tc.secret) {
+				t.Fatalf("detect(%q) leaked cleartext credential %q into DSN %q", tc.url, tc.secret, dsn)
+			}
+			if !strings.Contains(dsn, importedDBPasswordSecret) {
+				t.Fatalf("detect(%q) did not substitute the governed secret reference: DSN %q", tc.url, dsn)
+			}
+		})
+	}
+}
+
+func TestRedactJDBCInlineCredentialsNoCredsIsNoop(t *testing.T) {
+	for _, url := range []string{
+		"oracle:thin:@//orahost:1521/svc",
+		"sqlserver://mssql:1433;databaseName=app",
+		"customdb://host/db",
+	} {
+		out, found := redactJDBCInlineCredentials(url)
+		if found {
+			t.Fatalf("redact(%q): found=true, want false (no credential present)", url)
+		}
+		if out != url {
+			t.Fatalf("redact(%q) mutated a credential-free URL to %q", url, out)
+		}
 	}
 }
 

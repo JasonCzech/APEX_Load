@@ -73,6 +73,11 @@ export function CorrelationDiagnosePanel({
 
   const present = (response: CorrelationDiagnoseResponse) => {
     setSuggestions(response.suggestions || [])
+    // A fresh diagnosis produces a new suggestion set, so re-enable "Save as
+    // ruleset" — otherwise it stays stuck disabled for the rest of the session
+    // after the first save. Applied-state is per-suggestion and also resets.
+    setSavedRuleset(false)
+    setApplied(new Set())
   }
 
   const runBaseline = async () => {
@@ -157,7 +162,7 @@ export function CorrelationDiagnosePanel({
                 {savedRuleset ? 'Saved as ruleset' : 'Save as ruleset'}
               </button>
             )}
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSuggestions(null)}>Reset</button>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setSuggestions(null); setSavedRuleset(false); setApplied(new Set()) }}>Reset</button>
           </div>
           {suggestions.map((suggestion, index) => {
             const appliedKey = suggestion.rule_id + suggestion.source_step_id

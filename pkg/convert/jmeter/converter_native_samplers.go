@@ -11,6 +11,7 @@ package jmeter
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
@@ -192,31 +193,90 @@ func jdbcQueryActionType(queryType string) string {
 
 // parseJMeterJDBCConnection maps a JDBC Connection Configuration element onto a
 // best-effort database config. Detection may be partial; the connection is always
-// flagged adapter_required so an operator verifies it before running.
-func parseJMeterJDBCConnection(element *xmlNode) (*dsl.DatabaseConfig, bool) {
+// flagged adapter_required so an operator verifies it before running. The second
+// return reports whether a credential was redacted (the separate password
+// property OR one embedded inline in dbUrl), so the caller can warn unconditionally.
+func parseJMeterJDBCConnection(element *xmlNode) (*dsl.DatabaseConfig, bool, bool) {
 	dbURL := prop(element, "dbUrl")
 	username := prop(element, "username")
 	password := prop(element, "password")
 	cfg := &dsl.DatabaseConfig{}
-	if driver, dsn, ok := detectDatabaseDriverAndDSN(dbURL, username, password); ok {
+	credentialRedacted := strings.TrimSpace(password) != ""
+	if driver, dsn, inlineCred, ok := detectDatabaseDriverAndDSN(dbURL, username, password); ok {
 		cfg.Driver = driver
 		cfg.DSN = dsn
+		credentialRedacted = credentialRedacted || inlineCred
 	} else if trimmed := strings.TrimSpace(dbURL); trimmed != "" {
-		cfg.DSN = strings.TrimPrefix(trimmed, "jdbc:")
+		// Unknown driver: store the URL verbatim, but never with cleartext creds.
+		sanitized, inlineCred := redactJDBCInlineCredentials(strings.TrimPrefix(trimmed, "jdbc:"))
+		cfg.DSN = sanitized
+		credentialRedacted = credentialRedacted || inlineCred
 	}
-	return cfg, true
+	return cfg, credentialRedacted, true
 }
 
 // importedDBPasswordSecret is the governed secret reference substituted for a
 // JMX cleartext password so the credential is never baked into the exported DSL.
 const importedDBPasswordSecret = "{{secret.db_password}}"
 
+var (
+	// jdbcCredPropRe matches a password carried as a JDBC connection property or
+	// query parameter (SQL Server / jtds use ;password=, Postgres uses ?password=
+	// / &password=), case-insensitive. The value runs to the next ; or & or end.
+	jdbcCredPropRe = regexp.MustCompile(`(?i)([;&?](?:password|pwd)=)([^;&]*)`)
+	// jdbcOracleCredRe matches Oracle thin/oci inline credentials of the form
+	// jdbc:oracle:<drivertype>:user/password@... (the user/pass precede the '@').
+	jdbcOracleCredRe = regexp.MustCompile(`(?i)^(jdbc:oracle:[a-z]+:)([^/@:][^/@]*)/([^@]*)(@)`)
+)
+
+// redactJDBCInlineCredentials replaces any credential embedded directly in a JDBC
+// URL with the governed {{secret.db_password}} reference so cleartext is never
+// baked into the exported DSN. It returns the sanitized URL and whether a
+// credential was found. It handles connection-property (;password=), Oracle
+// thin (user/pass@), and URL-userinfo (scheme://user:pass@host) forms.
+func redactJDBCInlineCredentials(raw string) (string, bool) {
+	out := raw
+	found := false
+
+	if jdbcCredPropRe.MatchString(out) {
+		out = jdbcCredPropRe.ReplaceAllString(out, "${1}"+importedDBPasswordSecret)
+		found = true
+	}
+	if jdbcOracleCredRe.MatchString(out) {
+		out = jdbcOracleCredRe.ReplaceAllString(out, "${1}${2}/"+importedDBPasswordSecret+"${4}")
+		found = true
+	}
+	if idx := strings.Index(out, "://"); idx >= 0 {
+		head := out[:idx+3]
+		rest := out[idx+3:]
+		authority := rest
+		tail := ""
+		if end := strings.IndexAny(rest, "/?;"); end >= 0 {
+			authority, tail = rest[:end], rest[end:]
+		}
+		if at := strings.LastIndex(authority, "@"); at >= 0 {
+			userinfo, host := authority[:at], authority[at:] // host keeps the '@'
+			if colon := strings.Index(userinfo, ":"); colon >= 0 {
+				userinfo = userinfo[:colon+1] + importedDBPasswordSecret
+				found = true
+			}
+			out = head + userinfo + host + tail
+		}
+	}
+	return out, found
+}
+
 // detectDatabaseDriverAndDSN converts a JDBC URL into an APEX Load driver + DSN.
 // The cleartext JMX password is never embedded: the generated script is
-// exportable/downloadable/pushable, so the password is replaced with a governed
-// secret reference resolved at runtime.
-func detectDatabaseDriverAndDSN(dbURL, username, password string) (string, string, bool) {
+// exportable/downloadable/pushable, so the password (whether supplied as a
+// separate property or embedded inline in the URL) is replaced with a governed
+// secret reference resolved at runtime. The third return reports whether an
+// inline credential was found and redacted.
+func detectDatabaseDriverAndDSN(dbURL, username, password string) (string, string, bool, bool) {
 	raw := strings.TrimSpace(dbURL)
+	// Strip any credential embedded directly in the URL up front, so cleartext
+	// can never reach the DSN regardless of which driver branch builds it.
+	raw, inlineCred := redactJDBCInlineCredentials(raw)
 	lower := strings.ToLower(raw)
 	hostPort, database := splitJDBCURL(raw)
 	if strings.TrimSpace(password) != "" {
@@ -225,21 +285,21 @@ func detectDatabaseDriverAndDSN(dbURL, username, password string) (string, strin
 	switch {
 	case strings.HasPrefix(lower, "jdbc:postgresql:"):
 		base := "postgres://" + hostPort + "/" + database
-		return "postgres", injectURLCredentials(base, username, password), true
+		return "postgres", injectURLCredentials(base, username, password), inlineCred, true
 	case strings.HasPrefix(lower, "jdbc:mysql:"), strings.HasPrefix(lower, "jdbc:mariadb:"):
 		cred := username
 		if password != "" {
 			cred += ":" + password
 		}
-		return "mysql", fmt.Sprintf("%s@tcp(%s)/%s", cred, hostPort, database), true
+		return "mysql", fmt.Sprintf("%s@tcp(%s)/%s", cred, hostPort, database), inlineCred, true
 	case strings.HasPrefix(lower, "jdbc:oracle:"):
-		return "oracle", strings.TrimPrefix(raw, "jdbc:"), true
+		return "oracle", strings.TrimPrefix(raw, "jdbc:"), inlineCred, true
 	case strings.HasPrefix(lower, "jdbc:sqlite:"):
-		return "sqlite", strings.TrimPrefix(strings.TrimPrefix(raw, "jdbc:sqlite:"), "//"), true
+		return "sqlite", strings.TrimPrefix(strings.TrimPrefix(raw, "jdbc:sqlite:"), "//"), inlineCred, true
 	case strings.HasPrefix(lower, "jdbc:sqlserver:"), strings.HasPrefix(lower, "jdbc:jtds:"):
-		return "odbc", strings.TrimPrefix(raw, "jdbc:"), true
+		return "odbc", strings.TrimPrefix(raw, "jdbc:"), inlineCred, true
 	}
-	return "", "", false
+	return "", "", false, false
 }
 
 // splitJDBCURL extracts host:port and the database/path from a JDBC URL.

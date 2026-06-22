@@ -37,19 +37,26 @@ type eventMeta struct {
 	EnqueuedAt  time.Time
 }
 
-// memoryBroker is a process-local Event Hubs mock: an append-only log per event
-// hub (offset == sequence == index) with per-(hub, consumer-group) read cursors,
-// mirroring the Kafka mock so produce-then-consume and consumer lag behave like a
-// real namespace. Shakeout/CI only — the log is append-only (not trimmed); real
-// load uses the eventhubs_real adapter.
+// memoryBroker is a process-local Event Hubs mock: a log per event hub
+// (offset == sequence == base + index) with per-(hub, consumer-group) read
+// cursors, mirroring the Kafka mock so produce-then-consume and consumer lag
+// behave like a real namespace. Shakeout/CI only — real load uses the
+// eventhubs_real adapter. To keep a long-lived process bounded, each hub's log is
+// capped at maxBrokerLogPerHub records: the oldest are evicted and the per-hub
+// base offset advances (offsets stay absolute, so cursors/lag stay correct).
 type memoryBroker struct {
 	mu      sync.Mutex
 	logs    map[string][]event
+	base    map[string]int64 // absolute offset of logs[hub][0] (evicted count)
 	cursors map[string]int64
 }
 
+// maxBrokerLogPerHub bounds retained events per hub in the in-memory mock. It is
+// generous enough that ordinary shakeout/CI runs never evict.
+const maxBrokerLogPerHub = 50000
+
 func newMemoryBroker() *memoryBroker {
-	return &memoryBroker{logs: make(map[string][]event), cursors: make(map[string]int64)}
+	return &memoryBroker{logs: make(map[string][]event), base: make(map[string]int64), cursors: make(map[string]int64)}
 }
 
 // sharedBroker lets multiple VUser goroutines exercise the same mock hubs.
@@ -60,13 +67,18 @@ func cursorKey(hub, group string) string { return hub + "\x00" + group }
 func (b *memoryBroker) send(hub string, ev event) eventMeta {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	offset := int64(len(b.logs[hub]))
+	offset := b.base[hub] + int64(len(b.logs[hub]))
 	ev.Offset = offset
 	ev.SequenceNum = offset
 	if ev.EnqueuedAt.IsZero() {
 		ev.EnqueuedAt = time.Now()
 	}
 	b.logs[hub] = append(b.logs[hub], ev)
+	// Bound retained events: evict the oldest and advance the base offset.
+	if over := len(b.logs[hub]) - maxBrokerLogPerHub; over > 0 {
+		b.logs[hub] = append(b.logs[hub][:0], b.logs[hub][over:]...)
+		b.base[hub] += int64(over)
+	}
 	return eventMeta{PartitionID: ev.PartitionID, Offset: offset, SequenceNum: offset, EnqueuedAt: ev.EnqueuedAt}
 }
 
@@ -74,14 +86,20 @@ func (b *memoryBroker) receive(hub, group string) (event, int64, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	log := b.logs[hub]
+	base := b.base[hub]
+	end := base + int64(len(log))
 	key := cursorKey(hub, group)
 	pos := b.cursors[key]
-	if pos >= int64(len(log)) {
+	if pos < base {
+		// Cursor lagged behind eviction; skip to the earliest retained event.
+		pos = base
+	}
+	if pos >= end {
 		return event{}, 0, false
 	}
-	ev := log[pos]
+	ev := log[pos-base]
 	b.cursors[key] = pos + 1
-	return ev, int64(len(log)) - (pos + 1), true
+	return ev, end - (pos + 1), true
 }
 
 // mockClient adapts the in-memory broker to the eventHubsClient interface.
@@ -107,7 +125,7 @@ func (c mockClient) Receive(ctx context.Context, hub, group string, timeout time
 		case <-ctx.Done():
 			return event{}, 0, ctx.Err()
 		case <-deadline.C:
-			return event{}, 0, fmt.Errorf("no event received from %q within %s", hub, timeout)
+			return event{}, 0, fmt.Errorf("no event received from %q within %s: %w", hub, timeout, errNoEvent)
 		case <-tick.C:
 		}
 	}

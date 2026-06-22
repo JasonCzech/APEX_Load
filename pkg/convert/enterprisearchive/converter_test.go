@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -4413,6 +4414,51 @@ func assertTopLevelNamesFoldedUnique(t *testing.T, script *dsl.Script) {
 
 // TestConvertUniquifiesCaseVariantActionNames covers the reported bug: source
 // steps that differ only in case (a common Salesforce/Aura correlation-step
+// TestConvertReconcilesDuplicateUtilityActionNames covers the source-review
+// reconciliation for two byte-identical utility-action names: the kept action
+// must retain its own mapping rather than having it clobbered to the renamed
+// _N action (the old name-only reconcile rewrote ALL same-name mappings).
+func TestConvertReconcilesDuplicateUtilityActionNames(t *testing.T) {
+	source := `Action()
+{
+	web_convert_param("p1", "SourceString=a", "SourceEncoding=PLAIN", "TargetEncoding=URL", LAST);
+	web_convert_param("p1", "SourceString=b", "SourceEncoding=PLAIN", "TargetEncoding=URL", LAST);
+	return 0;
+}`
+	parsed, err := ParseActionFile("Action.c", source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %d, want 2 same-named utility actions", len(result.Script.Actions))
+	}
+	if result.Script.Actions[0].Name == result.Script.Actions[1].Name {
+		t.Fatalf("actions were not uniquified: both named %q", result.Script.Actions[0].Name)
+	}
+	// Every top-level action must have an action-kind mapping at its own path that
+	// names it — in particular the kept action[0] must not have lost its mapping.
+	for idx := range result.Script.Actions {
+		want := result.Script.Actions[idx].Name
+		path := fmt.Sprintf("actions[%d]", idx)
+		found := false
+		for _, m := range result.SourceReview.Mappings {
+			if m.TargetKind == "action" && m.TargetPath == path {
+				found = true
+				if m.TargetName != want {
+					t.Fatalf("mapping at %s has TargetName %q, want %q (the action's own name)", path, m.TargetName, want)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("action %q at %s lost its source-review mapping", want, path)
+		}
+	}
+}
+
 // pattern) defeated the case-sensitive per-branch dedup and surfaced as false
 // "Action name ... is duplicated" warnings in the dashboard, which folds case.
 func TestConvertUniquifiesCaseVariantActionNames(t *testing.T) {

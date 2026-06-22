@@ -522,6 +522,48 @@ func TestConvertAsyncAPIWiresCorrelationIDs(t *testing.T) {
 	}
 }
 
+func TestConvertAsyncAPIHeaderCorrelationGoesToActionHeaders(t *testing.T) {
+	// A correlationId that points at a message header must be written to the
+	// top-level action.Headers map (which both the Kafka and JMS runtimes send),
+	// not action.Params["headers"] (which neither reads).
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "asyncapi": "2.6.0",
+  "info": {"title": "Orders", "version": "1.0.0"},
+  "servers": {"prod": {"url": "broker:9092", "protocol": "kafka"}},
+  "channels": {
+    "order.requests": {
+      "publish": {
+        "operationId": "sendOrderRequest",
+        "message": {
+          "correlationId": {"location": "$message.header#/correlation-id"},
+          "payload": {"type": "object", "properties": {"sku": {"type": "string"}}}
+        }
+      }
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	var produce *dsl.Action
+	for i := range result.Script.Actions {
+		if strings.HasSuffix(result.Script.Actions[i].Type, "_produce") || result.Script.Actions[i].Type == "jms_publish" {
+			produce = &result.Script.Actions[i]
+		}
+	}
+	if produce == nil {
+		t.Fatalf("expected a produce action, got %+v", result.Script.Actions)
+	}
+	if got := produce.Headers["correlation-id"]; got != "{{fn.uuid()}}" {
+		t.Fatalf("header correlation not written to action.Headers: headers=%v", produce.Headers)
+	}
+	if _, leaked := produce.Params["headers"]; leaked {
+		t.Fatalf("correlation id was written to params[\"headers\"] (runtime-ignored): %v", produce.Params)
+	}
+}
+
 func TestParseCorrelationLocation(t *testing.T) {
 	tests := []struct {
 		location string

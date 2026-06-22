@@ -173,6 +173,24 @@ func TestConvertMQSCSkipsCommentLines(t *testing.T) {
 	}
 }
 
+func TestConvertMQSCIgnoresDefineInsideAttributeValue(t *testing.T) {
+	// A DEFINE keyword appearing inside an attribute value (here a DESCR string)
+	// must not be captured as a phantom object — only the real command's object.
+	mqsc := "DEFINE QLOCAL('REAL.Q') DESCR('replaces DEFINE QLOCAL(OLD) per ticket')\n"
+	res, err := Convert(ConvertRequest{Data: []byte(mqsc)})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if res.Stats.Queues != 1 {
+		t.Fatalf("queues = %d, want 1 (no phantom from the DESCR value)", res.Stats.Queues)
+	}
+	for _, a := range res.Script.Actions {
+		if a.Target == "OLD" {
+			t.Fatal("phantom OLD queue from inside the DESCR value must not be imported")
+		}
+	}
+}
+
 func TestConvertSanitizedNameCollision(t *testing.T) {
 	// "A/B" and "A%B" are distinct MQ destinations but sanitize to the same base.
 	mqsc := "DEFINE QLOCAL('A/B')\nDEFINE QLOCAL('A%B')\n"

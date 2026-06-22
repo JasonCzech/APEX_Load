@@ -104,7 +104,10 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
       else if (target.kind === 'text') next.text = target.value
       return next
     })
-    void runAction(() => api.updateObjectRepository(repo.id, { name: repo.name, description: repo.description, objects }))
+    // Send the current auto_promote_on_heal so a candidate promotion never
+    // implicitly resets it (the server also preserves omitted fields, but being
+    // explicit keeps the client intent unambiguous).
+    void runAction(() => api.updateObjectRepository(repo.id, { name: repo.name, description: repo.description, objects, auto_promote_on_heal: repo.auto_promote_on_heal }))
   }
 
   const toggleAutoPromote = (repo: ObjectRepository) => {

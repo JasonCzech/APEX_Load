@@ -176,23 +176,44 @@ func (a *serviceBusAdapter) RequestReply(ctx context.Context, requestDestination
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	// Use a dedicated peek-lock receiver so an uncorrelated reply (e.g. another
+	// VUser's reply on a shared reply queue) can be ABANDONED back to the queue
+	// rather than consumed-and-lost. Consume's auto-complete would silently delete
+	// it. Only the message whose correlation id matches this request is completed.
+	receiver, err := a.peekLockReceiver(replyDestination)
+	if err != nil {
+		return sent, message{}, err
+	}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
 			break
 		}
-		reply, err := a.Consume(ctx, replyDestination, remaining)
-		if err != nil {
-			return sent, message{}, err
+		receiveCtx, cancel := context.WithTimeout(ctx, remaining)
+		messages, rerr := receiver.ReceiveMessages(receiveCtx, 1, nil)
+		cancel()
+		if rerr != nil {
+			return sent, message{}, fmt.Errorf("receive Service Bus reply from %q: %w", replyDestination, rerr)
 		}
+		if len(messages) == 0 {
+			continue
+		}
+		reply := fromServiceBusMessage(replyDestination, messages[0])
 		if messaging.CorrelationMatches(request.CorrelationID, reply.CorrelationID) {
+			if err := receiver.CompleteMessage(ctx, messages[0], nil); err != nil {
+				return sent, reply, fmt.Errorf("complete Service Bus reply from %q: %w", replyDestination, err)
+			}
 			return sent, reply, nil
 		}
-		// NOTE: an uncorrelated reply has already been completed by Consume
-		// (peek-lock auto-complete) and is therefore lost rather than requeued.
-		// Requeue-safety needs client-controlled settlement (abandon), which lands
-		// with the Service Bus settlement work (P2.4).
+		// Not our reply: abandon it so it returns to the queue for its rightful
+		// requester instead of being destroyed.
+		if err := receiver.AbandonMessage(ctx, messages[0], nil); err != nil {
+			return sent, message{}, fmt.Errorf("abandon uncorrelated Service Bus reply from %q: %w", replyDestination, err)
+		}
 	}
 	return sent, message{}, fmt.Errorf("no correlated JMS reply received from %q within %s", replyDestination, timeout)
 }
@@ -238,6 +259,34 @@ func (a *serviceBusAdapter) Teardown(ctx context.Context) error {
 
 func (a *serviceBusAdapter) receiver(destination string) (*azservicebus.Receiver, error) {
 	return a.receiverFor(destination, "")
+}
+
+// peekLockReceiver returns a cached PeekLock-mode receiver for the destination,
+// independent of the configured ack mode. RequestReply needs PeekLock so an
+// uncorrelated reply can be abandoned (returned to the queue) instead of being
+// auto-completed and lost; a receive_and_delete ack mode would make that impossible.
+func (a *serviceBusAdapter) peekLockReceiver(destination string) (*azservicebus.Receiver, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	key := destination + "|__peeklock"
+	if receiver := a.receivers[key]; receiver != nil {
+		return receiver, nil
+	}
+	options := &azservicebus.ReceiverOptions{ReceiveMode: azservicebus.ReceiveModePeekLock}
+	var (
+		receiver *azservicebus.Receiver
+		err      error
+	)
+	if topic, subscription, ok := splitServiceBusSubscription(destination); ok {
+		receiver, err = a.handle.client.NewReceiverForSubscription(topic, subscription, options)
+	} else {
+		receiver, err = a.handle.client.NewReceiverForQueue(destination, options)
+	}
+	if err != nil {
+		return nil, err
+	}
+	a.receivers[key] = receiver
+	return receiver, nil
 }
 
 // Browse performs a non-destructive read via Service Bus PeekMessages (P2.3).

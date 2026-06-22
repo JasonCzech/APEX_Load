@@ -694,9 +694,13 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 	j.session.Track(msg)
 	// Reliability detection by broker sequence. A legitimate rollback-redelivery
 	// carries the same sequence; it is tracked as a redelivery, NOT a broker
-	// duplicate, so skip Observe for redelivered messages.
+	// duplicate, so skip Observe for redelivered messages. Observe within the
+	// subscription's own sequence space (empty for queue consumes): topic fan-out
+	// delivers the SAME broker sequence to every subscription, so a single session
+	// consuming two subscriptions of one topic would otherwise flag the second,
+	// distinct delivery as a duplicate.
 	if msg.SequenceNumber > 0 && !isRedeliveredMessage(msg) {
-		if dup, ooo := j.session.Observe(msg.SequenceNumber); dup || ooo {
+		if dup, ooo := j.session.ObserveKeyed(msg.sourceSubscription, msg.SequenceNumber); dup || ooo {
 			if dup {
 				result.Extractions["jms_duplicate"] = "1"
 			}

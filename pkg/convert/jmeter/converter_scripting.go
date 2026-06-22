@@ -224,6 +224,12 @@ func handleJMeterScriptSampler(node *treeNode, script *dsl.Script, result *Conve
 	startIndex := len(script.Actions)
 	script.Actions = append(script.Actions, actions...)
 
+	// The sampler produced executable actions, so account it as converted (once
+	// per sampler) — countJMeterSamplerElements pre-counted it as skipped, so
+	// without this the summary understates ConvertedActions and overstates
+	// SkippedSamplers for a successfully-translated script sampler.
+	countNativeSamplerConversion(result)
+
 	if recognized == total {
 		diagnostics.Add(diag.Info, "JMeter "+name, samplerLabel, fmt.Sprintf("translated %d JSR223 statement(s) into engine actions; verify semantics before replay", recognized))
 		*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, element, name, fmt.Sprintf("actions[%d]", startIndex), samplerLabel, "scripting", "converted", fmt.Sprintf("JMeter %s safe-subset script was translated into %d engine action(s).", name, recognized)))

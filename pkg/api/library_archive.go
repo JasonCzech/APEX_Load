@@ -61,7 +61,21 @@ func readLibraryArchiveImportRequest(r *http.Request) (LibraryImportRequest, *li
 				cleanup()
 				return LibraryImportRequest{}, nil, nil, err
 			}
-			req.ProjectID = strings.TrimSpace(string(data))
+			formProject := strings.TrimSpace(string(data))
+			switch {
+			case req.ProjectID == "":
+				// No query project_id (only reachable with auth disabled, since the
+				// route's project resolver otherwise rejects a missing query value):
+				// accept the form value.
+				req.ProjectID = formProject
+			case formProject != "" && formProject != req.ProjectID:
+				// Authorization was checked against the query project_id; a form value
+				// that disagrees would let a caller authorized for project A import into
+				// project B. Reject the mismatch instead of letting the form override
+				// the authorized project.
+				cleanup()
+				return LibraryImportRequest{}, nil, nil, fmt.Errorf("project_id form field %q does not match the authorized project_id query parameter %q", formProject, req.ProjectID)
+			}
 		case "archive":
 			tmp, err := os.CreateTemp("", "apexload-library-import-*.zip")
 			if err != nil {

@@ -574,6 +574,9 @@ func appendEventHubsConfig(cfg map[string]any, script *dsl.Script) {
 	if ehCfg.PartitionID != "" {
 		cfg["eventhubs_partition_id"] = ehCfg.PartitionID
 	}
+	if ehCfg.StartPosition != "" {
+		cfg["eventhubs_start_position"] = ehCfg.StartPosition
+	}
 	if ehCfg.AuthType != "" {
 		cfg["eventhubs_auth_type"] = ehCfg.AuthType
 	}

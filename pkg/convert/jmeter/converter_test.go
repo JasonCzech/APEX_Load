@@ -802,8 +802,8 @@ func TestConvertJMXMapsSimpleIfControllerAndReportsScriptSamplers(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ConvertJMX returned error: %v", err)
 	}
-	if result.Stats.ConvertedActions != 1 {
-		t.Fatalf("converted actions = %d, want 1 (HTTP sampler)", result.Stats.ConvertedActions)
+	if result.Stats.ConvertedActions != 2 {
+		t.Fatalf("converted actions = %d, want 2 (HTTP sampler + translated JSR223 sampler)", result.Stats.ConvertedActions)
 	}
 	// The IfController converts to control_if and the standalone JSR223 sampler's
 	// safe vars.put("sig","abc") translates into a source_parameter action.
@@ -826,8 +826,10 @@ func TestConvertJMXMapsSimpleIfControllerAndReportsScriptSamplers(t *testing.T) 
 	if param.Metadata["jsr223_source"] != `vars.put("sig", "abc")` {
 		t.Fatalf("jsr223_source metadata = %v, want preserved statement", param.Metadata["jsr223_source"])
 	}
-	if result.Stats.TotalSamplers != 2 || result.Stats.SkippedSamplers != 1 {
-		t.Fatalf("sampler accounting = total %d skipped %d, want total 2 skipped 1", result.Stats.TotalSamplers, result.Stats.SkippedSamplers)
+	// Both samplers produced executable actions, so neither is counted as skipped
+	// (the JSR223 sampler's safe-subset translation is a successful conversion).
+	if result.Stats.TotalSamplers != 2 || result.Stats.SkippedSamplers != 0 {
+		t.Fatalf("sampler accounting = total %d skipped %d, want total 2 skipped 0", result.Stats.TotalSamplers, result.Stats.SkippedSamplers)
 	}
 	if !containsJMeterDiagnostic(result, "JMeter JSR223Sampler") {
 		t.Fatalf("diagnostics = %#v, want JSR223Sampler translation note", result.Unsupported)

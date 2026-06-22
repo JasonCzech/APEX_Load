@@ -56,19 +56,28 @@ type recordMeta struct {
 // and replay. Reads default to the earliest offset so produce-then-consume
 // flows work without an explicit seek.
 //
-// The log is append-only and never trimmed (unlike a destructive queue), so it
-// grows for the process lifetime. This is acceptable because mock mode is
-// strictly for local shakeout/CI (real load uses the kafka_real adapter); do not
-// use the mock for sustained high-volume runs.
+// To keep a long-lived process (e.g. a controller running many mock shakeouts)
+// from growing without bound, each topic's log is capped at maxBrokerLogPerTopic
+// records: when exceeded, the oldest records are evicted and the per-topic base
+// offset advances. Offsets remain absolute (offset == base + index), so cursors,
+// lag, and seek stay correct across eviction. Mock mode is for shakeout/CI only
+// (real load uses the kafka_real adapter); do not use it for sustained runs.
 type memoryBroker struct {
 	mu      sync.Mutex
-	logs    map[string][]kafkaRecord // append-only per topic; offset == index
-	cursors map[string]int64         // per cursorKey(topic, group): next read offset
+	logs    map[string][]kafkaRecord // per topic; logs[topic][i] has offset base[topic]+i
+	base    map[string]int64         // per topic: absolute offset of logs[topic][0] (evicted count)
+	cursors map[string]int64         // per cursorKey(topic, group): next read offset (absolute)
 }
+
+// maxBrokerLogPerTopic bounds retained records per topic in the in-memory mock so
+// a long-lived process does not accumulate every produced event forever. It is
+// generous enough that ordinary shakeout/CI runs never evict.
+const maxBrokerLogPerTopic = 50000
 
 func newMemoryBroker() *memoryBroker {
 	return &memoryBroker{
 		logs:    make(map[string][]kafkaRecord),
+		base:    make(map[string]int64),
 		cursors: make(map[string]int64),
 	}
 }
@@ -82,13 +91,20 @@ var sharedBroker = newMemoryBroker()
 func (b *memoryBroker) produce(topic string, rec kafkaRecord) recordMeta {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	offset := int64(len(b.logs[topic]))
+	offset := b.base[topic] + int64(len(b.logs[topic]))
 	rec.Topic = topic
 	rec.Offset = offset
 	if rec.Timestamp.IsZero() {
 		rec.Timestamp = time.Now()
 	}
 	b.logs[topic] = append(b.logs[topic], rec)
+	// Bound retained records: evict the oldest and advance the base offset so a
+	// long-lived process does not grow unbounded. Offsets are absolute, so this is
+	// transparent to cursors/lag/seek.
+	if over := len(b.logs[topic]) - maxBrokerLogPerTopic; over > 0 {
+		b.logs[topic] = append(b.logs[topic][:0], b.logs[topic][over:]...)
+		b.base[topic] += int64(over)
+	}
 	return recordMeta{Topic: topic, Partition: rec.Partition, Offset: offset, Timestamp: rec.Timestamp}
 }
 
@@ -99,21 +115,32 @@ func (b *memoryBroker) consume(topic, group string) (kafkaRecord, int64, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	log := b.logs[topic]
+	base := b.base[topic]
+	end := base + int64(len(log))
 	key := cursorKey(topic, group)
 	pos := b.cursors[key]
-	if pos >= int64(len(log)) {
+	if pos < base {
+		// The cursor lagged behind eviction; skip to the earliest retained record.
+		pos = base
+	}
+	if pos >= end {
 		return kafkaRecord{}, 0, false
 	}
-	rec := log[pos]
+	rec := log[pos-base]
 	b.cursors[key] = pos + 1
-	lag := int64(len(log)) - (pos + 1)
+	lag := end - (pos + 1)
 	return rec, lag, true
 }
 
 func (b *memoryBroker) hasMessages(topic, group string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.cursors[cursorKey(topic, group)] < int64(len(b.logs[topic]))
+	base := b.base[topic]
+	pos := b.cursors[cursorKey(topic, group)]
+	if pos < base {
+		pos = base
+	}
+	return pos < base+int64(len(b.logs[topic]))
 }
 
 // seek repositions the (topic, group) consumer to earliest, latest, or an
@@ -121,12 +148,13 @@ func (b *memoryBroker) hasMessages(topic, group string) bool {
 func (b *memoryBroker) seek(topic, group, target string) (int64, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	end := int64(len(b.logs[topic]))
+	base := b.base[topic]
+	end := base + int64(len(b.logs[topic]))
 	key := cursorKey(topic, group)
 	switch strings.ToLower(strings.TrimSpace(target)) {
 	case "", "earliest", "beginning", "start":
-		b.cursors[key] = 0
-		return 0, nil
+		b.cursors[key] = base
+		return base, nil
 	case "latest", "end":
 		b.cursors[key] = end
 		return end, nil
@@ -135,8 +163,8 @@ func (b *memoryBroker) seek(topic, group, target string) (int64, error) {
 		if err != nil {
 			return 0, fmt.Errorf("invalid kafka seek offset %q (use earliest, latest, or a number)", target)
 		}
-		if n < 0 {
-			n = 0
+		if n < base {
+			n = base
 		}
 		if n > end {
 			n = end

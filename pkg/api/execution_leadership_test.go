@@ -53,22 +53,28 @@ func TestExecutionLeadershipNilReceiverIsAlwaysLeader(t *testing.T) {
 func TestExecutionLeadershipAcquiresAndFiresOnAcquireOnce(t *testing.T) {
 	store := &fakeLeaseStore{dfltOK: true}
 	l := newExecutionLeadership(store, "owner-a")
-	var acquires int
-	l.setOnAcquire(func() { acquires++ })
+	// onAcquire now runs asynchronously off the renewal goroutine, so the test
+	// synchronizes on a channel rather than reading a shared counter.
+	fired := make(chan struct{}, 8)
+	l.setOnAcquire(func() { fired <- struct{}{} })
 
 	l.tick()
 	if !l.IsLeader() {
 		t.Fatal("expected leader after acquiring lease")
 	}
-	if acquires != 1 {
-		t.Fatalf("onAcquire calls = %d, want 1", acquires)
+	select {
+	case <-fired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("onAcquire did not fire after acquiring the lease")
 	}
 
 	// Renewing the held lease must not re-fire onAcquire.
 	l.tick()
 	l.tick()
-	if acquires != 1 {
-		t.Fatalf("onAcquire re-fired on renewal: calls = %d, want 1", acquires)
+	select {
+	case <-fired:
+		t.Fatal("onAcquire re-fired on renewal")
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 
@@ -95,20 +101,28 @@ func TestExecutionLeadershipFailoverFiresOnAcquire(t *testing.T) {
 		{acquired: true},
 	}, dfltOK: true}
 	l := newExecutionLeadership(store, "owner-c")
-	var acquires int
-	l.setOnAcquire(func() { acquires++ })
+	fired := make(chan struct{}, 8)
+	l.setOnAcquire(func() { fired <- struct{}{} })
 
 	l.tick()
 	l.tick()
-	if l.IsLeader() || acquires != 0 {
-		t.Fatalf("expected follower before takeover (leader=%v, acquires=%d)", l.IsLeader(), acquires)
+	if l.IsLeader() {
+		t.Fatalf("expected follower before takeover (leader=%v)", l.IsLeader())
 	}
+	select {
+	case <-fired:
+		t.Fatal("onAcquire fired while still a follower")
+	case <-time.After(100 * time.Millisecond):
+	}
+
 	l.tick()
 	if !l.IsLeader() {
 		t.Fatal("expected leadership after failover takeover")
 	}
-	if acquires != 1 {
-		t.Fatalf("onAcquire calls after failover = %d, want 1", acquires)
+	select {
+	case <-fired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("onAcquire did not fire after failover takeover")
 	}
 }
 
@@ -387,6 +401,29 @@ func TestExecutionMutationHandlersReturn503OnFollower(t *testing.T) {
 				t.Fatalf("%s status = %d, want 503", tc.name, rec.Code)
 			}
 		})
+	}
+}
+
+func TestMaterializeAndRunExecutionPlanReturns503OnFollower(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	// HA election is enabled but the renewal loop is never started, so the server
+	// stays a follower. Running an execution plan must 503 (like every other
+	// execution-mutating handler) rather than persisting a junk plan-run.
+	s := NewServer(ServerConfig{Store: store, HAExecutionLeadership: true})
+	if s.isExecutionLeader() {
+		t.Fatal("server should be a follower until it acquires the lease")
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/execution-plans/plan-1/runs", strings.NewReader(`{}`))
+	req.SetPathValue("id", "plan-1")
+	s.handleMaterializeAndRunExecutionPlan(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("materialize-and-run on follower status = %d, want 503", rec.Code)
 	}
 }
 

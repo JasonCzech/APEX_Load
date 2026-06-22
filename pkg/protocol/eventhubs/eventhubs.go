@@ -9,6 +9,7 @@ package eventhubs
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -23,6 +24,12 @@ const (
 	defaultTimeout        = 5 * time.Second
 )
 
+// errNoEvent signals that the read-only consume observer probe found no event
+// within its timeout — an expected empty tail in this producer-first protocol
+// (the probe can outrun the producer), NOT a transport/auth failure. Adapters
+// wrap it so consume() can keep an empty probe out of the error/SLA accounting.
+var errNoEvent = errors.New("eventhubs: no event within timeout")
+
 func init() {
 	protocol.Register(eventHubsProtocolName, func() protocol.Protocol {
 		return &EventHubs{name: eventHubsProtocolName}
@@ -36,6 +43,7 @@ type config struct {
 	ConsumerGroup    string
 	PartitionKey     string
 	PartitionID      string
+	StartPosition    string // observer-probe start: "latest" (default) | "earliest"
 	AuthType         string // connection_string | aad
 	Timeout          time.Duration
 	Mock             bool
@@ -63,6 +71,7 @@ func (e *EventHubs) Init(_ context.Context, cfg map[string]any) error {
 		ConsumerGroup:    stringValue(cfg, "eventhubs_consumer_group"),
 		PartitionKey:     stringValue(cfg, "eventhubs_partition_key"),
 		PartitionID:      stringValue(cfg, "eventhubs_partition_id"),
+		StartPosition:    strings.ToLower(strings.TrimSpace(stringValue(cfg, "eventhubs_start_position"))),
 		AuthType:         strings.ToLower(strings.TrimSpace(stringValue(cfg, "eventhubs_auth_type"))),
 		Timeout:          durationValue(cfg, "eventhubs_timeout_ms", defaultTimeout),
 		Mock:             boolValue(cfg, "eventhubs_mock"),
@@ -119,6 +128,15 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 	}
 
 	result.Duration = time.Since(start)
+	// An empty observer probe (no event within the timeout) is an expected
+	// no-content outcome for this read-only, producer-first probe — consume() has
+	// already set StatusCode 204 and the empty-probe extraction. Clear the error
+	// so it is not scored as a failed transaction (which would inflate the error
+	// rate and can trip error-rate SLA gates on otherwise-healthy runs). hasReceived
+	// was computed before this and is correctly false (nothing was received).
+	if errors.Is(err, errNoEvent) {
+		err = nil
+	}
 	result.ServerTelemetry = finalizeTelemetry(result, sent, hasSent, received, hasReceived, err)
 	if err != nil {
 		result.Success = false
@@ -181,19 +199,40 @@ func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result
 	group := paramString(action.Params, "consumer_group", e.cfg.ConsumerGroup)
 	ev, lag, err := e.client.Receive(ctx, hub, group, e.timeout(action))
 	if err != nil {
-		result.StatusCode = 204
+		if errors.Is(err, errNoEvent) {
+			// Expected empty tail: report no-content success, not a failure.
+			result.StatusCode = 204
+			result.Extractions["eventhubs_operation"] = "consume"
+			result.Extractions["eventhubs_empty_probe"] = "1"
+			result.Extractions["eventhubs_consumer_lag"] = strconv.FormatInt(lag, 10)
+			return event{}, errNoEvent
+		}
+		// A genuine transport/auth error from the adapter is a real failure.
+		result.StatusCode = 502
 		return event{}, err
 	}
 	result.BytesReceived = int64(len(ev.Body))
 	addEventExtractions(result, ev)
 	result.Extractions["eventhubs_operation"] = "consume"
 	result.Extractions["eventhubs_consumer_lag"] = strconv.FormatInt(lag, 10)
-	// Reliability detection by sequence number. The consume probe has no
-	// rollback/redelivery model, so every observation is a fresh delivery.
+	// Reliability detection by sequence number. Event Hubs sequence numbers are
+	// per-(hub,partition), so observe within that stream's own space — otherwise
+	// consuming from a second hub (whose numbers restart) or a future multi-
+	// partition consume would interleave independent streams and read as spurious
+	// duplicates/out-of-order. The probe has no rollback/redelivery model, so
+	// every observation is a fresh delivery.
 	if e.observer == nil {
 		e.observer = messaging.New[struct{}](messaging.AckAuto)
 	}
-	if dup, ooo := e.observer.Observe(ev.SequenceNum); dup || ooo {
+	partitionID := ev.PartitionID
+	if partitionID == "" {
+		partitionID = e.cfg.PartitionID
+	}
+	if partitionID == "" {
+		partitionID = "0"
+	}
+	streamKey := hub + "\x00" + group + "\x00" + partitionID
+	if dup, ooo := e.observer.ObserveKeyed(streamKey, ev.SequenceNum); dup || ooo {
 		if dup {
 			result.Extractions["eventhubs_duplicate"] = "1"
 		}

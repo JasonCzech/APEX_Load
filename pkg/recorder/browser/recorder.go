@@ -151,7 +151,14 @@ func (r *Recorder) trustedControlNonce(got string) bool {
 // sidebar (via the closure nonce) rather than arbitrary recorded-page script.
 func controlKindRequiresTrust(kind string) bool {
 	switch kind {
-	case "recording_stop", "delete_last_step", "step_exclude", "step_mark":
+	// Destructive controls plus state-mutating controls that change how subsequent
+	// steps are recorded. The __apexloadRecord binding is exposed context-wide, so
+	// arbitrary recorded-page JS could otherwise forge these to corrupt the
+	// recording (misclassify steps via section_set, fabricate transaction
+	// markers/notes). The legitimate sidebar stamps the closure nonce on all of
+	// them, so gating rejects only forged events.
+	case "recording_stop", "delete_last_step", "step_exclude", "step_mark",
+		"section_set", "transaction_start", "transaction_end", "note_add":
 		return true
 	default:
 		return false

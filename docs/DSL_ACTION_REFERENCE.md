@@ -547,6 +547,7 @@ Reads the next event (read-only observer probe for end-to-end latency / backlog)
 | `params.event_hub` | string |  | Event hub alternative to target. |
 | `params.consumer_group` | string |  | Consumer group; falls back to config.eventhubs.consumer_group ($Default). |
 | `params.timeout_ms` | int |  | Receive timeout in milliseconds; falls back to config.eventhubs.timeout_ms. |
+| `config.eventhubs.start_position` | string |  | Probe start position: latest (default, partition tail — for sustained-load observation) or earliest (partition start — required for produce→consume round-trips so the just-produced event is observed). |
 
 ### `eventhubs_produce`
 
@@ -1102,12 +1103,12 @@ Produces a request record and waits for the correlated reply record.
 
 ### `kafka_seek`
 
-Seeks the consumer to an offset.
+Seeks the consumer cursor for the whole (topic, group) to an offset (mock only; the real adapter does not yet support seek).
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `params.offset` | any |  | Target offset: a number, "earliest", or "latest". |
-| `params.partition` | int |  | Partition to seek on. |
+| `params.partition` | int |  | Reserved: not yet honored at runtime — seek repositions the whole (topic, group) cursor, not a single partition. |
 
 ## Protocol: network
 

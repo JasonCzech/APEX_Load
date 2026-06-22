@@ -86,13 +86,48 @@ func TestSessionObserveWindowEviction(t *testing.T) {
 			t.Fatalf("Observe(%d) unexpectedly duplicate", i)
 		}
 	}
-	if len(s.seqOrder) != maxObserveWindow || len(s.seqSeen) != maxObserveWindow {
-		t.Fatalf("window not bounded: order=%d seen=%d, want %d", len(s.seqOrder), len(s.seqSeen), maxObserveWindow)
+	st := s.streams[""]
+	if st == nil || len(st.order) != maxObserveWindow || len(st.seen) != maxObserveWindow {
+		t.Fatalf("window not bounded: %+v, want order=seen=%d", st, maxObserveWindow)
 	}
 	// A once-seen but now-evicted sequence is below max, so re-observing it reads as
 	// out-of-order rather than duplicate — the documented bounded-window trade-off.
 	if dup, ooo := s.Observe(1); dup || !ooo {
 		t.Fatalf("re-Observe(evicted 1) = (dup=%v, ooo=%v), want (false, true)", dup, ooo)
+	}
+}
+
+func TestSessionObserveKeyedIsolatesStreams(t *testing.T) {
+	// Per-partition offsets each start near zero and advance independently;
+	// interleaving them must NOT be read as duplicate/out-of-order, but a real
+	// repeat or regression WITHIN one stream still is.
+	s := New[int](AckAuto)
+	if dup, ooo := s.ObserveKeyed("topic/0", 0); dup || ooo {
+		t.Fatalf("p0 seq0 = (dup=%v, ooo=%v), want clean", dup, ooo)
+	}
+	if dup, ooo := s.ObserveKeyed("topic/0", 1); dup || ooo {
+		t.Fatalf("p0 seq1 = (dup=%v, ooo=%v), want clean", dup, ooo)
+	}
+	// Partition 1 starting back at 0 is a fresh stream, not a duplicate of p0's 0.
+	if dup, ooo := s.ObserveKeyed("topic/1", 0); dup || ooo {
+		t.Fatalf("p1 seq0 = (dup=%v, ooo=%v), want clean (independent stream)", dup, ooo)
+	}
+	if dup, ooo := s.ObserveKeyed("topic/1", 1); dup || ooo {
+		t.Fatalf("p1 seq1 = (dup=%v, ooo=%v), want clean", dup, ooo)
+	}
+	if s.Duplicates() != 0 || s.OutOfOrders() != 0 {
+		t.Fatalf("cross-stream interleave flagged: dup=%d ooo=%d, want 0/0", s.Duplicates(), s.OutOfOrders())
+	}
+	// A genuine repeat within a stream is still a duplicate.
+	if dup, _ := s.ObserveKeyed("topic/0", 0); !dup {
+		t.Fatal("re-observing p0 seq0 should be a duplicate within its own stream")
+	}
+	// A regression within a fresh stream is still out-of-order.
+	if _, ooo := s.ObserveKeyed("topic/2", 5); ooo {
+		t.Fatal("first observation of a stream cannot be out-of-order")
+	}
+	if _, ooo := s.ObserveKeyed("topic/2", 3); !ooo {
+		t.Fatal("seq3 after seq5 within the same stream should be out-of-order")
 	}
 }
 

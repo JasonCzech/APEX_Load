@@ -438,23 +438,25 @@ func TestSidebarControlEventsRouteToRecorderMethods(t *testing.T) {
 	r := New(Options{StartURL: "https://app.example/"})
 
 	// Section switch from the sidebar tags subsequent steps and is not recorded.
-	r.handleRecordBinding(nil, `{"kind":"section_set","section":"teardown","ts":1}`)
+	// State-mutating control events carry the closure nonce (as the real sidebar
+	// stamps it) so the trust gate accepts them.
+	r.handleRecordBinding(nil, `{"kind":"section_set","section":"teardown","nonce":"`+r.controlNonce+`","ts":1}`)
 	if got := r.Section(); got != SectionTeardown {
 		t.Fatalf("section after section_set = %q, want teardown", got)
 	}
 
 	// Transaction lifecycle through the sidebar binding.
-	r.handleRecordBinding(nil, `{"kind":"transaction_start","name":"Checkout","ts":2}`)
+	r.handleRecordBinding(nil, `{"kind":"transaction_start","name":"Checkout","nonce":"`+r.controlNonce+`","ts":2}`)
 	if open := r.Snapshot().OpenTransactions; len(open) != 1 || open[0] != "Checkout" {
 		t.Fatalf("open transactions = %v, want [Checkout]", open)
 	}
-	r.handleRecordBinding(nil, `{"kind":"transaction_end","name":"Checkout","ts":3}`)
+	r.handleRecordBinding(nil, `{"kind":"transaction_end","name":"Checkout","nonce":"`+r.controlNonce+`","ts":3}`)
 	if open := r.Snapshot().OpenTransactions; len(open) != 0 {
 		t.Errorf("open transactions after end = %v, want none", open)
 	}
 
 	// Note marker through the sidebar binding.
-	r.handleRecordBinding(nil, `{"kind":"note_add","text":"watch the cart","ts":4}`)
+	r.handleRecordBinding(nil, `{"kind":"note_add","text":"watch the cart","nonce":"`+r.controlNonce+`","ts":4}`)
 
 	// Record two steps, then exclude/mark/delete via the sidebar binding.
 	r.handleRecordBinding(nil, `{"kind":"fill","value":"tok","ts":5,"element":{"tag":"input","name":"t","css_path":"#t"}}`)
@@ -486,7 +488,7 @@ func TestSidebarControlEventsWorkWhilePaused(t *testing.T) {
 	r.Pause()
 	// A capture step is dropped while paused, but a section switch still applies.
 	r.handleRecordBinding(nil, `{"kind":"click","ts":1,"element":{"tag":"button","css_path":"#a"}}`)
-	r.handleRecordBinding(nil, `{"kind":"section_set","section":"init","ts":2}`)
+	r.handleRecordBinding(nil, `{"kind":"section_set","section":"init","nonce":"`+r.controlNonce+`","ts":2}`)
 	if got := r.Section(); got != SectionInit {
 		t.Errorf("section while paused = %q, want init (control events bypass the pause gate)", got)
 	}
@@ -503,8 +505,10 @@ func TestSidebarControlEventErrorEmitsWarningOnly(t *testing.T) {
 		}
 	}})
 	// Ending a transaction when none is open errors; it surfaces as a warning
-	// event but is NOT persisted to the recorded artifact's warnings.
-	r.handleRecordBinding(nil, `{"kind":"transaction_end","name":"Nope","ts":1}`)
+	// event but is NOT persisted to the recorded artifact's warnings. The nonce
+	// makes the event pass the trust gate so it reaches the (failing) marker path
+	// rather than being rejected as untrusted.
+	r.handleRecordBinding(nil, `{"kind":"transaction_end","name":"Nope","nonce":"`+r.controlNonce+`","ts":1}`)
 	if len(warnings) != 1 || !strings.Contains(warnings[0], "transaction_end") {
 		t.Fatalf("warning events = %v, want one transaction_end warning", warnings)
 	}
@@ -745,4 +749,25 @@ func TestSessionCloneCopiesSlices(t *testing.T) {
 func base64decode(s string) (string, error) {
 	b, err := base64.StdEncoding.DecodeString(s)
 	return string(b), err
+}
+
+// TestControlKindRequiresTrustCoversStateMutatingKinds asserts that the nonce
+// trust gate covers not just destructive controls but also the state-mutating
+// controls reachable by arbitrary recorded-page JS via the context-wide binding.
+func TestControlKindRequiresTrustCoversStateMutatingKinds(t *testing.T) {
+	trusted := []string{
+		"recording_stop", "delete_last_step", "step_exclude", "step_mark",
+		"section_set", "transaction_start", "transaction_end", "note_add",
+	}
+	for _, kind := range trusted {
+		if !controlKindRequiresTrust(kind) {
+			t.Errorf("controlKindRequiresTrust(%q) = false, want true (must be nonce-gated)", kind)
+		}
+	}
+	// A read-only / non-mutating kind does not require the nonce.
+	for _, kind := range []string{"navigate", "focus", "", "unknown_kind"} {
+		if controlKindRequiresTrust(kind) {
+			t.Errorf("controlKindRequiresTrust(%q) = true, want false", kind)
+		}
+	}
 }

@@ -74,6 +74,14 @@ func (vu *VUser) conditionExprVarMap() map[string]any {
 			nested[column] = value
 			return
 		}
+		// Plain key. If a dotted key already populated a nested map under this name
+		// (e.g. a foreach binding "row.email" vs a plain var "row"), keep the nested
+		// map — the dotted binding wins. This makes the result deterministic
+		// regardless of Go's randomized map iteration order, so a CEL condition over
+		// var.<name> evaluates the same across identical runs/replays.
+		if _, isNested := out[key].(map[string]any); isNested {
+			return
+		}
 		out[key] = value
 	}
 	for key, value := range vu.Variables {
@@ -101,6 +109,11 @@ func (vu *VUser) conditionExprDataMap() map[string]any {
 	for key, value := range vu.Variables {
 		source, column, ok := strings.Cut(key, ".")
 		if !ok || strings.TrimSpace(source) == "" || strings.TrimSpace(column) == "" {
+			// Plain key: a dotted binding under the same name wins (deterministic
+			// regardless of map iteration order), mirroring conditionExprVarMap.
+			if _, isNested := out[key].(map[string]any); isNested {
+				continue
+			}
 			out[key] = value
 			continue
 		}

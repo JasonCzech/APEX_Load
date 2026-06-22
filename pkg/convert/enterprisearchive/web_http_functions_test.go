@@ -420,6 +420,27 @@ func TestWebRemoveCookieStopsAttachingDownstream(t *testing.T) {
 	}
 }
 
+func TestWebCleanupCookiesStopsAttachingDownstream(t *testing.T) {
+	// web_cleanup_cookies clears ALL cookies, so a cookie added earlier must not
+	// keep attaching to requests that come after the cleanup.
+	result := convertSingleWebSource(t, `
+	web_add_cookie("SessionID=abc; domain=example.test");
+	web_cleanup_cookies();
+	web_url("Home", "URL=https://example.test/home", LAST);`)
+	var home *dsl.Action
+	for i := range result.Script.Actions {
+		if result.Script.Actions[i].Name == "Home" {
+			home = &result.Script.Actions[i]
+		}
+	}
+	if home == nil {
+		t.Fatalf("expected a Home request action, got %#v", result.Script.Actions)
+	}
+	if cookie, ok := home.Headers["Cookie"]; ok && strings.Contains(cookie, "SessionID") {
+		t.Fatalf("web_cleanup_cookies did not stop the cookie attaching downstream: Cookie=%q", cookie)
+	}
+}
+
 func TestWebDisableKeepAliveMapsToConfig(t *testing.T) {
 	result := convertSingleWebSource(t, `
 	web_disable_keep_alive();

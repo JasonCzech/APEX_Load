@@ -11,6 +11,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -67,7 +68,16 @@ func (k kubernetesFleetScaler) Describe() ProvisionerInfo {
 func (k kubernetesFleetScaler) workloadForPool(pool *storage.FleetPool) string {
 	if pool != nil {
 		if name := strings.TrimSpace(pool.Tags["kubernetes.statefulset"]); name != "" {
-			return name
+			// Only honor a tag that names a generator StatefulSet: it must equal the
+			// configured default workload or share its name prefix (e.g. a per-zone
+			// "apexload-generator-eu"). This stops a mistyped or malicious pool tag
+			// from scaling an unrelated co-tenant StatefulSet in the controller's
+			// namespace; anything else falls back to the default workload.
+			if k.defaultWorkload != "" && (name == k.defaultWorkload || strings.HasPrefix(name, k.defaultWorkload+"-")) {
+				return name
+			}
+			slog.Warn("ignoring fleet pool kubernetes.statefulset tag that is not a generator workload",
+				"tag", name, "default_workload", k.defaultWorkload)
 		}
 	}
 	return k.defaultWorkload

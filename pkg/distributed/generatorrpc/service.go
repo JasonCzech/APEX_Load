@@ -66,6 +66,39 @@ func windowSecondsFromMs(windowMs int64) float64 {
 	return float64(windowMs) / 1000.0
 }
 
+// effectiveBatchWindowMs returns the window (ms) that makes totalSuccess/window
+// equal the additive fleet rate — the sum over groups of (groupSuccess /
+// groupWindow). Rate consumers divide the batch's summed success by its single
+// window, so when a pod hosts multiple groups with unequal windows (transiently,
+// during ramp/stagger/wind-down) the max window would mis-weight TPS; this
+// effective window corrects it. With one group or equal windows it equals that
+// window. Falls back to fallbackMs when there are no successes (rate is 0 anyway).
+func effectiveBatchWindowMs(a assignedTest, fallbackMs int64) int64 {
+	totalSuccess := 0
+	additiveTPS := 0.0
+	for group, txs := range a.groupTransactions {
+		success := 0
+		for _, tx := range txs {
+			if tx.Success {
+				success++
+			}
+		}
+		if success == 0 {
+			continue
+		}
+		windowMs := fallbackMs
+		if t, ok := a.groupTelemetry[group]; ok && t.WindowMs > 0 {
+			windowMs = t.WindowMs
+		}
+		totalSuccess += success
+		additiveTPS += float64(success) / windowSecondsFromMs(windowMs)
+	}
+	if totalSuccess == 0 || additiveTPS <= 0 {
+		return fallbackMs
+	}
+	return int64(float64(totalSuccess) / additiveTPS * 1000.0)
+}
+
 func (b *transactionBuffer) RecordResult(result *protocol.Result) error {
 	if result == nil || !result.BusinessTransaction {
 		return nil
@@ -827,6 +860,17 @@ func (s *Service) metricsBatchLocked(testID string) *pb.MetricsBatch {
 	for _, groupTransactions := range assignment.groupTransactions {
 		transactions = append(transactions, groupTransactions...)
 	}
+	// The batch carries a single window, but every rate consumer computes
+	// totalSuccess/window. When a pod hosts multiple groups whose windows differ
+	// (ramp/stagger/wind-down), dividing the summed cross-group success by the max
+	// window mis-weights TPS. Replace the window with the effective window that
+	// makes totalSuccess/window equal the additive sum-of-(groupSuccess/groupWindow)
+	// rate, so both the archive interval summary and the controller aggregation
+	// report the correct fleet TPS. In steady state (equal windows) this equals the
+	// window, so behavior is unchanged.
+	if telemetry != nil {
+		telemetry.WindowMs = effectiveBatchWindowMs(assignment, telemetry.WindowMs)
+	}
 	for groupName, activeVUsers := range groupAssignments {
 		if !groupsWithActiveStats[groupName] {
 			stats.ActiveVUsers += activeVUsers
@@ -1074,7 +1118,17 @@ func (s *Service) publishExecutionSnapshot(testID string, groupName string, exec
 		return
 	}
 	stats := GeneratorStats{GoroutineCount: int32(runtime.NumGoroutine())}
-	telemetry := MetricsTelemetry{WindowMs: window.Milliseconds()}
+	// The final out-of-band publish (after engine.Run returns) drains leftover
+	// transactions over the sub-tick remainder since the last periodic drain. That
+	// window can be a few milliseconds, which would yield an order-of-magnitude TPS
+	// spike on the last data point. Rate a sub-half-cadence drain against the
+	// normal publish cadence instead. Periodic drains are ~publishInterval, so
+	// they are never clamped.
+	windowMs := window.Milliseconds()
+	if window > 0 && window < s.publishInterval/2 {
+		windowMs = s.publishInterval.Milliseconds()
+	}
+	telemetry := MetricsTelemetry{WindowMs: windowMs}
 	if ok {
 		stats = generatorStatsFromResources(snapshot.Resources, int32(snapshot.ActiveVUsers))
 		telemetry.CollectedAtUnixMs = snapshot.Timestamp.UnixMilli()

@@ -49,10 +49,10 @@ func kafkaActionSpecs() []ActionSpec {
 		{
 			Type:      "kafka_seek",
 			Protocols: []string{"kafka"},
-			Summary:   "Seeks the consumer to an offset.",
+			Summary:   "Seeks the consumer cursor for the whole (topic, group) to an offset (mock only; the real adapter does not yet support seek).",
 			Fields: []FieldSpec{
 				{Name: "params.offset", Kind: FieldKindAny, Doc: "Target offset: a number, \"earliest\", or \"latest\"."},
-				{Name: "params.partition", Kind: FieldKindInt, Doc: "Partition to seek on."},
+				{Name: "params.partition", Kind: FieldKindInt, Doc: "Reserved: not yet honored at runtime — seek repositions the whole (topic, group) cursor, not a single partition."},
 			},
 		},
 		{

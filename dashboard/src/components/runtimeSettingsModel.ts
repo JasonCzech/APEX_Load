@@ -263,6 +263,9 @@ export function formatRunLogic(runLogic?: RuntimeSettingsOverride['run_logic']):
   const parts: string[] = []
   if (runLogic.workload_model) parts.push(runLogic.workload_model)
   if (runLogic.iterations) parts.push(`${runLogic.iterations} iters`)
+  // global_iterations is a fleet-wide shared cap, distinct from per-VUser
+  // iterations — surface it here (rather than conflated into the Iterations row).
+  if (runLogic.global_iterations) parts.push(`${runLogic.global_iterations} shared-iter cap`)
   if (runLogic.auto_transactions) parts.push(runLogic.auto_transactions.replace(/_/g, ' '))
   if (runLogic.block_scheduling) parts.push(runLogic.block_scheduling)
   return parts.length > 0 ? parts.join(' · ') : null
@@ -311,7 +314,7 @@ export function runtimeOverrideFromScriptConfig(config?: ScriptConfig): RuntimeS
   if (!config) return undefined
   const browser = config.browser
   return {
-    iterations: config.run_logic?.iterations ?? config.run_logic?.global_iterations,
+    iterations: config.run_logic?.iterations,
     pacing: config.pacing,
     think_time: config.think_time,
     browser: browser
@@ -352,7 +355,7 @@ export function formatEffectiveRuntimeField(
     // top-level field or promoted into the run_logic/log section (the section tab
     // handlers clear the top-level field when they do). Resolve both so a value
     // edited in its section tab is still attributed to this layer in the summary.
-    iterations: (o) => formatIterations(o?.iterations ?? o?.run_logic?.iterations ?? o?.run_logic?.global_iterations),
+    iterations: (o) => formatIterations(o?.iterations ?? o?.run_logic?.iterations),
     pacing: (o) => formatPacing(o?.pacing),
     think_time: (o) => formatThinkTime(o?.think_time),
     browser: (o) => formatBrowserSummary(o?.browser),

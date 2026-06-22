@@ -66,13 +66,23 @@ type Session[T any] struct {
 	aborts         int
 	droppedPending int
 
-	// Reliability observation state (see Observe).
-	seqSeen    map[int64]struct{} // sequences within the bounded dedup window
-	seqOrder   []int64            // insertion order, for oldest-first eviction
-	maxSeq     int64              // highest sequence observed so far
-	haveSeq    bool               // whether any sequence has been observed
+	// Reliability observation state (see Observe / ObserveKeyed). Tracking is
+	// per stream key so that providers whose sequences/offsets are per-partition
+	// (Kafka) or per-hub (Event Hubs) — or per-subscription (JMS topic fan-out) —
+	// are each compared within their own monotonic space. A single global space
+	// would flag legitimate cross-partition interleaving as duplicate/out-of-order.
+	streams    map[string]*observeStream
 	duplicates int
 	outOfOrder int
+}
+
+// observeStream is the bounded dedup/ordering window for one logical sequence
+// space (one partition, hub, or subscription).
+type observeStream struct {
+	seen    map[int64]struct{} // sequences within the bounded dedup window
+	order   []int64            // insertion order, for oldest-first eviction
+	maxSeq  int64              // highest sequence observed so far in this stream
+	haveSeq bool               // whether any sequence has been observed
 }
 
 // New creates a Session for the given acknowledgement mode.
@@ -136,42 +146,61 @@ func (s *Session[T]) Rollback() []T {
 	return toRedeliver
 }
 
-// Observe records a consumed item's monotonic sequence/offset and reports whether
-// it is a duplicate (the sequence was already seen within the bounded window) or
-// out-of-order (the sequence is lower than the highest already observed). A
-// negative sequence means the provider exposes no usable sequence, so Observe is a
-// no-op. The caller must NOT Observe a legitimate redelivery (a rolled-back message
-// re-consumed with the same sequence) — that is tracked separately as a redelivery,
-// not a broker duplicate. The dedup window is bounded to maxObserveWindow recent
-// sequences so it never grows without limit.
+// Observe records a consumed item's monotonic sequence/offset in the default
+// (single) sequence space. Use it only when the consumer reads a single ordered
+// stream; providers with per-partition/per-hub sequences must use ObserveKeyed so
+// independent streams are not conflated. See ObserveKeyed for the semantics.
 func (s *Session[T]) Observe(seq int64) (duplicate, outOfOrder bool) {
+	return s.ObserveKeyed("", seq)
+}
+
+// ObserveKeyed records a consumed item's monotonic sequence/offset within the
+// sequence space identified by streamKey, and reports whether it is a duplicate
+// (the sequence was already seen within the bounded window for that key) or
+// out-of-order (lower than the highest already observed for that key). Sequences/
+// offsets in messaging providers are monotonic only within a partition (Kafka),
+// hub (Event Hubs), or subscription (JMS topic fan-out), so callers must pass a
+// key that identifies that space — e.g. topic+partition — otherwise legitimate
+// cross-stream interleaving reads as duplicate/out-of-order.
+//
+// A negative sequence means the provider exposes no usable sequence, so it is a
+// no-op. The caller must NOT Observe a legitimate redelivery (a rolled-back
+// message re-consumed with the same sequence) — that is tracked separately as a
+// redelivery, not a broker duplicate. Each stream's dedup window is bounded to
+// maxObserveWindow recent sequences so it never grows without limit.
+func (s *Session[T]) ObserveKeyed(streamKey string, seq int64) (duplicate, outOfOrder bool) {
 	if seq < 0 {
 		return false, false
 	}
-	if s.seqSeen == nil {
-		s.seqSeen = make(map[int64]struct{}, maxObserveWindow)
+	if s.streams == nil {
+		s.streams = make(map[string]*observeStream)
 	}
-	if _, seen := s.seqSeen[seq]; seen {
+	st := s.streams[streamKey]
+	if st == nil {
+		st = &observeStream{seen: make(map[int64]struct{})}
+		s.streams[streamKey] = st
+	}
+	if _, seen := st.seen[seq]; seen {
 		s.duplicates++
 		return true, false
 	}
-	if s.haveSeq && seq < s.maxSeq {
+	if st.haveSeq && seq < st.maxSeq {
 		s.outOfOrder++
 		outOfOrder = true
 	}
-	if !s.haveSeq || seq > s.maxSeq {
-		s.maxSeq = seq
+	if !st.haveSeq || seq > st.maxSeq {
+		st.maxSeq = seq
 	}
-	s.haveSeq = true
-	s.seqSeen[seq] = struct{}{}
-	s.seqOrder = append(s.seqOrder, seq)
-	if len(s.seqOrder) > maxObserveWindow {
-		evict := len(s.seqOrder) - maxObserveWindow
-		for _, old := range s.seqOrder[:evict] {
-			delete(s.seqSeen, old)
+	st.haveSeq = true
+	st.seen[seq] = struct{}{}
+	st.order = append(st.order, seq)
+	if len(st.order) > maxObserveWindow {
+		evict := len(st.order) - maxObserveWindow
+		for _, old := range st.order[:evict] {
+			delete(st.seen, old)
 		}
 		// Compact in place so the backing array stays bounded at the cap.
-		s.seqOrder = append(s.seqOrder[:0], s.seqOrder[evict:]...)
+		st.order = append(st.order[:0], st.order[evict:]...)
 	}
 	return duplicate, outOfOrder
 }

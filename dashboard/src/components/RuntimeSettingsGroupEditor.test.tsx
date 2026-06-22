@@ -362,6 +362,63 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(last.log_level).toBe('') // legacy cleared so the section is authoritative
   })
 
+  it('Summary Clear removes a section-backed iterations override (not just the legacy field)', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          // Iterations override lives in the promoted run_logic section, as the
+          // normal edit path writes it (not the legacy top-level field). A pacing
+          // override is included so the draft is not emptied by the clear (which
+          // would emit undefined) — letting us assert iterations specifically.
+          overrides={[{ run_logic: { iterations: 9 }, pacing: { type: 'fixed_delay', delay_ms: 250 }, log_level: '', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const clearIterations = container.querySelector('button[aria-label="Clear Iterations override"]') as HTMLButtonElement
+    expect(clearIterations).toBeTruthy()
+    act(() => clearIterations.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last).toBeTruthy() // pacing survives, so a non-empty override is emitted
+    expect(last.iterations).toBeUndefined()
+    // The section copy must be gone too; run_logic had no other field, so it drops.
+    expect(last.run_logic?.iterations).toBeUndefined()
+    expect(last.run_logic?.global_iterations).toBeUndefined()
+    expect(last.pacing).toBeTruthy() // unrelated override preserved
+  })
+
+  it('editing the think-time distribution on an inheriting group keeps the inherited mean (not 0)', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          scenarioDefault={{ think_time: { type: 'fixed', mean_ms: 800 } }}
+          overrides={[undefined, undefined]} // group inherits think time
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Think Time')
+    const distSelect = Array.from(container.querySelectorAll('select')).find(s =>
+      Array.from(s.options).some(o => o.value === 'gaussian') && Array.from(s.options).some(o => o.value === 'uniform'),
+    ) as HTMLSelectElement
+    expect(distSelect).toBeTruthy()
+    act(() => setSelectValue(distSelect, 'gaussian'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last.think_time.type).toBe('gaussian')
+    // Must carry the inherited mean rather than silently forcing it to 0.
+    expect(last.think_time.mean_ms).toBe(800)
+  })
+
   it('folds the legacy iterations into the run_logic section when editing workload model (Run Logic tab)', () => {
     const onChange = vi.fn()
     act(() => {

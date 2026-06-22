@@ -2091,6 +2091,10 @@
           "then": {
             "description": "Reads the next event (read-only observer probe for end-to-end latency / backlog).",
             "properties": {
+              "config.eventhubs.start_position": {
+                "description": "Probe start position: latest (default, partition tail — for sustained-load observation) or earliest (partition start — required for produce→consume round-trips so the just-produced event is observed).",
+                "type": "string"
+              },
               "params": {
                 "properties": {
                   "consumer_group": {
@@ -3563,7 +3567,7 @@
             ]
           },
           "then": {
-            "description": "Seeks the consumer to an offset.",
+            "description": "Seeks the consumer cursor for the whole (topic, group) to an offset (mock only; the real adapter does not yet support seek).",
             "properties": {
               "params": {
                 "properties": {
@@ -3571,7 +3575,7 @@
                     "description": "Target offset: a number, \"earliest\", or \"latest\"."
                   },
                   "partition": {
-                    "description": "Partition to seek on.",
+                    "description": "Reserved: not yet honored at runtime — seek repositions the whole (topic, group) cursor, not a single partition.",
                     "type": "integer"
                   }
                 },
@@ -5746,6 +5750,9 @@
           "type": "string"
         },
         "partition_key": {
+          "type": "string"
+        },
+        "start_position": {
           "type": "string"
         },
         "timeout_ms": {

@@ -30,6 +30,7 @@ func eventHubsActionSpecs() []ActionSpec {
 				{Name: "params.event_hub", Kind: FieldKindString, Doc: "Event hub alternative to target."},
 				{Name: "params.consumer_group", Kind: FieldKindString, Doc: "Consumer group; falls back to config.eventhubs.consumer_group ($Default)."},
 				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Receive timeout in milliseconds; falls back to config.eventhubs.timeout_ms."},
+				{Name: "config.eventhubs.start_position", Kind: FieldKindString, Doc: "Probe start position: latest (default, partition tail — for sustained-load observation) or earliest (partition start — required for produce→consume round-trips so the just-produced event is observed)."},
 			},
 		},
 	}

@@ -239,6 +239,14 @@ func TestValidateKafkaScriptIssues(t *testing.T) {
 			wantClean: true,
 		},
 		{
+			name: "begin_transaction without transactional_id is rejected",
+			mutate: func(s *Script) {
+				s.Config.Kafka.TransactionalID = ""
+				s.Actions = []Action{{Name: "b", Type: "kafka_begin_transaction"}}
+			},
+			wantHas: "requires config.kafka.transactional_id",
+		},
+		{
 			name: "valid isolation read_committed",
 			mutate: func(s *Script) {
 				s.Config.Kafka.IsolationLevel = "read_committed"

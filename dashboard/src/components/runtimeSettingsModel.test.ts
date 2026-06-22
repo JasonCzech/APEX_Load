@@ -127,8 +127,11 @@ describe('runtimeSettingsModel', () => {
       run_logic: { global_iterations: 7 },
       browser: { headless: true, device_profile: 'pixel_8', orientation: 'portrait', engine: 'chromium' },
     })
-    // global_iterations is used when iterations is absent.
-    expect(projected!.iterations).toBe(7)
+    // global_iterations is a fleet-wide shared cap, not the per-VUser iteration
+    // count, so it is NOT projected into the iterations field; it stays in run_logic
+    // (surfaced via the Run Logic row, not conflated into Iterations).
+    expect(projected!.iterations).toBeUndefined()
+    expect(projected!.run_logic?.global_iterations).toBe(7)
     // browser device summary picks the 4-field subset; browser_config carries the full config.
     expect(projected!.browser).toEqual({ headless: true, device_profile: 'pixel_8', touch_mode: undefined, orientation: 'portrait' })
     expect(projected!.browser_config?.engine).toBe('chromium')

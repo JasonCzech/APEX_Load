@@ -184,7 +184,7 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	// Library transfer + remotes (flat endpoints).
 	routeAuth(http.MethodPost, "/api/v1/library/export", viewerProjectAccess(resolveLibraryTransferProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/library/import", editorProjectAccess(resolveLibraryImportProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/library/import/archive", editorProjectAccess(resolveProjectIDFromQuery)),
+	routeAuth(http.MethodPost, "/api/v1/library/import/archive", editorImportAccess(resolveProjectIDFromQuery, libraryArchiveImportMaxBodyBytes)),
 	routeAuth(http.MethodGet, "/api/v1/library/results/{id}/archive", viewerProjectAccess(resolveLibraryResultArchiveProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/library/remotes", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/library/remotes", systemAdminAccess()),

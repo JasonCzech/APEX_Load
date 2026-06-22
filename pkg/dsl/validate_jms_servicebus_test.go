@@ -58,6 +58,31 @@ func TestValidateJMSServiceBusTopicConsumeRequiresSubscription(t *testing.T) {
 	}
 }
 
+func TestValidateJMSServiceBusTopicBrowseRequiresSubscription(t *testing.T) {
+	// jms_browse on a topic requires a subscription at runtime (jms.go), so it
+	// must be flagged at validation time like jms_consume — not slip through.
+	issues := ValidateScriptIssues(&Script{
+		Name:     "Service Bus Topic",
+		Protocol: "jms-servicebus",
+		Config: ScriptConfig{
+			JMS: JMSConfig{
+				Provider:        "servicebus",
+				Destination:     "orders.topic",
+				DestinationType: "topic",
+				Mock:            true,
+			},
+		},
+		Actions: []Action{{
+			Name: "Browse",
+			Type: "jms_browse",
+		}},
+	})
+
+	if !containsIssue(issues, "subscription required to consume from a Service Bus topic") {
+		t.Fatalf("issues = %v, want subscription-required issue for jms_browse", issues)
+	}
+}
+
 func TestValidateJMSServiceBusTopicConsumeAcceptsSubscriptionSources(t *testing.T) {
 	tests := []struct {
 		name   string

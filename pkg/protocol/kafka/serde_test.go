@@ -106,6 +106,37 @@ func TestKafkaJSONSchemaSerdeRoundTrip(t *testing.T) {
 	}
 }
 
+// TestKafkaRequestReplyAppliesValueSerde verifies request_reply frames the
+// outgoing request and deframes the reply with the configured serde, matching
+// kafka_produce / kafka_consume (otherwise a schema-registry peer rejects the
+// unframed request and extractors see the raw Confluent envelope).
+func TestKafkaRequestReplyAppliesValueSerde(t *testing.T) {
+	ctx := context.Background()
+	k := newMockKafka(t, map[string]any{
+		"kafka_topic":         "orders",
+		"kafka_serialization": "json_schema",
+		"kafka_schema_id":     float64(99),
+	})
+	body := []byte(`{"k":"v"}`)
+	res, err := k.Execute(ctx, &protocol.Action{Name: "rr", Type: "kafka_request_reply", Body: body, Params: map[string]any{"reply_to": "orders.reply"}})
+	if err != nil || !res.Success {
+		t.Fatalf("request_reply: %v %s", err, res.ErrorMessage)
+	}
+	// The on-wire request is Confluent-framed (magic byte), like kafka_produce.
+	stored, _, ok := k.client.(mockClient).broker.consume("orders", "framecheck")
+	if !ok {
+		t.Fatal("expected a stored request record")
+	}
+	if stored.Value[0] != confluentMagicByte {
+		t.Fatalf("request value not Confluent-framed: 0x%02x", stored.Value[0])
+	}
+	// The reply is deframed before byte accounting/extractors: received bytes
+	// equal the original payload, not the 5-byte-envelope-framed length.
+	if res.BytesReceived != int64(len(body)) {
+		t.Fatalf("BytesReceived = %d, want %d (reply framing must be stripped)", res.BytesReceived, len(body))
+	}
+}
+
 func TestKafkaStaticSchemaIDSerdeNeedsNoRegistry(t *testing.T) {
 	ctx := context.Background()
 	k := newMockKafka(t, map[string]any{

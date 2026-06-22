@@ -123,6 +123,7 @@ func collectSelfHeals(report *engine.ReplayReport) []selfHealRecord {
 // bindings by action name (the key self-heal evidence reports under "action").
 func objectRefBindingsByActionName(script *dsl.Script) map[string]objectRefBinding {
 	out := map[string]objectRefBinding{}
+	ambiguous := map[string]struct{}{}
 	var walk func(actions []dsl.Action)
 	walk = func(actions []dsl.Action) {
 		for i := range actions {
@@ -137,7 +138,19 @@ func objectRefBindingsByActionName(script *dsl.Script) map[string]objectRefBindi
 						repoID = v
 					}
 				}
-				out[name] = objectRefBinding{logicalName: logicalName, repoID: repoID}
+				binding := objectRefBinding{logicalName: logicalName, repoID: repoID}
+				if _, dropped := ambiguous[name]; dropped {
+					// Already known to be ambiguous; keep skipping it.
+				} else if existing, seen := out[name]; seen && existing != binding {
+					// Two object_ref-bound actions share a name but resolve to
+					// different repository objects, so a heal reported under this name
+					// cannot be routed unambiguously. Drop the binding rather than
+					// write a healed locator onto the wrong object.
+					delete(out, name)
+					ambiguous[name] = struct{}{}
+				} else {
+					out[name] = binding
+				}
 			}
 			if action.Control != nil {
 				walk(action.Control.Steps)

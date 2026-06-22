@@ -399,6 +399,11 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			// cookie_clear action so the clear happens exactly where the source
 			// called it, instead of flattening it into a non-executed attribute.
 			action := convertWebCleanupCookiesAction(fn)
+			// web_cleanup_cookies removes ALL cookies, so also drop the importer's
+			// persistent set. Otherwise web_add_cookie cookies (stamped as literal
+			// Cookie headers on later requests by applyPersistentCookies) would
+			// keep attaching after the cleanup, replaying cleared session/auth state.
+			persistentCookies = nil
 			preserveSourceRuntimeControl(result.Script, "source_runtime_controls", fn, map[string]any{
 				"mapped_to": "actions[].cookie_clear",
 			})

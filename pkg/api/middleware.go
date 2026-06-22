@@ -351,6 +351,11 @@ const (
 	jmeterImportMaxBodyBytes            int64 = 50 << 20
 	enterpriseArchiveImportMaxBodyBytes int64 = 100 << 20
 	defaultMaxRequestBodyBytes          int64 = 128 << 20
+	// libraryArchiveImportMaxBodyBytes accommodates the streamed result archive
+	// (defaultLibraryArchiveMaxBytes, 512 MiB) plus the bundle JSON part and
+	// multipart framing, so the body limiter does not truncate large archives
+	// before the handler's own 512 MiB cap can run.
+	libraryArchiveImportMaxBodyBytes int64 = defaultLibraryArchiveMaxBytes + (32 << 20)
 )
 
 // bodyLimitMiddleware caps request body size as a defense against memory-
@@ -368,7 +373,11 @@ func bodyLimitMiddleware(next http.Handler) http.Handler {
 
 func requestMaxBodyBytes(r *http.Request) int64 {
 	limit := defaultMaxRequestBodyBytes
-	if requirement, ok := accessRequirementForRequest(r); ok && requirement.MaxBodyBytes > 0 && requirement.MaxBodyBytes < limit {
+	// An explicit per-route MaxBodyBytes is authoritative — it may tighten the
+	// default (most import routes) OR raise it for a route that legitimately needs
+	// a larger body (e.g. streamed library archive imports up to ~512 MiB).
+	// Per-route limits are code-defined constants, not attacker-controlled.
+	if requirement, ok := accessRequirementForRequest(r); ok && requirement.MaxBodyBytes > 0 {
 		limit = requirement.MaxBodyBytes
 	}
 	return limit

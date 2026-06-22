@@ -164,7 +164,11 @@ export default function RuntimeSettingsGroupEditor({
   // required type/mean_ms so the section stays valid. Clearing routes through the type
   // select (Inherit) which sets the whole section undefined.
   const patchThinkTime = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['think_time']>>) => {
-    const base = draft.think_time ?? { type: 'fixed', mean_ms: 0 }
+    // Seed a brand-new override from the inherited mean rather than 0. The backend
+    // replaces the whole think_time section, and mean_ms is required, so editing
+    // only the distribution (or a secondary field) on an inheriting group must not
+    // silently drop the effective mean to 0 — carry the inherited value instead.
+    const base = draft.think_time ?? { type: 'fixed', mean_ms: inheritedThink.mean_ms ?? 0 }
     patch({ think_time: { ...base, ...next } })
   }
 
@@ -213,9 +217,15 @@ export default function RuntimeSettingsGroupEditor({
 
   const clearField = (field: RuntimeFieldKey) => {
     switch (field) {
-      case 'iterations':
-        patch({ iterations: undefined })
+      case 'iterations': {
+        // fieldHasOverride reports an override when the value lives in the
+        // promoted run_logic section, so clearing must strip both the legacy
+        // top-level field AND the section copies; drop run_logic only when it
+        // becomes fully empty so unrelated section fields are preserved.
+        const rl = draft.run_logic ? { ...draft.run_logic, iterations: undefined, global_iterations: undefined } : undefined
+        patch({ iterations: undefined, run_logic: rl && Object.values(rl).some(v => v !== undefined) ? rl : undefined })
         break
+      }
       case 'pacing':
         patch({ pacing: undefined })
         break
@@ -225,12 +235,16 @@ export default function RuntimeSettingsGroupEditor({
       case 'browser':
         patch({ browser: undefined })
         break
-      case 'log_level':
-        patch({ log_level: '' })
+      case 'log_level': {
+        const lg = draft.log ? { ...draft.log, level: undefined } : undefined
+        patch({ log_level: '', log: lg && Object.values(lg).some(v => v !== undefined) ? lg : undefined })
         break
-      case 'auto_transactions':
-        patch({ auto_transactions: '' })
+      }
+      case 'auto_transactions': {
+        const rl = draft.run_logic ? { ...draft.run_logic, auto_transactions: undefined } : undefined
+        patch({ auto_transactions: '', run_logic: rl && Object.values(rl).some(v => v !== undefined) ? rl : undefined })
         break
+      }
       case 'error_handling':
         patch({ continue_on_error: false, snapshot_on_error: false, max_retries: undefined, retry_delay_ms: undefined, retry_backoff: undefined })
         break
@@ -257,8 +271,10 @@ export default function RuntimeSettingsGroupEditor({
     if (!o) return false
     switch (field) {
       case 'iterations':
-        // Either the legacy top-level field or the promoted run_logic section.
-        return o.iterations !== undefined || o.run_logic?.iterations !== undefined || o.run_logic?.global_iterations !== undefined
+        // Per-VUser iterations only (legacy top-level or the promoted run_logic
+        // section). global_iterations is a distinct fleet-wide shared cap shown via
+        // the Run Logic row, not conflated into this per-VUser Iterations row.
+        return o.iterations !== undefined || o.run_logic?.iterations !== undefined
       case 'pacing':
         return Boolean(o.pacing?.type)
       case 'think_time':
@@ -455,7 +471,7 @@ export default function RuntimeSettingsGroupEditor({
               </label>
               <label>
                 <span>Mean (ms)</span>
-                <input className="settings-input" type="number" min={0} value={draft.think_time?.mean_ms ?? ''} disabled={Boolean(draft.think_time?.ignore)} onChange={event => patchThinkTime({ mean_ms: event.target.value === '' ? 0 : Number(event.target.value) })} placeholder={inh(inheritedThink.mean_ms)} />
+                <input className="settings-input" type="number" min={0} value={draft.think_time?.mean_ms ?? ''} disabled={Boolean(draft.think_time?.ignore)} onChange={event => patchThinkTime({ mean_ms: event.target.value === '' ? (inheritedThink.mean_ms ?? 0) : Number(event.target.value) })} placeholder={inh(inheritedThink.mean_ms)} />
               </label>
               {draft.think_time?.type === 'gaussian' && (
                 <label>

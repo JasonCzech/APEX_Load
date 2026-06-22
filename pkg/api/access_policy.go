@@ -259,6 +259,20 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 	}
 
 	if r.PathValue("id") != "" && strings.HasPrefix(path, "/api/v1/releases/") {
+		// Creating or deleting an SLA-breach waiver is a risk-acceptance
+		// governance action that flips a failed release gate to "waived"; restrict
+		// it to project admins (mirroring schedule approvals above). The generic
+		// release-write rule below would otherwise let any project Editor mint one.
+		if strings.Contains(path, "/sla-governance/waivers") {
+			switch method {
+			case http.MethodPost, http.MethodDelete:
+				return accessRequirement{
+					GlobalRoles:   []string{RoleProjectAdmin, RoleSystemAdmin},
+					ProjectRoles:  []string{RoleProjectAdmin},
+					ProjectLookup: resolveReleaseProjectID,
+				}, true
+			}
+		}
 		switch method {
 		case http.MethodGet:
 			return accessRequirement{

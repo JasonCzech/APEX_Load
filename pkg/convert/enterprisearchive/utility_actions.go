@@ -22,6 +22,33 @@ func appendSourceAction(result *ConvertResult, fn ParsedFunction, action dsl.Act
 	recordSourceFunctionSupport(result, mode)
 }
 
+// actionPathByName returns the source-review TargetPath of the first top-level
+// action whose name matches, searching init -> actions -> teardown (the order
+// uniquify dedupes in). Post-uniquify names are unique across these phases, so
+// the match is unambiguous. Used to repoint a renamed action's mapping
+// positionally rather than by the (possibly duplicated) old name.
+func actionPathByName(script *dsl.Script, name string) (string, bool) {
+	if script == nil {
+		return "", false
+	}
+	phases := []struct {
+		phase   string
+		actions []dsl.Action
+	}{
+		{"init", script.Init},
+		{"actions", script.Actions},
+		{"teardown", script.Teardown},
+	}
+	for _, p := range phases {
+		for i := range p.actions {
+			if p.actions[i].Name == name {
+				return sourceReviewActionPath(p.phase, i), true
+			}
+		}
+	}
+	return "", false
+}
+
 func actionCountForPhase(script *dsl.Script, phase string) int {
 	if script == nil {
 		return 0

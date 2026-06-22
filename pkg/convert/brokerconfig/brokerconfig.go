@@ -202,8 +202,11 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 }
 
 // mqscDefineRe matches `DEFINE QLOCAL('NAME')` / `DEFINE TOPIC(NAME)` etc. across
-// the MQSC object types, capturing the object type and name (quoted or bare).
-var mqscDefineRe = regexp.MustCompile(`(?i)\bDEFINE\s+(QLOCAL|QREMOTE|QALIAS|QMODEL|TOPIC)\s*\(\s*'?([A-Za-z0-9._%/-]+)'?\s*\)`)
+// the MQSC object types, capturing the object type and name (quoted or bare). It
+// is line-anchored ((?im) + ^) so a DEFINE keyword appearing INSIDE an attribute
+// value (e.g. DESCR('see DEFINE QLOCAL(OLD) note')) is not captured as a phantom
+// object — each MQSC command starts at the beginning of a (continuation-joined) line.
+var mqscDefineRe = regexp.MustCompile(`(?im)^\s*DEFINE\s+(QLOCAL|QREMOTE|QALIAS|QMODEL|TOPIC)\s*\(\s*'?([A-Za-z0-9._%/-]+)'?\s*\)`)
 
 func parseMQSC(data []byte) ([]Destination, []string) {
 	// Join MQSC line continuations (a line ending with + or -) so a DEFINE that

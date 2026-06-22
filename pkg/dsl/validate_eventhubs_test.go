@@ -54,6 +54,21 @@ func TestValidateEventHubsBadAuthType(t *testing.T) {
 	}
 }
 
+func TestValidateEventHubsBadStartPosition(t *testing.T) {
+	s := eventHubsScript(func(s *Script) {
+		s.Config.EventHubs.StartPosition = "middle"
+	})
+	if issues := ValidateScriptIssues(s); !hasIssueContaining(issues, "start_position") {
+		t.Fatalf("expected start_position issue, got: %v", issues)
+	}
+	ok := eventHubsScript(func(s *Script) {
+		s.Config.EventHubs.StartPosition = "earliest"
+	})
+	if issues := ValidateScriptIssues(ok); hasIssueContaining(issues, "start_position") {
+		t.Fatalf("earliest is valid, got start_position issue: %v", issues)
+	}
+}
+
 func TestValidateEventHubsMissingHub(t *testing.T) {
 	s := eventHubsScript(func(s *Script) {
 		s.Config.EventHubs = EventHubsConfig{Mock: true} // no default hub

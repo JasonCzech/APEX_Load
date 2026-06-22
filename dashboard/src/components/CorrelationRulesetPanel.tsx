@@ -89,6 +89,11 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
   }
 
   const openApply = (rulesetId: string) => {
+    // Only (re)initialize when switching to a different ruleset's input. onFocus
+    // fires every time the field gains focus, so resetting unconditionally would
+    // wipe the typed script id and the computed preview when the user clicks back
+    // into the same field to verify or edit it.
+    if (applyForm.rulesetId === rulesetId) return
     setApplyForm({ rulesetId, scriptId: '' })
     setApplyResult(null)
   }

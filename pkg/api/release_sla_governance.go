@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -85,7 +86,6 @@ func (s *Server) handleCreateReleaseSLAWaiver(w http.ResponseWriter, r *http.Req
 	}
 	req.Scope = strings.TrimSpace(req.Scope)
 	req.Reason = strings.TrimSpace(req.Reason)
-	req.ApprovedBy = strings.TrimSpace(req.ApprovedBy)
 	if req.Scope == "" {
 		req.Scope = "release"
 	}
@@ -98,10 +98,11 @@ func (s *Server) handleCreateReleaseSLAWaiver(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	if req.ApprovedBy == "" {
-		_, subject, displayName := s.resolveAuditActor(r)
-		req.ApprovedBy = firstNonEmpty(displayName, subject)
-	}
+	// approved_by is always derived from the authenticated actor and never
+	// trusted from the request body, so the governance/audit record of who
+	// accepted the risk cannot be spoofed by the caller.
+	_, subject, displayName := s.resolveAuditActor(r)
+	req.ApprovedBy = firstNonEmpty(displayName, subject)
 	now := time.Now().UTC()
 	waiver := &storage.ReleaseSLAWaiver{
 		ID:         uuid.New().String(),
@@ -185,7 +186,18 @@ func (s *Server) buildReleaseSLAGovernance(releaseID string) (ReleaseSLAGovernan
 		if record, ok := s.runner.GetRunArchive(test.ID); ok {
 			report, err := buildRunArchiveReport(record)
 			if err != nil {
-				return ReleaseSLAGovernanceResponse{}, fmt.Errorf("failed to build archive report for %s: %w", test.ID, err)
+				// A single corrupt/unreadable archive must not 500 the whole
+				// release's governance view. Surface the run as degraded
+				// (conservatively breached) and continue with the other runs.
+				slog.Warn("release SLA governance: archive report unavailable", "test", test.ID, "err", err)
+				response.Summary.ArchivedRuns++
+				run.Completeness = "unknown"
+				run.TelemetryStatus = "unknown"
+				run.SLABreached = true
+				run.SLADetails = []string{"archive report unavailable: " + err.Error()}
+				response.Summary.FailedRuns++
+				response.BreachHistory = append(response.BreachHistory, run)
+				continue
 			}
 			response.Summary.ArchivedRuns++
 			if report.Manifest != nil {

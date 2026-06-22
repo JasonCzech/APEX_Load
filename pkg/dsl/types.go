@@ -272,6 +272,7 @@ type EventHubsConfig struct {
 	ConsumerGroup          string `json:"consumer_group,omitempty"`           // consumer group for the observer probe; defaults to $Default
 	PartitionKey           string `json:"partition_key,omitempty"`            // default partition key (hash routing)
 	PartitionID            string `json:"partition_id,omitempty"`             // default explicit partition id
+	StartPosition          string `json:"start_position,omitempty"`           // observer-probe start: latest (default, tail) | earliest (partition start, for produce→consume round-trips)
 	AuthType               string `json:"auth_type,omitempty"`                // connection_string | aad
 	TimeoutMs              int    `json:"timeout_ms,omitempty"`               // default send/receive timeout
 	Mock                   bool   `json:"mock,omitempty"`                     // use in-memory broker for local shakeout

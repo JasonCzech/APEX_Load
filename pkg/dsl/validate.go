@@ -771,7 +771,7 @@ func validateJMSScriptIssues(script *Script) []string {
 				issues = append(issues, fmt.Sprintf("actions[%d] %q: missing reply_to destination", i, action.Name))
 			}
 		}
-		if serviceBus && (action.Type == "jms_consume" || action.Type == "jms_request_reply") && jmsActionUsesServiceBusTopicWithoutSubscription(jms, action) {
+		if serviceBus && (action.Type == "jms_consume" || action.Type == "jms_request_reply" || action.Type == "jms_browse") && jmsActionUsesServiceBusTopicWithoutSubscription(jms, action) {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: subscription required to consume from a Service Bus topic", i, action.Name))
 		}
 		// JMS message-type model + delivery controls (P2.3) on send actions.
@@ -1081,6 +1081,12 @@ func validateKafkaScriptIssues(script *Script) []string {
 				issues = append(issues, fmt.Sprintf("actions[%d] %q: missing reply_to topic", i, action.Name))
 			}
 		}
+		// EOS transaction verbs require config.kafka.transactional_id (the runtime
+		// rejects kafka_begin_transaction without it). Gate on begin — the verb the
+		// runtime fails first — so the contract is enforced at pre-flight, not run time.
+		if action.Type == "kafka_begin_transaction" && strings.TrimSpace(kafka.TransactionalID) == "" {
+			issues = append(issues, fmt.Sprintf("actions[%d] %q: kafka_begin_transaction requires config.kafka.transactional_id", i, action.Name))
+		}
 	}
 
 	return issues
@@ -1116,6 +1122,9 @@ func validateEventHubsScriptIssues(script *Script) []string {
 	}
 	if eh.AuthType != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(eh.AuthType)), "connection_string", "aad") {
 		issues = append(issues, fmt.Sprintf("config.eventhubs.auth_type %q is not supported (use connection_string or aad)", eh.AuthType))
+	}
+	if eh.StartPosition != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(eh.StartPosition)), "latest", "earliest") {
+		issues = append(issues, fmt.Sprintf("config.eventhubs.start_position %q is not supported (use latest or earliest)", eh.StartPosition))
 	}
 	if eh.TimeoutMs < 0 {
 		issues = append(issues, "config.eventhubs.timeout_ms must be zero or greater")

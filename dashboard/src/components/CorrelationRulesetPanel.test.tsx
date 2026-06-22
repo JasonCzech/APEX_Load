@@ -106,6 +106,31 @@ describe('CorrelationRulesetPanel', () => {
     expect(container.textContent).toContain('applied 1 rule')
   })
 
+  it('keeps the typed script id and preview when the apply input is re-focused', async () => {
+    apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [ruleset({})], count: 1 })
+    apiMock.applyCorrelationRulesetToScript
+      .mockResolvedValueOnce({ ruleset_id: 'r1', script_id: 's9', matched_rules: 1, applied: false, diffs: [{ kind: 'extractor_added', after: 'login' }] })
+
+    await act(async () => { root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />) })
+    await flush()
+    const title = container.querySelector('.pp-row-title-button') as HTMLButtonElement
+    await act(async () => { title.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flush()
+
+    setInput('Apply to script id…', 's9')
+    await act(async () => { findButton('Preview')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flush()
+    expect(container.textContent).toContain('1 rule matched')
+
+    // Click back into the same field. onFocus must NOT wipe the typed id/preview.
+    const input = Array.from(container.querySelectorAll('input')).find(i => i.getAttribute('placeholder') === 'Apply to script id…') as HTMLInputElement
+    await act(async () => { input.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
+    await flush()
+    expect(input.value).toBe('s9')
+    expect(container.textContent).toContain('1 rule matched')
+    expect(findButton('Apply')!.disabled).toBe(false)
+  })
+
   it('disables Apply once the script id is edited until a fresh Preview', async () => {
     apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [ruleset({})], count: 1 })
     apiMock.applyCorrelationRulesetToScript

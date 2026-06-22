@@ -14,7 +14,7 @@ import { openSearchPanel } from '@codemirror/search'
 import { apexCodeMirrorTheme } from './codeMirrorTheme'
 import { apexDslSemanticHighlighting } from './apexDslSemanticHighlighting'
 import { buildDslAssistExtensions } from './dslEditorAssist'
-import { dslActionUsesSelector, dslActionUsesValue, ensureDslActionCatalog } from './dslActionCatalog'
+import { ensureDslActionCatalog } from './dslActionCatalog'
 import {
   BrowserReplayEvent,
   BrowserReplayNetworkEntry,
@@ -71,7 +71,6 @@ import {
   groupIssuesByAction,
   summarizeDataSources,
   summarizeParameters,
-  type AuthoringIssue,
   type MigrationAssistantSuggestion,
   type ScriptRepairSuggestion,
 } from './scriptAuthoringAssist'
@@ -92,15 +91,6 @@ import {
   defaultExtractorForProtocol,
   sanitizeDownloadName,
 } from './scriptEditorHelpers'
-import {
-  BrowserActionFields,
-  DatabaseActionFields,
-  GrpcActionFields,
-  HttpActionFields,
-  JmsActionFields,
-  NetworkActionFields,
-  WebSocketActionFields,
-} from './scriptActionFields'
 import {
   formatSnapshotRequestSection,
   formatSnapshotResponseSection,
@@ -188,9 +178,9 @@ import {
   type ScriptActionPhase,
   type ScriptPhaseActionRow,
 } from './scriptEditorWorkbench'
-import { isRecord, asString, httpSequenceRequests, rawHttpSequenceRequest, actionRequestCount, actionExtractorCount, actionAssertionCount, isControlAction, isReviewGatedJavaScriptAction, actionRequiresReview, actionSelectorFallbackCount, actionDisplayType, actionDisplayTarget, actionTypeSummary, actionRowLabel } from './scriptActionHelpers'
+import { isRecord, httpSequenceRequests, rawHttpSequenceRequest, actionRequestCount, actionExtractorCount, actionAssertionCount, isControlAction, isReviewGatedJavaScriptAction, actionRequiresReview, actionSelectorFallbackCount, actionDisplayType, actionDisplayTarget, actionTypeSummary, actionRowLabel } from './scriptActionHelpers'
 import { ActionEditor, ActionParameterMenu, ValidationEvidencePanel } from './ScriptEditorActionEditor'
-import { type ParameterFormatPreset, CUSTOM_PARAMETER_FORMAT_VALUE, parameterFormatForType, parameterFormatPresetsForType, isBuiltinParameterType, applyParameterTypeDefaults } from './scriptParameterFormat'
+import { CUSTOM_PARAMETER_FORMAT_VALUE, parameterFormatForType, parameterFormatPresetsForType, isBuiltinParameterType, applyParameterTypeDefaults } from './scriptParameterFormat'
 import './ScriptEditor.css'
 
 type Action = ScriptActionDefinition
@@ -3104,7 +3094,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     jsonDirty,
     jsonText,
     openDataEditor,
-    openSections,
     parameterCandidates,
     pendingParameterDraft,
     replayActivity,
@@ -3144,7 +3133,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setValidating,
     setWarnings,
     success,
-    toggleSection,
     validating,
     warnings,
     closeReplayScreenshot,
@@ -3704,7 +3692,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [assistantChangeLog, setAssistantChangeLog] = useState<AssistantChangeLogItem[]>([])
   const [editorHistory, setEditorHistory] = useState<EditorHistory>({ past: [], future: [] })
   const [authoringComponents, setAuthoringComponents] = useState<AuthoringComponent[]>([])
-  const [componentLibraryStatus, setComponentLibraryStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [, setComponentLibraryStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [validationEvidence, setValidationEvidence] = useState<ValidationEvidence | null>(null)
   const [validationReplayPreflight, setValidationReplayPreflight] = useState<ReplayPreflight | null>(null)
   // These derivations scan the full action set (and for imports, run a draft diff
@@ -4721,9 +4709,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   const duplicateAction = (idx: number) => {
     setScript(prev => ({ ...prev, actions: duplicateActionInList(prev.actions, idx) }))
-    // A copy is inserted at idx+1, so breakpoints after it shift down by one.
+    // A copy is inserted at idx+1, so every index after it shifts down by one.
+    // Bump breakpoints AND the active selection / JSON focus so they keep pointing
+    // at the same action — otherwise the outline highlight and the read-only
+    // Selected Action JSON pane would show, and a structured-form edit would
+    // target, the wrong action. Spread preserves any nested stepPath on the focus.
     setDebugBreakpoints(prev => prev.map(bp =>
       bp.phase === 'action' && bp.action_index > idx ? { ...bp, action_index: bp.action_index + 1 } : bp))
+    setActiveAction(prev => (prev !== null && prev > idx ? prev + 1 : prev))
+    setAuthorCodeFocus(prev => (prev && prev.phase === 'action' && prev.actionIndex > idx ? { ...prev, actionIndex: prev.actionIndex + 1 } : prev))
   }
 
   const updateAction = (idx: number, field: keyof Action, value: unknown) => {
@@ -7004,12 +6998,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       const lo = indices[0]
       const hi = indices[indices.length - 1]
       setScript(prev => ({ ...prev, actions: wrapActionsInTransactionMarkers(prev.actions, lo, hi, name) }))
-      // Two markers are inserted (start at lo, end after hi); keep breakpoints pinned.
+      // Two markers are inserted (start at lo, end after hi); keep breakpoints AND
+      // the active selection / JSON focus pinned so they don't drift onto a shifted
+      // action or an inserted marker (same family as duplicateAction).
       setDebugBreakpoints(prev => prev.map(bp => {
         if (bp.phase !== 'action') return bp
         const shifted = remapIndexAfterMarkerWrap(bp.action_index, lo, hi)
         return shifted === bp.action_index ? bp : { ...bp, action_index: shifted }
       }))
+      setActiveAction(prev => (prev === null ? prev : remapIndexAfterMarkerWrap(prev, lo, hi)))
+      setAuthorCodeFocus(prev => (prev && prev.phase === 'action'
+        ? { ...prev, actionIndex: remapIndexAfterMarkerWrap(prev.actionIndex, lo, hi) }
+        : prev))
     } else {
       setScript(prev => ({ ...prev, actions: tagActionsTransaction(prev.actions, indices, name) }))
     }

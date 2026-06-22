@@ -91,7 +91,7 @@ func (c *realClient) Receive(ctx context.Context, hub, group string, timeout tim
 		return event{}, 0, err
 	}
 	if len(events) == 0 {
-		return event{}, 0, fmt.Errorf("no event received from %q partition %q within %s", hub, partition, timeout)
+		return event{}, 0, fmt.Errorf("no event received from %q partition %q within %s: %w", hub, partition, timeout, errNoEvent)
 	}
 	rd := events[0]
 	ev := event{
@@ -261,11 +261,22 @@ func (c *realClient) partitionClient(hub, group, partition string) (*azeventhubs
 	if pc, ok := c.partitions[key]; ok {
 		return pc, nil
 	}
-	// Latest: the observer probe measures freshly-produced events, so it starts
-	// at the partition tail (matches the SDK default and producer-first intent).
-	latest := true
+	// Start position for the observer probe. Default "latest" (the partition tail)
+	// suits a sustained-load observer sampling freshly-arriving events. A
+	// produce→consume round-trip in the SAME run must use "earliest" (from the
+	// partition start) — otherwise a receiver opened lazily AFTER the produce
+	// starts past the just-produced event and never sees it (the mock reads from
+	// the start, so it would pass while the real adapter silently skips).
+	var start azeventhubs.StartPosition
+	if c.cfg.StartPosition == "earliest" {
+		earliest := true
+		start.Earliest = &earliest
+	} else {
+		latest := true
+		start.Latest = &latest
+	}
 	pc, err := cc.NewPartitionClient(partition, &azeventhubs.PartitionClientOptions{
-		StartPosition: azeventhubs.StartPosition{Latest: &latest},
+		StartPosition: start,
 	})
 	if err != nil {
 		return nil, err

@@ -158,7 +158,12 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 				ConvertedActions: trueClientResult.Stats.ConvertedActions,
 				Skipped:          trueClientResult.Stats.Skipped,
 				Transactions:     trueClientResult.Stats.Transactions,
-				UnsupportedFuncs: append([]string(nil), trueClientResult.Stats.UnsupportedSteps...),
+				// Propagate the converter's review-only step accounting so downstream
+				// ConvertStats consumers see it (and TotalFunctions reconciles against
+				// Converted + Skipped + ReviewOnly + Unsupported); the TrueClient branch
+				// previously dropped it, unlike the Java/utility/devweb branches.
+				ReviewOnlyFunctions: trueClientResult.Stats.ReviewOnlySteps,
+				UnsupportedFuncs:    append([]string(nil), trueClientResult.Stats.UnsupportedSteps...),
 			},
 		}
 		if result.DetectedProtocol != nil && result.DetectedProtocol.ImportMode != ImportModeExecutable {

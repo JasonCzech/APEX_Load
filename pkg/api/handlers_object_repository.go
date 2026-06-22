@@ -7,7 +7,9 @@ package api
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -104,13 +106,35 @@ func (s *Server) handleUpdateObjectRepository(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
 	var req storage.ObjectRepository
-	if !decodeJSONBody(w, r, &req) {
+	if err := json.Unmarshal(raw, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 	req.ID = existing.ID
 	req.ProjectID = existing.ProjectID
 	req.CreatedAt = existing.CreatedAt
+	// SaveObjectRepository UPSERTs the whole row, so any field the caller omits
+	// would be reset to its zero value. Preserve omitted optional fields from the
+	// existing record: `source` (provenance, set once at creation) and
+	// `auto_promote_on_heal` (a heal preference toggled from a separate control).
+	// This stops a partial update — e.g. a candidate promotion that sends only
+	// name/description/objects — from silently wiping them, while an explicit
+	// toggle (which does send the key) still takes effect.
+	var present map[string]json.RawMessage
+	if json.Unmarshal(raw, &present) == nil {
+		if _, sent := present["source"]; !sent {
+			req.Source = existing.Source
+		}
+		if _, sent := present["auto_promote_on_heal"]; !sent {
+			req.AutoPromoteOnHeal = existing.AutoPromoteOnHeal
+		}
+	}
 	if status, msg := validateObjectRepository(&req); status != 0 {
 		writeError(w, status, msg)
 		return

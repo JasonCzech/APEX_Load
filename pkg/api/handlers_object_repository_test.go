@@ -80,6 +80,60 @@ func TestObjectRepositoryCRUDHandlers(t *testing.T) {
 	}
 }
 
+func TestUpdateObjectRepositoryPreservesOmittedFields(t *testing.T) {
+	server := recordingTestServer(t)
+
+	// Seed a script-sourced repo that has opted into auto-promote-on-heal.
+	seed := &storage.ObjectRepository{
+		ID:                "repo-merge",
+		ProjectID:         "p1",
+		Name:              "Checkout",
+		Source:            "script:script-7",
+		AutoPromoteOnHeal: true,
+		Objects:           []storage.RepositoryObject{{LogicalName: "go", CSS: "#go"}},
+	}
+	if err := server.store.SaveObjectRepository(seed); err != nil {
+		t.Fatalf("seed save: %v", err)
+	}
+
+	// A partial update (e.g. a candidate promotion) that omits source and
+	// auto_promote_on_heal must NOT wipe them.
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/object-repositories/"+seed.ID,
+		strings.NewReader(`{"name":"Checkout","description":"","objects":[{"logical_name":"go","css":"#go2"}]}`))
+	putReq.SetPathValue("id", seed.ID)
+	putResp := httptest.NewRecorder()
+	server.handleUpdateObjectRepository(putResp, putReq)
+	if putResp.Code != http.StatusOK {
+		t.Fatalf("update status = %d body=%s", putResp.Code, putResp.Body.String())
+	}
+	var updated storage.ObjectRepository
+	json.NewDecoder(putResp.Body).Decode(&updated)
+	if updated.Source != "script:script-7" {
+		t.Fatalf("source dropped on partial update: %q", updated.Source)
+	}
+	if !updated.AutoPromoteOnHeal {
+		t.Fatal("auto_promote_on_heal wiped on partial update that omitted it")
+	}
+
+	// An explicit toggle that DOES send auto_promote_on_heal:false must still apply.
+	offReq := httptest.NewRequest(http.MethodPut, "/api/v1/object-repositories/"+seed.ID,
+		strings.NewReader(`{"name":"Checkout","objects":[{"logical_name":"go","css":"#go2"}],"auto_promote_on_heal":false}`))
+	offReq.SetPathValue("id", seed.ID)
+	offResp := httptest.NewRecorder()
+	server.handleUpdateObjectRepository(offResp, offReq)
+	if offResp.Code != http.StatusOK {
+		t.Fatalf("toggle-off status = %d body=%s", offResp.Code, offResp.Body.String())
+	}
+	var toggled storage.ObjectRepository
+	json.NewDecoder(offResp.Body).Decode(&toggled)
+	if toggled.AutoPromoteOnHeal {
+		t.Fatal("explicit auto_promote_on_heal:false did not take effect")
+	}
+	if toggled.Source != "script:script-7" {
+		t.Fatalf("source dropped on explicit toggle: %q", toggled.Source)
+	}
+}
+
 func TestObjectRepositoryObjectsFromScriptExcludesAmbiguousNames(t *testing.T) {
 	script := &dsl.Script{
 		Actions: []dsl.Action{

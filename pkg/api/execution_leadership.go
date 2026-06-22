@@ -46,6 +46,10 @@ type executionLeadership struct {
 	now     func() time.Time
 
 	leader atomic.Bool
+	// reconciling guards the asynchronous onAcquire callback so that, even if
+	// leadership flaps (false->true->false->true), at most one reconcile runs at
+	// a time and it never overlaps itself.
+	reconciling atomic.Bool
 
 	mu            sync.Mutex
 	onAcquire     func()
@@ -80,7 +84,21 @@ func (l *executionLeadership) IsLeader() bool {
 	if l == nil {
 		return true
 	}
-	return l.leader.Load()
+	if !l.leader.Load() {
+		return false
+	}
+	// Defense in depth: if renewals have not positively confirmed the lease for
+	// longer than the TTL — e.g. the renewal goroutine is wedged on a blocking
+	// store call and can never reach the step-down path in tick() — fail closed
+	// rather than continue mutating shared execution state after the DB lease
+	// could already have been granted to another replica.
+	l.mu.Lock()
+	last := l.lastConfirmed
+	l.mu.Unlock()
+	if !last.IsZero() && l.now().UTC().Sub(last) >= l.ttl {
+		return false
+	}
+	return true
 }
 
 // Run renews the lease until ctx is cancelled. It acquires immediately, then
@@ -137,7 +155,18 @@ func (l *executionLeadership) tick() {
 	if l.leader.CompareAndSwap(false, true) {
 		slog.Info("execution leadership acquired", "owner", l.ownerID)
 		if onAcquire != nil {
-			onAcquire()
+			// Run the acquire-time reconcile OFF the renewal goroutine. It can
+			// reload the full test set and run synchronous per-group script
+			// shakeouts (up to ~30s each), which is longer than the lease TTL; if
+			// it ran inline it would block lease renewal and let the lease this
+			// replica just acquired expire mid-takeover, admitting a second
+			// leader (split-brain). reconciling serializes overlapping runs.
+			if l.reconciling.CompareAndSwap(false, true) {
+				go func() {
+					defer l.reconciling.Store(false)
+					onAcquire()
+				}()
+			}
 		}
 	}
 }

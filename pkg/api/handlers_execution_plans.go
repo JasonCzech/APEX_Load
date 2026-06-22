@@ -180,6 +180,13 @@ type executionPlanRunResult struct {
 }
 
 func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *http.Request) {
+	// Running an execution plan mutates execution state (persists plan-run
+	// records, creates/starts tests, broadcasts lifecycle events). On an HA
+	// follower it must return 503 like every other execution-mutating handler,
+	// rather than persisting a junk run and emitting misleading WebSocket events.
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return

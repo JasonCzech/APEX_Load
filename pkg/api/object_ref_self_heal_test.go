@@ -53,6 +53,33 @@ func TestObjectRefBindingsByActionName(t *testing.T) {
 	}
 }
 
+func TestObjectRefBindingsByActionNameDropsAmbiguousNames(t *testing.T) {
+	// Two object_ref-bound actions share a name but point at DIFFERENT repository
+	// objects: the binding must be dropped so a heal under that name is not routed
+	// to the wrong object.
+	script := &dsl.Script{Actions: []dsl.Action{
+		{Name: "Go", Type: "browser_click", ObjectRef: "object-repo-a:go",
+			Metadata: map[string]any{objectRefRepositoryMetadataKey: "object-repo-a"}},
+		{Name: "Go", Type: "browser_click", ObjectRef: "object-repo-b:go",
+			Metadata: map[string]any{objectRefRepositoryMetadataKey: "object-repo-b"}},
+	}}
+	if bindings := objectRefBindingsByActionName(script); len(bindings) != 0 {
+		t.Fatalf("ambiguous same-name cross-repo bindings = %#v, want dropped (0)", bindings)
+	}
+
+	// Two same-named actions with the SAME binding are not ambiguous (a no-op
+	// last-write); the binding is retained.
+	same := &dsl.Script{Actions: []dsl.Action{
+		{Name: "Submit", Type: "browser_click", ObjectRef: "object-repo-a:submit",
+			Metadata: map[string]any{objectRefRepositoryMetadataKey: "object-repo-a"}},
+		{Name: "Submit", Type: "browser_click", ObjectRef: "object-repo-a:submit",
+			Metadata: map[string]any{objectRefRepositoryMetadataKey: "object-repo-a"}},
+	}}
+	if bindings := objectRefBindingsByActionName(same); len(bindings) != 1 {
+		t.Fatalf("identical same-name bindings = %#v, want retained (1)", bindings)
+	}
+}
+
 func TestApplyHealToRepositoryObject(t *testing.T) {
 	t.Run("appends a drifted locator", func(t *testing.T) {
 		repo := &storage.ObjectRepository{Objects: []storage.RepositoryObject{{

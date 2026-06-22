@@ -1,7 +1,7 @@
 package api
 
 import (
-	"fmt"
+	"log/slog"
 	"net/http"
 )
 
@@ -44,7 +44,9 @@ func (s *Server) collectReleaseTrendRuns(releaseID string) ([]releaseTrendRun, e
 		}
 		report, err := buildRunArchiveReport(record)
 		if err != nil {
-			return nil, fmt.Errorf("failed to build archive report for %s: %w", test.ID, err)
+			// One corrupt/unreadable archive must not fail the whole trend; skip it.
+			slog.Warn("release trend: archive report unavailable", "test", test.ID, "err", err)
+			continue
 		}
 		runs = append(runs, releaseTrendRun{Test: test, Report: report})
 	}

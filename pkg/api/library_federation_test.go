@@ -622,6 +622,36 @@ func writeLibraryArchiveText(t *testing.T, path string, value string) {
 	}
 }
 
+func TestLibraryArchiveImportRejectsMismatchedFormProjectID(t *testing.T) {
+	// A form project_id that differs from the auth-validated query project_id must
+	// be rejected (otherwise a caller authorized for project-a could import into
+	// project-b). A matching value is accepted.
+	mismatch, ct := multipartArchiveImportBody(t, LibraryBundle{}, "project-b", []byte("zipbytes"))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/library/import/archive?project_id=project-a", mismatch)
+	req.Header.Set("Content-Type", ct)
+	_, _, cleanup, err := readLibraryArchiveImportRequest(req)
+	if cleanup != nil {
+		cleanup()
+	}
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("mismatched form project_id err = %v, want a does-not-match rejection", err)
+	}
+
+	match, ct2 := multipartArchiveImportBody(t, LibraryBundle{}, "project-a", []byte("zipbytes"))
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/library/import/archive?project_id=project-a", match)
+	req2.Header.Set("Content-Type", ct2)
+	got, _, cleanup2, err2 := readLibraryArchiveImportRequest(req2)
+	if cleanup2 != nil {
+		cleanup2()
+	}
+	if err2 != nil {
+		t.Fatalf("matching project_id should be accepted, got err %v", err2)
+	}
+	if got.ProjectID != "project-a" {
+		t.Fatalf("resolved project_id = %q, want project-a (the authorized query value)", got.ProjectID)
+	}
+}
+
 func multipartArchiveImportBody(t *testing.T, bundle LibraryBundle, projectID string, archiveZip []byte) (*bytes.Buffer, string) {
 	t.Helper()
 	var body bytes.Buffer

@@ -483,7 +483,7 @@ func (vu *VUser) Run(ctx context.Context) {
 			case flowTeardown:
 				goto teardown
 			case flowBreak, flowContinue:
-				logger.Warn("control_break/control_continue outside a control_loop was ignored", "phase", "actions")
+				warnStrayControlFlow(logger, action.Name, "actions")
 			}
 		}
 
@@ -527,24 +527,31 @@ func (vu *VUser) prepareRuntimeState() {
 }
 
 func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, phase string, ignoreErrors bool, logger *slog.Logger, logCfg dsl.LogConfig, errCfg dsl.ErrorHandlingConfig) bool {
-	var runActions func(actions []dsl.Action, depth int) bool
-	runOne := func(action dsl.Action, depth int) bool {
+	// Lifecycle (init/teardown) actions use the same actionFlow model as the main
+	// path so control_break / control_continue inside a control_loop are honored
+	// here too (and not silently dropped); flowTeardown means "abort the phase".
+	var runActions func(actions []dsl.Action, depth int) actionFlow
+	runOne := func(action dsl.Action, depth int) actionFlow {
 		if vu.PauseControl != nil {
 			if err := vu.PauseControl.WaitIfPaused(ctx); err != nil {
-				return false
+				return flowTeardown
 			}
 		}
 		if ctx.Err() != nil {
-			return false
+			return flowTeardown
 		}
 		switch strings.ToLower(strings.TrimSpace(action.Type)) {
+		case "control_break":
+			return flowBreak
+		case "control_continue":
+			return flowContinue
 		case "control_if":
 			if action.Control == nil {
-				return true
+				return flowNext
 			}
 			if depth >= maxControlDepth {
 				logger.Error(phase+" control flow nesting exceeded", "action", action.Name)
-				return true
+				return flowNext
 			}
 			body := action.Control.Else
 			if vu.evalCondition(action.Control.Condition) {
@@ -553,11 +560,11 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 			return runActions(body, depth+1)
 		case "control_loop":
 			if action.Control == nil {
-				return true
+				return flowNext
 			}
 			if depth >= maxControlDepth {
 				logger.Error(phase+" control flow nesting exceeded", "action", action.Name)
-				return true
+				return flowNext
 			}
 			loop := action.Control
 			maxPasses := controlLoopMaxPasses(loop)
@@ -587,20 +594,25 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 					}
 					if ctx.Err() != nil {
 						restore()
-						return false
+						return flowTeardown
 					}
 					vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
 					vu.bindForEachRow(loop.ForEach.Var, row)
 					if loop.ForEach.Condition != nil && !vu.evalCondition(loop.ForEach.Condition) {
 						break
 					}
-					if !runActions(loop.Steps, depth+1) {
+					switch runActions(loop.Steps, depth+1) {
+					case flowTeardown:
 						restore()
-						return false
+						return flowTeardown
+					case flowBreak:
+						restore()
+						return flowNext
 					}
+					// flowContinue / flowNext: proceed to the next row.
 				}
 				restore()
-				return true
+				return flowNext
 			}
 
 			fixed := loop.Count > 0
@@ -610,7 +622,7 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 			for pass := 0; ; pass++ {
 				if ctx.Err() != nil {
 					restoreLoopIndex()
-					return false
+					return flowTeardown
 				}
 				vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
 				if fixed {
@@ -620,31 +632,36 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 				} else if pass >= maxPasses || !vu.evalCondition(loop.Condition) {
 					break
 				}
-				if !runActions(loop.Steps, depth+1) {
+				switch runActions(loop.Steps, depth+1) {
+				case flowTeardown:
 					restoreLoopIndex()
-					return false
+					return flowTeardown
+				case flowBreak:
+					restoreLoopIndex()
+					return flowNext
 				}
+				// flowContinue / flowNext: proceed to the next pass.
 			}
 			restoreLoopIndex()
-			return true
+			return flowNext
 		}
 		if handled, err := vu.handleEngineAction(ctx, action); handled {
 			if err != nil {
 				logger.Error(phase+" action failed", "action", action.Name, "err", err)
 				if !ignoreErrors {
-					return false
+					return flowTeardown
 				}
 			}
-			return true
+			return flowNext
 		}
 		resolved := vu.resolveAction(action)
 		result, err := vu.executeWithRetry(ctx, resolved, errCfg)
 		if err != nil {
 			logger.Error(phase+" action failed", "action", action.Name, "err", err)
 			if !ignoreErrors {
-				return false
+				return flowTeardown
 			}
-			return true
+			return flowNext
 		}
 		vu.recordResult(result, errCfg)
 		if result != nil && !result.Success {
@@ -654,20 +671,29 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 				logger.Warn(phase+" action unsuccessful", "action", action.Name, "error", result.ErrorMessage)
 			}
 			if !ignoreErrors {
-				return false
+				return flowTeardown
 			}
 		}
-		return true
+		return flowNext
 	}
-	runActions = func(actions []dsl.Action, depth int) bool {
+	runActions = func(actions []dsl.Action, depth int) actionFlow {
 		for _, action := range actions {
-			if !runOne(action, depth) {
-				return false
+			switch f := runOne(action, depth); f {
+			case flowTeardown:
+				return flowTeardown
+			case flowBreak, flowContinue:
+				if depth == 0 {
+					// A stray break/continue with no enclosing loop is a no-op that
+					// proceeds to the next action (matching the main + replay paths).
+					warnStrayControlFlow(logger, action.Name, phase)
+					continue
+				}
+				return f // bubble up to the nearest enclosing control_loop
 			}
 		}
-		return true
+		return flowNext
 	}
-	return runActions(actions, 0)
+	return runActions(actions, 0) != flowTeardown
 }
 
 func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {

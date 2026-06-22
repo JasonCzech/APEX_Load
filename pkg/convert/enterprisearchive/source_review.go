@@ -43,10 +43,28 @@ func reconcileSourceReviewName(result *ConvertResult, oldName, newName string) {
 	if result == nil || result.SourceReview == nil || oldName == newName {
 		return
 	}
+	// Prefer a positional match: find the single action uniquify renamed to
+	// newName and repoint only the mapping at that action's path. Matching purely
+	// by TargetName clobbers the kept action's mapping when two actions shared
+	// oldName (e.g. two byte-identical utility-action names), routing both source
+	// lines to the renamed _N action and leaving the kept action unmapped.
+	if path, ok := actionPathByName(result.Script, newName); ok {
+		for i := range result.SourceReview.Mappings {
+			mapping := &result.SourceReview.Mappings[i]
+			if mapping.TargetKind == "action" && mapping.TargetName == oldName && mapping.TargetPath == path {
+				mapping.TargetName = newName
+				return
+			}
+		}
+	}
+	// Fallback (no positional match, e.g. a nested/non-top-level rename): update
+	// the first action mapping still carrying oldName. newName is unique after
+	// uniquify, so this preserves the historical single-mapping behavior.
 	for i := range result.SourceReview.Mappings {
 		mapping := &result.SourceReview.Mappings[i]
 		if mapping.TargetKind == "action" && mapping.TargetName == oldName {
 			mapping.TargetName = newName
+			return
 		}
 	}
 }

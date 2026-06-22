@@ -543,9 +543,14 @@ func (k *Kafka) consume(ctx context.Context, action *protocol.Action, result *pr
 	result.Extractions["kafka_operation"] = "consume"
 	result.Extractions["kafka_consumer_lag"] = strconv.FormatInt(lag, 10)
 	// Reliability detection: flag a duplicate / out-of-order delivery by broker
-	// offset. Kafka uses auto-ack with no rollback model, so every consume is a
-	// fresh delivery (there is no redelivery to exclude).
-	if dup, ooo := k.session.Observe(rec.Offset); dup || ooo {
+	// offset. Kafka offsets are per-(topic,partition), so the offset is observed
+	// within that partition's own sequence space — otherwise consuming across
+	// multiple partitions of a topic (the normal topology) would interleave
+	// independent offset streams and read as spurious duplicates/out-of-order.
+	// Kafka uses auto-ack with no rollback model, so every consume is a fresh
+	// delivery (there is no redelivery to exclude).
+	streamKey := topic + "/" + strconv.FormatInt(int64(rec.Partition), 10)
+	if dup, ooo := k.session.ObserveKeyed(streamKey, rec.Offset); dup || ooo {
 		if dup {
 			result.Extractions["kafka_duplicate"] = "1"
 		}
@@ -574,6 +579,14 @@ func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, resul
 		return kafkaRecord{}, kafkaRecord{}, fmt.Errorf("kafka reply_to topic is required")
 	}
 	request := k.buildRecord(action, reqTopic)
+	// Frame the request value with the configured serde (Confluent/Avro), the same
+	// as produce — otherwise a schema-registry consumer rejects the unframed
+	// request and the on-wire encoding diverges from kafka_produce.
+	framed, serr := k.valueSerde.Serialize(ctx, reqTopic, request.Value)
+	if serr != nil {
+		return kafkaRecord{}, kafkaRecord{}, serr
+	}
+	request.Value = framed
 	if request.CorrelationID == "" {
 		request.CorrelationID = newCorrelationID()
 	}
@@ -590,6 +603,14 @@ func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, resul
 		result.StatusCode = 204
 		return kafkaRecord{}, kafkaRecord{}, err
 	}
+	// Deframe the reply with the configured serde, the same as consume, so
+	// extractors see clean decoded bytes rather than the Confluent envelope.
+	payload, derr := k.valueSerde.Deserialize(ctx, response.Value)
+	if derr != nil {
+		result.StatusCode = 422
+		return kafkaRecord{}, kafkaRecord{}, derr
+	}
+	response.Value = payload
 	request.Partition = meta.Partition
 	request.Offset = meta.Offset
 	result.BytesSent = int64(len(request.Value))

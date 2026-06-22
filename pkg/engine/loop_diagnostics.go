@@ -36,3 +36,24 @@ func warnLoopTruncation(logger *slog.Logger, actionName string, requested, capLi
 		"requested", requested,
 		"cap", capLimit)
 }
+
+// strayControlFlowWarned dedupes the "break/continue outside a loop" warning to
+// once per process per (action, phase) so a high VUser/iteration count cannot
+// flood the logs (mirrors loopTruncationWarned).
+var strayControlFlowWarned sync.Map
+
+// warnStrayControlFlow emits a one-time warning that a control_break or
+// control_continue executed outside any enclosing control_loop, where it is a
+// no-op. It runs in the per-iteration hot path, so without this dedup a single
+// mis-authored script at the 10k-VUsers target would emit millions of identical
+// lines.
+func warnStrayControlFlow(logger *slog.Logger, actionName, phase string) {
+	key := actionName + "|" + phase
+	if _, loaded := strayControlFlowWarned.LoadOrStore(key, struct{}{}); loaded {
+		return
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger.Warn("control_break/control_continue outside a control_loop was ignored", "action", actionName, "phase", phase)
+}

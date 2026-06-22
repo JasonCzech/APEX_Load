@@ -652,15 +652,14 @@ func applyCorrelationID(action *dsl.Action, op kafkaOp, columns []string) []stri
 			}
 		}
 		if source == "header" {
-			if action.Params == nil {
-				action.Params = map[string]any{}
+			// Outgoing message headers are sourced from the top-level
+			// action.Headers map by both the Kafka (buildRecord) and JMS
+			// (buildMessage) runtimes; params["headers"] is read by neither, so a
+			// correlation id written there would be silently dropped on send.
+			if action.Headers == nil {
+				action.Headers = map[string]string{}
 			}
-			headers, _ := action.Params["headers"].(map[string]any)
-			if headers == nil {
-				headers = map[string]any{}
-			}
-			headers[lastPathSegment(path)] = "{{fn.uuid()}}"
-			action.Params["headers"] = headers
+			action.Headers[lastPathSegment(path)] = "{{fn.uuid()}}"
 			action.Metadata["asyncapi_correlation_id"] = location
 		}
 	case "consume":

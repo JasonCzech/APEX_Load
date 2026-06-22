@@ -37,12 +37,15 @@ func TestEventHubsRealRoundTrip(t *testing.T) {
 		"eventhubs_partition_id":      partition,
 		"eventhubs_auth_type":         "connection_string",
 		"eventhubs_timeout_ms":        float64(15000),
+		// Round-trip: read from the partition start so the just-produced event is
+		// observed reliably (a "latest" probe opened after the produce skips it).
+		"eventhubs_start_position": "earliest",
 	}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	defer e.Teardown(ctx)
 
-	// Start the probe at the tail, then produce to the same partition.
+	// Produce to the partition, then observe from the start so the event is seen.
 	produced, err := e.Execute(ctx, &protocol.Action{
 		Name:   "produce",
 		Type:   "eventhubs_produce",
@@ -53,9 +56,8 @@ func TestEventHubsRealRoundTrip(t *testing.T) {
 		t.Fatalf("produce failed: err=%v msg=%s", err, produced.ErrorMessage)
 	}
 
-	// Give the service a moment, then observe. Retry a couple of times since the
-	// probe starts at "latest" and ordering between produce and the probe's
-	// connect is timing-dependent.
+	// Observe from the partition start (set above). Retry a few times to absorb
+	// ingestion propagation latency between produce and the event being readable.
 	var consumed *protocol.Result
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {

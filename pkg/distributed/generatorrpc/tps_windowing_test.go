@@ -63,6 +63,45 @@ func TestTransactionBufferDrainWindow(t *testing.T) {
 	}
 }
 
+// TestEffectiveBatchWindowMsAdditive verifies the multi-group window correction:
+// summing cross-group success and dividing by the max window mis-weights TPS when
+// group windows differ; the effective window makes totalSuccess/window equal the
+// additive sum-of-(groupSuccess/groupWindow) rate.
+func TestEffectiveBatchWindowMsAdditive(t *testing.T) {
+	successN := func(n int) []TransactionMetric {
+		out := make([]TransactionMetric, n)
+		for i := range out {
+			out[i] = TransactionMetric{Success: true}
+		}
+		return out
+	}
+	// group a: 100 tx / 1000ms = 100 TPS; group b: 200 tx / 2000ms = 100 TPS.
+	// Additive = 200 TPS. Naive (300 success / 2000ms max) = 150 TPS (wrong).
+	a := assignedTest{
+		groupTransactions: map[string][]TransactionMetric{"a": successN(100), "b": successN(200)},
+		groupTelemetry:    map[string]MetricsTelemetry{"a": {WindowMs: 1000}, "b": {WindowMs: 2000}},
+	}
+	windowMs := effectiveBatchWindowMs(a, 2000)
+	tps := float64(300) / windowSecondsFromMs(windowMs)
+	if tps < 199.0 || tps > 201.0 {
+		t.Fatalf("effective TPS = %.2f (window=%dms), want ~200 (additive), not 150 (naive max-window)", tps, windowMs)
+	}
+
+	// Steady state (equal windows) must be unchanged: effective == that window.
+	steady := assignedTest{
+		groupTransactions: map[string][]TransactionMetric{"a": successN(6), "b": successN(4)},
+		groupTelemetry:    map[string]MetricsTelemetry{"a": {WindowMs: 1000}, "b": {WindowMs: 1000}},
+	}
+	if got := effectiveBatchWindowMs(steady, 1000); got != 1000 {
+		t.Fatalf("steady-state effective window = %d, want 1000 (unchanged)", got)
+	}
+
+	// No successes -> fall back to the provided window.
+	if got := effectiveBatchWindowMs(assignedTest{groupTransactions: map[string][]TransactionMetric{}}, 1234); got != 1234 {
+		t.Fatalf("no-success effective window = %d, want fallback 1234", got)
+	}
+}
+
 // TestMergeMetricsTelemetryWindowMsMax covers infra-misc-1: the per-group window
 // merge takes the max across groups (groups on a pod publish on one cadence, so
 // the max is the representative batch window).
