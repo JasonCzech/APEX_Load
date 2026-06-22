@@ -17,8 +17,11 @@ const apiMock = {
   importRAML: vi.fn(),
   getRAMLSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   importPostman: vi.fn(),
+  validatePostmanImport: vi.fn(),
+  savePostmanImport: vi.fn(),
   importWSDL: vi.fn(),
   importAsyncAPI: vi.fn(),
+  listScripts: vi.fn(),
   createScript: vi.fn(),
 }
 
@@ -46,6 +49,59 @@ describe('ProtocolAssetImport', () => {
         value: vi.fn(),
       })
     }
+    apiMock.listScripts.mockResolvedValue({ scripts: [], count: 0 })
+    const postmanResult = {
+      scripts: [],
+      script: {
+        name: 'Imported Postman',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://api.example.test' },
+        actions: [
+          { name: 'Get Orders', type: 'request', method: 'GET', target: '/orders' },
+        ],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [{
+        key: 'postman_requests',
+        title: 'Postman Requests',
+        severity: 'info',
+        summary: 'Converted Postman requests into HTTP actions.',
+        items: ['GET /orders'],
+      }],
+      repair_suggestions: [],
+      correlations: [],
+      stats: {
+        format: 'postman',
+        folders: 0,
+        total_requests: 1,
+        converted_actions: 1,
+        variables_detected: 1,
+        environment_values: 2,
+        unsupported_bodies: 0,
+        assertions: 1,
+      },
+      summary: {
+        collection_name: 'Orders Collection',
+      },
+    }
+    apiMock.importPostman.mockResolvedValue(postmanResult)
+    apiMock.validatePostmanImport.mockResolvedValue(postmanResult)
+    apiMock.savePostmanImport.mockResolvedValue({
+      scripts: [],
+      stored_script: {
+        id: 'script-postman',
+        name: 'Imported Postman',
+        protocol: 'http',
+        version: '1.0.0',
+        project_id: 'project-1',
+        created_at: '2026-01-01T00:00:00Z',
+        script: postmanResult.script,
+      },
+      replaced: false,
+    })
 
     apiMock.importOpenAPI.mockResolvedValue({
       scripts: [],
@@ -566,6 +622,141 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('client_id_enforcement')
     expect(container.textContent).toContain('MuleSoft / Anypoint Review')
     expect(container.textContent).toContain('orders.us-e2.cloudhub.io')
+  })
+
+  it('passes optional Postman environment files to validation imports', async () => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="postman" projectId="project-1" />)
+    })
+
+    expect(container.textContent).toContain('Environment File')
+
+    const fileInputs = container.querySelectorAll('input[type="file"]')
+    const collectionInput = fileInputs[0] as HTMLInputElement | undefined
+    const environmentInput = fileInputs[1] as HTMLInputElement | undefined
+    expect(collectionInput).toBeDefined()
+    expect(environmentInput).toBeDefined()
+    if (!collectionInput || !environmentInput) return
+
+    const collectionFile = new File(['{"info":{"name":"Orders"},"item":[]}'], 'orders.postman_collection.json', { type: 'application/json' })
+    const environmentFile = new File(['{"values":[]}'], 'local.postman_environment.json', { type: 'application/json' })
+    await act(async () => {
+      Object.defineProperty(collectionInput, 'files', { configurable: true, value: [collectionFile] })
+      collectionInput.dispatchEvent(new Event('change', { bubbles: true }))
+      Object.defineProperty(environmentInput, 'files', { configurable: true, value: [environmentFile] })
+      environmentInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
+    expect(validateButton).toBeDefined()
+    if (!validateButton) return
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.validatePostmanImport).toHaveBeenCalledWith(collectionFile, expect.objectContaining({
+      project_id: 'project-1',
+      environment_file: environmentFile,
+    }))
+    expect(container.textContent).toContain('Validation Review')
+    expect(container.textContent).toContain('environment values')
+  })
+
+  it('saves reviewed Postman imports by replacing an existing script', async () => {
+    const onImported = vi.fn()
+    apiMock.listScripts.mockResolvedValueOnce({
+      scripts: [{
+        id: 'script-existing',
+        name: 'Existing Orders',
+        protocol: 'http',
+        version: '1.0.0',
+        project_id: 'project-1',
+        created_at: '2026-01-01T00:00:00Z',
+        script: {
+          name: 'Existing Orders',
+          version: '1.0.0',
+          protocol: 'http',
+          config: { base_url: 'https://api.example.test' },
+          actions: [],
+        },
+      }],
+      count: 1,
+    })
+    apiMock.savePostmanImport.mockResolvedValueOnce({
+      stored_script: {
+        id: 'script-existing',
+        name: 'Imported Postman',
+        protocol: 'http',
+        version: '1.0.0',
+        project_id: 'project-1',
+        created_at: '2026-01-01T00:00:00Z',
+        script: {
+          name: 'Imported Postman',
+          version: '1.0.0',
+          protocol: 'http',
+          config: { base_url: 'https://api.example.test' },
+          actions: [{ name: 'Get Orders', type: 'request', method: 'GET', target: '/orders' }],
+        },
+      },
+      replaced: true,
+    })
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="postman" projectId="project-1" onImported={onImported} />)
+    })
+    await flushPromises()
+
+    const collectionInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(collectionInput).not.toBeNull()
+    if (!collectionInput) return
+    const collectionFile = new File(['{"info":{"name":"Orders"},"item":[]}'], 'orders.postman_collection.json', { type: 'application/json' })
+    await act(async () => {
+      Object.defineProperty(collectionInput, 'files', { configurable: true, value: [collectionFile] })
+      collectionInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Postman Collection'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const modeSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Mode')) as HTMLSelectElement | undefined
+    expect(modeSelect).toBeDefined()
+    if (!modeSelect) return
+    await act(async () => {
+      modeSelect.value = 'replace'
+      modeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const scriptSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Script')) as HTMLSelectElement | undefined
+    expect(scriptSelect).toBeDefined()
+    if (!scriptSelect) return
+    await act(async () => {
+      scriptSelect.value = 'script-existing'
+      scriptSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Replace Script'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.savePostmanImport).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'replace',
+      target_script_id: 'script-existing',
+      script: expect.objectContaining({ name: 'Imported Postman' }),
+    }))
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ id: 'script-existing', name: 'Imported Postman' })],
+    }))
   })
 
   it('converts browser recordings and renders ranked selector candidates', async () => {

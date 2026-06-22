@@ -323,6 +323,7 @@ type Assertion struct {
 	Type     string `json:"type"`               // "status", "header", "body", "json", etc.
 	Expected any    `json:"expected,omitempty"` // Expected value
 	Value    string `json:"value,omitempty"`    // Field to check (JSONPath, header name, etc.)
+	Min      int    `json:"min,omitempty"`      // Min threshold for numeric assertions
 	Max      int    `json:"max,omitempty"`      // Max threshold for numeric assertions
 }
 

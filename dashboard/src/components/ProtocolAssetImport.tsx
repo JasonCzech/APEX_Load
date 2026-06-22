@@ -186,6 +186,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const saveTask = useAsyncTask<StoredScript>()
   const result = convertTask.value
   const [file, setFile] = useState<File | null>(null)
+  const [postmanEnvironmentFile, setPostmanEnvironmentFile] = useState<File | null>(null)
   const [secondaryHARFile, setSecondaryHARFile] = useState<File | null>(null)
   const [name, setName] = useState('')
   const [baseURL, setBaseURL] = useState('')
@@ -197,6 +198,9 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [messageError, setMessageError] = useState('')
   const [reviewMode, setReviewMode] = useState<'conversion' | 'validation'>('conversion')
   const [ramlSupport, setRamlSupport] = useState<{ entries: RAMLSupportMatrixEntry[]; notes: string[] } | null>(null)
+  const [postmanSaveMode, setPostmanSaveMode] = useState<'create' | 'replace'>('create')
+  const [postmanReplaceScriptId, setPostmanReplaceScriptId] = useState('')
+  const [postmanScripts, setPostmanScripts] = useState<StoredScript[]>([])
   const labels = copy[kind]
   const supportsAgentforceTransform = kind === 'openapi' || kind === 'raml' || kind === 'postman' || kind === 'salesforce'
 
@@ -208,6 +212,19 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
       .catch(() => { if (!cancelled) setRamlSupport(null) })
     return () => { cancelled = true }
   }, [api, kind])
+
+  useEffect(() => {
+    if (kind !== 'postman') return
+    let cancelled = false
+    api.listScripts(projectId)
+      .then(response => {
+        if (!cancelled) setPostmanScripts(response.scripts || [])
+      })
+      .catch(() => {
+        if (!cancelled) setPostmanScripts([])
+      })
+    return () => { cancelled = true }
+  }, [api, kind, projectId])
 
   const handleConvert = async (mode: 'conversion' | 'validation' = 'conversion') => {
     if (!file) {
@@ -236,7 +253,10 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
         if (kind === 'recorder-export') return api.importBrowserRecording(file, options)
         if (kind === 'openapi') return api.importOpenAPI(file, { ...options, agentforce_transform: agentforceReplayReady })
         if (kind === 'raml') return api.importRAML(file, { ...options, agentforce_transform: agentforceReplayReady })
-        if (kind === 'postman') return api.importPostman(file, { ...options, agentforce_transform: agentforceReplayReady })
+        if (kind === 'postman') {
+          const postmanOptions = { ...options, environment_file: postmanEnvironmentFile || undefined, agentforce_transform: agentforceReplayReady }
+          return mode === 'validation' ? api.validatePostmanImport(file, postmanOptions) : api.importPostman(file, postmanOptions)
+        }
         if (kind === 'asyncapi') return api.importAsyncAPI(file, { name: options.name, project_id: options.project_id })
         return api.importWSDL(file, { ...options, soap_version: soapVersion })
       }, { clearValue: true })
@@ -261,6 +281,24 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
     if (!reviewedScript) return
     setMessageError('')
     try {
+      if (kind === 'postman') {
+        if (postmanSaveMode === 'replace' && !postmanReplaceScriptId) {
+          setMessageError('Select a script to replace.')
+          return
+        }
+        const savedScript = await saveTask.run(async () => {
+          const response = await api.savePostmanImport({
+            script: reviewedScript,
+            mode: postmanSaveMode,
+            target_script_id: postmanSaveMode === 'replace' ? postmanReplaceScriptId : undefined,
+          })
+          const storedScript = response.stored_script || response.scripts?.[0]
+          if (!storedScript) throw new Error('Postman import save did not return a stored script')
+          return storedScript
+        })
+        onImported?.({ scripts: [withFallbackPersistedScript(savedScript, reviewedScript)] })
+        return
+      }
       const savedScript = await saveTask.run(async () => api.createScript(reviewedScript, projectId))
       onImported?.({ scripts: [withFallbackPersistedScript(savedScript, reviewedScript)] })
     } catch (error: unknown) {
@@ -299,6 +337,17 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
               dropHint={labels.drop}
             />
           </div>
+          {kind === 'postman' && (
+            <div className="sample-import-field sample-import-span-2">
+              <span>Environment File</span>
+              <ImportDropzone
+                accept=".postman_environment.json,.json,application/json"
+                file={postmanEnvironmentFile}
+                onFile={next => { setPostmanEnvironmentFile(next); setMessageError('') }}
+                dropHint="Drop an optional Postman environment JSON file here"
+              />
+            </div>
+          )}
           <label className="sample-import-field">
             <span>Script Name</span>
             <input value={name} onChange={event => setName(event.target.value)} placeholder={scriptNamePlaceholder(kind)} />
@@ -380,7 +429,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
           <ScriptImportReview
             title={reviewMode === 'validation' ? 'Validation Review' : 'Review Generated Script'}
             subtitle={`${actionCount} action(s) generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
-            saveLabel={reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save To Script Library'}
+            saveLabel={kind === 'postman' && postmanSaveMode === 'replace' ? 'Replace Script' : reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save To Script Library'}
             script={reviewedScript}
             warnings={result.warnings}
             unsupportedElements={result.unsupported_elements}
@@ -388,6 +437,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
             parameterization={result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}
             saving={saveTask.pending}
+            saveDisabled={kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceScriptId}
             onSave={handleSave}
             onEdit={onEdit ? () => onEdit(reviewedScript) : undefined}
             previewAside={kind === 'recorder-export'
@@ -402,6 +452,31 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
                 </div>
               ))}
             </div>
+            {kind === 'postman' && (
+              <div className="sample-import-review-block">
+                <h4>Save Target</h4>
+                <div className="sample-import-grid">
+                  <label className="sample-import-field">
+                    <span>Mode</span>
+                    <select value={postmanSaveMode} onChange={event => setPostmanSaveMode(event.target.value as 'create' | 'replace')}>
+                      <option value="create">Create new script</option>
+                      <option value="replace">Replace existing script</option>
+                    </select>
+                  </label>
+                  {postmanSaveMode === 'replace' && (
+                    <label className="sample-import-field">
+                      <span>Script</span>
+                      <select value={postmanReplaceScriptId} onChange={event => setPostmanReplaceScriptId(event.target.value)}>
+                        <option value="">Select script</option>
+                        {postmanScripts.map(script => (
+                          <option key={script.id} value={script.id}>{script.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+              </div>
+            )}
             <ImportRuntimeOptions script={reviewedScript} onChange={handleRuntimeOptionsChanged} disabled={saveTask.pending} />
             {kind === 'har' && harSummary && (
               <div className="sample-import-review-block">

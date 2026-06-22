@@ -3,10 +3,13 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestHandleWebAPIExecutionSupportMatrix(t *testing.T) {
@@ -312,8 +315,10 @@ func TestHandleImportPostman(t *testing.T) {
 			} `json:"actions"`
 		} `json:"script"`
 		Stats struct {
-			ConvertedActions int `json:"converted_actions"`
+			ConvertedActions  int `json:"converted_actions"`
+			EnvironmentValues int `json:"environment_values"`
 		} `json:"stats"`
+		Preflight      *ReplayPreflight `json:"preflight"`
 		ReviewSections []struct {
 			Key      string   `json:"key"`
 			Severity string   `json:"severity"`
@@ -338,8 +343,144 @@ func TestHandleImportPostman(t *testing.T) {
 	if result.Stats.ConvertedActions != 1 {
 		t.Fatalf("stats = %+v", result.Stats)
 	}
+	if result.Preflight == nil || result.Preflight.Valid || result.Preflight.ActionCount != 1 || !stringSliceContains(result.Preflight.MissingVariables, "request_id") {
+		t.Fatalf("preflight = %+v", result.Preflight)
+	}
 	assertReviewSection(t, result.ReviewSections, "postman_requests", "info", "GET /orders/{{var.order_id}}")
 	assertReviewSection(t, result.ReviewSections, "postman_variables", "info", "order_id")
+}
+
+func TestHandleImportPostmanMultipartEnvironment(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	file, err := writer.CreateFormFile("file", "orders.postman_collection.json")
+	if err != nil {
+		t.Fatalf("CreateFormFile collection returned error: %v", err)
+	}
+	_, _ = file.Write([]byte(`{
+  "info": {"name": "Orders Collection"},
+  "variable": [{"key": "baseUrl", "value": "https://api.example.test"}, {"key": "token", "value": "collection-token"}],
+  "item": [{"name": "Orders", "request": {"method": "GET", "url": "{{baseUrl}}/orders", "header": [{"key": "X-Token", "value": "{{token}}"}]}}]
+}`))
+	envFile, err := writer.CreateFormFile("environment", "local.postman_environment.json")
+	if err != nil {
+		t.Fatalf("CreateFormFile environment returned error: %v", err)
+	}
+	_, _ = envFile.Write([]byte(`{"name":"Local","values":[{"key":"baseUrl","value":"https://local.example.test","enabled":true},{"key":"token","value":"env-token","enabled":true}]}`))
+	_ = writer.WriteField("project_id", "proj-postman")
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/postman", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			Config struct {
+				BaseURL string `json:"base_url"`
+			} `json:"config"`
+			DataSources []struct {
+				InlineData string `json:"inline_data"`
+			} `json:"data_sources"`
+		} `json:"script"`
+		Stats struct {
+			EnvironmentValues int `json:"environment_values"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Config.BaseURL != "https://local.example.test" {
+		t.Fatalf("base URL = %q", result.Script.Config.BaseURL)
+	}
+	if result.Stats.EnvironmentValues != 2 {
+		t.Fatalf("environment values = %d, want 2", result.Stats.EnvironmentValues)
+	}
+	if len(result.Script.DataSources) != 1 || !strings.Contains(result.Script.DataSources[0].InlineData, "env-token") {
+		t.Fatalf("data sources = %+v", result.Script.DataSources)
+	}
+}
+
+func TestHandleSavePostmanImportCreateAndReplace(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	createPayload := map[string]any{
+		"script": dsl.Script{
+			Name:      "Created Postman",
+			Version:   "1.0.0",
+			Protocol:  "http",
+			ProjectID: "proj-postman",
+			Config:    dsl.ScriptConfig{BaseURL: "https://api.example.test"},
+			Actions:   []dsl.Action{{Name: "Get", Type: "request", Method: "GET", Target: "/orders"}},
+		},
+	}
+	createBody, err := json.Marshal(createPayload)
+	if err != nil {
+		t.Fatalf("json.Marshal create returned error: %v", err)
+	}
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/postman/save", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createResp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(createResp, createReq)
+
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created struct {
+		StoredScript StoredScript     `json:"stored_script"`
+		Replaced     bool             `json:"replaced"`
+		Preflight    *ReplayPreflight `json:"preflight"`
+	}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal create returned error: %v", err)
+	}
+	if created.StoredScript.ID == "" || created.Replaced || created.Preflight == nil || !created.Preflight.Valid {
+		t.Fatalf("created response = %+v", created)
+	}
+
+	replacePayload := map[string]any{
+		"mode":             "replace",
+		"target_script_id": created.StoredScript.ID,
+		"script": dsl.Script{
+			Name:      "Replaced Postman",
+			Version:   "1.0.0",
+			Protocol:  "http",
+			ProjectID: "proj-postman",
+			Config:    dsl.ScriptConfig{BaseURL: "https://api.example.test"},
+			Actions:   []dsl.Action{{Name: "List", Type: "request", Method: "GET", Target: "/orders?updated=1"}},
+		},
+	}
+	replaceBody, err := json.Marshal(replacePayload)
+	if err != nil {
+		t.Fatalf("json.Marshal replace returned error: %v", err)
+	}
+	replaceReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/postman/save", bytes.NewReader(replaceBody))
+	replaceReq.Header.Set("Content-Type", "application/json")
+	replaceResp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(replaceResp, replaceReq)
+
+	if replaceResp.Code != http.StatusOK {
+		t.Fatalf("replace status = %d, want %d body=%s", replaceResp.Code, http.StatusOK, replaceResp.Body.String())
+	}
+	var replaced struct {
+		StoredScript StoredScript `json:"stored_script"`
+		Replaced     bool         `json:"replaced"`
+	}
+	if err := json.Unmarshal(replaceResp.Body.Bytes(), &replaced); err != nil {
+		t.Fatalf("json.Unmarshal replace returned error: %v", err)
+	}
+	if !replaced.Replaced || replaced.StoredScript.ID != created.StoredScript.ID || replaced.StoredScript.Name != "Replaced Postman" {
+		t.Fatalf("replaced response = %+v", replaced)
+	}
 }
 
 func TestHandleImportWSDL(t *testing.T) {

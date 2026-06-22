@@ -40,10 +40,11 @@ type wsdlImportRequest struct {
 }
 
 type postmanImportRequest struct {
-	Data      []byte
-	ProjectID string
-	Name      string
-	Opts      postman.ConvertOptions
+	Data            []byte
+	EnvironmentData []byte
+	ProjectID       string
+	Name            string
+	Opts            postman.ConvertOptions
 }
 
 type asyncAPIImportRequest struct {
@@ -392,20 +393,32 @@ func (s *Server) handleImportPostman(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := postman.Convert(postman.ImportRequest{
-		Name:      importReq.Name,
-		ProjectID: importReq.ProjectID,
-		Content:   string(importReq.Data),
-		Options:   importReq.Opts,
+		Name:               importReq.Name,
+		ProjectID:          importReq.ProjectID,
+		Content:            string(importReq.Data),
+		EnvironmentContent: string(importReq.EnvironmentData),
+		Options:            importReq.Opts,
 	})
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
+	s.writePostmanImportResponse(w, result, importReq, agentforceTransformRequested(r))
+}
+
+func (s *Server) handleValidatePostmanImport(w http.ResponseWriter, r *http.Request) {
+	s.handleImportPostman(w, r)
+}
+
+func (s *Server) writePostmanImportResponse(w http.ResponseWriter, result *postman.ConvertResult, importReq *postmanImportRequest, agentforceTransform bool) {
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 	attachSourceReviewToScript(result.Script, "postman", importReq.Name, result.SourceReview)
-	if issues := validateScript(result.Script); len(issues) > 0 {
+	issues := validateScript(result.Script)
+	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
+	attachImportReplayPreflight(result.Script, "postman", preflight)
+	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
 	reviewSections := appendImportDiagnosticReviewSections(buildPostmanReviewSections(result), result.Unsupported)
@@ -415,7 +428,7 @@ func (s *Server) handleImportPostman(w http.ResponseWriter, r *http.Request) {
 		}
 		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
 	}
-	reviewSections = attachAgentforceReview(result.Script, "postman", reviewSections, agentforceTransformRequested(r))
+	reviewSections = attachAgentforceReview(result.Script, "postman", reviewSections, agentforceTransform)
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
@@ -426,7 +439,63 @@ func (s *Server) handleImportPostman(w http.ResponseWriter, r *http.Request) {
 		ReviewSections:      reviewSections,
 		SourceReview:        result.SourceReview,
 		Parameterization:    buildImportParameterization(result.Script, nil),
+		Preflight:           preflight,
 	}))
+}
+
+func (s *Server) handleSavePostmanImport(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Script         dsl.Script `json:"script"`
+		Mode           string     `json:"mode,omitempty"`
+		TargetScriptID string     `json:"target_script_id,omitempty"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	script := &req.Script
+	if issues := validateScript(script); len(issues) > 0 {
+		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
+		return
+	}
+	preflight := buildReplayPreflight(script, nil, nil, validationWarnings(script))
+	attachImportReplayPreflight(script, "postman", preflight)
+
+	mode := strings.ToLower(strings.TrimSpace(req.Mode))
+	targetID := strings.TrimSpace(req.TargetScriptID)
+	replacing := mode == "replace" || targetID != ""
+	if replacing {
+		if targetID == "" {
+			targetID = strings.TrimSpace(script.ID)
+		}
+		if targetID == "" {
+			writeError(w, http.StatusBadRequest, "target_script_id is required when replacing an existing Postman import")
+			return
+		}
+		updated, ok := s.runner.UpdateScript(targetID, script)
+		if !ok {
+			writeError(w, http.StatusNotFound, "target script not found")
+			return
+		}
+		s.recordAuditEvent(r, "script.import.postman.replace", "success", "script", updated.ID, updated.ProjectID, map[string]any{"name": updated.Name})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"scripts":       []*StoredScript{updated},
+			"script":        updated.Script,
+			"stored_script": updated,
+			"replaced":      true,
+			"preflight":     preflight,
+		})
+		return
+	}
+
+	stored := s.runner.StoreScript(script)
+	s.recordAuditEvent(r, "script.import.postman.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name})
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"scripts":       []*StoredScript{stored},
+		"script":        stored.Script,
+		"stored_script": stored,
+		"replaced":      false,
+		"preflight":     preflight,
+	})
 }
 
 func (s *Server) handleAsyncAPISupportMatrix(w http.ResponseWriter, r *http.Request) {
@@ -1014,27 +1083,26 @@ func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanI
 				Data:      data,
 				ProjectID: r.URL.Query().Get("project_id"),
 				Name:      r.URL.Query().Get("name"),
-				Opts: postman.ConvertOptions{
-					BaseURL:    r.URL.Query().Get("base_url"),
-					ScriptName: r.URL.Query().Get("script_name"),
-				},
+				Opts:      postmanConvertOptionsFromValue(r.URL.Query().Get),
 			}, true
 		}
-		return &postmanImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
+		return &postmanImportRequest{Data: []byte(req.Content), EnvironmentData: []byte(req.EnvironmentContent), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
 		if !ok {
 			return nil, false
 		}
+		environmentData, ok := readPostmanEnvironmentMultipartFile(w, r)
+		if !ok {
+			return nil, false
+		}
 		return &postmanImportRequest{
-			Data:      data,
-			ProjectID: r.FormValue("project_id"),
-			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
-			Opts: postman.ConvertOptions{
-				BaseURL:    r.FormValue("base_url"),
-				ScriptName: r.FormValue("script_name"),
-			},
+			Data:            data,
+			EnvironmentData: environmentData,
+			ProjectID:       r.FormValue("project_id"),
+			Name:            strings.TrimSuffix(filename, filepath.Ext(filename)),
+			Opts:            postmanConvertOptionsFromValue(r.FormValue),
 		}, true
 	}
 	data, ok := readImportBody(w, r)
@@ -1046,11 +1114,58 @@ func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanI
 		Data:      data,
 		ProjectID: r.URL.Query().Get("project_id"),
 		Name:      strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
-		Opts: postman.ConvertOptions{
-			BaseURL:    r.URL.Query().Get("base_url"),
-			ScriptName: r.URL.Query().Get("script_name"),
-		},
+		Opts:      postmanConvertOptionsFromValue(r.URL.Query().Get),
 	}, true
+}
+
+func postmanConvertOptionsFromValue(value func(string) string) postman.ConvertOptions {
+	opts := postman.ConvertOptions{
+		BaseURL:    value("base_url"),
+		ScriptName: value("script_name"),
+	}
+	if raw := strings.TrimSpace(value("include_assertions")); raw != "" {
+		parsed := parseBoolDefault(raw, true)
+		opts.IncludeAssertions = &parsed
+	}
+	if raw := strings.TrimSpace(value("sanitize_sensitive")); raw != "" {
+		parsed := parseBoolDefault(raw, true)
+		opts.SanitizeSensitive = &parsed
+	}
+	if raw := strings.TrimSpace(value("use_parameter_data_source")); raw != "" {
+		parsed := parseBoolDefault(raw, true)
+		opts.UseParameterDataSet = &parsed
+	}
+	if raw := strings.TrimSpace(value("default_think_time_ms")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n >= 0 {
+			opts.DefaultThinkTimeMs = n
+		}
+	}
+	return opts
+}
+
+func readPostmanEnvironmentMultipartFile(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	if r == nil || r.MultipartForm == nil {
+		return nil, true
+	}
+	for _, field := range []string{"environment", "environment_file"} {
+		headers := r.MultipartForm.File[field]
+		if len(headers) == 0 || headers[0] == nil {
+			continue
+		}
+		file, err := headers[0].Open()
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to open uploaded Postman environment: "+err.Error())
+			return nil, false
+		}
+		defer file.Close()
+		data, err := io.ReadAll(file)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read uploaded Postman environment: "+err.Error())
+			return nil, false
+		}
+		return data, true
+	}
+	return nil, true
 }
 
 func buildOpenAPIReviewSections(result *openapi.ConvertResult) []scriptImportReviewSection {

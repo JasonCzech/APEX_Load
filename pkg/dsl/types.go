@@ -696,5 +696,6 @@ type Assertion struct {
 	Type     string `json:"type"`
 	Expected any    `json:"expected,omitempty"`
 	Value    string `json:"value,omitempty"`
+	Min      int    `json:"min,omitempty"`
 	Max      int    `json:"max,omitempty"`
 }

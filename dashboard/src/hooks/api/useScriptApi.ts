@@ -36,7 +36,7 @@ export interface ScriptRecordingStatus {
   sensitivity?: string
   captured_at?: string
 }
-import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type Parameterization, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type ImportAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type Parameterization, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type ImportAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -159,6 +159,14 @@ type EnterpriseArchiveImportOptions = {
   project_id?: string
   har_file?: File
   salesforce_native?: boolean
+}
+
+type PostmanImportOptions = {
+  name?: string
+  base_url?: string
+  project_id?: string
+  environment_file?: File
+  agentforce_transform?: boolean
 }
 
 export type BrowserToHTTPPreviewRequest = {
@@ -575,6 +583,12 @@ export function useScriptApi() {
     [],
   )
 
+  const savePostmanImport = useCallback(
+    (payload: SavePostmanImportRequest) =>
+      request<SavePostmanImportResponse>('/scripts/import/postman/save', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
   const importSample = useCallback(
     (data: {
       name?: string
@@ -730,21 +744,34 @@ export function useScriptApi() {
     [],
   )
 
-  const importPostman = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; project_id?: string; agentforce_transform?: boolean }): Promise<PostmanImportResult> => {
+  const importPostmanUpload = useCallback(
+    async (endpoint: '/scripts/import/postman' | '/scripts/import/postman/validate', file: File, options?: PostmanImportOptions): Promise<PostmanImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('script_name', options.name)
       if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
+      if (options?.environment_file) formData.append('environment', options.environment_file)
 
-      const res = await apiFetch(`/scripts/import/postman${options?.agentforce_transform ? '?agentforce_transform=true' : ''}`, { method: 'POST', body: formData })
+      const res = await apiFetch(`${endpoint}${options?.agentforce_transform ? '?agentforce_transform=true' : ''}`, { method: 'POST', body: formData })
       if (!res.ok) {
         throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<PostmanImportResult>
     },
     [],
+  )
+
+  const importPostman = useCallback(
+    (file: File, options?: PostmanImportOptions): Promise<PostmanImportResult> =>
+      importPostmanUpload('/scripts/import/postman', file, options),
+    [importPostmanUpload],
+  )
+
+  const validatePostmanImport = useCallback(
+    (file: File, options?: PostmanImportOptions): Promise<PostmanImportResult> =>
+      importPostmanUpload('/scripts/import/postman/validate', file, options),
+    [importPostmanUpload],
   )
 
   const importWSDL = useCallback(
@@ -916,6 +943,7 @@ export function useScriptApi() {
       getJMeterSupportMatrix,
       getRAMLSupportMatrix,
       saveJMeterImport,
+      savePostmanImport,
       importSample,
       uploadImportAsset,
       importDevWeb,
@@ -925,6 +953,7 @@ export function useScriptApi() {
       importOpenAPI,
       importRAML,
       importPostman,
+      validatePostmanImport,
       importWSDL,
       importAsyncAPI,
       applyImportParameterization,
@@ -995,6 +1024,7 @@ export function useScriptApi() {
       getJMeterSupportMatrix,
       getRAMLSupportMatrix,
       saveJMeterImport,
+      savePostmanImport,
       importSample,
       uploadImportAsset,
       importDevWeb,
@@ -1004,6 +1034,7 @@ export function useScriptApi() {
       importOpenAPI,
       importRAML,
       importPostman,
+      validatePostmanImport,
       importWSDL,
       importAsyncAPI,
       applyImportParameterization,

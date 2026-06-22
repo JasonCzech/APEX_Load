@@ -397,7 +397,7 @@ func TestToProtocolExtractors(t *testing.T) {
 func TestToProtocolAssertions(t *testing.T) {
 	asserts := []dsl.Assertion{
 		{Type: "status_code", Expected: 200},
-		{Type: "response_time", Max: 5000},
+		{Type: "status_code_range", Min: 200, Max: 299},
 	}
 
 	result := toProtocolAssertions(asserts)
@@ -407,8 +407,8 @@ func TestToProtocolAssertions(t *testing.T) {
 	if result[0].Type != "status_code" {
 		t.Errorf("assertion[0].Type = %q", result[0].Type)
 	}
-	if result[1].Max != 5000 {
-		t.Errorf("assertion[1].Max = %d, want 5000", result[1].Max)
+	if result[1].Min != 200 || result[1].Max != 299 {
+		t.Errorf("assertion[1] range = %d-%d, want 200-299", result[1].Min, result[1].Max)
 	}
 }
 

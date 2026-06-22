@@ -65,11 +65,14 @@ func TestConvertPostmanCollection(t *testing.T) {
 	if first.Name != "Orders_Get_Order" || first.Method != "GET" || first.Target != "/orders/{{var.order_id}}?include=lines" {
 		t.Fatalf("first action = %#v", first)
 	}
+	if len(first.Assertions) != 1 || first.Assertions[0].Type != "status_code_range" || first.Assertions[0].Min != 200 || first.Assertions[0].Max != 299 {
+		t.Fatalf("default assertion = %#v", first.Assertions)
+	}
 	if first.Headers["X-Trace"] != "{{var.trace_id}}" {
 		t.Fatalf("trace header = %q", first.Headers["X-Trace"])
 	}
 	second := result.Script.Actions[1]
-	if second.Headers["Authorization"] != "{{var.Authorization}}" {
+	if second.Headers["Authorization"] != "{{env.POSTMAN_AUTHORIZATION}}" {
 		t.Fatalf("authorization header = %q", second.Headers["Authorization"])
 	}
 	if !strings.Contains(second.Body, "{{var.customer_id}}") || !strings.Contains(second.Body, "{{var.password}}") {
@@ -77,6 +80,9 @@ func TestConvertPostmanCollection(t *testing.T) {
 	}
 	if len(result.Script.Parameters) != 1 || result.Script.Parameters[0].Name != "order_id" {
 		t.Fatalf("parameters = %#v, want order_id only", result.Script.Parameters)
+	}
+	if len(result.Script.DataSources) != 1 || result.Script.Parameters[0].DataSource != "postman" || !strings.Contains(result.Script.DataSources[0].InlineData, "order_id") {
+		t.Fatalf("postman parameter data source = %#v / %#v", result.Script.Parameters, result.Script.DataSources)
 	}
 	if result.Stats.Folders != 1 || result.Stats.ConvertedActions != 2 || result.Stats.VariablesDetected != 1 {
 		t.Fatalf("stats = %#v", result.Stats)
@@ -177,12 +183,15 @@ func TestConvertPostmanAuthDynamicVariablesAndPathVariables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	if result.Script.Config.HTTP.Auth.Type != "digest" || result.Script.Config.HTTP.Auth.Username != "digest-user" || result.Script.Config.HTTP.Auth.Password != "{{var.digest_password}}" {
-		t.Fatalf("collection auth = %#v", result.Script.Config.HTTP.Auth)
+	if result.Script.Config.HTTP.Auth.Type != "" {
+		t.Fatalf("collection auth should not emit replay-blocking digest auth: %#v", result.Script.Config.HTTP.Auth)
 	}
 	first := result.Script.Actions[0]
 	if first.Target != "/orders/{{var.orderId}}?requestId={{fn.uuid()}}&ts={{fn.timestamp.unix}}" {
 		t.Fatalf("target = %q", first.Target)
+	}
+	if first.Auth != nil {
+		t.Fatalf("digest collection auth should be review-only, got action auth %#v", first.Auth)
 	}
 	if first.Headers["X-Request-Id"] != "{{fn.uuid()}}" {
 		t.Fatalf("dynamic header = %q", first.Headers["X-Request-Id"])
@@ -199,6 +208,147 @@ func TestConvertPostmanAuthDynamicVariablesAndPathVariables(t *testing.T) {
 	}
 	if !containsPostmanDiagnostic(result, "Postman auth") {
 		t.Fatalf("diagnostics = %#v, want unsupported signing auth warning", result.Unsupported)
+	}
+}
+
+func TestConvertPostmanNoAuthOverridesCollectionAuth(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+		  "info": {"name": "Auth Override"},
+		  "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "collection-secret"}]},
+		  "item": [
+		    {"name": "Inherit", "request": {"method": "GET", "url": "https://api.example.com/private"}},
+		    {"name": "Public", "request": {"method": "GET", "auth": {"type": "noauth"}, "url": "https://api.example.com/public"}}
+		  ]
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script.Config.HTTP.Auth.Type != "" {
+		t.Fatalf("global auth = %#v, want none", result.Script.Config.HTTP.Auth)
+	}
+	if got := result.Script.Actions[0].Auth; got == nil || got.Type != "bearer" || got.Token != "{{env.POSTMAN_BEARER_TOKEN}}" {
+		t.Fatalf("inherited auth = %#v, want sanitized bearer action auth", got)
+	}
+	if got := result.Script.Actions[1].Auth; got == nil || got.Type != "noauth" {
+		t.Fatalf("explicit noauth = %#v, want noauth action override", got)
+	}
+}
+
+func TestConvertPostmanAPIKeyAuth(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+		  "info": {"name": "API Keys"},
+		  "item": [
+		    {
+		      "name": "Header Key",
+		      "request": {
+		        "method": "GET",
+		        "auth": {"type": "apikey", "apikey": [
+		          {"key": "key", "value": "X-API-Key"},
+		          {"key": "value", "value": "super-secret"},
+		          {"key": "in", "value": "header"}
+		        ]},
+		        "url": "https://api.example.com/header"
+		      }
+		    },
+		    {
+		      "name": "Query Key",
+		      "request": {
+		        "method": "GET",
+		        "auth": {"type": "apikey", "apikey": [
+		          {"key": "key", "value": "api_key"},
+		          {"key": "value", "value": "{{apiToken}}"},
+		          {"key": "in", "value": "query"}
+		        ]},
+		        "url": "https://api.example.com/query?existing=1"
+		      }
+		    }
+		  ]
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if got := result.Script.Actions[0].Headers["X-API-Key"]; got != "{{env.POSTMAN_API_KEY}}" {
+		t.Fatalf("header API key = %q", got)
+	}
+	if got := result.Script.Actions[1].Target; got != "/query?existing=1&api_key={{var.apiToken}}" {
+		t.Fatalf("query API key target = %q", got)
+	}
+}
+
+func TestConvertPostmanEnvironmentAndParameterDataSource(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+		  "info": {"name": "Environment Import"},
+		  "variable": [
+		    {"key": "baseUrl", "value": "https://api.example.com"},
+		    {"key": "region", "value": "east"}
+		  ],
+		  "item": [
+		    {"name": "Region", "request": {"method": "GET", "url": "{{baseUrl}}/regions/{{region}}"}}
+		  ]
+		}`,
+		EnvironmentContent: `{
+		  "name": "Local",
+		  "values": [
+		    {"key": "baseUrl", "value": "https://local.example.test", "enabled": true},
+		    {"key": "region", "value": "west", "enabled": true},
+		    {"key": "ignored", "value": "nope", "enabled": false}
+		  ]
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script.Config.BaseURL != "https://local.example.test" {
+		t.Fatalf("base URL = %q", result.Script.Config.BaseURL)
+	}
+	if result.Stats.EnvironmentValues != 2 {
+		t.Fatalf("environment values = %d, want 2", result.Stats.EnvironmentValues)
+	}
+	if len(result.Script.DataSources) != 1 || !strings.Contains(result.Script.DataSources[0].InlineData, "region") || !strings.Contains(result.Script.DataSources[0].InlineData, "west") {
+		t.Fatalf("data source = %#v", result.Script.DataSources)
+	}
+	if len(result.Script.Parameters) != 1 || result.Script.Parameters[0].Name != "region" || result.Script.Parameters[0].DataSource != "postman" {
+		t.Fatalf("parameters = %#v", result.Script.Parameters)
+	}
+}
+
+func TestConvertPostmanStructuredURLPreservesTemplatesAndDisabledQuery(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+		  "info": {"name": "Structured URL"},
+		  "variable": [{"key": "baseUrl", "value": "https://api.example.com"}],
+		  "item": [
+		    {
+		      "name": "Search",
+		      "request": {
+		        "method": "GET",
+		        "url": {
+		          "raw": "{{baseUrl}}/search/:account-id?q=old&skip=old",
+		          "query": [
+		            {"key": "q", "value": "{{term}}"},
+		            {"key": "page", "value": "{{page}}"},
+		            {"key": "skip", "value": "1", "disabled": true}
+		          ],
+		          "variable": [{"key": "account-id", "value": "acct-1"}]
+		        }
+		      }
+		    }
+		  ]
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if got := result.Script.Actions[0].Target; got != "/search/{{var.account_id}}?q={{var.term}}&page={{var.page}}" {
+		t.Fatalf("target = %q", got)
+	}
+	if !postmanParameterNames(result, "account_id") {
+		t.Fatalf("parameters = %#v, want normalized path variable", result.Script.Parameters)
 	}
 }
 

@@ -1,6 +1,8 @@
 package postman
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,18 +20,20 @@ import (
 )
 
 type ImportRequest struct {
-	Name      string         `json:"name,omitempty"`
-	ProjectID string         `json:"project_id,omitempty"`
-	Content   string         `json:"content"`
-	Options   ConvertOptions `json:"options,omitempty"`
+	Name               string         `json:"name,omitempty"`
+	ProjectID          string         `json:"project_id,omitempty"`
+	Content            string         `json:"content"`
+	EnvironmentContent string         `json:"environment_content,omitempty"`
+	Options            ConvertOptions `json:"options,omitempty"`
 }
 
 type ConvertOptions struct {
-	ScriptName         string `json:"script_name,omitempty"`
-	BaseURL            string `json:"base_url,omitempty"`
-	IncludeAssertions  *bool  `json:"include_assertions,omitempty"`
-	SanitizeSensitive  *bool  `json:"sanitize_sensitive,omitempty"`
-	DefaultThinkTimeMs int    `json:"default_think_time_ms,omitempty"`
+	ScriptName          string `json:"script_name,omitempty"`
+	BaseURL             string `json:"base_url,omitempty"`
+	IncludeAssertions   *bool  `json:"include_assertions,omitempty"`
+	SanitizeSensitive   *bool  `json:"sanitize_sensitive,omitempty"`
+	UseParameterDataSet *bool  `json:"use_parameter_data_source,omitempty"`
+	DefaultThinkTimeMs  int    `json:"default_think_time_ms,omitempty"`
 }
 
 type ConvertStats struct {
@@ -39,6 +43,7 @@ type ConvertStats struct {
 	TotalRequests     int      `json:"total_requests"`
 	ConvertedActions  int      `json:"converted_actions"`
 	VariablesDetected int      `json:"variables_detected"`
+	EnvironmentValues int      `json:"environment_values,omitempty"`
 	AuthSchemes       []string `json:"auth_schemes,omitempty"`
 	UnsupportedBodies int      `json:"unsupported_bodies"`
 	Assertions        int      `json:"assertions"`
@@ -134,6 +139,18 @@ type variable struct {
 	Disabled bool   `json:"disabled"`
 }
 
+type environmentFile struct {
+	Name   string                `json:"name"`
+	Values []environmentVariable `json:"values"`
+}
+
+type environmentVariable struct {
+	Key      string `json:"key"`
+	Value    any    `json:"value"`
+	Enabled  *bool  `json:"enabled"`
+	Disabled bool   `json:"disabled"`
+}
+
 type auth struct {
 	Type   string          `json:"type"`
 	Bearer []keyValueEntry `json:"bearer"`
@@ -222,6 +239,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	sources := map[string]string{sourceFileName: content}
 	sourceMappings := make([]sourceview.Mapping, 0)
 	vars := collectionVariables(col.Variable)
+	envVars := environmentVariables(req.EnvironmentContent, &diagnostics)
+	for key, value := range envVars {
+		vars[key] = value
+	}
 	applyPostmanEventVariables(vars, requests, &diagnostics)
 	baseURL, warnings := deriveBaseURL(requests, vars, req.Options.BaseURL)
 	scriptName := sanitizeName(convertutil.FirstNonEmpty(req.Options.ScriptName, req.Name, col.Info.Name, "Imported_Postman_Collection"))
@@ -251,7 +272,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				Source:           "postman",
 				SourceScriptName: col.Info.Name,
 				Preserved: map[string]any{
-					"collection_schema": col.Info.Schema,
+					"collection_schema":  col.Info.Schema,
+					"environment_values": len(envVars),
 				},
 			}},
 		},
@@ -261,6 +283,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			CollectionVersion: strings.TrimPrefix(col.Info.Schema, "https://schema.getpostman.com/json/collection/"),
 			Folders:           folders,
 			TotalRequests:     len(requests),
+			EnvironmentValues: len(envVars),
 			AuthSchemes:       authSchemes,
 		},
 		Summary: ReviewSummary{
@@ -272,11 +295,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	result.Script.Parameters = buildParameters(vars, baseURL)
 	result.Script.Parameters = mergeParameters(result.Script.Parameters, pathVariableParameters(requests))
+	if convertutil.BoolOption(req.Options.UseParameterDataSet, true) {
+		result.Script.Parameters, result.Script.DataSources = postmanParameterDataSource(result.Script.Parameters)
+	}
 	result.Stats.VariablesDetected = len(result.Script.Parameters)
 	result.Summary.Variables = parameterNames(result.Script.Parameters)
-	if authConfig := postmanAuthConfig(col.Auth, &diagnostics, "collection"); authConfig.Type != "" {
-		result.Script.Config.HTTP.Auth = authConfig
-	}
+	reportUnsupportedPostmanAuth(col.Auth, &diagnostics, "collection")
 
 	sanitizeSensitive := convertutil.BoolOption(req.Options.SanitizeSensitive, true)
 	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
@@ -303,7 +327,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			})
 		}
 
-		action, actionWarnings := buildAction(index, item, baseURL, vars, sanitizeSensitive, includeAssertions, &diagnostics)
+		action, actionWarnings := buildAction(index, item, col.Auth, baseURL, vars, sanitizeSensitive, includeAssertions, &diagnostics)
 		if action.Name == "" {
 			result.Stats.SkippedItems = append(result.Stats.SkippedItems, item.Name)
 			diagnostics.Add(diag.Warning, "Postman item skipped", postmanItemLocation(item), "request item could not be converted into an executable action")
@@ -392,6 +416,97 @@ func collectionVariables(vars []variable) map[string]string {
 		out[v.Key] = strings.TrimSpace(fmt.Sprint(v.Value))
 	}
 	return out
+}
+
+func environmentVariables(content string, diagnostics *diag.Collector) map[string]string {
+	out := map[string]string{}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return out
+	}
+	var env environmentFile
+	if err := json.Unmarshal([]byte(content), &env); err != nil {
+		if diagnostics != nil {
+			diagnostics.Add(diag.Warning, "Postman environment", "environment", "environment file could not be parsed: "+err.Error())
+		}
+		return out
+	}
+	for _, v := range env.Values {
+		if v.Disabled || strings.TrimSpace(v.Key) == "" {
+			continue
+		}
+		if v.Enabled != nil && !*v.Enabled {
+			continue
+		}
+		out[v.Key] = strings.TrimSpace(fmt.Sprint(v.Value))
+	}
+	if len(out) > 0 && diagnostics != nil {
+		diagnostics.Add(diag.Info, "Postman environment", convertutil.FirstNonEmpty(env.Name, "environment"), fmt.Sprintf("imported %d environment value(s)", len(out)))
+	}
+	return out
+}
+
+func postmanParameterDataSource(params []dsl.Parameter) ([]dsl.Parameter, []dsl.DataSource) {
+	if len(params) == 0 {
+		return params, nil
+	}
+	columns := make([]string, 0, len(params))
+	values := make([]string, 0, len(params))
+	seenColumns := map[string]struct{}{}
+	for _, param := range params {
+		if dsl.CanonicalParameterType(param.Type) != "list" || len(param.Values) == 0 {
+			continue
+		}
+		column := normalizeVariableName(param.Name)
+		if strings.TrimSpace(column) == "" || strings.Contains(param.Values[0], "{{") {
+			continue
+		}
+		if _, seen := seenColumns[column]; seen {
+			continue
+		}
+		seenColumns[column] = struct{}{}
+		columns = append(columns, column)
+		values = append(values, param.Values[0])
+	}
+	if len(columns) == 0 {
+		return params, nil
+	}
+
+	var buf bytes.Buffer
+	writer := csv.NewWriter(&buf)
+	_ = writer.Write(columns)
+	_ = writer.Write(values)
+	writer.Flush()
+
+	next := make([]dsl.Parameter, len(params))
+	for i, param := range params {
+		next[i] = param
+		column := normalizeVariableName(param.Name)
+		if containsString(columns, column) {
+			next[i].Values = nil
+			next[i].DataSource = "postman"
+			next[i].Column = column
+			next[i].Selection = "sequential"
+		}
+	}
+	return next, []dsl.DataSource{{
+		Name:           "postman",
+		Type:           "csv",
+		InlineData:     buf.String(),
+		Strategy:       "sequential",
+		Delimiter:      ",",
+		FirstRowHeader: true,
+		Columns:        columns,
+	}}
+}
+
+func containsString(values []string, candidate string) bool {
+	for _, value := range values {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 var postmanSetPattern = regexp.MustCompile(`pm\.(?:environment|collectionVariables)\.set\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']*)["']\s*\)`)
@@ -529,7 +644,7 @@ func mergeParameters(existing []dsl.Parameter, extra []dsl.Parameter) []dsl.Para
 	return out
 }
 
-func buildAction(index int, item requestItem, baseURL string, vars map[string]string, sanitizeSensitive bool, includeAssertions bool, diagnostics *diag.Collector) (dsl.Action, []string) {
+func buildAction(index int, item requestItem, collectionAuth *auth, baseURL string, vars map[string]string, sanitizeSensitive bool, includeAssertions bool, diagnostics *diag.Collector) (dsl.Action, []string) {
 	req := item.Request
 	location := postmanItemLocation(item)
 	method := strings.ToUpper(convertutil.FirstNonEmpty(req.Method, "GET"))
@@ -541,10 +656,10 @@ func buildAction(index int, item requestItem, baseURL string, vars map[string]st
 			continue
 		}
 		if sanitizeSensitive && sensitiveHeader(h.Key) {
-			headers[h.Key] = "{{var." + normalizeVariableName(h.Key) + "}}"
+			headers[h.Key] = "{{env." + sensitiveEnvName(h.Key) + "}}"
 			continue
 		}
-		headers[h.Key] = rewriteVariablesWithDiagnostics(h.Value, diagnostics, location)
+		headers[h.Key] = rewriteVariablesWithContext(h.Value, vars, diagnostics, location)
 	}
 
 	bodyText, contentType, warnings := requestBody(req.Body, diagnostics, location)
@@ -554,7 +669,7 @@ func buildAction(index int, item requestItem, baseURL string, vars map[string]st
 	if sanitizeSensitive {
 		bodyText = sanitizeBody(bodyText)
 	}
-	bodyText = rewriteVariablesWithDiagnostics(bodyText, diagnostics, location)
+	bodyText = rewriteVariablesWithContext(bodyText, vars, diagnostics, location)
 
 	action := dsl.Action{
 		Name:    actionName(index, item),
@@ -570,21 +685,23 @@ func buildAction(index int, item requestItem, baseURL string, vars map[string]st
 	if item.Folder != "" {
 		action.Metadata["postman_folder"] = item.Folder
 	}
-	if authConfig := postmanAuthConfig(req.Auth, diagnostics, location); authConfig.Type != "" {
-		action.Auth = &authConfig
-	}
+	applyPostmanAuth(&action, req.Auth, collectionAuth, vars, sanitizeSensitive, diagnostics, location)
 	if len(action.Headers) == 0 {
 		action.Headers = nil
 	}
 	if includeAssertions {
-		action.Assertions = append(action.Assertions, dsl.Assertion{Type: "status_code", Expected: 200})
+		action.Assertions = append(action.Assertions, dsl.Assertion{Type: "status_code_range", Min: 200, Max: 299})
 	}
 	return action, warnings
 }
 
 func rawURL(u postmanURL) string {
 	if strings.TrimSpace(u.Raw) != "" {
-		return strings.TrimSpace(u.Raw)
+		raw := strings.TrimSpace(u.Raw)
+		if len(u.Query) > 0 {
+			return reconcileRawQuery(raw, u.Query)
+		}
+		return raw
 	}
 	host := strings.Join(u.Host, ".")
 	path := strings.Join(u.Path, "/")
@@ -599,17 +716,41 @@ func rawURL(u postmanURL) string {
 	if path != "" {
 		raw += "/" + path
 	}
-	query := url.Values{}
-	for _, q := range u.Query {
-		if q.Disabled || q.Key == "" {
-			continue
-		}
-		query.Add(q.Key, q.Value)
-	}
-	if encoded := query.Encode(); encoded != "" {
+	if encoded := postmanQueryString(u.Query); encoded != "" {
 		raw += "?" + encoded
 	}
 	return raw
+}
+
+func reconcileRawQuery(raw string, entries []keyValueEntry) string {
+	query := postmanQueryString(entries)
+	if query == "" {
+		if before, _, ok := strings.Cut(raw, "?"); ok {
+			return before
+		}
+		return raw
+	}
+	before, _, ok := strings.Cut(raw, "?")
+	if !ok {
+		return raw + "?" + query
+	}
+	return before + "?" + query
+}
+
+func postmanQueryString(entries []keyValueEntry) string {
+	parts := make([]string, 0, len(entries))
+	for _, q := range entries {
+		key := strings.TrimSpace(q.Key)
+		if q.Disabled || key == "" {
+			continue
+		}
+		if q.Value == "" {
+			parts = append(parts, key)
+			continue
+		}
+		parts = append(parts, key+"="+q.Value)
+	}
+	return strings.Join(parts, "&")
 }
 
 func toTarget(raw string, baseURL string, vars map[string]string, diagnostics *diag.Collector, location string) string {
@@ -621,7 +762,7 @@ func toTarget(raw string, baseURL string, vars map[string]string, diagnostics *d
 	if strings.TrimSpace(baseURL) != "" {
 		base := strings.TrimRight(baseURL, "/")
 		if strings.HasPrefix(expanded, base+"/") {
-			return rewriteVariablesWithDiagnostics(rewritePathVariables(strings.TrimPrefix(expanded, base)), diagnostics, location)
+			return rewriteVariablesWithContext(rewritePathVariables(strings.TrimPrefix(expanded, base)), vars, diagnostics, location)
 		}
 		if expanded == base {
 			return "/"
@@ -635,15 +776,15 @@ func toTarget(raw string, baseURL string, vars map[string]string, diagnostics *d
 		if parsed.RawQuery != "" {
 			target += "?" + parsed.RawQuery
 		}
-		return rewriteVariablesWithDiagnostics(rewritePathVariables(target), diagnostics, location)
+		return rewriteVariablesWithContext(rewritePathVariables(target), vars, diagnostics, location)
 	}
 	if strings.HasPrefix(raw, "{{") {
-		return rewriteVariablesWithDiagnostics(raw, diagnostics, location)
+		return rewriteVariablesWithContext(raw, vars, diagnostics, location)
 	}
 	if !strings.HasPrefix(raw, "/") {
 		raw = "/" + raw
 	}
-	return rewriteVariablesWithDiagnostics(rewritePathVariables(raw), diagnostics, location)
+	return rewriteVariablesWithContext(rewritePathVariables(raw), vars, diagnostics, location)
 }
 
 func requestBody(b *body, diagnostics *diag.Collector, location string) (string, string, []string) {
@@ -726,7 +867,100 @@ func sortedAuthSchemes(requests []requestItem, collectionAuth *auth) []string {
 	return out
 }
 
-func postmanAuthConfig(value *auth, diagnostics *diag.Collector, location string) dsl.AuthConfig {
+func reportUnsupportedPostmanAuth(value *auth, diagnostics *diag.Collector, location string) {
+	if value == nil || diagnostics == nil {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(value.Type)) {
+	case "digest", "ntlm":
+		diagnostics.Add(diag.Warning, "Postman auth", location, value.Type+" auth is not replayable by the HTTP runtime; it was preserved as review-only metadata and no runnable auth override was emitted")
+	case "awsv4", "hawk":
+		diagnostics.Add(diag.Warning, "Postman auth", location, value.Type+" request signing cannot be executed during import; translate the signing flow before replay")
+	}
+}
+
+func applyPostmanAuth(action *dsl.Action, requestAuth *auth, collectionAuth *auth, vars map[string]string, sanitizeSensitive bool, diagnostics *diag.Collector, location string) {
+	explicitRequestAuth := requestAuth != nil && strings.TrimSpace(requestAuth.Type) != ""
+	if explicitRequestAuth && strings.EqualFold(strings.TrimSpace(requestAuth.Type), "noauth") {
+		action.Auth = &dsl.AuthConfig{Type: "noauth"}
+		return
+	}
+
+	effective := requestAuth
+	inherited := false
+	if effective == nil || strings.TrimSpace(effective.Type) == "" || strings.EqualFold(strings.TrimSpace(effective.Type), "inherit") {
+		effective = collectionAuth
+		inherited = true
+	}
+	if effective == nil {
+		return
+	}
+
+	switch strings.ToLower(strings.TrimSpace(effective.Type)) {
+	case "", "inherit", "noauth":
+		return
+	case "apikey":
+		applyPostmanAPIKey(action, effective, vars, sanitizeSensitive, diagnostics, location)
+	case "bearer", "basic", "oauth2":
+		cfg := postmanAuthConfig(effective, vars, sanitizeSensitive, diagnostics, location)
+		if strings.TrimSpace(cfg.Type) != "" {
+			action.Auth = &cfg
+		}
+	case "digest", "ntlm", "awsv4", "hawk":
+		if !inherited {
+			reportUnsupportedPostmanAuth(effective, diagnostics, location)
+		}
+		if action.Metadata != nil {
+			action.Metadata["postman_auth_review_only"] = effective.Type
+		}
+	default:
+		if diagnostics != nil {
+			diagnostics.Add(diag.Warning, "Postman auth", location, "auth type "+effective.Type+" was not converted")
+		}
+		if action.Metadata != nil {
+			action.Metadata["postman_auth_review_only"] = effective.Type
+		}
+	}
+}
+
+func applyPostmanAPIKey(action *dsl.Action, value *auth, vars map[string]string, sanitizeSensitive bool, diagnostics *diag.Collector, location string) {
+	key := authValue(value.APIKey, "key", vars, diagnostics, location)
+	secret := authCredentialValue(value.APIKey, "value", vars, diagnostics, location, sanitizeSensitive, "POSTMAN_API_KEY")
+	placement := strings.ToLower(strings.TrimSpace(authValue(value.APIKey, "in", vars, diagnostics, location)))
+	if strings.TrimSpace(key) == "" || strings.TrimSpace(secret) == "" {
+		if diagnostics != nil {
+			diagnostics.Add(diag.Warning, "Postman auth", location, "API key auth is missing key, value, or placement and was not converted")
+		}
+		return
+	}
+	switch placement {
+	case "query", "queryparam", "queryparams":
+		action.Target = appendQueryParam(action.Target, key, secret)
+	case "", "header":
+		if action.Headers == nil {
+			action.Headers = map[string]string{}
+		}
+		action.Headers[key] = secret
+	default:
+		if diagnostics != nil {
+			diagnostics.Add(diag.Warning, "Postman auth", location, "API key placement "+placement+" is not supported; converted as a header")
+		}
+		if action.Headers == nil {
+			action.Headers = map[string]string{}
+		}
+		action.Headers[key] = secret
+	}
+}
+
+func appendQueryParam(target string, key string, value string) string {
+	sep := "?"
+	if strings.Contains(target, "?") {
+		sep = "&"
+	}
+	return target + sep + key + "=" + value
+}
+
+func postmanAuthConfig(value *auth, vars map[string]string, sanitizeSensitive bool, diagnostics *diag.Collector, location string) dsl.AuthConfig {
 	if value == nil {
 		return dsl.AuthConfig{}
 	}
@@ -734,23 +968,18 @@ func postmanAuthConfig(value *auth, diagnostics *diag.Collector, location string
 	case "", "noauth", "inherit":
 		return dsl.AuthConfig{}
 	case "bearer":
-		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(authValue(value.Bearer, "token"), "{{env.API_TOKEN}}")}
+		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(authCredentialValue(value.Bearer, "token", vars, diagnostics, location, sanitizeSensitive, "POSTMAN_BEARER_TOKEN"), "{{env.API_TOKEN}}")}
 	case "basic":
-		return dsl.AuthConfig{Type: "basic", Username: convertutil.FirstNonEmpty(authValue(value.Basic, "username"), "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(authValue(value.Basic, "password"), "{{env.API_PASSWORD}}")}
-	case "digest":
-		return dsl.AuthConfig{Type: "digest", Username: convertutil.FirstNonEmpty(authValue(value.Digest, "username"), "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(authValue(value.Digest, "password"), "{{env.API_PASSWORD}}")}
-	case "ntlm":
-		return dsl.AuthConfig{Type: "ntlm", Username: convertutil.FirstNonEmpty(authValue(value.NTLM, "username"), "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(authValue(value.NTLM, "password"), "{{env.API_PASSWORD}}"), Domain: authValue(value.NTLM, "domain")}
+		return dsl.AuthConfig{
+			Type:     "basic",
+			Username: convertutil.FirstNonEmpty(authValue(value.Basic, "username", vars, diagnostics, location), "{{env.API_USERNAME}}"),
+			Password: convertutil.FirstNonEmpty(authCredentialValue(value.Basic, "password", vars, diagnostics, location, sanitizeSensitive, "POSTMAN_BASIC_PASSWORD"), "{{env.API_PASSWORD}}"),
+		}
 	case "oauth2":
 		if diagnostics != nil {
 			diagnostics.Add(diag.Warning, "Postman auth", location, "OAuth2 auth was represented as a bearer token placeholder; review token acquisition before replay")
 		}
-		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(authValue(value.OAuth2, "accessToken"), authValue(value.OAuth2, "access_token"), "{{env.API_TOKEN}}")}
-	case "awsv4", "hawk":
-		if diagnostics != nil {
-			diagnostics.Add(diag.Warning, "Postman auth", location, value.Type+" request signing cannot be executed during import; generated script uses placeholders and requires signing configuration before replay")
-		}
-		return dsl.AuthConfig{}
+		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(authCredentialValue(value.OAuth2, "accessToken", vars, diagnostics, location, sanitizeSensitive, "POSTMAN_OAUTH2_ACCESS_TOKEN"), authCredentialValue(value.OAuth2, "access_token", vars, diagnostics, location, sanitizeSensitive, "POSTMAN_OAUTH2_ACCESS_TOKEN"), "{{env.API_TOKEN}}")}
 	default:
 		if diagnostics != nil {
 			diagnostics.Add(diag.Warning, "Postman auth", location, "auth type "+value.Type+" was not converted")
@@ -759,16 +988,27 @@ func postmanAuthConfig(value *auth, diagnostics *diag.Collector, location string
 	}
 }
 
-func authValue(entries []keyValueEntry, key string) string {
+func authValue(entries []keyValueEntry, key string, vars map[string]string, diagnostics *diag.Collector, location string) string {
 	for _, entry := range entries {
 		if entry.Disabled {
 			continue
 		}
 		if strings.EqualFold(entry.Key, key) {
-			return rewriteVariables(entry.Value)
+			return rewriteVariablesWithContext(entry.Value, vars, diagnostics, location)
 		}
 	}
 	return ""
+}
+
+func authCredentialValue(entries []keyValueEntry, key string, vars map[string]string, diagnostics *diag.Collector, location string, sanitizeSensitive bool, envName string) string {
+	value := authValue(entries, key, vars, diagnostics, location)
+	if value == "" {
+		return ""
+	}
+	if sanitizeSensitive && !strings.Contains(value, "{{") {
+		return "{{env." + envName + "}}"
+	}
+	return value
 }
 
 func parameterNames(params []dsl.Parameter) []string {
@@ -819,6 +1059,10 @@ func rewriteVariables(value string) string {
 }
 
 func rewriteVariablesWithDiagnostics(value string, diagnostics *diag.Collector, location string) string {
+	return rewriteVariablesWithContext(value, nil, diagnostics, location)
+}
+
+func rewriteVariablesWithContext(value string, vars map[string]string, diagnostics *diag.Collector, location string) string {
 	value = tmpl.TranslateDynamic(value, diagnostics, location)
 	return variablePattern.ReplaceAllStringFunc(value, func(token string) string {
 		matches := variablePattern.FindStringSubmatch(token)
@@ -829,14 +1073,46 @@ func rewriteVariablesWithDiagnostics(value string, diagnostics *diag.Collector, 
 		if isApexExpressionName(name) {
 			return "{{" + name + "}}"
 		}
+		if replacement, ok := inlineRuntimeVariable(name, vars, diagnostics, location); ok {
+			return replacement
+		}
 		return "{{var." + normalizeVariableName(name) + "}}"
 	})
+}
+
+func inlineRuntimeVariable(name string, vars map[string]string, diagnostics *diag.Collector, location string) (string, bool) {
+	if len(vars) == 0 {
+		return "", false
+	}
+	value, ok := vars[name]
+	if !ok {
+		return "", false
+	}
+	translated := strings.TrimSpace(tmpl.TranslateDynamic(value, diagnostics, location))
+	if !singleRuntimeExpression(translated) {
+		return "", false
+	}
+	return translated, true
+}
+
+func singleRuntimeExpression(value string) bool {
+	if !strings.HasPrefix(value, "{{") || !strings.HasSuffix(value, "}}") {
+		return false
+	}
+	expr := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "{{"), "}}"))
+	return strings.HasPrefix(expr, "fn.") || strings.HasPrefix(expr, "fake.")
 }
 
 var pathVariablePattern = regexp.MustCompile(`(^|/):([A-Za-z][A-Za-z0-9_-]*)`)
 
 func rewritePathVariables(value string) string {
-	return pathVariablePattern.ReplaceAllString(value, `${1}{{var.$2}}`)
+	return pathVariablePattern.ReplaceAllStringFunc(value, func(token string) string {
+		matches := pathVariablePattern.FindStringSubmatch(token)
+		if len(matches) != 3 {
+			return token
+		}
+		return matches[1] + "{{var." + normalizeVariableName(matches[2]) + "}}"
+	})
 }
 
 func pathVariableNames(value string) []string {
@@ -874,6 +1150,28 @@ func headerValue(headers map[string]string, key string) string {
 func sensitiveHeader(key string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(key))
 	return normalized == "authorization" || normalized == "proxy-authorization" || normalized == "cookie" || normalized == "x-api-key" || normalized == "api-key"
+}
+
+func sensitiveEnvName(key string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(key))
+	var builder strings.Builder
+	lastUnderscore := false
+	for _, r := range normalized {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			builder.WriteRune(r)
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			builder.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+	out := strings.Trim(builder.String(), "_")
+	if out == "" {
+		out = "SECRET"
+	}
+	return "POSTMAN_" + out
 }
 
 func sanitizeBody(value string) string {

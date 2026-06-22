@@ -570,6 +570,41 @@ func resolveJMeterSaveProjectID(r *http.Request, _ storage.Store) (string, int, 
 	return projectID, 0, ""
 }
 
+func resolvePostmanSaveProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	var req struct {
+		Mode           string `json:"mode,omitempty"`
+		TargetScriptID string `json:"target_script_id,omitempty"`
+		Script         *struct {
+			ID        string `json:"id,omitempty"`
+			ProjectID string `json:"project_id,omitempty"`
+		} `json:"script,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if req.Script == nil {
+		return "", http.StatusBadRequest, "script is required"
+	}
+	targetID := strings.TrimSpace(req.TargetScriptID)
+	if targetID == "" && strings.EqualFold(strings.TrimSpace(req.Mode), "replace") {
+		targetID = strings.TrimSpace(req.Script.ID)
+	}
+	if targetID != "" {
+		if store == nil {
+			if projectID := strings.TrimSpace(req.Script.ProjectID); projectID != "" {
+				return normalizeProjectID(projectID), 0, ""
+			}
+			return "", http.StatusServiceUnavailable, "script storage is not configured"
+		}
+		script, err := store.GetScript(targetID)
+		if err != nil {
+			return "", http.StatusNotFound, "target script not found"
+		}
+		return normalizeProjectID(script.ProjectID), 0, ""
+	}
+	return normalizeProjectID(req.Script.ProjectID), 0, ""
+}
+
 func resolveDataPoolListProjectID(r *http.Request, _ storage.Store) (string, int, string) {
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
 	if projectID == "" {

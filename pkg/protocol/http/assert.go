@@ -34,6 +34,25 @@ func evaluate(a protocol.Assertion, result *protocol.Result, body []byte) error 
 			return fmt.Errorf("expected status to not be %d", expected)
 		}
 
+	case "status_code_range":
+		minStatus := a.Min
+		maxStatus := a.Max
+		if minStatus == 0 && maxStatus == 0 {
+			return fmt.Errorf("status_code_range assertion: min or max is required")
+		}
+		if minStatus == 0 {
+			minStatus = maxStatus
+		}
+		if maxStatus == 0 {
+			maxStatus = minStatus
+		}
+		if minStatus > maxStatus {
+			return fmt.Errorf("status_code_range assertion: min %d exceeds max %d", minStatus, maxStatus)
+		}
+		if result.StatusCode < minStatus || result.StatusCode > maxStatus {
+			return fmt.Errorf("expected status between %d and %d, got %d", minStatus, maxStatus, result.StatusCode)
+		}
+
 	case "response_time_ms":
 		if result.Duration.Milliseconds() > int64(a.Max) {
 			return fmt.Errorf("response time %dms exceeded max %dms", result.Duration.Milliseconds(), a.Max)

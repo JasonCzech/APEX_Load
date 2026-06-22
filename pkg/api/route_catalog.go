@@ -275,6 +275,8 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/openapi", editorImportAccess(resolveImportProjectIDFromJSONOrForm, webAPIImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/raml", editorImportAccess(resolveImportProjectIDFromJSONOrForm, webAPIImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/postman", editorImportAccess(resolveImportProjectIDFromJSONOrForm, webAPIImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/postman/validate", editorImportAccess(resolveImportProjectIDFromJSONOrForm, webAPIImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/postman/save", editorProjectAccess(resolvePostmanSaveProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/wsdl", editorImportAccess(resolveImportProjectIDFromJSONOrForm, webAPIImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/export/k6", editorProjectAccess(resolveK6ExportProjectID)),
 

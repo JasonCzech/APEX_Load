@@ -569,6 +569,7 @@ export interface PostmanImportStats {
   total_requests: number
   converted_actions: number
   variables_detected: number
+  environment_values?: number
   auth_schemes?: string[]
   unsupported_bodies: number
   assertions: number
@@ -718,4 +719,18 @@ export interface SaveJMeterImportResponse {
   scripts?: StoredScript[]
   count?: number
   scenario?: StoredScenario
+}
+
+export interface SavePostmanImportRequest {
+  script: ScriptDefinition
+  mode?: 'create' | 'replace'
+  target_script_id?: string
+}
+
+export interface SavePostmanImportResponse {
+  scripts?: StoredScript[]
+  script?: ScriptDefinition
+  stored_script?: StoredScript
+  replaced?: boolean
+  preflight?: ReplayPreflight
 }

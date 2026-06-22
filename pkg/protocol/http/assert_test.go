@@ -39,6 +39,30 @@ func TestEvaluate_StatusCode_InvalidExpected(t *testing.T) {
 	}
 }
 
+func TestEvaluate_StatusCodeRange_Pass(t *testing.T) {
+	r := &protocol.Result{StatusCode: 204}
+	err := evaluate(protocol.Assertion{Type: "status_code_range", Min: 200, Max: 299}, r, nil)
+	if err != nil {
+		t.Errorf("expected pass, got: %v", err)
+	}
+}
+
+func TestEvaluate_StatusCodeRange_Fail(t *testing.T) {
+	r := &protocol.Result{StatusCode: 500}
+	err := evaluate(protocol.Assertion{Type: "status_code_range", Min: 200, Max: 299}, r, nil)
+	if err == nil {
+		t.Error("expected failure for status 500 outside 200-299")
+	}
+}
+
+func TestEvaluate_StatusCodeRange_InvalidBounds(t *testing.T) {
+	r := &protocol.Result{StatusCode: 200}
+	err := evaluate(protocol.Assertion{Type: "status_code_range", Min: 300, Max: 200}, r, nil)
+	if err == nil {
+		t.Error("expected error for invalid status range")
+	}
+}
+
 func TestEvaluate_ResponseTime_Pass(t *testing.T) {
 	r := &protocol.Result{Duration: 100 * time.Millisecond}
 	err := evaluate(protocol.Assertion{Type: "response_time_ms", Max: 500}, r, nil)

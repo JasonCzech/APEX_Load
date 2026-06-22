@@ -5365,6 +5365,9 @@
         "max": {
           "type": "integer"
         },
+        "min": {
+          "type": "integer"
+        },
         "type": {
           "type": "string"
         },

@@ -470,6 +470,7 @@ func toProtocolAssertions(asserts []dsl.Assertion) []protocol.Assertion {
 			Type:     a.Type,
 			Expected: a.Expected,
 			Value:    a.Value,
+			Min:      a.Min,
 			Max:      a.Max,
 		}
 	}
