@@ -156,6 +156,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	value, _ := vu.interpolateWithSecrets(action.Value)
 	headers, redactedHeaders := vu.interpolateMapWithSecrets(action.Headers)
 	body, redactedBody := vu.interpolateWithSecrets(action.Body)
+	auth, redactedAuth := toProtocolAuthConfig(action.Auth, vu)
 	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
 	return &protocol.Action{
 		Name:            action.Name,
@@ -177,9 +178,46 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		Metadata:        vu.interpolateAnyMap(action.Metadata),
 		Extractors:      toProtocolExtractors(action.Extractors),
 		Assertions:      toProtocolAssertions(action.Assertions),
+		Auth:            auth,
+		RedactedAuth:    redactedAuth,
+		TimeoutMs:       action.TimeoutMs,
+		MaxRedirects:    cloneIntPtr(action.MaxRedirects),
 		SOAP:            soapAction,
 		RedactedSOAP:    redactedSOAPAction,
 	}
+}
+
+func toProtocolAuthConfig(auth *dsl.AuthConfig, vu *VUser) (*protocol.AuthConfig, *protocol.AuthConfig) {
+	if auth == nil {
+		return nil, nil
+	}
+	username, redactedUsername := vu.interpolateWithSecrets(auth.Username)
+	password, redactedPassword := vu.interpolateWithSecrets(auth.Password)
+	token, redactedToken := vu.interpolateWithSecrets(auth.Token)
+	domain, redactedDomain := vu.interpolateWithSecrets(auth.Domain)
+	resolved := &protocol.AuthConfig{
+		Type:     auth.Type,
+		Username: username,
+		Password: password,
+		Token:    token,
+		Domain:   domain,
+	}
+	redacted := &protocol.AuthConfig{
+		Type:     auth.Type,
+		Username: redactedUsername,
+		Password: redactedPassword,
+		Token:    redactedToken,
+		Domain:   redactedDomain,
+	}
+	return resolved, redacted
+}
+
+func cloneIntPtr(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func toProtocolSOAPAction(action *dsl.SOAPActionConfig, vu *VUser) *protocol.SOAPActionConfig {

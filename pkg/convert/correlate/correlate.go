@@ -189,6 +189,43 @@ func ApplyVars(value string, vars map[string]string) string {
 	return value
 }
 
+func ApplyVarsWithEncodedValues(value string, vars map[string]string, encodedValues map[string]bool) string {
+	values := make([]string, 0, len(vars))
+	for raw := range vars {
+		if raw != "" {
+			values = append(values, raw)
+		}
+	}
+	sort.Slice(values, func(i, j int) bool { return len(values[i]) > len(values[j]) })
+	for _, raw := range values {
+		replacement := vars[raw]
+		value = strings.ReplaceAll(value, raw, replacement)
+		if encodedValues[raw] {
+			value = replaceEncodedValue(value, raw, replacement, url.QueryEscape)
+			value = replaceEncodedValue(value, raw, replacement, url.PathEscape)
+		}
+	}
+	return value
+}
+
+func ApplyVarsToHeadersWithEncodedValues(headers map[string]string, vars map[string]string, encodedValues map[string]bool) map[string]string {
+	if len(headers) == 0 {
+		return headers
+	}
+	for key, value := range headers {
+		headers[key] = ApplyVarsWithEncodedValues(value, vars, encodedValues)
+	}
+	return headers
+}
+
+func replaceEncodedValue(value, raw, replacement string, encode func(string) string) string {
+	encodedRaw := encode(raw)
+	if encodedRaw == "" || encodedRaw == raw {
+		return value
+	}
+	return strings.ReplaceAll(value, encodedRaw, replacement)
+}
+
 func ApplyVarsToHeaders(headers map[string]string, vars map[string]string) map[string]string {
 	if len(headers) == 0 {
 		return headers

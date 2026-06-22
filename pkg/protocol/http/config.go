@@ -326,20 +326,50 @@ func buildDefaultHeaders(config map[string]any) map[string]string {
 
 func buildAuthHeader(config map[string]any) (string, string) {
 	authType, _ := config["auth_type"].(string)
-	switch strings.ToLower(authType) {
-	case "basic":
-		user, _ := config["auth_username"].(string)
-		pass, _ := config["auth_password"].(string)
-		return authType, "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass))
+	return authType, authHeaderFromParts(authType, authStringConfig(config, "auth_username"), authStringConfig(config, "auth_password"), authStringConfig(config, "auth_token"))
+}
+
+func buildActionAuthHeader(auth *protocol.AuthConfig) (string, bool) {
+	if auth == nil {
+		return "", false
+	}
+	switch strings.ToLower(strings.TrimSpace(auth.Type)) {
+	case "", "none", "noauth", "inherit":
+		return "", true
+	default:
+		return authHeaderFromParts(auth.Type, auth.Username, auth.Password, auth.Token), true
+	}
+}
+
+func buildRedactedActionAuthHeader(auth *protocol.AuthConfig) string {
+	if auth == nil {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(auth.Type)) {
+	case "basic", "ntlm":
+		return "Basic [REDACTED]"
 	case "bearer":
-		token, _ := config["auth_token"].(string)
-		return authType, "Bearer " + token
+		return "Bearer [REDACTED]"
+	default:
+		return "[REDACTED]"
+	}
+}
+
+func authHeaderFromParts(authType, username, password, token string) string {
+	switch strings.ToLower(strings.TrimSpace(authType)) {
+	case "basic":
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
+	case "bearer":
+		return "Bearer " + token
 	case "ntlm":
 		fmt.Println("[WARN] NTLM authentication is not yet fully supported; using basic auth fallback")
-		user, _ := config["auth_username"].(string)
-		pass, _ := config["auth_password"].(string)
-		return authType, "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass))
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
 	default:
-		return authType, ""
+		return ""
 	}
+}
+
+func authStringConfig(config map[string]any, key string) string {
+	value, _ := config[key].(string)
+	return value
 }

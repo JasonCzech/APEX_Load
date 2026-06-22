@@ -117,6 +117,63 @@ securitySchemes:
 	}
 }
 
+func TestHandleImportRAMLDetectsAgentforce(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	ramlContent := `#%RAML 1.0
+title: Agent API
+version: v1
+baseUri: https://api.salesforce.com/einstein/ai-agent/v1/agents/0XxAGENT
+/sessions:
+  post:
+    displayName: Start Session
+/sessions/{sessionId}/messages/stream:
+  post:
+    displayName: Stream Message
+`
+	payload := map[string]any{
+		"name":       "Agent API",
+		"project_id": "proj-agent",
+		"content":    ramlContent,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/raml", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			Metadata struct {
+				Import struct {
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		ReviewSections []struct {
+			Key string `json:"key"`
+		} `json:"review_sections"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Metadata.Import.Preserved["agentforce_review"] == nil {
+		t.Fatalf("preserved metadata = %#v, want agentforce_review", result.Script.Metadata.Import.Preserved)
+	}
+	for _, section := range result.ReviewSections {
+		if section.Key == "agentforce_review" {
+			return
+		}
+	}
+	t.Fatalf("review sections = %#v, want agentforce_review", result.ReviewSections)
+}
+
 func TestHandleImportRAMLZipResolvesIncludesAndNamesFromMainEntry(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

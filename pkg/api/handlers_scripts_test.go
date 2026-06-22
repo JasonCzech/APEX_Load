@@ -726,7 +726,7 @@ func TestHandleImportSalesforceHARJSON(t *testing.T) {
         "response": {
           "status": 200,
           "headers": [],
-          "content": {"text": "{\"access_token\":\"tok-abcdef123456\"}"}
+          "content": {"text": "{\"access_token\":\"tok+/==\"}"}
         }
       },
       {
@@ -734,7 +734,7 @@ func TestHandleImportSalesforceHARJSON(t *testing.T) {
           "method": "POST",
           "url": "https://attone--perfhyper2.sandbox.lightning.force.com/aura",
           "headers": [{"name":"content-type","value":"application/x-www-form-urlencoded"}],
-          "postData": {"text": "aura.token=tok-abcdef123456&message=%7B%22actions%22%3A%5B%7B%22descriptor%22%3A%22apex%3A%2F%2FAccountController%2FACTION%24get%22%7D%5D%7D"}
+          "postData": {"text": "aura.token=tok%2B%2F%3D%3D&message=%7B%22actions%22%3A%5B%7B%22descriptor%22%3A%22apex%3A%2F%2FAccountController%2FACTION%24get%22%7D%5D%7D"}
         },
         "response": {
           "status": 200,
@@ -766,8 +766,12 @@ func TestHandleImportSalesforceHARJSON(t *testing.T) {
 			GeneratedBy string `json:"generated_by"`
 			Protocol    string `json:"protocol"`
 			Actions     []struct {
-				Target string `json:"target"`
-				Body   string `json:"body"`
+				Target     string `json:"target"`
+				Body       string `json:"body"`
+				Extractors []struct {
+					Name    string `json:"name"`
+					Convert string `json:"convert"`
+				} `json:"extractors"`
 			} `json:"actions"`
 			Metadata struct {
 				Import struct {
@@ -799,9 +803,77 @@ func TestHandleImportSalesforceHARJSON(t *testing.T) {
 	if len(result.Script.Actions) != 2 {
 		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
 	}
-	if !strings.Contains(result.Script.Actions[1].Body, "{{var.corr_access_token}}") {
+	if strings.Contains(result.Script.Actions[1].Body, "tok%2B%2F%3D%3D") || !strings.Contains(result.Script.Actions[1].Body, "{{var.corr_access_token}}") {
 		t.Fatalf("aura body = %q, want correlated token variable", result.Script.Actions[1].Body)
 	}
+	if len(result.Script.Actions[0].Extractors) == 0 || result.Script.Actions[0].Extractors[0].Convert != "url_encode" {
+		t.Fatalf("login extractors = %#v, want url_encode conversion", result.Script.Actions[0].Extractors)
+	}
+}
+
+func TestHandleImportSalesforceHARAttachesMuleSoftReview(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name": "MuleSoft HAR",
+		"content": `{
+  "log": {
+    "entries": [
+      {
+        "request": {
+          "method": "GET",
+          "url": "https://accounts.us-e2.cloudhub.io/api/accounts",
+          "headers": [
+            {"name":"Authorization","value":"Basic Y2xpZW50OnNlY3JldA=="}
+          ]
+        },
+        "response": {
+          "status": 200,
+          "headers": [],
+          "content": {"text": "{\"ok\":true}"}
+        }
+      }
+    ]
+  }
+}`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/salesforce", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			Metadata struct {
+				Import struct {
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		ReviewSections []struct {
+			Key string `json:"key"`
+		} `json:"review_sections"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Metadata.Import.Preserved["mulesoft_review"] == nil {
+		t.Fatalf("preserved metadata = %#v, want mulesoft_review", result.Script.Metadata.Import.Preserved)
+	}
+	for _, section := range result.ReviewSections {
+		if section.Key == "mulesoft_review" {
+			return
+		}
+	}
+	t.Fatalf("review sections = %#v, want mulesoft_review", result.ReviewSections)
 }
 
 func TestHandleImportRAMLJSON(t *testing.T) {

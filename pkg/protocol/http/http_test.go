@@ -502,6 +502,63 @@ func TestHTTP_ExecuteCapturesRedirectTelemetry(t *testing.T) {
 	}
 }
 
+func TestHTTP_Execute_ActionRedirectOverride(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/redirect":
+			http.Redirect(w, r, "/final", http.StatusFound)
+		case "/final":
+			_, _ = w.Write([]byte("ok"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url":      ts.URL,
+		"max_redirects": float64(-1),
+	})
+	maxRedirects := 2
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:         "follow-action",
+		Method:       "GET",
+		Target:       "/redirect",
+		MaxRedirects: &maxRedirects,
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success || result.StatusCode != http.StatusOK {
+		t.Fatalf("result = success:%v status:%d error:%s, want followed redirect", result.Success, result.StatusCode, result.ErrorMessage)
+	}
+}
+
+func TestHTTP_Execute_ActionTimeoutOverride(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(150 * time.Millisecond)
+		_, _ = w.Write([]byte("slow"))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url":           ts.URL,
+		"request_timeout_ms": float64(1000),
+	})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:      "short-timeout",
+		Method:    "GET",
+		Target:    "/",
+		TimeoutMs: 25,
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Success || !strings.Contains(strings.ToLower(result.ErrorMessage), "timeout") {
+		t.Fatalf("result = success:%v error:%q, want timeout", result.Success, result.ErrorMessage)
+	}
+}
+
 func TestHTTP_Execute_POST(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
@@ -710,6 +767,73 @@ func TestHTTP_Execute_AuthHeader(t *testing.T) {
 		Method: "GET",
 		Target: "/",
 	})
+}
+
+func TestHTTP_Execute_ActionAuthOverridesGlobalAuth(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Basic YWN0aW9uOnNlY3JldA==" {
+			t.Fatalf("Authorization = %q, want action basic auth", got)
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("boom"))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url":   ts.URL,
+		"auth_type":  "bearer",
+		"auth_token": "global-token",
+	})
+
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "action-auth",
+		Method: "GET",
+		Target: "/",
+		Auth: &protocol.AuthConfig{
+			Type:     "basic",
+			Username: "action",
+			Password: "secret",
+		},
+		RedactedAuth: &protocol.AuthConfig{Type: "basic"},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Snapshot == nil {
+		t.Fatal("Snapshot = nil, want failed response snapshot")
+	}
+	if got := result.Snapshot.RequestHeaders["Authorization"]; got != "Basic [REDACTED]" {
+		t.Fatalf("snapshot Authorization = %q, want redacted action auth", got)
+	}
+}
+
+func TestHTTP_Execute_ActionAuthNoneSuppressesGlobalAuth(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Fatalf("Authorization = %q, want no auth header", got)
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url":   ts.URL,
+		"auth_type":  "bearer",
+		"auth_token": "global-token",
+	})
+
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "no-auth",
+		Method: "GET",
+		Target: "/",
+		Auth:   &protocol.AuthConfig{Type: "none"},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Success = false, error=%s", result.ErrorMessage)
+	}
 }
 
 func TestHTTP_Execute_WithExtractor(t *testing.T) {

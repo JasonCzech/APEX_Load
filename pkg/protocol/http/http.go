@@ -152,15 +152,27 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		req.Header.Set(k, v)
 	}
 
-	// Apply global auth header
-	if h.authHeader != "" {
-		req.Header.Set("Authorization", h.authHeader)
+	authHeader := h.authHeader
+	actionAuthHeader, actionAuthOverride := buildActionAuthHeader(action.Auth)
+	if actionAuthOverride {
+		authHeader = actionAuthHeader
+	}
+	typedAuthApplied := false
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+		typedAuthApplied = actionAuthOverride
 	}
 
 	// Apply per-action headers (override defaults)
 	for k, v := range action.Headers {
 		req.Header.Set(k, v)
 	}
+	typedAuthApplied = typedAuthApplied && req.Header.Get("Authorization") == actionAuthHeader
+	redactedAuthHeader := buildRedactedActionAuthHeader(action.RedactedAuth)
+	if redactedAuthHeader == "" {
+		redactedAuthHeader = buildRedactedActionAuthHeader(action.Auth)
+	}
+	redactedRequestHeaders := redactedRequestHeadersForSnapshot(req.Header, action.RedactedHeaders, typedAuthApplied, redactedAuthHeader)
 	explicitCorrelationID := correlationIDFromHTTPHeader(req.Header)
 	generatedTraceparent := ensureTraceparentHeader(req.Header)
 
@@ -188,8 +200,15 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		GotFirstResponseByte: func() { traceMu.Lock(); traceTTFB = time.Since(startTime); traceMu.Unlock() },
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
-	baseCheckRedirect := h.client.CheckRedirect
 	client := *h.client
+	if action.TimeoutMs > 0 {
+		client.Timeout = time.Duration(action.TimeoutMs) * time.Millisecond
+	}
+	if action.MaxRedirects != nil {
+		client.CheckRedirect = nil
+		applyRedirectPolicy(&client, *action.MaxRedirects)
+	}
+	baseCheckRedirect := client.CheckRedirect
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		traceMu.Lock()
 		redirectCount = len(via)
@@ -226,7 +245,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		reused, rCount, rDur := applyTraceTelemetry()
 		result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
 		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 		return result, nil
 	}
 
@@ -274,7 +293,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			reused, rCount, rDur := applyTraceTelemetry()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
 			result.ErrorMessage = err.Error()
-			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), buf.Bytes())
+			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), buf.Bytes())
 			return result, nil
 		}
 	}
@@ -308,14 +327,14 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.Duration = time.Since(result.StartTime)
 		result.Success = false
 		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, buf.Bytes())
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, buf.Bytes())
 		return result, nil
 	}
 	formattedBody, err := applyDataFormattingChain(respBody, h.dataFormattingAutoDetect, h.dataFormattingChain)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
 		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
 		return result, nil
 	}
 	respBody = formattedBody
@@ -383,7 +402,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		}
 	}
 	if !result.Success {
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, resp.StatusCode, responseHeaders, respBody)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, action.RedactedTarget, redactedRequestHeaders, action.RedactedBody, resp.StatusCode, responseHeaders, respBody)
 	}
 
 	return result, nil
@@ -665,6 +684,24 @@ func cloneHTTPHeaders(headers http.Header) map[string]string {
 		return nil
 	}
 	return cloned
+}
+
+func redactedRequestHeadersForSnapshot(headers http.Header, redactedHeaders map[string]string, redactAuthorization bool, redactedAuthorization string) map[string]string {
+	if !redactAuthorization {
+		return redactedHeaders
+	}
+	out := cloneHTTPHeaders(headers)
+	if len(redactedHeaders) > 0 {
+		out = cloneStringMap(redactedHeaders)
+	}
+	if out == nil {
+		out = map[string]string{}
+	}
+	if strings.TrimSpace(redactedAuthorization) == "" {
+		redactedAuthorization = "[REDACTED]"
+	}
+	out["Authorization"] = redactedAuthorization
+	return out
 }
 
 func cloneStringMap(values map[string]string) map[string]string {

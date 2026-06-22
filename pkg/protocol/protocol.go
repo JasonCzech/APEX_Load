@@ -86,8 +86,20 @@ type Action struct {
 	Extractors      []Extractor            `json:"extractors,omitempty"`
 	Assertions      []Assertion            `json:"assertions,omitempty"`
 	ThinkTime       ThinkTimeConfig        `json:"think_time,omitempty"`
+	Auth            *AuthConfig            `json:"auth,omitempty"`
+	RedactedAuth    *AuthConfig            `json:"-"`
+	TimeoutMs       int                    `json:"timeout_ms,omitempty"`
+	MaxRedirects    *int                   `json:"max_redirects,omitempty"`
 	SOAP            *SOAPActionConfig      `json:"soap,omitempty"`
 	RedactedSOAP    *SOAPActionConfig      `json:"-"`
+}
+
+type AuthConfig struct {
+	Type     string `json:"type,omitempty"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+	Token    string `json:"token,omitempty"`
+	Domain   string `json:"domain,omitempty"`
 }
 
 type SOAPActionConfig struct {

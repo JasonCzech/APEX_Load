@@ -344,11 +344,65 @@ func TestAnalyzeHandlesHAREdgeCases(t *testing.T) {
 	if review.NativePreview == nil || review.NativePreview.Script == nil {
 		t.Fatal("native preview should still be returned for partial HAR review")
 	}
-	if review.NativePreview.Script.Actions[1].Metadata["salesforce"].(map[string]any)["har_match_id"] == 0 {
-		t.Fatalf("first duplicate Aura request was not matched: %#v", review.NativePreview.Script.Actions[1].Metadata)
+	if got := review.NativePreview.Script.Actions[1].Metadata["salesforce"].(map[string]any)["har_match_id"]; got != 1 {
+		t.Fatalf("first duplicate Aura request matched HAR %v, want fallback entry 1: %#v", got, review.NativePreview.Script.Actions[1].Metadata)
 	}
-	if review.NativePreview.Script.Actions[2].Metadata["salesforce"].(map[string]any)["har_match_id"] == 0 {
-		t.Fatalf("second duplicate Aura request was not matched: %#v", review.NativePreview.Script.Actions[2].Metadata)
+	if got := review.NativePreview.Script.Actions[2].Metadata["salesforce"].(map[string]any)["har_match_id"]; got != 4 {
+		t.Fatalf("second duplicate Aura request matched HAR %v, want body-matched entry 4: %#v", got, review.NativePreview.Script.Actions[2].Metadata)
+	}
+}
+
+func TestAnalyzeNativePreviewReplacesEncodedAuraCorrelation(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "SF Encoded Aura",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{{
+			Name:   "Login",
+			Type:   "GET",
+			Method: "GET",
+			Target: "https://acme.my.salesforce.com/login",
+		}, {
+			Name:   "Aura",
+			Type:   "POST",
+			Method: "POST",
+			Target: "https://acme.lightning.force.com/aura",
+			Headers: map[string]string{
+				"Content-Type": "application/x-www-form-urlencoded",
+			},
+			Body: `aura.token=tok%2B%2F%3D%3D&message=%7B%22actions%22%3A%5B%7B%22descriptor%22%3A%22apex%3A%2F%2FAccountController%2FACTION%24get%22%7D%5D%7D`,
+		}},
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {
+	        "request": {"method": "GET", "url": "https://acme.my.salesforce.com/login", "headers": []},
+	        "response": {"headers": [], "content": {"text": "{\"access_token\":\"tok+/==\"}"}}
+	      },
+	      {
+	        "request": {"method": "POST", "url": "https://acme.lightning.force.com/aura", "headers": [{"name":"content-type","value":"application/x-www-form-urlencoded"}], "postData": {"text": "aura.token=tok%2B%2F%3D%3D&message=%7B%22actions%22%3A%5B%7B%22descriptor%22%3A%22apex%3A%2F%2FAccountController%2FACTION%24get%22%7D%5D%7D"}},
+	        "response": {"headers": [], "content": {"text": "{\"actions\":[{\"state\":\"SUCCESS\"}]}"}
+	        }
+	      }
+	    ]
+	  }
+	}`)
+
+	review, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if review.NativePreview == nil || review.NativePreview.Script == nil {
+		t.Fatal("NativePreview = nil, want script")
+	}
+	login := review.NativePreview.Script.Actions[0]
+	if len(login.Extractors) == 0 || login.Extractors[0].Convert != "url_encode" {
+		t.Fatalf("login extractors = %#v, want url_encode conversion for encoded Aura reuse", login.Extractors)
+	}
+	auraBody := review.NativePreview.Script.Actions[1].Body
+	if strings.Contains(auraBody, "tok%2B%2F%3D%3D") || !strings.Contains(auraBody, "{{var.corr_access_token}}") {
+		t.Fatalf("aura body = %q, want encoded token replaced with variable", auraBody)
 	}
 }
 

@@ -87,6 +87,26 @@ func TestAnalyzeFlagsBearerWithoutTokenAcquisition(t *testing.T) {
 	}
 }
 
+func TestAnalyzeTreatsBasicAuthOnMuleSoftHostAsClientIDPolicySignal(t *testing.T) {
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{BaseURL: "https://accounts.us-e2.cloudhub.io/api"},
+		Actions: []dsl.Action{{
+			Name:    "Call",
+			Type:    "GET",
+			Method:  "GET",
+			Target:  "/resource",
+			Headers: map[string]string{"Authorization": "Basic Y2xpZW50OnNlY3JldA=="},
+		}},
+	}
+	review := Analyze(script)
+	for _, finding := range review.PolicyFindings {
+		if finding.Policy == "client_id_enforcement" && strings.Contains(finding.Evidence, "basic authorization") {
+			return
+		}
+	}
+	t.Fatalf("policy findings = %#v, want Basic Authorization client_id_enforcement signal", review.PolicyFindings)
+}
+
 func TestAnalyzeDoesNotFlagMissingTokenWhenRefreshTokenGrantPresent(t *testing.T) {
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{BaseURL: "https://api.anypoint.mulesoft.com/v1"},
@@ -153,6 +173,11 @@ func TestAnalyzeDetectsClientIDEnforcementInRequestBody(t *testing.T) {
 			name:        "nested json body",
 			body:        `{"auth":{"client_secret":"xyz"}}`,
 			wantEvidPfx: "body client_secret",
+		},
+		{
+			name:        "json array body",
+			body:        `[{"auth":{"client_id":"abc"}}]`,
+			wantEvidPfx: "body client_id",
 		},
 		{
 			name:        "form encoded body",

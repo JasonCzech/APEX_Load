@@ -461,6 +461,8 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 				result.Warnings = append(result.Warnings, "Salesforce traffic detected; use /api/v1/scripts/import/salesforce for the native HTTP draft.")
 			}
 		}
+		_ = attachMuleSoftReview(result.Script, "browser_recording_har", nil)
+		_ = attachAgentforceReview(result.Script, "browser_recording_har", nil)
 	}
 	return result.Script, result.Warnings, nil
 }

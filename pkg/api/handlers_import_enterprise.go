@@ -57,6 +57,8 @@ func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.C
 	if result == nil || result.Script == nil || importReq == nil {
 		return
 	}
+	_ = attachMuleSoftReview(result.Script, "enterprise_script_archive", nil)
+	_ = attachAgentforceReview(result.Script, "enterprise_script_archive", nil)
 	if !importReq.SalesforceNative && len(importReq.HARData) == 0 {
 		return
 	}
@@ -488,6 +490,12 @@ func buildEnterpriseArchiveImportReviewSections(warnings []string, result *enter
 			Items:    salesforceReviewItems(summary.SalesforceReview),
 		})
 	}
+	if summary.MuleSoftReview != nil {
+		sections = append(sections, mulesoftReviewSection(summary.MuleSoftReview))
+	}
+	if summary.AgentforceReview != nil {
+		sections = append(sections, agentforceReviewSection(summary.AgentforceReview))
+	}
 
 	return sections
 }
@@ -647,6 +655,8 @@ func buildEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResult
 		summary.TrueClient2CompatReport = buildTrueClient2CompatReport(result, summary)
 	}
 	summary.SalesforceReview = salesforceReviewValue(preserved["salesforce_review"])
+	summary.AgentforceReview = agentforceReviewValue(preserved["agentforce_review"])
+	summary.MuleSoftReview = mulesoftReviewValue(preserved["mulesoft_review"])
 	if summary.FidelityReport == nil {
 		summary.FidelityReport = fidelityReportValue(preserved["fidelity_report"])
 	}
@@ -672,6 +682,12 @@ func persistEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResu
 	}
 	if summary.SalesforceReview != nil {
 		result.Script.Metadata.Import.Preserved["salesforce_review"] = summary.SalesforceReview
+	}
+	if summary.AgentforceReview != nil {
+		result.Script.Metadata.Import.Preserved["agentforce_review"] = summary.AgentforceReview
+	}
+	if summary.MuleSoftReview != nil {
+		result.Script.Metadata.Import.Preserved["mulesoft_review"] = summary.MuleSoftReview
 	}
 	if summary.SourceReview != nil {
 		result.Script.Metadata.Import.Preserved["source_review"] = summary.SourceReview

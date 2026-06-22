@@ -9,7 +9,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/agentforce"
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
+	"github.com/jasonczech/apexload/pkg/convert/mulesoft"
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 )
@@ -44,6 +46,42 @@ func salesforceReviewValue(value any) *salesforce.Review {
 		return nil
 	}
 	var review salesforce.Review
+	if err := json.Unmarshal(data, &review); err != nil {
+		return nil
+	}
+	return &review
+}
+
+func agentforceReviewValue(value any) *agentforce.Review {
+	if value == nil {
+		return nil
+	}
+	if review, ok := value.(*agentforce.Review); ok {
+		return review
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var review agentforce.Review
+	if err := json.Unmarshal(data, &review); err != nil {
+		return nil
+	}
+	return &review
+}
+
+func mulesoftReviewValue(value any) *mulesoft.Review {
+	if value == nil {
+		return nil
+	}
+	if review, ok := value.(*mulesoft.Review); ok {
+		return review
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var review mulesoft.Review
 	if err := json.Unmarshal(data, &review); err != nil {
 		return nil
 	}

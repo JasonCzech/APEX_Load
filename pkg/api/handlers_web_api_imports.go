@@ -165,6 +165,7 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 			reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
 		}
 	}
+	reviewSections = attachAgentforceReview(result.Script, "raml", reviewSections)
 
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
@@ -208,7 +209,18 @@ func dropMulesoftClientIDEnforcement(review *mulesoft.Review) {
 }
 
 func mulesoftReviewHasContent(review *mulesoft.Review) bool {
-	return len(review.Domains) > 0 || len(review.PolicyFindings) > 0 || len(review.AuthFindings) > 0
+	return review != nil && (len(review.Domains) > 0 || len(review.PolicyFindings) > 0 || len(review.AuthFindings) > 0 || len(review.Blockers) > 0)
+}
+
+func attachMuleSoftReview(script *dsl.Script, source string, sections []scriptImportReviewSection) []scriptImportReviewSection {
+	review := mulesoft.Analyze(script)
+	if !review.Detected || !mulesoftReviewHasContent(review) {
+		return sections
+	}
+	if script != nil {
+		ensureScriptImportPreserved(script, source)["mulesoft_review"] = review
+	}
+	return append(sections, mulesoftReviewSection(review))
 }
 
 func ramlReviewItems(result *raml.ConvertResult) []string {

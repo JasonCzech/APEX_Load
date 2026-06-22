@@ -103,6 +103,7 @@ func Analyze(script *dsl.Script) *Review {
 	sawOAuthInit := false
 	for _, action := range allActions(script) {
 		addHost(action.Target)
+		actionMuleSoftHost := mulesoftHost(hostOf(action.Target, script.Config.BaseURL)) != ""
 		// Header-based signals.
 		for name, value := range action.Headers {
 			lower := strings.ToLower(strings.TrimSpace(name))
@@ -114,6 +115,9 @@ func Analyze(script *dsl.Script) *Review {
 			}
 			if lower == "authorization" && strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "basic ") {
 				addAuth("basic", "HTTP Basic authentication required on requests.")
+				if actionMuleSoftHost {
+					addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement may be using Basic Authorization as its credential origin; confirm the applied policy before replay.", "basic authorization")
+				}
 			}
 		}
 		// Query-string signals on the target.
@@ -249,9 +253,9 @@ func bodyCredentialKey(body string) (string, bool) {
 	if body == "" {
 		return "", false
 	}
-	// JSON object body.
-	if strings.HasPrefix(body, "{") {
-		var decoded map[string]any
+	// JSON object/array body.
+	if strings.HasPrefix(body, "{") || strings.HasPrefix(body, "[") {
+		var decoded any
 		if err := json.Unmarshal([]byte(body), &decoded); err == nil {
 			if key, ok := jsonCredentialKey(decoded); ok {
 				return key, true
@@ -278,11 +282,24 @@ func bodyCredentialKey(body string) (string, bool) {
 	return "", false
 }
 
-// jsonCredentialKey walks a decoded JSON object for a client-credential key,
+// jsonCredentialKey walks decoded JSON for a client-credential key,
 // visiting keys in sorted order at each level so the reported evidence is stable.
-func jsonCredentialKey(node map[string]any) (string, bool) {
-	keys := make([]string, 0, len(node))
-	for key := range node {
+func jsonCredentialKey(node any) (string, bool) {
+	mapping, ok := node.(map[string]any)
+	if !ok {
+		items, ok := node.([]any)
+		if !ok {
+			return "", false
+		}
+		for _, item := range items {
+			if found, ok := jsonCredentialKey(item); ok {
+				return found, true
+			}
+		}
+		return "", false
+	}
+	keys := make([]string, 0, len(mapping))
+	for key := range mapping {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
@@ -292,10 +309,8 @@ func jsonCredentialKey(node map[string]any) (string, bool) {
 		}
 	}
 	for _, key := range keys {
-		if nested, ok := node[key].(map[string]any); ok {
-			if found, ok := jsonCredentialKey(nested); ok {
-				return found, true
-			}
+		if found, ok := jsonCredentialKey(mapping[key]); ok {
+			return found, true
 		}
 	}
 	return "", false

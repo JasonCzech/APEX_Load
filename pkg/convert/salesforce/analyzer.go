@@ -1,6 +1,7 @@
 package salesforce
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -387,6 +388,8 @@ func matchHAR(refs []actionRef, entries []harEntry) map[int]int {
 	matches := make(map[int]int)
 	used := make(map[int]bool)
 	for refIndex, ref := range refs {
+		bestID := 0
+		bestScore := -1
 		for _, entry := range entries {
 			if used[entry.ID] {
 				continue
@@ -394,14 +397,65 @@ func matchHAR(refs []actionRef, entries []harEntry) map[int]int {
 			if !strings.EqualFold(ref.Method, entry.Method) {
 				continue
 			}
-			if equivalentURL(ref.URL, entry.URL) {
-				matches[refIndex] = entry.ID
-				used[entry.ID] = true
-				break
+			if !equivalentURL(ref.URL, entry.URL) {
+				continue
 			}
+			if score := harMatchScore(ref, entry); score > bestScore {
+				bestScore = score
+				bestID = entry.ID
+			}
+		}
+		if bestID != 0 {
+			matches[refIndex] = bestID
+			used[bestID] = true
 		}
 	}
 	return matches
+}
+
+func harMatchScore(ref actionRef, entry harEntry) int {
+	score := 1
+	actionBody := ""
+	if ref.Action != nil {
+		actionBody = ref.Action.Body
+	}
+	refBody := canonicalRequestBody(actionBody)
+	entryBody := canonicalRequestBody(entry.RequestBody)
+	if refBody != "" || entryBody != "" {
+		if refBody != "" && refBody == entryBody {
+			score += 100
+		}
+	}
+	if ref.Descriptor != "" && strings.Contains(canonicalRequestBody(entry.RequestBody), strings.ToLower(ref.Descriptor)) {
+		score += 25
+	}
+	if ref.Kind != "" && ref.Kind == classifyHARRequest(entry) {
+		score += 10
+	}
+	return score
+}
+
+func classifyHARRequest(entry harEntry) string {
+	action := &dsl.Action{Method: entry.Method, Target: entry.URL, Body: entry.RequestBody}
+	return classifySalesforceAction(action, entry.URL)
+}
+
+func canonicalRequestBody(body string) string {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return ""
+	}
+	if values, err := url.ParseQuery(body); err == nil && len(values) > 0 && strings.Contains(body, "=") {
+		return strings.ToLower(values.Encode())
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, []byte(body)); err == nil {
+		return strings.ToLower(compact.String())
+	}
+	if decoded, err := url.QueryUnescape(body); err == nil && decoded != body {
+		return strings.ToLower(strings.TrimSpace(decoded))
+	}
+	return strings.ToLower(body)
 }
 
 func equivalentURL(left, right string) bool {
@@ -586,6 +640,8 @@ func salesforceHost(host string) string {
 	switch {
 	case host == "api.salesforce.com":
 		return "agentforce"
+	case host == "api.gov.salesforce.com":
+		return "agentforce_gov"
 	case strings.Contains(host, ".sandbox.my.salesforce.com"):
 		return "sandbox"
 	case strings.Contains(host, ".my.salesforce.com"):
@@ -594,7 +650,7 @@ func salesforceHost(host string) string {
 		return "content"
 	case strings.Contains(host, ".lightning.force.com"):
 		return "lightning"
-	case host == "test.salesforce.com":
+	case host == "login.salesforce.com" || host == "test.salesforce.com":
 		return "login"
 	case host == "mobileauth.salesforce.com":
 		return "mobile_auth"
@@ -784,29 +840,78 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 	}
 
 	vars := correlate.BuildVarMap(correlations)
+	encodedValues := make(map[string]bool)
 	for _, corr := range correlations {
 		foundRef := harIDToRef[corr.FoundInID]
 		if foundRef == nil || foundRef.Action == nil {
 			continue
+		}
+		convert := ""
+		if correlationUsedOnlyEncoded(corr, harIDToRef) {
+			convert = "url_encode"
+			if corr.Value != "" {
+				encodedValues[corr.Value] = true
+			}
 		}
 		addExtractorIfMissing(foundRef.Action, dsl.Extractor{
 			Name:       corr.Name,
 			Source:     corr.Source,
 			Type:       corr.ExtractType,
 			Expression: corr.Expression,
+			Convert:    convert,
 		})
 	}
 	for index := range cloneRefs {
 		action := cloneRefs[index].Action
-		action.Target = correlate.ApplyVars(action.Target, vars)
-		action.Body = correlate.ApplyVars(action.Body, vars)
-		action.Headers = correlate.ApplyVarsToHeaders(action.Headers, vars)
+		action.Target = correlate.ApplyVarsWithEncodedValues(action.Target, vars, encodedValues)
+		action.Body = correlate.ApplyVarsWithEncodedValues(action.Body, vars, encodedValues)
+		action.Headers = correlate.ApplyVarsToHeadersWithEncodedValues(action.Headers, vars, encodedValues)
 	}
 
 	return &NativePreview{
 		Script:       clone,
 		Correlations: correlationSummaries(correlations),
 	}, nil
+}
+
+func correlationUsedOnlyEncoded(corr correlate.Correlation, refs map[int]*actionRef) bool {
+	value := corr.Value
+	if value == "" {
+		value = corr.SampleValue
+	}
+	if strings.TrimSpace(value) == "" {
+		return false
+	}
+	encodedForms := []string{url.QueryEscape(value), url.PathEscape(value)}
+	sawEncoded := false
+	for _, harID := range corr.UsedInIDs {
+		ref := refs[harID]
+		if ref == nil || ref.Action == nil {
+			continue
+		}
+		for _, candidate := range actionCorrelationSurfaces(ref.Action) {
+			if strings.Contains(candidate, value) {
+				return false
+			}
+			for _, encoded := range encodedForms {
+				if encoded != "" && encoded != value && strings.Contains(candidate, encoded) {
+					sawEncoded = true
+				}
+			}
+		}
+	}
+	return sawEncoded
+}
+
+func actionCorrelationSurfaces(action *dsl.Action) []string {
+	if action == nil {
+		return nil
+	}
+	surfaces := []string{action.Target, action.Body}
+	for _, value := range action.Headers {
+		surfaces = append(surfaces, value)
+	}
+	return surfaces
 }
 
 func cloneScript(script *dsl.Script) (*dsl.Script, error) {

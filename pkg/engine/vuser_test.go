@@ -197,6 +197,7 @@ func TestVUser_MergeExtractions(t *testing.T) {
 
 func TestVUser_ResolveAction(t *testing.T) {
 	t.Setenv("APEXLOAD_ACTION_ENV", "env-action")
+	maxRedirects := 2
 
 	vu := &VUser{
 		Variables: map[string]string{
@@ -229,6 +230,12 @@ func TestVUser_ResolveAction(t *testing.T) {
 		Metadata: map[string]any{
 			"note": "{{var.base}}",
 		},
+		Auth: &dsl.AuthConfig{
+			Type:  "bearer",
+			Token: "{{env.APEXLOAD_ACTION_ENV}}",
+		},
+		TimeoutMs:    1500,
+		MaxRedirects: &maxRedirects,
 		SOAP: &dsl.SOAPActionConfig{
 			Action:    "urn:user#{{data.users.username}}",
 			Operation: "Lookup{{data.users.username}}",
@@ -278,6 +285,15 @@ func TestVUser_ResolveAction(t *testing.T) {
 	}
 	if resolved.Metadata["note"] != "https://api.test.com" {
 		t.Errorf("Metadata[note] = %v, want https://api.test.com", resolved.Metadata["note"])
+	}
+	if resolved.Auth == nil || resolved.Auth.Type != "bearer" || resolved.Auth.Token != "env-action" {
+		t.Fatalf("Auth = %#v, want bearer env-action", resolved.Auth)
+	}
+	if resolved.TimeoutMs != 1500 {
+		t.Fatalf("TimeoutMs = %d, want 1500", resolved.TimeoutMs)
+	}
+	if resolved.MaxRedirects == nil || *resolved.MaxRedirects != 2 {
+		t.Fatalf("MaxRedirects = %#v, want 2", resolved.MaxRedirects)
 	}
 	if resolved.SOAP == nil {
 		t.Fatal("SOAP = nil, want interpolated SOAP action config")
