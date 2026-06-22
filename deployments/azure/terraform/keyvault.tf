@@ -9,6 +9,12 @@ resource "azurerm_key_vault" "main" {
   rbac_authorization_enabled    = true
   public_network_access_enabled = !local.private_network_enabled
   tags                          = local.tags
+
+  network_acls {
+    default_action = local.private_network_enabled || length(var.public_network_allowed_cidrs) > 0 ? "Deny" : "Allow"
+    ip_rules       = local.private_network_enabled ? [] : var.public_network_allowed_cidrs
+    bypass         = "AzureServices"
+  }
 }
 
 # Let whoever runs terraform manage secrets (seed {{secret.*}} values for scripts).

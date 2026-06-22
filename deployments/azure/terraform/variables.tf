@@ -57,6 +57,52 @@ variable "generator_node_max_count" {
   default     = 13
 }
 
+variable "availability_zones" {
+  description = "Availability zones used by the AKS system and generator pools. Use an empty list only in regions without zone support."
+  type        = list(string)
+  default     = ["1", "2", "3"]
+}
+
+variable "aks_admin_group_object_ids" {
+  description = "Microsoft Entra group object IDs granted AKS admin through Azure RBAC."
+  type        = list(string)
+  default     = []
+}
+
+variable "aks_local_account_disabled" {
+  description = "Disable local AKS admin accounts. Keep true for production; the bootstrap role assignment below preserves Terraform operator access by default."
+  type        = bool
+  default     = true
+}
+
+variable "aks_grant_current_user_cluster_admin" {
+  description = "Grant the current Terraform principal Azure Kubernetes Service RBAC Cluster Admin on the new cluster for bootstrap access."
+  type        = bool
+  default     = true
+}
+
+variable "aks_auto_upgrade_channel" {
+  description = "AKS automatic upgrade channel."
+  type        = string
+  default     = "stable"
+
+  validation {
+    condition     = contains(["patch", "rapid", "stable", "node-image", "none"], var.aks_auto_upgrade_channel)
+    error_message = "aks_auto_upgrade_channel must be patch, rapid, stable, node-image, or none."
+  }
+}
+
+variable "aks_node_os_upgrade_channel" {
+  description = "AKS node OS image upgrade channel."
+  type        = string
+  default     = "NodeImage"
+
+  validation {
+    condition     = contains(["Unmanaged", "SecurityPatch", "NodeImage", "None"], var.aks_node_os_upgrade_channel)
+    error_message = "aks_node_os_upgrade_channel must be Unmanaged, SecurityPatch, NodeImage, or None."
+  }
+}
+
 variable "postgres_sku_name" {
   description = "Azure Database for PostgreSQL Flexible Server SKU."
   type        = string
@@ -125,6 +171,12 @@ variable "eventhubs_partition_count" {
 
 variable "authorized_ip_ranges" {
   description = "CIDRs allowed to reach the AKS API server. Empty list = unrestricted (not recommended for prod)."
+  type        = list(string)
+  default     = []
+}
+
+variable "public_network_allowed_cidrs" {
+  description = "CIDRs allowed to reach public Storage and Key Vault endpoints when network_mode=public. Empty keeps evaluation-mode public access open."
   type        = list(string)
   default     = []
 }

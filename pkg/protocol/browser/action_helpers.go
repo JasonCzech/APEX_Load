@@ -193,6 +193,25 @@ func (b *Browser) waitTimeout(timeoutMs int) time.Duration {
 	return time.Duration(timeoutMs) * time.Millisecond
 }
 
+func (b *Browser) timeoutMS(ctx context.Context, fallback time.Duration) float64 {
+	if fallback <= 0 {
+		fallback = 10 * time.Second
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return 1
+		}
+		if remaining < fallback {
+			fallback = remaining
+		}
+	}
+	if fallback < time.Millisecond {
+		return 1
+	}
+	return float64(fallback.Milliseconds())
+}
+
 func parseWaitDelay(raw string) (time.Duration, error) {
 	if raw == "" {
 		return 0, fmt.Errorf("wait duration is required")

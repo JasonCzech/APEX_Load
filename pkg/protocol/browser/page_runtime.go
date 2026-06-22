@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	playwright "github.com/playwright-community/playwright-go"
@@ -66,9 +67,13 @@ func (b *Browser) capturePageState(ctx context.Context, action *protocol.Action,
 	return pageURL, pageTitle, domSummary, html, screenshot, nil
 }
 
-func (b *Browser) navigate(ctx context.Context, target string) error {
+func (b *Browser) navigate(ctx context.Context, action *protocol.Action, target string) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	page := b.currentPage()
+	if page == nil {
+		return fmt.Errorf("browser page is not initialized")
 	}
 	resolvedTarget := target
 	if b.baseURL != "" && strings.HasPrefix(target, "/") {
@@ -77,39 +82,86 @@ func (b *Browser) navigate(ctx context.Context, target string) error {
 		resolvedTarget = "http://" + target
 	}
 
-	if _, err := b.currentPage().Goto(resolvedTarget); err != nil {
+	timeout := b.actionTimeout(action)
+	if _, err := page.Goto(resolvedTarget, playwright.PageGotoOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+	}); err != nil {
 		return err
 	}
 	b.currentURL = resolvedTarget
-	return b.waitVisible(ctx, "body")
+	return b.waitVisibleWithTimeout(ctx, "body", timeout)
 }
 
-func (b *Browser) click(ctx context.Context, selector string) error {
-	if err := b.waitVisible(ctx, selector); err != nil {
+func (b *Browser) click(ctx context.Context, action *protocol.Action, selector string) error {
+	timeout := b.actionTimeout(action)
+	if err := b.waitVisibleWithTimeout(ctx, selector, timeout); err != nil {
 		return err
 	}
-	return b.currentPage().Click(selector)
+	page := b.currentPage()
+	if page == nil {
+		return fmt.Errorf("browser page is not initialized")
+	}
+	return page.Click(selector, playwright.PageClickOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+	})
 }
 
-func (b *Browser) fill(ctx context.Context, selector, value string) error {
-	if err := b.waitVisible(ctx, selector); err != nil {
+func (b *Browser) fill(ctx context.Context, action *protocol.Action, selector, value string) error {
+	timeout := b.actionTimeout(action)
+	if err := b.waitVisibleWithTimeout(ctx, selector, timeout); err != nil {
 		return err
 	}
-	return b.currentPage().Fill(selector, value)
+	page := b.currentPage()
+	if page == nil {
+		return fmt.Errorf("browser page is not initialized")
+	}
+	return page.Fill(selector, value, playwright.PageFillOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+	})
 }
 
 func (b *Browser) waitVisible(ctx context.Context, selector string) error {
-	_, err := b.currentPage().WaitForSelector(selector)
+	return b.waitVisibleWithTimeout(ctx, selector, 10*time.Second)
+}
+
+func (b *Browser) waitVisibleWithTimeout(ctx context.Context, selector string, timeout time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	page := b.currentPage()
+	if page == nil {
+		return fmt.Errorf("browser page is not initialized")
+	}
+	_, err := page.WaitForSelector(selector, playwright.PageWaitForSelectorOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+	})
 	return err
 }
 
 func (b *Browser) waitHidden(ctx context.Context, selector string) error {
-	_, err := b.currentPage().WaitForSelector(selector, playwright.PageWaitForSelectorOptions{State: playwright.WaitForSelectorStateHidden})
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	page := b.currentPage()
+	if page == nil {
+		return fmt.Errorf("browser page is not initialized")
+	}
+	_, err := page.WaitForSelector(selector, playwright.PageWaitForSelectorOptions{
+		State:   playwright.WaitForSelectorStateHidden,
+		Timeout: playwright.Float(b.timeoutMS(ctx, 10*time.Second)),
+	})
 	return err
 }
 
 func (b *Browser) evaluatePageExpression(ctx context.Context, expression string, result any) error {
-	res, err := b.currentPage().Evaluate(expression)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	page := b.currentPage()
+	if page == nil {
+		return fmt.Errorf("browser page is not initialized")
+	}
+	res, err := page.Evaluate(expression)
 	if err != nil {
 		return err
 	}
@@ -121,31 +173,55 @@ func (b *Browser) evaluatePageExpression(ctx context.Context, expression string,
 }
 
 func (b *Browser) captureHTML(ctx context.Context) (string, error) {
-	return b.currentPage().Content()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	page := b.currentPage()
+	if page == nil {
+		return "", fmt.Errorf("browser page is not initialized")
+	}
+	return page.Content()
 }
 
 func (b *Browser) captureScreenshot(ctx context.Context, action *protocol.Action) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	opts := playwright.PageScreenshotOptions{}
 	selector := b.screenshotSelector(action)
+	page := b.currentPage()
+	if page == nil {
+		return "", fmt.Errorf("browser page is not initialized")
+	}
 	if selector != "" {
-		el, err := b.currentPage().QuerySelector(selector)
+		el, err := page.QuerySelector(selector)
 		if err != nil {
 			return "", err
 		}
 		if el != nil {
-			buf, err := el.Screenshot()
+			buf, err := el.Screenshot(playwright.ElementHandleScreenshotOptions{
+				Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
+			})
 			return base64.StdEncoding.EncodeToString(buf), err
 		}
 	}
 	if action != nil && action.Capture != nil && action.Capture.FullPage {
 		opts.FullPage = playwright.Bool(true)
 	}
-	buf, err := b.currentPage().Screenshot(opts)
+	opts.Timeout = playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action)))
+	buf, err := page.Screenshot(opts)
 	return base64.StdEncoding.EncodeToString(buf), err
 }
 
 func (b *Browser) readDOMSummary(ctx context.Context) (string, string, *protocol.DOMSummary, error) {
-	res, err := b.currentPage().Evaluate(`(() => ({
+	if err := ctx.Err(); err != nil {
+		return "", "", nil, err
+	}
+	page := b.currentPage()
+	if page == nil {
+		return "", "", nil, fmt.Errorf("browser page is not initialized")
+	}
+	res, err := page.Evaluate(`(() => ({
 		url: window.location.href,
 		title: document.title,
 		readyState: document.readyState,
@@ -181,12 +257,19 @@ func domSummaryFromPageData(data map[string]any) (string, string, *protocol.DOMS
 	}, nil
 }
 
-func (b *Browser) selectOption(ctx context.Context, selector, value string) error {
-	if err := b.waitVisible(ctx, selector); err != nil {
+func (b *Browser) selectOption(ctx context.Context, action *protocol.Action, selector, value string) error {
+	timeout := b.actionTimeout(action)
+	if err := b.waitVisibleWithTimeout(ctx, selector, timeout); err != nil {
 		return err
 	}
-	_, err := b.currentPage().SelectOption(selector, playwright.SelectOptionValues{
+	page := b.currentPage()
+	if page == nil {
+		return fmt.Errorf("browser page is not initialized")
+	}
+	_, err := page.SelectOption(selector, playwright.SelectOptionValues{
 		ValuesOrLabels: playwright.StringSlice(value),
+	}, playwright.PageSelectOptionOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 	})
 	return err
 }

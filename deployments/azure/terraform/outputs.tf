@@ -33,6 +33,11 @@ output "generator_workload_identity_client_id" {
   value       = azurerm_user_assigned_identity.generator.client_id
 }
 
+output "keda_workload_identity_client_id" {
+  description = "identityId for the KEDA Azure Monitor TriggerAuthentication."
+  value       = azurerm_user_assigned_identity.keda_scaler.client_id
+}
+
 output "network_mode" {
   value = var.network_mode
 }

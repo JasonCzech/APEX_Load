@@ -350,6 +350,12 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 
 	// No live provisioner: resolve the request to a terminal not_configured state
 	// with an explanatory event instead of pretending.
+	notConfiguredMessage := "no cloud or Kubernetes provisioner is configured for this controller"
+	if s.fleetScaler != nil {
+		if description := strings.TrimSpace(s.fleetScaler.Describe().Description); description != "" {
+			notConfiguredMessage = description
+		}
+	}
 	req.Status = "not_configured"
 	req.CompletedAt = &now
 	req.Events = nil
@@ -358,7 +364,7 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		return
 	}
 	s.saveProvisioningEvent(req.ID, "requested", "provisioning requested", now)
-	s.saveProvisioningEvent(req.ID, "not_configured", "no cloud or Kubernetes provisioner is configured for this controller", now)
+	s.saveProvisioningEvent(req.ID, "not_configured", notConfiguredMessage, now)
 	s.recordAuditEvent(r, "provisioning.request.create", "success", "provisioning_request", req.ID, req.ProjectID, map[string]any{
 		"fleet_pool_id": req.FleetPoolID, "desired_count": req.DesiredCount, "status": req.Status,
 	})

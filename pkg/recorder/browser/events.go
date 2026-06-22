@@ -300,6 +300,33 @@ func (s *Session) appendStep(step Step) Step {
 	return step
 }
 
+// updateSwitchWindowStep replaces the provisional about:blank target captured
+// when a popup opens with the popup's first real navigation URL.
+func (s *Session) updateSwitchWindowStep(seq int, targetURL string) (*Step, bool) {
+	targetURL = strings.TrimSpace(targetURL)
+	if isBlankPageURL(targetURL) {
+		return nil, false
+	}
+	for i := range s.Steps {
+		if s.Steps[i].Seq != seq || s.Steps[i].Kind != StepSwitchWindow {
+			continue
+		}
+		if s.Steps[i].Value == targetURL && s.Steps[i].URL == targetURL {
+			return nil, false
+		}
+		s.Steps[i].Value = targetURL
+		s.Steps[i].URL = targetURL
+		step := s.Steps[i]
+		return &step, true
+	}
+	return nil, false
+}
+
+func isBlankPageURL(raw string) bool {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	return raw == "" || raw == "about:blank"
+}
+
 // clone deep-copies the session's slices so callers can read a stable snapshot
 // while recording continues. Element/candidate pointers are shared but treated
 // as immutable after capture.

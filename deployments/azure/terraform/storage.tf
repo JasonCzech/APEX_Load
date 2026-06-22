@@ -16,6 +16,12 @@ resource "azurerm_storage_account" "main" {
       days = 14
     }
   }
+
+  network_rules {
+    default_action = local.private_network_enabled || length(var.public_network_allowed_cidrs) > 0 ? "Deny" : "Allow"
+    ip_rules       = local.private_network_enabled ? [] : var.public_network_allowed_cidrs
+    bypass         = ["AzureServices"]
+  }
 }
 
 # Matches APEXLOAD_ARCHIVE_CONTAINER in deployments/k8s/aks/configmap.yaml.

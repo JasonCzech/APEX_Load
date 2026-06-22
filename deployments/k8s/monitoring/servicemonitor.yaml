@@ -12,6 +12,7 @@ spec:
       app.kubernetes.io/component: controller
   namespaceSelector:
     matchNames:
+      - apexload
       - apexload-local
   endpoints:
     - port: http
@@ -21,4 +22,4 @@ spec:
       honorLabels: true
       relabelings:
         - targetLabel: environment
-          replacement: local
+          replacement: shared

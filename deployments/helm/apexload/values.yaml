@@ -127,6 +127,7 @@ keda:
   azureMonitor:
     enabled: false
     triggerAuthenticationName: apexload-azure-monitor
+    identityId: ""
     serverAddress: https://CHANGE-ME.monitor.azure.com
 
 serviceMonitor:

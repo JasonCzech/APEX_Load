@@ -19,7 +19,11 @@ Provisions everything APEX Load needs on Azure. The same Terraform stack serves 
 ```bash
 cd deployments/azure/terraform
 cp terraform.tfvars.example terraform.tfvars   # edit
-terraform init
+terraform init \
+  -backend-config=resource_group_name=<tfstate-rg> \
+  -backend-config=storage_account_name=<tfstateaccount> \
+  -backend-config=container_name=tfstate \
+  -backend-config=key=apexload.terraform.tfstate
 terraform plan
 terraform apply
 ```
@@ -33,6 +37,7 @@ $(terraform output -raw kubeconfig_command)
 # Service accounts: workload identity client IDs
 export CONTROLLER_WORKLOAD_IDENTITY_CLIENT_ID=$(terraform output -raw controller_workload_identity_client_id)
 export GENERATOR_WORKLOAD_IDENTITY_CLIENT_ID=$(terraform output -raw generator_workload_identity_client_id)
+terraform output -raw keda_workload_identity_client_id # → KEDA Azure Monitor TriggerAuthentication identityId
 
 # ConfigMap values (deployments/k8s/aks/configmap.yaml)
 terraform output -raw storage_account_name   # → AZURE_STORAGE_ACCOUNT
@@ -84,12 +89,17 @@ The App Service's system-assigned managed identity must have `Storage Blob Data 
 
 ## Notes
 
-- **State**: configure the `azurerm` backend in `versions.tf` before team use.
+- **State**: the module declares an `azurerm` backend. Use `terraform init
+  -backend-config=...`; local state is only for throwaway experiments via
+  `terraform init -backend=false`.
 - **Networking**: `network_mode=private` is the production default and creates a
   VNet, AKS subnets, private endpoints, and private DNS for PostgreSQL, Redis,
   Blob Storage, and Key Vault. `network_mode=public` keeps the earlier
   evaluation posture with public data-plane endpoints plus PostgreSQL firewall
-  rules.
+  rules; set `public_network_allowed_cidrs` to restrict Storage and Key Vault
+  public endpoints in that mode.
+- **Observability**: a Log Analytics workspace and diagnostic settings are
+  created for AKS, ACR, PostgreSQL, Redis, Storage, and Key Vault.
 - **Prometheus**: the KEDA ScaledObject expects a Prometheus query endpoint.
   Installing kube-prometheus-stack in-cluster mirrors the on-prem setup; Azure
   Monitor managed Prometheus also works with a workload-identity

@@ -13,106 +13,139 @@ import (
 
 func (b *Browser) clickAction(ctx context.Context, action *protocol.Action, selector string) error {
 	if locator, ok := b.actionLocator(action, selector); ok {
-		if err := b.waitLocatorVisible(locator, b.actionTimeout(action)); err != nil {
+		timeout := b.actionTimeout(action)
+		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
 			return err
 		}
-		return locator.Click()
+		return locator.Click(playwright.LocatorClickOptions{
+			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+		})
 	}
-	return b.click(ctx, selector)
+	return b.click(ctx, action, selector)
 }
 
 func (b *Browser) fillAction(ctx context.Context, action *protocol.Action, selector, value string) error {
 	if locator, ok := b.actionLocator(action, selector); ok {
-		if err := b.waitLocatorVisible(locator, b.actionTimeout(action)); err != nil {
+		timeout := b.actionTimeout(action)
+		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
 			return err
 		}
-		return locator.Fill(value)
+		return locator.Fill(value, playwright.LocatorFillOptions{
+			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+		})
 	}
-	return b.fill(ctx, selector, value)
+	return b.fill(ctx, action, selector, value)
 }
 
 func (b *Browser) selectAction(ctx context.Context, action *protocol.Action, selector, value string) error {
 	if locator, ok := b.actionLocator(action, selector); ok {
-		if err := b.waitLocatorVisible(locator, b.actionTimeout(action)); err != nil {
+		timeout := b.actionTimeout(action)
+		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
 			return err
 		}
-		_, err := locator.SelectOption(playwright.SelectOptionValues{ValuesOrLabels: playwright.StringSlice(value)})
+		_, err := locator.SelectOption(playwright.SelectOptionValues{ValuesOrLabels: playwright.StringSlice(value)}, playwright.LocatorSelectOptionOptions{
+			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+		})
 		return err
 	}
-	return b.selectOption(ctx, selector, value)
+	return b.selectOption(ctx, action, selector, value)
 }
 
-func (b *Browser) dblclickAction(action *protocol.Action, selector string) error {
+func (b *Browser) dblclickAction(ctx context.Context, action *protocol.Action, selector string) error {
 	if locator, ok := b.actionLocator(action, selector); ok {
-		if err := b.waitLocatorVisible(locator, b.actionTimeout(action)); err != nil {
+		timeout := b.actionTimeout(action)
+		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
 			return err
 		}
-		return locator.Dblclick()
+		return locator.Dblclick(playwright.LocatorDblclickOptions{
+			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+		})
 	}
-	return b.currentPage().Dblclick(selector)
+	return b.currentPage().Dblclick(selector, playwright.PageDblclickOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
+	})
 }
 
-func (b *Browser) hoverAction(action *protocol.Action, selector string) error {
+func (b *Browser) hoverAction(ctx context.Context, action *protocol.Action, selector string) error {
 	if locator, ok := b.actionLocator(action, selector); ok {
-		if err := b.waitLocatorVisible(locator, b.actionTimeout(action)); err != nil {
+		timeout := b.actionTimeout(action)
+		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
 			return err
 		}
-		return locator.Hover()
+		return locator.Hover(playwright.LocatorHoverOptions{
+			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+		})
 	}
-	return b.currentPage().Hover(selector)
+	return b.currentPage().Hover(selector, playwright.PageHoverOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
+	})
 }
 
-func (b *Browser) dragAndDropAction(action *protocol.Action, source, target string) error {
+func (b *Browser) dragAndDropAction(ctx context.Context, action *protocol.Action, source, target string) error {
 	sourceLocator, sourceFramed := b.actionLocator(action, source)
 	targetLocator, targetFramed := b.actionLocator(action, target)
 	if sourceFramed || targetFramed {
 		if !sourceFramed || !targetFramed {
 			return fmt.Errorf("browser_drag_and_drop frame targeting requires source and target in the same frame context")
 		}
-		if err := b.waitLocatorVisible(sourceLocator, b.actionTimeout(action)); err != nil {
+		timeout := b.actionTimeout(action)
+		if err := b.waitLocatorVisible(ctx, sourceLocator, timeout); err != nil {
 			return err
 		}
-		if err := b.waitLocatorVisible(targetLocator, b.actionTimeout(action)); err != nil {
+		if err := b.waitLocatorVisible(ctx, targetLocator, timeout); err != nil {
 			return err
 		}
-		return sourceLocator.DragTo(targetLocator)
+		return sourceLocator.DragTo(targetLocator, playwright.LocatorDragToOptions{
+			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+		})
 	}
-	return b.currentPage().DragAndDrop(source, target)
+	return b.currentPage().DragAndDrop(source, target, playwright.PageDragAndDropOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
+	})
 }
 
-func (b *Browser) setInputFilesAction(action *protocol.Action, selector string, files []string) error {
+func (b *Browser) setInputFilesAction(ctx context.Context, action *protocol.Action, selector string, files []string) error {
 	if locator, ok := b.actionLocator(action, selector); ok {
-		return locator.SetInputFiles(files)
+		return locator.SetInputFiles(files, playwright.LocatorSetInputFilesOptions{
+			Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
+		})
 	}
-	return b.currentPage().SetInputFiles(selector, files)
+	return b.currentPage().SetInputFiles(selector, files, playwright.PageSetInputFilesOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
+	})
 }
 
-func (b *Browser) pressKeyAction(action *protocol.Action, selector string, key string) error {
+func (b *Browser) pressKeyAction(ctx context.Context, action *protocol.Action, selector string, key string) error {
 	if selector != "" {
 		if locator, ok := b.actionLocator(action, selector); ok {
-			if err := b.waitLocatorVisible(locator, b.actionTimeout(action)); err != nil {
+			timeout := b.actionTimeout(action)
+			if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
 				return err
 			}
-			return locator.Press(key)
+			return locator.Press(key, playwright.LocatorPressOptions{
+				Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+			})
 		}
-		return b.currentPage().Press(selector, key)
+		return b.currentPage().Press(selector, key, playwright.PagePressOptions{
+			Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
+		})
 	}
 	return b.currentPage().Keyboard().Press(key)
 }
 
 func (b *Browser) waitVisibleForAction(ctx context.Context, action *protocol.Action, selector string) error {
 	if locator, ok := b.actionLocator(action, selector); ok {
-		return b.waitLocatorVisible(locator, b.actionTimeout(action))
+		return b.waitLocatorVisible(ctx, locator, b.actionTimeout(action))
 	}
-	return b.waitVisible(ctx, selector)
+	return b.waitVisibleWithTimeout(ctx, selector, b.actionTimeout(action))
 }
 
 func (b *Browser) waitHiddenForAction(ctx context.Context, action *protocol.Action, selector string) error {
 	if locator, ok := b.actionLocator(action, selector); ok {
-		timeout := float64(b.actionTimeout(action).Milliseconds())
+		timeout := b.actionTimeout(action)
 		return locator.WaitFor(playwright.LocatorWaitForOptions{
 			State:   playwright.WaitForSelectorStateHidden,
-			Timeout: playwright.Float(timeout),
+			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 		})
 	}
 	return b.waitHidden(ctx, selector)
@@ -165,19 +198,26 @@ func cssAttrValue(value string) string {
 	return strings.ReplaceAll(value, `"`, `\"`)
 }
 
-func (b *Browser) waitLocatorVisible(locator playwright.Locator, timeout time.Duration) error {
-	timeoutMs := float64(timeout.Milliseconds())
-	return locator.WaitFor(playwright.LocatorWaitForOptions{Timeout: playwright.Float(timeoutMs)})
+func (b *Browser) waitLocatorVisible(ctx context.Context, locator playwright.Locator, timeout time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return locator.WaitFor(playwright.LocatorWaitForOptions{Timeout: playwright.Float(b.timeoutMS(ctx, timeout))})
 }
 
 func (b *Browser) actionTimeout(action *protocol.Action) time.Duration {
 	if action != nil && action.WaitFor != nil && action.WaitFor.TimeoutMs > 0 {
 		return time.Duration(action.WaitFor.TimeoutMs) * time.Millisecond
 	}
+	if action != nil && action.Params != nil {
+		if timeoutMs := actionParamInt(action.Params, "timeout_ms", 0); timeoutMs > 0 {
+			return time.Duration(timeoutMs) * time.Millisecond
+		}
+	}
 	return 10 * time.Second
 }
 
-func (b *Browser) dispatchSwitchFrame(action *protocol.Action) error {
+func (b *Browser) dispatchSwitchFrame(ctx context.Context, action *protocol.Action) error {
 	selector := b.actionSelector(action)
 	if selector == "" {
 		selector = firstActionString(action.Params, "frame_selector", "iframe_selector")
@@ -191,7 +231,7 @@ func (b *Browser) dispatchSwitchFrame(action *protocol.Action) error {
 	}
 	if page := b.currentPage(); page != nil {
 		locator := page.FrameLocator(selector).Locator("body")
-		if err := b.waitLocatorVisible(locator, b.actionTimeout(action)); err != nil {
+		if err := b.waitLocatorVisible(ctx, locator, b.actionTimeout(action)); err != nil {
 			return err
 		}
 	}

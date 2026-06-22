@@ -55,8 +55,9 @@ type ProvisionerInfo struct {
 }
 
 const (
-	staticProvisionerName = "static-fleet"
-	provisionerEnvVar     = "APEXLOAD_GENERATOR_PROVISIONER"
+	staticProvisionerName           = "static-fleet"
+	provisionerEnvVar               = "APEXLOAD_GENERATOR_PROVISIONER"
+	generatorAutoscalingOwnerEnvVar = "APEXLOAD_GENERATOR_AUTOSCALING_OWNER"
 )
 
 var (

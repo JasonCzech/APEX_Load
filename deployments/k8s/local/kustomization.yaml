@@ -8,7 +8,6 @@ resources:
   - controller-deployment.yaml
   - generator-service.yaml
   - generator-statefulset.yaml
-  - generator-keda-scaledobject.yaml
   - network-policy.yaml
 labels:
   - pairs:

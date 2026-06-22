@@ -12,6 +12,17 @@ location    = "eastus2"
 # Lock down the AKS API server to your network egress.
 # authorized_ip_ranges = ["203.0.113.0/24"]
 
+# Keep AKS pools zonal where the selected region supports zones.
+# availability_zones = ["1", "2", "3"]
+
+# Add enterprise Entra groups for AKS Azure RBAC administration. The current
+# Terraform principal is granted bootstrap Cluster Admin by default.
+# aks_admin_group_object_ids = ["00000000-0000-0000-0000-000000000000"]
+
+# If network_mode = "public", restrict public Storage/Key Vault access to
+# trusted egress CIDRs. Empty keeps evaluation-mode public endpoints open.
+# public_network_allowed_cidrs = ["203.0.113.0/24"]
+
 # Allow your workstation/CI through the PostgreSQL firewall during migration.
 # postgres_allowed_cidrs = {
 #   office = "203.0.113.0/24"

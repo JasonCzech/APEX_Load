@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "image": {
+      "type": "object",
+      "properties": {
+        "registry": { "$ref": "#/definitions/nonPlaceholder" },
+        "tag": { "type": "string", "minLength": 1 },
+        "controllerRepository": { "type": "string", "minLength": 1 },
+        "generatorRepository": { "type": "string", "minLength": 1 },
+        "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "dataPlatform": {
+      "type": "object",
+      "properties": {
+        "azureStorageAccount": {
+          "type": "string",
+          "pattern": "^[a-z0-9]{3,24}$",
+          "not": { "pattern": "(changeme|CHANGE-ME|change-me)" }
+        },
+        "keyVaultUrl": {
+          "type": "string",
+          "format": "uri",
+          "not": { "pattern": "(changeme|CHANGE-ME|change-me)" }
+        },
+        "createSecret": { "type": "boolean" },
+        "databaseUrl": { "type": "string" },
+        "redisUrl": { "type": "string" },
+        "grpcAuthToken": { "type": "string" }
+      }
+    },
+    "workloadIdentity": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "controllerClientId": { "type": "string" },
+        "generatorClientId": { "type": "string" }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "not": { "pattern": "(example\\.com|changeme|CHANGE-ME|change-me)" }
+        }
+      }
+    },
+    "keda": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minReplicaCount": { "type": "integer", "minimum": 0 },
+        "maxReplicaCount": { "type": "integer", "minimum": 1 },
+        "azureMonitor": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "identityId": { "type": "string" },
+            "serverAddress": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "workloadIdentity": {
+            "properties": { "enabled": { "const": true } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "workloadIdentity": {
+            "properties": {
+              "controllerClientId": { "$ref": "#/definitions/nonPlaceholder" },
+              "generatorClientId": { "$ref": "#/definitions/nonPlaceholder" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ingress": {
+            "properties": { "enabled": { "const": true } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "ingress": {
+            "properties": {
+              "host": { "$ref": "#/definitions/nonPlaceholder" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "keda": {
+            "properties": {
+              "azureMonitor": {
+                "properties": { "enabled": { "const": true } }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "keda": {
+            "properties": {
+              "azureMonitor": {
+                "properties": {
+                  "identityId": { "$ref": "#/definitions/nonPlaceholder" },
+                  "serverAddress": { "$ref": "#/definitions/nonPlaceholder" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "nonPlaceholder": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "pattern": "(changeme|CHANGE-ME|change-me|example\\.com|\\$\\{[A-Z0-9_]+\\})"
+      }
+    }
+  }
+}

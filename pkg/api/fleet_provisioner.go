@@ -46,6 +46,25 @@ func (unconfiguredFleetScaler) ScalePool(context.Context, *storage.FleetPool, in
 	return "", 0, errProvisionerNotConfigured
 }
 
+type ownerConflictFleetScaler struct {
+	owner string
+}
+
+func (ownerConflictFleetScaler) CanProvision() bool { return false }
+
+func (s ownerConflictFleetScaler) Describe() ProvisionerInfo {
+	owner := firstNonEmpty(s.owner, "external autoscaler")
+	return ProvisionerInfo{
+		Name:         owner,
+		CanProvision: false,
+		Description:  "Kubernetes generator provisioning is disabled because " + generatorAutoscalingOwnerEnvVar + "=" + owner + " owns the generator StatefulSet replicas; disable that autoscaler or set the owner to controller before using " + provisionerEnvVar + "=kubernetes.",
+	}
+}
+
+func (s ownerConflictFleetScaler) ScalePool(context.Context, *storage.FleetPool, int) (string, int, error) {
+	return "", 0, errors.New(s.Describe().Description)
+}
+
 // kubernetesFleetScaler scales the generator StatefulSet's replicas in-cluster.
 type kubernetesFleetScaler struct {
 	kube            KubeRestarter
@@ -120,6 +139,11 @@ func clampPoolDesired(pool *storage.FleetPool, desired int) int {
 // not_configured behavior.
 func newFleetPoolScaler(kube KubeRestarter, k8s K8sRestartSettings) fleetPoolScaler {
 	if strings.TrimSpace(os.Getenv(provisionerEnvVar)) == kubernetesProvisionerName && kube != nil && k8s.Enabled {
+		if owner := strings.ToLower(strings.TrimSpace(os.Getenv(generatorAutoscalingOwnerEnvVar))); owner != "" && owner != "controller" {
+			slog.Warn("disabling Kubernetes fleet scaler because another autoscaler owns generator replicas",
+				"owner", owner, "provisioner_env", provisionerEnvVar, "owner_env", generatorAutoscalingOwnerEnvVar)
+			return ownerConflictFleetScaler{owner: owner}
+		}
 		return kubernetesFleetScaler{
 			kube:            kube,
 			namespace:       k8s.Namespace,

@@ -12,13 +12,9 @@ terraform {
     }
   }
 
-  # Recommended: remote state in an Azure Storage backend.
-  # backend "azurerm" {
-  #   resource_group_name  = "tfstate-rg"
-  #   storage_account_name = "yourtfstate"
-  #   container_name       = "tfstate"
-  #   key                  = "apexload.terraform.tfstate"
-  # }
+  # Production state must be remote for locking, auditability, and team use.
+  # Supply backend details with -backend-config or a backend config file.
+  backend "azurerm" {}
 }
 
 provider "azurerm" {

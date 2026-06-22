@@ -668,13 +668,10 @@
                 "type": "string"
               },
               "value": {
-                "description": "Text to enter; template variables are expanded.",
+                "description": "Text to enter; empty string clears the field and template variables are expanded.",
                 "type": "string"
               }
-            },
-            "required": [
-              "value"
-            ]
+            }
           }
         },
         {

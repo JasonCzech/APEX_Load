@@ -5,9 +5,13 @@ install interface once values are supplied by Terraform outputs or release
 automation.
 
 ```bash
-helm lint deployments/helm/apexload
-helm template apexload deployments/helm/apexload --namespace apexload
+helm lint deployments/helm/apexload -f production-values.yaml
+helm template apexload deployments/helm/apexload --namespace apexload -f production-values.yaml
 ```
+
+The chart includes `values.schema.json` and fails on placeholder defaults such
+as `changeme.azurecr.io`, `apexload.example.com`, and
+`https://change-me.vault.azure.net`.
 
 Minimum production values:
 
@@ -20,6 +24,8 @@ Minimum production values:
 - `dataPlatform.secretName` pointing at a Secret with `APEXLOAD_DATABASE_URL`,
   `APEXLOAD_REDIS_URL`, and `APEXLOAD_GRPC_AUTH_TOKEN`
 - `ingress.host`
+- `keda.azureMonitor.identityId` and `keda.azureMonitor.serverAddress` when
+  `keda.azureMonitor.enabled=true`
 
 Set `certManager.enabled=true` when the cluster uses cert-manager to issue the
 controller/generator mTLS secrets. If the platform syncs those secrets from Key

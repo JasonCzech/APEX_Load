@@ -43,7 +43,7 @@ spec:
 {{- end }}
     spec:
       serviceAccountName: {{ .Values.generator.serviceAccountName }}
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 120
       automountServiceAccountToken: false
 {{- with .Values.generator.nodeSelector }}
       nodeSelector:
@@ -77,6 +77,10 @@ spec:
             capabilities:
               drop:
                 - ALL
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 15"]
           env:
             - name: APEXLOAD_ENV
               value: production

@@ -71,8 +71,8 @@ func browserActionSpecs() []ActionSpec {
 			Protocols:    []string{"browser"},
 			Summary:      "Types a value into an input element.",
 			RequireOneOf: [][]string{locatorRequireOneOf},
-			Fields:       locatorFields(FieldSpec{Name: "value", Required: true, Kind: FieldKindString, Doc: "Text to enter; template variables are expanded."}),
-			Validate:     browserValidator(browserRequireElementLocator, browserRequireValue),
+			Fields:       locatorFields(FieldSpec{Name: "value", Kind: FieldKindString, Doc: "Text to enter; empty string clears the field and template variables are expanded."}),
+			Validate:     browserValidator(browserRequireElementLocator, nil),
 		},
 		{
 			Type:         "browser_select",

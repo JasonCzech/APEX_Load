@@ -10,11 +10,8 @@ resources:
   - controller-ingress.yaml
   - generator-service.yaml
   - generator-statefulset.yaml
-  - generator-keda-scaledobject.yaml
   - network-policy.yaml
   - pdb.yaml
-  # Requires the Prometheus Operator CRDs (kube-prometheus-stack).
-  - servicemonitor.yaml
   # Opt-in after filling in cluster CIDRs (see file header):
   # - egress-policies.example.yaml
 labels:

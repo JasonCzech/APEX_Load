@@ -41,7 +41,7 @@ func (b *Browser) runWithSelectorSelfHeal(ctx context.Context, action *protocol.
 			continue
 		}
 		attempts++
-		if !b.selectorPresent(action, engineSelector) {
+		if !b.selectorPresent(ctx, action, engineSelector) {
 			continue
 		}
 		if healErr := run(engineSelector); healErr == nil {
@@ -54,15 +54,15 @@ func (b *Browser) runWithSelectorSelfHeal(ctx context.Context, action *protocol.
 
 // selectorPresent probes a candidate with a short visibility wait, honoring the
 // action's frame context.
-func (b *Browser) selectorPresent(action *protocol.Action, engineSelector string) bool {
+func (b *Browser) selectorPresent(ctx context.Context, action *protocol.Action, engineSelector string) bool {
 	if locator, ok := b.actionLocator(action, engineSelector); ok {
-		return b.waitLocatorVisible(locator, healProbeTimeout) == nil
+		return b.waitLocatorVisible(ctx, locator, healProbeTimeout) == nil
 	}
 	page := b.currentPage()
 	if page == nil {
 		return false
 	}
-	return b.waitLocatorVisible(page.Locator(engineSelector), healProbeTimeout) == nil
+	return b.waitLocatorVisible(ctx, page.Locator(engineSelector), healProbeTimeout) == nil
 }
 
 func (b *Browser) recordSelfHeal(action *protocol.Action, result *protocol.Result, primary string, healed string, candidate selector.Candidate) {

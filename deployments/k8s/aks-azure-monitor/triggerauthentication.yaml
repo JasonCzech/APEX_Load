@@ -9,3 +9,4 @@ metadata:
 spec:
   podIdentity:
     provider: azure-workload
+    identityId: ${KEDA_WORKLOAD_IDENTITY_CLIENT_ID}

@@ -4,5 +4,4 @@ resources:
   - ../aks
   - triggerauthentication.yaml
 patches:
-  - path: delete-servicemonitor.yaml
   - path: generator-keda-azure-monitor-patch.yaml

@@ -13,9 +13,6 @@ resources:
   - generator-keda-scaledobject.yaml
   - network-policy.yaml
   - pdb.yaml
-  # Requires the Prometheus Operator CRDs (kube-prometheus-stack). Comment out
-  # when using Azure Monitor managed Prometheus only.
-  - servicemonitor.yaml
 labels:
   - pairs:
       app.kubernetes.io/part-of: apexload

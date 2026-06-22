@@ -76,6 +76,12 @@ spec:
               port: redis
             periodSeconds: 10
             timeoutSeconds: 2
+          startupProbe:
+            tcpSocket:
+              port: redis
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 24
           livenessProbe:
             tcpSocket:
               port: redis
@@ -106,6 +112,20 @@ spec:
         resources:
           requests:
             storage: 10Gi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: apexload-redis
+  labels:
+    app.kubernetes.io/name: apexload-redis
+    app.kubernetes.io/component: cache
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-redis
+      app.kubernetes.io/component: cache
 ---
 # Admit only controller pods to the cache.
 apiVersion: networking.k8s.io/v1

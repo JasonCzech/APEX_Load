@@ -59,6 +59,7 @@ data:
   APEXLOAD_GENERATORS: dns://apexload-generator.apexload.svc.cluster.local:9090
   APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: 15s
   APEXLOAD_GENERATOR_TIMEOUT: 10s
+  APEXLOAD_GENERATOR_AUTOSCALING_OWNER: keda
 
   # --- Controller<->generator gRPC transport security ---
   # Generators run with APEXLOAD_ENV=production and refuse to start on a

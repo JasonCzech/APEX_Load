@@ -16,16 +16,17 @@ data:
   APEXLOAD_ARCHIVE_BACKEND: {{ .Values.dataPlatform.archiveBackend | quote }}
   APEXLOAD_ARCHIVE_CONTAINER: {{ .Values.dataPlatform.archiveContainer | quote }}
   APEXLOAD_ARCHIVE_PREFIX: {{ .Values.dataPlatform.archivePrefix | quote }}
-  AZURE_STORAGE_ACCOUNT: {{ .Values.dataPlatform.azureStorageAccount | quote }}
+  AZURE_STORAGE_ACCOUNT: {{ include "apexload.requiredCleanValue" (list "dataPlatform.azureStorageAccount" .Values.dataPlatform.azureStorageAccount) | quote }}
   APEXLOAD_CACHE_BACKEND: {{ .Values.dataPlatform.cacheBackend | quote }}
   APEXLOAD_REDIS_KEY_PREFIX: {{ .Values.dataPlatform.redisKeyPrefix | quote }}
   APEXLOAD_REDIS_TIMEOUT: {{ .Values.dataPlatform.redisTimeout | quote }}
   APEXLOAD_REDIS_FANOUT_CHANNEL: {{ .Values.dataPlatform.redisFanoutChannel | quote }}
-  APEXLOAD_AZURE_KEY_VAULT_URL: {{ .Values.dataPlatform.keyVaultUrl | quote }}
+  APEXLOAD_AZURE_KEY_VAULT_URL: {{ include "apexload.requiredCleanValue" (list "dataPlatform.keyVaultUrl" .Values.dataPlatform.keyVaultUrl) | quote }}
   APEXLOAD_AZURE_KEY_VAULT_AUTH: {{ .Values.dataPlatform.keyVaultAuth | quote }}
   APEXLOAD_GENERATORS: {{ .Values.dataPlatform.generators | quote }}
   APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: {{ .Values.dataPlatform.generatorDiscoveryInterval | quote }}
   APEXLOAD_GENERATOR_TIMEOUT: {{ .Values.dataPlatform.generatorTimeout | quote }}
+  APEXLOAD_GENERATOR_AUTOSCALING_OWNER: {{ ternary "keda" "controller" .Values.keda.enabled | quote }}
   APEXLOAD_GRPC_TLS_CERT: /etc/apexload/grpc-tls/tls.crt
   APEXLOAD_GRPC_TLS_KEY: /etc/apexload/grpc-tls/tls.key
   APEXLOAD_GRPC_TLS_CA: /etc/apexload/grpc-tls/ca.crt

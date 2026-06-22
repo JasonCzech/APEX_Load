@@ -54,8 +54,22 @@ spec:
     - type: prometheus
       metadata:
         serverAddress: http://prometheus-operated.monitoring.svc:9090
+        metricName: apexload_active_vusers
+        query: sum(apexload_scaling_vusers{state="active"})
+        threshold: "5000"
+        activationThreshold: "1"
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc:9090
         metricName: apexload_queued_browser_vusers
         query: sum(apexload_scaling_protocol_vusers{state="queued",protocol="browser"})
+        threshold: "20"
+        activationThreshold: "1"
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc:9090
+        metricName: apexload_active_browser_vusers
+        query: sum(apexload_scaling_protocol_vusers{state="active",protocol="browser"})
         threshold: "20"
         activationThreshold: "1"
     - type: prometheus

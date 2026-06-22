@@ -17,7 +17,7 @@ spec:
         app.kubernetes.io/name: apexload-generator
         app.kubernetes.io/component: generator
     spec:
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 120
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -36,6 +36,10 @@ spec:
             capabilities:
               drop:
                 - ALL
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 15"]
           volumeMounts:
             - name: tmp
               mountPath: /tmp

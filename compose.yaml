@@ -10,7 +10,13 @@ services:
         BUILD_TIME: ${APEXLOAD_BUILD_TIME:-}
     image: apexload-controller:local
     init: true
+    user: "65532:65532"
     restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       APEXLOAD_ADDR: "0.0.0.0:8080"
       APEXLOAD_METRICS_ADDR: ":9091"
@@ -27,6 +33,14 @@ services:
       - controller-data:/data
       - ./dist/recording-agent:/packages/recording-agent:ro
       - ./dist/desktop:/packages/desktop:ro
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/v1/system/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
 
   prometheus:
     image: prom/prometheus:v3.12.0

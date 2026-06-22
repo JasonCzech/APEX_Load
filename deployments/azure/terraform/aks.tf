@@ -4,12 +4,22 @@ resource "azurerm_kubernetes_cluster" "main" {
   location            = azurerm_resource_group.main.location
   dns_prefix          = local.name
   kubernetes_version  = var.kubernetes_version
+  sku_tier            = "Standard"
   tags                = local.tags
 
   # Workload identity: pods exchange federated service-account tokens for
   # Entra ID tokens (Key Vault, Blob Storage) — no secrets in the cluster.
-  oidc_issuer_enabled       = true
-  workload_identity_enabled = true
+  oidc_issuer_enabled               = true
+  workload_identity_enabled         = true
+  local_account_disabled            = var.aks_local_account_disabled
+  role_based_access_control_enabled = true
+  automatic_upgrade_channel         = var.aks_auto_upgrade_channel
+  node_os_upgrade_channel           = var.aks_node_os_upgrade_channel
+
+  azure_active_directory_role_based_access_control {
+    azure_rbac_enabled     = true
+    admin_group_object_ids = var.aks_admin_group_object_ids
+  }
 
   # Managed KEDA add-on drives the generator ScaledObject
   # (deployments/k8s/aks/generator-keda-scaledobject.yaml).
@@ -29,6 +39,7 @@ resource "azurerm_kubernetes_cluster" "main" {
     vm_size              = var.system_node_vm_size
     auto_scaling_enabled = false
     vnet_subnet_id       = local.private_network_enabled ? azurerm_subnet.aks_system[0].id : null
+    zones                = var.availability_zones
     upgrade_settings {
       max_surge = "33%"
     }
@@ -71,7 +82,15 @@ resource "azurerm_kubernetes_cluster_node_pool" "generators" {
   node_labels = {
     "apexload.io/node-pool" = "generators"
   }
+  zones = var.availability_zones
   node_taints = [
     "apexload.io/dedicated=generators:NoSchedule",
   ]
+}
+
+resource "azurerm_role_assignment" "current_user_aks_cluster_admin" {
+  count                = var.aks_grant_current_user_cluster_admin ? 1 : 0
+  scope                = azurerm_kubernetes_cluster.main.id
+  role_definition_name = "Azure Kubernetes Service RBAC Cluster Admin"
+  principal_id         = data.azurerm_client_config.current.object_id
 }

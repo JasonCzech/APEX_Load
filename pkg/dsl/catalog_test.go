@@ -313,12 +313,11 @@ func TestCatalogDrivenValidationMatchesLegacyMessages(t *testing.T) {
 			want:     []string{`actions[0] "step": unsupported browser action type "browser_unknown"`},
 		},
 		{
-			name:     "browser fill missing locator and value",
+			name:     "browser fill missing locator",
 			protocol: "browser",
 			action:   Action{Name: "fill", Type: "browser_fill"},
 			want: []string{
 				`actions[0] "fill": missing target or selector`,
-				`actions[0] "fill": browser_fill requires value`,
 			},
 		},
 		{

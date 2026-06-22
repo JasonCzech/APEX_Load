@@ -19,7 +19,7 @@ spec:
         app.kubernetes.io/component: generator
     spec:
       serviceAccountName: apexload-generator
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 120
       automountServiceAccountToken: false
       # Recommended: a dedicated node pool for load generation so spikes never
       # starve the controller or other tenants. Label/taint your nodes with
@@ -55,6 +55,10 @@ spec:
             capabilities:
               drop:
                 - ALL
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 15"]
           env:
             # Warn loudly if the gRPC transport is left plaintext/tokenless.
             - name: APEXLOAD_ENV

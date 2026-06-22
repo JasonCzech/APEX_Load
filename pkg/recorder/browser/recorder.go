@@ -322,6 +322,7 @@ func (r *Recorder) registerPage(page playwright.Page) {
 	isPopup := len(r.session.NavEvents) > 0 || len(r.session.Steps) > 0
 	paused := r.paused
 	var recorded *Step
+	switchStepSeq := 0
 	if isPopup && !paused {
 		step := r.session.appendStep(Step{
 			Kind:      StepSwitchWindow,
@@ -330,6 +331,7 @@ func (r *Recorder) registerPage(page playwright.Page) {
 			URL:       page.URL(),
 		})
 		recorded = &step
+		switchStepSeq = step.Seq
 	}
 	r.mu.Unlock()
 	if recorded != nil {
@@ -341,10 +343,14 @@ func (r *Recorder) registerPage(page playwright.Page) {
 			return
 		}
 		nav := NavEvent{Timestamp: time.Now(), URL: frame.URL()}
+		var updatedSwitchStep *Step
 		r.mu.Lock()
 		paused := r.paused
 		if !paused {
 			r.session.NavEvents = append(r.session.NavEvents, nav)
+			if switchStepSeq > 0 {
+				updatedSwitchStep, _ = r.session.updateSwitchWindowStep(switchStepSeq, nav.URL)
+			}
 		}
 		r.mu.Unlock()
 		if paused {
@@ -354,6 +360,9 @@ func (r *Recorder) registerPage(page playwright.Page) {
 			r.pushPauseState(page, true)
 			r.markSidebarDirty()
 			return
+		}
+		if updatedSwitchStep != nil {
+			r.emit(Event{Type: EventStepUpdate, Step: updatedSwitchStep})
 		}
 		r.emit(Event{Type: EventNavigation, Nav: &nav})
 	})

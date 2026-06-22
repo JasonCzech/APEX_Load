@@ -46,7 +46,8 @@ disabled and tokenless by default; see
    `$(terraform output -raw kubeconfig_command)`.
 2. **Images** — `make docker-push-acr ACR_NAME=<registry>` (or let CI do it;
    see `deployments/ci/azure-pipelines-aks.yml` / `github-actions-aks.yml`).
-3. **Configure** — edit the `CHANGE-ME` values in `configmap.yaml`,
+3. **Configure** — prefer the render script below. If you edit manifests
+   directly, replace the `CHANGE-ME` values in `configmap.yaml`,
    `kustomization.yaml` (ACR login server), and `controller-ingress.yaml`
    (hostname), using the Terraform outputs.
 4. **Secrets** —
@@ -63,10 +64,12 @@ disabled and tokenless by default; see
    ```
 6. **Prometheus for KEDA** — the ScaledObject queries
    `http://prometheus-operated.monitoring.svc:9090`. Install
-   kube-prometheus-stack (same as on-prem) and the bundled ServiceMonitor is
-   picked up. To use Azure Monitor managed Prometheus instead, point
-   the overlay in `deployments/k8s/aks-azure-monitor` at the workspace query
-   endpoint and apply it instead of the base AKS overlay.
+   kube-prometheus-stack (same as on-prem), then apply
+   `kubectl apply -k deployments/k8s/aks-prometheus` if you want the
+   Prometheus Operator `ServiceMonitor`. To use Azure Monitor managed
+   Prometheus instead, set the workspace query endpoint and
+   `keda_workload_identity_client_id` in `deployments/k8s/aks-azure-monitor`
+   and apply that overlay.
 7. **Smoke test** —
    ```bash
    kubectl -n apexload port-forward svc/apexload-controller 18080:8080 &
@@ -153,9 +156,9 @@ database dump in the opposite direction if writes happened on AKS.
 
 - **Controller pods are disposable**: durable state is PostgreSQL + Blob +
   Redis; `/var/lib/apexload` is an emptyDir used for staging/exports only.
-- **Controller replicas**: the AKS default is one active controller until
-  scheduler/reconciler singleton loops are protected by PostgreSQL leases.
-  Multi-replica API scale-out should be treated as a dedicated HA change.
+- **Controller replicas**: the AKS base keeps one controller. Use the HA
+  example only with shared PostgreSQL so execution leadership and scheduler
+  leases have a durable store.
 - **mTLS certificates**: use cert-manager with
   `certificates.cert-manager.yaml`, or sync `apexload-controller-grpc-tls` and
   `apexload-generator-grpc-tls` from Key Vault CSI. The base overlay assumes

@@ -14,6 +14,9 @@ It deploys:
 - 2 load generator pods
 - 1 persistent volume claim for controller state and archives
 
+The local base intentionally does not install KEDA or ServiceMonitor resources;
+it should apply cleanly on a fresh Docker Desktop cluster with no CRDs.
+
 ## What gets created
 
 - Namespace: `apexload-local`

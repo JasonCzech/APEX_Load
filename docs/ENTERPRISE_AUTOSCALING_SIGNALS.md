@@ -28,7 +28,11 @@ Recommended autoscaling policy:
 4. Avoid scaling on `unavailable` generators alone; use it as an alert and replacement signal.
 5. Scale in only when queued VUsers are zero and active VUsers remain below the pool's lower utilization target for a cooldown window.
 
-For KEDA, scrape the controller `/metrics` endpoint into Prometheus and use the Prometheus scaler with queued VUsers as the trigger query. The local Kubernetes overlay includes `deployments/k8s/local/generator-keda-scaledobject.yaml` as the reference scale-out artifact for the generator StatefulSet.
+For KEDA, scrape the controller `/metrics` endpoint into Prometheus and use the
+Prometheus scaler with queued and active VUsers as trigger queries. The AKS and
+on-prem autoscaling overlays define the production ScaledObjects; the local
+Kubernetes KEDA file remains a reference artifact and is not included in the
+fresh-cluster local base.
 
 Example trigger query:
 
@@ -44,13 +48,15 @@ sum by (region) (apexload_generator_region_active_vusers)
 
 ## Cluster Artifacts
 
-`deployments/k8s/local/generator-keda-scaledobject.yaml` defines a KEDA `ScaledObject` for `apexload-generator`:
+The KEDA `ScaledObject` for `apexload-generator` defines:
 
 - `minReplicaCount: 2` and `maxReplicaCount: 50`, matching the enterprise scale-out envelope.
 - Queued VUsers trigger: `sum(apexload_scaling_vusers{state="queued"})`.
-- Browser canary trigger: `sum(apexload_scaling_protocol_vusers{state="queued",protocol="browser"})`.
+- Active VUsers trigger: `sum(apexload_scaling_vusers{state="active"})`.
+- Queued browser canary trigger: `sum(apexload_scaling_protocol_vusers{state="queued",protocol="browser"})`.
+- Active browser canary trigger: `sum(apexload_scaling_protocol_vusers{state="active",protocol="browser"})`.
 - Saturation trigger: `sum(apexload_generator_capacity_state_count{state="saturated"})`.
-- Conservative scale-down stabilization so active or recently queued demand does not collapse the generator pool too quickly.
+- Conservative scale-down stabilization so recently queued demand does not collapse the generator pool too quickly.
 
 The default Prometheus endpoint is `http://prometheus-operated.monitoring.svc:9090`; production overlays should replace it when Prometheus uses a different service name or namespace.
 

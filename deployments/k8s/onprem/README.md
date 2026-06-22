@@ -8,7 +8,7 @@ counterpart to `deployments/k8s/local` (dev) and the on-prem sibling of
 |---|---|
 | mTLS + bearer-token auth on controller↔generator gRPC | `APEXLOAD_GRPC_*` in configmap/statefulset; certs via [certificates.example.yaml](certificates.example.yaml) |
 | TLS-terminating ingress (no plaintext dashboard/API) | [controller-ingress.yaml](controller-ingress.yaml) |
-| Metrics on a dedicated port, scoped to the monitoring namespace | `APEXLOAD_METRICS_ADDR`, [network-policy.yaml](network-policy.yaml), [servicemonitor.yaml](servicemonitor.yaml) |
+| Metrics on a dedicated port, scoped to the monitoring namespace | `APEXLOAD_METRICS_ADDR`, [network-policy.yaml](network-policy.yaml), optional [servicemonitor.yaml](servicemonitor.yaml) |
 | Pod Security Admission `restricted` enforced on the namespace | [namespace.yaml](namespace.yaml) |
 | Dedicated ServiceAccounts, no API tokens mounted | [serviceaccounts.yaml](serviceaccounts.yaml) |
 | Scoped ingress NetworkPolicies + opt-in egress templates | [network-policy.yaml](network-policy.yaml), [egress-policies.example.yaml](egress-policies.example.yaml) |
@@ -33,11 +33,12 @@ counterpart to `deployments/k8s/local` (dev) and the on-prem sibling of
 4. **Secrets** — create `apexload-data-platform` per [secret.example.yaml](secret.example.yaml)
    (DSN, Redis URL, gRPC token, object-store keys).
 5. **Edit the CHANGE-ME values** — registry in `kustomization.yaml`, ingress
-   hostname/TLS secret, object-store endpoint, ingress/monitoring namespace
-   names in `network-policy.yaml`, KEDA `maxReplicaCount` sized to your nodes.
-6. **Apply** — `kubectl apply -k deployments/k8s/onprem`
-7. **KEDA + Prometheus** — install the KEDA operator and kube-prometheus-stack;
-   the ServiceMonitor targets the dedicated metrics port automatically.
+   hostname/TLS secret, object-store endpoint, and ingress/monitoring namespace
+   names in `network-policy.yaml`.
+6. **Apply the base** — `kubectl apply -k deployments/k8s/onprem`
+7. **Optional autoscaling + Prometheus** — install the KEDA operator and
+   kube-prometheus-stack, size KEDA `maxReplicaCount` for your nodes, then
+   apply `kubectl apply -k deployments/k8s/onprem-autoscaling`.
 8. **Smoke test** — `kubectl -n apexload port-forward svc/apexload-controller 18080:8080`
    then `./deployments/k8s/smoke-test.sh`.
 
@@ -71,8 +72,8 @@ enumerable destination set (DB, cache, generators, HTTPS).
       shows `mtls+token-auth` (a plaintext warning here means the cert/token
       wiring is wrong)
 - [ ] Dashboard reachable only via HTTPS through the ingress
-- [ ] Prometheus targets page shows the controller scrape on :9091 UP
-- [ ] KEDA scale-up observed under a large queued test; fleet returns to
+- [ ] If autoscaling is enabled, Prometheus targets page shows the controller scrape on :9091 UP
+- [ ] If autoscaling is enabled, KEDA scale-up observed under a large queued test; fleet returns to
       minReplicaCount afterward
 - [ ] `GET /api/v1/system/services` lists every generator pod after a scale event
 - [ ] PostgreSQL backups scheduled (pg_dump or your platform's PITR) and

@@ -275,7 +275,7 @@ Requires one of: `target`, `selector`, `object_ref`
 | `target` | string |  | Element locator; target, selector, or object_ref is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
-| `value` | string | yes | Text to enter; template variables are expanded. |
+| `value` | string |  | Text to enter; empty string clears the field and template variables are expanded. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 

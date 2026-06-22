@@ -399,13 +399,13 @@ func buildBrowserToHTTPReview(req BrowserToHTTPPreviewRequest, generated *dsl.Sc
 	review.DataSourceCandidates = browserToHTTPDataSourceCandidates(entries)
 	review.AuthFindings = []BrowserToHTTPFinding{{
 		Severity: "info",
-		Summary:  "Replay network summaries do not include request headers or bodies.",
+		Summary:  "Replay network summaries may still omit response bodies.",
 		Evidence: "browser_replay.events[].network_entries",
-		Action:   "Use detailed HAR capture or replay snapshots before approving auth headers, CSRF tokens, or request body variables.",
+		Action:   "Validate generated HTTP auth, cookies, CSRF tokens, request bodies, and response-derived correlations with protocol replay or full HAR evidence before approval.",
 	}}
 	review.CookieFindings = []BrowserToHTTPFinding{{
 		Severity: "info",
-		Summary:  "Cookie state is not inferred from compact network entries.",
+		Summary:  "Cookie state is captured only when present in request headers; browser cookie jar semantics are not inferred from compact entries.",
 		Evidence: "browser_replay.events[].network_entries",
 		Action:   "Validate generated HTTP auth and cookie handling with a protocol replay before load-model assembly.",
 	}}

@@ -598,7 +598,7 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 				Target: "#app",
 			},
 			{
-				Name:   "missing fill value",
+				Name:   "clear fill",
 				Type:   "browser_fill",
 				Target: "#name",
 			},
@@ -644,7 +644,6 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 	assertIssue(t, issues, "config.browser.viewport.width must be zero or greater")
 	assertIssue(t, issues, "config.browser.viewport.height must be zero or greater")
 	assertIssue(t, issues, `actions[0] "bad type": unsupported browser action type "browser_scroll"`)
-	assertIssue(t, issues, `actions[1] "missing fill value": browser_fill requires value`)
 	assertIssue(t, issues, `actions[2] "missing select value": browser_select requires value`)
 	assertIssue(t, issues, `actions[3] "bad swipe": browser_swipe direction must be left, right, up, or down`)
 	assertIssue(t, issues, `actions[3] "bad swipe": browser_swipe distance must be greater than zero`)
@@ -871,10 +870,10 @@ func TestValidateScriptIssues_BrowserValidationAllowsSupportedFields(t *testing.
 				},
 			},
 			{
-				Name:   "fill",
+				Name:   "clear fill",
 				Type:   "browser_fill",
 				Target: "#query",
-				Value:  "apexload",
+				Value:  "",
 			},
 			{
 				Name:   "select",

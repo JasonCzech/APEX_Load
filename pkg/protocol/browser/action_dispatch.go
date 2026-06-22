@@ -16,7 +16,7 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		if action.Target == "" {
 			return nil, failBrowserAction(result, "browser_navigate requires target")
 		}
-		return b.navigate(ctx, b.resolveURL(action.Target)), false
+		return b.navigate(ctx, action, b.resolveURL(action.Target)), false
 	case "browser_wait":
 		return b.runWait(ctx, action), false
 	case "browser_click":
@@ -26,7 +26,7 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		}
 		if b.touchMode {
 			return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
-				return b.dispatchTap(ctx, s)
+				return b.dispatchTap(ctx, action, s)
 			}), false
 		}
 		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
@@ -37,14 +37,14 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		if selector == "" {
 			return nil, failBrowserAction(result, "browser_tap requires selector or target")
 		}
-		return b.dispatchTap(ctx, selector), false
+		return b.dispatchTap(ctx, action, selector), false
 	case "browser_long_press":
 		selector := b.actionSelector(action)
 		if selector == "" {
 			return nil, failBrowserAction(result, "browser_long_press requires selector or target")
 		}
 		durationMS := positiveActionParamInt(action.Params, "duration_ms", 500)
-		return b.dispatchLongPress(ctx, selector, time.Duration(durationMS)*time.Millisecond), false
+		return b.dispatchLongPress(ctx, action, selector, time.Duration(durationMS)*time.Millisecond), false
 	case "browser_swipe":
 		selector := b.actionSelector(action)
 		if selector == "" {
@@ -52,7 +52,7 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		}
 		direction := actionParamString(action.Params, "direction", "left")
 		distance := positiveActionParamInt(action.Params, "distance", 300)
-		return b.dispatchSwipe(ctx, selector, direction, distance), false
+		return b.dispatchSwipe(ctx, action, selector, direction, distance), false
 	case "browser_fill":
 		selector := b.actionSelector(action)
 		if selector == "" {
@@ -78,7 +78,7 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 			return nil, failBrowserAction(result, "browser_dblclick requires selector or target")
 		}
 		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
-			return b.dblclickAction(action, s)
+			return b.dblclickAction(ctx, action, s)
 		}), false
 	case "browser_hover":
 		selector := b.actionSelector(action)
@@ -86,7 +86,7 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 			return nil, failBrowserAction(result, "browser_hover requires selector or target")
 		}
 		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
-			return b.hoverAction(action, s)
+			return b.hoverAction(ctx, action, s)
 		}), false
 	case "browser_drag_and_drop":
 		source := b.actionSelector(action)
@@ -94,7 +94,7 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		if source == "" || target == "" {
 			return nil, failBrowserAction(result, "browser_drag_and_drop requires selector/target and target param")
 		}
-		return b.dragAndDropAction(action, source, target), false
+		return b.dragAndDropAction(ctx, action, source, target), false
 	case "browser_set_files":
 		selector := b.actionSelector(action)
 		if selector == "" {
@@ -104,17 +104,17 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		if len(files) == 0 {
 			return nil, failBrowserAction(result, "browser_set_files requires value or params.files")
 		}
-		return b.setInputFilesAction(action, selector, files), false
+		return b.setInputFilesAction(ctx, action, selector, files), false
 	case "browser_press_key":
 		key := actionKey(action)
 		if key == "" {
 			return nil, failBrowserAction(result, "browser_press_key requires value or params.key")
 		}
-		return b.pressKeyAction(action, b.actionSelector(action), key), false
+		return b.pressKeyAction(ctx, action, b.actionSelector(action), key), false
 	case "browser_evaluate_js":
 		return b.dispatchEvaluateJS(ctx, action, result)
 	case "browser_switch_frame":
-		return b.dispatchSwitchFrame(action), false
+		return b.dispatchSwitchFrame(ctx, action), false
 	case "browser_switch_window":
 		return b.dispatchSwitchWindow(action), false
 	case "browser_handle_dialog":

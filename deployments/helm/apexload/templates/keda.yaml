@@ -1,4 +1,8 @@
 {{- if .Values.keda.enabled }}
+{{- $kedaServerAddress := .Values.keda.prometheusServerAddress -}}
+{{- if .Values.keda.azureMonitor.enabled -}}
+{{- $kedaServerAddress = include "apexload.requiredCleanValue" (list "keda.azureMonitor.serverAddress" .Values.keda.azureMonitor.serverAddress) -}}
+{{- end }}
 {{- if .Values.keda.azureMonitor.enabled }}
 apiVersion: keda.sh/v1alpha1
 kind: TriggerAuthentication
@@ -12,6 +16,7 @@ metadata:
 spec:
   podIdentity:
     provider: azure-workload
+    identityId: {{ include "apexload.requiredCleanValue" (list "keda.azureMonitor.identityId" .Values.keda.azureMonitor.identityId) | quote }}
 ---
 {{- end }}
 apiVersion: keda.sh/v1alpha1
@@ -55,7 +60,7 @@ spec:
   triggers:
     - type: prometheus
       metadata:
-        serverAddress: {{ ternary .Values.keda.azureMonitor.serverAddress .Values.keda.prometheusServerAddress .Values.keda.azureMonitor.enabled }}
+        serverAddress: {{ $kedaServerAddress }}
         metricName: apexload_queued_vusers
         query: sum(apexload_scaling_vusers{state="queued"})
         threshold: "5000"
@@ -66,7 +71,18 @@ spec:
 {{- end }}
     - type: prometheus
       metadata:
-        serverAddress: {{ ternary .Values.keda.azureMonitor.serverAddress .Values.keda.prometheusServerAddress .Values.keda.azureMonitor.enabled }}
+        serverAddress: {{ $kedaServerAddress }}
+        metricName: apexload_active_vusers
+        query: sum(apexload_scaling_vusers{state="active"})
+        threshold: "5000"
+        activationThreshold: "1"
+{{- if .Values.keda.azureMonitor.enabled }}
+      authenticationRef:
+        name: {{ .Values.keda.azureMonitor.triggerAuthenticationName }}
+{{- end }}
+    - type: prometheus
+      metadata:
+        serverAddress: {{ $kedaServerAddress }}
         metricName: apexload_queued_browser_vusers
         query: sum(apexload_scaling_protocol_vusers{state="queued",protocol="browser"})
         threshold: "20"
@@ -77,7 +93,18 @@ spec:
 {{- end }}
     - type: prometheus
       metadata:
-        serverAddress: {{ ternary .Values.keda.azureMonitor.serverAddress .Values.keda.prometheusServerAddress .Values.keda.azureMonitor.enabled }}
+        serverAddress: {{ $kedaServerAddress }}
+        metricName: apexload_active_browser_vusers
+        query: sum(apexload_scaling_protocol_vusers{state="active",protocol="browser"})
+        threshold: "20"
+        activationThreshold: "1"
+{{- if .Values.keda.azureMonitor.enabled }}
+      authenticationRef:
+        name: {{ .Values.keda.azureMonitor.triggerAuthenticationName }}
+{{- end }}
+    - type: prometheus
+      metadata:
+        serverAddress: {{ $kedaServerAddress }}
         metricName: apexload_saturated_generators
         query: sum(apexload_generator_capacity_state_count{state="saturated"})
         threshold: "1"

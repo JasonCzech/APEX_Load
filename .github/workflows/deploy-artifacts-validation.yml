@@ -43,17 +43,43 @@ jobs:
       - name: Kustomize validate
         run: |
           set -euo pipefail
-          kubectl kustomize deployments/k8s/aks > /tmp/apexload-aks.yaml
-          kubeconform -strict -ignore-missing-schemas /tmp/apexload-aks.yaml
-          kubectl kustomize deployments/k8s/aks-azure-monitor > /tmp/apexload-aks-azure-monitor.yaml
-          kubeconform -strict -ignore-missing-schemas /tmp/apexload-aks-azure-monitor.yaml
+          for overlay in \
+            deployments/k8s/aks \
+            deployments/k8s/aks-prometheus \
+            deployments/k8s/aks-azure-monitor \
+            deployments/k8s/onprem \
+            deployments/k8s/onprem-autoscaling \
+            deployments/k8s/local \
+            deployments/k8s/local-kind
+          do
+            out="/tmp/apexload-$(basename "$overlay").yaml"
+            kubectl kustomize "$overlay" > "$out"
+            kubeconform -strict -ignore-missing-schemas "$out"
+          done
+
+      - name: AKS renderer validates placeholder substitution
+        env:
+          APEXLOAD_ACR_LOGIN_SERVER: ci.azurecr.io
+          APEXLOAD_STORAGE_ACCOUNT_NAME: ciapexloadstorage
+          APEXLOAD_KEY_VAULT_URL: https://ci-apexload.vault.azure.net
+          APEXLOAD_CONTROLLER_WORKLOAD_IDENTITY_CLIENT_ID: 00000000-0000-0000-0000-000000000001
+          APEXLOAD_GENERATOR_WORKLOAD_IDENTITY_CLIENT_ID: 00000000-0000-0000-0000-000000000002
+          APEXLOAD_IMAGE_TAG: ci
+        run: |
+          set -euo pipefail
+          scripts/render-aks-manifests.sh --output /tmp/apexload-aks-rendered.yaml
+          kubeconform -strict -ignore-missing-schemas /tmp/apexload-aks-rendered.yaml
 
       - name: Helm validate
         run: |
           set -euo pipefail
           helm lint deployments/helm/apexload \
             --set workloadIdentity.controllerClientId=00000000-0000-0000-0000-000000000001 \
-            --set workloadIdentity.generatorClientId=00000000-0000-0000-0000-000000000002
+            --set workloadIdentity.generatorClientId=00000000-0000-0000-0000-000000000002 \
+            --set image.registry=ci.azurecr.io \
+            --set dataPlatform.azureStorageAccount=ciapexloadstorage \
+            --set dataPlatform.keyVaultUrl=https://ci-apexload.vault.azure.net \
+            --set ingress.host=apexload-ci.example.internal
           helm template apexload deployments/helm/apexload \
             --namespace apexload \
             --set workloadIdentity.controllerClientId=00000000-0000-0000-0000-000000000001 \
@@ -61,6 +87,7 @@ jobs:
             --set image.registry=ci.azurecr.io \
             --set dataPlatform.azureStorageAccount=ciapexloadstorage \
             --set dataPlatform.keyVaultUrl=https://ci-apexload.vault.azure.net \
+            --set ingress.host=apexload-ci.example.internal \
             > /tmp/apexload-helm.yaml
           kubeconform -strict -ignore-missing-schemas /tmp/apexload-helm.yaml
           # Fail closed if any values.yaml placeholder leaks into a rendered

@@ -124,6 +124,35 @@ func TestAppendStepCollapsesDuplicateFills(t *testing.T) {
 	}
 }
 
+func TestUpdateSwitchWindowStepBackfillsPopupURL(t *testing.T) {
+	session := &Session{}
+	step := session.appendStep(Step{Kind: StepSwitchWindow, Value: "about:blank", URL: "about:blank", Timestamp: time.UnixMilli(1000)})
+
+	updated, ok := session.updateSwitchWindowStep(step.Seq, " https://shop.example/popup ")
+	if !ok {
+		t.Fatal("updateSwitchWindowStep() ok = false, want true")
+	}
+	if updated.Value != "https://shop.example/popup" || updated.URL != "https://shop.example/popup" {
+		t.Fatalf("updated step = %#v, want popup URL in value and URL", updated)
+	}
+	if session.Steps[0].Value != "https://shop.example/popup" || session.Steps[0].URL != "https://shop.example/popup" {
+		t.Fatalf("stored step = %#v, want popup URL in value and URL", session.Steps[0])
+	}
+}
+
+func TestUpdateSwitchWindowStepIgnoresBlankURL(t *testing.T) {
+	session := &Session{}
+	step := session.appendStep(Step{Kind: StepSwitchWindow, Value: "about:blank", URL: "about:blank", Timestamp: time.UnixMilli(1000)})
+
+	updated, ok := session.updateSwitchWindowStep(step.Seq, "about:blank")
+	if ok || updated != nil {
+		t.Fatalf("updateSwitchWindowStep() = (%#v, %v), want no update", updated, ok)
+	}
+	if session.Steps[0].Value != "about:blank" || session.Steps[0].URL != "about:blank" {
+		t.Fatalf("stored step = %#v, want unchanged about:blank", session.Steps[0])
+	}
+}
+
 func TestFrameSelectorFromURL(t *testing.T) {
 	tests := []struct {
 		name  string

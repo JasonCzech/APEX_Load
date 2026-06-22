@@ -144,6 +144,14 @@ The flagship on-ramp is the embedded browser recorder:
    produces a `dsl.Script` (HTTP or WebSocket actions), extracts correlations, optionally
    parameterizes recorded inputs, and can export a side-car HAR (`pkg/recorder/har.go`).
 
+Embedded browser capture is intentionally narrower than browser replay. It records clicks,
+input/textarea changes as fills, select changes, file-input filenames, Enter/Escape/Tab
+keypresses, assertion-picker steps, main-frame navigation, network summaries, and
+WebSocket summaries. It does not currently capture double-click, hover, drag/drop, scroll,
+arbitrary keyboard shortcuts, clipboard operations, or rich-editor mutations as distinct
+gestures; replay can execute hand-authored/imported `browser_dblclick` and
+`browser_hover` actions even though the embedded recorder may not produce them directly.
+
 The output is the *same* `dsl.Script` type as every other importer — the recorder is just
 another Stage-1 producer.
 

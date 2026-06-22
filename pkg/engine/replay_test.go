@@ -7,18 +7,23 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type replayTestProtocol struct {
-	execute func(action *protocol.Action) (*protocol.Result, error)
+	execute    func(action *protocol.Action) (*protocol.Result, error)
+	executeCtx func(ctx context.Context, action *protocol.Action) (*protocol.Result, error)
 }
 
 func (p *replayTestProtocol) Name() string                                   { return "replay-test" }
 func (p *replayTestProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
-func (p *replayTestProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+func (p *replayTestProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+	if p.executeCtx != nil {
+		return p.executeCtx(ctx, action)
+	}
 	return p.execute(action)
 }
 func (p *replayTestProtocol) Teardown(_ context.Context) error    { return nil }
@@ -29,6 +34,15 @@ func registerReplayProtocol(t *testing.T, execute func(action *protocol.Action) 
 	name := "replay-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
 	protocol.Register(name, func() protocol.Protocol {
 		return &replayTestProtocol{execute: execute}
+	})
+	return name
+}
+
+func registerReplayProtocolWithContext(t *testing.T, execute func(ctx context.Context, action *protocol.Action) (*protocol.Result, error)) string {
+	t.Helper()
+	name := "replay-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
+	protocol.Register(name, func() protocol.Protocol {
+		return &replayTestProtocol{executeCtx: execute}
 	})
 	return name
 }
@@ -216,6 +230,42 @@ func TestReplayScriptStopsAfterFailureWhenContinueOnErrorDisabled(t *testing.T) 
 	}
 	if report.Error != "boom" {
 		t.Fatalf("report.Error = %q, want boom", report.Error)
+	}
+}
+
+func TestReplayScriptBoundsTeardownActions(t *testing.T) {
+	t.Setenv("APEXLOAD_TEARDOWN_TIMEOUT", "25ms")
+
+	protocolName := registerReplayProtocolWithContext(t, func(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+		if action.Name == "cleanup" {
+			select {
+			case <-ctx.Done():
+				return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 204}, nil
+			case <-time.After(2 * time.Second):
+				return &protocol.Result{ActionName: action.Name, Success: false, ErrorMessage: "teardown was not cancelled"}, nil
+			}
+		}
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+
+	start := time.Now()
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "Bounded Teardown Replay",
+		Protocol: protocolName,
+		Actions:  []dsl.Action{{Name: "main", Type: "GET", Target: "/main"}},
+		Teardown: []dsl.Action{{Name: "cleanup", Type: "cleanup", Target: "/cleanup"}},
+	}, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript returned error: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("ReplayScript elapsed = %v, want bounded teardown", elapsed)
+	}
+	if len(report.Events) != 2 {
+		t.Fatalf("event count = %d, want action plus teardown", len(report.Events))
+	}
+	if report.Events[1].Phase != "teardown" || !report.Events[1].Success {
+		t.Fatalf("teardown event = %#v, want successful bounded teardown", report.Events[1])
 	}
 }
 

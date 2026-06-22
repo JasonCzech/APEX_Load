@@ -348,7 +348,9 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if shouldContinue {
 		shouldContinue = runReplayPhase(ctx, vu, script.Actions, "action", continueOnError, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
 	}
-	runReplayPhase(context.Background(), vu, script.Teardown, "teardown", true, true, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
+	teardownCtx, teardownCancel := teardownContext()
+	runReplayPhase(teardownCtx, vu, script.Teardown, "teardown", true, true, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
+	teardownCancel()
 
 	report.CompletedAt = time.Now()
 	report.FinalVariables = cloneStringMap(vu.Variables)

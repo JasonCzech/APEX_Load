@@ -8,10 +8,21 @@ app.kubernetes.io/managed-by: Helm
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
 {{- end -}}
 
+{{- define "apexload.requiredCleanValue" -}}
+{{- $name := index . 0 -}}
+{{- $value := toString (index . 1) -}}
+{{- if or (eq (trim $value) "") (regexMatch "(?i)(changeme|change-me|example\\.com|CHANGE-ME|\\$\\{[A-Z0-9_]+\\})" $value) -}}
+{{- fail (printf "%s must be set to a non-placeholder value" $name) -}}
+{{- end -}}
+{{- $value -}}
+{{- end -}}
+
 {{- define "apexload.controllerImage" -}}
-{{- printf "%s/%s:%s" .Values.image.registry .Values.image.controllerRepository .Values.image.tag -}}
+{{- $registry := include "apexload.requiredCleanValue" (list "image.registry" .Values.image.registry) -}}
+{{- printf "%s/%s:%s" $registry .Values.image.controllerRepository .Values.image.tag -}}
 {{- end -}}
 
 {{- define "apexload.generatorImage" -}}
-{{- printf "%s/%s:%s" .Values.image.registry .Values.image.generatorRepository .Values.image.tag -}}
+{{- $registry := include "apexload.requiredCleanValue" (list "image.registry" .Values.image.registry) -}}
+{{- printf "%s/%s:%s" $registry .Values.image.generatorRepository .Values.image.tag -}}
 {{- end -}}

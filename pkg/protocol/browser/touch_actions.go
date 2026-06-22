@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
-func (b *Browser) dispatchTap(ctx context.Context, selector string) error {
-	return b.runTouchScript(ctx, selector, `
+func (b *Browser) dispatchTap(ctx context.Context, action *protocol.Action, selector string) error {
+	return b.runTouchScript(ctx, action, selector, `
 		dispatchPointer('pointerdown', x, y);
 		dispatchTouch('touchstart', x, y, true);
 		dispatchTouch('touchend', x, y, false);
@@ -17,8 +19,8 @@ func (b *Browser) dispatchTap(ctx context.Context, selector string) error {
 	`, "browser tap")
 }
 
-func (b *Browser) dispatchLongPress(ctx context.Context, selector string, duration time.Duration) error {
-	if err := b.runTouchScript(ctx, selector, `
+func (b *Browser) dispatchLongPress(ctx context.Context, action *protocol.Action, selector string, duration time.Duration) error {
+	if err := b.runTouchScript(ctx, action, selector, `
 		dispatchPointer('pointerdown', x, y);
 		dispatchTouch('touchstart', x, y, true);
 	`, "browser long press start"); err != nil {
@@ -27,15 +29,15 @@ func (b *Browser) dispatchLongPress(ctx context.Context, selector string, durati
 	if err := b.sleep(ctx, duration); err != nil {
 		return err
 	}
-	return b.runTouchScript(ctx, selector, `
+	return b.runTouchScript(ctx, action, selector, `
 		dispatchTouch('touchend', x, y, false);
 		dispatchPointer('pointerup', x, y);
 		dispatchClick(x, y);
 	`, "browser long press end")
 }
 
-func (b *Browser) dispatchSwipe(ctx context.Context, selector, direction string, distance int) error {
-	return b.runTouchScript(ctx, selector, fmt.Sprintf(`
+func (b *Browser) dispatchSwipe(ctx context.Context, action *protocol.Action, selector, direction string, distance int) error {
+	return b.runTouchScript(ctx, action, selector, fmt.Sprintf(`
 		const startX = x;
 		const startY = y;
 		let endX = startX;
@@ -81,8 +83,8 @@ func normalizeSwipeDirection(direction string) string {
 	}
 }
 
-func (b *Browser) runTouchScript(ctx context.Context, selector, operation, label string) error {
-	if err := b.waitVisible(ctx, selector); err != nil {
+func (b *Browser) runTouchScript(ctx context.Context, action *protocol.Action, selector, operation, label string) error {
+	if err := b.waitVisibleWithTimeout(ctx, selector, b.actionTimeout(action)); err != nil {
 		return err
 	}
 

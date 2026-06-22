@@ -8,10 +8,12 @@ locals {
 
   # Kubernetes namespace + service accounts the federated credentials trust.
   # Must match deployments/k8s/aks (namespace.yaml / serviceaccounts.yaml).
-  k8s_namespace              = "apexload"
-  controller_service_account = "apexload-controller"
-  generator_service_account  = "apexload-generator"
-  private_network_enabled    = var.network_mode == "private"
+  k8s_namespace                 = "apexload"
+  controller_service_account    = "apexload-controller"
+  generator_service_account     = "apexload-generator"
+  keda_operator_namespace       = "kube-system"
+  keda_operator_service_account = "keda-operator"
+  private_network_enabled       = var.network_mode == "private"
 }
 
 data "azurerm_client_config" "current" {}
