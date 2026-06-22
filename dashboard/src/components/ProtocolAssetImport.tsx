@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type StoredScript } from '../types'
-import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type HARImportSummary, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
+import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type HARImportSummary, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
@@ -137,6 +137,10 @@ function scriptNamePlaceholder(kind: ImportKind): string {
       return 'Imported Postman Script'
     case 'raml':
       return 'Imported RAML Script'
+    case 'asyncapi':
+      return 'Imported AsyncAPI Script'
+    case 'wsdl':
+      return 'Imported WSDL Script'
     default:
       return 'Imported API Script'
   }
@@ -192,6 +196,16 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [postmanIncludeAssertions, setPostmanIncludeAssertions] = useState(true)
   const [postmanUseDataSource, setPostmanUseDataSource] = useState(false)
   const [postmanThinkTimeMs, setPostmanThinkTimeMs] = useState(1000)
+  const [asyncAPIBrokers, setAsyncAPIBrokers] = useState('')
+  const [asyncAPIChannels, setAsyncAPIChannels] = useState('')
+  const [asyncAPIMock, setAsyncAPIMock] = useState(true)
+  const [asyncAPIIncludeAssertions, setAsyncAPIIncludeAssertions] = useState(true)
+  const [asyncAPIThinkTimeMs, setAsyncAPIThinkTimeMs] = useState(1000)
+  const [asyncAPISerialization, setAsyncAPISerialization] = useState('')
+  const [asyncAPISchemaRegistryURL, setAsyncAPISchemaRegistryURL] = useState('')
+  const [asyncAPISchemaID, setAsyncAPISchemaID] = useState('')
+  const [asyncAPISubject, setAsyncAPISubject] = useState('')
+  const [selectedScriptIndex, setSelectedScriptIndex] = useState(0)
   const [secondaryHARFile, setSecondaryHARFile] = useState<File | null>(null)
   const [name, setName] = useState('')
   const [baseURL, setBaseURL] = useState('')
@@ -204,6 +218,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [reviewMode, setReviewMode] = useState<'conversion' | 'validation'>('conversion')
   const [ramlSupport, setRamlSupport] = useState<{ entries: RAMLSupportMatrixEntry[]; notes: string[] } | null>(null)
   const [openAPISupport, setOpenAPISupport] = useState<{ entries: OpenAPISupportMatrixEntry[]; notes: string[] } | null>(null)
+  const [asyncAPISupport, setAsyncAPISupport] = useState<{ entries: AsyncAPISupportMatrixEntry[]; notes: string[] } | null>(null)
   const [openAPISaveMode, setOpenAPISaveMode] = useState<'create' | 'replace'>('create')
   const [openAPIReplaceScriptId, setOpenAPIReplaceScriptId] = useState('')
   const [openAPIReplaceMode, setOpenAPIReplaceMode] = useState<'full' | 'merge_by_operation_id'>('full')
@@ -231,6 +246,24 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
       .catch(() => { if (!cancelled) setOpenAPISupport(null) })
     return () => { cancelled = true }
   }, [api, kind])
+
+  useEffect(() => {
+    if (kind !== 'asyncapi') return
+    let cancelled = false
+    api.getAsyncAPISupportMatrix()
+      .then(response => { if (!cancelled) setAsyncAPISupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
+      .catch(() => { if (!cancelled) setAsyncAPISupport(null) })
+    return () => { cancelled = true }
+  }, [api, kind])
+
+  useEffect(() => {
+    const count = result?.scripts?.length || (result?.script ? 1 : 0)
+    if (count === 0) {
+      setSelectedScriptIndex(0)
+    } else if (selectedScriptIndex >= count) {
+      setSelectedScriptIndex(0)
+    }
+  }, [result, selectedScriptIndex])
 
   useEffect(() => {
     if (kind !== 'openapi') return
@@ -297,7 +330,19 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
           }
           return mode === 'validation' ? api.validatePostmanImport(file, postmanOptions) : api.importPostman(file, postmanOptions)
         }
-        if (kind === 'asyncapi') return api.importAsyncAPI(file, { name: options.name, project_id: options.project_id })
+        if (kind === 'asyncapi') return api.importAsyncAPI(file, {
+          name: options.name,
+          project_id: options.project_id,
+          brokers: asyncAPIBrokers || undefined,
+          channels: asyncAPIChannels || undefined,
+          mock: asyncAPIMock,
+          include_assertions: asyncAPIIncludeAssertions,
+          default_think_time_ms: asyncAPIThinkTimeMs,
+          serialization: asyncAPISerialization || undefined,
+          schema_registry_url: asyncAPISchemaRegistryURL || undefined,
+          schema_id: asyncAPISchemaID ? Math.max(0, Number(asyncAPISchemaID) || 0) : undefined,
+          subject: asyncAPISubject || undefined,
+        })
         return api.importWSDL(file, { ...options, soap_version: soapVersion })
       }, { clearValue: true })
     } catch (error: unknown) {
@@ -307,7 +352,8 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
 
   const stats = result?.stats as Record<string, unknown> | undefined
   const actionCount = typeof stats?.converted_actions === 'number' ? stats.converted_actions : 0
-  const reviewedScript = result?.script || result?.scripts?.[0] || null
+  const generatedScripts = result?.scripts?.length ? result.scripts : result?.script ? [result.script] : []
+  const reviewedScript = generatedScripts[selectedScriptIndex] || generatedScripts[0] || null
   const sourceReview = sourceReviewForImport(result, reviewedScript)
   const harSummary: HARImportSummary | undefined = kind === 'har' ? (result as HARImportResult | null | undefined)?.summary : undefined
   const salesforceReview = kind === 'salesforce' ? salesforceReviewForImport(result, reviewedScript) : null
@@ -360,6 +406,16 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
         onImported?.({ scripts: [withFallbackPersistedScript(savedScript, reviewedScript)] })
         return
       }
+      if (kind === 'asyncapi') {
+        const savedScript = await saveTask.run(async () => {
+          const response = await api.commitAsyncAPIImport({ script: reviewedScript, mode: 'create' })
+          const storedScript = response.stored_script || response.scripts?.[0]
+          if (!storedScript) throw new Error('AsyncAPI import commit did not return a stored script')
+          return storedScript
+        })
+        onImported?.({ scripts: [withFallbackPersistedScript(savedScript, reviewedScript)] })
+        return
+      }
       const savedScript = await saveTask.run(async () => api.createScript(reviewedScript, projectId))
       onImported?.({ scripts: [withFallbackPersistedScript(savedScript, reviewedScript)] })
     } catch (error: unknown) {
@@ -367,14 +423,37 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
     }
   }
 
+  const handleSaveAllAsyncAPIScripts = async () => {
+    if (kind !== 'asyncapi' || generatedScripts.length === 0) return
+    setMessageError('')
+    try {
+      const savedScripts: StoredScript[] = []
+      await saveTask.run(async () => {
+        for (const script of generatedScripts) {
+          const response = await api.commitAsyncAPIImport({ script, mode: 'create' })
+          const storedScript = response.stored_script || response.scripts?.[0]
+          if (!storedScript) throw new Error('AsyncAPI import commit did not return a stored script')
+          savedScripts.push(withFallbackPersistedScript(storedScript, script))
+        }
+        if (!savedScripts[0]) throw new Error('AsyncAPI import commit did not return a stored script')
+        return savedScripts[0]
+      })
+      onImported?.({ scripts: savedScripts })
+    } catch (error: unknown) {
+      setMessageError(getErrorMessage(error, 'Failed to save generated scripts'))
+    }
+  }
+
   const handleParameterizationApplied = (parameterizedScript: ScriptDefinition) => {
     if (!result) return
-    convertTask.setValue({ ...result, script: parameterizedScript } as ProtocolImportResult)
+    const nextScripts = generatedScripts.length ? generatedScripts.map((script, index) => index === selectedScriptIndex ? parameterizedScript : script) : [parameterizedScript]
+    convertTask.setValue({ ...result, script: parameterizedScript, scripts: nextScripts } as ProtocolImportResult)
   }
 
   const handleRuntimeOptionsChanged = (updatedScript: ScriptDefinition) => {
     if (!result) return
-    convertTask.setValue({ ...result, script: updatedScript } as ProtocolImportResult)
+    const nextScripts = generatedScripts.length ? generatedScripts.map((script, index) => index === selectedScriptIndex ? updatedScript : script) : [updatedScript]
+    convertTask.setValue({ ...result, script: updatedScript, scripts: nextScripts } as ProtocolImportResult)
   }
 
   return (
@@ -431,10 +510,56 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
             <span>Script Name</span>
             <input value={name} onChange={event => setName(event.target.value)} placeholder={scriptNamePlaceholder(kind)} />
           </label>
-          <label className="sample-import-field">
-            <span>Base URL Override</span>
-            <input value={baseURL} onChange={event => setBaseURL(event.target.value)} placeholder="https://api.example.com" />
-          </label>
+          {kind !== 'asyncapi' && (
+            <label className="sample-import-field">
+              <span>Base URL Override</span>
+              <input value={baseURL} onChange={event => setBaseURL(event.target.value)} placeholder="https://api.example.com" />
+            </label>
+          )}
+          {kind === 'asyncapi' && (
+            <>
+              <label className="sample-import-field">
+                <span>Broker Override</span>
+                <input value={asyncAPIBrokers} onChange={event => setAsyncAPIBrokers(event.target.value)} placeholder="broker-a:9092, broker-b:9092" />
+              </label>
+              <label className="sample-import-field">
+                <span>Channel Filter</span>
+                <input value={asyncAPIChannels} onChange={event => setAsyncAPIChannels(event.target.value)} placeholder="orders.created, payments.*" />
+              </label>
+              <label className="sample-import-field">
+                <span>Serialization</span>
+                <select value={asyncAPISerialization} onChange={event => setAsyncAPISerialization(event.target.value)}>
+                  <option value="">From spec / raw</option>
+                  <option value="json_schema">JSON Schema</option>
+                  <option value="avro">Avro</option>
+                </select>
+              </label>
+              <label className="sample-import-field">
+                <span>Schema Registry URL</span>
+                <input value={asyncAPISchemaRegistryURL} onChange={event => setAsyncAPISchemaRegistryURL(event.target.value)} placeholder="https://registry.example.com" />
+              </label>
+              <label className="sample-import-field">
+                <span>Schema ID</span>
+                <input type="number" min={0} value={asyncAPISchemaID} onChange={event => setAsyncAPISchemaID(event.target.value)} placeholder="42" />
+              </label>
+              <label className="sample-import-field">
+                <span>Subject</span>
+                <input value={asyncAPISubject} onChange={event => setAsyncAPISubject(event.target.value)} placeholder="orders-value" />
+              </label>
+              <label className="sample-import-field">
+                <span>Think Time (ms)</span>
+                <input type="number" min={0} value={asyncAPIThinkTimeMs} onChange={event => setAsyncAPIThinkTimeMs(Math.max(0, Number(event.target.value) || 0))} />
+              </label>
+              <label className="sample-toggle">
+                <input type="checkbox" checked={asyncAPIMock} onChange={event => setAsyncAPIMock(event.target.checked)} />
+                Use mock broker
+              </label>
+              <label className="sample-toggle">
+                <input type="checkbox" checked={asyncAPIIncludeAssertions} onChange={event => setAsyncAPIIncludeAssertions(event.target.checked)} />
+                Include replay assertions
+              </label>
+            </>
+          )}
           {kind === 'wsdl' && (
             <label className="sample-import-field">
               <span>SOAP Version</span>
@@ -475,9 +600,11 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
       </div>
 
       <div className="sample-import-actions">
-        <button className="btn btn-secondary btn-lg" onClick={() => handleConvert('validation')} disabled={convertTask.pending || !file}>
-          {convertTask.pending && reviewMode === 'validation' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
-        </button>
+        {kind !== 'asyncapi' && (
+          <button className="btn btn-secondary btn-lg" onClick={() => handleConvert('validation')} disabled={convertTask.pending || !file}>
+            {convertTask.pending && reviewMode === 'validation' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
+          </button>
+        )}
         <button className="btn btn-primary btn-lg" onClick={() => handleConvert('conversion')} disabled={convertTask.pending || !file}>
           {convertTask.pending && reviewMode === 'conversion' ? <><span className="spinner" /> Converting...</> : labels.button}
         </button>
@@ -519,6 +646,24 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
         </details>
       )}
 
+      {kind === 'asyncapi' && asyncAPISupport && asyncAPISupport.entries.length > 0 && (
+        <details className="sample-import-support-matrix">
+          <summary>AsyncAPI import coverage ({asyncAPISupport.entries.length} constructs)</summary>
+          <ul className="sample-import-findings">
+            {asyncAPISupport.entries.map(entry => (
+              <li key={entry.id}>
+                <strong>{entry.construct}</strong> — {entry.status}{entry.review_required ? ' (review)' : ''}{entry.notes ? `: ${entry.notes}` : ''}
+              </li>
+            ))}
+          </ul>
+          {asyncAPISupport.notes.length > 0 && (
+            <ul className="sample-import-findings">
+              {asyncAPISupport.notes.map((note, index) => <li key={`asyncapi-note-${index}`}>{note}</li>)}
+            </ul>
+          )}
+        </details>
+      )}
+
       {(messageError || convertTask.error) && <div className="sample-import-error">{messageError || convertTask.error}</div>}
 
       {result && reviewedScript && (
@@ -541,17 +686,86 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
               ? <SelectorCandidatesReview script={reviewedScript} />
               : sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
           >
+            {kind === 'asyncapi' && generatedScripts.length > 1 && (
+              <div className="sample-import-review-block">
+                <h4>Generated Scripts</h4>
+                <div className="sample-import-script-tabs" role="tablist" aria-label="Generated AsyncAPI scripts">
+                  {generatedScripts.map((script, index) => (
+                    <button
+                      key={`${script.name}-${index}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={index === selectedScriptIndex}
+                      className={`sample-import-script-tab ${index === selectedScriptIndex ? 'active' : ''}`}
+                      onClick={() => setSelectedScriptIndex(index)}
+                    >
+                      {script.protocol} · {script.name}
+                    </button>
+                  ))}
+                </div>
+                <button className="btn btn-secondary btn-sm" type="button" onClick={handleSaveAllAsyncAPIScripts} disabled={saveTask.pending}>
+                  {saveTask.pending ? 'Saving...' : 'Save All Scripts'}
+                </button>
+              </div>
+            )}
             <div className="sample-import-stats-grid">
-              {stats && Object.entries(stats).filter(([, value]) => typeof value === 'number').slice(0, 5).map(([key, value]) => (
+              {stats && Object.entries(stats).filter(([, value]) => typeof value === 'number').map(([key, value]) => (
                 <div className="sample-stat" key={key}>
                   <span className="sample-stat-value">{Number(value)}</span>
                   <span className="sample-stat-label">{key.replace(/_/g, ' ')}</span>
                 </div>
               ))}
             </div>
-            {kind === 'openapi' && replayPreflight && (
+            {(kind === 'openapi' || kind === 'asyncapi') && replayPreflight && (
               <div className="sample-import-preflight">
                 <ReplayPreflightCard preflight={replayPreflight} />
+              </div>
+            )}
+            {kind === 'asyncapi' && (
+              <div className="sample-import-review-block">
+                <h4>AsyncAPI Replay Review</h4>
+                <div className="sample-import-stats-grid">
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{reviewedScript.protocol}</span>
+                    <span className="sample-stat-label">protocol</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{reviewedScript.protocol === 'kafka' ? (reviewedScript.config.kafka?.mock === false ? 'Live' : 'Mock') : (reviewedScript.config.jms?.mock === false ? 'Live' : 'Mock')}</span>
+                    <span className="sample-stat-label">adapter</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{(stats?.request_reply_actions as number | undefined) ?? 0}</span>
+                    <span className="sample-stat-label">request reply</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{(stats?.messages_with_correlation as number | undefined) ?? 0}</span>
+                    <span className="sample-stat-label">correlations</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{(stats?.skipped_operations as string[] | undefined)?.length ?? 0}</span>
+                    <span className="sample-stat-label">skipped operations</span>
+                  </div>
+                </div>
+                {(stats?.brokers as string[] | undefined)?.length ? (
+                  <ul className="sample-import-findings">
+                    {(stats!.brokers as string[]).map(broker => <li key={broker}><strong>Broker</strong> {broker}</li>)}
+                  </ul>
+                ) : null}
+                {(stats?.server_protocols as string[] | undefined)?.length ? (
+                  <ul className="sample-import-findings">
+                    {(stats!.server_protocols as string[]).map(protocol => <li key={protocol}><strong>Server protocol</strong> {protocol}</li>)}
+                  </ul>
+                ) : null}
+                {(stats?.schema_formats_detected as string[] | undefined)?.length ? (
+                  <ul className="sample-import-findings">
+                    {(stats!.schema_formats_detected as string[]).map(format => <li key={format}><strong>Schema format</strong> {format}</li>)}
+                  </ul>
+                ) : null}
+                {(stats?.skipped_operations as string[] | undefined)?.length ? (
+                  <ul className="sample-import-findings">
+                    {(stats!.skipped_operations as string[]).map(item => <li key={item}><strong>Skipped</strong> {item}</li>)}
+                  </ul>
+                ) : null}
               </div>
             )}
             {kind === 'openapi' && openAPICorrelations.length > 0 && (

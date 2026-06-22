@@ -44,6 +44,8 @@
 }
 
 .import-runtime-grid input[type="number"],
+.import-runtime-grid input:not([type]),
+.import-runtime-grid input[type="text"],
 .import-runtime-grid select {
   padding: 6px 8px;
   border: 1px solid var(--border);
@@ -51,6 +53,10 @@
   background: var(--bg-secondary, transparent);
   color: var(--text-primary);
   font-size: 12px;
+}
+
+.import-runtime-span-2 {
+  grid-column: span 2;
 }
 
 .import-runtime-toggle {

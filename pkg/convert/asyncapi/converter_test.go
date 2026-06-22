@@ -312,7 +312,7 @@ operations:
 	}
 }
 
-func TestConvertMQTTServerYieldsJMSWithReview(t *testing.T) {
+func TestConvertMQTTServerIsReviewOnly(t *testing.T) {
 	doc := `
 asyncapi: 3.0.0
 info:
@@ -342,8 +342,11 @@ operations:
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	if result.Script.Protocol != "jms-solace" {
-		t.Fatalf("protocol = %q, want jms-solace", result.Script.Protocol)
+	if result.Script.Protocol != "kafka" {
+		t.Fatalf("protocol = %q, want skeleton kafka review script", result.Script.Protocol)
+	}
+	if len(result.Script.Actions) != 0 {
+		t.Fatalf("MQTT import generated %d executable actions, want review-only skeleton", len(result.Script.Actions))
 	}
 	found := false
 	for _, w := range result.Warnings {

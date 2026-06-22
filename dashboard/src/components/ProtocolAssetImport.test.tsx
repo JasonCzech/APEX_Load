@@ -17,9 +17,11 @@ const apiMock = {
   importRAML: vi.fn(),
   getOpenAPISupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   getRAMLSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
+  getAsyncAPISupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   importPostman: vi.fn(),
   validatePostmanImport: vi.fn(),
   commitOpenAPIImport: vi.fn(),
+  commitAsyncAPIImport: vi.fn(),
   savePostmanImport: vi.fn(),
   importWSDL: vi.fn(),
   importAsyncAPI: vi.fn(),
@@ -53,6 +55,8 @@ describe('ProtocolAssetImport', () => {
     }
     apiMock.listScripts.mockResolvedValue({ scripts: [], count: 0 })
     apiMock.getOpenAPISupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
+    apiMock.getRAMLSupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
+    apiMock.getAsyncAPISupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     const postmanResult = {
       scripts: [],
       script: {
@@ -454,6 +458,129 @@ describe('ProtocolAssetImport', () => {
         mappings: [{ id: 'wsdl-op', source_file: 'service.wsdl', start_line: 1, function: 'GetAccount', target_path: 'actions[0]', target_name: 'GetAccount', target_kind: 'action', status: 'converted' }],
       },
     })
+    apiMock.importAsyncAPI.mockResolvedValue({
+      scripts: [
+        {
+          name: 'Orders Kafka',
+          version: '1.0.0',
+          protocol: 'kafka',
+          config: {
+            base_url: '',
+            kafka: {
+              brokers: ['override-a:9092'],
+              mock: true,
+              auto_offset_reset: 'earliest',
+              serialization: 'avro',
+              schema_registry_url: 'http://registry:8081',
+              schema_id: 42,
+              subject: 'orders-value',
+            },
+          },
+          actions: [
+            { name: 'Publish Order', type: 'kafka_produce', target: 'orders.created' },
+            { name: 'Consume Order', type: 'kafka_consume', target: 'orders.created' },
+          ],
+        },
+        {
+          name: 'Orders JMS',
+          version: '1.0.0',
+          protocol: 'jms-solace',
+          config: {
+            base_url: '',
+            jms: {
+              provider: 'solace',
+              broker_url: 'amqp.example.test:5671',
+              mock: true,
+              destination_type: 'topic',
+              subscription: 'asyncapi-replay',
+            },
+          },
+          actions: [
+            { name: 'Publish Shipment', type: 'jms_publish', target: 'shipments' },
+          ],
+        },
+      ],
+      script: {
+        name: 'Orders Kafka',
+        version: '1.0.0',
+        protocol: 'kafka',
+        config: {
+          base_url: '',
+          kafka: {
+            brokers: ['override-a:9092'],
+            mock: true,
+            auto_offset_reset: 'earliest',
+            serialization: 'avro',
+            schema_registry_url: 'http://registry:8081',
+            schema_id: 42,
+            subject: 'orders-value',
+          },
+        },
+        actions: [
+          { name: 'Publish Order', type: 'kafka_produce', target: 'orders.created' },
+          { name: 'Consume Order', type: 'kafka_consume', target: 'orders.created' },
+        ],
+      },
+      warnings: ['config.kafka.auto_offset_reset was set to earliest for import replay against real brokers.'],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [{
+        key: 'asyncapi_operations',
+        title: 'AsyncAPI Operations',
+        severity: 'info',
+        summary: 'Channels converted into messaging actions.',
+        items: ['Publish Order', 'Consume Order'],
+      }],
+      repair_suggestions: [],
+      correlations: [],
+      preflight: {
+        valid: true,
+        action_count: 2,
+        expected_action_count: 2,
+        data_source_count: 1,
+        parameter_count: 0,
+        browser_required: false,
+        checks: [
+          { id: 'messaging_kafka', label: 'Kafka replay readiness', status: 'pass', detail: 'Mock broker enabled.' },
+        ],
+      },
+      stats: {
+        format: 'asyncapi',
+        asyncapi_version: '3.0.0',
+        total_channels: 2,
+        total_operations: 3,
+        converted_actions: 3,
+        produce_actions: 2,
+        consume_actions: 1,
+        request_reply_actions: 1,
+        messages_with_correlation: 1,
+        server_protocols: ['kafka', 'amqp'],
+        brokers: ['override-a:9092'],
+        schema_formats_detected: ['avro'],
+        skipped_operations: ['mqtt sensor update'],
+      },
+      summary: {
+        topics: ['orders.created', 'shipments'],
+      },
+    })
+    apiMock.commitAsyncAPIImport.mockResolvedValue({
+      stored_script: {
+        id: 'script-asyncapi',
+        name: 'Orders Kafka',
+        protocol: 'kafka',
+        version: '1.0.0',
+        project_id: 'project-1',
+        created_at: '2026-01-01T00:00:00Z',
+        script: {
+          name: 'Orders Kafka',
+          version: '1.0.0',
+          protocol: 'kafka',
+          config: { base_url: '', kafka: { brokers: ['override-a:9092'], mock: true } },
+          actions: [{ name: 'Publish Order', type: 'kafka_produce', target: 'orders.created' }],
+        },
+      },
+      replaced: false,
+    })
   })
 
   afterEach(async () => {
@@ -807,6 +934,173 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('orders.us-e2.cloudhub.io')
   })
 
+  it('imports AsyncAPI specs with messaging controls, support matrix, and replay preflight', async () => {
+    apiMock.getAsyncAPISupportMatrix.mockResolvedValueOnce({
+      support_matrix: [
+        { id: 'asyncapi-payload-avro', area: 'Messages', construct: 'avro schemaFormat', status: 'supported', review_required: false },
+        { id: 'asyncapi-servers-mqtt', area: 'Servers', construct: 'mqtt servers', status: 'review_only', review_required: true },
+      ],
+      notes: ['MQTT operations are review-only.'],
+    })
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="asyncapi" projectId="project-1" />)
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Import AsyncAPI')
+    expect(container.textContent).toContain('AsyncAPI import coverage')
+    expect(container.textContent).toContain('avro schemaFormat')
+    expect(container.textContent).toContain('MQTT operations are review-only.')
+    expect(container.textContent).not.toContain('Validate Only')
+    expect(container.textContent).toContain('Broker Override')
+    expect(container.textContent).not.toContain('Base URL Override')
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+
+    const file = new File(['asyncapi: 3.0.0'], 'orders.asyncapi.yaml', { type: 'application/yaml' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const brokerInput = Array.from(container.querySelectorAll('input')).find(input => input.closest('label')?.textContent?.includes('Broker Override')) as HTMLInputElement | undefined
+    const channelInput = Array.from(container.querySelectorAll('input')).find(input => input.closest('label')?.textContent?.includes('Channel Filter')) as HTMLInputElement | undefined
+    const registryInput = Array.from(container.querySelectorAll('input')).find(input => input.closest('label')?.textContent?.includes('Schema Registry URL')) as HTMLInputElement | undefined
+    const schemaIDInput = Array.from(container.querySelectorAll('input')).find(input => input.closest('label')?.textContent?.includes('Schema ID')) as HTMLInputElement | undefined
+    const subjectInput = Array.from(container.querySelectorAll('input')).find(input => input.closest('label')?.textContent?.includes('Subject')) as HTMLInputElement | undefined
+    const serializationSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Serialization')) as HTMLSelectElement | undefined
+    expect(brokerInput).toBeDefined()
+    expect(channelInput).toBeDefined()
+    expect(registryInput).toBeDefined()
+    expect(schemaIDInput).toBeDefined()
+    expect(subjectInput).toBeDefined()
+    expect(serializationSelect).toBeDefined()
+    if (!brokerInput || !channelInput || !registryInput || !schemaIDInput || !subjectInput || !serializationSelect) return
+
+    await act(async () => {
+      setInputValue(brokerInput, 'override-a:9092')
+      setInputValue(channelInput, 'orders.created')
+      serializationSelect.value = 'avro'
+      serializationSelect.dispatchEvent(new Event('change', { bubbles: true }))
+      setInputValue(registryInput, 'http://registry:8081')
+      setInputValue(schemaIDInput, '42')
+      setInputValue(subjectInput, 'orders-value')
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importAsyncAPI).toHaveBeenCalledWith(file, expect.objectContaining({
+      project_id: 'project-1',
+      brokers: 'override-a:9092',
+      channels: 'orders.created',
+      mock: true,
+      include_assertions: true,
+      serialization: 'avro',
+      schema_registry_url: 'http://registry:8081',
+      schema_id: 42,
+      subject: 'orders-value',
+    }))
+    expect(container.textContent).toContain('Preflight')
+    expect(container.textContent).toContain('Kafka replay readiness')
+    expect(container.textContent).toContain('AsyncAPI Replay Review')
+    expect(container.textContent).toContain('request reply')
+    expect(container.textContent).toContain('correlations')
+    expect(container.textContent).toContain('mqtt sensor update')
+    expect(container.textContent).toContain('Generated Scripts')
+    expect(container.textContent).toContain('kafka · Orders Kafka')
+    expect(container.textContent).toContain('jms-solace · Orders JMS')
+    expect(container.textContent).toContain('Kafka brokers · serde · replay')
+    expect(container.textContent).toContain('SASL Secret')
+  })
+
+  it('saves all generated AsyncAPI scripts through the commit route', async () => {
+    const onImported = vi.fn()
+    apiMock.commitAsyncAPIImport
+      .mockResolvedValueOnce({
+        stored_script: {
+          id: 'script-asyncapi-kafka',
+          name: 'Orders Kafka',
+          protocol: 'kafka',
+          version: '1.0.0',
+          project_id: 'project-1',
+          created_at: '2026-01-01T00:00:00Z',
+          script: { name: 'Orders Kafka', version: '1.0.0', protocol: 'kafka', config: { base_url: '' }, actions: [] },
+        },
+      })
+      .mockResolvedValueOnce({
+        stored_script: {
+          id: 'script-asyncapi-jms',
+          name: 'Orders JMS',
+          protocol: 'jms-solace',
+          version: '1.0.0',
+          project_id: 'project-1',
+          created_at: '2026-01-01T00:00:00Z',
+          script: { name: 'Orders JMS', version: '1.0.0', protocol: 'jms-solace', config: { base_url: '' }, actions: [] },
+        },
+      })
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="asyncapi" projectId="project-1" onImported={onImported} />)
+    })
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+    const file = new File(['asyncapi: 3.0.0'], 'orders.asyncapi.yaml', { type: 'application/yaml' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const jmsTab = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('jms-solace · Orders JMS'))
+    expect(jmsTab).toBeDefined()
+    if (!jmsTab) return
+    await act(async () => {
+      jmsTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('JMS broker · destination · replay')
+    expect(container.textContent).toContain('Destination Type')
+
+    const saveAll = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save All Scripts'))
+    expect(saveAll).toBeDefined()
+    if (!saveAll) return
+    await act(async () => {
+      saveAll.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(2)
+    expect(apiMock.commitAsyncAPIImport).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      mode: 'create',
+      script: expect.objectContaining({ name: 'Orders Kafka', protocol: 'kafka' }),
+    }))
+    expect(apiMock.commitAsyncAPIImport).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      mode: 'create',
+      script: expect.objectContaining({ name: 'Orders JMS', protocol: 'jms-solace' }),
+    }))
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [
+        expect.objectContaining({ id: 'script-asyncapi-kafka' }),
+        expect.objectContaining({ id: 'script-asyncapi-jms' }),
+      ],
+    }))
+  })
+
   it('passes optional Postman environment files to validation imports', async () => {
     await act(async () => {
       root.render(<ProtocolAssetImport kind="postman" projectId="project-1" />)
@@ -1107,4 +1401,10 @@ async function flushPromises() {
   await act(async () => {
     await Promise.resolve()
   })
+}
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
 }

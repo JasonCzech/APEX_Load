@@ -1048,6 +1048,18 @@ func devWebMatrixContains(entries []struct {
 	return false
 }
 
+func preflightHasCheck(entries []struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}, id string) bool {
+	for _, entry := range entries {
+		if entry.ID == id && entry.Status != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func TestHandleImportAsyncAPI(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	payload := map[string]any{
@@ -1100,6 +1112,16 @@ operations:
 				Target string `json:"target"`
 			} `json:"actions"`
 		} `json:"script"`
+		Scripts []struct {
+			Protocol string `json:"protocol"`
+		} `json:"scripts"`
+		Preflight struct {
+			Valid  bool `json:"valid"`
+			Checks []struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+			} `json:"checks"`
+		} `json:"preflight"`
 		ReviewSections []struct {
 			Key      string   `json:"key"`
 			Severity string   `json:"severity"`
@@ -1116,10 +1138,127 @@ operations:
 	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "kafka_produce" || result.Script.Actions[0].Target != "orders.created" {
 		t.Fatalf("unexpected actions: %+v", result.Script.Actions)
 	}
+	if len(result.Scripts) != 1 || result.Scripts[0].Protocol != "kafka" {
+		t.Fatalf("scripts = %+v, want one kafka script", result.Scripts)
+	}
+	if !preflightHasCheck(result.Preflight.Checks, "messaging_kafka") {
+		t.Fatalf("missing AsyncAPI replay preflight: %+v", result.Preflight)
+	}
 	if len(result.SourceReview) == 0 {
 		t.Fatal("expected root source_review in response")
 	}
 	assertReviewSection(t, result.ReviewSections, "asyncapi_operations", "info", "send")
+}
+
+func TestHandleImportAsyncAPIMultipartPassesOptions(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "orders.asyncapi.yaml")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	if _, err := part.Write([]byte(`asyncapi: 3.0.0
+info:
+  title: Orders
+  version: 1.0.0
+servers:
+  prod:
+    host: kafka:9092
+    protocol: kafka
+channels:
+  orderCreated:
+    address: orders.created
+    messages:
+      m:
+        payload:
+          type: object
+          properties:
+            orderId:
+              type: string
+operations:
+  send:
+    action: send
+    channel:
+      $ref: '#/channels/orderCreated'
+`)); err != nil {
+		t.Fatalf("write multipart file returned error: %v", err)
+	}
+	fields := map[string]string{
+		"project_id":            "proj-multipart",
+		"script_name":           "Orders Multipart",
+		"brokers":               "override-a:9092,override-b:9092",
+		"mock":                  "false",
+		"include_assertions":    "false",
+		"default_think_time_ms": "125",
+		"serialization":         "json_schema",
+		"schema_registry_url":   "http://registry:8081",
+		"schema_id":             "42",
+		"subject":               "orders-value",
+	}
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatalf("WriteField(%s) returned error: %v", key, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/asyncapi", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			Name    string `json:"name"`
+			Project string `json:"project_id"`
+			Config  struct {
+				Kafka struct {
+					Brokers           []string `json:"brokers"`
+					Mock              bool     `json:"mock"`
+					Serialization     string   `json:"serialization"`
+					SchemaRegistryURL string   `json:"schema_registry_url"`
+					SchemaID          int      `json:"schema_id"`
+					Subject           string   `json:"subject"`
+				} `json:"kafka"`
+				ThinkTime struct {
+					MeanMs int `json:"mean_ms"`
+				} `json:"think_time"`
+			} `json:"config"`
+			Actions []struct {
+				Assertions []any `json:"assertions"`
+			} `json:"actions"`
+		} `json:"script"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Name != "Orders_Multipart" || result.Script.Project != "proj-multipart" {
+		t.Fatalf("script identity = %+v", result.Script)
+	}
+	if got := result.Script.Config.Kafka.Brokers; len(got) != 2 || got[0] != "override-a:9092" || got[1] != "override-b:9092" {
+		t.Fatalf("brokers = %v, want multipart override", got)
+	}
+	if result.Script.Config.Kafka.Mock {
+		t.Fatal("mock = true, want multipart mock=false passthrough")
+	}
+	if result.Script.Config.Kafka.Serialization != "json_schema" ||
+		result.Script.Config.Kafka.SchemaRegistryURL != "http://registry:8081" ||
+		result.Script.Config.Kafka.SchemaID != 42 ||
+		result.Script.Config.Kafka.Subject != "orders-value" {
+		t.Fatalf("serde config not passed through: %+v", result.Script.Config.Kafka)
+	}
+	if result.Script.Config.ThinkTime.MeanMs != 125 {
+		t.Fatalf("think time mean_ms = %d, want 125", result.Script.Config.ThinkTime.MeanMs)
+	}
+	if len(result.Script.Actions) != 1 || len(result.Script.Actions[0].Assertions) != 0 {
+		t.Fatalf("include_assertions=false not honored: %+v", result.Script.Actions)
+	}
 }
 
 func TestHandleImportBrokerConfigMQSC(t *testing.T) {

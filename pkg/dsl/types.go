@@ -247,7 +247,7 @@ type KafkaConfig struct {
 	Partitions         int               `json:"partitions,omitempty"`           // partition count hint for the mock broker
 	TimeoutMs          int               `json:"timeout_ms,omitempty"`           // default consume/request timeout
 	MaxMessageBytes    int               `json:"max_message_bytes,omitempty"`    // producer-side max record size; Event Hubs caps at 1 MiB (Std/Prem), 20 MiB (Dedicated)
-	Serialization      string            `json:"serialization,omitempty"`        // ""(raw)|json_schema — Confluent Schema Registry wire-format serde (avro/protobuf in a later release)
+	Serialization      string            `json:"serialization,omitempty"`        // ""(raw)|json_schema|avro — Confluent Schema Registry wire-format serde
 	SchemaRegistryURL  string            `json:"schema_registry_url,omitempty"`  // Confluent Schema Registry base URL; registers the subject to obtain the schema id
 	Subject            string            `json:"subject,omitempty"`              // explicit registry subject; defaults to <topic>-value
 	Schema             string            `json:"schema,omitempty"`               // schema document registered for the record value

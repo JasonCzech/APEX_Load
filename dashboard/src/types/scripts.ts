@@ -382,21 +382,32 @@ export interface KafkaTLSConfig {
 
 export interface KafkaConfig {
   brokers?: string[]
+  profile?: string
   security_protocol?: string
   sasl_mechanism?: string
   sasl_username?: string
   sasl_password?: string
   sasl_password_secret?: string
+  oauth_scope?: string
   tls?: KafkaTLSConfig
   client_id?: string
   consumer_group?: string
   topic?: string
   acks?: string
+  idempotence?: string
+  transactional_id?: string
   compression?: string
   partition_strategy?: string
   auto_offset_reset?: string
+  isolation_level?: string
   partitions?: number
   timeout_ms?: number
+  max_message_bytes?: number
+  serialization?: string
+  schema_registry_url?: string
+  subject?: string
+  schema?: string
+  schema_id?: number
   properties?: Record<string, string>
   mock?: boolean
 }

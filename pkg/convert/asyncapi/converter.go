@@ -38,6 +38,10 @@ type ConvertOptions struct {
 	IncludeAssertions  *bool    `json:"include_assertions,omitempty"`
 	DefaultThinkTimeMs int      `json:"default_think_time_ms,omitempty"`
 	Mock               *bool    `json:"mock,omitempty"` // default true (real adapter is stubbed)
+	SchemaRegistryURL  string   `json:"schema_registry_url,omitempty"`
+	SchemaID           int      `json:"schema_id,omitempty"`
+	SchemaSubject      string   `json:"schema_subject,omitempty"`
+	Serialization      string   `json:"serialization,omitempty"`
 }
 
 // ConvertStats summarizes what the converter saw and produced.
@@ -71,6 +75,7 @@ type ReviewSummary struct {
 // ConvertResult is the converter output.
 type ConvertResult struct {
 	Script       *dsl.Script        `json:"script"`
+	Scripts      []*dsl.Script      `json:"scripts,omitempty"`
 	Warnings     []string           `json:"warnings,omitempty"`
 	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
 	Stats        ConvertStats       `json:"stats"`
@@ -95,19 +100,35 @@ type info struct {
 }
 
 type server struct {
-	URL      string `json:"url,omitempty" yaml:"url,omitempty"`           // 2.x
-	Host     string `json:"host,omitempty" yaml:"host,omitempty"`         // 3.x
-	Pathname string `json:"pathname,omitempty" yaml:"pathname,omitempty"` // 3.x
-	Protocol string `json:"protocol,omitempty" yaml:"protocol,omitempty"`
+	URL       string                    `json:"url,omitempty" yaml:"url,omitempty"`           // 2.x
+	Host      string                    `json:"host,omitempty" yaml:"host,omitempty"`         // 3.x
+	Pathname  string                    `json:"pathname,omitempty" yaml:"pathname,omitempty"` // 3.x
+	Protocol  string                    `json:"protocol,omitempty" yaml:"protocol,omitempty"`
+	Variables map[string]serverVariable `json:"variables,omitempty" yaml:"variables,omitempty"`
+	Security  []map[string][]string     `json:"security,omitempty" yaml:"security,omitempty"`
+}
+
+type serverVariable struct {
+	Default any   `json:"default,omitempty" yaml:"default,omitempty"`
+	Enum    []any `json:"enum,omitempty" yaml:"enum,omitempty"`
 }
 
 type channel struct {
-	Ref       string                `json:"$ref,omitempty" yaml:"$ref,omitempty"`
-	Address   string                `json:"address,omitempty" yaml:"address,omitempty"`     // 3.x
-	Publish   *channelOperation     `json:"publish,omitempty" yaml:"publish,omitempty"`     // 2.x
-	Subscribe *channelOperation     `json:"subscribe,omitempty" yaml:"subscribe,omitempty"` // 2.x
-	Messages  map[string]messageDef `json:"messages,omitempty" yaml:"messages,omitempty"`   // 3.x
-	Bindings  bindings              `json:"bindings,omitempty" yaml:"bindings,omitempty"`
+	Ref        string                `json:"$ref,omitempty" yaml:"$ref,omitempty"`
+	Address    string                `json:"address,omitempty" yaml:"address,omitempty"` // 3.x
+	Servers    []ref                 `json:"servers,omitempty" yaml:"servers,omitempty"` // 3.x
+	Parameters map[string]parameter  `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	Publish    *channelOperation     `json:"publish,omitempty" yaml:"publish,omitempty"`     // 2.x
+	Subscribe  *channelOperation     `json:"subscribe,omitempty" yaml:"subscribe,omitempty"` // 2.x
+	Messages   map[string]messageDef `json:"messages,omitempty" yaml:"messages,omitempty"`   // 3.x
+	Bindings   bindings              `json:"bindings,omitempty" yaml:"bindings,omitempty"`
+}
+
+type parameter struct {
+	Default  any   `json:"default,omitempty" yaml:"default,omitempty"`
+	Example  any   `json:"example,omitempty" yaml:"example,omitempty"`
+	Examples []any `json:"examples,omitempty" yaml:"examples,omitempty"`
+	Enum     []any `json:"enum,omitempty" yaml:"enum,omitempty"`
 }
 
 type channelOperation struct {
@@ -121,6 +142,7 @@ type operation struct {
 	Action   string          `json:"action,omitempty" yaml:"action,omitempty"` // send|receive
 	Channel  ref             `json:"channel,omitempty" yaml:"channel,omitempty"`
 	Messages []ref           `json:"messages,omitempty" yaml:"messages,omitempty"`
+	Servers  []ref           `json:"servers,omitempty" yaml:"servers,omitempty"`
 	Reply    *operationReply `json:"reply,omitempty" yaml:"reply,omitempty"`
 	Title    string          `json:"title,omitempty" yaml:"title,omitempty"`
 	Summary  string          `json:"summary,omitempty" yaml:"summary,omitempty"`
@@ -136,11 +158,20 @@ type ref struct {
 }
 
 type bindings struct {
-	Kafka *kafkaBinding `json:"kafka,omitempty" yaml:"kafka,omitempty"`
+	Kafka  *kafkaBinding  `json:"kafka,omitempty" yaml:"kafka,omitempty"`
+	AMQP   map[string]any `json:"amqp,omitempty" yaml:"amqp,omitempty"`
+	JMS    map[string]any `json:"jms,omitempty" yaml:"jms,omitempty"`
+	Solace map[string]any `json:"solace,omitempty" yaml:"solace,omitempty"`
+	MQTT   map[string]any `json:"mqtt,omitempty" yaml:"mqtt,omitempty"`
 }
 
 type kafkaBinding struct {
-	Topic string `json:"topic,omitempty" yaml:"topic,omitempty"`
+	Topic      string `json:"topic,omitempty" yaml:"topic,omitempty"`
+	Key        string `json:"key,omitempty" yaml:"key,omitempty"`
+	GroupID    string `json:"groupId,omitempty" yaml:"groupId,omitempty"`
+	ClientID   string `json:"clientId,omitempty" yaml:"clientId,omitempty"`
+	Partitions int    `json:"partitions,omitempty" yaml:"partitions,omitempty"`
+	Partition  int    `json:"partition,omitempty" yaml:"partition,omitempty"`
 }
 
 type messageDef struct {
@@ -160,25 +191,54 @@ type correlationID struct {
 }
 
 type components struct {
-	Messages map[string]messageDef `json:"messages,omitempty" yaml:"messages,omitempty"`
-	Schemas  map[string]schema     `json:"schemas,omitempty" yaml:"schemas,omitempty"`
+	Messages        map[string]messageDef     `json:"messages,omitempty" yaml:"messages,omitempty"`
+	Schemas         map[string]schema         `json:"schemas,omitempty" yaml:"schemas,omitempty"`
+	Channels        map[string]channel        `json:"channels,omitempty" yaml:"channels,omitempty"`
+	SecuritySchemes map[string]securityScheme `json:"securitySchemes,omitempty" yaml:"securitySchemes,omitempty"`
+}
+
+type securityScheme struct {
+	Type         string `json:"type,omitempty" yaml:"type,omitempty"`
+	Scheme       string `json:"scheme,omitempty" yaml:"scheme,omitempty"`
+	BearerFormat string `json:"bearerFormat,omitempty" yaml:"bearerFormat,omitempty"`
 }
 
 type schema struct {
 	Ref        string            `json:"$ref,omitempty" yaml:"$ref,omitempty"`
-	Type       string            `json:"type,omitempty" yaml:"type,omitempty"`
+	Type       any               `json:"type,omitempty" yaml:"type,omitempty"`
 	Format     string            `json:"format,omitempty" yaml:"format,omitempty"`
 	Properties map[string]schema `json:"properties,omitempty" yaml:"properties,omitempty"`
 	Items      *schema           `json:"items,omitempty" yaml:"items,omitempty"`
+	Values     *schema           `json:"values,omitempty" yaml:"values,omitempty"`
+	Fields     []avroField       `json:"fields,omitempty" yaml:"fields,omitempty"`
 	Example    any               `json:"example,omitempty" yaml:"example,omitempty"`
 	Examples   []any             `json:"examples,omitempty" yaml:"examples,omitempty"`
 	Enum       []any             `json:"enum,omitempty" yaml:"enum,omitempty"`
+	Default    any               `json:"default,omitempty" yaml:"default,omitempty"`
+	Name       string            `json:"name,omitempty" yaml:"name,omitempty"`
+	Namespace  string            `json:"namespace,omitempty" yaml:"namespace,omitempty"`
 }
+
+type avroField struct {
+	Name    string `json:"name,omitempty" yaml:"name,omitempty"`
+	Type    any    `json:"type,omitempty" yaml:"type,omitempty"`
+	Default any    `json:"default,omitempty" yaml:"default,omitempty"`
+	Doc     string `json:"doc,omitempty" yaml:"doc,omitempty"`
+}
+
+type opTarget string
+
+const (
+	targetKafka  opTarget = "kafka"
+	targetJMS    opTarget = "jms"
+	targetReview opTarget = "review"
+)
 
 // kafkaOp is the unified, version-neutral operation the generator consumes.
 type kafkaOp struct {
 	name           string
 	kind           string // produce | consume | request_reply
+	targetProtocol opTarget
 	topic          string
 	replyTopic     string
 	payload        schema
@@ -188,6 +248,13 @@ type kafkaOp struct {
 	// produce-side uniqueness and consume-side extraction automatically.
 	correlationLocation string
 	schemaFormat        string
+	schemaDocument      string
+	key                 string
+	consumerGroup       string
+	clientID            string
+	partition           *int
+	destinationType     string
+	subscription        string
 	channelName         string
 }
 
@@ -234,10 +301,15 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		useJMS, jmsBroker, jmsWarnings = detectJMSTarget(doc)
 	}
 
-	ops, schemaFormats, opWarnings := collectOperations(doc, req.Options, &diagnostics, &mappings, sourceFile)
-	if len(ops) == 0 {
-		return nil, errors.New("no supported operations found in AsyncAPI document")
+	defaultTarget := targetKafka
+	if useJMS {
+		defaultTarget = targetJMS
 	}
+	ops, schemaFormats, opWarnings, skipped := collectOperations(doc, req.Options, defaultTarget, &diagnostics, &mappings, sourceFile)
+	if len(ops) == 0 {
+		diagnostics.Add(diag.Warning, "AsyncAPI import produced no executable actions", "", "all detected operations were review-only, filtered, or unsupported")
+	}
+	ops = orderReplayOps(ops)
 
 	mock := true
 	if req.Options.Mock != nil {
@@ -245,49 +317,15 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	scriptName := convertutil.FirstNonEmpty(req.Options.ScriptName, req.Name, doc.Info.Title, "Imported_AsyncAPI_Script")
-	cfg := dsl.ScriptConfig{
-		ThinkTime: dsl.ThinkTimeConfig{
-			Type:   "fixed",
-			MeanMs: float64(firstPositive(req.Options.DefaultThinkTimeMs, 1000)),
-		},
-		Pacing:        dsl.PacingConfig{Type: "none"},
-		RunLogic:      dsl.RunLogicConfig{Iterations: 0, AutoTransactions: "none"},
-		ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false},
-		Log:           dsl.LogConfig{Level: "standard"},
-	}
-	protocol := "kafka"
-	if useJMS {
-		protocol = "jms-solace"
-		cfg.JMS = dsl.JMSConfig{
-			BrokerURL: jmsBroker,
-			Provider:  "solace",
-			Mock:      mock,
-		}
-	} else {
-		cfg.Kafka = dsl.KafkaConfig{
-			Brokers:          brokers,
-			Profile:          kafkaProfile,
-			SecurityProtocol: securityProtocol,
-			Acks:             "all",
-			Mock:             mock,
-		}
-	}
+
 	result := &ConvertResult{
-		Script: &dsl.Script{
-			Name:          sanitizeName(scriptName),
-			Version:       "1.0.0",
-			Protocol:      protocol,
-			GeneratedBy:   "apexload-asyncapi-converter",
-			GeneratedFrom: "asyncapi",
-			CreatedAt:     time.Now(),
-			Config:        cfg,
-		},
 		Stats: ConvertStats{
-			Format:          "asyncapi",
-			AsyncAPIVersion: doc.AsyncAPI,
-			TotalChannels:   len(doc.Channels),
-			ServerProtocols: protocols,
-			Brokers:         brokers,
+			Format:            "asyncapi",
+			AsyncAPIVersion:   doc.AsyncAPI,
+			TotalChannels:     len(doc.Channels),
+			ServerProtocols:   protocols,
+			Brokers:           brokers,
+			SkippedOperations: skipped,
 		},
 		Summary: ReviewSummary{
 			Title:            doc.Info.Title,
@@ -306,10 +344,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		result.Warnings = append(result.Warnings, "AMQP/JMS servers were detected; the import targets the jms-solace adapter (executable with -tags jms_solace_real). Confirm the destination type (queue/topic) and credentials")
 	}
 	if mock {
-		if useJMS {
-			result.Warnings = append(result.Warnings, "config.jms.mock is enabled so the generated script runs against the in-memory broker; disable it once a real JMS adapter is configured")
-		} else {
+		if hasTarget(ops, targetKafka) {
 			result.Warnings = append(result.Warnings, "config.kafka.mock is enabled so the generated script runs against the in-memory broker; disable it once a real Kafka adapter is configured")
+		}
+		if hasTarget(ops, targetJMS) {
+			result.Warnings = append(result.Warnings, "config.jms.mock is enabled so the generated script runs against the in-memory broker; disable it once a real JMS adapter is configured")
 		}
 	}
 
@@ -318,35 +357,53 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	topics := map[string]struct{}{}
 	operationNames := []string{}
 
-	for i, op := range ops {
-		var action dsl.Action
-		var bodyColumns []string
-		if useJMS {
-			action, bodyColumns = buildJMSAction(op, includeAssertions)
-		} else {
-			action, bodyColumns = buildAction(op, includeAssertions)
+	grouped := groupOps(ops)
+	for _, target := range []opTarget{targetKafka, targetJMS} {
+		groupOps := grouped[target]
+		if len(groupOps) == 0 {
+			continue
 		}
-		idx := len(result.Script.Actions)
-		result.Script.Actions = append(result.Script.Actions, action)
-		mappings = append(mappings, sourceview.CoarseMapping(sourceFile, op.channelName+" ("+op.kind+")", fmt.Sprintf("actions[%d]", idx), action.Name, "action", "converted", "AsyncAPI operation was converted into a generated APEX Load action."))
-		result.Stats.ConvertedActions++
-		switch op.kind {
-		case "produce":
-			result.Stats.ProduceActions++
-		case "consume":
-			result.Stats.ConsumeActions++
-		case "request_reply":
-			result.Stats.RequestReplyActions++
+		script := buildScriptForOps(scriptName, target, groupOps, req.Options, brokers, kafkaProfile, securityProtocol, jmsBroker, mock, len(grouped) > 1)
+		if target == targetKafka && script.Config.Kafka.AutoOffsetReset == "earliest" {
+			result.Warnings = append(result.Warnings, "config.kafka.auto_offset_reset was set to earliest because the imported script produces and consumes records; this lets real-broker replay observe records produced earlier in the same run")
 		}
-		if op.hasCorrelation {
-			result.Stats.MessagesWithCorrelation++
+		for i, op := range groupOps {
+			var action dsl.Action
+			var bodyColumns []string
+			if target == targetJMS {
+				action, bodyColumns = buildJMSAction(op, includeAssertions, doc)
+			} else {
+				action, bodyColumns = buildAction(op, includeAssertions, doc)
+			}
+			idx := len(script.Actions)
+			script.Actions = append(script.Actions, action)
+			mappings = append(mappings, sourceview.CoarseMapping(sourceFile, op.channelName+" ("+op.kind+")", fmt.Sprintf("%s.actions[%d]", script.Protocol, idx), action.Name, "action", "converted", "AsyncAPI operation was converted into a generated APEX Load action."))
+			result.Stats.ConvertedActions++
+			switch op.kind {
+			case "produce":
+				result.Stats.ProduceActions++
+			case "consume":
+				result.Stats.ConsumeActions++
+			case "request_reply":
+				result.Stats.RequestReplyActions++
+			}
+			if op.hasCorrelation {
+				result.Stats.MessagesWithCorrelation++
+			}
+			topics[op.topic] = struct{}{}
+			operationNames = append(operationNames, action.Name)
+			for _, c := range bodyColumns {
+				columns[c] = struct{}{}
+			}
+			_ = i
 		}
-		topics[op.topic] = struct{}{}
-		operationNames = append(operationNames, action.Name)
-		for _, c := range bodyColumns {
-			columns[c] = struct{}{}
-		}
-		_ = i
+		result.Scripts = append(result.Scripts, script)
+	}
+	if len(result.Scripts) > 0 {
+		result.Script = result.Scripts[0]
+	} else {
+		result.Script = buildScriptForOps(scriptName, defaultTarget, nil, req.Options, brokers, kafkaProfile, securityProtocol, jmsBroker, mock, false)
+		result.Scripts = []*dsl.Script{result.Script}
 	}
 
 	result.Stats.TotalOperations = len(ops)
@@ -356,13 +413,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	dataColumns := sortedKeys(columns)
 	result.Summary.DataColumns = dataColumns
 	if len(dataColumns) > 0 {
-		result.Script.DataSources = []dsl.DataSource{dataSource(dataColumns)}
+		for _, script := range result.Scripts {
+			script.DataSources = []dsl.DataSource{dataSource(dataColumns)}
+		}
 	}
-	if useJMS {
+	if hasTarget(ops, targetJMS) {
 		if jmsBroker == "" {
 			result.Warnings = append(result.Warnings, "no broker URL was derived from servers; set config.jms.broker_url before running against a real broker")
 		}
-	} else if len(brokers) == 0 {
+	}
+	if hasTarget(ops, targetKafka) && len(brokers) == 0 {
 		result.Warnings = append(result.Warnings, "no Kafka brokers were derived from servers; set config.kafka.brokers before running against a real cluster")
 	}
 
@@ -385,12 +445,198 @@ func decodeDocument(data []byte) (*document, error) {
 	return &doc, nil
 }
 
+func buildScriptForOps(scriptName string, target opTarget, ops []kafkaOp, opts ConvertOptions, brokers []string, kafkaProfile, securityProtocol, jmsBroker string, mock bool, suffix bool) *dsl.Script {
+	name := sanitizeName(scriptName)
+	protocolName := "kafka"
+	if target == targetJMS {
+		protocolName = "jms-solace"
+	}
+	if suffix {
+		name = sanitizeName(name + "_" + protocolName)
+	}
+	cfg := baseScriptConfig(opts)
+	if target == targetJMS {
+		cfg.JMS = dsl.JMSConfig{
+			BrokerURL: jmsBroker,
+			Provider:  "solace",
+			Mock:      mock,
+		}
+		if opNeedsTopicSubscription(ops) {
+			cfg.JMS.DestinationType = "topic"
+			cfg.JMS.Subscription = "asyncapi-replay"
+			cfg.JMS.Destination = firstOpTopic(ops)
+		}
+	} else {
+		cfg.Kafka = dsl.KafkaConfig{
+			Brokers:          brokers,
+			Profile:          kafkaProfile,
+			SecurityProtocol: securityProtocol,
+			Acks:             "all",
+			Mock:             mock,
+		}
+		if kafkaProfile == "eventhubs" {
+			cfg.Kafka.SASLMechanism = "plain"
+			cfg.Kafka.SASLUsername = "$ConnectionString"
+			cfg.Kafka.SASLPasswordSecret = "eventhubs_connection_string"
+		}
+		if opsNeedReplayFromStart(ops) {
+			cfg.Kafka.AutoOffsetReset = "earliest"
+		}
+		applyKafkaSerdeConfig(&cfg.Kafka, ops, opts)
+	}
+	return &dsl.Script{
+		Name:          name,
+		Version:       "1.0.0",
+		Protocol:      protocolName,
+		GeneratedBy:   "apexload-asyncapi-converter",
+		GeneratedFrom: "asyncapi",
+		CreatedAt:     time.Now(),
+		Config:        cfg,
+	}
+}
+
+func baseScriptConfig(opts ConvertOptions) dsl.ScriptConfig {
+	return dsl.ScriptConfig{
+		ThinkTime: dsl.ThinkTimeConfig{
+			Type:   "fixed",
+			MeanMs: float64(firstPositive(opts.DefaultThinkTimeMs, 1000)),
+		},
+		Pacing:        dsl.PacingConfig{Type: "none"},
+		RunLogic:      dsl.RunLogicConfig{Iterations: 0, AutoTransactions: "none"},
+		ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false},
+		Log:           dsl.LogConfig{Level: "standard"},
+	}
+}
+
+func groupOps(ops []kafkaOp) map[opTarget][]kafkaOp {
+	grouped := map[opTarget][]kafkaOp{}
+	for _, op := range ops {
+		target := op.targetProtocol
+		if target == "" {
+			target = targetKafka
+		}
+		if target == targetReview {
+			continue
+		}
+		grouped[target] = append(grouped[target], op)
+	}
+	return grouped
+}
+
+func hasTarget(ops []kafkaOp, target opTarget) bool {
+	for _, op := range ops {
+		if op.targetProtocol == target {
+			return true
+		}
+	}
+	return false
+}
+
+func opsNeedReplayFromStart(ops []kafkaOp) bool {
+	hasProducer := false
+	hasConsumer := false
+	for _, op := range ops {
+		switch op.kind {
+		case "produce", "request_reply":
+			hasProducer = true
+		case "consume":
+			hasConsumer = true
+		}
+	}
+	return hasProducer && hasConsumer
+}
+
+func opNeedsTopicSubscription(ops []kafkaOp) bool {
+	for _, op := range ops {
+		if op.destinationType == "topic" && op.kind == "consume" {
+			return true
+		}
+	}
+	return false
+}
+
+func firstOpTopic(ops []kafkaOp) string {
+	for _, op := range ops {
+		if strings.TrimSpace(op.topic) != "" {
+			return op.topic
+		}
+	}
+	return ""
+}
+
+func applyKafkaSerdeConfig(cfg *dsl.KafkaConfig, ops []kafkaOp, opts ConvertOptions) {
+	serialization := strings.ToLower(strings.TrimSpace(opts.Serialization))
+	schemaDoc := ""
+	for _, op := range ops {
+		if serialization == "" {
+			serialization = serializationForSchemaFormat(op.schemaFormat)
+		}
+		if schemaDoc == "" {
+			schemaDoc = op.schemaDocument
+		}
+	}
+	if serialization == "" || serialization == "raw" {
+		return
+	}
+	cfg.Serialization = serialization
+	cfg.SchemaRegistryURL = strings.TrimSpace(opts.SchemaRegistryURL)
+	cfg.SchemaID = opts.SchemaID
+	cfg.Subject = strings.TrimSpace(opts.SchemaSubject)
+	if schemaDoc != "" {
+		cfg.Schema = schemaDoc
+	}
+}
+
+func serializationForSchemaFormat(format string) string {
+	f := strings.ToLower(strings.TrimSpace(format))
+	switch {
+	case strings.Contains(f, "avro"):
+		return "avro"
+	case strings.Contains(f, "jsonschema"), strings.Contains(f, "json-schema"):
+		return "json_schema"
+	default:
+		return ""
+	}
+}
+
+func orderReplayOps(ops []kafkaOp) []kafkaOp {
+	out := append([]kafkaOp(nil), ops...)
+	kindRank := func(kind string) int {
+		switch kind {
+		case "produce", "request_reply":
+			return 0
+		case "consume":
+			return 1
+		default:
+			return 2
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.targetProtocol != b.targetProtocol {
+			return a.targetProtocol < b.targetProtocol
+		}
+		if a.topic == b.topic {
+			return kindRank(a.kind) < kindRank(b.kind)
+		}
+		if a.kind == "consume" && (b.kind == "produce" || b.kind == "request_reply") && a.topic == b.topic {
+			return false
+		}
+		if b.kind == "consume" && (a.kind == "produce" || a.kind == "request_reply") && a.topic == b.topic {
+			return true
+		}
+		return false
+	})
+	return out
+}
+
 func deriveBrokers(doc *document, override []string) (brokers []string, protocols []string, securityProtocol string, warnings []string) {
 	if len(override) > 0 {
 		brokers = trimNonEmpty(override)
 	}
 	protoSet := map[string]struct{}{}
 	secure := false
+	plain := false
 	for _, name := range sortedServerKeys(doc.Servers) {
 		srv := doc.Servers[name]
 		proto := strings.ToLower(strings.TrimSpace(srv.Protocol))
@@ -406,7 +652,10 @@ func deriveBrokers(doc *document, override []string) (brokers []string, protocol
 		if proto == "kafka-secure" {
 			secure = true
 		}
-		host := convertutil.FirstNonEmpty(srv.Host, srv.URL)
+		if proto == "kafka" {
+			plain = true
+		}
+		host := serverEndpoint(srv)
 		if srv.Host != "" && srv.Pathname != "" {
 			host = srv.Host + srv.Pathname
 		}
@@ -421,6 +670,9 @@ func deriveBrokers(doc *document, override []string) (brokers []string, protocol
 	} else {
 		securityProtocol = "plaintext"
 	}
+	if secure && plain {
+		warnings = append(warnings, "both kafka and kafka-secure servers were detected; generated Kafka config uses one security_protocol, so split or review mixed-security brokers before live replay")
+	}
 	return brokers, protocols, securityProtocol, warnings
 }
 
@@ -430,20 +682,43 @@ func deriveBrokers(doc *document, override []string) (brokers []string, protocol
 func detectEventHubsProfile(brokers []string) bool {
 	for _, b := range brokers {
 		host := strings.ToLower(strings.TrimSpace(b))
-		if i := strings.IndexByte(host, ':'); i >= 0 {
+		port := ""
+		if i := strings.LastIndexByte(host, ':'); i >= 0 {
+			port = strings.TrimSpace(host[i+1:])
 			host = host[:i]
 		}
-		if strings.HasSuffix(host, ".servicebus.windows.net") {
+		if strings.HasSuffix(host, ".servicebus.windows.net") && port == "9093" {
 			return true
 		}
 	}
 	return false
 }
 
+func serverEndpoint(srv server) string {
+	host := convertutil.FirstNonEmpty(srv.Host, srv.URL)
+	if srv.Host != "" && srv.Pathname != "" {
+		host = srv.Host + srv.Pathname
+	}
+	return applyServerVariables(host, srv.Variables)
+}
+
+func applyServerVariables(value string, variables map[string]serverVariable) string {
+	out := value
+	for name, variable := range variables {
+		replacement := fmt.Sprint(firstNonNil(variable.Default, firstAny(variable.Enum), ""))
+		if replacement == "" {
+			continue
+		}
+		out = strings.ReplaceAll(out, "{"+name+"}", replacement)
+	}
+	return out
+}
+
 // detectJMSTarget reports whether the document's servers indicate a JMS/AMQP
 // target (and no Kafka — Kafka takes precedence to preserve existing behavior).
-// AMQP/JMS map to the executable jms-solace adapter; MQTT is accepted best-effort
-// with a review note (APEX Load has no native MQTT runtime).
+// AMQP/JMS map to the executable jms-solace adapter. MQTT stays review-only:
+// APEX Load has no native MQTT runtime and must not silently emit executable
+// JMS actions that cannot preserve MQTT semantics.
 func detectJMSTarget(doc *document) (isJMS bool, brokerURL string, warnings []string) {
 	for _, name := range sortedServerKeys(doc.Servers) {
 		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(doc.Servers[name].Protocol)), "kafka") {
@@ -453,15 +728,12 @@ func detectJMSTarget(doc *document) (isJMS bool, brokerURL string, warnings []st
 	for _, name := range sortedServerKeys(doc.Servers) {
 		srv := doc.Servers[name]
 		proto := strings.ToLower(strings.TrimSpace(srv.Protocol))
-		host := convertutil.FirstNonEmpty(srv.URL, srv.Host)
-		if srv.Host != "" && srv.Pathname != "" {
-			host = srv.Host + srv.Pathname
-		}
+		host := serverEndpoint(srv)
 		switch proto {
 		case "amqp", "amqps", "jms", "solace":
 			return true, host, nil
 		case "mqtt", "mqtts", "secure-mqtt":
-			return true, host, []string{fmt.Sprintf("server %q uses MQTT; APEX Load has no native MQTT runtime — the import targets the JMS-over-AMQP adapter as a best-effort starting point and needs review", name)}
+			return false, "", []string{fmt.Sprintf("server %q uses MQTT; APEX Load has no native MQTT runtime, so MQTT operations are review-only and no executable JMS actions are emitted", name)}
 		}
 	}
 	return false, "", nil
@@ -469,7 +741,7 @@ func detectJMSTarget(doc *document) (isJMS bool, brokerURL string, warnings []st
 
 // buildJMSAction mirrors buildAction for the JMS protocol family: produce ->
 // jms_publish, consume -> jms_consume, request_reply -> jms_request_reply.
-func buildJMSAction(op kafkaOp, includeAssertion bool) (dsl.Action, []string) {
+func buildJMSAction(op kafkaOp, includeAssertion bool, doc *document) (dsl.Action, []string) {
 	action := dsl.Action{
 		Name:   sanitizeName(op.name),
 		Target: op.topic,
@@ -477,17 +749,27 @@ func buildJMSAction(op kafkaOp, includeAssertion bool) (dsl.Action, []string) {
 			"asyncapi_channel": op.channelName,
 		},
 	}
+	params := map[string]any{}
+	if op.destinationType != "" {
+		params["destination_type"] = op.destinationType
+	}
+	if op.subscription != "" {
+		params["subscription"] = op.subscription
+	}
 	var columns []string
 	switch op.kind {
 	case "produce":
 		action.Type = "jms_publish"
-		action.Body, columns = sampleBody(op.payload)
+		action.Body, columns = sampleBody(doc, op.payload, op.schemaFormat)
 	case "request_reply":
 		action.Type = "jms_request_reply"
-		action.Body, columns = sampleBody(op.payload)
-		action.Params = map[string]any{"reply_to": op.replyTopic}
+		action.Body, columns = sampleBody(doc, op.payload, op.schemaFormat)
+		params["reply_to"] = op.replyTopic
 	default:
 		action.Type = "jms_consume"
+	}
+	if len(params) > 0 {
+		action.Params = params
 	}
 	columns = applyCorrelationID(&action, op, columns)
 	if includeAssertion {
@@ -496,17 +778,22 @@ func buildJMSAction(op kafkaOp, includeAssertion bool) (dsl.Action, []string) {
 	return action, columns
 }
 
-func collectOperations(doc *document, opts ConvertOptions, diagnostics *diag.Collector, mappings *[]sourceview.Mapping, sourceFile string) ([]kafkaOp, []string, []string) {
+func collectOperations(doc *document, opts ConvertOptions, defaultTarget opTarget, diagnostics *diag.Collector, mappings *[]sourceview.Mapping, sourceFile string) ([]kafkaOp, []string, []string, []string) {
 	var ops []kafkaOp
 	var warnings []string
+	var skipped []string
 	schemaFormats := map[string]struct{}{}
 	allowed := filterSet(opts.Channels)
 
 	recordFormat := func(m messageDef) {
 		if f := strings.TrimSpace(m.SchemaFormat); f != "" {
 			schemaFormats[f] = struct{}{}
-			if !isJSONSchemaFormat(f) {
-				warnings = append(warnings, fmt.Sprintf("message schemaFormat %q is not JSON Schema; the generated payload is a best-effort placeholder", f))
+			switch {
+			case isJSONSchemaFormat(f), isAvroSchemaFormat(f):
+			case strings.Contains(strings.ToLower(f), "protobuf"), strings.Contains(strings.ToLower(f), "proto"):
+				warnings = append(warnings, fmt.Sprintf("message schemaFormat %q is Protobuf; Protobuf import is review-only until runtime serde is available", f))
+			default:
+				warnings = append(warnings, fmt.Sprintf("message schemaFormat %q is not JSON Schema or Avro; the generated payload is review-only unless manually adapted", f))
 			}
 		}
 	}
@@ -517,14 +804,14 @@ func collectOperations(doc *document, opts ConvertOptions, diagnostics *diag.Col
 			op := doc.Operations[opName]
 			chName, ch, ok := resolveChannel(doc, op.Channel.Ref)
 			if !ok {
+				skipped = append(skipped, opName)
+				diagnostics.Add(diag.Warning, "AsyncAPI operation skipped", opName, "operation channel could not be resolved")
 				continue
 			}
 			if !channelAllowed(allowed, chName, channelTopic(chName, ch)) {
 				continue
 			}
 			topic := channelTopic(chName, ch)
-			msg := firstChannelMessage(doc, ch)
-			recordFormat(msg)
 			kind := "produce"
 			if strings.EqualFold(op.Action, "receive") {
 				kind = "consume"
@@ -536,26 +823,64 @@ func collectOperations(doc *document, opts ConvertOptions, diagnostics *diag.Col
 					kind = "request_reply"
 				}
 			}
-			ops = append(ops, kafkaOp{
-				name:                convertutil.FirstNonEmpty(opName, op.Title, op.Summary),
-				kind:                kind,
-				topic:               topic,
-				replyTopic:          replyTopic,
-				payload:             resolvePayload(doc, msg),
-				hasCorrelation:      msg.CorrelationID != nil,
-				correlationLocation: correlationLocationOf(msg),
-				schemaFormat:        msg.SchemaFormat,
-				channelName:         chName,
-			})
+			target, targetWarnings := operationTarget(doc, op, ch, defaultTarget)
+			warnings = append(warnings, targetWarnings...)
+			if target == targetReview {
+				skipped = append(skipped, opName)
+				diagnostics.Add(diag.Warning, "AsyncAPI operation review-only", opName, "operation targets a protocol without an executable APEX Load runtime")
+				*mappings = append(*mappings, sourceview.CoarseMapping(sourceFile, chName, "", opName, "operation", "review_only", "Operation was not emitted because its protocol is review-only."))
+				continue
+			}
+			messages := operationMessages(doc, op, ch)
+			if len(messages) == 0 {
+				messages = []namedMessage{{name: "", msg: messageDef{}}}
+			}
+			for _, named := range messages {
+				msg := derefMessage(doc, named.msg)
+				recordFormat(msg)
+				if isReviewOnlySchemaFormat(msg.SchemaFormat) {
+					skippedName := convertutil.FirstNonEmpty(named.name, opName)
+					skipped = append(skipped, skippedName)
+					diagnostics.Add(diag.Warning, "AsyncAPI message review-only", skippedName, "message schema format is not executable by the current Kafka/JMS runtime")
+					continue
+				}
+				opDisplayName := convertutil.FirstNonEmpty(opName, op.Title, op.Summary)
+				if named.name != "" && len(messages) > 1 {
+					opDisplayName += "_" + named.name
+				}
+				kop := kafkaOp{
+					name:                opDisplayName,
+					kind:                kind,
+					targetProtocol:      target,
+					topic:               topic,
+					replyTopic:          replyTopic,
+					payload:             resolvePayload(doc, msg),
+					hasCorrelation:      msg.CorrelationID != nil,
+					correlationLocation: correlationLocationOf(msg),
+					schemaFormat:        msg.SchemaFormat,
+					schemaDocument:      schemaDocument(resolvePayload(doc, msg)),
+					channelName:         chName,
+				}
+				applyBindingsToOp(&kop, ch.Bindings, op.Bindings)
+				ops = append(ops, kop)
+			}
 		}
-		return ops, sortedKeysFromSet(schemaFormats), warnings
+		return ops, sortedKeysFromSet(schemaFormats), warnings, uniqueSorted(skipped)
 	}
 
 	// AsyncAPI 2.x: channel-scoped publish/subscribe operations.
 	for _, chName := range sortedChannelKeys(doc.Channels) {
-		ch := doc.Channels[chName]
+		ch := resolveChannelValue(doc, doc.Channels[chName], map[string]bool{})
 		topic := channelTopic(chName, ch)
 		if !channelAllowed(allowed, chName, topic) {
+			continue
+		}
+		target, targetWarnings := channelTarget(doc, ch, defaultTarget)
+		warnings = append(warnings, targetWarnings...)
+		if target == targetReview {
+			skipped = append(skipped, chName)
+			diagnostics.Add(diag.Warning, "AsyncAPI channel review-only", chName, "channel targets a protocol without an executable APEX Load runtime")
+			*mappings = append(*mappings, sourceview.CoarseMapping(sourceFile, chName, "", chName, "channel", "review_only", "Channel protocol is review-only; no executable action emitted."))
 			continue
 		}
 		// 2.x perspective: an external client publishes to `publish` channels
@@ -563,40 +888,258 @@ func collectOperations(doc *document, opts ConvertOptions, diagnostics *diag.Col
 		if ch.Publish != nil {
 			msg := derefMessage(doc, messageOf(ch.Publish))
 			recordFormat(msg)
-			ops = append(ops, kafkaOp{
-				name:                convertutil.FirstNonEmpty(ch.Publish.OperationID, ch.Publish.Summary, chName+"_produce"),
-				kind:                "produce",
-				topic:               topicWithBinding(topic, ch.Publish.Bindings),
-				payload:             resolvePayload(doc, msg),
-				hasCorrelation:      msg.CorrelationID != nil,
-				correlationLocation: correlationLocationOf(msg),
-				schemaFormat:        msg.SchemaFormat,
-				channelName:         chName,
-			})
+			if isReviewOnlySchemaFormat(msg.SchemaFormat) {
+				skipped = append(skipped, convertutil.FirstNonEmpty(ch.Publish.OperationID, chName+"_publish"))
+				diagnostics.Add(diag.Warning, "AsyncAPI message review-only", chName, "message schema format is not executable by the current Kafka/JMS runtime")
+			} else {
+				kop := kafkaOp{
+					name:                convertutil.FirstNonEmpty(ch.Publish.OperationID, ch.Publish.Summary, chName+"_produce"),
+					kind:                "produce",
+					targetProtocol:      target,
+					topic:               topicWithBinding(topic, ch.Publish.Bindings),
+					payload:             resolvePayload(doc, msg),
+					hasCorrelation:      msg.CorrelationID != nil,
+					correlationLocation: correlationLocationOf(msg),
+					schemaFormat:        msg.SchemaFormat,
+					schemaDocument:      schemaDocument(resolvePayload(doc, msg)),
+					channelName:         chName,
+				}
+				applyBindingsToOp(&kop, ch.Bindings, ch.Publish.Bindings)
+				ops = append(ops, kop)
+			}
 		}
 		if ch.Subscribe != nil {
 			msg := derefMessage(doc, messageOf(ch.Subscribe))
 			recordFormat(msg)
-			ops = append(ops, kafkaOp{
-				name:                convertutil.FirstNonEmpty(ch.Subscribe.OperationID, ch.Subscribe.Summary, chName+"_consume"),
-				kind:                "consume",
-				topic:               topicWithBinding(topic, ch.Subscribe.Bindings),
-				payload:             resolvePayload(doc, msg),
-				hasCorrelation:      msg.CorrelationID != nil,
-				correlationLocation: correlationLocationOf(msg),
-				schemaFormat:        msg.SchemaFormat,
-				channelName:         chName,
-			})
+			if isReviewOnlySchemaFormat(msg.SchemaFormat) {
+				skipped = append(skipped, convertutil.FirstNonEmpty(ch.Subscribe.OperationID, chName+"_subscribe"))
+				diagnostics.Add(diag.Warning, "AsyncAPI message review-only", chName, "message schema format is not executable by the current Kafka/JMS runtime")
+			} else {
+				kop := kafkaOp{
+					name:                convertutil.FirstNonEmpty(ch.Subscribe.OperationID, ch.Subscribe.Summary, chName+"_consume"),
+					kind:                "consume",
+					targetProtocol:      target,
+					topic:               topicWithBinding(topic, ch.Subscribe.Bindings),
+					payload:             resolvePayload(doc, msg),
+					hasCorrelation:      msg.CorrelationID != nil,
+					correlationLocation: correlationLocationOf(msg),
+					schemaFormat:        msg.SchemaFormat,
+					schemaDocument:      schemaDocument(resolvePayload(doc, msg)),
+					channelName:         chName,
+				}
+				applyBindingsToOp(&kop, ch.Bindings, ch.Subscribe.Bindings)
+				ops = append(ops, kop)
+			}
 		}
 		if ch.Publish == nil && ch.Subscribe == nil {
+			skipped = append(skipped, chName)
 			diagnostics.Add(diag.Warning, "AsyncAPI channel skipped", chName, "channel declares neither publish nor subscribe operations")
 			*mappings = append(*mappings, sourceview.CoarseMapping(sourceFile, chName, "", chName, "channel", "review_only", "Channel had no publish/subscribe operation to convert."))
 		}
 	}
-	return ops, sortedKeysFromSet(schemaFormats), warnings
+	return ops, sortedKeysFromSet(schemaFormats), warnings, uniqueSorted(skipped)
 }
 
-func buildAction(op kafkaOp, includeAssertion bool) (dsl.Action, []string) {
+type namedMessage struct {
+	name string
+	msg  messageDef
+}
+
+func operationMessages(doc *document, op operation, ch channel) []namedMessage {
+	var out []namedMessage
+	for _, r := range op.Messages {
+		name, msg, ok := resolveOperationMessage(doc, ch, r.Ref)
+		if ok {
+			out = append(out, namedMessage{name: name, msg: msg})
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	for _, name := range sortedMessageKeys(ch.Messages) {
+		out = append(out, namedMessage{name: name, msg: resolveMessageRef(doc, ch.Messages[name])})
+	}
+	if len(out) > 0 {
+		return []namedMessage{out[0]}
+	}
+	return nil
+}
+
+func resolveOperationMessage(doc *document, ch channel, refStr string) (string, messageDef, bool) {
+	name := refName(refStr, "/messages/")
+	if name != "" {
+		if msg, ok := ch.Messages[name]; ok {
+			return name, resolveMessageRef(doc, msg), true
+		}
+	}
+	name = refName(refStr, "/components/messages/")
+	if name != "" {
+		if msg, ok := doc.Components.Messages[name]; ok {
+			return name, resolveMessageRef(doc, msg), true
+		}
+	}
+	if strings.TrimSpace(refStr) == "" {
+		return "", firstChannelMessage(doc, ch), true
+	}
+	return "", messageDef{}, false
+}
+
+func operationTarget(doc *document, op operation, ch channel, fallback opTarget) (opTarget, []string) {
+	if target, warnings, ok := targetFromServerRefs(doc, op.Servers); ok {
+		return target, warnings
+	}
+	return channelTarget(doc, ch, fallback)
+}
+
+func channelTarget(doc *document, ch channel, fallback opTarget) (opTarget, []string) {
+	if ch.Bindings.Kafka != nil {
+		return targetKafka, nil
+	}
+	if hasJMSBinding(ch.Bindings) {
+		return targetJMS, nil
+	}
+	if ch.Bindings.MQTT != nil {
+		return targetReview, []string{"MQTT bindings are review-only; APEX Load has no native MQTT runtime"}
+	}
+	if target, warnings, ok := targetFromServerRefs(doc, ch.Servers); ok {
+		return target, warnings
+	}
+	if hasOnlyMQTTServers(doc) {
+		return targetReview, []string{"MQTT servers are review-only; APEX Load has no native MQTT runtime"}
+	}
+	return fallback, nil
+}
+
+func targetFromServerRefs(doc *document, refs []ref) (opTarget, []string, bool) {
+	if len(refs) == 0 {
+		return "", nil, false
+	}
+	var warnings []string
+	for _, r := range refs {
+		name := refName(r.Ref, "/servers/")
+		if name == "" {
+			continue
+		}
+		srv, ok := doc.Servers[name]
+		if !ok {
+			continue
+		}
+		switch serverProtocolFamily(srv.Protocol) {
+		case targetKafka:
+			return targetKafka, warnings, true
+		case targetJMS:
+			return targetJMS, warnings, true
+		case targetReview:
+			warnings = append(warnings, fmt.Sprintf("server %q uses review-only protocol %q", name, srv.Protocol))
+			return targetReview, warnings, true
+		}
+	}
+	return "", warnings, false
+}
+
+func serverProtocolFamily(protocol string) opTarget {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "kafka", "kafka-secure":
+		return targetKafka
+	case "amqp", "amqps", "jms", "solace":
+		return targetJMS
+	case "mqtt", "mqtts", "secure-mqtt", "ws", "wss", "http", "https":
+		return targetReview
+	default:
+		return ""
+	}
+}
+
+func hasOnlyMQTTServers(doc *document) bool {
+	if len(doc.Servers) == 0 {
+		return false
+	}
+	seenMQTT := false
+	for _, srv := range doc.Servers {
+		family := serverProtocolFamily(srv.Protocol)
+		if family == targetKafka || family == targetJMS {
+			return false
+		}
+		if family == targetReview && strings.Contains(strings.ToLower(srv.Protocol), "mqtt") {
+			seenMQTT = true
+		}
+	}
+	return seenMQTT
+}
+
+func hasJMSBinding(b bindings) bool {
+	return b.AMQP != nil || b.JMS != nil || b.Solace != nil
+}
+
+func applyBindingsToOp(op *kafkaOp, channelBindings bindings, operationBindings bindings) {
+	for _, b := range []bindings{channelBindings, operationBindings} {
+		if b.Kafka != nil {
+			if strings.TrimSpace(b.Kafka.Topic) != "" {
+				op.topic = b.Kafka.Topic
+			}
+			if strings.TrimSpace(b.Kafka.Key) != "" {
+				op.key = b.Kafka.Key
+			}
+			if strings.TrimSpace(b.Kafka.GroupID) != "" {
+				op.consumerGroup = b.Kafka.GroupID
+			}
+			if strings.TrimSpace(b.Kafka.ClientID) != "" {
+				op.clientID = b.Kafka.ClientID
+			}
+			if b.Kafka.Partition > 0 {
+				p := b.Kafka.Partition
+				op.partition = &p
+			}
+		}
+		if hasJMSBinding(b) && op.targetProtocol == targetJMS {
+			if op.destinationType == "" {
+				op.destinationType = "topic"
+			}
+			if op.subscription == "" && op.kind == "consume" {
+				op.subscription = "asyncapi-replay"
+			}
+		}
+	}
+}
+
+func ensureKafkaActionParams(action *dsl.Action, op kafkaOp) {
+	if op.key == "" && op.consumerGroup == "" && op.partition == nil && op.clientID == "" {
+		return
+	}
+	if action.Params == nil {
+		action.Params = map[string]any{}
+	}
+	if op.key != "" {
+		action.Params["key"] = op.key
+	}
+	if op.consumerGroup != "" {
+		action.Params["consumer_group"] = op.consumerGroup
+	}
+	if op.partition != nil {
+		action.Params["partition"] = *op.partition
+	}
+	if op.clientID != "" {
+		action.Metadata["asyncapi_kafka_client_id"] = op.clientID
+	}
+}
+
+func schemaDocument(s schema) string {
+	if s.Ref != "" {
+		return ""
+	}
+	encoded, err := json.Marshal(s)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+func isReviewOnlySchemaFormat(format string) bool {
+	f := strings.ToLower(strings.TrimSpace(format))
+	return strings.Contains(f, "protobuf") || strings.Contains(f, "proto3") || strings.Contains(f, "proto2")
+}
+
+func buildAction(op kafkaOp, includeAssertion bool, doc *document) (dsl.Action, []string) {
 	action := dsl.Action{
 		Name:   sanitizeName(op.name),
 		Target: op.topic,
@@ -608,14 +1151,15 @@ func buildAction(op kafkaOp, includeAssertion bool) (dsl.Action, []string) {
 	switch op.kind {
 	case "produce":
 		action.Type = "kafka_produce"
-		action.Body, columns = sampleBody(op.payload)
+		action.Body, columns = sampleBody(doc, op.payload, op.schemaFormat)
 	case "request_reply":
 		action.Type = "kafka_request_reply"
-		action.Body, columns = sampleBody(op.payload)
+		action.Body, columns = sampleBody(doc, op.payload, op.schemaFormat)
 		action.Params = map[string]any{"reply_to": op.replyTopic}
 	default:
 		action.Type = "kafka_consume"
 	}
+	ensureKafkaActionParams(&action, op)
 	columns = applyCorrelationID(&action, op, columns)
 	if includeAssertion {
 		switch op.kind {
@@ -642,12 +1186,19 @@ func applyCorrelationID(action *dsl.Action, op kafkaOp, columns []string) []stri
 	if !ok {
 		return columns
 	}
+	correlationTemplate := "{{fn.uuid()}}"
 	switch op.kind {
 	case "produce", "request_reply":
 		if source == "payload" && action.Body != "" {
-			if updated, ok := setJSONPointerValue(action.Body, path, "{{fn.uuid()}}"); ok {
+			if updated, ok := setJSONPointerValue(action.Body, path, correlationTemplate); ok {
 				action.Body = updated
 				action.Metadata["asyncapi_correlation_id"] = location
+				if op.kind == "request_reply" {
+					if action.Params == nil {
+						action.Params = map[string]any{}
+					}
+					action.Params["correlation_id"] = correlationTemplate
+				}
 				return removeColumn(columns, sanitizeColumnName(lastPathSegment(path)))
 			}
 		}
@@ -659,16 +1210,22 @@ func applyCorrelationID(action *dsl.Action, op kafkaOp, columns []string) []stri
 			if action.Headers == nil {
 				action.Headers = map[string]string{}
 			}
-			action.Headers[lastPathSegment(path)] = "{{fn.uuid()}}"
+			action.Headers[lastPathSegment(path)] = correlationTemplate
 			action.Metadata["asyncapi_correlation_id"] = location
+			if op.kind == "request_reply" {
+				if action.Params == nil {
+					action.Params = map[string]any{}
+				}
+				action.Params["correlation_id"] = correlationTemplate
+			}
 		}
 	case "consume":
 		extractorName := sanitizeName(op.name) + "_correlation_id"
-		extractor := dsl.Extractor{Name: extractorName}
+		extractor := dsl.Extractor{Name: extractorName, OnMiss: "ignore"}
 		if source == "payload" {
 			extractor.Source = "body"
 			extractor.Type = "jsonpath"
-			extractor.Expression = "$." + strings.Join(splitPointerPath(path), ".")
+			extractor.Expression = jsonPathForPointer(path)
 		} else {
 			extractor.Source = "header"
 			extractor.Type = "header"
@@ -707,9 +1264,42 @@ func splitPointerPath(path string) []string {
 		if segment == "" {
 			continue
 		}
-		out = append(out, segment)
+		out = append(out, unescapeJSONPointerSegment(segment))
 	}
 	return out
+}
+
+func unescapeJSONPointerSegment(segment string) string {
+	segment = strings.ReplaceAll(segment, "~1", "/")
+	segment = strings.ReplaceAll(segment, "~0", "~")
+	return segment
+}
+
+func jsonPathForPointer(path string) string {
+	segments := splitPointerPath(path)
+	if len(segments) == 0 {
+		return "$"
+	}
+	var b strings.Builder
+	b.WriteString("$")
+	for _, segment := range segments {
+		if isIdentifier(segment) {
+			b.WriteByte('.')
+			b.WriteString(segment)
+			continue
+		}
+		if isDigits(segment) {
+			b.WriteByte('[')
+			b.WriteString(segment)
+			b.WriteByte(']')
+			continue
+		}
+		encoded, _ := json.Marshal(segment)
+		b.WriteByte('[')
+		b.WriteString(string(encoded))
+		b.WriteByte(']')
+	}
+	return b.String()
 }
 
 func lastPathSegment(path string) string {
@@ -763,8 +1353,14 @@ func removeColumn(columns []string, name string) []string {
 
 // --- schema sampling ---
 
-func sampleBody(s schema) (string, []string) {
-	value, columns := sampleForSchema(s, map[string]bool{})
+func sampleBody(doc *document, s schema, schemaFormat string) (string, []string) {
+	var value any
+	var columns []string
+	if isAvroSchemaFormat(schemaFormat) || strings.EqualFold(schemaType(s), "record") {
+		value, columns = sampleAvroSchema(doc, s, map[string]bool{}, "")
+	} else {
+		value, columns = sampleForSchema(doc, s, map[string]bool{}, "")
+	}
 	if value == nil {
 		return "", columns
 	}
@@ -775,12 +1371,13 @@ func sampleBody(s schema) (string, []string) {
 	return string(encoded), columns
 }
 
-func sampleForSchema(s schema, seen map[string]bool) (any, []string) {
+func sampleForSchema(doc *document, s schema, seen map[string]bool, prefix string) (any, []string) {
 	if s.Ref != "" {
 		if seen[s.Ref] {
 			return map[string]any{}, nil
 		}
 		seen[s.Ref] = true
+		s = resolveSchemaRef(doc, s)
 	}
 	if s.Example != nil {
 		return s.Example, nil
@@ -791,28 +1388,28 @@ func sampleForSchema(s schema, seen map[string]bool) (any, []string) {
 	if len(s.Enum) > 0 {
 		return s.Enum[0], nil
 	}
-	if len(s.Properties) > 0 || strings.EqualFold(s.Type, "object") {
+	if len(s.Properties) > 0 || strings.EqualFold(schemaType(s), "object") {
 		result := map[string]any{}
 		var columns []string
 		for _, name := range sortedSchemaKeys(s.Properties) {
 			prop := s.Properties[name]
 			if scalarSchema(prop) {
-				column := sanitizeColumnName(name)
+				column := columnName(prefix, name)
 				result[name] = "{{data.asyncapi." + column + "}}"
 				columns = append(columns, column)
 				continue
 			}
-			value, nested := sampleForSchema(prop, copySeen(seen))
+			value, nested := sampleForSchema(doc, prop, copySeen(seen), columnName(prefix, name))
 			result[name] = value
 			columns = append(columns, nested...)
 		}
 		return result, uniqueSorted(columns)
 	}
-	if s.Items != nil || strings.EqualFold(s.Type, "array") {
-		value, columns := sampleForSchema(valueOrEmpty(s.Items), copySeen(seen))
+	if s.Items != nil || strings.EqualFold(schemaType(s), "array") {
+		value, columns := sampleForSchema(doc, valueOrEmpty(s.Items), copySeen(seen), prefix)
 		return []any{value}, columns
 	}
-	switch strings.ToLower(s.Type) {
+	switch strings.ToLower(schemaType(s)) {
 	case "integer":
 		return 0, nil
 	case "number":
@@ -830,12 +1427,136 @@ func scalarSchema(s schema) bool {
 	if s.Ref != "" || len(s.Properties) > 0 || s.Items != nil {
 		return false
 	}
-	switch strings.ToLower(s.Type) {
+	switch strings.ToLower(schemaType(s)) {
 	case "string", "integer", "number", "boolean":
 		return true
 	default:
 		return false
 	}
+}
+
+func sampleAvroSchema(doc *document, s schema, seen map[string]bool, prefix string) (any, []string) {
+	if s.Ref != "" {
+		if seen[s.Ref] {
+			return map[string]any{}, nil
+		}
+		seen[s.Ref] = true
+		s = resolveSchemaRef(doc, s)
+	}
+	if s.Default != nil {
+		return s.Default, nil
+	}
+	if len(s.Enum) > 0 {
+		return s.Enum[0], nil
+	}
+	typ := s.Type
+	if typ == nil {
+		typ = schemaType(s)
+	}
+	if union, ok := typ.([]any); ok {
+		return sampleAvroUnion(doc, union, seen, prefix)
+	}
+	if len(s.Fields) > 0 || strings.EqualFold(schemaType(s), "record") {
+		result := map[string]any{}
+		var columns []string
+		for _, field := range s.Fields {
+			if strings.TrimSpace(field.Name) == "" {
+				continue
+			}
+			value, nested := sampleAvroType(doc, field.Type, field.Default, copySeen(seen), columnName(prefix, field.Name))
+			result[field.Name] = value
+			columns = append(columns, nested...)
+		}
+		return result, uniqueSorted(columns)
+	}
+	switch strings.ToLower(schemaType(s)) {
+	case "array":
+		value, columns := sampleAvroSchema(doc, valueOrEmpty(s.Items), copySeen(seen), prefix)
+		return []any{value}, columns
+	case "map":
+		value, columns := sampleAvroSchema(doc, valueOrEmpty(s.Values), copySeen(seen), prefix)
+		return map[string]any{"key": value}, columns
+	case "enum":
+		if len(s.Enum) > 0 {
+			return s.Enum[0], nil
+		}
+		return "ENUM_VALUE", nil
+	case "fixed", "bytes":
+		return "bytes", nil
+	case "int", "long", "integer":
+		return 0, nil
+	case "float", "double", "number":
+		return 0.0, nil
+	case "boolean":
+		return false, nil
+	case "null":
+		return nil, nil
+	case "string":
+		column := columnName(prefix, "value")
+		return "{{data.asyncapi." + column + "}}", []string{column}
+	default:
+		if isLikelyNamedAvroRef(schemaType(s)) {
+			if resolved, ok := resolveNamedAvroSchema(doc, schemaType(s)); ok {
+				return sampleAvroSchema(doc, resolved, copySeen(seen), prefix)
+			}
+		}
+		column := columnName(prefix, "value")
+		return "{{data.asyncapi." + column + "}}", []string{column}
+	}
+}
+
+func sampleAvroType(doc *document, typ any, defaultValue any, seen map[string]bool, prefix string) (any, []string) {
+	if defaultValue != nil {
+		return defaultValue, nil
+	}
+	switch t := typ.(type) {
+	case string:
+		return sampleAvroSchema(doc, schema{Type: t}, seen, prefix)
+	case []any:
+		return sampleAvroUnion(doc, t, seen, prefix)
+	case map[string]any:
+		return sampleAvroSchema(doc, schemaFromMap(t), seen, prefix)
+	case map[any]any:
+		converted := map[string]any{}
+		for k, v := range t {
+			converted[fmt.Sprint(k)] = v
+		}
+		return sampleAvroSchema(doc, schemaFromMap(converted), seen, prefix)
+	default:
+		return sampleAvroSchema(doc, schema{}, seen, prefix)
+	}
+}
+
+func sampleAvroUnion(doc *document, union []any, seen map[string]bool, prefix string) (any, []string) {
+	for _, branch := range union {
+		if s, ok := branch.(string); ok && strings.EqualFold(s, "null") {
+			continue
+		}
+		return sampleAvroType(doc, branch, nil, seen, prefix)
+	}
+	return nil, nil
+}
+
+func schemaFromMap(m map[string]any) schema {
+	var s schema
+	data, err := json.Marshal(m)
+	if err != nil {
+		return s
+	}
+	_ = json.Unmarshal(data, &s)
+	return s
+}
+
+func resolveNamedAvroSchema(doc *document, name string) (schema, bool) {
+	if doc == nil {
+		return schema{}, false
+	}
+	for key, candidate := range doc.Components.Schemas {
+		if key == name || candidate.Name == name || candidate.Namespace+"."+candidate.Name == name {
+			return candidate, true
+		}
+	}
+	return schema{}, false
 }
 
 // --- message / channel resolution ---
@@ -870,7 +1591,7 @@ func resolveMessageRef(doc *document, m messageDef) messageDef {
 
 func resolvePayload(doc *document, m messageDef) schema {
 	m = resolveMessageRef(doc, m)
-	return resolveSchemaRef(doc, m.Payload)
+	return resolveSchemaDeep(doc, m.Payload, map[string]bool{})
 }
 
 func resolveSchemaRef(doc *document, s schema) schema {
@@ -887,13 +1608,62 @@ func resolveSchemaRef(doc *document, s schema) schema {
 	return s
 }
 
+func resolveSchemaDeep(doc *document, s schema, seen map[string]bool) schema {
+	if s.Ref != "" {
+		if seen[s.Ref] {
+			return schema{}
+		}
+		seen[s.Ref] = true
+		s = resolveSchemaRef(doc, s)
+	}
+	for name, prop := range s.Properties {
+		s.Properties[name] = resolveSchemaDeep(doc, prop, copySeen(seen))
+	}
+	if s.Items != nil {
+		item := resolveSchemaDeep(doc, *s.Items, copySeen(seen))
+		s.Items = &item
+	}
+	if s.Values != nil {
+		value := resolveSchemaDeep(doc, *s.Values, copySeen(seen))
+		s.Values = &value
+	}
+	return s
+}
+
 func resolveChannel(doc *document, channelRef string) (string, channel, bool) {
 	name := refName(channelRef, "/channels/")
 	if name == "" {
 		return "", channel{}, false
 	}
 	ch, ok := doc.Channels[name]
+	if !ok {
+		ch, ok = doc.Components.Channels[name]
+	}
+	if ok {
+		ch = resolveChannelValue(doc, ch, map[string]bool{})
+	}
 	return name, ch, ok
+}
+
+func resolveChannelValue(doc *document, ch channel, seen map[string]bool) channel {
+	if ch.Ref == "" {
+		return ch
+	}
+	if seen[ch.Ref] {
+		return channel{}
+	}
+	seen[ch.Ref] = true
+	name := refName(ch.Ref, "/channels/")
+	if name == "" {
+		return ch
+	}
+	if resolved, ok := doc.Channels[name]; ok {
+		return resolveChannelValue(doc, resolved, seen)
+	}
+	if resolved, ok := doc.Components.Channels[name]; ok {
+		return resolveChannelValue(doc, resolved, seen)
+	}
+	return ch
 }
 
 func firstChannelMessage(doc *document, ch channel) messageDef {
@@ -904,13 +1674,15 @@ func firstChannelMessage(doc *document, ch channel) messageDef {
 }
 
 func channelTopic(name string, ch channel) string {
+	topic := ""
 	if ch.Bindings.Kafka != nil && strings.TrimSpace(ch.Bindings.Kafka.Topic) != "" {
-		return ch.Bindings.Kafka.Topic
+		topic = ch.Bindings.Kafka.Topic
+	} else if strings.TrimSpace(ch.Address) != "" {
+		topic = ch.Address
+	} else {
+		topic = name
 	}
-	if strings.TrimSpace(ch.Address) != "" {
-		return ch.Address
-	}
-	return name
+	return applyChannelParameters(topic, ch.Parameters)
 }
 
 func topicWithBinding(topic string, b bindings) string {
@@ -918,6 +1690,18 @@ func topicWithBinding(topic string, b bindings) string {
 		return b.Kafka.Topic
 	}
 	return topic
+}
+
+func applyChannelParameters(topic string, params map[string]parameter) string {
+	out := topic
+	for name, param := range params {
+		replacement := fmt.Sprint(firstNonNil(param.Default, param.Example, firstAny(param.Examples), firstAny(param.Enum), ""))
+		if replacement == "" {
+			continue
+		}
+		out = strings.ReplaceAll(out, "{"+name+"}", replacement)
+	}
+	return out
 }
 
 func channelAllowed(allowed map[string]struct{}, name, topic string) bool {
@@ -962,6 +1746,55 @@ func isJSONSchemaFormat(format string) bool {
 	return strings.Contains(f, "jsonschema") || strings.Contains(f, "json-schema") || strings.Contains(f, "openapi")
 }
 
+func isAvroSchemaFormat(format string) bool {
+	return strings.Contains(strings.ToLower(format), "avro")
+}
+
+func schemaType(s schema) string {
+	switch t := s.Type.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	case []any:
+		for _, item := range t {
+			if str, ok := item.(string); ok && !strings.EqualFold(str, "null") {
+				return strings.TrimSpace(str)
+			}
+		}
+	case map[string]any:
+		if str, ok := t["type"].(string); ok {
+			return strings.TrimSpace(str)
+		}
+	case map[any]any:
+		if v, ok := t["type"]; ok {
+			return strings.TrimSpace(fmt.Sprint(v))
+		}
+	}
+	return ""
+}
+
+func isLikelyNamedAvroRef(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	switch strings.ToLower(value) {
+	case "record", "array", "map", "enum", "fixed", "string", "bytes", "int", "long", "float", "double", "boolean", "null":
+		return false
+	default:
+		return true
+	}
+}
+
+func columnName(prefix, name string) string {
+	if prefix == "" {
+		return sanitizeColumnName(name)
+	}
+	if name == "" || name == "value" {
+		return sanitizeColumnName(prefix)
+	}
+	return sanitizeColumnName(prefix + "_" + name)
+}
+
 // --- small helpers ---
 
 func sourceFileName(content string) string {
@@ -976,6 +1809,49 @@ func valueOrEmpty(s *schema) schema {
 		return schema{}
 	}
 	return *s
+}
+
+func firstNonNil(values ...any) any {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func firstAny(values []any) any {
+	if len(values) == 0 {
+		return nil
+	}
+	return values[0]
+}
+
+func isIdentifier(value string) bool {
+	if value == "" {
+		return false
+	}
+	for i, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '_':
+		case i > 0 && r >= '0' && r <= '9':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func isDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func copySeen(seen map[string]bool) map[string]bool {

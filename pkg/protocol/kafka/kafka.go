@@ -633,6 +633,9 @@ func (k *Kafka) buildRecord(action *protocol.Action, topic string) kafkaRecord {
 		headers = make(map[string]string)
 	}
 	for mk, mv := range action.Metadata {
+		if metadataKeyIsProvenance(mk) {
+			continue
+		}
 		if s, ok := mv.(string); ok {
 			headers[mk] = s
 		}
@@ -646,6 +649,11 @@ func (k *Kafka) buildRecord(action *protocol.Action, topic string) kafkaRecord {
 		CorrelationID: correlationID,
 		Timestamp:     time.Now(),
 	}
+}
+
+func metadataKeyIsProvenance(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
+	return strings.HasPrefix(key, "asyncapi_")
 }
 
 // resolvePartition mirrors a producer's partitioner: an explicit partition param
@@ -760,7 +768,14 @@ func runExtractors(extractors []protocol.Extractor, result *protocol.Result, rec
 	for _, extractor := range extractors {
 		value, err := extract(extractor, rec)
 		if err != nil {
-			return err
+			switch strings.ToLower(strings.TrimSpace(extractor.OnMiss)) {
+			case "", "ignore":
+				continue
+			case "empty":
+				value = ""
+			default:
+				return err
+			}
 		}
 		result.Extractions[extractor.Name] = value
 	}
@@ -852,16 +867,30 @@ func evaluateAssertions(assertions []protocol.Assertion, result *protocol.Result
 }
 
 func extractJSONPath(expr string, body []byte) (string, error) {
-	expr = strings.TrimPrefix(strings.TrimSpace(expr), "$.")
-	if expr == "" {
+	expr = strings.TrimSpace(expr)
+	if expr == "$" || expr == "" {
 		return string(body), nil
 	}
-	parts := strings.Split(expr, ".")
+	parts, err := parseJSONPathSegments(expr)
+	if err != nil {
+		return "", err
+	}
 	var current any
 	if err := json.Unmarshal(body, &current); err != nil {
 		return "", fmt.Errorf("invalid JSON body: %w", err)
 	}
 	for _, part := range parts {
+		if idx, ok := parseArrayIndex(part); ok {
+			arr, ok := current.([]any)
+			if !ok {
+				return "", fmt.Errorf("expected JSON array at index %d", idx)
+			}
+			if idx < 0 || idx >= len(arr) {
+				return "", fmt.Errorf("JSON array index %d out of range", idx)
+			}
+			current = arr[idx]
+			continue
+		}
 		obj, ok := current.(map[string]any)
 		if !ok {
 			return "", fmt.Errorf("expected JSON object at %q", part)
@@ -872,6 +901,65 @@ func extractJSONPath(expr string, body []byte) (string, error) {
 		}
 	}
 	return fmt.Sprint(current), nil
+}
+
+func parseJSONPathSegments(expr string) ([]string, error) {
+	expr = strings.TrimSpace(expr)
+	expr = strings.TrimPrefix(expr, "$")
+	expr = strings.TrimPrefix(expr, ".")
+	if expr == "" {
+		return nil, nil
+	}
+	var parts []string
+	for len(expr) > 0 {
+		if expr[0] == '.' {
+			expr = expr[1:]
+			continue
+		}
+		if expr[0] == '[' {
+			end := strings.IndexByte(expr, ']')
+			if end < 0 {
+				return nil, fmt.Errorf("invalid JSONPath %q", expr)
+			}
+			token := expr[1:end]
+			if len(token) >= 2 && ((token[0] == '"' && token[len(token)-1] == '"') || (token[0] == '\'' && token[len(token)-1] == '\'')) {
+				var decoded string
+				if token[0] == '"' {
+					if err := json.Unmarshal([]byte(token), &decoded); err != nil {
+						return nil, err
+					}
+				} else {
+					decoded = strings.ReplaceAll(token[1:len(token)-1], `\'`, `'`)
+				}
+				parts = append(parts, decoded)
+			} else {
+				parts = append(parts, token)
+			}
+			expr = expr[end+1:]
+			continue
+		}
+		nextDot := strings.IndexAny(expr, ".[")
+		if nextDot < 0 {
+			parts = append(parts, expr)
+			break
+		}
+		parts = append(parts, expr[:nextDot])
+		expr = expr[nextDot:]
+	}
+	return parts, nil
+}
+
+func parseArrayIndex(value string) (int, bool) {
+	if value == "" {
+		return 0, false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+	}
+	idx, err := strconv.Atoi(value)
+	return idx, err == nil
 }
 
 func durationToNonNegativeMilliseconds(duration time.Duration) float64 {

@@ -5513,6 +5513,20 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
         - Scripts
+  /api/v1/scripts/import/asyncapi/commit:
+    post:
+      summary: Commit Async A P I Import
+      description: |-
+        **Handler:** `handleCommitAsyncAPIImport`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCommitAsyncAPIImport
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Scripts
   /api/v1/scripts/import/asyncapi/support-matrix:
     get:
       summary: Async A P I Support Matrix

@@ -688,9 +688,15 @@ export interface RAMLSupportMatrixResponse {
 }
 
 export type OpenAPISupportMatrixEntry = RAMLSupportMatrixEntry
+export type AsyncAPISupportMatrixEntry = RAMLSupportMatrixEntry
 
 export interface OpenAPISupportMatrixResponse {
   support_matrix?: OpenAPISupportMatrixEntry[]
+  notes?: string[]
+}
+
+export interface AsyncAPISupportMatrixResponse {
+  support_matrix?: AsyncAPISupportMatrixEntry[]
   notes?: string[]
 }
 
@@ -781,3 +787,6 @@ export interface CommitOpenAPIImportResponse {
   diff?: OpenAPIImportDiff
   preflight?: ReplayPreflight
 }
+
+export type CommitAsyncAPIImportRequest = CommitOpenAPIImportRequest
+export type CommitAsyncAPIImportResponse = CommitOpenAPIImportResponse

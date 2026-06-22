@@ -568,6 +568,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scripts/import/postman/support-matrix", cors(log(auth(http.HandlerFunc(s.handlePostmanSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/wsdl", cors(log(auth(http.HandlerFunc(s.handleImportWSDL)))))
 	s.mux.Handle("POST /api/v1/scripts/import/asyncapi", cors(log(auth(http.HandlerFunc(s.handleImportAsyncAPI)))))
+	s.mux.Handle("POST /api/v1/scripts/import/asyncapi/commit", cors(log(auth(http.HandlerFunc(s.handleCommitAsyncAPIImport)))))
 	s.mux.Handle("GET /api/v1/scripts/import/asyncapi/support-matrix", cors(log(auth(http.HandlerFunc(s.handleAsyncAPISupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/eventhubs-capture", cors(log(auth(http.HandlerFunc(s.handleImportEventHubsCapture)))))
 	s.mux.Handle("GET /api/v1/scripts/import/eventhubs-capture/support-matrix", cors(log(auth(http.HandlerFunc(s.handleEventHubsCaptureSupportMatrix)))))

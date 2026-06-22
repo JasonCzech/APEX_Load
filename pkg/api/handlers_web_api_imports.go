@@ -695,6 +695,23 @@ func (s *Server) handleAsyncAPISupportMatrix(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+func validateScripts(scripts []*dsl.Script) []string {
+	var issues []string
+	for _, script := range scripts {
+		if script == nil {
+			continue
+		}
+		for _, issue := range validateScript(script) {
+			if len(scripts) > 1 {
+				issues = append(issues, fmt.Sprintf("%s: %s", script.Name, issue))
+			} else {
+				issues = append(issues, issue)
+			}
+		}
+	}
+	return issues
+}
+
 func (s *Server) handleImportAsyncAPI(w http.ResponseWriter, r *http.Request) {
 	importReq, ok := readAsyncAPIImportRequest(w, r)
 	if !ok {
@@ -713,12 +730,23 @@ func (s *Server) handleImportAsyncAPI(w http.ResponseWriter, r *http.Request) {
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
-	attachSourceReviewToScript(result.Script, "asyncapi", importReq.Name, result.SourceReview)
-	if issues := validateScript(result.Script); len(issues) > 0 {
+	for _, script := range result.Scripts {
+		if script != nil {
+			script.ProjectID = normalizeProjectID(importReq.ProjectID)
+		}
+	}
+	attachSourceReviewToScripts(result.Scripts, "asyncapi", importReq.Name, result.SourceReview)
+	issues := validateScripts(result.Scripts)
+	preflight := buildReplayPreflight(result.Script, nil, validateScript(result.Script), result.Warnings)
+	for _, script := range result.Scripts {
+		attachImportReplayPreflight(script, "asyncapi", buildReplayPreflight(script, nil, validateScript(script), result.Warnings))
+	}
+	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
+		Scripts:             result.Scripts,
 		Script:              result.Script,
 		Warnings:            result.Warnings,
 		Stats:               result.Stats,
@@ -727,6 +755,7 @@ func (s *Server) handleImportAsyncAPI(w http.ResponseWriter, r *http.Request) {
 		ReviewSections:      appendImportDiagnosticReviewSections(buildAsyncAPIReviewSections(result), result.Unsupported),
 		SourceReview:        result.SourceReview,
 		Parameterization:    buildImportParameterization(result.Script, nil),
+		Preflight:           preflight,
 	}))
 }
 
@@ -986,7 +1015,7 @@ func readAsyncAPIImportRequest(w http.ResponseWriter, r *http.Request) (*asyncAP
 				Data:      data,
 				ProjectID: r.URL.Query().Get("project_id"),
 				Name:      r.URL.Query().Get("name"),
-				Opts:      asyncapi.ConvertOptions{ScriptName: r.URL.Query().Get("script_name")},
+				Opts:      asyncAPIOptionsFromValues(r.URL.Query()),
 			}, true
 		}
 		return &asyncAPIImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
@@ -1000,7 +1029,7 @@ func readAsyncAPIImportRequest(w http.ResponseWriter, r *http.Request) (*asyncAP
 			Data:      data,
 			ProjectID: r.FormValue("project_id"),
 			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
-			Opts:      asyncapi.ConvertOptions{ScriptName: r.FormValue("script_name")},
+			Opts:      asyncAPIOptionsFromForm(r),
 		}, true
 	}
 	data, ok := readImportBody(w, r)
@@ -1012,8 +1041,80 @@ func readAsyncAPIImportRequest(w http.ResponseWriter, r *http.Request) (*asyncAP
 		Data:      data,
 		ProjectID: r.URL.Query().Get("project_id"),
 		Name:      strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
-		Opts:      asyncapi.ConvertOptions{ScriptName: r.URL.Query().Get("script_name")},
+		Opts:      asyncAPIOptionsFromValues(r.URL.Query()),
 	}, true
+}
+
+func asyncAPIOptionsFromForm(r *http.Request) asyncapi.ConvertOptions {
+	values := r.PostForm
+	if values == nil {
+		values = map[string][]string{}
+	}
+	if r.MultipartForm != nil {
+		for key, value := range r.MultipartForm.Value {
+			values[key] = value
+		}
+	}
+	return asyncAPIOptionsFromValues(values)
+}
+
+func asyncAPIOptionsFromValues(values map[string][]string) asyncapi.ConvertOptions {
+	get := func(keys ...string) string {
+		for _, key := range keys {
+			if raw := strings.TrimSpace(firstValue(values[key])); raw != "" {
+				return raw
+			}
+		}
+		return ""
+	}
+	opts := asyncapi.ConvertOptions{
+		ScriptName:        get("script_name"),
+		Brokers:           splitCSV(get("brokers", "broker")),
+		Channels:          splitCSV(get("channels", "channel_filter")),
+		SchemaRegistryURL: get("schema_registry_url"),
+		SchemaSubject:     get("schema_subject", "subject"),
+		Serialization:     get("serialization"),
+	}
+	if v := get("default_think_time_ms", "think_time_ms"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			opts.DefaultThinkTimeMs = n
+		}
+	}
+	if v := get("schema_id"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			opts.SchemaID = n
+		}
+	}
+	if v := get("mock"); v != "" {
+		b := parseBoolDefault(v, true)
+		opts.Mock = &b
+	}
+	if v := get("include_assertions"); v != "" {
+		b := parseBoolDefault(v, true)
+		opts.IncludeAssertions = &b
+	}
+	return opts
+}
+
+func firstValue(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func splitCSV(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func readOpenAPIImportRequest(w http.ResponseWriter, r *http.Request) (*openAPIImportRequest, bool) {

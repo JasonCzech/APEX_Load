@@ -36,7 +36,7 @@ export interface ScriptRecordingStatus {
   sensitivity?: string
   captured_at?: string
 }
-import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type Parameterization, type AsyncAPIImportResult, type BrowserRecordingImportResult, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type HARImportResult, type ImportAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrowserRecordingImportResult, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type HARImportResult, type ImportAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -586,6 +586,11 @@ export function useScriptApi() {
     [],
   )
 
+  const getAsyncAPISupportMatrix = useCallback(
+    () => request<AsyncAPISupportMatrixResponse>('/scripts/import/asyncapi/support-matrix'),
+    [],
+  )
+
   const saveJMeterImport = useCallback(
     (payload: SaveJMeterImportRequest) =>
       request<SaveJMeterImportResponse>('/scripts/import/jmeter/save', { method: 'POST', body: JSON.stringify(payload) }),
@@ -601,6 +606,12 @@ export function useScriptApi() {
   const commitOpenAPIImport = useCallback(
     (payload: CommitOpenAPIImportRequest) =>
       request<CommitOpenAPIImportResponse>('/scripts/import/openapi/commit', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
+  const commitAsyncAPIImport = useCallback(
+    (payload: CommitAsyncAPIImportRequest) =>
+      request<CommitAsyncAPIImportResponse>('/scripts/import/asyncapi/commit', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
 
@@ -812,11 +823,32 @@ export function useScriptApi() {
   )
 
   const importAsyncAPI = useCallback(
-    async (file: File, options?: { name?: string; project_id?: string }): Promise<AsyncAPIImportResult> => {
+    async (file: File, options?: {
+      name?: string
+      project_id?: string
+      brokers?: string
+      channels?: string
+      mock?: boolean
+      include_assertions?: boolean
+      default_think_time_ms?: number
+      schema_registry_url?: string
+      schema_id?: number
+      subject?: string
+      serialization?: string
+    }): Promise<AsyncAPIImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('script_name', options.name)
       if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.brokers) formData.append('brokers', options.brokers)
+      if (options?.channels) formData.append('channels', options.channels)
+      if (typeof options?.mock === 'boolean') formData.append('mock', String(options.mock))
+      if (typeof options?.include_assertions === 'boolean') formData.append('include_assertions', String(options.include_assertions))
+      if (typeof options?.default_think_time_ms === 'number') formData.append('default_think_time_ms', String(options.default_think_time_ms))
+      if (options?.schema_registry_url) formData.append('schema_registry_url', options.schema_registry_url)
+      if (typeof options?.schema_id === 'number' && Number.isFinite(options.schema_id) && options.schema_id > 0) formData.append('schema_id', String(options.schema_id))
+      if (options?.subject) formData.append('subject', options.subject)
+      if (options?.serialization) formData.append('serialization', options.serialization)
 
       const res = await apiFetch('/scripts/import/asyncapi', { method: 'POST', body: formData })
       if (!res.ok) {
@@ -962,9 +994,11 @@ export function useScriptApi() {
       getJMeterSupportMatrix,
       getRAMLSupportMatrix,
       getOpenAPISupportMatrix,
+      getAsyncAPISupportMatrix,
       saveJMeterImport,
       savePostmanImport,
       commitOpenAPIImport,
+      commitAsyncAPIImport,
       importSample,
       uploadImportAsset,
       importDevWeb,
@@ -1045,9 +1079,11 @@ export function useScriptApi() {
       getJMeterSupportMatrix,
       getRAMLSupportMatrix,
       getOpenAPISupportMatrix,
+      getAsyncAPISupportMatrix,
       saveJMeterImport,
       savePostmanImport,
       commitOpenAPIImport,
+      commitAsyncAPIImport,
       importSample,
       uploadImportAsset,
       importDevWeb,

@@ -609,6 +609,10 @@ func resolveOpenAPICommitProjectID(r *http.Request, store storage.Store) (string
 	return resolvePostmanSaveProjectID(r, store)
 }
 
+func resolveAsyncAPICommitProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	return resolvePostmanSaveProjectID(r, store)
+}
+
 func resolveDataPoolListProjectID(r *http.Request, _ storage.Store) (string, int, string) {
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
 	if projectID == "" {

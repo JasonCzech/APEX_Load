@@ -222,8 +222,21 @@ func (c mockClient) RequestReply(ctx context.Context, reqTopic, replyTopic strin
 			Timestamp:     time.Now(),
 		})
 	}
-	reply, _, err := c.Consume(ctx, replyTopic, "", timeout)
-	return meta, reply, err
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break
+		}
+		reply, _, err := c.Consume(ctx, replyTopic, "", remaining)
+		if err != nil {
+			return recordMeta{}, kafkaRecord{}, err
+		}
+		if req.CorrelationID == "" || reply.CorrelationID == req.CorrelationID || reply.Headers["kafka_correlation_id"] == req.CorrelationID {
+			return meta, reply, nil
+		}
+	}
+	return recordMeta{}, kafkaRecord{}, fmt.Errorf("no correlated kafka reply received from %q within %s", replyTopic, timeout)
 }
 
 func (c mockClient) Commit(context.Context) error { return nil }

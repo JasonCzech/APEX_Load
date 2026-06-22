@@ -40,6 +40,7 @@ const replayPreflightMaxControlDepth = 32
 
 func buildReplayPreflight(script *dsl.Script, variables map[string]string, issues []string, warnings []string) *ReplayPreflight {
 	reviewGateIssues := replayReviewGateIssues(script)
+	messagingIssues, messagingWarnings, messagingChecks := replayMessagingPreflight(script)
 	actionCount := replayActionDefinitionCount(script)
 	preflight := &ReplayPreflight{
 		Valid:                len(issues) == 0,
@@ -49,8 +50,8 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 		ParameterCount:       len(scriptParameters(script)),
 		BrowserRequired:      script != nil && strings.EqualFold(strings.TrimSpace(script.Protocol), "browser"),
 		RuntimePrerequisites: replayRuntimePrerequisites(script),
-		Issues:               appendUniqueStrings(append([]string(nil), issues...), reviewGateIssues...),
-		Warnings:             append([]string(nil), warnings...),
+		Issues:               appendUniqueStrings(append([]string(nil), issues...), append(reviewGateIssues, messagingIssues...)...),
+		Warnings:             append(append([]string(nil), warnings...), messagingWarnings...),
 	}
 	preflight.MissingVariables = replayMissingVariables(script, variables)
 	preflight.RequiredSecrets, preflight.MissingSecrets = replaySecretRefs(script)
@@ -58,7 +59,7 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 	if len(dataWarnings) > 0 {
 		preflight.Warnings = append(preflight.Warnings, dataWarnings...)
 	}
-	preflight.Valid = preflight.Valid && len(reviewGateIssues) == 0 && len(preflight.MissingVariables) == 0 && len(preflight.MissingSecrets) == 0 && len(dataWarnings) == 0
+	preflight.Valid = preflight.Valid && len(reviewGateIssues) == 0 && len(messagingIssues) == 0 && len(preflight.MissingVariables) == 0 && len(preflight.MissingSecrets) == 0 && len(dataWarnings) == 0
 	preflight.Checks = []ReplayPreflightCheck{
 		{
 			ID:     "validation",
@@ -100,7 +101,65 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 	if preflight.BrowserRequired {
 		preflight.Checks = append(preflight.Checks, replayEvidenceCaptureCheck(script))
 	}
+	preflight.Checks = append(preflight.Checks, messagingChecks...)
 	return preflight
+}
+
+func replayMessagingPreflight(script *dsl.Script) (issues []string, warnings []string, checks []ReplayPreflightCheck) {
+	if script == nil {
+		return nil, nil, nil
+	}
+	switch strings.TrimSpace(script.Protocol) {
+	case "kafka":
+		kafka := script.Config.Kafka
+		var detail []string
+		if kafka.Mock {
+			detail = append(detail, "mock broker enabled")
+		} else {
+			if len(kafka.Brokers) == 0 {
+				issues = append(issues, "config.kafka.brokers is required when mock mode is disabled")
+			}
+			detail = append(detail, "real Kafka adapter required (-tags kafka_real)")
+		}
+		if strings.EqualFold(strings.TrimSpace(kafka.Profile), "eventhubs") && !kafka.Mock {
+			if strings.EqualFold(strings.TrimSpace(kafka.SASLMechanism), "plain") || strings.TrimSpace(kafka.SASLMechanism) == "" {
+				if strings.TrimSpace(kafka.SASLPassword) == "" && strings.TrimSpace(kafka.SASLPasswordSecret) == "" {
+					issues = append(issues, "Event Hubs Kafka profile requires sasl_password_secret or sasl_password before live replay")
+				}
+			}
+		}
+		if ser := strings.ToLower(strings.TrimSpace(kafka.Serialization)); ser != "" && ser != "raw" {
+			if strings.TrimSpace(kafka.SchemaRegistryURL) == "" && kafka.SchemaID <= 0 {
+				issues = append(issues, "config.kafka.serialization requires schema_registry_url or schema_id")
+			}
+			if ser == "avro" && strings.TrimSpace(kafka.Schema) == "" {
+				issues = append(issues, "config.kafka.serialization avro requires config.kafka.schema")
+			}
+			detail = append(detail, "serialization="+ser)
+		}
+		checks = append(checks, ReplayPreflightCheck{
+			ID:     "messaging_kafka",
+			Label:  "Kafka readiness",
+			Status: replayCheckStatus(len(issues) == 0, len(warnings) > 0 || kafka.Mock),
+			Detail: replayListDetail(issues, strings.Join(detail, "; ")),
+		})
+	case "jms-solace", "jms-servicebus", "jms-ibmmq":
+		jms := script.Config.JMS
+		if jms.Mock {
+			warnings = append(warnings, "config.jms.mock is enabled; replay uses the in-memory JMS broker")
+		} else {
+			if strings.TrimSpace(jms.BrokerURL) == "" {
+				issues = append(issues, "config.jms.broker_url is required when mock mode is disabled")
+			}
+		}
+		checks = append(checks, ReplayPreflightCheck{
+			ID:     "messaging_jms",
+			Label:  "JMS readiness",
+			Status: replayCheckStatus(len(issues) == 0, len(warnings) > 0 || jms.Mock),
+			Detail: replayListDetail(issues, "JMS runtime configuration is ready."),
+		})
+	}
+	return issues, warnings, checks
 }
 
 func cloneReplayPreflight(preflight *ReplayPreflight) *ReplayPreflight {

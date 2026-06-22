@@ -1507,6 +1507,9 @@ func (j *JMS) buildMessage(action *protocol.Action, destination string) message 
 		properties = make(map[string]string)
 	}
 	for k, v := range action.Metadata {
+		if metadataKeyIsProvenance(k) {
+			continue
+		}
 		if s, ok := v.(string); ok {
 			properties[k] = s
 		}
@@ -1548,6 +1551,11 @@ func (j *JMS) buildMessage(action *protocol.Action, destination string) message 
 		msg.ScheduledEnqueueAt = msg.CreatedAt.Add(delay)
 	}
 	return msg
+}
+
+func metadataKeyIsProvenance(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
+	return strings.HasPrefix(key, "asyncapi_")
 }
 
 // applyTypedBody fills the structured map/stream payload for a MapMessage or
