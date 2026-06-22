@@ -88,3 +88,63 @@ func TestReplayScript_DeterministicWithSeed(t *testing.T) {
 		t.Fatal("different seed should produce different draws")
 	}
 }
+
+// TestReplayScript_DeterministicInitialDataRow covers the initial random data-row
+// selection, which happens in prepareRuntimeState BEFORE the per-action loop. The
+// replay seed must be installed before that load, or the first row is picked from
+// the unseeded global rand and same-seed replays diverge.
+func TestReplayScript_DeterministicInitialDataRow(t *testing.T) {
+	var captured []string
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		if action.Name == "pick" {
+			captured = append(captured, action.Target)
+		}
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+
+	script := &dsl.Script{
+		Name:     "deterministic-initial-row",
+		Protocol: protocolName,
+		DataSources: []dsl.DataSource{{
+			Name:           "users",
+			Strategy:       "random",
+			FirstRowHeader: true,
+			InlineData:     "id\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n",
+		}},
+		Actions: []dsl.Action{{
+			Name:   "pick",
+			Type:   "GET",
+			Method: "GET",
+			Target: "/u/{{data.users.id}}",
+		}},
+	}
+
+	run := func(seed int64) string {
+		captured = nil
+		s := seed
+		if _, err := ReplayScript(context.Background(), script, ReplayOptions{IgnoreThinkTime: true, Seed: &s}); err != nil {
+			t.Fatalf("ReplayScript: %v", err)
+		}
+		if len(captured) != 1 {
+			t.Fatalf("expected 1 capture, got %d: %v", len(captured), captured)
+		}
+		return captured[0]
+	}
+
+	a := run(7)
+	if a != run(7) {
+		t.Fatalf("same seed selected different initial data rows (got %q then a different value)", a)
+	}
+	// The initial selection must vary across seeds; if it were picked before
+	// seeding it would be constant regardless of seed.
+	varied := false
+	for _, s := range []int64{1, 2, 3, 4, 5, 6, 8, 9, 10, 11} {
+		if run(s) != a {
+			varied = true
+			break
+		}
+	}
+	if !varied {
+		t.Fatal("initial data-row selection did not vary across seeds; replay seed not applied before the initial row load")
+	}
+}

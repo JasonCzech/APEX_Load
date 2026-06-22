@@ -115,7 +115,7 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 			}
 		}
 	}
-	writeMessagingMetrics(&body, tests)
+	writeMessagingMetrics(&body, s.runner.liveMetricsSnapshot())
 	_, _ = w.Write([]byte(body.String()))
 }
 
@@ -123,7 +123,30 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 // (JMS, Kafka, Event Hubs) as Prometheus gauges. Messaging server-telemetry is
 // dependency-scoped, so it is read from each running test's dependency_health,
 // labeled by test_id, protocol, and target (event hub / topic / queue).
-func writeMessagingMetrics(body *strings.Builder, tests []*ManagedTest) {
+// testLiveMetrics pairs a test id with its LiveMetrics pointer captured under the
+// runner lock. The publish loop swaps test.LiveMetrics under tr.mu (metrics.go),
+// so a concurrent /metrics scrape must read the pointer under the lock; the
+// pointed-to LiveMetrics is rebuilt fresh each cycle and never mutated in place,
+// so once captured it can be read without further locking.
+type testLiveMetrics struct {
+	testID  string
+	metrics *LiveMetrics
+}
+
+func (tr *TestRunner) liveMetricsSnapshot() []testLiveMetrics {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	out := make([]testLiveMetrics, 0, len(tr.tests))
+	for _, t := range tr.tests {
+		if t == nil {
+			continue
+		}
+		out = append(out, testLiveMetrics{testID: t.ID, metrics: t.LiveMetrics})
+	}
+	return out
+}
+
+func writeMessagingMetrics(body *strings.Builder, snapshot []testLiveMetrics) {
 	type row struct {
 		testID   string
 		protocol string
@@ -131,11 +154,11 @@ func writeMessagingMetrics(body *strings.Builder, tests []*ManagedTest) {
 		st       *ServerTelemetrySummary
 	}
 	var rows []row
-	for _, test := range tests {
-		if test == nil || test.LiveMetrics == nil {
+	for _, snap := range snapshot {
+		if snap.metrics == nil {
 			continue
 		}
-		for _, dep := range test.LiveMetrics.DependencyHealth {
+		for _, dep := range snap.metrics.DependencyHealth {
 			if dep == nil || dep.ServerTelemetry == nil {
 				continue
 			}
@@ -143,7 +166,7 @@ func writeMessagingMetrics(body *strings.Builder, tests []*ManagedTest) {
 			if !ok {
 				continue
 			}
-			rows = append(rows, row{testID: test.ID, protocol: protocol, target: dep.DependencyTarget, st: dep.ServerTelemetry})
+			rows = append(rows, row{testID: snap.testID, protocol: protocol, target: dep.DependencyTarget, st: dep.ServerTelemetry})
 		}
 	}
 	if len(rows) == 0 {

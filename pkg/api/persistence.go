@@ -201,7 +201,13 @@ func (tr *TestRunner) reloadStoredTests() {
 		tr.loadStoredTestHistory(managedTest)
 		tr.loadStoredTestArchive(managedTest)
 		tr.mu.Lock()
-		tr.tests[record.ID] = managedTest
+		// Re-check liveness under the write lock: startManagedTestRun may have begun
+		// a run for this ID in the window since the RLock above. Overwriting it with
+		// the DB-hydrated copy (cancel == nil) would detach the running goroutine's
+		// cancel func, so a later Stop/Abort could never stop the run.
+		if current, ok := tr.tests[record.ID]; !ok || current.cancel == nil {
+			tr.tests[record.ID] = managedTest
+		}
 		tr.mu.Unlock()
 	}
 }

@@ -316,19 +316,21 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		RedactionConfig: redactionConfig,
 		SnapshotStore:   NewSnapshotStore(128),
 	}
-	vu.prepareRuntimeState()
-	for key, value := range opts.Variables {
-		vu.Variables[key] = value
-	}
-
-	// Deterministic replay: seed random data selection and random template
-	// builtins so repeated replays of the same script reselect the same data.
+	// Deterministic replay: seed random data selection and random template builtins
+	// BEFORE prepareRuntimeState, whose initial data-row load (loadDataRow → GetRow)
+	// draws from the data provider's RNG. Seeding afterward left the first row's
+	// selection on the global rand source, so same-seed replays diverged.
 	replaySeed := defaultReplaySeed
 	if opts.Seed != nil {
 		replaySeed = *opts.Seed
 	}
 	dataProvider.SeedRandom(replaySeed)
 	vu.rng = rand.New(rand.NewSource(replaySeed))
+
+	vu.prepareRuntimeState()
+	for key, value := range opts.Variables {
+		vu.Variables[key] = value
+	}
 
 	continueOnError := script.Config.ErrorHandling.ContinueOnError
 	globalThinkCfg := protocol.ThinkTimeConfig{
