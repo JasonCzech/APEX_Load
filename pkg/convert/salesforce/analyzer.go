@@ -1129,7 +1129,11 @@ func detectCorrelations(entries []harEntry) []correlate.Correlation {
 		})
 	}
 	seenValues := make(map[string]bool)
-	correlations := detectNestedJSONCorrelations(observations, seenValues)
+	// Composite referenceId chaining is detected first so its precise,
+	// referenceId-scoped JMESPath extractor pre-empts the generic nested-JSON
+	// "$.id" candidate for the same value (dedup is by value via seenValues).
+	correlations := detectCompositeCorrelations(observations, seenValues)
+	correlations = append(correlations, detectNestedJSONCorrelations(observations, seenValues)...)
 	for _, corr := range correlate.Detect(observations) {
 		if seenValues[corr.Value] {
 			continue
@@ -1147,6 +1151,125 @@ func detectCorrelations(entries []harEntry) []correlate.Correlation {
 		return correlations[i].FoundInID < correlations[j].FoundInID
 	})
 	return correlations
+}
+
+// detectCompositeCorrelations finds server-assigned record ids returned by a
+// Salesforce /composite call (keyed by referenceId) that a LATER, separate
+// request reuses, and emits a referenceId-scoped JMESPath extractor so the live
+// id is correlated rather than the recorded literal. Intra-request @{ref.field}
+// placeholders are resolved server-side and need no handling (the engine only
+// expands {{...}} tokens, so @{...} passes through verbatim). The flat
+// compositeResponse[] shape is handled here; /composite/sobjects/tree and
+// /composite/graph response shapes are a follow-up.
+func detectCompositeCorrelations(observations []correlate.Observation, seenValues map[string]bool) []correlate.Correlation {
+	correlations := make([]correlate.Correlation, 0)
+	for index, observation := range observations {
+		if !strings.Contains(strings.ToLower(observation.RequestURL), "/composite") {
+			continue
+		}
+		for _, candidate := range compositeCandidates(observation.ResponseBody) {
+			if candidate.Value == "" || seenValues[candidate.Value] {
+				continue
+			}
+			usedIn := make([]int, 0)
+			for later := index + 1; later < len(observations); later++ {
+				if correlate.ObservationContains(observations[later], candidate.Value) {
+					usedIn = append(usedIn, observations[later].ID)
+				}
+			}
+			if len(usedIn) == 0 {
+				continue
+			}
+			seenValues[candidate.Value] = true
+			correlations = append(correlations, correlate.Correlation{
+				Name:        candidate.Name,
+				Source:      candidate.Source,
+				Expression:  candidate.Expression,
+				ExtractType: candidate.ExtractType,
+				FoundInID:   observation.ID,
+				UsedInIDs:   usedIn,
+				Value:       candidate.Value,
+				SampleValue: correlate.Truncate(candidate.Value, 80),
+				RuleID:      candidate.RuleID,
+				Confidence:  candidate.BaseConfidence,
+				Reasons:     []string{candidate.Reason},
+			})
+		}
+	}
+	return correlations
+}
+
+// compositeCandidates parses a /composite response and emits one candidate per
+// subrequest that returns a record id, addressed by its referenceId so the
+// extractor is unambiguous even when multiple subrequests each return an id.
+func compositeCandidates(body string) []correlate.Candidate {
+	if strings.TrimSpace(body) == "" {
+		return nil
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
+		return nil
+	}
+	entries, ok := decoded["compositeResponse"].([]any)
+	if !ok {
+		return nil
+	}
+	candidates := make([]correlate.Candidate, 0, len(entries))
+	// usedNames disambiguates referenceIds that slug to the same name (e.g.
+	// "Acct-1" and "Acct_1" both slug to ..._acct_1). Without this, the second
+	// extractor would be dropped as a duplicate Name and both record ids would be
+	// rewritten to the first referenceId's variable — a silent id mismatch.
+	usedNames := map[string]int{}
+	for _, raw := range entries {
+		sub, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		ref, _ := sub["referenceId"].(string)
+		if ref == "" || !safeCompositeReferenceID(ref) {
+			continue
+		}
+		if status, ok := sub["httpStatusCode"].(float64); ok && status >= 300 {
+			continue
+		}
+		bodyObj, ok := sub["body"].(map[string]any)
+		if !ok {
+			continue
+		}
+		id, _ := bodyObj["id"].(string)
+		if id == "" {
+			continue
+		}
+		name := "corr_" + correlate.Slug("salesforce_composite_"+ref)
+		usedNames[name]++
+		if n := usedNames[name]; n > 1 {
+			name = fmt.Sprintf("%s_%d", name, n)
+		}
+		candidates = append(candidates, correlate.Candidate{
+			Name:           name,
+			Value:          id,
+			Source:         "body",
+			ExtractType:    "jmespath",
+			Expression:     "compositeResponse[?referenceId=='" + ref + "'].body.id | [0]",
+			RuleID:         correlate.RuleSalesforceCompositeReference,
+			BaseConfidence: 0.85,
+			Reason:         "Salesforce composite subrequest '" + ref + "' record id",
+		})
+	}
+	return candidates
+}
+
+// safeCompositeReferenceID restricts referenceIds embedded in a JMESPath string
+// literal to a quote-free charset so a crafted/unusual referenceId cannot break
+// the generated expression. Real Salesforce referenceIds are simple identifiers.
+func safeCompositeReferenceID(ref string) bool {
+	for _, r := range ref {
+		if r == '_' || r == '-' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func detectNestedJSONCorrelations(observations []correlate.Observation, seenValues map[string]bool) []correlate.Correlation {

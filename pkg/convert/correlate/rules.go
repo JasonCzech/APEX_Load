@@ -10,33 +10,34 @@ import (
 // produced it so the dashboard, migration review, and replay-repair surfaces can
 // explain and group findings by response family.
 const (
-	RuleJSONAuthToken               = "json.auth_token"
-	RuleJSONCSRFToken               = "json.csrf_token"
-	RuleJSONSessionID               = "json.session_id"
-	RuleJSONNumericID               = "json.numeric_id"
-	RuleJSONDynamicID               = "json.dynamic_id"
-	RuleHTMLHiddenToken             = "html.hidden_token"
-	RuleASPNetState                 = "html.aspnet_state"
-	RuleXMLSOAPToken                = "xml.soap_token"
-	RuleXMLDynamicID                = "xml.dynamic_id"
-	RuleSetCookieSession            = "cookie.session"
-	RuleSetCookieOther              = "cookie.other"
-	RuleDynamicHeader               = "header.dynamic"
-	RuleLocationRedirect            = "header.location"
-	RuleLocationParam               = "header.location_param"
-	RuleWebSocketID                 = "messaging.websocket_id"
-	RuleJMSCorrelationID            = "messaging.jms_correlation_id"
-	RuleSalesforceAuraToken         = "salesforce.aura_token"
-	RuleSalesforceAuraContextFWUID  = "salesforce.aura_context_fwuid"
-	RuleSalesforceAuraAppDescriptor = "salesforce.aura_app_descriptor"
-	RuleSalesforceAuraLoaded        = "salesforce.aura_loaded"
-	RuleSalesforceAuraPageURI       = "salesforce.aura_page_uri"
-	RuleSalesforcePageScopeID       = "salesforce.page_scope_id"
-	RuleSalesforceViewState         = "salesforce.viewstate"
-	RuleSalesforceFrontdoorSID      = "salesforce.frontdoor_sid"
-	RuleSalesforceConfirmationToken = "salesforce.confirmation_token"
-	RuleSalesforceNextRecordsURL    = "salesforce.next_records_url"
-	RuleSalesforceBulkContentURL    = "salesforce.bulk_content_url"
+	RuleJSONAuthToken                = "json.auth_token"
+	RuleJSONCSRFToken                = "json.csrf_token"
+	RuleJSONSessionID                = "json.session_id"
+	RuleJSONNumericID                = "json.numeric_id"
+	RuleJSONDynamicID                = "json.dynamic_id"
+	RuleHTMLHiddenToken              = "html.hidden_token"
+	RuleASPNetState                  = "html.aspnet_state"
+	RuleXMLSOAPToken                 = "xml.soap_token"
+	RuleXMLDynamicID                 = "xml.dynamic_id"
+	RuleSetCookieSession             = "cookie.session"
+	RuleSetCookieOther               = "cookie.other"
+	RuleDynamicHeader                = "header.dynamic"
+	RuleLocationRedirect             = "header.location"
+	RuleLocationParam                = "header.location_param"
+	RuleWebSocketID                  = "messaging.websocket_id"
+	RuleJMSCorrelationID             = "messaging.jms_correlation_id"
+	RuleSalesforceAuraToken          = "salesforce.aura_token"
+	RuleSalesforceAuraContextFWUID   = "salesforce.aura_context_fwuid"
+	RuleSalesforceAuraAppDescriptor  = "salesforce.aura_app_descriptor"
+	RuleSalesforceAuraLoaded         = "salesforce.aura_loaded"
+	RuleSalesforceAuraPageURI        = "salesforce.aura_page_uri"
+	RuleSalesforcePageScopeID        = "salesforce.page_scope_id"
+	RuleSalesforceViewState          = "salesforce.viewstate"
+	RuleSalesforceFrontdoorSID       = "salesforce.frontdoor_sid"
+	RuleSalesforceConfirmationToken  = "salesforce.confirmation_token"
+	RuleSalesforceNextRecordsURL     = "salesforce.next_records_url"
+	RuleSalesforceBulkContentURL     = "salesforce.bulk_content_url"
+	RuleSalesforceCompositeReference = "salesforce.composite_reference"
 )
 
 // ResponseFamily groups rules by the kind of response they inspect.
@@ -79,6 +80,7 @@ func RuleCatalog() []RuleInfo {
 		{RuleSalesforceFrontdoorSID, FamilyForm, "Salesforce frontdoor sid", "sid/frontdoor session values passed through Salesforce frontdoor redirects.", 0.85},
 		{RuleSalesforceNextRecordsURL, FamilyForm, "Salesforce SOQL nextRecordsUrl", "SOQL REST Query API pagination cursor (nextRecordsUrl) reused verbatim as the next page request URL.", 0.9},
 		{RuleSalesforceBulkContentURL, FamilyForm, "Salesforce Bulk contentUrl", "Bulk API 2.0 ingest job contentUrl — the relative path the CSV batch is PUT to.", 0.9},
+		{RuleSalesforceCompositeReference, FamilyForm, "Salesforce composite referenceId", "Server-assigned record ids from a /composite subrequest, addressed by referenceId, reused in later requests.", 0.85},
 		{RuleASPNetState, FamilyHTML, "ASP.NET state field", "WebForms __VIEWSTATE / __EVENTVALIDATION style hidden fields that change every request.", 0.95},
 		{RuleHTMLHiddenToken, FamilyHTML, "Hidden anti-CSRF/state token", "Hidden form inputs named like csrf, xsrf, token, nonce, state, viewstate, authenticity.", 0.9},
 		{RuleJSONCSRFToken, FamilyJSON, "JSON CSRF token", "JSON fields whose name contains csrf/xsrf.", 0.9},

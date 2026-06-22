@@ -102,6 +102,26 @@ func TestExtractJMESPath_InvalidExpression(t *testing.T) {
 	}
 }
 
+// TestExtractCompositeReferenceId guards the A5 composite-chaining contract: a
+// referenceId-scoped lookup needs a filter predicate, which only the jmespath
+// extractor supports — the hand-rolled jsonpath extractor errors on it. The
+// Salesforce importer must therefore emit jmespath, not jsonpath, for these.
+func TestExtractCompositeReferenceId(t *testing.T) {
+	body := []byte(`{"compositeResponse":[{"referenceId":"NewAccount","httpStatusCode":201,"body":{"id":"001ABC"}},{"referenceId":"NewContact","httpStatusCode":201,"body":{"id":"003XYZ"}}]}`)
+
+	val, err := extractJMESPath("compositeResponse[?referenceId=='NewContact'].body.id | [0]", body)
+	if err != nil {
+		t.Fatalf("extractJMESPath filter: %v", err)
+	}
+	if val != "003XYZ" {
+		t.Errorf("jmespath filter got %q, want %q", val, "003XYZ")
+	}
+
+	if _, err := extractJSONPath("$.compositeResponse[?referenceId=='NewContact'].body.id", body); err == nil {
+		t.Fatal("hand-rolled jsonpath unexpectedly handled a filter predicate; the importer relies on this failing")
+	}
+}
+
 func TestExtractCSS_Text(t *testing.T) {
 	body := []byte(`<html><body><p class="primary">Alpha</p><p>Beta</p></body></html>`)
 

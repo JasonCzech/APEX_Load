@@ -648,6 +648,117 @@ func TestAnalyzeNativePreviewSynthesizesBulkPollLoop(t *testing.T) {
 	}
 }
 
+// TestCompositeCandidatesParsesReferenceIds covers the A5 composite parser: one
+// candidate per subrequest that returns a record id, addressed by referenceId,
+// skipping error subrequests and subrequests without a body id.
+func TestCompositeCandidatesParsesReferenceIds(t *testing.T) {
+	body := `{"compositeResponse":[
+	  {"referenceId":"NewAccount","httpStatusCode":201,"body":{"id":"001AAA000111","success":true}},
+	  {"referenceId":"NewContact","httpStatusCode":201,"body":{"id":"003BBB000222"}},
+	  {"referenceId":"FailedThing","httpStatusCode":400,"body":[{"errorCode":"REQUIRED_FIELD_MISSING"}]},
+	  {"referenceId":"QueryOnly","httpStatusCode":200,"body":{"totalSize":1,"records":[]}}
+	]}`
+	cands := compositeCandidates(body)
+	if len(cands) != 2 {
+		t.Fatalf("got %d candidates, want 2 (NewAccount, NewContact): %#v", len(cands), cands)
+	}
+	expr := map[string]string{}
+	typ := map[string]string{}
+	for _, c := range cands {
+		expr[c.Value] = c.Expression
+		typ[c.Value] = c.ExtractType
+	}
+	if typ["001AAA000111"] != "jmespath" || expr["001AAA000111"] != "compositeResponse[?referenceId=='NewAccount'].body.id | [0]" {
+		t.Fatalf("NewAccount candidate = %s %q, want referenceId-scoped jmespath", typ["001AAA000111"], expr["001AAA000111"])
+	}
+	if expr["003BBB000222"] != "compositeResponse[?referenceId=='NewContact'].body.id | [0]" {
+		t.Fatalf("NewContact expr = %q", expr["003BBB000222"])
+	}
+}
+
+// TestCompositeCandidatesDisambiguatesSluggedReferenceIds guards against the
+// silent id cross-wiring that occurs when two referenceIds slug to the same name
+// (e.g. "Acct-1" and "Acct_1"): each must get a distinct extractor name so its
+// own record id is substituted, not the first subrequest's.
+func TestCompositeCandidatesDisambiguatesSluggedReferenceIds(t *testing.T) {
+	body := `{"compositeResponse":[
+	  {"referenceId":"Acct-1","httpStatusCode":201,"body":{"id":"001AAA000111"}},
+	  {"referenceId":"Acct_1","httpStatusCode":201,"body":{"id":"001BBB000222"}}
+	]}`
+	cands := compositeCandidates(body)
+	if len(cands) != 2 {
+		t.Fatalf("got %d candidates, want 2", len(cands))
+	}
+	if cands[0].Name == cands[1].Name {
+		t.Fatalf("collision: both referenceIds produced the same extractor name %q", cands[0].Name)
+	}
+	// Each candidate must still target its OWN referenceId and carry its OWN id.
+	byVal := map[string]string{}
+	for _, c := range cands {
+		byVal[c.Value] = c.Expression
+	}
+	if byVal["001AAA000111"] != "compositeResponse[?referenceId=='Acct-1'].body.id | [0]" {
+		t.Fatalf("Acct-1 expr = %q", byVal["001AAA000111"])
+	}
+	if byVal["001BBB000222"] != "compositeResponse[?referenceId=='Acct_1'].body.id | [0]" {
+		t.Fatalf("Acct_1 expr = %q", byVal["001BBB000222"])
+	}
+}
+
+// TestAnalyzeNativePreviewCorrelatesCompositeReferenceId proves cross-request
+// chaining: a record id created by a /composite subrequest is extracted with a
+// referenceId-scoped JMESPath and reused in a later request's URL.
+func TestAnalyzeNativePreviewCorrelatesCompositeReferenceId(t *testing.T) {
+	const (
+		base  = "https://acme.my.salesforce.com"
+		newID = "001ABC0000111222AAA"
+	)
+	script := &dsl.Script{
+		Name:     "SF Composite",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: base},
+		Actions: []dsl.Action{
+			{Name: "Composite Create", Type: "POST", Method: "POST", Target: base + "/services/data/v60.0/composite", Body: `{"compositeRequest":[{"referenceId":"NewAccount","method":"POST","url":"/services/data/v60.0/sobjects/Account","body":{"Name":"Acme"}}]}`},
+			{Name: "Get Account", Type: "GET", Method: "GET", Target: base + "/services/data/v60.0/sobjects/Account/" + newID},
+		},
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {"request": {"method": "POST", "url": "` + base + `/services/data/v60.0/composite", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"compositeResponse\":[{\"referenceId\":\"NewAccount\",\"httpStatusCode\":201,\"body\":{\"id\":\"` + newID + `\",\"success\":true}}]}"}}},
+	      {"request": {"method": "GET", "url": "` + base + `/services/data/v60.0/sobjects/Account/` + newID + `", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"Id\":\"` + newID + `\",\"Name\":\"Acme\"}"}}}
+	    ]
+	  }
+	}`)
+
+	review, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if review.NativePreview == nil || review.NativePreview.Script == nil {
+		t.Fatal("NativePreview = nil, want script")
+	}
+	composite := review.NativePreview.Script.Actions[0]
+	var ext *dsl.Extractor
+	for i := range composite.Extractors {
+		if composite.Extractors[i].Type == "jmespath" && strings.Contains(composite.Extractors[i].Expression, "referenceId=='NewAccount'") {
+			ext = &composite.Extractors[i]
+		}
+	}
+	if ext == nil {
+		t.Fatalf("composite extractors = %#v, want a referenceId-scoped jmespath extractor", composite.Extractors)
+	}
+	getTarget := review.NativePreview.Script.Actions[1].Target
+	if strings.Contains(getTarget, newID) {
+		t.Fatalf("get-account target = %q, still carries the recorded record id literal", getTarget)
+	}
+	if !strings.Contains(getTarget, "{{var."+ext.Name+"}}") {
+		t.Fatalf("get-account target = %q, want it to reuse {{var.%s}}", getTarget, ext.Name)
+	}
+}
+
 func TestAnalyzeClassifiesBroadenedSalesforceSurface(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "SF Broad Surface",
