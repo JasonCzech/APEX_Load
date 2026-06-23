@@ -25,7 +25,7 @@ const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
 const EMPTY_SERVICES: SystemServicesResponse['services'] = []
 
 const MONITOR_CATEGORIES = [
-  { id: 'overview', label: 'Overview', cardIds: ['system-health', 'active-services', 'production-readiness', 'controller'] },
+  { id: 'overview', label: 'Overview', cardIds: ['system-health', 'production-readiness'] },
   { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts', 'fleet-pools', 'generator-metadata'] },
   { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors'] },
   { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar', 'timeslots'] },
@@ -34,6 +34,7 @@ const MONITOR_CATEGORIES = [
 type MonitorCategoryId = typeof MONITOR_CATEGORIES[number]['id']
 type RunCalendarView = 'month' | 'week' | 'day'
 type RunCalendarFilter = 'all' | 'cron' | 'ad_hoc' | 'current'
+type MonitorSeverity = 'healthy' | 'unknown' | 'warning' | 'danger'
 
 type RestartAction = {
   targetType: SystemRestartRequest['target_type']
@@ -75,6 +76,53 @@ function formatReadinessCheckName(name: string): string {
     .filter(Boolean)
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
+}
+
+function monitorSeverityRank(severity: MonitorSeverity): number {
+  switch (severity) {
+    case 'danger':
+      return 3
+    case 'warning':
+      return 2
+    case 'unknown':
+      return 1
+    default:
+      return 0
+  }
+}
+
+function worstMonitorSeverity(...severities: MonitorSeverity[]): MonitorSeverity {
+  return severities.reduce((worst, severity) => (
+    monitorSeverityRank(severity) > monitorSeverityRank(worst) ? severity : worst
+  ), 'healthy' as MonitorSeverity)
+}
+
+function statusMonitorSeverity(status?: string): MonitorSeverity {
+  const normalized = (status || '').trim().toLowerCase()
+  if (!normalized || normalized === 'unknown' || normalized === 'checking') return 'unknown'
+  if (['healthy', 'ok', 'ready', 'running', 'active', 'connected'].includes(normalized)) return 'healthy'
+  if (['failed', 'unhealthy', 'unreachable', 'unavailable', 'not_ready', 'error'].includes(normalized)) return 'danger'
+  if (['degraded', 'stopping', 'draining', 'cordoned', 'paused'].includes(normalized)) return 'warning'
+  return 'warning'
+}
+
+function websocketMonitorSeverity(connectionState: WebSocketConnectionState): MonitorSeverity {
+  if (connectionState === 'connected') return 'healthy'
+  if (connectionState === 'disconnected') return 'danger'
+  return 'warning'
+}
+
+function groupedMonitorHeaderLabel(severity: MonitorSeverity): string {
+  switch (severity) {
+    case 'danger':
+      return 'attention'
+    case 'warning':
+      return 'degraded'
+    case 'unknown':
+      return 'checking'
+    default:
+      return 'healthy'
+  }
 }
 
 function safeApiCall<T>(request: () => Promise<T>, fallback: T): Promise<T> {
@@ -197,6 +245,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [cardOrder, setCardOrder] = useState<string[]>(() => readStoredStringArray('apexload.monitoring.cardOrder'))
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
+  const apiHealthSeverity = statusMonitorSeverity(health?.status)
+  const websocketSeverity = websocketMonitorSeverity(connectionState)
   const websocketValueClass = connectionState === 'connected' ? 'text-success' : connectionState === 'disconnected' ? 'text-danger' : ''
   const websocketLabel = connectionState === 'connected' ? 'Connected' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
   const telemetryWarningCount = telemetryDiagnostics.filter(entry => entry.diagnostic.severity === 'warning').length
@@ -218,25 +268,23 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const generatorAvailableCapacity = generators.reduce((sum, generator) => sum + generator.available_capacity, 0)
   const generatorActiveVUsers = generators.reduce((sum, generator) => sum + generator.active_vusers, 0)
   const controllerStatusLabel = inventory?.controller.status || health?.status || 'unknown'
-  const controllerHeaderSeverity = controllerStatusLabel === 'healthy' || controllerStatusLabel === 'ok'
-    ? 'healthy'
-    : controllerStatusLabel === 'unknown'
-      ? 'unknown'
-      : 'warning'
+  const controllerHeaderSeverity: MonitorSeverity = statusMonitorSeverity(controllerStatusLabel)
+  const controlPlaneHeaderSeverity = worstMonitorSeverity(apiHealthSeverity, websocketSeverity, controllerHeaderSeverity)
+  const controlPlaneHeaderLabel = groupedMonitorHeaderLabel(controlPlaneHeaderSeverity)
   const controllerGeneratorInventoryLabel = inventory?.controller.execution_mode === 'distributed'
     ? `${generatorConnectedCount}/${generators.length} connected`
     : inventory?.controller.execution_mode === 'local'
       ? 'Local mode'
       : '-'
-  const generatorHeaderSeverity = generatorIssueCount > 0 ? 'warning' : generators.length > 0 ? 'healthy' : 'unknown'
+  const generatorHeaderSeverity: MonitorSeverity = generatorIssueCount > 0 ? 'warning' : generators.length > 0 ? 'healthy' : 'unknown'
   const generatorHeaderLabel = generators.length > 0
     ? `${generatorConnectedCount}/${generators.length} online`
     : 'no inventory'
   const fleetAlertDangerCount = fleetAlerts.filter(alert => alert.severity === 'danger').length
   const fleetAlertWarningCount = fleetAlerts.filter(alert => alert.severity === 'warning').length
-  const fleetAlertHeaderSeverity = fleetAlertDangerCount > 0 ? 'danger' : fleetAlertWarningCount > 0 ? 'warning' : generators.length > 0 ? 'healthy' : 'unknown'
+  const fleetAlertHeaderSeverity: MonitorSeverity = fleetAlertDangerCount > 0 ? 'danger' : fleetAlertWarningCount > 0 ? 'warning' : generators.length > 0 ? 'healthy' : 'unknown'
   const fleetAlertHeaderLabel = fleetAlerts.length > 0 ? `${fleetAlerts.length} alert${fleetAlerts.length === 1 ? '' : 's'}` : generators.length > 0 ? 'clear' : 'no inventory'
-  const scheduleHeaderSeverity = !scheduleHealth
+  const scheduleHeaderSeverity: MonitorSeverity = !scheduleHealth
     ? 'unknown'
     : scheduleHealth.failed > 0 || scheduleHealth.blocked > 0
       ? 'danger'
@@ -261,7 +309,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const readinessReadyCount = systemReadiness?.checks.filter(check => check.status === 'ready').length ?? 0
   const readinessDegradedCount = systemReadiness?.checks.filter(check => check.status === 'degraded').length ?? 0
   const readinessBlockedCount = systemReadiness?.checks.filter(check => check.status === 'not_ready').length ?? 0
-  const readinessHeaderSeverity = systemReadiness?.status === 'not_ready'
+  const readinessHeaderSeverity: MonitorSeverity = systemReadiness?.status === 'not_ready'
     ? 'danger'
     : systemReadiness?.status === 'degraded'
       ? 'warning'
@@ -271,12 +319,12 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const readinessHeaderLabel = formatReadinessStatus(systemReadiness?.status)
   const apmProfileCount = apmProfiles?.profiles.length ?? 0
   const apmConfiguredCount = apmProfiles?.profiles.filter(profile => profile.status === 'configured' || profile.status === 'supported').length ?? 0
-  const apmHeaderSeverity = !apmProfiles ? 'unknown' : apmConfiguredCount > 0 ? 'healthy' : 'warning'
+  const apmHeaderSeverity: MonitorSeverity = !apmProfiles ? 'unknown' : apmConfiguredCount > 0 ? 'healthy' : 'warning'
   const apmHeaderLabel = !apmProfiles ? 'checking' : `${apmConfiguredCount}/${apmProfileCount} ready`
   const monitorPackCount = monitorPacks?.packs.length ?? 0
   const monitorPackSupportedCount = monitorPacks?.packs.filter(pack => pack.status === 'supported').length ?? 0
   const monitorPackContractCount = monitorPacks?.packs.filter(pack => pack.status === 'integration_contract').length ?? 0
-  const monitorPackHeaderSeverity = !monitorPacks ? 'unknown' : monitorPackSupportedCount === monitorPackCount ? 'healthy' : 'warning'
+  const monitorPackHeaderSeverity: MonitorSeverity = !monitorPacks ? 'unknown' : monitorPackSupportedCount === monitorPackCount ? 'healthy' : 'warning'
   const monitorPackHeaderLabel = !monitorPacks ? 'checking' : `${monitorPackSupportedCount}/${monitorPackCount} native`
   const componentBuildRows = useMemo(() => [
     controllerBuildRow(health),
@@ -288,7 +336,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const frontendServices = useMemo(() => activeServices.filter(service => service.kind === 'frontend'), [activeServices])
   const activeServiceCount = activeServices.filter(service => isActiveServiceStatus(service.status)).length
   const serviceIssueCount = activeServices.filter(service => !isActiveServiceStatus(service.status)).length
-  const servicesHeaderSeverity = !systemServices && backendServices.length === 0
+  const servicesHeaderSeverity: MonitorSeverity = !systemServices && backendServices.length === 0
     ? 'unknown'
     : serviceIssueCount > 0
       ? 'warning'
@@ -300,6 +348,12 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     : backendServices.length === 0
       ? 'frontend only'
       : `${activeServiceCount}/${activeServices.length} active`
+  const readinessServicesHeaderSeverity = worstMonitorSeverity(readinessHeaderSeverity, servicesHeaderSeverity)
+  const readinessServicesHeaderLabel = readinessServicesHeaderSeverity === servicesHeaderSeverity && servicesHeaderSeverity !== 'healthy'
+    ? servicesHeaderLabel
+    : readinessServicesHeaderSeverity === readinessHeaderSeverity && readinessHeaderSeverity !== 'healthy'
+      ? readinessHeaderLabel
+      : groupedMonitorHeaderLabel(readinessServicesHeaderSeverity)
   const calendarRange = useMemo(() => getRunCalendarVisibleRange(calendarView, calendarAnchor), [calendarView, calendarAnchor])
   const calendarEvents = useMemo(() => filterRunCalendarEvents(runCalendar?.events ?? [], calendarFilter), [runCalendar, calendarFilter])
   const calendarModel = useMemo(() => buildRunCalendarModel(calendarView, calendarAnchor, calendarEvents), [calendarView, calendarAnchor, calendarEvents])
@@ -307,7 +361,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     () => (selectedCalendarEventId ? (runCalendar?.events ?? []).find(event => event.id === selectedCalendarEventId) ?? null : null),
     [runCalendar, selectedCalendarEventId],
   )
-  const calendarHeaderSeverity = !runCalendar ? 'unknown' : runCalendar.truncated ? 'warning' : calendarEvents.some(event => isRunCalendarProblemStatus(event.status)) ? 'danger' : 'healthy'
+  const calendarHeaderSeverity: MonitorSeverity = !runCalendar ? 'unknown' : runCalendar.truncated ? 'warning' : calendarEvents.some(event => isRunCalendarProblemStatus(event.status)) ? 'danger' : 'healthy'
   const calendarHeaderLabel = !runCalendar
     ? 'checking'
     : runCalendar.truncated
@@ -481,7 +535,12 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const cards = useMemo<MonitorCard[]>(() => [
     {
       id: 'system-health',
-      title: 'System & Connection',
+      title: 'Control Plane',
+      headerBadge: (
+        <span className={`monitor-header-badge ${controlPlaneHeaderSeverity}`}>
+          {controlPlaneHeaderLabel}
+        </span>
+      ),
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -489,18 +548,12 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: (
         <div className="monitor-body">
-          <div className="monitor-stat large">
-            <span className={`monitor-indicator ${health ? 'healthy' : 'unknown'}`} />
-            <span className="monitor-value">{health?.status || 'Checking...'}</span>
-          </div>
-          <div className="monitor-build-grid" aria-label="Component versions and build dates">
-            {componentBuildRows.map(component => (
-              <div key={component.id} className="monitor-build-row">
-                <span className="monitor-build-name">{component.name}</span>
-                <span className="monitor-build-version">{component.version}</span>
-                <span className="monitor-build-date" title={component.buildTime}>Built {component.buildDate}</span>
-              </div>
-            ))}
+          <div className="monitor-row">
+            <span className="monitor-label">API</span>
+            <span className="monitor-stat">
+              <span className={`monitor-indicator ${apiHealthSeverity === 'healthy' ? 'healthy' : 'unknown'}`} />
+              <span className="monitor-value">{health?.status || 'Checking...'}</span>
+            </span>
           </div>
           <div className="monitor-row">
             <span className="monitor-label">WebSocket</span>
@@ -511,106 +564,6 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           <div className="monitor-row">
             <span className="monitor-label">WS Endpoint</span>
             <span className="monitor-value cell-mono">/api/v1/ws</span>
-          </div>
-        </div>
-      ),
-    },
-    {
-      id: 'active-services',
-      title: 'Active Services',
-      headerBadge: (
-        <span className={`monitor-header-badge ${servicesHeaderSeverity}`}>
-          {servicesHeaderLabel}
-        </span>
-      ),
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="4" width="18" height="14" rx="2" />
-          <path d="M7 20h10" />
-          <path d="M9 9h.01" />
-          <path d="M13 9h4" />
-          <path d="M9 13h.01" />
-          <path d="M13 13h4" />
-        </svg>
-      ),
-      content: (
-        <ActiveServicesList
-          backendServices={backendServices}
-          frontendServices={frontendServices}
-          endpointAvailable={Boolean(systemServices)}
-        />
-      ),
-    },
-    {
-      id: 'production-readiness',
-      title: 'Production Readiness',
-      headerBadge: (
-        <span className={`monitor-header-badge ${readinessHeaderSeverity}`}>
-          {readinessHeaderLabel}
-        </span>
-      ),
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z" />
-          <path d="m9 12 2 2 4-5" />
-        </svg>
-      ),
-      content: (
-        <div className="monitor-body">
-          <div className="monitor-row">
-            <span className="monitor-label">Ready Checks</span>
-            <span className="monitor-value">{systemReadiness ? `${readinessReadyCount}/${systemReadiness.checks.length}` : '-'}</span>
-          </div>
-          <div className="monitor-row">
-            <span className="monitor-label">Degraded</span>
-            <span className={`monitor-value ${readinessDegradedCount > 0 ? 'telemetry-text-warning' : ''}`}>{systemReadiness ? readinessDegradedCount : '-'}</span>
-          </div>
-          <div className="monitor-row">
-            <span className="monitor-label">Blocked</span>
-            <span className={`monitor-value ${readinessBlockedCount > 0 ? 'text-danger' : ''}`}>{systemReadiness ? readinessBlockedCount : '-'}</span>
-          </div>
-          {systemReadiness ? (
-            <div className="monitor-warning-list">
-              {systemReadiness.checks
-                .filter(check => check.status !== 'ready')
-                .slice(0, 4)
-                .map(check => (
-                  <p key={check.name} className={check.status === 'not_ready' ? 'text-danger' : ''}>
-                    {formatReadinessCheckName(check.name)}: {check.message}
-                  </p>
-                ))}
-              {systemReadiness.checks.every(check => check.status === 'ready') && <p>All production readiness checks are passing.</p>}
-            </div>
-          ) : (
-            <p className="monitor-hint">Waiting for /api/v1/system/readiness.</p>
-          )}
-        </div>
-      ),
-    },
-    {
-      id: 'controller',
-      title: 'Controller',
-      headerBadge: (
-        <span className={`monitor-header-badge ${controllerHeaderSeverity}`}>
-          {controllerStatusLabel}
-        </span>
-      ),
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-          <line x1="8" y1="21" x2="16" y2="21" />
-          <line x1="12" y1="17" x2="12" y2="21" />
-        </svg>
-      ),
-      content: (
-        <div className="monitor-body">
-          <div className="monitor-row">
-            <span className="monitor-label">Status</span>
-            <span className="monitor-value">{controllerStatusLabel}</span>
-          </div>
-          <div className="monitor-row">
-            <span className="monitor-label">Version</span>
-            <span className="monitor-value">{formatBuildVersion(health?.version, health?.display_version)}</span>
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Active Tests</span>
@@ -636,6 +589,15 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             <span className="monitor-label">Address</span>
             <span className="monitor-value cell-mono">{inventory?.controller.address || '-'}</span>
           </div>
+          <div className="monitor-build-grid" aria-label="Component versions and build dates">
+            {componentBuildRows.map(component => (
+              <div key={component.id} className="monitor-build-row">
+                <span className="monitor-build-name">{component.name}</span>
+                <span className="monitor-build-version">{component.version}</span>
+                <span className="monitor-build-date" title={component.buildTime}>Built {component.buildDate}</span>
+              </div>
+            ))}
+          </div>
           {canRestart && restartCapabilities?.supports.controller_workload && (
             <div className="monitor-action-row">
               <button
@@ -647,6 +609,61 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               </button>
             </div>
           )}
+        </div>
+      ),
+    },
+    {
+      id: 'production-readiness',
+      title: 'Readiness & Services',
+      headerBadge: (
+        <span className={`monitor-header-badge ${readinessServicesHeaderSeverity}`}>
+          {readinessServicesHeaderLabel}
+        </span>
+      ),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z" />
+          <path d="m9 12 2 2 4-5" />
+        </svg>
+      ),
+      content: (
+        <div className="monitor-body">
+          <div className="monitor-row">
+            <span className="monitor-label">Ready Checks</span>
+            <span className="monitor-value">{systemReadiness ? `${readinessReadyCount}/${systemReadiness.checks.length}` : '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Degraded</span>
+            <span className={`monitor-value ${readinessDegradedCount > 0 ? 'telemetry-text-warning' : ''}`}>{systemReadiness ? readinessDegradedCount : '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Blocked</span>
+            <span className={`monitor-value ${readinessBlockedCount > 0 ? 'text-danger' : ''}`}>{systemReadiness ? readinessBlockedCount : '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Services</span>
+            <span className={`monitor-value ${servicesHeaderSeverity === 'warning' ? 'telemetry-text-warning' : ''}`}>{servicesHeaderLabel}</span>
+          </div>
+          {systemReadiness ? (
+            <div className="monitor-warning-list">
+              {systemReadiness.checks
+                .filter(check => check.status !== 'ready')
+                .slice(0, 4)
+                .map(check => (
+                  <p key={check.name} className={check.status === 'not_ready' ? 'text-danger' : ''}>
+                    {formatReadinessCheckName(check.name)}: {check.message}
+                  </p>
+                ))}
+              {systemReadiness.checks.every(check => check.status === 'ready') && <p>All production readiness checks are passing.</p>}
+            </div>
+          ) : (
+            <p className="monitor-hint">Waiting for /api/v1/system/readiness.</p>
+          )}
+          <ActiveServicesList
+            backendServices={backendServices}
+            frontendServices={frontendServices}
+            endpointAvailable={Boolean(systemServices)}
+          />
         </div>
       ),
     },
@@ -1089,7 +1106,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: <TimeslotsPanel projectId={activeProject?.id} canManage={canManageSystem} />,
     },
-  ], [activeProject?.id, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, componentBuildRows, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, restartCapabilities?.supports.controller_workload, restartDisabledReason, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, websocketLabel, websocketValueClass])
+  ], [activeProject?.id, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))
@@ -1544,10 +1561,10 @@ function ActiveServicesList({
   endpointAvailable: boolean
 }) {
   return (
-    <div className="monitor-body">
+    <>
       <ServiceGroup title="Backend" services={backendServices} emptyLabel={endpointAvailable ? 'No backend services reported.' : 'Waiting for /api/v1/system/services.'} />
       <ServiceGroup title="Frontend" services={frontendServices} emptyLabel="No dashboard frontend origin detected." />
-    </div>
+    </>
   )
 }
 

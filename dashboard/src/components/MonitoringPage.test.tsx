@@ -271,6 +271,33 @@ describe('MonitoringPage', () => {
     expect(buildRows[2].textContent).not.toContain('Built -')
   })
 
+  it('renders consolidated control plane diagnostics and admin restart action', async () => {
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} canManageSystem />)
+    })
+
+    const controlPlaneCard = container.querySelector<HTMLElement>('[data-card-id="system-health"]')
+    expect(controlPlaneCard).not.toBeNull()
+    expect(controlPlaneCard!.textContent).toContain('Control Plane')
+    expect(controlPlaneCard!.textContent).toContain('healthy')
+    expect(controlPlaneCard!.textContent).toContain('API')
+    expect(controlPlaneCard!.textContent).toContain('ok')
+    expect(controlPlaneCard!.textContent).toContain('WebSocket')
+    expect(controlPlaneCard!.textContent).toContain('Connected')
+    expect(controlPlaneCard!.textContent).toContain('/api/v1/ws')
+    expect(controlPlaneCard!.textContent).toContain('Active Tests')
+    expect(controlPlaneCard!.textContent).toContain('WS Clients')
+    expect(controlPlaneCard!.textContent).toContain('Generator Inventory')
+    expect(controlPlaneCard!.textContent).toContain('0/0 connected')
+    expect(controlPlaneCard!.textContent).toContain('Execution')
+    expect(controlPlaneCard!.textContent).toContain('distributed')
+    expect(controlPlaneCard!.textContent).toContain('Instance')
+    expect(controlPlaneCard!.textContent).toContain('controller-1')
+    expect(controlPlaneCard!.textContent).toContain('Address')
+    expect(controlPlaneCard!.textContent).toContain(':8080')
+    expect(controlPlaneCard!.textContent).toContain('Restart Controller')
+  })
+
   it('does not load or show restart controls for non-admin monitoring sessions', async () => {
     apiMock.getSystemInventory.mockResolvedValue({
       execution_mode: 'distributed',
@@ -518,8 +545,8 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Fleet')
     expect(container.textContent).toContain('Telemetry')
     expect(container.textContent).toContain('Schedules')
-    expect(container.textContent).toContain('Controller')
-    expect(container.textContent).toContain('Production Readiness')
+    expect(container.textContent).toContain('Control Plane')
+    expect(container.textContent).toContain('Readiness & Services')
     expect(container.textContent).toContain('Ready Checks')
     expect(container.textContent).toContain('4/6')
     const advisoryBadge = container.querySelector('.monitor-title-advisory')
@@ -533,7 +560,7 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Auth Mode: development auth bypass is enabled')
     expect(container.textContent).toContain('Generator Inventory')
     expect(container.textContent).toContain('0/0 connected')
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'active-services', 'production-readiness', 'controller'])
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'production-readiness'])
 
     await clickMonitorTab('Telemetry')
 
@@ -615,8 +642,8 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'active-services', 'production-readiness', 'controller'])
-    expect(container.textContent).toContain('Active Services')
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'production-readiness'])
+    expect(container.textContent).toContain('Readiness & Services')
     expect(container.textContent).toContain('4/4 active')
     expect(container.textContent).toContain('Backend')
     expect(container.textContent).toContain('Controller API')
@@ -637,15 +664,16 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
-    expect(container.textContent).toContain('Active Services')
+    expect(container.textContent).toContain('Readiness & Services')
     expect(container.textContent).toContain('Waiting for /api/v1/system/services.')
     expect(container.textContent).toContain('Dashboard')
     expect(container.textContent).toContain(window.location.origin)
   })
 
-  it('inserts the active services card into its default position for saved card orders', async () => {
+  it('cleans up legacy overview cards from saved card orders', async () => {
     window.localStorage.setItem('apexload.monitoring.cardOrder', JSON.stringify([
       'system-health',
+      'active-services',
       'production-readiness',
       'controller',
       'capacity',
@@ -661,7 +689,11 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'active-services', 'production-readiness', 'controller'])
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'production-readiness'])
+    expect(container.textContent).not.toContain('Active Services')
+    const storedOrder = JSON.parse(window.localStorage.getItem('apexload.monitoring.cardOrder') || '[]') as string[]
+    expect(storedOrder).not.toContain('active-services')
+    expect(storedOrder).not.toContain('controller')
   })
 
   it('renders C4 APM profiles and infrastructure monitor packs', async () => {
