@@ -15,6 +15,7 @@ import { type AuthoringState, type ScriptsCreateOptionActions } from './useScrip
 const apiMock = {
   listAuthoringTemplates: vi.fn(),
   listAuthoringComponents: vi.fn(),
+  listAuthoringCapabilities: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -35,8 +36,12 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
     onImported,
     onEditDraft,
     onReturnToDraftSource,
+    importLauncher,
+    importMode,
   }: {
     subView: string
+    importLauncher?: string | null
+    importMode?: string | null
     draftScript?: { name?: string } | null
     draftReturnTarget?: { label?: string } | null
     authoringNotice?: string | null
@@ -51,6 +56,8 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
   }) => (
     <div data-testid="authoring-surface">
       <span>subview:{subView}</span>
+      <span>launcher:{importLauncher || 'none'}</span>
+      <span>mode:{importMode || 'none'}</span>
       <span>draft:{draftScript?.name || 'none'}</span>
       <span>notice:{authoringNotice || 'none'}</span>
       <span>return:{draftReturnTarget?.label || 'none'}</span>
@@ -101,9 +108,10 @@ function createActions(overrides: Partial<ScriptsCreateOptionActions> = {}): Scr
     startKafkaScript: vi.fn(),
     startTemplateScript: vi.fn(),
     composeComponentScript: vi.fn(),
+    openRecorder: vi.fn(),
+    openImportSurface: vi.fn(),
     openEnterpriseArchiveImport: vi.fn(),
     openJMeterImport: vi.fn(),
-    openRecorder: vi.fn(),
     openSampleImport: vi.fn(),
     openJavaHttpImport: vi.fn(),
     openDevWebImport: vi.fn(),
@@ -128,7 +136,56 @@ function createState(subView: AuthoringState['subView'], overrides: Partial<Auth
     draftEditorFocus: null,
     draftReturnTarget: null,
     authoringNotice: null,
+    importLauncher: null,
+    importMode: null,
     ...overrides,
+  }
+}
+
+const importSurfaces = [
+  surface('openapi', 'OpenAPI / Swagger', 'OpenAPI', 'Contracts & Collections', 10, 'openapi', 'Generate HTTP scripts from OpenAPI 3.x or Swagger 2.0 contracts.'),
+  surface('postman', 'Postman Collection', 'Postman', 'Contracts & Collections', 20, 'postman', 'Convert Postman collections and environments into script drafts.'),
+  surface('wsdl', 'WSDL / SOAP', 'WSDL', 'Contracts & Collections', 30, 'wsdl', 'Import SOAP services and operations from WSDL.'),
+  surface('asyncapi', 'AsyncAPI', 'AsyncAPI', 'Contracts & Collections', 40, 'asyncapi', 'Model event-driven flows from AsyncAPI contracts.'),
+  surface('raml', 'RAML / Anypoint', 'RAML', 'Contracts & Collections', 50, 'raml', 'Import RAML contracts from Anypoint-style API specs.'),
+  surface('traffic_har', 'HAR Traffic', 'HAR', 'Traffic & Samples', 10, 'traffic_har', 'Convert captured browser/API traffic; auto-detects Salesforce and Agentforce.', [
+    { id: 'auto_detect', label: 'Auto-detect', description: 'Detect Salesforce and generate native drafts when present.', default: true },
+    { id: 'force_generic', label: 'Force Generic HAR', description: 'Return the raw deterministic HAR script.', default: false },
+  ]),
+  surface('recorder_export', 'Recorder Export / Playwright Codegen', 'Recorder', 'Traffic & Samples', 20, 'recorder_export', 'Import browser recorder exports and Playwright codegen captures.'),
+  surface('sample', 'Request / Response Sample', 'Sample', 'Traffic & Samples', 30, 'sample', 'Build from raw HTTP, curl, HAR, REST JSON, SOAP-shaped samples, or Java over HTTP payloads.', [
+    { id: 'standard_api', label: 'Standard API', description: 'Use the normal sample converter.', default: true },
+    { id: 'java_http', label: 'Java over HTTP', description: 'Promote samples into java_http drafts.', default: false },
+  ]),
+  surface('enterprise_archive', 'Import Enterprise Script Archive', 'Archive', 'Legacy & Tool Exports', 10, 'enterprise_archive', 'Convert LoadRunner enterprise script archives.'),
+  surface('jmeter', 'Import JMeter', 'JMeter', 'Legacy & Tool Exports', 20, 'jmeter', 'Convert JMeter plans into deterministic script drafts.'),
+  surface('devweb', 'DevWeb Source', 'DevWeb', 'Legacy & Tool Exports', 30, 'devweb', 'Convert DevWeb source projects.'),
+  surface('k6', 'k6 Script', 'k6', 'Legacy & Tool Exports', 40, 'k6', 'Convert k6 JavaScript scripts into Apex Load drafts.'),
+  surface('eventhubs_capture', 'Event Hubs Capture', 'Event Hubs', 'Messaging & Cloud Artifacts', 10, 'eventhubs_capture', 'Import Event Hubs capture metadata and payload examples.'),
+  surface('broker_config', 'Broker Config', 'Broker', 'Messaging & Cloud Artifacts', 20, 'broker_config', 'Import messaging broker configuration for JMS/Kafka style drafts.'),
+  surface('oracle_ebusiness_review', 'Oracle E-Business / Siebel Review', 'Review', 'Enterprise App Reviews', 10, 'oracle_ebusiness_review', 'Review Oracle E-Business and Siebel assets before script authoring.'),
+]
+
+function surface(
+  id: string,
+  title: string,
+  badge: string,
+  category: string,
+  order: number,
+  launcher: string,
+  description: string,
+  modes: Array<{ id: string; label: string; description: string; default: boolean }> = [],
+) {
+  return {
+    id,
+    title,
+    description,
+    badge,
+    category,
+    order,
+    launcher,
+    visible: true,
+    modes,
   }
 }
 
@@ -142,6 +199,11 @@ describe('ScriptsAuthoringShell', () => {
     root = createRoot(container)
     apiMock.listAuthoringTemplates.mockResolvedValue({ templates: [], count: 0 })
     apiMock.listAuthoringComponents.mockResolvedValue({ components: [], count: 0 })
+    apiMock.listAuthoringCapabilities.mockResolvedValue({
+      sources: [],
+      source_map: {},
+      import_surfaces: importSurfaces,
+    })
   })
 
   afterEach(async () => {
@@ -185,6 +247,7 @@ describe('ScriptsAuthoringShell', () => {
         }],
       }))
     })
+    await flushPromises()
 
     expect(container.textContent).toContain('Create Script')
     expect(container.textContent).toContain('Model From Existing Script')
@@ -206,46 +269,59 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).not.toContain('Browser Recorder')
 
     await clickButton('Import From Source')
+    await flushPromises()
     expect(container.textContent).toContain('Contracts & Collections')
-    expect(container.textContent).toContain('Salesforce Family')
     expect(container.textContent).toContain('Traffic & Samples')
     expect(container.textContent).toContain('Legacy & Tool Exports')
+    expect(container.textContent).toContain('Messaging & Cloud Artifacts')
+    expect(container.textContent).toContain('Enterprise App Reviews')
     expect(container.textContent).toContain('OpenAPI / Swagger')
     expect(container.textContent).toContain('Postman Collection')
     expect(container.textContent).toContain('WSDL / SOAP')
-    expect(container.textContent).toContain('Salesforce HAR')
-    expect(container.textContent).toContain('optional Agentforce replay-ready transforms')
+    expect(container.textContent).toContain('AsyncAPI')
     expect(container.textContent).toContain('RAML / Anypoint')
+    expect(container.textContent).not.toContain('Salesforce Family')
+    expect(container.textContent).not.toContain('Salesforce HAR')
     expect(container.textContent).not.toContain('Agentforce Template')
     expect(container.textContent).toContain('HAR Traffic')
+    expect(container.textContent).toContain('Auto-detect')
+    expect(container.textContent).toContain('Force Generic HAR')
     expect(container.textContent).toContain('Request / Response Sample')
-    expect(container.textContent).toContain('Import Java over HTTP')
+    expect(container.textContent).toContain('Java over HTTP')
+    expect(container.textContent).not.toContain('Import Java over HTTP')
     expect(container.textContent).toContain('Import Enterprise Script Archive')
     expect(container.textContent).toContain('Import JMeter')
     expect(container.textContent).toContain('DevWeb Source')
+    expect(container.textContent).toContain('k6 Script')
+    expect(container.textContent).toContain('Event Hubs Capture')
+    expect(container.textContent).toContain('Broker Config')
+    expect(container.textContent).toContain('Oracle E-Business / Siebel Review')
     expect(container.textContent).not.toContain('Import SOAP Assets')
+    expect(container.querySelectorAll('.script-create-import-groups .script-create-option')).toHaveLength(15)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('OpenAPI / Swagger'))).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('Postman Collection'))).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('WSDL / SOAP'))).toHaveLength(1)
-    expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('Salesforce HAR'))).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('RAML / Anypoint'))).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('HAR Traffic'))).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('DevWeb Source'))).toHaveLength(1)
 
     await clickButton('OpenAPI / Swagger')
-    expect(actions.openOpenAPIImport).toHaveBeenCalled()
+    expect(actions.openImportSurface).toHaveBeenCalledWith('openapi', null)
 
     await clickButton('Postman Collection')
-    expect(actions.openPostmanImport).toHaveBeenCalled()
+    expect(actions.openImportSurface).toHaveBeenCalledWith('postman', null)
 
-    await clickButton('Salesforce HAR')
-    expect(actions.openSalesforceImport).toHaveBeenCalled()
+    await clickButton('HAR Traffic')
+    expect(actions.openImportSurface).toHaveBeenCalledWith('traffic_har', 'auto_detect')
 
     await clickButton('RAML / Anypoint')
-    expect(actions.openRAMLImport).toHaveBeenCalled()
+    expect(actions.openImportSurface).toHaveBeenCalledWith('raml', null)
 
     await clickButton('Import Enterprise Script Archive')
-    expect(actions.openEnterpriseArchiveImport).toHaveBeenCalled()
+    expect(actions.openImportSurface).toHaveBeenCalledWith('enterprise_archive', null)
+
+    await clickButton('Oracle E-Business / Siebel Review')
+    expect(actions.openImportSurface).toHaveBeenCalledWith('oracle_ebusiness_review', null)
 
     await clickButton('Script Library')
     expect(onOpenLibrary).toHaveBeenCalled()
@@ -357,7 +433,10 @@ describe('ScriptsAuthoringShell', () => {
       return renderShell({
         authoringState,
         createOptionActions: createActions({
-          openOpenAPIImport: () => setAuthoringState(createState('openapi-import')),
+          openImportSurface: (launcher, mode) => setAuthoringState(createState('protocol-import', {
+            importLauncher: launcher,
+            importMode: mode || null,
+          })),
         }),
         onOpenCreateOptions: () => setAuthoringState(createState('create-options')),
       })
@@ -366,13 +445,15 @@ describe('ScriptsAuthoringShell', () => {
     await act(async () => {
       root.render(<Harness />)
     })
+    await flushPromises()
 
     await clickButton('Import From Source')
     expect(container.textContent).toContain('Contracts & Collections')
     expect(container.textContent).not.toContain('Model From Existing Script')
 
     await clickButton('OpenAPI / Swagger')
-    expect(container.textContent).toContain('subview:openapi-import')
+    expect(container.textContent).toContain('subview:protocol-import')
+    expect(container.textContent).toContain('launcher:openapi')
 
     await clickButton('surface-create-options')
 

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type BrowserReplayReport, type BrowserReplayStartResponse, type ReplayRepairSuggestion, type StoredScript } from '../types'
-import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrowserRecordingImportResult, type DevWebImportResult, type DevWebSupportMatrixEntry, type HARImportResult, type HARImportSummary, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
+import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
@@ -19,10 +19,11 @@ import { buildReplayStartPayload } from './scriptEditorUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
 
-type ImportKind = 'devweb' | 'har' | 'salesforce' | 'recorder-export' | 'openapi' | 'raml' | 'postman' | 'wsdl' | 'asyncapi'
+export type ImportKind = 'devweb' | 'har' | 'recorder-export' | 'openapi' | 'raml' | 'postman' | 'wsdl' | 'asyncapi' | 'k6' | 'eventhubs-capture' | 'broker-config'
 
 interface Props {
   kind: ImportKind
+  initialMode?: string | null
   projectId?: string
   onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition) => void
@@ -39,17 +40,10 @@ const copy = {
   },
   har: {
     title: 'Import HAR',
-    subtitle: 'Upload a Chrome DevTools HAR file and convert recorded HTTP entries into a reviewable APEX Load HTTP script.',
+    subtitle: 'Upload a Chrome DevTools HAR file and convert recorded HTTP entries into a reviewable APEX Load HTTP script. Salesforce traffic is auto-detected and can emit a native Salesforce draft.',
     accept: '.har,application/json',
     drop: 'Drop a .har file here',
     button: 'Convert HAR',
-  },
-  salesforce: {
-    title: 'Import Salesforce HAR',
-    subtitle: 'Upload a Salesforce, Lightning, MuleSoft, or Agentforce HAR and generate a Salesforce-aware HTTP draft with native correlation review.',
-    accept: '.har,.json,application/json',
-    drop: 'Drop a Salesforce HAR or JSON file here',
-    button: 'Convert Salesforce HAR',
   },
   'recorder-export': {
     title: 'Import Browser Recording',
@@ -93,10 +87,31 @@ const copy = {
     drop: 'Drop an AsyncAPI JSON or YAML file here',
     button: 'Convert AsyncAPI',
   },
+  k6: {
+    title: 'Import k6 Script',
+    subtitle: 'Upload a k6 JavaScript file and convert the supported HTTP subset into APEX Load actions with review notes for unsupported code.',
+    accept: '.js,.ts,application/javascript,text/javascript,text/plain',
+    drop: 'Drop a k6 .js file here',
+    button: 'Convert k6 Script',
+  },
+  'eventhubs-capture': {
+    title: 'Import Event Hubs Capture',
+    subtitle: 'Upload an Azure Event Hubs Capture Avro file and seed native eventhubs_produce actions in mock mode for review.',
+    accept: '.avro,application/octet-stream',
+    drop: 'Drop an Event Hubs Capture .avro file here',
+    button: 'Convert Capture',
+  },
+  'broker-config': {
+    title: 'Import Broker Config',
+    subtitle: 'Upload IBM MQ MQSC or JMS JNDI properties and seed a JMS topology draft from queues, topics, and bindings.',
+    accept: '.mqsc,.properties,.txt,text/plain,application/octet-stream',
+    drop: 'Drop MQSC or JNDI properties here',
+    button: 'Convert Broker Config',
+  },
 } satisfies Record<ImportKind, Record<string, string>>
 
-type ProtocolImportResult = DevWebImportResult | HARImportResult | SalesforceImportResult | BrowserRecordingImportResult | OpenAPIImportResult | RAMLImportResult | PostmanImportResult | WSDLImportResult | AsyncAPIImportResult
-type SourceImportSupportEntry = DevWebSupportMatrixEntry | OpenAPISupportMatrixEntry | RAMLSupportMatrixEntry | PostmanSupportMatrixEntry | AsyncAPISupportMatrixEntry
+type ProtocolImportResult = DevWebImportResult | HARImportResult | SalesforceImportResult | BrowserRecordingImportResult | OpenAPIImportResult | RAMLImportResult | PostmanImportResult | WSDLImportResult | AsyncAPIImportResult | K6ImportResult | EventHubsCaptureImportResult | BrokerConfigImportResult
+type SourceImportSupportEntry = DevWebSupportMatrixEntry | OpenAPISupportMatrixEntry | RAMLSupportMatrixEntry | PostmanSupportMatrixEntry | AsyncAPISupportMatrixEntry | K6SupportMatrixEntry | EventHubsCaptureSupportMatrixEntry | BrokerConfigSupportMatrixEntry
 
 type SourceImportSupportState = {
   entries: SourceImportSupportEntry[]
@@ -117,6 +132,9 @@ const sourceImportProtocolTargets: Partial<Record<ImportKind, string[]>> = {
   raml: ['HTTP / REST'],
   postman: ['HTTP'],
   asyncapi: ['Kafka', 'JMS Solace for AMQP/JMS servers', 'MQTT review-only'],
+  k6: ['HTTP subset'],
+  'eventhubs-capture': ['Event Hubs'],
+  'broker-config': ['JMS Solace', 'JMS IBM MQ review/mock'],
 }
 
 function sourceReviewForImport(result?: ProtocolImportResult | null, script?: ScriptDefinition | null): SourceReview | null {
@@ -132,8 +150,6 @@ function uploadNounForKind(kind: ImportKind): string {
       return 'a DevWeb script'
     case 'har':
       return 'a HAR file'
-    case 'salesforce':
-      return 'a Salesforce HAR file'
     case 'recorder-export':
       return 'a Chrome Recorder export or Playwright script'
     case 'openapi':
@@ -144,6 +160,12 @@ function uploadNounForKind(kind: ImportKind): string {
       return 'a Postman collection'
     case 'asyncapi':
       return 'an AsyncAPI document'
+    case 'k6':
+      return 'a k6 script'
+    case 'eventhubs-capture':
+      return 'an Event Hubs Capture file'
+    case 'broker-config':
+      return 'a broker config file'
     default:
       return 'a WSDL document'
   }
@@ -155,8 +177,6 @@ function scriptNamePlaceholder(kind: ImportKind): string {
       return 'Imported DevWeb Script'
     case 'har':
       return 'Imported HAR Script'
-    case 'salesforce':
-      return 'Imported Salesforce Script'
     case 'postman':
       return 'Imported Postman Script'
     case 'raml':
@@ -165,6 +185,12 @@ function scriptNamePlaceholder(kind: ImportKind): string {
       return 'Imported AsyncAPI Script'
     case 'wsdl':
       return 'Imported WSDL Script'
+    case 'k6':
+      return 'Imported k6 Script'
+    case 'eventhubs-capture':
+      return 'Imported Event Hubs Capture Script'
+    case 'broker-config':
+      return 'Imported Broker Config Script'
     default:
       return 'Imported API Script'
   }
@@ -176,8 +202,6 @@ function generatedFromLabel(kind: ImportKind): string {
       return 'DevWeb source'
     case 'har':
       return 'HAR entries'
-    case 'salesforce':
-      return 'Salesforce HAR entries'
     case 'recorder-export':
       return 'recorded browser steps'
     case 'openapi':
@@ -188,6 +212,12 @@ function generatedFromLabel(kind: ImportKind): string {
       return 'Postman requests'
     case 'asyncapi':
       return 'AsyncAPI operations'
+    case 'k6':
+      return 'k6 HTTP calls'
+    case 'eventhubs-capture':
+      return 'captured Event Hubs events'
+    case 'broker-config':
+      return 'broker destinations'
     default:
       return 'WSDL operations'
   }
@@ -488,7 +518,7 @@ function RecorderStepMappingReview({ summary }: { summary?: Record<string, unkno
 
 const endpointTotal = salesforceEndpointTotal
 
-export default function ProtocolAssetImport({ kind, projectId, onImported, onEdit, onClose }: Props) {
+export default function ProtocolAssetImport({ kind, initialMode, projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const convertTask = useAsyncTask<ProtocolImportResult>()
   const saveTask = useAsyncTask<StoredScript>()
@@ -516,6 +546,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [includeStaticAssets, setIncludeStaticAssets] = useState(false)
   const [redactSensitive, setRedactSensitive] = useState(true)
   const [agentforceReplayReady, setAgentforceReplayReady] = useState(false)
+  const [harSalesforceNative, setHARSalesforceNative] = useState(initialMode !== 'force_generic')
   const [retentionDays, setRetentionDays] = useState(7)
   const [messageError, setMessageError] = useState('')
   const [reviewMode, setReviewMode] = useState<'conversion' | 'validation'>('conversion')
@@ -531,6 +562,9 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [openAPISupport, setOpenAPISupport] = useState<{ entries: OpenAPISupportMatrixEntry[]; notes: string[] } | null>(null)
   const [postmanSupport, setPostmanSupport] = useState<SourceImportSupportState | null>(null)
   const [asyncAPISupport, setAsyncAPISupport] = useState<{ entries: AsyncAPISupportMatrixEntry[]; notes: string[] } | null>(null)
+  const [k6Support, setK6Support] = useState<{ entries: K6SupportMatrixEntry[]; notes: string[] } | null>(null)
+  const [eventHubsCaptureSupport, setEventHubsCaptureSupport] = useState<{ entries: EventHubsCaptureSupportMatrixEntry[]; notes: string[] } | null>(null)
+  const [brokerConfigSupport, setBrokerConfigSupport] = useState<{ entries: BrokerConfigSupportMatrixEntry[]; notes: string[] } | null>(null)
   const [openAPISaveMode, setOpenAPISaveMode] = useState<'create' | 'replace'>('create')
   const [openAPIReplaceScriptId, setOpenAPIReplaceScriptId] = useState('')
   const [openAPIReplaceMode, setOpenAPIReplaceMode] = useState<'full' | 'merge_by_operation_id'>('full')
@@ -539,7 +573,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [postmanReplaceScriptId, setPostmanReplaceScriptId] = useState('')
   const [postmanScripts, setPostmanScripts] = useState<StoredScript[]>([])
   const labels = copy[kind]
-  const supportsAgentforceTransform = kind === 'openapi' || kind === 'raml' || kind === 'postman' || kind === 'salesforce'
+  const supportsAgentforceTransform = kind === 'openapi' || kind === 'raml' || kind === 'postman' || kind === 'har'
 
   useEffect(() => {
     if (kind !== 'devweb') return
@@ -583,6 +617,33 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
     api.getAsyncAPISupportMatrix()
       .then(response => { if (!cancelled) setAsyncAPISupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
       .catch(() => { if (!cancelled) setAsyncAPISupport(null) })
+    return () => { cancelled = true }
+  }, [api, kind])
+
+  useEffect(() => {
+    if (kind !== 'k6') return
+    let cancelled = false
+    api.getK6SupportMatrix()
+      .then(response => { if (!cancelled) setK6Support({ entries: response.support_matrix || [], notes: response.notes || [] }) })
+      .catch(() => { if (!cancelled) setK6Support(null) })
+    return () => { cancelled = true }
+  }, [api, kind])
+
+  useEffect(() => {
+    if (kind !== 'eventhubs-capture') return
+    let cancelled = false
+    api.getEventHubsCaptureSupportMatrix()
+      .then(response => { if (!cancelled) setEventHubsCaptureSupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
+      .catch(() => { if (!cancelled) setEventHubsCaptureSupport(null) })
+    return () => { cancelled = true }
+  }, [api, kind])
+
+  useEffect(() => {
+    if (kind !== 'broker-config') return
+    let cancelled = false
+    api.getBrokerConfigSupportMatrix()
+      .then(response => { if (!cancelled) setBrokerConfigSupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
+      .catch(() => { if (!cancelled) setBrokerConfigSupport(null) })
     return () => { cancelled = true }
   }, [api, kind])
 
@@ -633,7 +694,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
     return () => { cancelled = true }
   }, [api, kind, projectId])
 
-  const handleConvert = async (mode: 'conversion' | 'validation' = 'conversion') => {
+  const handleConvert = async (mode: 'conversion' | 'validation' = 'conversion', overrides?: { salesforceNative?: boolean }) => {
     if (!file) {
       setMessageError(`Please upload ${uploadNounForKind(kind)}.`)
       return
@@ -648,6 +709,9 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
           project_id: projectId,
         }
         if (kind === 'devweb') return api.importDevWeb(file, options)
+        if (kind === 'k6') return api.importK6(file, options)
+        if (kind === 'eventhubs-capture') return api.importEventHubsCapture(file, { project_id: projectId })
+        if (kind === 'broker-config') return api.importBrokerConfig(file, { project_id: projectId })
         if (kind === 'har') return api.importHAR(file, {
           ...options,
           include_static_assets: includeStaticAssets,
@@ -655,8 +719,9 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
           artifact_mode: secondaryHARFile ? 'design_har_pair' : 'design_har',
           retention_days: retentionDays,
           redact_sensitive: redactSensitive,
+          salesforce_native: overrides?.salesforceNative ?? harSalesforceNative,
+          agentforce_transform: agentforceReplayReady,
         })
-        if (kind === 'salesforce') return api.importSalesforce(file, { ...options, agentforce_transform: agentforceReplayReady })
         if (kind === 'recorder-export') return mode === 'validation' ? api.validateBrowserRecordingImport(file, options) : api.importBrowserRecording(file, options)
         if (kind === 'openapi') return api.importOpenAPI(file, { ...options, agentforce_transform: agentforceReplayReady })
         if (kind === 'raml') return api.importRAML(file, { ...options, agentforce_transform: agentforceReplayReady })
@@ -692,6 +757,11 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
     }
   }
 
+  const handleHARSalesforceNativeConvert = async (salesforceNative: boolean) => {
+    setHARSalesforceNative(salesforceNative)
+    await handleConvert('conversion', { salesforceNative })
+  }
+
   const stats = result?.stats as Record<string, unknown> | undefined
   const actionCount = typeof stats?.converted_actions === 'number' ? stats.converted_actions : 0
   const importedScripts = result?.scripts?.length ? result.scripts : result?.script ? [result.script] : []
@@ -699,7 +769,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const reviewedScript = generatedScripts[selectedScriptIndex] || generatedScripts[0] || null
   const sourceReview = sourceReviewForImport(result, reviewedScript)
   const harSummary: HARImportSummary | undefined = kind === 'har' ? (result as HARImportResult | null | undefined)?.summary : undefined
-  const salesforceReview = kind === 'salesforce' ? salesforceReviewForImport(result, reviewedScript) : null
+  const salesforceReview = kind === 'har' ? salesforceReviewForImport(result, reviewedScript) : null
   const mulesoftReview = preservedReviewForImport<MulesoftReview>(reviewedScript, 'mulesoft_review')
   const agentforceReview = preservedReviewForImport<AgentforceReview>(reviewedScript, 'agentforce_review')
   const agentforceTransformChanges = (reviewedScript?.metadata?.import?.preserved?.agentforce_transform as AgentforceTransformChange[] | undefined) ?? []
@@ -714,6 +784,9 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
     raml: ramlSupport,
     postman: postmanSupport,
     asyncapi: asyncAPISupport,
+    k6: k6Support,
+    'eventhubs-capture': eventHubsCaptureSupport,
+    'broker-config': brokerConfigSupport,
   })
 
   const handleRunRecorderReplay = async () => {
@@ -1274,9 +1347,29 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
                 ) : null}
               </div>
             )}
-            {kind === 'salesforce' && salesforceReview && (
+            {kind === 'har' && salesforceReview && (
               <div className="sample-import-review-block">
                 <h4>Salesforce Native Review</h4>
+                {salesforceReview.detected && (
+                  <div className="sample-import-actions compact">
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleHARSalesforceNativeConvert(false)}
+                      disabled={convertTask.pending || !file || !harSalesforceNative}
+                    >
+                      {convertTask.pending && harSalesforceNative ? 'Converting...' : 'Force Generic HAR'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleHARSalesforceNativeConvert(true)}
+                      disabled={convertTask.pending || !file || harSalesforceNative}
+                    >
+                      {convertTask.pending && !harSalesforceNative ? 'Converting...' : 'Use Native Salesforce Draft'}
+                    </button>
+                  </div>
+                )}
                 <div className="sample-import-stats-grid">
                   <div className="sample-stat">
                     <span className="sample-stat-value">{salesforceReview.detected ? 'Detected' : 'Needs review'}</span>

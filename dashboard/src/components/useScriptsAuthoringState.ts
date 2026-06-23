@@ -5,13 +5,13 @@ import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createJavaHttpDraft, createJmsDraft, createKafkaDraft, createNetworkDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
 
-export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'recorder-import' | 'sample' | 'java-http-import' | 'devweb-import' | 'har-import' | 'salesforce-import' | 'openapi-import' | 'raml-import' | 'postman-import' | 'wsdl-import' | 'asyncapi-import'
+export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'protocol-import' | 'oracle-review' | 'recorder-import' | 'java-http-import' | 'devweb-import' | 'har-import' | 'salesforce-import' | 'openapi-import' | 'raml-import' | 'postman-import' | 'wsdl-import' | 'asyncapi-import'
 
 export interface DraftEditorFocus {
-	targetAction?: string | null
+  targetAction?: string | null
   targetSection?: 'runtime' | 'parameter-data' | null
   targetDataSource?: string | null
-	targetRuntimeArea?: string | null
+  targetRuntimeArea?: string | null
 }
 
 export interface AuthoringReturnTarget {
@@ -28,6 +28,8 @@ export interface AuthoringState {
   draftEditorFocus: DraftEditorFocus | null
   draftReturnTarget: AuthoringReturnTarget | null
   authoringNotice: string | null
+  importLauncher?: string | null
+  importMode?: string | null
 }
 
 export interface ImportedSaveResult {
@@ -54,9 +56,10 @@ export interface ScriptsCreateOptionActions {
   startKafkaScript: () => void
   startTemplateScript: (script: ScriptDefinition) => void
   composeComponentScript: (component: AuthoringComponent) => void
+  openRecorder: () => void
+  openImportSurface: (launcher: string, mode?: string | null) => void
   openEnterpriseArchiveImport: () => void
   openJMeterImport: () => void
-  openRecorder: () => void
   openSampleImport: () => void
   openJavaHttpImport: () => void
   openDevWebImport: () => void
@@ -84,8 +87,8 @@ interface ScriptsAuthoringStateModel {
 }
 
 function normalizeDraftEditorFocus(focus?: DraftEditorFocus | null): DraftEditorFocus | null {
-	if (!focus) return null
-	const targetAction = focus.targetAction?.trim()
+  if (!focus) return null
+  const targetAction = focus.targetAction?.trim()
   const targetSection = focus.targetSection === 'runtime' || focus.targetSection === 'parameter-data'
     ? focus.targetSection
     : null
@@ -112,20 +115,70 @@ function normalizeAuthoringReturnTarget(returnTarget?: AuthoringReturnTarget | n
   }
 }
 
-function normalizeSubView(mode?: ScriptsAuthoringSubView): ScriptsAuthoringSubView {
-  if (!mode) return 'list'
-  return mode === 'create' ? 'create-options' : mode
+function importLauncherState(launcher: string, mode?: string | null): Pick<AuthoringState, 'subView' | 'importLauncher' | 'importMode'> {
+  const normalizedLauncher = launcher.trim()
+  const normalizedMode = mode?.trim() || null
+  switch (normalizedLauncher) {
+    case 'enterprise_archive':
+      return { subView: 'import', importLauncher: normalizedLauncher, importMode: normalizedMode }
+    case 'jmeter':
+      return { subView: 'jmeter-import', importLauncher: normalizedLauncher, importMode: normalizedMode }
+    case 'sample':
+      return { subView: 'sample', importLauncher: normalizedLauncher, importMode: normalizedMode }
+    case 'oracle_ebusiness_review':
+      return { subView: 'oracle-review', importLauncher: normalizedLauncher, importMode: normalizedMode }
+    default:
+      return { subView: 'protocol-import', importLauncher: normalizedLauncher, importMode: normalizedMode }
+  }
+}
+
+function aliasImportState(mode: ScriptsAuthoringSubView): Pick<AuthoringState, 'subView' | 'importLauncher' | 'importMode'> | null {
+  switch (mode) {
+    case 'import':
+      return importLauncherState('enterprise_archive')
+    case 'jmeter-import':
+      return importLauncherState('jmeter')
+    case 'sample':
+      return importLauncherState('sample', 'standard_api')
+    case 'java-http-import':
+      return importLauncherState('sample', 'java_http')
+    case 'salesforce-import':
+      return importLauncherState('traffic_har', 'auto_detect')
+    case 'har-import':
+      return importLauncherState('traffic_har', 'auto_detect')
+    case 'recorder-import':
+      return importLauncherState('recorder_export')
+    case 'devweb-import':
+      return importLauncherState('devweb')
+    case 'openapi-import':
+      return importLauncherState('openapi')
+    case 'raml-import':
+      return importLauncherState('raml')
+    case 'postman-import':
+      return importLauncherState('postman')
+    case 'wsdl-import':
+      return importLauncherState('wsdl')
+    case 'asyncapi-import':
+      return importLauncherState('asyncapi')
+    default:
+      return null
+  }
 }
 
 function createAuthoringState(mode?: ScriptsAuthoringSubView, editId?: string): AuthoringState {
+  const normalizedMode = mode === 'create' ? 'create-options' : mode
+  const alias = normalizedMode ? aliasImportState(normalizedMode) : null
+  const subView = alias?.subView || normalizedMode || 'list'
   return {
-    subView: normalizeSubView(mode),
+    subView,
     editingId: editId || null,
     editingScript: null,
     draftScript: null,
     draftEditorFocus: null,
     draftReturnTarget: null,
     authoringNotice: null,
+    importLauncher: alias?.importLauncher || null,
+    importMode: alias?.importMode || null,
   }
 }
 
@@ -137,7 +190,18 @@ export function useScriptsAuthoringState({
   const [authoringState, setAuthoringState] = useState<AuthoringState>(() => createAuthoringState(initialMode, initialEditId))
 
   const setSubview = useCallback((subView: ScriptsAuthoringSubView) => {
-    setAuthoringState({ subView, editingId: null, editingScript: null, draftScript: null, draftEditorFocus: null, draftReturnTarget: null, authoringNotice: null })
+    const alias = aliasImportState(subView)
+    setAuthoringState({
+      subView: alias?.subView || subView,
+      editingId: null,
+      editingScript: null,
+      draftScript: null,
+      draftEditorFocus: null,
+      draftReturnTarget: null,
+      authoringNotice: null,
+      importLauncher: alias?.importLauncher || null,
+      importMode: alias?.importMode || null,
+    })
   }, [])
 
   const openLibrary = useCallback(() => {
@@ -148,61 +212,38 @@ export function useScriptsAuthoringState({
     setSubview('create-options')
   }, [setSubview])
 
-  const openEnterpriseArchiveImport = useCallback(() => {
-    setSubview('import')
-  }, [setSubview])
-
-  const openJMeterImport = useCallback(() => {
-    setSubview('jmeter-import')
-  }, [setSubview])
+  const openImportSurface = useCallback((launcher: string, mode?: string | null) => {
+    const next = importLauncherState(launcher, mode)
+    setAuthoringState({
+      subView: next.subView,
+      editingId: null,
+      editingScript: null,
+      draftScript: null,
+      draftEditorFocus: null,
+      draftReturnTarget: null,
+      authoringNotice: null,
+      importLauncher: next.importLauncher,
+      importMode: next.importMode,
+    })
+  }, [])
 
   const openRecorder = useCallback(() => {
     setSubview('recorder')
   }, [setSubview])
 
-  const openSampleImport = useCallback(() => {
-    setSubview('sample')
-  }, [setSubview])
-
-  const openJavaHttpImport = useCallback(() => {
-    setSubview('java-http-import')
-  }, [setSubview])
-
-  const openDevWebImport = useCallback(() => {
-    setSubview('devweb-import')
-  }, [setSubview])
-
-  const openHARImport = useCallback(() => {
-    setSubview('har-import')
-  }, [setSubview])
-
-  const openSalesforceImport = useCallback(() => {
-    setSubview('salesforce-import')
-  }, [setSubview])
-
-  const openBrowserRecordingImport = useCallback(() => {
-    setSubview('recorder-import')
-  }, [setSubview])
-
-  const openOpenAPIImport = useCallback(() => {
-    setSubview('openapi-import')
-  }, [setSubview])
-
-  const openRAMLImport = useCallback(() => {
-    setSubview('raml-import')
-  }, [setSubview])
-
-  const openPostmanImport = useCallback(() => {
-    setSubview('postman-import')
-  }, [setSubview])
-
-  const openWSDLImport = useCallback(() => {
-    setSubview('wsdl-import')
-  }, [setSubview])
-
-  const openAsyncAPIImport = useCallback(() => {
-    setSubview('asyncapi-import')
-  }, [setSubview])
+  const openEnterpriseArchiveImport = useCallback(() => openImportSurface('enterprise_archive'), [openImportSurface])
+  const openJMeterImport = useCallback(() => openImportSurface('jmeter'), [openImportSurface])
+  const openSampleImport = useCallback(() => openImportSurface('sample', 'standard_api'), [openImportSurface])
+  const openJavaHttpImport = useCallback(() => openImportSurface('sample', 'java_http'), [openImportSurface])
+  const openDevWebImport = useCallback(() => openImportSurface('devweb'), [openImportSurface])
+  const openHARImport = useCallback(() => openImportSurface('traffic_har', 'auto_detect'), [openImportSurface])
+  const openSalesforceImport = useCallback(() => openImportSurface('traffic_har', 'auto_detect'), [openImportSurface])
+  const openBrowserRecordingImport = useCallback(() => openImportSurface('recorder_export'), [openImportSurface])
+  const openOpenAPIImport = useCallback(() => openImportSurface('openapi'), [openImportSurface])
+  const openRAMLImport = useCallback(() => openImportSurface('raml'), [openImportSurface])
+  const openPostmanImport = useCallback(() => openImportSurface('postman'), [openImportSurface])
+  const openWSDLImport = useCallback(() => openImportSurface('wsdl'), [openImportSurface])
+  const openAsyncAPIImport = useCallback(() => openImportSurface('asyncapi'), [openImportSurface])
 
   const openDraftEditor = useCallback((script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null) => {
     setAuthoringState({
@@ -213,6 +254,8 @@ export function useScriptsAuthoringState({
       draftEditorFocus: normalizeDraftEditorFocus(focus),
       draftReturnTarget: normalizeAuthoringReturnTarget(returnTarget),
       authoringNotice: null,
+      importLauncher: null,
+      importMode: null,
     })
   }, [])
 
@@ -273,13 +316,15 @@ export function useScriptsAuthoringState({
       const res = await api.getScript(id)
       setAuthoringState({
         subView: 'edit',
-      editingId: id,
-      editingScript: res.script ?? null,
-      draftScript: null,
-      draftEditorFocus: null,
-      draftReturnTarget: null,
-      authoringNotice: null,
-    })
+        editingId: id,
+        editingScript: res.script ?? null,
+        draftScript: null,
+        draftEditorFocus: null,
+        draftReturnTarget: null,
+        authoringNotice: null,
+        importLauncher: null,
+        importMode: null,
+      })
     } catch {
       // Ignore edit-load failures to preserve existing page behavior.
     }
@@ -294,6 +339,8 @@ export function useScriptsAuthoringState({
       draftEditorFocus: null,
       draftReturnTarget: null,
       authoringNotice: notice?.trim() || null,
+      importLauncher: null,
+      importMode: null,
     }))
   }, [])
 
@@ -310,6 +357,8 @@ export function useScriptsAuthoringState({
         draftEditorFocus: null,
         draftReturnTarget: null,
         authoringNotice: null,
+        importLauncher: null,
+        importMode: null,
       }
     })
   }, [])
@@ -346,9 +395,10 @@ export function useScriptsAuthoringState({
       startKafkaScript,
       startTemplateScript,
       composeComponentScript,
+      openRecorder,
+      openImportSurface,
       openEnterpriseArchiveImport,
       openJMeterImport,
-      openRecorder,
       openSampleImport,
       openJavaHttpImport,
       openDevWebImport,

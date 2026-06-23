@@ -36,7 +36,7 @@ export interface ScriptRecordingStatus {
   sensitivity?: string
   captured_at?: string
 }
-import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrowserRecordingImportResult, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -274,6 +274,11 @@ export function useScriptApi() {
     [],
   )
 
+  const listAuthoringCapabilities = useCallback(
+    () => request<AuthoringCapabilitiesResponse>('/scripts/authoring/capabilities'),
+    [],
+  )
+
   const listAuthoringTemplates = useCallback(
     (params?: { protocol?: string; use_case?: string }) => {
       const query = new URLSearchParams()
@@ -353,10 +358,10 @@ export function useScriptApi() {
   )
 
   const replayScript = useCallback(
-		(id: string, payload?: { group_name?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean; script?: ScriptDefinition }) =>
-			request<ScriptReplayResponse>(`/scripts/${id}/replay`, { method: 'POST', body: JSON.stringify(payload || {}) }),
-		[],
-	)
+    (id: string, payload?: { group_name?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean; script?: ScriptDefinition }) =>
+      request<ScriptReplayResponse>(`/scripts/${id}/replay`, { method: 'POST', body: JSON.stringify(payload || {}) }),
+    [],
+  )
 
   const replayDraftScript = useCallback(
     (payload: { script: ScriptDefinition; group_name?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean }) =>
@@ -365,10 +370,10 @@ export function useScriptApi() {
   )
 
   const startBrowserReplaySession = useCallback(
-		(id: string, payload?: BrowserReplayStartRequest) =>
-			request<BrowserReplayStartResponse>(`/scripts/${id}/browser-replay/sessions`, { method: 'POST', body: JSON.stringify(payload || {}) }),
-		[],
-	)
+    (id: string, payload?: BrowserReplayStartRequest) =>
+      request<BrowserReplayStartResponse>(`/scripts/${id}/browser-replay/sessions`, { method: 'POST', body: JSON.stringify(payload || {}) }),
+    [],
+  )
 
   const startDraftBrowserReplaySession = useCallback(
     (payload: BrowserReplayStartRequest & { script: ScriptDefinition }) =>
@@ -523,9 +528,9 @@ export function useScriptApi() {
   )
 
   const getEnterpriseArchiveSupportMatrix = useCallback(
-		() => request<EnterpriseArchiveSupportMatrixResponse>('/scripts/import/enterprise-script-archive/support-matrix'),
-		[],
-	)
+    () => request<EnterpriseArchiveSupportMatrixResponse>('/scripts/import/enterprise-script-archive/support-matrix'),
+    [],
+  )
 
   const importJMeter = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean; project_id?: string }): Promise<JMeterImportResult> => {
@@ -581,6 +586,11 @@ export function useScriptApi() {
     [],
   )
 
+  const getK6SupportMatrix = useCallback(
+    () => request<K6SupportMatrixResponse>('/scripts/import/k6/support-matrix'),
+    [],
+  )
+
   const getRAMLSupportMatrix = useCallback(
     () => request<RAMLSupportMatrixResponse>('/scripts/import/raml/support-matrix'),
     [],
@@ -598,6 +608,21 @@ export function useScriptApi() {
 
   const getPostmanSupportMatrix = useCallback(
     () => request<PostmanSupportMatrixResponse>('/scripts/import/postman/support-matrix'),
+    [],
+  )
+
+  const getEventHubsCaptureSupportMatrix = useCallback(
+    () => request<EventHubsCaptureSupportMatrixResponse>('/scripts/import/eventhubs-capture/support-matrix'),
+    [],
+  )
+
+  const getBrokerConfigSupportMatrix = useCallback(
+    () => request<BrokerConfigSupportMatrixResponse>('/scripts/import/broker-config/support-matrix'),
+    [],
+  )
+
+  const getOracleEBusinessSupportMatrix = useCallback(
+    () => request<OracleEBusinessSupportMatrixResponse>('/scripts/import/oracle-ebusiness/support-matrix'),
     [],
   )
 
@@ -681,6 +706,61 @@ export function useScriptApi() {
     [],
   )
 
+  const importK6 = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<K6ImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+      if (options?.name) formData.append('script_name', options.name)
+
+      const res = await apiFetch('/scripts/import/k6', { method: 'POST', body: formData })
+      if (!res.ok) {
+        throw new Error(await errorMessageFromResponse(res))
+      }
+      return res.json() as Promise<K6ImportResult>
+    },
+    [],
+  )
+
+  const importEventHubsCapture = useCallback(
+    async (file: File, options?: { project_id?: string; event_hub?: string; max_events?: number }): Promise<EventHubsCaptureImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      const query = new URLSearchParams()
+      if (options?.event_hub) query.set('event_hub', options.event_hub)
+      if (typeof options?.max_events === 'number') query.set('max_events', String(options.max_events))
+      const suffix = query.toString()
+
+      const res = await apiFetch(`/scripts/import/eventhubs-capture${suffix ? `?${suffix}` : ''}`, { method: 'POST', body: formData })
+      if (!res.ok) {
+        throw new Error(await errorMessageFromResponse(res))
+      }
+      return res.json() as Promise<EventHubsCaptureImportResult>
+    },
+    [],
+  )
+
+  const importBrokerConfig = useCallback(
+    async (file: File, options?: { project_id?: string; format?: string; max_destinations?: number }): Promise<BrokerConfigImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      const query = new URLSearchParams()
+      if (options?.format) query.set('format', options.format)
+      if (typeof options?.max_destinations === 'number') query.set('max_destinations', String(options.max_destinations))
+      const suffix = query.toString()
+
+      const res = await apiFetch(`/scripts/import/broker-config${suffix ? `?${suffix}` : ''}`, { method: 'POST', body: formData })
+      if (!res.ok) {
+        throw new Error(await errorMessageFromResponse(res))
+      }
+      return res.json() as Promise<BrokerConfigImportResult>
+    },
+    [],
+  )
+
   const importHAR = useCallback(
     async (file: File, options?: {
       name?: string
@@ -691,6 +771,8 @@ export function useScriptApi() {
       artifact_mode?: string
       retention_days?: number
       redact_sensitive?: boolean
+      salesforce_native?: boolean
+      agentforce_transform?: boolean
     }): Promise<HARImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
@@ -703,7 +785,11 @@ export function useScriptApi() {
       if (typeof options?.retention_days === 'number') formData.append('retention_days', String(options.retention_days))
       if (typeof options?.redact_sensitive === 'boolean') formData.append('redact_sensitive', options.redact_sensitive ? 'true' : 'false')
 
-      const res = await apiFetch('/scripts/import/har', { method: 'POST', body: formData })
+      const query = new URLSearchParams()
+      if (options?.salesforce_native === false) query.set('salesforce_native', 'false')
+      if (options?.agentforce_transform) query.set('agentforce_transform', 'true')
+      const suffix = query.toString()
+      const res = await apiFetch(`/scripts/import/har${suffix ? `?${suffix}` : ''}`, { method: 'POST', body: formData })
       if (!res.ok) {
         throw new Error(await errorMessageFromResponse(res))
       }
@@ -726,6 +812,12 @@ export function useScriptApi() {
       }
       return res.json() as Promise<SalesforceImportResult>
     },
+    [],
+  )
+
+  const reviewOracleEBusiness = useCallback(
+    (payload: OracleEBusinessReviewRequest) =>
+      request<OracleEBusinessReviewResponse>('/scripts/import/oracle-ebusiness/review', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
 
@@ -998,6 +1090,7 @@ export function useScriptApi() {
       moveScript,
       validateScript,
       validateDraftScript,
+      listAuthoringCapabilities,
       listAuthoringTemplates,
       listAuthoringComponents,
       createAuthoringComponent,
@@ -1011,7 +1104,7 @@ export function useScriptApi() {
       diagnoseScriptReplay,
       diagnoseCorrelations,
       replayScript,
-  		replayDraftScript,
+      replayDraftScript,
       startBrowserReplaySession,
       startDraftBrowserReplaySession,
       startScriptDebugSession,
@@ -1037,10 +1130,14 @@ export function useScriptApi() {
       validateJMeterImport,
       getJMeterSupportMatrix,
       getDevWebSupportMatrix,
+      getK6SupportMatrix,
       getRAMLSupportMatrix,
       getOpenAPISupportMatrix,
       getAsyncAPISupportMatrix,
       getPostmanSupportMatrix,
+      getEventHubsCaptureSupportMatrix,
+      getBrokerConfigSupportMatrix,
+      getOracleEBusinessSupportMatrix,
       saveJMeterImport,
       savePostmanImport,
       commitOpenAPIImport,
@@ -1048,8 +1145,12 @@ export function useScriptApi() {
       importSample,
       uploadImportAsset,
       importDevWeb,
+      importK6,
+      importEventHubsCapture,
+      importBrokerConfig,
       importHAR,
       importSalesforce,
+      reviewOracleEBusiness,
       importBrowserRecording,
       validateBrowserRecordingImport,
       replayBrowserRecordingImport,
@@ -1087,6 +1188,7 @@ export function useScriptApi() {
       moveScript,
       validateScript,
       validateDraftScript,
+      listAuthoringCapabilities,
       listAuthoringTemplates,
       listAuthoringComponents,
       createAuthoringComponent,
@@ -1100,7 +1202,7 @@ export function useScriptApi() {
       diagnoseScriptReplay,
       diagnoseCorrelations,
       replayScript,
-  		replayDraftScript,
+      replayDraftScript,
       startBrowserReplaySession,
       startDraftBrowserReplaySession,
       startScriptDebugSession,
@@ -1126,10 +1228,14 @@ export function useScriptApi() {
       validateJMeterImport,
       getJMeterSupportMatrix,
       getDevWebSupportMatrix,
+      getK6SupportMatrix,
       getRAMLSupportMatrix,
       getOpenAPISupportMatrix,
       getAsyncAPISupportMatrix,
       getPostmanSupportMatrix,
+      getEventHubsCaptureSupportMatrix,
+      getBrokerConfigSupportMatrix,
+      getOracleEBusinessSupportMatrix,
       saveJMeterImport,
       savePostmanImport,
       commitOpenAPIImport,
@@ -1137,8 +1243,12 @@ export function useScriptApi() {
       importSample,
       uploadImportAsset,
       importDevWeb,
+      importK6,
+      importEventHubsCapture,
+      importBrokerConfig,
       importHAR,
       importSalesforce,
+      reviewOracleEBusiness,
       importBrowserRecording,
       validateBrowserRecordingImport,
       replayBrowserRecordingImport,

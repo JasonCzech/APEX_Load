@@ -29,7 +29,9 @@ describe('app topbar helpers', () => {
     expect(pageTitleForScriptSubView('edit')).toBe('Edit Script')
     expect(pageTitleForScriptSubView('openapi-import')).toBe('Import OpenAPI')
     expect(pageTitleForScriptSubView('raml-import')).toBe('Import RAML')
-    expect(pageTitleForScriptSubView('salesforce-import')).toBe('Import Salesforce')
+    expect(pageTitleForScriptSubView('protocol-import')).toBe('Import From Source')
+    expect(pageTitleForScriptSubView('oracle-review')).toBe('Oracle E-Business Review')
+    expect(pageTitleForScriptSubView('salesforce-import')).toBe('Script Library')
     expect(pageTitleForScriptSubView('recorder')).toBe('Record Browser')
   })
 

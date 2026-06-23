@@ -4,14 +4,16 @@ import { Project, type StoredScript } from '../types'
 import ScriptEditor from './ScriptEditor'
 import EnterpriseArchiveImport from './EnterpriseArchiveImport'
 import JMeterImport from './JMeterImport'
-import JavaHttpImport from './JavaHttpImport'
 import RecordingStudio from './RecordingStudio'
 import SampleScriptImport from './SampleScriptImport'
-import ProtocolAssetImport from './ProtocolAssetImport'
+import ProtocolAssetImport, { type ImportKind } from './ProtocolAssetImport'
+import OracleEBusinessReviewImport from './OracleEBusinessReviewImport'
 import { type AuthoringReturnTarget, type DraftEditorFocus, type ImportedSaveResult, type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
 
 interface Props {
   subView: ScriptsAuthoringSubView
+  importLauncher?: string | null
+  importMode?: string | null
   draftScript: ScriptDefinition | null
   draftEditorFocus: DraftEditorFocus | null
   draftReturnTarget: AuthoringReturnTarget | null
@@ -39,8 +41,38 @@ function renderCreateOptionsSurface(
   )
 }
 
+function protocolKindForLauncher(launcher?: string | null): ImportKind {
+  switch (launcher) {
+    case 'devweb':
+      return 'devweb'
+    case 'recorder_export':
+      return 'recorder-export'
+    case 'openapi':
+      return 'openapi'
+    case 'raml':
+      return 'raml'
+    case 'postman':
+      return 'postman'
+    case 'wsdl':
+      return 'wsdl'
+    case 'asyncapi':
+      return 'asyncapi'
+    case 'k6':
+      return 'k6'
+    case 'eventhubs_capture':
+      return 'eventhubs-capture'
+    case 'broker_config':
+      return 'broker-config'
+    case 'traffic_har':
+    default:
+      return 'har'
+  }
+}
+
 export default function ScriptsAuthoringSurface({
   subView,
+  importLauncher,
+  importMode,
   draftScript,
   draftEditorFocus,
   draftReturnTarget,
@@ -106,11 +138,15 @@ export default function ScriptsAuthoringSurface({
       )
     case 'sample':
       return renderCreateOptionsSurface(
-        <SampleScriptImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <SampleScriptImport preset={importMode === 'java_http' ? 'java-http' : 'default'} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
-    case 'java-http-import':
+    case 'protocol-import':
       return renderCreateOptionsSurface(
-        <JavaHttpImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind={protocolKindForLauncher(importLauncher)} initialMode={importMode} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+      )
+    case 'oracle-review':
+      return renderCreateOptionsSurface(
+        <OracleEBusinessReviewImport projectId={projectId} onClose={onOpenCreateOptions} />,
       )
     case 'devweb-import':
       return renderCreateOptionsSurface(
@@ -119,10 +155,6 @@ export default function ScriptsAuthoringSurface({
     case 'har-import':
       return renderCreateOptionsSurface(
         <ProtocolAssetImport kind="har" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
-      )
-    case 'salesforce-import':
-      return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="salesforce" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'recorder-import':
       return renderCreateOptionsSurface(

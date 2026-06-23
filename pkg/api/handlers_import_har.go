@@ -36,6 +36,36 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
+
+	salesforceAugmentation := augmentHARImportWithSalesforce(result, importReq.Data, importReq.ProjectID, importReq.Opts.ScriptName, "har", salesforceNativeRequested(r), agentforceTransformRequested(r), true)
+	if salesforceAugmentation.Detected {
+		issues := validateScript(salesforceAugmentation.Script)
+		if len(issues) > 0 {
+			result.Warnings = append(result.Warnings, issues...)
+		}
+		preflight := buildReplayPreflight(salesforceAugmentation.Script, nil, issues, result.Warnings)
+		attachImportReplayPreflight(salesforceAugmentation.Script, salesforceAugmentation.Source, preflight)
+
+		preApplied := sampleCorrelationsToPreApplied(result.Correlations)
+		if salesforceAugmentation.Script != result.Script {
+			preApplied = nil
+		}
+		writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+			Result:              result,
+			Script:              salesforceAugmentation.Script,
+			Warnings:            result.Warnings,
+			Stats:               result.Stats,
+			Correlations:        salesforceAugmentation.Correlations,
+			UnsupportedElements: result.Unsupported.Strings(),
+			ReviewSections:      salesforceAugmentation.ReviewSections,
+			SourceReview:        result.SourceReview,
+			Summary:             salesforceAugmentation.Summary,
+			Parameterization:    buildImportParameterization(salesforceAugmentation.Script, preApplied),
+			Preflight:           preflight,
+		}))
+		return
+	}
+
 	attachSourceReviewToScript(result.Script, "har", importReq.Opts.ScriptName, result.SourceReview)
 	issues := validateScript(result.Script)
 	if len(issues) > 0 {
@@ -57,6 +87,13 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		Parameterization:    buildImportParameterization(result.Script, sampleCorrelationsToPreApplied(result.Correlations)),
 		Preflight:           preflight,
 	}))
+}
+
+func salesforceNativeRequested(r *http.Request) bool {
+	if r == nil {
+		return true
+	}
+	return parseBoolDefault(r.URL.Query().Get("salesforce_native"), true)
 }
 
 func harImportSummary(result *har.ConvertResult) map[string]any {

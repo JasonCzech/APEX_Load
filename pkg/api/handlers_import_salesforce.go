@@ -5,7 +5,18 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+type salesforceHARAugmentation struct {
+	Script            *dsl.Script
+	Correlations      any
+	ReviewSections    []scriptImportReviewSection
+	Summary           map[string]any
+	Source            string
+	Detected          bool
+	ReviewForResponse *salesforce.Review
+}
 
 func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) {
 	importReq, ok := readHARImportRequest(w, r)
@@ -22,37 +33,90 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 
+	augmented := augmentHARImportWithSalesforce(result, importReq.Data, importReq.ProjectID, importReq.Opts.ScriptName, "salesforce_har", true, agentforceTransformRequested(r), false)
+
+	// Validate AFTER the MuleSoft/Agentforce attach calls: agentforce.Transform
+	// mutates the script in place (injects an OAuth init, rewrites headers, appends
+	// a teardown), so validating earlier would compute warnings against a script
+	// that no longer matches what is returned.
+	if issues := validateScript(augmented.Script); len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+
+	preApplied := sampleCorrelationsToPreApplied(result.Correlations)
+	if augmented.Script != result.Script {
+		preApplied = nil
+	}
+
+	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+		Result:              result,
+		Script:              augmented.Script,
+		Warnings:            result.Warnings,
+		Stats:               result.Stats,
+		Correlations:        augmented.Correlations,
+		UnsupportedElements: result.Unsupported.Strings(),
+		ReviewSections:      augmented.ReviewSections,
+		SourceReview:        result.SourceReview,
+		Summary:             augmented.Summary,
+		Parameterization:    buildImportParameterization(augmented.Script, preApplied),
+	}))
+}
+
+func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, projectID, sourceName, source string, buildNative, agentforce, requireDetected bool) salesforceHARAugmentation {
+	augmentation := salesforceHARAugmentation{
+		Script:         result.Script,
+		Correlations:   any(result.Correlations),
+		ReviewSections: harImportReviewSections(result),
+		Summary:        harImportSummary(result),
+		Source:         source,
+	}
 	review, err := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{
-		BuildNative: true,
-		HARData:     importReq.Data,
+		BuildNative: buildNative,
+		HARData:     data,
 	})
 	if err != nil {
-		result.Warnings = append(result.Warnings, "Salesforce review failed: "+err.Error())
+		if !requireDetected {
+			result.Warnings = append(result.Warnings, "Salesforce review failed: "+err.Error())
+		}
+		return augmentation
 	}
-	reviewForResponse := salesforceReviewForResponse(review)
+	if requireDetected && (review == nil || !review.Detected) {
+		return augmentation
+	}
 
-	script := result.Script
-	correlations := any(result.Correlations)
-	if review != nil && review.NativePreview != nil && review.NativePreview.Script != nil {
-		script = review.NativePreview.Script
-		script.ProjectID = normalizeProjectID(importReq.ProjectID)
-		correlations = review.NativePreview.Correlations
+	augmentation.Detected = review != nil && review.Detected
+	reviewForResponse := salesforceReviewForResponse(review)
+	augmentation.ReviewForResponse = reviewForResponse
+
+	if buildNative && review != nil && review.NativePreview != nil && review.NativePreview.Script != nil {
+		augmentation.Script = review.NativePreview.Script
+		augmentation.Source = "salesforce_har"
+		augmentation.Correlations = review.NativePreview.Correlations
+		if augmentation.Script != nil {
+			augmentation.Script.ProjectID = normalizeProjectID(projectID)
+		}
+		augmentation.Summary["generation_mode"] = "salesforce_native_http"
+		augmentation.Summary["protocol_scope"] = "salesforce_http_family"
 	}
-	if script != nil {
-		attachSourceReviewToScript(script, "salesforce_har", importReq.Opts.ScriptName, result.SourceReview)
-		preserved := ensureScriptImportPreserved(script, "salesforce_har")
+	if reviewForResponse != nil {
+		augmentation.Summary["salesforce_review"] = reviewForResponse
+	}
+	if source == "salesforce_har" && buildNative {
+		augmentation.Summary["generation_mode"] = "salesforce_native_http"
+		augmentation.Summary["protocol_scope"] = "salesforce_http_family"
+	}
+	if augmentation.Script != nil {
+		attachSourceReviewToScript(augmentation.Script, augmentation.Source, sourceName, result.SourceReview)
 		if reviewForResponse != nil {
-			preserved["salesforce_review"] = reviewForResponse
+			ensureScriptImportPreserved(augmentation.Script, augmentation.Source)["salesforce_review"] = reviewForResponse
 		}
 	}
-
-	reviewSections := harImportReviewSections(result)
 	if review != nil {
 		severity := "info"
 		if !review.Detected {
 			severity = "warning"
 		}
-		reviewSections = append(reviewSections, scriptImportReviewSection{
+		augmentation.ReviewSections = append(augmentation.ReviewSections, scriptImportReviewSection{
 			Key:      "salesforce_review",
 			Title:    "Salesforce Native Review",
 			Severity: severity,
@@ -60,36 +124,9 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 			Items:    salesforceReviewItems(review),
 		})
 	}
-	reviewSections = attachMuleSoftReview(script, "salesforce_har", reviewSections)
-	reviewSections = attachAgentforceReview(script, "salesforce_har", reviewSections, agentforceTransformRequested(r))
-
-	// Validate AFTER the MuleSoft/Agentforce attach calls: agentforce.Transform
-	// mutates the script in place (injects an OAuth init, rewrites headers, appends
-	// a teardown), so validating earlier would compute warnings against a script
-	// that no longer matches what is returned.
-	if issues := validateScript(script); len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
-	}
-
-	summary := harImportSummary(result)
-	summary["generation_mode"] = "salesforce_native_http"
-	summary["protocol_scope"] = "salesforce_http_family"
-	if reviewForResponse != nil {
-		summary["salesforce_review"] = reviewForResponse
-	}
-
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
-		Result:              result,
-		Script:              script,
-		Warnings:            result.Warnings,
-		Stats:               result.Stats,
-		Correlations:        correlations,
-		UnsupportedElements: result.Unsupported.Strings(),
-		ReviewSections:      reviewSections,
-		SourceReview:        result.SourceReview,
-		Summary:             summary,
-		Parameterization:    buildImportParameterization(script, sampleCorrelationsToPreApplied(result.Correlations)),
-	}))
+	augmentation.ReviewSections = attachMuleSoftReview(augmentation.Script, augmentation.Source, augmentation.ReviewSections)
+	augmentation.ReviewSections = attachAgentforceReview(augmentation.Script, augmentation.Source, augmentation.ReviewSections, agentforce)
+	return augmentation
 }
 
 func salesforceReviewForResponse(review *salesforce.Review) *salesforce.Review {

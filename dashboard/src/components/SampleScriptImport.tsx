@@ -223,7 +223,10 @@ function appendJavaHTTPWarnings(script: ScriptDefinition, warnings: string[]): s
   const nextWarnings = [...warnings]
   const nonEmptyBodies = script.actions
     .map(action => (typeof action.body === 'string' ? action.body : ''))
-    .filter(body => body.trim() !== '')
+    .filter(body => {
+      const trimmed = body.trim()
+      return trimmed !== '' && !/^\{\{file\.[^}]+\}\}$/.test(trimmed)
+    })
   const hasNonBase64Body = nonEmptyBodies.some(body => !looksLikeBase64(body))
   // A body can be valid base64 yet not be a Java serialized object — flag that
   // separately so the user can verify the codec/source rather than silently
@@ -360,12 +363,13 @@ function sampleImportOptionsReducer(state: SampleImportOptions, action: SampleIm
   }
 }
 
-export default function SampleScriptImport({ projectId, onImported, onEdit, onClose, preset = 'default' }: Props) {
+export default function SampleScriptImport({ projectId, onImported, onEdit, onClose, preset: initialPreset = 'default' }: Props) {
   const api = useApi()
   const primaryFileRef = useRef<HTMLInputElement>(null)
   const secondaryFileRef = useRef<HTMLInputElement>(null)
-  const defaultFormat = defaultFormatByPreset[preset]
-  const defaultTemplate = getSampleTemplate(preset, defaultFormat)
+  const [preset, setPreset] = useState<SampleImportPreset>(initialPreset)
+  const defaultFormat = defaultFormatByPreset[initialPreset]
+  const defaultTemplate = getSampleTemplate(initialPreset, defaultFormat)
   const [format, setFormat] = useState<SampleFormat>(defaultFormat)
   const [primaryContent, setPrimaryContent] = useState(defaultTemplate.primary)
   const [secondaryContent, setSecondaryContent] = useState(defaultTemplate.secondary || '')
@@ -400,6 +404,25 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
 
   const handleFormatChange = (nextFormat: SampleFormat) => {
     const template = getSampleTemplate(preset, nextFormat)
+    setFormat(nextFormat)
+    setPrimaryContent(template.primary)
+    setSecondaryContent(template.secondary || '')
+    setPrimaryFileName('')
+    setSecondaryFileName('')
+    setPrimaryFileNames([])
+    setSecondaryFileNames([])
+    setPrimaryMergedCount(0)
+    setSecondaryMergedCount(0)
+    convertTask.reset()
+    saveTask.clearError()
+    setMessageError('')
+    setAssetUploads({})
+  }
+
+  const handlePresetChange = (nextPreset: SampleImportPreset) => {
+    const nextFormat = defaultFormatByPreset[nextPreset]
+    const template = getSampleTemplate(nextPreset, nextFormat)
+    setPreset(nextPreset)
     setFormat(nextFormat)
     setPrimaryContent(template.primary)
     setSecondaryContent(template.secondary || '')
@@ -638,13 +661,19 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
             <h3>1. Input Format</h3>
             <p>{getFormatHelp(preset, format)}</p>
           </div>
-          <select value={format} onChange={e => handleFormatChange(e.target.value as SampleFormat)}>
-            {availableFormats.map((option) => (
-              <option key={option} value={option}>
-                {option === 'rest_json' ? 'REST JSON' : option === 'raw_http' ? 'Raw HTTP' : option === 'curl' ? 'cURL' : 'HAR / HAR Entry'}
-              </option>
-            ))}
-          </select>
+          <div className="sample-import-format-controls">
+            <select aria-label="Sample format" value={format} onChange={e => handleFormatChange(e.target.value as SampleFormat)}>
+              {availableFormats.map((option) => (
+                <option key={option} value={option}>
+                  {option === 'rest_json' ? 'REST JSON' : option === 'raw_http' ? 'Raw HTTP' : option === 'curl' ? 'cURL' : 'HAR / HAR Entry'}
+                </option>
+              ))}
+            </select>
+            <select aria-label="Payload profile" value={preset} onChange={e => handlePresetChange(e.target.value as SampleImportPreset)}>
+              <option value="default">Standard API</option>
+              <option value="java-http">Java over HTTP</option>
+            </select>
+          </div>
         </div>
 
         <div className="settings-notice">

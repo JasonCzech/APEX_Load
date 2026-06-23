@@ -765,7 +765,8 @@ func TestHandleImportHARJSON(t *testing.T) {
 				Target string `json:"target"`
 			} `json:"actions"`
 		} `json:"script"`
-		Stats struct {
+		Summary map[string]any `json:"summary"`
+		Stats   struct {
 			ConvertedActions int `json:"converted_actions"`
 		} `json:"stats"`
 	}
@@ -784,6 +785,174 @@ func TestHandleImportHARJSON(t *testing.T) {
 	if result.Script.Actions[0].Method != "GET" || result.Script.Actions[0].Target != "/health" {
 		t.Fatalf("action = %#v", result.Script.Actions[0])
 	}
+	if result.Summary["generation_mode"] != "deterministic_har_spine" {
+		t.Fatalf("summary generation_mode = %#v, want deterministic_har_spine", result.Summary["generation_mode"])
+	}
+	if _, ok := result.Summary["salesforce_review"]; ok {
+		t.Fatalf("summary unexpectedly includes salesforce_review: %#v", result.Summary["salesforce_review"])
+	}
+}
+
+func TestHandleImportHARAutoGeneratesSalesforceNativeDraft(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", bytes.NewReader(salesforceHARImportJSON(t)))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			GeneratedBy string `json:"generated_by"`
+			Protocol    string `json:"protocol"`
+			Actions     []struct {
+				Body       string `json:"body"`
+				Extractors []struct {
+					Name string `json:"name"`
+				} `json:"extractors"`
+			} `json:"actions"`
+			Metadata struct {
+				Import struct {
+					Source    string         `json:"source"`
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		Correlations []struct {
+			Name string `json:"name"`
+		} `json:"correlations"`
+		Summary map[string]any `json:"summary"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "http" {
+		t.Fatalf("protocol = %q, want http", result.Script.Protocol)
+	}
+	if result.Script.GeneratedBy != "apexload-salesforce-builder" {
+		t.Fatalf("generated_by = %q, want Salesforce native builder", result.Script.GeneratedBy)
+	}
+	if result.Script.Metadata.Import.Source != "salesforce" {
+		t.Fatalf("import source = %q, want salesforce", result.Script.Metadata.Import.Source)
+	}
+	if result.Summary["generation_mode"] != "salesforce_native_http" {
+		t.Fatalf("summary generation_mode = %#v, want salesforce_native_http", result.Summary["generation_mode"])
+	}
+	review, ok := result.Summary["salesforce_review"].(map[string]any)
+	if !ok || review["detected"] != true {
+		t.Fatalf("salesforce_review = %#v, want detected review", result.Summary["salesforce_review"])
+	}
+	if _, ok := result.Script.Metadata.Import.Preserved["salesforce_review"]; !ok {
+		t.Fatalf("salesforce review metadata missing: %#v", result.Script.Metadata.Import.Preserved)
+	}
+	if len(result.Correlations) == 0 {
+		t.Fatalf("correlations = %#v, want native Salesforce correlations", result.Correlations)
+	}
+	if len(result.Script.Actions) < 2 || !strings.Contains(result.Script.Actions[1].Body, "{{var.corr_access_token}}") {
+		t.Fatalf("native script actions = %#v, want correlated token in Aura request", result.Script.Actions)
+	}
+}
+
+func TestHandleImportHARForceGenericKeepsRawScriptAndSalesforceReview(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har?salesforce_native=false", bytes.NewReader(salesforceHARImportJSON(t)))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			GeneratedBy string `json:"generated_by"`
+			Protocol    string `json:"protocol"`
+			Actions     []struct {
+				Body string `json:"body"`
+			} `json:"actions"`
+			Metadata struct {
+				Import struct {
+					Source    string         `json:"source"`
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		Summary map[string]any `json:"summary"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "http" {
+		t.Fatalf("protocol = %q, want http", result.Script.Protocol)
+	}
+	if result.Script.GeneratedBy == "apexload-salesforce-builder" {
+		t.Fatalf("generated_by = %q, want raw HAR script", result.Script.GeneratedBy)
+	}
+	if result.Script.Metadata.Import.Source != "har" {
+		t.Fatalf("import source = %q, want har", result.Script.Metadata.Import.Source)
+	}
+	if result.Summary["generation_mode"] != "deterministic_har_spine" {
+		t.Fatalf("summary generation_mode = %#v, want deterministic_har_spine", result.Summary["generation_mode"])
+	}
+	review, ok := result.Summary["salesforce_review"].(map[string]any)
+	if !ok || review["detected"] != true {
+		t.Fatalf("salesforce_review = %#v, want detected review", result.Summary["salesforce_review"])
+	}
+	if _, ok := result.Script.Metadata.Import.Preserved["salesforce_review"]; !ok {
+		t.Fatalf("salesforce review metadata missing: %#v", result.Script.Metadata.Import.Preserved)
+	}
+	if len(result.Script.Actions) < 2 || !strings.Contains(result.Script.Actions[1].Body, "tok%2B%2F%3D%3D") {
+		t.Fatalf("raw HAR actions = %#v, want original encoded token retained", result.Script.Actions)
+	}
+}
+
+func salesforceHARImportJSON(t *testing.T) []byte {
+	t.Helper()
+	payload := map[string]any{
+		"name": "Salesforce HAR",
+		"content": `{
+  "log": {
+    "entries": [
+      {
+        "request": {
+          "method": "GET",
+          "url": "https://attone--perfhyper2.sandbox.my.salesforce.com/login",
+          "headers": []
+        },
+        "response": {
+          "status": 200,
+          "headers": [],
+          "content": {"text": "{\"access_token\":\"tok+/==\"}"}
+        }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "url": "https://attone--perfhyper2.sandbox.lightning.force.com/aura",
+          "headers": [{"name":"content-type","value":"application/x-www-form-urlencoded"}],
+          "postData": {"text": "aura.token=tok%2B%2F%3D%3D&message=%7B%22actions%22%3A%5B%7B%22descriptor%22%3A%22apex%3A%2F%2FAccountController%2FACTION%24get%22%7D%5D%7D"}
+        },
+        "response": {
+          "status": 200,
+          "headers": [],
+          "content": {"text": "{\"actions\":[{\"state\":\"SUCCESS\"}]}"}
+        }
+      }
+    ]
+  }
+}`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	return body
 }
 
 func TestHandleImportSalesforceHARJSON(t *testing.T) {
@@ -3330,6 +3499,59 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 	if !containsAuthoringSourceStatus(payload.Sources, "web2_browser_profile", "active") {
 		t.Fatalf("sources = %#v, want web2_browser_profile active source", payload.Sources)
 	}
+	visibleSurfaces := map[string]AuthoringImportSurface{}
+	for _, surface := range payload.ImportSurfaces {
+		if !surface.Visible {
+			continue
+		}
+		visibleSurfaces[surface.ID] = surface
+		if surface.Launcher == "" {
+			t.Fatalf("import surface %q has empty launcher", surface.ID)
+		}
+		if surface.Category == "" {
+			t.Fatalf("import surface %q has empty category", surface.ID)
+		}
+	}
+	if len(visibleSurfaces) != 15 {
+		t.Fatalf("visible import surfaces = %d, want 15 (%#v)", len(visibleSurfaces), visibleSurfaces)
+	}
+	expectedSurfaces := map[string]string{
+		"openapi":                 "Contracts & Collections",
+		"postman":                 "Contracts & Collections",
+		"wsdl":                    "Contracts & Collections",
+		"asyncapi":                "Contracts & Collections",
+		"raml":                    "Contracts & Collections",
+		"traffic_har":             "Traffic & Samples",
+		"recorder_export":         "Traffic & Samples",
+		"sample":                  "Traffic & Samples",
+		"enterprise_archive":      "Legacy & Tool Exports",
+		"jmeter":                  "Legacy & Tool Exports",
+		"devweb":                  "Legacy & Tool Exports",
+		"k6":                      "Legacy & Tool Exports",
+		"eventhubs_capture":       "Messaging & Cloud Artifacts",
+		"broker_config":           "Messaging & Cloud Artifacts",
+		"oracle_ebusiness_review": "Enterprise App Reviews",
+	}
+	for id, category := range expectedSurfaces {
+		surface, ok := visibleSurfaces[id]
+		if !ok {
+			t.Fatalf("missing visible import surface %q", id)
+		}
+		if surface.Category != category {
+			t.Fatalf("surface %q category = %q, want %q", id, surface.Category, category)
+		}
+		if surface.Launcher == "java-http-import" || surface.Launcher == "salesforce-import" {
+			t.Fatalf("surface %q uses obsolete launcher %q", id, surface.Launcher)
+		}
+	}
+	sampleSurface := visibleSurfaces["sample"]
+	if !containsAuthoringImportMode(sampleSurface.Modes, "standard_api", true) || !containsAuthoringImportMode(sampleSurface.Modes, "java_http", false) {
+		t.Fatalf("sample modes = %#v, want standard_api default and java_http", sampleSurface.Modes)
+	}
+	harSurface := visibleSurfaces["traffic_har"]
+	if !containsAuthoringImportMode(harSurface.Modes, "auto_detect", true) || !containsAuthoringImportMode(harSurface.Modes, "force_generic", false) {
+		t.Fatalf("traffic_har modes = %#v, want auto_detect default and force_generic", harSurface.Modes)
+	}
 }
 
 func TestAuthoringTemplatesEndpointReturnsValidProtocolStarters(t *testing.T) {
@@ -4175,6 +4397,15 @@ func containsEnterpriseArchiveWeb2Fixture(entries []struct {
 func containsAuthoringSourceStatus(sources []AuthoringSourceCapability, source string, status string) bool {
 	for _, item := range sources {
 		if item.Source == source && item.Status == status {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAuthoringImportMode(modes []AuthoringImportMode, id string, defaultMode bool) bool {
+	for _, mode := range modes {
+		if mode.ID == id && mode.Default == defaultMode {
 			return true
 		}
 	}

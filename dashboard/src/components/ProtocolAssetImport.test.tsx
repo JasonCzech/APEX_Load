@@ -991,12 +991,14 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('dynamic candidates')
   })
 
-  it('imports Salesforce HAR files through the native review flow', async () => {
-    await act(async () => {
-      root.render(<ProtocolAssetImport kind="salesforce" projectId="project-1" />)
-    })
-
-    expect(container.textContent).toContain('Import Salesforce HAR')
+	  it('imports Salesforce HAR files through the native review flow', async () => {
+	    const salesforceResult = await apiMock.importSalesforce()
+	    apiMock.importHAR.mockResolvedValueOnce(salesforceResult)
+	    await act(async () => {
+	      root.render(<ProtocolAssetImport kind="har" projectId="project-1" />)
+	    })
+	
+	    expect(container.textContent).toContain('Import HAR')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
     expect(fileInput).not.toBeNull()
@@ -1011,7 +1013,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Salesforce HAR'))
+	    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert HAR'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
 
@@ -1020,7 +1022,7 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
-    expect(apiMock.importSalesforce).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
+	    expect(apiMock.importHAR).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1', salesforce_native: true }))
     expect(container.textContent).toContain('Salesforce Native Review')
     expect(container.textContent).toContain('100%')
     expect(container.textContent).toContain('acme.my.salesforce.com')

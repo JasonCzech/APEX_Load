@@ -72,14 +72,14 @@ export function pageTitleForScriptSubView(subView?: string): string {
       return 'Record Browser'
     case 'sample':
       return 'Import Sample'
-    case 'java-http-import':
-      return 'Import Java over HTTP'
+    case 'protocol-import':
+      return 'Import From Source'
+    case 'oracle-review':
+      return 'Oracle E-Business Review'
     case 'devweb-import':
       return 'Import DevWeb'
     case 'har-import':
       return 'Import HAR'
-    case 'salesforce-import':
-      return 'Import Salesforce'
     case 'recorder-import':
       return 'Import Browser Recording'
     case 'openapi-import':

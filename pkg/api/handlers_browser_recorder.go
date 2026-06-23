@@ -492,7 +492,7 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 			preserved := ensureScriptImportPreserved(result.Script, "browser_recording_har")
 			preserved["salesforce_review"] = salesforceReviewForResponse(review)
 			if review.NativePreview != nil && review.NativePreview.Script != nil {
-				result.Warnings = append(result.Warnings, "Salesforce traffic detected; use /api/v1/scripts/import/salesforce for the native HTTP draft.")
+				result.Warnings = append(result.Warnings, "Salesforce traffic detected; the HAR Traffic importer auto-generates the native HTTP draft.")
 			}
 		}
 		_ = attachMuleSoftReview(result.Script, "browser_recording_har", nil)

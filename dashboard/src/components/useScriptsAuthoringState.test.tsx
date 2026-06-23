@@ -22,6 +22,8 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
   return (
     <div>
       <span data-testid="subview">{model.authoringState.subView}</span>
+      <span data-testid="import-launcher">{model.authoringState.importLauncher || 'none'}</span>
+      <span data-testid="import-mode">{model.authoringState.importMode || 'none'}</span>
       <span data-testid="editing-id">{model.authoringState.editingId || 'none'}</span>
       <span data-testid="editing-name">{model.authoringState.editingScript?.name || 'none'}</span>
       <span data-testid="draft-name">{model.authoringState.draftScript?.name || 'none'}</span>
@@ -50,6 +52,7 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <button data-testid="save-script-with-notice" onClick={() => model.handleSavedScript({ id: 'saved-script-3', name: 'Saved Notice Draft', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z' }, 'Saved 2 scripts. Reviewing the first saved script.')}>save-script-with-notice</button>
       <button data-testid="save-script-with-payload" onClick={() => model.handleSavedScript({ id: 'saved-script-2', name: 'Saved Payload', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z', script: { name: 'Persisted Checkout', protocol: 'http', config: {}, actions: [] } as never })}>save-script-with-payload</button>
       <button data-testid="open-sample" onClick={model.createOptionActions.openSampleImport}>open-sample</button>
+      <button data-testid="open-java-import" onClick={model.createOptionActions.openJavaHttpImport}>open-java-import</button>
       <button data-testid="open-salesforce" onClick={model.createOptionActions.openSalesforceImport}>open-salesforce</button>
       <button data-testid="open-openapi" onClick={model.createOptionActions.openOpenAPIImport}>open-openapi</button>
       <button data-testid="open-raml" onClick={model.createOptionActions.openRAMLImport}>open-raml</button>
@@ -255,27 +258,45 @@ describe('useScriptsAuthoringState', () => {
     await click('open-sample')
 
     expect(readTestId('subview')).toBe('sample')
+    expect(readTestId('import-launcher')).toBe('sample')
+    expect(readTestId('import-mode')).toBe('standard_api')
     expect(readTestId('draft-name')).toBe('none')
+
+    await click('open-java-import')
+
+    expect(readTestId('subview')).toBe('sample')
+    expect(readTestId('import-launcher')).toBe('sample')
+    expect(readTestId('import-mode')).toBe('java_http')
 
     await click('open-openapi')
 
-    expect(readTestId('subview')).toBe('openapi-import')
+    expect(readTestId('subview')).toBe('protocol-import')
+    expect(readTestId('import-launcher')).toBe('openapi')
+    expect(readTestId('import-mode')).toBe('none')
 
     await click('open-raml')
 
-    expect(readTestId('subview')).toBe('raml-import')
+    expect(readTestId('subview')).toBe('protocol-import')
+    expect(readTestId('import-launcher')).toBe('raml')
+    expect(readTestId('import-mode')).toBe('none')
 
     await click('open-salesforce')
 
-    expect(readTestId('subview')).toBe('salesforce-import')
+    expect(readTestId('subview')).toBe('protocol-import')
+    expect(readTestId('import-launcher')).toBe('traffic_har')
+    expect(readTestId('import-mode')).toBe('auto_detect')
 
     await click('open-postman')
 
-    expect(readTestId('subview')).toBe('postman-import')
+    expect(readTestId('subview')).toBe('protocol-import')
+    expect(readTestId('import-launcher')).toBe('postman')
+    expect(readTestId('import-mode')).toBe('none')
 
     await click('open-wsdl')
 
-    expect(readTestId('subview')).toBe('wsdl-import')
+    expect(readTestId('subview')).toBe('protocol-import')
+    expect(readTestId('import-launcher')).toBe('wsdl')
+    expect(readTestId('import-mode')).toBe('none')
 
     await click('start-java-http')
 

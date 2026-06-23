@@ -55,25 +55,13 @@ export default function ScriptsAuthoringShell({
         onStartGrpcScript={createOptionActions.startGrpcScript}
         onStartDatabaseScript={createOptionActions.startDatabaseScript}
         onStartNetworkScript={createOptionActions.startNetworkScript}
-        onOpenJavaHttpImport={createOptionActions.openJavaHttpImport}
-        onOpenSampleImport={createOptionActions.openSampleImport}
         onStartWebScript={createOptionActions.startWebScript}
         onOpenRecorder={createOptionActions.openRecorder}
         onStartJmsScript={createOptionActions.startJmsScript}
         onStartKafkaScript={createOptionActions.startKafkaScript}
         onStartTemplateScript={createOptionActions.startTemplateScript}
         onComposeComponent={createOptionActions.composeComponentScript}
-        onOpenEnterpriseArchiveImport={createOptionActions.openEnterpriseArchiveImport}
-        onOpenJMeterImport={createOptionActions.openJMeterImport}
-        onOpenDevWebImport={createOptionActions.openDevWebImport}
-        onOpenHARImport={createOptionActions.openHARImport}
-        onOpenSalesforceImport={createOptionActions.openSalesforceImport}
-        onOpenBrowserRecordingImport={createOptionActions.openBrowserRecordingImport}
-        onOpenOpenAPIImport={createOptionActions.openOpenAPIImport}
-        onOpenRAMLImport={createOptionActions.openRAMLImport}
-        onOpenPostmanImport={createOptionActions.openPostmanImport}
-        onOpenWSDLImport={createOptionActions.openWSDLImport}
-        onOpenAsyncAPIImport={createOptionActions.openAsyncAPIImport}
+        onOpenImportSurface={createOptionActions.openImportSurface}
         scripts={scripts}
         onStartExistingScript={onStartExistingScript}
         workflow={createOptionsWorkflow}
@@ -86,6 +74,8 @@ export default function ScriptsAuthoringShell({
     return (
       <ScriptsAuthoringSurface
         subView={authoringState.subView}
+        importLauncher={authoringState.importLauncher}
+        importMode={authoringState.importMode}
         draftScript={authoringState.draftScript}
         draftEditorFocus={authoringState.draftEditorFocus}
         draftReturnTarget={authoringState.draftReturnTarget}

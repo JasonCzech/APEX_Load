@@ -41,6 +41,14 @@
   gap: 16px;
 }
 
+.sample-import-format-controls {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .sample-import-section-header h3,
 .sample-import-result-header h3,
 .sample-import-warnings h4,
@@ -161,6 +169,11 @@
   background: var(--bg-secondary);
   color: var(--text-primary);
   font: inherit;
+}
+
+.sample-import-format-controls select {
+  width: auto;
+  min-width: 160px;
 }
 
 .sample-import-field textarea {

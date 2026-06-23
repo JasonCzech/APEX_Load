@@ -16,6 +16,7 @@ const apiMock = {
   listTests: vi.fn(),
   listAuthoringTemplates: vi.fn(),
   listAuthoringComponents: vi.fn(),
+  listAuthoringCapabilities: vi.fn(),
   listAuthoringSessions: vi.fn(),
   approveAuthoringSession: vi.fn(),
   deleteAuthoringSession: vi.fn(),
@@ -146,21 +147,6 @@ vi.mock('./SampleScriptImport', () => ({
   ),
 }))
 
-vi.mock('./JavaHttpImport', () => ({
-  default: ({ onEdit }: { onEdit?: (script: { name: string, version: string, protocol: string, config: { base_url: string }, actions: unknown[] }) => void }) => (
-    <div data-testid="java-http-import">
-      <button onClick={() => onEdit?.({
-        name: 'Java Import Draft',
-        version: '1.0.0',
-        protocol: 'java_http',
-        config: { base_url: 'https://java.example.com' },
-        actions: [],
-      })}
-      >mock-java-import-edit</button>
-    </div>
-  ),
-}))
-
 vi.mock('./ProtocolAssetImport', () => ({
   default: ({ kind, onEdit }: { kind: string, onEdit?: (script: { name: string, version: string, protocol: string, config: { base_url: string }, actions: unknown[] }) => void }) => (
     <div data-testid={`protocol-import-${kind}`}>
@@ -177,6 +163,10 @@ vi.mock('./ProtocolAssetImport', () => ({
   ),
 }))
 
+vi.mock('./OracleEBusinessReviewImport', () => ({
+  default: () => <div data-testid="oracle-ebusiness-review">oracle-review</div>,
+}))
+
 function TopbarContributionHarness() {
   const contribution = useActiveTopbarContribution()
   return (
@@ -185,6 +175,53 @@ function TopbarContributionHarness() {
       {contribution?.controls}
     </div>
   )
+}
+
+const importSurfaces = [
+  surface('openapi', 'OpenAPI / Swagger', 'OpenAPI', 'Contracts & Collections', 10, 'openapi', 'Generate HTTP scripts from OpenAPI 3.x or Swagger 2.0 contracts.'),
+  surface('postman', 'Postman Collection', 'Postman', 'Contracts & Collections', 20, 'postman', 'Convert Postman collections and environments into script drafts.'),
+  surface('wsdl', 'WSDL / SOAP', 'WSDL', 'Contracts & Collections', 30, 'wsdl', 'Import SOAP services and operations from WSDL.'),
+  surface('asyncapi', 'AsyncAPI', 'AsyncAPI', 'Contracts & Collections', 40, 'asyncapi', 'Model event-driven flows from AsyncAPI contracts.'),
+  surface('raml', 'RAML / Anypoint', 'RAML', 'Contracts & Collections', 50, 'raml', 'Import RAML contracts from Anypoint-style API specs.'),
+  surface('traffic_har', 'HAR Traffic', 'HAR', 'Traffic & Samples', 10, 'traffic_har', 'Convert captured browser/API traffic; auto-detects Salesforce and Agentforce.', [
+    { id: 'auto_detect', label: 'Auto-detect', description: 'Detect Salesforce and generate native drafts when present.', default: true },
+    { id: 'force_generic', label: 'Force Generic HAR', description: 'Return the raw deterministic HAR script.', default: false },
+  ]),
+  surface('recorder_export', 'Recorder Export / Playwright Codegen', 'Recorder', 'Traffic & Samples', 20, 'recorder_export', 'Import browser recorder exports and Playwright codegen captures.'),
+  surface('sample', 'Request / Response Sample', 'Sample', 'Traffic & Samples', 30, 'sample', 'Build from raw HTTP, curl, HAR, REST JSON, SOAP-shaped samples, or Java over HTTP payloads.', [
+    { id: 'standard_api', label: 'Standard API', description: 'Use the normal sample converter.', default: true },
+    { id: 'java_http', label: 'Java over HTTP', description: 'Promote samples into java_http drafts.', default: false },
+  ]),
+  surface('enterprise_archive', 'Import Enterprise Script Archive', 'Archive', 'Legacy & Tool Exports', 10, 'enterprise_archive', 'Convert LoadRunner enterprise script archives.'),
+  surface('jmeter', 'Import JMeter', 'JMeter', 'Legacy & Tool Exports', 20, 'jmeter', 'Convert JMeter plans into deterministic script drafts.'),
+  surface('devweb', 'DevWeb Source', 'DevWeb', 'Legacy & Tool Exports', 30, 'devweb', 'Convert DevWeb source projects.'),
+  surface('k6', 'k6 Script', 'k6', 'Legacy & Tool Exports', 40, 'k6', 'Convert k6 JavaScript scripts into Apex Load drafts.'),
+  surface('eventhubs_capture', 'Event Hubs Capture', 'Event Hubs', 'Messaging & Cloud Artifacts', 10, 'eventhubs_capture', 'Import Event Hubs capture metadata and payload examples.'),
+  surface('broker_config', 'Broker Config', 'Broker', 'Messaging & Cloud Artifacts', 20, 'broker_config', 'Import messaging broker configuration for JMS/Kafka style drafts.'),
+  surface('oracle_ebusiness_review', 'Oracle E-Business / Siebel Review', 'Review', 'Enterprise App Reviews', 10, 'oracle_ebusiness_review', 'Review Oracle E-Business and Siebel assets before script authoring.'),
+]
+
+function surface(
+  id: string,
+  title: string,
+  badge: string,
+  category: string,
+  order: number,
+  launcher: string,
+  description: string,
+  modes: Array<{ id: string; label: string; description: string; default: boolean }> = [],
+) {
+  return {
+    id,
+    title,
+    description,
+    badge,
+    category,
+    order,
+    launcher,
+    visible: true,
+    modes,
+  }
 }
 
 describe('ScriptsPage', () => {
@@ -223,6 +260,11 @@ describe('ScriptsPage', () => {
     apiMock.listTests.mockResolvedValue({ tests: [] })
     apiMock.listAuthoringTemplates.mockResolvedValue({ templates: [], count: 0 })
     apiMock.listAuthoringComponents.mockResolvedValue({ components: [], count: 0 })
+    apiMock.listAuthoringCapabilities.mockResolvedValue({
+      sources: [],
+      source_map: {},
+      import_surfaces: importSurfaces,
+    })
     apiMock.listAuthoringSessions.mockResolvedValue({ sessions: [], count: 0 })
     apiMock.approveAuthoringSession.mockResolvedValue({
       session: { id: 'session-1', name: 'Migrated checkout review', status: 'approved' },
@@ -445,15 +487,20 @@ describe('ScriptsPage', () => {
     expect(workflowCards.some(label => label.includes('Import Existing'))).toBe(false)
 
     await clickButton('Import From Source')
+    await flushPromises()
 
     expect(container.textContent).toContain('Contracts & Collections')
     expect(container.textContent).toContain('Traffic & Samples')
     expect(container.textContent).toContain('Legacy & Tool Exports')
+    expect(container.textContent).toContain('Messaging & Cloud Artifacts')
+    expect(container.textContent).toContain('Enterprise App Reviews')
     expect(container.textContent).not.toContain('Import OpenAPI')
     expect(container.textContent).not.toContain('Import Postman')
     expect(container.textContent).not.toContain('Import WSDL')
     expect(container.textContent).not.toContain('Import HAR')
     expect(container.textContent).not.toContain('Import DevWeb')
+    expect(container.textContent).not.toContain('Salesforce Family')
+    expect(container.textContent).not.toContain('Salesforce HAR')
 
     const countImportOption = (label: string) =>
       Array.from(container.querySelectorAll('.script-create-option h3')).filter(heading => heading.textContent === label).length
@@ -461,13 +508,44 @@ describe('ScriptsPage', () => {
     expect(countImportOption('OpenAPI / Swagger')).toBe(1)
     expect(countImportOption('Postman Collection')).toBe(1)
     expect(countImportOption('WSDL / SOAP')).toBe(1)
+    expect(countImportOption('AsyncAPI')).toBe(1)
+    expect(countImportOption('RAML / Anypoint')).toBe(1)
     expect(countImportOption('HAR Traffic')).toBe(1)
     expect(countImportOption('Request / Response Sample')).toBe(1)
-    expect(countImportOption('Import Java over HTTP')).toBe(1)
+    expect(countImportOption('Import Java over HTTP')).toBe(0)
+    expect(container.textContent).toContain('Java over HTTP')
     expect(countImportOption('Import Enterprise Script Archive')).toBe(1)
     expect(countImportOption('Import JMeter')).toBe(1)
     expect(countImportOption('DevWeb Source')).toBe(1)
+    expect(countImportOption('k6 Script')).toBe(1)
+    expect(countImportOption('Event Hubs Capture')).toBe(1)
+    expect(countImportOption('Broker Config')).toBe(1)
+    expect(countImportOption('Oracle E-Business / Siebel Review')).toBe(1)
+    expect(container.querySelectorAll('.script-create-import-groups .script-create-option')).toHaveLength(15)
     expect(countImportOption('Import SOAP Assets')).toBe(0)
+  })
+
+  it('falls back to the built-in source registry when an older controller omits import_surfaces', async () => {
+    apiMock.listAuthoringCapabilities.mockResolvedValueOnce({
+      sources: [],
+      source_map: {},
+    })
+
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+
+    await flushPromises()
+    await clickButton('Import From Source')
+    await flushPromises()
+
+    expect(container.textContent).toContain('Contracts & Collections')
+    expect(container.textContent).toContain('Traffic & Samples')
+    expect(container.textContent).toContain('Messaging & Cloud Artifacts')
+    expect(container.querySelectorAll('.script-create-import-groups .script-create-option')).toHaveLength(15)
+    expect(container.textContent).toContain('HAR Traffic')
+    expect(container.textContent).toContain('Oracle E-Business / Siebel Review')
+    expect(container.textContent).not.toContain('No import sources are available from this controller.')
   })
 
   it('opens the recording studio directly from the Record Browser workflow card', async () => {
@@ -1416,7 +1494,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Applied')
   })
 
-  it('routes the Java-over-HTTP import option into the dedicated Java import surface', async () => {
+  it('routes the merged sample import card into the profile-switchable sample surface', async () => {
     await act(async () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })
@@ -1424,18 +1502,20 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     await clickButton('Import From Source')
+    await flushPromises()
 
-    const javaImportButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Java over HTTP'))
-    expect(javaImportButton).toBeDefined()
-    if (!javaImportButton) {
+    const sampleImportButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Request / Response Sample'))
+    expect(sampleImportButton).toBeDefined()
+    if (!sampleImportButton) {
       return
     }
 
     await act(async () => {
-      javaImportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      sampleImportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('[data-testid="java-http-import"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="sample-import"]')).not.toBeNull()
+    expect(container.textContent).toContain('sample-import:default')
   })
 
   it('renders the script library as read-only when manage_scripts is denied', async () => {

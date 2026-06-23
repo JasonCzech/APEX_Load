@@ -11,6 +11,7 @@ type AuthoringCapabilityResponse struct {
 	HealthInputs    []string                     `json:"health_inputs"`
 	Sources         []AuthoringSourceCapability  `json:"sources"`
 	SourceMap       map[string]AuthoringFeatures `json:"source_map"`
+	ImportSurfaces  []AuthoringImportSurface     `json:"import_surfaces"`
 }
 
 type AuthoringSourceCapability struct {
@@ -35,6 +36,25 @@ type AuthoringFeatures struct {
 	ScenarioDraft         bool `json:"scenario_draft"`
 	Provenance            bool `json:"provenance"`
 	ApprovalGateCandidate bool `json:"approval_gate_candidate"`
+}
+
+type AuthoringImportSurface struct {
+	ID          string                `json:"id"`
+	Title       string                `json:"title"`
+	Description string                `json:"description"`
+	Badge       string                `json:"badge"`
+	Category    string                `json:"category"`
+	Order       int                   `json:"order"`
+	Launcher    string                `json:"launcher"`
+	Visible     bool                  `json:"visible"`
+	Modes       []AuthoringImportMode `json:"modes,omitempty"`
+}
+
+type AuthoringImportMode struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Default     bool   `json:"default"`
 }
 
 type AuthoringHealth struct {
@@ -141,6 +161,169 @@ func runtimeParityIssueCount(counts map[string]int) int {
 	return counts[string(enterprisearchive.RuntimeSettingStatusBlocked)] +
 		counts[string(enterprisearchive.RuntimeSettingStatusPartial)] +
 		counts[string(enterprisearchive.RuntimeSettingStatusCompatibilityOnly)]
+}
+
+func authoringImportSurfaces() []AuthoringImportSurface {
+	return []AuthoringImportSurface{
+		{
+			ID:          "openapi",
+			Title:       "OpenAPI / Swagger",
+			Description: "Generate grouped REST request flows with detected auth schemes, examples, variables, and candidate data pools.",
+			Badge:       "OAS",
+			Category:    "Contracts & Collections",
+			Order:       10,
+			Launcher:    "openapi",
+			Visible:     true,
+		},
+		{
+			ID:          "postman",
+			Title:       "Postman Collection",
+			Description: "Convert collection folders, requests, variables, and auth placeholders into a reviewable HTTP script.",
+			Badge:       "PM",
+			Category:    "Contracts & Collections",
+			Order:       20,
+			Launcher:    "postman",
+			Visible:     true,
+		},
+		{
+			ID:          "wsdl",
+			Title:       "WSDL / SOAP",
+			Description: "Generate SOAP operation actions with SOAPAction, namespaces, sample envelopes, and fault-review guidance.",
+			Badge:       "WSDL",
+			Category:    "Contracts & Collections",
+			Order:       30,
+			Launcher:    "wsdl",
+			Visible:     true,
+		},
+		{
+			ID:          "asyncapi",
+			Title:       "AsyncAPI / Kafka",
+			Description: "Convert AsyncAPI 2.x/3.x channels into Kafka produce, consume, and request-reply actions with brokers, topics, and sample payloads.",
+			Badge:       "ASYNC",
+			Category:    "Contracts & Collections",
+			Order:       40,
+			Launcher:    "asyncapi",
+			Visible:     true,
+		},
+		{
+			ID:          "raml",
+			Title:       "RAML / Anypoint",
+			Description: "Convert RAML resources, methods, examples, and OAuth2 security schemes into reviewable HTTP actions.",
+			Badge:       "RAML",
+			Category:    "Contracts & Collections",
+			Order:       50,
+			Launcher:    "raml",
+			Visible:     true,
+		},
+		{
+			ID:          "traffic_har",
+			Title:       "HAR Traffic",
+			Description: "Convert captured browser/API traffic into HTTP actions; auto-detects Salesforce, Lightning, and Agentforce and generates a native, correlation-rich draft.",
+			Badge:       "HAR",
+			Category:    "Traffic & Samples",
+			Order:       100,
+			Launcher:    "traffic_har",
+			Visible:     true,
+			Modes: []AuthoringImportMode{
+				{ID: "auto_detect", Label: "Auto-detect", Description: "Detect Salesforce traffic and emit the native Salesforce draft when found.", Default: true},
+				{ID: "force_generic", Label: "Force Generic HAR", Description: "Return the raw HAR-derived HTTP script while still attaching detected Salesforce review.", Default: false},
+			},
+		},
+		{
+			ID:          "recorder_export",
+			Title:       "Recorder Export / Playwright Codegen",
+			Description: "Convert a Chrome DevTools Recorder export or Playwright codegen script into a browser script with ranked selector candidates.",
+			Badge:       "REC",
+			Category:    "Traffic & Samples",
+			Order:       110,
+			Launcher:    "recorder_export",
+			Visible:     true,
+		},
+		{
+			ID:          "sample",
+			Title:       "Request / Response Sample",
+			Description: "Build an API draft from raw HTTP, cURL, HAR, or payload examples when formal contracts are unavailable.",
+			Badge:       "API",
+			Category:    "Traffic & Samples",
+			Order:       120,
+			Launcher:    "sample",
+			Visible:     true,
+			Modes: []AuthoringImportMode{
+				{ID: "standard_api", Label: "Standard API", Description: "Infer HTTP actions from raw HTTP, cURL, HAR, or structured request/response samples.", Default: true},
+				{ID: "java_http", Label: "Java over HTTP", Description: "Preserve opaque base64-encoded Java serialized payloads and promote the draft to java_http.", Default: false},
+			},
+		},
+		{
+			ID:          "enterprise_archive",
+			Title:       "Import Enterprise Script Archive",
+			Description: "Convert an enterprise script archive ZIP into an APEX Load script and keep unsupported source functions visible for cleanup.",
+			Badge:       "ESA",
+			Category:    "Legacy & Tool Exports",
+			Order:       200,
+			Launcher:    "enterprise_archive",
+			Visible:     true,
+		},
+		{
+			ID:          "jmeter",
+			Title:       "Import JMeter",
+			Description: "Convert a JMeter .jmx plan into HTTP scripts with warnings, unsupported elements, and scenario draft context.",
+			Badge:       "JMX",
+			Category:    "Legacy & Tool Exports",
+			Order:       210,
+			Launcher:    "jmeter",
+			Visible:     true,
+		},
+		{
+			ID:          "devweb",
+			Title:       "DevWeb Source",
+			Description: "Convert DevWeb JavaScript assets into HTTP, WebSocket, or gRPC script drafts for review.",
+			Badge:       "DEV",
+			Category:    "Legacy & Tool Exports",
+			Order:       220,
+			Launcher:    "devweb",
+			Visible:     true,
+		},
+		{
+			ID:          "k6",
+			Title:       "k6 Script",
+			Description: "Convert supported k6 HTTP flows into APEX Load actions and preserve unsupported JavaScript for review.",
+			Badge:       "k6",
+			Category:    "Legacy & Tool Exports",
+			Order:       230,
+			Launcher:    "k6",
+			Visible:     true,
+		},
+		{
+			ID:          "eventhubs_capture",
+			Title:       "Event Hubs Capture",
+			Description: "Seed native Event Hubs producer actions from Azure Event Hubs Capture Avro files.",
+			Badge:       "EH",
+			Category:    "Messaging & Cloud Artifacts",
+			Order:       300,
+			Launcher:    "eventhubs_capture",
+			Visible:     true,
+		},
+		{
+			ID:          "broker_config",
+			Title:       "Broker Config",
+			Description: "Import IBM MQ MQSC or JMS JNDI broker configuration into a JMS topology draft.",
+			Badge:       "JMS",
+			Category:    "Messaging & Cloud Artifacts",
+			Order:       310,
+			Launcher:    "broker_config",
+			Visible:     true,
+		},
+		{
+			ID:          "oracle_ebusiness_review",
+			Title:       "Oracle E-Business / Siebel Review",
+			Description: "Review Oracle E-Business, Oracle NCA, and Siebel assets for package signals, correlation packs, and execution posture.",
+			Badge:       "EBS",
+			Category:    "Enterprise App Reviews",
+			Order:       400,
+			Launcher:    "oracle_ebusiness_review",
+			Visible:     true,
+		},
+	}
 }
 
 func authoringCapabilityResponse() AuthoringCapabilityResponse {
@@ -361,5 +544,6 @@ func authoringCapabilityResponse() AuthoringCapabilityResponse {
 		HealthInputs:    []string{"validation_issues", "runtime_parity", "unsupported_constructs", "missing_data_sources", "replay_readiness", "provenance"},
 		Sources:         sources,
 		SourceMap:       sourceMap,
+		ImportSurfaces:  authoringImportSurfaces(),
 	}
 }

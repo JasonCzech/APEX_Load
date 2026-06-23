@@ -8,6 +8,34 @@ export interface SupportMatrix {
   notes?: string[]
 }
 
+export interface AuthoringImportMode {
+  id: string
+  label: string
+  description: string
+  default: boolean
+}
+
+export interface AuthoringImportSurface {
+  id: string
+  title: string
+  description: string
+  badge: string
+  category: string
+  order: number
+  launcher: string
+  visible: boolean
+  modes?: AuthoringImportMode[]
+}
+
+export interface AuthoringCapabilitiesResponse {
+  contract_version: string
+  draft_lifecycle: string[]
+  health_inputs: string[]
+  sources: unknown[]
+  source_map: Record<string, unknown>
+  import_surfaces?: AuthoringImportSurface[]
+}
+
 export interface ImportReviewSection {
   key: string
   title: string
@@ -543,6 +571,7 @@ export interface HARImportSummary {
   retention_days?: number
   governance?: HARArtifactGovernance
   har_diff?: HARDiffReport
+  salesforce_review?: SalesforceReview
   generation_mode?: string
   protocol_scope?: string
   llm_role?: string
@@ -647,6 +676,9 @@ export type PostmanImportResult = ScriptImportResult<PostmanImportStats, unknown
 export type WSDLImportResult = ScriptImportResult<WSDLImportStats, unknown>
 export type AsyncAPIImportResult = ScriptImportResult<AsyncAPIImportStats, unknown>
 export type RecorderImportResult = ScriptImportResult<Record<string, unknown>, RecorderCorrelation>
+export type K6ImportResult = ScriptImportResult<Record<string, unknown>, unknown>
+export type EventHubsCaptureImportResult = ScriptImportResult<Record<string, unknown>, unknown>
+export type BrokerConfigImportResult = ScriptImportResult<Record<string, unknown>, unknown>
 
 export interface RAMLImportStats {
   format: string
@@ -703,6 +735,9 @@ export interface AsyncAPISupportMatrixResponse {
 
 export type DevWebSupportMatrixEntry = RAMLSupportMatrixEntry
 export type PostmanSupportMatrixEntry = RAMLSupportMatrixEntry
+export type K6SupportMatrixEntry = RAMLSupportMatrixEntry
+export type EventHubsCaptureSupportMatrixEntry = RAMLSupportMatrixEntry
+export type BrokerConfigSupportMatrixEntry = RAMLSupportMatrixEntry
 
 export interface DevWebSupportMatrixResponse {
   support_matrix?: DevWebSupportMatrixEntry[]
@@ -711,6 +746,21 @@ export interface DevWebSupportMatrixResponse {
 
 export interface PostmanSupportMatrixResponse {
   support_matrix?: PostmanSupportMatrixEntry[]
+  notes?: string[]
+}
+
+export interface K6SupportMatrixResponse {
+  support_matrix?: K6SupportMatrixEntry[]
+  notes?: string[]
+}
+
+export interface EventHubsCaptureSupportMatrixResponse {
+  support_matrix?: EventHubsCaptureSupportMatrixEntry[]
+  notes?: string[]
+}
+
+export interface BrokerConfigSupportMatrixResponse {
+  support_matrix?: BrokerConfigSupportMatrixEntry[]
   notes?: string[]
 }
 
@@ -747,6 +797,60 @@ export interface EnterpriseArchiveSupportMatrixResponse {
   notes?: string[]
   tested_examples?: EnterpriseArchiveSupportMatrixExample[]
   protocol_support_matrix?: EnterpriseArchiveProtocolSupportEntry[]
+}
+
+export interface OracleEBusinessReviewFile {
+  name?: string
+  content?: string
+}
+
+export interface OracleEBusinessReviewRequest {
+  project_id?: string
+  name?: string
+  package?: string
+  source_text?: string
+  files?: OracleEBusinessReviewFile[]
+  script?: ScriptDefinition
+  metadata?: Record<string, unknown>
+  options?: {
+    require_replay_evidence?: boolean
+    block_nca_execution?: boolean
+  }
+}
+
+export interface OracleEBusinessReviewResponse {
+  package: string
+  status: string
+  project_id?: string
+  name?: string
+  source_summary?: {
+    files?: number
+    bytes?: number
+    actions?: number
+    detected_hosts?: string[]
+    source_profiles?: string[]
+  }
+  review_sections?: ImportReviewSection[]
+  repair_suggestions?: ImportRepairSuggestion[]
+  findings?: Array<{ id: string; severity: string; category: string; summary: string; detail?: string; evidence?: string[] }>
+  next_actions?: string[]
+  required_evidence?: string[]
+  support_matrix?: RAMLSupportMatrixEntry[]
+  scenario_templates?: Array<{ id: string; package: string; name: string; description: string; flow?: string[]; parameters?: string[]; evidence?: string[] }>
+  execution_posture?: {
+    posture: string
+    runner_requirement: string
+    can_execute_natively: boolean
+    blocks_execution: boolean
+    reasons?: string[]
+  }
+}
+
+export interface OracleEBusinessSupportMatrixResponse {
+  support_matrix?: RAMLSupportMatrixEntry[]
+  notes?: string[]
+  correlation_packs?: unknown[]
+  scenario_templates?: OracleEBusinessReviewResponse['scenario_templates']
 }
 
 export interface SaveJMeterImportRequest {
