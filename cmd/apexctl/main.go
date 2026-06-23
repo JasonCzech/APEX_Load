@@ -12,15 +12,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/engine"
-	_ "github.com/jasonczech/apexload/pkg/protocol/browser"
-	_ "github.com/jasonczech/apexload/pkg/protocol/eventhubs"
-	_ "github.com/jasonczech/apexload/pkg/protocol/grpc"
-	_ "github.com/jasonczech/apexload/pkg/protocol/http"
-	_ "github.com/jasonczech/apexload/pkg/protocol/java_vuser"
-	_ "github.com/jasonczech/apexload/pkg/protocol/jms"
-	_ "github.com/jasonczech/apexload/pkg/protocol/kafka"
-	_ "github.com/jasonczech/apexload/pkg/protocol/soap"
-	_ "github.com/jasonczech/apexload/pkg/protocol/websocket"
+	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
 )
 
 func main() {

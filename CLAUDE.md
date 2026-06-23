@@ -73,8 +73,8 @@ deployments/
 
 ## Protocol Interface
 All protocols implement `pkg/protocol.Protocol`. Register new protocols in `pkg/protocol/registry.go`.
-Bundled and compiled into the controller and generator binaries (see the `_` imports in
-`cmd/*/main.go`): HTTP (http/1.1, http/2), SOAP (+ WSDL import), Java-over-HTTP (`java_http`,
+Bundled and compiled into the standard binaries via `pkg/protocol/builtin`: HTTP (http/1.1, http/2),
+SOAP (+ WSDL import), Java-over-HTTP (`java_http`,
 bounded codec MVP), Java Vuser sidecar bridge (`java_vuser`, external-runner; governed and
 disabled unless runner config enables it), WebSocket, gRPC, JMS Solace, JMS IBM MQ,
 JMS Azure Service Bus (real adapter opt-in via `-tags jms_servicebus_real`),
@@ -85,8 +85,7 @@ protocol, producer-first: `eventhubs_produce` + observer-probe `eventhubs_consum
 in-memory mock by default, real azeventhubs/AMQP adapter opt-in via
 `-tags eventhubs_real`), database (SQL query/exec/transactions),
 network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP),
-and browser (replay + canary diagnostics). `apexctl` bundles the same set except
-database, java_http, and network. (`sap_gui` actions are authorable/importable via the DSL
+and browser (replay + canary diagnostics). (`sap_gui` actions are authorable/importable via the DSL
 catalog but have no registered runtime protocol — they cannot be executed.)
 
 ## Script DSL

@@ -108,7 +108,7 @@ for them to consume. Routing Kafka through the importer framework would miscateg
 ## Current Baseline (what this plan builds on)
 - **Protocol contract** — `pkg/protocol/protocol.go` defines `Init / Execute / Teardown /
   HealthCheck`. Protocols self-register in `init()` via `protocol.Register` and are pulled
-  into binaries by blank imports in `cmd/*/main.go`.
+  into standard binaries by `pkg/protocol/builtin`.
 - **JMS is the near-exact analog** — `pkg/protocol/jms/jms.go` already implements
   publish / consume / request-reply, a `brokerAdapter` interface, an in-memory mock broker
   for local replay, and "unavailable" adapters where a real broker SDK is not compiled in.

@@ -92,14 +92,14 @@ type Protocol interface {
 - **network**: DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP
 - **browser**: Playwright replay + canary diagnostics (FCP/LCP/CLS/INP/TTFB)
 
-The controller and generator binaries bundle all of the above; `apexctl` bundles the same set except
-`database`, `java_http`, and `network`.
+The controller, generator, and `apexctl` binaries bundle all of the above through
+`pkg/protocol/builtin`.
 
 **Adding a New Protocol:**
 1. Create `pkg/protocol/myproto/` package
 2. Implement the `Protocol` interface
 3. Register in `pkg/protocol/registry.go`: `RegisterProtocol(new(myProto.MyProtocol))`
-4. Import it from the controller and generator binaries if it must be executable from both surfaces
+4. Import it from `pkg/protocol/builtin` if it must be executable from the standard binaries
 
 ### `pkg/dsl`
 

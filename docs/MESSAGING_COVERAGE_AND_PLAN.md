@@ -926,7 +926,7 @@ No proto change needed — `ServerTelemetry`/`ProtocolSummary` already carry the
 
 **Acceptance criteria**
 - [ ] `pkg/protocol/eventhubs` exists with `eventhubs.go`, `realadapter_eventhubs.go` (`eventhubs_real`), `realadapter_default.go` (`!eventhubs_real`); `go build ./...` (default) and `go build -tags eventhubs_real ./...` both pass.
-- [ ] `protocol.Register("eventhubs", …)` fires via `init()`; protocol is listed by the controller and generator (blank imports in all three `cmd/*/main.go`, alpha-ordered).
+- [ ] `protocol.Register("eventhubs", …)` fires via `init()`; protocol is listed by the standard binaries through `pkg/protocol/builtin`.
 - [ ] Default build is fail-closed: any non-mock `eh_*` script returns a loud, actionable unavailable error; no AMQP/azeventhubs symbols linked into the default binary.
 - [ ] `eh_send`/`eh_send_batch`/`eh_receive`/`eh_checkpoint` exist in the catalog; `go generate ./pkg/dsl` is clean and the schemagen freshness test passes.
 - [ ] `eh_checkpoint` performs a real `UpdateCheckpoint` (verified in integration); it is NOT a no-op.
