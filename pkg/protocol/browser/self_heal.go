@@ -2,7 +2,9 @@ package browser
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -78,12 +80,31 @@ func (b *Browser) recordSelfHeal(action *protocol.Action, result *protocol.Resul
 	if result.ProtocolEvidence == nil {
 		result.ProtocolEvidence = map[string]any{}
 	}
-	result.ProtocolEvidence["selector_self_heal"] = map[string]any{
+	evidence := map[string]any{
 		"action":           action.Name,
 		"primary_selector": primary,
 		"healed_selector":  healed,
 		"candidate_kind":   candidate.Kind,
 		"confidence":       candidate.Confidence,
 		"reason":           candidate.Reason,
+	}
+	if seq := actionMetadataString(action.Metadata, "recorder_step_seq"); seq != "" {
+		evidence["recorder_step_seq"] = seq
+	}
+	result.ProtocolEvidence["selector_self_heal"] = evidence
+}
+
+func actionMetadataString(metadata map[string]any, key string) string {
+	value, ok := metadata[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case fmt.Stringer:
+		return strings.TrimSpace(typed.String())
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
 	}
 }

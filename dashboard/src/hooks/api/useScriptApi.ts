@@ -736,6 +736,40 @@ export function useScriptApi() {
     [],
   )
 
+  const validateBrowserRecordingImport = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<BrowserRecordingImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+
+      const res = await apiFetch('/scripts/import/recorder/validate', { method: 'POST', body: formData })
+      if (!res.ok) {
+        throw new Error(await errorMessageFromResponse(res))
+      }
+      return res.json() as Promise<BrowserRecordingImportResult>
+    },
+    [],
+  )
+
+  const replayBrowserRecordingImport = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<BrowserRecordingImportResult & BrowserReplayStartResponse> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+
+      const res = await apiFetch('/scripts/import/recorder/replay', { method: 'POST', body: formData })
+      if (!res.ok) {
+        throw new Error(await errorMessageFromResponse(res))
+      }
+      return res.json() as Promise<BrowserRecordingImportResult & BrowserReplayStartResponse>
+    },
+    [],
+  )
+
   const importOpenAPI = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; project_id?: string; agentforce_transform?: boolean }): Promise<OpenAPIImportResult> => {
       const formData = new FormData()
@@ -1005,6 +1039,8 @@ export function useScriptApi() {
       importHAR,
       importSalesforce,
       importBrowserRecording,
+      validateBrowserRecordingImport,
+      replayBrowserRecordingImport,
       importOpenAPI,
       importRAML,
       importPostman,
@@ -1090,6 +1126,8 @@ export function useScriptApi() {
       importHAR,
       importSalesforce,
       importBrowserRecording,
+      validateBrowserRecordingImport,
+      replayBrowserRecordingImport,
       importOpenAPI,
       importRAML,
       importPostman,

@@ -965,6 +965,8 @@ func runReplayAction(
 		return event, false
 	}
 
+	attachSelfHealSuggestion(&event)
+
 	if !ignoreThinkTime && action.ThinkTimeAfter {
 		thinkCfg := globalThinkCfg
 		if action.ThinkTime.Type != "" {

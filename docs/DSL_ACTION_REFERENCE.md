@@ -288,6 +288,7 @@ Handles the next native dialog (alert/confirm/prompt) by accepting or dismissing
 | `params.action` | enum: accept\|dismiss |  | How to respond: accept or dismiss (required). |
 | `params.dialog_type` | enum: alert\|confirm\|prompt\|beforeunload |  | Expected dialog kind for documentation/validation. |
 | `params.expected_message` | string |  | If set, the captured dialog message must contain this text. |
+| `params.match_mode` | enum: exact\|contains\|normalized |  | Message comparison mode; recorder-origin dialogs default to contains. |
 | `params.prompt_text` | string |  | Text entered into a prompt dialog when accepting. |
 | `params.wait_ms` | int |  | How long to wait for the dialog to appear (default 5000). |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
@@ -331,6 +332,19 @@ Requires one of: `target`, `selector`
 |-------|------|----------|-------------|
 | `target` | string |  | Destination URL; target or selector is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
+
+### `browser_open_window`
+
+Opens a new browser window or tab and navigates it to a URL.
+
+Requires one of: `target`, `params.url`
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Destination URL. |
+| `params.url` | string |  | Destination URL alternative to target. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -460,6 +474,33 @@ Requires one of: `wait_for`, `selector`, `target`
 | `wait_for` | object |  | Wait condition: {type, value, timeout_ms}. One of wait_for, selector, or target is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `target` | string |  | Element locator alternative to selector. |
+
+### `browser_ws_assert`
+
+Asserts that matching WebSocket events have been observed in the replayed browser page.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.url_contains` | string |  | Substring that must appear in the WebSocket URL. |
+| `params.direction` | enum: open\|sent\|received |  | Observed event direction. |
+| `params.match` | string |  | Payload match text or regex. |
+| `params.match_mode` | enum: contains\|exact\|regex |  | Payload comparison mode. |
+| `params.count` | int |  | Number of matching events required. |
+| `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
+
+### `browser_ws_wait`
+
+Waits for a WebSocket open event or frame observed in the replayed browser page.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.url_contains` | string |  | Substring that must appear in the WebSocket URL. |
+| `params.direction` | enum: open\|sent\|received |  | Observed event direction. |
+| `params.match` | string |  | Payload match text or regex. |
+| `params.match_mode` | enum: contains\|exact\|regex |  | Payload comparison mode. |
+| `params.timeout_ms` | int |  | Maximum wait in milliseconds. |
+| `params.count` | int |  | Number of matching events required. |
+| `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ## Protocol: database
 

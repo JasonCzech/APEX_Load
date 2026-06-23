@@ -5961,6 +5961,34 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
         - Scripts
+  /api/v1/scripts/import/recorder/replay:
+    post:
+      summary: Replay Recorder Import
+      description: |-
+        **Handler:** `handleReplayRecorderImport`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleReplayRecorderImport
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Scripts
+  /api/v1/scripts/import/recorder/validate:
+    post:
+      summary: Validate Recorder Import
+      description: |-
+        **Handler:** `handleValidateRecorderImport`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleValidateRecorderImport
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Scripts
   /api/v1/scripts/import/salesforce:
     post:
       summary: Import Salesforce

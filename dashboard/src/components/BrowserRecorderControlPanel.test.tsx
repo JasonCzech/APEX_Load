@@ -602,8 +602,9 @@ describe('BrowserRecorderControlPanel', () => {
     await renderPanel()
     // Enable split + dual-http checkboxes (click toggles them false→true).
     const checks = Array.from(container.querySelectorAll('.brp-convert input[type="checkbox"]')) as HTMLInputElement[]
-    expect(checks.length).toBe(2)
-    for (const c of checks) {
+    const conversionChecks = checks.filter(c => !c.parentElement?.textContent?.includes('Parameterize inputs'))
+    expect(conversionChecks.length).toBe(2)
+    for (const c of conversionChecks) {
       await act(async () => { c.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     }
     await clickButton('Save to Script Library')
@@ -611,6 +612,22 @@ describe('BrowserRecorderControlPanel', () => {
     expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({
       split_at_transactions: true,
       also_create_http_script: true,
+      parameterize: false,
+    }))
+  })
+
+  it('passes the embedded parameterize inputs toggle to convert', async () => {
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await renderPanel()
+    const parameterize = Array.from(container.querySelectorAll('.brp-convert input[type="checkbox"]'))
+      .find(input => input.parentElement?.textContent?.includes('Parameterize inputs')) as HTMLInputElement | undefined
+    expect(parameterize).toBeDefined()
+    if (!parameterize) return
+    await act(async () => { parameterize.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await clickButton('Save to Script Library')
+    await flushPromises()
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({
+      parameterize: true,
     }))
   })
 

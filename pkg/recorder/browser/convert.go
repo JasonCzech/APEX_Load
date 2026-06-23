@@ -89,6 +89,9 @@ type timelineEntry struct {
 	step      *Step
 	navURL    string
 	marker    *Marker
+	wsURL     string
+	wsFrame   *WebSocketFrame
+	wsOpen    bool
 }
 
 // Convert turns a recorded session into a browser-protocol DSL script with
@@ -165,6 +168,14 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 
 	for _, entry := range buildTimeline(session, opts.StepRange) {
 		switch {
+		case entry.wsOpen || entry.wsFrame != nil:
+			action, ok := websocketWaitAction(entry)
+			if !ok {
+				continue
+			}
+			decorate(&action, true)
+			out = append(out, sectionedAction{action: action, section: lastSection})
+			result.Stats.SyncPolicies++
 		case entry.marker != nil:
 			marker := entry.marker
 			switch marker.Kind {
@@ -327,10 +338,15 @@ func splitByTransaction(assembled []sectionedAction, baseName string, session *S
 			if depth == 0 {
 				current = newBrowserScript(fmt.Sprintf("%s — %s", baseName, sa.action.Name), session, baseURL)
 				currentActions = nil
+			} else {
+				currentActions = append(currentActions, sa)
 			}
 			depth++
 		case isTxn && fn == "lr_end_transaction":
 			if depth > 0 {
+				if depth > 1 {
+					currentActions = append(currentActions, sa)
+				}
 				depth--
 				if depth == 0 {
 					flush()
@@ -368,9 +384,9 @@ func finalizeConvertWarnings(session *Session, result *ConvertResult) {
 		for _, ws := range session.WebSockets {
 			framesCaptured += len(ws.Frames)
 		}
-		detail := "captured frames are available in the side-car HAR for network-level scripting"
+		detail := "connection-level browser_ws_wait actions were generated"
 		if framesCaptured > 0 {
-			detail = fmt.Sprintf("%d frame payload(s) were captured for future WebSocket scripting", framesCaptured)
+			detail = fmt.Sprintf("%d captured frame payload(s) were converted into browser_ws_wait synchronization where possible", framesCaptured)
 		}
 		result.Warnings = append(result.Warnings, fmt.Sprintf(
 			"%d WebSocket connection(s) observed during recording; the replayed page opens its own connections, and %s", len(session.WebSockets), detail))
@@ -494,8 +510,64 @@ func buildTimeline(session *Session, stepRange StepRange) []timelineEntry {
 			entries = append(entries, timelineEntry{timestamp: session.Markers[i].Timestamp, marker: &session.Markers[i]})
 		}
 	}
+	for _, ws := range session.WebSockets {
+		payloadFrames := 0
+		for i := range ws.Frames {
+			frame := ws.Frames[i]
+			if frame.Direction != "received" || strings.TrimSpace(frame.Payload) == "" {
+				continue
+			}
+			ts := frame.Timestamp
+			if ts.IsZero() {
+				ts = ws.OpenedAt
+			}
+			if within(ts) {
+				entries = append(entries, timelineEntry{timestamp: ts, wsURL: ws.URL, wsFrame: &ws.Frames[i]})
+				payloadFrames++
+			}
+		}
+		if payloadFrames == 0 && !ws.OpenedAt.IsZero() && within(ws.OpenedAt) {
+			entries = append(entries, timelineEntry{timestamp: ws.OpenedAt, wsURL: ws.URL, wsOpen: true})
+		}
+	}
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].timestamp.Before(entries[j].timestamp) })
 	return entries
+}
+
+func websocketWaitAction(entry timelineEntry) (dsl.Action, bool) {
+	params := map[string]any{
+		"url_contains": entry.wsURL,
+		"count":        1,
+		"timeout_ms":   10000,
+	}
+	name := "Wait for WebSocket"
+	if entry.wsOpen {
+		params["direction"] = "open"
+		if entry.wsURL != "" {
+			name = "Wait for WebSocket open " + entry.wsURL
+		}
+		return dsl.Action{Name: name, Type: "browser_ws_wait", Params: params}, true
+	}
+	if entry.wsFrame == nil {
+		return dsl.Action{}, false
+	}
+	params["direction"] = "received"
+	payload := strings.TrimSpace(entry.wsFrame.Payload)
+	if payload != "" {
+		params["match"] = truncateString(payload, 160)
+		params["match_mode"] = "contains"
+	}
+	if entry.wsURL != "" {
+		name = "Wait for WebSocket frame " + entry.wsURL
+	}
+	return dsl.Action{Name: name, Type: "browser_ws_wait", Params: params}, true
+}
+
+func truncateString(value string, limit int) string {
+	if limit <= 0 || len(value) <= limit {
+		return value
+	}
+	return value[:limit]
 }
 
 func convertStep(step Step, session *Session, opts ConvertOptions, result *ConvertResult) (dsl.Action, bool) {
@@ -507,6 +579,18 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 	case StepClick:
 		action.Name = "Click " + stepLabel(step)
 		action.Type = "browser_click"
+	case StepDblClick:
+		action.Name = "Double-click " + stepLabel(step)
+		action.Type = "browser_dblclick"
+	case StepDragAndDrop:
+		action.Name = "Drag " + stepLabel(step)
+		action.Type = "browser_drag_and_drop"
+		if strings.TrimSpace(step.TargetSelector) == "" {
+			result.Warnings = append(result.Warnings, fmt.Sprintf(
+				"step %d drag-and-drop has no replayable drop target selector and was skipped", step.Seq))
+			return dsl.Action{}, false
+		}
+		action.Params = map[string]any{"target": step.TargetSelector}
 	case StepFill:
 		action.Name = "Fill " + stepLabel(step)
 		action.Type = "browser_fill"
@@ -525,7 +609,7 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 				"step %d was marked as a data parameter; review it in the parameterization step", step.Seq))
 		}
 	case StepHandleDialog:
-		params := map[string]any{"action": "accept"}
+		params := map[string]any{"action": "accept", "match_mode": "contains"}
 		if step.DialogType != "" {
 			params["dialog_type"] = step.DialogType
 			action.Name = "Handle " + step.DialogType + " dialog"
@@ -553,8 +637,12 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 		action.Name = "Upload files to " + stepLabel(step)
 		action.Type = "browser_set_files"
 		action.Value = step.Value
+		if action.Metadata == nil {
+			action.Metadata = map[string]any{}
+		}
+		action.Metadata["source_upload_fixture"] = true
 		result.Warnings = append(result.Warnings, fmt.Sprintf(
-			"step %d uploads file(s) %q; replace the recorded names with paths readable by the replay engine", step.Seq, step.Value))
+			"step %d uploads file(s) %q; bind the recorded names to fixture paths readable by the replay engine during parameterization", step.Seq, step.Value))
 	case StepAssert:
 		return assertAction(step, best, result)
 	case StepSwitchWindow:
@@ -674,6 +762,10 @@ func attachStepMetadata(action *dsl.Action, step Step) {
 	if action.Metadata == nil {
 		action.Metadata = map[string]any{}
 	}
+	if step.Seq > 0 {
+		action.Metadata["recorder_step_seq"] = step.Seq
+		action.Metadata["source_step_index"] = step.Seq
+	}
 	if len(step.Candidates) > 0 {
 		action.Metadata["source_selector_candidates"] = step.Candidates
 		action.Metadata["source_selector_confidence"] = step.Candidates[0].Confidence
@@ -692,6 +784,9 @@ func attachStepMetadata(action *dsl.Action, step Step) {
 	}
 	if step.Masked {
 		action.Metadata["source_masked_secret"] = true
+	}
+	if len(step.TargetCandidates) > 0 {
+		action.Metadata["source_target_selector_candidates"] = step.TargetCandidates
 	}
 }
 

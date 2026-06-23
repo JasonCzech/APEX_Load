@@ -13,6 +13,9 @@ const apiMock = {
   importHAR: vi.fn(),
   importSalesforce: vi.fn(),
   importBrowserRecording: vi.fn(),
+  validateBrowserRecordingImport: vi.fn(),
+  replayBrowserRecordingImport: vi.fn(),
+  startDraftBrowserReplaySession: vi.fn(),
   importOpenAPI: vi.fn(),
   importRAML: vi.fn(),
   getOpenAPISupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
@@ -39,6 +42,29 @@ vi.mock('./LinkedCodePane', () => ({
   ),
 }))
 
+vi.mock('./BrowserReplayProgress', () => ({
+  default: ({ replaySessionId, onComplete }: { replaySessionId: string; onComplete?: (report: unknown, events: unknown[]) => void }) => (
+    <div data-testid="replay-progress">
+      <span>Replay {replaySessionId}</span>
+      <button
+        type="button"
+        onClick={() => onComplete?.({
+          replay_session_id: replaySessionId,
+          success: true,
+          group: 'Recorder import',
+          protocol: 'browser',
+          started_at: '2026-06-22T00:00:00Z',
+          completed_at: '2026-06-22T00:00:01Z',
+          events: [{ event_id: 'evt-1', action_type: 'browser_click', success: true }],
+          repair_suggestions: [],
+        }, [])}
+      >
+        Complete Replay
+      </button>
+    </div>
+  ),
+}))
+
 describe('ProtocolAssetImport', () => {
   let container: HTMLDivElement
   let root: Root
@@ -57,6 +83,22 @@ describe('ProtocolAssetImport', () => {
     apiMock.getOpenAPISupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     apiMock.getRAMLSupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     apiMock.getAsyncAPISupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
+    apiMock.startDraftBrowserReplaySession.mockResolvedValue({ replay_session_id: 'replay-recorder-1', replay_session: { id: 'replay-recorder-1' } })
+    apiMock.createScript.mockResolvedValue({
+      id: 'script-saved',
+      name: 'Imported Chrome Recording',
+      protocol: 'browser',
+      version: '1.0',
+      project_id: 'project-1',
+      created_at: '2026-01-01T00:00:00Z',
+      script: {
+        name: 'Imported Chrome Recording',
+        version: '1.0',
+        protocol: 'browser',
+        config: { base_url: 'https://shop.example.test' },
+        actions: [],
+      },
+    })
     const postmanResult = {
       scripts: [],
       script: {
@@ -1297,6 +1339,83 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('role=button[name="Sign in"]')
     expect(container.textContent).toContain('95')
     expect(container.textContent).toContain('chrome_recorder_step:scroll')
+  })
+
+  it('requires replay validation before normal recorder import save and attaches evidence', async () => {
+    const onImported = vi.fn()
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="recorder-export" projectId="project-1" onImported={onImported} />)
+    })
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+    const file = new File(['{"title":"Login","steps":[]}'], 'login.json', { type: 'application/json' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Recording'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save To Script Library'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Run replay validation successfully before saving')
+
+    const replayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Run Replay Validation'))
+    expect(replayButton).toBeDefined()
+    if (!replayButton) return
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledWith(expect.objectContaining({
+      ignore_think_time: true,
+      script: expect.objectContaining({ protocol: 'browser', project_id: 'project-1' }),
+    }))
+
+    const completeReplay = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Complete Replay'))
+    expect(completeReplay).toBeDefined()
+    if (!completeReplay) return
+    await act(async () => {
+      completeReplay.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('Replay validation passed')
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({
+        import: expect.objectContaining({
+          preserved: expect.objectContaining({
+            replay_validation: expect.objectContaining({
+              status: 'completed',
+              success: true,
+              replay_session_id: 'replay-recorder-1',
+              events: 1,
+              draft_override: false,
+            }),
+          }),
+        }),
+      }),
+    }), 'project-1')
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ id: 'script-saved' })],
+    }))
   })
 
   it('opts into the Agentforce replay-readiness transform and renders applied changes', async () => {

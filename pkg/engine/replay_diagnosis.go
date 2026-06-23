@@ -16,6 +16,73 @@ func attachReplayDiagnosis(event *ReplayActionEvent) {
 	event.RepairSuggestions = replayRepairSuggestionsForDiagnosis(*event, diagnosis)
 }
 
+func attachSelfHealSuggestion(event *ReplayActionEvent) {
+	if event == nil || !event.Success || len(event.ProtocolEvidence) == 0 {
+		return
+	}
+	evidence, ok := event.ProtocolEvidence["selector_self_heal"].(map[string]any)
+	if !ok || len(evidence) == 0 {
+		return
+	}
+	healed := selfHealEvidenceString(evidence, "healed_selector")
+	if healed == "" {
+		return
+	}
+	previous := selfHealEvidenceString(evidence, "primary_selector")
+	recorderSeq := selfHealEvidenceString(evidence, "recorder_step_seq")
+	if recorderSeq == "" && event.SourceStepIndex > 0 {
+		recorderSeq = fmt.Sprint(event.SourceStepIndex)
+	}
+	confidence := selfHealConfidence(evidence["confidence"])
+	baseID := event.EventID
+	if baseID == "" {
+		baseID = fmt.Sprintf("%s-%d", event.Phase, event.EventIndex)
+	}
+	fields := map[string]string{
+		"selector":          healed,
+		"previous_selector": previous,
+	}
+	if recorderSeq != "" {
+		fields["recorder_step_seq"] = recorderSeq
+	}
+	event.RepairSuggestions = append(event.RepairSuggestions, ReplayRepairSuggestion{
+		ID:             baseID + ":promote-selector",
+		Title:          "Promote self-healed selector",
+		Description:    "Replay succeeded by using a fallback selector. Promote that selector so the next replay starts with the working locator.",
+		DraftPatchType: "promote_selector",
+		Action:         event.ActionName,
+		Confidence:     confidence,
+		Fields:         fields,
+	})
+}
+
+func selfHealEvidenceString(evidence map[string]any, key string) string {
+	value, ok := evidence[key]
+	if !ok || value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func selfHealConfidence(value any) float64 {
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case float32:
+		return float64(typed)
+	case int:
+		return float64(typed)
+	case int64:
+		return float64(typed)
+	case string:
+		var parsed float64
+		if _, err := fmt.Sscanf(typed, "%f", &parsed); err == nil {
+			return parsed
+		}
+	}
+	return 0.8
+}
+
 func classifyReplayFailure(event ReplayActionEvent) ReplayDiagnosis {
 	errorText := strings.TrimSpace(event.ErrorMessage)
 	statusText := ""

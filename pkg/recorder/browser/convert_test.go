@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -187,6 +188,62 @@ func TestConvertWarningsAndSkips(t *testing.T) {
 		if !found {
 			t.Errorf("warnings missing %q: %v", fragment, result.Warnings)
 		}
+	}
+}
+
+func TestConvertExpandedBrowserCaptureActions(t *testing.T) {
+	source := &selector.ElementMetadata{Tag: "div", ID: "card", CSSPath: "#card"}
+	target := &selector.ElementMetadata{Tag: "div", DataTestID: "lane-done", Attributes: map[string]string{"data-testid": "lane-done"}, CSSPath: "#done"}
+	upload := &selector.ElementMetadata{Tag: "input", ID: "avatar", Type: "file", CSSPath: "#avatar"}
+	button := &selector.ElementMetadata{Tag: "button", ID: "row", CSSPath: "#row"}
+	base := ts(0)
+	session := &Session{ID: "rec_expanded", StartURL: "https://shop.example/board", StartedAt: base}
+	session.appendStep(Step{Kind: StepDblClick, Timestamp: ts(1000), Element: button, Candidates: selector.Candidates(*button)})
+	session.appendStep(Step{
+		Kind:             StepDragAndDrop,
+		Timestamp:        ts(2000),
+		Element:          source,
+		Candidates:       selector.Candidates(*source),
+		TargetSelector:   `[data-testid="lane-done"]`,
+		TargetCandidates: selector.Candidates(*target),
+	})
+	session.appendStep(Step{Kind: StepSetFiles, Value: "avatar.png", Timestamp: ts(3000), Element: upload, Candidates: selector.Candidates(*upload)})
+	session.WebSockets = []WebSocketSummary{{
+		URL:      "wss://shop.example/live",
+		OpenedAt: ts(3500),
+		Frames: []WebSocketFrame{{
+			Direction: "received",
+			Payload:   `{"type":"ready","token":"abc"}`,
+			Timestamp: ts(3600),
+		}},
+	}}
+
+	result := Convert(session, ConvertOptions{})
+	types := actionTypes(result.Script.Actions)
+	want := []string{"browser_navigate", "browser_dblclick", "browser_drag_and_drop", "browser_set_files", "browser_ws_wait"}
+	if strings.Join(types, ",") != strings.Join(want, ",") {
+		t.Fatalf("actions = %v, want %v", types, want)
+	}
+	drag := result.Script.Actions[2]
+	if drag.Params["target"] != `[data-testid="lane-done"]` {
+		t.Errorf("drag target = %+v", drag.Params)
+	}
+	if drag.Metadata["recorder_step_seq"] != 2 {
+		t.Errorf("drag recorder_step_seq = %v", drag.Metadata["recorder_step_seq"])
+	}
+	if drag.Metadata["source_target_selector_candidates"] == nil {
+		t.Errorf("drag missing target candidates metadata: %+v", drag.Metadata)
+	}
+	uploadAction := result.Script.Actions[3]
+	if uploadAction.Metadata["source_upload_fixture"] != true {
+		t.Errorf("upload metadata = %+v", uploadAction.Metadata)
+	}
+	ws := result.Script.Actions[4]
+	if ws.Params["direction"] != "received" || ws.Params["match_mode"] != "contains" {
+		t.Errorf("ws params = %+v", ws.Params)
+	}
+	if !strings.Contains(fmt.Sprint(ws.Params["match"]), "ready") {
+		t.Errorf("ws match = %v", ws.Params["match"])
 	}
 }
 

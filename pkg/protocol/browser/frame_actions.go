@@ -232,7 +232,7 @@ func (b *Browser) dispatchSwitchFrame(ctx context.Context, action *protocol.Acti
 	if page := b.currentPage(); page != nil {
 		locator := page.FrameLocator(selector).Locator("body")
 		if err := b.waitLocatorVisible(ctx, locator, b.actionTimeout(action)); err != nil {
-			return err
+			return fmt.Errorf("browser_switch_frame: frame %q not found or never became ready: %w", selector, err)
 		}
 	}
 	b.currentFrameSelector = selector

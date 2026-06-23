@@ -50,7 +50,7 @@ func TestConvertChromeRecording(t *testing.T) {
 	for _, action := range script.Actions {
 		types = append(types, action.Type)
 	}
-	want := []string{"browser_navigate", "browser_fill", "browser_click", "browser_press_key", "browser_wait", "browser_dblclick", "browser_hover"}
+	want := []string{"browser_navigate", "browser_fill", "browser_click", "browser_press_key", "browser_wait", "browser_dblclick", "browser_hover", "browser_evaluate_js"}
 	if strings.Join(types, ",") != strings.Join(want, ",") {
 		t.Fatalf("action types = %v, want %v", types, want)
 	}
@@ -91,11 +91,16 @@ func TestConvertChromeRecording(t *testing.T) {
 		t.Errorf("wait = %+v", wait.WaitFor)
 	}
 
-	// scroll and close are unsupported
-	if result.Stats.SkippedSteps != 2 {
-		t.Errorf("skipped = %d, want 2 (%v)", result.Stats.SkippedSteps, result.Unsupported)
+	scroll := script.Actions[7]
+	if scroll.Metadata["review_required"] != true {
+		t.Errorf("scroll metadata = %+v, want review_required", scroll.Metadata)
 	}
-	if len(result.Unsupported) != 2 {
+
+	// close is unsupported; scroll is preserved as review-gated JS.
+	if result.Stats.SkippedSteps != 1 {
+		t.Errorf("skipped = %d, want 1 (%v)", result.Stats.SkippedSteps, result.Unsupported)
+	}
+	if len(result.Unsupported) != 1 {
 		t.Errorf("unsupported = %v", result.Unsupported)
 	}
 }

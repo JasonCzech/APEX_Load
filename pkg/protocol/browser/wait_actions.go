@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -134,7 +135,11 @@ func (b *Browser) runPostActionSync(ctx context.Context, action *protocol.Action
 		}
 		return b.waitForDOMStable(waitCtx, stable)
 	default:
-		return nil
+		slog.Warn("unknown browser sync type; falling back to network_idle", "sync_type", sync.Type, "action", action.Name)
+		return b.currentPage().WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+			State:   playwright.LoadStateNetworkidle,
+			Timeout: playwright.Float(b.timeoutMS(waitCtx, b.waitTimeout(sync.TimeoutMs))),
+		})
 	}
 }
 

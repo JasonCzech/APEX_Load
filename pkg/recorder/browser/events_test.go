@@ -50,6 +50,15 @@ func TestStepFromEvent(t *testing.T) {
 			wantNumCand: 2,
 		},
 		{
+			name: "drag and drop captures target candidates",
+			payload: `{"kind":"drag_and_drop","ts":1700000000000,
+				"element":{"tag":"div","id":"source","css_path":"#source"},
+				"target_element":{"tag":"div","data_test_id":"drop-zone","attributes":{"data-testid":"drop-zone"},"css_path":"#target"}}`,
+			wantKind:    StepDragAndDrop,
+			wantBest:    "#source",
+			wantNumCand: 1,
+		},
+		{
 			name:      "assert without element still valid",
 			payload:   `{"kind":"assert","value":"Order complete","ts":1700000000000}`,
 			wantKind:  StepAssert,
@@ -82,6 +91,14 @@ func TestStepFromEvent(t *testing.T) {
 			}
 			if got := step.bestSelector(); got != tt.wantBest {
 				t.Errorf("bestSelector() = %q, want %q", got, tt.wantBest)
+			}
+			if tt.wantKind == StepDragAndDrop {
+				if step.TargetSelector != `[data-testid="drop-zone"]` {
+					t.Errorf("TargetSelector = %q", step.TargetSelector)
+				}
+				if len(step.TargetCandidates) == 0 {
+					t.Fatal("TargetCandidates empty")
+				}
 			}
 		})
 	}
@@ -150,6 +167,26 @@ func TestUpdateSwitchWindowStepIgnoresBlankURL(t *testing.T) {
 	}
 	if session.Steps[0].Value != "about:blank" || session.Steps[0].URL != "about:blank" {
 		t.Fatalf("stored step = %#v, want unchanged about:blank", session.Steps[0])
+	}
+}
+
+func TestPromoteStepSelectorPrependsHighConfidenceCandidate(t *testing.T) {
+	session := &Session{}
+	el := &selector.ElementMetadata{Tag: "button", ID: "old", CSSPath: "#old"}
+	step := session.appendStep(Step{Kind: StepClick, Element: el, Candidates: selector.Candidates(*el)})
+
+	updated, ok := session.PromoteStepSelector(step.Seq, `[data-testid="new"]`)
+	if !ok {
+		t.Fatal("PromoteStepSelector() ok = false")
+	}
+	if updated.Candidates[0].Value != `[data-testid="new"]` || updated.Candidates[0].Confidence != 100 {
+		t.Fatalf("promoted candidates = %+v", updated.Candidates)
+	}
+	if session.Steps[0].Candidates[0].Value != `[data-testid="new"]` {
+		t.Fatalf("stored candidates = %+v", session.Steps[0].Candidates)
+	}
+	if got := session.Steps[0].bestSelector(); got != `[data-testid="new"]` {
+		t.Fatalf("best selector = %q", got)
 	}
 }
 

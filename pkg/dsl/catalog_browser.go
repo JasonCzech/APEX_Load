@@ -43,6 +43,18 @@ func browserActionSpecs() []ActionSpec {
 			Validate: browserValidator(browserRequireTargetOrSelector, nil),
 		},
 		{
+			Type:         "browser_open_window",
+			Protocols:    []string{"browser"},
+			Summary:      "Opens a new browser window or tab and navigates it to a URL.",
+			RequireOneOf: [][]string{{"target", "params.url"}},
+			Fields: []FieldSpec{
+				{Name: "target", Kind: FieldKindString, Doc: "Destination URL."},
+				{Name: "params.url", Kind: FieldKindString, Doc: "Destination URL alternative to target."},
+				fieldSync, fieldCapture,
+			},
+			Validate: browserValidator(browserOpenWindowChecks, nil),
+		},
+		{
 			Type:         "browser_click",
 			Protocols:    []string{"browser"},
 			Summary:      "Clicks an element.",
@@ -164,6 +176,35 @@ func browserActionSpecs() []ActionSpec {
 			},
 		},
 		{
+			Type:      "browser_ws_wait",
+			Protocols: []string{"browser"},
+			Summary:   "Waits for a WebSocket open event or frame observed in the replayed browser page.",
+			Fields: []FieldSpec{
+				{Name: "params.url_contains", Kind: FieldKindString, Doc: "Substring that must appear in the WebSocket URL."},
+				{Name: "params.direction", Kind: FieldKindEnum, Enum: []string{"open", "sent", "received"}, Doc: "Observed event direction."},
+				{Name: "params.match", Kind: FieldKindString, Doc: "Payload match text or regex."},
+				{Name: "params.match_mode", Kind: FieldKindEnum, Enum: []string{"contains", "exact", "regex"}, Doc: "Payload comparison mode."},
+				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Maximum wait in milliseconds."},
+				{Name: "params.count", Kind: FieldKindInt, Doc: "Number of matching events required."},
+				fieldCapture,
+			},
+			Validate: browserValidator(nil, browserWSChecks),
+		},
+		{
+			Type:      "browser_ws_assert",
+			Protocols: []string{"browser"},
+			Summary:   "Asserts that matching WebSocket events have been observed in the replayed browser page.",
+			Fields: []FieldSpec{
+				{Name: "params.url_contains", Kind: FieldKindString, Doc: "Substring that must appear in the WebSocket URL."},
+				{Name: "params.direction", Kind: FieldKindEnum, Enum: []string{"open", "sent", "received"}, Doc: "Observed event direction."},
+				{Name: "params.match", Kind: FieldKindString, Doc: "Payload match text or regex."},
+				{Name: "params.match_mode", Kind: FieldKindEnum, Enum: []string{"contains", "exact", "regex"}, Doc: "Payload comparison mode."},
+				{Name: "params.count", Kind: FieldKindInt, Doc: "Number of matching events required."},
+				fieldCapture,
+			},
+			Validate: browserValidator(nil, browserWSChecks),
+		},
+		{
 			Type:      "browser_screenshot",
 			Protocols: []string{"browser"},
 			Summary:   "Captures a screenshot of the current page, or of one element when a locator is set.",
@@ -220,6 +261,7 @@ func browserActionSpecs() []ActionSpec {
 				{Name: "params.action", Kind: FieldKindEnum, Enum: []string{"accept", "dismiss"}, Doc: "How to respond: accept or dismiss (required)."},
 				{Name: "params.dialog_type", Kind: FieldKindEnum, Enum: []string{"alert", "confirm", "prompt", "beforeunload"}, Doc: "Expected dialog kind for documentation/validation."},
 				{Name: "params.expected_message", Kind: FieldKindString, Doc: "If set, the captured dialog message must contain this text."},
+				{Name: "params.match_mode", Kind: FieldKindEnum, Enum: []string{"exact", "contains", "normalized"}, Doc: "Message comparison mode; recorder-origin dialogs default to contains."},
 				{Name: "params.prompt_text", Kind: FieldKindString, Doc: "Text entered into a prompt dialog when accepting."},
 				{Name: "params.wait_ms", Kind: FieldKindInt, Doc: "How long to wait for the dialog to appear (default 5000)."},
 				fieldCapture,
@@ -234,12 +276,19 @@ func browserHandleDialogChecks(label string, action Action) []string {
 	value := strings.ToLower(strings.TrimSpace(raw))
 	switch value {
 	case "accept", "dismiss":
-		return nil
 	case "":
 		return []string{fmt.Sprintf("%s: browser_handle_dialog requires params.action (accept or dismiss)", label)}
 	default:
 		return []string{fmt.Sprintf("%s: browser_handle_dialog params.action must be accept or dismiss, got %q", label, value)}
 	}
+	if mode, ok := actionParamStringValue(action.Params, "match_mode"); ok {
+		switch strings.ToLower(strings.TrimSpace(mode)) {
+		case "", "exact", "contains", "normalized":
+		default:
+			return []string{fmt.Sprintf("%s: browser_handle_dialog params.match_mode must be exact, contains, or normalized, got %q", label, mode)}
+		}
+	}
+	return nil
 }
 
 // browserValidator composes the shared browser validation pipeline: the
@@ -265,6 +314,32 @@ func browserRequireTargetOrSelector(label string, action Action) []string {
 		return []string{fmt.Sprintf("%s: missing target or selector", label)}
 	}
 	return nil
+}
+
+func browserOpenWindowChecks(label string, action Action) []string {
+	if strings.TrimSpace(action.Target) == "" {
+		if urlValue, ok := actionParamStringValue(action.Params, "url"); !ok || strings.TrimSpace(urlValue) == "" {
+			return []string{fmt.Sprintf("%s: browser_open_window requires target or params.url", label)}
+		}
+	}
+	return nil
+}
+
+func browserWSChecks(label string, action Action) []string {
+	var issues []string
+	if direction, ok := actionParamStringValue(action.Params, "direction"); ok && strings.TrimSpace(direction) != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(direction)), "open", "sent", "received") {
+		issues = append(issues, fmt.Sprintf("%s: %s params.direction must be open, sent, or received", label, action.Type))
+	}
+	if mode, ok := actionParamStringValue(action.Params, "match_mode"); ok && strings.TrimSpace(mode) != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(mode)), "contains", "exact", "regex") {
+		issues = append(issues, fmt.Sprintf("%s: %s params.match_mode must be contains, exact, or regex", label, action.Type))
+	}
+	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
+		issues = append(issues, fmt.Sprintf("%s: %s params.timeout_ms must be >= 0", label, action.Type))
+	}
+	if count, ok := actionParamIntValue(action.Params, "count"); ok && count <= 0 {
+		issues = append(issues, fmt.Sprintf("%s: %s params.count must be > 0", label, action.Type))
+	}
+	return issues
 }
 
 // browserRequireElementLocator is the element-action variant of

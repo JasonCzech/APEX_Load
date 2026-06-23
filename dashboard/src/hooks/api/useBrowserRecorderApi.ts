@@ -24,6 +24,8 @@ export type BrowserRecorderStep = {
   title?: string
   frame_selector?: string
   candidates?: { kind: string; value: string; confidence: number; reason?: string }[]
+  target_selector?: string
+  target_candidates?: { kind: string; value: string; confidence: number; reason?: string }[]
   section?: string
   excluded?: boolean
   deleted?: boolean
@@ -127,6 +129,7 @@ export type BrowserRecorderConvertRequest = {
   end_seq?: number
   split_at_transactions?: boolean
   also_create_http_script?: boolean
+  parameterize?: boolean
 }
 
 type BrowserRecorderSessionEnvelope = {
@@ -281,7 +284,7 @@ export function useBrowserRecorderApi() {
   )
 
   const updateBrowserRecordingStep = useCallback(
-    (id: string, seq: number, update: { excluded?: boolean; mark_secret?: boolean; mark_param?: boolean }) =>
+    (id: string, seq: number, update: { excluded?: boolean; mark_secret?: boolean; mark_param?: boolean; promote_selector?: string }) =>
       recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/steps/${seq}`, {
         method: 'PATCH',
         body: JSON.stringify(update),

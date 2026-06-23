@@ -7,7 +7,7 @@ import {
   type BrowserRecorderStep,
   type BrowserRecorderTransactionSuggestion,
 } from '../hooks/api/useBrowserRecorderApi'
-import { type StoredScript } from '../types'
+import { type BrowserReplayReport, type ReplayRepairSuggestion, type StoredScript } from '../types'
 import { type RecorderImportResult, type SalesforceImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import {
@@ -136,8 +136,10 @@ export default function BrowserRecorderControlPanel({
   const [noteText, setNoteText] = useState('')
   const [splitAtTransactions, setSplitAtTransactions] = useState(false)
   const [alsoCreateHTTP, setAlsoCreateHTTP] = useState(false)
+  const [parameterizeInputs, setParameterizeInputs] = useState(false)
   const [suggestions, setSuggestions] = useState<BrowserRecorderTransactionSuggestion[]>([])
   const [replaySessionId, setReplaySessionId] = useState<string | null>(null)
+  const [lastVerifyReport, setLastVerifyReport] = useState<BrowserReplayReport | null>(null)
 
   const showFeedback = (msg: string, type: 'success' | 'error' = 'success') => {
     setFeedback(msg)
@@ -328,7 +330,19 @@ export default function BrowserRecorderControlPanel({
     name: scriptName || undefined,
     split_at_transactions: splitAtTransactions,
     also_create_http_script: alsoCreateHTTP,
+    parameterize: parameterizeInputs,
   })
+
+  const confirmReplaySaveRisk = () => {
+    if (!stopped) return true
+    if (!lastVerifyReport) {
+      return true
+    }
+    if (!lastVerifyReport.success) {
+      return window.confirm('The latest replay verification found issues. Save this script anyway?') !== false
+    }
+    return true
+  }
 
   const handlePreview = async () => {
     setBusy(true)
@@ -345,6 +359,7 @@ export default function BrowserRecorderControlPanel({
   }
 
   const handleSave = async () => {
+    if (!confirmReplaySaveRisk()) return
     setBusy(true)
     try {
       if (api.browserRecorderBridge) {
@@ -442,6 +457,7 @@ export default function BrowserRecorderControlPanel({
   const handleVerify = async () => {
     setBusy(true)
     try {
+      setLastVerifyReport(null)
       const res = await api.verifyBrowserRecording(sessionId)
       setReplaySessionId(res.replay_session_id)
       showFeedback('Verifying — replaying the recorded script')
@@ -450,6 +466,39 @@ export default function BrowserRecorderControlPanel({
     } finally {
       setBusy(false)
     }
+  }
+
+  const handleReplayComplete = (report: BrowserReplayReport | null) => {
+    setLastVerifyReport(report)
+    if (!report) {
+      showFeedback('Replay verification stopped before a final report was available', 'error')
+      return
+    }
+    if (report.success) {
+      showFeedback('Replay verification passed')
+    } else {
+      showFeedback('Replay verification found issues to review', 'error')
+    }
+  }
+
+  const handleApplyReplaySuggestion = async (suggestion: ReplayRepairSuggestion) => {
+    if (suggestion.draft_patch_type !== 'promote_selector') {
+      return
+    }
+    const fields = suggestion.fields || {}
+    const selector = typeof fields.selector === 'string' ? fields.selector.trim() : ''
+    const seqRaw = fields.recorder_step_seq
+    const seq = typeof seqRaw === 'number' ? seqRaw : Number(seqRaw)
+    if (!selector || !Number.isFinite(seq)) {
+      showFeedback('This replay suggestion is missing the original recorder step or selector', 'error')
+      return
+    }
+    const patched = await api.updateBrowserRecordingStep(sessionId, seq, { promote_selector: selector })
+    setSession(patched.session)
+    setLastVerifyReport(null)
+    const verify = await api.verifyBrowserRecording(sessionId)
+    setReplaySessionId(verify.replay_session_id)
+    showFeedback(`Selector promoted for step #${seq}; verifying again`)
   }
 
   const editableScript = (preview?.script as ScriptDefinition | undefined) || savedScript?.script
@@ -809,6 +858,8 @@ export default function BrowserRecorderControlPanel({
           replaySessionId={replaySessionId}
           projectId={session.project_id}
           bridge={api.browserRecorderBridge}
+          onApplySuggestion={handleApplyReplaySuggestion}
+          onComplete={handleReplayComplete}
           onDismiss={() => setReplaySessionId(null)}
         />
       )}
@@ -834,6 +885,16 @@ export default function BrowserRecorderControlPanel({
               <input type="checkbox" checked={alsoCreateHTTP} onChange={e => setAlsoCreateHTTP(e.target.checked)} />
               <span>Also create a protocol-level HTTP script from the recorded HAR</span>
             </label>
+          )}
+          <label className="rec-checkbox-row">
+            <input type="checkbox" checked={parameterizeInputs} onChange={e => setParameterizeInputs(e.target.checked)} />
+            <span>Parameterize inputs</span>
+          </label>
+          {!lastVerifyReport && (
+            <div className="brp-hint">Replay verification has not completed for this recording.</div>
+          )}
+          {lastVerifyReport && !lastVerifyReport.success && (
+            <div className="rec-feedback error">Latest replay verification found issues. Save is still available as an explicit draft decision.</div>
           )}
           {showSalesforceHandoff && (
             <div className="brp-hint">

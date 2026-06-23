@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
@@ -350,6 +351,10 @@ func (s *Server) writeBrowserRecordingControlResult(w http.ResponseWriter, sessi
 		return
 	}
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
 		if strings.Contains(err.Error(), "not live") {
 			writeError(w, http.StatusConflict, err.Error())
 			return
@@ -371,6 +376,9 @@ type browserRecordingConvertRequest struct {
 	// AlsoCreateHTTPScript additionally generates a protocol-level HTTP script
 	// from the recorded HAR (dual-script generation).
 	AlsoCreateHTTPScript bool `json:"also_create_http_script,omitempty"`
+	// Parameterize applies safe auto-parameterization suggestions to the
+	// converted browser script(s) before preview/save.
+	Parameterize bool `json:"parameterize,omitempty"`
 }
 
 // convertBrowserRecording runs the shared conversion path for preview and
@@ -394,6 +402,9 @@ func (s *Server) convertBrowserRecording(artifact *recbrowser.Session, info *Bro
 		}
 		sc.ProjectID = projectID
 		attachRecordingProvenance(sc, artifact, info)
+		if req.Parameterize {
+			applyAutoParameterization(sc)
+		}
 	}
 	if result.Script != nil {
 		result.Script.ProjectID = projectID
@@ -430,6 +441,27 @@ func attachRecordingProvenance(script *dsl.Script, artifact *recbrowser.Session,
 	if len(artifact.Annotations) > 0 {
 		script.Metadata.Import.Preserved["recorded_annotations"] = len(artifact.Annotations)
 	}
+}
+
+func applyAutoParameterization(script *dsl.Script) {
+	if script == nil {
+		return
+	}
+	result := paramize.Suggest(script, paramize.Options{EnableDataParams: true, EnableSecrets: true})
+	selected := make(map[string]bool)
+	for _, suggestion := range result.Suggestions {
+		if suggestion.AutoApply && !suggestion.HighRisk {
+			selected[suggestion.ID] = true
+		}
+	}
+	if len(selected) == 0 {
+		return
+	}
+	applied, _, err := paramize.ApplySuggestions(script, result.Suggestions, selected)
+	if err != nil || applied == nil {
+		return
+	}
+	*script = *applied
 }
 
 // createHTTPScriptFromHAR converts the recorded side-car HAR into a
@@ -626,9 +658,10 @@ func (s *Server) handleUpdateBrowserRecordingStep(w http.ResponseWriter, r *http
 		return
 	}
 	var req struct {
-		Excluded *bool `json:"excluded,omitempty"`
-		Secret   *bool `json:"mark_secret,omitempty"`
-		Param    *bool `json:"mark_param,omitempty"`
+		Excluded        *bool   `json:"excluded,omitempty"`
+		Secret          *bool   `json:"mark_secret,omitempty"`
+		Param           *bool   `json:"mark_param,omitempty"`
+		PromoteSelector *string `json:"promote_selector,omitempty"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -646,7 +679,17 @@ func (s *Server) handleUpdateBrowserRecordingStep(w http.ResponseWriter, r *http
 		s.writeBrowserRecordingControlResult(w, session, ok, err)
 		return
 	}
-	writeError(w, http.StatusBadRequest, "no step update provided (excluded, mark_secret, or mark_param)")
+	if req.PromoteSelector != nil {
+		selector := strings.TrimSpace(*req.PromoteSelector)
+		if selector == "" {
+			writeError(w, http.StatusBadRequest, "promote_selector cannot be empty")
+			return
+		}
+		session, ok, err := s.browserRecording.PromoteStepSelector(id, seq, selector)
+		s.writeBrowserRecordingControlResult(w, session, ok, err)
+		return
+	}
+	writeError(w, http.StatusBadRequest, "no step update provided (excluded, mark_secret, mark_param, or promote_selector)")
 }
 
 func (s *Server) handleSuggestBrowserRecordingTransactions(w http.ResponseWriter, r *http.Request) {

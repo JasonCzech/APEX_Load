@@ -372,6 +372,35 @@ func TestBrowserRecordingManagerStopRequested(t *testing.T) {
 	}
 }
 
+func TestBrowserRecordingManagerPromoteStepSelectorOnStoppedArtifact(t *testing.T) {
+	m := NewBrowserRecordingManager(NewHub())
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	fake.install(m)
+
+	started, err := m.Start(BrowserRecordingStartRequest{StartURL: "https://shop.example/login"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Stop(started.ID); !ok {
+		t.Fatal("Stop() did not find session")
+	}
+	waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)
+
+	patched, ok, err := m.PromoteStepSelector(started.ID, 2, `[data-testid="healed-go"]`)
+	if err != nil || !ok {
+		t.Fatalf("PromoteStepSelector() ok=%v err=%v", ok, err)
+	}
+	if len(patched.Steps) < 2 {
+		t.Fatalf("patched steps = %+v", patched.Steps)
+	}
+	if got := patched.Steps[1].Candidates[0].Value; got != `[data-testid="healed-go"]` {
+		t.Fatalf("promoted selector = %q", got)
+	}
+	if got := fake.session.Steps[1].Candidates[0].Value; got != `[data-testid="healed-go"]` {
+		t.Fatalf("final artifact selector = %q", got)
+	}
+}
+
 func TestBrowserRecordingManagerStopIsIdempotent(t *testing.T) {
 	m := NewBrowserRecordingManager(NewHub())
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())

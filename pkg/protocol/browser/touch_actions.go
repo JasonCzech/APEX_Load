@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	playwright "github.com/playwright-community/playwright-go"
 )
 
 func (b *Browser) dispatchTap(ctx context.Context, action *protocol.Action, selector string) error {
@@ -84,13 +85,19 @@ func normalizeSwipeDirection(direction string) string {
 }
 
 func (b *Browser) runTouchScript(ctx context.Context, action *protocol.Action, selector, operation, label string) error {
-	if err := b.waitVisibleWithTimeout(ctx, selector, b.actionTimeout(action)); err != nil {
+	if err := b.waitVisibleForAction(ctx, action, selector); err != nil {
 		return err
 	}
+	locator, ok := b.actionLocator(action, selector)
+	if !ok {
+		page := b.currentPage()
+		if page == nil {
+			return fmt.Errorf("%s failed: no active page", label)
+		}
+		locator = page.Locator(selector)
+	}
 
-	var evalErr string
-	expression := fmt.Sprintf(`(() => {
-		const el = document.querySelector(%q);
+	expression := fmt.Sprintf(`(el) => {
 		if (!el) {
 			return 'selector not found';
 		}
@@ -164,10 +171,14 @@ func (b *Browser) runTouchScript(ctx context.Context, action *protocol.Action, s
 		};
 		%s
 		return '';
-	})()`, selector, operation)
-	if err := b.evaluatePageExpression(ctx, expression, &evalErr); err != nil {
+	}`, operation)
+	value, err := locator.Evaluate(expression, nil, playwright.LocatorEvaluateOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
+	})
+	if err != nil {
 		return err
 	}
+	evalErr, _ := value.(string)
 	if evalErr != "" {
 		return fmt.Errorf("%s failed: %s", label, evalErr)
 	}

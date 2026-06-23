@@ -89,7 +89,7 @@ func (b *Browser) installBrowserContextHandlers(browserContext playwright.Browse
 			if expectedType := strings.TrimSpace(policy.expectedType); expectedType != "" && !strings.EqualFold(dialog.Type(), expectedType) {
 				b.setDialogError(fmt.Errorf("browser dialog type = %q, want %q", dialog.Type(), expectedType))
 			}
-			if expectedMessage := strings.TrimSpace(policy.expectedMessage); expectedMessage != "" && dialog.Message() != expectedMessage {
+			if expectedMessage := strings.TrimSpace(policy.expectedMessage); expectedMessage != "" && !dialogMessageMatches(dialog.Message(), expectedMessage, policy.matchMode) {
 				b.setDialogError(fmt.Errorf("browser dialog message = %q, want %q", dialog.Message(), expectedMessage))
 			}
 		}
@@ -111,6 +111,23 @@ func (b *Browser) installBrowserContextHandlers(browserContext playwright.Browse
 	browserContext.OnRequestFailed(func(request playwright.Request) {
 		go b.recordNetworkRequest(request, false)
 	})
+}
+
+func dialogMessageMatches(actual, expected, mode string) bool {
+	actual = strings.TrimSpace(actual)
+	expected = strings.TrimSpace(expected)
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "contains":
+		return strings.Contains(actual, expected)
+	case "normalized":
+		return strings.EqualFold(normalizeDialogMessage(actual), normalizeDialogMessage(expected))
+	default:
+		return actual == expected
+	}
+}
+
+func normalizeDialogMessage(value string) string {
+	return strings.Join(strings.Fields(value), " ")
 }
 
 func (b *Browser) setDialogError(err error) {
@@ -159,6 +176,9 @@ func (b *Browser) registerPage(page playwright.Page, activate bool) {
 		b.pwPage = page
 	}
 	b.mu.Unlock()
+	if !known {
+		b.observePageWebSockets(page)
+	}
 	if activate {
 		b.installCDPSession(b.pwContext, page)
 	}

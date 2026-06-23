@@ -32,6 +32,7 @@ func dataParamSuggestions(script *dsl.Script, names *nameRegistry, claimed map[s
 		collectQueryParams(collector, section, index, action)
 		collectBodyParams(collector, section, index, action)
 		collectFillParams(collector, section, index, action)
+		collectUploadParams(collector, section, index, action)
 		collectMessagingParams(collector, section, index, action)
 	})
 	return collector.suggestions()
@@ -148,6 +149,21 @@ func collectFillParams(collector *dataParamCollector, section string, index int,
 		return
 	}
 	collector.add(hint, action.Value, "browser fill value", section, index, action,
+		"value", action.Value, func(template string) string { return template })
+}
+
+func collectUploadParams(collector *dataParamCollector, section string, index int, action *dsl.Action) {
+	if action.Type != "browser_set_files" || strings.TrimSpace(action.Value) == "" || isTemplated(action.Value) {
+		return
+	}
+	if action.Metadata == nil || action.Metadata["source_upload_fixture"] != true {
+		return
+	}
+	key := SelectorFieldHint(action.Selector)
+	if key == "" || !LooksParameterName(key) {
+		key = "upload_file"
+	}
+	collector.add(key, action.Value, "browser upload fixture", section, index, action,
 		"value", action.Value, func(template string) string { return template })
 }
 

@@ -38,6 +38,8 @@ type recorderImportResponse struct {
 		Format           string `json:"format"`
 		ConvertedActions int    `json:"converted_actions"`
 	} `json:"stats"`
+	Summary         map[string]any `json:"summary"`
+	ReplaySessionID string         `json:"replay_session_id"`
 }
 
 func TestHandleImportRecorderChromeJSON(t *testing.T) {
@@ -134,6 +136,51 @@ func TestHandleImportRecorderRawBody(t *testing.T) {
 	}
 	if result.Script.Name != "flow" {
 		t.Errorf("name from filename = %q", result.Script.Name)
+	}
+}
+
+func TestHandleImportRecorderValidateAndReplayRoutes(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name":    "Recorder Import",
+		"content": chromeRecorderFixture,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/recorder/validate", bytes.NewReader(body))
+	validateReq.Header.Set("Content-Type", "application/json")
+	validateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(validateResp, validateReq)
+	if validateResp.Code != http.StatusOK {
+		t.Fatalf("validate status = %d body=%s", validateResp.Code, validateResp.Body.String())
+	}
+	var validateResult recorderImportResponse
+	if err := json.Unmarshal(validateResp.Body.Bytes(), &validateResult); err != nil {
+		t.Fatalf("validate json.Unmarshal: %v", err)
+	}
+	if validateResult.Summary["replay_required"] != true || validateResult.Summary["replay_supported"] != true {
+		t.Fatalf("validate summary = %+v", validateResult.Summary)
+	}
+	if validateResult.Summary["source_format"] != "chrome_devtools_recorder" {
+		t.Fatalf("source format = %+v", validateResult.Summary)
+	}
+
+	replayReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/recorder/replay", bytes.NewReader(body))
+	replayReq.Header.Set("Content-Type", "application/json")
+	replayResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(replayResp, replayReq)
+	if replayResp.Code != http.StatusCreated {
+		t.Fatalf("replay status = %d body=%s", replayResp.Code, replayResp.Body.String())
+	}
+	var replayResult recorderImportResponse
+	if err := json.Unmarshal(replayResp.Body.Bytes(), &replayResult); err != nil {
+		t.Fatalf("replay json.Unmarshal: %v", err)
+	}
+	if replayResult.ReplaySessionID == "" {
+		t.Fatalf("replay session id missing: %+v", replayResult)
 	}
 }
 

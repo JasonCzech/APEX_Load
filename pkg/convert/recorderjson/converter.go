@@ -46,15 +46,37 @@ type chromeRecording struct {
 }
 
 type chromeStep struct {
-	Type           string               `json:"type"`
-	URL            string               `json:"url,omitempty"`
-	Key            string               `json:"key,omitempty"`
-	Value          string               `json:"value,omitempty"`
-	Expression     string               `json:"expression,omitempty"`
-	Width          int                  `json:"width,omitempty"`
-	Height         int                  `json:"height,omitempty"`
-	Selectors      [][]string           `json:"selectors,omitempty"`
-	AssertedEvents []chromeAssertedItem `json:"assertedEvents,omitempty"`
+	Type               string               `json:"type"`
+	URL                string               `json:"url,omitempty"`
+	Key                string               `json:"key,omitempty"`
+	Value              string               `json:"value,omitempty"`
+	Expression         string               `json:"expression,omitempty"`
+	Width              int                  `json:"width,omitempty"`
+	Height             int                  `json:"height,omitempty"`
+	X                  int                  `json:"x,omitempty"`
+	Y                  int                  `json:"y,omitempty"`
+	Timeout            int                  `json:"timeout,omitempty"`
+	OffsetX            int                  `json:"offsetX,omitempty"`
+	OffsetY            int                  `json:"offsetY,omitempty"`
+	Duration           int                  `json:"duration,omitempty"`
+	Button             string               `json:"button,omitempty"`
+	DeviceType         string               `json:"deviceType,omitempty"`
+	Target             string               `json:"target,omitempty"`
+	Frame              []int                `json:"frame,omitempty"`
+	Operator           string               `json:"operator,omitempty"`
+	Count              int                  `json:"count,omitempty"`
+	Visible            *bool                `json:"visible,omitempty"`
+	Properties         map[string]string    `json:"properties,omitempty"`
+	Attributes         map[string]string    `json:"attributes,omitempty"`
+	DeviceScaleFactor  float64              `json:"deviceScaleFactor,omitempty"`
+	IsMobile           bool                 `json:"isMobile,omitempty"`
+	HasTouch           bool                 `json:"hasTouch,omitempty"`
+	IsLandscape        bool                 `json:"isLandscape,omitempty"`
+	Latency            int                  `json:"latency,omitempty"`
+	DownloadThroughput int                  `json:"downloadThroughput,omitempty"`
+	UploadThroughput   int                  `json:"uploadThroughput,omitempty"`
+	Selectors          [][]string           `json:"selectors,omitempty"`
+	AssertedEvents     []chromeAssertedItem `json:"assertedEvents,omitempty"`
 }
 
 type chromeAssertedItem struct {
@@ -112,6 +134,26 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 			if step.Width > 0 && step.Height > 0 {
 				script.Config.Browser.Viewport = dsl.BrowserViewport{Width: step.Width, Height: step.Height}
 			}
+			if step.HasTouch {
+				touch := true
+				script.Config.Browser.TouchMode = &touch
+			}
+			if step.IsLandscape {
+				script.Config.Browser.Orientation = "landscape"
+			}
+			if step.IsMobile {
+				script.Config.Browser.DeviceProfile = convertutil.FirstNonEmpty(script.Config.Browser.DeviceProfile, "mobile")
+			}
+			ensureChromeImportMetadata(script)["viewport"] = chromeStepMetadata(step)
+		case "emulateNetworkConditions":
+			script.Config.WebRuntime.NetworkSimulation.Mode = "custom"
+			if step.Latency > 0 {
+				script.Config.WebRuntime.NetworkSimulation.LatencyMs = step.Latency
+			}
+			if step.DownloadThroughput > 0 {
+				script.Config.WebRuntime.NetworkSimulation.BandwidthKbps = step.DownloadThroughput / 1024
+			}
+			ensureChromeImportMetadata(script)["network_conditions"] = chromeStepMetadata(step)
 		case "navigate":
 			if script.Config.BaseURL == "" {
 				script.Config.BaseURL = originOf(step.URL)
@@ -137,6 +179,7 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 				action.Type = "browser_click"
 				action.Name = "Click " + chromeStepLabel(step)
 			}
+			attachChromeActionMetadata(&action, step)
 			applyAssertedNavigation(&action, step)
 			script.Actions = append(script.Actions, action)
 		case "change":
@@ -147,15 +190,18 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 			action.Type = "browser_fill"
 			action.Name = "Fill " + chromeStepLabel(step)
 			action.Value = step.Value
+			attachChromeActionMetadata(&action, step)
 			applyAssertedNavigation(&action, step)
 			script.Actions = append(script.Actions, action)
 		case "keyDown":
 			if key := strings.TrimSpace(step.Key); key != "" {
-				script.Actions = append(script.Actions, dsl.Action{
+				action := dsl.Action{
 					Name:  "Press " + key,
 					Type:  "browser_press_key",
 					Value: key,
-				})
+				}
+				attachChromeActionMetadata(&action, step)
+				script.Actions = append(script.Actions, action)
 			}
 		case "keyUp":
 			// The paired keyDown already produced the press action.
@@ -166,8 +212,82 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 			}
 			action.Type = "browser_wait"
 			action.Name = "Wait for " + chromeStepLabel(step)
-			action.WaitFor = &dsl.WaitCondition{Type: "visible", Value: action.Selector}
+			waitType := "visible"
+			if step.Visible != nil && !*step.Visible {
+				waitType = "hidden"
+			}
+			action.WaitFor = &dsl.WaitCondition{Type: waitType, Value: action.Selector, TimeoutMs: step.Timeout}
+			if action.Params == nil {
+				action.Params = map[string]any{}
+			}
+			if step.Operator != "" {
+				action.Params["operator"] = step.Operator
+			}
+			if step.Count > 0 {
+				action.Params["count"] = step.Count
+			}
+			if len(step.Properties) > 0 {
+				action.Params["properties"] = step.Properties
+			}
+			if len(step.Attributes) > 0 {
+				action.Params["attributes"] = step.Attributes
+			}
+			attachChromeActionMetadata(&action, step)
 			script.Actions = append(script.Actions, action)
+		case "waitForExpression":
+			expr := strings.TrimSpace(step.Expression)
+			if expr == "" {
+				result.Stats.SkippedSteps++
+				unsupported.Add(diag.Warning, "chrome_recorder_step:"+step.Type, location,
+					"Chrome waitForExpression step has no expression and was skipped.")
+				continue
+			}
+			timeout := step.Timeout
+			if timeout <= 0 {
+				timeout = 10000
+			}
+			action := dsl.Action{
+				Name:      "Wait for expression",
+				Type:      "browser_evaluate_js",
+				Target:    chromeWaitForExpressionScript(expr, timeout),
+				TimeoutMs: timeout,
+				Metadata: map[string]any{
+					"review_required":    true,
+					"compatibility_gate": "chrome_recorder_wait_for_expression",
+					"source_expression":  expr,
+				},
+			}
+			attachChromeActionMetadata(&action, step)
+			script.Actions = append(script.Actions, action)
+		case "scroll":
+			action := dsl.Action{
+				Name:   "Scroll page",
+				Type:   "browser_evaluate_js",
+				Target: fmt.Sprintf("window.scrollTo(%d, %d)", step.X, step.Y),
+				Metadata: map[string]any{
+					"review_required":    true,
+					"compatibility_gate": "chrome_recorder_scroll",
+				},
+			}
+			if len(step.Selectors) > 0 {
+				if elementAction, ok := chromeElementAction(step, location, result); ok {
+					action.Selector = elementAction.Selector
+					action.Target = fmt.Sprintf("document.querySelector(%q)?.scrollTo(%d, %d)", elementAction.Selector, step.X, step.Y)
+					action.Metadata = elementAction.Metadata
+					action.Metadata["review_required"] = true
+					action.Metadata["compatibility_gate"] = "chrome_recorder_element_scroll"
+				}
+			}
+			attachChromeActionMetadata(&action, step)
+			script.Actions = append(script.Actions, action)
+		case "close":
+			result.Stats.SkippedSteps++
+			unsupported.Add(diag.Warning, "chrome_recorder_step:"+step.Type, location,
+				"Chrome close step was preserved as a review diagnostic; browser replay keeps the active page open.")
+		case "customStep":
+			result.Stats.SkippedSteps++
+			unsupported.Add(diag.Warning, "chrome_recorder_step:"+step.Type, location,
+				"Chrome customStep requires manual review before it can be replayed.")
 		default:
 			result.Stats.SkippedSteps++
 			unsupported.Add(diag.Warning, "chrome_recorder_step:"+step.Type, location,
@@ -213,6 +333,103 @@ func chromeElementAction(step chromeStep, location string, result *ConvertResult
 		}
 	}
 	return action, true
+}
+
+func ensureChromeImportMetadata(script *dsl.Script) map[string]any {
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{Source: "chrome_devtools_recorder"}
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = map[string]any{}
+	}
+	return script.Metadata.Import.Preserved
+}
+
+func attachChromeActionMetadata(action *dsl.Action, step chromeStep) {
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
+	for key, value := range chromeStepMetadata(step) {
+		action.Metadata[key] = value
+	}
+	if step.Timeout > 0 && action.TimeoutMs == 0 {
+		action.TimeoutMs = step.Timeout
+	}
+}
+
+func chromeStepMetadata(step chromeStep) map[string]any {
+	metadata := map[string]any{
+		"source_format":    "chrome_devtools_recorder",
+		"source_step_type": step.Type,
+	}
+	if step.Target != "" {
+		metadata["source_target"] = step.Target
+	}
+	if len(step.Frame) > 0 {
+		metadata["source_frame"] = step.Frame
+	}
+	if step.Timeout > 0 {
+		metadata["source_timeout_ms"] = step.Timeout
+	}
+	if step.Button != "" {
+		metadata["source_click_button"] = step.Button
+	}
+	if step.OffsetX != 0 || step.OffsetY != 0 {
+		metadata["source_click_offset"] = map[string]int{"x": step.OffsetX, "y": step.OffsetY}
+	}
+	if step.Duration > 0 {
+		metadata["source_duration_ms"] = step.Duration
+	}
+	if step.DeviceType != "" {
+		metadata["source_device_type"] = step.DeviceType
+	}
+	if step.DeviceScaleFactor > 0 {
+		metadata["source_device_scale_factor"] = step.DeviceScaleFactor
+	}
+	if step.IsMobile {
+		metadata["source_is_mobile"] = true
+	}
+	if step.HasTouch {
+		metadata["source_has_touch"] = true
+	}
+	if step.IsLandscape {
+		metadata["source_is_landscape"] = true
+	}
+	if step.Latency > 0 {
+		metadata["source_network_latency_ms"] = step.Latency
+	}
+	if step.DownloadThroughput > 0 {
+		metadata["source_download_throughput"] = step.DownloadThroughput
+	}
+	if step.UploadThroughput > 0 {
+		metadata["source_upload_throughput"] = step.UploadThroughput
+	}
+	return metadata
+}
+
+func chromeWaitForExpressionScript(expression string, timeoutMs int) string {
+	return fmt.Sprintf(`(() => new Promise((resolve, reject) => {
+  const deadline = Date.now() + %d;
+  const check = () => {
+    try {
+      if ((%s)) {
+        resolve(true);
+        return;
+      }
+      if (Date.now() >= deadline) {
+        reject(new Error("Chrome Recorder waitForExpression timed out"));
+        return;
+      }
+      setTimeout(check, 100);
+    } catch (err) {
+      reject(err);
+    }
+  };
+  check();
+}))()`, timeoutMs, expression)
 }
 
 // applyAssertedNavigation maps the recorder's asserted navigation events onto

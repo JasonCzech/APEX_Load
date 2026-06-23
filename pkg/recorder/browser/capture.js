@@ -22,6 +22,8 @@
   let paused = false;
   let assertMode = false;
   let toolbarHost = null;
+  let pendingClick = null;
+  let pendingDrag = null;
 
   // Live recording state the Go recorder pushes into the page for the advanced
   // sidebar (counts, active section, open transactions, recent steps). Updated
@@ -237,8 +239,8 @@
     }
   }
 
-  function record(kind, el, value, masked) {
-    send({
+  function record(kind, el, value, masked, extra) {
+    const payload = {
       kind: kind,
       value: value || '',
       masked: !!masked,
@@ -247,7 +249,9 @@
       title: document.title,
       frame_selector: frameSelector(),
       element: el ? safeMetaFor(el) : null
-    });
+    };
+    if (extra && typeof extra === 'object') Object.assign(payload, extra);
+    send(payload);
   }
 
   // Password values never leave the page: the fill is recorded with an empty
@@ -287,6 +291,38 @@
     return scoped;
   }
 
+  function cancelPendingClick() {
+    if (!pendingClick) return;
+    clearTimeout(pendingClick.timer);
+    pendingClick = null;
+  }
+
+  function flushPendingClick() {
+    if (!pendingClick) return;
+    const pending = pendingClick;
+    pendingClick = null;
+    clearTimeout(pending.timer);
+    if (!paused) record('click', pending.el, '');
+  }
+
+  function scheduleClick(el) {
+    if (pendingClick) {
+      if (pendingClick.el !== el) {
+        flushPendingClick();
+      } else {
+        cancelPendingClick();
+      }
+    }
+    pendingClick = {
+      el: el,
+      timer: setTimeout(() => {
+        const pending = pendingClick;
+        pendingClick = null;
+        if (pending && !paused) record('click', pending.el, '');
+      }, 250)
+    };
+  }
+
   window.addEventListener('click', (ev) => {
     const raw = targetOf(ev);
     if (!raw || isToolbar(raw)) return;
@@ -308,8 +344,43 @@
         type === 'checkbox' || type === 'radio' || type === 'file';
       if (!clickable) return; // focus click before typing is noise
     }
-    record('click', el, '');
+    scheduleClick(el);
   }, true);
+
+  window.addEventListener('dblclick', (ev) => {
+    const raw = targetOf(ev);
+    if (!raw || isToolbar(raw) || paused || assertMode) return;
+    const el = interactiveAncestor(raw);
+    cancelPendingClick();
+    record('dblclick', el, '');
+  }, true);
+
+  window.addEventListener('dragstart', (ev) => {
+    if (paused || assertMode) return;
+    const raw = targetOf(ev);
+    if (!raw || isToolbar(raw)) return;
+    pendingDrag = { el: interactiveAncestor(raw), ts: Date.now() };
+  }, true);
+
+  window.addEventListener('drop', (ev) => {
+    if (paused || assertMode) return;
+    const raw = targetOf(ev);
+    if (!raw || isToolbar(raw) || !pendingDrag) return;
+    const age = Date.now() - pendingDrag.ts;
+    if (age >= 0 && age <= 10000) {
+      record('drag_and_drop', pendingDrag.el, '', false, {
+        target_element: safeMetaFor(interactiveAncestor(raw))
+      });
+    }
+    pendingDrag = null;
+  }, true);
+
+  window.addEventListener('dragend', () => {
+    pendingDrag = null;
+  }, true);
+
+  window.addEventListener('beforeunload', flushPendingClick, true);
+  window.addEventListener('pagehide', flushPendingClick, true);
 
   window.addEventListener('change', (ev) => {
     if (paused) return;

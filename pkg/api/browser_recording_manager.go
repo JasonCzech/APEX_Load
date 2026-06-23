@@ -484,6 +484,32 @@ func (m *BrowserRecordingManager) SetStepExcluded(id string, seq int, excluded b
 	return session.fullSnapshot(), true, nil
 }
 
+// PromoteStepSelector applies a replay-verified selector promotion to the
+// stopped recording artifact. Live sessions still use the recorder backend path
+// for mutable operations; selector promotion is intentionally scoped to verify
+// results from a frozen artifact.
+func (m *BrowserRecordingManager) PromoteStepSelector(id string, seq int, selector string) (*BrowserRecordingSession, bool, error) {
+	m.mu.RLock()
+	session, ok := m.sessions[id]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, false, nil
+	}
+	session.mu.Lock()
+	if session.final == nil {
+		snapshot := session.summaryLocked()
+		session.mu.Unlock()
+		return snapshot, true, fmt.Errorf("recording has no stopped artifact")
+	}
+	if _, ok := session.final.PromoteStepSelector(seq, selector); !ok {
+		snapshot := session.summaryLocked()
+		session.mu.Unlock()
+		return snapshot, true, fmt.Errorf("step %d not found", seq)
+	}
+	session.mu.Unlock()
+	return session.fullSnapshot(), true, nil
+}
+
 // SetStepMark flags a fill step as a runtime secret or data parameter.
 func (m *BrowserRecordingManager) SetStepMark(id string, seq int, secret, param bool) (*BrowserRecordingSession, bool, error) {
 	session, backend, err := m.liveBackend(id)

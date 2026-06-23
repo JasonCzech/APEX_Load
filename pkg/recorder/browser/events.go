@@ -18,6 +18,8 @@ import (
 const (
 	StepNavigate     = "navigate"
 	StepClick        = "click"
+	StepDblClick     = "dblclick"
+	StepDragAndDrop  = "drag_and_drop"
 	StepFill         = "fill"
 	StepSelect       = "select"
 	StepPressKey     = "press_key"
@@ -59,22 +61,26 @@ type capturedEvent struct {
 	Title         string                    `json:"title,omitempty"`
 	FrameSelector string                    `json:"frame_selector,omitempty"`
 	Element       *selector.ElementMetadata `json:"element,omitempty"`
+	TargetElement *selector.ElementMetadata `json:"target_element,omitempty"`
 }
 
 // Step is one recorded user interaction with everything replay needs: the
 // ranked selector candidates, frame context, page URL, and timing. Masked
 // marks fills whose value was withheld at capture (password inputs).
 type Step struct {
-	Seq           int                       `json:"seq"`
-	Kind          string                    `json:"kind"`
-	Value         string                    `json:"value,omitempty"`
-	Masked        bool                      `json:"masked,omitempty"`
-	Timestamp     time.Time                 `json:"timestamp"`
-	URL           string                    `json:"url,omitempty"`
-	Title         string                    `json:"title,omitempty"`
-	FrameSelector string                    `json:"frame_selector,omitempty"`
-	Element       *selector.ElementMetadata `json:"element,omitempty"`
-	Candidates    []selector.Candidate      `json:"candidates,omitempty"`
+	Seq              int                       `json:"seq"`
+	Kind             string                    `json:"kind"`
+	Value            string                    `json:"value,omitempty"`
+	Masked           bool                      `json:"masked,omitempty"`
+	Timestamp        time.Time                 `json:"timestamp"`
+	URL              string                    `json:"url,omitempty"`
+	Title            string                    `json:"title,omitempty"`
+	FrameSelector    string                    `json:"frame_selector,omitempty"`
+	Element          *selector.ElementMetadata `json:"element,omitempty"`
+	Candidates       []selector.Candidate      `json:"candidates,omitempty"`
+	TargetElement    *selector.ElementMetadata `json:"target_element,omitempty"`
+	TargetSelector   string                    `json:"target_selector,omitempty"`
+	TargetCandidates []selector.Candidate      `json:"target_candidates,omitempty"`
 	// Section routes the converted action into the DSL init/actions/teardown
 	// block. Empty means actions.
 	Section string `json:"section,omitempty"`
@@ -243,6 +249,8 @@ type Session struct {
 var validStepKinds = map[string]bool{
 	StepNavigate:     true,
 	StepClick:        true,
+	StepDblClick:     true,
+	StepDragAndDrop:  true,
 	StepFill:         true,
 	StepSelect:       true,
 	StepPressKey:     true,
@@ -271,12 +279,25 @@ func stepFromEvent(payload string) (Step, error) {
 		Title:         strings.TrimSpace(event.Title),
 		FrameSelector: strings.TrimSpace(event.FrameSelector),
 		Element:       event.Element,
+		TargetElement: event.TargetElement,
 	}
 	if event.TimestampMs <= 0 {
 		step.Timestamp = time.Now()
 	}
 	if event.Element != nil {
 		step.Candidates = selector.Candidates(*event.Element)
+	}
+	if event.TargetElement != nil {
+		step.TargetCandidates = selector.Candidates(*event.TargetElement)
+		step.TargetSelector = selector.PlaywrightSelector(step.TargetCandidates)
+		if step.TargetSelector == "" {
+			for _, candidate := range step.TargetCandidates {
+				if value, ok := selector.Usable(candidate); ok {
+					step.TargetSelector = value
+					break
+				}
+			}
+		}
 	}
 	return step, nil
 }
@@ -373,6 +394,54 @@ func (s *Session) setStepExcluded(seq int, excluded bool) (*Step, bool) {
 		}
 	}
 	return nil, false
+}
+
+// PromoteStepSelector prepends a replay-verified selector to a stopped session
+// step so the next conversion uses it as the primary selector while preserving
+// the original captured candidates as fallbacks.
+func (s *Session) PromoteStepSelector(seq int, sel string) (*Step, bool) {
+	sel = strings.TrimSpace(sel)
+	if sel == "" {
+		return nil, false
+	}
+	for i := range s.Steps {
+		if s.Steps[i].Seq == seq {
+			if s.Steps[i].Deleted {
+				return nil, false
+			}
+			promoted := selector.Candidate{
+				Kind:       promotedSelectorKind(sel),
+				Value:      sel,
+				Confidence: 100,
+				Reason:     "self-heal promotion",
+			}
+			next := []selector.Candidate{promoted}
+			for _, candidate := range s.Steps[i].Candidates {
+				if strings.EqualFold(candidate.Kind, promoted.Kind) && strings.TrimSpace(candidate.Value) == sel {
+					continue
+				}
+				next = append(next, candidate)
+			}
+			s.Steps[i].Candidates = next
+			step := s.Steps[i]
+			return &step, true
+		}
+	}
+	return nil, false
+}
+
+func promotedSelectorKind(sel string) string {
+	lower := strings.ToLower(strings.TrimSpace(sel))
+	switch {
+	case strings.HasPrefix(lower, "xpath="), strings.HasPrefix(lower, "//"), strings.HasPrefix(lower, "(//"):
+		return "xpath"
+	case strings.HasPrefix(lower, "role="):
+		return "role"
+	case strings.HasPrefix(lower, "text="):
+		return "text"
+	default:
+		return "css"
+	}
 }
 
 // AddMarker validates and appends a marker, maintaining open-transaction

@@ -718,6 +718,15 @@
                     "description": "If set, the captured dialog message must contain this text.",
                     "type": "string"
                   },
+                  "match_mode": {
+                    "description": "Message comparison mode; recorder-origin dialogs default to contains.",
+                    "enum": [
+                      "exact",
+                      "contains",
+                      "normalized"
+                    ],
+                    "type": "string"
+                  },
                   "prompt_text": {
                     "description": "Text entered into a prompt dialog when accepting.",
                     "type": "string"
@@ -907,6 +916,69 @@
               },
               "target": {
                 "description": "Destination URL; target or selector is required.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "browser_open_window"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "allOf": [
+              {
+                "anyOf": [
+                  {
+                    "required": [
+                      "target"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "params": {
+                        "required": [
+                          "url"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "params"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "description": "Opens a new browser window or tab and navigates it to a URL.",
+            "properties": {
+              "capture": {
+                "description": "Evidence capture: {screenshot, full_page, html}.",
+                "type": "object"
+              },
+              "params": {
+                "properties": {
+                  "url": {
+                    "description": "Destination URL alternative to target.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "sync": {
+                "description": "Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}.",
+                "type": "object"
+              },
+              "target": {
+                "description": "Destination URL.",
                 "type": "string"
               }
             }
@@ -1536,6 +1608,126 @@
               },
               "wait_for": {
                 "description": "Wait condition: {type, value, timeout_ms}. One of wait_for, selector, or target is required.",
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "browser_ws_assert"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Asserts that matching WebSocket events have been observed in the replayed browser page.",
+            "properties": {
+              "capture": {
+                "description": "Evidence capture: {screenshot, full_page, html}.",
+                "type": "object"
+              },
+              "params": {
+                "properties": {
+                  "count": {
+                    "description": "Number of matching events required.",
+                    "type": "integer"
+                  },
+                  "direction": {
+                    "description": "Observed event direction.",
+                    "enum": [
+                      "open",
+                      "sent",
+                      "received"
+                    ],
+                    "type": "string"
+                  },
+                  "match": {
+                    "description": "Payload match text or regex.",
+                    "type": "string"
+                  },
+                  "match_mode": {
+                    "description": "Payload comparison mode.",
+                    "enum": [
+                      "contains",
+                      "exact",
+                      "regex"
+                    ],
+                    "type": "string"
+                  },
+                  "url_contains": {
+                    "description": "Substring that must appear in the WebSocket URL.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "browser_ws_wait"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Waits for a WebSocket open event or frame observed in the replayed browser page.",
+            "properties": {
+              "capture": {
+                "description": "Evidence capture: {screenshot, full_page, html}.",
+                "type": "object"
+              },
+              "params": {
+                "properties": {
+                  "count": {
+                    "description": "Number of matching events required.",
+                    "type": "integer"
+                  },
+                  "direction": {
+                    "description": "Observed event direction.",
+                    "enum": [
+                      "open",
+                      "sent",
+                      "received"
+                    ],
+                    "type": "string"
+                  },
+                  "match": {
+                    "description": "Payload match text or regex.",
+                    "type": "string"
+                  },
+                  "match_mode": {
+                    "description": "Payload comparison mode.",
+                    "enum": [
+                      "contains",
+                      "exact",
+                      "regex"
+                    ],
+                    "type": "string"
+                  },
+                  "timeout_ms": {
+                    "description": "Maximum wait in milliseconds.",
+                    "type": "integer"
+                  },
+                  "url_contains": {
+                    "description": "Substring that must appear in the WebSocket URL.",
+                    "type": "string"
+                  }
+                },
                 "type": "object"
               }
             }
@@ -5220,6 +5412,7 @@
             "browser_hover",
             "browser_long_press",
             "browser_navigate",
+            "browser_open_window",
             "browser_press_key",
             "browser_screenshot",
             "browser_select",
@@ -5229,6 +5422,8 @@
             "browser_switch_window",
             "browser_tap",
             "browser_wait",
+            "browser_ws_assert",
+            "browser_ws_wait",
             "commit",
             "control_break",
             "control_continue",

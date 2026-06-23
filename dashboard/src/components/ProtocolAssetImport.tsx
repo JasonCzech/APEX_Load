@@ -2,18 +2,20 @@ import { useEffect, useState } from 'react'
 
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
-import { type StoredScript } from '../types'
+import { type BrowserReplayReport, type BrowserReplayStartResponse, type StoredScript } from '../types'
 import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type HARImportSummary, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
 import ImportRuntimeOptions from './ImportRuntimeOptions'
+import BrowserReplayProgress from './BrowserReplayProgress'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import ScriptImportReview from './ScriptImportReview'
 import SelectorCandidatesReview from './SelectorCandidatesReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { salesforceApiSurfaceBreakdown, salesforceEndpointTotal } from './salesforceReviewSummary'
+import { buildReplayStartPayload } from './scriptEditorUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
 
@@ -183,6 +185,30 @@ function preservedReviewForImport<T extends { detected: boolean }>(script: Scrip
   return review && review.detected ? review : null
 }
 
+function attachRecorderReplayEvidence(script: ScriptDefinition, report: BrowserReplayReport | null, status: string, draftOverride: boolean, replaySessionId: string): ScriptDefinition {
+  return {
+    ...script,
+    metadata: {
+      ...script.metadata,
+      import: {
+        ...script.metadata?.import,
+        preserved: {
+          ...(script.metadata?.import?.preserved || {}),
+          replay_validation: {
+            status,
+            success: report?.success ?? false,
+            replay_session_id: report?.replay_session_id || replaySessionId || undefined,
+            completed_at: report?.completed_at,
+            events: report?.events?.length ?? 0,
+            repair_suggestions: report?.repair_suggestions?.length ?? 0,
+            draft_override: draftOverride,
+          },
+        },
+      },
+    },
+  }
+}
+
 const endpointTotal = salesforceEndpointTotal
 
 export default function ProtocolAssetImport({ kind, projectId, onImported, onEdit, onClose }: Props) {
@@ -216,6 +242,11 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [retentionDays, setRetentionDays] = useState(7)
   const [messageError, setMessageError] = useState('')
   const [reviewMode, setReviewMode] = useState<'conversion' | 'validation'>('conversion')
+  const replayTask = useAsyncTask<BrowserReplayStartResponse>()
+  const [recorderReplaySessionId, setRecorderReplaySessionId] = useState('')
+  const [recorderReplayStatus, setRecorderReplayStatus] = useState<'idle' | 'running' | 'completed' | 'failed' | 'stopped'>('idle')
+  const [recorderReplayReport, setRecorderReplayReport] = useState<BrowserReplayReport | null>(null)
+  const [allowRecorderDraftSave, setAllowRecorderDraftSave] = useState(false)
   const [ramlSupport, setRamlSupport] = useState<{ entries: RAMLSupportMatrixEntry[]; notes: string[] } | null>(null)
   const [openAPISupport, setOpenAPISupport] = useState<{ entries: OpenAPISupportMatrixEntry[]; notes: string[] } | null>(null)
   const [asyncAPISupport, setAsyncAPISupport] = useState<{ entries: AsyncAPISupportMatrixEntry[]; notes: string[] } | null>(null)
@@ -264,6 +295,13 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
       setSelectedScriptIndex(0)
     }
   }, [result, selectedScriptIndex])
+
+  useEffect(() => {
+    setRecorderReplaySessionId('')
+    setRecorderReplayStatus('idle')
+    setRecorderReplayReport(null)
+    setAllowRecorderDraftSave(false)
+  }, [result, selectedScriptIndex, file])
 
   useEffect(() => {
     if (kind !== 'openapi') return
@@ -315,7 +353,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
           redact_sensitive: redactSensitive,
         })
         if (kind === 'salesforce') return api.importSalesforce(file, { ...options, agentforce_transform: agentforceReplayReady })
-        if (kind === 'recorder-export') return api.importBrowserRecording(file, options)
+        if (kind === 'recorder-export') return mode === 'validation' ? api.validateBrowserRecordingImport(file, options) : api.importBrowserRecording(file, options)
         if (kind === 'openapi') return api.importOpenAPI(file, { ...options, agentforce_transform: agentforceReplayReady })
         if (kind === 'raml') return api.importRAML(file, { ...options, agentforce_transform: agentforceReplayReady })
         if (kind === 'postman') {
@@ -366,10 +404,41 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const replayPreflight = (generatedScripts.length > 1 ? selectedReplayPreflight : result?.preflight || selectedReplayPreflight) || null
   const openAPICorrelations: OpenAPICorrelation[] = kind === 'openapi' ? ((result as OpenAPIImportResult | null | undefined)?.correlations || []) : []
 
+  const handleRunRecorderReplay = async () => {
+    if (kind !== 'recorder-export' || !reviewedScript) return
+    setMessageError('')
+    setRecorderReplayReport(null)
+    setRecorderReplayStatus('running')
+    try {
+      const response = await replayTask.run(async () => api.startDraftBrowserReplaySession(buildReplayStartPayload(reviewedScript, {
+        projectId,
+        ignoreThinkTime: true,
+      })))
+      setRecorderReplaySessionId(response.replay_session_id)
+    } catch (error: unknown) {
+      setRecorderReplayStatus('failed')
+      setMessageError(getErrorMessage(error, 'Failed to start browser replay validation'))
+    }
+  }
+
+  const handleRecorderReplayComplete = (report: BrowserReplayReport | null) => {
+    setRecorderReplayReport(report)
+    setRecorderReplayStatus(report?.success ? 'completed' : 'failed')
+  }
+
   const handleSave = async () => {
     if (!reviewedScript) return
     setMessageError('')
     try {
+      let scriptToSave = reviewedScript
+      if (kind === 'recorder-export') {
+        const replayPassed = recorderReplayStatus === 'completed' && recorderReplayReport?.success
+        if (!replayPassed && !allowRecorderDraftSave) {
+          setMessageError('Run replay validation successfully before saving, or choose Save as draft needing replay review.')
+          return
+        }
+        scriptToSave = attachRecorderReplayEvidence(reviewedScript, recorderReplayReport, recorderReplayStatus, !replayPassed, recorderReplaySessionId)
+      }
       if (kind === 'openapi') {
         if (openAPISaveMode === 'replace' && !openAPIReplaceScriptId) {
           setMessageError('Select a script to replace.')
@@ -417,8 +486,8 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
         onImported?.({ scripts: [withFallbackPersistedScript(savedScript, reviewedScript)] })
         return
       }
-      const savedScript = await saveTask.run(async () => api.createScript(reviewedScript, projectId))
-      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, reviewedScript)] })
+      const savedScript = await saveTask.run(async () => api.createScript(scriptToSave, projectId))
+      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
     } catch (error: unknown) {
       setMessageError(getErrorMessage(error, 'Failed to save generated script'))
     }
@@ -717,9 +786,32 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
                 </div>
               ))}
             </div>
-            {(kind === 'openapi' || kind === 'asyncapi') && replayPreflight && (
+            {(kind === 'openapi' || kind === 'asyncapi' || kind === 'recorder-export') && replayPreflight && (
               <div className="sample-import-preflight">
                 <ReplayPreflightCard preflight={replayPreflight} />
+              </div>
+            )}
+            {kind === 'recorder-export' && reviewedScript && (
+              <div className="sample-import-review-block">
+                <h4>Replay Validation</h4>
+                <div className="sample-import-actions compact">
+                  <button className="btn btn-secondary btn-sm" type="button" onClick={handleRunRecorderReplay} disabled={replayTask.pending || recorderReplayStatus === 'running'}>
+                    {replayTask.pending || recorderReplayStatus === 'running' ? 'Starting Replay...' : 'Run Replay Validation'}
+                  </button>
+                  <label className="sample-toggle" title="Save the import as a draft even if replay has not passed yet.">
+                    <input type="checkbox" checked={allowRecorderDraftSave} onChange={event => setAllowRecorderDraftSave(event.target.checked)} />
+                    Save as draft needing replay review
+                  </label>
+                </div>
+                {recorderReplaySessionId && (
+                  <BrowserReplayProgress
+                    replaySessionId={recorderReplaySessionId}
+                    projectId={projectId}
+                    onComplete={handleRecorderReplayComplete}
+                  />
+                )}
+                {recorderReplayStatus === 'completed' && <p className="sample-import-success">Replay validation passed.</p>}
+                {recorderReplayStatus === 'failed' && <p className="sample-import-warning">Replay validation found issues. Review fixes or save explicitly as a draft.</p>}
               </div>
             )}
             {kind === 'asyncapi' && (

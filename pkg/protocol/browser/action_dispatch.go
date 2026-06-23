@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	playwright "github.com/playwright-community/playwright-go"
 )
 
 func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, result *protocol.Result) (error, bool) {
@@ -17,8 +18,14 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 			return nil, failBrowserAction(result, "browser_navigate requires target")
 		}
 		return b.navigate(ctx, action, b.resolveURL(action.Target)), false
+	case "browser_open_window":
+		return b.dispatchOpenWindow(ctx, action), false
 	case "browser_wait":
 		return b.runWait(ctx, action), false
+	case "browser_ws_wait":
+		return b.dispatchWSWait(ctx, action, result)
+	case "browser_ws_assert":
+		return b.dispatchWSAssert(action, result)
 	case "browser_click":
 		selector := b.actionSelector(action)
 		if selector == "" {
@@ -127,6 +134,34 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 	}
 }
 
+func (b *Browser) dispatchOpenWindow(ctx context.Context, action *protocol.Action) error {
+	rawURL := strings.TrimSpace(firstNonEmptyString(action.Target, actionParamString(action.Params, "url", "")))
+	if rawURL == "" {
+		return fmt.Errorf("browser_open_window requires target or params.url")
+	}
+	if b.pwContext == nil {
+		return fmt.Errorf("browser context is not initialized")
+	}
+	resolvedURL := b.resolveURL(rawURL)
+	if b.downloadFilterMode == "allow_list" && b.shouldBlockFilteredRequest(resolvedURL) {
+		return fmt.Errorf("browser_open_window target %q is outside the configured URL allow-list", resolvedURL)
+	}
+	page, err := b.pwContext.NewPage()
+	if err != nil {
+		return err
+	}
+	b.registerPage(page, true)
+	b.currentFrameSelector = ""
+	timeout := b.actionTimeout(action)
+	if _, err := page.Goto(resolvedURL, playwright.PageGotoOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+	}); err != nil {
+		return err
+	}
+	b.currentURL = resolvedURL
+	return b.waitVisibleWithTimeout(ctx, "body", timeout)
+}
+
 // dispatchHandleDialog arms a one-shot dialog policy consumed by the next
 // dialog the page raises (the action that triggers it follows this one).
 func (b *Browser) dispatchHandleDialog(action *protocol.Action, result *protocol.Result) (error, bool) {
@@ -139,6 +174,7 @@ func (b *Browser) dispatchHandleDialog(action *protocol.Action, result *protocol
 		action:          policy,
 		expectedMessage: actionParamString(action.Params, "expected_message", ""),
 		expectedType:    actionParamString(action.Params, "dialog_type", ""),
+		matchMode:       actionParamString(action.Params, "match_mode", "exact"),
 		promptText:      actionParamString(action.Params, "prompt_text", ""),
 	}
 	b.dialogMu.Unlock()
