@@ -178,6 +178,7 @@ type messageDef struct {
 	Ref           string         `json:"$ref,omitempty" yaml:"$ref,omitempty"`
 	Name          string         `json:"name,omitempty" yaml:"name,omitempty"`
 	Title         string         `json:"title,omitempty" yaml:"title,omitempty"`
+	Headers       schema         `json:"headers,omitempty" yaml:"headers,omitempty"`
 	Payload       schema         `json:"payload,omitempty" yaml:"payload,omitempty"`
 	CorrelationID *correlationID `json:"correlationId,omitempty" yaml:"correlationId,omitempty"`
 	SchemaFormat  string         `json:"schemaFormat,omitempty" yaml:"schemaFormat,omitempty"`
@@ -242,6 +243,7 @@ type kafkaOp struct {
 	topic          string
 	replyTopic     string
 	payload        schema
+	headers        schema
 	hasCorrelation bool
 	// correlationLocation is the AsyncAPI runtime expression for the message's
 	// correlation id (e.g. $message.payload#/correlationId), used to wire
@@ -253,6 +255,7 @@ type kafkaOp struct {
 	consumerGroup       string
 	clientID            string
 	partition           *int
+	partitions          int
 	destinationType     string
 	subscription        string
 	channelName         string
@@ -283,6 +286,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	mappings := make([]sourceview.Mapping, 0)
 
 	brokers, protocols, securityProtocol, brokerWarnings := deriveBrokers(doc, req.Options.Brokers)
+	kafkaSASLMechanism := deriveKafkaSASLMechanism(doc)
 
 	// Azure Event Hubs exposes a Kafka-protocol endpoint; when the bootstrap host
 	// is *.servicebus.windows.net, pre-set the Event Hubs profile and its
@@ -296,10 +300,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	// When the servers are AMQP/JMS (and not Kafka), target the JMS family instead
 	// of Kafka so the import is executable (jms-solace) rather than review-only.
-	useJMS, jmsBroker, jmsWarnings := false, "", []string(nil)
-	if len(brokers) == 0 {
-		useJMS, jmsBroker, jmsWarnings = detectJMSTarget(doc)
-	}
+	jmsAvailable, jmsBroker, jmsWarnings := detectJMSTarget(doc)
+	useJMS := len(brokers) == 0 && jmsAvailable
 
 	defaultTarget := targetKafka
 	if useJMS {
@@ -363,7 +365,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		if len(groupOps) == 0 {
 			continue
 		}
-		script := buildScriptForOps(scriptName, target, groupOps, req.Options, brokers, kafkaProfile, securityProtocol, jmsBroker, mock, len(grouped) > 1)
+		script := buildScriptForOps(scriptName, target, groupOps, req.Options, brokers, kafkaProfile, securityProtocol, kafkaSASLMechanism, jmsBroker, mock, len(grouped) > 1)
 		if target == targetKafka && script.Config.Kafka.AutoOffsetReset == "earliest" {
 			result.Warnings = append(result.Warnings, "config.kafka.auto_offset_reset was set to earliest because the imported script produces and consumes records; this lets real-broker replay observe records produced earlier in the same run")
 		}
@@ -402,7 +404,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if len(result.Scripts) > 0 {
 		result.Script = result.Scripts[0]
 	} else {
-		result.Script = buildScriptForOps(scriptName, defaultTarget, nil, req.Options, brokers, kafkaProfile, securityProtocol, jmsBroker, mock, false)
+		result.Script = buildScriptForOps(scriptName, defaultTarget, nil, req.Options, brokers, kafkaProfile, securityProtocol, kafkaSASLMechanism, jmsBroker, mock, false)
 		result.Scripts = []*dsl.Script{result.Script}
 	}
 
@@ -445,7 +447,7 @@ func decodeDocument(data []byte) (*document, error) {
 	return &doc, nil
 }
 
-func buildScriptForOps(scriptName string, target opTarget, ops []kafkaOp, opts ConvertOptions, brokers []string, kafkaProfile, securityProtocol, jmsBroker string, mock bool, suffix bool) *dsl.Script {
+func buildScriptForOps(scriptName string, target opTarget, ops []kafkaOp, opts ConvertOptions, brokers []string, kafkaProfile, securityProtocol, kafkaSASLMechanism, jmsBroker string, mock bool, suffix bool) *dsl.Script {
 	name := sanitizeName(scriptName)
 	protocolName := "kafka"
 	if target == targetJMS {
@@ -472,12 +474,18 @@ func buildScriptForOps(scriptName string, target opTarget, ops []kafkaOp, opts C
 			Profile:          kafkaProfile,
 			SecurityProtocol: securityProtocol,
 			Acks:             "all",
+			Partitions:       maxKafkaPartitions(ops),
 			Mock:             mock,
 		}
 		if kafkaProfile == "eventhubs" {
 			cfg.Kafka.SASLMechanism = "plain"
 			cfg.Kafka.SASLUsername = "$ConnectionString"
 			cfg.Kafka.SASLPasswordSecret = "eventhubs_connection_string"
+		} else if kafkaSASLMechanism != "" {
+			cfg.Kafka.SASLMechanism = kafkaSASLMechanism
+			if cfg.Kafka.SecurityProtocol == "" || cfg.Kafka.SecurityProtocol == "plaintext" {
+				cfg.Kafka.SecurityProtocol = "sasl_plaintext"
+			}
 		}
 		if opsNeedReplayFromStart(ops) {
 			cfg.Kafka.AutoOffsetReset = "earliest"
@@ -544,6 +552,16 @@ func opsNeedReplayFromStart(ops []kafkaOp) bool {
 		}
 	}
 	return hasProducer && hasConsumer
+}
+
+func maxKafkaPartitions(ops []kafkaOp) int {
+	maxPartitions := 0
+	for _, op := range ops {
+		if op.partitions > maxPartitions {
+			maxPartitions = op.partitions
+		}
+	}
+	return maxPartitions
 }
 
 func opNeedsTopicSubscription(ops []kafkaOp) bool {
@@ -616,14 +634,11 @@ func orderReplayOps(ops []kafkaOp) []kafkaOp {
 		if a.targetProtocol != b.targetProtocol {
 			return a.targetProtocol < b.targetProtocol
 		}
+		// The importer can only infer replay dependency for the same messaging
+		// destination. Cross-topic request/reply choreography remains in source
+		// order because AsyncAPI does not generally declare a causal graph.
 		if a.topic == b.topic {
 			return kindRank(a.kind) < kindRank(b.kind)
-		}
-		if a.kind == "consume" && (b.kind == "produce" || b.kind == "request_reply") && a.topic == b.topic {
-			return false
-		}
-		if b.kind == "consume" && (a.kind == "produce" || a.kind == "request_reply") && a.topic == b.topic {
-			return true
 		}
 		return false
 	})
@@ -676,6 +691,53 @@ func deriveBrokers(doc *document, override []string) (brokers []string, protocol
 	return brokers, protocols, securityProtocol, warnings
 }
 
+func deriveKafkaSASLMechanism(doc *document) string {
+	if doc == nil || len(doc.Components.SecuritySchemes) == 0 {
+		return ""
+	}
+	referenced := map[string]struct{}{}
+	for _, srv := range doc.Servers {
+		if serverProtocolFamily(srv.Protocol) != targetKafka {
+			continue
+		}
+		for _, requirement := range srv.Security {
+			for name := range requirement {
+				referenced[name] = struct{}{}
+			}
+		}
+	}
+	if len(referenced) > 0 {
+		for _, name := range sortedKeysFromSet(referenced) {
+			if mechanism := saslMechanismForScheme(doc.Components.SecuritySchemes[name]); mechanism != "" {
+				return mechanism
+			}
+		}
+	}
+	for _, name := range sortedSecuritySchemeKeys(doc.Components.SecuritySchemes) {
+		if mechanism := saslMechanismForScheme(doc.Components.SecuritySchemes[name]); mechanism != "" {
+			return mechanism
+		}
+	}
+	return ""
+}
+
+func saslMechanismForScheme(s securityScheme) string {
+	raw := strings.ToLower(strings.TrimSpace(convertutil.FirstNonEmpty(s.Scheme, s.Type, s.BearerFormat)))
+	raw = strings.NewReplacer("_", "-", " ", "-", ".", "-").Replace(raw)
+	switch raw {
+	case "plain", "user-password", "api-key":
+		return "plain"
+	case "scramsha256", "scram-sha256", "scram-sha-256":
+		return "scram-sha-256"
+	case "scramsha512", "scram-sha512", "scram-sha-512":
+		return "scram-sha-512"
+	case "oauth2", "oauthbearer", "oauth-bearer", "bearer", "jwt":
+		return "oauthbearer"
+	default:
+		return ""
+	}
+}
+
 // detectEventHubsProfile reports whether any bootstrap broker points at an Azure
 // Event Hubs Kafka endpoint (*.servicebus.windows.net), so the importer can
 // pre-set the Event Hubs profile and its mandatory sasl_ssl transport.
@@ -714,17 +776,13 @@ func applyServerVariables(value string, variables map[string]serverVariable) str
 	return out
 }
 
-// detectJMSTarget reports whether the document's servers indicate a JMS/AMQP
-// target (and no Kafka — Kafka takes precedence to preserve existing behavior).
-// AMQP/JMS map to the executable jms-solace adapter. MQTT stays review-only:
-// APEX Load has no native MQTT runtime and must not silently emit executable
-// JMS actions that cannot preserve MQTT semantics.
+// detectJMSTarget reports whether any document server indicates a JMS/AMQP
+// target. Kafka still takes precedence as the default target in Convert when
+// Kafka brokers are present, but mixed Kafka+JMS documents need the JMS broker
+// URL for the generated JMS sub-script. MQTT stays review-only: APEX Load has no
+// native MQTT runtime and must not silently emit executable JMS actions that
+// cannot preserve MQTT semantics.
 func detectJMSTarget(doc *document) (isJMS bool, brokerURL string, warnings []string) {
-	for _, name := range sortedServerKeys(doc.Servers) {
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(doc.Servers[name].Protocol)), "kafka") {
-			return false, "", nil
-		}
-	}
 	for _, name := range sortedServerKeys(doc.Servers) {
 		srv := doc.Servers[name]
 		proto := strings.ToLower(strings.TrimSpace(srv.Protocol))
@@ -768,6 +826,7 @@ func buildJMSAction(op kafkaOp, includeAssertion bool, doc *document) (dsl.Actio
 	default:
 		action.Type = "jms_consume"
 	}
+	columns = append(columns, applyDeclaredHeaders(&action, op, doc)...)
 	if len(params) > 0 {
 		action.Params = params
 	}
@@ -836,6 +895,7 @@ func collectOperations(doc *document, opts ConvertOptions, defaultTarget opTarge
 				messages = []namedMessage{{name: "", msg: messageDef{}}}
 			}
 			for _, named := range messages {
+				warnDroppedOneOf(doc, diagnostics, &warnings, convertutil.FirstNonEmpty(named.name, opName), named.msg)
 				msg := derefMessage(doc, named.msg)
 				recordFormat(msg)
 				if isReviewOnlySchemaFormat(msg.SchemaFormat) {
@@ -855,6 +915,7 @@ func collectOperations(doc *document, opts ConvertOptions, defaultTarget opTarge
 					topic:               topic,
 					replyTopic:          replyTopic,
 					payload:             resolvePayload(doc, msg),
+					headers:             resolveHeaders(doc, msg),
 					hasCorrelation:      msg.CorrelationID != nil,
 					correlationLocation: correlationLocationOf(msg),
 					schemaFormat:        msg.SchemaFormat,
@@ -886,7 +947,9 @@ func collectOperations(doc *document, opts ConvertOptions, defaultTarget opTarge
 		// 2.x perspective: an external client publishes to `publish` channels
 		// (produce) and consumes from `subscribe` channels (consume).
 		if ch.Publish != nil {
-			msg := derefMessage(doc, messageOf(ch.Publish))
+			rawMsg := messageOf(ch.Publish)
+			warnDroppedOneOf(doc, diagnostics, &warnings, convertutil.FirstNonEmpty(ch.Publish.OperationID, chName+"_publish"), rawMsg)
+			msg := derefMessage(doc, rawMsg)
 			recordFormat(msg)
 			if isReviewOnlySchemaFormat(msg.SchemaFormat) {
 				skipped = append(skipped, convertutil.FirstNonEmpty(ch.Publish.OperationID, chName+"_publish"))
@@ -898,6 +961,7 @@ func collectOperations(doc *document, opts ConvertOptions, defaultTarget opTarge
 					targetProtocol:      target,
 					topic:               topicWithBinding(topic, ch.Publish.Bindings),
 					payload:             resolvePayload(doc, msg),
+					headers:             resolveHeaders(doc, msg),
 					hasCorrelation:      msg.CorrelationID != nil,
 					correlationLocation: correlationLocationOf(msg),
 					schemaFormat:        msg.SchemaFormat,
@@ -909,7 +973,9 @@ func collectOperations(doc *document, opts ConvertOptions, defaultTarget opTarge
 			}
 		}
 		if ch.Subscribe != nil {
-			msg := derefMessage(doc, messageOf(ch.Subscribe))
+			rawMsg := messageOf(ch.Subscribe)
+			warnDroppedOneOf(doc, diagnostics, &warnings, convertutil.FirstNonEmpty(ch.Subscribe.OperationID, chName+"_subscribe"), rawMsg)
+			msg := derefMessage(doc, rawMsg)
 			recordFormat(msg)
 			if isReviewOnlySchemaFormat(msg.SchemaFormat) {
 				skipped = append(skipped, convertutil.FirstNonEmpty(ch.Subscribe.OperationID, chName+"_subscribe"))
@@ -921,6 +987,7 @@ func collectOperations(doc *document, opts ConvertOptions, defaultTarget opTarge
 					targetProtocol:      target,
 					topic:               topicWithBinding(topic, ch.Subscribe.Bindings),
 					payload:             resolvePayload(doc, msg),
+					headers:             resolveHeaders(doc, msg),
 					hasCorrelation:      msg.CorrelationID != nil,
 					correlationLocation: correlationLocationOf(msg),
 					schemaFormat:        msg.SchemaFormat,
@@ -1090,6 +1157,9 @@ func applyBindingsToOp(op *kafkaOp, channelBindings bindings, operationBindings 
 				p := b.Kafka.Partition
 				op.partition = &p
 			}
+			if b.Kafka.Partitions > 0 {
+				op.partitions = b.Kafka.Partitions
+			}
 		}
 		if hasJMSBinding(b) && op.targetProtocol == targetJMS {
 			if op.destinationType == "" {
@@ -1159,6 +1229,7 @@ func buildAction(op kafkaOp, includeAssertion bool, doc *document) (dsl.Action, 
 	default:
 		action.Type = "kafka_consume"
 	}
+	columns = append(columns, applyDeclaredHeaders(&action, op, doc)...)
 	ensureKafkaActionParams(&action, op)
 	columns = applyCorrelationID(&action, op, columns)
 	if includeAssertion {
@@ -1170,6 +1241,24 @@ func buildAction(op kafkaOp, includeAssertion bool, doc *document) (dsl.Action, 
 		}
 	}
 	return action, columns
+}
+
+func applyDeclaredHeaders(action *dsl.Action, op kafkaOp, doc *document) []string {
+	if op.kind == "consume" || len(op.headers.Properties) == 0 {
+		return nil
+	}
+	value, columns := sampleForSchema(doc, op.headers, map[string]bool{}, "header")
+	headers, ok := value.(map[string]any)
+	if !ok || len(headers) == 0 {
+		return columns
+	}
+	if action.Headers == nil {
+		action.Headers = map[string]string{}
+	}
+	for _, name := range sortedAnyKeys(headers) {
+		action.Headers[name] = fmt.Sprint(headers[name])
+	}
+	return columns
 }
 
 // applyCorrelationID wires the message's declared correlation id into the
@@ -1218,6 +1307,7 @@ func applyCorrelationID(action *dsl.Action, op kafkaOp, columns []string) []stri
 				}
 				action.Params["correlation_id"] = correlationTemplate
 			}
+			return removeColumn(columns, sanitizeColumnName(columnName("header", lastPathSegment(path))))
 		}
 	case "consume":
 		extractorName := sanitizeName(op.name) + "_correlation_id"
@@ -1575,6 +1665,18 @@ func derefMessage(doc *document, m messageDef) messageDef {
 	return resolveMessageRef(doc, m)
 }
 
+func warnDroppedOneOf(doc *document, diagnostics *diag.Collector, warnings *[]string, label string, m messageDef) {
+	resolved := resolveMessageRef(doc, m)
+	if len(resolved.OneOf) <= 1 {
+		return
+	}
+	message := fmt.Sprintf("message oneOf declares %d variants; the importer sampled the first variant and left %d variant(s) for review", len(resolved.OneOf), len(resolved.OneOf)-1)
+	*warnings = append(*warnings, fmt.Sprintf("%s: %s", label, message))
+	if diagnostics != nil {
+		diagnostics.Add(diag.Warning, "AsyncAPI message oneOf review", label, message)
+	}
+}
+
 func resolveMessageRef(doc *document, m messageDef) messageDef {
 	if m.Ref == "" {
 		return m
@@ -1592,6 +1694,11 @@ func resolveMessageRef(doc *document, m messageDef) messageDef {
 func resolvePayload(doc *document, m messageDef) schema {
 	m = resolveMessageRef(doc, m)
 	return resolveSchemaDeep(doc, m.Payload, map[string]bool{})
+}
+
+func resolveHeaders(doc *document, m messageDef) schema {
+	m = resolveMessageRef(doc, m)
+	return resolveSchemaDeep(doc, m.Headers, map[string]bool{})
 }
 
 func resolveSchemaRef(doc *document, s schema) schema {
@@ -1616,18 +1723,22 @@ func resolveSchemaDeep(doc *document, s schema, seen map[string]bool) schema {
 		seen[s.Ref] = true
 		s = resolveSchemaRef(doc, s)
 	}
-	for name, prop := range s.Properties {
-		s.Properties[name] = resolveSchemaDeep(doc, prop, copySeen(seen))
+	out := s
+	if s.Properties != nil {
+		out.Properties = make(map[string]schema, len(s.Properties))
+		for name, prop := range s.Properties {
+			out.Properties[name] = resolveSchemaDeep(doc, prop, copySeen(seen))
+		}
 	}
 	if s.Items != nil {
 		item := resolveSchemaDeep(doc, *s.Items, copySeen(seen))
-		s.Items = &item
+		out.Items = &item
 	}
 	if s.Values != nil {
 		value := resolveSchemaDeep(doc, *s.Values, copySeen(seen))
-		s.Values = &value
+		out.Values = &value
 	}
-	return s
+	return out
 }
 
 func resolveChannel(doc *document, channelRef string) (string, channel, bool) {
@@ -1963,6 +2074,24 @@ func sortedMessageKeys(m map[string]messageDef) []string {
 }
 
 func sortedSchemaKeys(m map[string]schema) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedAnyKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedSecuritySchemeKeys(m map[string]securityScheme) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

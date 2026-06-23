@@ -362,7 +362,8 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const agentforceTransformChanges = (reviewedScript?.metadata?.import?.preserved?.agentforce_transform as AgentforceTransformChange[] | undefined) ?? []
   const ramlSummary = kind === 'raml' ? (result as RAMLImportResult | null | undefined)?.summary : undefined
   const harDiff = harSummary?.har_diff
-  const replayPreflight = result?.preflight || (reviewedScript?.metadata?.import?.preserved?.replay_preflight as OpenAPIImportResult['preflight'] | undefined) || null
+  const selectedReplayPreflight = reviewedScript?.metadata?.import?.preserved?.replay_preflight as OpenAPIImportResult['preflight'] | undefined
+  const replayPreflight = (generatedScripts.length > 1 ? selectedReplayPreflight : result?.preflight || selectedReplayPreflight) || null
   const openAPICorrelations: OpenAPICorrelation[] = kind === 'openapi' ? ((result as OpenAPIImportResult | null | undefined)?.correlations || []) : []
 
   const handleSave = async () => {

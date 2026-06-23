@@ -266,15 +266,32 @@ func (b *memoryBroker) hasMessages(destination string) bool {
 	return len(b.queues[destination]) > 0
 }
 
+func (b *memoryBroker) hasMatching(destination string, match func(message) bool) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, msg := range b.queues[destination] {
+		if match == nil || match(msg) {
+			return true
+		}
+	}
+	return false
+}
+
 // consumeMatching pops the first message satisfying the selector (a nil selector
 // matches the head, preserving plain-FIFO behavior). Non-matching messages stay
 // in the queue for other consumers.
 func (b *memoryBroker) consumeMatching(destination string, sel *selector) (message, bool) {
+	return b.consumeWhere(destination, func(msg message) bool {
+		return sel.matches(msg.Headers, msg.Properties)
+	})
+}
+
+func (b *memoryBroker) consumeWhere(destination string, match func(message) bool) (message, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	queue := b.queues[destination]
 	for i, msg := range queue {
-		if sel.matches(msg.Headers, msg.Properties) {
+		if match == nil || match(msg) {
 			// Three-index slice on the head keeps the backing array intact for the
 			// retained tail.
 			b.queues[destination] = append(queue[:i:i], queue[i+1:]...)
@@ -1114,7 +1131,15 @@ func (a memoryAdapter) Consume(ctx context.Context, destination string, timeout 
 func (a memoryAdapter) RequestReply(ctx context.Context, requestDestination string, replyDestination string, request message, timeout time.Duration) (message, message, error) {
 	a.broker.publish(requestDestination, request)
 
-	if !a.broker.hasMessages(replyDestination) {
+	matchesRequest := func(reply message) bool {
+		return request.CorrelationID == "" ||
+			reply.CorrelationID == request.CorrelationID ||
+			reply.Headers["jms_correlation_id"] == request.CorrelationID ||
+			reply.Properties["jms_correlation_id"] == request.CorrelationID ||
+			reply.Properties["JMSCorrelationID"] == request.CorrelationID
+	}
+	if (request.CorrelationID != "" && !a.broker.hasMatching(replyDestination, matchesRequest)) ||
+		(request.CorrelationID == "" && !a.broker.hasMessages(replyDestination)) {
 		a.broker.publish(replyDestination, message{
 			ID:            uuid.NewString(),
 			CorrelationID: request.CorrelationID,
@@ -1126,8 +1151,23 @@ func (a memoryAdapter) RequestReply(ctx context.Context, requestDestination stri
 		})
 	}
 
-	response, err := a.Consume(ctx, replyDestination, timeout)
-	return request, response, err
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+
+	for {
+		if response, ok := a.broker.consumeWhere(replyDestination, matchesRequest); ok {
+			return request, response, nil
+		}
+		select {
+		case <-ctx.Done():
+			return request, message{}, ctx.Err()
+		case <-deadline.C:
+			return request, message{}, fmt.Errorf("no correlated JMS reply received from %q within %s", replyDestination, timeout)
+		case <-tick.C:
+		}
+	}
 }
 
 func (a memoryAdapter) HealthCheck(context.Context) error {
@@ -1760,7 +1800,14 @@ func runExtractors(extractors []protocol.Extractor, result *protocol.Result, msg
 	for _, extractor := range extractors {
 		value, err := extract(extractor, msg)
 		if err != nil {
-			return err
+			switch strings.ToLower(strings.TrimSpace(extractor.OnMiss)) {
+			case "", "ignore":
+				continue
+			case "empty":
+				value = ""
+			default:
+				return err
+			}
 		}
 		result.Extractions[extractor.Name] = value
 	}
@@ -1834,16 +1881,30 @@ func evaluateAssertions(assertions []protocol.Assertion, result *protocol.Result
 }
 
 func extractJSONPath(expr string, body []byte) (string, error) {
-	expr = strings.TrimPrefix(strings.TrimSpace(expr), "$.")
-	if expr == "" {
+	expr = strings.TrimSpace(expr)
+	if expr == "$" || expr == "" {
 		return string(body), nil
 	}
-	parts := strings.Split(expr, ".")
+	parts, err := parseJSONPathSegments(expr)
+	if err != nil {
+		return "", err
+	}
 	var current any
 	if err := json.Unmarshal(body, &current); err != nil {
 		return "", fmt.Errorf("invalid JSON body: %w", err)
 	}
 	for _, part := range parts {
+		if idx, ok := parseArrayIndex(part); ok {
+			arr, ok := current.([]any)
+			if !ok {
+				return "", fmt.Errorf("expected JSON array at index %d", idx)
+			}
+			if idx < 0 || idx >= len(arr) {
+				return "", fmt.Errorf("JSON array index %d out of range", idx)
+			}
+			current = arr[idx]
+			continue
+		}
 		obj, ok := current.(map[string]any)
 		if !ok {
 			return "", fmt.Errorf("expected JSON object at %q", part)
@@ -1854,6 +1915,65 @@ func extractJSONPath(expr string, body []byte) (string, error) {
 		}
 	}
 	return fmt.Sprint(current), nil
+}
+
+func parseJSONPathSegments(expr string) ([]string, error) {
+	expr = strings.TrimSpace(expr)
+	expr = strings.TrimPrefix(expr, "$")
+	expr = strings.TrimPrefix(expr, ".")
+	if expr == "" {
+		return nil, nil
+	}
+	var parts []string
+	for len(expr) > 0 {
+		if expr[0] == '.' {
+			expr = expr[1:]
+			continue
+		}
+		if expr[0] == '[' {
+			end := strings.IndexByte(expr, ']')
+			if end < 0 {
+				return nil, fmt.Errorf("invalid JSONPath %q", expr)
+			}
+			token := expr[1:end]
+			if len(token) >= 2 && ((token[0] == '"' && token[len(token)-1] == '"') || (token[0] == '\'' && token[len(token)-1] == '\'')) {
+				var decoded string
+				if token[0] == '"' {
+					if err := json.Unmarshal([]byte(token), &decoded); err != nil {
+						return nil, err
+					}
+				} else {
+					decoded = strings.ReplaceAll(token[1:len(token)-1], `\'`, `'`)
+				}
+				parts = append(parts, decoded)
+			} else {
+				parts = append(parts, token)
+			}
+			expr = expr[end+1:]
+			continue
+		}
+		nextDot := strings.IndexAny(expr, ".[")
+		if nextDot < 0 {
+			parts = append(parts, expr)
+			break
+		}
+		parts = append(parts, expr[:nextDot])
+		expr = expr[nextDot:]
+	}
+	return parts, nil
+}
+
+func parseArrayIndex(value string) (int, bool) {
+	if value == "" {
+		return 0, false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+	}
+	idx, err := strconv.Atoi(value)
+	return idx, err == nil
 }
 
 func stringValue(cfg map[string]any, key string) string {

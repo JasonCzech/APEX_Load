@@ -469,6 +469,118 @@ func TestHandleCommitOpenAPIImportCreateReplaceAndDryRun(t *testing.T) {
 	}
 }
 
+func TestHandleCommitAsyncAPIImportCreateReplaceAndDryRun(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	createPayload := map[string]any{
+		"script": asyncAPICommitTestScript("Created AsyncAPI", "proj-async", []dsl.Action{
+			asyncAPICommitTestAction("PublishOrders", "kafka_produce", "orders.created", "orders"),
+		}),
+	}
+	createBody, err := json.Marshal(createPayload)
+	if err != nil {
+		t.Fatalf("json.Marshal create returned error: %v", err)
+	}
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/asyncapi/commit", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created struct {
+		StoredScript StoredScript      `json:"stored_script"`
+		Replaced     bool              `json:"replaced"`
+		DryRun       bool              `json:"dry_run"`
+		Diff         openAPIImportDiff `json:"diff"`
+		Preflight    *ReplayPreflight  `json:"preflight"`
+	}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal create returned error: %v", err)
+	}
+	if created.StoredScript.ID == "" || created.Replaced || created.DryRun || created.Diff.Added != 1 || created.Preflight == nil {
+		t.Fatalf("created response = %+v", created)
+	}
+
+	dryRunPayload := map[string]any{
+		"mode":             "replace",
+		"target_script_id": created.StoredScript.ID,
+		"replace_mode":     "full",
+		"dry_run":          true,
+		"script": asyncAPICommitTestScript("Dry Run AsyncAPI", "proj-async", []dsl.Action{
+			asyncAPICommitTestAction("PublishOrders", "kafka_produce", "orders.updated", "orders"),
+		}),
+	}
+	dryRunBody, err := json.Marshal(dryRunPayload)
+	if err != nil {
+		t.Fatalf("json.Marshal dry-run returned error: %v", err)
+	}
+	dryRunReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/asyncapi/commit", bytes.NewReader(dryRunBody))
+	dryRunReq.Header.Set("Content-Type", "application/json")
+	dryRunResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(dryRunResp, dryRunReq)
+
+	if dryRunResp.Code != http.StatusOK {
+		t.Fatalf("dry-run status = %d, want %d body=%s", dryRunResp.Code, http.StatusOK, dryRunResp.Body.String())
+	}
+	var dryRun struct {
+		DryRun bool              `json:"dry_run"`
+		Diff   openAPIImportDiff `json:"diff"`
+	}
+	if err := json.Unmarshal(dryRunResp.Body.Bytes(), &dryRun); err != nil {
+		t.Fatalf("json.Unmarshal dry-run returned error: %v", err)
+	}
+	if !dryRun.DryRun || dryRun.Diff.ReplaceMode != "full" || dryRun.Diff.Added != 1 || dryRun.Diff.Removed != 1 {
+		t.Fatalf("dry-run response = %+v", dryRun)
+	}
+	stillCreated, ok := server.runner.GetScript(created.StoredScript.ID)
+	if !ok || stillCreated.Name != "Created AsyncAPI" {
+		t.Fatalf("dry-run mutated stored script: %+v ok=%v", stillCreated, ok)
+	}
+
+	existing := asyncAPICommitTestScript("Merge Target", "proj-async", []dsl.Action{
+		asyncAPICommitTestAction("ConsumeOrders", "kafka_consume", "orders.created", "orders"),
+		{Name: "CustomAudit", Type: "kafka_consume", Target: "custom.audit"},
+	})
+	storedExisting := server.runner.StoreScript(&existing)
+	updated := asyncAPICommitTestAction("ConsumeOrders", "kafka_consume", "orders.created", "orders")
+	updated.Assertions = []dsl.Assertion{{Type: "message_received"}}
+	mergePayload := map[string]any{
+		"mode":             "replace",
+		"target_script_id": storedExisting.ID,
+		"replace_mode":     "merge_by_operation_id",
+		"script": asyncAPICommitTestScript("Merged AsyncAPI", "proj-async", []dsl.Action{
+			updated,
+			asyncAPICommitTestAction("PublishPayments", "kafka_produce", "payments.created", "payments"),
+		}),
+	}
+	mergeBody, err := json.Marshal(mergePayload)
+	if err != nil {
+		t.Fatalf("json.Marshal merge returned error: %v", err)
+	}
+	mergeReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/asyncapi/commit", bytes.NewReader(mergeBody))
+	mergeReq.Header.Set("Content-Type", "application/json")
+	mergeResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(mergeResp, mergeReq)
+
+	if mergeResp.Code != http.StatusOK {
+		t.Fatalf("merge status = %d, want %d body=%s", mergeResp.Code, http.StatusOK, mergeResp.Body.String())
+	}
+	var merged struct {
+		StoredScript StoredScript      `json:"stored_script"`
+		Diff         openAPIImportDiff `json:"diff"`
+	}
+	if err := json.Unmarshal(mergeResp.Body.Bytes(), &merged); err != nil {
+		t.Fatalf("json.Unmarshal merge returned error: %v", err)
+	}
+	if merged.Diff.Updated != 1 || merged.Diff.Added != 1 || merged.Diff.Preserved != 1 {
+		t.Fatalf("merge diff = %+v, want updated/added/preserved", merged.Diff)
+	}
+	if len(merged.StoredScript.Script.Actions) != 3 || merged.StoredScript.Script.Actions[2].Name != "CustomAudit" {
+		t.Fatalf("merged actions = %+v, want custom action preserved after imported messages", merged.StoredScript.Script.Actions)
+	}
+}
+
 func TestHandleImportOpenAPIRawJSONDocument(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi?project_id=proj-api&base_url=https://override.example.test", strings.NewReader(`{
@@ -999,6 +1111,37 @@ func openAPICommitTestAction(name string, method string, target string, operatio
 	}
 }
 
+func asyncAPICommitTestScript(name string, projectID string, actions []dsl.Action) dsl.Script {
+	return dsl.Script{
+		Name:      name,
+		Version:   "1.0.0",
+		Protocol:  "kafka",
+		ProjectID: projectID,
+		Config: dsl.ScriptConfig{Kafka: dsl.KafkaConfig{
+			Brokers:          []string{"kafka:9092"},
+			SecurityProtocol: "plaintext",
+			Mock:             true,
+		}},
+		Actions: actions,
+	}
+}
+
+func asyncAPICommitTestAction(name string, actionType string, target string, channel string) dsl.Action {
+	body := ""
+	if actionType == "kafka_produce" {
+		body = `{"id":"sample"}`
+	}
+	return dsl.Action{
+		Name:   name,
+		Type:   actionType,
+		Target: target,
+		Body:   body,
+		Metadata: map[string]any{
+			"asyncapi_channel": channel,
+		},
+	}
+}
+
 func webAPIMatrixContains(entries []struct {
 	ID              string `json:"id"`
 	Status          string `json:"status"`
@@ -1058,6 +1201,23 @@ func preflightHasCheck(entries []struct {
 		}
 	}
 	return false
+}
+
+func scriptHasPreservedReplayPreflight(metadata map[string]any) bool {
+	importMeta, ok := metadata["import"].(map[string]any)
+	if !ok {
+		return false
+	}
+	preserved, ok := importMeta["preserved"].(map[string]any)
+	if !ok {
+		return false
+	}
+	preflight, ok := preserved["replay_preflight"].(map[string]any)
+	if !ok {
+		return false
+	}
+	checks, ok := preflight["checks"].([]any)
+	return ok && len(checks) > 0
 }
 
 func TestHandleImportAsyncAPI(t *testing.T) {
@@ -1258,6 +1418,133 @@ operations:
 	}
 	if len(result.Script.Actions) != 1 || len(result.Script.Actions[0].Assertions) != 0 {
 		t.Fatalf("include_assertions=false not honored: %+v", result.Script.Actions)
+	}
+}
+
+func TestHandleImportAsyncAPIMixedKafkaJMSPreservesPerScriptPreflight(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name":       "Mixed AsyncAPI",
+		"project_id": "proj-mixed",
+		"content": `asyncapi: 3.0.0
+info:
+  title: Mixed
+  version: 1.0.0
+servers:
+  kafkaBroker:
+    host: kafka:9092
+    protocol: kafka
+  amqpBroker:
+    host: amqp.example.test:5671
+    protocol: amqp
+channels:
+  orders:
+    address: orders.events
+    servers:
+      - $ref: '#/servers/kafkaBroker'
+    messages:
+      m:
+        payload:
+          type: object
+          properties:
+            orderId:
+              type: string
+  shipments:
+    address: shipments.events
+    servers:
+      - $ref: '#/servers/amqpBroker'
+    bindings:
+      jms:
+        destinationType: topic
+    messages:
+      m:
+        payload:
+          type: object
+          properties:
+            shipmentId:
+              type: string
+operations:
+  sendOrder:
+    action: send
+    channel:
+      $ref: '#/channels/orders'
+  receiveOrder:
+    action: receive
+    channel:
+      $ref: '#/channels/orders'
+  sendShipment:
+    action: send
+    channel:
+      $ref: '#/channels/shipments'
+  receiveShipment:
+    action: receive
+    channel:
+      $ref: '#/channels/shipments'
+`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/asyncapi", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Scripts []struct {
+			Protocol string         `json:"protocol"`
+			Metadata map[string]any `json:"metadata"`
+			Config   struct {
+				Kafka struct {
+					AutoOffsetReset string `json:"auto_offset_reset"`
+				} `json:"kafka"`
+				JMS struct {
+					BrokerURL       string `json:"broker_url"`
+					DestinationType string `json:"destination_type"`
+				} `json:"jms"`
+			} `json:"config"`
+		} `json:"scripts"`
+		Preflight struct {
+			Checks []struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+			} `json:"checks"`
+		} `json:"preflight"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) != 2 {
+		t.Fatalf("scripts = %+v, want Kafka + JMS split", result.Scripts)
+	}
+	if !preflightHasCheck(result.Preflight.Checks, "messaging_kafka") {
+		t.Fatalf("top-level preflight = %+v, want Kafka readiness for first script", result.Preflight)
+	}
+	foundKafka := false
+	foundJMS := false
+	for _, script := range result.Scripts {
+		if !scriptHasPreservedReplayPreflight(script.Metadata) {
+			t.Fatalf("%s script missing preserved replay_preflight metadata: %+v", script.Protocol, script.Metadata)
+		}
+		switch script.Protocol {
+		case "kafka":
+			foundKafka = true
+			if script.Config.Kafka.AutoOffsetReset != "earliest" {
+				t.Fatalf("kafka auto_offset_reset = %q, want earliest", script.Config.Kafka.AutoOffsetReset)
+			}
+		case "jms-solace":
+			foundJMS = true
+			if script.Config.JMS.BrokerURL != "amqp.example.test:5671" || script.Config.JMS.DestinationType != "topic" {
+				t.Fatalf("jms config = %+v, want broker URL + topic destination", script.Config.JMS)
+			}
+		}
+	}
+	if !foundKafka || !foundJMS {
+		t.Fatalf("scripts = %+v, want Kafka and JMS protocols", result.Scripts)
 	}
 }
 

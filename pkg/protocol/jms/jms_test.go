@@ -480,6 +480,132 @@ func TestJMSRequestReplyEchoesResponse(t *testing.T) {
 	}
 }
 
+func TestJMSRequestReplySkipsUncorrelatedReply(t *testing.T) {
+	ctx := context.Background()
+	p := &JMS{name: "jms-solace", provider: "solace"}
+	if err := p.Init(ctx, map[string]any{
+		"jms_destination": "orders.request.correlation",
+		"jms_reply_to":    "orders.reply.correlation",
+		"jms_mock":        true,
+		"jms_timeout_ms":  float64(250),
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	stale, err := p.Execute(ctx, &protocol.Action{
+		Name:   "stale-reply",
+		Type:   "jms_publish",
+		Target: "orders.reply.correlation",
+		Params: map[string]any{"correlation_id": "stale-correlation"},
+		Body:   []byte(`{"reply":"stale"}`),
+	})
+	if err != nil {
+		t.Fatalf("stale publish returned error: %v", err)
+	}
+	if !stale.Success {
+		t.Fatalf("stale publish failed: %s", stale.ErrorMessage)
+	}
+
+	result, err := p.Execute(ctx, &protocol.Action{
+		Name:   "request-order",
+		Type:   "jms_request_reply",
+		Params: map[string]any{"correlation_id": "wanted-correlation"},
+		Body:   []byte(`{"reply":"fresh"}`),
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("request-reply success = false: %s", result.ErrorMessage)
+	}
+	if got := result.Extractions["jms_correlation_id"]; got != "wanted-correlation" {
+		t.Fatalf("jms_correlation_id = %q, want wanted-correlation; extractions=%#v", got, result.Extractions)
+	}
+	if strings.Contains(result.Extractions["jms_body"], "stale") {
+		t.Fatalf("request-reply consumed stale body: %q", result.Extractions["jms_body"])
+	}
+}
+
+func TestJMSConsumeExtractorOnMissIgnore(t *testing.T) {
+	ctx := context.Background()
+	p := &JMS{name: "jms-solace", provider: "solace"}
+	if err := p.Init(ctx, map[string]any{
+		"jms_destination": "orders.extractor.ignore",
+		"jms_mock":        true,
+		"jms_timeout_ms":  float64(250),
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	if _, err := p.Execute(ctx, &protocol.Action{
+		Name: "publish",
+		Type: "jms_publish",
+		Body: []byte(`{"orderId":"A-1"}`),
+	}); err != nil {
+		t.Fatalf("publish returned error: %v", err)
+	}
+
+	consumed, err := p.Execute(ctx, &protocol.Action{
+		Name: "consume",
+		Type: "jms_consume",
+		Extractors: []protocol.Extractor{{
+			Name:       "missing_correlation",
+			Source:     "body",
+			Type:       "jsonpath",
+			Expression: "$.missing.correlation",
+			OnMiss:     "ignore",
+		}},
+		Assertions: []protocol.Assertion{{Type: "message_received"}},
+	})
+	if err != nil {
+		t.Fatalf("consume returned error: %v", err)
+	}
+	if !consumed.Success {
+		t.Fatalf("consume failed despite OnMiss=ignore: %s", consumed.ErrorMessage)
+	}
+	if _, ok := consumed.Extractions["missing_correlation"]; ok {
+		t.Fatalf("missing extractor was populated: %#v", consumed.Extractions)
+	}
+}
+
+func TestJMSConsumeBracketAndArrayJSONPath(t *testing.T) {
+	ctx := context.Background()
+	p := &JMS{name: "jms-solace", provider: "solace"}
+	if err := p.Init(ctx, map[string]any{
+		"jms_destination": "orders.extractor.bracket",
+		"jms_mock":        true,
+		"jms_timeout_ms":  float64(250),
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	if _, err := p.Execute(ctx, &protocol.Action{
+		Name: "publish",
+		Type: "jms_publish",
+		Body: []byte(`{"weird.key":[{"a/b":"ok"}]}`),
+	}); err != nil {
+		t.Fatalf("publish returned error: %v", err)
+	}
+
+	consumed, err := p.Execute(ctx, &protocol.Action{
+		Name: "consume",
+		Type: "jms_consume",
+		Extractors: []protocol.Extractor{{
+			Name:       "escaped",
+			Source:     "body",
+			Type:       "jsonpath",
+			Expression: `$["weird.key"][0]["a/b"]`,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("consume returned error: %v", err)
+	}
+	if !consumed.Success {
+		t.Fatalf("consume failed: %s", consumed.ErrorMessage)
+	}
+	if got := consumed.Extractions["escaped"]; got != "ok" {
+		t.Fatalf("escaped extraction = %q, want ok", got)
+	}
+}
+
 func TestJMSServiceBusMockPublishConsumeRequestReply(t *testing.T) {
 	ctx := context.Background()
 	p := &JMS{name: "jms-servicebus", provider: "servicebus"}

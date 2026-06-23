@@ -409,6 +409,236 @@ operations:
 	}
 }
 
+func TestConvertKafkaSecurityBindingsHeadersAndPartitions(t *testing.T) {
+	doc := `
+asyncapi: 3.0.0
+info:
+  title: Secure Orders
+  version: 1.0.0
+servers:
+  prod:
+    host: kafka:9092
+    protocol: kafka
+    security:
+      - scram: []
+components:
+  securitySchemes:
+    scram:
+      type: scramSha512
+channels:
+  orders:
+    address: orders.secure
+    bindings:
+      kafka:
+        key: order-key
+        groupId: orders-replay
+        partition: 2
+        partitions: 8
+    messages:
+      m:
+        headers:
+          type: object
+          properties:
+            event-type:
+              type: string
+            trace.id:
+              type: string
+        payload:
+          type: object
+          properties:
+            orderId:
+              type: string
+operations:
+  send:
+    action: send
+    channel:
+      $ref: '#/channels/orders'
+`
+	result, err := Convert(ImportRequest{Content: doc})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script.Config.Kafka.SASLMechanism != "scram-sha-512" || result.Script.Config.Kafka.SecurityProtocol != "sasl_plaintext" {
+		t.Fatalf("Kafka SASL config = %+v, want scram-sha-512 over sasl_plaintext", result.Script.Config.Kafka)
+	}
+	if result.Script.Config.Kafka.Partitions != 8 {
+		t.Fatalf("partitions = %d, want 8", result.Script.Config.Kafka.Partitions)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %+v, want one produce", result.Script.Actions)
+	}
+	action := result.Script.Actions[0]
+	if action.Params["key"] != "order-key" || action.Params["consumer_group"] != "orders-replay" || action.Params["partition"] != 2 {
+		t.Fatalf("Kafka params = %+v, want key/group/partition from bindings", action.Params)
+	}
+	if !strings.Contains(action.Headers["event-type"], "{{data.asyncapi.header_event_type}}") {
+		t.Fatalf("event-type header = %q, want generated data placeholder", action.Headers["event-type"])
+	}
+	if !strings.Contains(action.Headers["trace.id"], "{{data.asyncapi.header_trace_id}}") {
+		t.Fatalf("trace.id header = %q, want collision-safe data placeholder", action.Headers["trace.id"])
+	}
+}
+
+func TestConvertAsyncAPI3OperationMessagesAndComponentsChannel(t *testing.T) {
+	doc := `
+asyncapi: 3.0.0
+info:
+  title: Components
+  version: 1.0.0
+servers:
+  broker:
+    host: kafka:9092
+    protocol: kafka
+channels:
+  proxy:
+    $ref: '#/components/channels/orders'
+components:
+  channels:
+    orders:
+      address: orders.components
+      messages:
+        created:
+          payload:
+            type: object
+            properties:
+              orderId:
+                type: string
+        cancelled:
+          payload:
+            type: object
+            properties:
+              cancelId:
+                type: string
+operations:
+  sendBoth:
+    action: send
+    channel:
+      $ref: '#/channels/proxy'
+    messages:
+      - $ref: '#/channels/proxy/messages/created'
+      - $ref: '#/channels/proxy/messages/cancelled'
+`
+	result, err := Convert(ImportRequest{Content: doc})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %+v, want one action per operation.messages entry", result.Script.Actions)
+	}
+	if result.Script.Actions[0].Target != "orders.components" || result.Script.Actions[1].Target != "orders.components" {
+		t.Fatalf("targets = %+v, want dereferenced component channel topic", result.Script.Actions)
+	}
+	if !strings.Contains(result.Script.Actions[0].Body, "orderId") || !strings.Contains(result.Script.Actions[1].Body, "cancelId") {
+		t.Fatalf("operation.messages payloads not preserved: first=%s second=%s", result.Script.Actions[0].Body, result.Script.Actions[1].Body)
+	}
+}
+
+func TestConvertProtobufSchemaFormatIsReviewOnly(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `
+asyncapi: 3.0.0
+info:
+  title: Protobuf
+  version: 1.0.0
+servers:
+  broker:
+    host: kafka:9092
+    protocol: kafka
+channels:
+  c:
+    address: protobuf.events
+    messages:
+      m:
+        schemaFormat: application/protobuf
+        payload:
+          type: object
+operations:
+  send:
+    action: send
+    channel:
+      $ref: '#/channels/c'
+`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 0 {
+		t.Fatalf("protobuf import generated executable actions: %+v", result.Script.Actions)
+	}
+	if !stringSliceContains(result.Stats.SkippedOperations, "m") {
+		t.Fatalf("skipped_operations = %+v, want protobuf message name", result.Stats.SkippedOperations)
+	}
+	if !warningsContain(result.Warnings, "Protobuf") {
+		t.Fatalf("warnings = %v, want Protobuf review-only warning", result.Warnings)
+	}
+}
+
+func TestConvertMessageOneOfWarnsAndSamplesFirstVariant(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `
+asyncapi: 2.6.0
+info:
+  title: OneOf
+  version: 1.0.0
+servers:
+  broker:
+    url: kafka:9092
+    protocol: kafka
+channels:
+  events:
+    publish:
+      operationId: sendVariant
+      message:
+        oneOf:
+          - payload:
+              type: object
+              properties:
+                firstId:
+                  type: string
+          - payload:
+              type: object
+              properties:
+                secondId:
+                  type: string
+`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 || !strings.Contains(result.Script.Actions[0].Body, "firstId") || strings.Contains(result.Script.Actions[0].Body, "secondId") {
+		t.Fatalf("oneOf first-variant sampling failed: %+v", result.Script.Actions)
+	}
+	if !warningsContain(result.Warnings, "oneOf declares 2 variants") {
+		t.Fatalf("warnings = %v, want oneOf review warning", result.Warnings)
+	}
+}
+
+func TestResolveSchemaDeepDoesNotMutateComponentSchemas(t *testing.T) {
+	doc := &document{
+		Components: components{Schemas: map[string]schema{
+			"Envelope": {
+				Type: "object",
+				Properties: map[string]schema{
+					"child": {Ref: "#/components/schemas/Child"},
+				},
+			},
+			"Child": {
+				Type: "object",
+				Properties: map[string]schema{
+					"id": {Type: "string"},
+				},
+			},
+		}},
+	}
+	resolved := resolveSchemaDeep(doc, schema{Ref: "#/components/schemas/Envelope"}, map[string]bool{})
+	if _, ok := resolved.Properties["child"].Properties["id"]; !ok {
+		t.Fatalf("resolved schema = %+v, want nested child properties", resolved)
+	}
+	if got := doc.Components.Schemas["Envelope"].Properties["child"].Ref; got != "#/components/schemas/Child" {
+		t.Fatalf("component schema was mutated: child ref = %q", got)
+	}
+}
+
 func TestConvertErrors(t *testing.T) {
 	if _, err := Convert(ImportRequest{Content: ""}); err == nil {
 		t.Fatal("expected error for empty content")
@@ -588,4 +818,28 @@ func TestParseCorrelationLocation(t *testing.T) {
 				tt.location, source, path, ok, tt.source, tt.path, tt.ok)
 		}
 	}
+}
+
+func TestJSONPathForPointerEscapesSpecialKeysAndArrays(t *testing.T) {
+	if got := jsonPathForPointer("meta/0/a~1b/weird.key"); got != `$.meta[0]["a/b"]["weird.key"]` {
+		t.Fatalf("jsonPathForPointer = %q, want bracket JSONPath with pointer unescape", got)
+	}
+}
+
+func warningsContain(warnings []string, needle string) bool {
+	for _, warning := range warnings {
+		if strings.Contains(warning, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func stringSliceContains(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }

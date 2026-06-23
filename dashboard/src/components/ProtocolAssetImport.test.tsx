@@ -480,6 +480,18 @@ describe('ProtocolAssetImport', () => {
             { name: 'Publish Order', type: 'kafka_produce', target: 'orders.created' },
             { name: 'Consume Order', type: 'kafka_consume', target: 'orders.created' },
           ],
+          metadata: {
+            import: {
+              preserved: {
+                replay_preflight: {
+                  valid: true,
+                  checks: [
+                    { id: 'messaging_kafka', label: 'Kafka replay readiness', status: 'pass', detail: 'Mock broker enabled.' },
+                  ],
+                },
+              },
+            },
+          },
         },
         {
           name: 'Orders JMS',
@@ -498,6 +510,18 @@ describe('ProtocolAssetImport', () => {
           actions: [
             { name: 'Publish Shipment', type: 'jms_publish', target: 'shipments' },
           ],
+          metadata: {
+            import: {
+              preserved: {
+                replay_preflight: {
+                  valid: true,
+                  checks: [
+                    { id: 'messaging_jms', label: 'JMS replay readiness', status: 'pass', detail: 'Mock broker enabled.' },
+                  ],
+                },
+              },
+            },
+          },
         },
       ],
       script: {
@@ -1073,6 +1097,7 @@ describe('ProtocolAssetImport', () => {
     await act(async () => {
       jmsTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    expect(container.textContent).toContain('JMS replay readiness')
     expect(container.textContent).toContain('JMS broker · destination · replay')
     expect(container.textContent).toContain('Destination Type')
 

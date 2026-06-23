@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -34,6 +35,17 @@ func TestNativeProtocolSupportMatrixEndpointCoversRemainingExecutableProtocols(t
 		}
 		if len(entry.ActionEditor) == 0 || len(entry.ReplayEvidence) == 0 || len(entry.ReportExport) == 0 {
 			t.Fatalf("%s entry missing parity surfaces: %#v", protocol, entry)
+		}
+	}
+	kafkaEntry := nativeProtocolMatrixEntry(payload.SupportMatrix, "kafka")
+	if kafkaEntry == nil {
+		t.Fatal("support matrix missing kafka")
+	}
+	for _, gap := range kafkaEntry.RemainingGaps {
+		if strings.Contains(gap, "Avro/Protobuf") ||
+			strings.Contains(gap, "Avro schema-registry payloads remain review-only") ||
+			strings.Contains(gap, "Avro remains review-only") {
+			t.Fatalf("Kafka native support matrix has stale Avro review-only wording: %q", gap)
 		}
 	}
 	if payload.StatusCounts["supported"] < 5 {
