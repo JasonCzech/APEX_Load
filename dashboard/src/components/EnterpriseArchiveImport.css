@@ -200,32 +200,6 @@
   width: 100%;
   justify-content: center;
 }
-.lr-protocol-route-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-.lr-protocol-route-list li {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-.lr-protocol-route-list strong {
-  color: var(--text-secondary);
-}
-.lr-protocol-route-list span {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .lr-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -665,5 +639,10 @@
 .lr-preserved-card.coverage-review_required { border-left: 3px solid color-mix(in srgb, var(--danger) 50%, var(--accent)); }
 .lr-preserved-card.coverage-adapter_required { border-left: 3px solid var(--danger); }
 .lr-preserved-card.coverage-unsupported { border-left: 3px solid var(--text-muted); }
+/* Enterprise script protocol import coverage categories. */
+.lr-preserved-card.coverage-executable { border-left: 3px solid var(--success); }
+.lr-preserved-card.coverage-review_only { border-left: 3px solid color-mix(in srgb, var(--danger) 45%, var(--accent)); }
+.lr-preserved-card.coverage-external_runner_required { border-left: 3px solid var(--danger); }
 .coverage-hint { color: var(--text-muted); font-size: 12px; margin: 4px 0 8px 0; }
 .lr-warnings details[data-coverage="adapter_required"] > summary { color: var(--danger); }
+.lr-warnings details[data-coverage="external_runner_required"] > summary { color: var(--danger); }

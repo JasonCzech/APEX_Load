@@ -234,6 +234,7 @@ type EnterpriseArchiveProtocolCoverageSection = {
   title: string
   items: EnterpriseArchiveProtocolSupportEntry[]
   preview: string
+  hint: string
 }
 
 type EditorActionButton = {
@@ -1653,17 +1654,45 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
 
       <div className="settings-notice">
         <p>Protocol-aware detection uses .usr metadata plus source signatures. Conflicting evidence is gated for review instead of being saved as an executable script.</p>
-        {protocolCoverageSections.length > 0 && (
-          <ul className="lr-protocol-route-list" aria-label="source protocol import routes">
-            {protocolCoverageSections.map(section => (
-              <li key={section.key}>
-                <strong>{section.title}</strong>: {section.items.length}
-                {section.preview ? <span>{section.preview}</span> : null}
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
+
+      {protocolCoverageSections.length > 0 && (
+        <div className="lr-preserved" aria-label="enterprise protocol import coverage">
+          <div className="lr-preserved-header">
+            <h4>Import Coverage</h4>
+            <span>Executable, review-only, external-runner, and unsupported protocols</span>
+          </div>
+          <div className="lr-preserved-grid">
+            {protocolCoverageSections.map(section => (
+              <div className={`lr-preserved-card coverage-${section.key}`} key={section.key}>
+                <span className="lr-preserved-label">{section.title}</span>
+                <strong>{section.items.length} {section.items.length === 1 ? 'protocol' : 'protocols'}</strong>
+                <small>{section.preview}</small>
+              </div>
+            ))}
+          </div>
+          <div className="lr-warnings">
+            <h4>Coverage Details</h4>
+            {protocolCoverageSections.map(section => (
+              <details key={section.key} data-coverage={section.key}>
+                <summary>{section.title} ({section.items.length})</summary>
+                <p className="coverage-hint">{section.hint}</p>
+                <ul>
+                  {section.items.map(item => {
+                    const detail = enterpriseArchiveProtocolSupportDetail(item)
+                    return (
+                      <li key={item.id}>
+                        <strong>{enterpriseArchiveProtocolName(item)}</strong>
+                        {detail ? <> — {detail}</> : null}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </details>
+            ))}
+          </div>
+        </div>
+      )}
 
       {failedImportMessage && <div className="lr-error" role="alert">{failedImportMessage}</div>}
       {displayError && <div className="lr-error" role="alert">{displayError}</div>}
@@ -2582,7 +2611,35 @@ function buildEnterpriseArchiveProtocolCoverageSection(mode: string, title: stri
     key: mode,
     title,
     items,
-    preview: items.slice(0, 2).map(entry => entry.display_name || entry.protocol || entry.id).join(' • '),
+    preview: items.map(enterpriseArchiveProtocolName).join(' • '),
+    hint: enterpriseArchiveProtocolCoverageHint(mode),
+  }
+}
+
+function enterpriseArchiveProtocolName(entry: EnterpriseArchiveProtocolSupportEntry): string {
+  return entry.display_name || entry.protocol || entry.id
+}
+
+function enterpriseArchiveProtocolSupportDetail(entry: EnterpriseArchiveProtocolSupportEntry): string {
+  return [
+    entry.notes,
+    entry.runner_requirement ? `Requires ${entry.runner_requirement}.` : '',
+    entry.recommended_workflow,
+  ].filter(Boolean).join(' ')
+}
+
+function enterpriseArchiveProtocolCoverageHint(mode: string): string {
+  switch (mode) {
+    case 'executable':
+      return 'Protocols that can produce runnable APEX Load scripts from source evidence.'
+    case 'review_only':
+      return 'Protocols that preserve source evidence for review before a runnable script can be promoted.'
+    case 'external_runner_required':
+      return 'Protocols that require an approved external runner or bridge before execution.'
+    case 'unsupported':
+      return 'Protocols that are classified for visibility but do not currently have an import pathway.'
+    default:
+      return 'Protocols detected in the enterprise script archive support matrix.'
   }
 }
 

@@ -375,6 +375,52 @@ describe('EnterpriseArchiveImport', () => {
     expect(backdropRule).toContain('z-index: 220;')
   })
 
+  it('renders enterprise protocol import coverage with JMeter-style cards and full details', async () => {
+    apiMock.getEnterpriseArchiveSupportMatrix.mockResolvedValueOnce({
+      support_matrix: [],
+      notes: [],
+      tested_examples: [],
+      protocol_support_matrix: [
+        { id: 'web_http_html', protocol: 'web_http_html', display_name: 'Web HTTP/HTML', status: 'supported' },
+        { id: 'database', protocol: 'database', display_name: 'SQL / ODBC-style Database', status: 'supported' },
+        { id: 'dns', protocol: 'dns', display_name: 'DNS', status: 'supported' },
+        { id: 'web_services', protocol: 'web_services', display_name: 'Web Services', status: 'supported' },
+        { id: 'mapi', protocol: 'mapi', display_name: 'MAPI', status: 'review_only', notes: 'Preserved for review.' },
+        { id: 'sap_gui', protocol: 'sap_gui', display_name: 'SAP GUI', status: 'external_runner', runner_requirement: 'External SAP GUI runner bridge' },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<EnterpriseArchiveImport />)
+    })
+
+    await flushPromises()
+
+    const coverage = container.querySelector('[aria-label="enterprise protocol import coverage"]') as HTMLElement | null
+    expect(coverage).not.toBeNull()
+    expect(coverage?.querySelector('.lr-preserved-header h4')?.textContent).toBe('Import Coverage')
+    expect(coverage?.querySelector('.lr-preserved-grid')).not.toBeNull()
+
+    const executableCard = coverage?.querySelector('.lr-preserved-card.coverage-executable') as HTMLElement | null
+    expect(executableCard).not.toBeNull()
+    expect(executableCard?.textContent).toContain('4 protocols')
+    expect(executableCard?.textContent).toContain('Web HTTP/HTML')
+    expect(executableCard?.textContent).toContain('SQL / ODBC-style Database')
+    expect(executableCard?.textContent).toContain('DNS')
+    expect(executableCard?.textContent).toContain('Web Services')
+
+    const executableDetails = coverage?.querySelector('details[data-coverage="executable"]') as HTMLDetailsElement | null
+    expect(executableDetails).not.toBeNull()
+    expect(executableDetails?.textContent).toContain('Web HTTP/HTML')
+    expect(executableDetails?.textContent).toContain('SQL / ODBC-style Database')
+    expect(executableDetails?.textContent).toContain('DNS')
+    expect(executableDetails?.textContent).toContain('Web Services')
+
+    const externalRunnerDetails = coverage?.querySelector('details[data-coverage="external_runner_required"]') as HTMLDetailsElement | null
+    expect(externalRunnerDetails?.textContent).toContain('SAP GUI')
+    expect(externalRunnerDetails?.textContent).toContain('Requires External SAP GUI runner bridge.')
+  })
+
   it('imports a zip and saves the converted script', async () => {
     const onImported = vi.fn()
     apiMock.createScript.mockResolvedValueOnce({
@@ -396,12 +442,12 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).not.toContain('Protocol Import Coverage')
     expect(container.querySelector('.lr-conversion-row')).not.toBeNull()
     expect(container.querySelector('.lr-import-actions-card')).not.toBeNull()
-    expect(container.querySelector('.lr-protocol-route-list')).not.toBeNull()
+    expect(container.querySelector('[aria-label="enterprise protocol import coverage"]')).not.toBeNull()
     expect(container.textContent).toContain('Executable')
     expect(container.textContent).toContain('External Runner')
     expect(container.textContent).toContain('Partial')
     expect(container.textContent).toContain('Compatibility Only')
-    expect(container.querySelectorAll('.lr-preserved-card')).toHaveLength(0)
+    expect(container.querySelector('.lr-preserved-card.coverage-executable')).not.toBeNull()
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     expect(container.textContent).not.toContain('HTTP: Timeouts, redirects, and connection reuse')
     expect(container.textContent).not.toContain('Tested Examples')
