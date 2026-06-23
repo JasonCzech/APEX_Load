@@ -39,9 +39,13 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 	// mutates the script in place (injects an OAuth init, rewrites headers, appends
 	// a teardown), so validating earlier would compute warnings against a script
 	// that no longer matches what is returned.
-	if issues := validateScript(augmented.Script); len(issues) > 0 {
+	issues := validateScript(augmented.Script)
+	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
+	// Attach a replay preflight for parity with the HAR importer's Salesforce path.
+	preflight := buildReplayPreflight(augmented.Script, nil, issues, result.Warnings)
+	attachImportReplayPreflight(augmented.Script, augmented.Source, preflight)
 
 	preApplied := sampleCorrelationsToPreApplied(result.Correlations)
 	if augmented.Script != result.Script {
@@ -59,6 +63,7 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 		SourceReview:        result.SourceReview,
 		Summary:             augmented.Summary,
 		Parameterization:    buildImportParameterization(augmented.Script, preApplied),
+		Preflight:           preflight,
 	}))
 }
 
@@ -70,8 +75,12 @@ func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 		Summary:        harImportSummary(result),
 		Source:         source,
 	}
+	// Detect first with BuildNative:false so the expensive native preview (a full
+	// script clone + per-action rewrite in buildNativePreview) is never built for
+	// non-Salesforce HARs. handleImportHAR runs this for every HAR import, so
+	// detection must stay off the native-build hot path.
 	review, err := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{
-		BuildNative: buildNative,
+		BuildNative: false,
 		HARData:     data,
 	})
 	if err != nil {
@@ -84,10 +93,24 @@ func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 		return augmentation
 	}
 
+	// Only build the native Salesforce preview once Salesforce traffic is confirmed.
+	if buildNative && review != nil && review.Detected {
+		nativeReview, nativeErr := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{
+			BuildNative: true,
+			HARData:     data,
+		})
+		if nativeErr != nil {
+			result.Warnings = append(result.Warnings, "Salesforce native preview failed: "+nativeErr.Error())
+		} else if nativeReview != nil {
+			review = nativeReview
+		}
+	}
+
 	augmentation.Detected = review != nil && review.Detected
 	reviewForResponse := salesforceReviewForResponse(review)
 	augmentation.ReviewForResponse = reviewForResponse
 
+	nativeApplied := false
 	if buildNative && review != nil && review.NativePreview != nil && review.NativePreview.Script != nil {
 		augmentation.Script = review.NativePreview.Script
 		augmentation.Source = "salesforce_har"
@@ -95,15 +118,16 @@ func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 		if augmentation.Script != nil {
 			augmentation.Script.ProjectID = normalizeProjectID(projectID)
 		}
+		nativeApplied = true
+	}
+	// Advertise the native generation mode only when a native script was actually
+	// emitted, so a detected-but-not-rebuilt import is not mislabeled as native.
+	if nativeApplied {
 		augmentation.Summary["generation_mode"] = "salesforce_native_http"
 		augmentation.Summary["protocol_scope"] = "salesforce_http_family"
 	}
 	if reviewForResponse != nil {
 		augmentation.Summary["salesforce_review"] = reviewForResponse
-	}
-	if source == "salesforce_har" && buildNative {
-		augmentation.Summary["generation_mode"] = "salesforce_native_http"
-		augmentation.Summary["protocol_scope"] = "salesforce_http_family"
 	}
 	if augmentation.Script != nil {
 		attachSourceReviewToScript(augmentation.Script, augmentation.Source, sourceName, result.SourceReview)

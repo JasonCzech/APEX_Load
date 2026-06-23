@@ -442,6 +442,64 @@ describe('SampleScriptImport', () => {
     }))
   })
 
+  it('switches the payload profile to Java over HTTP in-component and promotes the saved draft', async () => {
+    const onImported = vi.fn()
+
+    await act(async () => {
+      root.render(<SampleScriptImport onImported={onImported} />)
+    })
+
+    const profileSelect = Array.from(container.querySelectorAll('select')).find(select => select.getAttribute('aria-label') === 'Payload profile') as HTMLSelectElement | undefined
+    const formatSelect = Array.from(container.querySelectorAll('select')).find(select => select.getAttribute('aria-label') === 'Sample format') as HTMLSelectElement | undefined
+    expect(profileSelect).toBeDefined()
+    expect(formatSelect).toBeDefined()
+    if (!profileSelect || !formatSelect) return
+
+    // The Standard API profile offers REST JSON.
+    expect(profileSelect.value).toBe('default')
+    expect(Array.from(formatSelect.options).map(option => option.textContent)).toContain('REST JSON')
+
+    // Switch the payload profile in-component (the merged Java-over-HTTP entry point).
+    await act(async () => {
+      profileSelect.value = 'java-http'
+      profileSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    // The format set narrows (no REST JSON), defaults to raw HTTP, and the notice explains java_http promotion.
+    expect(Array.from(formatSelect.options).map(option => option.textContent)).not.toContain('REST JSON')
+    expect(formatSelect.value).toBe('raw_http')
+    expect(container.textContent).toContain('promoted to the `java_http` protocol')
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importSample).toHaveBeenCalledWith(expect.objectContaining({ format: 'raw_http' }))
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save To Script Library'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    // Saving promotes the draft to the java_http protocol even though the profile was switched at runtime.
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      protocol: 'java_http',
+      config: expect.objectContaining({
+        java_http: expect.objectContaining({ codec: 'java_serialized_object_base64' }),
+      }),
+    }), undefined)
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ protocol: 'java_http' })],
+    }))
+  })
+
   it('warns when a Java-over-HTTP body is base64 but not a serialized object stream', async () => {
     apiMock.importSample.mockResolvedValueOnce({
       script: {

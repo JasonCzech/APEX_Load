@@ -1,0 +1,92 @@
+// @vitest-environment jsdom
+
+import { act } from 'react'
+import { createRoot, Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
+
+vi.mock('../apiClient', () => ({
+  apiFetch: vi.fn(),
+  request: vi.fn(),
+}))
+
+import { apiFetch, request } from '../apiClient'
+import { useScriptApi } from './useScriptApi'
+
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+let api: ReturnType<typeof useScriptApi>
+function Capture() {
+  api = useScriptApi()
+  return null
+}
+
+describe('useScriptApi import wrappers', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    ;(apiFetch as Mock).mockResolvedValue({ ok: true, json: async () => ({ ok: true }) })
+    ;(request as Mock).mockResolvedValue({ ok: true })
+    await act(async () => {
+      root.render(<Capture />)
+    })
+  })
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount()
+    })
+    container.remove()
+    vi.clearAllMocks()
+  })
+
+  it('posts k6 imports as multipart with script_name/base_url/project_id', async () => {
+    const file = new File(['import http from "k6/http";'], 'script.js', { type: 'application/javascript' })
+    await api.importK6(file, { project_id: 'p1', base_url: 'https://api.example.test', name: 'My k6' })
+
+    expect(apiFetch).toHaveBeenCalledTimes(1)
+    const [url, options] = (apiFetch as Mock).mock.calls[0]
+    expect(url).toBe('/scripts/import/k6')
+    expect(options.method).toBe('POST')
+    const body = options.body as FormData
+    expect(body.get('script_name')).toBe('My k6')
+    expect(body.get('base_url')).toBe('https://api.example.test')
+    expect(body.get('project_id')).toBe('p1')
+    expect(body.get('file')).toBeInstanceOf(File)
+  })
+
+  it('posts Event Hubs Capture imports with event_hub/max_events query params', async () => {
+    const file = new File(['avro'], 'capture.avro')
+    await api.importEventHubsCapture(file, { project_id: 'p1', event_hub: 'orders', max_events: 5 })
+
+    const [url, options] = (apiFetch as Mock).mock.calls[0]
+    expect(url).toBe('/scripts/import/eventhubs-capture?event_hub=orders&max_events=5')
+    expect((options.body as FormData).get('project_id')).toBe('p1')
+  })
+
+  it('posts Broker Config imports with format/max_destinations query params', async () => {
+    const file = new File(['DEFINE QLOCAL(ORDERS)'], 'broker.mqsc')
+    await api.importBrokerConfig(file, { project_id: 'p1', format: 'mqsc', max_destinations: 3 })
+
+    const [url] = (apiFetch as Mock).mock.calls[0]
+    expect(url).toBe('/scripts/import/broker-config?format=mqsc&max_destinations=3')
+  })
+
+  it('posts Oracle E-Business reviews as JSON to the review endpoint', async () => {
+    const payload = { project_id: 'p1', package: 'oracle_web', source_text: 'GET /OA_HTML' }
+    await api.reviewOracleEBusiness(payload)
+
+    expect(request).toHaveBeenCalledWith('/scripts/import/oracle-ebusiness/review', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }))
+  })
+
+  it('fetches authoring capabilities from the capabilities endpoint', async () => {
+    await api.listAuthoringCapabilities()
+    expect(request).toHaveBeenCalledWith('/scripts/authoring/capabilities')
+  })
+})

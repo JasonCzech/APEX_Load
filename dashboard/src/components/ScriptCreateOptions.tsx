@@ -97,7 +97,12 @@ function defaultImportMode(surface: AuthoringImportSurface): string | null {
   return surface.modes?.find(mode => mode.default)?.id || surface.modes?.[0]?.id || null
 }
 
-const defaultImportSurfaces: AuthoringImportSurface[] = [
+// Best-effort fallback used only when the controller capabilities response omits
+// `import_surfaces` (older controllers) or the fetch fails. It MUST stay in sync with the
+// backend authoringImportSurfaces() registry; the launcher set is pinned by
+// ScriptCreateOptions.fallback.test.ts (and the backend by TestAuthoringCapabilitiesEndpoint)
+// so drift fails a test rather than silently shipping a stale offline card list.
+export const defaultImportSurfaces: AuthoringImportSurface[] = [
   {
     id: 'openapi',
     title: 'OpenAPI / Swagger',

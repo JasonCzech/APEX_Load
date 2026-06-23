@@ -32,6 +32,12 @@ const apiMock = {
   importAsyncAPI: vi.fn(),
   listScripts: vi.fn(),
   createScript: vi.fn(),
+  importK6: vi.fn(),
+  importEventHubsCapture: vi.fn(),
+  importBrokerConfig: vi.fn(),
+  getK6SupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
+  getEventHubsCaptureSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
+  getBrokerConfigSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -87,6 +93,24 @@ describe('ProtocolAssetImport', () => {
     apiMock.getRAMLSupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     apiMock.getAsyncAPISupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     apiMock.getPostmanSupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
+    apiMock.getK6SupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
+    apiMock.getEventHubsCaptureSupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
+    apiMock.getBrokerConfigSupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
+    const protocolImportResult = (protocol: string) => ({
+      scripts: [],
+      script: { name: `Imported ${protocol}`, version: '1.0.0', protocol, config: { base_url: '' }, actions: [{ name: 'Action', type: 'request', method: 'GET', target: '/' }] },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: { converted_actions: 1 },
+      summary: {},
+    })
+    apiMock.importK6.mockResolvedValue(protocolImportResult('http'))
+    apiMock.importEventHubsCapture.mockResolvedValue(protocolImportResult('eventhubs'))
+    apiMock.importBrokerConfig.mockResolvedValue(protocolImportResult('jms-solace'))
     apiMock.startDraftBrowserReplaySession.mockResolvedValue({ replay_session_id: 'replay-recorder-1', replay_session: { id: 'replay-recorder-1' } })
     apiMock.createScript.mockResolvedValue({
       id: 'script-saved',
@@ -1658,6 +1682,130 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('WSDL Operations')
     expect(container.textContent).toContain('GetAccount')
     expect(container.textContent).toContain('Source Comparison')
+  })
+  it('imports k6 scripts through the shared protocol asset flow', async () => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="k6" projectId="project-1" />)
+    })
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+    const file = new File(['import http from "k6/http";'], 'script.js', { type: 'application/javascript' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert k6 Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importK6).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
+    expect(container.textContent).toContain('Review Generated Script')
+  })
+
+  it('imports Event Hubs Capture files and hides the inert name/base-url inputs', async () => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="eventhubs-capture" projectId="project-1" />)
+    })
+    await flushPromises()
+
+    // L2: the Event Hubs Capture converter ignores name/base_url, so the inputs are not rendered.
+    expect(container.textContent).not.toContain('Script Name')
+    expect(container.textContent).not.toContain('Base URL Override')
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+    const file = new File(['avro-bytes'], 'capture.avro', { type: 'application/octet-stream' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Capture'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importEventHubsCapture).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
+  })
+
+  it('imports broker configuration files and hides the inert base-url input', async () => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="broker-config" projectId="project-1" />)
+    })
+    await flushPromises()
+
+    expect(container.textContent).not.toContain('Base URL Override')
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+    const file = new File(['DEFINE QLOCAL(ORDERS)'], 'broker.mqsc', { type: 'text/plain' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Broker Config'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importBrokerConfig).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
+  })
+
+  it('re-converts a detected Salesforce HAR as a generic draft when Force Generic HAR is chosen', async () => {
+    const salesforceResult = await apiMock.importSalesforce()
+    apiMock.importHAR.mockResolvedValue(salesforceResult)
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="har" projectId="project-1" />)
+    })
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+    const file = new File(['{"log":{"entries":[]}}'], 'salesforce.har', { type: 'application/json' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert HAR'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    // Auto-detect path sends salesforce_native: true.
+    expect(apiMock.importHAR).toHaveBeenLastCalledWith(file, expect.objectContaining({ salesforce_native: true }))
+
+    const forceGenericButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Force Generic HAR'))
+    expect(forceGenericButton).toBeDefined()
+    if (!forceGenericButton) return
+    await act(async () => {
+      forceGenericButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    // Force Generic re-converts the same file with salesforce_native: false.
+    expect(apiMock.importHAR).toHaveBeenLastCalledWith(file, expect.objectContaining({ salesforce_native: false }))
   })
 })
 

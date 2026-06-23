@@ -574,6 +574,10 @@ export default function ProtocolAssetImport({ kind, initialMode, projectId, onIm
   const [postmanScripts, setPostmanScripts] = useState<StoredScript[]>([])
   const labels = copy[kind]
   const supportsAgentforceTransform = kind === 'openapi' || kind === 'raml' || kind === 'postman' || kind === 'har'
+  // Event Hubs Capture and Broker Config converters read neither a script name nor a
+  // base URL, so do not render inputs that would silently do nothing.
+  const supportsScriptName = kind !== 'eventhubs-capture' && kind !== 'broker-config'
+  const supportsBaseURL = kind !== 'asyncapi' && kind !== 'eventhubs-capture' && kind !== 'broker-config'
 
   useEffect(() => {
     if (kind !== 'devweb') return
@@ -995,11 +999,13 @@ export default function ProtocolAssetImport({ kind, initialMode, projectId, onIm
               </label>
             </>
           )}
-          <label className="sample-import-field">
-            <span>Script Name</span>
-            <input value={name} onChange={event => setName(event.target.value)} placeholder={scriptNamePlaceholder(kind)} />
-          </label>
-          {kind !== 'asyncapi' && (
+          {supportsScriptName && (
+            <label className="sample-import-field">
+              <span>Script Name</span>
+              <input value={name} onChange={event => setName(event.target.value)} placeholder={scriptNamePlaceholder(kind)} />
+            </label>
+          )}
+          {supportsBaseURL && (
             <label className="sample-import-field">
               <span>Base URL Override</span>
               <input value={baseURL} onChange={event => setBaseURL(event.target.value)} placeholder="https://api.example.com" />
