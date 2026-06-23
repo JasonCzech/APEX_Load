@@ -17,10 +17,12 @@ const apiMock = {
   replayBrowserRecordingImport: vi.fn(),
   startDraftBrowserReplaySession: vi.fn(),
   importOpenAPI: vi.fn(),
+  getDevWebSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   importRAML: vi.fn(),
   getOpenAPISupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   getRAMLSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   getAsyncAPISupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
+  getPostmanSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   importPostman: vi.fn(),
   validatePostmanImport: vi.fn(),
   commitOpenAPIImport: vi.fn(),
@@ -80,9 +82,11 @@ describe('ProtocolAssetImport', () => {
       })
     }
     apiMock.listScripts.mockResolvedValue({ scripts: [], count: 0 })
+    apiMock.getDevWebSupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     apiMock.getOpenAPISupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     apiMock.getRAMLSupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     apiMock.getAsyncAPISupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
+    apiMock.getPostmanSupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     apiMock.startDraftBrowserReplaySession.mockResolvedValue({ replay_session_id: 'replay-recorder-1', replay_session: { id: 'replay-recorder-1' } })
     apiMock.createScript.mockResolvedValue({
       id: 'script-saved',
@@ -711,10 +715,79 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('actions[0]')
   })
 
+  it('does not render import coverage when a support matrix has no limitations', async () => {
+    apiMock.getOpenAPISupportMatrix.mockResolvedValueOnce({
+      support_matrix: [{ id: 'openapi-doc', area: 'Document', construct: 'OpenAPI 2.0 / 3.x / 3.1', status: 'supported' }],
+      notes: [],
+    })
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="openapi" projectId="project-1" />)
+    })
+    await flushPromises()
+
+    expect(container.querySelector('[aria-label="Import OpenAPI coverage"]')).toBeNull()
+    expect(container.textContent).not.toContain('Supported protocols')
+  })
+
+  it('renders DevWeb supported protocols and limitations from its support matrix', async () => {
+    apiMock.getDevWebSupportMatrix.mockResolvedValueOnce({
+      support_matrix: [
+        { id: 'devweb-http-webrequest', area: 'HTTP', construct: 'load.WebRequest({...}).send()', status: 'supported', execution_status: 'executable' },
+        { id: 'devweb-grpc-unary', area: 'gRPC', construct: 'client.invoke(service, method, payload)', status: 'partial', execution_status: 'review_required', review_required: true, notes: 'Proto files and metadata require review.' },
+        { id: 'devweb-dynamic-javascript', area: 'JavaScript Runtime', construct: 'dynamic variables, loops, custom modules, async control flow', status: 'review_only', execution_status: 'not_executable', review_required: true },
+      ],
+      notes: ['Mixed HTTP/WebSocket/gRPC DevWeb files should be split by protocol before high-scale execution.'],
+    })
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="devweb" projectId="project-1" />)
+    })
+    await flushPromises()
+
+    const coverage = container.querySelector('[aria-label="Import DevWeb Script coverage"]') as HTMLElement | null
+    expect(coverage).not.toBeNull()
+    expect(coverage?.textContent).toContain('Supported protocols')
+    expect(coverage?.textContent).toContain('HTTP')
+    expect(coverage?.textContent).toContain('WebSocket')
+    expect(coverage?.textContent).toContain('gRPC unary')
+    expect(coverage?.textContent).toContain('Review required')
+    expect(coverage?.textContent).toContain('client.invoke(service, method, payload)')
+    expect(coverage?.textContent).toContain('Review-only')
+    expect(coverage?.textContent).toContain('dynamic variables, loops, custom modules, async control flow')
+  })
+
+  it('renders Postman supported protocols and limitations from its support matrix', async () => {
+    apiMock.getPostmanSupportMatrix.mockResolvedValueOnce({
+      support_matrix: [
+        { id: 'postman-requests', area: 'Operations', construct: 'HTTP requests', status: 'supported' },
+        { id: 'postman-auth-oauth2', area: 'Security', construct: 'oauth2', status: 'partial', review_required: true, notes: 'Token acquisition must be configured before replay.' },
+        { id: 'postman-scripts', area: 'Scripts', construct: 'pre-request / test scripts', status: 'review_only', review_required: true },
+      ],
+      notes: ['Postman import targets HTTP API replay; pre-request and test scripts are not executed.'],
+    })
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="postman" projectId="project-1" />)
+    })
+    await flushPromises()
+
+    const coverage = container.querySelector('[aria-label="Import Postman Collection coverage"]') as HTMLElement | null
+    expect(coverage).not.toBeNull()
+    expect(coverage?.textContent).toContain('Supported protocols')
+    expect(coverage?.textContent).toContain('HTTP')
+    expect(coverage?.textContent).toContain('oauth2')
+    expect(coverage?.textContent).toContain('Token acquisition must be configured before replay.')
+    expect(coverage?.textContent).toContain('pre-request / test scripts')
+  })
+
   it('reviews OpenAPI correlations and replaces by operation id', async () => {
     const onImported = vi.fn()
     apiMock.getOpenAPISupportMatrix.mockResolvedValueOnce({
-      support_matrix: [{ id: 'openapi-chaining', area: 'Replay', construct: 'cross-operation chaining', status: 'supported' }],
+      support_matrix: [
+        { id: 'openapi-operations', area: 'Operations', construct: 'HTTP operations', status: 'supported' },
+        { id: 'openapi-chaining', area: 'Replay', construct: 'cross-operation chaining', status: 'supported', review_required: true, notes: 'Low-confidence matches require review.' },
+      ],
       notes: ['Correlation is spec-inferred.'],
     })
     apiMock.listScripts.mockResolvedValueOnce({
@@ -789,7 +862,10 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('OpenAPI import coverage')
+    expect(container.textContent).toContain('Import Coverage')
+    expect(container.textContent).toContain('Supported protocols')
+    expect(container.textContent).toContain('HTTP / REST')
+    expect(container.textContent).toContain('Review required')
     expect(container.textContent).toContain('cross-operation chaining')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
@@ -964,7 +1040,10 @@ describe('ProtocolAssetImport', () => {
 
   it('imports RAML files through the shared protocol asset flow', async () => {
     apiMock.getRAMLSupportMatrix.mockResolvedValue({
-      support_matrix: [{ id: 'raml-resources', area: 'Resources', construct: 'nested resources + URI params', status: 'supported' }],
+      support_matrix: [
+        { id: 'raml-resources', area: 'Resources', construct: 'nested resources + URI params', status: 'supported' },
+        { id: 'raml-types', area: 'Types', construct: 'RAML data types / schemas', status: 'review_only', review_required: true, notes: 'Provide examples for body generation.' },
+      ],
       notes: ['RAML import targets common HTTP/JSON API specifications.'],
     })
     await act(async () => {
@@ -974,7 +1053,9 @@ describe('ProtocolAssetImport', () => {
 
     expect(container.textContent).toContain('Import RAML')
     // RAML support-matrix panel (G2)
-    expect(container.textContent).toContain('RAML import coverage')
+    expect(container.textContent).toContain('Import Coverage')
+    expect(container.textContent).toContain('HTTP / REST')
+    expect(container.textContent).toContain('RAML data types / schemas')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
     expect(fileInput).not.toBeNull()
@@ -1023,7 +1104,9 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Import AsyncAPI')
-    expect(container.textContent).toContain('AsyncAPI import coverage')
+    expect(container.textContent).toContain('Import Coverage')
+    expect(container.textContent).toContain('Kafka')
+    expect(container.textContent).toContain('JMS Solace')
     expect(container.textContent).toContain('avro schemaFormat')
     expect(container.textContent).toContain('MQTT operations are review-only.')
     expect(container.textContent).not.toContain('Validate Only')

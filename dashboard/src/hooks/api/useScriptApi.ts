@@ -36,7 +36,7 @@ export interface ScriptRecordingStatus {
   sensitivity?: string
   captured_at?: string
 }
-import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrowserRecordingImportResult, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type HARImportResult, type ImportAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrowserRecordingImportResult, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -576,6 +576,11 @@ export function useScriptApi() {
     [],
   )
 
+  const getDevWebSupportMatrix = useCallback(
+    () => request<DevWebSupportMatrixResponse>('/scripts/import/devweb/support-matrix'),
+    [],
+  )
+
   const getRAMLSupportMatrix = useCallback(
     () => request<RAMLSupportMatrixResponse>('/scripts/import/raml/support-matrix'),
     [],
@@ -588,6 +593,11 @@ export function useScriptApi() {
 
   const getAsyncAPISupportMatrix = useCallback(
     () => request<AsyncAPISupportMatrixResponse>('/scripts/import/asyncapi/support-matrix'),
+    [],
+  )
+
+  const getPostmanSupportMatrix = useCallback(
+    () => request<PostmanSupportMatrixResponse>('/scripts/import/postman/support-matrix'),
     [],
   )
 
@@ -1026,9 +1036,11 @@ export function useScriptApi() {
       importJMeter,
       validateJMeterImport,
       getJMeterSupportMatrix,
+      getDevWebSupportMatrix,
       getRAMLSupportMatrix,
       getOpenAPISupportMatrix,
       getAsyncAPISupportMatrix,
+      getPostmanSupportMatrix,
       saveJMeterImport,
       savePostmanImport,
       commitOpenAPIImport,
@@ -1113,9 +1125,11 @@ export function useScriptApi() {
       importJMeter,
       validateJMeterImport,
       getJMeterSupportMatrix,
+      getDevWebSupportMatrix,
       getRAMLSupportMatrix,
       getOpenAPISupportMatrix,
       getAsyncAPISupportMatrix,
+      getPostmanSupportMatrix,
       saveJMeterImport,
       savePostmanImport,
       commitOpenAPIImport,

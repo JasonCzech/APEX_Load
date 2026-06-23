@@ -677,6 +677,7 @@ export interface RAMLSupportMatrixEntry {
   area: string
   construct: string
   status: string
+  execution_status?: string
   review_required?: boolean
   fields?: string[]
   notes?: string
@@ -697,6 +698,19 @@ export interface OpenAPISupportMatrixResponse {
 
 export interface AsyncAPISupportMatrixResponse {
   support_matrix?: AsyncAPISupportMatrixEntry[]
+  notes?: string[]
+}
+
+export type DevWebSupportMatrixEntry = RAMLSupportMatrixEntry
+export type PostmanSupportMatrixEntry = RAMLSupportMatrixEntry
+
+export interface DevWebSupportMatrixResponse {
+  support_matrix?: DevWebSupportMatrixEntry[]
+  notes?: string[]
+}
+
+export interface PostmanSupportMatrixResponse {
+  support_matrix?: PostmanSupportMatrixEntry[]
   notes?: string[]
 }
 

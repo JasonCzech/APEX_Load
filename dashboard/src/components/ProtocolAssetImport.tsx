@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type BrowserReplayReport, type BrowserReplayStartResponse, type ReplayRepairSuggestion, type StoredScript } from '../types'
-import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type HARImportSummary, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
+import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrowserRecordingImportResult, type DevWebImportResult, type DevWebSupportMatrixEntry, type HARImportResult, type HARImportSummary, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
@@ -96,6 +96,28 @@ const copy = {
 } satisfies Record<ImportKind, Record<string, string>>
 
 type ProtocolImportResult = DevWebImportResult | HARImportResult | SalesforceImportResult | BrowserRecordingImportResult | OpenAPIImportResult | RAMLImportResult | PostmanImportResult | WSDLImportResult | AsyncAPIImportResult
+type SourceImportSupportEntry = DevWebSupportMatrixEntry | OpenAPISupportMatrixEntry | RAMLSupportMatrixEntry | PostmanSupportMatrixEntry | AsyncAPISupportMatrixEntry
+
+type SourceImportSupportState = {
+  entries: SourceImportSupportEntry[]
+  notes: string[]
+}
+
+type SourceImportCoverageSection = {
+  key: string
+  title: string
+  items: SourceImportSupportEntry[]
+  preview: string
+  hint: string
+}
+
+const sourceImportProtocolTargets: Partial<Record<ImportKind, string[]>> = {
+  devweb: ['HTTP', 'WebSocket', 'gRPC unary (review required)'],
+  openapi: ['HTTP / REST'],
+  raml: ['HTTP / REST'],
+  postman: ['HTTP'],
+  asyncapi: ['Kafka', 'JMS Solace for AMQP/JMS servers', 'MQTT review-only'],
+}
 
 function sourceReviewForImport(result?: ProtocolImportResult | null, script?: ScriptDefinition | null): SourceReview | null {
   const metadataReview = script?.metadata?.import?.preserved?.source_review as SourceReview | undefined
@@ -169,6 +191,127 @@ function generatedFromLabel(kind: ImportKind): string {
     default:
       return 'WSDL operations'
   }
+}
+
+function sourceImportCoverageKey(entry: SourceImportSupportEntry): string {
+  const status = (entry.status || '').toLowerCase()
+  const executionStatus = (entry.execution_status || '').toLowerCase()
+  if (status === 'unsupported' || executionStatus === 'unsupported') return 'unsupported'
+  if (status === 'review_only' || executionStatus === 'not_executable') return 'review_only'
+  if (status === 'partial' || entry.review_required || executionStatus === 'review_required') return 'review_required'
+  return 'supported'
+}
+
+function sourceImportCoverageTitle(key: string): string {
+  switch (key) {
+    case 'supported':
+      return 'Supported'
+    case 'review_required':
+      return 'Review required'
+    case 'review_only':
+      return 'Review-only'
+    case 'unsupported':
+      return 'Unsupported'
+    default:
+      return key
+  }
+}
+
+function sourceImportCoverageHint(key: string): string {
+  switch (key) {
+    case 'supported':
+      return 'Constructs that can be converted into runnable APEX Load script content.'
+    case 'review_required':
+      return 'Constructs that are converted or preserved but need operator review before replay or promotion.'
+    case 'review_only':
+      return 'Constructs that are preserved for review and are not emitted as executable replay logic.'
+    case 'unsupported':
+      return 'Constructs that are reported for visibility but do not currently have an import path.'
+    default:
+      return 'Import support classification from the code-owned support matrix.'
+  }
+}
+
+function summarizeSourceImportCoverage(entries: SourceImportSupportEntry[]): SourceImportCoverageSection[] {
+  const order = ['supported', 'review_required', 'review_only', 'unsupported']
+  return order
+    .map(key => {
+      const items = entries.filter(entry => sourceImportCoverageKey(entry) === key)
+      return {
+        key,
+        title: sourceImportCoverageTitle(key),
+        items,
+        preview: items.map(item => item.construct).join(' • '),
+        hint: sourceImportCoverageHint(key),
+      }
+    })
+    .filter(section => section.items.length > 0)
+}
+
+function sourceImportSupportHasLimitations(support: SourceImportSupportState | null): support is SourceImportSupportState {
+  if (!support || support.entries.length === 0) return false
+  return support.notes.length > 0 || support.entries.some(entry => (
+    sourceImportCoverageKey(entry) !== 'supported' || Boolean(entry.review_required) || Boolean(entry.notes)
+  ))
+}
+
+function sourceImportSupportForKind(
+  kind: ImportKind,
+  support: Partial<Record<ImportKind, SourceImportSupportState | null>>,
+): SourceImportSupportState | null {
+  return support[kind] || null
+}
+
+function SourceImportCoveragePanel({ kind, support }: { kind: ImportKind; support: SourceImportSupportState }) {
+  const sections = summarizeSourceImportCoverage(support.entries)
+  const protocolTargets = sourceImportProtocolTargets[kind] || []
+  if (sections.length === 0) return null
+  return (
+    <div className="source-import-coverage" aria-label={`${copy[kind].title} coverage`}>
+      <div className="source-import-coverage-header">
+        <h4>Import Coverage</h4>
+        <span>Supported protocols and limitations</span>
+      </div>
+      {protocolTargets.length > 0 && (
+        <div className="source-import-protocol-card">
+          <span className="source-import-coverage-label">Supported protocols</span>
+          <strong>{protocolTargets.join(' • ')}</strong>
+        </div>
+      )}
+      <div className="source-import-coverage-grid">
+        {sections.map(section => (
+          <div className={`source-import-coverage-card coverage-${section.key}`} key={section.key}>
+            <span className="source-import-coverage-label">{section.title}</span>
+            <strong>{section.items.length} {section.items.length === 1 ? 'construct' : 'constructs'}</strong>
+            <small>{section.preview}</small>
+          </div>
+        ))}
+      </div>
+      <div className="source-import-coverage-details">
+        <h4>Coverage Details</h4>
+        {sections.map(section => (
+          <details key={section.key} data-coverage={section.key}>
+            <summary>{section.title} ({section.items.length})</summary>
+            <p className="source-import-coverage-hint">{section.hint}</p>
+            <ul>
+              {section.items.map(entry => (
+                <li key={entry.id}>
+                  <strong>{entry.construct}</strong>
+                  {entry.notes ? <> — {entry.notes}</> : null}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ))}
+        {support.notes.length > 0 && (
+          <details data-coverage="notes">
+            <summary>Importer Notes ({support.notes.length})</summary>
+            <ul>{support.notes.map((note, index) => <li key={`source-import-note-${index}`}>{note}</li>)}</ul>
+          </details>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function salesforceReviewForImport(result?: ProtocolImportResult | null, script?: ScriptDefinition | null): SalesforceReview | null {
@@ -383,8 +526,10 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [allowRecorderDraftSave, setAllowRecorderDraftSave] = useState(false)
   const [editedRecorderScripts, setEditedRecorderScripts] = useState<ScriptDefinition[]>([])
   const [recorderDraftNotice, setRecorderDraftNotice] = useState('')
+  const [devWebSupport, setDevWebSupport] = useState<SourceImportSupportState | null>(null)
   const [ramlSupport, setRamlSupport] = useState<{ entries: RAMLSupportMatrixEntry[]; notes: string[] } | null>(null)
   const [openAPISupport, setOpenAPISupport] = useState<{ entries: OpenAPISupportMatrixEntry[]; notes: string[] } | null>(null)
+  const [postmanSupport, setPostmanSupport] = useState<SourceImportSupportState | null>(null)
   const [asyncAPISupport, setAsyncAPISupport] = useState<{ entries: AsyncAPISupportMatrixEntry[]; notes: string[] } | null>(null)
   const [openAPISaveMode, setOpenAPISaveMode] = useState<'create' | 'replace'>('create')
   const [openAPIReplaceScriptId, setOpenAPIReplaceScriptId] = useState('')
@@ -395,6 +540,15 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [postmanScripts, setPostmanScripts] = useState<StoredScript[]>([])
   const labels = copy[kind]
   const supportsAgentforceTransform = kind === 'openapi' || kind === 'raml' || kind === 'postman' || kind === 'salesforce'
+
+  useEffect(() => {
+    if (kind !== 'devweb') return
+    let cancelled = false
+    api.getDevWebSupportMatrix()
+      .then(response => { if (!cancelled) setDevWebSupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
+      .catch(() => { if (!cancelled) setDevWebSupport(null) })
+    return () => { cancelled = true }
+  }, [api, kind])
 
   useEffect(() => {
     if (kind !== 'raml') return
@@ -411,6 +565,15 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
     api.getOpenAPISupportMatrix()
       .then(response => { if (!cancelled) setOpenAPISupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
       .catch(() => { if (!cancelled) setOpenAPISupport(null) })
+    return () => { cancelled = true }
+  }, [api, kind])
+
+  useEffect(() => {
+    if (kind !== 'postman') return
+    let cancelled = false
+    api.getPostmanSupportMatrix()
+      .then(response => { if (!cancelled) setPostmanSupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
+      .catch(() => { if (!cancelled) setPostmanSupport(null) })
     return () => { cancelled = true }
   }, [api, kind])
 
@@ -545,6 +708,13 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const selectedReplayPreflight = reviewedScript?.metadata?.import?.preserved?.replay_preflight as OpenAPIImportResult['preflight'] | undefined
   const replayPreflight = (generatedScripts.length > 1 ? selectedReplayPreflight : result?.preflight || selectedReplayPreflight) || null
   const openAPICorrelations: OpenAPICorrelation[] = kind === 'openapi' ? ((result as OpenAPIImportResult | null | undefined)?.correlations || []) : []
+  const sourceImportSupport = sourceImportSupportForKind(kind, {
+    devweb: devWebSupport,
+    openapi: openAPISupport,
+    raml: ramlSupport,
+    postman: postmanSupport,
+    asyncapi: asyncAPISupport,
+  })
 
   const handleRunRecorderReplay = async () => {
     if (kind !== 'recorder-export' || !reviewedScript) return
@@ -856,58 +1026,8 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
         </button>
       </div>
 
-      {kind === 'raml' && ramlSupport && ramlSupport.entries.length > 0 && (
-        <details className="sample-import-support-matrix">
-          <summary>RAML import coverage ({ramlSupport.entries.length} constructs)</summary>
-          <ul className="sample-import-findings">
-            {ramlSupport.entries.map(entry => (
-              <li key={entry.id}>
-                <strong>{entry.construct}</strong> — {entry.status}{entry.review_required ? ' (review)' : ''}{entry.notes ? `: ${entry.notes}` : ''}
-              </li>
-            ))}
-          </ul>
-          {ramlSupport.notes.length > 0 && (
-            <ul className="sample-import-findings">
-              {ramlSupport.notes.map((note, index) => <li key={`note-${index}`}>{note}</li>)}
-            </ul>
-          )}
-        </details>
-      )}
-
-      {kind === 'openapi' && openAPISupport && openAPISupport.entries.length > 0 && (
-        <details className="sample-import-support-matrix">
-          <summary>OpenAPI import coverage ({openAPISupport.entries.length} constructs)</summary>
-          <ul className="sample-import-findings">
-            {openAPISupport.entries.map(entry => (
-              <li key={entry.id}>
-                <strong>{entry.construct}</strong> — {entry.status}{entry.review_required ? ' (review)' : ''}{entry.notes ? `: ${entry.notes}` : ''}
-              </li>
-            ))}
-          </ul>
-          {openAPISupport.notes.length > 0 && (
-            <ul className="sample-import-findings">
-              {openAPISupport.notes.map((note, index) => <li key={`openapi-note-${index}`}>{note}</li>)}
-            </ul>
-          )}
-        </details>
-      )}
-
-      {kind === 'asyncapi' && asyncAPISupport && asyncAPISupport.entries.length > 0 && (
-        <details className="sample-import-support-matrix">
-          <summary>AsyncAPI import coverage ({asyncAPISupport.entries.length} constructs)</summary>
-          <ul className="sample-import-findings">
-            {asyncAPISupport.entries.map(entry => (
-              <li key={entry.id}>
-                <strong>{entry.construct}</strong> — {entry.status}{entry.review_required ? ' (review)' : ''}{entry.notes ? `: ${entry.notes}` : ''}
-              </li>
-            ))}
-          </ul>
-          {asyncAPISupport.notes.length > 0 && (
-            <ul className="sample-import-findings">
-              {asyncAPISupport.notes.map((note, index) => <li key={`asyncapi-note-${index}`}>{note}</li>)}
-            </ul>
-          )}
-        </details>
+      {sourceImportSupportHasLimitations(sourceImportSupport) && (
+        <SourceImportCoveragePanel kind={kind} support={sourceImportSupport} />
       )}
 
       {(messageError || convertTask.error) && <div className="sample-import-error">{messageError || convertTask.error}</div>}
