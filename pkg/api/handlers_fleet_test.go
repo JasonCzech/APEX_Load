@@ -181,7 +181,7 @@ func TestDistributedPlannerRejectsIncompatibleGeneratorVersion(t *testing.T) {
 	if assignments["http-users"] != "" {
 		t.Fatalf("assignment = %q, want empty target for incompatible generator version", assignments["http-users"])
 	}
-	message := generatorPlacementRejectionMessage(groups[0], loadByTarget, specs)
+	message := generatorPlacementRejectionMessage(groups[0], loadByTarget, specs, nil)
 	if !strings.Contains(message, "incompatible") || !strings.Contains(message, "2.0.0") {
 		t.Fatalf("rejection message = %q, want incompatible version detail", message)
 	}

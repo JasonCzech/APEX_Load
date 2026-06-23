@@ -188,7 +188,25 @@ func browserDensityGovernanceLaunchConflict(advisory *CapacityAdvisory) *LaunchC
 	}
 }
 
-func (tr *TestRunner) generatorPlacementLaunchConflictsLocked(test *ManagedTest) []LaunchConflict {
+// groupPlacementConflict is a per-group placement eligibility failure. Group is
+// empty for fleet-level failures (bad assignment, no configured generators).
+type groupPlacementConflict struct {
+	Group   string
+	Message string
+}
+
+// evaluateGeneratorPlacementConflictsLocked is the shared per-group placement
+// eligibility check used by BOTH launch preflight and the scenario-builder
+// load-model report, so the two surfaces never disagree (M1).
+//
+// It is a STATIC, configuration-time check: it validates drain state, protocol,
+// version, and required-label compatibility against the configured fleet, but it
+// intentionally does NOT dial generators to verify live reachability. Probing the
+// network here would block under tr.mu and contradict the fast static contract;
+// live reachability is enforced fail-closed at Run() via
+// generatorPlacementRejectionMessage ("... is not reachable"), so a host that is
+// configured + active but currently down is caught at launch rather than here (M2).
+func (tr *TestRunner) evaluateGeneratorPlacementConflictsLocked(test *ManagedTest) []groupPlacementConflict {
 	if test == nil {
 		return nil
 	}
@@ -198,18 +216,18 @@ func (tr *TestRunner) generatorPlacementLaunchConflictsLocked(test *ManagedTest)
 	}
 	rootAssignment, err := normalizeGeneratorAssignmentSettings(test.Assignment)
 	if err != nil {
-		return []LaunchConflict{generatorPlacementLaunchConflict(err.Error())}
+		return []groupPlacementConflict{{Message: err.Error()}}
 	}
 	defaultTargets, err := backend.allowedTargetsForTest(test)
 	if err != nil {
-		return []LaunchConflict{generatorPlacementLaunchConflict(err.Error())}
+		return []groupPlacementConflict{{Message: err.Error()}}
 	}
 	if _, err := backend.explicitGroupTargetsForTest(test); err != nil {
-		return []LaunchConflict{generatorPlacementLaunchConflict(err.Error())}
+		return []groupPlacementConflict{{Message: err.Error()}}
 	}
 	specs := tr.enrichGeneratorTargetSpecsWithLabels(backend.configuredTargetSpecs())
 	if len(specs) == 0 {
-		return []LaunchConflict{generatorPlacementLaunchConflict("no generator targets configured")}
+		return []groupPlacementConflict{{Message: "no generator targets configured"}}
 	}
 	activeTargets := map[string]generatorLoadSnapshot{}
 	for _, spec := range specs {
@@ -220,12 +238,12 @@ func (tr *TestRunner) generatorPlacementLaunchConflictsLocked(test *ManagedTest)
 	}
 	defaultLoad := loadSnapshotsForTargets(activeTargets, defaultTargets)
 	compatibility := newGeneratorCompatibilityIndex(specs, activeTargets)
-	conflicts := make([]LaunchConflict, 0)
+	conflicts := make([]groupPlacementConflict, 0)
 	for _, group := range test.Groups {
 		if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeSpecificHosts {
 			shards := chooseGeneratorShardsForGroup(group, activeTargets, defaultLoad, orderedUniqueTargets(mapKeys(activeTargets)), defaultTargets, rootAssignment, nil, compatibility)
 			if len(shards) == 0 {
-				conflicts = append(conflicts, generatorPlacementLaunchConflict(generatorPlacementRejectionMessage(group, activeTargets, specs)))
+				conflicts = append(conflicts, groupPlacementConflict{Group: group.Name, Message: generatorPlacementRejectionMessage(group, activeTargets, specs, rootAssignment)})
 			}
 			continue
 		}
@@ -238,10 +256,22 @@ func (tr *TestRunner) generatorPlacementLaunchConflictsLocked(test *ManagedTest)
 			effectiveAssignment = group.Assignment
 		}
 		if target := chooseGeneratorTargetForGroup(group, candidateLoad, candidatePreferred, nil, compatibility, effectiveGroupRequiredLabels(group, effectiveAssignment)); target == "" {
-			conflicts = append(conflicts, generatorPlacementLaunchConflict(generatorPlacementRejectionMessage(group, candidateLoad, specs)))
+			conflicts = append(conflicts, groupPlacementConflict{Group: group.Name, Message: generatorPlacementRejectionMessage(group, candidateLoad, specs, effectiveAssignment)})
 		}
 	}
 	return conflicts
+}
+
+func (tr *TestRunner) generatorPlacementLaunchConflictsLocked(test *ManagedTest) []LaunchConflict {
+	conflicts := tr.evaluateGeneratorPlacementConflictsLocked(test)
+	if len(conflicts) == 0 {
+		return nil
+	}
+	out := make([]LaunchConflict, 0, len(conflicts))
+	for _, conflict := range conflicts {
+		out = append(out, generatorPlacementLaunchConflict(conflict.Message))
+	}
+	return out
 }
 
 func generatorPlacementLaunchConflict(message string) LaunchConflict {

@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { GeneratorAssignmentSettings, SystemInventoryGenerator } from '../types'
+import { normalizeRequiredLabels } from './assignmentLabels'
 import './GroupPlacementEditor.css'
 
 type PlacementMode = 'inherit' | 'auto' | 'specific_hosts' | 'required_labels'
@@ -15,42 +17,43 @@ interface Props {
   allowInherit?: boolean
 }
 
-function normalizeLabels(labels?: Record<string, string>) {
-  if (!labels) return undefined
-  const next = Object.fromEntries(Object.entries(labels)
-    .map(([key, value]) => [key.trim(), value.trim()])
-    .filter(([key, value]) => key && value))
-  return Object.keys(next).length > 0 ? next : undefined
-}
-
 function assignmentMode(assignment?: GeneratorAssignmentSettings): PlacementMode {
   if (assignment?.mode === 'specific_hosts') return 'specific_hosts'
-  if (normalizeLabels(assignment?.required_labels)) return 'required_labels'
+  if (normalizeRequiredLabels(assignment?.required_labels)) return 'required_labels'
   if (assignment?.mode === 'auto') return 'auto'
   return 'inherit'
 }
 
 function labelSummary(labels?: Record<string, string>) {
-  const entries = Object.entries(normalizeLabels(labels) || {})
+  const entries = Object.entries(normalizeRequiredLabels(labels) || {})
   if (entries.length === 0) return 'No capabilities selected'
   return entries.map(([key, value]) => `${key}=${value}`).join(', ')
 }
 
 function generatorCanRun(generator: SystemInventoryGenerator, protocol?: string) {
   const drainActive = !generator.drain_state || generator.drain_state === 'active'
-  const connected = ['connected', 'healthy', 'ready'].includes(generator.status)
   const compatible = !generator.compatibility_state || generator.compatibility_state === 'compatible' || generator.compatibility_state === 'unknown'
   const protocols = generator.supported_protocols || []
   const protocolSupported = !protocol || protocols.length === 0 || protocols.includes(protocol)
+  // Synthetic fallback rows (no live inventory) carry status 'configured' with no
+  // capacity/health data — keep them selectable so recommendation hostnames remain
+  // pinnable when /system/inventory is empty or unavailable (M3).
+  if (generator.status === 'configured') {
+    return drainActive && compatible && protocolSupported
+  }
+  const connected = ['connected', 'healthy', 'ready'].includes(generator.status)
   return drainActive && connected && compatible && protocolSupported && (generator.available_capacity ?? 0) > 0
 }
 
 function generatorDisabledReason(generator: SystemInventoryGenerator, protocol?: string) {
   if (generator.drain_state && generator.drain_state !== 'active') return `Host is ${generator.drain_state}`
-  if (!['connected', 'healthy', 'ready'].includes(generator.status)) return `Host is ${generator.status}`
   if (generator.compatibility_state && generator.compatibility_state !== 'compatible' && generator.compatibility_state !== 'unknown') return generator.compatibility_issues?.[0] || `Compatibility is ${generator.compatibility_state}`
   const protocols = generator.supported_protocols || []
   if (protocol && protocols.length > 0 && !protocols.includes(protocol)) return `Does not support ${protocol}`
+  // Fallback rows have no live status/capacity to report on once the above
+  // configuration checks pass.
+  if (generator.status === 'configured') return ''
+  if (!['connected', 'healthy', 'ready'].includes(generator.status)) return `Host is ${generator.status}`
   if ((generator.available_capacity ?? 0) <= 0) return 'No available capacity'
   return ''
 }
@@ -94,7 +97,7 @@ function targetRows(availableTargets: string[], generatorInventory: SystemInvent
 }
 
 function labelsMatch(generator: SystemInventoryGenerator, required?: Record<string, string>) {
-  const labels = normalizeLabels(required)
+  const labels = normalizeRequiredLabels(required)
   if (!labels) return true
   return Object.entries(labels).every(([key, value]) => generator.labels?.[key] === value)
 }
@@ -117,9 +120,25 @@ export default function GroupPlacementEditor({
   allowInherit = true,
 }: Props) {
   const rawMode = assignmentMode(assignment)
-  const mode = !allowInherit && rawMode === 'inherit' ? 'auto' : rawMode
+  const derivedMode: PlacementMode = !allowInherit && rawMode === 'inherit' ? 'auto' : rawMode
   const selectedTargets = assignment?.selected_targets || []
-  const requiredLabels = normalizeLabels(assignment?.required_labels)
+  const requiredLabels = normalizeRequiredLabels(assignment?.required_labels)
+
+  // The "Require capability" mode serializes as { mode:'auto', required_labels }, so
+  // until the user picks a label it is indistinguishable from plain "auto" in the
+  // serialized assignment. Track the selected mode locally so the capability panel
+  // stays open while labels are still empty, instead of snapping back to auto (H2).
+  const [mode, setLocalMode] = useState<PlacementMode>(derivedMode)
+  useEffect(() => {
+    setLocalMode(prev => {
+      if (prev === 'required_labels' && derivedMode === 'auto' && !normalizeRequiredLabels(assignment?.required_labels)) {
+        return prev
+      }
+      return derivedMode
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [derivedMode])
+
   const rows = targetRows(availableTargets, generatorInventory, selectedTargets)
   const labelKeys = Object.keys(availableLabels || {}).sort()
   const matchingLabelHosts = generatorInventory?.filter(generator => generatorCanRun(generator, protocol) && labelsMatch(generator, requiredLabels)).length ?? 0
@@ -127,6 +146,7 @@ export default function GroupPlacementEditor({
   const selectedCapacity = rows.reduce((total, generator) => selectedTargetSet.has(generator.target) ? total + (generator.available_capacity || 0) : total, 0)
 
   const setMode = (nextMode: PlacementMode) => {
+    setLocalMode(nextMode)
     if (nextMode === 'inherit') {
       onChange(undefined)
       return

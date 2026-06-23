@@ -319,6 +319,11 @@ func (tr *TestRunner) enrichGeneratorTargetSpecsWithLabels(specs []generatorTarg
 		}
 		return out
 	}
+	// Index fleet tags under BOTH the metadata Target and GeneratorID so capability
+	// labels attach whenever EITHER equals the generator's dial address (the only
+	// join key available pre-probe). Tags recorded against a generator whose metadata
+	// has neither Target nor GeneratorID equal to its configured dial address cannot
+	// be correlated here — operators must record capability tags keyed by dial address.
 	labelsByTarget := make(map[string]map[string]string, len(metadata))
 	for _, item := range metadata {
 		if item == nil || len(item.Tags) == 0 {
@@ -409,7 +414,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		shards := groupShards[group.Name]
 		if len(shards) == 0 {
 			cleanup()
-			tr.failTestBeforeRun(test, generatorPlacementRejectionMessage(group, loadByTarget, targetSpecs))
+			tr.failTestBeforeRun(test, generatorPlacementRejectionMessage(group, loadByTarget, targetSpecs, assignment))
 			return
 		}
 

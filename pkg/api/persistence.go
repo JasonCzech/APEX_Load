@@ -331,7 +331,7 @@ func storedScenarioToStorage(stored *StoredScenario) *storage.Scenario {
 		ScenarioMode:     stored.ScenarioMode,
 		ScriptShakeout:   stored.ScriptShakeout,
 		ResourceBaseline: stored.ResourceBaseline,
-		Assignment:       cloneGeneratorAssignmentSettings(stored.Assignment),
+		Assignment:       generatorAssignmentForStorage(stored.Assignment),
 		GoalConfig:       cloneGoalConfig(stored.GoalConfig),
 		RuntimeSettings:  cloneRuntimeSettings(stored.RuntimeSettings),
 		CreatedAt:        stored.CreatedAt,
@@ -358,7 +358,7 @@ func storedScenarioRefsToStorage(stored *StoredScenario) []storage.ScenarioScrip
 			Iterations:      ref.Iterations,
 			Initialization:  ref.Initialization,
 			RuntimeSettings: runtimeSettingsForStorage(ref.RuntimeSettings),
-			Assignment:      cloneGeneratorAssignmentSettings(ref.Assignment),
+			Assignment:      generatorAssignmentForStorage(ref.Assignment),
 		})
 	}
 	return scripts

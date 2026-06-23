@@ -57,6 +57,7 @@ func (tr *TestRunner) ValidateScenarioLoadModel(req CreateScenarioRequest) (*Loa
 	report.Items = append(report.Items, validateCapacityAdvisory(preview.CapacityAdvisory)...)
 	report.Items = append(report.Items, validateBrowserCanaryDemand(preview.CapacityAdvisory)...)
 	report.Items = append(report.Items, validateAssignmentPlacement(preview, recommendation)...)
+	report.Items = append(report.Items, tr.validateGroupPlacementLocked(preview)...)
 	dataSourceItems, peakTPS := tr.validateLoadModelDataSourcesLocked(req.DataPools, preview.Groups)
 	report.PeakTargetTPS = peakTPS
 	report.Items = append(report.Items, dataSourceItems...)
@@ -218,6 +219,27 @@ func validateAssignmentPlacement(test *ManagedTest, recommendation *AssignmentRe
 		status = "blocked"
 	}
 	return []LoadModelValidationItem{{Dimension: "generator_placement", Status: status, Summary: summary}}
+}
+
+// validateGroupPlacementLocked surfaces per-group placement eligibility in the
+// scenario-builder load-model report using the SAME evaluation as launch preflight
+// (M1), so a group pinned to an incompatible/ineligible host is reported "blocked"
+// here instead of silently showing "ready" until launch preflight blocks it.
+func (tr *TestRunner) validateGroupPlacementLocked(test *ManagedTest) []LoadModelValidationItem {
+	conflicts := tr.evaluateGeneratorPlacementConflictsLocked(test)
+	if len(conflicts) == 0 {
+		return nil
+	}
+	items := make([]LoadModelValidationItem, 0, len(conflicts))
+	for _, conflict := range conflicts {
+		items = append(items, LoadModelValidationItem{
+			Dimension: "generator_placement",
+			Group:     conflict.Group,
+			Status:    "blocked",
+			Summary:   conflict.Message,
+		})
+	}
+	return items
 }
 
 func (tr *TestRunner) validateLoadModelDataSourcesLocked(bindings []storage.ScenarioDataPoolBinding, groups []TestGroup) ([]LoadModelValidationItem, float64) {

@@ -216,7 +216,11 @@ func (i *generatorCompatibilityIndex) targetCanRun(target string, protocolName s
 	return generatorCompatibilityState(spec) == "compatible" && targetSupportsProtocol(spec, protocolName) && targetMatchesRequiredLabels(spec, requiredLabels)
 }
 
-func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, specs []generatorTargetSpec) string {
+// generatorPlacementRejectionMessage explains why a group could not be placed.
+// inherited is the scenario/test-level (root) assignment so that an INHERITING
+// group blocked by inherited required_labels reports the actual unmet labels
+// instead of an empty/misleading reason.
+func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, specs []generatorTargetSpec, inherited *GeneratorAssignmentSettings) string {
 	protocolName := usageKey(group.Protocol, "unknown")
 	reasons := make([]string, 0)
 	if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeSpecificHosts {
@@ -245,7 +249,7 @@ func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string
 			reasons = append(reasons, fmt.Sprintf("%s does not support protocol %s", spec.Address, protocolName))
 			continue
 		}
-		requiredLabels := effectiveGroupRequiredLabels(group, nil)
+		requiredLabels := effectiveGroupRequiredLabels(group, inherited)
 		if !targetMatchesRequiredLabels(spec, requiredLabels) {
 			reasons = append(reasons, fmt.Sprintf("%s does not match required labels %s", spec.Address, formatRequiredLabels(requiredLabels)))
 		}

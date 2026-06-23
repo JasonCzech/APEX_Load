@@ -1,5 +1,6 @@
 import { GeneratorAssignmentSettings, RuntimeSettingsOverride, StoredScenario, SystemInventoryGenerator } from '../types'
 import { parseDurationToSeconds } from '../utils/timeUtils'
+import { normalizeRequiredLabels } from './assignmentLabels'
 
 export type RunDefaultKey =
   | 'duration'
@@ -211,13 +212,6 @@ function formatRuntimeBrowserTableValue(browser?: RuntimeSettingsOverride['brows
   return parts.length ? parts.join(' · ') : 'Standard'
 }
 
-function normalizeRequiredLabels(labels?: Record<string, string>) {
-  if (!labels) return undefined
-  const next = Object.fromEntries(Object.entries(labels)
-    .map(([key, value]) => [key.trim(), value.trim()])
-    .filter(([key, value]) => key && value))
-  return Object.keys(next).length > 0 ? next : undefined
-}
 
 function hasActivePlacementAssignment(assignment?: GeneratorAssignmentSettings) {
   if (assignment?.mode === 'specific_hosts') return Boolean(assignment.selected_targets?.length)

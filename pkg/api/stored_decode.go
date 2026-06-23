@@ -58,8 +58,28 @@ func decodeStoredGoalConfig(value any) *GoalConfig {
 	return cloneGoalConfig(&config)
 }
 
+// generatorAssignmentForStorage boxes a generator assignment into the storage
+// layer's `any` field, returning a true nil interface (not a typed-nil pointer)
+// when there is no override — mirroring runtimeSettingsForStorage. Without this,
+// a nil *GeneratorAssignmentSettings boxed into `any` becomes a non-nil interface
+// that decodeStoredGeneratorAssignment would normalize into {Mode:"auto"}, silently
+// turning an inheriting group into an explicit-auto (fleet-wide) one.
+func generatorAssignmentForStorage(a *GeneratorAssignmentSettings) any {
+	if a == nil {
+		return nil
+	}
+	return cloneGeneratorAssignmentSettings(a)
+}
+
 func decodeStoredGeneratorAssignment(value any) *GeneratorAssignmentSettings {
 	if value == nil {
+		return nil
+	}
+	// Defense in depth against a typed-nil *GeneratorAssignmentSettings boxed into
+	// the `any` field (interface is non-nil but the pointer is nil): treat it as
+	// "no assignment" rather than marshalling it to JSON null and normalizing the
+	// resulting empty struct into {Mode:"auto"}.
+	if a, ok := value.(*GeneratorAssignmentSettings); ok && a == nil {
 		return nil
 	}
 	data, err := json.Marshal(value)

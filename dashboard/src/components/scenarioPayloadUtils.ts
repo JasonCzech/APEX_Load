@@ -1,4 +1,5 @@
 import { GeneratorAssignmentSettings, GoalConfig, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode } from '../types'
+import { normalizeRequiredLabels } from './assignmentLabels'
 import { ScenarioRuntimeSettings } from './scenarioDraftUtils'
 import { BrowserConfig, ErrorHandlingConfig, HTTPConfig, LogConfig, PacingConfig, RunLogicConfig, ThinkTimeConfig, WebRuntimeConfig } from '../types/scripts'
 
@@ -195,13 +196,6 @@ function normalizeSelectedTargets(targets?: string[]) {
   return Array.from(new Set((targets || []).map(target => target.trim()).filter(Boolean)))
 }
 
-function normalizeRequiredLabels(labels?: Record<string, string>) {
-  if (!labels) return undefined
-  const next = Object.fromEntries(Object.entries(labels)
-    .map(([key, value]) => [key.trim(), value.trim()])
-    .filter(([key, value]) => key && value))
-  return Object.keys(next).length > 0 ? next : undefined
-}
 
 export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: GoalConfig): GoalConfig | undefined {
   if (scenarioMode !== 'goal_oriented') {

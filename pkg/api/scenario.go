@@ -87,7 +87,7 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 		ScenarioMode:     normalizeScenarioMode(req.ScenarioMode),
 		ScriptShakeout:   req.ScriptShakeout,
 		ResourceBaseline: req.ResourceBaseline,
-		Assignment:       cloneGeneratorAssignmentSettings(req.Assignment),
+		Assignment:       generatorAssignmentForStorage(req.Assignment),
 		GoalConfig:       req.GoalConfig,
 		RuntimeSettings:  req.RuntimeSettings,
 		CreatedAt:        createdAt,
@@ -110,7 +110,7 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 			Iterations:      group.Iterations,
 			Initialization:  group.InitStrategy,
 			RuntimeSettings: runtimeSettingsForStorage(group.RuntimeSettings),
-			Assignment:      cloneGeneratorAssignmentSettings(group.Assignment),
+			Assignment:      generatorAssignmentForStorage(group.Assignment),
 		})
 	}
 	dataPools, err := normalizeScenarioDataPoolBindings(id, req.DataPools)

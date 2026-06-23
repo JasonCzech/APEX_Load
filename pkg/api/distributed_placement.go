@@ -34,6 +34,15 @@ func newRegionPlacementState(groups []TestGroup, assignment *GeneratorAssignment
 	totalWeight := 0
 	remaining := make(map[string]float64)
 	weightedRegions := make(map[string]struct{})
+	// Region/load-zone weighting is a SOFT preference, not a hard quota. The
+	// denominator sums the VUsers of inheriting groups only (pinned and explicit-auto
+	// groups are excluded), but it counts ALL inheriting demand even though some may
+	// ultimately land in a non-weighted region (e.g. when every weighted region is
+	// capacity-exhausted, orderedLoadTargets falls back to capacity ordering and
+	// consume() does not decrement for unweighted regions). The result is that the
+	// per-region remaining quota can stay slightly inflated; ranking by remaining
+	// quota still steers placement toward under-filled weighted regions first, then
+	// degrades gracefully to capacity-based selection. This is intentional.
 	totalVUsers := 0
 	for _, group := range groups {
 		if !groupInheritsAssignment(group) {
