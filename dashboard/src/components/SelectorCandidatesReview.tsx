@@ -9,6 +9,7 @@ export interface SelectorCandidate {
 }
 
 interface ActionCandidates {
+  actionIndex: number
   actionName: string
   actionType: string
   selector: string
@@ -31,11 +32,12 @@ function candidatesFromMetadata(value: unknown): SelectorCandidate[] {
 export function collectActionCandidates(script: ScriptDefinition | null): ActionCandidates[] {
   if (!script?.actions) return []
   const out: ActionCandidates[] = []
-  for (const action of script.actions) {
+  for (const [actionIndex, action] of script.actions.entries()) {
     const metadata = (action as { metadata?: Record<string, unknown> }).metadata
     const candidates = candidatesFromMetadata(metadata?.source_selector_candidates)
     if (candidates.length === 0) continue
     out.push({
+      actionIndex,
       actionName: action.name || action.type || 'action',
       actionType: action.type || '',
       selector: (action as { selector?: string }).selector || '',
@@ -57,7 +59,13 @@ function confidenceBand(confidence: number): string {
  * import) so reviewers can see how each step will locate its element and what
  * replay self-heal will fall back to.
  */
-export default function SelectorCandidatesReview({ script }: { script: ScriptDefinition | null }) {
+export default function SelectorCandidatesReview({
+  script,
+  onPromoteCandidate,
+}: {
+  script: ScriptDefinition | null
+  onPromoteCandidate?: (actionIndex: number, candidate: SelectorCandidate) => void
+}) {
   const actions = collectActionCandidates(script)
   if (actions.length === 0) return null
 
@@ -82,6 +90,15 @@ export default function SelectorCandidatesReview({ script }: { script: ScriptDef
                 </span>
                 <span className="selector-kind">{candidate.kind}</span>
                 <code>{candidate.value}</code>
+                {onPromoteCandidate && candidate.value !== action.selector && (
+                  <button
+                    type="button"
+                    className="selector-promote"
+                    onClick={() => onPromoteCandidate(action.actionIndex, candidate)}
+                  >
+                    Use
+                  </button>
+                )}
                 {candidate.reason && <small>{candidate.reason}</small>}
               </li>
             ))}

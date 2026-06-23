@@ -8,6 +8,7 @@ import {
   type BrowserReplayReport,
   type ReplayRepairSuggestion,
 } from '../types'
+import RepairSuggestionList from './RepairSuggestionList'
 
 export interface BrowserReplayProgressProps {
   replaySessionId: string
@@ -114,27 +115,6 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
     }
   }
 
-  const renderSuggestion = (suggestion: ReplayRepairSuggestion) => {
-    if (rejected[suggestion.id]) return null
-    return (
-      <div key={suggestion.id} className="brp-repair-suggestion">
-        <strong>{suggestion.title}</strong>
-        {typeof suggestion.confidence === 'number' && <span className="brp-repair-confidence"> {Math.round(suggestion.confidence * 100)}%</span>}
-        <div className="brp-repair-desc">{suggestion.description}</div>
-        {(onApplySuggestion || suggestion.draft_patch_type === 'promote_selector') && (
-          <div className="brp-repair-actions">
-            {onApplySuggestion && (
-              <button type="button" className="rec-inline-action" disabled={!!applying[suggestion.id]} onClick={() => applySuggestion(suggestion)}>
-                {applying[suggestion.id] ? 'Applying...' : 'Accept'}
-              </button>
-            )}
-            <button type="button" className="rec-inline-action" onClick={() => setRejected(prev => ({ ...prev, [suggestion.id]: true }))}>Reject</button>
-          </div>
-        )}
-      </div>
-    )
-  }
-
   return (
     <div className="brp-replay-progress" data-testid="replay-progress">
       <div className="brp-replay-header">
@@ -169,7 +149,18 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
               {expanded === key && (
                 <div className="brp-replay-suggestions">
                   {event.error_message && <div className="brp-replay-error-full">{event.error_message}</div>}
-                  {suggestions.map(renderSuggestion)}
+                  <RepairSuggestionList
+                    suggestions={suggestions}
+                    itemClassName="brp-repair-suggestion"
+                    confidenceClassName="brp-repair-confidence"
+                    descriptionClassName="brp-repair-desc"
+                    actionsClassName="brp-repair-actions"
+                    actionButtonClassName="rec-inline-action"
+                    rejected={rejected}
+                    applying={applying}
+                    onApplySuggestion={onApplySuggestion ? applySuggestion : undefined}
+                    onRejectSuggestion={suggestion => setRejected(prev => ({ ...prev, [suggestion.id]: true }))}
+                  />
                 </div>
               )}
             </div>
@@ -178,10 +169,21 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
       </div>
 
       {reportSuggestions.length > 0 && (
-        <div className="brp-replay-suggestions">
-          <div className="brp-warnings-title">Self-heal suggestions</div>
-          {reportSuggestions.map(renderSuggestion)}
-        </div>
+        <RepairSuggestionList
+          suggestions={reportSuggestions}
+          className="brp-replay-suggestions"
+          itemClassName="brp-repair-suggestion"
+          label="Self-heal suggestions"
+          labelClassName="brp-warnings-title"
+          confidenceClassName="brp-repair-confidence"
+          descriptionClassName="brp-repair-desc"
+          actionsClassName="brp-repair-actions"
+          actionButtonClassName="rec-inline-action"
+          rejected={rejected}
+          applying={applying}
+          onApplySuggestion={onApplySuggestion ? applySuggestion : undefined}
+          onRejectSuggestion={suggestion => setRejected(prev => ({ ...prev, [suggestion.id]: true }))}
+        />
       )}
     </div>
   )

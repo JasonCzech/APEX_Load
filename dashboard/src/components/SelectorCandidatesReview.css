@@ -72,6 +72,20 @@
   color: var(--text-secondary, #9ca3af);
 }
 
+.selector-promote {
+  border: 1px solid var(--border-color, #2a3245);
+  border-radius: 6px;
+  padding: 2px 8px;
+  background: var(--surface-color, transparent);
+  color: var(--text-primary, inherit);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.selector-promote:hover {
+  border-color: var(--accent, #60a5fa);
+}
+
 .selector-confidence {
   display: inline-flex;
   align-items: center;

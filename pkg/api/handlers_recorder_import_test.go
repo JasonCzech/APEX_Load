@@ -84,6 +84,67 @@ func TestHandleImportRecorderChromeJSON(t *testing.T) {
 	if click.Metadata["source_selector_candidates"] == nil {
 		t.Error("click missing selector candidates metadata")
 	}
+	stepMapping, ok := result.Summary["step_mapping"].([]any)
+	if !ok || len(stepMapping) != 3 {
+		t.Fatalf("step mapping = %#v, want 3 mapped steps", result.Summary["step_mapping"])
+	}
+	firstMapping, ok := stepMapping[0].(map[string]any)
+	if !ok || firstMapping["disposition"] != "mapped" {
+		t.Fatalf("first mapping = %#v", stepMapping[0])
+	}
+}
+
+func TestHandleImportRecorderStepMappingDispositions(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	fixture := `{
+  "title": "Review",
+  "steps": [
+    {"type": "navigate", "url": "https://shop.example/"},
+    {"type": "scroll", "x": 0, "y": 300, "distancePercentage": 25},
+    {"type": "customStep", "name": "Manual"}
+  ]
+}`
+	payload := map[string]any{"name": "Review", "content": fixture}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/recorder", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var result recorderImportResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	stepMapping, ok := result.Summary["step_mapping"].([]any)
+	if !ok || len(stepMapping) != 3 {
+		t.Fatalf("step mapping = %#v, want 3 source-step mappings", result.Summary["step_mapping"])
+	}
+	counts := map[string]int{}
+	reasons := map[string]string{}
+	for _, raw := range stepMapping {
+		mapping, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("mapping = %#v", raw)
+		}
+		disposition, _ := mapping["disposition"].(string)
+		counts[disposition]++
+		if reason, _ := mapping["reason"].(string); reason != "" {
+			reasons[disposition] = reason
+		}
+	}
+	if counts["mapped"] != 1 || counts["degraded"] != 1 || counts["unsupported"] != 1 {
+		t.Fatalf("disposition counts = %#v", counts)
+	}
+	if reasons["degraded"] == "" || reasons["unsupported"] == "" {
+		t.Fatalf("mapping reasons = %#v", stepMapping)
+	}
 }
 
 func TestHandleImportRecorderPlaywrightMultipart(t *testing.T) {

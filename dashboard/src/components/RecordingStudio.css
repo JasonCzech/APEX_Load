@@ -1512,7 +1512,8 @@
 .brp-replay-suggestions { width: 100%; display: flex; flex-direction: column; gap: 6px; }
 .brp-repair-suggestion { font-size: 12px; padding: 6px 8px; background: var(--bg-hover); border-radius: 6px; }
 .brp-repair-confidence { color: var(--text-muted); font-size: 11px; }
-.brp-repair-desc { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+.brp-repair-desc { display: block; color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+.brp-repair-actions { display: flex; gap: 6px; margin-top: 6px; }
 
 /* Launcher advanced options + install affordance */
 .rec-browser-options {

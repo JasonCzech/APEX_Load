@@ -426,7 +426,7 @@ describe('ProtocolAssetImport', () => {
         ],
       },
       warnings: [],
-      unsupported_elements: ['chrome_recorder_step:scroll (step 4) [warning]: not convertible'],
+      unsupported_elements: ['chrome_recorder_step:customStep (step 4) [warning]: manual review required'],
       assumptions: [],
       review_sections: [],
       repair_suggestions: [],
@@ -437,7 +437,16 @@ describe('ProtocolAssetImport', () => {
         converted_actions: 2,
         skipped_steps: 1,
       },
-      summary: { import_mode: 'chrome_devtools_recorder', execution_mode: 'apexload_browser' },
+      summary: {
+        import_mode: 'chrome_devtools_recorder',
+        execution_mode: 'apexload_browser',
+        step_mapping: [
+          { source_index: 1, source_location: 'step 1', source_step_type: 'navigate', action_index: 0, name: 'Navigate to /login', type: 'browser_navigate', disposition: 'mapped' },
+          { source_index: 2, source_location: 'step 2', source_step_type: 'click', action_index: 1, name: 'Click Sign in', type: 'browser_click', disposition: 'mapped' },
+          { source_index: 3, source_location: 'step 3', source_step_type: 'scroll', action_index: 2, name: 'Scroll page', type: 'browser_evaluate_js', disposition: 'degraded', reason: 'Converted scroll to review-gated JavaScript.' },
+          { source_index: 4, source_location: 'step 4', source_step_type: 'customStep', disposition: 'unsupported', reason: 'Chrome customStep requires manual review before replay.' },
+        ],
+      },
     })
     apiMock.importWSDL.mockResolvedValue({
       scripts: [],
@@ -1338,7 +1347,11 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain("[data-testid='login-btn']")
     expect(container.textContent).toContain('role=button[name="Sign in"]')
     expect(container.textContent).toContain('95')
-    expect(container.textContent).toContain('chrome_recorder_step:scroll')
+    expect(container.textContent).toContain('Recorder Step Mapping')
+    expect(container.textContent).toContain('1 degraded')
+    expect(container.textContent).toContain('1 unsupported')
+    expect(container.textContent).toContain('Chrome customStep requires manual review')
+    expect(container.textContent).toContain('chrome_recorder_step:customStep')
   })
 
   it('requires replay validation before normal recorder import save and attaches evidence', async () => {
@@ -1364,6 +1377,14 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
+    const useFallback = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Use')
+    expect(useFallback).toBeDefined()
+    if (!useFallback) return
+    await act(async () => {
+      useFallback.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('Selector updated in the draft')
+
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save To Script Library'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
@@ -1383,7 +1404,13 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
     expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledWith(expect.objectContaining({
       ignore_think_time: true,
-      script: expect.objectContaining({ protocol: 'browser', project_id: 'project-1' }),
+      script: expect.objectContaining({
+        protocol: 'browser',
+        project_id: 'project-1',
+        actions: expect.arrayContaining([
+          expect.objectContaining({ selector: 'role=button[name="Sign in"]' }),
+        ]),
+      }),
     }))
 
     const completeReplay = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Complete Replay'))
@@ -1399,6 +1426,14 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      actions: expect.arrayContaining([
+        expect.objectContaining({
+          selector: 'role=button[name="Sign in"]',
+          metadata: expect.objectContaining({
+            selector_promoted_from_import_review: true,
+          }),
+        }),
+      ]),
       metadata: expect.objectContaining({
         import: expect.objectContaining({
           preserved: expect.objectContaining({

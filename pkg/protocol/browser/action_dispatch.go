@@ -170,6 +170,9 @@ func (b *Browser) dispatchHandleDialog(action *protocol.Action, result *protocol
 		return nil, failBrowserAction(result, fmt.Sprintf("browser_handle_dialog params.action must be accept or dismiss, got %q", policy))
 	}
 	b.dialogMu.Lock()
+	// Keep the runtime default strict for hand-authored scripts. Recorder-origin
+	// dialog imports set match_mode:"contains" explicitly because browser dialog
+	// text often includes dynamic prefixes/suffixes captured at record time.
 	b.pendingDialog = &dialogPolicy{
 		action:          policy,
 		expectedMessage: actionParamString(action.Params, "expected_message", ""),

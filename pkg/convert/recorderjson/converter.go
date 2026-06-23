@@ -35,6 +35,20 @@ type ConvertResult struct {
 	Warnings    []string         `json:"warnings,omitempty"`
 	Unsupported diag.Diagnostics `json:"unsupported,omitempty"`
 	Stats       ConvertStats     `json:"stats"`
+	StepMapping []StepMapping    `json:"step_mapping,omitempty"`
+}
+
+type StepMapping struct {
+	SourceIndex     int    `json:"source_index,omitempty"`
+	SourceLocation  string `json:"source_location,omitempty"`
+	SourceStepType  string `json:"source_step_type,omitempty"`
+	ActionIndex     *int   `json:"action_index,omitempty"`
+	Name            string `json:"name,omitempty"`
+	Type            string `json:"type,omitempty"`
+	TargetPath      string `json:"target_path,omitempty"`
+	RecorderStepSeq int    `json:"recorder_step_seq,omitempty"`
+	Disposition     string `json:"disposition"`
+	Reason          string `json:"reason,omitempty"`
 }
 
 // chromeRecording is the Chrome DevTools Recorder export format
@@ -55,6 +69,7 @@ type chromeStep struct {
 	Height             int                  `json:"height,omitempty"`
 	X                  int                  `json:"x,omitempty"`
 	Y                  int                  `json:"y,omitempty"`
+	DistancePercentage float64              `json:"distancePercentage,omitempty"`
 	Timeout            int                  `json:"timeout,omitempty"`
 	OffsetX            int                  `json:"offsetX,omitempty"`
 	OffsetY            int                  `json:"offsetY,omitempty"`
@@ -129,6 +144,7 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 
 	for i, step := range recording.Steps {
 		location := fmt.Sprintf("step %d", i+1)
+		sourceIndex := i + 1
 		switch step.Type {
 		case "setViewport":
 			if step.Width > 0 && step.Height > 0 {
@@ -145,6 +161,7 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 				script.Config.Browser.DeviceProfile = convertutil.FirstNonEmpty(script.Config.Browser.DeviceProfile, "mobile")
 			}
 			ensureChromeImportMetadata(script)["viewport"] = chromeStepMetadata(step)
+			appendConfigStepMapping(result, sourceIndex, location, step.Type, "mapped", "Applied viewport and device settings to the script browser configuration.")
 		case "emulateNetworkConditions":
 			script.Config.WebRuntime.NetworkSimulation.Mode = "custom"
 			if step.Latency > 0 {
@@ -154,11 +171,15 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 				script.Config.WebRuntime.NetworkSimulation.BandwidthKbps = step.DownloadThroughput / 1024
 			}
 			ensureChromeImportMetadata(script)["network_conditions"] = chromeStepMetadata(step)
+			appendConfigStepMapping(result, sourceIndex, location, step.Type, "mapped", "Applied Chrome network conditions to script runtime settings.")
 		case "navigate":
 			if script.Config.BaseURL == "" {
 				script.Config.BaseURL = originOf(step.URL)
 			}
-			script.Actions = append(script.Actions, dsl.Action{
+			appendImportedAction(script, result, StepMapping{
+				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: step.Type,
+				RecorderStepSeq: sourceIndex, Disposition: "mapped",
+			}, dsl.Action{
 				Name:   "Navigate to " + step.URL,
 				Type:   "browser_navigate",
 				Target: relativeTo(script.Config.BaseURL, step.URL),
@@ -166,6 +187,7 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 		case "click", "doubleClick", "hover":
 			action, ok := chromeElementAction(step, location, result)
 			if !ok {
+				appendUnsupportedStepMapping(result, sourceIndex, location, step.Type, "No replayable selector was available for the element action.")
 				continue
 			}
 			switch step.Type {
@@ -181,10 +203,14 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 			}
 			attachChromeActionMetadata(&action, step)
 			applyAssertedNavigation(&action, step)
-			script.Actions = append(script.Actions, action)
+			appendImportedAction(script, result, StepMapping{
+				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: step.Type,
+				RecorderStepSeq: sourceIndex, Disposition: "mapped",
+			}, action)
 		case "change":
 			action, ok := chromeElementAction(step, location, result)
 			if !ok {
+				appendUnsupportedStepMapping(result, sourceIndex, location, step.Type, "No replayable selector was available for the change step.")
 				continue
 			}
 			action.Type = "browser_fill"
@@ -192,7 +218,10 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 			action.Value = step.Value
 			attachChromeActionMetadata(&action, step)
 			applyAssertedNavigation(&action, step)
-			script.Actions = append(script.Actions, action)
+			appendImportedAction(script, result, StepMapping{
+				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: step.Type,
+				RecorderStepSeq: sourceIndex, Disposition: "mapped",
+			}, action)
 		case "keyDown":
 			if key := strings.TrimSpace(step.Key); key != "" {
 				action := dsl.Action{
@@ -201,13 +230,20 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 					Value: key,
 				}
 				attachChromeActionMetadata(&action, step)
-				script.Actions = append(script.Actions, action)
+				appendImportedAction(script, result, StepMapping{
+					SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: step.Type,
+					RecorderStepSeq: sourceIndex, Disposition: "mapped",
+				}, action)
+			} else {
+				appendUnsupportedStepMapping(result, sourceIndex, location, step.Type, "Chrome keyDown step had no key value.")
 			}
 		case "keyUp":
 			// The paired keyDown already produced the press action.
+			appendConfigStepMapping(result, sourceIndex, location, step.Type, "mapped", "Paired keyUp is represented by the browser_press_key action emitted for keyDown.")
 		case "waitForElement":
 			action, ok := chromeElementAction(step, location, result)
 			if !ok {
+				appendUnsupportedStepMapping(result, sourceIndex, location, step.Type, "No replayable selector was available for the waitForElement step.")
 				continue
 			}
 			action.Type = "browser_wait"
@@ -233,13 +269,17 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 				action.Params["attributes"] = step.Attributes
 			}
 			attachChromeActionMetadata(&action, step)
-			script.Actions = append(script.Actions, action)
+			appendImportedAction(script, result, StepMapping{
+				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: step.Type,
+				RecorderStepSeq: sourceIndex, Disposition: "mapped",
+			}, action)
 		case "waitForExpression":
 			expr := strings.TrimSpace(step.Expression)
 			if expr == "" {
 				result.Stats.SkippedSteps++
 				unsupported.Add(diag.Warning, "chrome_recorder_step:"+step.Type, location,
 					"Chrome waitForExpression step has no expression and was skipped.")
+				appendUnsupportedStepMapping(result, sourceIndex, location, step.Type, "Chrome waitForExpression step had no expression.")
 				continue
 			}
 			timeout := step.Timeout
@@ -258,40 +298,54 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 				},
 			}
 			attachChromeActionMetadata(&action, step)
-			script.Actions = append(script.Actions, action)
+			appendImportedAction(script, result, StepMapping{
+				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: step.Type,
+				RecorderStepSeq: sourceIndex, Disposition: "degraded",
+				Reason: "Converted waitForExpression to review-gated JavaScript evaluation.",
+			}, action)
 		case "scroll":
+			targetScript, scrollReason := chromeScrollScript(step, "")
 			action := dsl.Action{
 				Name:   "Scroll page",
 				Type:   "browser_evaluate_js",
-				Target: fmt.Sprintf("window.scrollTo(%d, %d)", step.X, step.Y),
+				Target: targetScript,
 				Metadata: map[string]any{
 					"review_required":    true,
 					"compatibility_gate": "chrome_recorder_scroll",
 				},
 			}
 			if len(step.Selectors) > 0 {
-				if elementAction, ok := chromeElementAction(step, location, result); ok {
+				if elementAction, ok := chromeElementActionNoSkip(step); ok {
+					elementScript, elementReason := chromeScrollScript(step, elementAction.Selector)
 					action.Selector = elementAction.Selector
-					action.Target = fmt.Sprintf("document.querySelector(%q)?.scrollTo(%d, %d)", elementAction.Selector, step.X, step.Y)
+					action.Target = elementScript
 					action.Metadata = elementAction.Metadata
 					action.Metadata["review_required"] = true
 					action.Metadata["compatibility_gate"] = "chrome_recorder_element_scroll"
+					scrollReason = elementReason
 				}
 			}
 			attachChromeActionMetadata(&action, step)
-			script.Actions = append(script.Actions, action)
+			appendImportedAction(script, result, StepMapping{
+				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: step.Type,
+				RecorderStepSeq: sourceIndex, Disposition: "degraded",
+				Reason: scrollReason,
+			}, action)
 		case "close":
 			result.Stats.SkippedSteps++
 			unsupported.Add(diag.Warning, "chrome_recorder_step:"+step.Type, location,
 				"Chrome close step was preserved as a review diagnostic; browser replay keeps the active page open.")
+			appendUnsupportedStepMapping(result, sourceIndex, location, step.Type, "Chrome close is unsupported in browser replay imports; replay keeps the active page open.")
 		case "customStep":
 			result.Stats.SkippedSteps++
 			unsupported.Add(diag.Warning, "chrome_recorder_step:"+step.Type, location,
 				"Chrome customStep requires manual review before it can be replayed.")
+			appendUnsupportedStepMapping(result, sourceIndex, location, step.Type, "Chrome customStep requires manual review before replay.")
 		default:
 			result.Stats.SkippedSteps++
 			unsupported.Add(diag.Warning, "chrome_recorder_step:"+step.Type, location,
 				"Chrome DevTools Recorder step type is not convertible to a browser action; review the recording for coverage gaps.")
+			appendUnsupportedStepMapping(result, sourceIndex, location, step.Type, "Chrome DevTools Recorder step type is not convertible to a browser action.")
 		}
 	}
 
@@ -304,10 +358,90 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 	return result, nil
 }
 
+func appendImportedAction(script *dsl.Script, result *ConvertResult, mapping StepMapping, action dsl.Action) {
+	actionIndex := len(script.Init) + len(script.Actions) + len(script.Teardown)
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
+	if mapping.SourceStepType != "" {
+		action.Metadata["source_step_type"] = mapping.SourceStepType
+	}
+	if mapping.SourceIndex > 0 {
+		action.Metadata["source_step_index"] = mapping.SourceIndex
+	}
+	if mapping.RecorderStepSeq > 0 {
+		action.Metadata["recorder_step_seq"] = mapping.RecorderStepSeq
+	}
+	if mapping.Disposition != "" {
+		action.Metadata["import_disposition"] = mapping.Disposition
+	}
+	if mapping.Reason != "" {
+		action.Metadata["import_disposition_reason"] = mapping.Reason
+	}
+	script.Actions = append(script.Actions, action)
+	mapping.ActionIndex = &actionIndex
+	mapping.Name = action.Name
+	mapping.Type = action.Type
+	mapping.TargetPath = fmt.Sprintf("actions[%d]", len(script.Actions)-1)
+	if mapping.Disposition == "" {
+		mapping.Disposition = "mapped"
+	}
+	result.StepMapping = append(result.StepMapping, mapping)
+}
+
+func appendConfigStepMapping(result *ConvertResult, sourceIndex int, location, sourceType, disposition, reason string) {
+	result.StepMapping = append(result.StepMapping, StepMapping{
+		SourceIndex:     sourceIndex,
+		SourceLocation:  location,
+		SourceStepType:  sourceType,
+		RecorderStepSeq: sourceIndex,
+		Disposition:     disposition,
+		Reason:          reason,
+	})
+}
+
+func appendUnsupportedStepMapping(result *ConvertResult, sourceIndex int, location, sourceType, reason string) {
+	appendConfigStepMapping(result, sourceIndex, location, sourceType, "unsupported", reason)
+}
+
+func chromeScrollScript(step chromeStep, selectorValue string) (string, string) {
+	target := "window"
+	if selectorValue != "" {
+		target = fmt.Sprintf("document.querySelector(%q)", selectorValue)
+	}
+	if step.DistancePercentage != 0 {
+		script := fmt.Sprintf(`(() => {
+  const target = %s;
+  if (!target) throw new Error("scroll target not found");
+  const amount = Math.round((target === window ? window.innerHeight : target.clientHeight) * %g / 100);
+  target.scrollBy(0, amount);
+})()`, target, step.DistancePercentage)
+		return script, "Converted Chrome scroll distancePercentage to review-gated JavaScript scrollBy."
+	}
+	if selectorValue != "" {
+		return fmt.Sprintf(`(() => {
+  const target = %s;
+  if (!target) throw new Error("scroll target not found");
+  target.scrollTo(%d, %d);
+})()`, target, step.X, step.Y), "Converted element scroll coordinates to review-gated JavaScript."
+	}
+	return fmt.Sprintf("window.scrollTo(%d, %d)", step.X, step.Y), "Converted page scroll coordinates to review-gated JavaScript."
+}
+
 // chromeElementAction builds the shared element-action skeleton: ranked
 // candidates from the step's selectors arrays, best-selector promotion, and
 // the same source_selector_* metadata the embedded recorder emits.
 func chromeElementAction(step chromeStep, location string, result *ConvertResult) (dsl.Action, bool) {
+	action, ok := chromeElementActionNoSkip(step)
+	if ok {
+		return action, true
+	}
+	result.Stats.SkippedSteps++
+	result.Warnings = append(result.Warnings, fmt.Sprintf("%s (%s) has no replayable selector and was skipped", location, step.Type))
+	return dsl.Action{}, false
+}
+
+func chromeElementActionNoSkip(step chromeStep) (dsl.Action, bool) {
 	candidates := candidatesFromChromeSelectors(step.Selectors)
 	best := selector.PlaywrightSelector(candidates)
 	if best == "" {
@@ -319,8 +453,6 @@ func chromeElementAction(step chromeStep, location string, result *ConvertResult
 		}
 	}
 	if best == "" {
-		result.Stats.SkippedSteps++
-		result.Warnings = append(result.Warnings, fmt.Sprintf("%s (%s) has no replayable selector and was skipped", location, step.Type))
 		return dsl.Action{}, false
 	}
 	action := dsl.Action{Selector: best, Target: best}
@@ -379,6 +511,9 @@ func chromeStepMetadata(step chromeStep) map[string]any {
 	}
 	if step.OffsetX != 0 || step.OffsetY != 0 {
 		metadata["source_click_offset"] = map[string]int{"x": step.OffsetX, "y": step.OffsetY}
+	}
+	if step.DistancePercentage != 0 {
+		metadata["source_scroll_distance_percentage"] = step.DistancePercentage
 	}
 	if step.Duration > 0 {
 		metadata["source_duration_ms"] = step.Duration

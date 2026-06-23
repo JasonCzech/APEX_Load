@@ -101,7 +101,7 @@ func (s *Server) convertRecorderImport(importReq *recorderImportRequest) (*recor
 		preserved["replay_required"] = true
 		preserved["replay_supported"] = result.Script.Protocol == "browser"
 		preserved["conversion_confidence"] = recorderConversionConfidence(result.Stats)
-		preserved["step_mapping"] = recorderStepMapping(result.Script)
+		preserved["step_mapping"] = recorderStepMapping(result)
 		return result, preflight, nil
 	}
 	return result, nil, nil
@@ -125,7 +125,7 @@ func buildRecorderImportResponse(result *recorderjson.ConvertResult, preflight *
 			"replay_required":       true,
 			"replay_supported":      result.Script != nil && result.Script.Protocol == "browser",
 			"conversion_confidence": recorderConversionConfidence(result.Stats),
-			"step_mapping":          recorderStepMapping(result.Script),
+			"step_mapping":          recorderStepMapping(result),
 		},
 	})
 }
@@ -137,7 +137,49 @@ func recorderConversionConfidence(stats recorderjson.ConvertStats) float64 {
 	return float64(stats.TotalSteps-stats.SkippedSteps) / float64(stats.TotalSteps)
 }
 
-func recorderStepMapping(script *dsl.Script) []map[string]any {
+func recorderStepMapping(result *recorderjson.ConvertResult) []map[string]any {
+	if result == nil {
+		return []map[string]any{}
+	}
+	if len(result.StepMapping) > 0 {
+		out := make([]map[string]any, 0, len(result.StepMapping))
+		for _, mapping := range result.StepMapping {
+			entry := map[string]any{
+				"disposition": mapping.Disposition,
+			}
+			if mapping.SourceIndex > 0 {
+				entry["source_index"] = mapping.SourceIndex
+			}
+			if mapping.SourceLocation != "" {
+				entry["source_location"] = mapping.SourceLocation
+			}
+			if mapping.SourceStepType != "" {
+				entry["source_step_type"] = mapping.SourceStepType
+			}
+			if mapping.ActionIndex != nil {
+				entry["index"] = *mapping.ActionIndex
+				entry["action_index"] = *mapping.ActionIndex
+			}
+			if mapping.Name != "" {
+				entry["name"] = mapping.Name
+			}
+			if mapping.Type != "" {
+				entry["type"] = mapping.Type
+			}
+			if mapping.TargetPath != "" {
+				entry["target_path"] = mapping.TargetPath
+			}
+			if mapping.RecorderStepSeq > 0 {
+				entry["recorder_step_seq"] = mapping.RecorderStepSeq
+			}
+			if mapping.Reason != "" {
+				entry["reason"] = mapping.Reason
+			}
+			out = append(out, entry)
+		}
+		return out
+	}
+	script := result.Script
 	if script == nil {
 		return []map[string]any{}
 	}
@@ -147,9 +189,10 @@ func recorderStepMapping(script *dsl.Script) []map[string]any {
 	out := make([]map[string]any, 0, len(actions))
 	for index, action := range actions {
 		entry := map[string]any{
-			"index": index,
-			"name":  action.Name,
-			"type":  action.Type,
+			"index":       index,
+			"name":        action.Name,
+			"type":        action.Type,
+			"disposition": "mapped",
 		}
 		if action.Metadata != nil {
 			if sourceType, ok := action.Metadata["source_step_type"]; ok {

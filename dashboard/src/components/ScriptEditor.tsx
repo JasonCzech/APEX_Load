@@ -55,6 +55,7 @@ import type { ScriptRecordingStatus } from '../hooks/api/useScriptApi'
 import PageViewToggle from './PageViewToggle'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import { buildLocalReplayPreflight, replayPreflightStatusLabel } from './replayPreflightUtils'
+import RepairSuggestionList from './RepairSuggestionList'
 import SourceMappingReview from './SourceMappingReview'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
@@ -8804,9 +8805,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                       {event.diagnosis.action && <small>{event.diagnosis.action}</small>}
                                     </div>
                                     {(event.repair_suggestions || []).length > 0 && (
-                                      <div className="replay-repair-suggestions">
-                                        <span className="replay-detail-label">Draft repair suggestions</span>
-                                        {(event.repair_suggestions || []).map(suggestion => {
+                                      <RepairSuggestionList
+                                        suggestions={event.repair_suggestions || []}
+                                        className="replay-repair-suggestions"
+                                        itemClassName="replay-repair-suggestion"
+                                        label="Draft repair suggestions"
+                                        labelClassName="replay-detail-label"
+                                        renderExtraAction={suggestion => {
                                           const fields = suggestion.fields || {}
                                           const expression = fields.expression
                                           const isExtractorFix = !!expression && (
@@ -8814,28 +8819,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                             || suggestion.draft_patch_type === 'add_extractor'
                                             || !!fields.source
                                           )
+                                          if (!isExtractorFix || editableActionIndex === null) return null
                                           return (
-                                            <div key={suggestion.id} className="replay-repair-suggestion">
-                                              <strong>{suggestion.title}</strong>
-                                              <span>{suggestion.description}</span>
-                                              {isExtractorFix && editableActionIndex !== null && (
-                                                <button
-                                                  type="button"
-                                                  className="btn btn-sm btn-secondary"
-                                                  onClick={() => addExtractorDefinition(editableActionIndex, {
-                                                    name: fields.name || 'correlation_value',
-                                                    source: fields.source || 'body',
-                                                    type: fields.type || fields.extract_type || 'regex',
-                                                    expression: expression as string,
-                                                  })}
-                                                >
-                                                  Add as extractor
-                                                </button>
-                                              )}
-                                            </div>
+                                            <button
+                                              type="button"
+                                              className="btn btn-sm btn-secondary"
+                                              onClick={() => addExtractorDefinition(editableActionIndex, {
+                                                name: fields.name || 'correlation_value',
+                                                source: fields.source || 'body',
+                                                type: fields.type || fields.extract_type || 'regex',
+                                                expression: expression as string,
+                                              })}
+                                            >
+                                              Add as extractor
+                                            </button>
                                           )
-                                        })}
-                                      </div>
+                                        }}
+                                      />
                                     )}
                                   </div>
                                 )}

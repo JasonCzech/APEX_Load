@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
-import { type BrowserReplayReport, type BrowserReplayStartResponse, type StoredScript } from '../types'
+import { type BrowserReplayReport, type BrowserReplayStartResponse, type ReplayRepairSuggestion, type StoredScript } from '../types'
 import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrowserRecordingImportResult, type DevWebImportResult, type HARImportResult, type HARImportSummary, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -11,7 +11,7 @@ import ImportRuntimeOptions from './ImportRuntimeOptions'
 import BrowserReplayProgress from './BrowserReplayProgress'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import ScriptImportReview from './ScriptImportReview'
-import SelectorCandidatesReview from './SelectorCandidatesReview'
+import SelectorCandidatesReview, { type SelectorCandidate } from './SelectorCandidatesReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { salesforceApiSurfaceBreakdown, salesforceEndpointTotal } from './salesforceReviewSummary'
@@ -209,6 +209,140 @@ function attachRecorderReplayEvidence(script: ScriptDefinition, report: BrowserR
   }
 }
 
+function scriptsFromImportResult(result: BrowserRecordingImportResult | null): ScriptDefinition[] {
+  if (!result) return []
+  return result.scripts?.length ? result.scripts : result.script ? [result.script] : []
+}
+
+function promoteDraftSelector(script: ScriptDefinition, actionIndex: number, selector: string, candidate?: SelectorCandidate): ScriptDefinition {
+  if (!script.actions?.[actionIndex]) return script
+  const actions = script.actions.map((action, index) => {
+    if (index !== actionIndex) return action
+    const metadata = { ...(action.metadata || {}) }
+    const currentCandidates = Array.isArray(metadata.source_selector_candidates)
+      ? metadata.source_selector_candidates.filter((item): item is SelectorCandidate => (
+        !!item && typeof item === 'object' && typeof (item as SelectorCandidate).value === 'string'
+      ))
+      : []
+    const promoted: SelectorCandidate = candidate || {
+      kind: selector.startsWith('//') ? 'xpath' : 'css',
+      value: selector,
+      confidence: 100,
+      reason: 'Replay self-heal promotion.',
+    }
+    const nextCandidates = [promoted, ...currentCandidates.filter(item => item.value !== promoted.value)]
+    metadata.source_selector_candidates = nextCandidates
+    metadata.source_selector_fallbacks = nextCandidates.slice(1)
+    metadata.source_selector_confidence = promoted.confidence
+    metadata.selector_promoted_from_import_review = true
+    return {
+      ...action,
+      selector: promoted.value,
+      target: action.target === action.selector || !action.target ? promoted.value : action.target,
+      metadata,
+    }
+  })
+  return { ...script, actions }
+}
+
+function findActionIndexForReplaySuggestion(script: ScriptDefinition | null, suggestion: ReplayRepairSuggestion): number {
+  if (!script?.actions) return -1
+  const fields = suggestion.fields || {}
+  const seq = fields.recorder_step_seq
+  if (seq) {
+    const seqString = String(seq)
+    const match = script.actions.findIndex(action => String(action.metadata?.recorder_step_seq || '') === seqString)
+    if (match >= 0) return match
+  }
+  if (suggestion.action) {
+    const match = script.actions.findIndex(action => action.name === suggestion.action)
+    if (match >= 0) return match
+  }
+  return -1
+}
+
+type RecorderStepMapping = {
+  source_index?: number
+  source_location?: string
+  source_step_type?: string
+  action_index?: number
+  name?: string
+  type?: string
+  target_path?: string
+  recorder_step_seq?: number
+  disposition?: string
+  reason?: string
+}
+
+function recorderStepMappingsFromSummary(summary?: Record<string, unknown>): RecorderStepMapping[] {
+  const raw = summary?.step_mapping
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    .map(item => ({
+      source_index: typeof item.source_index === 'number' ? item.source_index : undefined,
+      source_location: typeof item.source_location === 'string' ? item.source_location : undefined,
+      source_step_type: typeof item.source_step_type === 'string' ? item.source_step_type : undefined,
+      action_index: typeof item.action_index === 'number' ? item.action_index : typeof item.index === 'number' ? item.index : undefined,
+      name: typeof item.name === 'string' ? item.name : undefined,
+      type: typeof item.type === 'string' ? item.type : undefined,
+      target_path: typeof item.target_path === 'string' ? item.target_path : undefined,
+      recorder_step_seq: typeof item.recorder_step_seq === 'number' ? item.recorder_step_seq : undefined,
+      disposition: typeof item.disposition === 'string' ? item.disposition : 'mapped',
+      reason: typeof item.reason === 'string' ? item.reason : undefined,
+    }))
+}
+
+function RecorderStepMappingReview({ summary }: { summary?: Record<string, unknown> }) {
+  const mappings = recorderStepMappingsFromSummary(summary)
+  if (mappings.length === 0) return null
+  const degraded = mappings.filter(item => item.disposition === 'degraded').length
+  const unsupported = mappings.filter(item => item.disposition === 'unsupported').length
+  return (
+    <div className="sample-import-review-block recorder-step-mapping">
+      <h4>Recorder Step Mapping</h4>
+      <p>
+        {mappings.length} source step(s) reviewed · {degraded} degraded · {unsupported} unsupported
+      </p>
+      <div className="recorder-step-mapping-table-wrap">
+        <table className="recorder-step-mapping-table">
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Disposition</th>
+              <th>Generated Action</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {mappings.map((mapping, index) => (
+              <tr key={`${mapping.source_location || mapping.source_index || index}-${mapping.type || 'none'}`} className={`recorder-step-${mapping.disposition || 'mapped'}`}>
+                <td>
+                  <strong>{mapping.source_location || `step ${mapping.source_index ?? index + 1}`}</strong>
+                  {mapping.source_step_type && <small>{mapping.source_step_type}</small>}
+                </td>
+                <td><span>{mapping.disposition || 'mapped'}</span></td>
+                <td>
+                  {mapping.name || mapping.type ? (
+                    <>
+                      <strong>{mapping.name || mapping.type}</strong>
+                      {mapping.type && <small>{mapping.type}</small>}
+                      {mapping.target_path && <code>{mapping.target_path}</code>}
+                    </>
+                  ) : (
+                    <span className="sample-import-muted">No generated action</span>
+                  )}
+                </td>
+                <td>{mapping.reason || 'Mapped directly.'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 const endpointTotal = salesforceEndpointTotal
 
 export default function ProtocolAssetImport({ kind, projectId, onImported, onEdit, onClose }: Props) {
@@ -247,6 +381,8 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [recorderReplayStatus, setRecorderReplayStatus] = useState<'idle' | 'running' | 'completed' | 'failed' | 'stopped'>('idle')
   const [recorderReplayReport, setRecorderReplayReport] = useState<BrowserReplayReport | null>(null)
   const [allowRecorderDraftSave, setAllowRecorderDraftSave] = useState(false)
+  const [editedRecorderScripts, setEditedRecorderScripts] = useState<ScriptDefinition[]>([])
+  const [recorderDraftNotice, setRecorderDraftNotice] = useState('')
   const [ramlSupport, setRamlSupport] = useState<{ entries: RAMLSupportMatrixEntry[]; notes: string[] } | null>(null)
   const [openAPISupport, setOpenAPISupport] = useState<{ entries: OpenAPISupportMatrixEntry[]; notes: string[] } | null>(null)
   const [asyncAPISupport, setAsyncAPISupport] = useState<{ entries: AsyncAPISupportMatrixEntry[]; notes: string[] } | null>(null)
@@ -301,7 +437,12 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
     setRecorderReplayStatus('idle')
     setRecorderReplayReport(null)
     setAllowRecorderDraftSave(false)
+    setRecorderDraftNotice('')
   }, [result, selectedScriptIndex, file])
+
+  useEffect(() => {
+    setEditedRecorderScripts(kind === 'recorder-export' ? scriptsFromImportResult(result as BrowserRecordingImportResult | null) : [])
+  }, [kind, result])
 
   useEffect(() => {
     if (kind !== 'openapi') return
@@ -390,7 +531,8 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
 
   const stats = result?.stats as Record<string, unknown> | undefined
   const actionCount = typeof stats?.converted_actions === 'number' ? stats.converted_actions : 0
-  const generatedScripts = result?.scripts?.length ? result.scripts : result?.script ? [result.script] : []
+  const importedScripts = result?.scripts?.length ? result.scripts : result?.script ? [result.script] : []
+  const generatedScripts = kind === 'recorder-export' && editedRecorderScripts.length > 0 ? editedRecorderScripts : importedScripts
   const reviewedScript = generatedScripts[selectedScriptIndex] || generatedScripts[0] || null
   const sourceReview = sourceReviewForImport(result, reviewedScript)
   const harSummary: HARImportSummary | undefined = kind === 'har' ? (result as HARImportResult | null | undefined)?.summary : undefined
@@ -407,6 +549,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const handleRunRecorderReplay = async () => {
     if (kind !== 'recorder-export' || !reviewedScript) return
     setMessageError('')
+    setRecorderDraftNotice('')
     setRecorderReplayReport(null)
     setRecorderReplayStatus('running')
     try {
@@ -424,6 +567,39 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const handleRecorderReplayComplete = (report: BrowserReplayReport | null) => {
     setRecorderReplayReport(report)
     setRecorderReplayStatus(report?.success ? 'completed' : 'failed')
+  }
+
+  const markRecorderDraftChanged = (message: string) => {
+    setRecorderReplaySessionId('')
+    setRecorderReplayReport(null)
+    setRecorderReplayStatus('idle')
+    setAllowRecorderDraftSave(false)
+    setRecorderDraftNotice(message)
+  }
+
+  const handlePromoteRecorderCandidate = (actionIndex: number, candidate: SelectorCandidate) => {
+    setEditedRecorderScripts(prev => prev.map((script, index) => (
+      index === selectedScriptIndex ? promoteDraftSelector(script, actionIndex, candidate.value, candidate) : script
+    )))
+    markRecorderDraftChanged('Selector updated in the draft. Run replay validation again before saving normally.')
+  }
+
+  const handleApplyRecorderReplaySuggestion = async (suggestion: ReplayRepairSuggestion) => {
+    if (suggestion.draft_patch_type !== 'promote_selector') return
+    const selector = typeof suggestion.fields?.selector === 'string' ? suggestion.fields.selector.trim() : ''
+    if (!selector || !reviewedScript) {
+      setMessageError('This replay suggestion did not include a selector to promote.')
+      return
+    }
+    const actionIndex = findActionIndexForReplaySuggestion(reviewedScript, suggestion)
+    if (actionIndex < 0) {
+      setMessageError('Could not match this replay suggestion to an imported action.')
+      return
+    }
+    setEditedRecorderScripts(prev => prev.map((script, index) => (
+      index === selectedScriptIndex ? promoteDraftSelector(script, actionIndex, selector) : script
+    )))
+    markRecorderDraftChanged('Replay suggestion applied to the draft. Run replay validation again before saving normally.')
   }
 
   const handleSave = async () => {
@@ -753,9 +929,12 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
             onSave={handleSave}
             onEdit={onEdit ? () => onEdit(reviewedScript) : undefined}
             previewAside={kind === 'recorder-export'
-              ? <SelectorCandidatesReview script={reviewedScript} />
+              ? <SelectorCandidatesReview script={reviewedScript} onPromoteCandidate={handlePromoteRecorderCandidate} />
               : sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
           >
+            {kind === 'recorder-export' && (
+              <RecorderStepMappingReview summary={result.summary as Record<string, unknown> | undefined} />
+            )}
             {kind === 'asyncapi' && generatedScripts.length > 1 && (
               <div className="sample-import-review-block">
                 <h4>Generated Scripts</h4>
@@ -808,10 +987,12 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
                     replaySessionId={recorderReplaySessionId}
                     projectId={projectId}
                     onComplete={handleRecorderReplayComplete}
+                    onApplySuggestion={handleApplyRecorderReplaySuggestion}
                   />
                 )}
                 {recorderReplayStatus === 'completed' && <p className="sample-import-success">Replay validation passed.</p>}
                 {recorderReplayStatus === 'failed' && <p className="sample-import-warning">Replay validation found issues. Review fixes or save explicitly as a draft.</p>}
+                {recorderDraftNotice && <p className="sample-import-warning">{recorderDraftNotice}</p>}
               </div>
             )}
             {kind === 'asyncapi' && (

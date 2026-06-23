@@ -9,6 +9,7 @@ import {
   type ScriptDebugAction,
 } from '../types'
 import { formatConsoleEntries, formatNetworkEntries } from './scriptEditorUtils'
+import RepairSuggestionList from './RepairSuggestionList'
 
 function eventStatus(event?: BrowserReplayEvent | null): string {
   if (!event) return 'idle'
@@ -485,6 +486,17 @@ export default function BrowserReplayDebugger({
                     <span>Suggested Selector</span>
                     <strong>{suggestedLocator}</strong>
                     {selectedEvent.diagnosis?.evidence && <small>{selectedEvent.diagnosis.evidence}</small>}
+                  </div>
+                )}
+                {(selectedEvent.repair_suggestions || []).length > 0 && (
+                  <div className="browser-debugger-detail-item browser-debugger-detail-item-wide">
+                    <RepairSuggestionList
+                      suggestions={selectedEvent.repair_suggestions || []}
+                      className="replay-repair-suggestions"
+                      itemClassName="replay-repair-suggestion"
+                      label="Draft repair suggestions"
+                      labelClassName="replay-detail-label"
+                    />
                   </div>
                 )}
                 <div className="browser-debugger-detail-item">

@@ -219,6 +219,60 @@
   background: var(--subtle-fill);
 }
 
+.recorder-step-mapping {
+  gap: 10px;
+}
+
+.recorder-step-mapping p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.recorder-step-mapping-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+
+.recorder-step-mapping-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.recorder-step-mapping-table th,
+.recorder-step-mapping-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+
+.recorder-step-mapping-table th {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.recorder-step-mapping-table td small,
+.recorder-step-mapping-table td code {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+}
+
+.recorder-step-degraded td:first-child {
+  border-left: 3px solid #eab308;
+}
+
+.recorder-step-unsupported td:first-child {
+  border-left: 3px solid var(--danger, #ef4444);
+}
+
+.sample-import-muted {
+  color: var(--text-muted);
+}
+
 .sample-import-preflight .replay-preflight-card.ready {
   border-color: color-mix(in srgb, var(--success) 30%, var(--border-subtle));
 }
