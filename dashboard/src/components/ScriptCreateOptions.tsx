@@ -745,23 +745,12 @@ export default function ScriptCreateOptions({
                 <button className="script-create-option primary" onClick={onOpenSalesforceImport}>
                   <span className="script-create-type-badge">SF</span>
                   <h3>Salesforce HAR</h3>
-                  <p>Review Salesforce Lightning, Aura, UI API, login, and Agentforce traffic as a native HTTP draft with Salesforce-aware correlation.</p>
+                  <p>Review Salesforce Lightning, Aura, UI API, login, and Agentforce HAR traffic as a native HTTP draft with Salesforce-aware correlation and optional Agentforce replay-ready transforms.</p>
                 </button>
                 <button className="script-create-option primary" onClick={onOpenRAMLImport}>
                   <span className="script-create-type-badge">RAML</span>
                   <h3>RAML / Anypoint</h3>
                   <p>Convert RAML resources, methods, examples, and OAuth2 security schemes into reviewable HTTP actions.</p>
-                </button>
-                <button
-                  className="script-create-option"
-                  onClick={() => {
-                    setActiveWorkflow('start-new')
-                    setStartNewCategory('templates')
-                  }}
-                >
-                  <span className="script-create-type-badge import">AGT</span>
-                  <h3>Agentforce Template</h3>
-                  <p>Start from the backend Agentforce SSE/OAuth2 template and review required environment and secret values before editing.</p>
                 </button>
               </div>
             </div>
