@@ -62,7 +62,7 @@ describe('runtimeSettingsModel', () => {
   })
 
   it('attributes section-backed iterations/auto_transactions/log_level to the group override', () => {
-    // The Run Logic / Logging tab handlers promote these into run_logic/log and
+    // The Run Logic / Error Handling tab handlers promote these into run_logic/log and
     // clear the legacy top-level field. The summary must still credit the group
     // override rather than fall through to a stale script default.
     const group = {

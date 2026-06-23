@@ -79,6 +79,7 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 			Iterations:      script.Iterations,
 			Initialization:  script.Initialization,
 			RuntimeSettings: decodeStoredRuntimeSettings(script.RuntimeSettings),
+			Assignment:      decodeStoredGeneratorAssignment(script.Assignment),
 		}
 		if stored, ok := tr.scripts[script.ScriptID]; ok {
 			ref.ScriptName = stored.Name
@@ -357,9 +358,24 @@ func storedScenarioRefsToStorage(stored *StoredScenario) []storage.ScenarioScrip
 			Iterations:      ref.Iterations,
 			Initialization:  ref.Initialization,
 			RuntimeSettings: runtimeSettingsForStorage(ref.RuntimeSettings),
+			Assignment:      cloneGeneratorAssignmentSettings(ref.Assignment),
 		})
 	}
 	return scripts
+}
+
+func cloneScenarioScriptRefs(in []ScenarioScriptRef) []ScenarioScriptRef {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ScenarioScriptRef, len(in))
+	copy(out, in)
+	for i := range out {
+		out[i].Stages = cloneLoadStages(in[i].Stages)
+		out[i].RuntimeSettings = cloneRuntimeSettings(in[i].RuntimeSettings)
+		out[i].Assignment = cloneGeneratorAssignmentSettings(in[i].Assignment)
+	}
+	return out
 }
 
 func mapToLiveMetrics(m map[string]any) *LiveMetrics {

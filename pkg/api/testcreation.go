@@ -286,6 +286,7 @@ func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenar
 				Iterations:      script.Iterations,
 				InitStrategy:    script.Initialization,
 				RuntimeSettings: cloneRuntimeSettings(script.RuntimeSettings),
+				Assignment:      cloneGeneratorAssignmentSettings(script.Assignment),
 			})
 		}
 	}

@@ -41,7 +41,7 @@ func (tr *TestRunner) assignmentTargetSpecs() []generatorTargetSpec {
 	if !ok {
 		return nil
 	}
-	return provider.configuredTargetSpecs()
+	return tr.enrichGeneratorTargetSpecsWithLabels(provider.configuredTargetSpecs())
 }
 
 func assignmentAvailableRegions(specs []generatorTargetSpec) []string {
@@ -58,6 +58,34 @@ func assignmentAvailableRegions(specs []generatorTargetSpec) []string {
 	}
 	sort.Strings(regions)
 	return regions
+}
+
+func assignmentAvailableLabels(specs []generatorTargetSpec) map[string][]string {
+	values := make(map[string]map[string]struct{})
+	for _, spec := range specs {
+		for key, value := range spec.Labels {
+			key = strings.TrimSpace(key)
+			value = strings.TrimSpace(value)
+			if key == "" || value == "" {
+				continue
+			}
+			if values[key] == nil {
+				values[key] = map[string]struct{}{}
+			}
+			values[key][value] = struct{}{}
+		}
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(values))
+	for key, set := range values {
+		for value := range set {
+			out[key] = append(out[key], value)
+		}
+		sort.Strings(out[key])
+	}
+	return out
 }
 
 func matchingRegionWeightedTargets(specs []generatorTargetSpec, weights map[string]int) int {
@@ -210,7 +238,8 @@ func (tr *TestRunner) buildAssignmentRecommendation(test *ManagedTest) *Assignme
 		return nil
 	}
 	availableTargets := tr.assignmentTargets()
-	availableRegions := assignmentAvailableRegions(tr.assignmentTargetSpecs())
+	targetSpecs := tr.assignmentTargetSpecs()
+	availableRegions := assignmentAvailableRegions(targetSpecs)
 	assignment := cloneGeneratorAssignmentSettings(test.Assignment)
 	if assignment == nil {
 		assignment = &GeneratorAssignmentSettings{Mode: generatorAssignmentModeAuto}
@@ -227,6 +256,7 @@ func (tr *TestRunner) buildAssignmentRecommendation(test *ManagedTest) *Assignme
 		Mode:               assignment.Mode,
 		AvailableTargets:   availableTargets,
 		AvailableRegions:   availableRegions,
+		AvailableLabels:    assignmentAvailableLabels(targetSpecs),
 		RecommendedTargets: recommendedTargets,
 	}
 	if assignment.Mode == generatorAssignmentModeSpecificHosts {

@@ -578,6 +578,9 @@ type ScenarioScript struct {
 	// RuntimeSettings holds per-group runtime overrides as an opaque JSON value
 	// (mirrors Scenario.RuntimeSettings); decoded into *RuntimeSettingsOverride upstream.
 	RuntimeSettings any `json:"runtime_settings,omitempty"`
+	// Assignment holds per-group generator placement overrides as opaque JSON
+	// (mirrors Scenario.Assignment); decoded into *GeneratorAssignmentSettings upstream.
+	Assignment any `json:"assignment,omitempty"`
 }
 
 type LoadStage struct {

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Application, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario, SystemInventoryGenerator } from '../types'
+import { Application, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, GeneratorAssignmentSettings, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario, SystemInventoryGenerator } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
@@ -30,6 +30,7 @@ import {
 } from './newTestScheduleFormat'
 import ErrorDiagnostic from './ErrorDiagnostic'
 import PageViewToggle from './PageViewToggle'
+import GroupPlacementEditor from './GroupPlacementEditor'
 import {
   buildEffectiveScenarioGroups,
   buildEmptyRunDefaultOverrides,
@@ -43,7 +44,6 @@ import {
   emptyGroupEditDraft,
   formatGroupPlacement,
   generatorCanRunGroup,
-  generatorDisabledReason,
   getEffectiveResourceBaseline,
   getEffectiveRunDuration,
   GLOBAL_RUN_DEFAULT_KEYS,
@@ -53,7 +53,6 @@ import {
   hasGroupOverrideValues,
   hasOwnKey,
   hasRuntimeSettingsValues,
-  selectedGeneratorCapacity,
   type GroupEditDraft,
   type GroupRunOverride,
   type RunDefaultEditDraft,
@@ -233,6 +232,62 @@ function selectedTargetsChanged(left: string[], right: string[]) {
   return normalize(left) !== normalize(right)
 }
 
+function normalizeRequiredLabels(labels?: Record<string, string>) {
+  if (!labels) return undefined
+  const next = Object.fromEntries(Object.entries(labels)
+    .map(([key, value]) => [key.trim(), value.trim()])
+    .filter(([key, value]) => key && value))
+  return Object.keys(next).length > 0 ? next : undefined
+}
+
+function requiredLabelsChanged(left: Record<string, string>, right: Record<string, string>) {
+  const normalize = (values: Record<string, string>) => Object.entries(normalizeRequiredLabels(values) || {})
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\u0000')
+  return normalize(left) !== normalize(right)
+}
+
+function assignmentFromGroupEditDraft(draft: GroupEditDraft): GeneratorAssignmentSettings {
+  const requiredLabels = normalizeRequiredLabels(draft.requiredLabels)
+  if (draft.assignmentMode === 'specific_hosts') {
+    const selectedTargets = draft.selectedTargets.filter(Boolean)
+    return {
+      mode: 'specific_hosts',
+      selected_targets: selectedTargets,
+      ...(selectedTargets.length > 1 ? { shard_strategy: 'capacity_weighted' as const } : {}),
+      ...(requiredLabels ? { required_labels: requiredLabels } : {}),
+    }
+  }
+  return {
+    mode: 'auto',
+    ...(requiredLabels ? { required_labels: requiredLabels } : {}),
+  }
+}
+
+function groupEditDraftPatchFromAssignment(assignment?: GeneratorAssignmentSettings): Pick<GroupEditDraft, 'assignmentMode' | 'selectedTargets' | 'requiredLabels'> {
+  const requiredLabels = normalizeRequiredLabels(assignment?.required_labels) || {}
+  if (assignment?.mode === 'specific_hosts') {
+    return {
+      assignmentMode: 'specific_hosts',
+      selectedTargets: assignment.selected_targets || [],
+      requiredLabels,
+    }
+  }
+  if (Object.keys(requiredLabels).length > 0) {
+    return {
+      assignmentMode: 'required_labels',
+      selectedTargets: [],
+      requiredLabels,
+    }
+  }
+  return {
+    assignmentMode: 'auto',
+    selectedTargets: [],
+    requiredLabels: {},
+  }
+}
+
 function buildGroupEditChanges(draft: GroupEditDraft, baseline: GroupEditDraft): GroupEditChanges {
   const continueOnErrorChanged = normalizeDraftText(draft.continue_on_error) !== normalizeDraftText(baseline.continue_on_error)
   const snapshotOnErrorChanged = normalizeDraftText(draft.snapshot_on_error) !== normalizeDraftText(baseline.snapshot_on_error)
@@ -261,7 +316,8 @@ function buildGroupEditChanges(draft: GroupEditDraft, baseline: GroupEditDraft):
     browser_orientation: browserOrientationChanged,
     browser: browserDeviceProfileChanged || browserHeadlessChanged || browserTouchModeChanged || browserOrientationChanged,
     assignment: draft.assignmentMode !== baseline.assignmentMode
-      || selectedTargetsChanged(draft.selectedTargets, baseline.selectedTargets),
+      || selectedTargetsChanged(draft.selectedTargets, baseline.selectedTargets)
+      || requiredLabelsChanged(draft.requiredLabels, baseline.requiredLabels),
   }
 }
 
@@ -479,6 +535,21 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     [groupEditChanges],
   )
   const generatorByTarget = useMemo(() => new Map(generatorInventory.map(generator => [generator.target, generator])), [generatorInventory])
+  const availableLabels = useMemo(() => {
+    const labels = new Map<string, Set<string>>()
+    generatorInventory.forEach(generator => {
+      Object.entries(generator.labels || {}).forEach(([key, value]) => {
+        const labelKey = key.trim()
+        const labelValue = value.trim()
+        if (!labelKey || !labelValue) return
+        const values = labels.get(labelKey) || new Set<string>()
+        values.add(labelValue)
+        labels.set(labelKey, values)
+      })
+    })
+    return Object.fromEntries(Array.from(labels.entries())
+      .map(([key, values]) => [key, Array.from(values).sort()]))
+  }, [generatorInventory])
   const scenarioReleaseFilterOptions = useMemo(() => {
     const optionMap = new Map<string, string>()
     releases.forEach(item => {
@@ -575,7 +646,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       { label: 'Script Groups', value: scenario ? formatCount(effectiveScenarioGroups.length, 'group') : '0 groups' },
       { label: 'Protocols', value: protocols.length ? protocols.join(', ') : 'None' },
       { label: 'Run Overrides', value: formatCount(runOverridesCount, 'override') },
-      { label: 'Host Placement', value: groupPlacementSummary(groupRunOverrides) },
+      { label: 'Host Placement', value: groupPlacementSummary(groupRunOverrides, scenario?.scripts) },
       { label: 'Shared Data Pools', value: dataPoolValue },
       { label: 'Capacity', value: capacityValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
       { label: 'Bottleneck', value: bottleneckValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
@@ -1040,25 +1111,28 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     if (hasRuntimeSettingsValues(runtimeSettings)) {
       nextOverride.runtime_settings = runtimeSettings
     }
-    if (groupEditChanges.assignment && groupEditDraft.assignmentMode === 'specific_hosts') {
-      const selectedTargets = groupEditDraft.selectedTargets.filter(Boolean)
-      if (selectedTargets.length === 0) {
-        setError('Select at least one load generator host for group placement.')
+    if (groupEditChanges.assignment) {
+      const nextAssignment = assignmentFromGroupEditDraft(groupEditDraft)
+      if (groupEditDraft.assignmentMode === 'specific_hosts') {
+        const selectedTargets = nextAssignment.selected_targets || []
+        if (selectedTargets.length === 0) {
+          setError('Select at least one load generator host for group placement.')
+          return
+        }
+        const unavailableTargets = selectedTargets.filter(target => {
+          const generator = generatorByTarget.get(target)
+          return generator ? !generatorCanRunGroup(generator, editingGroup) : false
+        })
+        if (unavailableTargets.length > 0) {
+          setError(`Selected generator is not eligible for this group: ${unavailableTargets.join(', ')}`)
+          return
+        }
+      }
+      if (groupEditDraft.assignmentMode === 'required_labels' && !normalizeRequiredLabels(groupEditDraft.requiredLabels)) {
+        setError('Select at least one required generator capability for this group.')
         return
       }
-      const unavailableTargets = selectedTargets.filter(target => {
-        const generator = generatorByTarget.get(target)
-        return generator ? !generatorCanRunGroup(generator, editingGroup) : false
-      })
-      if (unavailableTargets.length > 0) {
-        setError(`Selected generator is not eligible for this group: ${unavailableTargets.join(', ')}`)
-        return
-      }
-      nextOverride.assignment = {
-        mode: 'specific_hosts',
-        selected_targets: selectedTargets,
-        ...(selectedTargets.length > 1 ? { shard_strategy: 'capacity_weighted' as const } : {}),
-      }
+      nextOverride.assignment = nextAssignment
     }
 
     setGroupRunOverrides(prev => {
@@ -1712,7 +1786,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                                                       <td className="new-test-runtime-cell">{runtimeValues.logLevel}</td>
                                                       <td className="new-test-runtime-cell">{runtimeValues.autoTransactions}</td>
                                                       <td className="new-test-runtime-cell">{runtimeValues.errorHandling}</td>
-                                                      <td className="new-test-runtime-cell">{formatGroupPlacement(override)}</td>
+                                                      <td className="new-test-runtime-cell">{formatGroupPlacement(override, sourceGroup)}</td>
                                                     </tr>
                                                   )
                                                 }) : (
@@ -2090,66 +2164,20 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                 <section>
                   <h4>Load Generator Sharding <ChangedBadge changed={groupEditChanges.assignment} /></h4>
                   <p className="new-test-inline-note">Saved host placement applies only to this run. Multiple hosts split this group by available capacity.</p>
-                  <div className="new-test-placement-toggle" role="radiogroup" aria-label="Load generator placement">
-                    <label className={groupEditDraft.assignmentMode === 'auto' ? 'selected' : ''}>
-                      <input
-                        type="radio"
-                        name="group-assignment-mode"
-                        checked={groupEditDraft.assignmentMode === 'auto'}
-                        onChange={() => setGroupEditDraft(prev => ({ ...prev, assignmentMode: 'auto', selectedTargets: [] }))}
-                      />
-                      <span>Automatic placement</span>
-                    </label>
-                    <label className={groupEditDraft.assignmentMode === 'specific_hosts' ? 'selected' : ''}>
-                      <input
-                        type="radio"
-                        name="group-assignment-mode"
-                        checked={groupEditDraft.assignmentMode === 'specific_hosts'}
-                        onChange={() => setGroupEditDraft(prev => ({ ...prev, assignmentMode: 'specific_hosts' }))}
-                      />
-                      <span>Specific host sharding</span>
-                    </label>
-                  </div>
-                  {groupEditDraft.assignmentMode === 'specific_hosts' && (
-                    <div className="new-test-generator-picker">
-                      {generatorInventoryLoading ? (
-                        <div className="new-test-empty compact">Loading generator inventory...</div>
-                      ) : generatorInventory.length === 0 ? (
-                        <div className="new-test-empty compact">{generatorInventoryError || 'No load generators are registered.'}</div>
-                      ) : (
-                        generatorInventory.map(generator => {
-                          const selected = groupEditDraft.selectedTargets.includes(generator.target)
-                          const eligible = generatorCanRunGroup(generator, editingGroup)
-                          const disabledReason = generatorDisabledReason(generator, editingGroup)
-                          return (
-                            <label key={generator.target} className={`new-test-generator-option ${selected ? 'selected' : ''} ${!eligible ? 'disabled' : ''}`}>
-                              <input
-                                type="checkbox"
-                                checked={selected}
-                                disabled={!eligible && !selected}
-                                onChange={event => {
-                                  setGroupEditDraft(prev => {
-                                    const selectedTargets = event.target.checked
-                                      ? Array.from(new Set([...prev.selectedTargets, generator.target]))
-                                      : prev.selectedTargets.filter(target => target !== generator.target)
-                                    return { ...prev, selectedTargets }
-                                  })
-                                }}
-                              />
-                              <span>
-                                <strong>{generator.target}</strong>
-                                <em>{generator.region || 'default'} · {generator.available_capacity} capacity · {generator.active_vusers} active</em>
-                                {disabledReason && <em className="warning">{disabledReason}</em>}
-                              </span>
-                            </label>
-                          )
-                        })
-                      )}
-                      <div className="new-test-placement-summary">
-                        <strong>{formatGroupPlacement({ assignment: { mode: groupEditDraft.assignmentMode, selected_targets: groupEditDraft.selectedTargets, ...(groupEditDraft.selectedTargets.length > 1 ? { shard_strategy: 'capacity_weighted' as const } : {}) } })}</strong>
-                        <span>{selectedGeneratorCapacity(generatorInventory, groupEditDraft.selectedTargets)} selected VUser capacity</span>
-                      </div>
-                    </div>
+                  {generatorInventoryLoading ? (
+                    <div className="new-test-empty compact">Loading generator inventory...</div>
+                  ) : generatorInventory.length === 0 ? (
+                    <div className="new-test-empty compact">{generatorInventoryError || 'No load generators are registered.'}</div>
+                  ) : (
+                    <GroupPlacementEditor
+                      assignment={assignmentFromGroupEditDraft(groupEditDraft)}
+                      onChange={assignment => setGroupEditDraft(prev => ({ ...prev, ...groupEditDraftPatchFromAssignment(assignment) }))}
+                      generatorInventory={generatorInventory}
+                      availableLabels={availableLabels}
+                      protocol={editingGroup?.protocol}
+                      compact
+                      allowInherit={false}
+                    />
                   )}
                 </section>
                 <section>

@@ -93,8 +93,7 @@ func maskStoredScenario(scenario *StoredScenario) *StoredScenario {
 	masked := *scenario
 	masked.RuntimeSettings = maskRuntimeSettings(scenario.RuntimeSettings)
 	if len(scenario.Scripts) > 0 {
-		refs := make([]ScenarioScriptRef, len(scenario.Scripts))
-		copy(refs, scenario.Scripts)
+		refs := cloneScenarioScriptRefs(scenario.Scripts)
 		for i := range refs {
 			refs[i].RuntimeSettings = maskRuntimeSettings(refs[i].RuntimeSettings)
 		}

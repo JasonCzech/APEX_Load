@@ -1,5 +1,6 @@
-import { StoredScript, ScenarioDraftGroup, ScenarioMode } from '../types'
+import { StoredScript, ScenarioDraftGroup, ScenarioMode, SystemInventoryGenerator } from '../types'
 import DurationField from './DurationField'
+import GroupPlacementEditor from './GroupPlacementEditor'
 
 interface Props {
   scenarioMode: ScenarioMode
@@ -8,6 +9,10 @@ interface Props {
   onAddGroup: () => void
   onUpdateGroup: (index: number, patch: Partial<ScenarioDraftGroup>) => void
   onRemoveGroup: (index: number) => void
+  availableTargets?: string[]
+  recommendedTargets?: string[]
+  generatorInventory?: SystemInventoryGenerator[]
+  availableLabels?: Record<string, string[]>
 }
 
 function isBrowserScript(scripts: StoredScript[], scriptId: string): boolean {
@@ -21,6 +26,10 @@ export default function CreateTestGroupsEditor({
   onAddGroup,
   onUpdateGroup,
   onRemoveGroup,
+  availableTargets,
+  recommendedTargets,
+  generatorInventory,
+  availableLabels,
 }: Props) {
   return (
     <div className="groups-section">
@@ -124,6 +133,18 @@ export default function CreateTestGroupsEditor({
                 </option>
               </select>
             </label>
+            <div className="group-placement-row">
+              <GroupPlacementEditor
+                assignment={group.assignment}
+                onChange={assignment => onUpdateGroup(idx, { assignment })}
+                availableTargets={availableTargets}
+                recommendedTargets={recommendedTargets}
+                generatorInventory={generatorInventory}
+                availableLabels={availableLabels}
+                protocol={scripts.find(script => script.id === group.scriptId)?.protocol}
+                compact
+              />
+            </div>
             {groups.length > 1 && (
               <button
                 type="button"

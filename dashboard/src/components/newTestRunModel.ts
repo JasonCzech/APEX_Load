@@ -75,8 +75,9 @@ export type GroupEditDraft = {
   browser_headless: string
   browser_touch_mode: string
   browser_orientation: string
-  assignmentMode: 'auto' | 'specific_hosts'
+  assignmentMode: 'auto' | 'specific_hosts' | 'required_labels'
   selectedTargets: string[]
+  requiredLabels: Record<string, string>
 }
 
 export type RunLoadProfilePreview = {
@@ -116,7 +117,10 @@ export function hasRuntimeSettingsValues(settings?: RuntimeSettingsOverride) {
 }
 
 export function hasGroupAssignmentValues(assignment?: GeneratorAssignmentSettings) {
-  return assignment?.mode === 'specific_hosts' && Boolean(assignment.selected_targets?.length)
+  if (!assignment) return false
+  if (assignment.mode === 'specific_hosts') return Boolean(assignment.selected_targets?.length)
+  if (assignment.mode === 'auto') return true
+  return Boolean(normalizeRequiredLabels(assignment.required_labels))
 }
 
 export function hasGroupOverrideValues(override?: GroupRunOverride) {
@@ -207,6 +211,19 @@ function formatRuntimeBrowserTableValue(browser?: RuntimeSettingsOverride['brows
   return parts.length ? parts.join(' · ') : 'Standard'
 }
 
+function normalizeRequiredLabels(labels?: Record<string, string>) {
+  if (!labels) return undefined
+  const next = Object.fromEntries(Object.entries(labels)
+    .map(([key, value]) => [key.trim(), value.trim()])
+    .filter(([key, value]) => key && value))
+  return Object.keys(next).length > 0 ? next : undefined
+}
+
+function hasActivePlacementAssignment(assignment?: GeneratorAssignmentSettings) {
+  if (assignment?.mode === 'specific_hosts') return Boolean(assignment.selected_targets?.length)
+  return Boolean(normalizeRequiredLabels(assignment?.required_labels))
+}
+
 export function getEffectiveRunDuration(scenario?: StoredScenario | null, overrides?: RunDefaultOverrides) {
   return overrides?.duration?.trim() || scenario?.duration || ''
 }
@@ -239,6 +256,7 @@ export function applyGroupOverride(group: ScenarioScriptGroup, override?: GroupR
     ramp_up: hasOwnKey(override, 'ramp_up') ? override.ramp_up : group.ramp_up,
     ramp_down: hasOwnKey(override, 'ramp_down') ? override.ramp_down : group.ramp_down,
     initialization: hasOwnKey(override, 'initialization') ? override.initialization : group.initialization,
+    assignment: override.assignment || group.assignment,
   }
 }
 
@@ -512,6 +530,7 @@ export function buildGroupsForRunPayload(scenario: StoredScenario | undefined, o
     const override = overrides[key]
     const effective = applyGroupOverride(group, override)
     const runtimeSettings = override?.runtime_settings || group.runtime_settings
+    const assignment = override?.assignment || group.assignment
     return {
       name: effective.name || effective.script_name || `Group ${effective.order + 1}`,
       script_id: effective.script_id,
@@ -522,31 +541,43 @@ export function buildGroupsForRunPayload(scenario: StoredScenario | undefined, o
       iterations: group.iterations,
       initialization: effective.initialization || 'at_runtime',
       ...(runtimeSettings ? { runtime_settings: runtimeSettings } : {}),
-      ...(override?.assignment ? { assignment: override.assignment } : {}),
+      ...(assignment ? { assignment } : {}),
     }
   })
 }
 
-export function formatGroupPlacement(override?: GroupRunOverride) {
-  const assignment = override?.assignment
+export function formatGroupPlacement(override?: GroupRunOverride, group?: ScenarioScriptGroup) {
+  const assignment = override?.assignment || group?.assignment
+  const requiredLabels = normalizeRequiredLabels(assignment?.required_labels)
+  const labelText = requiredLabels
+    ? `Capability: ${Object.entries(requiredLabels).map(([key, value]) => `${key}=${value}`).join(', ')}`
+    : ''
+  if (assignment?.mode === 'auto' && labelText) {
+    return labelText
+  }
   const targets = assignment?.selected_targets || []
   if (!targets.length) return 'Auto'
-  if (targets.length === 1) return `Pinned: ${targets[0]}`
-  return `Sharded: ${targets.length} hosts, capacity weighted`
+  const hostText = targets.length === 1 ? `Pinned: ${targets[0]}` : `Sharded: ${targets.length} hosts, capacity weighted`
+  return labelText ? `${hostText} · ${labelText}` : hostText
 }
 
 function formatCount(value: number, singular: string, plural = `${singular}s`) {
   return `${value} ${value === 1 ? singular : plural}`
 }
 
-export function groupPlacementSummary(overrides: Record<string, GroupRunOverride>) {
-  const placements = Object.values(overrides).filter(override => hasGroupAssignmentValues(override.assignment))
+export function groupPlacementSummary(overrides: Record<string, GroupRunOverride>, groups?: ScenarioScriptGroup[]) {
+  const assignments = groups
+    ? groups.map(group => (overrides[groupOverrideKey(group)]?.assignment || group.assignment))
+    : Object.values(overrides).map(override => override.assignment)
+  const placements = assignments.filter(hasActivePlacementAssignment)
   if (placements.length === 0) return 'Auto placement'
-  const pinned = placements.filter(override => (override.assignment?.selected_targets || []).length === 1).length
-  const sharded = placements.length - pinned
+  const pinned = placements.filter(assignment => (assignment?.selected_targets || []).length === 1).length
+  const sharded = placements.filter(assignment => (assignment?.selected_targets || []).length > 1).length
+  const capability = placements.filter(assignment => !(assignment?.selected_targets || []).length && normalizeRequiredLabels(assignment?.required_labels)).length
   return [
     pinned > 0 ? formatCount(pinned, 'pinned group') : '',
     sharded > 0 ? formatCount(sharded, 'sharded group') : '',
+    capability > 0 ? formatCount(capability, 'capability-constrained group') : '',
   ].filter(Boolean).join(', ')
 }
 
@@ -608,6 +639,7 @@ export function emptyGroupEditDraft(): GroupEditDraft {
     browser_orientation: '',
     assignmentMode: 'auto',
     selectedTargets: [],
+    requiredLabels: {},
   }
 }
 
@@ -654,6 +686,13 @@ function buildRuntimeGroupEditDraftValues(runtime: ReturnType<typeof effectiveGr
 export function buildGroupEditDraft(group: ScenarioScriptGroup, scenario: StoredScenario, runDefaultOverrides: RunDefaultOverrides, override?: GroupRunOverride): GroupEditDraft {
   const effective = applyGroupOverride(group, override)
   const runtime = effectiveGroupRuntimeSettings(group, scenario, runDefaultOverrides, override)
+  const assignment = override?.assignment || group.assignment
+  const requiredLabels = normalizeRequiredLabels(assignment?.required_labels) || {}
+  const assignmentMode = assignment?.mode === 'specific_hosts'
+    ? 'specific_hosts'
+    : Object.keys(requiredLabels).length > 0
+      ? 'required_labels'
+      : 'auto'
   return {
     ...emptyGroupEditDraft(),
     vusers: String(effective.vusers || ''),
@@ -661,7 +700,8 @@ export function buildGroupEditDraft(group: ScenarioScriptGroup, scenario: Stored
     ramp_down: effective.ramp_down || '',
     initialization: effective.initialization || 'at_runtime',
     ...buildRuntimeGroupEditDraftValues(runtime),
-    assignmentMode: override?.assignment?.mode === 'specific_hosts' ? 'specific_hosts' : 'auto',
-    selectedTargets: override?.assignment?.selected_targets || [],
+    assignmentMode,
+    selectedTargets: assignment?.selected_targets || [],
+    requiredLabels,
   }
 }

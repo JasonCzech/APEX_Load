@@ -23,6 +23,7 @@ const apiMock = {
   deleteScenario: vi.fn(),
   listScenarioResults: vi.fn(),
   getAuthEffectiveAccess: vi.fn(),
+  getSystemInventory: vi.fn(),
   getConfigDefaults: vi.fn().mockResolvedValue({ config: {} }),
 }
 
@@ -318,6 +319,11 @@ describe('TestHub', () => {
         },
       ],
     })
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: { id: 'controller-1', status: 'ready', address: ':8080', version: 'dev', execution_mode: 'distributed' },
+      generators: [],
+    })
     window.localStorage.removeItem('apexload.settings.focusSection')
     window.localStorage.removeItem('apexload.scenarioBuilder.draft')
   })
@@ -545,9 +551,19 @@ describe('TestHub', () => {
 
     expect(container.querySelector('.scenario-builder')).toBeTruthy()
     expect(container.querySelector('.library-table-wrapper')).toBeFalsy()
+    const startActionLabels = Array.from(container.querySelectorAll('.scenario-builder-actions button'))
+      .map(button => button.textContent?.trim())
+    expect(startActionLabels).not.toContain('Back')
+    expect(startActionLabels).toContain('Next')
     const builderToggle = Array.from(container.querySelectorAll('.scenario-page-toggle button'))
       .find(button => button.textContent === 'Scenario Builder')
     expect(builderToggle?.getAttribute('aria-pressed')).toBe('true')
+
+    await clickWizardStep('Shape / Source')
+
+    const sourceActionLabels = Array.from(container.querySelectorAll('.scenario-builder-actions button'))
+      .map(button => button.textContent?.trim())
+    expect(sourceActionLabels).toContain('Back')
   })
 
   it('hides the duplicate builder page title when the static topbar owns it', async () => {
@@ -781,7 +797,7 @@ describe('TestHub', () => {
       setInputValue(meanInput, '250')
     })
 
-    await clickRunSettingsTab('Logging')
+    await clickRunSettingsTab('Error Handling')
     const logLevelSelect = findControlByLabel<HTMLSelectElement>(container, 'Log level', 'select')
     expect(logLevelSelect).toBeDefined()
     if (!logLevelSelect) return
@@ -1173,6 +1189,9 @@ describe('TestHub', () => {
       editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
+
+    expect(wizardStepMarker('Shape / Source')).toBe('✓')
+    expect(wizardStepComplete('Shape / Source')).toBe(true)
 
     const groupCards = Array.from(container.querySelectorAll('.scenario-script-group-card'))
     expect(groupCards).toHaveLength(2)

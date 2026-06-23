@@ -16,6 +16,7 @@ describe('scenarioDraftUtils', () => {
 	    rampDown: '',
 	    iterations: undefined,
 	    initialization: 'at_runtime',
+	    assignment: undefined,
 	  })
 	})
 
@@ -112,7 +113,40 @@ describe('scenarioDraftUtils', () => {
 	    rampDown: '15s',
 	    iterations: undefined,
 	    initialization: 'at_once',
+	    assignment: undefined,
 	  }])
+	})
+
+	it('preserves root and group generator assignment labels in drafts', () => {
+	  const draft = buildScenarioDraftFromTest({
+	    id: 'test-1',
+	    name: 'JVM Run',
+	    status: 'QUEUED',
+	    total_vusers: 10,
+	    duration: '5m',
+	    created_at: '2026-05-12T20:00:00Z',
+	    assignment: { mode: 'load_zone_weighted', load_zone_weights: { zone_a: 100 }, required_labels: { arch: 'amd64' } },
+	    groups: [{
+	      name: 'Java',
+	      script_id: 'script-1',
+	      protocol: 'java_http',
+	      vusers: 10,
+	      initialization: 'at_runtime',
+	      assignment: { mode: 'auto', required_labels: { jvm: '17' } },
+	    }],
+	  } as never)
+
+	  expect(draft.assignment).toEqual({
+	    mode: 'load_zone_weighted',
+	    selected_targets: [],
+	    load_zone_weights: { zone_a: 100 },
+	    required_labels: { arch: 'amd64' },
+	  })
+	  expect(draft.groups[0].assignment).toEqual({
+	    mode: 'auto',
+	    selected_targets: [],
+	    required_labels: { jvm: '17' },
+	  })
 	})
 
 	it('preserves web_runtime source IPs (IP spoofing) when mapping a test summary into a draft', () => {

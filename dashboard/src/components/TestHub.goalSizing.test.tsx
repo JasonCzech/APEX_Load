@@ -16,6 +16,7 @@ const apiMock = {
   getLoadModelSupportMatrix: vi.fn(),
   getAuthEffectiveAccess: vi.fn(),
   estimateTest: vi.fn(),
+  getSystemInventory: vi.fn(),
   listTests: vi.fn(),
   getTestArchiveReport: vi.fn(),
   getTestArchiveAnalysis: vi.fn(),
@@ -71,6 +72,11 @@ describe('TestHub build-from-goal', () => {
     apiMock.listLoadModelTemplates.mockResolvedValue({ templates: [] })
     apiMock.getLoadModelSupportMatrix.mockResolvedValue({ support_matrix: [] })
     apiMock.estimateTest.mockResolvedValue({})
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: { id: 'controller-1', status: 'ready', address: ':8080', version: 'dev', execution_mode: 'distributed' },
+      generators: [],
+    })
     apiMock.getAuthEffectiveAccess.mockResolvedValue({
       enabled: true,
       authenticated: true,

@@ -9,6 +9,7 @@ import CreateTestModal from './CreateTestModal'
 const apiMock = {
   estimateTest: vi.fn(),
   createTest: vi.fn(),
+  getSystemInventory: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -49,6 +50,11 @@ describe('CreateTestModal', () => {
       },
     })
     apiMock.createTest.mockResolvedValue({ id: 'test-1' })
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: { id: 'controller-1', status: 'ready', address: ':8080', version: 'dev', execution_mode: 'distributed' },
+      generators: [],
+    })
   })
 
   afterEach(async () => {

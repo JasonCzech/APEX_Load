@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useModalDialog } from '../hooks/useModalDialog'
-import { DraftCapacityEstimate, ScenarioDraft, ScenarioDraftGroup, StoredScript, TestSummary } from '../types'
+import { DraftCapacityEstimate, ScenarioDraft, ScenarioDraftGroup, StoredScript, SystemInventoryGenerator, TestSummary } from '../types'
 import './CreateTestModal.css'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import CreateTestCapacityPreview from './CreateTestCapacityPreview'
@@ -91,6 +91,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const [estimateError, setEstimateError] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
   const dialogRef = useRef<HTMLDivElement | null>(null)
 
   const { name, duration, startDelay, scenarioMode, scriptShakeout, resourceBaseline, assignment, groups, goalConfig, runtimeSettings } = scenarioDraft
@@ -147,6 +148,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const assignmentRecommendation = draftEstimate?.assignment_recommendation
   const availableTargets = assignmentRecommendation?.available_targets || []
   const recommendedTargets = assignmentRecommendation?.recommended_targets || []
+  const availableLabels = assignmentRecommendation?.available_labels || {}
   const footprint = draftEstimate?.footprint
   const hasGoalModeConfig = Boolean(
     goalConfig.target_average_tps ||
@@ -281,6 +283,20 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       window.clearTimeout(timer)
     }
   }, [api, buildEstimatePayload, groups, duration])
+
+  useEffect(() => {
+    let cancelled = false
+    api.getSystemInventory()
+      .then(response => {
+        if (!cancelled) setGeneratorInventory(response.generators || [])
+      })
+      .catch(() => {
+        if (!cancelled) setGeneratorInventory([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [api])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -504,6 +520,10 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
             onAddGroup={addGroup}
             onUpdateGroup={updateGroup}
             onRemoveGroup={removeGroup}
+            availableTargets={availableTargets}
+            recommendedTargets={recommendedTargets}
+            generatorInventory={generatorInventory}
+            availableLabels={availableLabels}
           />
 
           <CreateTestRuntimeOverrides

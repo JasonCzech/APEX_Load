@@ -16,6 +16,32 @@ type MetaDraft = {
   fleet_pool_id: string
   provider_status: string
   cordoned: boolean
+  tagsText: string
+}
+
+function formatTags(tags?: Record<string, string>) {
+  return Object.entries(tags || {})
+    .filter(([key, value]) => key && value)
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([key, value]) => `${key}=${value}`)
+    .join(', ')
+}
+
+function parseTagsText(value: string): Record<string, string> {
+  const tags: Record<string, string> = {}
+  value
+    .split(/[,\n]/)
+    .map(entry => entry.trim())
+    .filter(Boolean)
+    .forEach(entry => {
+      const separator = entry.includes('=') ? '=' : ':'
+      const index = entry.indexOf(separator)
+      if (index < 0) return
+      const key = entry.slice(0, index).trim()
+      const tagValue = entry.slice(index + 1).trim()
+      if (key && tagValue) tags[key] = tagValue
+    })
+  return tags
 }
 
 export default function FleetGeneratorsCard({ canManage = false }: Props) {
@@ -67,6 +93,7 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
       fleet_pool_id: draft.fleet_pool_id, // empty string clears membership (backend convention)
       provider_status: draft.provider_status,
       cordoned: draft.cordoned,
+      tags: parseTagsText(draft.tagsText),
     })
     setDraft(null)
   }, [draft, patch])
@@ -81,7 +108,7 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
           <button
             type="button"
             className="btn btn-primary btn-sm"
-            onClick={() => setDraft({ generator_id: '', isNew: true, region: '', fleet_pool_id: '', provider_status: '', cordoned: false })}
+            onClick={() => setDraft({ generator_id: '', isNew: true, region: '', fleet_pool_id: '', provider_status: '', cordoned: false, tagsText: '' })}
           >
             Add Metadata
           </button>
@@ -107,6 +134,7 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
                   {gen.region ? <span>region: {gen.region}</span> : null}
                   {gen.fleet_pool_id ? <span>pool: {gen.fleet_pool_id}</span> : <span>pool: —</span>}
                   {gen.provider_status ? <span>{gen.provider_status}</span> : null}
+                  {formatTags(gen.tags) ? <span>capabilities: {formatTags(gen.tags)}</span> : null}
                 </div>
               </div>
               {canManage && (
@@ -126,6 +154,7 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
                         fleet_pool_id: gen.fleet_pool_id || '',
                         provider_status: gen.provider_status || '',
                         cordoned: Boolean(gen.cordoned),
+                        tagsText: formatTags(gen.tags),
                       })
                     }
                   >
@@ -170,6 +199,15 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
                   <input type="checkbox" checked={draft.cordoned} onChange={e => setDraft(d => (d ? { ...d, cordoned: e.target.checked } : d))} />
                 </label>
               </div>
+              <label className="pp-field">
+                <span>Capabilities / labels</span>
+                <textarea
+                  value={draft.tagsText}
+                  onChange={e => setDraft(d => (d ? { ...d, tagsText: e.target.value } : d))}
+                  placeholder="jvm=17, arch=amd64"
+                  rows={3}
+                />
+              </label>
             </div>
             <div className="pp-modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setDraft(null)}>Cancel</button>

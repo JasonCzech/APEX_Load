@@ -142,7 +142,7 @@ describe('RuntimeSettingsGroupEditor', () => {
 
     // Universal tabs always present.
     render(0) // http
-    expect(tabLabels()).toEqual(['Summary', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling', 'HTTP Transport', 'Web/HTTP', 'Logging'])
+    expect(tabLabels()).toEqual(['Summary', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling', 'HTTP Transport', 'Web/HTTP'])
 
     render(1) // browser — HTTP Transport (with browser emulation) + Web/HTTP still show
     expect(tabLabels()).toContain('HTTP Transport')
@@ -151,7 +151,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     render(2) // grpc — protocol-specific tabs hidden
     expect(tabLabels()).not.toContain('HTTP Transport')
     expect(tabLabels()).not.toContain('Web/HTTP')
-    expect(tabLabels()).toEqual(['Summary', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling', 'Logging'])
+    expect(tabLabels()).toEqual(['Summary', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling'])
   })
 
   it('renders the browser device editor under HTTP Transport → Browser emulation for a browser group', () => {
@@ -281,8 +281,13 @@ describe('RuntimeSettingsGroupEditor', () => {
     })
     clickTab('Error Handling')
     const text = container.textContent || ''
+    expect(text).toContain('Log level')
     expect(text).toContain('Max retries')
     expect(text).toContain('Retry delay (ms)')
+    const logLevel = Array.from(container.querySelectorAll('select')).find(s =>
+      Array.from(s.options).some(o => o.value === 'extended') && Array.from(s.options).some(o => o.value === 'disabled'),
+    )
+    expect(logLevel).toBeTruthy()
     // retry_backoff select offers the backoff strategies.
     const backoff = Array.from(container.querySelectorAll('select')).find(s =>
       Array.from(s.options).some(o => o.value === 'exponential'),
@@ -336,7 +341,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({ web_runtime: expect.objectContaining({ source_ips: ['10.0.0.1', '10.0.0.2'] }) }))
   })
 
-  it('promotes the legacy log level into the log section on edit (Logging tab)', () => {
+  it('promotes the legacy log level into the log section on edit (Error Handling tab)', () => {
     const onChange = vi.fn()
     act(() => {
       root.render(
@@ -350,7 +355,7 @@ describe('RuntimeSettingsGroupEditor', () => {
         />,
       )
     })
-    clickTab('Logging')
+    clickTab('Error Handling')
     const logSelect = Array.from(container.querySelectorAll('select')).find(s =>
       Array.from(s.options).some(o => o.value === 'extended') && Array.from(s.options).some(o => o.value === 'disabled'),
     ) as HTMLSelectElement
@@ -568,7 +573,7 @@ describe('RuntimeSettingsGroupEditor', () => {
         <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={0} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={onChange} onApplyToGroups={() => {}} />,
       )
     })
-    clickTab('Logging')
+    clickTab('Error Handling')
     const card = Array.from(container.querySelectorAll('label')).find(l => (l.textContent || '').includes('Advanced trace'))
     expect(card).toBeTruthy()
     const checkbox = card!.querySelector('input[type="checkbox"]') as HTMLInputElement

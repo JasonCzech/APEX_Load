@@ -873,7 +873,7 @@ describe('NewTestPage', () => {
     expect(modal).toBeTruthy()
     if (!modal) return
 
-    const shardingRadio = Array.from(modal.querySelectorAll('label')).find(label => label.textContent?.includes('Specific host sharding'))?.querySelector('input') as HTMLInputElement | null
+    const shardingRadio = Array.from(modal.querySelectorAll('label')).find(label => label.textContent?.includes('Pin to host'))?.querySelector('input') as HTMLInputElement | null
     expect(shardingRadio).toBeTruthy()
     await act(async () => {
       shardingRadio?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -923,6 +923,93 @@ describe('NewTestPage', () => {
       })],
     }))
     expect(apiMock.startTest).not.toHaveBeenCalled()
+  })
+
+  it('uses saved per-group placement as the New Test baseline and clears it with explicit auto for launch only', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Pinned Checkout',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          scripts: [
+            {
+              order: 1,
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 30,
+              ramp_up: '1m',
+              assignment: { mode: 'specific_hosts', selected_targets: ['gen-a:9090'] },
+            },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    expect(scenarioRow).toBeTruthy()
+    await act(async () => {
+      scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.new-test-script-table')?.textContent).toContain('Pinned: gen-a:9090')
+
+    const scriptGroupRow = Array.from(container.querySelectorAll('.new-test-script-row')).find(row => row.textContent?.includes('Checkout')) as HTMLTableRowElement | undefined
+    await act(async () => {
+      scriptGroupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const modal = container.querySelector('.run-group-modal') as HTMLElement | null
+    expect(modal?.textContent).toContain('gen-a:9090')
+    const autoRadio = Array.from(modal?.querySelectorAll('label') || []).find(label => label.textContent?.includes('Automatic placement'))?.querySelector('input') as HTMLInputElement | null
+    expect(autoRadio).toBeTruthy()
+    await act(async () => {
+      autoRadio?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const saveButton = Array.from(modal?.querySelectorAll('button') || []).find(button => button.textContent === 'Save For This Run')
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.new-test-script-table')?.textContent).toContain('Auto')
+    expect(container.textContent).toContain('Run override')
+
+    await flushDebouncedPreflight()
+    const reserveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Reserve Timeslot')
+    await act(async () => {
+      reserveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      scenario_id: 'scenario-1',
+      groups: [expect.objectContaining({
+        script_id: 'script-1',
+        assignment: { mode: 'auto' },
+      })],
+    }))
   })
 
   it('surfaces governed schedule policies and approval actions', async () => {

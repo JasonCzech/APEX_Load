@@ -28,9 +28,51 @@ func parseGeneratorTargetSpec(raw string) generatorTargetSpec {
 					spec.Protocols = append(spec.Protocols, protocol)
 				}
 			}
+		case "labels", "tags":
+			spec.Labels = mergeStringMaps(spec.Labels, parseGeneratorTargetLabels(value))
 		}
 	}
 	return spec
+}
+
+func parseGeneratorTargetLabels(raw string) map[string]string {
+	out := map[string]string{}
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		var key, value string
+		if left, right, ok := strings.Cut(item, ":"); ok {
+			key, value = left, right
+		} else if left, right, ok := strings.Cut(item, "="); ok {
+			key, value = left, right
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func mergeStringMaps(base map[string]string, overlay map[string]string) map[string]string {
+	if len(base) == 0 && len(overlay) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(base)+len(overlay))
+	for key, value := range base {
+		out[key] = value
+	}
+	for key, value := range overlay {
+		out[key] = value
+	}
+	return out
 }
 
 func generatorSpecVersion(spec generatorTargetSpec) string {
@@ -69,6 +111,7 @@ func normalizedProtocolList(protocols []string) []string {
 
 func generatorEffectiveSpec(spec generatorTargetSpec, snapshot generatorLoadSnapshot) generatorTargetSpec {
 	effective := spec
+	effective.Labels = cloneStringMap(spec.Labels)
 	if version := strings.TrimSpace(snapshot.Version); version != "" {
 		effective.Version = version
 	}
@@ -135,6 +178,18 @@ func targetSupportsProtocol(spec generatorTargetSpec, protocolName string) bool 
 	return false
 }
 
+func targetMatchesRequiredLabels(spec generatorTargetSpec, required map[string]string) bool {
+	if len(required) == 0 {
+		return true
+	}
+	for key, value := range required {
+		if spec.Labels[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
 type generatorCompatibilityIndex struct {
 	byTarget map[string]generatorTargetSpec
 }
@@ -150,7 +205,7 @@ func newGeneratorCompatibilityIndex(specs []generatorTargetSpec, loadByTarget ma
 	return index
 }
 
-func (i *generatorCompatibilityIndex) targetCanRun(target string, protocolName string) bool {
+func (i *generatorCompatibilityIndex) targetCanRun(target string, protocolName string, requiredLabels map[string]string) bool {
 	if i == nil {
 		return true
 	}
@@ -158,12 +213,23 @@ func (i *generatorCompatibilityIndex) targetCanRun(target string, protocolName s
 	if !ok {
 		return true
 	}
-	return generatorCompatibilityState(spec) == "compatible" && targetSupportsProtocol(spec, protocolName)
+	return generatorCompatibilityState(spec) == "compatible" && targetSupportsProtocol(spec, protocolName) && targetMatchesRequiredLabels(spec, requiredLabels)
 }
 
 func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, specs []generatorTargetSpec) string {
 	protocolName := usageKey(group.Protocol, "unknown")
 	reasons := make([]string, 0)
+	if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeSpecificHosts {
+		for _, target := range group.Assignment.SelectedTargets {
+			target = strings.TrimSpace(target)
+			if target == "" {
+				continue
+			}
+			if _, reachable := loadByTarget[target]; !reachable {
+				reasons = append(reasons, fmt.Sprintf("%s is not reachable", target))
+			}
+		}
+	}
 	for _, spec := range specs {
 		if _, reachable := loadByTarget[spec.Address]; !reachable {
 			continue
@@ -177,6 +243,11 @@ func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string
 		}
 		if !targetSupportsProtocol(spec, group.Protocol) {
 			reasons = append(reasons, fmt.Sprintf("%s does not support protocol %s", spec.Address, protocolName))
+			continue
+		}
+		requiredLabels := effectiveGroupRequiredLabels(group, nil)
+		if !targetMatchesRequiredLabels(spec, requiredLabels) {
+			reasons = append(reasons, fmt.Sprintf("%s does not match required labels %s", spec.Address, formatRequiredLabels(requiredLabels)))
 		}
 	}
 	if len(reasons) == 0 {

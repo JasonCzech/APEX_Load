@@ -46,6 +46,7 @@ type generatorTargetSpec struct {
 	Region    string
 	Version   string
 	Protocols []string
+	Labels    map[string]string
 }
 
 type distributedExecutionBackend struct {
@@ -228,6 +229,114 @@ func (b *distributedExecutionBackend) allowedTargetsForTest(test *ManagedTest) (
 	return allowed, nil
 }
 
+func (b *distributedExecutionBackend) explicitGroupTargetsForTest(test *ManagedTest) ([]string, error) {
+	if test == nil || len(test.Groups) == 0 {
+		return nil, nil
+	}
+	specs := b.configuredTargetSpecs()
+	configured := make(map[string]struct{}, len(specs))
+	for _, spec := range specs {
+		configured[spec.Address] = struct{}{}
+	}
+	targets := make([]string, 0)
+	for _, group := range test.Groups {
+		assignment := group.Assignment
+		if assignment == nil || assignment.Mode != generatorAssignmentModeSpecificHosts {
+			continue
+		}
+		for _, target := range assignment.SelectedTargets {
+			target = strings.TrimSpace(target)
+			if target == "" {
+				continue
+			}
+			if _, ok := configured[target]; !ok {
+				return nil, fmt.Errorf("group %q assignment target %q is not configured on this controller", group.Name, target)
+			}
+			if drainState := b.generatorDrainState(target); drainState != "active" {
+				return nil, fmt.Errorf("group %q assignment target %q is %s and cannot accept new work", group.Name, target, drainState)
+			}
+			targets = append(targets, target)
+		}
+	}
+	return orderedUniqueTargets(targets), nil
+}
+
+func hasExplicitAutoGroup(groups []TestGroup) bool {
+	for _, group := range groups {
+		if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeAuto {
+			return true
+		}
+	}
+	return false
+}
+
+func orderedUniqueTargets(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func loadSnapshotsForTargets(loadByTarget map[string]generatorLoadSnapshot, targets []string) map[string]generatorLoadSnapshot {
+	if len(loadByTarget) == 0 || len(targets) == 0 {
+		return nil
+	}
+	out := make(map[string]generatorLoadSnapshot, len(targets))
+	for _, target := range targets {
+		if snapshot, ok := loadByTarget[target]; ok {
+			out[target] = snapshot
+		}
+	}
+	return out
+}
+
+func (tr *TestRunner) enrichGeneratorTargetSpecsWithLabels(specs []generatorTargetSpec) []generatorTargetSpec {
+	if len(specs) == 0 {
+		return nil
+	}
+	out := make([]generatorTargetSpec, len(specs))
+	copy(out, specs)
+	if tr == nil || tr.fleetStore == nil {
+		for i := range out {
+			out[i].Labels = cloneStringMap(out[i].Labels)
+		}
+		return out
+	}
+	metadata, err := tr.fleetStore.ListGeneratorMetadata(0, 0)
+	if err != nil || len(metadata) == 0 {
+		for i := range out {
+			out[i].Labels = cloneStringMap(out[i].Labels)
+		}
+		return out
+	}
+	labelsByTarget := make(map[string]map[string]string, len(metadata))
+	for _, item := range metadata {
+		if item == nil || len(item.Tags) == 0 {
+			continue
+		}
+		if target := strings.TrimSpace(item.Target); target != "" {
+			labelsByTarget[target] = mergeStringMaps(labelsByTarget[target], item.Tags)
+		}
+		if id := strings.TrimSpace(item.GeneratorID); id != "" {
+			labelsByTarget[id] = mergeStringMaps(labelsByTarget[id], item.Tags)
+		}
+	}
+	for i := range out {
+		out[i].Labels = mergeStringMaps(out[i].Labels, labelsByTarget[out[i].Address])
+	}
+	return out
+}
+
 func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	tr.mu.Lock()
 	assignment, err := normalizeGeneratorAssignmentSettings(test.Assignment)
@@ -238,7 +347,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	}
 	test.Assignment = assignment
 	tr.mu.Unlock()
-	targetSpecs := b.configuredTargetSpecs()
+	targetSpecs := tr.enrichGeneratorTargetSpecsWithLabels(b.configuredTargetSpecs())
 	if len(targetSpecs) == 0 {
 		tr.failTestBeforeRun(test, "no generator targets configured")
 		return
@@ -248,6 +357,17 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		tr.failTestBeforeRun(test, err.Error())
 		return
 	}
+	groupTargets, err := b.explicitGroupTargetsForTest(test)
+	if err != nil {
+		tr.failTestBeforeRun(test, err.Error())
+		return
+	}
+	allTargets := append([]string(nil), allowedTargets...)
+	if hasExplicitAutoGroup(test.Groups) {
+		allTargets = append(allTargets, b.configuredTargets()...)
+	}
+	allTargets = append(allTargets, groupTargets...)
+	allTargets = orderedUniqueTargets(allTargets)
 
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
@@ -264,7 +384,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			_ = client.Close()
 		}
 	}
-	for _, target := range allowedTargets {
+	for _, target := range allTargets {
 		client, err := b.dial(ctx, target)
 		if err != nil {
 			slog.Warn("distributed generator unavailable during placement", "target", target, "error", err)
@@ -277,7 +397,8 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		tr.failTestBeforeRun(test, "no reachable generator targets configured")
 		return
 	}
-	groupShards := planDistributedGroupShards(test.Groups, loadByTarget, allowedTargets, assignment, targetSpecs)
+	defaultLoadByTarget := loadSnapshotsForTargets(loadByTarget, allowedTargets)
+	groupShards := planDistributedGroupShardsForCandidates(test.Groups, loadByTarget, defaultLoadByTarget, allTargets, allowedTargets, assignment, targetSpecs)
 	for _, group := range test.Groups {
 		if group.script == nil {
 			cleanup()

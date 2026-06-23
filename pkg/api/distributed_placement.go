@@ -3,8 +3,10 @@ package api
 // distributed_placement.go — split from distributed_execution_backend.go (same package, behavior-preserving).
 
 import (
+	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 )
@@ -34,6 +36,9 @@ func newRegionPlacementState(groups []TestGroup, assignment *GeneratorAssignment
 	weightedRegions := make(map[string]struct{})
 	totalVUsers := 0
 	for _, group := range groups {
+		if !groupInheritsAssignment(group) {
+			continue
+		}
 		totalVUsers += group.VUsers
 	}
 	for region, weight := range weights {
@@ -92,18 +97,23 @@ func planDistributedGroupTargets(groups []TestGroup, loadByTarget map[string]gen
 }
 
 func planDistributedGroupShards(groups []TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string, assignment *GeneratorAssignmentSettings, targetSpecs []generatorTargetSpec) map[string][]GeneratorShardSummary {
-	if len(loadByTarget) == 0 {
+	return planDistributedGroupShardsForCandidates(groups, loadByTarget, loadByTarget, preferred, preferred, assignment, targetSpecs)
+}
+
+func planDistributedGroupShardsForCandidates(groups []TestGroup, allLoadByTarget map[string]generatorLoadSnapshot, defaultLoadByTarget map[string]generatorLoadSnapshot, preferredAll []string, preferredDefault []string, assignment *GeneratorAssignmentSettings, targetSpecs []generatorTargetSpec) map[string][]GeneratorShardSummary {
+	if len(allLoadByTarget) == 0 {
 		return nil
 	}
-	projected := make(map[string]generatorLoadSnapshot, len(loadByTarget))
-	for key, value := range loadByTarget {
+	projected := make(map[string]generatorLoadSnapshot, len(allLoadByTarget))
+	for key, value := range allLoadByTarget {
 		projected[key] = value
 	}
+	defaultProjected := filterLoadSnapshots(projected, defaultLoadByTarget)
 	regionState := newRegionPlacementState(groups, assignment, targetSpecs)
-	compatibility := newGeneratorCompatibilityIndex(targetSpecs, loadByTarget)
+	compatibility := newGeneratorCompatibilityIndex(targetSpecs, allLoadByTarget)
 	shardsByGroup := make(map[string][]GeneratorShardSummary, len(groups))
 	for _, group := range groups {
-		shards := chooseGeneratorShardsForGroup(group, projected, preferred, regionState, compatibility)
+		shards := chooseGeneratorShardsForGroup(group, projected, defaultProjected, preferredAll, preferredDefault, assignment, regionState, compatibility)
 		shardsByGroup[group.Name] = shards
 		for _, shard := range shards {
 			if shard.Target == "" || shard.VUsers <= 0 {
@@ -113,28 +123,94 @@ func planDistributedGroupShards(groups []TestGroup, loadByTarget map[string]gene
 			snapshot.AvailableCapacity -= int32(shard.VUsers)
 			snapshot.Stats.ActiveVUsers += int32(shard.VUsers)
 			projected[shard.Target] = snapshot
-			regionState.consume(shard.Target, shard.VUsers)
+			if _, ok := defaultProjected[shard.Target]; ok {
+				defaultProjected[shard.Target] = snapshot
+			}
+			if groupUsesWeightedDefault(group, assignment) {
+				regionState.consume(shard.Target, shard.VUsers)
+			}
 		}
 	}
 	return shardsByGroup
 }
 
-func chooseGeneratorShardsForGroup(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string, regionState *regionPlacementState, compatibility *generatorCompatibilityIndex) []GeneratorShardSummary {
+func filterLoadSnapshots(source map[string]generatorLoadSnapshot, allowed map[string]generatorLoadSnapshot) map[string]generatorLoadSnapshot {
+	if len(source) == 0 || len(allowed) == 0 {
+		return nil
+	}
+	out := make(map[string]generatorLoadSnapshot, len(allowed))
+	for target := range allowed {
+		if snapshot, ok := source[target]; ok {
+			out[target] = snapshot
+		}
+	}
+	return out
+}
+
+func groupInheritsAssignment(group TestGroup) bool {
+	return group.Assignment == nil || strings.TrimSpace(group.Assignment.Mode) == ""
+}
+
+func groupUsesWeightedDefault(group TestGroup, assignment *GeneratorAssignmentSettings) bool {
+	if !groupInheritsAssignment(group) || assignment == nil {
+		return false
+	}
+	return assignment.Mode == generatorAssignmentModeRegionWeighted || assignment.Mode == generatorAssignmentModeLoadZoneWeighted
+}
+
+func effectiveGroupRequiredLabels(group TestGroup, inherited *GeneratorAssignmentSettings) map[string]string {
+	if group.Assignment != nil {
+		return group.Assignment.RequiredLabels
+	}
+	if inherited != nil {
+		return inherited.RequiredLabels
+	}
+	return nil
+}
+
+func formatRequiredLabels(labels map[string]string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%s", key, labels[key]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func chooseGeneratorShardsForGroup(group TestGroup, allLoadByTarget map[string]generatorLoadSnapshot, defaultLoadByTarget map[string]generatorLoadSnapshot, preferredAll []string, preferredDefault []string, inherited *GeneratorAssignmentSettings, regionState *regionPlacementState, compatibility *generatorCompatibilityIndex) []GeneratorShardSummary {
 	if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeSpecificHosts {
 		targets := make([]string, 0, len(group.Assignment.SelectedTargets))
+		requiredLabels := effectiveGroupRequiredLabels(group, inherited)
 		for _, target := range group.Assignment.SelectedTargets {
-			if _, ok := loadByTarget[target]; !ok {
+			if _, ok := allLoadByTarget[target]; !ok {
 				return nil
 			}
-			if compatibility != nil && !compatibility.targetCanRun(target, group.Protocol) {
+			if compatibility != nil && !compatibility.targetCanRun(target, group.Protocol, requiredLabels) {
 				return nil
 			}
 			targets = append(targets, target)
 		}
-		return capacityWeightedShards(group.Name, group.VUsers, targets, loadByTarget, group.Assignment.ShardStrategy)
+		return capacityWeightedShards(group.Name, group.VUsers, targets, allLoadByTarget, group.Assignment.ShardStrategy)
 	}
 
-	target := chooseGeneratorTargetForGroup(group, loadByTarget, preferred, regionState, compatibility)
+	candidateLoad := defaultLoadByTarget
+	candidatePreferred := preferredDefault
+	candidateRegionState := regionState
+	effectiveAssignment := inherited
+	if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeAuto {
+		candidateLoad = allLoadByTarget
+		candidatePreferred = preferredAll
+		candidateRegionState = nil
+		effectiveAssignment = group.Assignment
+	}
+	target := chooseGeneratorTargetForGroup(group, candidateLoad, candidatePreferred, candidateRegionState, compatibility, effectiveGroupRequiredLabels(group, effectiveAssignment))
 	if target == "" {
 		return nil
 	}
@@ -252,13 +328,13 @@ func allocateCapacityWeightedVUsers(total int, targets []string, loadByTarget ma
 	return allocations
 }
 
-func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string, regionState *regionPlacementState, compatibility *generatorCompatibilityIndex) string {
+func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string, regionState *regionPlacementState, compatibility *generatorCompatibilityIndex, requiredLabels map[string]string) string {
 	ordered := orderedLoadTargets(loadByTarget, preferred, regionState)
 	if len(ordered) == 0 {
 		return ""
 	}
 	for _, target := range ordered {
-		if compatibility != nil && !compatibility.targetCanRun(target, group.Protocol) {
+		if compatibility != nil && !compatibility.targetCanRun(target, group.Protocol, requiredLabels) {
 			continue
 		}
 		if loadByTarget[target].AvailableCapacity >= int32(group.VUsers) {
@@ -266,7 +342,7 @@ func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]gene
 		}
 	}
 	for _, target := range ordered {
-		if compatibility == nil || compatibility.targetCanRun(target, group.Protocol) {
+		if compatibility == nil || compatibility.targetCanRun(target, group.Protocol, requiredLabels) {
 			return target
 		}
 	}

@@ -21,10 +21,12 @@ export interface TestGroup {
 }
 
 export interface GeneratorAssignmentSettings {
-  mode?: 'auto' | 'specific_hosts' | 'region_weighted'
+  mode?: 'auto' | 'specific_hosts' | 'region_weighted' | 'load_zone_weighted'
   selected_targets?: string[]
   region_weights?: Record<string, number>
+  load_zone_weights?: Record<string, number>
   shard_strategy?: 'capacity_weighted'
+  required_labels?: Record<string, string>
 }
 
 export interface GeneratorShardSummary {
@@ -44,10 +46,11 @@ export interface ScenarioFootprint {
 }
 
 export interface AssignmentRecommendation {
-  mode: 'auto' | 'specific_hosts' | 'region_weighted'
+  mode: 'auto' | 'specific_hosts' | 'region_weighted' | 'load_zone_weighted'
   available_targets?: string[]
   recommended_targets?: string[]
   available_regions?: string[]
+  available_labels?: Record<string, string[]>
   region_weights?: Record<string, number>
   summary?: string
   warnings?: string[]
@@ -1363,6 +1366,7 @@ export interface ScenarioDraftGroup {
   initialization: 'at_runtime' | 'at_once'
   /** Per-group runtime overrides; merged over the scenario-wide runtime defaults. */
   runtimeSettings?: ScenarioRuntimeSettingsDraft
+  assignment?: GeneratorAssignmentSettings
 }
 
 export interface ScenarioDraft {
@@ -2073,6 +2077,7 @@ export interface StoredScenario {
     iterations?: number
     runtime_settings?: RuntimeSettingsOverride
     initialization?: 'at_runtime' | 'at_once'
+    assignment?: GeneratorAssignmentSettings
   }>
   schedules?: ScenarioSchedule[]
   data_pools?: ScenarioDataPoolBinding[]
@@ -2557,9 +2562,12 @@ export interface SystemInventoryGenerator {
   restartable?: boolean
   restart_blocked_reason?: string
   region?: string
+  fleet_pool_id?: string
+  pool_name?: string
   status: 'connected' | 'healthy' | 'ready' | 'unreachable' | string
   version?: string
   supported_protocols?: string[]
+  labels?: Record<string, string>
   compatibility_state?: string
   compatibility_issues?: string[]
   drain_state?: 'active' | 'cordoned' | 'draining' | string

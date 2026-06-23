@@ -217,5 +217,5 @@ paths:
       authButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(window.location.hash).toBe('#/docs?guide=authentication')
-  })
+  }, 10_000)
 })

@@ -737,19 +737,20 @@ type StoredScenario struct {
 }
 
 type ScenarioScriptRef struct {
-	Order           int                      `json:"order"`
-	Name            string                   `json:"name,omitempty"`
-	ScriptID        string                   `json:"script_id"`
-	ScriptName      string                   `json:"script_name,omitempty"`
-	Protocol        string                   `json:"protocol,omitempty"`
-	Role            string                   `json:"role,omitempty"`
-	VUsers          int                      `json:"vusers"`
-	RampUp          string                   `json:"ramp_up,omitempty"`
-	RampDown        string                   `json:"ramp_down,omitempty"`
-	Stages          []storage.LoadStage      `json:"stages,omitempty"`
-	Iterations      *int                     `json:"iterations,omitempty"`
-	Initialization  string                   `json:"initialization,omitempty"`
-	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
+	Order           int                          `json:"order"`
+	Name            string                       `json:"name,omitempty"`
+	ScriptID        string                       `json:"script_id"`
+	ScriptName      string                       `json:"script_name,omitempty"`
+	Protocol        string                       `json:"protocol,omitempty"`
+	Role            string                       `json:"role,omitempty"`
+	VUsers          int                          `json:"vusers"`
+	RampUp          string                       `json:"ramp_up,omitempty"`
+	RampDown        string                       `json:"ramp_down,omitempty"`
+	Stages          []storage.LoadStage          `json:"stages,omitempty"`
+	Iterations      *int                         `json:"iterations,omitempty"`
+	Initialization  string                       `json:"initialization,omitempty"`
+	RuntimeSettings *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	Assignment      *GeneratorAssignmentSettings `json:"assignment,omitempty"`
 }
 
 const (
@@ -792,11 +793,12 @@ type latencyRouteCacheEntry struct {
 }
 
 type GeneratorAssignmentSettings struct {
-	Mode            string         `json:"mode,omitempty"`
-	SelectedTargets []string       `json:"selected_targets,omitempty"`
-	RegionWeights   map[string]int `json:"region_weights,omitempty"`
-	LoadZoneWeights map[string]int `json:"load_zone_weights,omitempty"`
-	ShardStrategy   string         `json:"shard_strategy,omitempty"`
+	Mode            string            `json:"mode,omitempty"`
+	SelectedTargets []string          `json:"selected_targets,omitempty"`
+	RegionWeights   map[string]int    `json:"region_weights,omitempty"`
+	LoadZoneWeights map[string]int    `json:"load_zone_weights,omitempty"`
+	ShardStrategy   string            `json:"shard_strategy,omitempty"`
+	RequiredLabels  map[string]string `json:"required_labels,omitempty"`
 	// PoolID restricts a run to the generators in a managed fleet pool. It is
 	// resolved to the pool's member targets at create time (as specific_hosts),
 	// then enforced leniently at placement (offline members are skipped).
@@ -824,12 +826,13 @@ type ScenarioFootprint struct {
 }
 
 type AssignmentRecommendation struct {
-	Mode               string   `json:"mode"`
-	AvailableTargets   []string `json:"available_targets,omitempty"`
-	AvailableRegions   []string `json:"available_regions,omitempty"`
-	RecommendedTargets []string `json:"recommended_targets,omitempty"`
-	Summary            string   `json:"summary,omitempty"`
-	Warnings           []string `json:"warnings,omitempty"`
+	Mode               string              `json:"mode"`
+	AvailableTargets   []string            `json:"available_targets,omitempty"`
+	AvailableRegions   []string            `json:"available_regions,omitempty"`
+	AvailableLabels    map[string][]string `json:"available_labels,omitempty"`
+	RecommendedTargets []string            `json:"recommended_targets,omitempty"`
+	Summary            string              `json:"summary,omitempty"`
+	Warnings           []string            `json:"warnings,omitempty"`
 }
 
 type ReleaseRef struct {

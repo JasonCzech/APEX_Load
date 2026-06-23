@@ -110,6 +110,7 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 			Iterations:      group.Iterations,
 			Initialization:  group.InitStrategy,
 			RuntimeSettings: runtimeSettingsForStorage(group.RuntimeSettings),
+			Assignment:      cloneGeneratorAssignmentSettings(group.Assignment),
 		})
 	}
 	dataPools, err := normalizeScenarioDataPoolBindings(id, req.DataPools)
@@ -415,7 +416,7 @@ func (tr *TestRunner) enrichScenarioSummaryLocked(scenario *StoredScenario) *Sto
 		return nil
 	}
 	copy := *scenario
-	copy.Scripts = append([]ScenarioScriptRef(nil), scenario.Scripts...)
+	copy.Scripts = cloneScenarioScriptRefs(scenario.Scripts)
 	releaseSet := map[string]ReleaseRef{}
 	var lastRunTestID string
 	var lastRunStartedAt *time.Time

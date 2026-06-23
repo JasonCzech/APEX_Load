@@ -70,7 +70,11 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 	if in == nil {
 		return nil, nil
 	}
-	out := &GeneratorAssignmentSettings{Mode: strings.TrimSpace(in.Mode), PoolID: strings.TrimSpace(in.PoolID)}
+	out := &GeneratorAssignmentSettings{
+		Mode:           strings.TrimSpace(in.Mode),
+		PoolID:         strings.TrimSpace(in.PoolID),
+		RequiredLabels: normalizeRequiredLabels(in.RequiredLabels),
+	}
 	if out.Mode == "" {
 		out.Mode = generatorAssignmentModeAuto
 	}
@@ -143,6 +147,25 @@ func normalizePositiveWeights(in map[string]int, _ string) map[string]int {
 			continue
 		}
 		out[normalizedKey] = weight
+	}
+	return out
+}
+
+func normalizeRequiredLabels(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
@@ -225,6 +248,12 @@ func cloneGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) *Generato
 		out.LoadZoneWeights = make(map[string]int, len(in.LoadZoneWeights))
 		for zone, weight := range in.LoadZoneWeights {
 			out.LoadZoneWeights[zone] = weight
+		}
+	}
+	if len(in.RequiredLabels) > 0 {
+		out.RequiredLabels = make(map[string]string, len(in.RequiredLabels))
+		for key, value := range in.RequiredLabels {
+			out.RequiredLabels[key] = value
 		}
 	}
 	return &out

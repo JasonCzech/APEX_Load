@@ -125,6 +125,9 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 	if conflicts := importPromotionLaunchConflicts(preview.Groups); len(conflicts) > 0 {
 		blocking = append(blocking, conflicts...)
 	}
+	if conflicts := tr.generatorPlacementLaunchConflictsLocked(preview); len(conflicts) > 0 {
+		blocking = append(blocking, conflicts...)
+	}
 
 	if conflicts := tr.launchWindowConflictsLocked(preview, window, now, ""); len(conflicts) > 0 {
 		blocking = append(blocking, conflicts...)
@@ -183,6 +186,80 @@ func browserDensityGovernanceLaunchConflict(advisory *CapacityAdvisory) *LaunchC
 		Source:   "capacity_advisory",
 		Message:  browserDensityReleaseGateMessage(advisory),
 	}
+}
+
+func (tr *TestRunner) generatorPlacementLaunchConflictsLocked(test *ManagedTest) []LaunchConflict {
+	if test == nil {
+		return nil
+	}
+	backend, ok := tr.execution.(*distributedExecutionBackend)
+	if !ok {
+		return nil
+	}
+	rootAssignment, err := normalizeGeneratorAssignmentSettings(test.Assignment)
+	if err != nil {
+		return []LaunchConflict{generatorPlacementLaunchConflict(err.Error())}
+	}
+	defaultTargets, err := backend.allowedTargetsForTest(test)
+	if err != nil {
+		return []LaunchConflict{generatorPlacementLaunchConflict(err.Error())}
+	}
+	if _, err := backend.explicitGroupTargetsForTest(test); err != nil {
+		return []LaunchConflict{generatorPlacementLaunchConflict(err.Error())}
+	}
+	specs := tr.enrichGeneratorTargetSpecsWithLabels(backend.configuredTargetSpecs())
+	if len(specs) == 0 {
+		return []LaunchConflict{generatorPlacementLaunchConflict("no generator targets configured")}
+	}
+	activeTargets := map[string]generatorLoadSnapshot{}
+	for _, spec := range specs {
+		if backend.generatorDrainState(spec.Address) != "active" {
+			continue
+		}
+		activeTargets[spec.Address] = generatorLoadSnapshot{Target: spec.Address}
+	}
+	defaultLoad := loadSnapshotsForTargets(activeTargets, defaultTargets)
+	compatibility := newGeneratorCompatibilityIndex(specs, activeTargets)
+	conflicts := make([]LaunchConflict, 0)
+	for _, group := range test.Groups {
+		if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeSpecificHosts {
+			shards := chooseGeneratorShardsForGroup(group, activeTargets, defaultLoad, orderedUniqueTargets(mapKeys(activeTargets)), defaultTargets, rootAssignment, nil, compatibility)
+			if len(shards) == 0 {
+				conflicts = append(conflicts, generatorPlacementLaunchConflict(generatorPlacementRejectionMessage(group, activeTargets, specs)))
+			}
+			continue
+		}
+		candidateLoad := defaultLoad
+		candidatePreferred := defaultTargets
+		effectiveAssignment := rootAssignment
+		if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeAuto {
+			candidateLoad = activeTargets
+			candidatePreferred = orderedUniqueTargets(mapKeys(activeTargets))
+			effectiveAssignment = group.Assignment
+		}
+		if target := chooseGeneratorTargetForGroup(group, candidateLoad, candidatePreferred, nil, compatibility, effectiveGroupRequiredLabels(group, effectiveAssignment)); target == "" {
+			conflicts = append(conflicts, generatorPlacementLaunchConflict(generatorPlacementRejectionMessage(group, candidateLoad, specs)))
+		}
+	}
+	return conflicts
+}
+
+func generatorPlacementLaunchConflict(message string) LaunchConflict {
+	return LaunchConflict{
+		Code:     "generator_placement",
+		Severity: "blocking",
+		Source:   "generator_assignment",
+		Message:  message,
+	}
+}
+
+func mapKeys(values map[string]generatorLoadSnapshot) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // browserDensityReleaseGateMessage renders the operator-facing remediation

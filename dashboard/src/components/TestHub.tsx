@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
+import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary } from '../types'
 import { type ScriptConfig } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
@@ -13,6 +13,7 @@ import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPa
 import { SortIndicator } from './SortIndicator'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
+import GroupPlacementEditor from './GroupPlacementEditor'
 import { isRuntimeFieldApplicable, overrideFromRuntimeDraft, runtimeDraftFromOverride } from './runtimeSettingsModel'
 import { buildScenarioModelPreview, buildScenarioShapeCatalog, formatModelTimeLabel, getScenarioShapePreset, ScenarioModelPreview, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, validateStageTimeline } from './scenarioWizardUtils'
 import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
@@ -83,6 +84,7 @@ interface ScenarioFormGroup {
   initialization: 'at_runtime' | 'at_once'
   /** Per-group runtime overrides layered over the scenario-wide defaults. */
   runtimeSettings?: ScenarioRuntimeSettingsDraft
+  assignment?: GeneratorAssignmentSettings
 }
 
 interface ScenarioSeedGroup {
@@ -270,6 +272,7 @@ function normalizeGroupForPayload(group: ScenarioFormGroup) {
     stages: group.stages.map(normalizeStageForPayload),
     initialization: group.initialization,
     runtimeSettings: group.runtimeSettings,
+    assignment: group.assignment,
   }
 }
 
@@ -284,6 +287,7 @@ function scenarioFormGroupFromStored(group: StoredScenario['scripts'][number], f
     stages: group.stages ? [...group.stages] : [],
     initialization: group.initialization || 'at_runtime',
     runtimeSettings: runtimeDraftFromOverride(group.runtime_settings),
+    assignment: group.assignment ? { ...group.assignment, selected_targets: group.assignment.selected_targets ? [...group.assignment.selected_targets] : undefined, required_labels: group.assignment.required_labels ? { ...group.assignment.required_labels } : undefined } : undefined,
   }
 }
 
@@ -298,6 +302,7 @@ function ensureScenarioGroups(groups: ScenarioFormGroup[]): ScenarioFormGroup[] 
     ramp_down: group.ramp_down || '',
     stages: group.stages || [],
     initialization: group.initialization || 'at_runtime',
+    assignment: group.assignment,
   }))
 }
 
@@ -865,6 +870,12 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const [selectedCloneScenarioId, setSelectedCloneScenarioId] = useState(() => restoredDraft?.selectedCloneScenarioId ?? '')
   const [selectedShapeId, setSelectedShapeId] = useState(() => restoredDraft?.selectedShapeId ?? '')
   const [form, setForm] = useState<ScenarioFormState>(() => restoredDraft?.form ?? emptyScenarioForm())
+  const markWizardStepVisited = useCallback((stepId: ScenarioWizardStep) => {
+    const stepIndex = scenarioWizardSteps.findIndex(step => step.id === stepId)
+    if (stepIndex >= 0) {
+      setMaxVisitedWizardIndex(current => Math.max(current, stepIndex))
+    }
+  }, [])
   const [error, setError] = useState('')
   const [scenarioQuery, setScenarioQuery] = useState('')
   const [scenarioReleaseFilter, setScenarioReleaseFilter] = useState('all')
@@ -882,6 +893,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
   const [estimateLoading, setEstimateLoading] = useState(false)
   const [estimateError, setEstimateError] = useState('')
+  const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
   const [confirmDeleteScenarioId, setConfirmDeleteScenarioId] = useState<string | null>(null)
   // Build-from-goal (Little's Law) sizing panel state.
   const [goalSizingOpen, setGoalSizingOpen] = useState(false)
@@ -1338,7 +1350,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId('')
-    setSelectedCloneScenarioId('')
+    setSelectedCloneScenarioId(scenario.id)
     setScenarioSourceMode('existing')
     setScenarioStartChoice('existing')
     setScenarioCloneQuery('')
@@ -1382,6 +1394,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setRunSettingsTab('scenario')
     setLoadModelValidation(null)
     setLoadModelValidationError('')
+    markWizardStepVisited('source')
     void loadScenarioRuns(scenario)
   }
 
@@ -1404,6 +1417,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
           ramp_down: group.ramp_down || '',
           stages: group.stages || [],
           initialization: prev.groups[index]?.initialization || 'at_runtime',
+          assignment: prev.groups[index]?.assignment,
         })),
       ),
       goal_target_average_tps: seed.goal?.target_average_tps,
@@ -1441,6 +1455,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     }
     setStageGroupIndex(0)
     setRunSettingsTab(preset?.recommendedRunTab ?? 'scenario')
+    markWizardStepVisited('source')
     setWizardStep('scripts')
   }
 
@@ -1456,6 +1471,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setScenarioStartChoice('shape')
     setScriptSelectionTargetIndex(null)
     setStageGroupIndex(0)
+    markWizardStepVisited('source')
     setWizardStep('scripts')
     seedFormFromScenario(scenarioSeedFromTemplate(template))
   }
@@ -1555,6 +1571,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
           ramp_down: '',
           stages: [],
           initialization: 'at_runtime' as const,
+          assignment: prev.groups[index]?.assignment,
         })),
       ),
     }))
@@ -1568,6 +1585,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setLoadModelValidationError('')
     setGoalSizingOpen(false)
     setRunSettingsTab('scenario')
+    markWizardStepVisited('source')
     setWizardStep('run')
   }
 
@@ -1834,6 +1852,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const assignmentRecommendation = draftEstimate?.assignment_recommendation
   const availableTargets = assignmentRecommendation?.available_targets || []
   const recommendedTargets = assignmentRecommendation?.recommended_targets || []
+  const availableLabels = assignmentRecommendation?.available_labels || {}
 
   const toggleAssignmentTarget = (target: string, checked: boolean) => {
     const current = new Set(form.assignment_targets)
@@ -1848,6 +1867,21 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       setMaxVisitedWizardIndex(current => Math.max(current, currentWizardIndex))
     }
   }, [currentWizardIndex])
+
+  useEffect(() => {
+    if (!showForm) return
+    let cancelled = false
+    api.getSystemInventory()
+      .then(response => {
+        if (!cancelled) setGeneratorInventory(response.generators || [])
+      })
+      .catch(() => {
+        if (!cancelled) setGeneratorInventory([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [api, showForm])
 
   // Auto-save the in-progress builder so wizard progress (and its green
   // checkmarks) survives navigation, reloads, and new sessions. Edits of an
@@ -1880,7 +1914,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const sourceStepComplete = scenarioStartChoice === 'goal'
     ? Boolean(goalSizingResult)
     : scenarioSourceMode === 'existing'
-      ? Boolean(selectedCloneScenarioId)
+      ? Boolean(selectedCloneScenarioId || editingId)
       : Boolean(selectedShapeId || selectedLoadModelTemplateId)
   const wizardStepCompletion: Record<ScenarioWizardStep, boolean> = {
     start: Boolean(scenarioStartChoice),
@@ -2618,6 +2652,37 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
             {assignmentRecommendation?.warnings && assignmentRecommendation.warnings.length > 0 && (
               <div className="scenario-assignment-warnings">{assignmentRecommendation.warnings.map(warning => <p key={warning}>{warning}</p>)}</div>
             )}
+            <div className="scenario-group-placement-panel">
+              <div className="scenario-assignment-header compact">
+                <div>
+                  <h4>Per-Group Generator Placement</h4>
+                  <p>Groups inherit the scenario default unless they explicitly use automatic placement, host pinning, or a required capability.</p>
+                </div>
+              </div>
+              <div className="scenario-group-placement-list">
+                {formGroups.map((group, index) => {
+                  const script = findScriptById(scripts, group.script_id)
+                  return (
+                    <div key={`${group.script_id}-${index}`} className="scenario-group-placement-item">
+                      <div className="scenario-group-placement-title">
+                        <strong>{group.name || script?.name || `Group ${index + 1}`}</strong>
+                        <span>{script?.protocol || 'script'} · {group.vusers} VUsers</span>
+                      </div>
+                      <GroupPlacementEditor
+                        assignment={group.assignment}
+                        onChange={assignment => updateScenarioGroup(index, { assignment })}
+                        availableTargets={availableTargets}
+                        recommendedTargets={recommendedTargets}
+                        generatorInventory={generatorInventory}
+                        availableLabels={availableLabels}
+                        protocol={script?.protocol}
+                        compact
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
               </div>
             )}
           </div>
@@ -2817,16 +2882,17 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
                 Start Over
               </button>
             )}
-            <button
-              className="btn btn-secondary"
-              onClick={() => {
-                const nextIndex = Math.max(0, currentWizardIndex - 1)
-                setWizardStep(scenarioWizardSteps[nextIndex].id)
-              }}
-              disabled={currentWizardIndex === 0}
-            >
-              Back
-            </button>
+            {currentWizardIndex > 0 && (
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  const nextIndex = Math.max(0, currentWizardIndex - 1)
+                  setWizardStep(scenarioWizardSteps[nextIndex].id)
+                }}
+              >
+                Back
+              </button>
+            )}
             <button
               className="btn btn-secondary"
               onClick={() => {

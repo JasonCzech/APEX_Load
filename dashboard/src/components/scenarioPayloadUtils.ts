@@ -19,6 +19,7 @@ export type ScenarioGroupPayload = {
   iterations?: number
   initialization: ScenarioDraftGroup['initialization']
   runtime_settings?: ScenarioUpsertPayload['runtime_settings']
+  assignment?: GeneratorAssignmentSettings
 }
 
 export type ScenarioUpsertPayload = {
@@ -137,8 +138,69 @@ export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): Scenar
       }
     }
 
+    const assignment = buildGroupAssignmentPayload(group.assignment)
+    if (assignment) {
+      payload.assignment = assignment
+    }
+
     return payload
   })
+}
+
+export function buildGroupAssignmentPayload(assignment?: GeneratorAssignmentSettings): GeneratorAssignmentSettings | undefined {
+  if (!assignment?.mode && !assignment?.required_labels) return undefined
+  const requiredLabels = normalizeRequiredLabels(assignment.required_labels)
+  if (assignment.mode === 'specific_hosts') {
+    const selectedTargets = normalizeSelectedTargets(assignment.selected_targets)
+    if (selectedTargets.length === 0) return undefined
+    return {
+      mode: 'specific_hosts',
+      selected_targets: selectedTargets,
+      ...(selectedTargets.length > 1 ? { shard_strategy: 'capacity_weighted' as const } : {}),
+      ...(requiredLabels ? { required_labels: requiredLabels } : {}),
+    }
+  }
+  if (assignment.mode === 'auto' || requiredLabels) {
+    return {
+      mode: 'auto',
+      ...(requiredLabels ? { required_labels: requiredLabels } : {}),
+    }
+  }
+  return undefined
+}
+
+function buildRootAssignmentPayload(assignment?: GeneratorAssignmentSettings): GeneratorAssignmentSettings {
+  const requiredLabels = normalizeRequiredLabels(assignment?.required_labels)
+  if (assignment?.mode === 'specific_hosts') {
+    const selectedTargets = normalizeSelectedTargets(assignment.selected_targets)
+    if (selectedTargets.length > 0) {
+      return {
+        mode: 'specific_hosts',
+        selected_targets: selectedTargets,
+        ...(selectedTargets.length > 1 ? { shard_strategy: 'capacity_weighted' as const } : {}),
+        ...(requiredLabels ? { required_labels: requiredLabels } : {}),
+      }
+    }
+  }
+  if (assignment?.mode === 'region_weighted' && assignment.region_weights) {
+    return { mode: 'region_weighted', region_weights: assignment.region_weights, ...(requiredLabels ? { required_labels: requiredLabels } : {}) }
+  }
+  if (assignment?.mode === 'load_zone_weighted' && assignment.load_zone_weights) {
+    return { mode: 'load_zone_weighted', load_zone_weights: assignment.load_zone_weights, ...(requiredLabels ? { required_labels: requiredLabels } : {}) }
+  }
+  return { mode: 'auto', ...(requiredLabels ? { required_labels: requiredLabels } : {}) }
+}
+
+function normalizeSelectedTargets(targets?: string[]) {
+  return Array.from(new Set((targets || []).map(target => target.trim()).filter(Boolean)))
+}
+
+function normalizeRequiredLabels(labels?: Record<string, string>) {
+  if (!labels) return undefined
+  const next = Object.fromEntries(Object.entries(labels)
+    .map(([key, value]) => [key.trim(), value.trim()])
+    .filter(([key, value]) => key && value))
+  return Object.keys(next).length > 0 ? next : undefined
 }
 
 export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: GoalConfig): GoalConfig | undefined {
@@ -229,9 +291,7 @@ export function buildScenarioUpsertPayload({
   runtimeSettings,
   dataPools,
 }: ScenarioUpsertPayloadInput): ScenarioUpsertPayload {
-  const resolvedAssignment = assignment?.mode === 'specific_hosts'
-    ? { mode: 'specific_hosts' as const, selected_targets: assignment.selected_targets || [] }
-    : { mode: 'auto' as const }
+  const resolvedAssignment = buildRootAssignmentPayload(assignment)
 
   const payload: ScenarioUpsertPayload = {
     name: name.trim(),
@@ -278,9 +338,7 @@ export function buildCreateTestPayload({
   projectId,
   folderId,
 }: CreateTestPayloadInput): CreateTestPayload {
-  const resolvedAssignment = assignment?.mode === 'specific_hosts'
-    ? { mode: 'specific_hosts' as const, selected_targets: assignment.selected_targets || [] }
-    : { mode: 'auto' as const }
+  const resolvedAssignment = buildRootAssignmentPayload(assignment)
 
   const payload: CreateTestPayload = {
     duration,
@@ -317,7 +375,7 @@ export function buildCreateTestPayload({
   }
 
   const normalizedGroups = buildScenarioGroupPayloads(groups)
-  if (normalizedGroups.length === 1 && !normalizedGroups[0].name && normalizedGroups[0].iterations === undefined && !normalizedGroups[0].stages?.length) {
+  if (normalizedGroups.length === 1 && !normalizedGroups[0].name && normalizedGroups[0].iterations === undefined && !normalizedGroups[0].stages?.length && !normalizedGroups[0].assignment) {
     payload.script_id = normalizedGroups[0].script_id
     payload.vusers = normalizedGroups[0].vusers
     payload.ramp_up = normalizedGroups[0].ramp_up

@@ -82,7 +82,6 @@ type RuntimeTabId =
   | 'error_handling'
   | 'http_transport'
   | 'web_http'
-  | 'logging'
 
 /** Nested sub-tabs within the HTTP Transport tab (mirrors the Script Editor). */
 type HttpSubTabId = 'timeouts' | 'connection' | 'tls' | 'proxy' | 'authentication' | 'browser_emulation'
@@ -324,7 +323,6 @@ export default function RuntimeSettingsGroupEditor({
     { id: 'error_handling', label: 'Error Handling', show: true },
     { id: 'http_transport', label: 'HTTP Transport', show: httpApplicable || browserApplicable },
     { id: 'web_http', label: 'Web/HTTP', show: webRuntimeApplicable },
-    { id: 'logging', label: 'Logging', show: true },
   ]
   const visibleTabs = tabs.filter(tab => tab.show)
   // Clamp the active tab to a visible one so switching focus to a group that hides the
@@ -656,6 +654,15 @@ export default function RuntimeSettingsGroupEditor({
             </div>
             <div className="scenario-browser-grid">
               <label>
+                <span>Log level</span>
+                <select className="settings-input" value={draft.log?.level ?? draft.log_level ?? ''} onChange={event => patchLog({ level: event.target.value || undefined })}>
+                  <option value="">Inherit</option>
+                  <option value="disabled">Disabled</option>
+                  <option value="standard">Standard</option>
+                  <option value="extended">Extended</option>
+                </select>
+              </label>
+              <label>
                 <span>Max retries</span>
                 <input
                   className="settings-input"
@@ -689,6 +696,24 @@ export default function RuntimeSettingsGroupEditor({
                   <option value="linear">Linear</option>
                   <option value="exponential">Exponential</option>
                 </select>
+              </label>
+            </div>
+            <div className="scenario-option-grid">
+              <label className={`scenario-option-card ${draft.log?.on_error_only ? 'selected' : ''}`}>
+                <input type="checkbox" checked={Boolean(draft.log?.on_error_only)} onChange={event => patchLog({ on_error_only: event.target.checked || undefined })} />
+                <div><strong>Extended logging on error only</strong><span>Use extended logging only when a step fails.</span></div>
+              </label>
+              <label className={`scenario-option-card ${draft.log?.extended_options?.includes('parameter_substitution') ? 'selected' : ''}`}>
+                <input type="checkbox" checked={Boolean(draft.log?.extended_options?.includes('parameter_substitution'))} onChange={event => toggleLogOption('parameter_substitution', event.target.checked)} />
+                <div><strong>Parameter substitution</strong><span>Log each parameter substitution.</span></div>
+              </label>
+              <label className={`scenario-option-card ${draft.log?.extended_options?.includes('data_returned') ? 'selected' : ''}`}>
+                <input type="checkbox" checked={Boolean(draft.log?.extended_options?.includes('data_returned'))} onChange={event => toggleLogOption('data_returned', event.target.checked)} />
+                <div><strong>Data returned</strong><span>Log the data returned by the server.</span></div>
+              </label>
+              <label className={`scenario-option-card ${draft.log?.extended_options?.includes('advanced_trace') ? 'selected' : ''}`}>
+                <input type="checkbox" checked={Boolean(draft.log?.extended_options?.includes('advanced_trace'))} onChange={event => toggleLogOption('advanced_trace', event.target.checked)} />
+                <div><strong>Advanced trace</strong><span>Capture full advanced trace detail.</span></div>
               </label>
             </div>
           </>
@@ -909,40 +934,6 @@ export default function RuntimeSettingsGroupEditor({
 
         {activeTab === 'web_http' && (
           <WebHttpTab web={draft.web_runtime} inheritedWeb={inheritedWeb} setWeb={next => patch({ web_runtime: next })} />
-        )}
-
-        {activeTab === 'logging' && (
-          <>
-            <div className="scenario-browser-grid">
-              <label>
-                <span>Log level</span>
-                <select className="settings-input" value={draft.log?.level ?? draft.log_level ?? ''} onChange={event => patchLog({ level: event.target.value || undefined })}>
-                  <option value="">Inherit</option>
-                  <option value="disabled">Disabled</option>
-                  <option value="standard">Standard</option>
-                  <option value="extended">Extended</option>
-                </select>
-              </label>
-            </div>
-            <div className="scenario-option-grid">
-              <label className={`scenario-option-card ${draft.log?.on_error_only ? 'selected' : ''}`}>
-                <input type="checkbox" checked={Boolean(draft.log?.on_error_only)} onChange={event => patchLog({ on_error_only: event.target.checked || undefined })} />
-                <div><strong>Extended logging on error only</strong><span>Use extended logging only when a step fails.</span></div>
-              </label>
-              <label className={`scenario-option-card ${draft.log?.extended_options?.includes('parameter_substitution') ? 'selected' : ''}`}>
-                <input type="checkbox" checked={Boolean(draft.log?.extended_options?.includes('parameter_substitution'))} onChange={event => toggleLogOption('parameter_substitution', event.target.checked)} />
-                <div><strong>Parameter substitution</strong><span>Log each parameter substitution.</span></div>
-              </label>
-              <label className={`scenario-option-card ${draft.log?.extended_options?.includes('data_returned') ? 'selected' : ''}`}>
-                <input type="checkbox" checked={Boolean(draft.log?.extended_options?.includes('data_returned'))} onChange={event => toggleLogOption('data_returned', event.target.checked)} />
-                <div><strong>Data returned</strong><span>Log the data returned by the server.</span></div>
-              </label>
-              <label className={`scenario-option-card ${draft.log?.extended_options?.includes('advanced_trace') ? 'selected' : ''}`}>
-                <input type="checkbox" checked={Boolean(draft.log?.extended_options?.includes('advanced_trace'))} onChange={event => toggleLogOption('advanced_trace', event.target.checked)} />
-                <div><strong>Advanced trace</strong><span>Capture full advanced trace detail.</span></div>
-              </label>
-            </div>
-          </>
         )}
       </div>
 

@@ -1,4 +1,4 @@
-import { ScenarioDraft, ScenarioDraftGroup, StoredScript, TestSummary } from '../types'
+import { GeneratorAssignmentSettings, ScenarioDraft, ScenarioDraftGroup, StoredScript, TestSummary } from '../types'
 
 export type ScenarioRuntimeSettings = ScenarioDraft['runtimeSettings']
 export type ScenarioDraftState = ScenarioDraft
@@ -14,6 +14,22 @@ export type ScenarioDraftAction =
   | { type: 'addGroup'; group: ScenarioDraftGroup }
   | { type: 'removeGroup'; index: number }
 
+function cloneGeneratorAssignment(assignment?: GeneratorAssignmentSettings): GeneratorAssignmentSettings {
+  return {
+    mode: assignment?.mode || 'auto',
+    ...(assignment?.selected_targets ? { selected_targets: [...assignment.selected_targets] } : { selected_targets: [] }),
+    ...(assignment?.region_weights ? { region_weights: { ...assignment.region_weights } } : {}),
+    ...(assignment?.load_zone_weights ? { load_zone_weights: { ...assignment.load_zone_weights } } : {}),
+    ...(assignment?.shard_strategy ? { shard_strategy: assignment.shard_strategy } : {}),
+    ...(assignment?.required_labels ? { required_labels: { ...assignment.required_labels } } : {}),
+  }
+}
+
+function cloneGroupAssignment(assignment?: GeneratorAssignmentSettings) {
+  if (!assignment) return undefined
+  return cloneGeneratorAssignment(assignment)
+}
+
 export function buildDefaultScenarioGroup(scripts: StoredScript[]): ScenarioDraftGroup {
   return {
     name: '',
@@ -23,6 +39,7 @@ export function buildDefaultScenarioGroup(scripts: StoredScript[]): ScenarioDraf
     rampDown: '',
     iterations: undefined,
     initialization: 'at_runtime',
+    assignment: undefined,
   }
 }
 
@@ -34,10 +51,7 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
     scenarioMode: initialScenario?.scenarioMode || 'vuser_driven',
     scriptShakeout: Boolean(initialScenario?.scriptShakeout),
     resourceBaseline: Boolean(initialScenario?.resourceBaseline),
-    assignment: {
-      mode: initialScenario?.assignment?.mode || 'auto',
-      selected_targets: initialScenario?.assignment?.selected_targets ? [...initialScenario.assignment.selected_targets] : [],
-    },
+    assignment: cloneGeneratorAssignment(initialScenario?.assignment),
     goalConfig: {
       target_average_tps: initialScenario?.goalConfig?.target_average_tps,
       p95_latency_ms: initialScenario?.goalConfig?.p95_latency_ms,
@@ -86,6 +100,7 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
       rampDown: group.ramp_down || '',
       iterations: group.iterations,
       initialization: group.initialization || 'at_runtime',
+      assignment: cloneGroupAssignment(group.assignment),
     }))
     : [{
       name: '',
@@ -104,10 +119,7 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
     scenarioMode: test.scenario_mode || 'vuser_driven',
     scriptShakeout: Boolean(test.script_shakeout),
     resourceBaseline: Boolean(test.resource_baseline),
-    assignment: {
-      mode: test.assignment?.mode || 'auto',
-      selected_targets: test.assignment?.selected_targets ? [...test.assignment.selected_targets] : [],
-    },
+    assignment: cloneGeneratorAssignment(test.assignment),
     goalConfig: {
       target_average_tps: test.goal_config?.target_average_tps,
       p95_latency_ms: test.goal_config?.p95_latency_ms,

@@ -74,7 +74,7 @@ describe('FleetGeneratorsCard', () => {
 
   it('renders generators with schedulable / cordoned pills', async () => {
     fleetApiMock.listGeneratorMetadata.mockResolvedValue({
-      generators: [meta({ cordoned: false }), meta({ generator_id: 'gen-2', cordoned: true })],
+      generators: [meta({ cordoned: false, tags: { jvm: '17' } }), meta({ generator_id: 'gen-2', cordoned: true })],
       count: 2,
     })
     await act(async () => {
@@ -83,6 +83,7 @@ describe('FleetGeneratorsCard', () => {
     await flush()
     expect(container.textContent).toContain('gen-1')
     expect(container.textContent).toContain('region: us-east')
+    expect(container.textContent).toContain('capabilities: jvm=17')
     expect(container.querySelector('.pp-pill-success')).toBeTruthy()
     expect(container.querySelector('.pp-pill-warning')).toBeTruthy()
   })
@@ -100,6 +101,39 @@ describe('FleetGeneratorsCard', () => {
     })
     await flush()
     expect(fleetApiMock.patchGeneratorMetadata).toHaveBeenCalledWith('gen-1', { cordoned: true })
+  })
+
+  it('edits capability labels through generator metadata tags', async () => {
+    fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [meta({ tags: { jvm: '11' } })], count: 1 })
+    fleetApiMock.patchGeneratorMetadata.mockResolvedValue(meta({ tags: { jvm: '17', arch: 'amd64' } }))
+    await act(async () => {
+      root.render(<FleetGeneratorsCard canManage />)
+    })
+    await flush()
+
+    const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'Edit')
+    await act(async () => {
+      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea')
+    expect(textarea?.value).toBe('jvm=11')
+    await act(async () => {
+      if (!textarea) return
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      valueSetter?.call(textarea, 'jvm=17, arch=amd64')
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'Save')
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+
+    expect(fleetApiMock.patchGeneratorMetadata).toHaveBeenCalledWith('gen-1', expect.objectContaining({
+      tags: { jvm: '17', arch: 'amd64' },
+    }))
   })
 
   it('hides management actions without permission', async () => {

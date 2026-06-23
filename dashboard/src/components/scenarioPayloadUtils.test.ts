@@ -200,6 +200,64 @@ describe('scenarioPayloadUtils', () => {
     expect(payload.groups[1].runtime_settings).toBeUndefined()
   })
 
+  it('serializes explicit per-group placement overrides while omitting inherited groups', () => {
+    const payload = buildScenarioUpsertPayload({
+      name: 'Group Placement',
+      duration: '5m',
+      startDelay: '',
+      scenarioMode: 'vuser_driven',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      groups: [
+        {
+          name: 'Inherited',
+          scriptId: 'script-a',
+          vusers: 10,
+          rampUp: '',
+          rampDown: '',
+          initialization: 'at_runtime',
+        },
+        {
+          name: 'Explicit Auto',
+          scriptId: 'script-b',
+          vusers: 5,
+          rampUp: '',
+          rampDown: '',
+          initialization: 'at_runtime',
+          assignment: { mode: 'auto' },
+        },
+        {
+          name: 'Pinned JVM',
+          scriptId: 'script-c',
+          vusers: 5,
+          rampUp: '',
+          rampDown: '',
+          initialization: 'at_runtime',
+          assignment: { mode: 'specific_hosts', selected_targets: ['gen-a', 'gen-b'], required_labels: { jvm: '17' } },
+        },
+      ],
+      goalConfig: {},
+      runtimeSettings: {
+        iterations: undefined,
+        pacing: undefined,
+        think_time: undefined,
+        log_level: '',
+        auto_transactions: '',
+        continue_on_error: false,
+        snapshot_on_error: false,
+      },
+    })
+
+    expect(payload.groups[0].assignment).toBeUndefined()
+    expect(payload.groups[1].assignment).toEqual({ mode: 'auto' })
+    expect(payload.groups[2].assignment).toEqual({
+      mode: 'specific_hosts',
+      selected_targets: ['gen-a', 'gen-b'],
+      shard_strategy: 'capacity_weighted',
+      required_labels: { jvm: '17' },
+    })
+  })
+
   it('keeps a single unnamed group in the groups array when it has an iterations override', () => {
     const payload = buildCreateTestPayload({
       name: '',
@@ -318,6 +376,7 @@ describe('scenarioPayloadUtils', () => {
     expect(payload.assignment).toEqual({
       mode: 'specific_hosts',
       selected_targets: ['gen-a', 'gen-b'],
+      shard_strategy: 'capacity_weighted',
     })
   })
 

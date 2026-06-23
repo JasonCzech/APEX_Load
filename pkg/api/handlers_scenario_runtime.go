@@ -106,8 +106,7 @@ func (tr *TestRunner) ApplyScenarioRuntimeToGroups(id string, req ApplyRuntimeTo
 	// override — the same value the editor previews as the group's effective runtime.
 	effective := mergeRuntimeSettings(stored.RuntimeSettings, stored.Scripts[req.SourceGroup].RuntimeSettings)
 
-	refs := make([]ScenarioScriptRef, len(stored.Scripts))
-	copy(refs, stored.Scripts)
+	refs := cloneScenarioScriptRefs(stored.Scripts)
 
 	skipped := []ApplyRuntimeToGroupsSkip{}
 	applied := 0

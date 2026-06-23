@@ -189,11 +189,18 @@ describe('newTestRunModel', () => {
     const scenario = scenarioFixture()
     const pinned: GroupRunOverride = { assignment: { mode: 'specific_hosts', selected_targets: ['gen-a:9090'] } }
     const sharded: GroupRunOverride = { assignment: { mode: 'specific_hosts', selected_targets: ['gen-a:9090', 'gen-b:9090'] } }
+    const requiredJvm: GroupRunOverride = { assignment: { mode: 'auto', required_labels: { jvm: '17' } } }
 
     expect(formatGroupPlacement()).toBe('Auto')
     expect(formatGroupPlacement(pinned)).toBe('Pinned: gen-a:9090')
     expect(formatGroupPlacement(sharded)).toBe('Sharded: 2 hosts, capacity weighted')
+    expect(formatGroupPlacement(requiredJvm)).toBe('Capability: jvm=17')
     expect(groupPlacementSummary({ one: pinned, two: sharded })).toBe('1 pinned group, 1 sharded group')
+    const savedPinned = { ...scenario.scripts[0], assignment: { mode: 'specific_hosts' as const, selected_targets: ['gen-a:9090'] } }
+    expect(groupPlacementSummary({ [groupOverrideKey(savedPinned)]: { assignment: { mode: 'auto' } } }, [
+      savedPinned,
+      { ...scenario.scripts[1], assignment: { mode: 'auto', required_labels: { jvm: '17' } } },
+    ])).toBe('1 capability-constrained group')
 
     expect(generatorCanRunGroup(generatorFixture(), scenario.scripts[0])).toBe(true)
     expect(generatorCanRunGroup(generatorFixture({ supported_protocols: ['http'] }), scenario.scripts[1])).toBe(false)
@@ -202,6 +209,19 @@ describe('newTestRunModel', () => {
       generatorFixture({ target: 'gen-a:9090', available_capacity: 20 }),
       generatorFixture({ target: 'gen-b:9090', available_capacity: 30 }),
     ], ['gen-b:9090'])).toBe(30)
+  })
+
+  it('treats explicit auto as a run-only group placement override', () => {
+    const scenario = scenarioFixture()
+    scenario.scripts[0].assignment = { mode: 'specific_hosts', selected_targets: ['gen-a:9090'] }
+    const override: GroupRunOverride = { assignment: { mode: 'auto' } }
+
+    const effective = buildEffectiveScenarioGroups(scenario, { [groupOverrideKey(scenario.scripts[0])]: override })
+    const payload = buildGroupsForRunPayload(scenario, { [groupOverrideKey(scenario.scripts[0])]: override })
+
+    expect(effective[0].assignment).toEqual({ mode: 'auto' })
+    expect(payload?.[0].assignment).toEqual({ mode: 'auto' })
+    expect(formatGroupPlacement(override, scenario.scripts[0])).toBe('Auto')
   })
 
   it('builds run default cards with override status', () => {

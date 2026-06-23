@@ -126,6 +126,40 @@ func TestPreflightLaunchBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
 	}
 }
 
+func TestPreflightLaunchBlocksIncompatibleGroupAssignment(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend([]string{"gen-browser:9090|protocols=browser"}, time.Second, nil))
+	storePreflightScript(runner, "script-preflight-placement", "")
+
+	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
+		CreateTestRequest: CreateTestRequest{
+			Name:     "Pinned HTTP",
+			Duration: "5m",
+			Groups: []CreateGroupEntry{{
+				Name:     "HTTP Group",
+				ScriptID: "script-preflight-placement",
+				VUsers:   1,
+				Assignment: &GeneratorAssignmentSettings{
+					Mode:            generatorAssignmentModeSpecificHosts,
+					SelectedTargets: []string{"gen-browser:9090"},
+				},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	if preflight.Decision != "blocked" || preflight.StartNowAllowed {
+		t.Fatalf("preflight = %#v, want blocked placement decision", preflight)
+	}
+	if len(preflight.BlockingConflicts) == 0 || preflight.BlockingConflicts[0].Code != "generator_placement" {
+		t.Fatalf("blocking conflicts = %#v, want generator_placement", preflight.BlockingConflicts)
+	}
+	if !strings.Contains(preflight.BlockingConflicts[0].Message, "does not support protocol http") {
+		t.Fatalf("placement conflict message = %q, want protocol detail", preflight.BlockingConflicts[0].Message)
+	}
+}
+
 func TestCreateTestBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
 	// Even a script that sets config.java_vuser.enabled=true cannot self-clear
 	// the gate: only the operator env enables the runner.
