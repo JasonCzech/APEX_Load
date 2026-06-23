@@ -94,6 +94,24 @@ describe('JMeterImport', () => {
     vi.clearAllMocks()
   })
 
+  it('renders the import close action as a Back button', async () => {
+    const onClose = vi.fn()
+
+    await act(async () => {
+      root.render(<JMeterImport onClose={onClose} />)
+    })
+
+    const closeButtons = Array.from(container.querySelectorAll('button'))
+      .filter(button => button.textContent?.trim() === 'Back')
+    expect(closeButtons).toHaveLength(1)
+
+    await act(async () => {
+      closeButtons[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('renders inline coverage details and captured variables after validation', async () => {
     await act(async () => {
       root.render(<JMeterImport />)

@@ -1,7 +1,7 @@
-import { type ComponentProps, type ReactNode } from 'react'
+import { type ComponentProps, type ReactNode, useState } from 'react'
 
 import { type Project, type StoredScript } from '../types'
-import ScriptCreateOptions from './ScriptCreateOptions'
+import ScriptCreateOptions, { type CreateWorkflow } from './ScriptCreateOptions'
 import ScriptsAuthoringSurface from './ScriptsAuthoringSurface'
 import { type AuthoringState, type ImportedSaveResult, type ScriptsCreateOptionActions } from './useScriptsAuthoringState'
 
@@ -38,6 +38,8 @@ export default function ScriptsAuthoringShell({
   canManageScripts = true,
   children,
 }: Props) {
+  const [createOptionsWorkflow, setCreateOptionsWorkflow] = useState<CreateWorkflow>('existing')
+
   if (!canManageScripts) {
     return <>{children}</>
   }
@@ -74,6 +76,8 @@ export default function ScriptsAuthoringShell({
         onOpenAsyncAPIImport={createOptionActions.openAsyncAPIImport}
         scripts={scripts}
         onStartExistingScript={onStartExistingScript}
+        workflow={createOptionsWorkflow}
+        onWorkflowChange={setCreateOptionsWorkflow}
       />
     )
   }

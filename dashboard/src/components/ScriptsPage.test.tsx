@@ -906,7 +906,7 @@ describe('ScriptsPage', () => {
     })
 
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
-    expect(container.textContent).toContain('Back to Create Script')
+    expect(container.textContent).not.toContain('Back to Create Script')
 
     const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-enterprise-archive-close'))
     expect(closeButton).toBeDefined()
@@ -986,7 +986,7 @@ describe('ScriptsPage', () => {
     })
 
     expect(container.querySelector('[data-testid="jmeter-import"]')).not.toBeNull()
-    expect(container.textContent).toContain('Back to Create Script')
+    expect(container.textContent).not.toContain('Back to Create Script')
 
     const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-jmeter-close'))
     expect(closeButton).toBeDefined()
@@ -1000,8 +1000,8 @@ describe('ScriptsPage', () => {
 
     expect(container.querySelector('[data-testid="jmeter-import"]')).toBeNull()
     expect(container.textContent).toContain('Create Script')
-    expect(container.textContent).toContain('Model From Existing Script')
-    await clickButton('Import From Source')
+    expect(container.textContent).toContain('Source-driven authoring')
+    expect(container.textContent).not.toContain('Model From Existing Script')
     expect(container.textContent).toContain('Import Enterprise Script Archive')
   })
 

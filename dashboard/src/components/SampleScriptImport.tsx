@@ -629,7 +629,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
               : 'Create a APEX Load script from raw HTTP, curl, REST JSON, or HAR data, then layer in runtime details before saving.'}
           </p>
         </div>
-        {onClose && <button className="btn btn-ghost" onClick={onClose}>✕</button>}
+        {onClose && <button type="button" className="btn btn-secondary" onClick={onClose}>Back</button>}
       </div>
 
       <div className="sample-import-card">

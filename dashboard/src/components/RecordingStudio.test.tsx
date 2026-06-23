@@ -290,6 +290,24 @@ describe('RecordingStudio', () => {
     vi.clearAllMocks()
   })
 
+  it('renders an optional page header Back action', async () => {
+    const onClose = vi.fn()
+
+    await act(async () => {
+      root.render(<RecordingStudio onClose={onClose} />)
+    })
+
+    const backButtons = Array.from(container.querySelectorAll('.page-header button'))
+      .filter(button => button.textContent?.trim() === 'Back')
+    expect(backButtons).toHaveLength(1)
+
+    await act(async () => {
+      backButtons[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('builds macOS proxy shortcuts that save and restore the selected service', () => {
     const startCommand = buildMacOSStartProxyCommand('9090', `USB Bob's LAN`)
     const restoreCommand = buildMacOSRestoreProxyCommand(`USB Bob's LAN`)

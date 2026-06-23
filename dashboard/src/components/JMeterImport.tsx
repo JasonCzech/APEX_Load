@@ -204,7 +204,7 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
             Upload a <code>.jmx</code> plan and convert HTTP thread groups into APEX Load reusable scripts. The importer preserves variables, CSV data sources, headers, timers, and review notes where possible.
           </p>
         </div>
-        {onClose && <button className="btn btn-ghost" onClick={onClose}>x</button>}
+        {onClose && <button type="button" className="btn btn-secondary" onClick={onClose}>Back</button>}
       </div>
 
       <div

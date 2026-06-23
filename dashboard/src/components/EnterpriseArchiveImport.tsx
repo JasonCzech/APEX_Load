@@ -1410,7 +1410,7 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
           <h2>Import Enterprise Script Archive</h2>
           <p className="lr-subtitle">Upload a ZIP containing C-based virtual-user scripts, runtime settings, parameter files, and protocol metadata. APEX Load routes executable HTTP, SOAP, browser, database, and network archives while preserving review artifacts for sources that still require evidence or external runners.</p>
         </div>
-        {onClose && <button className="btn btn-ghost" onClick={onClose}>✕</button>}
+        {onClose && <button type="button" className="btn btn-secondary" onClick={onClose}>Back</button>}
       </div>
 
       {/* Drop zone */}

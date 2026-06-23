@@ -315,9 +315,10 @@ interface RecordingStudioProps {
   activeProject?: Project | null
   onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition) => void
+  onClose?: () => void
 }
 
-export default function RecordingStudio({ activeProject, onImported, onEdit }: RecordingStudioProps) {
+export default function RecordingStudio({ activeProject, onImported, onEdit, onClose }: RecordingStudioProps) {
   const api = useApi()
   const [sessions, setSessions] = useState<RecordingSession[]>([])
   const [activeSession, setActiveSession] = useState<RecordingSession | null>(null)
@@ -912,6 +913,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
           <h2>Recording Studio</h2>
           <p className="page-subtitle">Record a browser session and convert it to a test script</p>
         </div>
+        {onClose && <button type="button" className="btn btn-secondary" onClick={onClose}>Back</button>}
       </div>
 
       {feedback && (

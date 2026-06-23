@@ -106,6 +106,43 @@ describe('SampleScriptImport', () => {
     vi.clearAllMocks()
   })
 
+  it('renders the sample import close action as a Back button', async () => {
+    const onClose = vi.fn()
+
+    await act(async () => {
+      root.render(<SampleScriptImport onClose={onClose} />)
+    })
+
+    const closeButtons = Array.from(container.querySelectorAll('button'))
+      .filter(button => button.textContent?.trim() === 'Back')
+    expect(closeButtons).toHaveLength(1)
+
+    await act(async () => {
+      closeButtons[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders the Java over HTTP sample close action as a Back button', async () => {
+    const onClose = vi.fn()
+
+    await act(async () => {
+      root.render(<SampleScriptImport preset="java-http" onClose={onClose} />)
+    })
+
+    expect(container.textContent).toContain('Import Java over HTTP Samples')
+    const closeButtons = Array.from(container.querySelectorAll('button'))
+      .filter(button => button.textContent?.trim() === 'Back')
+    expect(closeButtons).toHaveLength(1)
+
+    await act(async () => {
+      closeButtons[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('converts a sample response and saves the generated script', async () => {
     const onImported = vi.fn()
 

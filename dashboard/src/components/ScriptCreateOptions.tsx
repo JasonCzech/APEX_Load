@@ -36,12 +36,14 @@ interface Props {
   onOpenAsyncAPIImport: () => void
   scripts?: StoredScript[]
   onStartExistingScript?: (script: StoredScript) => void
+  workflow?: CreateWorkflow
+  onWorkflowChange?: (workflow: CreateWorkflow) => void
 }
 
 type ExistingScriptSortKey = 'name' | 'health' | 'usage' | 'associated_releases' | 'created_at' | 'last_run'
 type ExistingScriptSortDirection = 'asc' | 'desc'
 type StartNewCategory = 'templates' | 'editors' | 'blocks'
-type CreateWorkflow = 'existing' | 'start-new' | 'source'
+export type CreateWorkflow = 'existing' | 'start-new' | 'source'
 
 function formatScriptStatus(status?: string) {
   return status ? status.replace(/_/g, ' ') : 'not scored'
@@ -191,17 +193,27 @@ export default function ScriptCreateOptions({
   onOpenAsyncAPIImport,
   scripts = [],
   onStartExistingScript,
+  workflow,
+  onWorkflowChange,
 }: Props) {
   const api = useApi()
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const [templates, setTemplates] = useState<AuthoringTemplate[]>([])
   const [components, setComponents] = useState<AuthoringComponent[]>([])
-  const [workflow, setWorkflow] = useState<CreateWorkflow>('existing')
+  const [internalWorkflow, setInternalWorkflow] = useState<CreateWorkflow>('existing')
   const [existingScriptQuery, setExistingScriptQuery] = useState('')
   const [existingScriptProtocol, setExistingScriptProtocol] = useState('all')
   const [existingScriptHealth, setExistingScriptHealth] = useState('all')
   const [existingScriptSort, setExistingScriptSort] = useState<{ key: ExistingScriptSortKey; direction: ExistingScriptSortDirection }>({ key: 'name', direction: 'asc' })
   const [startNewCategory, setStartNewCategory] = useState<StartNewCategory>('templates')
+  const activeWorkflow = workflow ?? internalWorkflow
+  const setActiveWorkflow = (nextWorkflow: CreateWorkflow) => {
+    if (onWorkflowChange) {
+      onWorkflowChange(nextWorkflow)
+      return
+    }
+    setInternalWorkflow(nextWorkflow)
+  }
 
   const existingScriptProtocols = useMemo(() => {
     return Array.from(new Set(scripts.map(script => script.protocol).filter(Boolean))).sort((a, b) => a.localeCompare(b))
@@ -393,12 +405,12 @@ export default function ScriptCreateOptions({
       </div>
 
       <div className="script-workflow-picker" aria-label="Script creation workflows">
-        <button type="button" className={`script-workflow-card ${workflow === 'existing' ? 'active' : ''}`} onClick={() => setWorkflow('existing')}>
+        <button type="button" className={`script-workflow-card ${activeWorkflow === 'existing' ? 'active' : ''}`} onClick={() => setActiveWorkflow('existing')}>
           <span>1</span>
           <strong>Model Existing</strong>
           <small>Clone a saved script into a new editable draft.</small>
         </button>
-        <button type="button" className={`script-workflow-card ${workflow === 'start-new' ? 'active' : ''}`} onClick={() => setWorkflow('start-new')}>
+        <button type="button" className={`script-workflow-card ${activeWorkflow === 'start-new' ? 'active' : ''}`} onClick={() => setActiveWorkflow('start-new')}>
           <span>2</span>
           <strong>Start New Script</strong>
           <small>Use templates, reusable blocks, or blank protocol editors.</small>
@@ -408,7 +420,7 @@ export default function ScriptCreateOptions({
           <strong>Record Browser</strong>
           <small>Capture a user journey and review it before save.</small>
         </button>
-        <button type="button" className={`script-workflow-card ${workflow === 'source' ? 'active' : ''}`} onClick={() => setWorkflow('source')}>
+        <button type="button" className={`script-workflow-card ${activeWorkflow === 'source' ? 'active' : ''}`} onClick={() => setActiveWorkflow('source')}>
           <span>4</span>
           <strong>Import From Source</strong>
           <small>Generate or migrate scripts from contracts, collections, traffic captures, source archives, and legacy tool exports.</small>
@@ -416,7 +428,7 @@ export default function ScriptCreateOptions({
       </div>
 
       <div className="script-create-lanes compact">
-        {workflow === 'existing' && (
+        {activeWorkflow === 'existing' && (
           <section className="script-create-lane api full">
             <div className="script-create-lane-header">
               <span className="script-create-kicker">Script library</span>
@@ -529,7 +541,7 @@ export default function ScriptCreateOptions({
           </section>
         )}
 
-        {workflow === 'start-new' && (
+        {activeWorkflow === 'start-new' && (
           <section className="script-create-lane api full">
             <div className="script-create-lane-header">
               <span className="script-create-kicker">New draft authoring</span>
@@ -693,7 +705,7 @@ export default function ScriptCreateOptions({
           </section>
         )}
 
-        {workflow === 'source' && (
+        {activeWorkflow === 'source' && (
         <section className="script-create-lane import full">
           <div className="script-create-lane-header">
             <span className="script-create-kicker">Source-driven authoring</span>
@@ -743,7 +755,7 @@ export default function ScriptCreateOptions({
                 <button
                   className="script-create-option"
                   onClick={() => {
-                    setWorkflow('start-new')
+                    setActiveWorkflow('start-new')
                     setStartNewCategory('templates')
                   }}
                 >

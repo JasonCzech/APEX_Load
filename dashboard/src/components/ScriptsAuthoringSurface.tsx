@@ -30,12 +30,10 @@ interface Props {
 
 function renderCreateOptionsSurface(
   content: ReactNode,
-  onBack: () => void,
   hidden = false,
 ) {
   return (
     <div className="page" hidden={hidden}>
-      <button className="btn btn-secondary" onClick={onBack} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
       {content}
     </div>
   )
@@ -68,7 +66,6 @@ export default function ScriptsAuthoringSurface({
   }
   const renderEnterpriseArchiveImportSurface = (hidden = false) => renderCreateOptionsSurface(
     <EnterpriseArchiveImport projectId={projectId} onImported={onImported} onEdit={openEnterpriseArchiveDraftInEditor} onClose={onOpenCreateOptions} />,
-    onOpenCreateOptions,
     hidden,
   )
   const closeCreateEditor = draftReturnTarget ? onReturnToDraftSource : onOpenLibrary
@@ -102,67 +99,54 @@ export default function ScriptsAuthoringSurface({
     case 'jmeter-import':
       return renderCreateOptionsSurface(
         <JMeterImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
-        onOpenCreateOptions,
       )
     case 'recorder':
       return renderCreateOptionsSurface(
-        <RecordingStudio activeProject={activeProject} onImported={onImported} onEdit={onEditDraft} />,
-        onOpenCreateOptions,
+        <RecordingStudio activeProject={activeProject} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'sample':
       return renderCreateOptionsSurface(
         <SampleScriptImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
-        onOpenCreateOptions,
       )
     case 'java-http-import':
       return renderCreateOptionsSurface(
         <JavaHttpImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
-        onOpenCreateOptions,
       )
     case 'devweb-import':
       return renderCreateOptionsSurface(
         <ProtocolAssetImport kind="devweb" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
-        onOpenCreateOptions,
       )
     case 'har-import':
       return renderCreateOptionsSurface(
         <ProtocolAssetImport kind="har" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
-        onOpenCreateOptions,
       )
     case 'salesforce-import':
       return renderCreateOptionsSurface(
         <ProtocolAssetImport kind="salesforce" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
-        onOpenCreateOptions,
       )
     case 'recorder-import':
       return renderCreateOptionsSurface(
         <ProtocolAssetImport kind="recorder-export" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
-        onOpenCreateOptions,
       )
     case 'openapi-import':
       return renderCreateOptionsSurface(
         <ProtocolAssetImport kind="openapi" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
-        onOpenCreateOptions,
       )
     case 'raml-import':
       return renderCreateOptionsSurface(
         <ProtocolAssetImport kind="raml" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
-        onOpenCreateOptions,
       )
     case 'postman-import':
       return renderCreateOptionsSurface(
         <ProtocolAssetImport kind="postman" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
-        onOpenCreateOptions,
       )
     case 'wsdl-import':
       return renderCreateOptionsSurface(
         <ProtocolAssetImport kind="wsdl" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
-        onOpenCreateOptions,
       )
     case 'asyncapi-import':
       return renderCreateOptionsSurface(
         <ProtocolAssetImport kind="asyncapi" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
-        onOpenCreateOptions,
       )
     default:
       return null

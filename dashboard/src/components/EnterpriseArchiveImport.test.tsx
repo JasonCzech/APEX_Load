@@ -347,6 +347,24 @@ describe('EnterpriseArchiveImport', () => {
     vi.clearAllMocks()
   })
 
+  it('renders the import close action as a Back button', async () => {
+    const onClose = vi.fn()
+
+    await act(async () => {
+      root.render(<EnterpriseArchiveImport onClose={onClose} />)
+    })
+
+    const closeButtons = Array.from(container.querySelectorAll('button'))
+      .filter(button => button.textContent?.trim() === 'Back')
+    expect(closeButtons).toHaveLength(1)
+
+    await act(async () => {
+      closeButtons[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('layers import modal dialogs above the sticky app chrome', async () => {
     // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
     const { readFileSync } = await import('node:fs')

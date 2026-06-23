@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { act } from 'react'
-import { type ReactNode } from 'react'
+import { type ReactNode, useState } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -348,6 +348,36 @@ describe('ScriptsAuthoringShell', () => {
 
     const firstBodyRow = container.querySelector('.script-create-existing-table tbody tr')
     expect(firstBodyRow?.textContent).toContain('Billing Flow')
+  })
+
+  it('returns from source-driven card pages to the source-driven authoring workflow', async () => {
+    function Harness() {
+      const [authoringState, setAuthoringState] = useState<AuthoringState>(createState('create-options'))
+      return renderShell({
+        authoringState,
+        createOptionActions: createActions({
+          openOpenAPIImport: () => setAuthoringState(createState('openapi-import')),
+        }),
+        onOpenCreateOptions: () => setAuthoringState(createState('create-options')),
+      })
+    }
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+
+    await clickButton('Import From Source')
+    expect(container.textContent).toContain('Contracts & Collections')
+    expect(container.textContent).not.toContain('Model From Existing Script')
+
+    await clickButton('OpenAPI / Swagger')
+    expect(container.textContent).toContain('subview:openapi-import')
+
+    await clickButton('surface-create-options')
+
+    expect(container.textContent).toContain('Contracts & Collections')
+    expect(container.textContent).toContain('OpenAPI / Swagger')
+    expect(container.textContent).not.toContain('Model From Existing Script')
   })
 
   it('renders backend starter templates and delegates template drafts', async () => {
