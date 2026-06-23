@@ -4428,6 +4428,67 @@
   align-items: center;
 }
 
+.monitor-build-grid {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.monitor-build-row {
+  display: grid;
+  grid-template-columns: minmax(92px, auto) minmax(0, 1fr);
+  grid-template-areas:
+    "name version"
+    "name date";
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--subtle-fill);
+}
+
+.monitor-build-name {
+  grid-area: name;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.monitor-build-version {
+  grid-area: version;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.monitor-build-date {
+  grid-area: date;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 480px) {
+  .monitor-build-row {
+    grid-template-areas:
+      "name"
+      "version"
+      "date";
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+}
+
 .monitor-label {
   color: var(--text-muted);
   font-size: 13px;

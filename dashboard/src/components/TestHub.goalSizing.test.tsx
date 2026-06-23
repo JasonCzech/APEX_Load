@@ -55,6 +55,11 @@ function setSelectValue(select: HTMLSelectElement, value: string) {
   select.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+function goalBaselineRunNames(root: HTMLElement): string[] {
+  return Array.from(root.querySelectorAll('.goal-baseline-table tbody tr.clickable-row .cell-name > div:first-child'))
+    .map(node => node.textContent || '')
+}
+
 describe('TestHub build-from-goal', () => {
   let container: HTMLDivElement
   let root: Root
@@ -91,14 +96,24 @@ describe('TestHub build-from-goal', () => {
       }],
     })
     apiMock.listTests.mockResolvedValue({
-      tests: [{ id: 'run-1', name: 'Baseline Run', status: 'COMPLETE', groups: [], total_vusers: 1, duration: '1m', created_at: '' }],
+      tests: [
+        { id: 'run-2', name: 'Search Baseline', status: 'COMPLETE', groups: [], total_vusers: 4, duration: '3m', created_at: '2026-05-02T10:00:00Z', start_time: '2026-05-02T10:00:00Z' },
+        { id: 'run-1', name: 'Baseline Run', status: 'COMPLETE', total_vusers: 1, duration: '1m', created_at: '2026-05-01T10:00:00Z', start_time: '2026-05-01T10:00:00Z' },
+      ],
     })
-    apiMock.getTestArchiveReport.mockResolvedValue({
-      manifest: { provenance: { groups: [{ name: 'Checkout', script_id: 'script-a', script_name: 'Checkout', protocol: 'http', vusers: 1 }] } },
-      overview: { avg_response_ms: 3000 },
+    apiMock.getTestArchiveReport.mockImplementation((id: string) => Promise.resolve({
+      manifest: { provenance: { groups: id === 'run-1'
+        ? [{ name: 'Checkout', script_id: 'script-a', script_name: 'Checkout', protocol: 'http', vusers: 1 }]
+        : [{ name: 'Search', script_id: 'script-b', script_name: 'Search Catalog', protocol: 'http', vusers: 4 }] } },
+      overview: id === 'run-1'
+        ? { transactions: 10, errors: 0, error_pct: 0, avg_response_ms: 3000, min_response_ms: 900, max_response_ms: 3800, resource_samples: 0, interval_summaries: 0, peak_tps: 42.4, peak_active_vusers: 1 }
+        : { transactions: 20, errors: 1, error_pct: 5, avg_response_ms: 500, min_response_ms: 150, max_response_ms: 900, resource_samples: 0, interval_summaries: 0, peak_tps: 12.2, peak_active_vusers: 4 },
       by_action: {},
-      by_group: { Checkout: { transactions: 1, errors: 0, error_pct: 0, avg_response_ms: 3000, min_response_ms: 3000, max_response_ms: 3000 } },
-    })
+      by_group: id === 'run-1'
+        ? { Checkout: { transactions: 10, errors: 0, error_pct: 0, avg_response_ms: 3000, min_response_ms: 900, max_response_ms: 3800, peak_tps: 42.4 } }
+        : { Search: { transactions: 20, errors: 1, error_pct: 5, avg_response_ms: 500, min_response_ms: 150, max_response_ms: 900, peak_tps: 12.2 } },
+      resource_peaks: { cpu_process_pct: 0, mem_process_mb: 0, net_sent_kbps: 0, net_recv_kbps: 0, disk_read_kbps: 0, disk_write_kbps: 0 },
+    }))
     apiMock.sizeScenarioFromGoal.mockResolvedValue({
       baseline_test_id: 'run-1',
       groups: [{ group: 'Checkout', script_id: 'script-a', baseline_art_ms: 3000, target_tps: 100, computed_vusers: 300, basis: 'group' }],
@@ -140,11 +155,39 @@ describe('TestHub build-from-goal', () => {
     const panel = container.querySelector('[data-testid="goal-sizing-panel"]') as HTMLElement | null
     expect(panel).toBeTruthy()
 
-    // Select the completed baseline run.
-    const baselineSelect = container.querySelector('select[aria-label="Baseline run"]') as HTMLSelectElement
-    await act(async () => { setSelectValue(baselineSelect, 'run-1') })
+    expect(container.querySelector('select[aria-label="Baseline run"]')).toBeNull()
+    expect(container.textContent).toContain('Search Baseline')
+    expect(container.textContent).toContain('Baseline Run')
+    expect(goalBaselineRunNames(container)).toEqual(['Search Baseline', 'Baseline Run'])
+
+    const runSortHeader = Array.from(container.querySelectorAll('.goal-baseline-table th'))
+      .find(header => header.textContent?.includes('Run ↕')) as HTMLTableCellElement | undefined
+    expect(runSortHeader).toBeTruthy()
+    await act(async () => { runSortHeader?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(goalBaselineRunNames(container)).toEqual(['Baseline Run', 'Search Baseline'])
+
+    // Filter the completed-run table, then expand the run to inspect script metrics.
+    const runFilter = container.querySelector('.goal-baseline-search input') as HTMLInputElement
+    expect(runFilter).toBeTruthy()
+    await act(async () => { setInputValue(runFilter, 'Baseline Run') })
+    expect(container.textContent).toContain('Baseline Run')
+    expect(container.textContent).not.toContain('Search Baseline')
+
+    const expandButton = container.querySelector('button[aria-label="Expand Baseline Run scripts"]') as HTMLButtonElement
+    expect(expandButton).toBeTruthy()
+    await act(async () => { expandButton.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flush()
     expect(apiMock.getTestArchiveReport).toHaveBeenCalledWith('run-1')
+    expect(container.textContent).toContain('Scripts in Baseline Run')
+    expect(container.textContent).toContain('Checkout')
+    expect(container.textContent).toContain('42.4')
+    expect(container.textContent).toContain('3,000 ms')
+
+    // Select the completed baseline run from the table.
+    const selectButton = container.querySelector('button[aria-label="Select Baseline Run as goal baseline"]') as HTMLButtonElement
+    expect(selectButton).toBeTruthy()
+    await act(async () => { selectButton.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flush()
 
     // Enter the target TPS for the Checkout group; the instant estimate should appear.
     const tpsInput = container.querySelector('input[aria-label="Target TPS for Checkout"]') as HTMLInputElement

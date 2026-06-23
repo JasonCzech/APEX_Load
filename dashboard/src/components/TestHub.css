@@ -622,6 +622,75 @@
   min-width: 1180px;
 }
 
+.goal-baseline-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.goal-baseline-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.goal-baseline-search {
+  flex: 1 1 420px;
+  max-width: 560px;
+}
+
+.goal-baseline-table {
+  overflow-x: auto;
+}
+
+.goal-baseline-table table {
+  min-width: 1080px;
+}
+
+.goal-baseline-table th,
+.goal-baseline-table td {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.goal-baseline-table .scenario-run-time-cell {
+  min-width: 132px;
+}
+
+.goal-baseline-expanded-row > td {
+  background: var(--bg-primary);
+}
+
+.goal-baseline-script-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+
+.goal-baseline-script-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.goal-baseline-script-table th,
+.goal-baseline-script-table td {
+  padding: 9px 10px;
+}
+
+.goal-baseline-script-table th {
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .scenario-library-table {
   overflow-x: auto;
 }
@@ -1771,8 +1840,14 @@
   }
 
   .scenario-wizard-panel-header,
+  .goal-baseline-toolbar,
   .scenario-model-preview-header {
     flex-direction: column;
+  }
+
+  .goal-baseline-search {
+    width: 100%;
+    max-width: none;
   }
 
   .scenario-model-summary {

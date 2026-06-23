@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary } from '../types'
+import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveActionStats, RunArchiveReport, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary } from '../types'
 import { type ScriptConfig } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
@@ -126,6 +126,7 @@ interface ScenarioSeed {
 
 type ScenarioSortField = 'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_test_id' | 'last_run_at' | 'last_run_ended_at' | 'result_count'
 type ScriptLibrarySortField = 'name' | 'created_at' | 'last_run_at' | 'associated_scenarios' | 'associated_releases' | 'protocol'
+type GoalBaselineSortField = 'name' | 'id' | 'started_at' | 'duration' | 'vusers' | 'peak_tps' | 'art' | 'error_rate'
 export type ScenarioStartChoice = ScenarioSourceMode | 'goal' | ''
 type RunSettingsTab = 'scenario' | 'runtime' | 'infrastructure'
 
@@ -575,6 +576,148 @@ function getRunSortValue(run: TestSummary, field: 'name' | 'status' | 'release_i
   return String(run[field] || '').toLowerCase()
 }
 
+function latestRunTimestamp(run: TestSummary): string {
+  return run.start_time || run.started_at || run.created_at || ''
+}
+
+function maxFinite(values: Array<number | undefined>): number | undefined {
+  const finite = values.filter((value): value is number => Number.isFinite(value))
+  if (finite.length === 0) return undefined
+  return Math.max(...finite)
+}
+
+function firstFinite(values: Array<number | undefined>): number | undefined {
+  return values.find((value): value is number => Number.isFinite(value))
+}
+
+function formatOptionalNumber(value: number | undefined, digits = 0): string {
+  if (!Number.isFinite(value)) return '—'
+  return Number(value).toLocaleString(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })
+}
+
+function formatOptionalMs(value: number | undefined): string {
+  const formatted = formatOptionalNumber(value, 0)
+  return formatted === '—' ? formatted : `${formatted} ms`
+}
+
+function formatOptionalTps(value: number | undefined): string {
+  const formatted = formatOptionalNumber(value, 1)
+  return formatted === '—' ? formatted : formatted
+}
+
+function formatOptionalPercent(value: number | undefined): string {
+  const formatted = formatOptionalNumber(value, 2)
+  return formatted === '—' ? formatted : `${formatted}%`
+}
+
+function goalBaselinePeakTps(run: TestSummary, report?: RunArchiveReport): number | undefined {
+  return maxFinite([
+    report?.overview?.peak_tps,
+    run.live_metrics?.tps,
+    ...(run.history || []).map(point => point.tps),
+  ])
+}
+
+function goalBaselineArt(run: TestSummary, report?: RunArchiveReport): number | undefined {
+  return firstFinite([
+    report?.overview?.avg_response_ms,
+    run.live_metrics?.avg_response_ms,
+    ...(run.history || []).slice(-1).map(point => point.avg_response_ms),
+  ])
+}
+
+function goalBaselineErrorRate(run: TestSummary, report?: RunArchiveReport): number | undefined {
+  return firstFinite([
+    report?.overview?.error_pct,
+    run.live_metrics?.error_pct,
+    ...(run.history || []).slice(-1).map(point => point.error_pct),
+  ])
+}
+
+function goalBaselineVusers(run: TestSummary, report?: RunArchiveReport): number | undefined {
+  return firstFinite([
+    run.total_vusers,
+    report?.overview?.peak_active_vusers,
+    run.live_metrics?.active_vusers,
+  ])
+}
+
+function getGoalBaselineSortValue(run: TestSummary, report: RunArchiveReport | undefined, field: GoalBaselineSortField): string | number {
+  switch (field) {
+    case 'id':
+      return run.id.toLowerCase()
+    case 'started_at':
+      return new Date(latestRunTimestamp(run) || 0).getTime()
+    case 'duration':
+      return parseDurationToSeconds(run.duration || '') || 0
+    case 'vusers':
+      return goalBaselineVusers(run, report) || 0
+    case 'peak_tps':
+      return goalBaselinePeakTps(run, report) || 0
+    case 'art':
+      return goalBaselineArt(run, report) || 0
+    case 'error_rate':
+      return goalBaselineErrorRate(run, report) || 0
+    case 'name':
+    default:
+      return `${run.name || ''} ${run.id || ''}`.toLowerCase()
+  }
+}
+
+interface GoalBaselineScriptRow {
+  key: string
+  group: string
+  scriptId?: string
+  scriptName: string
+  protocol?: string
+  vusers?: number
+  metrics?: RunArchiveActionStats
+}
+
+function goalBaselineScriptRows(run: TestSummary, report?: RunArchiveReport): GoalBaselineScriptRow[] {
+  const archiveGroups = report?.manifest?.provenance?.groups || []
+  const sourceGroups = archiveGroups.length > 0 ? archiveGroups : (run.groups || [])
+  if (sourceGroups.length === 0 && (run.script_id || run.script_name)) {
+    return [{
+      key: run.script_id || run.id,
+      group: run.script_name || run.name,
+      scriptId: run.script_id,
+      scriptName: run.script_name || run.name,
+      protocol: undefined,
+      vusers: run.total_vusers,
+      metrics: report?.by_group?.[run.script_name || run.name],
+    }]
+  }
+  return sourceGroups.map((group, index) => {
+    const groupName = group.name || group.script_name || group.script_id || `Group ${index + 1}`
+    return {
+      key: `${groupName}-${group.script_id || index}`,
+      group: groupName,
+      scriptId: group.script_id,
+      scriptName: group.script_name || group.name || group.script_id || `Script ${index + 1}`,
+      protocol: group.protocol,
+      vusers: group.vusers,
+      metrics: report?.by_group?.[groupName],
+    }
+  })
+}
+
+function goalBaselineSearchText(run: TestSummary, report?: RunArchiveReport): string {
+  return [
+    run.id,
+    run.ref_key,
+    run.name,
+    run.status,
+    run.release_id,
+    run.duration,
+    formatDateTime(latestRunTimestamp(run)),
+    ...goalBaselineScriptRows(run, report).flatMap(row => [row.group, row.scriptId, row.scriptName, row.protocol]),
+  ].filter(Boolean).join(' ').toLowerCase()
+}
+
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
 }
@@ -899,6 +1042,13 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const [goalSizingOpen, setGoalSizingOpen] = useState(false)
   const [goalBaselineTests, setGoalBaselineTests] = useState<TestSummary[]>([])
   const [goalBaselineId, setGoalBaselineId] = useState('')
+  const [goalBaselineQuery, setGoalBaselineQuery] = useState('')
+  const [goalBaselineSortField, setGoalBaselineSortField] = useState<GoalBaselineSortField>('started_at')
+  const [goalBaselineSortDirection, setGoalBaselineSortDirection] = useState<'asc' | 'desc'>('desc')
+  const [expandedGoalBaselineId, setExpandedGoalBaselineId] = useState<string | null>(null)
+  const [goalBaselineReports, setGoalBaselineReports] = useState<Record<string, RunArchiveReport>>({})
+  const [goalBaselineReportErrors, setGoalBaselineReportErrors] = useState<Record<string, string>>({})
+  const [goalBaselineLoadingId, setGoalBaselineLoadingId] = useState('')
   const [goalBaselineGroups, setGoalBaselineGroups] = useState<BaselineGroupOption[]>([])
   const [goalTargetTps, setGoalTargetTps] = useState<Record<string, string>>({})
   const [goalSizingResult, setGoalSizingResult] = useState<GoalSizingReport | null>(() => restoredDraft?.goalSizingResult ?? null)
@@ -911,6 +1061,10 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const scriptLibraryRef = useRef<HTMLDivElement | null>(null)
   const scriptLibrarySearchRef = useRef<HTMLInputElement | null>(null)
   const scriptGroupRefs = useRef<Array<HTMLDivElement | null>>([])
+  const goalBaselineTableRef = useRef<HTMLDivElement | null>(null)
+  const resetGoalBaselineTableScroll = () => {
+    if (goalBaselineTableRef.current) goalBaselineTableRef.current.scrollLeft = 0
+  }
   const formGroups = useMemo(
     () => form.groups.length > 0 ? form.groups : [emptyScenarioGroup()],
     [form.groups],
@@ -981,6 +1135,21 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       return String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' }) * direction
     })
   }, [scriptLibraryQuery, scriptLibrarySortDirection, scriptLibrarySortField, scripts])
+  const visibleGoalBaselineTests = useMemo(() => {
+    const query = goalBaselineQuery.trim().toLowerCase()
+    const filtered = query
+      ? goalBaselineTests.filter(test => goalBaselineSearchText(test, goalBaselineReports[test.id]).includes(query))
+      : goalBaselineTests
+    return [...filtered].sort((left, right) => {
+      const leftValue = getGoalBaselineSortValue(left, goalBaselineReports[left.id], goalBaselineSortField)
+      const rightValue = getGoalBaselineSortValue(right, goalBaselineReports[right.id], goalBaselineSortField)
+      const direction = goalBaselineSortDirection === 'asc' ? 1 : -1
+      if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+        return (leftValue - rightValue) * direction
+      }
+      return String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' }) * direction
+    })
+  }, [goalBaselineQuery, goalBaselineReports, goalBaselineSortDirection, goalBaselineSortField, goalBaselineTests])
   const showScenarioLibrary = !showForm && !showPlans
   const showScriptLibrary = showForm && wizardStep === 'scripts'
   const showModelPreview = showForm && wizardStep !== 'start' && wizardStep !== 'scripts'
@@ -1184,6 +1353,16 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     } else {
       setScriptLibrarySortField(field)
       setScriptLibrarySortDirection(field === 'created_at' || field === 'last_run_at' ? 'desc' : 'asc')
+    }
+  }
+
+  const handleGoalBaselineSort = (field: GoalBaselineSortField) => {
+    resetGoalBaselineTableScroll()
+    if (goalBaselineSortField === field) {
+      setGoalBaselineSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setGoalBaselineSortField(field)
+      setGoalBaselineSortDirection(['started_at', 'vusers', 'peak_tps', 'art', 'error_rate'].includes(field) ? 'desc' : 'asc')
     }
   }
 
@@ -1484,6 +1663,11 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setGoalSizingOpen(true)
     setScenarioStartChoice('goal')
     setGoalBaselineId('')
+    setGoalBaselineQuery('')
+    setExpandedGoalBaselineId(null)
+    setGoalBaselineReports({})
+    setGoalBaselineReportErrors({})
+    setGoalBaselineLoadingId('')
     setGoalBaselineGroups([])
     setGoalTargetTps({})
     setGoalSizingResult(null)
@@ -1499,15 +1683,35 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     }
   }
 
+  const loadGoalBaselineReport = async (testId: string): Promise<RunArchiveReport> => {
+    const cached = goalBaselineReports[testId]
+    if (cached) return cached
+    setGoalBaselineLoadingId(testId)
+    setGoalBaselineReportErrors(prev => ({ ...prev, [testId]: '' }))
+    try {
+      const report = await api.getTestArchiveReport(testId)
+      setGoalBaselineReports(prev => ({ ...prev, [testId]: report }))
+      return report
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, 'Unable to load the baseline run report')
+      setGoalBaselineReportErrors(prev => ({ ...prev, [testId]: message }))
+      throw new Error(message)
+    } finally {
+      setGoalBaselineLoadingId(current => current === testId ? '' : current)
+    }
+  }
+
   const selectGoalBaseline = async (testId: string) => {
+    resetGoalBaselineTableScroll()
     setGoalBaselineId(testId)
+    setExpandedGoalBaselineId(testId || null)
     setGoalBaselineGroups([])
     setGoalTargetTps({})
     setGoalSizingResult(null)
     setGoalSizingError('')
     if (!testId) return
     try {
-      const report = await api.getTestArchiveReport(testId)
+      const report = await loadGoalBaselineReport(testId)
       const options = baselineGroupOptions(report)
       if (options.length === 0) {
         setGoalSizingError('This run has no response-time data to size from.')
@@ -1515,6 +1719,21 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       }
       setGoalBaselineGroups(options)
       setGoalTargetTps(Object.fromEntries(options.map(option => [option.group, ''])))
+    } catch (err: unknown) {
+      setGoalSizingError(getErrorMessage(err, 'Unable to load the baseline run report'))
+    }
+  }
+
+  const toggleGoalBaselineExpanded = async (testId: string) => {
+    resetGoalBaselineTableScroll()
+    if (expandedGoalBaselineId === testId) {
+      setExpandedGoalBaselineId(null)
+      return
+    }
+    setExpandedGoalBaselineId(testId)
+    setGoalSizingError('')
+    try {
+      await loadGoalBaselineReport(testId)
     } catch (err: unknown) {
       setGoalSizingError(getErrorMessage(err, 'Unable to load the baseline run report'))
     }
@@ -2009,6 +2228,9 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       const tps = Number(goalTargetTps[option.group])
       return sum + (Number.isFinite(tps) && tps > 0 ? littlesLawVUsers(tps, option.baseline_art_ms) : 0)
     }, 0)
+    const baselineSummary = goalBaselineQuery.trim()
+      ? `${visibleGoalBaselineTests.length} matching completed run${visibleGoalBaselineTests.length === 1 ? '' : 's'}`
+      : `${goalBaselineTests.length} completed run${goalBaselineTests.length === 1 ? '' : 's'} available`
     return (
       <section className="scenario-wizard-panel" data-testid="goal-sizing-panel">
         <div className="scenario-wizard-panel-header">
@@ -2019,15 +2241,165 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
           <button type="button" className="mode-chip" onClick={closeGoalSizing}>Back</button>
         </div>
 
-        <label className="settings-field">
-          <span>Baseline run</span>
-          <select value={goalBaselineId} onChange={event => void selectGoalBaseline(event.target.value)} aria-label="Baseline run">
-            <option value="">Select a completed run…</option>
-            {goalBaselineTests.map(test => (
-              <option key={test.id} value={test.id}>{test.name}</option>
-            ))}
-          </select>
-        </label>
+        <div className="goal-baseline-picker" aria-label="Completed baseline runs">
+          <div className="goal-baseline-toolbar">
+            <label className="library-search goal-baseline-search">
+              <span>Filter completed runs</span>
+              <input
+                type="search"
+                value={goalBaselineQuery}
+                onChange={event => {
+                  resetGoalBaselineTableScroll()
+                  setGoalBaselineQuery(event.target.value)
+                }}
+                placeholder="Run name, run ID, release, script..."
+              />
+            </label>
+            <span className="scenario-table-assignment-detail">{baselineSummary}</span>
+          </div>
+          <div className="data-table goal-baseline-table" ref={goalBaselineTableRef}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Scripts</th>
+                  <th onClick={() => handleGoalBaselineSort('name')} className="sortable">Run <SortIndicator active={goalBaselineSortField === 'name'} direction={goalBaselineSortDirection} /></th>
+                  <th onClick={() => handleGoalBaselineSort('id')} className="sortable">Run ID <SortIndicator active={goalBaselineSortField === 'id'} direction={goalBaselineSortDirection} /></th>
+                  <th onClick={() => handleGoalBaselineSort('started_at')} className="sortable">Run Date/Time <SortIndicator active={goalBaselineSortField === 'started_at'} direction={goalBaselineSortDirection} /></th>
+                  <th onClick={() => handleGoalBaselineSort('duration')} className="sortable">Overall Duration <SortIndicator active={goalBaselineSortField === 'duration'} direction={goalBaselineSortDirection} /></th>
+                  <th onClick={() => handleGoalBaselineSort('vusers')} className="sortable">VUsers <SortIndicator active={goalBaselineSortField === 'vusers'} direction={goalBaselineSortDirection} /></th>
+                  <th onClick={() => handleGoalBaselineSort('peak_tps')} className="sortable">Peak TPS <SortIndicator active={goalBaselineSortField === 'peak_tps'} direction={goalBaselineSortDirection} /></th>
+                  <th onClick={() => handleGoalBaselineSort('art')} className="sortable">ART <SortIndicator active={goalBaselineSortField === 'art'} direction={goalBaselineSortDirection} /></th>
+                  <th onClick={() => handleGoalBaselineSort('error_rate')} className="sortable">Error Rate <SortIndicator active={goalBaselineSortField === 'error_rate'} direction={goalBaselineSortDirection} /></th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleGoalBaselineTests.map(test => {
+                  const report = goalBaselineReports[test.id]
+                  const selected = goalBaselineId === test.id
+                  const expanded = expandedGoalBaselineId === test.id
+                  const loadingReport = goalBaselineLoadingId === test.id
+                  const reportError = goalBaselineReportErrors[test.id]
+                  const scriptRows = goalBaselineScriptRows(test, report)
+                  return (
+                    <Fragment key={test.id}>
+                      <tr
+                        className={`clickable-row ${selected ? 'selected' : ''}`}
+                        aria-selected={selected}
+                        onClick={() => void selectGoalBaseline(test.id)}
+                      >
+                        <td>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-ghost"
+                            aria-expanded={expanded}
+                            aria-label={`${expanded ? 'Collapse' : 'Expand'} ${test.name} scripts`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void toggleGoalBaselineExpanded(test.id)
+                            }}
+                          >
+                            {expanded ? 'Hide' : 'Scripts'}
+                          </button>
+                        </td>
+                        <td className="cell-name">
+                          <div>{test.name}</div>
+                          <div className="script-table-meta">
+                            <ReferenceKeyBadge value={test.ref_key} />
+                            <span>{test.status}</span>
+                            {test.release_id && <span>Release {test.release_id}</span>}
+                          </div>
+                        </td>
+                        <td className="cell-mono">{test.id}</td>
+                        <td className="cell-muted scenario-run-time-cell">{formatDateTime(latestRunTimestamp(test))}</td>
+                        <td className="cell-muted">{test.duration || '—'}</td>
+                        <td>{formatOptionalNumber(goalBaselineVusers(test, report), 0)}</td>
+                        <td>{formatOptionalTps(goalBaselinePeakTps(test, report))}</td>
+                        <td>{formatOptionalMs(goalBaselineArt(test, report))}</td>
+                        <td>{formatOptionalPercent(goalBaselineErrorRate(test, report))}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${selected ? 'btn-primary' : 'btn-secondary'}`}
+                            aria-label={`${selected ? 'Selected' : 'Select'} ${test.name} as goal baseline`}
+                            disabled={loadingReport && selected}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void selectGoalBaseline(test.id)
+                            }}
+                          >
+                            {loadingReport && selected ? 'Loading...' : selected ? 'Selected' : 'Select'}
+                          </button>
+                        </td>
+                      </tr>
+                      {expanded && (
+                        <tr className="no-hover goal-baseline-expanded-row">
+                          <td colSpan={10}>
+                            {loadingReport && !report ? (
+                              <div className="cell-muted">Loading script details...</div>
+                            ) : reportError ? (
+                              <div className="form-error" role="alert">{reportError}</div>
+                            ) : scriptRows.length === 0 ? (
+                              <div className="cell-muted">No script groups were recorded for this run.</div>
+                            ) : (
+                              <div className="goal-baseline-script-panel">
+                                <div className="scenario-linked-runs-header">
+                                  <div>
+                                    <strong>Scripts in {test.name}</strong>
+                                    <span>{scriptRows.length} script group{scriptRows.length === 1 ? '' : 's'} · Run ID {test.id}</span>
+                                  </div>
+                                  <span className="scenario-table-assignment-detail">Overall {test.duration || '—'} · Started {formatDateTime(latestRunTimestamp(test))}</span>
+                                </div>
+                                <table className="goal-baseline-script-table">
+                                  <thead>
+                                    <tr>
+                                      <th>Script</th>
+                                      <th>VUsers</th>
+                                      <th>Peak TPS</th>
+                                      <th>ART</th>
+                                      <th>Error Rate</th>
+                                      <th>Duration</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {scriptRows.map(row => (
+                                      <tr key={row.key}>
+                                        <td className="cell-name">
+                                          <div>{row.scriptName}</div>
+                                          <div className="script-table-meta">
+                                            <span>{row.group}</span>
+                                            {row.scriptId && <span className="cell-mono">{row.scriptId}</span>}
+                                            {row.protocol && <span>{row.protocol}</span>}
+                                          </div>
+                                        </td>
+                                        <td>{formatOptionalNumber(row.vusers, 0)}</td>
+                                        <td>{formatOptionalTps(row.metrics?.peak_tps)}</td>
+                                        <td>{formatOptionalMs(row.metrics?.avg_response_ms)}</td>
+                                        <td>{formatOptionalPercent(row.metrics?.error_pct)}</td>
+                                        <td>{test.duration || '—'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+                {visibleGoalBaselineTests.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="cell-muted">
+                      {goalBaselineTests.length === 0 ? 'No completed runs are available for goal sizing.' : 'No completed runs match these filters.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
         {goalBaselineGroups.length > 0 && (
           <div className="goal-sizing-groups">

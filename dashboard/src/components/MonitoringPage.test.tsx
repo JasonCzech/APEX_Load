@@ -42,7 +42,14 @@ describe('MonitoringPage', () => {
 
   beforeEach(() => {
     window.localStorage.clear()
-    apiMock.getHealth.mockResolvedValue({ status: 'ok', version: 'dev', ws_clients: 2, test_count: 1 })
+    apiMock.getHealth.mockResolvedValue({
+      status: 'ok',
+      version: '1.2.3',
+      display_version: 'v1.2.3',
+      build_time: '2026-06-04T14:00:00Z',
+      ws_clients: 2,
+      test_count: 1,
+    })
     apiMock.getFleetProvisioner.mockResolvedValue(null)
     apiMock.getRestartCapabilities.mockResolvedValue({
       enabled: true,
@@ -237,6 +244,32 @@ describe('MonitoringPage', () => {
       </div>
     )
   }
+
+  it('shows controller, Vite server, and UX build metadata on the system card', async () => {
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const systemCard = container.querySelector<HTMLElement>('[data-card-id="system-health"]')
+    expect(systemCard).not.toBeNull()
+
+    const buildRows = Array.from(systemCard!.querySelectorAll<HTMLElement>('.monitor-build-row'))
+    expect(buildRows).toHaveLength(3)
+    expect(buildRows.map(row => row.querySelector('.monitor-build-name')?.textContent)).toEqual([
+      'Controller',
+      'Vite Server',
+      'UX',
+    ])
+
+    const controllerRow = buildRows[0]
+    expect(controllerRow.textContent).toContain('v1.2.3')
+    expect(controllerRow.textContent).toContain('Built')
+    expect(controllerRow.textContent).toContain('2026')
+    expect(buildRows[1].textContent).toMatch(/v\d+\.\d+\.\d+/)
+    expect(buildRows[1].textContent).not.toContain('Built -')
+    expect(buildRows[2].textContent).toContain('v0.1.0')
+    expect(buildRows[2].textContent).not.toContain('Built -')
+  })
 
   it('does not load or show restart controls for non-admin monitoring sessions', async () => {
     apiMock.getSystemInventory.mockResolvedValue({

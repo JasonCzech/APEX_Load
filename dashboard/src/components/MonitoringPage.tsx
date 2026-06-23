@@ -11,6 +11,7 @@ import MonitoringCollectorsCard from './MonitoringCollectorsCard'
 import FleetPoolsCard from './FleetPoolsCard'
 import FleetGeneratorsCard from './FleetGeneratorsCard'
 import TimeslotsPanel from './TimeslotsPanel'
+import { frontendBuildMetadata, type FrontendBuildComponentInfo } from '../buildMetadata'
 import './CreateTestModal.css'
 
 interface Props {
@@ -91,6 +92,54 @@ function formatBuildVersion(version?: string, displayVersion?: string): string {
   if (raw.length > 1 && /^[vV][0-9]/.test(raw)) return raw
   return /^[0-9]/.test(raw) ? `v${raw}` : raw
 }
+
+function formatBuildDate(buildTime?: string): string {
+  const raw = (buildTime || '').trim()
+  if (!raw) return '-'
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return raw
+  return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function fullBuildTimeTitle(buildTime?: string): string | undefined {
+  const raw = (buildTime || '').trim()
+  if (!raw) return undefined
+  const parsed = new Date(raw)
+  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
+}
+
+interface ComponentBuildRow {
+  id: string
+  name: string
+  version: string
+  buildDate: string
+  buildTime?: string
+}
+
+function frontendBuildRow(id: string, name: string, info: FrontendBuildComponentInfo): ComponentBuildRow {
+  return {
+    id,
+    name,
+    version: formatBuildVersion(info.version),
+    buildDate: formatBuildDate(info.buildTime),
+    buildTime: fullBuildTimeTitle(info.buildTime),
+  }
+}
+
+function controllerBuildRow(health: HealthResponse | null): ComponentBuildRow {
+  return {
+    id: 'controller',
+    name: 'Controller',
+    version: formatBuildVersion(health?.version, health?.display_version),
+    buildDate: formatBuildDate(health?.build_time),
+    buildTime: fullBuildTimeTitle(health?.build_time),
+  }
+}
+
+const STATIC_FRONTEND_BUILD_ROWS = [
+  frontendBuildRow('vite-server', 'Vite Server', frontendBuildMetadata.viteServer),
+  frontendBuildRow('ux', 'UX', frontendBuildMetadata.ux),
+]
 
 function disabledRestartCapabilities(reason: string): SystemRestartCapabilities {
   return {
@@ -229,6 +278,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const monitorPackContractCount = monitorPacks?.packs.filter(pack => pack.status === 'integration_contract').length ?? 0
   const monitorPackHeaderSeverity = !monitorPacks ? 'unknown' : monitorPackSupportedCount === monitorPackCount ? 'healthy' : 'warning'
   const monitorPackHeaderLabel = !monitorPacks ? 'checking' : `${monitorPackSupportedCount}/${monitorPackCount} native`
+  const componentBuildRows = useMemo(() => [
+    controllerBuildRow(health),
+    ...STATIC_FRONTEND_BUILD_ROWS,
+  ], [health])
   const dashboardOrigin = getCurrentDashboardOrigin()
   const activeServices = useMemo(() => mergeDashboardService(systemServices?.services ?? EMPTY_SERVICES, dashboardOrigin), [dashboardOrigin, systemServices])
   const backendServices = useMemo(() => activeServices.filter(service => service.kind !== 'frontend'), [activeServices])
@@ -440,9 +493,14 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             <span className={`monitor-indicator ${health ? 'healthy' : 'unknown'}`} />
             <span className="monitor-value">{health?.status || 'Checking...'}</span>
           </div>
-          <div className="monitor-row">
-            <span className="monitor-label">Version</span>
-            <span className="monitor-value">{formatBuildVersion(health?.version, health?.display_version)}</span>
+          <div className="monitor-build-grid" aria-label="Component versions and build dates">
+            {componentBuildRows.map(component => (
+              <div key={component.id} className="monitor-build-row">
+                <span className="monitor-build-name">{component.name}</span>
+                <span className="monitor-build-version">{component.version}</span>
+                <span className="monitor-build-date" title={component.buildTime}>Built {component.buildDate}</span>
+              </div>
+            ))}
           </div>
           <div className="monitor-row">
             <span className="monitor-label">WebSocket</span>
@@ -1031,7 +1089,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: <TimeslotsPanel projectId={activeProject?.id} canManage={canManageSystem} />,
     },
-  ], [activeProject?.id, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, restartCapabilities?.supports.controller_workload, restartDisabledReason, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, websocketLabel, websocketValueClass])
+  ], [activeProject?.id, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, componentBuildRows, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, restartCapabilities?.supports.controller_workload, restartDisabledReason, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))
