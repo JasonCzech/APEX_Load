@@ -640,6 +640,13 @@ type ControlFlow struct {
 	Count         int          `json:"count,omitempty"`          // control_loop: fixed pass count (0 = condition-driven)
 	MaxIterations int          `json:"max_iterations,omitempty"` // control_loop: safety cap (0 = engine default)
 	ForEach       *ForEachLoop `json:"for_each,omitempty"`       // control_loop: data-driven iteration (takes precedence over count/condition)
+	// DoWhile makes a condition-driven control_loop run its body once BEFORE the
+	// predicate is first evaluated (post-test / run-at-least-once) instead of the
+	// default pre-test behavior. Useful when the predicate depends on a variable
+	// the body itself produces — e.g. a poll loop whose terminal-state var persists
+	// across VUser iterations would otherwise be skipped on re-entry. Ignored for
+	// count/for_each modes (their pass counts are already determined).
+	DoWhile bool `json:"do_while,omitempty"`
 }
 
 // ForEachLoop drives a data-driven control_loop: it iterates every row of a data

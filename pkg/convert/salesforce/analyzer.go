@@ -1108,16 +1108,34 @@ func rewriteSingleBayeuxConnectID(message map[string]any) bool {
 
 // Bulk API 2.0 poll-loop synthesis.
 const (
-	bulkStateVar          = "bulk_job_state"
+	bulkStateVarPrefix    = "bulk_job_state"
 	bulkPollMaxIterations = 60
 	bulkPollIntervalMs    = 2000
-	// bulkPollConditionExpr keeps polling while the job is non-terminal. It is
-	// null-safe for the first pass: the state var is unset until the loop body's
-	// status GET runs, so !has(...) makes the condition true initially and the loop
-	// always executes at least once (a bare comparison on an unset var errors and
-	// the engine treats an errored condition as false, which would skip the poll).
-	bulkPollConditionExpr = `!has(var.bulk_job_state) || (var.bulk_job_state != "JobComplete" && var.bulk_job_state != "Failed" && var.bulk_job_state != "Aborted")`
 )
+
+// bulkStateVarFor returns the per-job-kind poll-state variable name. Ingest and
+// query jobs must use distinct variables: VUser.Variables is a single map
+// persisted across the whole run, so a shared "bulk_job_state" lets the first
+// job's loop leave a terminal "JobComplete" that makes the second job's loop
+// condition false on its first pass — the second poll loop (and its status GET)
+// then never runs.
+func bulkStateVarFor(kind string) string {
+	if kind == "" {
+		return bulkStateVarPrefix
+	}
+	return bulkStateVarPrefix + "_" + kind
+}
+
+// bulkPollConditionExprFor keeps polling while the job is non-terminal. The loop
+// runs in do_while mode, so the body (status GET) always executes once and
+// re-primes the state var before this predicate is first evaluated — including
+// on VUser re-entry, where the var would otherwise still hold a terminal value
+// from the previous iteration. The leading !has(...) clause remains as defensive
+// null-safety (a bare comparison on an unset var errors, which the engine treats
+// as false and would skip the poll).
+func bulkPollConditionExprFor(stateVar string) string {
+	return fmt.Sprintf(`!has(var.%[1]s) || (var.%[1]s != "JobComplete" && var.%[1]s != "Failed" && var.%[1]s != "Aborted")`, stateVar)
+}
 
 // synthesizeBulkPollLoops rewrites a recorded Bulk API 2.0 ingest/query status
 // GET into a control_loop that polls until the job reaches a terminal state, so
@@ -1137,7 +1155,7 @@ func synthesizeBulkPollLoops(refs []actionRef) {
 	}
 	for i := range refs {
 		if kind := bulkJobStatusPollKind(&refs[i]); kind != "" && createKinds[kind] {
-			wrapBulkStatusPollInLoop(refs[i].Action)
+			wrapBulkStatusPollInLoop(refs[i].Action, kind)
 		}
 	}
 }
@@ -1191,13 +1209,14 @@ func bulkJobStatusPollKind(ref *actionRef) string {
 // wrapBulkStatusPollInLoop rewrites a job-status GET in place into a control_loop
 // that re-issues the GET (with a state extractor and a poll interval) until the
 // job reaches a terminal state or the iteration cap is hit.
-func wrapBulkStatusPollInLoop(action *dsl.Action) {
+func wrapBulkStatusPollInLoop(action *dsl.Action, kind string) {
 	if action == nil || strings.EqualFold(action.Type, "control_loop") {
 		return
 	}
+	stateVar := bulkStateVarFor(kind)
 	inner := *action
 	addExtractorIfMissing(&inner, dsl.Extractor{
-		Name:       bulkStateVar,
+		Name:       stateVar,
 		Source:     "body",
 		Type:       "jsonpath",
 		Expression: "$.state",
@@ -1211,9 +1230,15 @@ func wrapBulkStatusPollInLoop(action *dsl.Action) {
 		Name: strings.TrimSpace(inner.Name) + " (poll until JobComplete)",
 		Type: "control_loop",
 		Control: &dsl.ControlFlow{
-			Condition:     &dsl.Condition{Expr: bulkPollConditionExpr},
+			Condition:     &dsl.Condition{Expr: bulkPollConditionExprFor(stateVar)},
 			Steps:         []dsl.Action{inner},
 			MaxIterations: bulkPollMaxIterations,
+			// do_while runs the status GET once before the terminal-state predicate
+			// is checked, re-priming the state var each time the loop is entered.
+			// Without it, the state var left at "JobComplete" by a prior VUser
+			// iteration would make the condition immediately false and skip the
+			// (only copy of the) status GET from iteration 2 onward under load.
+			DoWhile: true,
 		},
 		Metadata: map[string]any{
 			"salesforce": map[string]any{
@@ -1623,8 +1648,6 @@ func safeCompositeReferenceID(ref string) bool {
 	return true
 }
 
-const salesforceIDChecksumAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
-
 func salesforceID15(value string) (string, bool) {
 	value = strings.TrimSpace(value)
 	if !salesforceIDPattern.MatchString(value) {
@@ -1638,34 +1661,6 @@ func salesforceID15(value string) (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-func salesforceID18(value string) (string, bool) {
-	value = strings.TrimSpace(value)
-	if !salesforceIDPattern.MatchString(value) {
-		return "", false
-	}
-	base := value
-	if len(base) == 18 {
-		base = base[:15]
-	}
-	if len(base) != 15 {
-		return "", false
-	}
-	var builder strings.Builder
-	builder.Grow(18)
-	builder.WriteString(base)
-	for chunk := 0; chunk < 3; chunk++ {
-		mask := 0
-		for offset := 0; offset < 5; offset++ {
-			c := base[chunk*5+offset]
-			if c >= 'A' && c <= 'Z' {
-				mask |= 1 << offset
-			}
-		}
-		builder.WriteByte(salesforceIDChecksumAlphabet[mask])
-	}
-	return builder.String(), true
 }
 
 type salesforceCandidateReuse struct {

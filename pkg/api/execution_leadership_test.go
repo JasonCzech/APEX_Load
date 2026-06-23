@@ -441,3 +441,71 @@ func TestExecutionMutationHandlersServeNormallyWhenSingleActive(t *testing.T) {
 		t.Fatal("single-active server must not return 503 for execution endpoints")
 	}
 }
+
+// TestExecutionLeadershipReconcileCoalesces guards B9: triggers that arrive while
+// a reconcile is in flight must be COALESCED into a single re-run, not dropped.
+// Under the old drop-on-flap behavior the mid-flight triggers were lost and the
+// second run would never start (this test would then time out).
+func TestExecutionLeadershipReconcileCoalesces(t *testing.T) {
+	l := newExecutionLeadership(&fakeLeaseStore{dfltOK: true}, "owner")
+
+	var mu sync.Mutex
+	runs := 0
+	started := make(chan struct{}, 8)
+	release := make(chan struct{})
+	onAcquire := func() {
+		mu.Lock()
+		runs++
+		mu.Unlock()
+		started <- struct{}{}
+		<-release
+	}
+
+	waitStarted := func(what string) {
+		select {
+		case <-started:
+		case <-time.After(3 * time.Second):
+			t.Fatalf("timed out waiting for %s (reconcile coalescing dropped a request?)", what)
+		}
+	}
+
+	// First trigger starts a worker; it blocks inside onAcquire.
+	l.triggerReconcile(onAcquire)
+	waitStarted("initial reconcile")
+
+	// Three triggers while in flight must coalesce into exactly one re-run.
+	l.triggerReconcile(onAcquire)
+	l.triggerReconcile(onAcquire)
+	l.triggerReconcile(onAcquire)
+
+	release <- struct{}{} // finish run 1
+	waitStarted("coalesced reconcile")
+	release <- struct{}{} // finish run 2 (the worker should now drain and exit)
+
+	// A trigger after the worker has drained starts a fresh run.
+	l.triggerReconcile(onAcquire)
+	waitStarted("post-drain reconcile")
+	release <- struct{}{} // finish run 3
+
+	// Settle, then assert exactly three runs: 1 initial + 1 coalesced (not 3) + 1 fresh.
+	deadline := time.After(2 * time.Second)
+	for {
+		mu.Lock()
+		got := runs
+		mu.Unlock()
+		if got == 3 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("reconcile runs = %d, want 3 (3 mid-flight triggers must coalesce into 1)", got)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	// Confirm no spurious extra run is pending.
+	select {
+	case <-started:
+		t.Fatal("an extra reconcile ran; mid-flight triggers did not coalesce")
+	case <-time.After(100 * time.Millisecond):
+	}
+}

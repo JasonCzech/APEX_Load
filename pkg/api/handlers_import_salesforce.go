@@ -46,11 +46,6 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	issues := validateScript(script)
-	if len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
-	}
-
 	reviewSections := harImportReviewSections(result)
 	if review != nil {
 		severity := "info"
@@ -67,6 +62,15 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 	}
 	reviewSections = attachMuleSoftReview(script, "salesforce_har", reviewSections)
 	reviewSections = attachAgentforceReview(script, "salesforce_har", reviewSections, agentforceTransformRequested(r))
+
+	// Validate AFTER the MuleSoft/Agentforce attach calls: agentforce.Transform
+	// mutates the script in place (injects an OAuth init, rewrites headers, appends
+	// a teardown), so validating earlier would compute warnings against a script
+	// that no longer matches what is returned.
+	if issues := validateScript(script); len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+
 	summary := harImportSummary(result)
 	summary["generation_mode"] = "salesforce_native_http"
 	summary["protocol_scope"] = "salesforce_http_family"

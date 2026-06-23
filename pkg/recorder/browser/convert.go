@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -567,7 +568,14 @@ func truncateString(value string, limit int) string {
 	if limit <= 0 || len(value) <= limit {
 		return value
 	}
-	return value[:limit]
+	truncated := value[:limit]
+	// Back off to a valid UTF-8 boundary so we never split a multi-byte rune
+	// (which would emit invalid UTF-8 into the browser_ws_wait match hint). A
+	// rune is at most 4 bytes, so this trims at most 3 trailing bytes.
+	for len(truncated) > 0 && !utf8.ValidString(truncated) {
+		truncated = truncated[:len(truncated)-1]
+	}
+	return truncated
 }
 
 func convertStep(step Step, session *Session, opts ConvertOptions, result *ConvertResult) (dsl.Action, bool) {

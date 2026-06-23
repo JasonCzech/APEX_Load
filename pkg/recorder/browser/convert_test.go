@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/selector"
@@ -618,4 +619,66 @@ func actionTypes(actions []dsl.Action) []string {
 		types = append(types, action.Type)
 	}
 	return types
+}
+
+func TestTruncateStringRuneSafe(t *testing.T) {
+	// "é" (U+00E9) is 2 bytes; "😀" (U+1F600) is 4 bytes.
+	if got := truncateString("café", 3); got != "caf" {
+		t.Fatalf("truncateString(café,3) = %q, want caf", got)
+	}
+	// Limit lands inside the 2-byte é — must back off to "caf", not emit a half rune.
+	got := truncateString("café", 4)
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncateString produced invalid UTF-8: %q", got)
+	}
+	if got != "caf" {
+		t.Fatalf("truncateString(café,4) = %q, want caf (rune boundary)", got)
+	}
+	// Multi-byte emoji split mid-rune backs off to the prior boundary.
+	emoji := truncateString("a😀b", 3)
+	if !utf8.ValidString(emoji) {
+		t.Fatalf("truncateString split the emoji rune: %q", emoji)
+	}
+	if emoji != "a" {
+		t.Fatalf("truncateString(a😀b,3) = %q, want a", emoji)
+	}
+}
+
+// TestConvertOrdersByCaptureTimeNotArrival guards B11: the capture script defers
+// a click up to 250ms (to coalesce double-clicks) but now stamps it with its
+// ORIGINAL event time. So a click can arrive (and be appended) AFTER a fill that
+// the user performed later, yet carry an earlier timestamp. Conversion must order
+// by capture timestamp, placing the click before the fill — not by arrival order.
+func TestConvertOrdersByCaptureTimeNotArrival(t *testing.T) {
+	clickedBtn := &selector.ElementMetadata{Tag: "button", Text: "Open", CSSPath: "#open"}
+	filledInput := &selector.ElementMetadata{Tag: "input", Name: "q", CSSPath: "#q"}
+
+	session := &Session{ID: "rec_order", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	// The fill (ts 2000) is appended FIRST (it was sent immediately); the deferred
+	// click (ts 1000, the user's earlier action) is appended AFTER it.
+	session.appendStep(Step{Kind: StepFill, Value: "widget", Timestamp: ts(2000), URL: "https://shop.example/", Element: filledInput, Candidates: selector.Candidates(*filledInput)})
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(1000), URL: "https://shop.example/", Element: clickedBtn, Candidates: selector.Candidates(*clickedBtn)})
+
+	result := Convert(session, ConvertOptions{ScriptName: "Order"})
+	types := actionTypes(result.Script.Actions)
+
+	clickIdx, fillIdx := -1, -1
+	for i, typ := range types {
+		switch typ {
+		case "browser_click":
+			if clickIdx == -1 {
+				clickIdx = i
+			}
+		case "browser_fill":
+			if fillIdx == -1 {
+				fillIdx = i
+			}
+		}
+	}
+	if clickIdx == -1 || fillIdx == -1 {
+		t.Fatalf("expected a browser_click and a browser_fill, got %v", types)
+	}
+	if clickIdx > fillIdx {
+		t.Fatalf("click (capture ts 1000) must precede fill (capture ts 2000); got order %v", types)
+	}
 }

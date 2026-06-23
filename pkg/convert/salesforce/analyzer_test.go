@@ -652,6 +652,88 @@ func TestAnalyzeNativePreviewCorrelatesBulkQueryLocatorAndPollLoop(t *testing.T)
 	}
 }
 
+// TestAnalyzeNativePreviewBulkIngestAndQueryUseDistinctPollState guards B7: when
+// a recording contains BOTH a Bulk ingest job and a Bulk query job, each
+// synthesized poll loop must use its own state variable. A shared
+// "bulk_job_state" lets the first loop leave a terminal value that makes the
+// second loop's condition false on its first pass, so the second job is never
+// polled.
+func TestAnalyzeNativePreviewBulkIngestAndQueryUseDistinctPollState(t *testing.T) {
+	const (
+		base     = "https://acme.my.salesforce.com"
+		ingestID = "7508c00000INGEST0AAL"
+		queryID  = "7508c00000QUERY00AAL"
+	)
+	script := &dsl.Script{
+		Name:     "SF Bulk Ingest + Query",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: base},
+		Actions: []dsl.Action{
+			{Name: "Create Ingest Job", Type: "POST", Method: "POST", Target: base + "/services/data/v60.0/jobs/ingest", Body: `{"object":"Account","operation":"insert"}`},
+			{Name: "Ingest Job Status", Type: "GET", Method: "GET", Target: base + "/services/data/v60.0/jobs/ingest/" + ingestID},
+			{Name: "Create Query Job", Type: "POST", Method: "POST", Target: base + "/services/data/v60.0/jobs/query", Body: `{"operation":"query","query":"SELECT Id FROM Account"}`},
+			{Name: "Query Job Status", Type: "GET", Method: "GET", Target: base + "/services/data/v60.0/jobs/query/" + queryID},
+		},
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {"request": {"method": "POST", "url": "` + base + `/services/data/v60.0/jobs/ingest", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"id\":\"` + ingestID + `\",\"state\":\"Open\"}"}}},
+	      {"request": {"method": "GET", "url": "` + base + `/services/data/v60.0/jobs/ingest/` + ingestID + `", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"id\":\"` + ingestID + `\",\"state\":\"JobComplete\"}"}}},
+	      {"request": {"method": "POST", "url": "` + base + `/services/data/v60.0/jobs/query", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"id\":\"` + queryID + `\",\"state\":\"UploadComplete\"}"}}},
+	      {"request": {"method": "GET", "url": "` + base + `/services/data/v60.0/jobs/query/` + queryID + `", "headers": []},
+	       "response": {"headers": [], "content": {"text": "{\"id\":\"` + queryID + `\",\"state\":\"JobComplete\"}"}}}
+	    ]
+	  }
+	}`)
+
+	review, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	actions := review.NativePreview.Script.Actions
+
+	stateVars := map[string]bool{}
+	loopCount := 0
+	for _, a := range actions {
+		if a.Type != "control_loop" || a.Control == nil || len(a.Control.Steps) == 0 {
+			continue
+		}
+		loopCount++
+		var stateVar string
+		for _, ext := range a.Control.Steps[0].Extractors {
+			if strings.HasPrefix(ext.Name, "bulk_job_state") {
+				stateVar = ext.Name
+			}
+		}
+		if stateVar == "" {
+			t.Fatalf("bulk poll loop %q has no bulk_job_state extractor: %#v", a.Name, a.Control.Steps[0].Extractors)
+		}
+		if stateVars[stateVar] {
+			t.Fatalf("two bulk poll loops share state var %q (ingest/query collision)", stateVar)
+		}
+		stateVars[stateVar] = true
+		// The loop condition must reference the same per-kind state var.
+		if a.Control.Condition == nil || !strings.Contains(a.Control.Condition.Expr, "var."+stateVar) {
+			t.Fatalf("loop %q condition %q does not gate on its state var %q", a.Name, a.Control.Condition.Expr, stateVar)
+		}
+		// do_while makes the status GET re-prime the state var on every VUser
+		// iteration; without it the loop is skipped from iteration 2 under load.
+		if !a.Control.DoWhile {
+			t.Fatalf("loop %q must set DoWhile so it re-executes across iterations", a.Name)
+		}
+	}
+	if loopCount != 2 {
+		t.Fatalf("synthesized %d bulk poll loops, want 2 (ingest + query)", loopCount)
+	}
+	if !stateVars["bulk_job_state_ingest"] || !stateVars["bulk_job_state_query"] {
+		t.Fatalf("poll loops did not use per-kind state vars: %#v", stateVars)
+	}
+}
+
 // TestAnalyzeNativePreviewSynthesizesBulkPollLoop proves the A5 Bulk API 2.0
 // lifecycle: the recorded job-status GET is rewritten into a control_loop that
 // polls until the job reaches a terminal state, the CSV-upload target reuses the
@@ -713,7 +795,7 @@ func TestAnalyzeNativePreviewSynthesizesBulkPollLoop(t *testing.T) {
 	if poll.Control.MaxIterations != 60 {
 		t.Fatalf("loop max_iterations = %d, want 60", poll.Control.MaxIterations)
 	}
-	if poll.Control.Condition == nil || !strings.Contains(poll.Control.Condition.Expr, "JobComplete") || !strings.Contains(poll.Control.Condition.Expr, "has(var.bulk_job_state)") {
+	if poll.Control.Condition == nil || !strings.Contains(poll.Control.Condition.Expr, "JobComplete") || !strings.Contains(poll.Control.Condition.Expr, "has(var.bulk_job_state_ingest)") {
 		t.Fatalf("loop condition = %#v, want a null-safe JobComplete predicate", poll.Control.Condition)
 	}
 	if len(poll.Control.Steps) != 1 {
@@ -722,7 +804,7 @@ func TestAnalyzeNativePreviewSynthesizesBulkPollLoop(t *testing.T) {
 	step := poll.Control.Steps[0]
 	var stateExt *dsl.Extractor
 	for i := range step.Extractors {
-		if step.Extractors[i].Name == "bulk_job_state" {
+		if step.Extractors[i].Name == "bulk_job_state_ingest" {
 			stateExt = &step.Extractors[i]
 		}
 	}
@@ -815,19 +897,12 @@ func TestSalesforceIDNormalization(t *testing.T) {
 	if !ok || got15 != id15 {
 		t.Fatalf("salesforceID15(%q) = %q, %v; want %q, true", id18, got15, ok, id15)
 	}
-	got18, ok := salesforceID18(id15)
-	if !ok || got18 != id18 {
-		t.Fatalf("salesforceID18(%q) = %q, %v; want %q, true", id15, got18, ok, id18)
-	}
-	if got18From18, ok := salesforceID18(id18); !ok || got18From18 != id18 {
-		t.Fatalf("salesforceID18(%q) = %q, %v; want unchanged canonical 18-char id", id18, got18From18, ok)
+	if got15From15, ok := salesforceID15(id15); !ok || got15From15 != id15 {
+		t.Fatalf("salesforceID15(%q) = %q, %v; want unchanged 15-char id", id15, got15From15, ok)
 	}
 	for _, invalid := range []string{"", "not-an-id", "001A0000009z3Z!", "001A0000009z3Z"} {
 		if got, ok := salesforceID15(invalid); ok {
 			t.Fatalf("salesforceID15(%q) = %q, true; want false", invalid, got)
-		}
-		if got, ok := salesforceID18(invalid); ok {
-			t.Fatalf("salesforceID18(%q) = %q, true; want false", invalid, got)
 		}
 	}
 }

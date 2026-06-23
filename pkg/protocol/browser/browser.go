@@ -61,9 +61,16 @@ type Browser struct {
 	pwCDP                playwright.CDPSession
 	currentFrameSelector string
 
-	mu                 sync.Mutex
-	consoleEntries     []protocol.ConsoleEntry
-	networkEntries     []protocol.NetworkEntry
+	mu             sync.Mutex
+	consoleEntries []protocol.ConsoleEntry
+	networkEntries []protocol.NetworkEntry
+	// networkEntriesDropped counts entries evicted from the front of
+	// networkEntries by the ring/byte-budget cap, so absolute offset-based
+	// slicing (eventOffsets/networkEntriesSince) stays correct across eviction.
+	networkEntriesDropped int
+	// networkBodyBytes tracks the captured request-body bytes currently retained,
+	// used to enforce the byte budget.
+	networkBodyBytes   int
 	resourceValidators map[string]string
 	pages              []playwright.Page
 

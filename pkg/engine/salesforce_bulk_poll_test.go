@@ -47,6 +47,10 @@ func bulkPollLoopAction(maxIterations int) dsl.Action {
 		Control: &dsl.ControlFlow{
 			Condition:     &dsl.Condition{Expr: bulkPollCondition},
 			MaxIterations: maxIterations,
+			// Mirrors the synthesized output (pkg/convert/salesforce): do_while runs
+			// the body once before the predicate is first checked so the state var is
+			// re-primed on every loop entry, including VUser re-entry.
+			DoWhile: true,
 			Steps: []dsl.Action{{
 				Name:       "Job Status",
 				Type:       "GET",
@@ -76,6 +80,31 @@ func TestBulkPollLoopRespectsMaxIterations(t *testing.T) {
 	vu.Run(context.Background())
 	if proto.calls != 5 {
 		t.Fatalf("never-completing poll loop issued %d GETs, want 5 (capped at MaxIterations)", proto.calls)
+	}
+}
+
+func TestBulkPollLoopReExecutesAcrossIterations(t *testing.T) {
+	// Regression: VUser.Variables persist across script iterations, so the poll
+	// state var keeps its terminal value from a prior iteration. Without do_while,
+	// iteration 2's pre-test condition is immediately false and the (only copy of
+	// the) status GET is skipped — the poll loop is effectively dead under load.
+	// do_while runs the body once per loop entry, re-priming the var each iteration.
+	run := func(doWhile bool) int {
+		proto := &bulkStatusProtocol{completeAfter: 0} // every poll returns JobComplete
+		action := bulkPollLoopAction(60)
+		action.Control.DoWhile = doWhile
+		vu := newControlFlowVUser(proto, nil, []dsl.Action{action})
+		vu.Script.Config.RunLogic.Iterations = 2
+		vu.Run(context.Background())
+		return proto.calls
+	}
+	// Pre-test (the bug): iteration 1 sets bulk_job_state=JobComplete, iteration 2 skips.
+	if got := run(false); got != 1 {
+		t.Fatalf("pre-test loop issued %d status GETs over 2 iterations, want 1 (iteration 2 skipped — the bug this guards)", got)
+	}
+	// do_while (the fix): the status GET re-runs on every iteration.
+	if got := run(true); got != 2 {
+		t.Fatalf("do_while loop issued %d status GETs over 2 iterations, want 2 (one re-primed poll per iteration)", got)
 	}
 }
 

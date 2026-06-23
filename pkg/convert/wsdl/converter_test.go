@@ -446,6 +446,51 @@ func TestConvertWSDLHandlesRecursiveTypeWithoutStackOverflow(t *testing.T) {
 	}
 }
 
+// TestConvertWSDLHandlesRecursiveSimpleTypeWithoutStackOverflow covers the
+// simpleType placeholder-resolution vector (distinct from the complexType case
+// above): a self-restricting simpleType and a mutually-recursive pair. Without
+// the depth cap in placeholderForSimpleType/XSDType/NamedSimpleType these
+// recurse forever and stack-overflow the controller during import. The test
+// completing at all is the regression assertion.
+func TestConvertWSDLHandlesRecursiveSimpleTypeWithoutStackOverflow(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `<?xml version="1.0"?>
+<definitions name="CyclicService" targetNamespace="urn:cyc"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:tns="urn:cyc"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <types>
+    <xsd:schema targetNamespace="urn:cyc">
+      <xsd:element name="GetThingRequest" type="tns:SelfRef"/>
+      <xsd:simpleType name="SelfRef">
+        <xsd:restriction base="tns:SelfRef"/>
+      </xsd:simpleType>
+      <xsd:simpleType name="A">
+        <xsd:restriction base="tns:B"/>
+      </xsd:simpleType>
+      <xsd:simpleType name="B">
+        <xsd:restriction base="tns:A"/>
+      </xsd:simpleType>
+    </xsd:schema>
+  </types>
+  <message name="GetThingInput"><part name="parameters" element="tns:GetThingRequest"/></message>
+  <portType name="ThingPortType"><operation name="GetThing"><input message="tns:GetThingInput"/></operation></portType>
+  <binding name="ThingBinding" type="tns:ThingPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="GetThing"><soap:operation soapAction="urn:GetThing"/></operation>
+  </binding>
+  <service name="ThingService"><port name="Primary" binding="tns:ThingBinding"><soap:address location="https://things.example.test/thing"/></port></service>
+</definitions>`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) == 0 || result.Script.Actions[0].Body == "" {
+		t.Fatal("expected a bounded SOAP body for the recursive simpleType")
+	}
+}
+
 func TestConvertWSDLSelectsRequestedBinding(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Content: `<?xml version="1.0"?>

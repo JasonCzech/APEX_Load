@@ -260,27 +260,34 @@ function isFileAssetReady(source: ScriptDataSource): boolean {
   return Boolean(source.storage_ref?.trim() || source.path?.trim() || source.inline_data?.trim())
 }
 
-function assetUploadKey(source: ScriptDataSource): string {
-  return source.name || source.file_name || 'file'
+// assetUploadKey is keyed primarily on the data source's index so that multiple
+// nameless file data sources do not collide onto one key (which would make their
+// upload status and merge target route to the wrong asset).
+function assetUploadKey(source: ScriptDataSource, index: number): string {
+  return `${index}::${source.name || source.file_name || 'file'}`
 }
 
 function importAssetID(script: ScriptDefinition): string {
   return script.id || script.ref_key || script.name || 'sample-import'
 }
 
-function mergeUploadedFileAsset(script: ScriptDefinition, targetName: string, uploaded: ScriptDataSource): ScriptDefinition {
+// mergeUploadedFileAsset merges the uploaded asset into the data source at
+// targetIndex (the asset's stable position in data_sources), rather than matching
+// by name — a nameless source would otherwise match the first empty-named entry
+// and mis-target the merge.
+function mergeUploadedFileAsset(script: ScriptDefinition, targetIndex: number, uploaded: ScriptDataSource): ScriptDefinition {
   const nextSources = [...(script.data_sources || [])]
-  const sourceIndex = nextSources.findIndex(source => source.name === targetName)
-  const existing = sourceIndex >= 0 ? nextSources[sourceIndex] : undefined
+  const inRange = targetIndex >= 0 && targetIndex < nextSources.length
+  const existing = inRange ? nextSources[targetIndex] : undefined
   const merged: ScriptDataSource = {
     ...(existing || {}),
     ...uploaded,
-    name: existing?.name || uploaded.name || targetName,
+    name: existing?.name || uploaded.name,
     type: 'file',
     strategy: uploaded.strategy || existing?.strategy || 'sequential',
   }
-  if (sourceIndex >= 0) {
-    nextSources[sourceIndex] = merged
+  if (inRange) {
+    nextSources[targetIndex] = merged
   } else {
     nextSources.push(merged)
   }
@@ -578,7 +585,8 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
 
   const handleAssetUpload = async (source: ScriptDataSource, file: File) => {
     if (!result || !reviewedScript) return
-    const key = assetUploadKey(source)
+    const targetIndex = (reviewedScript.data_sources || []).indexOf(source)
+    const key = assetUploadKey(source, targetIndex)
     setMessageError('')
     setAssetUploads(prev => ({
       ...prev,
@@ -590,7 +598,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
         name: source.name,
         content_type: source.content_type || file.type || undefined,
       })
-      const mergedScript = mergeUploadedFileAsset(reviewedScript, source.name, uploaded.data_source)
+      const mergedScript = mergeUploadedFileAsset(reviewedScript, targetIndex, uploaded.data_source)
       const preflight = buildLocalReplayPreflight(mergedScript)
       const scriptWithPreflight = attachReplayPreflight(mergedScript, preflight)
       convertTask.setValue(replaceImportResultScript(result, scriptWithPreflight, preflight))
@@ -858,7 +866,8 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
                 <div className="sample-import-assets-list">
                   {importFileAssets.map(source => {
                     const ready = isFileAssetReady(source)
-                    const key = assetUploadKey(source)
+                    const fullIndex = (reviewedScript?.data_sources || []).indexOf(source)
+                    const key = assetUploadKey(source, fullIndex)
                     const uploadState = assetUploads[key]
                     return (
                       <div key={key} className={`sample-import-asset-row ${ready ? 'ready' : 'missing'}`}>

@@ -13,6 +13,17 @@ import (
 
 const browserNetworkBodyCaptureLimitBytes = 512 * 1024
 
+// Bounds on the per-session network-entry buffer. Without these the buffer grows
+// for the whole browser session (reset only at Close), retaining full headers and
+// up to 512KiB request bodies each — an unbounded memory leak on long replay
+// sessions. We cap both the entry count and the total retained body bytes,
+// evicting the oldest entries first (the sibling wsEvents buffer is similarly
+// ring-bounded).
+const (
+	browserNetworkEntryRingLimit  = 2048
+	browserNetworkBodyBudgetBytes = 32 * 1024 * 1024
+)
+
 func (b *Browser) openBrowserContext() error {
 	pwBrowser, err := getBrowserInstance(b.engine, b.headless)
 	if err != nil {
@@ -217,6 +228,35 @@ func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool
 		RequestBodyTruncated: requestBodyTruncated,
 		ResponseHeaders:      responseHeaders,
 	})
+	b.networkBodyBytes += len(requestBody)
+	b.trimNetworkEntriesLocked()
+}
+
+// trimNetworkEntriesLocked evicts the oldest network entries once the count or
+// retained-body-byte budget is exceeded, keeping at least one entry. It
+// reallocates the retained slice so the evicted entries (and their large bodies)
+// become unreachable and collectable, and advances networkEntriesDropped so the
+// absolute offsets used by eventOffsets/networkEntriesSince stay valid. Callers
+// must hold b.mu.
+func (b *Browser) trimNetworkEntriesLocked() {
+	keepFrom := 0
+	for keepFrom < len(b.networkEntries) {
+		overCount := len(b.networkEntries)-keepFrom > browserNetworkEntryRingLimit
+		overBytes := b.networkBodyBytes > browserNetworkBodyBudgetBytes && len(b.networkEntries)-keepFrom > 1
+		if !overCount && !overBytes {
+			break
+		}
+		b.networkBodyBytes -= len(b.networkEntries[keepFrom].RequestBody)
+		keepFrom++
+	}
+	if keepFrom == 0 {
+		return
+	}
+	retained := len(b.networkEntries) - keepFrom
+	compacted := make([]protocol.NetworkEntry, retained)
+	copy(compacted, b.networkEntries[keepFrom:])
+	b.networkEntries = compacted
+	b.networkEntriesDropped += keepFrom
 }
 
 func safeRequestHeaders(request playwright.Request) (headers map[string]string) {

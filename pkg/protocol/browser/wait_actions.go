@@ -135,11 +135,12 @@ func (b *Browser) runPostActionSync(ctx context.Context, action *protocol.Action
 		}
 		return b.waitForDOMStable(waitCtx, stable)
 	default:
-		slog.Warn("unknown browser sync type; falling back to network_idle", "sync_type", sync.Type, "action", action.Name)
-		return b.currentPage().WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-			State:   playwright.LoadStateNetworkidle,
-			Timeout: playwright.Float(b.timeoutMS(waitCtx, b.waitTimeout(sync.TimeoutMs))),
-		})
+		// An unrecognized sync type is a no-op, not a forced network_idle wait:
+		// network_idle never resolves on sites with long-poll/streaming/websocket
+		// traffic, so falling back to it would newly hang or time out actions that
+		// previously proceeded. Skip silently-but-logged instead.
+		slog.Warn("unknown browser sync type; skipping (no wait)", "sync_type", sync.Type, "action", action.Name)
+		return nil
 	}
 }
 

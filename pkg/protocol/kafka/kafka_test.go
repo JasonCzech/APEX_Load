@@ -265,3 +265,17 @@ func TestKafkaConsumerGroupDependencyType(t *testing.T) {
 		t.Fatalf("DependencyType = %q, want kafka_consumer_group", res.DependencyType)
 	}
 }
+
+func TestExtractJSONPathNumericObjectKeyVsArrayIndex(t *testing.T) {
+	// Numeric-string object key must be reachable (not misread as an array index).
+	if got, err := extractJSONPath("$.counts.123", []byte(`{"counts":{"123":"ok","2":"no"}}`)); err != nil || got != "ok" {
+		t.Fatalf("numeric object key: got %q, err %v; want ok", got, err)
+	}
+	if got, err := extractJSONPath(`$.counts["123"]`, []byte(`{"counts":{"123":"bracket"}}`)); err != nil || got != "bracket" {
+		t.Fatalf("bracket numeric object key: got %q, err %v; want bracket", got, err)
+	}
+	// Array indexing into an actual array still works.
+	if got, err := extractJSONPath("$.items[1]", []byte(`{"items":["a","b","c"]}`)); err != nil || got != "b" {
+		t.Fatalf("array index: got %q, err %v; want b", got, err)
+	}
+}

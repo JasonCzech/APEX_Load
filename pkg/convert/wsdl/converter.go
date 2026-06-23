@@ -1416,8 +1416,23 @@ func placeholderForXSDElement(doc definitions, field xsdElement, fieldName strin
 	return placeholderForXSDType(doc, field.Type, fieldName)
 }
 
+// maxSimpleTypeDepth bounds simpleType placeholder resolution. A cyclic or
+// self-restricting XSD simpleType (e.g. <simpleType name="A"><restriction
+// base="A"/></simpleType>, or a mutually-recursive pair) would otherwise recurse
+// forever and stack-overflow — a process-fatal, recover()-proof crash — during
+// WSDL/enterprise-archive import of untrusted content. On exceeding the cap we
+// fall back to the generic data-driven placeholder rather than recursing.
+const maxSimpleTypeDepth = 32
+
 func placeholderForXSDType(doc definitions, typeName string, fieldName string) string {
-	if value, ok := placeholderForNamedSimpleType(doc, localName(typeName), fieldName); ok {
+	return placeholderForXSDTypeDepth(doc, typeName, fieldName, 0)
+}
+
+func placeholderForXSDTypeDepth(doc definitions, typeName string, fieldName string, depth int) string {
+	if depth > maxSimpleTypeDepth {
+		return "{{data.wsdl." + sanitizeName(fieldName) + "}}"
+	}
+	if value, ok := placeholderForNamedSimpleTypeDepth(doc, localName(typeName), fieldName, depth); ok {
 		return value
 	}
 	switch strings.ToLower(localName(typeName)) {
@@ -1435,6 +1450,10 @@ func placeholderForXSDType(doc definitions, typeName string, fieldName string) s
 }
 
 func placeholderForNamedSimpleType(doc definitions, typeName string, fieldName string) (string, bool) {
+	return placeholderForNamedSimpleTypeDepth(doc, typeName, fieldName, 0)
+}
+
+func placeholderForNamedSimpleTypeDepth(doc definitions, typeName string, fieldName string, depth int) (string, bool) {
 	if typeName == "" {
 		return "", false
 	}
@@ -1442,7 +1461,7 @@ func placeholderForNamedSimpleType(doc definitions, typeName string, fieldName s
 		for _, schema := range t.Schemas {
 			for _, simple := range schema.SimpleTypes {
 				if simple.Name == typeName {
-					return placeholderForSimpleType(simple, doc, fieldName)
+					return placeholderForSimpleTypeDepth(simple, doc, fieldName, depth)
 				}
 			}
 		}
@@ -1451,19 +1470,26 @@ func placeholderForNamedSimpleType(doc definitions, typeName string, fieldName s
 }
 
 func placeholderForSimpleType(simple xsdSimpleType, doc definitions, fieldName string) (string, bool) {
+	return placeholderForSimpleTypeDepth(simple, doc, fieldName, 0)
+}
+
+func placeholderForSimpleTypeDepth(simple xsdSimpleType, doc definitions, fieldName string, depth int) (string, bool) {
+	if depth > maxSimpleTypeDepth {
+		return "{{data.wsdl." + sanitizeName(fieldName) + "}}", true
+	}
 	if simple.Restriction != nil {
 		if len(simple.Restriction.Enumerations) > 0 {
 			return xmlEscape(simple.Restriction.Enumerations[0].Value), true
 		}
-		return placeholderForXSDType(doc, simple.Restriction.Base, fieldName), true
+		return placeholderForXSDTypeDepth(doc, simple.Restriction.Base, fieldName, depth+1), true
 	}
 	if simple.List != nil {
-		return placeholderForXSDType(doc, simple.List.ItemType, fieldName), true
+		return placeholderForXSDTypeDepth(doc, simple.List.ItemType, fieldName, depth+1), true
 	}
 	if simple.Union != nil {
 		types := strings.Fields(simple.Union.MemberTypes)
 		if len(types) > 0 {
-			return placeholderForXSDType(doc, types[0], fieldName), true
+			return placeholderForXSDTypeDepth(doc, types[0], fieldName, depth+1), true
 		}
 	}
 	return "", false

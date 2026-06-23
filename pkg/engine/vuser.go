@@ -352,7 +352,13 @@ func (vu *VUser) Run(ctx context.Context) {
 						if pass >= loop.Count || pass >= maxPasses {
 							break
 						}
-					} else if pass >= maxPasses || !vu.evalCondition(loop.Condition) {
+					} else if pass >= maxPasses {
+						break
+					} else if !(loop.DoWhile && pass == 0) && !vu.evalCondition(loop.Condition) {
+						// do_while runs the body once before the predicate is first
+						// checked, so a loop whose terminal-state var persists from a
+						// prior VUser iteration re-primes it on pass 0 instead of being
+						// skipped.
 						break
 					}
 					switch runActions(loop.Steps, depth+1) {

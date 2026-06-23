@@ -46,10 +46,15 @@ type executionLeadership struct {
 	now     func() time.Time
 
 	leader atomic.Bool
-	// reconciling guards the asynchronous onAcquire callback so that, even if
-	// leadership flaps (false->true->false->true), at most one reconcile runs at
-	// a time and it never overlaps itself.
-	reconciling atomic.Bool
+
+	// reconcileMu guards the acquire-time reconcile lifecycle. At most one
+	// reconcile runs at a time; if leadership flaps (false->true->false->true)
+	// while one is in flight, the new request is COALESCED via reconcilePending
+	// and re-run when the in-flight one finishes — rather than dropped, which
+	// would leave the final takeover unreconciled.
+	reconcileMu      sync.Mutex
+	reconcileRunning bool
+	reconcilePending bool
 
 	mu            sync.Mutex
 	onAcquire     func()
@@ -154,19 +159,48 @@ func (l *executionLeadership) tick() {
 	l.mu.Unlock()
 	if l.leader.CompareAndSwap(false, true) {
 		slog.Info("execution leadership acquired", "owner", l.ownerID)
-		if onAcquire != nil {
-			// Run the acquire-time reconcile OFF the renewal goroutine. It can
-			// reload the full test set and run synchronous per-group script
-			// shakeouts (up to ~30s each), which is longer than the lease TTL; if
-			// it ran inline it would block lease renewal and let the lease this
-			// replica just acquired expire mid-takeover, admitting a second
-			// leader (split-brain). reconciling serializes overlapping runs.
-			if l.reconciling.CompareAndSwap(false, true) {
-				go func() {
-					defer l.reconciling.Store(false)
-					onAcquire()
-				}()
-			}
-		}
+		// Run the acquire-time reconcile OFF the renewal goroutine. It can reload
+		// the full test set and run synchronous per-group script shakeouts (up to
+		// ~30s each), which is longer than the lease TTL; if it ran inline it would
+		// block lease renewal and let the lease this replica just acquired expire
+		// mid-takeover, admitting a second leader (split-brain).
+		l.triggerReconcile(onAcquire)
 	}
+}
+
+// triggerReconcile schedules the acquire-time reconcile, ensuring at most one
+// runs at a time. If one is already in flight, the request is coalesced: the
+// running worker re-runs onAcquire once it finishes, so a takeover that happens
+// while a prior reconcile is still executing is never left unreconciled.
+func (l *executionLeadership) triggerReconcile(onAcquire func()) {
+	if onAcquire == nil {
+		return
+	}
+	l.reconcileMu.Lock()
+	l.reconcilePending = true
+	if l.reconcileRunning {
+		// A worker is already running; it will observe reconcilePending and re-run.
+		l.reconcileMu.Unlock()
+		return
+	}
+	l.reconcileRunning = true
+	l.reconcileMu.Unlock()
+
+	go func() {
+		for {
+			l.reconcileMu.Lock()
+			if !l.reconcilePending {
+				// No pending request: clear the running flag under the lock so a
+				// concurrent triggerReconcile either sees running=true (and sets
+				// pending, which we'd miss) — avoided because we re-check pending
+				// here before releasing — or sees running=false and starts fresh.
+				l.reconcileRunning = false
+				l.reconcileMu.Unlock()
+				return
+			}
+			l.reconcilePending = false
+			l.reconcileMu.Unlock()
+			onAcquire()
+		}
+	}()
 }

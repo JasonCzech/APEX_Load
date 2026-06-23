@@ -505,11 +505,20 @@ func jsonCandidatesFromParsedBody(body string) []Candidate {
 		return nil
 	}
 	candidates := make([]Candidate, 0)
-	walkJSONCandidates(value, "$", &candidates)
+	walkJSONCandidates(value, "$", true, &candidates)
 	return candidates
 }
 
-func walkJSONCandidates(value any, path string, candidates *[]Candidate) {
+// walkJSONCandidates descends the parsed body collecting correlation candidates.
+// The `evaluable` flag tracks whether every object-key segment of `path` so far
+// is one the replay-side lite JSONPath extractor (extractJSONPathValue) can
+// resolve — i.e. a dot-identifier or an array index. A non-identifier key
+// (hyphenated/dotted/etc.) is emitted by jsonPathChild as a bracket-quoted
+// segment (`$["x-csrf-token"]`) that the extractor cannot evaluate, so any
+// candidate under such a path would silently error at replay. We keep descending
+// (a deeper subtree might still be useful for review) but do not EMIT candidates
+// once the path is no longer evaluable, rather than emitting broken extractors.
+func walkJSONCandidates(value any, path string, evaluable bool, candidates *[]Candidate) {
 	switch typed := value.(type) {
 	case map[string]any:
 		keys := make([]string, 0, len(typed))
@@ -518,15 +527,16 @@ func walkJSONCandidates(value any, path string, candidates *[]Candidate) {
 		}
 		sort.Strings(keys)
 		for _, key := range keys {
-			walkJSONCandidates(typed[key], jsonPathChild(path, key), candidates)
+			childEvaluable := evaluable && jsonPathIdentifier.MatchString(key)
+			walkJSONCandidates(typed[key], jsonPathChild(path, key), childEvaluable, candidates)
 		}
 	case []any:
 		for index, item := range typed {
-			walkJSONCandidates(item, fmt.Sprintf("%s[%d]", path, index), candidates)
+			walkJSONCandidates(item, fmt.Sprintf("%s[%d]", path, index), evaluable, candidates)
 		}
 	case string:
 		key := jsonPathLastKey(path)
-		if key == "" || len(typed) < 6 || !dynamicJSONKey(key) {
+		if key == "" || len(typed) < 6 || !dynamicJSONKey(key) || !evaluable {
 			return
 		}
 		ruleID, base := classifyJSONKey(key)
@@ -542,7 +552,7 @@ func walkJSONCandidates(value any, path string, candidates *[]Candidate) {
 		})
 	case float64:
 		key := jsonPathLastKey(path)
-		if key == "" || !dynamicJSONKey(key) {
+		if key == "" || !dynamicJSONKey(key) || !evaluable {
 			return
 		}
 		number := fmt.Sprintf("%.0f", typed)

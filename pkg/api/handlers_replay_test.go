@@ -574,6 +574,52 @@ func TestValidateScriptForReplayBlocksReviewGatedJavaScriptUntilApproved(t *test
 	}
 }
 
+// TestReplayPreflightSecretMissWarnsNotInvalid guards C6: a secret unresolvable
+// on the controller is resolved on the generators at runtime, so it must surface
+// as a warning, not invalidate the script.
+func TestReplayPreflightSecretMissWarnsNotInvalid(t *testing.T) {
+	const secretName = "C6_UNSET_SECRET_FIXTURE"
+	script := &dsl.Script{
+		Name:     "Secret Replay",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://api.test"},
+		Actions: []dsl.Action{{
+			Name:    "Auth",
+			Type:    "request",
+			Method:  "GET",
+			Target:  "/me",
+			Headers: map[string]string{"Authorization": "Bearer {{secret." + secretName + "}}"},
+		}},
+	}
+
+	preflight := buildReplayPreflight(script, nil, validateScript(script), nil)
+	if !preflight.Valid {
+		t.Fatalf("preflight.Valid = false for a generator-resolved secret; issues=%v", preflight.Issues)
+	}
+	if !stringSliceContainsSubstr(preflight.MissingSecrets, secretName) {
+		t.Fatalf("MissingSecrets = %v, want it to include %q", preflight.MissingSecrets, secretName)
+	}
+	if status := replayPreflightCheckStatus(preflight, "secrets"); status != "warn" {
+		t.Fatalf("secrets check status = %q, want warn", status)
+	}
+	if !anyStringContains(preflight.Warnings, secretName) {
+		t.Fatalf("warnings = %v, want a secret-binding warning mentioning %q", preflight.Warnings, secretName)
+	}
+}
+
+func stringSliceContainsSubstr(values []string, needle string) bool {
+	return anyStringContains(values, needle)
+}
+
+func anyStringContains(values []string, needle string) bool {
+	for _, v := range values {
+		if strings.Contains(v, needle) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestReplayPreflightWalksNestedControlFlow(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "Nested Control Replay",

@@ -188,13 +188,20 @@ func (a *serviceBusAdapter) RequestReply(ctx context.Context, requestDestination
 		return sent, message{}, err
 	}
 	deadline := time.Now().Add(timeout)
+	// Track replies we have already abandoned this call. Abandon makes a message
+	// immediately redeliverable, so on a shared reply queue an uncorrelated reply
+	// would otherwise be received-and-abandoned in a tight CPU/network busy-loop
+	// until timeout. We batch-receive, abandon foreign replies for their rightful
+	// requester, and back off once a receive cycle yields only already-seen ones.
+	const replyBackoff = 50 * time.Millisecond
+	abandoned := make(map[string]struct{})
 	for time.Now().Before(deadline) {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
 			break
 		}
 		receiveCtx, cancel := context.WithTimeout(ctx, remaining)
-		messages, rerr := receiver.ReceiveMessages(receiveCtx, 1, nil)
+		messages, rerr := receiver.ReceiveMessages(receiveCtx, 10, nil)
 		cancel()
 		if rerr != nil {
 			return sent, message{}, fmt.Errorf("receive Service Bus reply from %q: %w", replyDestination, rerr)
@@ -202,17 +209,33 @@ func (a *serviceBusAdapter) RequestReply(ctx context.Context, requestDestination
 		if len(messages) == 0 {
 			continue
 		}
-		reply := fromServiceBusMessage(replyDestination, messages[0])
-		if messaging.CorrelationMatches(request.CorrelationID, reply.CorrelationID) {
-			if err := receiver.CompleteMessage(ctx, messages[0], nil); err != nil {
-				return sent, reply, fmt.Errorf("complete Service Bus reply from %q: %w", replyDestination, err)
+		sawNewForeign := false
+		for _, sbMsg := range messages {
+			reply := fromServiceBusMessage(replyDestination, sbMsg)
+			if messaging.CorrelationMatches(request.CorrelationID, reply.CorrelationID) {
+				if err := receiver.CompleteMessage(ctx, sbMsg, nil); err != nil {
+					return sent, reply, fmt.Errorf("complete Service Bus reply from %q: %w", replyDestination, err)
+				}
+				return sent, reply, nil
 			}
-			return sent, reply, nil
+			// Not our reply: abandon it so it returns to the queue for its rightful
+			// requester instead of being destroyed.
+			if _, seen := abandoned[sbMsg.MessageID]; !seen {
+				sawNewForeign = true
+				abandoned[sbMsg.MessageID] = struct{}{}
+			}
+			if err := receiver.AbandonMessage(ctx, sbMsg, nil); err != nil {
+				return sent, message{}, fmt.Errorf("abandon uncorrelated Service Bus reply from %q: %w", replyDestination, err)
+			}
 		}
-		// Not our reply: abandon it so it returns to the queue for its rightful
-		// requester instead of being destroyed.
-		if err := receiver.AbandonMessage(ctx, messages[0], nil); err != nil {
-			return sent, message{}, fmt.Errorf("abandon uncorrelated Service Bus reply from %q: %w", replyDestination, err)
+		// Only already-abandoned foreign replies recurred: back off briefly so we
+		// don't busy-spin re-receiving the same messages.
+		if !sawNewForeign {
+			select {
+			case <-ctx.Done():
+				return sent, message{}, ctx.Err()
+			case <-time.After(replyBackoff):
+			}
 		}
 	}
 	return sent, message{}, fmt.Errorf("no correlated JMS reply received from %q within %s", replyDestination, timeout)

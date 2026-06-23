@@ -171,7 +171,9 @@ type kafkaBinding struct {
 	GroupID    string `json:"groupId,omitempty" yaml:"groupId,omitempty"`
 	ClientID   string `json:"clientId,omitempty" yaml:"clientId,omitempty"`
 	Partitions int    `json:"partitions,omitempty" yaml:"partitions,omitempty"`
-	Partition  int    `json:"partition,omitempty" yaml:"partition,omitempty"`
+	// Partition is a pointer so an explicit `partition: 0` (a valid, pinnable
+	// partition index) is distinguishable from absence and not silently dropped.
+	Partition *int `json:"partition,omitempty" yaml:"partition,omitempty"`
 }
 
 type messageDef struct {
@@ -1033,15 +1035,17 @@ func operationMessages(doc *document, op operation, ch channel) []namedMessage {
 }
 
 func resolveOperationMessage(doc *document, ch channel, refStr string) (string, messageDef, bool) {
-	name := refName(refStr, "/messages/")
-	if name != "" {
-		if msg, ok := ch.Messages[name]; ok {
+	// Resolve a components ref from components FIRST. A "#/components/messages/Foo"
+	// ref also contains the "/messages/" substring, so the channel-message lookup
+	// would otherwise win and a same-named channel message would shadow the
+	// intended component message.
+	if name := refName(refStr, "/components/messages/"); name != "" {
+		if msg, ok := doc.Components.Messages[name]; ok {
 			return name, resolveMessageRef(doc, msg), true
 		}
 	}
-	name = refName(refStr, "/components/messages/")
-	if name != "" {
-		if msg, ok := doc.Components.Messages[name]; ok {
+	if name := refName(refStr, "/messages/"); name != "" {
+		if msg, ok := ch.Messages[name]; ok {
 			return name, resolveMessageRef(doc, msg), true
 		}
 	}
@@ -1153,8 +1157,8 @@ func applyBindingsToOp(op *kafkaOp, channelBindings bindings, operationBindings 
 			if strings.TrimSpace(b.Kafka.ClientID) != "" {
 				op.clientID = b.Kafka.ClientID
 			}
-			if b.Kafka.Partition > 0 {
-				p := b.Kafka.Partition
+			if b.Kafka.Partition != nil {
+				p := *b.Kafka.Partition
 				op.partition = &p
 			}
 			if b.Kafka.Partitions > 0 {
@@ -1447,7 +1451,7 @@ func sampleBody(doc *document, s schema, schemaFormat string) (string, []string)
 	var value any
 	var columns []string
 	if isAvroSchemaFormat(schemaFormat) || strings.EqualFold(schemaType(s), "record") {
-		value, columns = sampleAvroSchema(doc, s, map[string]bool{}, "")
+		value, columns = sampleAvroSchema(doc, s, map[string]bool{}, "", 0)
 	} else {
 		value, columns = sampleForSchema(doc, s, map[string]bool{}, "")
 	}
@@ -1525,7 +1529,18 @@ func scalarSchema(s schema) bool {
 	}
 }
 
-func sampleAvroSchema(doc *document, s schema, seen map[string]bool, prefix string) (any, []string) {
+// maxAvroSampleDepth bounds Avro schema-sampling recursion as defense-in-depth.
+// The seen-set keyed on named-type identity (and on $ref) is the primary
+// cycle-breaker; this cap guards against any unforeseen recursive shape so a
+// hostile spec cannot stack-overflow (an uncatchable, process-fatal panic) the
+// controller via the authenticated AsyncAPI import endpoint.
+const maxAvroSampleDepth = 64
+
+func sampleAvroSchema(doc *document, s schema, seen map[string]bool, prefix string, depth int) (any, []string) {
+	if depth > maxAvroSampleDepth {
+		column := columnName(prefix, "value")
+		return "{{data.asyncapi." + column + "}}", []string{column}
+	}
 	if s.Ref != "" {
 		if seen[s.Ref] {
 			return map[string]any{}, nil
@@ -1544,7 +1559,7 @@ func sampleAvroSchema(doc *document, s schema, seen map[string]bool, prefix stri
 		typ = schemaType(s)
 	}
 	if union, ok := typ.([]any); ok {
-		return sampleAvroUnion(doc, union, seen, prefix)
+		return sampleAvroUnion(doc, union, seen, prefix, depth+1)
 	}
 	if len(s.Fields) > 0 || strings.EqualFold(schemaType(s), "record") {
 		result := map[string]any{}
@@ -1553,7 +1568,7 @@ func sampleAvroSchema(doc *document, s schema, seen map[string]bool, prefix stri
 			if strings.TrimSpace(field.Name) == "" {
 				continue
 			}
-			value, nested := sampleAvroType(doc, field.Type, field.Default, copySeen(seen), columnName(prefix, field.Name))
+			value, nested := sampleAvroType(doc, field.Type, field.Default, copySeen(seen), columnName(prefix, field.Name), depth+1)
 			result[field.Name] = value
 			columns = append(columns, nested...)
 		}
@@ -1561,10 +1576,10 @@ func sampleAvroSchema(doc *document, s schema, seen map[string]bool, prefix stri
 	}
 	switch strings.ToLower(schemaType(s)) {
 	case "array":
-		value, columns := sampleAvroSchema(doc, valueOrEmpty(s.Items), copySeen(seen), prefix)
+		value, columns := sampleAvroSchema(doc, valueOrEmpty(s.Items), copySeen(seen), prefix, depth+1)
 		return []any{value}, columns
 	case "map":
-		value, columns := sampleAvroSchema(doc, valueOrEmpty(s.Values), copySeen(seen), prefix)
+		value, columns := sampleAvroSchema(doc, valueOrEmpty(s.Values), copySeen(seen), prefix, depth+1)
 		return map[string]any{"key": value}, columns
 	case "enum":
 		if len(s.Enum) > 0 {
@@ -1585,9 +1600,18 @@ func sampleAvroSchema(doc *document, s schema, seen map[string]bool, prefix stri
 		column := columnName(prefix, "value")
 		return "{{data.asyncapi." + column + "}}", []string{column}
 	default:
-		if isLikelyNamedAvroRef(schemaType(s)) {
-			if resolved, ok := resolveNamedAvroSchema(doc, schemaType(s)); ok {
-				return sampleAvroSchema(doc, resolved, copySeen(seen), prefix)
+		// Avro references a named type via the `type` field (not a JSON $ref), so
+		// the $ref seen-guard above never fires for it. Track the resolved
+		// named-type identity here to break cyclic/mutually-recursive Avro records.
+		if name := schemaType(s); isLikelyNamedAvroRef(name) {
+			avroKey := "avro:" + name
+			if seen[avroKey] {
+				return map[string]any{}, nil
+			}
+			if resolved, ok := resolveNamedAvroSchema(doc, name); ok {
+				next := copySeen(seen)
+				next[avroKey] = true
+				return sampleAvroSchema(doc, resolved, next, prefix, depth+1)
 			}
 		}
 		column := columnName(prefix, "value")
@@ -1595,34 +1619,34 @@ func sampleAvroSchema(doc *document, s schema, seen map[string]bool, prefix stri
 	}
 }
 
-func sampleAvroType(doc *document, typ any, defaultValue any, seen map[string]bool, prefix string) (any, []string) {
+func sampleAvroType(doc *document, typ any, defaultValue any, seen map[string]bool, prefix string, depth int) (any, []string) {
 	if defaultValue != nil {
 		return defaultValue, nil
 	}
 	switch t := typ.(type) {
 	case string:
-		return sampleAvroSchema(doc, schema{Type: t}, seen, prefix)
+		return sampleAvroSchema(doc, schema{Type: t}, seen, prefix, depth)
 	case []any:
-		return sampleAvroUnion(doc, t, seen, prefix)
+		return sampleAvroUnion(doc, t, seen, prefix, depth)
 	case map[string]any:
-		return sampleAvroSchema(doc, schemaFromMap(t), seen, prefix)
+		return sampleAvroSchema(doc, schemaFromMap(t), seen, prefix, depth)
 	case map[any]any:
 		converted := map[string]any{}
 		for k, v := range t {
 			converted[fmt.Sprint(k)] = v
 		}
-		return sampleAvroSchema(doc, schemaFromMap(converted), seen, prefix)
+		return sampleAvroSchema(doc, schemaFromMap(converted), seen, prefix, depth)
 	default:
-		return sampleAvroSchema(doc, schema{}, seen, prefix)
+		return sampleAvroSchema(doc, schema{}, seen, prefix, depth)
 	}
 }
 
-func sampleAvroUnion(doc *document, union []any, seen map[string]bool, prefix string) (any, []string) {
+func sampleAvroUnion(doc *document, union []any, seen map[string]bool, prefix string, depth int) (any, []string) {
 	for _, branch := range union {
 		if s, ok := branch.(string); ok && strings.EqualFold(s, "null") {
 			continue
 		}
-		return sampleAvroType(doc, branch, nil, seen, prefix)
+		return sampleAvroType(doc, branch, nil, seen, prefix, depth)
 	}
 	return nil, nil
 }

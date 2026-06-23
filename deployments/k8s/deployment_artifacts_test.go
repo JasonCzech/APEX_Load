@@ -2,9 +2,51 @@ package k8s_test
 
 import (
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+var placeholderPattern = regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`)
+
+// TestRenderScriptHandlesEveryOverlayPlaceholder guards B10: every ${PLACEHOLDER}
+// used in an AKS overlay must have a matching substitution rule in
+// scripts/render-aks-manifests.sh. Without this, a placeholder like
+// ${KEDA_WORKLOAD_IDENTITY_CLIENT_ID} (aks-azure-monitor TriggerAuthentication)
+// silently survives rendering and the KEDA scaler fails workload-identity auth,
+// stalling generator autoscaling.
+func TestRenderScriptHandlesEveryOverlayPlaceholder(t *testing.T) {
+	renderScript := readTextFile(t, "../../scripts/render-aks-manifests.sh")
+
+	overlayDirs := []string{"aks", "aks-azure-monitor", "aks-prometheus", "onprem-autoscaling"}
+	seen := map[string]bool{}
+	for _, dir := range overlayDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue // overlay is optional; skip if absent
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+				continue
+			}
+			content := readTextFile(t, filepath.Join(dir, entry.Name()))
+			for _, m := range placeholderPattern.FindAllStringSubmatch(content, -1) {
+				name := m[1]
+				if seen[name] {
+					continue
+				}
+				seen[name] = true
+				if !strings.Contains(renderScript, name) {
+					t.Errorf("overlay placeholder ${%s} (in %s/%s) has no substitution rule in render-aks-manifests.sh", name, dir, entry.Name())
+				}
+			}
+		}
+	}
+	if len(seen) == 0 {
+		t.Fatal("no ${...} placeholders found across AKS overlays; test wiring is likely broken")
+	}
+}
 
 func TestFreshClusterBasesDoNotIncludeOptionalCRDResources(t *testing.T) {
 	tests := []struct {

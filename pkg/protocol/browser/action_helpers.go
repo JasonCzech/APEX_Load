@@ -159,7 +159,10 @@ func (b *Browser) sleep(ctx context.Context, delay time.Duration) error {
 func (b *Browser) eventOffsets() (int, int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return len(b.consoleEntries), len(b.networkEntries)
+	// The network offset is absolute (total ever appended) so it survives eviction
+	// of older entries by the ring/byte-budget cap; networkEntriesSince translates
+	// it back to a local index.
+	return len(b.consoleEntries), b.networkEntriesDropped + len(b.networkEntries)
 }
 
 func (b *Browser) consoleEntriesSince(offset int) []protocol.ConsoleEntry {
@@ -177,13 +180,16 @@ func (b *Browser) consoleEntriesSince(offset int) []protocol.ConsoleEntry {
 func (b *Browser) networkEntriesSince(offset int) []protocol.NetworkEntry {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if offset <= 0 {
+	// offset is absolute (see eventOffsets); translate to a local index, clamping
+	// when the captured start has since been evicted by the cap.
+	local := offset - b.networkEntriesDropped
+	if local <= 0 {
 		return cloneNetworkEntries(b.networkEntries)
 	}
-	if offset >= len(b.networkEntries) {
+	if local >= len(b.networkEntries) {
 		return nil
 	}
-	return cloneNetworkEntries(b.networkEntries[offset:])
+	return cloneNetworkEntries(b.networkEntries[local:])
 }
 
 func (b *Browser) waitTimeout(timeoutMs int) time.Duration {

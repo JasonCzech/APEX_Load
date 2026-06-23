@@ -59,6 +59,55 @@ func TestConvertOpenAPIRawJSONScalarsAndAdditionalProperties(t *testing.T) {
 	}
 }
 
+// TestConvertOpenAPIAdditionalPropertiesBoolEmitsNoSpuriousField guards B8: the
+// boolean form of additionalProperties (false/true) is a closed/open marker, NOT
+// a map schema, so it must not synthesize a bogus `additionalProperty` field or
+// `additional_value` data column.
+func TestConvertOpenAPIAdditionalPropertiesBoolEmitsNoSpuriousField(t *testing.T) {
+	for _, apValue := range []string{"false", "true"} {
+		t.Run("additionalProperties_"+apValue, func(t *testing.T) {
+			result, err := Convert(ImportRequest{
+				Name: "Closed",
+				Content: `{
+  "openapi": "3.1.0",
+  "info": {"title": "Closed", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "paths": {
+    "/things": {
+      "post": {
+        "operationId": "createThing",
+        "requestBody": {"content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": ` + apValue + `,
+          "properties": {"id": {"type": "string"}}
+        }}}},
+        "responses": {"200": {"description": "ok"}}
+      }
+    }
+  }
+}`,
+			})
+			if err != nil {
+				t.Fatalf("Convert returned error: %v", err)
+			}
+			body := result.Script.Actions[0].Body
+			if strings.Contains(body, "additionalProperty") {
+				t.Fatalf("additionalProperties: %s synthesized a spurious field: %s", apValue, body)
+			}
+			for _, ds := range result.Script.DataSources {
+				if strings.Contains(ds.InlineData, "additional_value") {
+					t.Fatalf("additionalProperties: %s leaked an additional_value column", apValue)
+				}
+				for _, col := range ds.Columns {
+					if col == "additional_value" {
+						t.Fatalf("additionalProperties: %s leaked an additional_value column", apValue)
+					}
+				}
+			}
+		})
+	}
+}
+
 // TestConvertOpenAPIXMLRequestBodyFromSchema covers schema-derived XML body
 // generation including attribute-vs-element handling and data placeholders.
 func TestConvertOpenAPIXMLRequestBodyFromSchema(t *testing.T) {

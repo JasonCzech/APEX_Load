@@ -340,6 +340,13 @@ func isTrustedFullBodyBase64Template(body string) bool {
 		return false
 	}
 	expr := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(body, "{{"), "}}"))
+	// Reject composite templates like {{env.X}}<arbitrary>{{secret.Y}}: stripping
+	// only the outer braces leaves an inner expr that still starts with env./secret.
+	// but smuggles untrusted content (or extra template spans) into the base64
+	// payload. A trusted full-body template must be a single {{...}} span.
+	if strings.Contains(expr, "{{") || strings.Contains(expr, "}}") {
+		return false
+	}
 	return strings.HasPrefix(expr, "env.") || strings.HasPrefix(expr, "secret.")
 }
 

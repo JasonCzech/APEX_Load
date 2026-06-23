@@ -95,6 +95,44 @@ func TestDetectNestedJSONPathToken(t *testing.T) {
 	}
 }
 
+// TestDetectSkipsNonEvaluableBracketJSONPath guards against emitting a
+// bracket-quoted JSONPath (e.g. $["x-csrf-token"]) that the replay-side lite
+// extractor (extractJSONPathValue) cannot evaluate — it splits only on "." and
+// "[N]". A non-identifier nested key must NOT produce a broken extractor; a
+// sibling identifier key must still correlate with a clean dot path.
+func TestDetectSkipsNonEvaluableBracketJSONPath(t *testing.T) {
+	observations := []Observation{
+		{
+			ID:           1,
+			ResponseBody: `{"wrap":{"x-csrf-token":"csrf-abcdef123456"},"auth":{"access_token":"tok-abcdef123456"}}`,
+		},
+		{
+			ID:             2,
+			RequestHeaders: map[string]string{"Authorization": "Bearer tok-abcdef123456", "X-CSRF": "csrf-abcdef123456"},
+		},
+	}
+
+	correlations := Detect(observations)
+	if len(correlations) == 0 {
+		t.Fatalf("expected at least the access_token correlation, got none")
+	}
+	var sawAccessToken bool
+	for _, corr := range correlations {
+		if corr.ExtractType == "jsonpath" && strings.Contains(corr.Expression, "[") {
+			t.Fatalf("emitted a bracket-quoted JSONPath the replay extractor cannot evaluate: %q", corr.Expression)
+		}
+		if corr.Name == "corr_access_token" {
+			sawAccessToken = true
+			if corr.Expression != "$.auth.access_token" {
+				t.Fatalf("access_token expression = %q, want $.auth.access_token", corr.Expression)
+			}
+		}
+	}
+	if !sawAccessToken {
+		t.Fatalf("identifier-keyed access_token correlation was dropped: %#v", correlations)
+	}
+}
+
 // TestAuraAppPatternRequiresDescriptorShape guards the A6 fix: the Salesforce Aura
 // app-descriptor detector must only fire on values shaped like a real descriptor
 // (markup:// or namespace:name), not on any generic "app":"..." JSON field, which

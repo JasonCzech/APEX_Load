@@ -355,7 +355,9 @@ func (s *Server) writeBrowserRecordingControlResult(w http.ResponseWriter, sessi
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		if strings.Contains(err.Error(), "not live") {
+		if strings.Contains(err.Error(), "not live") || strings.Contains(err.Error(), "no stopped artifact") {
+			// Both are client-state preconditions (session not live / not yet
+			// stopped), not backend failures — 409, not 502.
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}

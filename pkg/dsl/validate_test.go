@@ -49,6 +49,11 @@ func TestValidateScriptIssues_Base64BodyEncodingTemplates(t *testing.T) {
 		{name: "partial template rejected", body: "AP8={{var.token}}", wantIssue: true},
 		{name: "var full body rejected", body: "{{var.payload}}", wantIssue: true},
 		{name: "invalid literal rejected", body: "not base64!", wantIssue: true},
+		// Composite env/secret templates must be rejected: stripping the outer
+		// braces leaves an env.-prefixed expr that smuggles content between spans.
+		{name: "composite env+untrusted+secret rejected", body: "{{env.X}}AAAA{{secret.Y}}", wantIssue: true},
+		{name: "composite env+secret rejected", body: "{{env.X}}{{secret.Y}}", wantIssue: true},
+		{name: "composite env+var rejected", body: "{{env.X}}{{var.Y}}", wantIssue: true},
 	}
 
 	for _, tc := range cases {

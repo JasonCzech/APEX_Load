@@ -197,3 +197,36 @@ func TestReplay_BreakOutsideLoopIsNoOp(t *testing.T) {
 		t.Fatalf("stray break replay leaves = %v, want [Break After]", names)
 	}
 }
+
+func TestReplay_DoWhileRunsBodyOnceWhenConditionInitiallyFalse(t *testing.T) {
+	proto := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	loop := func(doWhile bool) dsl.Action {
+		return dsl.Action{
+			Name: "Loop",
+			Type: "control_loop",
+			Control: &dsl.ControlFlow{
+				// Unset var → the predicate is false on the very first check.
+				Condition:     &dsl.Condition{Left: "{{var.flag}}", Op: "eq", Right: "go"},
+				DoWhile:       doWhile,
+				MaxIterations: 3,
+				Steps:         []dsl.Action{{Name: "Body", Type: "GET", Method: "GET", Target: "/b"}},
+			},
+		}
+	}
+	pre, err := ReplayScript(context.Background(), &dsl.Script{Name: "Pre", Protocol: proto, Actions: []dsl.Action{loop(false)}}, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript: %v", err)
+	}
+	if names := replayLeafNames(pre); len(names) != 0 {
+		t.Fatalf("pre-test loop replayed body %v, want none", names)
+	}
+	dw, err := ReplayScript(context.Background(), &dsl.Script{Name: "DoWhile", Protocol: proto, Actions: []dsl.Action{loop(true)}}, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript: %v", err)
+	}
+	if names := replayLeafNames(dw); len(names) != 1 || names[0] != "Body" {
+		t.Fatalf("do_while loop replayed body %v, want exactly [Body]", names)
+	}
+}

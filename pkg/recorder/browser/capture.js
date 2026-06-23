@@ -302,7 +302,11 @@
     const pending = pendingClick;
     pendingClick = null;
     clearTimeout(pending.timer);
-    if (!paused) record('click', pending.el, '');
+    // Stamp the original click time, not the flush time: the click is deferred up
+    // to 250ms (to coalesce double-clicks), so a fill/keypress landing inside that
+    // window would otherwise carry an earlier ts and be ordered BEFORE the click
+    // in the generated DSL.
+    if (!paused) record('click', pending.el, '', false, { ts: pending.ts });
   }
 
   function scheduleClick(el) {
@@ -315,10 +319,11 @@
     }
     pendingClick = {
       el: el,
+      ts: Date.now(),
       timer: setTimeout(() => {
         const pending = pendingClick;
         pendingClick = null;
-        if (pending && !paused) record('click', pending.el, '');
+        if (pending && !paused) record('click', pending.el, '', false, { ts: pending.ts });
       }, 250)
     };
   }

@@ -982,11 +982,43 @@ func applyPostmanAPIKey(action *dsl.Action, value *auth, vars map[string]string,
 }
 
 func appendQueryParam(target string, key string, value string) string {
+	// Split off any existing #fragment so the query parameter is appended before
+	// it (appending after would corrupt the URL), then re-attach.
+	base, fragment, hasFragment := strings.Cut(target, "#")
 	sep := "?"
-	if strings.Contains(target, "?") {
+	if strings.Contains(base, "?") {
 		sep = "&"
 	}
-	return target + sep + key + "=" + value
+	result := base + sep + encodeQueryComponentPreservingTemplates(key) + "=" + encodeQueryComponentPreservingTemplates(value)
+	if hasFragment {
+		result += "#" + fragment
+	}
+	return result
+}
+
+// encodeQueryComponentPreservingTemplates QueryEscapes the literal portions of s
+// while leaving {{...}} template spans verbatim, so a non-template literal (e.g.
+// an unsanitized API-key value with reserved characters) cannot produce a
+// malformed query string, yet placeholders still resolve at replay.
+func encodeQueryComponentPreservingTemplates(s string) string {
+	var b strings.Builder
+	for len(s) > 0 {
+		open := strings.Index(s, "{{")
+		if open < 0 {
+			b.WriteString(url.QueryEscape(s))
+			break
+		}
+		b.WriteString(url.QueryEscape(s[:open]))
+		rel := strings.Index(s[open:], "}}")
+		if rel < 0 {
+			b.WriteString(url.QueryEscape(s[open:]))
+			break
+		}
+		end := open + rel + 2
+		b.WriteString(s[open:end]) // {{...}} kept verbatim
+		s = s[end:]
+	}
+	return b.String()
 }
 
 func postmanAuthConfig(value *auth, vars map[string]string, sanitizeSensitive bool, diagnostics *diag.Collector, location string) dsl.AuthConfig {

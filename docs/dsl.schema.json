@@ -1810,8 +1810,12 @@
             "description": "Loop block: repeats control.steps for a fixed count, for each row of a data source, or while a condition holds.",
             "properties": {
               "control": {
-                "description": "Loop body: {condition, steps, count, max_iterations, for_each}. Mode precedence is for_each \u003e count \u003e condition; requires a for_each.source, a positive count, or a condition. condition may use legacy left/op/right or CEL expr over var/data/env. Each pass exposes a 1-based {{var.loop_index}} to the body and the condition (e.g. expr \"int(var.loop_index) \u003c= int(var.total)\").",
+                "description": "Loop body: {condition, steps, count, max_iterations, for_each, do_while}. Mode precedence is for_each \u003e count \u003e condition; requires a for_each.source, a positive count, or a condition. condition may use legacy left/op/right or CEL expr over var/data/env. Each pass exposes a 1-based {{var.loop_index}} to the body and the condition (e.g. expr \"int(var.loop_index) \u003c= int(var.total)\").",
                 "type": "object"
+              },
+              "control.do_while": {
+                "description": "Condition mode only: run the body once before the predicate is first evaluated (post-test / run-at-least-once) instead of the default pre-test loop. Useful when the predicate depends on a variable the body itself produces. Ignored for count/for_each modes.",
+                "type": "boolean"
               },
               "control.for_each.condition": {
                 "description": "Optional per-row early-exit predicate {condition}. Iteration stops the first row this evaluates false (the row's columns are bound before it is checked).",
@@ -5771,6 +5775,9 @@
         },
         "count": {
           "type": "integer"
+        },
+        "do_while": {
+          "type": "boolean"
         },
         "else": {
           "items": {

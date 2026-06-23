@@ -423,3 +423,25 @@ func containsPostmanDiagnostic(result *ConvertResult, element string) bool {
 	}
 	return false
 }
+
+func TestAppendQueryParamEncodesLiteralsAndKeepsTemplatesAndFragment(t *testing.T) {
+	// Template spans are preserved verbatim so they still resolve at replay.
+	if got := appendQueryParam("https://api.test/x", "api_key", "{{env.POSTMAN_API_KEY}}"); got != "https://api.test/x?api_key={{env.POSTMAN_API_KEY}}" {
+		t.Fatalf("template value got %q", got)
+	}
+	// A literal value with reserved characters is percent-encoded, not injected raw.
+	got := appendQueryParam("https://api.test/x", "api key", "a b&c=d")
+	if got != "https://api.test/x?api+key=a+b%26c%3Dd" {
+		t.Fatalf("literal value got %q, want reserved chars encoded", got)
+	}
+	// An existing fragment is preserved after the appended query param.
+	got = appendQueryParam("https://api.test/x#section", "k", "v")
+	if got != "https://api.test/x?k=v#section" {
+		t.Fatalf("fragment handling got %q", got)
+	}
+	// Mixed literal + template encodes only the literal portion.
+	got = appendQueryParam("https://api.test/x?a=1", "k", "pre {{var.t}} post")
+	if got != "https://api.test/x?a=1&k=pre+{{var.t}}+post" {
+		t.Fatalf("mixed value got %q", got)
+	}
+}

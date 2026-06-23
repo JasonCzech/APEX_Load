@@ -67,12 +67,19 @@ STORAGE_ACCOUNT_NAME="${APEXLOAD_STORAGE_ACCOUNT_NAME:-$(tf_output storage_accou
 KEY_VAULT_URL="${APEXLOAD_KEY_VAULT_URL:-$(tf_output key_vault_url)}"
 CONTROLLER_CLIENT_ID="${APEXLOAD_CONTROLLER_WORKLOAD_IDENTITY_CLIENT_ID:-$(tf_output controller_workload_identity_client_id)}"
 GENERATOR_CLIENT_ID="${APEXLOAD_GENERATOR_WORKLOAD_IDENTITY_CLIENT_ID:-$(tf_output generator_workload_identity_client_id)}"
+KEDA_CLIENT_ID="${APEXLOAD_KEDA_WORKLOAD_IDENTITY_CLIENT_ID:-$(tf_output keda_workload_identity_client_id)}"
 
 if [[ -z "$CONTROLLER_CLIENT_ID" ]]; then
   CONTROLLER_CLIENT_ID="$(tf_output workload_identity_client_id)"
 fi
 if [[ -z "$GENERATOR_CLIENT_ID" ]]; then
   GENERATOR_CLIENT_ID="$CONTROLLER_CLIENT_ID"
+fi
+# The KEDA TriggerAuthentication (aks-azure-monitor overlay) authenticates the
+# scaler with the generator's workload identity; fall back to it when a dedicated
+# KEDA identity output is absent.
+if [[ -z "$KEDA_CLIENT_ID" ]]; then
+  KEDA_CLIENT_ID="$GENERATOR_CLIENT_ID"
 fi
 if [[ -z "$IMAGE_TAG" ]]; then
   IMAGE_TAG="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || true)"
@@ -96,15 +103,21 @@ TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/apexload-aks.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 cp -R "$OVERLAY_DIR/." "$TMP_DIR/"
 
-export STORAGE_ACCOUNT_NAME KEY_VAULT_URL ACR_LOGIN_SERVER CONTROLLER_CLIENT_ID GENERATOR_CLIENT_ID IMAGE_TAG
+export STORAGE_ACCOUNT_NAME KEY_VAULT_URL ACR_LOGIN_SERVER CONTROLLER_CLIENT_ID GENERATOR_CLIENT_ID KEDA_CLIENT_ID IMAGE_TAG
+# Substitute across every YAML in the overlay so additional overlays (e.g.
+# aks-azure-monitor's triggerauthentication.yaml carrying
+# ${KEDA_WORKLOAD_IDENTITY_CLIENT_ID}) are rendered, not just the base files. The
+# substitutions are placeholder-specific, so applying them to files without
+# placeholders is a no-op.
 perl -0pi \
   -e 's/changemestorageaccount/$ENV{STORAGE_ACCOUNT_NAME}/g;' \
   -e 's#https://change-me\.vault\.azure\.net#$ENV{KEY_VAULT_URL}#g;' \
   -e 's/changeme\.azurecr\.io/$ENV{ACR_LOGIN_SERVER}/g;' \
   -e 's/\$\{CONTROLLER_WORKLOAD_IDENTITY_CLIENT_ID\}/$ENV{CONTROLLER_CLIENT_ID}/g;' \
   -e 's/\$\{GENERATOR_WORKLOAD_IDENTITY_CLIENT_ID\}/$ENV{GENERATOR_CLIENT_ID}/g;' \
+  -e 's/\$\{KEDA_WORKLOAD_IDENTITY_CLIENT_ID\}/$ENV{KEDA_CLIENT_ID}/g;' \
   -e 's/\$\{WORKLOAD_IDENTITY_CLIENT_ID\}/$ENV{CONTROLLER_CLIENT_ID}/g;' \
-  "$TMP_DIR"/configmap.yaml "$TMP_DIR"/serviceaccounts.yaml "$TMP_DIR"/kustomization.yaml
+  "$TMP_DIR"/*.yaml
 
 perl -0pi -e 's/newTag: 0\.1\.0/newTag: $ENV{IMAGE_TAG}/g;' "$TMP_DIR"/kustomization.yaml
 

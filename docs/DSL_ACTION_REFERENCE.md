@@ -48,7 +48,8 @@ Loop block: repeats control.steps for a fixed count, for each row of a data sour
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `control` | object | yes | Loop body: {condition, steps, count, max_iterations, for_each}. Mode precedence is for_each > count > condition; requires a for_each.source, a positive count, or a condition. condition may use legacy left/op/right or CEL expr over var/data/env. Each pass exposes a 1-based {{var.loop_index}} to the body and the condition (e.g. expr "int(var.loop_index) <= int(var.total)"). |
+| `control` | object | yes | Loop body: {condition, steps, count, max_iterations, for_each, do_while}. Mode precedence is for_each > count > condition; requires a for_each.source, a positive count, or a condition. condition may use legacy left/op/right or CEL expr over var/data/env. Each pass exposes a 1-based {{var.loop_index}} to the body and the condition (e.g. expr "int(var.loop_index) <= int(var.total)"). |
+| `control.do_while` | bool |  | Condition mode only: run the body once before the predicate is first evaluated (post-test / run-at-least-once) instead of the default pre-test loop. Useful when the predicate depends on a variable the body itself produces. Ignored for count/for_each modes. |
 | `control.for_each.source` | string |  | Data source name to iterate row-by-row. Required when using for_each mode; takes precedence over count and condition. |
 | `control.for_each.var` | string |  | Var-namespace prefix each iterated row binds under: row column c is available to the body as {{var.<var>.c}}. Distinct from the per-VUser {{data.source.c}} binding. |
 | `control.for_each.condition` | object |  | Optional per-row early-exit predicate {condition}. Iteration stops the first row this evaluates false (the row's columns are bound before it is checked). |

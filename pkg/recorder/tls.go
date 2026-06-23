@@ -420,6 +420,24 @@ func (c *readBufferedConn) Read(p []byte) (int, error) {
 
 // forwardHTTPS forwards a single HTTP request read from the intercepted TLS connection
 // to the real upstream server and writes the response back to the client.
+// stripDefaultHTTPSPort removes an explicit :443 from a host:port so recorded
+// HTTPS URLs use the canonical default-port-less form (example.com, not
+// example.com:443). Non-default ports and bare hosts are returned unchanged.
+func stripDefaultHTTPSPort(host string) string {
+	h, port, err := net.SplitHostPort(host)
+	if err != nil {
+		return host
+	}
+	if port != "443" {
+		return host
+	}
+	if strings.Contains(h, ":") {
+		// IPv6 literal: keep it bracketed for use as a URL host.
+		return "[" + h + "]"
+	}
+	return h
+}
+
 func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, clientReq *http.Request, hostname, host string, client *http.Client) {
 	r.mu.RLock()
 	session := r.active
@@ -466,10 +484,13 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, cl
 	defer resp.Body.Close()
 
 	// Set the request URL to the full HTTPS URL for recording before any
-	// streaming response can emit its early recording event.
+	// streaming response can emit its early recording event. Strip the implicit
+	// :443 (added to `host` for the upstream dial) so recorded URLs and the
+	// derived BaseURL use the canonical default-port-less form.
+	recordHost := stripDefaultHTTPSPort(host)
 	clientReq.URL.Scheme = "https"
-	clientReq.URL.Host = host
-	clientReq.Host = host
+	clientReq.URL.Host = recordHost
+	clientReq.Host = recordHost
 
 	if isStreamingResponse(resp) {
 		writeHTTPSResponseHeaders(tlsConn, resp, -1, true)

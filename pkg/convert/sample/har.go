@@ -155,6 +155,10 @@ func parseHARItem(item map[string]any, diagnostics *diag.Collector, index int) (
 		location = strings.TrimSpace(ex.Method + " " + ex.URL)
 	}
 	applyHARPostDataHeaders(requestData, ex.Headers)
+	// applyHARPostDataHeaders may inject a multipart boundary into the Content-Type
+	// in the map; keep the ordered HeaderList (which replay prefers over the map) in
+	// sync so the body stays parseable at replay.
+	ex.HeaderList = reconcileMultipartBoundaryInList(ex.HeaderList, ex.Headers)
 	mergeHARCookies(requestData["cookies"], ex.Headers, diagnostics, location)
 	if startedAt, ok := parseHARStartedAt(item["startedDateTime"]); ok {
 		ex.StartedAt = startedAt

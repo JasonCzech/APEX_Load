@@ -59,7 +59,14 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 	if len(dataWarnings) > 0 {
 		preflight.Warnings = append(preflight.Warnings, dataWarnings...)
 	}
-	preflight.Valid = preflight.Valid && len(reviewGateIssues) == 0 && len(messagingIssues) == 0 && len(preflight.MissingVariables) == 0 && len(preflight.MissingSecrets) == 0 && len(dataWarnings) == 0
+	// A secret missing on the controller does NOT invalidate the script: secrets
+	// are resolved at runtime on the generators, which have their own secret/env
+	// stores. Surface it as a warning so the operator can confirm the binding,
+	// rather than blocking the run.
+	if len(preflight.MissingSecrets) > 0 {
+		preflight.Warnings = append(preflight.Warnings, fmt.Sprintf("secret(s) not resolvable on the controller and must be provided to the generators at runtime: %s", strings.Join(preflight.MissingSecrets, ", ")))
+	}
+	preflight.Valid = preflight.Valid && len(reviewGateIssues) == 0 && len(messagingIssues) == 0 && len(preflight.MissingVariables) == 0 && len(dataWarnings) == 0
 	preflight.Checks = []ReplayPreflightCheck{
 		{
 			ID:     "validation",
@@ -80,9 +87,11 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 			Detail: replayListDetail(preflight.MissingVariables, "All replay variables are seeded or extracted before use."),
 		},
 		{
-			ID:     "secrets",
-			Label:  "Secret bindings",
-			Status: replayCheckStatus(len(preflight.MissingSecrets) == 0, len(preflight.RequiredSecrets) > 0),
+			ID:    "secrets",
+			Label: "Secret bindings",
+			// Missing secrets warn (resolved on generators at runtime); they never
+			// fail the check.
+			Status: replayCheckStatus(true, len(preflight.MissingSecrets) > 0 || len(preflight.RequiredSecrets) > 0),
 			Detail: replaySecretDetail(preflight.RequiredSecrets, preflight.MissingSecrets),
 		},
 		{

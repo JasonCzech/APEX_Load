@@ -4,12 +4,31 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
+	"mime"
 	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+// headerListContentType returns the (last) Content-Type value from an ordered
+// HeaderList, failing the test if none is present.
+func headerListContentType(t *testing.T, list dsl.HeaderList) string {
+	t.Helper()
+	value := ""
+	found := false
+	for _, h := range list {
+		if strings.EqualFold(h.Name, "Content-Type") {
+			value = h.Value
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("HeaderList has no Content-Type entry: %#v", list)
+	}
+	return value
+}
 
 func TestConvertRESTJSON(t *testing.T) {
 	includeAssertions := true
@@ -353,6 +372,36 @@ func TestConvertCurlMultipartUsesExistingBoundary(t *testing.T) {
 	}
 	if !strings.Contains(action.Body, "------custom-boundary\r\n") || !strings.Contains(action.Body, "------custom-boundary--\r\n") {
 		t.Fatalf("multipart body = %q, want custom boundary", action.Body)
+	}
+}
+
+// TestConvertCurlMultipartSynthesizesBoundaryInHeaderList guards B1: when the
+// recorded Content-Type is multipart but carries no boundary, the synthesized
+// boundary must land in the ordered HeaderList (which replay prefers), not only
+// in the legacy Headers map — otherwise the bare HeaderList Content-Type shadows
+// the fix and the body replays as unparseable.
+func TestConvertCurlMultipartSynthesizesBoundaryInHeaderList(t *testing.T) {
+	sanitizeSensitive := false
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format:  "curl",
+		Content: `curl -H 'Content-Type: multipart/form-data' -F 'file=@/tmp/report.pdf;type=application/pdf' https://api.example.com/upload`,
+		Options: ConvertOptions{SanitizeSensitive: &sanitizeSensitive, InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	listCT := headerListContentType(t, action.HeaderList)
+	if !strings.Contains(listCT, "boundary=") {
+		t.Fatalf("HeaderList Content-Type = %q, want a synthesized boundary (replay uses HeaderList)", listCT)
+	}
+	if listCT != action.Headers["Content-Type"] {
+		t.Fatalf("HeaderList Content-Type %q out of sync with map %q", listCT, action.Headers["Content-Type"])
+	}
+	_, params, _ := mime.ParseMediaType(listCT)
+	if b := params["boundary"]; b == "" || !strings.Contains(action.Body, "--"+b+"\r\n") {
+		t.Fatalf("body does not use the HeaderList boundary %q: %q", b, action.Body)
 	}
 }
 
@@ -1185,6 +1234,48 @@ func TestConvertHARMultipartUsesExistingBoundary(t *testing.T) {
 	}
 	if !strings.Contains(action.Body, "------custom-har-boundary\r\n") || !strings.Contains(action.Body, "------custom-har-boundary--\r\n") {
 		t.Fatalf("multipart body = %q, want custom boundary", action.Body)
+	}
+}
+
+// TestConvertHARMultipartSynthesizesBoundaryInHeaderList guards B1 on the HAR
+// path: a boundary-less multipart Content-Type must get its synthesized boundary
+// reflected in the ordered HeaderList that replay consumes.
+func TestConvertHARMultipartSynthesizesBoundaryInHeaderList(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {
+				"entries": [{
+					"request": {
+						"method": "POST",
+						"url": "https://api.example.com/upload",
+						"headers": [{"name":"Content-Type","value":"multipart/form-data"}],
+						"postData": {
+							"mimeType": "multipart/form-data",
+							"params": [{"name":"file","fileName":"report.pdf","contentType":"application/pdf"}]
+						}
+					},
+					"response": {"status": 201, "headers": [], "content": {"text": "{}"}}
+				}]
+			}
+		}`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	listCT := headerListContentType(t, action.HeaderList)
+	if !strings.Contains(listCT, "boundary=") {
+		t.Fatalf("HeaderList Content-Type = %q, want a synthesized boundary (replay uses HeaderList)", listCT)
+	}
+	if listCT != action.Headers["Content-Type"] {
+		t.Fatalf("HeaderList Content-Type %q out of sync with map %q", listCT, action.Headers["Content-Type"])
+	}
+	_, params, _ := mime.ParseMediaType(listCT)
+	if b := params["boundary"]; b == "" || !strings.Contains(action.Body, "--"+b+"\r\n") {
+		t.Fatalf("body does not use the HeaderList boundary %q: %q", b, action.Body)
 	}
 }
 

@@ -209,6 +209,7 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 		boundary := multipartBoundaryOrDefault(contentType, defaultCurlMultipartBoundary)
 		ex.Body = curlMultipartBody(formParts, boundary)
 		ensureMultipartContentTypeBoundary(ex.Headers, boundary)
+		ex.HeaderList = reconcileMultipartBoundaryInList(ex.HeaderList, ex.Headers)
 		if ex.Method == "GET" {
 			ex.Method = "POST"
 		}

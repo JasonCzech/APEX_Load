@@ -479,6 +479,49 @@ operations:
 	}
 }
 
+// TestConvertKafkaBindingPartitionZero guards C4: an explicit `partition: 0` is a
+// valid pinned partition and must be emitted, not dropped as if absent.
+func TestConvertKafkaBindingPartitionZero(t *testing.T) {
+	doc := `
+asyncapi: 3.0.0
+info:
+  title: Pinned
+  version: 1.0.0
+servers:
+  broker:
+    host: kafka:9092
+    protocol: kafka
+channels:
+  orders:
+    address: orders.pinned
+    bindings:
+      kafka:
+        partition: 0
+    messages:
+      m:
+        payload:
+          type: object
+          properties:
+            id:
+              type: string
+operations:
+  send:
+    action: send
+    channel:
+      $ref: '#/channels/orders'
+`
+	result, err := Convert(ImportRequest{Content: doc})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) == 0 {
+		t.Fatalf("no actions produced")
+	}
+	if got, ok := result.Script.Actions[0].Params["partition"]; !ok || got != 0 {
+		t.Fatalf("partition param = %v (present=%v), want explicit 0", got, ok)
+	}
+}
+
 func TestConvertAsyncAPI3OperationMessagesAndComponentsChannel(t *testing.T) {
 	doc := `
 asyncapi: 3.0.0
@@ -842,4 +885,70 @@ func stringSliceContains(values []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// TestSampleAvroSchemaTerminatesOnRecursiveTypes guards against the
+// stack-overflow DoS: Avro references a named type via the `type` field (not a
+// JSON $ref), so the $ref-keyed cycle guard never fired and a self-referential
+// or mutually-recursive component schema recursed forever. A Go stack overflow
+// is process-fatal and recover()-proof, so a regression crashes the controller.
+// If the guard is removed, these calls do not return and the test binary aborts
+// with "goroutine stack exceeds" — that abort IS the failing signal.
+func TestSampleAvroSchemaTerminatesOnRecursiveTypes(t *testing.T) {
+	cases := []struct {
+		name string
+		doc  *document
+		root schema
+	}{
+		{
+			name: "direct self-reference",
+			doc: &document{Components: components{Schemas: map[string]schema{
+				"TreeNode": {
+					Type:   "record",
+					Name:   "TreeNode",
+					Fields: []avroField{{Name: "value", Type: "string"}, {Name: "next", Type: "TreeNode"}},
+				},
+			}}},
+			root: schema{
+				Type:   "record",
+				Name:   "TreeNode",
+				Fields: []avroField{{Name: "value", Type: "string"}, {Name: "next", Type: "TreeNode"}},
+			},
+		},
+		{
+			name: "optional union self-reference",
+			doc: &document{Components: components{Schemas: map[string]schema{
+				"Node": {
+					Type:   "record",
+					Name:   "Node",
+					Fields: []avroField{{Name: "next", Type: []any{"null", "Node"}, Default: nil}},
+				},
+			}}},
+			root: schema{
+				Type:   "record",
+				Name:   "Node",
+				Fields: []avroField{{Name: "next", Type: []any{"null", "Node"}}},
+			},
+		},
+		{
+			name: "mutual recursion",
+			doc: &document{Components: components{Schemas: map[string]schema{
+				"A": {Type: "record", Name: "A", Fields: []avroField{{Name: "b", Type: "B"}}},
+				"B": {Type: "record", Name: "B", Fields: []avroField{{Name: "a", Type: "A"}}},
+			}}},
+			root: schema{Type: "record", Name: "A", Fields: []avroField{{Name: "b", Type: "B"}}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			value, _ := sampleAvroSchema(tc.doc, tc.root, map[string]bool{}, "", 0)
+			if value == nil {
+				t.Fatalf("expected a finite sampled value, got nil")
+			}
+			// Exercise the full body-synthesis entry point too; just assert it returns.
+			if body, _ := sampleBody(tc.doc, tc.root, "application/vnd.apache.avro+json"); body == "" {
+				t.Fatalf("sampleBody returned empty body for %s", tc.name)
+			}
+		})
+	}
 }

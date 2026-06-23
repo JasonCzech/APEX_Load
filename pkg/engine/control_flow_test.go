@@ -415,3 +415,31 @@ func TestVUser_EvalConditionSafeAtoiUnsetParameter(t *testing.T) {
 		t.Error("non-numeric parameter must behave like atoi()==0")
 	}
 }
+
+func TestControlLoopDoWhileRunsBodyAtLeastOnce(t *testing.T) {
+	// Condition is false on the very first check (done already == "yes").
+	loop := func(doWhile bool) dsl.Action {
+		return dsl.Action{
+			Name: "Loop",
+			Type: "control_loop",
+			Control: &dsl.ControlFlow{
+				Condition:     &dsl.Condition{Left: "{{var.done}}", Op: "ne", Right: "yes"},
+				DoWhile:       doWhile,
+				MaxIterations: 5,
+				Steps:         []dsl.Action{click("body")},
+			},
+		}
+	}
+	// Default pre-test loop: predicate false up front → body never runs.
+	pre := &captureProtocol{}
+	newControlFlowVUser(pre, map[string]string{"done": "yes"}, []dsl.Action{loop(false)}).Run(context.Background())
+	if len(pre.names) != 0 {
+		t.Fatalf("pre-test loop ran body %d time(s), want 0", len(pre.names))
+	}
+	// do_while: body runs exactly once before the predicate is first evaluated.
+	dw := &captureProtocol{}
+	newControlFlowVUser(dw, map[string]string{"done": "yes"}, []dsl.Action{loop(true)}).Run(context.Background())
+	if len(dw.names) != 1 {
+		t.Fatalf("do_while loop ran body %d time(s), want exactly 1", len(dw.names))
+	}
+}

@@ -143,8 +143,11 @@ func (b *Browser) dispatchOpenWindow(ctx context.Context, action *protocol.Actio
 		return fmt.Errorf("browser context is not initialized")
 	}
 	resolvedURL := b.resolveURL(rawURL)
-	if b.downloadFilterMode == "allow_list" && b.shouldBlockFilteredRequest(resolvedURL) {
-		return fmt.Errorf("browser_open_window target %q is outside the configured URL allow-list", resolvedURL)
+	// Guard on hasDownloadFilters() (as the request-policy hook does): without it,
+	// allow_list mode with NO configured hosts treats an empty allow-list as
+	// "block everything" and rejects every open_window even though no filter is set.
+	if b.hasDownloadFilters() && b.shouldBlockFilteredRequest(resolvedURL) {
+		return fmt.Errorf("browser_open_window target %q is blocked by the configured URL filter", resolvedURL)
 	}
 	page, err := b.pwContext.NewPage()
 	if err != nil {

@@ -623,10 +623,16 @@ func expandReplayAction(
 				if pass >= maxPasses {
 					break
 				}
-				condOK, evidence := vu.evalConditionEvidence(loop.Condition)
-				publishConditionEvidence(onProgress, report, action, phase, actionIndex, stepPath, append(append([]int(nil), iterationPath...), pass+1), evidence)
-				if !condOK {
-					break
+				// do_while runs the body once before the predicate is first checked
+				// (post-test), mirroring the live engine, so a loop whose
+				// terminal-state var persists from a prior iteration re-primes it on
+				// pass 0 instead of being skipped.
+				if !(loop.DoWhile && pass == 0) {
+					condOK, evidence := vu.evalConditionEvidence(loop.Condition)
+					publishConditionEvidence(onProgress, report, action, phase, actionIndex, stepPath, append(append([]int(nil), iterationPath...), pass+1), evidence)
+					if !condOK {
+						break
+					}
 				}
 			}
 			childIterPath := append(append([]int(nil), iterationPath...), pass+1)

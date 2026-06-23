@@ -935,10 +935,14 @@ func sampleForSchema(s schema, res resolver, location string, seen map[string]bo
 			result[name] = value
 			out = append(out, nested...)
 		}
-		if s.AdditionalProperties != nil {
+		if sub, ok := additionalPropertiesSchema(s); ok {
 			column := "additional_value"
 			result["additionalProperty"] = "{{data.openapi." + column + "}}"
-			columns.add(column, schema{Type: "string"})
+			colSchema := sub
+			if strings.TrimSpace(colSchema.Type) == "" {
+				colSchema = schema{Type: "string"}
+			}
+			columns.add(column, colSchema)
 			out = append(out, column)
 		}
 		return result, uniqueSorted(out)
@@ -1589,11 +1593,39 @@ func stringSet(values []string) map[string]bool {
 func scalarSchema(s schema) bool {
 	// Objects (including map-style schemas declared only via additionalProperties)
 	// are not scalars — they must recurse so their fields/representative entries
-	// render, rather than collapsing into a single placeholder.
-	if strings.EqualFold(s.Type, "object") || s.AdditionalProperties != nil {
+	// render, rather than collapsing into a single placeholder. Only the schema
+	// (map) form of additionalProperties counts; a bool form (false/true) does not
+	// make an otherwise-scalar schema non-scalar.
+	if _, hasMapAP := additionalPropertiesSchema(s); strings.EqualFold(s.Type, "object") || hasMapAP {
 		return false
 	}
 	return len(s.Properties) == 0 && s.Items == nil
+}
+
+// additionalPropertiesSchema returns the value schema and true only when
+// `additionalProperties` is declared as a schema (the map form). In OpenAPI the
+// field is `bool | schema`; JSON/YAML box a bool `false`/`true` into a non-nil
+// any, so a plain `s.AdditionalProperties != nil` check wrongly treats a
+// closed/open schema (additionalProperties: false / true) as a map and would
+// synthesize a spurious `additionalProperty` field and data column.
+func additionalPropertiesSchema(s schema) (schema, bool) {
+	var raw map[string]any
+	switch v := s.AdditionalProperties.(type) {
+	case map[string]any:
+		raw = v
+	case map[any]any:
+		raw = make(map[string]any, len(v))
+		for k, val := range v {
+			raw[fmt.Sprint(k)] = val
+		}
+	default:
+		return schema{}, false
+	}
+	var sub schema
+	if b, err := json.Marshal(raw); err == nil {
+		_ = json.Unmarshal(b, &sub)
+	}
+	return sub, true
 }
 
 func valueOrEmptySchema(value *schema) schema {

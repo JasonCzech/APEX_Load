@@ -880,10 +880,13 @@ func extractJSONPath(expr string, body []byte) (string, error) {
 		return "", fmt.Errorf("invalid JSON body: %w", err)
 	}
 	for _, part := range parts {
-		if idx, ok := parseArrayIndex(part); ok {
-			arr, ok := current.([]any)
+		// Treat an all-digit segment as an array index ONLY when the current value
+		// is actually an array. Against an object, an all-digit segment is a
+		// (numeric-string) key — otherwise a key like "123" could never be reached.
+		if arr, ok := current.([]any); ok {
+			idx, ok := parseArrayIndex(part)
 			if !ok {
-				return "", fmt.Errorf("expected JSON array at index %d", idx)
+				return "", fmt.Errorf("expected JSON array index, got %q", part)
 			}
 			if idx < 0 || idx >= len(arr) {
 				return "", fmt.Errorf("JSON array index %d out of range", idx)

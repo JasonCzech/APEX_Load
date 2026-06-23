@@ -381,6 +381,21 @@ func TestWriteHTTPError(t *testing.T) {
 	}
 }
 
+func TestStripDefaultHTTPSPort(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"example.com:443", "example.com"},
+		{"example.com:8443", "example.com:8443"},
+		{"example.com", "example.com"},
+		{"[::1]:443", "[::1]"},
+		{"[2001:db8::1]:8443", "[2001:db8::1]:8443"},
+	}
+	for _, tc := range cases {
+		if got := stripDefaultHTTPSPort(tc.in); got != tc.want {
+			t.Errorf("stripDefaultHTTPSPort(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 // testHijackResponseWriter implements http.ResponseWriter and http.Hijacker
 // for testing the CONNECT handler with a net.Pipe connection.
 type testHijackResponseWriter struct {

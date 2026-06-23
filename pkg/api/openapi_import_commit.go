@@ -98,6 +98,13 @@ func mergeImportScriptByKey(existing *dsl.Script, imported *dsl.Script, keyFn fu
 	merged.DataSources, _ = mergeImportDataSources(existing.DataSources, imported.DataSources)
 	merged.Parameters = mergeImportParameters(existing.Parameters, imported.Parameters)
 	merged.Config = mergeImportConfig(existing.Config, imported.Config)
+	// Preserve manual init/teardown steps (login, env setup, cleanup) the user
+	// added to the target. Without this they are silently dropped on a merge
+	// re-import — and since the importer's synthesized OAuth-token init is off by
+	// default, imported.Init is usually empty, so the user's setup is wiped to
+	// nothing. Imported (re-synthesized) lifecycle steps win on a type/name match.
+	merged.Init = mergeImportLifecycle(existing.Init, imported.Init)
+	merged.Teardown = mergeImportLifecycle(existing.Teardown, imported.Teardown)
 	// Ownership/identity is governed by the replace handler (see
 	// preserveReplacedScriptIdentity), but keep sensible fallbacks here too.
 	if merged.ProjectID == "" {
@@ -110,6 +117,36 @@ func mergeImportScriptByKey(existing *dsl.Script, imported *dsl.Script, keyFn fu
 		merged.CreatedAt = existing.CreatedAt
 	}
 	return &merged
+}
+
+// mergeImportLifecycle unions imported init/teardown steps with the existing
+// (target) ones, keeping imported steps first and appending existing steps that
+// the import does not re-emit (matched by type+name+method+target). This keeps
+// the importer-managed steps (e.g. a synthesized OAuth-token fetch) fresh while
+// preserving the user's manual setup/cleanup rather than clobbering it.
+func mergeImportLifecycle(existing, imported []dsl.Action) []dsl.Action {
+	if len(imported) == 0 {
+		return existing
+	}
+	if len(existing) == 0 {
+		return imported
+	}
+	importedSig := make(map[string]struct{}, len(imported))
+	for _, action := range imported {
+		importedSig[lifecycleActionSignature(action)] = struct{}{}
+	}
+	merged := append([]dsl.Action(nil), imported...)
+	for _, action := range existing {
+		if _, dup := importedSig[lifecycleActionSignature(action)]; dup {
+			continue
+		}
+		merged = append(merged, action)
+	}
+	return merged
+}
+
+func lifecycleActionSignature(action dsl.Action) string {
+	return strings.Join([]string{action.Type, action.Name, action.Method, action.Target}, "\x00")
 }
 
 // preserveReplacedScriptIdentity keeps the target script's identity and

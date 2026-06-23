@@ -144,6 +144,53 @@ func TestMergeOpenAPIImportScriptPreservesUserCustomizations(t *testing.T) {
 	}
 }
 
+// TestMergeOpenAPIImportScriptPreservesInitTeardown guards B3: a merge re-import
+// must not silently drop the user's manual init/teardown steps. The importer's
+// re-synthesized lifecycle step (matched by type+name) wins, but everything the
+// import does not re-emit survives.
+func TestMergeOpenAPIImportScriptPreservesInitTeardown(t *testing.T) {
+	existing := &dsl.Script{
+		ID: "real-id",
+		Init: []dsl.Action{
+			{Name: "ManualLogin", Type: "request", Method: "POST", Target: "/login"},
+			{Name: "TokenFetch", Type: "http_oauth2_token"},
+		},
+		Teardown: []dsl.Action{
+			{Name: "ManualCleanup", Type: "request", Method: "DELETE", Target: "/session"},
+		},
+		Actions: []dsl.Action{openAPIKeyedAction("GetA", "GET /a")},
+	}
+	imported := &dsl.Script{
+		// Fresh import re-synthesizes the OAuth token init (same type+name) and
+		// carries no manual setup/cleanup of its own.
+		Init:    []dsl.Action{{Name: "TokenFetch", Type: "http_oauth2_token"}},
+		Actions: []dsl.Action{openAPIKeyedAction("GetA", "GET /a")},
+	}
+
+	merged := mergeOpenAPIImportScript(existing, imported)
+
+	initNames := map[string]int{}
+	for _, a := range merged.Init {
+		initNames[a.Name]++
+	}
+	if initNames["ManualLogin"] != 1 {
+		t.Fatalf("manual init step lost: %#v", merged.Init)
+	}
+	if initNames["TokenFetch"] != 1 {
+		t.Fatalf("synthesized init step should appear exactly once (deduped), got %d: %#v", initNames["TokenFetch"], merged.Init)
+	}
+	if len(merged.Teardown) != 1 || merged.Teardown[0].Name != "ManualCleanup" {
+		t.Fatalf("manual teardown step lost: %#v", merged.Teardown)
+	}
+
+	// When the import emits no init of its own, the existing init is preserved wholesale.
+	importedNoInit := &dsl.Script{Actions: []dsl.Action{openAPIKeyedAction("GetA", "GET /a")}}
+	merged2 := mergeOpenAPIImportScript(existing, importedNoInit)
+	if len(merged2.Init) != 2 {
+		t.Fatalf("existing init dropped when import had none: %#v", merged2.Init)
+	}
+}
+
 func TestPreserveReplacedScriptIdentity(t *testing.T) {
 	folder := "owner-folder"
 	created := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
