@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/fileasset"
 )
 
 type importAssetUploadResponse struct {
@@ -34,7 +35,7 @@ func resolveImportAssetDir(cfg ServerConfig) string {
 	if dir := strings.TrimSpace(cfg.DesktopAppDataPath); dir != "" {
 		return filepath.Join(dir, "import-assets")
 	}
-	return filepath.Join(os.TempDir(), "apexload-import-assets")
+	return fileasset.DefaultImportAssetDir()
 }
 
 func (s *Server) handleUploadImportAsset(w http.ResponseWriter, r *http.Request) {
@@ -69,6 +70,10 @@ func (s *Server) handleUploadImportAsset(w http.ResponseWriter, r *http.Request)
 	contentType := firstNonEmpty(strings.TrimSpace(r.FormValue("content_type")), header.Header.Get("Content-Type"))
 	if contentType == "" {
 		contentType = http.DetectContentType(data)
+	}
+	if err := fileasset.RegisterRoot(s.importAssetDir); err != nil {
+		writeError(w, http.StatusInternalServerError, "invalid import asset store: "+err.Error())
+		return
 	}
 
 	sum := sha256.Sum256(data)

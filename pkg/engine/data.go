@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/fileasset"
 )
 
 // DataProvider loads and serves rows from CSV/DAT parameter files.
@@ -76,7 +76,7 @@ func loadFileDataSource(src dsl.DataSource) (*fileDataSource, error) {
 	}
 	defer readerSource.Close()
 
-	content, err := io.ReadAll(readerSource)
+	content, err := fileasset.ReadAllLimited(readerSource)
 	if err != nil {
 		return nil, fmt.Errorf("read file asset: %w", err)
 	}
@@ -251,31 +251,12 @@ func openFileDataSourceReader(src dsl.DataSource) (io.ReadCloser, error) {
 		}
 	}
 	if strings.TrimSpace(src.Path) != "" {
-		return openFileAssetPath(src.Path)
+		return fileasset.OpenPath(src.Path)
 	}
 	if strings.TrimSpace(src.StorageRef) != "" {
-		return openFileAssetStorageRef(src.StorageRef)
+		return fileasset.OpenStorageRef(src.StorageRef)
 	}
 	return nil, fmt.Errorf("inline_data, path, or storage_ref is required")
-}
-
-func openFileAssetPath(path string) (io.ReadCloser, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open file asset %s: %w", path, err)
-	}
-	return f, nil
-}
-
-func openFileAssetStorageRef(ref string) (io.ReadCloser, error) {
-	parsed, err := url.Parse(strings.TrimSpace(ref))
-	if err != nil {
-		return nil, fmt.Errorf("parse storage_ref: %w", err)
-	}
-	if parsed.Scheme == "file" {
-		return openFileAssetPath(parsed.Path)
-	}
-	return nil, fmt.Errorf("unsupported storage_ref scheme %q", parsed.Scheme)
 }
 
 // GetRow returns a set of variable name → value pairs for the given VUser.

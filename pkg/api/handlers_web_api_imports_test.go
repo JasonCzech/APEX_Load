@@ -1439,7 +1439,7 @@ servers:
     protocol: amqp
 channels:
   orders:
-    address: orders.events
+    address: orders.events?order_id=ORD-123
     servers:
       - $ref: '#/servers/kafkaBroker'
     messages:
@@ -1450,7 +1450,7 @@ channels:
             orderId:
               type: string
   shipments:
-    address: shipments.events
+    address: shipments.events?shipment_id=SHP-123
     servers:
       - $ref: '#/servers/amqpBroker'
     bindings:
@@ -1496,6 +1496,7 @@ operations:
 	}
 	var result struct {
 		Scripts []struct {
+			Name     string         `json:"name"`
 			Protocol string         `json:"protocol"`
 			Metadata map[string]any `json:"metadata"`
 			Config   struct {
@@ -1514,12 +1515,33 @@ operations:
 				Status string `json:"status"`
 			} `json:"checks"`
 		} `json:"preflight"`
+		Parameterization struct {
+			Suggestions []struct {
+				ScriptName string `json:"script_name"`
+				VarName    string `json:"var_name"`
+			} `json:"suggestions"`
+		} `json:"parameterization"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
 	if len(result.Scripts) != 2 {
 		t.Fatalf("scripts = %+v, want Kafka + JMS split", result.Scripts)
+	}
+	scriptNames := make(map[string]struct{}, len(result.Scripts))
+	for _, script := range result.Scripts {
+		scriptNames[script.Name] = struct{}{}
+	}
+	suggestionScriptNames := make(map[string]struct{}, len(result.Parameterization.Suggestions))
+	for _, suggestion := range result.Parameterization.Suggestions {
+		if suggestion.ScriptName != "" {
+			suggestionScriptNames[suggestion.ScriptName] = struct{}{}
+		}
+	}
+	for name := range scriptNames {
+		if _, ok := suggestionScriptNames[name]; !ok {
+			t.Fatalf("parameterization suggestions = %+v, want script-scoped suggestions for %q", result.Parameterization.Suggestions, name)
+		}
 	}
 	if !preflightHasCheck(result.Preflight.Checks, "messaging_kafka") {
 		t.Fatalf("top-level preflight = %+v, want Kafka readiness for first script", result.Preflight)

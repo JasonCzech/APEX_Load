@@ -88,6 +88,7 @@ export default function ScriptImportReview({
         <ParameterizationReview
           parameterization={parameterization}
           script={script}
+          scriptName={script.name}
           onApplied={onParameterizationApplied}
         />
       )}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/fileasset"
 )
 
 func writeCSV(t *testing.T, dir, name, content string) string {
@@ -390,6 +391,9 @@ func TestDataProvider_FileDataSourceInlineBase64(t *testing.T) {
 
 func TestDataProvider_FileDataSourceStorageRef(t *testing.T) {
 	dir := t.TempDir()
+	if err := fileasset.RegisterRoot(dir); err != nil {
+		t.Fatalf("RegisterRoot: %v", err)
+	}
 	path := filepath.Join(dir, "upload.txt")
 	if err := os.WriteFile(path, []byte("asset bytes"), 0o600); err != nil {
 		t.Fatalf("write asset: %v", err)
@@ -407,6 +411,52 @@ func TestDataProvider_FileDataSourceStorageRef(t *testing.T) {
 	got, ok := dp.GetFileContent("upload")
 	if !ok || got != "asset bytes" {
 		t.Fatalf("file content = %q/%v, want asset bytes/true", got, ok)
+	}
+}
+
+func TestDataProvider_FileDataSourceStorageRefRejectsOutsideAllowedRoots(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "secret.txt")
+	if err := os.WriteFile(path, []byte("secret bytes"), 0o600); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+	ref := (&url.URL{Scheme: "file", Path: path}).String()
+
+	_, err := NewDataProvider([]dsl.DataSource{{
+		Name:       "secret",
+		Type:       "file",
+		StorageRef: ref,
+		FileName:   "secret.txt",
+	}})
+	if err == nil {
+		t.Fatal("expected file storage_ref outside allowed roots to fail")
+	}
+}
+
+func TestDataProvider_FileDataSourceStorageRefRejectsSymlinkEscape(t *testing.T) {
+	assetRoot := t.TempDir()
+	if err := fileasset.RegisterRoot(assetRoot); err != nil {
+		t.Fatalf("RegisterRoot: %v", err)
+	}
+	outsideDir := t.TempDir()
+	outsidePath := filepath.Join(outsideDir, "secret.txt")
+	if err := os.WriteFile(outsidePath, []byte("secret bytes"), 0o600); err != nil {
+		t.Fatalf("write outside asset: %v", err)
+	}
+	linkPath := filepath.Join(assetRoot, "linked-secret.txt")
+	if err := os.Symlink(outsidePath, linkPath); err != nil {
+		t.Skipf("symlink not available: %v", err)
+	}
+	ref := (&url.URL{Scheme: "file", Path: linkPath}).String()
+
+	_, err := NewDataProvider([]dsl.DataSource{{
+		Name:       "linked_secret",
+		Type:       "file",
+		StorageRef: ref,
+		FileName:   "linked-secret.txt",
+	}})
+	if err == nil {
+		t.Fatal("expected symlink escaping allowed roots to fail")
 	}
 }
 

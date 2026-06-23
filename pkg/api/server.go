@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -207,6 +208,9 @@ func NewServer(cfg ServerConfig) *Server {
 		restartInFlight:    make(map[string]struct{}),
 		metricsAddr:        strings.TrimSpace(cfg.MetricsAddr),
 		staticFS:           StaticFS,
+	}
+	if err := fileasset.RegisterRoot(s.importAssetDir); err != nil {
+		slog.Warn("invalid import asset store; file assets will be unavailable", "dir", s.importAssetDir, "error", err)
 	}
 
 	// Select the fleet provisioner backend (in-cluster Kubernetes scaler when

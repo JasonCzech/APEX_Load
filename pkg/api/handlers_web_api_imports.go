@@ -754,7 +754,7 @@ func (s *Server) handleImportAsyncAPI(w http.ResponseWriter, r *http.Request) {
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      appendImportDiagnosticReviewSections(buildAsyncAPIReviewSections(result), result.Unsupported),
 		SourceReview:        result.SourceReview,
-		Parameterization:    buildImportParameterization(result.Script, nil),
+		Parameterization:    buildMultiScriptParameterization(result.Scripts),
 		Preflight:           preflight,
 	}))
 }

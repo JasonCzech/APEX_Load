@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/fileasset"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
 
@@ -380,6 +381,7 @@ func validateDataSourceIssues(script *Script) []string {
 			if !fileDataSourceHasContent(source) {
 				issues = append(issues, fmt.Sprintf("%s %q: file data source requires inline_data, path, or storage_ref", label, name))
 			}
+			issues = append(issues, validateFileDataSourceReferenceIssues(label, name, source)...)
 			switch strings.ToLower(strings.TrimSpace(source.Encoding)) {
 			case "", "text", "base64":
 			default:
@@ -387,6 +389,21 @@ func validateDataSourceIssues(script *Script) []string {
 			}
 		default:
 			issues = append(issues, fmt.Sprintf("%s %q: unsupported type %q", label, name, source.Type))
+		}
+	}
+	return issues
+}
+
+func validateFileDataSourceReferenceIssues(label string, name string, source DataSource) []string {
+	issues := make([]string, 0, 2)
+	if path := strings.TrimSpace(source.Path); path != "" {
+		if _, err := fileasset.ValidatePath(path); err != nil {
+			issues = append(issues, fmt.Sprintf("%s %q: file data source path is not an allowed file asset: %v", label, name, err))
+		}
+	}
+	if ref := strings.TrimSpace(source.StorageRef); ref != "" {
+		if _, err := fileasset.ValidateStorageRef(ref); err != nil {
+			issues = append(issues, fmt.Sprintf("%s %q: file data source storage_ref is not an allowed file asset: %v", label, name, err))
 		}
 	}
 	return issues

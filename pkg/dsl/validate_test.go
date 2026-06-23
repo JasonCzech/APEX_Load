@@ -1,8 +1,13 @@
 package dsl
 
 import (
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/fileasset"
 )
 
 func TestValidateScriptIssues_RendezvousValidation(t *testing.T) {
@@ -76,6 +81,21 @@ func TestValidateScriptIssues_Base64BodyEncodingTemplates(t *testing.T) {
 }
 
 func TestValidateScriptIssues_FileAssetReferences(t *testing.T) {
+	assetRoot := t.TempDir()
+	if err := fileasset.RegisterRoot(assetRoot); err != nil {
+		t.Fatalf("RegisterRoot: %v", err)
+	}
+	assetPath := filepath.Join(assetRoot, "upload.bin")
+	if err := os.WriteFile(assetPath, []byte("bytes"), 0o600); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+	assetRef := (&url.URL{Scheme: "file", Path: assetPath}).String()
+	outsidePath := filepath.Join(t.TempDir(), "upload.bin")
+	if err := os.WriteFile(outsidePath, []byte("secret"), 0o600); err != nil {
+		t.Fatalf("write outside asset: %v", err)
+	}
+	outsideRef := (&url.URL{Scheme: "file", Path: outsidePath}).String()
+
 	base := func(source DataSource) *Script {
 		script := &Script{
 			Name:     "file-assets",
@@ -115,7 +135,12 @@ func TestValidateScriptIssues_FileAssetReferences(t *testing.T) {
 		},
 		{
 			name:   "storage ref file asset",
-			source: DataSource{Name: "upload", Type: "file", StorageRef: "file:///tmp/upload.bin", FileName: "upload.bin"},
+			source: DataSource{Name: "upload", Type: "file", StorageRef: assetRef, FileName: "upload.bin"},
+		},
+		{
+			name:      "storage ref outside asset root",
+			source:    DataSource{Name: "upload", Type: "file", StorageRef: outsideRef, FileName: "upload.bin"},
+			wantIssue: `data_sources[0] "upload": file data source storage_ref is not an allowed file asset`,
 		},
 	}
 
@@ -130,7 +155,7 @@ func TestValidateScriptIssues_FileAssetReferences(t *testing.T) {
 				}
 				return
 			}
-			assertIssue(t, issues, tc.wantIssue)
+			assertIssueContains(t, issues, tc.wantIssue)
 		})
 	}
 }

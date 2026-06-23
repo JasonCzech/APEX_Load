@@ -2,11 +2,20 @@
 
 import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { type Parameterization } from '../types/scriptImports'
 import ScriptImportReview from './ScriptImportReview'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+const apiMock = vi.hoisted(() => ({
+  applyImportParameterization: vi.fn(),
+}))
+
+vi.mock('../hooks/useApi', () => ({
+  useApi: () => apiMock,
+}))
 
 const script = {
   name: 'Imported API Script',
@@ -83,5 +92,62 @@ describe('ScriptImportReview', () => {
     expect(comparison?.textContent).toContain('Source Comparison')
     expect(preview && comparison ? children.indexOf(preview) < children.indexOf(comparison) : false).toBe(true)
     expect(container.querySelector('.script-import-review-preview-row')).toBeNull()
+  })
+
+  it('filters scoped parameterization suggestions to the active script', () => {
+    const parameterization: Parameterization = {
+      suggestions: [
+        {
+          id: 'pz_kafka',
+          kind: 'data_param',
+          script_name: 'Orders Kafka',
+          var_name: 'kafka_token',
+          replacement: '{{param.kafka_token}}',
+          literal_value: 'kafka-123',
+          sample_value: 'kafka-123',
+          confidence: 0.8,
+          rule_id: 'test.kafka',
+          rationale: 'Kafka script value',
+          auto_apply: false,
+          high_risk: false,
+        },
+        {
+          id: 'pz_jms',
+          kind: 'data_param',
+          script_name: 'Orders JMS',
+          var_name: 'jms_token',
+          replacement: '{{param.jms_token}}',
+          literal_value: 'jms-123',
+          sample_value: 'jms-123',
+          confidence: 0.8,
+          rule_id: 'test.jms',
+          rationale: 'JMS script value',
+          auto_apply: false,
+          high_risk: false,
+        },
+      ],
+      summary: {
+        total: 2,
+        by_kind: { data_param: 2 },
+        auto_apply_count: 0,
+        review_count: 2,
+        high_risk_count: 0,
+        pre_applied_count: 0,
+      },
+    }
+
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          title="Review Generated Script"
+          script={{ ...script, name: 'Orders JMS' }}
+          parameterization={parameterization}
+          onParameterizationApplied={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('jms_token')
+    expect(container.textContent).not.toContain('kafka_token')
   })
 })
