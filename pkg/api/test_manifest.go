@@ -115,6 +115,7 @@ type TestRunManifestArchive struct {
 	ArchiveURI           string    `json:"archive_uri,omitempty"`
 	ManifestURI          string    `json:"manifest_uri,omitempty"`
 	TestManifestFile     string    `json:"test_manifest_file,omitempty"`
+	TestNotesFile        string    `json:"test_notes_file,omitempty"`
 	TransactionCount     int64     `json:"transaction_count,omitempty"`
 	ResourceSampleCount  int64     `json:"resource_sample_count,omitempty"`
 	IntervalSummaryCount int64     `json:"interval_summary_count,omitempty"`
@@ -395,6 +396,7 @@ func manifestArchiveFromRecord(record *storage.RunArchiveRecord, manifest *RunAr
 	if manifest != nil {
 		archive.SchemaVersion = manifest.SchemaVersion
 		archive.TestManifestFile = manifest.TestManifestFile
+		archive.TestNotesFile = manifest.TestNotesFile
 		archive.SLABreached = manifest.SLABreached
 		archive.SLADetails = append([]string(nil), manifest.SLADetails...)
 		archive.Error = manifest.Error
@@ -540,9 +542,22 @@ func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *sto
 	manifest.GeneratedAt = time.Now().UTC()
 	if manifest.Archive != nil {
 		manifest.Archive.TestManifestFile = testRunManifestFileName
+		manifest.Archive.TestNotesFile = testNotesArchiveFileName
 	}
 
 	if err := writeIndentedJSONFile(filepath.Join(record.ArchivePath, testRunManifestFileName), manifest); err != nil {
+		return err
+	}
+	var notes []*storage.TestNote
+	if tr.testNotesStore != nil {
+		loaded, err := tr.testNotesStore.ListTestNotes(test.ID)
+		if err != nil {
+			return fmt.Errorf("load test notes: %w", err)
+		}
+		notes = loaded
+	}
+	testNotesFile, err := writeTestNotesArtifact(record.ArchivePath, test.ID, notes)
+	if err != nil {
 		return err
 	}
 	archiveManifest, err := loadRunArchiveManifest(record.ManifestPath)
@@ -550,6 +565,7 @@ func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *sto
 		return err
 	}
 	archiveManifest.TestManifestFile = testRunManifestFileName
+	archiveManifest.TestNotesFile = testNotesFile
 	if err := writeIndentedJSONFile(record.ManifestPath, archiveManifest); err != nil {
 		return err
 	}

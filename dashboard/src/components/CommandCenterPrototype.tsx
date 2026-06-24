@@ -25,6 +25,7 @@ import { useExecutionMetricsStream } from './useExecutionMetricsStream'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
+import TestNotesDialog from './TestNotesDialog'
 import {
   formatSnapshotRequestLineAndHeaders,
   formatSnapshotResponseStatusAndHeaders,
@@ -933,6 +934,7 @@ export default function CommandCenterPrototype({
   const [evidenceError, setEvidenceError] = useState('')
   const [backendScopedChartData, setBackendScopedChartData] = useState<MetricsHistoryPoint[] | null>(null)
   const [backendScopedMetrics, setBackendScopedMetrics] = useState<LiveMetrics | undefined>()
+  const [showNotes, setShowNotes] = useState(false)
   const syncedTargetsRef = useRef<Record<string, number>>({})
   const syncedTargetTestIdRef = useRef<string | null>(null)
   const [state, setState] = useState<CommandCenterState>(() => ({
@@ -1521,7 +1523,15 @@ export default function CommandCenterPrototype({
         onStop={() => { void stopRun() }}
         onAbort={() => { void abortRun() }}
         onOpenExecution={testId && onOpenExecution ? () => onOpenExecution(testId) : undefined}
+        onOpenTestNotes={testId ? () => setShowNotes(true) : undefined}
       />
+      {showNotes && testId && (
+        <TestNotesDialog
+          testId={testId}
+          testName={displayTest.name}
+          onClose={() => setShowNotes(false)}
+        />
+      )}
       {historicalRun && (
         <CommandCenterHistoricalBanner
           status={runStatus}
@@ -1671,6 +1681,7 @@ interface RunControlShelfProps {
   onStop: () => void
   onAbort: () => void
   onOpenExecution?: () => void
+  onOpenTestNotes?: () => void
 }
 
 function RunControlShelf({
@@ -1688,6 +1699,7 @@ function RunControlShelf({
   onStop,
   onAbort,
   onOpenExecution,
+  onOpenTestNotes,
 }: RunControlShelfProps) {
   const terminal = status === 'ABORTED' || status === 'STOPPING' || status === 'COMPLETE' || status === 'FAILED'
   // Abort must stay available during STOPPING so a wedged graceful stop can still be escalated.
@@ -1722,6 +1734,12 @@ function RunControlShelf({
             Details
           </button>
         )}
+        {onOpenTestNotes && (
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenTestNotes}>
+            <NotesIcon />
+            Test Notes
+          </button>
+        )}
         {!historicalRun && (
           <>
             {canStart && (
@@ -1750,6 +1768,16 @@ function RunControlShelf({
 
       <p className="command-control-feedback" role="status">{feedback}</p>
     </section>
+  )
+}
+
+function NotesIcon() {
+  return (
+    <svg className="command-notes-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 3.75h8.5L20.25 8.5V20A1.25 1.25 0 0 1 19 21.25H7A1.25 1.25 0 0 1 5.75 20V5A1.25 1.25 0 0 1 7 3.75Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M15.25 3.75V8.5h5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M9 12h7M9 15.5h7M9 19h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
   )
 }
 

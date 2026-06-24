@@ -290,6 +290,8 @@ func writeArchiveArtifactInventoryCSVRows(write func(string, string, string, str
 		{manifest.ResourceSamplesParquetFile, manifest.ResourceSampleCount},
 		{manifest.IntervalSummariesFile, manifest.IntervalSummaryCount},
 		{manifest.IntervalSummariesParquetFile, manifest.IntervalSummaryCount},
+		{manifest.TestManifestFile, 0},
+		{manifest.TestNotesFile, 0},
 	}
 	for _, row := range rows {
 		if row.key == "" {

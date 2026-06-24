@@ -24,6 +24,7 @@ const hookMocks = vi.hoisted(() => ({
 
 vi.mock('./TestExecutionHeader', () => ({ default: () => <div>Execution Header</div> }))
 vi.mock('./TestExecutionScenarioEditor', () => ({ default: ({ open }: { open: boolean }) => (open ? <div>Scenario Editor Content</div> : null) }))
+vi.mock('./TestNotesDialog', () => ({ default: ({ testId }: { testId: string }) => <div>Test Notes Dialog {testId}</div> }))
 vi.mock('./TestExecutionScenarioOverview', () => ({ default: () => <div>Scenario Overview Content</div> }))
 vi.mock('./TestExecutionHeroMetrics', () => ({ default: () => <div>Hero Metrics Content</div> }))
 vi.mock('./TestExecutionLiveControls', () => ({ default: () => <div>Live Controls Content</div> }))
@@ -199,6 +200,7 @@ describe('TestExecution workspace layout', () => {
     expect(topbarText()).toContain('Checkout Browser')
     expect(topbarText()).not.toContain('Live Controls')
     expect(topbarText()).toContain('Revise Queued Run')
+    expect(topbarText()).toContain('Test Notes')
     expect(topbarText()).toContain('Start Test')
     expect(topbarText()).toContain('Queued')
     expect(topbarText()).toContain('Load 10 VUsers')
@@ -210,6 +212,8 @@ describe('TestExecution workspace layout', () => {
     const queuedActions = latestActionBridge()
     await clickTopbarButton('Start Test')
     expect(queuedActions.onStart).toHaveBeenCalledTimes(1)
+    await clickTopbarButton('Test Notes')
+    expect(container.textContent).toContain('Test Notes Dialog test-1')
 
     configureHooks(makeTest('RUNNING', {
       name: 'Checkout Live Run',

@@ -238,6 +238,96 @@
   margin: 0 0 8px;
 }
 
+.report-notes-source {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 12px;
+  margin: 14px 0 18px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.report-notes-source-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  max-height: 270px;
+  overflow-y: auto;
+}
+
+.report-note-source-item {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #fffdf8;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.report-note-source-item.selected,
+.report-note-source-item:hover {
+  border-color: var(--accent);
+  background: #f0fdfa;
+}
+
+.report-note-source-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.report-note-source-item span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.report-note-source-preview {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.report-note-source-markdown {
+  max-height: 270px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fffdf8;
+  word-break: break-word;
+}
+
+.report-note-source-markdown.markdown-body {
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink);
+  --text-muted: var(--muted);
+  --border: var(--line);
+  --bg-card: #fff;
+  --bg-primary: #fffdf8;
+  --accent: #0f766e;
+  font: 13px/1.5 "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.report-note-source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-note-source-actions .report-select {
+  min-width: 180px;
+}
+
 .report-charts {
   display: grid;
   gap: 18px;

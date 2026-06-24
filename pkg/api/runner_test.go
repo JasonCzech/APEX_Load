@@ -380,7 +380,7 @@ func (s *metricsStoreSpy) GetExecutionPlan(string) (*storage.ExecutionPlan, erro
 func (s *metricsStoreSpy) ListExecutionPlans(string, int, int) ([]*storage.ExecutionPlan, error) {
 	return nil, nil
 }
-func (s *metricsStoreSpy) DeleteExecutionPlan(string) error { return nil }
+func (s *metricsStoreSpy) DeleteExecutionPlan(string) error                     { return nil }
 func (s *metricsStoreSpy) SaveExecutionPlanRun(*storage.ExecutionPlanRun) error { return nil }
 func (s *metricsStoreSpy) GetExecutionPlanRun(string) (*storage.ExecutionPlanRun, error) {
 	return nil, nil
@@ -496,6 +496,16 @@ func (s *metricsStoreSpy) GetRunArchive(testID string) (*storage.RunArchiveRecor
 	}
 	return s.archiveByTestID[testID], nil
 }
+func (s *metricsStoreSpy) CreateTestNote(note *storage.TestNote) error { return nil }
+func (s *metricsStoreSpy) ListTestNotes(testID string) ([]*storage.TestNote, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) GetTestNote(id string) (*storage.TestNote, error) {
+	return nil, sql.ErrNoRows
+}
+func (s *metricsStoreSpy) UpdateTestNote(note *storage.TestNote) error { return sql.ErrNoRows }
+func (s *metricsStoreSpy) DeleteTestNote(id string) error              { return sql.ErrNoRows }
+func (s *metricsStoreSpy) DeleteTestNotesByTestID(testID string) error { return nil }
 func (s *metricsStoreSpy) SaveSetting(key string, value string) error {
 	if s.settings == nil {
 		s.settings = make(map[string]string)

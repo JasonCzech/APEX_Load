@@ -319,6 +319,11 @@
   min-width: 0;
 }
 
+.command-run-actions .command-notes-icon {
+  flex: 0 0 auto;
+  margin-right: 4px;
+}
+
 .command-graph-options-slot:empty {
   display: none;
 }

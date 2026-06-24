@@ -35,6 +35,7 @@ type RunArchiveManifest struct {
 	IntervalSummariesFile        string               `json:"interval_summaries_file"`
 	IntervalSummariesParquetFile string               `json:"interval_summaries_parquet_file,omitempty"`
 	TestManifestFile             string               `json:"test_manifest_file,omitempty"`
+	TestNotesFile                string               `json:"test_notes_file,omitempty"`
 	TransactionCount             int64                `json:"transaction_count"`
 	ResourceSampleCount          int64                `json:"resource_sample_count"`
 	IntervalSummaryCount         int64                `json:"interval_summary_count"`

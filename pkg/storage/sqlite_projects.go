@@ -485,6 +485,9 @@ func (s *SQLiteStore) DeleteProject(id string) error {
 		if _, err := tx.Exec(`DELETE FROM test_history WHERE test_id = ?`, testID); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(`DELETE FROM test_notes WHERE test_id = ?`, testID); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(`DELETE FROM test_interval_summaries WHERE test_id = ?`, testID); err != nil {
 			return err
 		}

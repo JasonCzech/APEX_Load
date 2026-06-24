@@ -71,6 +71,12 @@ func TestLoadRunArchiveManifestRejectsUnsafeArtifactNames(t *testing.T) {
 				manifest.TestManifestFile = "test\x00manifest.json"
 			},
 		},
+		{
+			name: "notes traversal",
+			mutate: func(manifest *RunArchiveManifest) {
+				manifest.TestNotesFile = "../test_notes.json"
+			},
+		},
 	}
 
 	for _, tt := range tests {

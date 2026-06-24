@@ -24,6 +24,7 @@ import TestExecutionScenarioOverview from './TestExecutionScenarioOverview'
 import TestExecutionScenarioEditor from './TestExecutionScenarioEditor'
 import GenerateReportModal, { type ReportProfileId } from './GenerateReportModal'
 import ReportComposer from './ReportComposer'
+import TestNotesDialog from './TestNotesDialog'
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
@@ -105,6 +106,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
   const { test, setTest, error } = useExecutionTestPolling(testId)
   const [showScenarioEditor, setShowScenarioEditor] = useState(false)
   const [showGenerateReport, setShowGenerateReport] = useState(false)
+  const [showTestNotes, setShowTestNotes] = useState(false)
   const [reportProfile, setReportProfile] = useState<ReportProfileId | null>(null)
   const {
     expandedChart,
@@ -317,6 +319,13 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
         hidden: !showLiveControls,
         disabled: !hasActiveVUsers || rampInputMissing || isStopping,
         onClick: () => { void onStopAllVUsers() },
+      },
+      {
+        id: 'test-notes',
+        label: 'Test Notes',
+        compactLabel: 'Notes',
+        tone: 'secondary',
+        onClick: () => setShowTestNotes(true),
       },
       {
         id: 'download-archive',
@@ -854,6 +863,14 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
           testName={test?.name ?? testId}
           profile={reportProfile}
           onClose={() => setReportProfile(null)}
+        />
+      )}
+
+      {showTestNotes && (
+        <TestNotesDialog
+          testId={testId}
+          testName={test?.name ?? testId}
+          onClose={() => setShowTestNotes(false)}
         />
       )}
 

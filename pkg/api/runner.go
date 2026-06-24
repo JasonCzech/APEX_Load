@@ -83,6 +83,10 @@ type archivePersistence interface {
 	GetRunArchive(testID string) (*storage.RunArchiveRecord, error)
 }
 
+type testNotesPersistence interface {
+	ListTestNotes(testID string) ([]*storage.TestNote, error)
+}
+
 type settingsPersistence interface {
 	SaveSetting(key string, value string) error
 	GetSetting(key string) (string, error)
@@ -101,25 +105,26 @@ type reservationPersistence interface {
 }
 
 type TestRunner struct {
-	tests         map[string]*ManagedTest
-	scripts       map[string]*StoredScript
-	scenarios     map[string]*StoredScenario
-	archives      map[string]*storage.RunArchiveRecord
-	mu            sync.RWMutex
-	hub           *Hub
-	maxTests      int
-	settings      SystemSettings
-	scriptStore   scriptPersistence
-	testStore     testPersistence
-	scenarioStore scenarioPersistence
-	dataPoolStore dataPoolPersistence
-	projectStore  projectPersistence
-	releaseStore  releasePersistence
-	historyStore  historyPersistence
-	archiveStore  archivePersistence
-	auditStore    auditPersistence
-	settingsStore settingsPersistence
-	usageStore    usageSnapshotPersistence
+	tests          map[string]*ManagedTest
+	scripts        map[string]*StoredScript
+	scenarios      map[string]*StoredScenario
+	archives       map[string]*storage.RunArchiveRecord
+	mu             sync.RWMutex
+	hub            *Hub
+	maxTests       int
+	settings       SystemSettings
+	scriptStore    scriptPersistence
+	testStore      testPersistence
+	scenarioStore  scenarioPersistence
+	dataPoolStore  dataPoolPersistence
+	projectStore   projectPersistence
+	releaseStore   releasePersistence
+	historyStore   historyPersistence
+	archiveStore   archivePersistence
+	testNotesStore testNotesPersistence
+	auditStore     auditPersistence
+	settingsStore  settingsPersistence
+	usageStore     usageSnapshotPersistence
 	// objectRepoStore resolves object_ref bindings into concrete selectors when a
 	// load run is compiled (generators have no store, so binding must resolve here).
 	objectRepoStore objectRepositoryReader
@@ -891,6 +896,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 		releaseStore:     store,
 		historyStore:     store,
 		archiveStore:     store,
+		testNotesStore:   store,
 		auditStore:       store,
 		settingsStore:    store,
 		usageStore:       store,

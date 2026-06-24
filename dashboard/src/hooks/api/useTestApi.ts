@@ -29,6 +29,7 @@ import {
   ScenarioScheduleHealth,
   ScenarioDataPoolBinding,
   ScenarioMode,
+  TestNote,
   TestRunManifest,
   TestSummary,
   TransactionEvent,
@@ -68,6 +69,15 @@ type MetricsParams = {
 type TestListResponse = {
   tests: TestSummary[]
   count: number
+}
+
+type TestNotesResponse = {
+  test_id: string
+  notes: TestNote[]
+}
+
+type DeleteTestNoteResponse = {
+  deleted: string
 }
 
 type StartTestOptions = {
@@ -502,6 +512,34 @@ export function useTestApi() {
     [],
   )
 
+  const listTestNotes = useCallback((id: string) => request<TestNotesResponse>(`/tests/${id}/notes`), [])
+
+  const createTestNote = useCallback(
+    (id: string, body: string) =>
+      request<TestNote>(`/tests/${id}/notes`, {
+        method: 'POST',
+        body: JSON.stringify({ body }),
+      }),
+    [],
+  )
+
+  const updateTestNote = useCallback(
+    (id: string, noteId: string, body: string) =>
+      request<TestNote>(`/tests/${id}/notes/${noteId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ body }),
+      }),
+    [],
+  )
+
+  const deleteTestNote = useCallback(
+    (id: string, noteId: string) =>
+      request<DeleteTestNoteResponse>(`/tests/${id}/notes/${noteId}`, {
+        method: 'DELETE',
+      }),
+    [],
+  )
+
   const downloadTestReport = useCallback(
     (id: string, profile: string) => fetchBlob(`/tests/${id}/report${buildQuery({ profile })}`),
     [],
@@ -612,6 +650,10 @@ export function useTestApi() {
       getTestArchiveReport,
       getTestReportAnnotations,
       saveTestReportAnnotations,
+      listTestNotes,
+      createTestNote,
+      updateTestNote,
+      deleteTestNote,
       downloadTestReport,
       getTestArchiveAnalysis,
       downloadTestArchive,
@@ -678,6 +720,10 @@ export function useTestApi() {
       getTestArchiveReport,
       getTestReportAnnotations,
       saveTestReportAnnotations,
+      listTestNotes,
+      createTestNote,
+      updateTestNote,
+      deleteTestNote,
       downloadTestReport,
       getTestArchiveAnalysis,
       downloadTestArchive,

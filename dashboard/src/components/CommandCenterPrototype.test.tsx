@@ -205,6 +205,30 @@ describe('CommandCenterPrototype', () => {
     expect(container.querySelector('[aria-label="Command center run controls"]')).not.toBeNull()
   })
 
+  it('opens the Test Notes dialog from the run controls', async () => {
+    const liveRun = buildLiveVuserTest()
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = requestUrl(input)
+      if (url.includes('/tests/live-vuser-1/notes')) {
+        return Promise.resolve(jsonResponse({ test_id: 'live-vuser-1', notes: [] }))
+      }
+      if (url.includes('/tests/live-vuser-1/')) return Promise.resolve(jsonResponse({}))
+      if (url.includes('/tests/live-vuser-1')) return Promise.resolve(jsonResponse(liveRun))
+      return Promise.resolve(jsonResponse({}))
+    })
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" />)
+    })
+    await flush()
+
+    await click(buttonNamed('Test Notes'))
+    await flush()
+
+    expect(container.querySelector('.test-notes-dialog')).not.toBeNull()
+    expect(container.textContent).toContain('No notes yet')
+  })
+
   it('shows a picker when several live runs exist and opens the chosen one', async () => {
     const runA: TestSummary = { ...buildLiveVuserTest(), id: 'run-a', name: 'Checkout Soak' }
     const runB: TestSummary = { ...buildLiveVuserTest(), id: 'run-b', name: 'Search Spike' }

@@ -6864,6 +6864,94 @@ paths:
             type: string
       tags:
         - Tests
+  /api/v1/tests/{id}/notes:
+    get:
+      summary: List Test Notes
+      description: |-
+        **Handler:** `handleListTestNotes`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleListTestNotes
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+    post:
+      summary: Create Test Note
+      description: |-
+        **Handler:** `handleCreateTestNote`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCreateTestNote
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+  /api/v1/tests/{id}/notes/{note_id}:
+    delete:
+      summary: Delete Test Note
+      description: |-
+        **Handler:** `handleDeleteTestNote`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleDeleteTestNote
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+    patch:
+      summary: Update Test Note
+      description: |-
+        **Handler:** `handleUpdateTestNote`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleUpdateTestNote
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
   /api/v1/tests/{id}/pause:
     post:
       summary: Pause Test

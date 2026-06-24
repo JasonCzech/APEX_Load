@@ -42,6 +42,7 @@ func archiveManifestArtifactNames(manifest *RunArchiveManifest) (map[string]stru
 		manifest.IntervalSummariesFile,
 		manifest.IntervalSummariesParquetFile,
 		manifest.TestManifestFile,
+		manifest.TestNotesFile,
 		"manifest.json",
 	} {
 		if strings.TrimSpace(name) == "" {
@@ -76,6 +77,9 @@ func validateRunArchiveManifestArtifacts(manifest *RunArchiveManifest) error {
 		return err
 	}
 	if manifest.TestManifestFile, err = optionalArchiveArtifactName("test_manifest_file", manifest.TestManifestFile); err != nil {
+		return err
+	}
+	if manifest.TestNotesFile, err = optionalArchiveArtifactName("test_notes_file", manifest.TestNotesFile); err != nil {
 		return err
 	}
 	return nil

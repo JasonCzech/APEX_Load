@@ -180,6 +180,12 @@ type Store interface {
 	GetHistory(testID string) ([]any, error)
 	SaveRunArchive(record *RunArchiveRecord) error
 	GetRunArchive(testID string) (*RunArchiveRecord, error)
+	CreateTestNote(note *TestNote) error
+	ListTestNotes(testID string) ([]*TestNote, error)
+	GetTestNote(id string) (*TestNote, error)
+	UpdateTestNote(note *TestNote) error
+	DeleteTestNote(id string) error
+	DeleteTestNotesByTestID(testID string) error
 
 	// System settings
 	SaveSetting(key string, value string) error
@@ -803,6 +809,16 @@ type RunArchiveRecord struct {
 	IntervalSummaryCount int64     `json:"interval_summary_count"`
 	CreatedAt            time.Time `json:"created_at"`
 	CompletedAt          time.Time `json:"completed_at"`
+}
+
+type TestNote struct {
+	ID        string    `json:"id"`
+	TestID    string    `json:"test_id"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	CreatedBy string    `json:"created_by,omitempty"`
+	UpdatedBy string    `json:"updated_by,omitempty"`
 }
 
 // ScriptRecordingObservation is one recorded request/response exchange in a

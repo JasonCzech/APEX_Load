@@ -603,6 +603,16 @@ export interface RunArchiveRecord {
   completed_at: string
 }
 
+export interface TestNote {
+  id: string
+  test_id: string
+  body: string
+  created_at: string
+  updated_at: string
+  created_by?: string
+  updated_by?: string
+}
+
 export interface RunArchiveManifest {
   schema_version: string
   test_id: string
@@ -619,6 +629,7 @@ export interface RunArchiveManifest {
   interval_summaries_file: string
   interval_summaries_parquet_file?: string
   test_manifest_file?: string
+  test_notes_file?: string
   transaction_count: number
   resource_sample_count: number
   interval_summary_count: number
@@ -715,6 +726,7 @@ export interface TestRunManifestArchive {
   archive_uri?: string
   manifest_uri?: string
   test_manifest_file?: string
+  test_notes_file?: string
   transaction_count?: number
   resource_sample_count?: number
   interval_summary_count?: number

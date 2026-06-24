@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,6 +139,15 @@ func TestTestManifestArchiveArtifactAndFallback(t *testing.T) {
 		}},
 	}
 	saveStoredManifestTest(t, store, test)
+	if err := store.CreateTestNote(&storage.TestNote{
+		ID:        "manifest-note-1",
+		TestID:    test.ID,
+		Body:      "# During Run\n\nLatency elevated during ramp.",
+		CreatedBy: "operator",
+		UpdatedBy: "operator",
+	}); err != nil {
+		t.Fatalf("CreateTestNote returned error: %v", err)
+	}
 	runner.mu.Lock()
 	runner.tests[test.ID] = test
 	runner.mu.Unlock()
@@ -164,6 +174,27 @@ func TestTestManifestArchiveArtifactAndFallback(t *testing.T) {
 	if archiveManifest.TestManifestFile != testRunManifestFileName {
 		t.Fatalf("archive manifest test_manifest_file = %q, want %q", archiveManifest.TestManifestFile, testRunManifestFileName)
 	}
+	if archiveManifest.TestNotesFile != testNotesArchiveFileName {
+		t.Fatalf("archive manifest test_notes_file = %q, want %q", archiveManifest.TestNotesFile, testNotesArchiveFileName)
+	}
+	artifacts, err := archiveManifestArtifactNames(archiveManifest)
+	if err != nil {
+		t.Fatalf("archiveManifestArtifactNames returned error: %v", err)
+	}
+	if _, ok := artifacts[testNotesArchiveFileName]; !ok {
+		t.Fatalf("artifact allowlist does not include %q: %#v", testNotesArchiveFileName, artifacts)
+	}
+	var notesArtifact testNotesArchiveArtifact
+	notesData, err := os.ReadFile(filepath.Join(record.ArchivePath, testNotesArchiveFileName))
+	if err != nil {
+		t.Fatalf("read test notes artifact: %v", err)
+	}
+	if err := json.Unmarshal(notesData, &notesArtifact); err != nil {
+		t.Fatalf("decode test notes artifact: %v", err)
+	}
+	if notesArtifact.TestID != test.ID || len(notesArtifact.Notes) != 1 || notesArtifact.Notes[0].Body != "# During Run\n\nLatency elevated during ramp." {
+		t.Fatalf("test notes artifact = %#v", notesArtifact)
+	}
 	persisted, err := runner.GetTestManifest(test.ID)
 	if err != nil {
 		t.Fatalf("GetTestManifest persisted returned error: %v", err)
@@ -173,6 +204,9 @@ func TestTestManifestArchiveArtifactAndFallback(t *testing.T) {
 	}
 	if persisted.Archive == nil || persisted.Archive.TestManifestFile != testRunManifestFileName {
 		t.Fatalf("persisted archive info = %#v, want test manifest file", persisted.Archive)
+	}
+	if persisted.Archive.TestNotesFile != testNotesArchiveFileName {
+		t.Fatalf("persisted archive test_notes_file = %q, want %q", persisted.Archive.TestNotesFile, testNotesArchiveFileName)
 	}
 
 	fallbackTest := &ManagedTest{

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import Logo from './Logo'
+import MarkdownRenderer from './MarkdownRenderer'
 import ReportCharts from './ReportCharts'
 import { useApi } from '../hooks/useApi'
 import { downloadBlob } from '../utils/fileUtils'
 import { getErrorMessage } from '../utils/errorUtils'
-import { ReportAnnotations, ReportCommentarySection, ReportFinding, RunArchiveReport } from '../types'
+import { ReportAnnotations, ReportCommentarySection, ReportFinding, RunArchiveReport, TestNote } from '../types'
 import type { ReportProfileId } from './GenerateReportModal'
 import './ReportComposer.css'
 
@@ -34,6 +35,9 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   const [verdictExplanation, setVerdictExplanation] = useState('')
   const [findings, setFindings] = useState<ReportFinding[]>([])
   const [updatedBy, setUpdatedBy] = useState('')
+  const [testNotes, setTestNotes] = useState<TestNote[]>([])
+  const [selectedNoteId, setSelectedNoteId] = useState('')
+  const [noteSectionId, setNoteSectionId] = useState('')
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -68,12 +72,20 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     setLoading(true)
     setError('')
 
-    Promise.all([api.getTestArchiveReport(testId), api.getTestReportAnnotations(testId, profile)])
-      .then(([reportResult, annotationsResult]) => {
+    Promise.all([
+      api.getTestArchiveReport(testId),
+      api.getTestReportAnnotations(testId, profile),
+      api.listTestNotes(testId).catch(() => ({ test_id: testId, notes: [] as TestNote[] })),
+    ])
+      .then(([reportResult, annotationsResult, notesResult]) => {
         if (cancelled) return
         setReport(reportResult)
         setSections(annotationsResult.sections || [])
+        setNoteSectionId(annotationsResult.sections?.[0]?.id || '')
         applyAnnotations(annotationsResult.annotations)
+        const loadedNotes = notesResult.notes || []
+        setTestNotes(loadedNotes)
+        setSelectedNoteId(loadedNotes[0]?.id || '')
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(getErrorMessage(err, 'Unable to load report data'))
@@ -135,12 +147,48 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   const overview = report?.overview
   const manifest = report?.manifest
   const slaBreached = manifest?.sla_breached ?? false
+  const selectedNote = useMemo(
+    () => testNotes.find((note) => note.id === selectedNoteId) || null,
+    [selectedNoteId, testNotes],
+  )
 
   const topActions = useMemo(() => {
     const entries = Object.entries(report?.by_action || {})
     entries.sort((a, b) => b[1].transactions - a[1].transactions)
     return entries.slice(0, profile === 'executive' ? 5 : 20)
   }, [report?.by_action, profile])
+
+  const appendSelectedNoteToSummary = useCallback(() => {
+    if (!selectedNote) return
+    setNarrative((current) => appendReportText(current, selectedNote.body))
+    setStatus('Inserted note')
+  }, [selectedNote])
+
+  const appendSelectedNoteToSection = useCallback(() => {
+    if (!selectedNote) return
+    const sectionId = noteSectionId || sections[0]?.id
+    if (!sectionId) return
+    setComments((current) => ({
+      ...current,
+      [sectionId]: appendReportText(current[sectionId] || '', selectedNote.body),
+    }))
+    setNoteSectionId(sectionId)
+    setStatus('Inserted note')
+  }, [noteSectionId, sections, selectedNote])
+
+  const convertSelectedNoteToFinding = useCallback(() => {
+    if (!selectedNote) return
+    setFindings((current) => [
+      ...current,
+      {
+        id: '',
+        title: firstNoteLine(selectedNote.body),
+        severity: 'info',
+        observed: selectedNote.body,
+      },
+    ])
+    setStatus('Inserted finding')
+  }, [selectedNote])
 
   return (
     <div className="report-composer-overlay" role="dialog" aria-modal="true" aria-label="Report composer">
@@ -415,6 +463,53 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
             <section className="report-section">
               <h2>Analyst Commentary</h2>
               <p className="report-hint no-print">Edit the commentary below — it is saved with the report and appears in the downloaded HTML.</p>
+              {testNotes.length > 0 && (
+                <div className="report-notes-source no-print">
+                  <div className="report-notes-source-list">
+                    {testNotes.map((note) => (
+                      <button
+                        key={note.id}
+                        type="button"
+                        className={`report-note-source-item${note.id === selectedNoteId ? ' selected' : ''}`}
+                        onClick={() => setSelectedNoteId(note.id)}
+                      >
+                        <strong>{firstNoteLine(note.body)}</strong>
+                        <span>Updated {formatTime(note.updated_at)}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="report-note-source-preview">
+                    {selectedNote && (
+                      <>
+                        <div className="report-note-source-markdown markdown-body">
+                          <MarkdownRenderer source={selectedNote.body} blockKeyPrefix={`report-note-${selectedNote.id}`} />
+                        </div>
+                        <div className="report-note-source-actions">
+                          <button type="button" className="btn btn-secondary" onClick={appendSelectedNoteToSummary}>
+                            Append to Executive Summary
+                          </button>
+                          <select
+                            className="report-select"
+                            value={noteSectionId || sections[0]?.id || ''}
+                            onChange={(event) => setNoteSectionId(event.target.value)}
+                            aria-label="Commentary section"
+                          >
+                            {sections.map((section) => (
+                              <option key={section.id} value={section.id}>{section.label}</option>
+                            ))}
+                          </select>
+                          <button type="button" className="btn btn-secondary" onClick={appendSelectedNoteToSection} disabled={sections.length === 0}>
+                            Append to Section
+                          </button>
+                          <button type="button" className="btn btn-secondary" onClick={convertSelectedNoteToFinding}>
+                            Convert to Info Finding
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
               {sections.map((section) => (
                 <label key={section.id} className="report-comment">
                   <span>{section.label}</span>
@@ -463,4 +558,16 @@ function formatTime(value: string | undefined): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'n/a'
   return date.toLocaleString()
+}
+
+function appendReportText(current: string, addition: string): string {
+  const body = addition.trim()
+  if (!body) return current
+  return current.trim() ? `${current.trimEnd()}\n\n${body}` : body
+}
+
+function firstNoteLine(body: string): string {
+  const line = body.split(/\r?\n/).find((entry) => entry.trim())?.trim() || 'Test note'
+  const normalized = line.replace(/^#{1,6}\s+/, '')
+  return normalized.length > 90 ? `${normalized.slice(0, 87)}...` : normalized
 }
