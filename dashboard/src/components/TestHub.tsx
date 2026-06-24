@@ -26,7 +26,8 @@ import { useLibraryFederation } from './useLibraryFederation'
 import { shortLibraryHash } from './libraryFederationUtils'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
-import { clearScenarioBuilderDraft, hasScenarioBuilderProgress, loadScenarioBuilderDraft, saveScenarioBuilderDraft } from './scenarioBuilderDraft'
+import { clearScenarioBuilderDraft, hasScenarioBuilderProgress } from './scenarioBuilderDraft'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -994,15 +995,13 @@ function ScenarioModelPreviewPanel({
 function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, onScenarioViewChange, initialView = 'library' }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
-  // Restored once on mount so an in-progress builder survives reloads/new sessions.
-  const [restoredDraft] = useState(loadScenarioBuilderDraft)
   const [engineDefaults, setEngineDefaults] = useState<ScriptConfig | undefined>(undefined)
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
   const [loadModelTemplates, setLoadModelTemplates] = useState<LoadModelTemplate[]>([])
   const [loadModelSupportMatrix, setLoadModelSupportMatrix] = useState<LoadModelSupportEntry[]>([])
-  const [selectedLoadModelTemplateId, setSelectedLoadModelTemplateId] = useState(() => restoredDraft?.selectedLoadModelTemplateId ?? '')
+  const [selectedLoadModelTemplateId, setSelectedLoadModelTemplateId] = useState('')
   const [loadModelValidation, setLoadModelValidation] = useState<LoadModelValidationReport | null>(null)
   const [loadModelValidationLoading, setLoadModelValidationLoading] = useState(false)
   const [loadModelValidationError, setLoadModelValidationError] = useState('')
@@ -1010,15 +1009,16 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const [showPlans, setShowPlans] = useState(initialView === 'plans')
   const [planSeedScenarioId, setPlanSeedScenarioId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [wizardStep, setWizardStep] = useState<ScenarioWizardStep>(() => restoredDraft?.wizardStep ?? 'start')
-  const [maxVisitedWizardIndex, setMaxVisitedWizardIndex] = useState(() => restoredDraft?.maxVisitedWizardIndex ?? 0)
+  const [wizardStep, setWizardStep] = useState<ScenarioWizardStep>('start')
+  const [maxVisitedWizardIndex, setMaxVisitedWizardIndex] = useState(0)
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
-  const [scenarioSourceMode, setScenarioSourceMode] = useState<ScenarioSourceMode>(() => restoredDraft?.scenarioSourceMode ?? 'shape')
-  const [scenarioStartChoice, setScenarioStartChoice] = useState<ScenarioStartChoice>(() => restoredDraft?.scenarioStartChoice ?? '')
+  const { runGuarded } = useNavigationGuardRunner()
+  const [scenarioSourceMode, setScenarioSourceMode] = useState<ScenarioSourceMode>('shape')
+  const [scenarioStartChoice, setScenarioStartChoice] = useState<ScenarioStartChoice>('')
   const [scenarioCloneQuery, setScenarioCloneQuery] = useState('')
-  const [selectedCloneScenarioId, setSelectedCloneScenarioId] = useState(() => restoredDraft?.selectedCloneScenarioId ?? '')
-  const [selectedShapeId, setSelectedShapeId] = useState(() => restoredDraft?.selectedShapeId ?? '')
-  const [form, setForm] = useState<ScenarioFormState>(() => restoredDraft?.form ?? emptyScenarioForm())
+  const [selectedCloneScenarioId, setSelectedCloneScenarioId] = useState('')
+  const [selectedShapeId, setSelectedShapeId] = useState('')
+  const [form, setForm] = useState<ScenarioFormState>(() => emptyScenarioForm())
   const markWizardStepVisited = useCallback((stepId: ScenarioWizardStep) => {
     const stepIndex = scenarioWizardSteps.findIndex(step => step.id === stepId)
     if (stepIndex >= 0) {
@@ -1057,7 +1057,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const [goalBaselineLoadingId, setGoalBaselineLoadingId] = useState('')
   const [goalBaselineGroups, setGoalBaselineGroups] = useState<BaselineGroupOption[]>([])
   const [goalTargetTps, setGoalTargetTps] = useState<Record<string, string>>({})
-  const [goalSizingResult, setGoalSizingResult] = useState<GoalSizingReport | null>(() => restoredDraft?.goalSizingResult ?? null)
+  const [goalSizingResult, setGoalSizingResult] = useState<GoalSizingReport | null>(null)
   const [goalSizingLoading, setGoalSizingLoading] = useState(false)
   const [goalSizingError, setGoalSizingError] = useState('')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
@@ -1069,6 +1069,11 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const scriptGroupRefs = useRef<Array<HTMLDivElement | null>>([])
   const goalBaselineTableRef = useRef<HTMLDivElement | null>(null)
   const goalSizingResultRef = useRef<HTMLDivElement | null>(null)
+  const editingBaselineFormRef = useRef('')
+  const persistScenarioRef = useRef<() => Promise<StoredScenario | null>>(async () => null)
+  const resetScenarioBuilderRef = useRef<() => void>(() => undefined)
+  const refreshRef = useRef<() => Promise<void>>(async () => undefined)
+  const isScenarioBuilderDirtyRef = useRef<() => boolean>(() => false)
   const resetGoalBaselineTableScroll = () => {
     if (goalBaselineTableRef.current) goalBaselineTableRef.current.scrollLeft = 0
   }
@@ -1419,6 +1424,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   // showForm/view or the persisted draft — callers decide those.
   const resetBuilderToBlank = useCallback(() => {
     setEditingId(null)
+    editingBaselineFormRef.current = ''
     setForm(emptyScenarioForm())
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId('')
@@ -1441,28 +1447,8 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       setError('Current session can view scenarios but cannot create or edit them.')
       return
     }
-    // Resume a saved in-progress draft if one exists; otherwise start blank.
-    const draft = loadScenarioBuilderDraft()
-    if (draft) {
-      setEditingId(null)
-      setForm(draft.form)
-      setSelectedLoadModelTemplateId(draft.selectedLoadModelTemplateId)
-      setSelectedShapeId(draft.selectedShapeId)
-      setSelectedCloneScenarioId(draft.selectedCloneScenarioId)
-      setScenarioSourceMode(draft.scenarioSourceMode)
-      setScenarioStartChoice(draft.scenarioStartChoice)
-      setGoalSizingResult(draft.goalSizingResult)
-      setWizardStep(draft.wizardStep)
-      setMaxVisitedWizardIndex(draft.maxVisitedWizardIndex)
-      setStageGroupIndex(0)
-      setScenarioCloneQuery('')
-      setScriptSelectionTargetIndex(null)
-      setRunSettingsTab('scenario')
-      setLoadModelValidation(null)
-      setLoadModelValidationError('')
-    } else {
-      resetBuilderToBlank()
-    }
+    clearScenarioBuilderDraft()
+    resetBuilderToBlank()
     setShowForm(true)
     setShowPlans(false)
     onScenarioViewChange?.('builder')
@@ -1479,6 +1465,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setShowForm(false)
     setShowPlans(false)
     setEditingId(null)
+    editingBaselineFormRef.current = ''
     setConfirmDeleteScenarioId(null)
     setScriptSelectionTargetIndex(null)
     setScenarioStartChoice('')
@@ -1490,8 +1477,17 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setShowForm(false)
     setShowPlans(true)
     setEditingId(null)
+    editingBaselineFormRef.current = ''
     onScenarioViewChange?.('plans')
   }, [onScenarioViewChange])
+
+  const guardedOpenScenarioLibrary = useCallback(() => {
+    runGuarded(openScenarioLibrary)
+  }, [openScenarioLibrary, runGuarded])
+
+  const guardedOpenExecutionPlans = useCallback(() => {
+    runGuarded(openExecutionPlans)
+  }, [openExecutionPlans, runGuarded])
 
   const addScenarioToPlan = useCallback((scenarioId: string) => {
     setPlanSeedScenarioId(scenarioId)
@@ -1504,8 +1500,8 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       ariaLabel="Scenario page view"
       className="scenario-page-toggle topbar-page-section-toggle"
       onChange={view => {
-        if (view === 'library') openScenarioLibrary()
-        else if (view === 'plans') openExecutionPlans()
+        if (view === 'library') guardedOpenScenarioLibrary()
+        else if (view === 'plans') guardedOpenExecutionPlans()
         else openCreate()
       }}
       options={[
@@ -1514,7 +1510,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
         { value: 'plans', label: 'Execution Plans' },
       ]}
     />
-  ), [canManageTests, openCreate, openExecutionPlans, openScenarioLibrary, showForm, showPlans])
+  ), [canManageTests, guardedOpenExecutionPlans, guardedOpenScenarioLibrary, openCreate, showForm, showPlans])
 
   const scenarioTopbarContribution = useMemo(() => ({
     id: 'scenario-page',
@@ -1531,8 +1527,10 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       return
     }
     const fallbackScriptId = scripts[0]?.id || ''
+    const nextForm = scenarioFormStateFromStoredScenario(scenario, fallbackScriptId)
     setEditingId(scenario.id)
-    setForm(scenarioFormStateFromStoredScenario(scenario, fallbackScriptId))
+    editingBaselineFormRef.current = JSON.stringify(nextForm)
+    setForm(nextForm)
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId('')
@@ -1556,6 +1554,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     }
     openEdit(scenario)
     setEditingId(null)
+    editingBaselineFormRef.current = ''
     setForm(prev => ({ ...prev, name: `${scenario.name} (Copy)` }))
   }
 
@@ -1569,6 +1568,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const cloneScenarioDraft = (scenario: StoredScenario) => {
     const fallbackScriptId = scripts[0]?.id || ''
     setEditingId(null)
+    editingBaselineFormRef.current = ''
     setForm(scenarioFormStateFromStoredScenario(scenario, fallbackScriptId, true))
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
@@ -1682,6 +1682,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setWizardStep('start')
     setShowForm(true)
     setEditingId(null)
+    editingBaselineFormRef.current = ''
     try {
       const response = await api.listTests({ project_id: activeProject?.id })
       setGoalBaselineTests((response.tests || []).filter(test => test.status === 'COMPLETE'))
@@ -1780,6 +1781,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     const sizedGroups = goalSizedGroups(draft)
     const goalFields = goalSizedGoalFields(draft)
     setEditingId(null)
+    editingBaselineFormRef.current = ''
     setForm(prev => ({
       ...prev,
       name: draft.name || prev.name,
@@ -1998,7 +2000,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       return null
     }
     if (!form.name.trim()) {
-      setError('')
+      setError('Name the scenario before saving.')
       setWizardStep('review')
       return null
     }
@@ -2027,6 +2029,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const resetScenarioBuilder = () => {
     clearScenarioBuilderDraft()
     setEditingId(null)
+    editingBaselineFormRef.current = ''
     setForm(emptyScenarioForm())
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
@@ -2088,6 +2091,33 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   }
 
   const currentWizardIndex = scenarioWizardSteps.findIndex(step => step.id === wizardStep)
+  const scenarioBuilderDirty = showForm && (
+    editingId
+      ? Boolean(editingBaselineFormRef.current) && JSON.stringify(form) !== editingBaselineFormRef.current
+      : hasScenarioBuilderProgress({ form, scenarioStartChoice, maxVisitedWizardIndex })
+  )
+  persistScenarioRef.current = persistScenario
+  resetScenarioBuilderRef.current = resetScenarioBuilder
+  refreshRef.current = refresh
+  isScenarioBuilderDirtyRef.current = () => scenarioBuilderDirty
+  const scenarioBuilderGuard = useMemo<NavigationGuard>(() => ({
+    id: 'scenario-builder',
+    label: 'Scenario Builder',
+    isDirty: () => isScenarioBuilderDirtyRef.current(),
+    save: async () => {
+      const saved = await persistScenarioRef.current()
+      if (!saved) return false
+      resetScenarioBuilderRef.current()
+      void refreshRef.current()
+      return true
+    },
+    discard: () => {
+      clearScenarioBuilderDraft()
+      resetScenarioBuilderRef.current()
+    },
+  }), [])
+  useNavigationGuard(showForm ? scenarioBuilderGuard : null, scenarioBuilderDirty)
+
   useEffect(() => {
     if (currentWizardIndex >= 0) {
       setMaxVisitedWizardIndex(current => Math.max(current, currentWizardIndex))
@@ -2117,28 +2147,6 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     }
   }, [api, showForm])
 
-  // Auto-save the in-progress builder so wizard progress (and its green
-  // checkmarks) survives navigation, reloads, and new sessions. Edits of an
-  // existing scenario are not drafted, and an empty builder clears any stale draft.
-  useEffect(() => {
-    if (!showForm || editingId) return
-    const draft = {
-      form,
-      scenarioSourceMode,
-      scenarioStartChoice,
-      selectedShapeId,
-      selectedCloneScenarioId,
-      selectedLoadModelTemplateId,
-      goalSizingResult,
-      wizardStep,
-      maxVisitedWizardIndex,
-    }
-    if (hasScenarioBuilderProgress(draft)) {
-      saveScenarioBuilderDraft(draft)
-    } else {
-      clearScenarioBuilderDraft()
-    }
-  }, [showForm, editingId, form, scenarioSourceMode, scenarioStartChoice, selectedShapeId, selectedCloneScenarioId, selectedLoadModelTemplateId, goalSizingResult, wizardStep, maxVisitedWizardIndex])
   const dataPoolLabel = form.data_pool_id
     ? dataPools.find(pool => pool.id === form.data_pool_id)?.name || 'Shared data configured'
     : 'No shared data pool'
@@ -3329,7 +3337,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
           {blockingStageTimelineMessage && <div className="settings-error-inline">{blockingStageTimelineMessage}</div>}
 
           <div className="scenario-builder-actions">
-            <button className="btn btn-secondary" onClick={openScenarioLibrary}>Cancel</button>
+            <button className="btn btn-secondary" onClick={guardedOpenScenarioLibrary}>Cancel</button>
             {builderHasProgress && (
               <button
                 type="button"

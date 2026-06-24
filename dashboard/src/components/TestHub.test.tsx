@@ -1886,9 +1886,10 @@ describe('TestHub', () => {
     })
     await flushPromises()
 
-    // No scenario created and no error surfaced; the user is taken to review with a name prompt.
+    // No scenario is created; the user is taken to review with a name prompt.
     expect(apiMock.createScenario).not.toHaveBeenCalled()
     expect(container.textContent).not.toContain('required')
+    expect(container.textContent).toContain('Name the scenario before saving.')
     const promptInput = container.querySelector('.scenario-name-prompt input') as HTMLInputElement | null
     expect(promptInput).toBeTruthy()
     if (!promptInput) return
@@ -1906,33 +1907,36 @@ describe('TestHub', () => {
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({ name: 'Late Named Scenario' }))
   })
 
-  it('discards the in-progress draft when Start Over is confirmed', async () => {
+  it('starts over without restoring or persisting an in-progress builder draft', async () => {
     await act(async () => {
       root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
     })
     await flushPromises()
 
-    // Enter the builder and make progress so a draft is persisted.
+    window.localStorage.setItem('apexload.scenarioBuilder.draft', JSON.stringify({ form: { name: 'Stale Draft' } }))
+
+    // Enter the builder and make progress; the stale persisted draft is ignored.
     await clickWizardStep('Scripts')
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name') as HTMLInputElement | undefined
     expect(nameInput).toBeDefined()
     if (!nameInput) return
+    expect(nameInput.value).toBe('')
     await act(async () => {
       setInputValue(nameInput, 'Draft Scenario')
     })
     await flushPromises()
 
     const startOverButton = () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start Over')
-    expect(window.localStorage.getItem('apexload.scenarioBuilder.draft')).not.toBeNull()
+    expect(window.localStorage.getItem('apexload.scenarioBuilder.draft')).toBeNull()
     expect(startOverButton()).toBeDefined()
 
-    // Declining the confirmation leaves the draft and progress untouched.
+    // Declining the confirmation leaves progress untouched without writing a draft.
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
     await clickButton('Start Over')
-    expect(window.localStorage.getItem('apexload.scenarioBuilder.draft')).not.toBeNull()
+    expect(window.localStorage.getItem('apexload.scenarioBuilder.draft')).toBeNull()
     expect(startOverButton()).toBeDefined()
 
-    // Confirming discards the draft and resets the wizard to a blank Start step.
+    // Confirming discards progress and resets the wizard to a blank Start step.
     confirmSpy.mockReturnValue(true)
     await clickButton('Start Over')
     await flushPromises()

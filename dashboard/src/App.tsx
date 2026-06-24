@@ -28,6 +28,7 @@ import {
   type TopbarAction,
   type TopbarMetaChip,
 } from './hooks/TopbarContributionProvider'
+import { NavigationGuardProvider, useNavigationGuardRunner } from './hooks/NavigationGuardProvider'
 import { isEffectiveOperationAllowed } from './utils/authAccessUtils'
 import { DesktopStatusResponse } from './types/library'
 import ThemeToggle from './components/ThemeToggle'
@@ -175,6 +176,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const [activeTopbarRuns, setActiveTopbarRuns] = useState<TopbarRunSummary[]>([])
   const testApi = useTestApi()
   const activeTopbarContribution = useActiveTopbarContribution()
+  const { runGuarded } = useNavigationGuardRunner()
 
   const handleWSMessage = useCallback((msg: WSMessage) => {
     if (msg.type === 'metrics_update' && msg.data && msg.test_id && msg.timestamp) {
@@ -231,26 +233,38 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const canManageSystem = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_system', false)
   const snapshotAudience = dashboardSnapshotAudience(authStatus, devViewMode, activeProject?.id)
 
+  const setGuardedView = useCallback((next: AppView | ((current: AppView) => AppView)) => {
+    runGuarded(() => {
+      setView(current => (typeof next === 'function' ? next(current) : next))
+    })
+  }, [runGuarded])
+
   const navigateToTest = useCallback((id: string, tab?: TestWorkspaceTabID) => {
-    setView(tab ? { page: 'test', testId: id, tab } : { page: 'test', testId: id })
-  }, [])
+    setGuardedView(tab ? { page: 'test', testId: id, tab } : { page: 'test', testId: id })
+  }, [setGuardedView])
   const navigateToTestArchive = useCallback((id: string) => navigateToTest(id, 'archive'), [navigateToTest])
   const navigateToCommandCenter = useCallback((id?: string) => {
-    setView(id ? { page: 'command-center', testId: id } : { page: 'command-center' })
-  }, [])
+    setGuardedView(id ? { page: 'command-center', testId: id } : { page: 'command-center' })
+  }, [setGuardedView])
   const activePage: NavPage = view.page === 'test' ? 'tests' : view.page === 'swagger' || view.page === 'repository-guide' ? 'docs' : view.page === 'recorder-panel' ? 'scripts' : view.page
 
-  const navigateToScriptEdit = (scriptId: string) => setView({ page: 'scripts', mode: 'edit', scriptId })
-  const navigateToScenarioBuilder = () => setView({ page: 'tests', scenarioView: 'builder' })
-  const navigateToNewTestForScenario = (scenarioId: string) => setView({ page: 'new-test', scenarioId })
+  const navigateToScriptEdit = (scriptId: string) => setGuardedView({ page: 'scripts', mode: 'edit', scriptId })
+  const navigateToScenarioBuilder = () => setGuardedView({ page: 'tests', scenarioView: 'builder' })
+  const navigateToNewTestForScenario = (scenarioId: string) => {
+    setView({ page: 'new-test', scenarioId })
+  }
 
-  const handleNavigate = useCallback((page: NavPage) => {
+  const performNavigate = useCallback((page: NavPage) => {
     if (page === 'scripts') {
       setScriptsNavigationVersion(version => version + 1)
       setScriptsTopbarState(null)
     }
     setView({ page })
   }, [])
+
+  const handleNavigate = useCallback((page: NavPage) => {
+    runGuarded(() => performNavigate(page))
+  }, [performNavigate, runGuarded])
 
   const handleScriptsAuthoringStateChange = useCallback((state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => {
     setScriptsTopbarState(state)
@@ -281,11 +295,11 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
 
   const navigateBack = useCallback((fallbackPage: NavPage = 'dashboard') => {
     if (appHistoryDepth.current > 1) {
-      window.history.back()
+      runGuarded(() => window.history.back())
     } else {
-      setView({ page: fallbackPage })
+      setGuardedView({ page: fallbackPage })
     }
-  }, [])
+  }, [runGuarded, setGuardedView])
   const navigateBackToTests = useCallback(() => navigateBack('tests'), [navigateBack])
 
   const appShellShortcuts = useMemo(() => [
@@ -678,7 +692,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
                   href={viewToLocationHash({ page: 'tests' })}
                   onClick={(event) => {
                     event.preventDefault()
-                    setView({ page: 'tests' })
+                    setGuardedView({ page: 'tests' })
                   }}
                 >
                   +{hiddenTopbarRunCount} run{hiddenTopbarRunCount === 1 ? '' : 's'}
@@ -894,8 +908,10 @@ function AppContent() {
         <ApplicationProvider>
           <KeyboardShortcutProvider>
             <TopbarContributionProvider>
-              <TablePaginationManager />
-              <AppShell authStatus={authState.status === 'ready' ? authState.auth : undefined} />
+              <NavigationGuardProvider>
+                <TablePaginationManager />
+                <AppShell authStatus={authState.status === 'ready' ? authState.auth : undefined} />
+              </NavigationGuardProvider>
             </TopbarContributionProvider>
           </KeyboardShortcutProvider>
         </ApplicationProvider>

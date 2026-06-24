@@ -4,6 +4,7 @@ import { useApi } from '../hooks/useApi'
 import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
 import { useKeyboardShortcuts } from '../hooks/KeyboardShortcutProvider'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 import CodeMirror from '@uiw/react-codemirror'
@@ -3130,6 +3131,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     [api, projectId, folderId],
   )
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
+  const { runGuarded } = useNavigationGuardRunner()
   const {
     activeAction,
     activeReplaySessionId,
@@ -3140,9 +3142,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     error,
     expandedReplayBrowserArtifacts,
     expandedReplayEvent,
+    baselineJsonRef,
     hydrateEditorState,
     jsonDirty,
     jsonText,
+    markBaseline,
     openDataEditor,
     parameterCandidates,
     pendingParameterDraft,
@@ -5021,6 +5025,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const jsonParseMessage = jsonDraftParse.ok ? '' : jsonDraftParse.message
   const jsonStatus: ScriptCodePaneProps['status'] = jsonParseMessage ? 'invalid' : jsonDirty ? 'dirty' : 'synced'
   const jsonStatusMessage = jsonParseMessage ? 'Invalid JSON' : jsonDirty ? 'Unsaved JSON edits' : 'Synced'
+  const scriptEditorDirty = jsonDirty || formattedScriptJson !== baselineJsonRef.current
+  const scriptEditorDirtyRef = useRef(scriptEditorDirty)
+  const handleSaveRef = useRef<() => Promise<boolean>>(async () => false)
+  scriptEditorDirtyRef.current = scriptEditorDirty
 
   const handleScriptCodeScrollSnapshotChange = useCallback((snapshot: ScriptCodeScrollSnapshot) => {
     setScriptCodeScrollSnapshot(current => (
@@ -5089,7 +5097,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setJsonDirty(value !== formattedScriptJson)
   }
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<boolean> => {
     setError(''); setSuccess(''); setWarnings([]); setSaving(true)
     setValidationEvidence(null)
     setValidationReplayPreflight(null)
@@ -5102,15 +5110,30 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         savedScript = await api.createScript(currentScript, projectId, folderId)
       }
       commitJsonDraft(currentScript)
+      markBaseline(currentScript)
       setSuccess('Script saved successfully!')
       onSave?.(savedScript)
+      return true
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to save script'))
       if (getErrorMessage(e, '').includes('Script JSON is invalid')) {
         setDebuggerBottomTab('problems')
       }
+      return false
     } finally { setSaving(false) }
   }
+  handleSaveRef.current = handleSave
+  const scriptEditorGuard = useMemo<NavigationGuard>(() => ({
+    id: `script-editor-${scriptId || 'new'}`,
+    label: scriptId ? 'Edit Script' : 'Create Script',
+    isDirty: () => scriptEditorDirtyRef.current,
+    save: () => handleSaveRef.current(),
+    discard: () => undefined,
+  }), [scriptId])
+  useNavigationGuard(scriptEditorGuard, scriptEditorDirty)
+  const handleCloseEditor = useCallback(() => {
+    if (onClose) runGuarded(onClose)
+  }, [onClose, runGuarded])
 
   const handleValidateScript = async () => {
     setError('')
@@ -7156,7 +7179,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         title: 'Close script editor',
         tone: 'ghost',
         hidden: !onClose,
-        onClick: () => { onClose?.() },
+        onClick: handleCloseEditor,
       },
     ],
     primaryActions: [
@@ -7867,7 +7890,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               <button className="btn btn-primary" onClick={handleSave} disabled={saving || validating || !currentDraftScript.name}>
                 {saving ? 'Saving...' : 'Save Script'}
               </button>
-              {onClose && <button className="btn btn-ghost" onClick={onClose}>Close</button>}
+              {onClose && <button className="btn btn-ghost" onClick={handleCloseEditor}>Close</button>}
             </div>
           </div>
           <div className="script-ide-command-bar" aria-label="Script IDE command bar">
@@ -16039,6 +16062,7 @@ function cloneScriptForImportBaseline(source: ScriptData): ScriptData {
 
 function useScriptEditorState(initialScript?: ScriptData | null) {
   const [script, setScript] = useState<ScriptData>(initialScript || { ...EMPTY_SCRIPT })
+  const baselineJsonRef = useRef(formatScriptJson(initialScript || { ...EMPTY_SCRIPT }))
   const [importBaselineScript, setImportBaselineScript] = useState<ScriptData | null>(
     initialScript?.metadata?.import ? cloneScriptForImportBaseline(initialScript) : null,
   )
@@ -16087,6 +16111,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
 
   const hydrateEditorState = useCallback((nextScript: ScriptData) => {
     setScript(nextScript)
+    baselineJsonRef.current = formatScriptJson(nextScript)
     setImportBaselineScript(nextScript.metadata?.import ? cloneScriptForImportBaseline(nextScript) : null)
     if (scriptHasImportMetadata(nextScript)) {
       setOpenSections(prev => ({ ...prev, import: true }))
@@ -16107,6 +16132,10 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     setReplayScreenshotSelection(null)
   }, [])
 
+  const markBaseline = useCallback((nextScript: ScriptData) => {
+    baselineJsonRef.current = formatScriptJson(nextScript)
+  }, [])
+
   const closeParameterDialog = () => {
     setIsParameterDialogOpen(false)
     setPendingParameterDraft(null)
@@ -16119,6 +16148,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
   return {
     activeAction,
     activeReplaySessionId,
+    baselineJsonRef,
     browserReplaySession,
     closeParameterDialog,
     copiedReplaySnapshotSection,
@@ -16132,6 +16162,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     isParameterDialogOpen,
     jsonDirty,
     jsonText,
+    markBaseline,
     openDataEditor,
     openSections,
     parameterCandidates,

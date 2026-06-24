@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { DraftCapacityEstimate, ScenarioDraft, ScenarioDraftGroup, StoredScript, SystemInventoryGenerator, TestSummary } from '../types'
@@ -12,6 +12,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { buildDefaultScenarioGroup, buildInitialScenarioDraft, scenarioDraftReducer, ScenarioDraftField, ScenarioDraftState } from './scenarioDraftUtils'
 import { buildCreateTestPayload } from './scenarioPayloadUtils'
 import DurationField from './DurationField'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 
 interface Props {
   scripts: StoredScript[]
@@ -81,11 +82,15 @@ function validateGoalConfig(goalConfig: ScenarioDraftState['goalConfig']): strin
 
 export default function CreateTestModal({ scripts, projectId, folderId, onClose, onCreated, initialScenario, mode = 'create-queued-run' }: Props) {
   const api = useApi()
+  const { runGuarded } = useNavigationGuardRunner()
   const baselineSeconds = 5 * 60
   const [scenarioDraft, dispatchScenarioDraft] = useReducer(
     scenarioDraftReducer,
     buildInitialScenarioDraft(initialScenario, scripts),
   )
+  const baselineDraftRef = useRef(JSON.stringify(scenarioDraft))
+  const submitDraftRef = useRef<() => Promise<boolean>>(async () => false)
+  const modalDirtyRef = useRef(false)
   const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
   const [estimateLoading, setEstimateLoading] = useState(false)
   const [estimateError, setEstimateError] = useState('')
@@ -105,7 +110,11 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     dispatchScenarioDraft({ type: 'setField', field, value })
   }
 
-  useModalDialog({ dialogRef, onClose: loading ? undefined : onClose })
+  const handleGuardedClose = useCallback(() => {
+    runGuarded(onClose)
+  }, [onClose, runGuarded])
+
+  useModalDialog({ dialogRef, onClose: loading ? undefined : handleGuardedClose })
 
   const updateGroup = (idx: number, patch: Partial<ScenarioDraftGroup>) => {
     dispatchScenarioDraft({ type: 'updateGroup', index: idx, patch })
@@ -298,8 +307,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     }
   }, [api])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const submitDraft = async (): Promise<boolean> => {
     setError('')
     setLoading(true)
     try {
@@ -317,15 +325,33 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
       const test = await api.createTest(payload)
       onCreated(test)
+      return true
     } catch (error: unknown) {
       setError(getErrorMessage(error, errorMessage))
+      return false
     } finally {
       setLoading(false)
     }
   }
+  submitDraftRef.current = submitDraft
+  const modalDirty = JSON.stringify(scenarioDraft) !== baselineDraftRef.current
+  modalDirtyRef.current = modalDirty
+  const modalGuard = useMemo<NavigationGuard>(() => ({
+    id: `create-test-modal-${mode}`,
+    label: modalTitle,
+    isDirty: () => modalDirtyRef.current,
+    save: () => submitDraftRef.current(),
+    discard: () => undefined,
+  }), [modalTitle, mode])
+  useNavigationGuard(modalGuard, modalDirty)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await submitDraft()
+  }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={loading ? undefined : handleGuardedClose}>
       <div ref={dialogRef} className="modal modal-wide" role="dialog" aria-modal="true" aria-label={modalTitle} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{modalTitle}</h3>
@@ -534,7 +560,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
           {error && <p className="form-error">{error}</p>}
 
           <div className="modal-actions">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
+            <button type="button" className="btn btn-secondary" onClick={handleGuardedClose} disabled={loading}>
               Cancel
             </button>
             <button

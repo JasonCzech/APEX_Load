@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import CreateTestModal from './CreateTestModal'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardProvider'
 
 const apiMock = {
   estimateTest: vi.fn(),
@@ -151,6 +152,75 @@ describe('CreateTestModal', () => {
     }))
     expect(onCreated).toHaveBeenCalledWith({ id: 'test-1' })
   })
+
+  it('prompts before closing a dirty queued-run draft', async () => {
+    const onClose = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <CreateTestModal
+            scripts={[{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]}
+            onClose={onClose}
+            onCreated={vi.fn()}
+          />
+        </NavigationGuardProvider>,
+      )
+    })
+
+    const nameInput = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
+      .find(input => input.placeholder?.includes('auto-generated'))
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
+
+    await act(async () => {
+      setInputValue(nameInput, 'Dirty queued run')
+    })
+
+    await click('Cancel')
+
+    expect(onClose).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Unsaved Changes')
+
+    await click('Keep editing')
+    expect(container.textContent).not.toContain('Unsaved Changes')
+
+    await click('Cancel')
+    await click('Discard changes')
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes a clean queued-run draft without prompting', async () => {
+    const onClose = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <CreateTestModal
+            scripts={[{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]}
+            onClose={onClose}
+            onCreated={vi.fn()}
+          />
+        </NavigationGuardProvider>,
+      )
+    })
+
+    await click('Cancel')
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('Unsaved Changes')
+  })
+
+  async function click(label: string) {
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(candidate => candidate.textContent?.includes(label))
+    expect(button).toBeDefined()
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => Promise.resolve())
+  }
 })
 
 function setInputValue(input: HTMLInputElement, value: string) {

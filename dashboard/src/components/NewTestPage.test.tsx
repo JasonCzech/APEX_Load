@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import NewTestPage from './NewTestPage'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardProvider'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -284,6 +285,50 @@ describe('NewTestPage', () => {
     })
     expect(container.textContent).toContain('Order API')
     expect(container.querySelector('.new-test-scenario-expanded-row')?.textContent).toContain('Order API')
+  })
+
+  it('prompts before leaving a dirty run setup for schedules', async () => {
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <NewTestPage
+            activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+            activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+            releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+            onSelectTest={vi.fn()}
+            onCreateRelease={vi.fn().mockResolvedValue(null)}
+          />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+
+    const runNameInput = findControlByLabel<HTMLInputElement>(container, 'Run Name', 'input')
+    expect(runNameInput).toBeDefined()
+    if (!runNameInput) return
+
+    await act(async () => {
+      setInputValue(runNameInput, 'Dirty run setup')
+      runNameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const schedulesButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Schedules')
+    expect(schedulesButton).toBeDefined()
+    await act(async () => {
+      schedulesButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Unsaved Changes')
+    expect(container.textContent).not.toContain('Scenario Schedule')
+
+    const discardButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Discard changes'))
+    await act(async () => {
+      discardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Scenario Schedule')
   })
 
   it('omits previously tested release tags without duplicate key warnings', async () => {

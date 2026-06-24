@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Application, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, GeneratorAssignmentSettings, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario, SystemInventoryGenerator } from '../types'
 import { useApi } from '../hooks/useApi'
@@ -64,6 +64,7 @@ import {
 } from './newTestRunModel'
 import './CreateTestModal.css'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 
 interface Props {
   activeApplication: Application | null
@@ -320,6 +321,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const { activeProject } = useProject()
   const [pageMode, setPageMode] = useState<'launch' | 'schedules'>('launch')
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
+  const { runGuarded } = useNavigationGuardRunner()
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
   const [scenarioId, setScenarioId] = useState(initialScenarioId || '')
   const [releaseId, setReleaseId] = useState(activeRelease?.id || '')
@@ -366,6 +368,9 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [generatorInventoryError, setGeneratorInventoryError] = useState('')
   const [bindableTimeslots, setBindableTimeslots] = useState<CapacityTimeslot[]>([])
   const [selectedTimeslotId, setSelectedTimeslotId] = useState('')
+  const newTestDirtyRef = useRef(false)
+  const createQueuedRunRef = useRef<() => Promise<boolean>>(async () => false)
+  const resetRunSetupRef = useRef<() => void>(() => undefined)
 
   const refresh = useCallback(async () => {
     try {
@@ -422,7 +427,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     setGroupSaveNotice('')
     setShowAllRuntimeDefaults(false)
   }, [scenarioId])
-  useEffect(() => { setReleaseId(activeRelease?.id || releases[0]?.id || '') }, [activeRelease?.id, releases])
+  const defaultReleaseId = activeRelease?.id || releases[0]?.id || ''
+  useEffect(() => { setReleaseId(defaultReleaseId) }, [defaultReleaseId])
   useEffect(() => {
     let cancelled = false
     const loadEffectiveAccess = async () => {
@@ -786,18 +792,19 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     setScenarioSortDirection(field === 'last_run_at' || field === 'vusers' ? 'desc' : 'asc')
   }
 
-  const createRun = async (intent: 'reserve' | 'queue' | 'schedule') => {
+  const createRun = async (intent: 'reserve' | 'queue' | 'schedule', options: { navigate?: boolean } = {}): Promise<boolean> => {
+    const navigate = options.navigate ?? true
     if (!canManageTests) {
       setError('Current session cannot create, reserve, or start test runs for this project.')
-      return
+      return false
     }
     if (!scenario || !releaseId || !activeApplication || !runCreatePayload) {
       setError('Choose a release and scenario before creating a test.')
-      return
+      return false
     }
     if (intent === 'schedule' && !scheduledStartISO) {
       setError('Choose a scheduled start time before scheduling a run.')
-      return
+      return false
     }
     setCreating(true)
     setError('')
@@ -818,17 +825,63 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       if (intent === 'queue') {
         await api.startTest(test.id)
       }
-      if (intent === 'reserve' || intent === 'queue') {
+      if (navigate && (intent === 'reserve' || intent === 'queue')) {
         ;(onOpenCommandCenter || onSelectTest)(test.id)
-        return
+        return true
       }
-      onSelectTest(test.id)
+      if (navigate) onSelectTest(test.id)
+      return true
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Unable to create test'))
+      return false
     } finally {
       setCreating(false)
     }
   }
+
+  const resetRunSetup = useCallback(() => {
+    setRunName(scenario?.name || '')
+    setReleaseId(defaultReleaseId)
+    setNewReleaseName('')
+    setShowNewRelease(false)
+    setRunDefaultOverrides(buildEmptyRunDefaultOverrides())
+    setGroupRunOverrides({})
+    setEditingDefaultKey(null)
+    setEditingGroupKey(null)
+    setDefaultSaveNotice('')
+    setGroupSaveNotice('')
+    setShowAllRuntimeDefaults(false)
+    setSelectedTimeslotId('')
+    setScheduledStartLocal('')
+  }, [defaultReleaseId, scenario?.name])
+
+  const runNameDirty = Boolean(runName.trim() && runName.trim() !== (scenario?.name || '').trim())
+  const releaseDirty = Boolean(releaseId && releaseId !== defaultReleaseId)
+  const pendingGroupDirty = Boolean(editingGroupKey && hasGroupEditChanges)
+  const newTestDirty = pageMode === 'launch' && Boolean(
+    runNameDirty
+    || releaseDirty
+    || runOverridesCount > 0
+    || selectedTimeslotId
+    || scheduledStartLocal
+    || newReleaseName.trim()
+    || pendingGroupDirty
+  )
+  createQueuedRunRef.current = async () => {
+    const created = await createRun('queue', { navigate: false })
+    if (created) resetRunSetup()
+    return created
+  }
+  resetRunSetupRef.current = resetRunSetup
+  newTestDirtyRef.current = newTestDirty
+  const newTestGuard = useMemo<NavigationGuard>(() => ({
+    id: 'new-test-run-setup',
+    label: 'New Test setup',
+    isDirty: () => newTestDirtyRef.current,
+    save: () => createQueuedRunRef.current(),
+    discard: () => resetRunSetupRef.current(),
+  }), [])
+  useNavigationGuard(newTestGuard, newTestDirty)
 
   const openRunDefaultEditor = (key: RunDefaultKey) => {
     if (!scenario) return
@@ -1310,13 +1363,13 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       value={pageMode}
       ariaLabel="New test page view"
       className="new-test-view-toggle topbar-page-section-toggle"
-      onChange={setPageMode}
+      onChange={nextMode => runGuarded(() => setPageMode(nextMode))}
       options={[
         { value: 'launch', label: 'Run Setup' },
         { value: 'schedules', label: 'Schedules' },
       ]}
     />
-  ), [pageMode])
+  ), [pageMode, runGuarded])
   const newTestTopbarContribution = useMemo(() => ({
     id: 'new-test-page',
     title: 'New Test',
