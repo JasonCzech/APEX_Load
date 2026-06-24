@@ -15,7 +15,7 @@ import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { isRuntimeFieldApplicable, overrideFromRuntimeDraft, runtimeDraftFromOverride } from './runtimeSettingsModel'
-import { buildScenarioModelPreview, buildScenarioShapeCatalog, formatModelTimeLabel, getScenarioShapePreset, ScenarioModelPreview, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, validateStageTimeline } from './scenarioWizardUtils'
+import { adaptScenarioShapeDefaults, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, formatModelTimeLabel, getScenarioShapePreset, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
 import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
 import DurationField from './DurationField'
 import PageViewToggle from './PageViewToggle'
@@ -86,43 +86,6 @@ interface ScenarioFormGroup {
   /** Per-group runtime overrides layered over the scenario-wide defaults. */
   runtimeSettings?: ScenarioRuntimeSettingsDraft
   assignment?: GeneratorAssignmentSettings
-}
-
-interface ScenarioSeedGroup {
-  name?: string
-  vusers?: number
-  ramp_up?: string
-  ramp_down?: string
-  stages?: LoadStageDraft[]
-}
-
-// Normalized intermediate consumed by seedFormFromScenario — the union of fields produced
-// by both the starter-template path and the workload-shape preset path.
-interface ScenarioSeed {
-  duration?: string
-  scenario_mode?: ScenarioMode
-  script_shakeout?: boolean
-  resource_baseline?: boolean
-  groups?: ScenarioSeedGroup[]
-  goal?: {
-    target_average_tps?: number
-    min_vusers?: number
-    max_vusers?: number
-    p95_latency_ms?: number
-    max_error_pct?: number
-  }
-  pacing?: {
-    type?: ScenarioFormState['runtime_pacing_type']
-    delay_ms?: number
-    interval_ms?: number
-    tps?: number
-  }
-  think_time?: { mean_ms?: number, ignore?: boolean }
-  iterations?: number
-  log_level?: string
-  auto_transactions?: string
-  continue_on_error?: boolean
-  snapshot_on_error?: boolean
 }
 
 type ScenarioSortField = 'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_test_id' | 'last_run_at' | 'last_run_ended_at' | 'result_count'
@@ -250,6 +213,40 @@ function scenarioSeedFromPreset(preset: ScenarioShapePreset): ScenarioSeed {
     pacing: preset.pacing,
     continue_on_error: preset.continueOnError,
     snapshot_on_error: preset.snapshotOnError,
+  }
+}
+
+function scenarioSeedFromForm(form: ScenarioFormState): ScenarioSeed {
+  return {
+    duration: form.duration,
+    scenario_mode: form.scenario_mode,
+    script_shakeout: form.script_shakeout,
+    resource_baseline: form.resource_baseline,
+    groups: form.groups.map(group => ({
+      name: group.name,
+      vusers: group.vusers,
+      ramp_up: group.ramp_up,
+      ramp_down: group.ramp_down,
+      stages: group.stages,
+    })),
+    goal: {
+      target_average_tps: form.goal_target_average_tps,
+      min_vusers: form.goal_min_vusers,
+      max_vusers: form.goal_max_vusers,
+      p95_latency_ms: form.goal_p95_latency_ms,
+      max_error_pct: form.goal_max_error_pct,
+    },
+    pacing: {
+      type: form.runtime_pacing_type,
+      delay_ms: form.runtime_pacing_delay_ms,
+      interval_ms: form.runtime_pacing_interval_ms,
+      tps: form.runtime_pacing_tps,
+    },
+    iterations: form.runtime_iterations,
+    log_level: form.runtime_log_level,
+    auto_transactions: form.runtime_auto_transactions,
+    continue_on_error: form.continue_on_error,
+    snapshot_on_error: form.snapshot_on_error,
   }
 }
 
@@ -1637,7 +1634,12 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setScenarioStartChoice('shape')
     setScriptSelectionTargetIndex(null)
     if (preset && shapeChanged) {
-      seedFormFromScenario(scenarioSeedFromPreset(preset))
+      const seed = adaptScenarioShapeDefaults(shapeId, scenarioSeedFromPreset(preset), {
+        duration: form.duration,
+        groups: form.groups,
+        goalTps: form.goal_target_average_tps,
+      })
+      seedFormFromScenario(seed)
     }
     setStageGroupIndex(0)
     setRunSettingsTab(preset?.recommendedRunTab ?? 'scenario')
@@ -1659,7 +1661,12 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     setStageGroupIndex(0)
     markWizardStepVisited('source')
     setWizardStep('scripts')
-    seedFormFromScenario(scenarioSeedFromTemplate(template))
+    const seed = adaptScenarioShapeDefaults(template.shape_id, scenarioSeedFromTemplate(template), {
+      duration: form.duration,
+      groups: form.groups,
+      goalTps: form.goal_target_average_tps,
+    })
+    seedFormFromScenario(seed)
   }
 
   const openGoalSizing = async () => {
@@ -1924,8 +1931,49 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   }
 
   const enableDefaultStages = () => {
-    const nextStages = createDefaultStages(activeStageGroup.vusers, activeStageGroup.ramp_up || '2m', form.duration || '5m', activeStageGroup.ramp_down || '1m')
-    updateScenarioGroup(stageGroupIndex, { stages: nextStages, vusers: maxStageVUsers(nextStages), ramp_up: '', ramp_down: '' })
+    const strategy = shapeStageStrategyFor(selectedShapeId)
+    const durationSeconds = parseDurationToSeconds(form.duration) || 300
+    const adapted = selectedShapeId
+      ? adaptScenarioShapeDefaults(selectedShapeId, scenarioSeedFromForm(form), {
+        duration: form.duration,
+        groups: form.groups,
+        goalTps: form.goal_target_average_tps,
+      })
+      : undefined
+    const adaptedGroup = adapted?.groups?.[stageGroupIndex]
+    const shapeStages = strategy !== 'none'
+      ? buildShapeStages(strategy, {
+        peakVusers: activeStageGroup.vusers,
+        durationSeconds,
+        turbulenceTps: adapted?.goal?.target_average_tps || form.goal_target_average_tps,
+      })
+      : []
+    const nextStages = shapeStages.length > 0
+      ? shapeStages
+      : createDefaultStages(activeStageGroup.vusers, activeStageGroup.ramp_up || '2m', form.duration || '5m', activeStageGroup.ramp_down || '1m')
+    const nextPeak = maxStageVUsers(nextStages) || activeStageGroup.vusers
+    const nextRampUp = strategy === 'none' ? '' : (adaptedGroup?.ramp_up || '')
+    const nextRampDown = strategy === 'none' ? '' : (adaptedGroup?.ramp_down || '')
+    setForm(prev => ({
+      ...prev,
+      ...(adapted?.scenario_mode ? { scenario_mode: adapted.scenario_mode } : {}),
+      goal_target_average_tps: adapted?.goal?.target_average_tps ?? prev.goal_target_average_tps,
+      goal_min_vusers: adapted?.goal?.min_vusers ?? prev.goal_min_vusers,
+      goal_max_vusers: adapted?.goal?.max_vusers ?? prev.goal_max_vusers,
+      goal_p95_latency_ms: adapted?.goal?.p95_latency_ms ?? prev.goal_p95_latency_ms,
+      goal_max_error_pct: adapted?.goal?.max_error_pct ?? prev.goal_max_error_pct,
+      runtime_pacing_type: (adapted?.pacing?.type || prev.runtime_pacing_type || '') as ScenarioFormState['runtime_pacing_type'],
+      runtime_pacing_delay_ms: adapted?.pacing?.delay_ms ?? prev.runtime_pacing_delay_ms,
+      runtime_pacing_interval_ms: adapted?.pacing?.interval_ms ?? prev.runtime_pacing_interval_ms,
+      runtime_pacing_tps: adapted?.pacing?.tps ?? prev.runtime_pacing_tps,
+      groups: ensureScenarioGroups(prev.groups.map((group, groupIndex) => groupIndex === stageGroupIndex ? {
+        ...group,
+        stages: nextStages,
+        vusers: nextPeak,
+        ramp_up: nextRampUp,
+        ramp_down: nextRampDown,
+      } : group)),
+    }))
     setLoadModelValidation(null)
   }
 
@@ -3016,12 +3064,19 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
                 </button>
               </div>
             </div>
+            {selectedShape && (
+              <p className="scenario-assignment-copy secondary">
+                Regeneration uses the selected {selectedShape.support.name} shape plus this group's current peak and scenario duration.
+              </p>
+            )}
             {activeStageGroup.stages.length > 0 ? (
               <div className="scenario-stage-list">
                 <div className="scenario-stage-toolbar">
                   <span className={`scenario-stage-status ${activeStageTimeline.status}`}>{formatLoadModelDimension(activeStageTimeline.status)}</span>
                   {activeStageTimeline.message && <span>{activeStageTimeline.message}</span>}
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={enableDefaultStages}>Regenerate From Simple Ramp</button>
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={enableDefaultStages}>
+                    {selectedShape ? `Regenerate for ${selectedShape.support.name}` : 'Regenerate From Simple Ramp'}
+                  </button>
                 </div>
                 {activeStageGroup.stages.map((stage, index) => (
                   <div key={`${stage.name || 'stage'}-${index}`} className="scenario-stage-row">

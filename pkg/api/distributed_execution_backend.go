@@ -403,7 +403,8 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		return
 	}
 	defaultLoadByTarget := loadSnapshotsForTargets(loadByTarget, allowedTargets)
-	groupShards := planDistributedGroupShardsForCandidates(test.Groups, loadByTarget, defaultLoadByTarget, allTargets, allowedTargets, assignment, targetSpecs)
+	peakGroupShards := planDistributedGroupShardsForCandidates(test.Groups, loadByTarget, defaultLoadByTarget, allTargets, allowedTargets, assignment, targetSpecs)
+	activeGroupShards := make(map[string][]GeneratorShardSummary, len(peakGroupShards))
 	for _, group := range test.Groups {
 		if group.script == nil {
 			cleanup()
@@ -411,12 +412,14 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			return
 		}
 
-		shards := groupShards[group.Name]
-		if len(shards) == 0 {
+		peakShards := peakGroupShards[group.Name]
+		if len(peakShards) == 0 {
 			cleanup()
 			tr.failTestBeforeRun(test, generatorPlacementRejectionMessage(group, loadByTarget, targetSpecs, assignment))
 			return
 		}
+		shards := initialGroupShardsForRun(group, peakShards, loadByTarget)
+		activeGroupShards[group.Name] = cloneGeneratorShardSummaries(shards)
 
 		scriptContent, contentHash, err := marshalDistributedScript(group.script)
 		if err != nil {
@@ -426,7 +429,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		}
 
 		for _, shard := range shards {
-			if shard.VUsers <= 0 {
+			if shard.Target == "" {
 				continue
 			}
 			target := shard.Target
@@ -478,7 +481,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		}
 	}
 
-	for _, target := range orderedAssignedShardTargets(groupShards, allowedTargets) {
+	for _, target := range orderedAssignedShardTargets(activeGroupShards, allowedTargets) {
 		if _, ok := streamsByTarget[target]; ok {
 			continue
 		}
@@ -491,7 +494,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		streamsByTarget[target] = stream
 	}
 
-	b.startDistributedTestRun(tr, test, groupShards, clientsByTarget, streamsByTarget)
+	b.startDistributedTestRun(tr, test, activeGroupShards, clientsByTarget, streamsByTarget)
 }
 
 func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest) error {
@@ -526,6 +529,14 @@ func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest
 		return stopErr
 	}
 	return nil
+}
+
+func initialGroupShardsForRun(group TestGroup, peakShards []GeneratorShardSummary, loadByTarget map[string]generatorLoadSnapshot) []GeneratorShardSummary {
+	if !group.stageDriven {
+		return cloneGeneratorShardSummaries(peakShards)
+	}
+	targets := shardTargets(peakShards)
+	return capacityWeightedShardsIncludingZero(group.Name, groupCurrentVUsers(group), targets, loadByTarget, shardStrategyForGroupShards(peakShards))
 }
 
 func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedTest, groupName string, targetVUsers int) error {

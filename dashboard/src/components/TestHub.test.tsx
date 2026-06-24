@@ -670,12 +670,73 @@ describe('TestHub', () => {
     await clickWizardStep('Run Settings')
 
     const stageRows = container.querySelectorAll('.scenario-stage-row')
-    expect(stageRows.length).toBe(6)
+    expect(stageRows.length).toBe(38)
     const firstStageName = stageRows[0].querySelector('input') as HTMLInputElement
     expect(firstStageName?.value).toBe('Step 1')
     expect(container.textContent).toContain('Peak staged VUsers: 75')
     // Stages active → the "Use Simple Ramp" escape hatch is offered.
     expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.includes('Use Simple Ramp'))).toBe(true)
+  })
+
+  it('regenerates stepped-ramp stages explicitly from current peak and duration without ordinary edit clobbering', async () => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await clickButton('Build from Workload Shape')
+    await selectManualShapeByName('Stepped Ramp')
+
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
+    await act(async () => {
+      setInputValue(nameInput, 'Adaptive Stepped Scenario')
+    })
+    await chooseLibraryScriptForGroup()
+    await clickWizardStep('Run Settings')
+
+    const groupCard = container.querySelector('.scenario-script-group-card')
+    const vusersInput = groupCard ? Array.from(groupCard.querySelectorAll('input')).find(input => input.type === 'number') : undefined
+    const durationField = getDurationFieldByLabel(container, 'Duration')
+    expect(vusersInput).toBeDefined()
+    expect(durationField).not.toBeNull()
+    if (!vusersInput || !durationField) return
+
+    await act(async () => {
+      setInputValue(vusersInput, '20')
+      setInputValue(durationField.input, '1')
+      setSelectValue(durationField.select, 'h')
+    })
+
+    await clickButton('Regenerate for Stepped Ramp')
+
+    let stageRows = container.querySelectorAll('.scenario-stage-row')
+    expect(stageRows.length).toBe(40)
+    expect(container.textContent).toContain('Peak staged VUsers: 20')
+    expect(container.textContent).toContain('current peak and scenario duration')
+
+    await act(async () => {
+      setInputValue(durationField.input, '2')
+      setSelectValue(durationField.select, 'h')
+    })
+    stageRows = container.querySelectorAll('.scenario-stage-row')
+    expect(stageRows.length).toBe(40)
+
+    await clickButton('Save Scenario')
+    await flushPromises()
+
+    const payload = apiMock.createScenario.mock.calls[apiMock.createScenario.mock.calls.length - 1]?.[0]
+    expect(payload).toMatchObject({
+      name: 'Adaptive Stepped Scenario',
+      duration: '2h',
+      scenario_mode: 'vuser_driven',
+      groups: [expect.objectContaining({
+        script_id: 'script-1',
+        vusers: 20,
+      })],
+    })
+    expect(payload.groups[0].stages).toHaveLength(40)
   })
 
   it('re-seeds the form from a new shape while preserving the chosen script', async () => {

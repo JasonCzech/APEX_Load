@@ -337,7 +337,7 @@ func (s *Service) AssignWork(_ context.Context, assignment *pb.WorkAssignment) (
 	}, nil
 }
 
-func (s *Service) AdjustVUsers(_ context.Context, request *pb.VUserAdjustment) (*pb.AdjustmentAck, error) {
+func (s *Service) AdjustVUsers(ctx context.Context, request *pb.VUserAdjustment) (*pb.AdjustmentAck, error) {
 	if request.GetTestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "test_id is required")
 	}
@@ -349,32 +349,56 @@ func (s *Service) AdjustVUsers(_ context.Context, request *pb.VUserAdjustment) (
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	assignment, ok := s.assignments[request.GetTestId()]
 	if !ok {
+		s.mu.Unlock()
 		return nil, status.Error(codes.NotFound, "test assignment not found")
 	}
 	currentGroupVUsers, ok := assignment.groups[request.GetGroupName()]
 	if !ok {
+		s.mu.Unlock()
 		return nil, status.Error(codes.NotFound, "group assignment not found")
 	}
 
 	updatedTotal := assignment.vuserCount - currentGroupVUsers + request.GetTargetVusers()
 	projected := s.activeVUsersLocked() - assignment.vuserCount + updatedTotal
 	if projected > s.maxVUsers {
+		s.mu.Unlock()
 		return nil, status.Error(codes.ResourceExhausted, "insufficient generator capacity")
 	}
+	var execEngine *engine.MultiGroupEngine
 	if s.executionEnabled {
 		if execs, ok := s.executions[request.GetTestId()]; ok {
 			exec := execs[request.GetGroupName()]
 			if exec != nil {
-				if err := exec.engine.ScaleVUsers(request.GetGroupName(), int(request.GetTargetVusers())); err != nil {
-					return nil, status.Errorf(codes.FailedPrecondition, "scale running group: %v", err)
-				}
+				execEngine = exec.engine
 			}
 		}
 	}
+	s.mu.Unlock()
+
+	if execEngine != nil {
+		select {
+		case <-ctx.Done():
+			return nil, status.Errorf(codes.Canceled, "wait for execution readiness: %v", ctx.Err())
+		case <-execEngine.Ready():
+		}
+		if err := execEngine.ScaleVUsers(request.GetGroupName(), int(request.GetTargetVusers())); err != nil {
+			return nil, status.Errorf(codes.FailedPrecondition, "scale running group: %v", err)
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	assignment, ok = s.assignments[request.GetTestId()]
+	if !ok {
+		return nil, status.Error(codes.NotFound, "test assignment not found")
+	}
+	currentGroupVUsers, ok = assignment.groups[request.GetGroupName()]
+	if !ok {
+		return nil, status.Error(codes.NotFound, "group assignment not found")
+	}
+	updatedTotal = assignment.vuserCount - currentGroupVUsers + request.GetTargetVusers()
 
 	assignment.groups[request.GetGroupName()] = request.GetTargetVusers()
 	assignment.activeGroups[request.GetGroupName()] = request.GetTargetVusers()
@@ -1062,12 +1086,13 @@ func (s *Service) startExecutionLocked(assignment *pb.WorkAssignment) error {
 	}
 	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
 		Groups: []engine.GroupConfig{{
-			Name:         assignment.GetGroupName(),
-			Script:       &script,
-			VUsers:       int(assignment.GetVuserCount()),
-			RampUp:       time.Duration(assignment.GetRampUpSeconds()) * time.Second,
-			InitStrategy: "at_runtime",
-			ResultSink:   combineSinks(results, writer),
+			Name:            assignment.GetGroupName(),
+			Script:          &script,
+			VUsers:          int(assignment.GetVuserCount()),
+			RampUp:          time.Duration(assignment.GetRampUpSeconds()) * time.Second,
+			AllowZeroVUsers: assignment.GetVuserCount() == 0,
+			InitStrategy:    "at_runtime",
+			ResultSink:      combineSinks(results, writer),
 		}},
 		Duration: duration,
 	})

@@ -411,7 +411,7 @@ func orderedAssignedShardTargets(groupShards map[string][]GeneratorShardSummary,
 	set := make(map[string]struct{})
 	for _, shards := range groupShards {
 		for _, shard := range shards {
-			if shard.Target == "" || shard.VUsers <= 0 {
+			if shard.Target == "" {
 				continue
 			}
 			set[shard.Target] = struct{}{}
@@ -463,7 +463,7 @@ func primaryTargetsFromShards(groupShards map[string][]GeneratorShardSummary) ma
 	primary := make(map[string]string, len(groupShards))
 	for group, shards := range groupShards {
 		for _, shard := range shards {
-			if shard.Target == "" || shard.VUsers <= 0 {
+			if shard.Target == "" {
 				continue
 			}
 			primary[group] = shard.Target

@@ -1295,7 +1295,7 @@ func TestCompileManagedTestGroupLockedDerivesRampFromStages(t *testing.T) {
 		Stages: []storage.LoadStage{
 			{Name: "Warmup", Type: "ramp_up", Duration: "30s", TargetVUsers: 20},
 			{Name: "Hold", Type: "hold", Duration: "2m", TargetVUsers: 20},
-			{Name: "Cooldown", Type: "ramp_down", Duration: "15s", TargetVUsers: 1},
+			{Name: "Cooldown", Type: "ramp_down", Duration: "15s", TargetVUsers: 0},
 		},
 	}, nil, nil)
 	if err != nil {
@@ -1307,8 +1307,26 @@ func TestCompileManagedTestGroupLockedDerivesRampFromStages(t *testing.T) {
 	if len(testGroup.Stages) != 3 {
 		t.Fatalf("stages = %#v, want preserved staged model", testGroup.Stages)
 	}
-	if engineGroup.VUsers != 20 || engineGroup.RampUp != 30*time.Second || engineGroup.RampDown != 15*time.Second {
-		t.Fatalf("engine group = %#v, want compatibility ramp durations", engineGroup)
+	if !testGroup.stageDriven || testGroup.initialVUsers != 0 || testGroup.currentVUsers != 0 {
+		t.Fatalf("stage runtime state = driven:%v initial:%d current:%d, want driven zero-start", testGroup.stageDriven, testGroup.initialVUsers, testGroup.currentVUsers)
+	}
+	if engineGroup.VUsers != 0 || engineGroup.RampUp != 0 || engineGroup.RampDown != 0 || !engineGroup.AllowZeroVUsers {
+		t.Fatalf("engine group = %#v, want zero-start staged runtime", engineGroup)
+	}
+
+	_, goalEngineGroup, err := runner.compileManagedTestGroupForModeLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-staged-load",
+		Stages: []storage.LoadStage{
+			{Name: "Warmup", Type: "ramp_up", Duration: "30s", TargetVUsers: 20},
+			{Name: "Hold", Type: "hold", Duration: "2m", TargetVUsers: 20},
+			{Name: "Cooldown", Type: "ramp_down", Duration: "15s", TargetVUsers: 0},
+		},
+	}, nil, nil, "goal_oriented")
+	if err != nil {
+		t.Fatalf("compileManagedTestGroupForModeLocked(goal_oriented) returned error: %v", err)
+	}
+	if goalEngineGroup.VUsers != 20 || goalEngineGroup.RampUp != 30*time.Second || goalEngineGroup.RampDown != 15*time.Second || goalEngineGroup.AllowZeroVUsers {
+		t.Fatalf("goal engine group = %#v, want compatibility ramp durations", goalEngineGroup)
 	}
 }
 
@@ -3122,6 +3140,110 @@ func TestScaleVUsersWithOptionsRampsGradually(t *testing.T) {
 	}
 }
 
+func TestRunStageScheduleDrivesRampHoldAndDrain(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 8)}
+	runner.setExecutionBackend(backend)
+	runner.tests["test-1"] = &ManagedTest{
+		ID:           "test-1",
+		Name:         "Staged schedule test",
+		Status:       "RUNNING",
+		ScenarioMode: "vuser_driven",
+		ProjectID:    storage.DefaultProjectID,
+		TotalVUsers:  2,
+		Groups: []TestGroup{{
+			Name:          "buyers",
+			VUsers:        2,
+			stageDriven:   true,
+			initialVUsers: 0,
+			currentVUsers: 0,
+		}},
+	}
+
+	stages := []storage.LoadStage{
+		{Name: "Step", Type: "ramp_up", Duration: "20ms", TargetVUsers: 2},
+		{Name: "Hold", Type: "hold", Duration: "10ms", TargetVUsers: 2},
+		{Name: "Drain", Type: "ramp_down", Duration: "20ms", TargetVUsers: 0},
+	}
+	runner.runStageSchedule(context.Background(), "test-1", "buyers", stages, nil)
+
+	got := drainScaleCalls(t, backend.calls, 4)
+	want := []int{1, 2, 1, 0}
+	if !intSlicesEqual(got, want) {
+		t.Fatalf("stage scale targets = %v, want %v", got, want)
+	}
+	scaled, ok := runner.GetTest("test-1")
+	if !ok {
+		t.Fatal("expected test to exist after stage schedule")
+	}
+	if scaled.TotalVUsers != 2 || scaled.Groups[0].VUsers != 2 {
+		t.Fatalf("capacity vusers changed: groups=%#v total=%d, want peak capacity 2", scaled.Groups, scaled.TotalVUsers)
+	}
+	if scaled.Groups[0].currentVUsers != 0 {
+		t.Fatalf("current staged vusers = %d, want drained to zero", scaled.Groups[0].currentVUsers)
+	}
+}
+
+func TestStartStageSchedulesSkipsGoalOrientedGroups(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 1)}
+	runner.setExecutionBackend(backend)
+	test := &ManagedTest{
+		ID:           "test-goal",
+		Status:       "RUNNING",
+		ScenarioMode: "goal_oriented",
+		Groups: []TestGroup{{
+			Name:        "buyers",
+			VUsers:      5,
+			Stages:      []storage.LoadStage{{Type: "ramp_up", Duration: "5ms", TargetVUsers: 5}},
+			stageDriven: true,
+		}},
+	}
+	runner.tests[test.ID] = test
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runner.startStageSchedules(ctx, test, nil)
+
+	select {
+	case call := <-backend.calls:
+		t.Fatalf("unexpected goal-oriented stage scale call: %#v", call)
+	case <-time.After(25 * time.Millisecond):
+	}
+}
+
+func TestInitialGroupShardsForRunUsesActiveStagedCount(t *testing.T) {
+	peakShards := []GeneratorShardSummary{
+		{Group: "buyers", Target: "gen-a", VUsers: 6, ShardStrategy: generatorShardStrategyCapacityWeighted},
+		{Group: "buyers", Target: "gen-b", VUsers: 4, ShardStrategy: generatorShardStrategyCapacityWeighted},
+	}
+	got := initialGroupShardsForRun(TestGroup{
+		Name:          "buyers",
+		VUsers:        10,
+		stageDriven:   true,
+		initialVUsers: 0,
+		currentVUsers: 0,
+	}, peakShards, nil)
+	if len(got) != 2 {
+		t.Fatalf("initial shards = %#v, want both peak targets retained", got)
+	}
+	for _, shard := range got {
+		if shard.VUsers != 0 {
+			t.Fatalf("initial shard %#v has vusers, want zero active assignment", shard)
+		}
+	}
+}
+
+func TestMaxGroupRampDownIgnoresStagedDrains(t *testing.T) {
+	got := maxGroupRampDown([]TestGroup{
+		{RampDown: "2m", Stages: []storage.LoadStage{{Type: "ramp_down", Duration: "2m", TargetVUsers: 0}}},
+		{RampDown: "30s"},
+	})
+	if got != 30*time.Second {
+		t.Fatalf("max ramp down = %v, want only non-staged ramp down", got)
+	}
+}
+
 func TestScaleVUsersWithOptionsExposesActiveRampStatus(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
 	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 8)}
@@ -3164,6 +3286,21 @@ func TestScaleVUsersWithOptionsExposesActiveRampStatus(t *testing.T) {
 	if len(scaled.VUserRamps) != 0 {
 		t.Fatalf("expected immediate scale to clear active ramps, got %#v", scaled.VUserRamps)
 	}
+}
+
+func drainScaleCalls(t *testing.T, calls <-chan scaleBackendCall, count int) []int {
+	t.Helper()
+	got := make([]int, 0, count)
+	deadline := time.After(2 * time.Second)
+	for len(got) < count {
+		select {
+		case call := <-calls:
+			got = append(got, call.target)
+		case <-deadline:
+			t.Fatalf("timed out waiting for scale calls, got %v want %d calls", got, count)
+		}
+	}
+	return got
 }
 
 func intSlicesEqual(a []int, b []int) bool {

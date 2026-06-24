@@ -1,5 +1,5 @@
 import { LoadModelSupportEntry, LoadModelTemplate, LoadStageDraft, ScenarioMode, StageTimelineValidationResult } from '../types'
-import { parseDurationToSeconds } from '../utils/timeUtils'
+import { formatTimeCompact, parseDurationToSeconds } from '../utils/timeUtils'
 
 export type ScenarioWizardStep = 'start' | 'source' | 'scripts' | 'run' | 'data' | 'review'
 
@@ -72,6 +72,45 @@ export interface ScenarioShapePresetPacing {
   tps?: number
 }
 
+export interface ScenarioSeedGroup {
+  name?: string
+  vusers?: number
+  ramp_up?: string
+  ramp_down?: string
+  stages?: LoadStageDraft[]
+}
+
+export interface ScenarioSeed {
+  duration?: string
+  scenario_mode?: ScenarioMode
+  script_shakeout?: boolean
+  resource_baseline?: boolean
+  groups?: ScenarioSeedGroup[]
+  goal?: ScenarioShapePresetGoal
+  pacing?: Omit<Partial<ScenarioShapePresetPacing>, 'type'> & { type?: ScenarioShapePacingType | '' }
+  think_time?: { mean_ms?: number, ignore?: boolean }
+  iterations?: number
+  log_level?: string
+  auto_transactions?: string
+  continue_on_error?: boolean
+  snapshot_on_error?: boolean
+}
+
+export interface ScenarioShapeAdaptContext {
+  duration?: string
+  groups?: ScenarioSeedGroup[]
+  goalTps?: number
+}
+
+export type ShapeStageStrategy = 'stepped' | 'stress' | 'soak' | 'spike' | 'chaos' | 'none'
+
+export interface ShapeStageBuildOptions {
+  peakVusers: number
+  durationSeconds: number
+  baselineVusers?: number
+  turbulenceTps?: number
+}
+
 /**
  * A ScenarioShapePreset is the deterministic starting point applied when the operator
  * selects a workload shape via "Use Manual Shape". It seeds the scenario form so the
@@ -97,34 +136,308 @@ export interface ScenarioShapePreset {
   suggestMultipleGroups?: boolean
 }
 
-function steppedRampStages(): LoadStageDraft[] {
+export function shapeStageStrategyFor(shapeId?: string): ShapeStageStrategy {
+  switch (shapeId) {
+    case 'stepped-ramp':
+      return 'stepped'
+    case 'stress':
+      return 'stress'
+    case 'soak':
+      return 'soak'
+    case 'spike-rendezvous':
+      return 'spike'
+    case 'chaos-resilience':
+      return 'chaos'
+    default:
+      return 'none'
+  }
+}
+
+export function steppedStepPlan(peak: number, maxSteps = 20): { inc: number, steps: number } {
+  const p = Math.max(1, Math.round(peak))
+  if (p <= maxSteps) return { inc: 1, steps: p }
+  const inc = Math.ceil(p / maxSteps)
+  return { inc, steps: Math.ceil(p / inc) }
+}
+
+function clampPositiveSeconds(value: number, fallback = 1): number {
+  return Math.max(1, Math.round(Number.isFinite(value) && value > 0 ? value : fallback))
+}
+
+function normalizePeak(value: number): number {
+  return Math.max(1, Math.round(Number(value) || 0))
+}
+
+function durationText(seconds: number): string {
+  return formatTimeCompact(clampPositiveSeconds(seconds))
+}
+
+function distributeSeconds(totalSeconds: number, bucketCount: number): number[] {
+  const count = Math.max(1, Math.floor(bucketCount))
+  const total = Math.max(count, Math.round(totalSeconds))
+  const base = Math.floor(total / count)
+  let remainder = total - base * count
+  return Array.from({ length: count }, () => {
+    const value = base + (remainder > 0 ? 1 : 0)
+    remainder -= 1
+    return Math.max(1, value)
+  })
+}
+
+function splitPhaseDuration(totalSeconds: number, rampFraction: number, maxRampSeconds?: number): { ramp: number, hold: number } {
+  const total = Math.max(2, Math.round(totalSeconds))
+  const candidate = Math.max(1, Math.round(total * rampFraction))
+  const capped = maxRampSeconds ? Math.min(candidate, maxRampSeconds) : candidate
+  const ramp = Math.max(1, Math.min(capped, total - 1))
+  return { ramp, hold: Math.max(1, total - ramp) }
+}
+
+function buildSteppedStages(options: ShapeStageBuildOptions): LoadStageDraft[] {
+  const peak = normalizePeak(options.peakVusers)
+  const durationSeconds = clampPositiveSeconds(options.durationSeconds, 60)
+  const planned = steppedStepPlan(peak)
+  const maxPositiveStepWindows = Math.max(1, Math.floor(durationSeconds / 2))
+  const steps = Math.min(planned.steps, maxPositiveStepWindows)
+  const inc = Math.ceil(peak / steps)
+  const windows = distributeSeconds(durationSeconds, steps)
+
+  return windows.flatMap((windowSeconds, index) => {
+    const target = Math.min(peak, inc * (index + 1))
+    const { ramp, hold } = splitPhaseDuration(windowSeconds, 0.25, 15)
+    return [
+      { name: `Step ${index + 1}`, type: 'ramp_up', duration: durationText(ramp), target_vusers: target },
+      { name: `Hold ${index + 1}`, type: 'hold', duration: durationText(hold), target_vusers: target },
+    ]
+  })
+}
+
+function buildStressStages(options: ShapeStageBuildOptions): LoadStageDraft[] {
+  const peak = normalizePeak(options.peakVusers)
+  const durationSeconds = clampPositiveSeconds(options.durationSeconds, 60)
+  const targets = [0.33, 0.66, 1].map(fraction => Math.max(1, Math.round(peak * fraction)))
+  targets[targets.length - 1] = peak
+  const windows = distributeSeconds(durationSeconds, targets.length)
+
+  return windows.flatMap((windowSeconds, index) => {
+    const target = targets[index]
+    const { ramp, hold } = splitPhaseDuration(windowSeconds, index === targets.length - 1 ? 0.5 : 0.45)
+    return [
+      { name: `Ramp ${index + 1}`, type: 'ramp_up', duration: durationText(ramp), target_vusers: target },
+      { name: `Hold ${index + 1}`, type: 'hold', duration: durationText(hold), target_vusers: target },
+    ]
+  })
+}
+
+function buildSoakStages(options: ShapeStageBuildOptions): LoadStageDraft[] {
+  const peak = normalizePeak(options.peakVusers)
+  const durationSeconds = Math.max(3, clampPositiveSeconds(options.durationSeconds, 60))
+  const ramp = Math.max(1, Math.round(durationSeconds * 0.06))
+  const drain = Math.max(1, Math.round(durationSeconds * 0.05))
+  const hold = Math.max(1, durationSeconds - ramp - drain)
+  const adjustedHold = ramp + drain + hold === durationSeconds ? hold : Math.max(1, durationSeconds - ramp - drain)
   return [
-    { name: 'Step 1', type: 'ramp_up', duration: '2m', target_vusers: 25 },
-    { name: 'Hold 1', type: 'hold', duration: '2m', target_vusers: 25 },
-    { name: 'Step 2', type: 'ramp_up', duration: '2m', target_vusers: 50 },
-    { name: 'Hold 2', type: 'hold', duration: '2m', target_vusers: 50 },
-    { name: 'Step 3', type: 'ramp_up', duration: '2m', target_vusers: 75 },
-    { name: 'Hold 3', type: 'hold', duration: '2m', target_vusers: 75 },
+    { name: 'Warmup', type: 'ramp_up', duration: durationText(ramp), target_vusers: peak },
+    { name: 'Endurance', type: 'hold', duration: durationText(adjustedHold), target_vusers: peak },
+    { name: 'Cooldown', type: 'ramp_down', duration: durationText(Math.max(1, durationSeconds - ramp - adjustedHold)), target_vusers: 0 },
   ]
 }
 
-function stressStages(): LoadStageDraft[] {
+function buildSpikeStages(options: ShapeStageBuildOptions): LoadStageDraft[] {
+  const peak = normalizePeak(options.peakVusers)
+  const durationSeconds = Math.max(3, clampPositiveSeconds(options.durationSeconds, 60))
+  const ramp = Math.max(1, Math.round(durationSeconds * 0.15))
+  const drain = Math.max(1, Math.round(durationSeconds * 0.1))
+  const hold = Math.max(1, durationSeconds - ramp - drain)
   return [
-    { name: 'Ramp 1', type: 'ramp_up', duration: '4m', target_vusers: 100 },
-    { name: 'Hold 1', type: 'hold', duration: '4m', target_vusers: 100 },
-    { name: 'Ramp 2', type: 'ramp_up', duration: '4m', target_vusers: 200 },
-    { name: 'Hold 2', type: 'hold', duration: '4m', target_vusers: 200 },
-    { name: 'Ramp 3', type: 'ramp_up', duration: '2m', target_vusers: 300 },
-    { name: 'Hold 3', type: 'hold', duration: '2m', target_vusers: 300 },
+    { name: 'Spike Ramp', type: 'ramp_up', duration: durationText(ramp), target_vusers: peak },
+    { name: 'Rendezvous Window', type: 'hold', duration: durationText(hold), target_vusers: peak },
+    { name: 'Spike Drain', type: 'ramp_down', duration: durationText(Math.max(1, durationSeconds - ramp - hold)), target_vusers: 0 },
   ]
 }
 
-function chaosStages(): LoadStageDraft[] {
+function buildChaosStages(options: ShapeStageBuildOptions): LoadStageDraft[] {
+  const peak = normalizePeak(options.peakVusers)
+  const durationSeconds = Math.max(3, clampPositiveSeconds(options.durationSeconds, 60))
+  const baseline = Math.max(1, Math.round(durationSeconds / 6))
+  const recovery = Math.max(1, Math.round(durationSeconds * 5 / 18))
+  const turbulence = Math.max(1, durationSeconds - baseline - recovery)
+  const targetTps = Number(options.turbulenceTps) > 0 ? Number(options.turbulenceTps) : undefined
+  const recoveryTarget = Math.max(1, Math.round(peak * 0.2))
   return [
-    { name: 'Baseline', type: 'ramp_up', duration: '3m', target_vusers: 25 },
-    { name: 'Turbulence', type: 'hold', duration: '10m', target_vusers: 25, target_tps: 15 },
-    { name: 'Recovery', type: 'ramp_down', duration: '5m', target_vusers: 5 },
+    { name: 'Baseline', type: 'ramp_up', duration: durationText(baseline), target_vusers: peak },
+    { name: 'Turbulence', type: 'hold', duration: durationText(turbulence), target_vusers: peak, ...(targetTps ? { target_tps: targetTps } : {}) },
+    { name: 'Recovery', type: 'ramp_down', duration: durationText(Math.max(1, durationSeconds - baseline - turbulence)), target_vusers: recoveryTarget },
   ]
+}
+
+export function buildShapeStages(strategy: ShapeStageStrategy, options: ShapeStageBuildOptions): LoadStageDraft[] {
+  switch (strategy) {
+    case 'stepped':
+      return buildSteppedStages(options)
+    case 'stress':
+      return buildStressStages(options)
+    case 'soak':
+      return buildSoakStages(options)
+    case 'spike':
+      return buildSpikeStages(options)
+    case 'chaos':
+      return buildChaosStages(options)
+    default:
+      return []
+  }
+}
+
+function maxStageVUsers(stages?: LoadStageDraft[]): number {
+  return (stages || []).reduce((max, stage) => Math.max(max, Number(stage.target_vusers) || 0), 0)
+}
+
+function stageDurationSum(stages: LoadStageDraft[], type: string): number {
+  return stages
+    .filter(stage => stage.type === type)
+    .reduce((sum, stage) => sum + parseDurationToSeconds(stage.duration), 0)
+}
+
+function simpleRampForDuration(durationSeconds: number, capFraction = 0.2, desiredSeconds = 30): string {
+  const cap = Math.max(1, Math.round(durationSeconds * capFraction))
+  return durationText(Math.min(Math.max(1, desiredSeconds), cap))
+}
+
+function scenarioDurationSeconds(seed: ScenarioSeed, ctx?: ScenarioShapeAdaptContext): number {
+  return parseDurationToSeconds(seed.duration || ctx?.duration) || 60
+}
+
+function seedGroups(seed: ScenarioSeed, ctx?: ScenarioShapeAdaptContext): ScenarioSeedGroup[] {
+  const groups = seed.groups?.length ? seed.groups : ctx?.groups
+  return groups?.length ? groups : [{ vusers: 10 }]
+}
+
+function targetTpsFor(seed: ScenarioSeed, ctx?: ScenarioShapeAdaptContext, fallback = 25): number {
+  return Number(ctx?.goalTps || seed.goal?.target_average_tps || seed.pacing?.tps || fallback)
+}
+
+function vuserGuardrails(peak: number, multiplier: number) {
+  const p = normalizePeak(peak)
+  return {
+    min_vusers: Math.max(1, Math.floor(p / 2)),
+    max_vusers: Math.max(p, Math.round(p * multiplier)),
+  }
+}
+
+export function adaptScenarioShapeDefaults(shapeId: string, seed: ScenarioSeed, ctx?: ScenarioShapeAdaptContext): ScenarioSeed {
+  const strategy = shapeStageStrategyFor(shapeId)
+  const durationSeconds = scenarioDurationSeconds(seed, ctx)
+  const duration = seed.duration || ctx?.duration || durationText(durationSeconds)
+  const baseGroups = seedGroups(seed, ctx)
+  const next: ScenarioSeed = {
+    ...seed,
+    duration,
+    groups: baseGroups.map(group => ({ ...group })),
+    goal: seed.goal ? { ...seed.goal } : undefined,
+    pacing: seed.pacing ? { ...seed.pacing } : undefined,
+  }
+
+  if (shapeId === 'closed-vuser') {
+    next.scenario_mode = 'vuser_driven'
+    next.groups = next.groups?.slice(0, 1).map(group => ({
+      ...group,
+      vusers: normalizePeak(group.vusers || 5),
+      ramp_up: simpleRampForDuration(durationSeconds, 0.2, parseDurationToSeconds(group.ramp_up) || 30),
+      ramp_down: group.ramp_down || '',
+      stages: [],
+    }))
+    return next
+  }
+
+  if (shapeId === 'open-arrival-rate' || shapeId === 'goal-based') {
+    const defaultTps = shapeId === 'goal-based' ? 30 : 25
+    const targetTps = targetTpsFor(seed, ctx, defaultTps)
+    const peak = normalizePeak(next.groups?.[0]?.vusers || 10)
+    const guardrails = vuserGuardrails(peak, shapeId === 'goal-based' ? 10 : 5)
+    next.scenario_mode = 'goal_oriented'
+    next.goal = {
+      ...(next.goal || {}),
+      target_average_tps: targetTps,
+      min_vusers: next.goal?.min_vusers || guardrails.min_vusers,
+      max_vusers: next.goal?.max_vusers || guardrails.max_vusers,
+    }
+    next.pacing = { ...(next.pacing || {}), type: 'tps', tps: targetTps }
+    next.groups = next.groups?.map(group => ({
+      ...group,
+      vusers: normalizePeak(group.vusers || peak),
+      ramp_up: group.ramp_up || simpleRampForDuration(durationSeconds, 0.2, Math.max(10, Math.round(durationSeconds * 0.2))),
+      stages: [],
+    }))
+    return next
+  }
+
+  if (shapeId === 'mixed-protocol') {
+    next.scenario_mode = 'vuser_driven'
+    const groups = next.groups?.length ? next.groups : [{ name: 'api-bulk', vusers: 500 }, { name: 'browser-canary', vusers: 5 }]
+    next.groups = groups.map((group, index) => {
+      const isObserver = (group.name || '').toLowerCase().includes('canary') || index > 0
+      const vusers = isObserver ? Math.min(5, normalizePeak(group.vusers || 5)) : normalizePeak(group.vusers || 100)
+      return {
+        ...group,
+        vusers,
+        ramp_up: group.ramp_up || simpleRampForDuration(durationSeconds, isObserver ? 0.15 : 0.33, isObserver ? 120 : 300),
+        ramp_down: group.ramp_down || simpleRampForDuration(durationSeconds, isObserver ? 0.08 : 0.15, isObserver ? 60 : 120),
+        stages: [],
+      }
+    })
+    return next
+  }
+
+  if (strategy === 'none') {
+    return next
+  }
+
+  const targetTps = targetTpsFor(seed, ctx, shapeId === 'chaos-resilience' ? 15 : 25)
+  next.groups = next.groups?.map((group) => {
+    const peak = normalizePeak(group.vusers || maxStageVUsers(group.stages) || 10)
+    const stages = buildShapeStages(strategy, {
+      peakVusers: peak,
+      durationSeconds,
+      baselineVusers: Math.max(1, Math.ceil(peak / 3)),
+      turbulenceTps: shapeId === 'chaos-resilience' ? targetTps : undefined,
+    })
+    const rampUpSeconds = shapeId === 'stepped-ramp'
+      ? durationSeconds
+      : stageDurationSum(stages, 'ramp_up')
+    const rampDownSeconds = stageDurationSum(stages, 'ramp_down')
+    return {
+      ...group,
+      vusers: maxStageVUsers(stages) || peak,
+      ramp_up: shapeId === 'chaos-resilience' && group.ramp_up ? group.ramp_up : (rampUpSeconds > 0 ? durationText(rampUpSeconds) : ''),
+      ramp_down: shapeId === 'chaos-resilience' && group.ramp_down ? group.ramp_down : (rampDownSeconds > 0 ? durationText(rampDownSeconds) : ''),
+      stages,
+    }
+  })
+
+  if (shapeId === 'stress') {
+    const peak = normalizePeak(next.groups?.[0]?.vusers || 300)
+    next.scenario_mode = 'goal_oriented'
+    next.goal = { ...(next.goal || {}), max_vusers: peak }
+  } else if (shapeId === 'chaos-resilience') {
+    const peak = normalizePeak(next.groups?.[0]?.vusers || 25)
+    next.scenario_mode = 'goal_oriented'
+    next.script_shakeout = true
+    next.resource_baseline = true
+    next.continue_on_error = true
+    next.snapshot_on_error = true
+    next.goal = {
+      ...(next.goal || {}),
+      target_average_tps: targetTps,
+      min_vusers: next.goal?.min_vusers || Math.max(1, Math.floor(peak / 5)),
+      max_vusers: next.goal?.max_vusers || peak * 3,
+    }
+  } else if (shapeId === 'soak') {
+    next.scenario_mode = 'vuser_driven'
+    next.pacing = { ...(next.pacing || {}), type: 'fixed_delay', delay_ms: next.pacing?.delay_ms || 1000 }
+  } else {
+    next.scenario_mode = 'vuser_driven'
+  }
+
+  return next
 }
 
 export const SCENARIO_SHAPE_PRESETS: Record<string, ScenarioShapePreset> = {
@@ -146,26 +459,44 @@ export const SCENARIO_SHAPE_PRESETS: Record<string, ScenarioShapePreset> = {
   'stepped-ramp': {
     duration: '12m',
     scenarioMode: 'vuser_driven',
-    groups: [{ vusers: 75, stages: steppedRampStages() }],
+    groups: [{
+      vusers: 75,
+      ramp_up: '12m',
+      stages: buildShapeStages('stepped', { peakVusers: 75, durationSeconds: 12 * 60 }),
+    }],
     guidance: 'Each step holds a VUser target before the next increase. Edit the steps in the Advanced Stair-Step Ramp panel on Run Settings.',
   },
   'spike-rendezvous': {
     duration: '8m',
     scenarioMode: 'vuser_driven',
-    groups: [{ vusers: 100, ramp_up: '1m', ramp_down: '1m' }],
+    groups: [{
+      vusers: 100,
+      ramp_up: '1m12s',
+      ramp_down: '48s',
+      stages: buildShapeStages('spike', { peakVusers: 100, durationSeconds: 8 * 60 }),
+    }],
     guidance: 'Add an actions[].type=rendezvous step in the script before the spike transaction so VUsers synchronize before the surge.',
   },
   soak: {
     duration: '2h',
     scenarioMode: 'vuser_driven',
-    groups: [{ vusers: 20, ramp_up: '10m', ramp_down: '5m' }],
+    groups: [{
+      vusers: 20,
+      ramp_up: '7m12s',
+      ramp_down: '6m',
+      stages: buildShapeStages('soak', { peakVusers: 20, durationSeconds: 2 * 60 * 60 }),
+    }],
     pacing: { type: 'fixed_delay', delay_ms: 1000 },
     guidance: 'Long, steady-state endurance run. Keep VUsers modest and pacing consistent to surface leaks and drift over time.',
   },
   stress: {
     duration: '20m',
     scenarioMode: 'goal_oriented',
-    groups: [{ vusers: 300, stages: stressStages() }],
+    groups: [{
+      vusers: 300,
+      ramp_up: '9m',
+      stages: buildShapeStages('stress', { peakVusers: 300, durationSeconds: 20 * 60 }),
+    }],
     goal: { max_vusers: 300, p95_latency_ms: 1000, max_error_pct: 2 },
     guidance: 'Escalating load to find the breaking point. Staged groups push VUsers higher while the goal guardrails (max VUsers, SLA) and capacity advisory keep the run bounded.',
   },
@@ -181,7 +512,7 @@ export const SCENARIO_SHAPE_PRESETS: Record<string, ScenarioShapePreset> = {
     scenarioMode: 'goal_oriented',
     scriptShakeout: true,
     resourceBaseline: true,
-    groups: [{ name: 'chaos-steady-state', vusers: 25, ramp_up: '3m', ramp_down: '2m', stages: chaosStages() }],
+    groups: [{ name: 'chaos-steady-state', vusers: 25, ramp_up: '3m', ramp_down: '2m', stages: buildShapeStages('chaos', { peakVusers: 25, durationSeconds: 18 * 60, turbulenceTps: 15 }) }],
     goal: { target_average_tps: 15, min_vusers: 5, max_vusers: 75, p95_latency_ms: 1200, max_error_pct: 5 },
     continueOnError: true,
     snapshotOnError: true,

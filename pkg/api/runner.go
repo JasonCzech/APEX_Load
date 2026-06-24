@@ -279,6 +279,9 @@ type TestGroup struct {
 	RunLogicGoals   *RunLogicGoalSnapshot        `json:"run_logic_goals,omitempty"`
 	Initialization  string                       `json:"initialization,omitempty"`
 	rampUpDur       time.Duration
+	stageDriven     bool
+	initialVUsers   int
+	currentVUsers   int
 	script          *dsl.Script
 }
 

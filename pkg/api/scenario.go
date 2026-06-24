@@ -59,7 +59,7 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 	if err != nil {
 		return nil, err
 	}
-	testGroups, engineGroups, _, err := tr.compileManagedTestGroupsLocked(groups, req.RuntimeSettings)
+	testGroups, engineGroups, _, err := tr.compileManagedTestGroupsForModeWithDataSourcesLocked(groups, req.RuntimeSettings, nil, normalizeScenarioMode(req.ScenarioMode))
 	if err != nil {
 		return nil, err
 	}

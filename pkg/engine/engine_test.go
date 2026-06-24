@@ -354,6 +354,51 @@ func TestMultiGroup_RunStopsAtGlobalTransactionGoal(t *testing.T) {
 	}
 }
 
+func TestMultiGroupZeroStartReadyAllowsRuntimeScale(t *testing.T) {
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name: "buyers",
+			Script: &dsl.Script{
+				Name:     "zero-start",
+				Protocol: "stub",
+				Actions:  []dsl.Action{{Name: "main", Type: "request", Target: "/"}},
+			},
+			VUsers:          0,
+			AllowZeroVUsers: true,
+		}},
+		Duration: 80 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := mge.Run(ctx)
+		done <- err
+	}()
+
+	select {
+	case <-mge.Ready():
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for zero-start engine readiness")
+	}
+	if err := mge.ScaleVUsers("buyers", 1); err != nil {
+		t.Fatalf("ScaleVUsers after Ready: %v", err)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned error after cancel: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("zero-start engine did not stop after cancel")
+	}
+}
+
 func TestMultiGroup_RunOpenWorkloadStopsAtGlobalTransactionGoal(t *testing.T) {
 	mge, err := NewMultiGroup(MultiGroupConfig{
 		Groups: []GroupConfig{{

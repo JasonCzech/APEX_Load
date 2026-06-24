@@ -83,6 +83,7 @@ func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, te
 	for _, target := range orderedMetricsTargets(streamsByTarget, b.configuredTargets()) {
 		go b.consumeMetrics(ctx, tr, test, target, streamsByTarget[target])
 	}
+	tr.startStageSchedules(ctx, test, nil)
 }
 
 // snapshotRemoteClients copies, under tr.mu, the fields clientForTest reads.

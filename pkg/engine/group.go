@@ -18,6 +18,7 @@ type GroupConfig struct {
 	VUsers          int
 	RampUp          time.Duration
 	RampDown        time.Duration
+	AllowZeroVUsers bool
 	InitStrategy    string // "at_runtime", "at_once"
 	ResultSink      ResultSink
 	RedactionConfig *RedactionConfig
@@ -48,6 +49,8 @@ type MultiGroupEngine struct {
 	postBaseline time.Duration
 	metrics      *MetricsCollector
 	cancel       context.CancelFunc
+	readyCh      chan struct{}
+	readyOnce    sync.Once
 
 	// Dynamic control state
 	mu             sync.Mutex
@@ -96,8 +99,14 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		if g.Script == nil {
 			return nil, fmt.Errorf("group[%d] %q: script is required", i, g.Name)
 		}
-		if g.VUsers <= 0 {
+		if g.VUsers < 0 {
+			return nil, fmt.Errorf("group[%d] %q: vusers must be zero or greater", i, g.Name)
+		}
+		if g.VUsers == 0 && !g.AllowZeroVUsers {
 			return nil, fmt.Errorf("group[%d] %q: vusers must be positive", i, g.Name)
+		}
+		if g.VUsers == 0 && isOpenWorkload(g.Script) {
+			return nil, fmt.Errorf("group[%d] %q: open workload groups require positive vusers", i, g.Name)
 		}
 		if g.Name == "" {
 			cfg.Groups[i].Name = g.Script.Name
@@ -109,9 +118,16 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		preBaseline:  cfg.PreBaseline,
 		postBaseline: cfg.PostBaseline,
 		metrics:      NewMetricsCollector(10000),
+		readyCh:      make(chan struct{}),
 	}
 	mge.metrics.SetGroupActiveVUsersProvider(mge.activeVUserCountByGroup)
 	return mge, nil
+}
+
+// Ready is closed once Run has initialized the internal contexts required by
+// runtime controls such as ScaleVUsers.
+func (mge *MultiGroupEngine) Ready() <-chan struct{} {
+	return mge.readyCh
 }
 
 // activeVUserCountByGroup returns the live active VUser count per group, derived
@@ -196,6 +212,17 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 
 	if err := waitForBaselineWindow(ctx, mge.preBaseline); err != nil {
 		return nil, err
+	}
+	mge.readyOnce.Do(func() {
+		close(mge.readyCh)
+	})
+
+	if mge.hasZeroStartClosedGroup() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-mge.loopCtx.Done()
+		}()
 	}
 
 	totalTargetTPS := 0.0
@@ -307,6 +334,15 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		result.FinalSnapshot = snap
 	}
 	return result, nil
+}
+
+func (mge *MultiGroupEngine) hasZeroStartClosedGroup() bool {
+	for _, group := range mge.groups {
+		if group.AllowZeroVUsers && group.VUsers == 0 && !isOpenWorkload(group.Script) {
+			return true
+		}
+	}
+	return false
 }
 
 func groupLifecycleAtOnce(group GroupConfig) bool {
@@ -549,7 +585,7 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 
-	if mge.baseCtx == nil || mge.baseCtx.Err() != nil {
+	if mge.baseCtx == nil || mge.baseCtx.Err() != nil || mge.wg == nil {
 		return fmt.Errorf("engine not running")
 	}
 

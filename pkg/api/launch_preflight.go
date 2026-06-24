@@ -330,6 +330,9 @@ func launchWindowForTest(test *ManagedTest, start time.Time) LaunchWindow {
 func maxGroupRampDown(groups []TestGroup) time.Duration {
 	maxRamp := time.Duration(0)
 	for _, group := range groups {
+		if len(group.Stages) > 0 {
+			continue
+		}
 		if group.RampDown == "" {
 			continue
 		}

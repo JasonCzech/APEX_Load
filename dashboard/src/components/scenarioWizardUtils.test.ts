@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildScenarioModelPreview, buildScenarioShapeCatalog, getScenarioShapePreset, parseDurationSeconds, SCENARIO_SHAPE_PRESETS, validateStageTimeline } from './scenarioWizardUtils'
+import { adaptScenarioShapeDefaults, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, getScenarioShapePreset, parseDurationSeconds, SCENARIO_SHAPE_PRESETS, ShapeStageStrategy, steppedStepPlan, validateStageTimeline } from './scenarioWizardUtils'
 import { LoadModelSupportEntry, LoadModelTemplate } from '../types'
+
+const stageSeconds = (stages: { duration: string }[]) => stages.reduce((sum, stage) => sum + parseDurationSeconds(stage.duration), 0)
+const stagePeak = (stages: { target_vusers?: number }[]) => Math.max(...stages.map(stage => Number(stage.target_vusers) || 0))
 
 describe('scenarioWizardUtils', () => {
   it('merges supported workload shapes with matching templates', () => {
@@ -86,6 +89,112 @@ describe('scenarioWizardUtils', () => {
   })
 })
 
+describe('shape-adaptive stage generators', () => {
+  it('plans small stepped ramps as one VUser per step', () => {
+    expect(steppedStepPlan(20)).toEqual({ inc: 1, steps: 20 })
+  })
+
+  it('builds the stepped-ramp hero case as 20 three-minute windows', () => {
+    const stages = buildShapeStages('stepped', { peakVusers: 20, durationSeconds: 3600 })
+    const ramps = stages.filter(stage => stage.type === 'ramp_up')
+    const holds = stages.filter(stage => stage.type === 'hold')
+
+    expect(ramps).toHaveLength(20)
+    expect(holds).toHaveLength(20)
+    expect(stageSeconds(stages)).toBe(3600)
+    expect(stagePeak(stages)).toBe(20)
+    ramps.forEach((stage, index) => {
+      expect(stage.target_vusers).toBe(index + 1)
+      expect(parseDurationSeconds(stage.duration) + parseDurationSeconds(holds[index].duration)).toBe(180)
+    })
+  })
+
+  it('caps large stepped ramps near twenty windows with larger increments', () => {
+    const stages = buildShapeStages('stepped', { peakVusers: 500, durationSeconds: 3600 })
+    const ramps = stages.filter(stage => stage.type === 'ramp_up')
+
+    expect(ramps.length).toBeLessThanOrEqual(20)
+    expect(ramps[0].target_vusers).toBe(25)
+    expect(stagePeak(stages)).toBe(500)
+    expect(stageSeconds(stages)).toBe(3600)
+  })
+
+  it('keeps generated strategy timelines exact and positive', () => {
+    const strategies: ShapeStageStrategy[] = ['stepped', 'stress', 'soak', 'spike', 'chaos']
+    strategies.forEach(strategy => {
+      const stages = buildShapeStages(strategy, { peakVusers: 25, durationSeconds: 1080, turbulenceTps: 15 })
+      expect(stages.length).toBeGreaterThan(0)
+      expect(stageSeconds(stages)).toBe(1080)
+      expect(stagePeak(stages)).toBe(25)
+      expect(stages.every(stage => parseDurationSeconds(stage.duration) > 0)).toBe(true)
+      expect(validateStageTimeline('18m', stages).status).not.toBe('error')
+    })
+  })
+
+  it('preserves the chaos-resilience mirror numbers at default inputs', () => {
+    const stages = buildShapeStages('chaos', { peakVusers: 25, durationSeconds: 18 * 60, turbulenceTps: 15 })
+    expect(stages).toEqual([
+      { name: 'Baseline', type: 'ramp_up', duration: '3m', target_vusers: 25 },
+      { name: 'Turbulence', type: 'hold', duration: '10m', target_vusers: 25, target_tps: 15 },
+      { name: 'Recovery', type: 'ramp_down', duration: '5m', target_vusers: 5 },
+    ])
+  })
+})
+
+describe('adaptScenarioShapeDefaults', () => {
+  it('adapts stepped-ramp seeds from the selected peak and duration', () => {
+    const seed = adaptScenarioShapeDefaults('stepped-ramp', {
+      duration: '1h',
+      scenario_mode: 'vuser_driven',
+      groups: [{ name: 'checkout', vusers: 20, ramp_up: '1m' }],
+    })
+
+    expect(seed.groups?.[0].ramp_up).toBe('1h')
+    expect(seed.groups?.[0].vusers).toBe(20)
+    expect(seed.groups?.[0].stages?.filter(stage => stage.type === 'ramp_up')).toHaveLength(20)
+    expect(stageSeconds(seed.groups?.[0].stages || [])).toBe(3600)
+  })
+
+  it('aligns throughput goal and pacing defaults for goal shapes', () => {
+    const seed = adaptScenarioShapeDefaults('open-arrival-rate', {
+      duration: '10m',
+      groups: [{ vusers: 12 }],
+      goal: { target_average_tps: 42 },
+    })
+
+    expect(seed.scenario_mode).toBe('goal_oriented')
+    expect(seed.goal?.target_average_tps).toBe(42)
+    expect(seed.pacing).toMatchObject({ type: 'tps', tps: 42 })
+    expect(seed.groups?.[0].stages).toEqual([])
+  })
+
+  it('caps closed and mixed-protocol non-stage defaults', () => {
+    const closed = adaptScenarioShapeDefaults('closed-vuser', {
+      duration: '10m',
+      groups: [{ vusers: 10, ramp_up: '5m' }],
+    })
+    expect(parseDurationSeconds(closed.groups?.[0].ramp_up)).toBeLessThanOrEqual(120)
+    expect(closed.groups?.[0].stages).toEqual([])
+
+    const mixed = adaptScenarioShapeDefaults('mixed-protocol', {
+      duration: '15m',
+      groups: [{ name: 'api-bulk', vusers: 200 }, { name: 'browser-canary', vusers: 30 }],
+    })
+    expect(mixed.groups?.[1].vusers).toBe(5)
+  })
+
+  it('sets stress goal max to the generated peak', () => {
+    const seed = adaptScenarioShapeDefaults('stress', {
+      duration: '20m',
+      scenario_mode: 'vuser_driven',
+      groups: [{ vusers: 120 }],
+    })
+    expect(seed.scenario_mode).toBe('goal_oriented')
+    expect(seed.goal?.max_vusers).toBe(120)
+    expect(stagePeak(seed.groups?.[0].stages || [])).toBe(120)
+  })
+})
+
 describe('SCENARIO_SHAPE_PRESETS', () => {
   const SHAPE_IDS = [
     'closed-vuser',
@@ -128,7 +237,7 @@ describe('SCENARIO_SHAPE_PRESETS', () => {
   })
 
   it('sets staged group vusers to the staged peak', () => {
-    ;['stepped-ramp', 'stress', 'chaos-resilience'].forEach((id) => {
+    ;['stepped-ramp', 'spike-rendezvous', 'soak', 'stress', 'chaos-resilience'].forEach((id) => {
       const group = getScenarioShapePreset(id)!.groups[0]
       const peak = Math.max(...(group.stages || []).map(stage => Number(stage.target_vusers) || 0))
       expect(group.vusers).toBe(peak)

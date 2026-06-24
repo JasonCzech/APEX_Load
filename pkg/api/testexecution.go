@@ -529,6 +529,76 @@ func (tr *TestRunner) runVUserScaleRamp(ctx context.Context, ramp *vuserScaleRam
 	}
 }
 
+func (tr *TestRunner) startStageSchedules(ctx context.Context, test *ManagedTest, mge *engine.MultiGroupEngine) {
+	if !tr.isExecutionLeader() {
+		return
+	}
+	tr.mu.RLock()
+	if test == nil || test.ScenarioMode != "vuser_driven" {
+		tr.mu.RUnlock()
+		return
+	}
+	testID := test.ID
+	groups := make([]TestGroup, 0, len(test.Groups))
+	for _, group := range test.Groups {
+		if group.stageDriven && len(group.Stages) > 0 {
+			group.Stages = cloneLoadStages(group.Stages)
+			groups = append(groups, group)
+		}
+	}
+	tr.mu.RUnlock()
+
+	for _, group := range groups {
+		group := group
+		go tr.runStageSchedule(ctx, testID, group.Name, group.Stages, mge)
+	}
+}
+
+func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, groupName string, stages []storage.LoadStage, mge *engine.MultiGroupEngine) {
+	if mge != nil {
+		select {
+		case <-ctx.Done():
+			return
+		case <-mge.Ready():
+		}
+	}
+	for index, stage := range stages {
+		stageType := strings.ToLower(strings.TrimSpace(stage.Type))
+		duration, err := time.ParseDuration(stage.Duration)
+		if err != nil || duration <= 0 {
+			slog.Warn("stage schedule stopped on invalid stage duration", "test_id", testID, "group", groupName, "stage", index, "duration", stage.Duration, "error", err)
+			return
+		}
+		switch stageType {
+		case "ramp_up", "ramp_down":
+			if err := tr.ScaleVUsersWithOptions(testID, groupName, stage.TargetVUsers, ScaleVUsersOptions{RampDuration: duration}); err != nil {
+				slog.Warn("stage schedule scale failed", "test_id", testID, "group", groupName, "stage", index, "target_vusers", stage.TargetVUsers, "error", err)
+				return
+			}
+		case "hold":
+			// The engine is already at the hold target: first holds are seeded by
+			// compilation, later holds inherit the preceding ramp target.
+		default:
+			slog.Warn("stage schedule stopped on invalid stage type", "test_id", testID, "group", groupName, "stage", index, "type", stage.Type)
+			return
+		}
+		if !sleepStageDuration(ctx, duration) {
+			return
+		}
+	}
+}
+
+func sleepStageDuration(ctx context.Context, duration time.Duration) bool {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
 func (tr *TestRunner) scaleVUsersNow(id string, groupName string, targetVUsers int, cancelExistingRamp bool) error {
 	tr.mu.Lock()
 	id = tr.resolveRefKeyLocked(id)
@@ -592,15 +662,21 @@ func (tr *TestRunner) updateTestGroupVUsers(id string, groupName string, targetV
 	if !ok {
 		return 0, ""
 	}
-	totalVUsers := 0
+	currentTotalVUsers := 0
+	capacityTotalVUsers := 0
 	for i := range test.Groups {
 		if test.Groups[i].Name == groupName {
-			test.Groups[i].VUsers = targetVUsers
+			if test.Groups[i].stageDriven {
+				test.Groups[i].currentVUsers = targetVUsers
+			} else {
+				test.Groups[i].VUsers = targetVUsers
+			}
 		}
-		totalVUsers += test.Groups[i].VUsers
+		currentTotalVUsers += groupCurrentVUsers(test.Groups[i])
+		capacityTotalVUsers += test.Groups[i].VUsers
 	}
-	test.TotalVUsers = totalVUsers
-	return totalVUsers, normalizeProjectID(test.ProjectID)
+	test.TotalVUsers = capacityTotalVUsers
+	return currentTotalVUsers, normalizeProjectID(test.ProjectID)
 }
 
 func (tr *TestRunner) cancelVUserScaleRampLocked(test *ManagedTest, groupName string) {
@@ -684,10 +760,17 @@ func testGroupVUsers(test *ManagedTest, groupName string) (int, bool) {
 	}
 	for _, group := range test.Groups {
 		if group.Name == groupName {
-			return group.VUsers, true
+			return groupCurrentVUsers(group), true
 		}
 	}
 	return 0, false
+}
+
+func groupCurrentVUsers(group TestGroup) int {
+	if group.stageDriven {
+		return group.currentVUsers
+	}
+	return group.VUsers
 }
 
 func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error {
@@ -913,6 +996,7 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 
 	tr.cacheRunSnapshot(snapshot)
 	tr.broadcastEvent("test_started", test)
+	tr.startStageSchedules(ctx, test, mge)
 
 	metricsDone := make(chan struct{})
 	metricsStopped := make(chan struct{})

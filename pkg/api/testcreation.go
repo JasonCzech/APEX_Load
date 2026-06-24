@@ -160,7 +160,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		return nil, err
 	}
 
-	testGroups, engineGroups, totalVUsers, err := tr.compileManagedTestGroupsWithDataSourcesLocked(groups, req.RuntimeSettings, sharedDataSources)
+	testGroups, engineGroups, totalVUsers, err := tr.compileManagedTestGroupsForModeWithDataSourcesLocked(groups, req.RuntimeSettings, sharedDataSources, scenarioMode)
 	if err != nil {
 		return nil, err
 	}
@@ -363,16 +363,20 @@ func normalizeCreateTestGroups(req CreateTestRequest) ([]CreateGroupEntry, error
 }
 
 func (tr *TestRunner) compileManagedTestGroupsLocked(groups []CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride) ([]TestGroup, []engine.GroupConfig, int, error) {
-	return tr.compileManagedTestGroupsWithDataSourcesLocked(groups, runtimeSettings, nil)
+	return tr.compileManagedTestGroupsForModeWithDataSourcesLocked(groups, runtimeSettings, nil, "vuser_driven")
 }
 
 func (tr *TestRunner) compileManagedTestGroupsWithDataSourcesLocked(groups []CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource) ([]TestGroup, []engine.GroupConfig, int, error) {
+	return tr.compileManagedTestGroupsForModeWithDataSourcesLocked(groups, runtimeSettings, sharedDataSources, "vuser_driven")
+}
+
+func (tr *TestRunner) compileManagedTestGroupsForModeWithDataSourcesLocked(groups []CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource, scenarioMode string) ([]TestGroup, []engine.GroupConfig, int, error) {
 	testGroups := make([]TestGroup, 0, len(groups))
 	engineGroups := make([]engine.GroupConfig, 0, len(groups))
 	totalVUsers := 0
 
 	for i, group := range groups {
-		testGroup, engineGroup, err := tr.compileManagedTestGroupLocked(i, len(groups), group, runtimeSettings, sharedDataSources)
+		testGroup, engineGroup, err := tr.compileManagedTestGroupForModeLocked(i, len(groups), group, runtimeSettings, sharedDataSources, scenarioMode)
 		if err != nil {
 			return nil, nil, 0, err
 		}
@@ -385,6 +389,10 @@ func (tr *TestRunner) compileManagedTestGroupsWithDataSourcesLocked(groups []Cre
 }
 
 func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, group CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource) (TestGroup, engine.GroupConfig, error) {
+	return tr.compileManagedTestGroupForModeLocked(index, totalGroups, group, runtimeSettings, sharedDataSources, "vuser_driven")
+}
+
+func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroups int, group CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource, scenarioMode string) (TestGroup, engine.GroupConfig, error) {
 	script, ok := tr.scripts[group.ScriptID]
 	if !ok {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: script not found: %s", index, group.ScriptID)
@@ -416,6 +424,7 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 	}
 	rampUpValue := firstNonEmpty(group.RampUp, derivedRampUp)
 	rampDownValue := firstNonEmpty(group.RampDown, derivedRampDown)
+	stageDriven := normalizeScenarioMode(scenarioMode) == "vuser_driven" && len(group.Stages) > 0
 	if len(group.Stages) > 0 && derivedVUsers > 0 && vusers != derivedVUsers {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: vusers must match the maximum target_vusers from stages (%d)", index, derivedVUsers)
 	}
@@ -437,6 +446,18 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 	rampDown, err := parseOptionalGroupDuration(rampDownValue, index, "ramp_down")
 	if err != nil {
 		return TestGroup{}, engine.GroupConfig{}, err
+	}
+	engineVUsers := vusers
+	engineRampUp := rampUp
+	engineRampDown := rampDown
+	allowZeroVUsers := false
+	initialVUsers := vusers
+	if stageDriven {
+		initialVUsers = stagedInitialVUsers(group.Stages, vusers)
+		engineVUsers = initialVUsers
+		engineRampUp = 0
+		engineRampDown = 0
+		allowZeroVUsers = initialVUsers == 0
 	}
 
 	name := group.Name
@@ -486,7 +507,10 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 		Assignment:      cloneGeneratorAssignmentSettings(assignment),
 		RunLogicGoals:   runLogicGoalSnapshot(script.Script),
 		Initialization:  initStrategy,
-		rampUpDur:       rampUp,
+		rampUpDur:       engineRampUp,
+		stageDriven:     stageDriven,
+		initialVUsers:   initialVUsers,
+		currentVUsers:   initialVUsers,
 	}
 
 	scriptCopy := *script.Script
@@ -532,9 +556,10 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 	engineGroup := engine.GroupConfig{
 		Name:            name,
 		Script:          &scriptCopy,
-		VUsers:          vusers,
-		RampUp:          rampUp,
-		RampDown:        rampDown,
+		VUsers:          engineVUsers,
+		RampUp:          engineRampUp,
+		RampDown:        engineRampDown,
+		AllowZeroVUsers: allowZeroVUsers,
 		InitStrategy:    initStrategy,
 		RedactionConfig: redactionConfig,
 	}
@@ -670,7 +695,7 @@ func loadStageCompatibility(stages []storage.LoadStage, groupIndex int) (string,
 		if stage.TargetTPS != nil && *stage.TargetTPS <= 0 {
 			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: target_tps must be greater than zero", groupIndex, index)
 		}
-		if stage.TargetVUsers == 0 && stage.TargetTPS == nil {
+		if stage.TargetVUsers == 0 && stage.TargetTPS == nil && stageType != "ramp_down" {
 			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: target_vusers or target_tps is required", groupIndex, index)
 		}
 		if stage.TargetVUsers > maxVUsers {
@@ -684,6 +709,26 @@ func loadStageCompatibility(stages []storage.LoadStage, groupIndex int) (string,
 		}
 	}
 	return durationStringOrEmpty(rampUp), durationStringOrEmpty(rampDown), maxVUsers, nil
+}
+
+func stagedInitialVUsers(stages []storage.LoadStage, peakVUsers int) int {
+	if len(stages) == 0 {
+		return peakVUsers
+	}
+	first := stages[0]
+	switch strings.ToLower(strings.TrimSpace(first.Type)) {
+	case "ramp_up":
+		return 0
+	case "hold":
+		return first.TargetVUsers
+	case "ramp_down":
+		if peakVUsers > first.TargetVUsers {
+			return peakVUsers
+		}
+		return first.TargetVUsers
+	default:
+		return peakVUsers
+	}
 }
 
 func durationStringOrEmpty(duration time.Duration) string {
