@@ -99,6 +99,31 @@ describe('NavigationGuardProvider', () => {
     expect(proceed).not.toHaveBeenCalled()
   })
 
+  it('prompts for the most recently registered dirty guard', async () => {
+    const pageDiscard = vi.fn()
+    const modalDiscard = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <Runner proceed={vi.fn()} />
+          <Publisher guard={makeGuard({ dirty: true, label: 'Page Builder', discard: pageDiscard })} dirty />
+          <Publisher guard={makeGuard({ id: 'modal-guard', dirty: true, label: 'Inline Editor', discard: modalDiscard })} dirty />
+        </NavigationGuardProvider>,
+      )
+    })
+
+    await click('Navigate')
+
+    expect(container.textContent).toContain('Inline Editor has unsaved changes')
+    expect(container.textContent).not.toContain('Page Builder has unsaved changes')
+
+    await click('Discard changes')
+
+    expect(modalDiscard).toHaveBeenCalledTimes(1)
+    expect(pageDiscard).not.toHaveBeenCalled()
+  })
+
   it('does not prompt after the guard unregisters', async () => {
     const proceed = vi.fn()
     const guard = makeGuard({ dirty: true })
@@ -169,15 +194,19 @@ describe('NavigationGuardProvider', () => {
   function makeGuard({
     dirty,
     discard = vi.fn(),
+    id = 'test-guard',
+    label = 'Test Builder',
     save = vi.fn().mockResolvedValue(true),
   }: {
     dirty: boolean
     discard?: () => void
+    id?: string
+    label?: string
     save?: () => Promise<boolean>
   }): NavigationGuard {
     return {
-      id: 'test-guard',
-      label: 'Test Builder',
+      id,
+      label,
       isDirty: () => dirty,
       save,
       discard,

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ScriptDefinition } from '../types/scripts'
 import { formatSnapshotRequestSection, formatSnapshotResponseSection } from '../utils/snapshotFormatUtils'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardProvider'
 import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { formatSOAPFaultSummary } from './soapFaultUtils'
 import ScriptEditor from './ScriptEditor'
@@ -4764,6 +4765,71 @@ describe('ScriptEditor', () => {
       name: initialScript.name,
     }))
     expect(container.textContent).toContain('Script saved successfully!')
+  })
+
+  it('guards dirty editor close and clears the guard after a successful save', async () => {
+    const onClose = vi.fn()
+    apiMock.createScript.mockResolvedValueOnce({
+      id: 'script-saved-guard',
+      name: 'Guarded Checkout Flow',
+      protocol: initialScript.protocol,
+      version: initialScript.version,
+      created_at: '2026-05-17T00:00:00Z',
+      script: { ...initialScript, name: 'Guarded Checkout Flow' },
+    })
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <ScriptEditor initialScript={initialScript} onClose={onClose} />
+        </NavigationGuardProvider>,
+      )
+    })
+
+    const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
+
+    await act(async () => {
+      changeInputValue(nameInput, 'Guarded Checkout Flow')
+      await Promise.resolve()
+    })
+
+    const closeButton = findButtonByText(container, 'Close')
+    expect(closeButton).toBeDefined()
+    if (!closeButton) return
+
+    await act(async () => {
+      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(onClose).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Create Script has unsaved changes')
+
+    const saveChangesButton = findButtonByText(container, 'Save changes')
+    expect(saveChangesButton).toBeDefined()
+    if (!saveChangesButton) return
+
+    await act(async () => {
+      saveChangesButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Guarded Checkout Flow',
+    }), undefined, undefined)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('Unsaved Changes')
+
+    await act(async () => {
+      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(onClose).toHaveBeenCalledTimes(2)
+    expect(container.textContent).not.toContain('Unsaved Changes')
   })
 
   it('renders the new Web HTTP/HTML runtime sections from the draft model', async () => {

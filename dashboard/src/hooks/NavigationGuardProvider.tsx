@@ -35,7 +35,7 @@ const NavigationGuardRunnerContext = createContext<NavigationGuardRunner>({
 function firstDirtyGuard(guards: Map<string, RegisteredNavigationGuard>): RegisteredNavigationGuard | null {
   return [...guards.values()]
     .filter(guard => guard.dirty || guard.isDirty())
-    .sort((left, right) => left.sequence - right.sequence)[0] || null
+    .sort((left, right) => right.sequence - left.sequence)[0] || null
 }
 
 export function NavigationGuardProvider({ children }: { children: ReactNode }) {

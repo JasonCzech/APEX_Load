@@ -2059,7 +2059,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
       setError('Scenario was saved, but the response did not include a scenario id.')
       return
     }
-    setEditingId(null)
+    resetScenarioBuilder()
     onCreateTestFromScenario?.(saved.id)
     void refresh()
   }

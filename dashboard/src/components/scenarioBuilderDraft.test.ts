@@ -6,21 +6,19 @@ import {
   SCENARIO_BUILDER_DRAFT_KEY,
   clearScenarioBuilderDraft,
   hasScenarioBuilderProgress,
-  loadScenarioBuilderDraft,
-  saveScenarioBuilderDraft,
-  type ScenarioBuilderDraft,
 } from './scenarioBuilderDraft'
+import type { ScenarioFormState, ScenarioStartChoice } from './TestHub'
 
-function makeDraft(overrides: Partial<ScenarioBuilderDraft> = {}): ScenarioBuilderDraft {
+interface ProgressDraft {
+  form: ScenarioFormState
+  scenarioStartChoice: ScenarioStartChoice
+  maxVisitedWizardIndex: number
+}
+
+function makeDraft(overrides: Partial<ProgressDraft> = {}): ProgressDraft {
   return {
-    form: { name: '' } as ScenarioBuilderDraft['form'],
-    scenarioSourceMode: 'shape',
+    form: { name: '' } as ScenarioFormState,
     scenarioStartChoice: '',
-    selectedShapeId: '',
-    selectedCloneScenarioId: '',
-    selectedLoadModelTemplateId: '',
-    goalSizingResult: null,
-    wizardStep: 'start',
     maxVisitedWizardIndex: 0,
     ...overrides,
   }
@@ -31,31 +29,10 @@ describe('scenarioBuilderDraft', () => {
     window.localStorage.clear()
   })
 
-  it('returns null when no draft is stored', () => {
-    expect(loadScenarioBuilderDraft()).toBeNull()
-  })
-
-  it('round-trips a saved draft', () => {
-    const draft = makeDraft({
-      scenarioStartChoice: 'shape',
-      selectedShapeId: 'spike',
-      wizardStep: 'scripts',
-      maxVisitedWizardIndex: 2,
-      form: { name: 'Checkout flow' } as ScenarioBuilderDraft['form'],
-    })
-    saveScenarioBuilderDraft(draft)
-    expect(loadScenarioBuilderDraft()).toEqual(draft)
-  })
-
   it('clears a stored draft', () => {
-    saveScenarioBuilderDraft(makeDraft({ scenarioStartChoice: 'shape' }))
-    clearScenarioBuilderDraft()
-    expect(loadScenarioBuilderDraft()).toBeNull()
-  })
-
-  it('rejects malformed payloads that lack a form object', () => {
     window.localStorage.setItem(SCENARIO_BUILDER_DRAFT_KEY, JSON.stringify({ scenarioStartChoice: 'shape' }))
-    expect(loadScenarioBuilderDraft()).toBeNull()
+    clearScenarioBuilderDraft()
+    expect(window.localStorage.getItem(SCENARIO_BUILDER_DRAFT_KEY)).toBeNull()
   })
 
   it('treats a pristine builder as having no progress', () => {
@@ -67,8 +44,8 @@ describe('scenarioBuilderDraft', () => {
   })
 
   it('detects progress from a non-empty (trimmed) scenario name', () => {
-    expect(hasScenarioBuilderProgress(makeDraft({ form: { name: '  ' } as ScenarioBuilderDraft['form'] }))).toBe(false)
-    expect(hasScenarioBuilderProgress(makeDraft({ form: { name: 'My run' } as ScenarioBuilderDraft['form'] }))).toBe(true)
+    expect(hasScenarioBuilderProgress(makeDraft({ form: { name: '  ' } as ScenarioFormState }))).toBe(false)
+    expect(hasScenarioBuilderProgress(makeDraft({ form: { name: 'My run' } as ScenarioFormState }))).toBe(true)
   })
 
   it('detects progress once the user has advanced past the first step', () => {
