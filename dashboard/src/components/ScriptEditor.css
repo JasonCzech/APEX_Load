@@ -765,6 +765,20 @@
   border-radius: 8px;
   background: var(--bg-card);
 }
+
+.side-panel-script-name {
+  display: block;
+  padding: 12px 16px 14px;
+  border-width: 0 0 1px;
+  border-radius: 0;
+  background: var(--bg-secondary);
+}
+
+.side-panel-script-name .script-name-field {
+  width: 100%;
+  max-width: none;
+}
+
 .script-name-field {
   display: grid;
   gap: 6px;
@@ -4533,6 +4547,25 @@
   white-space: nowrap;
 }
 .action-name-text { font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.action-name-toggle {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.action-name-toggle:hover,
+.action-name-toggle:focus-visible {
+  color: var(--accent);
+}
+.action-name-toggle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 .action-breakpoint-button {
   display: inline-flex;
   align-items: center;
@@ -4552,14 +4585,13 @@
 .action-item.action-item-nested {
   opacity: 0.95;
 }
-.action-expand-toggle {
-  border: none;
-  background: transparent;
-  cursor: pointer;
+.action-expand-glyph {
+  display: inline-block;
   color: var(--text-secondary);
   padding: 0 4px 0 0;
   font-size: 11px;
   line-height: 1;
+  pointer-events: none;
 }
 .action-breakpoint-spacer {
   display: inline-flex;
@@ -6125,14 +6157,6 @@
 .script-ide-debugger.open {
   display: flex;
 }
-.script-ide-debugger.maximized.open {
-  position: fixed;
-  inset: 16px;
-  z-index: 180;
-  max-height: none;
-  min-height: 0;
-  box-shadow: 0 24px 54px rgba(15, 23, 42, 0.34);
-}
 /* Debug mode fills the content frame: the page stops scrolling, every wrapper
    between .main-content and the debugger grows, and the panel bleeds into the
    .main-content padding (20px 36px 28px) so it runs sidebar-edge to window-edge. */
@@ -6222,58 +6246,6 @@
   .editor-body.workspace-debug .script-ide-debugger.open {
     margin: 0 -16px;
   }
-}
-
-/* Toolbar */
-.debugger-toolbar {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  flex-shrink: 0;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-secondary);
-}
-.debugger-toolbar-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.debugger-toolbar-title {
-  gap: 8px;
-  min-width: 0;
-}
-.debugger-toolbar-title .panel-title {
-  margin: 0;
-}
-.debugger-toolbar-controls {
-  padding: 0 6px;
-  border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
-}
-.debugger-toolbar-right {
-  margin-left: auto;
-}
-.debugger-status-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  background: var(--text-muted);
-  box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
-}
-.debugger-status-dot.running {
-  background: var(--accent);
-  animation: debugger-pulse 1.4s ease-in-out infinite;
-}
-.debugger-status-dot.paused { background: var(--warning, #f59e0b); }
-.debugger-status-dot.success { background: var(--success); }
-.debugger-status-dot.error { background: var(--danger); }
-@keyframes debugger-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.45); }
-  70% { box-shadow: 0 0 0 6px rgba(99, 102, 241, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
 }
 
 .debugger-icon-btn {

@@ -14,10 +14,6 @@ const { downloadTextFileMock } = vi.hoisted(() => ({
   downloadTextFileMock: vi.fn(),
 }))
 
-const { downloadBlobMock } = vi.hoisted(() => ({
-  downloadBlobMock: vi.fn(),
-}))
-
 const { codeMirrorDispatchMock, codeMirrorScrollDoms } = vi.hoisted(() => ({
   codeMirrorDispatchMock: vi.fn(),
   codeMirrorScrollDoms: [] as HTMLElement[],
@@ -211,44 +207,6 @@ vi.mock('./scriptEditorUtils', async () => {
   }
 })
 
-vi.mock('../utils/fileUtils', async () => {
-  const actual = await vi.importActual<typeof import('../utils/fileUtils')>('../utils/fileUtils')
-  return {
-    ...actual,
-    downloadBlob: downloadBlobMock,
-  }
-})
-
-const zipDecoder = new TextDecoder()
-
-async function readStoredZipEntries(blob: Blob) {
-  const bytes = new Uint8Array(await blob.arrayBuffer())
-  const entries = new Map<string, Uint8Array>()
-  let offset = 0
-
-  while (offset + 30 <= bytes.length) {
-    const view = new DataView(bytes.buffer, bytes.byteOffset + offset)
-    const signature = view.getUint32(0, true)
-    if (signature !== 0x04034b50) {
-      break
-    }
-
-    const compressedSize = view.getUint32(18, true)
-    const fileNameLength = view.getUint16(26, true)
-    const extraFieldLength = view.getUint16(28, true)
-    const fileNameStart = offset + 30
-    const fileNameEnd = fileNameStart + fileNameLength
-    const dataStart = fileNameEnd + extraFieldLength
-    const dataEnd = dataStart + compressedSize
-    const fileName = zipDecoder.decode(bytes.slice(fileNameStart, fileNameEnd))
-
-    entries.set(fileName, bytes.slice(dataStart, dataEnd))
-    offset = dataEnd
-  }
-
-  return entries
-}
-
 function cssRule(css: string, selector: string) {
   const selectorIndex = css.indexOf(`${selector} {`)
   expect(selectorIndex).toBeGreaterThanOrEqual(0)
@@ -336,14 +294,21 @@ function TopbarContributionHarness() {
   return (
     <div data-testid="topbar-contribution">
       {contribution?.titleNode}
+      {contribution?.meta?.filter(item => !item.hidden).map(item => (
+        <span className="topbar-meta-chip" key={item.id}>
+          {item.label}
+        </span>
+      ))}
       {contribution?.controls}
       {contribution?.secondaryActions?.filter(action => !action.hidden).map(action => (
         <button
           key={action.id}
+          className={action.className}
           disabled={action.disabled}
           title={action.title}
           onClick={action.onClick}
         >
+          {action.icon && <span className="topbar-action-icon">{action.icon}</span>}
           {action.label}
         </button>
       ))}
@@ -462,7 +427,6 @@ describe('ScriptEditor', () => {
     })
     writeText.mockReset()
     downloadTextFileMock.mockReset()
-    downloadBlobMock.mockReset()
     codeMirrorDispatchMock.mockReset()
     codeMirrorScrollDoms.length = 0
     apiMock.getScript.mockResolvedValue({ script: initialScript })
@@ -607,7 +571,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-header h2')).toBeNull()
     expect(container.querySelector('.editor-header')?.textContent).not.toContain('Edit Script')
     expect(container.querySelector('.editor-header .editor-actions')).not.toBeNull()
-    expect(container.querySelector('.script-name-panel')).not.toBeNull()
+    expect(container.querySelector('.side-panel-script-name')).not.toBeNull()
   })
 
   it('publishes script identity and primary actions to the app topbar contribution', async () => {
@@ -622,9 +586,11 @@ describe('ScriptEditor', () => {
     await flushReact()
 
     const topbar = container.querySelector('[data-testid="topbar-contribution"]')
-    const nameInput = topbar?.querySelector<HTMLInputElement>('input[placeholder="My_Test_Script"]')
+    const topbarNameInput = topbar?.querySelector<HTMLInputElement>('input[placeholder="My_Test_Script"]')
+    const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')
     const workspaceToggle = topbar?.querySelector('.page-view-toggle.script-page-toggle.script-mode-switcher')
     const workspaceButtons = Array.from(workspaceToggle?.querySelectorAll<HTMLButtonElement>('.mode-chip') || [])
+    expect(topbarNameInput).toBeNull()
     expect(nameInput?.value).toBe('Checkout Flow')
     expect(topbar?.textContent).toContain('Author')
     expect(topbar?.textContent).toContain('Debug')
@@ -633,11 +599,30 @@ describe('ScriptEditor', () => {
     expect(workspaceButtons[0]?.classList.contains('active')).toBe(true)
     expect(topbar?.textContent).toContain('Validate Draft')
     expect(topbar?.textContent).toContain('Save Script')
+    expect(Array.from(topbar?.querySelectorAll('button') || []).map(button => button.textContent?.trim())).not.toContain('Settings')
+    expect(Array.from(topbar?.querySelectorAll('button') || []).map(button => button.textContent?.trim())).not.toContain('Breakpoint')
+    const debugActionButtons = Array.from(topbar?.querySelectorAll<HTMLButtonElement>('.topbar-debug-action') || [])
+    expect(debugActionButtons.map(button => button.textContent?.trim())).toEqual([
+      'Run',
+      'Pause',
+      'Step',
+      'Step Over',
+      'Finish Loop',
+      'Stop',
+      'Break on failure',
+    ])
+    expect(debugActionButtons.every(button => button.querySelector('.topbar-action-icon svg'))).toBe(true)
+    const metaLabels = Array.from(topbar?.querySelectorAll('.topbar-meta-chip') || []).map(chip => chip.textContent?.trim())
+    expect(metaLabels).not.toContain('Create Script')
+    expect(metaLabels).not.toContain('Edit Script')
+    expect(metaLabels).not.toContain((initialScript.protocol || 'http').toUpperCase())
+    expect(metaLabels).not.toContain('Draft')
+    expect(metaLabels).not.toContain('JSON Draft')
     expect(container.querySelector('.script-editor-local-action-proxy')).toBeNull()
 
     if (!nameInput) return
     await act(async () => {
-      changeInputValue(nameInput, 'Banner Checkout Flow')
+      changeInputValue(nameInput, 'Side Panel Checkout Flow')
       await Promise.resolve()
     })
 
@@ -652,7 +637,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Banner Checkout Flow',
+      name: 'Side Panel Checkout Flow',
     }), 'project-1', undefined)
   })
 
@@ -849,14 +834,19 @@ describe('ScriptEditor', () => {
 
     // Collapsed by default — no nested rows until the container is expanded.
     expect(container.querySelectorAll('.action-item-nested')).toHaveLength(0)
-    const toggle = container.querySelector('.action-expand-toggle') as HTMLButtonElement | null
-    expect(toggle).not.toBeNull()
-    await act(async () => { toggle?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(container.querySelector('.action-expand-glyph')).not.toBeNull()
+    expect(container.querySelector('.action-expand-toggle')).toBeNull()
+    const actionNameToggle = Array.from(container.querySelectorAll<HTMLButtonElement>('.action-name-toggle'))
+      .find(button => button.textContent?.trim() === 'Checkout_Txn')
+    expect(actionNameToggle).toBeDefined()
+    expect(actionNameToggle?.getAttribute('aria-expanded')).toBe('false')
+    await act(async () => { actionNameToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
 
     const nested = container.querySelectorAll('.action-item-nested')
     expect(nested).toHaveLength(2)
     expect(nested[0].textContent).toContain('Sub_One')
     expect(nested[1].textContent).toContain('Sub_Two')
+    expect(actionNameToggle?.getAttribute('aria-expanded')).toBe('true')
   })
 
   it('shows selected parent action JSON by default with a full-script override', async () => {
@@ -907,8 +897,10 @@ describe('ScriptEditor', () => {
     }
     await act(async () => { root.render(<ScriptEditor initialScript={sequenceScript} projectId="project-1" />) })
 
-    const toggle = container.querySelector('.action-expand-toggle') as HTMLButtonElement | null
-    await act(async () => { toggle?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const actionNameToggle = Array.from(container.querySelectorAll<HTMLButtonElement>('.action-name-toggle'))
+      .find(button => button.textContent?.trim() === 'Checkout_Txn')
+    expect(actionNameToggle).toBeDefined()
+    await act(async () => { actionNameToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
 
     const nestedRows = Array.from(container.querySelectorAll('.action-item-nested'))
     const subTwoRow = nestedRows.find(row => row.textContent?.includes('Sub_Two')) as HTMLElement | undefined
@@ -1143,11 +1135,12 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.editor-support-toolbar')).toBeNull()
-    const namePanel = container.querySelector('.script-name-panel')
-    const commandBar = container.querySelector('.script-ide-command-bar')
+    const namePanel = container.querySelector('.side-panel-script-name')
+    const actionListHeader = Array.from(container.querySelectorAll('.actions-sidebar-header'))
+      .find(header => header.textContent?.includes('Action List'))
     expect(namePanel).toBeTruthy()
-    expect(commandBar).toBeTruthy()
-    expect(Boolean(namePanel!.compareDocumentPosition(commandBar!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
+    expect(actionListHeader).toBeTruthy()
+    expect(Boolean(namePanel!.compareDocumentPosition(actionListHeader!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
     expect(namePanel?.textContent).toContain('Script Name')
     expect(namePanel?.textContent).not.toContain('Runtime Settings')
     expect(namePanel?.textContent).not.toContain('Replay Output')
@@ -1367,6 +1360,13 @@ describe('ScriptEditor', () => {
     const debugRail = container.querySelector('.debugger-rail')
     expect(debugRail?.textContent).toContain('Action List')
     expect(debugRail?.textContent).toContain('Parameter List')
+    const debugNamePanel = debugRail?.querySelector('.side-panel-script-name')
+    const debugActionHeader = Array.from(debugRail?.querySelectorAll('.debugger-rail-header') || [])
+      .find(header => header.textContent?.includes('Action List'))
+    expect(debugNamePanel?.textContent).toContain('Script Name')
+    expect(debugNamePanel?.querySelector<HTMLInputElement>('input[placeholder="My_Test_Script"]')?.value).toBe('Checkout Flow')
+    expect(debugActionHeader).toBeTruthy()
+    expect(Boolean(debugNamePanel!.compareDocumentPosition(debugActionHeader!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
     expect(debugRail?.querySelector('.debugger-rail-list')?.textContent).toContain('Login')
     expect(debugRail?.querySelector('.debugger-parameter-list')?.textContent).toContain('session_id')
 
@@ -4307,7 +4307,7 @@ describe('ScriptEditor', () => {
     }))
   })
 
-  it('resizes debugger panels with accessible splitters and resets the layout', async () => {
+  it('resizes debugger panels with accessible splitters without the shell header controls', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
     })
@@ -4322,6 +4322,14 @@ describe('ScriptEditor', () => {
       debugTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
+
+    const debuggerShell = container.querySelector('[aria-label="Script Debugger"]')
+    expect(debuggerShell).not.toBeNull()
+    expect(debuggerShell?.querySelector('.debugger-toolbar')).toBeNull()
+    expect(debuggerShell?.textContent).not.toContain('Script Debugger')
+    expect(findButtonByTitle(container, 'Reset debugger layout')).toBeUndefined()
+    expect(findButtonByTitle(container, 'Maximize')).toBeUndefined()
+    expect(findButtonByTitle(container, 'Restore')).toBeUndefined()
 
     // The merged detail panel is open by default, so its resizer is present.
     const actionsResizer = container.querySelector('[aria-label="Resize actions panel"]') as HTMLDivElement | null
@@ -4351,22 +4359,6 @@ describe('ScriptEditor', () => {
     expect(actionsResizer.getAttribute('aria-valuenow')).toBe('284')
     expect(panelResizer.getAttribute('aria-valuenow')).toBe('344')
     expect(bottomResizer.getAttribute('aria-valuenow')).toBe('244')
-
-    const resetLayoutButton = findButtonByTitle(container, 'Reset debugger layout')
-    expect(resetLayoutButton).toBeDefined()
-    if (!resetLayoutButton) {
-      return
-    }
-
-    await act(async () => {
-      resetLayoutButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
-
-    // Reset restores defaults; the panel stays open (open by default).
-    expect(container.querySelector('[aria-label="Resize actions panel"]')?.getAttribute('aria-valuenow')).toBe('260')
-    expect(container.querySelector('[aria-label="Resize bottom panel"]')?.getAttribute('aria-valuenow')).toBe('220')
-    expect(container.querySelector('[aria-label="Resize debug panel"]')?.getAttribute('aria-valuenow')).toBe('320')
   })
 
   it('surfaces script load failures when fetching by id', async () => {
@@ -5661,122 +5653,6 @@ describe('ScriptEditor', () => {
       protocol: 'browser',
     })
     expect(container.textContent).toContain('Exported debugger session JSON.')
-  })
-
-  it('exports the current browser replay session as a ZIP bundle', async () => {
-    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce({
-      replay_session_id: 'browser-replay-1',
-      session: {
-        id: 'browser-replay-1',
-        group: 'Checkout Flow-browser-replay',
-        protocol: 'browser',
-        status: 'completed',
-        started_at: '2026-05-14T20:00:00Z',
-        completed_at: '2026-05-14T20:00:03Z',
-        events: [
-          {
-            phase: 'action',
-            action_name: 'Open Home',
-            action_type: 'browser_navigate',
-            target: '/',
-            success: true,
-            started_at: '2026-05-14T20:00:00Z',
-            completed_at: '2026-05-14T20:00:01Z',
-            duration_ms: 125.5,
-            screenshot_base64: btoa('png-bytes'),
-            html: '<html><body>Home</body></html>',
-            console_entries: [{ level: 'info', text: 'Loaded home page', source: 'console' }],
-            network_entries: [{ method: 'GET', status_code: 200, url: 'https://example.test/', duration_ms: 32.4 }],
-            dom_summary: { title: 'Home', ready_state: 'complete', visible_text: ['Home'] },
-            snapshot: {
-              request_method: 'GET',
-              request_url: 'https://example.test/',
-              response_status: 200,
-              response_headers: { 'content-type': 'text/html' },
-              response_body: '<html><body>Home</body></html>',
-            },
-          },
-        ],
-      },
-    })
-
-    const browserScript: ScriptDefinition = {
-      ...initialScript,
-      protocol: 'browser',
-      config: {
-        ...initialScript.config,
-        browser: {
-          engine: 'chromium',
-          headless: true,
-        },
-      },
-      actions: [
-        {
-          name: 'Open Home',
-          type: 'browser_navigate',
-          target: '/',
-          selector: '',
-          value: '',
-          capture: { screenshot: true, full_page: false, html: true },
-          think_time_after: true,
-        },
-      ],
-    }
-
-    await act(async () => {
-      root.render(<ScriptEditor initialScript={browserScript} />)
-    })
-
-    const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
-    expect(replayButton).toBeDefined()
-    if (!replayButton) {
-      return
-    }
-
-    await act(async () => {
-      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
-
-    const exportButton = findButtonByTitle(container, 'Download Replay ZIP')
-    expect(exportButton).toBeDefined()
-    if (!exportButton) {
-      return
-    }
-
-    await act(async () => {
-      exportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
-
-    expect(downloadBlobMock).toHaveBeenCalledTimes(1)
-    const [blob, filename] = downloadBlobMock.mock.calls[0]
-    expect(blob).toBeInstanceOf(Blob)
-    expect(filename).toBe('checkout-flow-browser-replay-1-browser-replay.zip')
-
-    const entries = await readStoredZipEntries(blob)
-    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/manifest.json')).toBe(true)
-    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/replay-export.json')).toBe(true)
-    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/session.json')).toBe(true)
-    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/event.json')).toBe(true)
-    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/request.txt')).toBe(true)
-    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/response.txt')).toBe(true)
-    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/page.html')).toBe(true)
-    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/screenshot.png')).toBe(true)
-
-    const manifest = JSON.parse(zipDecoder.decode(entries.get('checkout-flow-browser-replay-1-browser-replay/manifest.json')))
-    expect(manifest.schema_version).toBe('apexload.browser_replay_bundle.v1')
-    expect(manifest.event_count).toBe(1)
-
-    const eventJson = JSON.parse(zipDecoder.decode(entries.get('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/event.json')))
-    expect(eventJson.action_name).toBe('Open Home')
-    expect(eventJson.snapshot.request_url).toBe('https://example.test/')
-
-    expect(zipDecoder.decode(entries.get('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/console.txt'))).toContain('Loaded home page')
-    expect(zipDecoder.decode(entries.get('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/network.txt'))).toContain('https://example.test/')
-    expect(zipDecoder.decode(entries.get('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/page.html'))).toContain('Home')
-    expect(zipDecoder.decode(entries.get('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/screenshot.png'))).toBe('png-bytes')
-    expect(container.textContent).toContain('Exported browser replay bundle ZIP.')
   })
 
   it('renders replay validation warnings returned on failed browser replay start', async () => {

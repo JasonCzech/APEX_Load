@@ -12,6 +12,7 @@ export interface TopbarAction {
   compactLabel?: string
   disabled?: boolean
   hidden?: boolean
+  icon?: ReactNode
   pressed?: boolean
   shortcut?: string | string[]
   shortcutGroup?: string

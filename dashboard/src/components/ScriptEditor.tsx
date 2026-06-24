@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useApi } from '../hooks/useApi'
 import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
 import { useKeyboardShortcuts } from '../hooks/KeyboardShortcutProvider'
-import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
+import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 import CodeMirror from '@uiw/react-codemirror'
@@ -96,7 +96,6 @@ import {
   formatSnapshotRequestSection,
   formatSnapshotResponseSection,
 } from '../utils/snapshotFormatUtils'
-import { createZipBlob, downloadBlob, type ZipFileEntry } from '../utils/fileUtils'
 import {
   EMPTY_ACTION,
   EMPTY_BROWSER_ACTION,
@@ -2337,13 +2336,63 @@ function formatReplayDiagnosisCategory(category?: string) {
   return (category || 'diagnosis').replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
 }
 
-function decodeBase64Bytes(value: string): Uint8Array {
-  const decoded = atob(value)
-  const bytes = new Uint8Array(decoded.length)
-  for (let index = 0; index < decoded.length; index += 1) {
-    bytes[index] = decoded.charCodeAt(index)
+type DebugTopbarIconKind = 'run' | 'pause' | 'step' | 'stepOver' | 'loop' | 'stop' | 'break'
+
+function DebugTopbarIcon({ kind }: { kind: DebugTopbarIconKind }) {
+  switch (kind) {
+    case 'run':
+      return (
+        <svg viewBox="0 0 24 24" focusable="false">
+          <polygon points="8 5 18 12 8 19" fill="currentColor" stroke="none" />
+        </svg>
+      )
+    case 'pause':
+      return (
+        <svg viewBox="0 0 24 24" focusable="false">
+          <rect x="7" y="5" width="3.5" height="14" rx="1" fill="currentColor" stroke="none" />
+          <rect x="13.5" y="5" width="3.5" height="14" rx="1" fill="currentColor" stroke="none" />
+        </svg>
+      )
+    case 'step':
+      return (
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path d="M6 5v14" />
+          <path d="M9 12h8" />
+          <path d="M13 8l4 4-4 4" />
+        </svg>
+      )
+    case 'stepOver':
+      return (
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path d="M6 17v-4a6 6 0 0 1 10.5-4" />
+          <path d="M15 5h4v4" />
+          <path d="M18 13v6" />
+        </svg>
+      )
+    case 'loop':
+      return (
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path d="M7 8h8a4 4 0 0 1 4 4" />
+          <path d="M15 5l4 3-4 3" />
+          <path d="M17 16H9a4 4 0 0 1-4-4" />
+          <path d="M9 19l-4-3 4-3" />
+        </svg>
+      )
+    case 'stop':
+      return (
+        <svg viewBox="0 0 24 24" focusable="false">
+          <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none" />
+        </svg>
+      )
+    case 'break':
+      return (
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path d="M12 4l8 15H4z" />
+          <path d="M12 9v4" />
+          <path d="M12 17h.01" />
+        </svg>
+      )
   }
-  return bytes
 }
 
 interface ReplayOptionsState {
@@ -3445,7 +3494,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }, [])
   const [debugBreakpoints, setDebugBreakpoints] = useState<ScriptDebugBreakpoint[]>([])
   const [debuggerTab, setDebuggerTab] = useState<DebuggerTab>('request')
-  const [debuggerMaximized, setDebuggerMaximized] = useState(false)
   const [debuggerSettingsOpen, setDebuggerSettingsOpen] = useState(false)
   const [authorOutlineCollapsed, setAuthorOutlineCollapsed] = useState(false)
   const [authorRightSidebarCollapsed, setAuthorRightSidebarCollapsed] = useState(false)
@@ -5441,152 +5489,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setSuccess('Exported debugger session JSON.')
   }
 
-  const handleDownloadBrowserReplayBundle = () => {
-    if (!isBrowserScript || !replayReport) return
-
-    const replaySessionId = activeReplaySessionId || browserReplaySession?.id
-    const exportedAt = new Date().toISOString()
-    const exportPayload = {
-      schema_version: 'apexload.browser_replay_export.v1',
-      exported_at: exportedAt,
-      replay_session_id: replaySessionId,
-      script: {
-        id: scriptId || undefined,
-        name: script.name,
-        project_id: script.project_id || projectId,
-        protocol: script.protocol,
-      },
-      replay_options: {
-        group_name: replayReport.group || replayOptions.groupName || undefined,
-        ignore_think_time: replayOptions.ignoreThinkTime,
-        start_paused: replayOptions.startPaused,
-        variables: replaySeedVariables,
-      },
-      preflight: browserReplaySession?.preflight || replayPreflight,
-      artifact_manifest: replayReport.artifact_manifest,
-      diagnosis_summary: replayReport.diagnosis_summary,
-      repair_suggestions: replayReport.repair_suggestions,
-      session: browserReplaySession,
-      report: replayReport,
-    }
-    const replayEvents = replayReport.events.length >= (browserReplaySession?.events?.length || 0)
-      ? replayReport.events
-      : browserReplaySession?.events || []
-    const scriptBase = sanitizeDownloadName(script.name, 'script')
-    const replayBase = sanitizeDownloadName(replaySessionId || replayReport.group || 'browser-replay', 'browser-replay')
-    const bundleBase = `${scriptBase}-${replayBase}-browser-replay`
-    const eventNumberWidth = Math.max(2, String(Math.max(replayEvents.length, 1)).length)
-    const entries: ZipFileEntry[] = [
-      {
-        name: `${bundleBase}/manifest.json`,
-        content: JSON.stringify({
-          schema_version: 'apexload.browser_replay_bundle.v1',
-          exported_at: exportedAt,
-          replay_session_id: replaySessionId,
-          group_name: replayReport.group,
-          status: browserReplaySession?.status || (replayReport.success ? 'completed' : 'failed'),
-          success: replayReport.success,
-          event_count: replayEvents.length,
-          includes_session: Boolean(browserReplaySession),
-          includes_report: true,
-        }, null, 2),
-      },
-      {
-        name: `${bundleBase}/replay-export.json`,
-        content: JSON.stringify(exportPayload, null, 2),
-      },
-      {
-        name: `${bundleBase}/script.json`,
-        content: JSON.stringify(script, null, 2),
-      },
-      {
-        name: `${bundleBase}/seed-variables.json`,
-        content: JSON.stringify(replaySeedVariables, null, 2),
-      },
-      {
-        name: `${bundleBase}/report.json`,
-        content: JSON.stringify(replayReport, null, 2),
-      },
-    ]
-
-    if (browserReplaySession) {
-      entries.push({
-        name: `${bundleBase}/session.json`,
-        content: JSON.stringify(browserReplaySession, null, 2),
-      })
-    }
-
-    replayEvents.forEach((event, index) => {
-      const eventBase = `${bundleBase}/events/${String(index + 1).padStart(eventNumberWidth, '0')}-${sanitizeDownloadName(event.action_name || event.action_type, 'event')}`
-      const replayConsoleEntries = event.console_entries || event.snapshot?.console_entries
-      const replayNetworkEntries = event.network_entries || event.snapshot?.network_entries
-      const replayHTML = event.html || event.snapshot?.html
-      const replayScreenshotBase64 = event.screenshot_base64 || event.snapshot?.screenshot_base64
-      const replayDOMSummary = event.dom_summary || event.snapshot?.dom_summary
-
-      entries.push({
-        name: `${eventBase}/event.json`,
-        content: JSON.stringify(event, null, 2),
-      })
-
-      if (hasStructuredReplaySnapshot(event.snapshot)) {
-        entries.push(
-          {
-            name: `${eventBase}/snapshot.json`,
-            content: JSON.stringify(event.snapshot, null, 2),
-          },
-          {
-            name: `${eventBase}/request.txt`,
-            content: formatSnapshotRequestSection(event.snapshot),
-          },
-          {
-            name: `${eventBase}/response.txt`,
-            content: formatSnapshotResponseSection(event.snapshot),
-          },
-        )
-      }
-
-      if (replayDOMSummary) {
-        entries.push({
-          name: `${eventBase}/dom-summary.json`,
-          content: JSON.stringify(replayDOMSummary, null, 2),
-        })
-      }
-
-      if (replayConsoleEntries?.length) {
-        entries.push({
-          name: `${eventBase}/console.txt`,
-          content: formatConsoleEntries(replayConsoleEntries),
-        })
-      }
-
-      if (replayNetworkEntries?.length) {
-        entries.push({
-          name: `${eventBase}/network.txt`,
-          content: formatNetworkEntries(replayNetworkEntries),
-        })
-      }
-
-      if (replayHTML) {
-        entries.push({
-          name: `${eventBase}/page.html`,
-          content: replayHTML,
-        })
-      }
-
-      if (replayScreenshotBase64) {
-        entries.push({
-          name: `${eventBase}/screenshot.png`,
-          content: decodeBase64Bytes(replayScreenshotBase64),
-        })
-      }
-    })
-
-    downloadBlob(createZipBlob(entries), `${bundleBase}.zip`)
-    setError('')
-    setSuccess('Exported browser replay bundle ZIP.')
-  }
-
   const methodColor = (m: string) => {
     switch (m) {
       case 'GET': return 'var(--success)'
@@ -5871,13 +5773,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     window.addEventListener('mousedown', onDown)
     return () => window.removeEventListener('mousedown', onDown)
   }, [debuggerSettingsOpen])
-
-  const resetDebuggerLayout = () => {
-    setDebuggerRailWidth(DEBUGGER_LAYOUT_DEFAULTS.rail)
-    setDebuggerVarsWidth(DEBUGGER_LAYOUT_DEFAULTS.vars)
-    setDebuggerBottomHeight(DEBUGGER_LAYOUT_DEFAULTS.bottom)
-    setDebugDetailCollapsed(false)
-  }
 
   const handleDebuggerResizeKeyDown = (kind: DebuggerResizeKind, event: React.KeyboardEvent<HTMLDivElement>) => {
     const limits = DEBUGGER_LAYOUT_LIMITS[kind]
@@ -7150,39 +7045,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       disabled: saving || validating || !script.name,
     },
   ]
-  const scriptTopbarStatusLabel = saving
-    ? 'Saving'
-    : validating
-      ? 'Validating'
-      : replaying
-        ? (isReplayPaused ? 'Debug Paused' : 'Debug Running')
-        : jsonDirty
-          ? 'JSON Draft'
-          : validationEvidence
-            ? 'Validated'
-            : 'Draft'
-  const scriptTopbarStatusTone: TopbarMetaTone = saving || validating || replaying
-    ? 'info'
-    : jsonDirty
-      ? 'warning'
-      : validationEvidence
-        ? 'success'
-        : 'default'
-
   useTopbarContribution({
     id: 'script-editor',
     priority: 80,
     title: scriptId ? 'Edit Script' : 'Create Script',
-    titleNode: (
-      <label className="topbar-title-field" aria-label="Script identity">
-        <span>Script Name</span>
-        <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
-      </label>
-    ),
     meta: [
-      { id: 'mode', label: scriptId ? 'Edit Script' : 'Create Script', tone: 'accent' },
-      { id: 'protocol', label: (currentDraftScript.protocol || 'http').toUpperCase(), tone: 'default' },
-      { id: 'status', label: scriptTopbarStatusLabel, tone: scriptTopbarStatusTone },
       {
         id: 'problems',
         label: `${problemCount} issue${problemCount === 1 ? '' : 's'}`,
@@ -7207,8 +7074,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         id: 'run-debug',
         label: replaying ? 'Running...' : replayReport ? 'Restart' : 'Run',
         compactLabel: 'Run',
+        icon: <DebugTopbarIcon kind="run" />,
+        className: 'topbar-debug-action topbar-debug-action-run',
         title: replayStartButtonLabel,
-        tone: 'secondary',
+        tone: 'success',
         disabled: replaying || saving || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0,
         onClick: () => { void handleReplay() },
       },
@@ -7216,6 +7085,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         id: 'pause-debug',
         label: isReplayPaused ? 'Continue' : 'Pause',
         compactLabel: isReplayPaused ? 'Go' : 'Pause',
+        icon: <DebugTopbarIcon kind="pause" />,
+        className: 'topbar-debug-action topbar-debug-action-pause',
         title: isReplayPaused ? 'Continue debugger' : 'Pause debugger',
         tone: 'secondary',
         disabled: !activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped',
@@ -7225,6 +7096,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         id: 'step-debug',
         label: 'Step',
         compactLabel: 'Step',
+        icon: <DebugTopbarIcon kind="step" />,
+        className: 'topbar-debug-action topbar-debug-action-step',
         title: 'Step to next action',
         tone: 'secondary',
         disabled: stepReplayDisabled,
@@ -7234,6 +7107,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         id: 'step-over-debug',
         label: 'Step Over',
         compactLabel: 'Over',
+        icon: <DebugTopbarIcon kind="stepOver" />,
+        className: 'topbar-debug-action topbar-debug-action-step-over',
         title: 'Step over the current block (run the rest of it, pause after)',
         tone: 'secondary',
         disabled: stepReplayDisabled,
@@ -7243,6 +7118,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         id: 'finish-loop-debug',
         label: 'Finish Loop',
         compactLabel: 'Loop',
+        icon: <DebugTopbarIcon kind="loop" />,
+        className: 'topbar-debug-action topbar-debug-action-loop',
         title: 'Run to the end of the enclosing loop',
         tone: 'secondary',
         disabled: stepReplayDisabled,
@@ -7252,44 +7129,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         id: 'stop-debug',
         label: 'Stop',
         compactLabel: 'Stop',
+        icon: <DebugTopbarIcon kind="stop" />,
+        className: 'topbar-debug-action topbar-debug-action-stop',
         title: 'Stop debugger',
-        tone: 'secondary',
+        tone: 'danger',
         disabled: !activeReplaySessionId || !replaying,
         onClick: () => { void handleStopReplay() },
-      },
-      {
-        id: 'breakpoint',
-        label: 'Breakpoint',
-        compactLabel: 'BP',
-        title: 'Toggle breakpoint on selected action',
-        tone: 'ghost',
-        disabled: debugActionRows.length === 0,
-        onClick: toggleSelectedBreakpoint,
       },
       {
         id: 'break-on-failure',
         label: 'Break on failure',
         compactLabel: 'BoF',
+        icon: <DebugTopbarIcon kind="break" />,
+        className: 'topbar-debug-action topbar-debug-action-break',
         title: replayOptions.breakOnFailure
           ? 'Break on failure is on — the debugger pauses on the first failing action'
           : 'Break on failure: pause automatically when an action fails',
         tone: 'ghost',
         pressed: replayOptions.breakOnFailure,
         onClick: () => { void setBreakOnFailure(!replayOptions.breakOnFailure) },
-      },
-      {
-        id: 'settings',
-        label: 'Settings',
-        compactLabel: 'Set',
-        title: 'Session overrides',
-        tone: 'ghost',
-        pressed: centerTabsState.activeTabId === 'runtime-settings',
-        onClick: () => {
-          activateWorkspaceTab('debug')
-          setDebuggerTab('request')
-          setDebuggerSettingsOpen(false)
-          openCenterTab('runtime-settings')
-        },
       },
       {
         id: 'close-editor',
@@ -8012,12 +7870,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               {onClose && <button className="btn btn-ghost" onClick={onClose}>Close</button>}
             </div>
           </div>
-          <div className="script-name-panel" aria-label="Script identity">
-            <label className="script-name-field">
-              <span>Script Name</span>
-              <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
-            </label>
-          </div>
           <div className="script-ide-command-bar" aria-label="Script IDE command bar">
             <div className="script-ide-tabs" role="tablist" aria-label="Script workspace">
               <button type="button" role="tab" aria-selected={workspaceTab === 'author'} className={workspaceTab === 'author' ? 'active' : ''} onClick={() => activateWorkspaceTab('author')}>
@@ -8119,49 +7971,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       <div className={`editor-body workspace-${workspaceTab}`}>
           {workspaceTab === 'debug' && (
           <div
-            className={`config-panel replay-panel script-ide-debugger debugger-dialog open ${replayReport ? 'has-report' : ''} ${debuggerMaximized ? 'maximized' : ''}`}
+            className={`config-panel replay-panel script-ide-debugger debugger-dialog open ${replayReport ? 'has-report' : ''}`}
             role="region"
             aria-label="Script Debugger"
           >
-            <div className="debugger-toolbar">
-              <div className="debugger-toolbar-group debugger-toolbar-title">
-                <span className={`debugger-status-dot ${debuggerStatusState}`} aria-hidden="true" />
-                <h3 className="panel-title">Script Debugger</h3>
-              </div>
-              <div className="debugger-toolbar-group debugger-toolbar-right">
-                {isBrowserScript && replayReport && (
-                  <button type="button" className="debugger-icon-btn" title="Download Replay ZIP" onClick={handleDownloadBrowserReplayBundle}>
-                    <span className="debugger-icon" aria-hidden="true">&#8675;</span>
-                    <span>ZIP</span>
-                  </button>
-                )}
-                {replayReport && (
-                  <button type="button" className="debugger-icon-btn" title="Download Debug JSON" onClick={handleDownloadBrowserReplayExport}>
-                    <span className="debugger-icon" aria-hidden="true">&#8675;</span>
-                    <span>JSON</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="debugger-icon-btn"
-                  title="Reset debugger layout"
-                  onClick={resetDebuggerLayout}
-                >
-                  <span className="debugger-icon" aria-hidden="true">&#8635;</span>
-                  <span>Layout</span>
-                </button>
-                <button
-                  type="button"
-                  className="debugger-icon-btn debugger-icon-btn-square"
-                  title={debuggerMaximized ? 'Restore' : 'Maximize'}
-                  aria-pressed={debuggerMaximized}
-                  onClick={() => setDebuggerMaximized(value => !value)}
-                >
-                  <span className="debugger-icon" aria-hidden="true">{debuggerMaximized ? '❐' : '⛶'}</span>
-                </button>
-              </div>
-            </div>
-
             {debuggerSettingsOpen && (
               <div className="debugger-settings-popover" ref={debuggerSettingsRef}>
                 <div className="debugger-settings-head">
@@ -8282,6 +8095,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 } as React.CSSProperties}
               >
                 <aside className="debugger-rail" aria-label="Actions">
+                  <div className="script-name-panel side-panel-script-name" aria-label="Script identity">
+                    <label className="script-name-field">
+                      <span>Script Name</span>
+                      <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
+                    </label>
+                  </div>
                   <section className="debugger-rail-section">
                     <div className="debugger-rail-header">
                       <div className="debugger-rail-header-top">
@@ -11198,6 +11017,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     </div>
                   </div>
                 </div>
+                <div className="script-name-panel side-panel-script-name" aria-label="Script identity">
+                  <label className="script-name-field">
+                    <span>Script Name</span>
+                    <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
+                  </label>
+                </div>
                 <section className="outline-section">
                   <div className="actions-sidebar-header outline-section-header">
                     <button
@@ -11390,17 +11215,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                 <span className="action-breakpoint-spacer" aria-hidden="true" />
                               </div>
                               <span className="action-cell action-phase-label" style={indent}>
-                                <button
-                                  type="button"
-                                  className="action-expand-toggle"
-                                  aria-label={containerActive ? 'Collapse sub-steps' : 'Expand sub-steps'}
-                                  aria-expanded={containerActive}
-                                  onClick={event => { event.stopPropagation(); toggleAuthorContainer(item.key) }}
-                                >{containerActive ? '▾' : '▸'}</button>
+                                <span aria-hidden="true" className="action-expand-glyph">{containerActive ? '▾' : '▸'}</span>
                                 {typeLabel}
                               </span>
                               <span className="action-cell action-method" aria-hidden="true" />
-                              <span className="action-cell action-name-text" title={item.name}>{item.name}</span>
+                              <button
+                                type="button"
+                                className="action-cell action-name-text action-name-toggle"
+                                title={item.name}
+                                aria-label={`${containerActive ? 'Collapse' : 'Expand'} ${item.name}`}
+                                aria-expanded={containerActive}
+                                onClick={event => { event.stopPropagation(); toggleAuthorContainer(item.key) }}
+                              >
+                                {item.name}
+                              </button>
                               <div className="action-cell action-cell-txn" />
                               <div className="action-cell action-item-signals">
                                 <span className="action-item-meta"><span className="metric-badge">{item.leafCount} {item.containerType === 'http_sequence' ? 'req' : 'step'}</span></span>
@@ -11465,18 +11293,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             </div>
                             <span className="action-cell action-phase-label" title={`${phaseLabel} ${i + 1}`}>
                               {isContainerRow && (
-                                <button
-                                  type="button"
-                                  className="action-expand-toggle"
-                                  aria-label={containerExpanded ? 'Collapse sub-steps' : 'Expand sub-steps'}
-                                  aria-expanded={containerExpanded}
-                                  onClick={event => { event.stopPropagation(); toggleAuthorContainer(item.key) }}
-                                >{containerExpanded ? '▾' : '▸'}</button>
+                                <span aria-hidden="true" className="action-expand-glyph">{containerExpanded ? '▾' : '▸'}</span>
                               )}
                               {phaseLabel} {i + 1}
                             </span>
                             <span className="action-cell action-method" style={{ color: methodColor(a.type) }} title={actionTypeSummary(a)}>{txnMarker ? 'TXN' : a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
-                            <span className="action-cell action-name-text" title={actionRowLabel(a)}>{actionRowLabel(a)}</span>
+                            {isContainerRow ? (
+                              <button
+                                type="button"
+                                className="action-cell action-name-text action-name-toggle"
+                                title={actionRowLabel(a)}
+                                aria-label={`${containerExpanded ? 'Collapse' : 'Expand'} ${actionRowLabel(a)}`}
+                                aria-expanded={containerExpanded}
+                                onClick={event => { event.stopPropagation(); toggleAuthorContainer(item.key) }}
+                              >
+                                {actionRowLabel(a)}
+                              </button>
+                            ) : (
+                              <span className="action-cell action-name-text" title={actionRowLabel(a)}>{actionRowLabel(a)}</span>
+                            )}
                             <div className="action-cell action-cell-txn">
                               {actionTransactionName(a) && (
                                 <span className="action-txn-pill" title={`Transaction: ${actionTransactionName(a)}`}>

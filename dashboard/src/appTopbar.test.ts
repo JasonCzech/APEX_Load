@@ -4,6 +4,7 @@ import {
   pageTitleForScriptSubView,
   pageTitleForView,
   selectTopbarActiveRuns,
+  shouldShowTopbarClientDownloads,
   topbarRunStatusLabel,
   topbarRunTone,
   updateTopbarActiveRuns,
@@ -33,6 +34,16 @@ describe('app topbar helpers', () => {
     expect(pageTitleForScriptSubView('oracle-review')).toBe('Oracle E-Business Review')
     expect(pageTitleForScriptSubView('salesforce-import')).toBe('Script Library')
     expect(pageTitleForScriptSubView('recorder')).toBe('Record Browser')
+  })
+
+  it('keeps client downloads in the topbar only for API guide pages', () => {
+    expect(shouldShowTopbarClientDownloads({ page: 'docs' })).toBe(true)
+    expect(shouldShowTopbarClientDownloads({ page: 'docs', guidePage: 'authentication' })).toBe(true)
+    expect(shouldShowTopbarClientDownloads({ page: 'swagger' })).toBe(true)
+    expect(shouldShowTopbarClientDownloads({ page: 'repository-guide' })).toBe(true)
+    expect(shouldShowTopbarClientDownloads({ page: 'dashboard' })).toBe(false)
+    expect(shouldShowTopbarClientDownloads({ page: 'scripts' })).toBe(false)
+    expect(shouldShowTopbarClientDownloads({ page: 'settings' })).toBe(false)
   })
 
   it('selects only active run statuses and prioritizes live work', () => {

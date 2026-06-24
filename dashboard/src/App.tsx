@@ -37,6 +37,7 @@ import {
   pageTitleForScriptSubView,
   pageTitleForView,
   selectTopbarActiveRuns,
+  shouldShowTopbarClientDownloads,
   topbarRunStatusLabel,
   topbarRunTone,
   updateTopbarActiveRuns,
@@ -110,6 +111,7 @@ function renderTopbarAction(action: TopbarAction) {
       disabled={action.disabled}
       onClick={action.onClick}
     >
+      {action.icon && <span className="topbar-action-icon" aria-hidden="true">{action.icon}</span>}
       <span className="topbar-action-label">{action.label}</span>
       {action.compactLabel && <span className="topbar-action-compact-label">{action.compactLabel}</span>}
     </button>
@@ -548,6 +550,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const hasContextualTopbarActions = topbarPrimaryActions.length > 0 || topbarSecondaryActions.length > 0 || Boolean(activeTopbarContribution?.controls)
   const showTopbarRunChips = visibleTopbarRuns.length > 0 && !hasContextualTopbarActions
   const effectiveTopbarTitle = activeTopbarContribution?.title || topbarPageTitle
+  const showTopbarClientDownloads = shouldShowTopbarClientDownloads(view)
   const mainContentClassName = `main-content topbar-title-mode page-${view.page}`
 
   const topbarActionShortcuts = useMemo(() => (
@@ -716,7 +719,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
                 )}
               </div>
             )}
-            <ClientDownloadsMenu />
+            {showTopbarClientDownloads && <ClientDownloadsMenu />}
             <DeploymentBanner />
             <ThemeToggle theme={theme} onThemeChange={setTheme} />
           </div>

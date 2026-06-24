@@ -91,43 +91,6 @@
   white-space: nowrap;
 }
 
-.topbar-title-field {
-  width: 100%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.topbar-title-field span {
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.topbar-title-field input {
-  width: 100%;
-  min-width: 0;
-  height: 32px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--control-bg);
-  color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1.2;
-  padding: 6px 10px;
-}
-
-.topbar-title-field input:focus {
-  border-color: var(--accent-border);
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
-}
-
 .topbar-meta-strip,
 .topbar-contribution-controls,
 .topbar-action-group {
@@ -282,8 +245,32 @@
 }
 
 .topbar-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 30px;
   white-space: nowrap;
+}
+
+.topbar-action-icon {
+  width: 15px;
+  height: 15px;
+  display: inline-flex;
+  flex: 0 0 15px;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.topbar-action-icon svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .topbar-action-button.topbar-action-pressed,
@@ -291,6 +278,62 @@
   border-color: var(--accent-border);
   background: var(--accent-soft);
   color: var(--accent-hover);
+}
+
+.topbar-action-button.topbar-debug-action {
+  min-height: 36px;
+  padding: 6px 12px;
+  border-color: color-mix(in srgb, var(--accent-border) 70%, var(--border));
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--accent-soft) 78%, var(--bg-card)) 0%,
+      color-mix(in srgb, var(--bg-elevated) 82%, var(--accent-soft)) 100%);
+  color: var(--text-primary);
+  font-weight: 800;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 9%, transparent),
+    0 8px 18px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+.topbar-action-button.topbar-debug-action .topbar-action-icon {
+  width: 17px;
+  height: 17px;
+  flex-basis: 17px;
+}
+
+.topbar-action-button.topbar-debug-action .topbar-action-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.topbar-action-button.topbar-debug-action:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent-border) 88%, var(--text-muted));
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--accent-soft) 92%, var(--bg-elevated)) 0%,
+      color-mix(in srgb, var(--bg-elevated) 72%, var(--accent-soft)) 100%);
+}
+
+.topbar-action-button.topbar-debug-action:disabled {
+  background: color-mix(in srgb, var(--control-bg) 78%, var(--bg-card));
+  box-shadow: none;
+}
+
+.topbar-action-button.topbar-debug-action-run:not(:disabled) {
+  border-color: color-mix(in srgb, var(--success) 46%, var(--accent-border));
+  color: var(--success-text, var(--success));
+}
+
+.topbar-action-button.topbar-debug-action-stop:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 48%, var(--border));
+  color: var(--danger-text, var(--danger));
+}
+
+.topbar-action-button.topbar-debug-action-break[aria-pressed='true'],
+.topbar-action-button.topbar-debug-action-break.topbar-action-pressed {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text, var(--warning));
 }
 
 .topbar-action-compact-label {
@@ -500,6 +543,22 @@
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+@media (max-width: 1500px) {
+  .main-topbar.contextual:has(.topbar-page-section-toggle) {
+    flex-wrap: wrap;
+  }
+
+  .main-topbar.contextual:has(.topbar-page-section-toggle) .topbar-contribution-controls {
+    flex: 0 1 auto;
+    overflow: visible;
+  }
+
+  .main-topbar.contextual:has(.topbar-page-section-toggle) .main-topbar-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 1320px) {

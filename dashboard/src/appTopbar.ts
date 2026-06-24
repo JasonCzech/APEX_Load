@@ -97,6 +97,10 @@ export function pageTitleForScriptSubView(subView?: string): string {
   }
 }
 
+export function shouldShowTopbarClientDownloads(view: AppView): boolean {
+  return view.page === 'docs' || view.page === 'swagger' || view.page === 'repository-guide'
+}
+
 export function isTopbarActiveRunStatus(status?: string): status is TestStatus {
   return Boolean(status && ACTIVE_RUN_STATUS_PRIORITY[normalizeTestStatus(status)] !== undefined)
 }
