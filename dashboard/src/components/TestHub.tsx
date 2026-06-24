@@ -613,6 +613,12 @@ function formatOptionalPercent(value: number | undefined): string {
   return formatted === '—' ? formatted : `${formatted}%`
 }
 
+function formatGoalSizingBasis(value: string): string {
+  if (value === 'group') return 'Group metrics'
+  if (value === 'overview') return 'Run overview'
+  return value || '—'
+}
+
 function goalBaselinePeakTps(run: TestSummary, report?: RunArchiveReport): number | undefined {
   return maxFinite([
     report?.overview?.peak_tps,
@@ -1062,6 +1068,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const scriptLibrarySearchRef = useRef<HTMLInputElement | null>(null)
   const scriptGroupRefs = useRef<Array<HTMLDivElement | null>>([])
   const goalBaselineTableRef = useRef<HTMLDivElement | null>(null)
+  const goalSizingResultRef = useRef<HTMLDivElement | null>(null)
   const resetGoalBaselineTableScroll = () => {
     if (goalBaselineTableRef.current) goalBaselineTableRef.current.scrollLeft = 0
   }
@@ -2088,6 +2095,14 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   }, [currentWizardIndex])
 
   useEffect(() => {
+    const node = goalSizingResultRef.current
+    if (!goalSizingOpen || !goalSizingResult || !node || typeof node.scrollIntoView !== 'function') return
+    window.requestAnimationFrame(() => {
+      node.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    })
+  }, [goalSizingOpen, goalSizingResult])
+
+  useEffect(() => {
     if (!showForm) return
     let cancelled = false
     api.getSystemInventory()
@@ -2255,7 +2270,13 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
 
           {goalBaselineGroups.length > 0 ? (
             <div className="goal-sizing-groups">
-              <table className="settings-table">
+              <table className="settings-table goal-sizing-table">
+                <colgroup>
+                  <col className="goal-sizing-col-group" />
+                  <col className="goal-sizing-col-art" />
+                  <col className="goal-sizing-col-target" />
+                  <col className="goal-sizing-col-estimate" />
+                </colgroup>
                 <thead>
                   <tr><th>Group</th><th>Baseline ART</th><th>Target TPS</th><th>Est. VUsers</th></tr>
                 </thead>
@@ -2285,7 +2306,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
                 </tbody>
               </table>
               {previewTotal > 0 && <p className="goal-sizing-preview">Estimated total: <strong>{previewTotal} VUsers</strong></p>}
-              <button type="button" className="primary-button" onClick={() => void runGoalSizing()} disabled={goalSizingLoading}>
+              <button type="button" className="btn btn-primary" onClick={() => void runGoalSizing()} disabled={goalSizingLoading}>
                 {goalSizingLoading ? 'Sizing…' : 'Size scenario'}
               </button>
             </div>
@@ -2296,17 +2317,68 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
           {goalSizingError && <p className="form-error" role="alert">{goalSizingError}</p>}
 
           {goalSizingResult && (
-            <div className="goal-sizing-result" data-testid="goal-sizing-result">
-              <p>{formatGoalSizingSummary(goalSizingResult)}</p>
-              <ul>
-                {goalSizingResult.groups.map(group => (
-                  <li key={group.group}>{group.group}: <strong>{group.computed_vusers} VUsers</strong> ({group.target_tps} TPS × {Math.round(group.baseline_art_ms)} ms)</li>
-                ))}
-              </ul>
+            <div className="goal-sizing-result" data-testid="goal-sizing-result" ref={goalSizingResultRef}>
+              <div className="goal-sizing-result-header">
+                <div>
+                  <h4>Recommended Size</h4>
+                  <p>{formatGoalSizingSummary(goalSizingResult)}</p>
+                </div>
+                <div className="goal-sizing-result-header-meta">
+                  <span className="scenario-table-assignment-detail">Baseline {goalSizingResult.baseline_test_id}</span>
+                  <button type="button" className="btn btn-primary" onClick={applyGoalSizing}>Apply to scenario</button>
+                </div>
+              </div>
+              <div className="goal-sizing-result-summary" aria-label="Sizing result summary">
+                <div>
+                  <span>Total VUsers</span>
+                  <strong>{formatOptionalNumber(goalSizingResult.total_vusers, 0)}</strong>
+                </div>
+                <div>
+                  <span>Target TPS</span>
+                  <strong>{formatOptionalTps(goalSizingResult.total_target_tps)}</strong>
+                </div>
+                <div>
+                  <span>Draft Duration</span>
+                  <strong>{goalSizingResult.scenario_draft.duration || '—'}</strong>
+                </div>
+                <div>
+                  <span>Groups</span>
+                  <strong>{goalSizingResult.groups.length}</strong>
+                </div>
+              </div>
               {goalSizingResult.load_model_validation?.capacity_advisory && (
-                <p className="goal-sizing-capacity">Capacity: {goalSizingResult.load_model_validation.capacity_advisory.recommended_generators} generator(s) recommended.</p>
+                <div className="goal-sizing-capacity">
+                  <strong>Capacity</strong>
+                  <span>{goalSizingResult.load_model_validation.capacity_advisory.recommended_generators} generator(s) recommended.</span>
+                </div>
               )}
-              <button type="button" className="primary-button" onClick={applyGoalSizing}>Apply to scenario</button>
+              <div className="goal-sizing-result-table-wrap">
+                <table className="goal-sizing-result-table">
+                  <thead>
+                    <tr>
+                      <th>Group</th>
+                      <th>Target TPS</th>
+                      <th>Baseline ART</th>
+                      <th>Computed VUsers</th>
+                      <th>Basis</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {goalSizingResult.groups.map(group => (
+                      <tr key={group.group}>
+                        <td>
+                          <strong>{group.group}</strong>
+                          {group.script_id && <span>{group.script_id}</span>}
+                        </td>
+                        <td>{formatOptionalTps(group.target_tps)}</td>
+                        <td>{formatOptionalMs(group.baseline_art_ms)}</td>
+                        <td>{formatOptionalNumber(group.computed_vusers, 0)}</td>
+                        <td>{formatGoalSizingBasis(group.basis)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
@@ -3290,7 +3362,6 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
             >
               Next
             </button>
-            <button className="btn btn-secondary" onClick={validateLoadModel} disabled={loadModelValidationLoading || Boolean(blockingStageTimelineMessage)}>{loadModelValidationLoading ? 'Validating...' : 'Validate Load Model'}</button>
             {wizardStep === 'review' && onCreateTestFromScenario && (
               <button className="btn btn-secondary" onClick={saveScenarioAndCreateTest} disabled={Boolean(blockingStageTimelineMessage)}>Save &amp; Create Test Run</button>
             )}

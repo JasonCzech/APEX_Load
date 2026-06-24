@@ -214,6 +214,13 @@ describe('TestHub build-from-goal', () => {
     })
     const result = container.querySelector('[data-testid="goal-sizing-result"]') as HTMLElement
     expect(result.textContent).toContain('300 VUsers')
+    expect(result.querySelector('.goal-sizing-result-summary')?.textContent).toContain('Total VUsers')
+    expect(result.querySelector('.goal-sizing-result-summary')?.textContent).toContain('Target TPS')
+    const resultTable = result.querySelector('.goal-sizing-result-table') as HTMLTableElement | null
+    expect(resultTable).toBeTruthy()
+    expect(resultTable?.textContent).toContain('Computed VUsers')
+    expect(resultTable?.textContent).toContain('Group metrics')
+    expect(resultTable?.textContent).toContain('script-a')
 
     // Apply the draft to the scenario form.
     await act(async () => { findButton(container, 'Apply to scenario')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })

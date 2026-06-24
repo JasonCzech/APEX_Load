@@ -1403,6 +1403,11 @@ describe('TestHub', () => {
     expect(modeSelect?.value).toBe('goal_oriented')
     expect(container.textContent).toContain('Goal Controller')
 
+    const runSettingsValidateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Load Model'))
+    expect(runSettingsValidateButton).toBeUndefined()
+
+    await clickWizardStep('Review')
+
     const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Load Model'))
     expect(validateButton).toBeDefined()
     if (!validateButton) return
