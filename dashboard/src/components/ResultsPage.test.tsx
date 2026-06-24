@@ -1212,6 +1212,8 @@ describe('ResultsPage', () => {
     expect(container.querySelector('.results-table-selection-toolbar')?.textContent).toContain('0 selected')
     expect(buttonByText(container, 'Run Comparison')?.disabled).toBe(true)
     expect(container.textContent).toContain('Push')
+    expect(container.querySelector('.library-source-table thead th:last-child')?.classList.contains('results-actions-column')).toBe(true)
+    expect(sourceRowNamed(container, 'iPhone Checkout').querySelector('td:last-child .results-row-actions')).toBeTruthy()
 
     await changeInput(inputByPlaceholder(container, 'Find releases or results...'), 'LOC-RUN-20260512-001')
     expect(sourceRowNamed(container, 'iPhone Checkout')).toBeDefined()

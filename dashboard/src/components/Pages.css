@@ -99,13 +99,13 @@
 .results-actions-column {
   width: 420px;
   min-width: 360px;
-  text-align: right;
+  text-align: left;
 }
 
 .results-row-actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: center;
   gap: 6px;
   min-width: 360px;
