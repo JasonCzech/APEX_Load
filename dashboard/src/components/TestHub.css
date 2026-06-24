@@ -640,6 +640,28 @@
   max-width: 560px;
 }
 
+.goal-sizing-setup {
+  gap: 12px;
+}
+
+.goal-sizing-groups,
+.goal-sizing-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.goal-sizing-groups .settings-table {
+  width: 100%;
+}
+
+.goal-sizing-empty,
+.goal-sizing-preview,
+.goal-sizing-result p {
+  margin: 0;
+}
+
 .goal-baseline-table {
   overflow-x: auto;
 }

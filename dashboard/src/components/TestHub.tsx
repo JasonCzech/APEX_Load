@@ -2231,6 +2231,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     const baselineSummary = goalBaselineQuery.trim()
       ? `${visibleGoalBaselineTests.length} matching completed run${visibleGoalBaselineTests.length === 1 ? '' : 's'}`
       : `${goalBaselineTests.length} completed run${goalBaselineTests.length === 1 ? '' : 's'} available`
+    const selectedBaseline = goalBaselineTests.find(test => test.id === goalBaselineId)
     return (
       <section className="scenario-wizard-panel" data-testid="goal-sizing-panel">
         <div className="scenario-wizard-panel-header">
@@ -2239,6 +2240,75 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
             <p>Pick a completed baseline run and a target throughput per group. APEX Load sizes VUsers with Little&apos;s Law (VUsers = target TPS × response time), then the goal controller converges at run time.</p>
           </div>
           <button type="button" className="mode-chip" onClick={closeGoalSizing}>Back</button>
+        </div>
+
+        <div className="scenario-subpanel goal-sizing-setup" data-testid="goal-sizing-modeling-options">
+          <div className="scenario-assignment-header">
+            <div>
+              <h4>Modeling Options</h4>
+              <p>Set the target throughput envelope for the selected baseline run before sizing the scenario draft.</p>
+            </div>
+            <span className="scenario-table-assignment-detail">
+              {selectedBaseline ? `Baseline ${selectedBaseline.id}` : 'Select a baseline run below'}
+            </span>
+          </div>
+
+          {goalBaselineGroups.length > 0 ? (
+            <div className="goal-sizing-groups">
+              <table className="settings-table">
+                <thead>
+                  <tr><th>Group</th><th>Baseline ART</th><th>Target TPS</th><th>Est. VUsers</th></tr>
+                </thead>
+                <tbody>
+                  {goalBaselineGroups.map(option => {
+                    const tps = Number(goalTargetTps[option.group])
+                    const estimate = Number.isFinite(tps) && tps > 0 ? littlesLawVUsers(tps, option.baseline_art_ms) : 0
+                    return (
+                      <tr key={option.group}>
+                        <td>{option.group}</td>
+                        <td>{Math.round(option.baseline_art_ms)} ms</td>
+                        <td>
+                          <input
+                            className="settings-input"
+                            type="number"
+                            min="0"
+                            step="1"
+                            aria-label={`Target TPS for ${option.group}`}
+                            value={goalTargetTps[option.group] ?? ''}
+                            onChange={event => setGoalTargetTps(prev => ({ ...prev, [option.group]: event.target.value }))}
+                          />
+                        </td>
+                        <td>{estimate > 0 ? estimate : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              {previewTotal > 0 && <p className="goal-sizing-preview">Estimated total: <strong>{previewTotal} VUsers</strong></p>}
+              <button type="button" className="primary-button" onClick={() => void runGoalSizing()} disabled={goalSizingLoading}>
+                {goalSizingLoading ? 'Sizing…' : 'Size scenario'}
+              </button>
+            </div>
+          ) : (
+            <p className="cell-muted goal-sizing-empty">Select a completed run from the table below to populate baseline ART and target TPS inputs.</p>
+          )}
+
+          {goalSizingError && <p className="form-error" role="alert">{goalSizingError}</p>}
+
+          {goalSizingResult && (
+            <div className="goal-sizing-result" data-testid="goal-sizing-result">
+              <p>{formatGoalSizingSummary(goalSizingResult)}</p>
+              <ul>
+                {goalSizingResult.groups.map(group => (
+                  <li key={group.group}>{group.group}: <strong>{group.computed_vusers} VUsers</strong> ({group.target_tps} TPS × {Math.round(group.baseline_art_ms)} ms)</li>
+                ))}
+              </ul>
+              {goalSizingResult.load_model_validation?.capacity_advisory && (
+                <p className="goal-sizing-capacity">Capacity: {goalSizingResult.load_model_validation.capacity_advisory.recommended_generators} generator(s) recommended.</p>
+              )}
+              <button type="button" className="primary-button" onClick={applyGoalSizing}>Apply to scenario</button>
+            </div>
+          )}
         </div>
 
         <div className="goal-baseline-picker" aria-label="Completed baseline runs">
@@ -2400,61 +2470,6 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
             </table>
           </div>
         </div>
-
-        {goalBaselineGroups.length > 0 && (
-          <div className="goal-sizing-groups">
-            <table className="settings-table">
-              <thead>
-                <tr><th>Group</th><th>Baseline ART</th><th>Target TPS</th><th>Est. VUsers</th></tr>
-              </thead>
-              <tbody>
-                {goalBaselineGroups.map(option => {
-                  const tps = Number(goalTargetTps[option.group])
-                  const estimate = Number.isFinite(tps) && tps > 0 ? littlesLawVUsers(tps, option.baseline_art_ms) : 0
-                  return (
-                    <tr key={option.group}>
-                      <td>{option.group}</td>
-                      <td>{Math.round(option.baseline_art_ms)} ms</td>
-                      <td>
-                        <input
-                          className="settings-input"
-                          type="number"
-                          min="0"
-                          step="1"
-                          aria-label={`Target TPS for ${option.group}`}
-                          value={goalTargetTps[option.group] ?? ''}
-                          onChange={event => setGoalTargetTps(prev => ({ ...prev, [option.group]: event.target.value }))}
-                        />
-                      </td>
-                      <td>{estimate > 0 ? estimate : '—'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            {previewTotal > 0 && <p className="goal-sizing-preview">Estimated total: <strong>{previewTotal} VUsers</strong></p>}
-            <button type="button" className="primary-button" onClick={() => void runGoalSizing()} disabled={goalSizingLoading}>
-              {goalSizingLoading ? 'Sizing…' : 'Size scenario'}
-            </button>
-          </div>
-        )}
-
-        {goalSizingError && <p className="form-error" role="alert">{goalSizingError}</p>}
-
-        {goalSizingResult && (
-          <div className="goal-sizing-result" data-testid="goal-sizing-result">
-            <p>{formatGoalSizingSummary(goalSizingResult)}</p>
-            <ul>
-              {goalSizingResult.groups.map(group => (
-                <li key={group.group}>{group.group}: <strong>{group.computed_vusers} VUsers</strong> ({group.target_tps} TPS × {Math.round(group.baseline_art_ms)} ms)</li>
-              ))}
-            </ul>
-            {goalSizingResult.load_model_validation?.capacity_advisory && (
-              <p className="goal-sizing-capacity">Capacity: {goalSizingResult.load_model_validation.capacity_advisory.recommended_generators} generator(s) recommended.</p>
-            )}
-            <button type="button" className="primary-button" onClick={applyGoalSizing}>Apply to scenario</button>
-          </div>
-        )}
       </section>
     )
   }

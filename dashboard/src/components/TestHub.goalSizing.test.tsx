@@ -154,6 +154,14 @@ describe('TestHub build-from-goal', () => {
     expect(apiMock.listTests).toHaveBeenCalled()
     const panel = container.querySelector('[data-testid="goal-sizing-panel"]') as HTMLElement | null
     expect(panel).toBeTruthy()
+    const modelingOptions = container.querySelector('[data-testid="goal-sizing-modeling-options"]') as HTMLElement | null
+    const baselinePicker = container.querySelector('.goal-baseline-picker') as HTMLElement | null
+    expect(modelingOptions).toBeTruthy()
+    expect(baselinePicker).toBeTruthy()
+    if (!modelingOptions || !baselinePicker) throw new Error('Goal sizing panel did not render the modeling options and baseline table')
+    expect(modelingOptions.compareDocumentPosition(baselinePicker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(modelingOptions.textContent).toContain('Modeling Options')
+    expect(modelingOptions.textContent).toContain('Select a completed run from the table below')
 
     expect(container.querySelector('select[aria-label="Baseline run"]')).toBeNull()
     expect(container.textContent).toContain('Search Baseline')
@@ -192,6 +200,7 @@ describe('TestHub build-from-goal', () => {
     // Enter the target TPS for the Checkout group; the instant estimate should appear.
     const tpsInput = container.querySelector('input[aria-label="Target TPS for Checkout"]') as HTMLInputElement
     expect(tpsInput).toBeTruthy()
+    expect(modelingOptions?.contains(tpsInput)).toBe(true)
     await act(async () => { setInputValue(tpsInput, '100') })
     await flush()
     expect(container.textContent).toContain('Estimated total: 300 VUsers')

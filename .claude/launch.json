@@ -24,7 +24,10 @@
       "name": "controller",
       "runtimeExecutable": "./bin/controller",
       "runtimeArgs": [],
-      "port": 8080
+      "port": 8080,
+      "env": {
+        "APEXLOAD_GENERATORS": "localhost:9090"
+      }
     },
     {
       "name": "controller-preview",
