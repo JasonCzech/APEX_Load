@@ -599,7 +599,8 @@ describe('ScriptEditor', () => {
     expect(workspaceButtons.map(button => button.textContent?.trim())).toEqual(['Author', 'Debug'])
     expect(workspaceButtons[0]?.classList.contains('active')).toBe(true)
     expect(topbar?.textContent).toContain('Validate Draft')
-    expect(topbar?.textContent).toContain('Save Script')
+    expect(topbar?.textContent).not.toContain('Save Script')
+    expect(topbar?.textContent).not.toContain('Close')
     expect(Array.from(topbar?.querySelectorAll('button') || []).map(button => button.textContent?.trim())).not.toContain('Settings')
     expect(Array.from(topbar?.querySelectorAll('button') || []).map(button => button.textContent?.trim())).not.toContain('Breakpoint')
     const debugActionButtons = Array.from(topbar?.querySelectorAll<HTMLButtonElement>('.topbar-debug-action') || [])
@@ -627,10 +628,12 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const saveButton = Array.from(topbar?.querySelectorAll('button') || [])
-      .find(button => button.textContent === 'Save Script')
+    const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
+    expect(saveButton.textContent?.trim()).toBe('')
+    expect(saveButton.querySelector('svg')).not.toBeNull()
+    expect(saveButton.disabled).toBe(false)
 
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -705,7 +708,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.metadata-json-dialog')).toBeNull()
     expect(actionDetail).toBeNull()
     expect(container.querySelector('.author-code-center')?.contains(metadataSection)).toBe(true)
-    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
+    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).not.toContain('Outline')
     expect(metadataSection?.getAttribute('role')).toBeNull()
     expect(metadataSection?.classList.contains('editor-support-dialog')).toBe(false)
     expect(container.querySelector('.support-dialog-import')).toBeNull()
@@ -2069,9 +2072,11 @@ describe('ScriptEditor', () => {
     expect((container.querySelector('input[placeholder="My_Test_Script"]') as HTMLInputElement | null)?.value).toBe('Checkout JSON Draft')
     expect(container.querySelector('.action-list')?.textContent).toContain('Get Cart')
 
-    const saveButton = Array.from(container.querySelectorAll('.editor-header .editor-actions button')).find(button => button.textContent === 'Save Script')
+    const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
+    expect(saveButton.disabled).toBe(false)
+    expect(saveButton.getAttribute('title')).toBe('Save script')
 
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2108,9 +2113,11 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.center-document-blocked')?.textContent).toContain('Script JSON is invalid')
     expect(container.querySelector('.center-document-blocked')?.textContent).toContain('Fix or reset the Script JSON draft')
 
-    const saveButton = Array.from(container.querySelectorAll('.editor-header .editor-actions button')).find(button => button.textContent === 'Save Script')
+    const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
+    expect(saveButton.disabled).toBe(true)
+    expect(saveButton.getAttribute('title')).toBe('Fix invalid Script JSON before saving')
 
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2118,17 +2125,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(apiMock.createScript).not.toHaveBeenCalled()
-
-    const debugTab = findOpenDebuggerButton(container)
-    expect(debugTab).toBeDefined()
-    if (!debugTab) return
-
-    await act(async () => {
-      debugTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
-
-    expect(container.querySelector('[aria-label="Problems"]')?.textContent).toContain('Script JSON is invalid')
+    expect(container.querySelector('.script-code-status.invalid')?.textContent).toContain('Invalid JSON')
   })
 
   it('renders browser actions without outline metric pills', async () => {
@@ -3075,7 +3072,7 @@ describe('ScriptEditor', () => {
     expect(metadataSection?.textContent).not.toContain('Open In Parameter Data')
     expect(actionDetail).toBeNull()
     expect(container.querySelector('.author-code-center')?.contains(metadataSection)).toBe(true)
-    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
+    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).not.toContain('Outline')
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).not.toContain('Conversion Mapping')
     expect(findCenterTab(container, 'Conversion Mapping')).toBeUndefined()
     const centerTabLabels = Array.from(container.querySelectorAll('.center-tab-button')).map(button => button.textContent?.trim())
@@ -4736,24 +4733,38 @@ describe('ScriptEditor', () => {
     const onSave = vi.fn()
     apiMock.createScript.mockResolvedValueOnce({
       id: 'script-saved-1',
-      name: initialScript.name,
+      name: 'Saved Callback Flow',
       protocol: initialScript.protocol,
       version: initialScript.version,
       created_at: '2026-05-17T00:00:00Z',
-      script: initialScript,
+      script: { ...initialScript, name: 'Saved Callback Flow' },
     })
 
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} onSave={onSave} />)
     })
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.includes('Save Script'),
-    )
+    const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
     expect(saveButton).toBeDefined()
     if (!saveButton) {
       return
     }
+    expect(saveButton.disabled).toBe(true)
+    expect(saveButton.getAttribute('title')).toBe('No unsaved changes to save')
+
+    const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')
+    expect(nameInput).toBeDefined()
+    if (!nameInput) {
+      return
+    }
+
+    await act(async () => {
+      changeInputValue(nameInput, 'Saved Callback Flow')
+      await Promise.resolve()
+    })
+
+    expect(saveButton.disabled).toBe(false)
+    expect(saveButton.getAttribute('title')).toBe('Save script')
 
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -4762,7 +4773,7 @@ describe('ScriptEditor', () => {
 
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       id: 'script-saved-1',
-      name: initialScript.name,
+      name: 'Saved Callback Flow',
     }))
     expect(container.textContent).toContain('Script saved successfully!')
   })
@@ -4795,9 +4806,11 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const closeButton = findButtonByText(container, 'Close')
+    const closeButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Close script editor"]')
     expect(closeButton).toBeDefined()
     if (!closeButton) return
+    expect(closeButton.textContent?.trim()).toBe('')
+    expect(closeButton.querySelector('svg')).not.toBeNull()
 
     await act(async () => {
       closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -5355,11 +5368,13 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const undoButton = findButtonByText(container, 'Undo')
+    const undoButton = findButtonByTitle(container, 'Undo last guided change')
     expect(undoButton).toBeDefined()
     if (!undoButton) {
       return
     }
+    expect(undoButton.textContent?.trim()).toBe('')
+    expect(undoButton.querySelector('svg')).not.toBeNull()
 
     await act(async () => {
       undoButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -5829,11 +5844,18 @@ describe('ScriptEditor', () => {
     expect(dfeArea.value).toContain('gzip mode=decode')
     expect(dfeArea.value).toContain('html_unescape')
 
+    const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')
+    expect(nameInput).toBeDefined()
+    if (!nameInput) {
+      return
+    }
+
     await act(async () => {
       const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
       valueSetter?.call(dfeArea, 'gzip mode=decode\nhtml_unescape')
       dfeArea.dispatchEvent(new Event('input', { bubbles: true }))
       dfeArea.dispatchEvent(new Event('change', { bubbles: true }))
+      changeInputValue(nameInput, 'DFE Round Trip')
     })
 
     expect(dfeArea.value).toBe('gzip mode=decode\nhtml_unescape')
@@ -5998,7 +6020,7 @@ describe('ScriptEditor', () => {
     expect(contentGrid).not.toBeNull()
     expect(sidebar).not.toBeNull()
     expect(sidebar?.classList.contains('collapsed')).toBe(false)
-    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
+    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).not.toContain('Outline')
 
     const collapseOutlineSidebar = container.querySelector('.actions-sidebar button[aria-label="Collapse outline side panel"]') as HTMLButtonElement | null
     expect(collapseOutlineSidebar).not.toBeNull()
@@ -6020,7 +6042,7 @@ describe('ScriptEditor', () => {
 
     expect(contentGrid?.classList.contains('author-outline-collapsed')).toBe(false)
     expect(container.querySelector('.actions-sidebar')?.classList.contains('collapsed')).toBe(false)
-    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
+    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).not.toContain('Outline')
     expect(container.querySelector('.actions-sidebar .action-list')).not.toBeNull()
   })
 
@@ -7718,7 +7740,7 @@ describe('ScriptEditor', () => {
       configurationTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('Outline')
+    expect(container.querySelector('.actions-sidebar .editor-outline-nav')).not.toBeNull()
     expect(container.textContent).toContain('Parameter File Mappings')
     expect(container.textContent).toContain('Open Mapping List')
     expect(container.textContent).not.toContain('Starter Blocks')
@@ -7889,13 +7911,13 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Health_Check')
     expect(Array.from(container.querySelectorAll('.action-item')).length).toBe(initialScript.actions.length + 1)
 
-    const undoButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Undo',
-    )
+    const undoButton = findButtonByTitle(container, 'Undo last guided change')
     expect(undoButton).toBeDefined()
     if (!undoButton) {
       return
     }
+    expect(undoButton.textContent?.trim()).toBe('')
+    expect(undoButton.querySelector('svg')).not.toBeNull()
 
     await act(async () => {
       undoButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))

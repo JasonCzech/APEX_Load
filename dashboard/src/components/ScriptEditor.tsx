@@ -2396,6 +2396,42 @@ function DebugTopbarIcon({ kind }: { kind: DebugTopbarIconKind }) {
   }
 }
 
+type EditorRailActionIconKind = 'undo' | 'redo' | 'save' | 'close'
+
+function EditorRailActionIcon({ kind }: { kind: EditorRailActionIconKind }) {
+  switch (kind) {
+    case 'undo':
+      return (
+        <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+          <path d="M9 7H4v5" />
+          <path d="M5 11a8 8 0 1 1 2.3 5.7" />
+        </svg>
+      )
+    case 'redo':
+      return (
+        <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+          <path d="M15 7h5v5" />
+          <path d="M19 11a8 8 0 1 0-2.3 5.7" />
+        </svg>
+      )
+    case 'save':
+      return (
+        <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+          <path d="M5 4h12l2 2v14H5z" />
+          <path d="M8 4v6h8V4" />
+          <path d="M8 20v-6h8v6" />
+        </svg>
+      )
+    case 'close':
+      return (
+        <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+          <path d="M6 6l12 12" />
+          <path d="M18 6L6 18" />
+        </svg>
+      )
+  }
+}
+
 interface ReplayOptionsState {
   groupName: string
   ignoreThinkTime: boolean
@@ -5026,6 +5062,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const jsonStatus: ScriptCodePaneProps['status'] = jsonParseMessage ? 'invalid' : jsonDirty ? 'dirty' : 'synced'
   const jsonStatusMessage = jsonParseMessage ? 'Invalid JSON' : jsonDirty ? 'Unsaved JSON edits' : 'Synced'
   const scriptEditorDirty = jsonDirty || formattedScriptJson !== baselineJsonRef.current
+  const saveScriptDisabled = saving || validating || !scriptEditorDirty || !currentDraftScript.name || Boolean(jsonParseMessage)
+  const saveScriptTitle = saving
+    ? 'Saving script'
+    : validating
+      ? 'Wait for validation to finish before saving'
+      : jsonParseMessage
+        ? 'Fix invalid Script JSON before saving'
+        : !scriptEditorDirty
+          ? 'No unsaved changes to save'
+          : !currentDraftScript.name
+            ? 'Enter a script name before saving'
+            : 'Save script'
   const scriptEditorDirtyRef = useRef(scriptEditorDirty)
   const handleSaveRef = useRef<() => Promise<boolean>>(async () => false)
   scriptEditorDirtyRef.current = scriptEditorDirty
@@ -5919,6 +5967,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       },
     },
     {
+      id: 'script.save',
+      label: 'Save script',
+      keys: 'Cmd/Ctrl+S',
+      group: 'Script Editor',
+      disabled: saveScriptDisabled,
+      allowInEditable: true,
+      priority: 900,
+      onTrigger: () => { void handleSaveRef.current() },
+    },
+    {
       id: 'script.debug.run',
       label: replaying ? 'Continue debugger' : 'Run debugger',
       keys: 'F5',
@@ -5995,6 +6053,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     handleStopReplay,
     isReplayPaused,
     replaying,
+    saveScriptDisabled,
     saving,
     script.actions,
     script.name,
@@ -7065,7 +7124,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       label: 'Approve / Save',
       status: validationEvidence && replayReport?.completed_at && errorCount === 0 ? 'ready' : 'needs evidence',
       action: handleSave,
-      disabled: saving || validating || !script.name,
+      disabled: saveScriptDisabled,
     },
   ]
   useTopbarContribution({
@@ -7172,15 +7231,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         pressed: replayOptions.breakOnFailure,
         onClick: () => { void setBreakOnFailure(!replayOptions.breakOnFailure) },
       },
-      {
-        id: 'close-editor',
-        label: 'Close',
-        compactLabel: 'Close',
-        title: 'Close script editor',
-        tone: 'ghost',
-        hidden: !onClose,
-        onClick: handleCloseEditor,
-      },
     ],
     primaryActions: [
       {
@@ -7190,17 +7240,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         tone: 'secondary',
         disabled: saving || replaying || validating || !currentDraftScript.name,
         onClick: () => { void handleValidateScript() },
-      },
-      {
-        id: 'save-script',
-        label: saving ? 'Saving...' : 'Save Script',
-        compactLabel: 'Save',
-        shortcut: 'Cmd/Ctrl+S',
-        shortcutGroup: 'Script Editor',
-        allowShortcutInEditable: true,
-        tone: 'primary',
-        disabled: saving || validating || !currentDraftScript.name,
-        onClick: () => { void handleSave() },
       },
     ],
   })
@@ -7887,7 +7926,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               <button className="btn btn-ghost" onClick={handleValidateScript} disabled={saving || replaying || validating || !currentDraftScript.name}>
                 {validating ? 'Validating...' : (scriptId ? 'Validate Saved Script' : 'Validate Draft')}
               </button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving || validating || !currentDraftScript.name}>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saveScriptDisabled} title={saveScriptTitle}>
                 {saving ? 'Saving...' : 'Save Script'}
               </button>
               {onClose && <button className="btn btn-ghost" onClick={handleCloseEditor}>Close</button>}
@@ -9325,7 +9364,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <p>Execution, pacing, browser, protocol, and source runtime compatibility controls.</p>
                   </div>
                   <div className="runtime-settings-header-actions">
-                    <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving || validating || !currentDraftScript.name}>
+                    <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saveScriptDisabled} title={saveScriptTitle}>
                       {saving ? 'Saving...' : 'Save Script'}
                     </button>
                   </div>
@@ -11020,14 +11059,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 ) : (
                 <>
                 <div className="editor-outline-nav">
-                  <div className="editor-outline-header">
-                    <div className="editor-outline-title">
-                      <strong>Outline</strong>
-                      <span>{outlineSummary.actionCount} executable</span>
-                    </div>
+                  <div className="editor-outline-header editor-outline-header-actions-only">
                     <div className="editor-outline-actions">
-                      <button type="button" className="btn btn-sm btn-ghost" onClick={undoEditorChange} disabled={editorHistory.past.length === 0} title="Undo last guided change (component, repair, parameter, runtime)">Undo</button>
-                      <button type="button" className="btn btn-sm btn-ghost" onClick={redoEditorChange} disabled={editorHistory.future.length === 0} title="Redo guided change">Redo</button>
+                      <button type="button" className="btn-icon editor-outline-action-button" onClick={undoEditorChange} disabled={editorHistory.past.length === 0} title="Undo last guided change" aria-label="Undo last guided change">
+                        <EditorRailActionIcon kind="undo" />
+                      </button>
+                      <button type="button" className="btn-icon editor-outline-action-button" onClick={redoEditorChange} disabled={editorHistory.future.length === 0} title="Redo guided change" aria-label="Redo guided change">
+                        <EditorRailActionIcon kind="redo" />
+                      </button>
+                      <button type="button" className="btn-icon editor-outline-action-button primary" onClick={() => { void handleSave() }} disabled={saveScriptDisabled} title={saveScriptTitle} aria-label="Save script">
+                        <EditorRailActionIcon kind="save" />
+                      </button>
+                      {onClose && (
+                        <button type="button" className="btn-icon editor-outline-action-button" onClick={handleCloseEditor} title="Close script editor" aria-label="Close script editor">
+                          <EditorRailActionIcon kind="close" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="debugger-pane-close"
