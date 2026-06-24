@@ -36,6 +36,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   const [findings, setFindings] = useState<ReportFinding[]>([])
   const [updatedBy, setUpdatedBy] = useState('')
   const [testNotes, setTestNotes] = useState<TestNote[]>([])
+  const [testNotesError, setTestNotesError] = useState('')
   const [selectedNoteId, setSelectedNoteId] = useState('')
   const [noteSectionId, setNoteSectionId] = useState('')
 
@@ -75,7 +76,12 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     Promise.all([
       api.getTestArchiveReport(testId),
       api.getTestReportAnnotations(testId, profile),
-      api.listTestNotes(testId).catch(() => ({ test_id: testId, notes: [] as TestNote[] })),
+      api.listTestNotes(testId)
+        .then((response) => ({ response, error: '' }))
+        .catch((err: unknown) => ({
+          response: { test_id: testId, notes: [] as TestNote[] },
+          error: getErrorMessage(err, 'Unable to load test notes'),
+        })),
     ])
       .then(([reportResult, annotationsResult, notesResult]) => {
         if (cancelled) return
@@ -83,7 +89,8 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
         setSections(annotationsResult.sections || [])
         setNoteSectionId(annotationsResult.sections?.[0]?.id || '')
         applyAnnotations(annotationsResult.annotations)
-        const loadedNotes = notesResult.notes || []
+        setTestNotesError(notesResult.error)
+        const loadedNotes = notesResult.response.notes || []
         setTestNotes(loadedNotes)
         setSelectedNoteId(loadedNotes[0]?.id || '')
       })
@@ -463,53 +470,59 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
             <section className="report-section">
               <h2>Analyst Commentary</h2>
               <p className="report-hint no-print">Edit the commentary below — it is saved with the report and appears in the downloaded HTML.</p>
-              {testNotes.length > 0 && (
-                <div className="report-notes-source no-print">
-                  <div className="report-notes-source-list">
-                    {testNotes.map((note) => (
-                      <button
-                        key={note.id}
-                        type="button"
-                        className={`report-note-source-item${note.id === selectedNoteId ? ' selected' : ''}`}
-                        onClick={() => setSelectedNoteId(note.id)}
-                      >
-                        <strong>{firstNoteLine(note.body)}</strong>
-                        <span>Updated {formatTime(note.updated_at)}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="report-note-source-preview">
-                    {selectedNote && (
-                      <>
-                        <div className="report-note-source-markdown markdown-body">
-                          <MarkdownRenderer source={selectedNote.body} blockKeyPrefix={`report-note-${selectedNote.id}`} />
-                        </div>
-                        <div className="report-note-source-actions">
-                          <button type="button" className="btn btn-secondary" onClick={appendSelectedNoteToSummary}>
-                            Append to Executive Summary
-                          </button>
-                          <select
-                            className="report-select"
-                            value={noteSectionId || sections[0]?.id || ''}
-                            onChange={(event) => setNoteSectionId(event.target.value)}
-                            aria-label="Commentary section"
-                          >
-                            {sections.map((section) => (
-                              <option key={section.id} value={section.id}>{section.label}</option>
-                            ))}
-                          </select>
-                          <button type="button" className="btn btn-secondary" onClick={appendSelectedNoteToSection} disabled={sections.length === 0}>
-                            Append to Section
-                          </button>
-                          <button type="button" className="btn btn-secondary" onClick={convertSelectedNoteToFinding}>
-                            Convert to Info Finding
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
+              <div className="report-notes-source no-print">
+                {testNotesError ? (
+                  <p className="report-note-source-empty report-error" role="alert">{testNotesError}</p>
+                ) : testNotes.length === 0 ? (
+                  <p className="report-note-source-empty">No test notes are available for this run.</p>
+                ) : (
+                  <>
+                    <div className="report-notes-source-list">
+                      {testNotes.map((note) => (
+                        <button
+                          key={note.id}
+                          type="button"
+                          className={`report-note-source-item${note.id === selectedNoteId ? ' selected' : ''}`}
+                          onClick={() => setSelectedNoteId(note.id)}
+                        >
+                          <strong>{firstNoteLine(note.body)}</strong>
+                          <span>Updated {formatTime(note.updated_at)}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="report-note-source-preview">
+                      {selectedNote && (
+                        <>
+                          <div className="report-note-source-markdown markdown-body">
+                            <MarkdownRenderer source={selectedNote.body} blockKeyPrefix={`report-note-${selectedNote.id}`} />
+                          </div>
+                          <div className="report-note-source-actions">
+                            <button type="button" className="btn btn-secondary" onClick={appendSelectedNoteToSummary}>
+                              Append to Executive Summary
+                            </button>
+                            <select
+                              className="report-select"
+                              value={noteSectionId || sections[0]?.id || ''}
+                              onChange={(event) => setNoteSectionId(event.target.value)}
+                              aria-label="Commentary section"
+                            >
+                              {sections.map((section) => (
+                                <option key={section.id} value={section.id}>{section.label}</option>
+                              ))}
+                            </select>
+                            <button type="button" className="btn btn-secondary" onClick={appendSelectedNoteToSection} disabled={sections.length === 0}>
+                              Append to Section
+                            </button>
+                            <button type="button" className="btn btn-secondary" onClick={convertSelectedNoteToFinding}>
+                              Convert to Info Finding
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
               {sections.map((section) => (
                 <label key={section.id} className="report-comment">
                   <span>{section.label}</span>

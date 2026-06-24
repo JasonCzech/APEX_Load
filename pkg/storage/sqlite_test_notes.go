@@ -96,11 +96,6 @@ func (s *SQLiteStore) DeleteTestNote(id string) error {
 	return nil
 }
 
-func (s *SQLiteStore) DeleteTestNotesByTestID(testID string) error {
-	_, err := s.db.Exec(`DELETE FROM test_notes WHERE test_id = ?`, strings.TrimSpace(testID))
-	return err
-}
-
 func scanTestNote(row rowScanner) (*TestNote, error) {
 	var note TestNote
 	if err := row.Scan(

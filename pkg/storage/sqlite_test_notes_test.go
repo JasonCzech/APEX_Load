@@ -79,16 +79,6 @@ func TestSQLiteTestNotesRoundTripAndOrdering(t *testing.T) {
 	if len(notes) != 1 || notes[0].ID != "note-1" {
 		t.Fatalf("remaining notes = %#v", notes)
 	}
-	if err := store.DeleteTestNotesByTestID("notes-run"); err != nil {
-		t.Fatalf("DeleteTestNotesByTestID returned error: %v", err)
-	}
-	notes, err = store.ListTestNotes("notes-run")
-	if err != nil {
-		t.Fatalf("ListTestNotes after delete by test returned error: %v", err)
-	}
-	if len(notes) != 0 {
-		t.Fatalf("notes after DeleteTestNotesByTestID = %d, want 0", len(notes))
-	}
 }
 
 func TestSQLiteTestNotesUnknownUpdateDelete(t *testing.T) {

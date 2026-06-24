@@ -80,10 +80,7 @@ describe('ReportComposer test notes source panel', () => {
   })
 
   it('inserts selected notes into summary, commentary, and info findings', async () => {
-    await act(async () => {
-      root.render(<ReportComposer testId="test-1" testName="Checkout Run" profile="executive" onClose={() => {}} />)
-    })
-    await flush()
+    await renderComposer()
 
     expect(container.textContent).toContain('Analyst note')
     expect(container.querySelector('.report-note-source-markdown strong')?.textContent).toBe('spike')
@@ -110,6 +107,30 @@ describe('ReportComposer test notes source panel', () => {
       observed: '# Analyst note\n\nObserved **spike** during checkout.',
     })
   })
+
+  it('shows an empty notes source state', async () => {
+    apiMock.listTestNotes.mockResolvedValue({ test_id: 'test-1', notes: [] })
+
+    await renderComposer()
+
+    expect(container.textContent).toContain('No test notes are available for this run.')
+  })
+
+  it('shows a notes source load failure without failing the report load', async () => {
+    apiMock.listTestNotes.mockRejectedValue(new Error('notes unavailable'))
+
+    await renderComposer()
+
+    expect(container.textContent).toContain('Report charts')
+    expect(container.textContent).toContain('notes unavailable')
+  })
+
+  async function renderComposer() {
+    await act(async () => {
+      root.render(<ReportComposer testId="test-1" testName="Checkout Run" profile="executive" onClose={() => {}} />)
+    })
+    await flush()
+  }
 
   function button(label: string) {
     const match = Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.trim() === label)

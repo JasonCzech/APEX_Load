@@ -540,14 +540,6 @@ func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *sto
 	}
 	manifest.Source = "archive"
 	manifest.GeneratedAt = time.Now().UTC()
-	if manifest.Archive != nil {
-		manifest.Archive.TestManifestFile = testRunManifestFileName
-		manifest.Archive.TestNotesFile = testNotesArchiveFileName
-	}
-
-	if err := writeIndentedJSONFile(filepath.Join(record.ArchivePath, testRunManifestFileName), manifest); err != nil {
-		return err
-	}
 	var notes []*storage.TestNote
 	if tr.testNotesStore != nil {
 		loaded, err := tr.testNotesStore.ListTestNotes(test.ID)
@@ -558,6 +550,13 @@ func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *sto
 	}
 	testNotesFile, err := writeTestNotesArtifact(record.ArchivePath, test.ID, notes)
 	if err != nil {
+		return err
+	}
+	if manifest.Archive != nil {
+		manifest.Archive.TestManifestFile = testRunManifestFileName
+		manifest.Archive.TestNotesFile = testNotesFile
+	}
+	if err := writeIndentedJSONFile(filepath.Join(record.ArchivePath, testRunManifestFileName), manifest); err != nil {
 		return err
 	}
 	archiveManifest, err := loadRunArchiveManifest(record.ManifestPath)
@@ -598,7 +597,35 @@ func writeIndentedJSONFile(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	if dirHandle, err := os.Open(dir); err == nil {
+		_ = dirHandle.Sync()
+		_ = dirHandle.Close()
+	}
+	return nil
 }
 
 func durationString(duration time.Duration, fallback string) string {

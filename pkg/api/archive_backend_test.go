@@ -1,8 +1,12 @@
 package api
 
 import (
+	"context"
+	"os"
 	"path/filepath"
 	"testing"
+
+	"gocloud.dev/blob/fileblob"
 )
 
 func TestCurrentArchiveBackendDefaultsToFilesystem(t *testing.T) {
@@ -50,5 +54,38 @@ func TestCurrentArchiveBackendValidatesRequiredObjectTarget(t *testing.T) {
 	backend := currentArchiveBackend()
 	if err := backend.validate(); err == nil {
 		t.Fatal("expected missing bucket validation error")
+	}
+}
+
+func TestUploadArchiveObjectsUploadsOnlyNamedFiles(t *testing.T) {
+	localDir := t.TempDir()
+	bucketDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(localDir, runArchiveManifestFileName), []byte(`{"test_id":"run-1"}`), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(localDir, testNotesArchiveFileName), []byte(`{"notes":[]}`), 0o644); err != nil {
+		t.Fatalf("write notes: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(localDir, "transactions.jsonl"), []byte(`{"transaction":1}`), 0o644); err != nil {
+		t.Fatalf("write transactions: %v", err)
+	}
+	bucket, err := fileblob.OpenBucket(bucketDir, nil)
+	if err != nil {
+		t.Fatalf("OpenBucket returned error: %v", err)
+	}
+	defer bucket.Close()
+	backend := archiveBackendRuntime{Prefix: "prod/evidence"}
+
+	if err := uploadArchiveObjectsToBucket(context.Background(), bucket, backend, localDir, "run-1", testNotesArchiveFileName, runArchiveManifestFileName); err != nil {
+		t.Fatalf("uploadArchiveObjectsToBucket returned error: %v", err)
+	}
+
+	for _, name := range []string{runArchiveManifestFileName, testNotesArchiveFileName} {
+		if _, err := os.Stat(filepath.Join(bucketDir, "prod", "evidence", "run-1", name)); err != nil {
+			t.Fatalf("expected uploaded object %s: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(bucketDir, "prod", "evidence", "run-1", "transactions.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("transactions artifact upload err = %v, want not uploaded", err)
 	}
 }

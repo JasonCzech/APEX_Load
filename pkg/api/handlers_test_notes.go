@@ -6,9 +6,12 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+const testNoteBodyMaxCharacters = 64000
 
 type testNotesListResponse struct {
 	TestID string              `json:"test_id"`
@@ -78,7 +81,7 @@ func (s *Server) handleCreateTestNote(w http.ResponseWriter, r *http.Request) {
 	s.recordAuditEvent(r, "test.notes.create", "success", "test", testID, projectID, map[string]any{
 		"note_id": note.ID,
 	})
-	s.syncTestNotesToArchive(testID)
+	s.syncTestNotesToArchiveAsync(testID)
 	writeJSON(w, http.StatusCreated, note)
 }
 
@@ -124,7 +127,7 @@ func (s *Server) handleUpdateTestNote(w http.ResponseWriter, r *http.Request) {
 	s.recordAuditEvent(r, "test.notes.update", "success", "test", testID, projectID, map[string]any{
 		"note_id": note.ID,
 	})
-	s.syncTestNotesToArchive(testID)
+	s.syncTestNotesToArchiveAsync(testID)
 	writeJSON(w, http.StatusOK, note)
 }
 
@@ -162,7 +165,7 @@ func (s *Server) handleDeleteTestNote(w http.ResponseWriter, r *http.Request) {
 	s.recordAuditEvent(r, "test.notes.delete", "success", "test", testID, projectID, map[string]any{
 		"note_id": noteID,
 	})
-	s.syncTestNotesToArchive(testID)
+	s.syncTestNotesToArchiveAsync(testID)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": noteID})
 }
 
@@ -171,9 +174,14 @@ func decodeTestNoteBody(w http.ResponseWriter, r *http.Request) (string, bool) {
 	if !decodeJSONBody(w, r, &req) {
 		return "", false
 	}
-	if strings.TrimSpace(req.Body) == "" {
+	body := strings.TrimSpace(req.Body)
+	if body == "" {
 		writeError(w, http.StatusBadRequest, "note body cannot be empty")
 		return "", false
 	}
-	return req.Body, true
+	if utf8.RuneCountInString(body) > testNoteBodyMaxCharacters {
+		writeError(w, http.StatusBadRequest, "note too long (max 64000 characters)")
+		return "", false
+	}
+	return body, true
 }

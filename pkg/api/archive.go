@@ -17,6 +17,7 @@ import (
 const archiveSchemaVersion = "apexload.archive.v1"
 const runArchiveReportSchemaVersion = "apexload.archive_report.v1"
 const browserDiagnosticsSchemaVersion = "apexload.browser_diagnostics.v1"
+const runArchiveManifestFileName = "manifest.json"
 const testRunManifestFileName = "test_manifest.json"
 
 type RunArchiveManifest struct {

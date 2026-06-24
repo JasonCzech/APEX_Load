@@ -38,6 +38,7 @@ describe('TestNotesDialog', () => {
       root.unmount()
     })
     container.remove()
+    vi.restoreAllMocks()
     vi.clearAllMocks()
   })
 
@@ -92,19 +93,37 @@ describe('TestNotesDialog', () => {
     expect(apiMock.updateTestNote).toHaveBeenCalledWith('test-1', 'note-1', 'Edited **body**')
     expect(container.querySelector('.test-notes-preview strong')?.textContent).toBe('body')
 
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
     await click(button('Delete'))
-    const inputs = Array.from(container.querySelectorAll<HTMLInputElement>('.destructive-confirm-form input'))
-    setField(inputs[0], 'cleanup')
-    setField(inputs[1], 'Edited **body**')
-    const deleteButtons = Array.from(container.querySelectorAll('button')).filter((item) => item.textContent?.trim() === 'Delete')
-    await click(deleteButtons[deleteButtons.length - 1])
     await flush()
     expect(apiMock.deleteTestNote).toHaveBeenCalledWith('test-1', 'note-1')
   })
 
-  async function renderDialog() {
+  it('confirms before discarding an unsaved draft', async () => {
+    const onClose = vi.fn()
+    apiMock.listTestNotes.mockResolvedValue({
+      test_id: 'test-1',
+      notes: [],
+    })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    await renderDialog(onClose)
+    setField(container.querySelector('textarea'), 'Unsaved observation')
+
+    await click(button('Close'))
+
+    expect(confirm).toHaveBeenCalledWith('Discard unsaved note?')
+    expect(onClose).not.toHaveBeenCalled()
+
+    confirm.mockReturnValue(true)
+    await click(button('Close'))
+
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  async function renderDialog(onClose = () => {}) {
     await act(async () => {
-      root.render(<TestNotesDialog testId="test-1" testName="Checkout Run" onClose={() => {}} />)
+      root.render(<TestNotesDialog testId="test-1" testName="Checkout Run" onClose={onClose} />)
     })
     await flush()
   }

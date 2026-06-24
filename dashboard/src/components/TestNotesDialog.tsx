@@ -4,7 +4,6 @@ import { useApi } from '../hooks/useApi'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { getErrorMessage } from '../utils/errorUtils'
 import { TestNote } from '../types'
-import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import MarkdownRenderer from './MarkdownRenderer'
 import './TestNotesDialog.css'
 
@@ -13,13 +12,12 @@ const NOTE_BODY_MAX_LENGTH = 64000
 interface Props {
   testId: string
   testName?: string
-  readOnly?: boolean
   onClose: () => void
 }
 
 type NoteMode = 'preview' | 'edit' | 'new'
 
-export default function TestNotesDialog({ testId, testName, readOnly = false, onClose }: Props) {
+export default function TestNotesDialog({ testId, testName, onClose }: Props) {
   const api = useApi()
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -31,9 +29,25 @@ export default function TestNotesDialog({ testId, testName, readOnly = false, on
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<TestNote | null>(null)
 
-  useModalDialog({ dialogRef, onClose: saving ? undefined : onClose })
+  const selectedNote = useMemo(
+    () => notes.find((note) => note.id === selectedId) || null,
+    [notes, selectedId],
+  )
+  const isDirty = (mode === 'new' && draftBody.trim() !== '') || (mode === 'edit' && selectedNote != null && draftBody !== selectedNote.body)
+
+  const confirmDiscard = useCallback(() => {
+    if (!isDirty) return true
+    return window.confirm('Discard unsaved note?')
+  }, [isDirty])
+
+  const requestClose = useCallback(() => {
+    if (saving) return
+    if (!confirmDiscard()) return
+    onClose()
+  }, [confirmDiscard, onClose, saving])
+
+  useModalDialog({ dialogRef, onClose: saving ? undefined : requestClose })
 
   useEffect(() => {
     let cancelled = false
@@ -66,37 +80,34 @@ export default function TestNotesDialog({ testId, testName, readOnly = false, on
     }
   }, [mode])
 
-  const selectedNote = useMemo(
-    () => notes.find((note) => note.id === selectedId) || null,
-    [notes, selectedId],
-  )
-
-  const canSave = draftBody.trim().length > 0 && !saving && !readOnly
+  const canSave = draftBody.trim().length > 0 && !saving
 
   const selectNote = useCallback((note: TestNote) => {
+    if (note.id === selectedId && mode === 'preview') return
+    if (!confirmDiscard()) return
     setSelectedId(note.id)
     setMode('preview')
     setDraftBody('')
     setError('')
     setStatus('')
-  }, [])
+  }, [confirmDiscard, mode, selectedId])
 
   const startNewNote = useCallback(() => {
-    if (readOnly) return
+    if (!confirmDiscard()) return
     setSelectedId('')
     setMode('new')
     setDraftBody('')
     setError('')
     setStatus('')
-  }, [readOnly])
+  }, [confirmDiscard])
 
   const startEditNote = useCallback(() => {
-    if (!selectedNote || readOnly) return
+    if (!selectedNote) return
     setMode('edit')
     setDraftBody(selectedNote.body)
     setError('')
     setStatus('')
-  }, [readOnly, selectedNote])
+  }, [selectedNote])
 
   const cancelEdit = useCallback(() => {
     setError('')
@@ -132,20 +143,19 @@ export default function TestNotesDialog({ testId, testName, readOnly = false, on
     }
   }, [api, canSave, draftBody, mode, selectedNote, testId])
 
-  const confirmDelete = useCallback(async () => {
-    if (!deleteTarget || readOnly) return
+  const deleteNote = useCallback(async (target: TestNote) => {
+    if (!window.confirm(`Delete test note "${noteDeleteTarget(target)}"?`)) return
     setSaving(true)
     setError('')
     setStatus('')
     try {
-      await api.deleteTestNote(testId, deleteTarget.id)
-      const next = notes.filter((note) => note.id !== deleteTarget.id)
+      await api.deleteTestNote(testId, target.id)
+      const next = notes.filter((note) => note.id !== target.id)
       setNotes(next)
-      if (selectedId === deleteTarget.id) {
+      if (selectedId === target.id) {
         setSelectedId(next[0]?.id || '')
         setMode(next.length > 0 ? 'preview' : 'new')
       }
-      setDeleteTarget(null)
       setDraftBody('')
       setStatus('Deleted')
     } catch (err: unknown) {
@@ -153,10 +163,10 @@ export default function TestNotesDialog({ testId, testName, readOnly = false, on
     } finally {
       setSaving(false)
     }
-  }, [api, deleteTarget, notes, readOnly, selectedId, testId])
+  }, [api, notes, selectedId, testId])
 
   return (
-    <div className="modal-overlay test-notes-overlay" onClick={saving ? undefined : onClose}>
+    <div className="modal-overlay test-notes-overlay" onClick={saving ? undefined : requestClose}>
       <div
         ref={dialogRef}
         className="modal test-notes-dialog"
@@ -170,17 +180,17 @@ export default function TestNotesDialog({ testId, testName, readOnly = false, on
             <h3 id="test-notes-title">Test Notes</h3>
             <p className="page-subtitle">{testName || testId}</p>
           </div>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onClose} disabled={saving}>Close</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={requestClose} disabled={saving}>Close</button>
         </div>
 
-        {error && <p className="form-error test-notes-message">{error}</p>}
-        {status && !error && <p className="test-notes-status">{status}</p>}
+        {error && <p className="form-error test-notes-message" role="alert">{error}</p>}
+        {status && !error && <p className="test-notes-status" role="status" aria-live="polite">{status}</p>}
 
         <div className="test-notes-grid">
           <aside className="test-notes-list-pane" aria-label="Saved test notes">
             <div className="test-notes-list-header">
               <span>{notes.length} {notes.length === 1 ? 'note' : 'notes'}</span>
-              <button type="button" className="btn btn-primary btn-sm" onClick={startNewNote} disabled={readOnly || saving}>
+              <button type="button" className="btn btn-primary btn-sm" onClick={startNewNote} disabled={saving}>
                 New Note
               </button>
             </div>
@@ -194,7 +204,7 @@ export default function TestNotesDialog({ testId, testName, readOnly = false, on
                   key={note.id}
                   type="button"
                   className={`test-notes-list-item${note.id === selectedId ? ' selected' : ''}`}
-                  aria-selected={note.id === selectedId}
+                  aria-current={note.id === selectedId ? 'true' : undefined}
                   onClick={() => selectNote(note)}
                 >
                   <strong>{noteTitle(note)}</strong>
@@ -213,10 +223,10 @@ export default function TestNotesDialog({ testId, testName, readOnly = false, on
                   <MarkdownRenderer source={selectedNote.body} blockKeyPrefix={`note-${selectedNote.id}`} />
                 </div>
                 <div className="test-notes-actions">
-                  <button type="button" className="btn btn-secondary" onClick={startEditNote} disabled={readOnly || saving}>
+                  <button type="button" className="btn btn-secondary" onClick={startEditNote} disabled={saving}>
                     Edit
                   </button>
-                  <button type="button" className="btn btn-danger" onClick={() => setDeleteTarget(selectedNote)} disabled={readOnly || saving}>
+                  <button type="button" className="btn btn-danger" onClick={() => { void deleteNote(selectedNote) }} disabled={saving}>
                     Delete
                   </button>
                 </div>
@@ -238,7 +248,7 @@ export default function TestNotesDialog({ testId, testName, readOnly = false, on
                     onChange={(event) => setDraftBody(event.target.value)}
                     maxLength={NOTE_BODY_MAX_LENGTH}
                     rows={12}
-                    disabled={saving || readOnly}
+                    disabled={saving}
                   />
                 </label>
                 <div className="test-notes-edit-footer">
@@ -262,21 +272,6 @@ export default function TestNotesDialog({ testId, testName, readOnly = false, on
           </section>
         </div>
       </div>
-
-      {deleteTarget && (
-        <div onClick={(event) => event.stopPropagation()}>
-          <ConfirmDestructiveModal
-            title="Delete Test Note"
-            description="This note will be removed from the run notes and the archive snapshot will be refreshed when available."
-            target={noteDeleteTarget(deleteTarget)}
-            targetLabel="Note"
-            confirmLabel="Delete"
-            loading={saving}
-            onCancel={() => setDeleteTarget(null)}
-            onConfirm={() => { void confirmDelete() }}
-          />
-        </div>
-      )}
     </div>
   )
 }

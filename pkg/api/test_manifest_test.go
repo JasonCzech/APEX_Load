@@ -269,6 +269,31 @@ func saveAuditEvent(t *testing.T, store *storage.SQLiteStore, event *storage.Aud
 	}
 }
 
+func TestWriteIndentedJSONFileAtomicReplace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
+	if err := os.WriteFile(path, []byte(`{"old":true}`), 0o644); err != nil {
+		t.Fatalf("write original: %v", err)
+	}
+	if err := writeIndentedJSONFile(path, map[string]any{"new": true}); err != nil {
+		t.Fatalf("writeIndentedJSONFile returned error: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read replaced file: %v", err)
+	}
+	if !strings.Contains(string(data), `"new": true`) || strings.Contains(string(data), `"old": true`) {
+		t.Fatalf("replaced content = %s", string(data))
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, ".manifest.json.tmp-*"))
+	if err != nil {
+		t.Fatalf("glob temp files: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("temp files left behind: %v", matches)
+	}
+}
+
 func saveStoredManifestTest(t *testing.T, store *storage.SQLiteStore, test *ManagedTest) {
 	t.Helper()
 	if err := store.SaveTest(buildManagedTestRecord(test)); err != nil {

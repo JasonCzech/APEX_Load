@@ -185,7 +185,6 @@ type Store interface {
 	GetTestNote(id string) (*TestNote, error)
 	UpdateTestNote(note *TestNote) error
 	DeleteTestNote(id string) error
-	DeleteTestNotesByTestID(testID string) error
 
 	// System settings
 	SaveSetting(key string, value string) error

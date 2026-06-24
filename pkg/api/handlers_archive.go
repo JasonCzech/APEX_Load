@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -95,6 +96,14 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 	fullPath, err := archiveArtifactPath(record.ArchivePath, name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "archive artifact not found")
+		return
+	}
+	if _, err := os.Stat(fullPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeError(w, http.StatusNotFound, "archive artifact not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to read archive artifact: "+err.Error())
 		return
 	}
 	filename := fmt.Sprintf("%s-%s-%s", sanitizeFilename(test.Name), id, name)

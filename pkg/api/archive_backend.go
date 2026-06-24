@@ -197,6 +197,46 @@ func uploadArchiveDirectory(ctx context.Context, localDir string, testID string)
 	})
 }
 
+func uploadArchiveObjects(ctx context.Context, localDir string, testID string, names ...string) error {
+	backend := currentArchiveBackend()
+	if backend.Backend == archiveBackendFilesystem {
+		return nil
+	}
+	bucket, err := backend.openBucket(ctx)
+	if err != nil {
+		return err
+	}
+	defer bucket.Close()
+	return uploadArchiveObjectsToBucket(ctx, bucket, backend, localDir, testID, names...)
+}
+
+func uploadArchiveObjectsToBucket(ctx context.Context, bucket *blob.Bucket, backend archiveBackendRuntime, localDir string, testID string, names ...string) error {
+	if bucket == nil {
+		return fmt.Errorf("archive object bucket is required")
+	}
+	seen := map[string]bool{}
+	for _, name := range names {
+		name = strings.TrimSpace(filepath.ToSlash(name))
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		localPath, err := archiveArtifactPath(localDir, name)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(localPath)
+		if err != nil {
+			return err
+		}
+		key := backend.objectKey(testID, name)
+		if err := bucket.WriteAll(ctx, key, data, nil); err != nil {
+			return fmt.Errorf("upload archive object %s: %w", key, err)
+		}
+	}
+	return nil
+}
+
 func ensureArchiveMaterialized(record *storage.RunArchiveRecord) error {
 	if record == nil {
 		return nil

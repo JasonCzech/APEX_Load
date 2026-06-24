@@ -49,12 +49,6 @@ function setInputValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-function setSelectValue(select: HTMLSelectElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(select) as HTMLSelectElement, 'value')?.set
-  setter?.call(select, value)
-  select.dispatchEvent(new Event('change', { bubbles: true }))
-}
-
 function goalBaselineRunNames(root: HTMLElement): string[] {
   return Array.from(root.querySelectorAll('.goal-baseline-table tbody tr.clickable-row .cell-name > div:first-child'))
     .map(node => node.textContent || '')

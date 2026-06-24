@@ -258,6 +258,13 @@
   overflow-y: auto;
 }
 
+.report-note-source-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .report-note-source-item {
   width: 100%;
   display: grid;

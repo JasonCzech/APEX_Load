@@ -44,6 +44,8 @@ func (s *Server) syncTestNotesToArchive(testID string) {
 	}
 	record, ok := s.runner.GetRunArchive(testID)
 	if !ok || record == nil {
+		// Running tests are not archived yet; persistTestManifestArtifact captures
+		// all current notes when the run archive is finalized.
 		return
 	}
 	notes, err := s.store.ListTestNotes(testID)
@@ -66,7 +68,11 @@ func (s *Server) syncTestNotesToArchive(testID string) {
 		slog.Warn("failed to update archive manifest for test notes sync", "test_id", testID, "err", err)
 		return
 	}
-	if err := uploadArchiveDirectory(context.Background(), record.ArchivePath, record.TestID); err != nil {
+	if err := uploadArchiveObjects(context.Background(), record.ArchivePath, record.TestID, testNotesFile, runArchiveManifestFileName); err != nil {
 		slog.Warn("failed to upload archive after test notes sync", "test_id", testID, "err", err)
 	}
+}
+
+func (s *Server) syncTestNotesToArchiveAsync(testID string) {
+	go s.syncTestNotesToArchive(testID)
 }

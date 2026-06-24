@@ -505,7 +505,6 @@ func (s *metricsStoreSpy) GetTestNote(id string) (*storage.TestNote, error) {
 }
 func (s *metricsStoreSpy) UpdateTestNote(note *storage.TestNote) error { return sql.ErrNoRows }
 func (s *metricsStoreSpy) DeleteTestNote(id string) error              { return sql.ErrNoRows }
-func (s *metricsStoreSpy) DeleteTestNotesByTestID(testID string) error { return nil }
 func (s *metricsStoreSpy) SaveSetting(key string, value string) error {
 	if s.settings == nil {
 		s.settings = make(map[string]string)

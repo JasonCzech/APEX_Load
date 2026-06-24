@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -152,6 +153,82 @@ func TestTestNotesValidationAndNotFound(t *testing.T) {
 	}
 }
 
+func TestTestNotesTrimAndLengthValidation(t *testing.T) {
+	server, _, testID := newTestNotesAPIServer(t)
+
+	trimmedBody, _ := json.Marshal(testNoteRequest{Body: "  trimmed note  \n"})
+	trimmedReq := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+testID+"/notes", bytes.NewReader(trimmedBody))
+	trimmedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(trimmedResp, trimmedReq)
+	if trimmedResp.Code != http.StatusCreated {
+		t.Fatalf("trimmed POST status = %d, want 201 (body=%s)", trimmedResp.Code, trimmedResp.Body.String())
+	}
+	var trimmed storage.TestNote
+	if err := json.Unmarshal(trimmedResp.Body.Bytes(), &trimmed); err != nil {
+		t.Fatalf("decode trimmed note: %v", err)
+	}
+	if trimmed.Body != "trimmed note" {
+		t.Fatalf("trimmed body = %q, want %q", trimmed.Body, "trimmed note")
+	}
+
+	cjkBody, _ := json.Marshal(testNoteRequest{Body: strings.Repeat("中", 22000)})
+	cjkReq := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+testID+"/notes", bytes.NewReader(cjkBody))
+	cjkResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(cjkResp, cjkReq)
+	if cjkResp.Code != http.StatusCreated {
+		t.Fatalf("CJK POST status = %d, want 201 (body=%s)", cjkResp.Code, cjkResp.Body.String())
+	}
+
+	tooLongBody, _ := json.Marshal(testNoteRequest{Body: strings.Repeat("a", testNoteBodyMaxCharacters+1)})
+	tooLongReq := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+testID+"/notes", bytes.NewReader(tooLongBody))
+	tooLongResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(tooLongResp, tooLongReq)
+	if tooLongResp.Code != http.StatusBadRequest {
+		t.Fatalf("too-long POST status = %d, want 400 (body=%s)", tooLongResp.Code, tooLongResp.Body.String())
+	}
+	if !strings.Contains(tooLongResp.Body.String(), "max 64000 characters") {
+		t.Fatalf("too-long response = %s, want friendly max characters error", tooLongResp.Body.String())
+	}
+}
+
+func TestTestNotesRejectsCrossTestNoteMutation(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	now := time.Now().UTC()
+	for _, testID := range []string{"notes-run-a", "notes-run-b"} {
+		if err := store.SaveTest(&storage.TestRecord{ID: testID, Name: testID, Status: "COMPLETE", ProjectID: storage.DefaultProjectID, StartTime: now}); err != nil {
+			t.Fatalf("SaveTest(%s) returned error: %v", testID, err)
+		}
+	}
+	if err := store.CreateTestNote(&storage.TestNote{ID: "note-a", TestID: "notes-run-a", Body: "owned by A"}); err != nil {
+		t.Fatalf("CreateTestNote returned error: %v", err)
+	}
+	server := NewServer(ServerConfig{Store: store})
+
+	updateBody, _ := json.Marshal(testNoteRequest{Body: "cross update"})
+	patchReq := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/notes-run-b/notes/note-a", bytes.NewReader(updateBody))
+	patchResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(patchResp, patchReq)
+	if patchResp.Code != http.StatusNotFound {
+		t.Fatalf("cross-test PATCH status = %d, want 404 (body=%s)", patchResp.Code, patchResp.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/tests/notes-run-b/notes/note-a", nil)
+	deleteResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusNotFound {
+		t.Fatalf("cross-test DELETE status = %d, want 404 (body=%s)", deleteResp.Code, deleteResp.Body.String())
+	}
+
+	note, err := store.GetTestNote("note-a")
+	if err != nil || note.Body != "owned by A" {
+		t.Fatalf("cross-test mutation changed note: note=%#v err=%v", note, err)
+	}
+}
+
 func TestTestNotesNilStore(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	testID := "nil-store-notes"
@@ -184,8 +261,8 @@ func TestTestNotesAuthRequirement(t *testing.T) {
 	if !ok {
 		t.Fatal("expected access requirement for POST notes")
 	}
-	if containsRole(postRule.GlobalRoles, RoleViewer) || postRule.MaxBodyBytes != 65536 {
-		t.Fatalf("POST rule = %#v, want editor+ and 64KiB limit", postRule)
+	if containsRole(postRule.GlobalRoles, RoleViewer) || postRule.MaxBodyBytes != 262144 {
+		t.Fatalf("POST rule = %#v, want editor+ and 256KiB limit", postRule)
 	}
 
 	patchReq := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/t1/notes/n1", nil)
@@ -195,8 +272,8 @@ func TestTestNotesAuthRequirement(t *testing.T) {
 	if !ok {
 		t.Fatal("expected access requirement for PATCH notes")
 	}
-	if containsRole(patchRule.GlobalRoles, RoleViewer) || patchRule.MaxBodyBytes != 65536 {
-		t.Fatalf("PATCH rule = %#v, want editor+ and 64KiB limit", patchRule)
+	if containsRole(patchRule.GlobalRoles, RoleViewer) || patchRule.MaxBodyBytes != 262144 {
+		t.Fatalf("PATCH rule = %#v, want editor+ and 256KiB limit", patchRule)
 	}
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/tests/t1/notes/n1", nil)
@@ -208,6 +285,55 @@ func TestTestNotesAuthRequirement(t *testing.T) {
 	}
 	if containsRole(deleteRule.GlobalRoles, RoleViewer) || deleteRule.MaxBodyBytes != 0 {
 		t.Fatalf("DELETE rule = %#v, want editor+ and no body limit", deleteRule)
+	}
+}
+
+func TestTestNotesTrustedHeaderViewerCannotWriteAndEditorAttribution(t *testing.T) {
+	server, store, testID := newTestNotesAPIServer(t)
+	enableTrustedHeaderAuth(t, server)
+
+	viewerGet := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testID+"/notes", nil)
+	viewerGet.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerGet.Header.Set("X-APEXLoad-Project-Roles", storage.DefaultProjectID+"="+RoleViewer)
+	viewerGetResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerGetResp, viewerGet)
+	if viewerGetResp.Code != http.StatusOK {
+		t.Fatalf("viewer GET status = %d, want 200 (body=%s)", viewerGetResp.Code, viewerGetResp.Body.String())
+	}
+
+	viewerBody, _ := json.Marshal(testNoteRequest{Body: "viewer write"})
+	viewerPost := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+testID+"/notes", bytes.NewReader(viewerBody))
+	viewerPost.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerPost.Header.Set("X-APEXLoad-Project-Roles", storage.DefaultProjectID+"="+RoleViewer)
+	viewerPostResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerPostResp, viewerPost)
+	if viewerPostResp.Code != http.StatusForbidden {
+		t.Fatalf("viewer POST status = %d, want 403 (body=%s)", viewerPostResp.Code, viewerPostResp.Body.String())
+	}
+
+	editorBody, _ := json.Marshal(testNoteRequest{Body: "editor note"})
+	editorPost := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+testID+"/notes", bytes.NewReader(editorBody))
+	editorPost.Header.Set("X-Auth-Request-User", "editor-user")
+	editorPost.Header.Set("X-Auth-Request-Name", "Editor User")
+	editorPost.Header.Set("X-APEXLoad-Project-Roles", storage.DefaultProjectID+"="+RoleEditor)
+	editorPostResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorPostResp, editorPost)
+	if editorPostResp.Code != http.StatusCreated {
+		t.Fatalf("editor POST status = %d, want 201 (body=%s)", editorPostResp.Code, editorPostResp.Body.String())
+	}
+	var created storage.TestNote
+	if err := json.Unmarshal(editorPostResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode editor note: %v", err)
+	}
+	if created.CreatedBy != "Editor User" || created.UpdatedBy != "Editor User" {
+		t.Fatalf("created attribution = created_by %q updated_by %q, want Editor User", created.CreatedBy, created.UpdatedBy)
+	}
+	persisted, err := store.GetTestNote(created.ID)
+	if err != nil {
+		t.Fatalf("GetTestNote returned error: %v", err)
+	}
+	if persisted.CreatedBy != "Editor User" || persisted.UpdatedBy != "Editor User" {
+		t.Fatalf("persisted attribution = created_by %q updated_by %q, want Editor User", persisted.CreatedBy, persisted.UpdatedBy)
 	}
 }
 
