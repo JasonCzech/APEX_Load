@@ -224,6 +224,11 @@ function findButtonByTitle(root: ParentNode, title: string) {
   return Array.from(root.querySelectorAll('button')).find(button => button.getAttribute('title') === title)
 }
 
+function findReadinessCard(root: ParentNode) {
+  return Array.from(root.querySelectorAll<HTMLElement>('.debug-readiness-card'))
+    .find(card => card.textContent?.includes('Ready to run?'))
+}
+
 function findWorkspaceTab(root: ParentNode, label: string) {
   return Array.from(root.querySelectorAll('button[role="tab"]')).find(button => button.textContent?.trim() === label)
 }
@@ -598,7 +603,8 @@ describe('ScriptEditor', () => {
     expect(workspaceToggle).not.toBeNull()
     expect(workspaceButtons.map(button => button.textContent?.trim())).toEqual(['Author', 'Debug'])
     expect(workspaceButtons[0]?.classList.contains('active')).toBe(true)
-    expect(topbar?.textContent).toContain('Validate Draft')
+    expect(topbar?.textContent).not.toContain('Validate Draft')
+    expect(topbar?.textContent).not.toContain('Validate Saved')
     expect(topbar?.textContent).not.toContain('Save Script')
     expect(topbar?.textContent).not.toContain('Close')
     expect(Array.from(topbar?.querySelectorAll('button') || []).map(button => button.textContent?.trim())).not.toContain('Settings')
@@ -4437,9 +4443,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} />)
     })
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Validate Saved Script',
-    )
+    const validateButton = findButtonByTitle(container, 'Recheck script readiness')
     expect(validateButton).toBeDefined()
     if (!validateButton) {
       return
@@ -4451,8 +4455,10 @@ describe('ScriptEditor', () => {
     })
 
     expect(apiMock.validateScript).toHaveBeenCalledWith('script-1')
-    expect(container.textContent).toContain('Script validation passed with warnings.')
-    expect(container.textContent).toContain('WebKit execution depends on Playwright assets being installed on the controller host.')
+    const readinessCard = findReadinessCard(container)
+    expect(readinessCard?.textContent).toContain('Script validation passed with warnings.')
+    expect(readinessCard?.textContent).toContain('WebKit execution depends on Playwright assets being installed on the controller host.')
+    expect(container.querySelector('.editor-feedback-strip')?.textContent || '').not.toContain('Script validation passed')
   })
 
   it('renders saved script validation issues when validation fails', async () => {
@@ -4467,9 +4473,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} />)
     })
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Validate Saved Script',
-    )
+    const validateButton = findButtonByTitle(container, 'Recheck script readiness')
     expect(validateButton).toBeDefined()
     if (!validateButton) {
       return
@@ -4480,8 +4484,10 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).toContain('browser action 1 is missing a selector for browser_click')
-    expect(container.textContent).toContain('WebKit device profile requires the WebKit engine.')
+    const readinessCard = findReadinessCard(container)
+    expect(readinessCard?.textContent).toContain('browser action 1 is missing a selector for browser_click')
+    expect(readinessCard?.textContent).toContain('WebKit device profile requires the WebKit engine.')
+    expect(container.querySelector('.editor-feedback-strip')?.textContent || '').not.toContain('browser action 1 is missing a selector')
   })
 
   it('validates a draft script before save', async () => {
@@ -4496,9 +4502,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
     })
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Validate Draft',
-    )
+    const validateButton = findButtonByTitle(container, 'Recheck script readiness')
     expect(validateButton).toBeDefined()
     if (!validateButton) {
       return
@@ -4513,8 +4517,10 @@ describe('ScriptEditor', () => {
       name: initialScript.name,
       protocol: initialScript.protocol,
     }), 'project-1', undefined)
-    expect(container.textContent).toContain('Script validation passed with warnings.')
-    expect(container.textContent).toContain('Draft browser config will use Chromium defaults.')
+    const readinessCard = findReadinessCard(container)
+    expect(readinessCard?.textContent).toContain('Script validation passed with warnings.')
+    expect(readinessCard?.textContent).toContain('Draft browser config will use Chromium defaults.')
+    expect(container.querySelector('.editor-feedback-strip')?.textContent || '').not.toContain('Draft browser config')
   })
 
   it('surfaces validation data-source fit and AI guardrail evidence', async () => {
@@ -4555,9 +4561,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
     })
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Validate Draft',
-    )
+    const validateButton = findButtonByTitle(container, 'Recheck script readiness')
     expect(validateButton).toBeDefined()
     if (!validateButton) {
       return
@@ -4568,13 +4572,15 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).toContain('Authoring Health')
-    expect(container.textContent).toContain('Blocked · 58')
-    expect(container.textContent).toContain('Data-Source Fit')
-    expect(container.textContent).toContain('Unique data usage requires more rows than the data source provides.')
-    expect(container.textContent).toContain('Source users · Parameter login_email · Column email · 3/10 rows')
-    expect(container.textContent).toContain('AI Draft Guardrails')
-    expect(container.textContent).toContain('AI-generated drafts require replay evidence before promotion.')
+    const readinessCard = findReadinessCard(container)
+    expect(readinessCard?.textContent).toContain('Authoring Health')
+    expect(readinessCard?.textContent).toContain('Blocked · 58')
+    expect(readinessCard?.textContent).toContain('Data-Source Fit')
+    expect(readinessCard?.textContent).toContain('Unique data usage requires more rows than the data source provides.')
+    expect(readinessCard?.textContent).toContain('Source users · Parameter login_email · Column email · 3/10 rows')
+    expect(readinessCard?.textContent).toContain('AI Draft Guardrails')
+    expect(readinessCard?.textContent).toContain('AI-generated drafts require replay evidence before promotion.')
+    expect(container.querySelector('.editor-feedback-strip')?.textContent || '').not.toContain('Authoring Health')
   })
 
   it('uses backend validation preflight for edit-page debug readiness', async () => {
@@ -4600,9 +4606,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
     })
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Validate Draft',
-    )
+    const validateButton = findButtonByTitle(container, 'Recheck script readiness')
     expect(validateButton).toBeDefined()
     if (!validateButton) {
       return
@@ -4619,8 +4623,7 @@ describe('ScriptEditor', () => {
       configurationTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const readinessCard = Array.from(container.querySelectorAll('.utility-card'))
-      .find(card => card.textContent?.includes('Ready to run?'))
+    const readinessCard = findReadinessCard(container)
     expect(readinessCard?.textContent).toContain('Variable readiness')
     expect(readinessCard?.textContent).toContain('Missing variable: backend_only_account')
   })
@@ -4710,9 +4713,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Partial: Logging')
     expect(container.textContent).not.toContain('Executed: Run Logic')
 
-    const validateButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Validate Draft',
-    )
+    const validateButton = findButtonByTitle(container, 'Recheck script readiness')
     expect(validateButton).toBeDefined()
     if (!validateButton) {
       return

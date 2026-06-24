@@ -5170,6 +5170,58 @@
 .debug-readiness-card .replay-preflight-checks {
   grid-template-columns: 1fr;
 }
+.readiness-card-header {
+  align-items: center;
+}
+.readiness-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.readiness-header-actions > span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.readiness-validation-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.readiness-validation-message {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.readiness-validation-message strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.readiness-validation-message ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+}
+.readiness-validation-message.success {
+  border-color: rgba(34, 197, 94, 0.28);
+}
+.readiness-validation-message.warning {
+  border-color: rgba(245, 158, 11, 0.38);
+}
+.readiness-validation-message.error {
+  border-color: rgba(239, 68, 68, 0.32);
+}
+.debug-readiness-card .validation-evidence-panel {
+  margin-top: 0;
+  background: var(--bg-secondary);
+}
 .utility-card-header {
   display: flex;
   align-items: flex-start;

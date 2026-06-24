@@ -494,6 +494,12 @@ type ImportedParameterFileMapping = {
   sourceName: string | null
 }
 type ValidationEvidence = Pick<ScriptValidationResponse, 'data_source_fit' | 'ai_guardrails' | 'authoring_health'>
+type ValidationSidebarResult = {
+  tone: 'success' | 'warning' | 'error'
+  message: string
+  warnings: string[]
+  issues: string[]
+}
 
 type ReplaySnapshot = BrowserReplaySnapshot
 type ReplayActionEvent = BrowserReplayEvent
@@ -3784,6 +3790,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [, setComponentLibraryStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [validationEvidence, setValidationEvidence] = useState<ValidationEvidence | null>(null)
   const [validationReplayPreflight, setValidationReplayPreflight] = useState<ReplayPreflight | null>(null)
+  const [validationSidebarResult, setValidationSidebarResult] = useState<ValidationSidebarResult | null>(null)
   // These derivations scan the full action set (and for imports, run a draft diff
   // against the baseline). On a multi-thousand-action import they are expensive, so
   // they must be memoized — otherwise every render (including scroll-snapshot driven
@@ -5074,6 +5081,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           : !currentDraftScript.name
             ? 'Enter a script name before saving'
             : 'Save script'
+  const validateScriptDisabled = saving || replaying || validating || !currentDraftScript.name
+  const validateScriptTitle = validating
+    ? 'Checking script readiness'
+    : !currentDraftScript.name
+      ? 'Enter a script name before checking readiness'
+      : 'Recheck script readiness'
   const scriptEditorDirtyRef = useRef(scriptEditorDirty)
   const handleSaveRef = useRef<() => Promise<boolean>>(async () => false)
   scriptEditorDirtyRef.current = scriptEditorDirty
@@ -5189,6 +5202,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setWarnings([])
     setValidationEvidence(null)
     setValidationReplayPreflight(null)
+    setValidationSidebarResult(null)
     setValidating(true)
     try {
       const currentScript = resolveCurrentScript()
@@ -5205,21 +5219,34 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         ai_guardrails: res.ai_guardrails,
         authoring_health: res.authoring_health,
       })
-      setWarnings(validationWarnings)
       if (jsonDirty || currentScript.metadata?.import || validationScript !== currentScript) {
         commitJsonDraft(validationScript)
       }
       if (res.valid) {
-        setSuccess(validationWarnings.length > 0 ? 'Script validation passed with warnings.' : 'Script validation passed.')
+        setValidationSidebarResult({
+          tone: validationWarnings.length > 0 ? 'warning' : 'success',
+          message: validationWarnings.length > 0 ? 'Script validation passed with warnings.' : 'Script validation passed.',
+          warnings: validationWarnings,
+          issues: [],
+        })
         return
       }
-      setError(res.issues.join(' | ') || 'Script validation failed.')
+      setValidationSidebarResult({
+        tone: 'error',
+        message: 'Script validation failed.',
+        warnings: validationWarnings,
+        issues: res.issues.length > 0 ? res.issues : ['Script validation failed.'],
+      })
     } catch (e: unknown) {
       const validationWarnings = normalizeWarnings(getErrorWarnings(e))
-      setWarnings(validationWarnings)
       setValidationEvidence(null)
       setValidationReplayPreflight(null)
-      setError(getErrorMessage(e, 'Script validation failed'))
+      setValidationSidebarResult({
+        tone: 'error',
+        message: getErrorMessage(e, 'Script validation failed'),
+        warnings: validationWarnings,
+        issues: [],
+      })
       if (getErrorMessage(e, '').includes('Script JSON is invalid')) {
         setDebuggerBottomTab('problems')
       }
@@ -5613,6 +5640,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   useEffect(() => {
     setValidationReplayPreflight(null)
+    setValidationEvidence(null)
+    setValidationSidebarResult(null)
   }, [script.actions, script.data_sources, script.name, script.parameters, script.protocol, replayOptions.variablesText])
   const replayFailingEventIndex = replayReport?.events.findIndex(event => !event.success) ?? -1
   const replayFailingEvent = replayReport && replayFailingEventIndex >= 0 ? replayReport.events[replayFailingEventIndex] : null
@@ -7098,13 +7127,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   const convergenceItems = [
     {
-      key: 'validate',
-      label: 'Validate',
-      status: validationEvidence ? 'done' : errorCount > 0 ? 'needs attention' : 'ready',
-      action: handleValidateScript,
-      disabled: saving || replaying || validating || !script.name,
-    },
-    {
       key: 'repair',
       label: 'Repair',
       status: repairSuggestions.length > 0 ? `${repairSuggestions.length} suggested` : 'done',
@@ -7230,16 +7252,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         tone: 'ghost',
         pressed: replayOptions.breakOnFailure,
         onClick: () => { void setBreakOnFailure(!replayOptions.breakOnFailure) },
-      },
-    ],
-    primaryActions: [
-      {
-        id: 'validate-script',
-        label: validating ? 'Validating...' : (scriptId ? 'Validate Saved' : 'Validate Draft'),
-        compactLabel: 'Check',
-        tone: 'secondary',
-        disabled: saving || replaying || validating || !currentDraftScript.name,
-        onClick: () => { void handleValidateScript() },
       },
     ],
   })
@@ -7455,6 +7467,71 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         return { kind: 'signals', title: 'Insights', railLabel: 'Insights' }
     }
   })()
+  const renderReadinessValidationResult = () => {
+    if (!validationSidebarResult && !validationEvidence) return null
+    return (
+      <div className="readiness-validation-result" aria-live="polite">
+        {validationSidebarResult && (
+          <div className={`readiness-validation-message ${validationSidebarResult.tone}`}>
+            <strong>{validationSidebarResult.message}</strong>
+            {validationSidebarResult.issues.length > 0 && (
+              <ul>
+                {validationSidebarResult.issues.map((issue, index) => (
+                  <li key={`validation-issue-${index}`}>{issue}</li>
+                ))}
+              </ul>
+            )}
+            {validationSidebarResult.warnings.length > 0 && (
+              <ul>
+                {validationSidebarResult.warnings.map((warning, index) => (
+                  <li key={`validation-warning-${index}`}>{warning}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {validationEvidence && <ValidationEvidencePanel evidence={validationEvidence} />}
+      </div>
+    )
+  }
+  const renderReadyToRunCard = ({ showChecklist = false }: { showChecklist?: boolean } = {}) => (
+    <div className="utility-card debug-readiness-card">
+      <div className="utility-card-header readiness-card-header">
+        <strong>Ready to run?</strong>
+        <div className="readiness-header-actions">
+          <span>{replayPreflightStatusLabel(replayPreflight)}</span>
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary"
+            onClick={() => { void handleValidateScript() }}
+            disabled={validateScriptDisabled}
+            title={validateScriptTitle}
+          >
+            {validating ? 'Checking...' : 'Recheck'}
+          </button>
+        </div>
+      </div>
+      <ReplayPreflightCard preflight={replayPreflight} />
+      {renderReadinessValidationResult()}
+      {showChecklist && (
+        <div className="utility-checklist">
+          {convergenceItems.map(item => (
+            <div key={item.key} className="utility-checklist-item">
+              <div>
+                <strong>{item.label}</strong>
+                <span>{item.status}</span>
+              </div>
+              {item.action && (
+                <button type="button" className="btn btn-sm btn-secondary" onClick={item.action} disabled={item.disabled}>
+                  {item.actionLabel || item.label}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
   const renderContextualRightSidebarContent = (): ReactNode => {
     switch (authorRightSidebarContext.kind) {
       case 'auto-parameterization': {
@@ -7729,13 +7806,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       case 'browser-replay':
         return (
           <>
-            <div className="utility-card debug-readiness-card">
-              <div className="utility-card-header">
-                <strong>Ready to run?</strong>
-                <span>{replayPreflightStatusLabel(replayPreflight)}</span>
-              </div>
-              <ReplayPreflightCard preflight={replayPreflight} />
-            </div>
+            {renderReadyToRunCard()}
             <div className="utility-card">
               <div className="utility-card-header">
                 <strong>Replay Evidence</strong>
@@ -7763,13 +7834,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <li className="utility-list-item">Proxy: {httpProxySummary}</li>
               </ul>
             </div>
-            <div className="utility-card debug-readiness-card">
-              <div className="utility-card-header">
-                <strong>Ready to run?</strong>
-                <span>{replayPreflightStatusLabel(replayPreflight)}</span>
-              </div>
-              <ReplayPreflightCard preflight={replayPreflight} />
-            </div>
+            {renderReadyToRunCard()}
             {importSummary.runtimeSettingsParity.length > 0 && (
               <div className="utility-card">
                 <div className="utility-card-header">
@@ -7923,9 +7988,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         <div className="editor-header script-editor-local-action-proxy" hidden>
           <div className="editor-title-row">
             <div className="editor-actions">
-              <button className="btn btn-ghost" onClick={handleValidateScript} disabled={saving || replaying || validating || !currentDraftScript.name}>
-                {validating ? 'Validating...' : (scriptId ? 'Validate Saved Script' : 'Validate Draft')}
-              </button>
               <button className="btn btn-primary" onClick={handleSave} disabled={saveScriptDisabled} title={saveScriptTitle}>
                 {saving ? 'Saving...' : 'Save Script'}
               </button>
@@ -8015,7 +8077,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           </div>
         </div>
       )}
-      {(error || warnings.length > 0 || success || validationEvidence) && (
+      {(error || warnings.length > 0 || success) && (
         <div className="editor-feedback-strip">
           {error && <div className="editor-toast error">{error}</div>}
           {warnings.length > 0 && (
@@ -8026,7 +8088,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             </div>
           )}
           {success && <div className="editor-toast success">{success}</div>}
-          {validationEvidence && <ValidationEvidencePanel evidence={validationEvidence} />}
         </div>
       )}
 
@@ -11929,28 +11990,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   )}
                 </div>
 
-                <div className="utility-card debug-readiness-card">
-                  <div className="utility-card-header">
-                    <strong>Ready to run?</strong>
-                    <span>{replayPreflightStatusLabel(replayPreflight)}</span>
-                  </div>
-                  <ReplayPreflightCard preflight={replayPreflight} />
-                  <div className="utility-checklist">
-                    {convergenceItems.map(item => (
-                      <div key={item.key} className="utility-checklist-item">
-                        <div>
-                          <strong>{item.label}</strong>
-                          <span>{item.status}</span>
-                        </div>
-                        {item.action && (
-                          <button type="button" className="btn btn-sm btn-secondary" onClick={item.action} disabled={item.disabled}>
-                            {item.actionLabel || item.label}
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                {renderReadyToRunCard({ showChecklist: true })}
 
                 <div className="utility-card">
                   <div className="utility-card-header">
