@@ -199,6 +199,62 @@ func TestExecutionPlanRunHistory(t *testing.T) {
 	}
 }
 
+// TestExecutionPlanParallelRunHistory verifies a parallel materialize now
+// persists a queryable plan-run record (run_id + per-entry statuses) just like
+// the sequential path, so parallel run history survives a reload.
+func TestExecutionPlanParallelRunHistory(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+
+	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/execution-plans", map[string]any{
+		"project_id": "proj-a", "name": "parallel-history", "run_mode": "parallel",
+		"entries": []map[string]any{
+			{"order": 0, "scenario_id": "missing-1"},
+			{"order": 1, "scenario_id": "missing-2", "enabled": false},
+		},
+	})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create status = %d body=%s", create.Code, create.Body.String())
+	}
+	var plan storage.ExecutionPlan
+	_ = json.Unmarshal(create.Body.Bytes(), &plan)
+
+	runRec := timeslotRequest(t, server, http.MethodPost, "/api/v1/execution-plans/"+plan.ID+"/runs", nil)
+	if runRec.Code != http.StatusOK {
+		t.Fatalf("run status = %d body=%s", runRec.Code, runRec.Body.String())
+	}
+	var runResp struct {
+		RunID   string `json:"run_id"`
+		RunMode string `json:"run_mode"`
+		Status  string `json:"status"`
+	}
+	_ = json.Unmarshal(runRec.Body.Bytes(), &runResp)
+	if runResp.RunID == "" || runResp.RunMode != "parallel" {
+		t.Fatalf("parallel run response missing run_id/run_mode: %s", runRec.Body.String())
+	}
+
+	list := timeslotRequest(t, server, http.MethodGet, "/api/v1/execution-plans/"+plan.ID+"/runs", nil)
+	var listResp struct {
+		Runs  []storage.ExecutionPlanRun `json:"runs"`
+		Count int                        `json:"count"`
+	}
+	_ = json.Unmarshal(list.Body.Bytes(), &listResp)
+	if listResp.Count != 1 || len(listResp.Runs) != 1 || listResp.Runs[0].ID != runResp.RunID {
+		t.Fatalf("parallel run list = %+v, want one run %q", listResp, runResp.RunID)
+	}
+	got := listResp.Runs[0]
+	if got.RunMode != "parallel" || len(got.Entries) != 2 {
+		t.Fatalf("parallel run = %+v, want parallel with 2 entries", got)
+	}
+	byOrder := map[int]storage.ExecutionPlanRunEntry{}
+	for _, e := range got.Entries {
+		byOrder[e.Order] = e
+	}
+	// Entry 0 fails (missing scenario); entry 1 is disabled -> skipped.
+	if byOrder[0].Status != "failed" || byOrder[1].Status != "skipped" {
+		t.Fatalf("parallel entry statuses = %+v, want order0 failed / order1 skipped", got.Entries)
+	}
+}
+
 func TestExecutionPlanEntryDataPoolValidation(t *testing.T) {
 	server, _ := newTimeslotServer(t)
 	for _, tc := range []struct {

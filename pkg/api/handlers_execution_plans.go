@@ -239,14 +239,20 @@ func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *
 	copy(entries, plan.Entries)
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Order < entries[j].Order })
 
+	now := time.Now().UTC()
 	results := make([]executionPlanRunResult, 0, len(entries))
+	runEntries := make([]storage.ExecutionPlanRunEntry, 0, len(entries))
 	created, failed := 0, 0
 	for _, entry := range entries {
 		res := executionPlanRunResult{Order: entry.Order, ScenarioID: entry.ScenarioID}
+		runEntry := storage.ExecutionPlanRunEntry{Order: entry.Order, ScenarioID: entry.ScenarioID, ScenarioName: entry.ScenarioName}
 		if !entry.IsEnabled() {
 			res.Status = "skipped"
 			res.Detail = "entry disabled"
+			runEntry.Status = "skipped"
+			runEntry.Detail = "entry disabled"
 			results = append(results, res)
+			runEntries = append(runEntries, runEntry)
 			continue
 		}
 		test, err := s.runner.CreateTest(buildPlanEntryCreateRequest(plan.Name, plan.ProjectID, plan.TimeslotID, entry))
@@ -254,27 +260,57 @@ func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *
 			failed++
 			res.Status = "failed"
 			res.Detail = err.Error()
+			runEntry.Status = "failed"
+			runEntry.Detail = err.Error()
 		} else {
 			created++
 			res.Status = "created"
 			res.TestID = test.ID
+			runEntry.Status = "created"
+			runEntry.TestID = test.ID
 			if attributable {
 				s.runner.AttributeTestCreated(test.ID, actorSubject, actorDisplayName)
 			}
 		}
 		results = append(results, res)
+		runEntries = append(runEntries, runEntry)
 	}
 
+	// Persist the parallel run so its history (run_id + per-entry status) survives
+	// a reload, mirroring the sequential path. Parallel entries are created (not
+	// started), so this is an eager snapshot: the run is "completed" once all
+	// enabled entries were created, or "failed" if any failed to create. Live
+	// aggregation from child test statuses is a follow-up.
+	runID := "exec-plan-run-" + uuid.New().String()
+	runStatus := "completed"
+	if failed > 0 {
+		runStatus = "failed"
+	}
+	run := &storage.ExecutionPlanRun{
+		ID:          runID,
+		PlanID:      plan.ID,
+		ProjectID:   normalizeProjectID(plan.ProjectID),
+		RunMode:     "parallel",
+		Status:      runStatus,
+		Entries:     runEntries,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		CompletedAt: &now,
+	}
+	s.runner.persistExecutionPlanRun(run)
+
 	s.recordAuditEvent(r, "execution_plan.run", "success", "execution_plan", plan.ID, plan.ProjectID, map[string]any{
-		"run_mode": plan.RunMode, "created": created, "failed": failed, "actor": actorDisplayName,
+		"run_mode": plan.RunMode, "run_id": runID, "status": runStatus, "created": created, "failed": failed, "actor": actorDisplayName,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"execution_plan_id": plan.ID,
 		"run_mode":          plan.RunMode,
+		"run_id":            runID,
+		"status":            runStatus,
 		"created_count":     created,
 		"failed_count":      failed,
 		"results":           results,
-		"materialized_at":   time.Now().UTC(),
+		"materialized_at":   now,
 	})
 }
 

@@ -256,9 +256,10 @@ func (tr *TestRunner) BuildRunCalendar(from time.Time, to time.Time, projectID s
 		if schedule == nil || !schedule.Enabled {
 			continue
 		}
-		if schedule.NextRequiredAction == "approval_required" || strings.TrimSpace(schedule.ConflictSummary) != "" {
-			continue
-		}
+		// Blocked/approval-pending schedules are still projected (tagged
+		// "blocked" by projectRunCalendarSchedule) so operators can see runs that
+		// will not fire as-is and act early, instead of the run silently
+		// disappearing from the calendar.
 		projected := projectRunCalendarSchedule(schedule, from, to, now, occurrenceByScheduleAt, snapshot.Scenarios)
 		for _, event := range projected {
 			appendEvent(event)
@@ -477,6 +478,21 @@ func projectRunCalendarSchedule(schedule *storage.ScenarioSchedule, from time.Ti
 	if startFrom.Before(now) {
 		startFrom = now
 	}
+	// A schedule that requires approval or has an unresolved conflict will not
+	// materialize as-is; project its occurrences tagged "blocked" with the reason
+	// so the calendar surfaces them rather than hiding the runs.
+	blockedReason := ""
+	if schedule.NextRequiredAction == "approval_required" {
+		blockedReason = "approval_required"
+	} else if strings.TrimSpace(schedule.ConflictSummary) != "" {
+		blockedReason = "schedule_conflict"
+	}
+	status := "scheduled"
+	occurrenceStatus := ""
+	if blockedReason != "" {
+		status = "blocked"
+		occurrenceStatus = "blocked"
+	}
 	cursor := startFrom.Add(-time.Minute)
 	events := make([]RunCalendarEvent, 0)
 	for len(events) < runCalendarMaxProjectedPerCron {
@@ -493,24 +509,27 @@ func projectRunCalendarSchedule(schedule *storage.ScenarioSchedule, from time.Ti
 		endAt := plannedAt.Add(duration).UTC()
 		scenario := scenarios[schedule.ScenarioID]
 		events = append(events, RunCalendarEvent{
-			ID:           fmt.Sprintf("projected:%s:%d", schedule.ID, plannedAt.Unix()),
-			Source:       "cron",
-			RunType:      "scheduled",
-			Title:        calendarTitle(firstPresentString(schedule.RunNameTemplate, schedule.Name, scenario.Name, "Scheduled Run")),
-			Status:       "scheduled",
-			StartAt:      plannedAt,
-			EndAt:        &endAt,
-			Projected:    true,
-			ScheduleID:   schedule.ID,
-			ScheduleName: schedule.Name,
-			CronExpr:     schedule.CronExpr,
-			Timezone:     schedule.Timezone,
-			ScenarioID:   schedule.ScenarioID,
-			ScenarioName: scenario.Name,
-			ReleaseID:    schedule.ReleaseID,
-			ProjectID:    normalizeProjectID(schedule.ProjectID),
-			Workload:     workloadForCalendar(nil, scenario, duration),
-			User:         userForCalendarSchedule(schedule, nil),
+			ID:               fmt.Sprintf("projected:%s:%d", schedule.ID, plannedAt.Unix()),
+			Source:           "cron",
+			RunType:          "scheduled",
+			Title:            calendarTitle(firstPresentString(schedule.RunNameTemplate, schedule.Name, scenario.Name, "Scheduled Run")),
+			Status:           status,
+			StartAt:          plannedAt,
+			EndAt:            &endAt,
+			Projected:        true,
+			OccurrenceStatus: occurrenceStatus,
+			ReasonCode:       blockedReason,
+			ConflictSummary:  schedule.ConflictSummary,
+			ScheduleID:       schedule.ID,
+			ScheduleName:     schedule.Name,
+			CronExpr:         schedule.CronExpr,
+			Timezone:         schedule.Timezone,
+			ScenarioID:       schedule.ScenarioID,
+			ScenarioName:     scenario.Name,
+			ReleaseID:        schedule.ReleaseID,
+			ProjectID:        normalizeProjectID(schedule.ProjectID),
+			Workload:         workloadForCalendar(nil, scenario, duration),
+			User:             userForCalendarSchedule(schedule, nil),
 			Topology: RunCalendarTopology{
 				Source:  "planned",
 				Summary: "Generator assignment will be resolved when the run materializes.",

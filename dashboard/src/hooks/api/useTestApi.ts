@@ -151,6 +151,7 @@ type ScenarioScheduleRequest = {
   cron_expr: string
   timezone?: string
   release_id?: string
+  timeslot_id?: string
   run_name_template?: string
   enabled?: boolean
   approval_policy?: string
