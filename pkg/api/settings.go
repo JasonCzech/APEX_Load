@@ -407,6 +407,13 @@ type AuthSettings struct {
 	ProjectRolesHeader    string   `json:"project_roles_header,omitempty"`
 	DomainRolesHeader     string   `json:"domain_roles_header,omitempty"`
 	RepositoryRolesHeader string   `json:"application_repository_roles_header,omitempty"`
+	// Trusted-proxy gate for trusted_headers mode (defense-in-depth against header
+	// spoofing if the controller port is ever reachable directly). Identity headers are
+	// honored only when the request arrives from a TrustedProxyCIDRs source OR carries a
+	// constant-time-matching shared secret (env-var name in TrustedProxySecretEnvVar,
+	// header X-APEXLoad-Proxy-Secret). In production at least one must be configured.
+	TrustedProxyCIDRs        []string `json:"trusted_proxy_cidrs,omitempty"`
+	TrustedProxySecretEnvVar string   `json:"trusted_proxy_secret_env_var,omitempty"`
 }
 
 const (

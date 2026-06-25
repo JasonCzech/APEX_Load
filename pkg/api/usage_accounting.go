@@ -206,6 +206,17 @@ func (s *Server) usageAccounting(projectID string) UsageAccountingResponse {
 	return usageAccountingFromTests(projectID, s.runner.ListTests())
 }
 
+// scopedUsageAccounting returns usage limited to the caller's authorization scope.
+// Global callers (all=true) see everything; a scoped caller who pinned an in-scope
+// project_id sees that project; a scoped caller with no project sees the aggregate over
+// only their administered projects — never the whole tenant.
+func (s *Server) scopedUsageAccounting(projectID string, scope map[string]struct{}, all bool) UsageAccountingResponse {
+	if all || projectID != "" {
+		return s.usageAccounting(projectID)
+	}
+	return usageAccountingFromTestsScoped(scope, s.runner.ListTests())
+}
+
 func usageAccountingFromTests(projectID string, tests []*ManagedTest) UsageAccountingResponse {
 	byProject := map[string]*UsageAccountingBucket{}
 	byProtocol := map[string]*UsageAccountingBucket{}
@@ -265,6 +276,22 @@ func usageAccountingFromTests(projectID string, tests []*ManagedTest) UsageAccou
 		response.ByProject = nil
 	}
 	return response
+}
+
+// usageAccountingFromTestsScoped aggregates usage across only the projects in scope
+// (used for non-global admins reading user activity without a specific project_id, so
+// they never see cross-tenant usage). An empty scope yields empty usage, not all of it.
+func usageAccountingFromTestsScoped(scope map[string]struct{}, tests []*ManagedTest) UsageAccountingResponse {
+	filtered := make([]*ManagedTest, 0, len(tests))
+	for _, test := range tests {
+		if test == nil {
+			continue
+		}
+		if _, ok := scope[normalizeProjectID(test.ProjectID)]; ok {
+			filtered = append(filtered, test)
+		}
+	}
+	return usageAccountingFromTests("", filtered)
 }
 
 func usageAccountingForActor(actorSubject string, base UsageAccountingResponse, tests []*ManagedTest) UsageAccountingResponse {

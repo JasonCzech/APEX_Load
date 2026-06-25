@@ -1078,7 +1078,8 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     () => form.groups.length > 0 ? form.groups : [emptyScenarioGroup()],
     [form.groups],
   )
-  const activeStageGroup = formGroups[Math.min(stageGroupIndex, formGroups.length - 1)] || formGroups[0]
+  const activeGroupIndex = Math.min(stageGroupIndex, formGroups.length - 1)
+  const activeStageGroup = formGroups[activeGroupIndex] || formGroups[0]
   const activeStageTimeline = useMemo(
     () => validateStageTimeline(form.duration, activeStageGroup?.stages || []),
     [activeStageGroup?.stages, form.duration],
@@ -2892,6 +2893,9 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     }
 
     if (wizardStep === 'run') {
+      const activeGroupScript = findScriptById(scripts, activeStageGroup.script_id)
+      const activeGroupLabel = activeStageGroup.name || `Group ${activeGroupIndex + 1}`
+
       return (
         <section className="scenario-wizard-panel">
           <div className="scenario-wizard-panel-header">
@@ -2943,17 +2947,30 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
                 <option value="goal_oriented">Goal oriented</option>
               </select>
             </label>
-            <label className="scenario-field scenario-stage-group-picker">
-              <span>Configure stages for</span>
-              <select className="settings-input" value={stageGroupIndex} onChange={event => setStageGroupIndex(Number(event.target.value))}>
-                {formGroups.map((group, index) => (
-                  <option key={`${group.script_id || 'group'}-${index}`} value={index}>
-                    {group.name || `Group ${index + 1}`} · {findScriptById(scripts, group.script_id)?.name || 'Unassigned script'}
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
+          {formGroups.length > 1 && (
+            <div className="scenario-group-tabs" role="tablist" aria-label="Scenario load groups">
+              {formGroups.map((group, index) => {
+                const script = findScriptById(scripts, group.script_id)
+                const groupLabel = group.name || `Group ${index + 1}`
+                return (
+                  <button
+                    key={`${group.script_id || 'group'}-scenario-tab-${index}`}
+                    type="button"
+                    id={`scenario-group-tab-${index}`}
+                    className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`}
+                    role="tab"
+                    aria-selected={activeGroupIndex === index}
+                    aria-controls="scenario-active-group-panel"
+                    onClick={() => setStageGroupIndex(index)}
+                  >
+                    <strong>{groupLabel}</strong>
+                    <span>{script?.name || 'Unassigned script'} · {group.vusers} VUsers</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
           <div className="scenario-subpanel">
             <div className="scenario-assignment-header">
               <div>
@@ -2961,12 +2978,16 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
                 <p>Set the VUser count and simple ramp for each script group participating in this scenario.</p>
               </div>
             </div>
-            <div className="scenario-script-group-list">
-              {formGroups.map((group, index) => (
-                <div key={`${group.script_id || 'group'}-load-${index}`} className="scenario-script-group-card">
+            <div
+              id="scenario-active-group-panel"
+              className="scenario-script-group-list scenario-load-group-panel"
+              role={formGroups.length > 1 ? 'tabpanel' : undefined}
+              aria-labelledby={formGroups.length > 1 ? `scenario-group-tab-${activeGroupIndex}` : undefined}
+            >
+                <div key={`${activeStageGroup.script_id || 'group'}-load-${activeGroupIndex}`} className="scenario-script-group-card">
                   <div className="scenario-script-group-title">
-                    <strong>{group.name || `Group ${index + 1}`}</strong>
-                    <span className="scenario-assignment-copy secondary">{findScriptById(scripts, group.script_id)?.name || 'Unassigned script'}</span>
+                    <strong>{activeGroupLabel}</strong>
+                    <span className="scenario-assignment-copy secondary">{activeGroupScript?.name || 'Unassigned script'}</span>
                   </div>
                   <div className="settings-grid scenario-group-grid">
                     <label className="scenario-field">
@@ -2976,32 +2997,31 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
                           className="scenario-vuser-slider"
                           type="range"
                           min={1}
-                          max={Math.max(100, Number(group.vusers) * 2 || 100)}
-                          value={group.vusers}
-                          onChange={event => updateScenarioGroup(index, { vusers: Number(event.target.value) })}
+                          max={Math.max(100, Number(activeStageGroup.vusers) * 2 || 100)}
+                          value={activeStageGroup.vusers}
+                          onChange={event => updateScenarioGroup(activeGroupIndex, { vusers: Number(event.target.value) })}
                         />
-                        <input className="settings-input" type="number" min={1} value={group.vusers} onChange={event => updateScenarioGroup(index, { vusers: Number(event.target.value) })} />
+                        <input className="settings-input" type="number" min={1} value={activeStageGroup.vusers} onChange={event => updateScenarioGroup(activeGroupIndex, { vusers: Number(event.target.value) })} />
                       </div>
                     </label>
                     <DurationField
                       className="scenario-field"
                       label="Ramp Up"
-                      value={group.ramp_up}
+                      value={activeStageGroup.ramp_up}
                       allowEmpty
                       compact
-                      onChange={value => updateScenarioGroup(index, { ramp_up: value })}
+                      onChange={value => updateScenarioGroup(activeGroupIndex, { ramp_up: value })}
                     />
                     <DurationField
                       className="scenario-field"
                       label="Ramp Down"
-                      value={group.ramp_down}
+                      value={activeStageGroup.ramp_down}
                       allowEmpty
                       compact
-                      onChange={value => updateScenarioGroup(index, { ramp_down: value })}
+                      onChange={value => updateScenarioGroup(activeGroupIndex, { ramp_down: value })}
                     />
                   </div>
                 </div>
-              ))}
             </div>
           </div>
           <div className="scenario-subpanel">
@@ -3066,7 +3086,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
             </div>
             {selectedShape && (
               <p className="scenario-assignment-copy secondary">
-                Regeneration uses the selected {selectedShape.support.name} shape plus this group's current peak and scenario duration.
+                Regeneration uses the selected {selectedShape.support.name} shape plus {activeGroupLabel}'s current peak and scenario duration.
               </p>
             )}
             {activeStageGroup.stages.length > 0 ? (

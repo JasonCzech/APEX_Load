@@ -803,6 +803,39 @@ describe('TestHub', () => {
     expect(container.textContent).not.toContain('Auto Assignment')
   })
 
+  it('shows multi-group Scenario tab load settings in horizontal group tabs', async () => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+
+    await flushPromises()
+    await clickWizardStep('Scripts')
+    await clickButton('Add Group')
+    await clickWizardStep('Run Settings')
+
+    const groupTabs = Array.from(container.querySelectorAll('.scenario-group-tab'))
+    expect(groupTabs).toHaveLength(2)
+    expect(groupTabs.map(tab => tab.textContent)).toEqual([
+      'Group 1Unassigned script · 10 VUsers',
+      'Group 2Unassigned script · 10 VUsers',
+    ])
+    expect(groupTabs[1].getAttribute('aria-selected')).toBe('true')
+
+    const loadPanel = container.querySelector('.scenario-load-group-panel')
+    expect(loadPanel?.querySelectorAll('.scenario-script-group-card')).toHaveLength(1)
+    expect(loadPanel?.textContent).toContain('Group 2')
+    expect(loadPanel?.textContent).not.toContain('Group 1')
+
+    await act(async () => {
+      groupTabs[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelectorAll('.scenario-load-group-panel .scenario-script-group-card')).toHaveLength(1)
+    expect(container.querySelector('.scenario-load-group-panel')?.textContent).toContain('Group 1')
+    expect(container.querySelector('.scenario-load-group-panel')?.textContent).not.toContain('Group 2')
+    expect(Array.from(container.querySelectorAll('.scenario-group-tab'))[0].getAttribute('aria-selected')).toBe('true')
+  })
+
   it('persists script runtime settings from the Browser/Script Runtime tab', async () => {
     const onSelectTest = vi.fn()
 
@@ -1262,9 +1295,18 @@ describe('TestHub', () => {
     expect(secondGroupInitSelect?.value).toBe('at_once')
 
     await clickWizardStep('Run Settings')
-    const loadGroupCards = Array.from(container.querySelectorAll('.scenario-script-group-card'))
-    expect(loadGroupCards).toHaveLength(2)
-    const secondGroupVUsers = Array.from(loadGroupCards[1].querySelectorAll('input')).find(input => input.type === 'number')
+    const paymentGroupTab = Array.from(container.querySelectorAll('.scenario-group-tab')).find(tab => tab.textContent?.includes('Payments'))
+    expect(paymentGroupTab).toBeDefined()
+    if (!paymentGroupTab) return
+
+    await act(async () => {
+      paymentGroupTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const loadGroupCards = Array.from(container.querySelectorAll('.scenario-load-group-panel .scenario-script-group-card'))
+    expect(loadGroupCards).toHaveLength(1)
+    expect(loadGroupCards[0].textContent).toContain('Payments')
+    const secondGroupVUsers = Array.from(loadGroupCards[0].querySelectorAll('input')).find(input => input.type === 'number')
     expect(secondGroupVUsers).toBeDefined()
     if (!secondGroupVUsers) return
 

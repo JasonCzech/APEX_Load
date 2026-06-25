@@ -59,6 +59,8 @@ type Server struct {
 	leadership         *executionLeadership
 	mux                *http.ServeMux
 	usageCancel        context.CancelFunc
+	auditRetentionCancel context.CancelFunc
+	authAudit          auditThrottle
 	fanoutCancel       context.CancelFunc
 	fanoutSub          FanoutSubscription
 	generatorDiscovery *generatorDiscovery
@@ -239,7 +241,7 @@ func NewServer(cfg ServerConfig) *Server {
 func (s *Server) routes(allowedOrigins []string) {
 	cors := corsMiddleware(allowedOrigins)
 	log := loggingMiddleware
-	auth := authMiddleware(func() AuthSettings { return s.runner.GetSystemSettings().Auth }, s.store, s.cache)
+	auth := authMiddleware(func() AuthSettings { return s.runner.GetSystemSettings().Auth }, s.store, s.cache, withAuthAuditRecorder(s))
 	recorderViewAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
@@ -671,12 +673,15 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/auth/users", cors(log(auth(http.HandlerFunc(s.handleCreateUser)))))
 	s.mux.Handle("GET /api/v1/auth/users/{id}", cors(log(auth(http.HandlerFunc(s.handleGetUser)))))
 	s.mux.Handle("PATCH /api/v1/auth/users/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateUser)))))
+	s.mux.Handle("DELETE /api/v1/auth/users/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteUser)))))
 	s.mux.Handle("POST /api/v1/auth/users/{id}/bindings", cors(log(auth(http.HandlerFunc(s.handleCreateUserBinding)))))
 	s.mux.Handle("DELETE /api/v1/auth/users/{id}/bindings/{binding_id}", cors(log(auth(http.HandlerFunc(s.handleDeleteUserBinding)))))
 	s.mux.Handle("POST /api/v1/auth/users/{id}/disable", cors(log(auth(http.HandlerFunc(s.handleDisableUser)))))
 	s.mux.Handle("POST /api/v1/auth/users/{id}/enable", cors(log(auth(http.HandlerFunc(s.handleEnableUser)))))
+	s.mux.Handle("POST /api/v1/auth/users/{id}/revoke-sessions", cors(log(auth(http.HandlerFunc(s.handleRevokeUserSessions)))))
 	s.mux.Handle("GET /api/v1/auth/user-activity", cors(log(auth(http.HandlerFunc(s.handleGetUserActivity)))))
 	s.mux.Handle("GET /api/v1/auth/user-activity/export", cors(log(auth(http.HandlerFunc(s.handleExportUserActivity)))))
+	s.mux.Handle("GET /api/v1/auth/access-review", cors(log(auth(http.HandlerFunc(s.handleGetAccessReview)))))
 	s.mux.Handle("GET /api/v1/auth/service-accounts", cors(log(auth(http.HandlerFunc(s.handleListServiceAccounts)))))
 	s.mux.Handle("POST /api/v1/auth/service-accounts", cors(log(auth(http.HandlerFunc(s.handleCreateServiceAccount)))))
 	s.mux.Handle("PATCH /api/v1/auth/service-accounts/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateServiceAccount)))))
@@ -882,8 +887,19 @@ func setDashboardStaticHeaders(w http.ResponseWriter) {
 // but the effective auth mode bypasses authentication. In non-production it
 // only warns loudly so operators know the API is unauthenticated.
 func (s *Server) enforceAuthPosture() error {
-	mode := normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode
+	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	mode := settings.Mode
 	if !isAuthBypassMode(mode) {
+		// Trusted-headers mode trusts forwarded identity headers. In production it must
+		// be fronted by a verifiable trust boundary (a trusted-proxy CIDR allowlist or a
+		// shared secret); without one, anyone who can reach the controller port forges
+		// identity. Fail closed loudly at boot rather than silently per request.
+		if mode == authModeTrustedHeaders && productionMode() && !trustedProxyGateConfigured(settings) {
+			return fmt.Errorf("refusing to start: auth mode %q in production requires a trusted-proxy gate; set auth.trusted_proxy_cidrs or auth.trusted_proxy_secret_env_var", authModeTrustedHeaders)
+		}
+		if mode == authModeTrustedHeaders && !trustedProxyGateConfigured(settings) {
+			slog.Warn("trusted-headers auth has no trusted-proxy gate; forwarded identity headers are trusted from any source — configure auth.trusted_proxy_cidrs or auth.trusted_proxy_secret_env_var before production")
+		}
 		return nil
 	}
 	if productionMode() {
@@ -917,6 +933,7 @@ func (s *Server) Start() error {
 		return fmt.Errorf("starting recording proxy: %w", err)
 	}
 	s.startUsageAccountingSnapshotCadence()
+	s.startAuditRetentionCadence()
 
 	if err := s.startMetricsListener(); err != nil {
 		return err
@@ -1041,6 +1058,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.usageCancel != nil {
 		s.usageCancel()
 		s.usageCancel = nil
+	}
+	if s.auditRetentionCancel != nil {
+		s.auditRetentionCancel()
+		s.auditRetentionCancel = nil
 	}
 	if s.fanoutCancel != nil {
 		s.fanoutCancel()

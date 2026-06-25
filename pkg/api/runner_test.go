@@ -556,6 +556,7 @@ func (s *metricsStoreSpy) UpdateUserActive(id string, active bool, updatedAt tim
 func (s *metricsStoreSpy) BumpUserSessionEpoch(id string, updatedAt time.Time) (int, error) {
 	return 0, nil
 }
+func (s *metricsStoreSpy) CountUsers(filter storage.UserFilter) (int, error) { return 0, nil }
 func (s *metricsStoreSpy) DeleteUser(id string) error { return nil }
 func (s *metricsStoreSpy) SaveUserRoleBinding(binding *storage.UserRoleBinding) error {
 	return nil
@@ -564,6 +565,8 @@ func (s *metricsStoreSpy) DeleteUserRoleBinding(id string) error { return nil }
 func (s *metricsStoreSpy) ListUserRoleBindings(userID string) ([]*storage.UserRoleBinding, error) {
 	return nil, nil
 }
+func (s *metricsStoreSpy) CountActiveGlobalRoleHolders(role string) (int, error) { return 0, nil }
+func (s *metricsStoreSpy) DeleteAuditEventsBefore(cutoff time.Time) (int64, error) { return 0, nil }
 func (s *metricsStoreSpy) SaveAuditEvent(event *storage.AuditEvent) error {
 	if event != nil {
 		clone := *event
@@ -612,6 +615,9 @@ func (s *metricsStoreSpy) usageSnapshotCount() int {
 }
 func (s *metricsStoreSpy) ListUsageAccountingSnapshots(projectID string, limit int, offset int) ([]*storage.UsageAccountingSnapshot, error) {
 	return nil, nil
+}
+func (s *metricsStoreSpy) DeleteUsageAccountingSnapshotsBefore(cutoff time.Time) (int64, error) {
+	return 0, nil
 }
 func (s *metricsStoreSpy) Close() error { return nil }
 

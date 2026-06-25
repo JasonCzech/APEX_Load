@@ -3240,6 +3240,40 @@ export interface DashboardUser {
 export interface DashboardUserListResponse {
   users: DashboardUser[]
   count: number
+  total?: number
+  limit?: number
+  offset?: number
+  has_more?: boolean
+}
+
+export interface DashboardAccessReviewUser {
+  id: string
+  subject: string
+  display_name?: string
+  active: boolean
+  flags: string[]
+  global_roles?: string[]
+  last_seen_at?: string
+}
+
+export interface DashboardAccessReviewServiceAccount {
+  id: string
+  name: string
+  active: boolean
+  flags: string[]
+  scopes?: string[]
+  last_used_at?: string
+  expires_at?: string
+  rotation_due_at?: string
+}
+
+export interface DashboardAccessReviewResponse {
+  generated_at: string
+  stale_after_days: number
+  expiring_within_days: number
+  users: DashboardAccessReviewUser[]
+  service_accounts: DashboardAccessReviewServiceAccount[]
+  summary: Record<string, number>
 }
 
 export interface DashboardCreateUserRequest {

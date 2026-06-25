@@ -328,6 +328,20 @@ paths:
       security: []
       tags:
         - Auth
+  /api/v1/auth/access-review:
+    get:
+      summary: Get Access Review
+      description: |-
+        **Handler:** `handleGetAccessReview`
+
+        **Access Control:** Requires Authentication
+      operationId: handleGetAccessReview
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication
+      tags:
+        - Auth
   /api/v1/auth/audit-events:
     get:
       summary: List Audit Events
@@ -603,6 +617,25 @@ paths:
       tags:
         - Auth
   /api/v1/auth/users/{id}:
+    delete:
+      summary: Delete User
+      description: |-
+        **Handler:** `handleDeleteUser`
+
+        **Access Control:** Requires Authentication
+      operationId: handleDeleteUser
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Auth
     get:
       summary: Get User
       description: |-
@@ -714,6 +747,26 @@ paths:
 
         **Access Control:** Requires Authentication
       operationId: handleEnableUser
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Auth
+  /api/v1/auth/users/{id}/revoke-sessions:
+    post:
+      summary: Revoke User Sessions
+      description: |-
+        **Handler:** `handleRevokeUserSessions`
+
+        **Access Control:** Requires Authentication
+      operationId: handleRevokeUserSessions
       responses:
         "200":
           description: Successful operation

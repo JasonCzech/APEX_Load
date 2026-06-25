@@ -129,6 +129,7 @@ func TestTrustedHeaderAuthAllowsServiceAccountAPIKeyForSystemSettings(t *testing
 		KeyHash:     fmt.Sprintf("%x", sum[:]),
 		Active:      true,
 		GlobalRoles: []string{RoleSystemAdmin},
+		Scopes:      []string{"automation:*"},
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}); err != nil {
@@ -166,6 +167,7 @@ func TestTrustedHeaderAuthRateLimitsServiceAccountAPIKeys(t *testing.T) {
 		KeyHash:     fmt.Sprintf("%x", sum[:]),
 		Active:      true,
 		GlobalRoles: []string{RoleSystemAdmin},
+		Scopes:      []string{"automation:*"},
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}); err != nil {
