@@ -1058,6 +1058,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
   const [goalSizingLoading, setGoalSizingLoading] = useState(false)
   const [goalSizingError, setGoalSizingError] = useState('')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
+  const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
   const [stageGroupIndex, setStageGroupIndex] = useState(0)
   const [runtimeGroupIndex, setRuntimeGroupIndex] = useState(0)
   const [runSettingsTab, setRunSettingsTab] = useState<RunSettingsTab>('scenario')
@@ -1237,6 +1238,10 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
         if (!cancelled) {
           setEffectiveAuthAccessResources([])
         }
+      } finally {
+        if (!cancelled) {
+          setEffectiveAccessLoaded(true)
+        }
       }
     }
     loadEffectiveAccess()
@@ -1245,12 +1250,15 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     }
   }, [activeProject?.id, api])
   useEffect(() => {
-    if (!canManageTests) {
+    // Only tear down manage-only views once access has loaded; the brief
+    // default-DENY window before the access fetch resolves must not reset a
+    // deep-linked builder/edit view for a user who can in fact manage tests.
+    if (effectiveAccessLoaded && !canManageTests) {
       setShowForm(false)
       setEditingId(null)
       setConfirmDeleteScenarioId(null)
     }
-  }, [canManageTests])
+  }, [effectiveAccessLoaded, canManageTests])
 
   useEffect(() => {
     setStageGroupIndex(current => Math.min(current, Math.max(0, form.groups.length - 1)))
