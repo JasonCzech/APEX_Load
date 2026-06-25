@@ -122,6 +122,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   const [healthFilter, setHealthFilter] = useState<AuthoringHealthFilter>('all')
   const [releaseFilter, setReleaseFilter] = useState('all')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
+  const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
 
   const openRemoteSettings = useCallback(() => {
     try { window.localStorage.setItem('apexload.settings.focusSection', 'integrations') } catch { /* storage unavailable */ }
@@ -389,6 +390,10 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
         if (!cancelled) {
           setEffectiveAuthAccessResources([])
         }
+      } finally {
+        if (!cancelled) {
+          setEffectiveAccessLoaded(true)
+        }
       }
     }
     loadEffectiveAccess()
@@ -397,10 +402,13 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     }
   }, [activeProject?.id, api])
   useEffect(() => {
-    if (!canManageScripts && authoringState.subView !== 'list') {
+    // Only redirect away from a manage-only sub-view once effective access has
+    // loaded; otherwise the brief default-DENY window before the access fetch
+    // resolves would bounce a deep-linked create/edit view back to the library.
+    if (effectiveAccessLoaded && !canManageScripts && authoringState.subView !== 'list') {
       openLibrary()
     }
-  }, [authoringState.subView, canManageScripts, openLibrary])
+  }, [effectiveAccessLoaded, authoringState.subView, canManageScripts, openLibrary])
 
   useEffect(() => {
     onAuthoringStateChange?.({

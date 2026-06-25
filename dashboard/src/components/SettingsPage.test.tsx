@@ -444,6 +444,19 @@ describe('SettingsPage', () => {
             },
           ],
         },
+        {
+          id: 'system_configuration',
+          name: 'System Configuration',
+          description: '',
+          operations: [
+            { id: 'view_system', label: 'View settings and inventory', allowed: true, grant_source: 'global' },
+            { id: 'manage_system', label: 'Update system settings', allowed: true, grant_source: 'global' },
+            { id: 'manage_domains', label: 'Manage domains', allowed: true, grant_source: 'global' },
+            { id: 'manage_projects', label: 'Manage projects', allowed: true, grant_source: 'global' },
+            { id: 'manage_service_accounts', label: 'Manage service accounts', allowed: true, grant_source: 'global' },
+            { id: 'view_audit', label: 'View audit', allowed: true, grant_source: 'global' },
+          ],
+        },
       ],
     })
     apiMock.getHealth.mockResolvedValue({ status: 'healthy', version: '0.1.0', ws_clients: 1, test_count: 0 })
