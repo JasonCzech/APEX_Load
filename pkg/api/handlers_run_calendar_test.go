@@ -149,6 +149,69 @@ func TestHandleRunCalendarReturnsAdHocScheduledAndProjectedRuns(t *testing.T) {
 	}
 }
 
+func TestHandleRunCalendarProjectsBlockedScheduleAsBlocked(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.StoreScript(&dsl.Script{
+		ID:        "script-blocked-calendar",
+		Name:      "Blocked Checkout",
+		ProjectID: "project-calendar",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		Config:    dsl.ScriptConfig{BaseURL: "https://checkout.example.test"},
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/checkout"}},
+	})
+	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Blocked Scenario",
+		Duration: "10m",
+		Groups:   []CreateGroupEntry{{Name: "buyers", ScriptID: "script-blocked-calendar", VUsers: 5}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	// A non-auto approval policy leaves NextRequiredAction == "approval_required",
+	// so the schedule will not materialize as-is. It must still be projected on
+	// the calendar, tagged blocked, rather than disappearing.
+	schedule, err := server.runner.CreateScenarioSchedule(scenario.ID, CreateScenarioScheduleRequest{
+		Name:           "Approval-Gated Hourly",
+		CronExpr:       "0 * * * *",
+		ApprovalPolicy: "manual",
+	})
+	if err != nil {
+		t.Fatalf("CreateScenarioSchedule returned error: %v", err)
+	}
+
+	now := time.Now().UTC()
+	values := url.Values{}
+	values.Set("from", now.Add(-time.Hour).Format(time.RFC3339))
+	values.Set("to", now.Add(6*time.Hour).Format(time.RFC3339))
+	values.Set("project_id", "project-calendar")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/run-calendar?"+values.Encode(), nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload RunCalendarResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	blocked := findRunCalendarEvent(payload.Events, func(event RunCalendarEvent) bool {
+		return event.ScheduleID == schedule.ID && event.Projected
+	})
+	if blocked == nil {
+		t.Fatalf("events = %#v, want blocked schedule still projected", payload.Events)
+	}
+	if blocked.Status != "blocked" || blocked.OccurrenceStatus != "blocked" || blocked.ReasonCode != "approval_required" {
+		t.Fatalf("blocked event = %#v, want status/occurrence blocked with approval_required reason", blocked)
+	}
+}
+
 func TestHandleRunCalendarClampsRetentionAndFutureRange(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

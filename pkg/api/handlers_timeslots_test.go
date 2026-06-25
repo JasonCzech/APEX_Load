@@ -71,6 +71,58 @@ func TestCapacityReservationCreateValidation(t *testing.T) {
 	}
 }
 
+func TestCapacityReservationApprovalOverbookingGuard(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	settings := server.runner.GetSystemSettings()
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 10
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings: %v", err)
+	}
+	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	end := start.Add(2 * time.Hour)
+
+	create := func(name string) string {
+		rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots", map[string]any{
+			"project_id": "proj-a", "start_at": start, "end_at": end, "timezone": "UTC",
+			"requested_capacity": map[string]any{"generators": 8},
+		})
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("create %s status = %d body=%s", name, rec.Code, rec.Body.String())
+		}
+		var got storage.CapacityReservation
+		_ = json.Unmarshal(rec.Body.Bytes(), &got)
+		return got.ID
+	}
+	approve := func(id string, body any) *httptest.ResponseRecorder {
+		return timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots/"+id+"/approve", body)
+	}
+
+	a := create("a")
+	b := create("b")
+
+	if rec := approve(a, nil); rec.Code != http.StatusOK {
+		t.Fatalf("approve first = %d body=%s, want 200", rec.Code, rec.Body.String())
+	}
+	// A second overlapping reservation overbooks the pool (8 + 8 > 10) -> blocked.
+	if rec := approve(b, nil); rec.Code != http.StatusConflict {
+		t.Fatalf("approve overbooking = %d body=%s, want 409", rec.Code, rec.Body.String())
+	}
+	// Override without a reason is rejected.
+	if rec := approve(b, map[string]any{"conflict_override": true}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("override without reason = %d, want 400", rec.Code)
+	}
+	// Override with a reason is allowed (admin accepts the overbooking).
+	rec := approve(b, map[string]any{"conflict_override": true, "reason": "approved by capacity owner"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("override with reason = %d body=%s, want 200", rec.Code, rec.Body.String())
+	}
+	var got storage.CapacityReservation
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got.ApprovalState != "approved" {
+		t.Fatalf("overridden reservation state = %q, want approved", got.ApprovalState)
+	}
+}
+
 func TestCapacityReservationListAndAvailability(t *testing.T) {
 	server, _ := newTimeslotServer(t)
 	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
@@ -370,9 +422,9 @@ func TestStandaloneBindEnforcesWindowAndCapacity(t *testing.T) {
 
 func TestCapacityReservationRouteAccessRequirements(t *testing.T) {
 	cases := []struct {
-		method     string
-		path       string
-		wantRoles  []string
+		method    string
+		path      string
+		wantRoles []string
 	}{
 		{http.MethodPost, "/api/v1/capacity/timeslots", []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}},
 		{http.MethodGet, "/api/v1/capacity/timeslots", []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}},

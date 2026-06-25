@@ -605,6 +605,7 @@ type ScenarioSchedule struct {
 	CronExpr            string                      `json:"cron_expr"`
 	Timezone            string                      `json:"timezone,omitempty"`
 	ReleaseID           string                      `json:"release_id,omitempty"`
+	TimeslotID          string                      `json:"timeslot_id,omitempty"`
 	RunNameTemplate     string                      `json:"run_name_template,omitempty"`
 	Enabled             bool                        `json:"enabled"`
 	ApprovalPolicy      string                      `json:"approval_policy,omitempty"`

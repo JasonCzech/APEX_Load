@@ -553,6 +553,9 @@ func (s *metricsStoreSpy) ListUsers(filter storage.UserFilter) ([]*storage.User,
 func (s *metricsStoreSpy) UpdateUserActive(id string, active bool, updatedAt time.Time) error {
 	return nil
 }
+func (s *metricsStoreSpy) BumpUserSessionEpoch(id string, updatedAt time.Time) (int, error) {
+	return 0, nil
+}
 func (s *metricsStoreSpy) DeleteUser(id string) error { return nil }
 func (s *metricsStoreSpy) SaveUserRoleBinding(binding *storage.UserRoleBinding) error {
 	return nil
@@ -5236,6 +5239,94 @@ func TestNextScenarioScheduleRunHonorsBlackoutAndAvailabilityWindows(t *testing.
 	}
 }
 
+func TestNextScenarioScheduleRunTimezoneAware(t *testing.T) {
+	tests := []struct {
+		name     string
+		cron     string
+		timezone string
+		from     time.Time
+		want     time.Time
+	}{
+		{
+			name:     "chicago morning is local not utc",
+			cron:     "0 9 * * *",
+			timezone: "America/Chicago",
+			from:     time.Date(2026, time.May, 16, 0, 0, 0, 0, time.UTC),
+			// 09:00 America/Chicago (CDT, UTC-5) == 14:00 UTC, not 09:00 UTC.
+			want: time.Date(2026, time.May, 16, 14, 0, 0, 0, time.UTC),
+		},
+		{
+			name:     "dst spring forward skips nonexistent local time",
+			cron:     "30 2 * * *",
+			timezone: "America/Chicago",
+			from:     time.Date(2026, time.March, 8, 0, 0, 0, 0, time.UTC),
+			// 2026-03-08 02:30 CT does not exist (spring forward); next valid
+			// occurrence is 2026-03-09 02:30 CDT == 07:30 UTC.
+			want: time.Date(2026, time.March, 9, 7, 30, 0, 0, time.UTC),
+		},
+		{
+			name:     "dst fall back picks earliest matching instant",
+			cron:     "30 1 * * *",
+			timezone: "America/Chicago",
+			from:     time.Date(2026, time.November, 1, 0, 0, 0, 0, time.UTC),
+			// 01:30 local occurs twice on fall-back day; the earliest instant is
+			// 01:30 CDT == 06:30 UTC.
+			want: time.Date(2026, time.November, 1, 6, 30, 0, 0, time.UTC),
+		},
+		{
+			name:     "invalid timezone falls back to utc",
+			cron:     "0 9 * * *",
+			timezone: "Not/ARealZone",
+			from:     time.Date(2026, time.May, 16, 0, 0, 0, 0, time.UTC),
+			want:     time.Date(2026, time.May, 16, 9, 0, 0, 0, time.UTC),
+		},
+		{
+			name:     "posix dom-or-dow matches either field",
+			cron:     "0 9 15 * 1",
+			timezone: "UTC",
+			from:     time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
+			// Monday 2026-07-06 matches day-of-week well before the 15th matches
+			// day-of-month; the prior AND-only logic would have skipped it.
+			want: time.Date(2026, time.July, 6, 9, 0, 0, 0, time.UTC),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			schedule := &storage.ScenarioSchedule{CronExpr: tc.cron, Timezone: tc.timezone}
+			next, err := nextScenarioScheduleRun(schedule, tc.from)
+			if err != nil {
+				t.Fatalf("nextScenarioScheduleRun returned error: %v", err)
+			}
+			if next == nil || !next.Equal(tc.want) {
+				t.Fatalf("next run = %v, want %v", next, tc.want)
+			}
+			if next.Location() != time.UTC {
+				t.Fatalf("next_run_at must be stored in UTC, got location %s", next.Location())
+			}
+		})
+	}
+}
+
+func TestNextScenarioScheduleRunRecomputesAfterAdvance(t *testing.T) {
+	// A timezone-aware schedule should advance to the same local wall-clock time
+	// on the following day (a tz change is reflected on each recompute because
+	// the same evaluator runs every time).
+	schedule := &storage.ScenarioSchedule{CronExpr: "0 9 * * *", Timezone: "America/Chicago"}
+	first, err := nextScenarioScheduleRun(schedule, time.Date(2026, time.May, 16, 0, 0, 0, 0, time.UTC))
+	if err != nil || first == nil {
+		t.Fatalf("first run error: %v", err)
+	}
+	second, err := nextScenarioScheduleRun(schedule, *first)
+	if err != nil || second == nil {
+		t.Fatalf("second run error: %v", err)
+	}
+	wantFirst := time.Date(2026, time.May, 16, 14, 0, 0, 0, time.UTC)
+	wantSecond := time.Date(2026, time.May, 17, 14, 0, 0, 0, time.UTC)
+	if !first.Equal(wantFirst) || !second.Equal(wantSecond) {
+		t.Fatalf("recompute = (%v, %v), want (%v, %v)", first, second, wantFirst, wantSecond)
+	}
+}
+
 func TestScenarioSchedulerRunDueSchedulesCreatesAndStartsRun(t *testing.T) {
 	store := &metricsStoreSpy{}
 	runner := NewTestRunner(2, NewHub(), store)
@@ -5330,6 +5421,98 @@ func TestScenarioSchedulerRunDueSchedulesCreatesAndStartsRun(t *testing.T) {
 	}
 	if len(auditEvents) != 1 || auditEvents[0].ResourceID != occurrences[0].ID || auditEvents[0].Details["reason_code"] != "started" {
 		t.Fatalf("audit events = %#v, want materialized occurrence audit", auditEvents)
+	}
+}
+
+func TestScenarioSchedulerBlocksRunOnLaunchWindowConflict(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-blocked-sched",
+		Name:     "Sched Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Blocked Sched",
+		Duration: "30m",
+		Groups:   []CreateGroupEntry{{ScriptID: "script-blocked-sched", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+
+	runner.mu.Lock()
+	// Constrain global concurrency to 1 and occupy it with a reserved run that
+	// overlaps the schedule's launch window, so materializing the schedule would
+	// exceed the global concurrency window and must be blocked, not launched.
+	settings := runner.settings
+	settings.General.MaxConcurrentTests = 1
+	runner.settings = settings
+	reservedStart := due
+	runner.tests["competing-reserved"] = &ManagedTest{
+		ID:               "competing-reserved",
+		Name:             "Competing Reserved",
+		Status:           "RESERVED",
+		ScheduledStartAt: &reservedStart,
+		Duration:         time.Hour,
+		TotalVUsers:      1,
+		Groups:           []TestGroup{{Name: "g", VUsers: 1}},
+	}
+	schedule := &storage.ScenarioSchedule{
+		ID:         "schedule-blocked",
+		ScenarioID: scenario.ID,
+		Name:       "Blocked Run",
+		CronExpr:   "*/5 * * * *",
+		Enabled:    true,
+		NextRunAt:  &due,
+		CreatedAt:  now.Add(-time.Hour),
+		UpdatedAt:  now.Add(-time.Hour),
+	}
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+
+	// No run should have started.
+	select {
+	case id := <-backend.started:
+		t.Fatalf("expected no run to start on a launch-window conflict, but %q started", id)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].Status != "blocked" || occurrences[0].ReasonCode != "schedule_conflict" {
+		t.Fatalf("occurrences = %#v, want one blocked occurrence with schedule_conflict", occurrences)
+	}
+	if !strings.Contains(occurrences[0].ConflictSummary, "launch window conflict") {
+		t.Fatalf("blocked occurrence conflict = %q, want launch-window conflict detail", occurrences[0].ConflictSummary)
+	}
+	if occurrences[0].TestID != "" {
+		t.Fatalf("blocked occurrence should not reference a started test, got %q", occurrences[0].TestID)
+	}
+
+	runner.mu.RLock()
+	defer runner.mu.RUnlock()
+	if _, exists := runner.tests["competing-reserved"]; !exists || len(runner.tests) != 1 {
+		t.Fatalf("runner.tests = %d entries, want only the competing reserved run (no orphaned scheduled test)", len(runner.tests))
 	}
 }
 

@@ -12,6 +12,7 @@ package api
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -276,6 +277,23 @@ func (s *Server) handleRejectCapacityReservation(w http.ResponseWriter, r *http.
 	s.transitionReservationApproval(w, r, "rejected", "timeslot.reject")
 }
 
+type reservationApprovalRequest struct {
+	ConflictOverride bool   `json:"conflict_override"`
+	Reason           string `json:"reason"`
+}
+
+// decodeReservationApprovalRequest reads the optional approve-body override flag.
+// The approve endpoint historically took no body, so a missing/empty/invalid body
+// degrades to the zero value (no override).
+func decodeReservationApprovalRequest(r *http.Request) reservationApprovalRequest {
+	var req reservationApprovalRequest
+	if r.Body == nil {
+		return req
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	return req
+}
+
 func (s *Server) transitionReservationApproval(w http.ResponseWriter, r *http.Request, state, action string) {
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
@@ -285,15 +303,64 @@ func (s *Server) transitionReservationApproval(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
+	details := map[string]any{"approval_state": state}
+	// Guard approval against overbooking: approving a reservation whose reserved
+	// generators, combined with the already-approved reservations overlapping its
+	// window, exceed the configured pool would let two bound timeslots claim
+	// capacity that does not exist. An admin can override with an explicit reason.
+	if state == "approved" {
+		approval := decodeReservationApprovalRequest(r)
+		if approval.ConflictOverride {
+			if strings.TrimSpace(approval.Reason) == "" {
+				writeError(w, http.StatusBadRequest, "conflict_override requires a reason")
+				return
+			}
+			details["conflict_override"] = true
+			details["override_reason"] = strings.TrimSpace(approval.Reason)
+		} else if msg := s.reservationOverbookingConflict(reservation); msg != "" {
+			writeError(w, http.StatusConflict, msg+"; pass conflict_override with a reason to approve anyway")
+			return
+		}
+	}
 	reservation.ApprovalState = state
 	if err := s.store.SaveCapacityReservation(reservation); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.recordAuditEvent(r, action, "success", "timeslot", reservation.ID, reservation.ProjectID, map[string]any{
-		"approval_state": state,
-	})
+	s.recordAuditEvent(r, action, "success", "timeslot", reservation.ID, reservation.ProjectID, details)
 	writeJSON(w, http.StatusOK, reservation)
+}
+
+// reservationOverbookingConflict returns a non-empty message when approving the
+// reservation would over-commit the configured generator pool across the
+// approved reservations overlapping its window. A storage failure fails closed so
+// an approval is never granted against unknown reservation state.
+func (s *Server) reservationOverbookingConflict(reservation *storage.CapacityReservation) string {
+	settings := s.runner.GetSystemSettings()
+	required := timeslotReservedGenerators(settings, reservation)
+	if required <= 0 {
+		return ""
+	}
+	pool := resolveCapacityAvailabilityAt(settings, reservation.StartAt.UTC()).EffectiveAvailableGenerators
+	if pool <= 0 {
+		// No configured generator pool to enforce against.
+		return ""
+	}
+	overlaps, err := s.store.ListCapacityReservationsByTimeRange("", reservation.StartAt, reservation.EndAt)
+	if err != nil {
+		return "reservation capacity state is temporarily unavailable; try again"
+	}
+	total := required
+	for _, o := range overlaps {
+		if o == nil || o.ID == reservation.ID || o.ApprovalState != "approved" {
+			continue
+		}
+		total += timeslotReservedGenerators(settings, o)
+	}
+	if total > pool {
+		return fmt.Sprintf("approving this timeslot would reserve %d generators in an overlapping window but only %d are available", total, pool)
+	}
+	return ""
 }
 
 func (s *Server) handleCheckCapacityAvailability(w http.ResponseWriter, r *http.Request) {

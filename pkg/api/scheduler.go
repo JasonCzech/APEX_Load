@@ -42,6 +42,7 @@ type CreateScenarioScheduleRequest struct {
 	CronExpr            string                           `json:"cron_expr"`
 	Timezone            string                           `json:"timezone,omitempty"`
 	ReleaseID           string                           `json:"release_id,omitempty"`
+	TimeslotID          string                           `json:"timeslot_id,omitempty"`
 	RunNameTemplate     string                           `json:"run_name_template,omitempty"`
 	Enabled             *bool                            `json:"enabled,omitempty"`
 	ApprovalPolicy      string                           `json:"approval_policy,omitempty"`
@@ -194,13 +195,19 @@ func nextScenarioScheduleRun(schedule *storage.ScenarioSchedule, from time.Time)
 	if len(fields) != 5 {
 		return nil, fmt.Errorf("cron expression must have 5 fields")
 	}
+	location := scheduleEvalLocation(schedule.Timezone)
 	limit := from.Add(366 * 24 * time.Hour)
 	for candidate := from.Truncate(time.Minute).Add(time.Minute); !candidate.After(limit); candidate = candidate.Add(time.Minute) {
-		if cronFieldMatches(fields[0], int(candidate.Minute()), 0, 59) &&
-			cronFieldMatches(fields[1], int(candidate.Hour()), 0, 23) &&
-			cronFieldMatches(fields[2], int(candidate.Day()), 1, 31) &&
-			cronFieldMatches(fields[3], int(candidate.Month()), 1, 12) &&
-			cronFieldMatches(fields[4], int(candidate.Weekday()), 0, 6) {
+		// Match cron fields in the schedule's declared timezone so a schedule
+		// fires at its local wall-clock time; iteration and the returned
+		// next_run_at stay in UTC. During a DST spring-forward the skipped local
+		// hour simply never matches (the desired skip); during fall-back the
+		// earliest matching UTC instant wins.
+		local := candidate.In(location)
+		if cronFieldMatches(fields[0], int(local.Minute()), 0, 59) &&
+			cronFieldMatches(fields[1], int(local.Hour()), 0, 23) &&
+			cronFieldMatches(fields[3], int(local.Month()), 1, 12) &&
+			cronMatchesDayOfMonthAndWeek(fields[2], fields[4], local) {
 			if allowed, err := scheduleAllowsCandidate(schedule, candidate); err != nil {
 				return nil, err
 			} else if !allowed {
@@ -279,6 +286,39 @@ func parseCronNumber(raw string, min int, max int) (int, bool) {
 		return 0, false
 	}
 	return value, true
+}
+
+// scheduleEvalLocation resolves the timezone in which a schedule's cron fields
+// are evaluated. An empty or unparseable timezone falls back to UTC so a
+// mis-typed zone degrades to the previous (UTC) behavior rather than failing the
+// schedule. next_run_at is always stored in UTC regardless of this location.
+func scheduleEvalLocation(timezone string) *time.Location {
+	timezone = strings.TrimSpace(timezone)
+	if timezone == "" {
+		return time.UTC
+	}
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		return time.UTC
+	}
+	return location
+}
+
+// cronMatchesDayOfMonthAndWeek applies POSIX cron semantics for the
+// day-of-month (field 3) and day-of-week (field 5) fields: when BOTH are
+// restricted (neither is "*"), a candidate matches if EITHER field matches;
+// otherwise both must match (and a "*" field always matches, so this reduces to
+// the single restricted field). This fixes the prior AND-only behavior where
+// "0 9 15 * 1" only fired on a Monday that was also the 15th.
+func cronMatchesDayOfMonthAndWeek(domField, dowField string, t time.Time) bool {
+	domRestricted := strings.TrimSpace(domField) != "*"
+	dowRestricted := strings.TrimSpace(dowField) != "*"
+	domMatch := cronFieldMatches(domField, t.Day(), 1, 31)
+	dowMatch := cronFieldMatches(dowField, int(t.Weekday()), 0, 6)
+	if domRestricted && dowRestricted {
+		return domMatch || dowMatch
+	}
+	return domMatch && dowMatch
 }
 
 func scheduleAllowsCandidate(schedule *storage.ScenarioSchedule, candidate time.Time) (bool, error) {
@@ -435,9 +475,37 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		_ = tr.saveScenarioScheduleOccurrenceLocked(occurrence)
 		return nil, err
 	}
+	// Recurring runs use the same launch-window evaluator as manual/scheduled
+	// starts and preflight. A run that would launch into a capacity/concurrency/
+	// reservation-window conflict is recorded as a blocked occurrence (surfaced on
+	// the run calendar) instead of being launched anyway. The test is built but
+	// not yet registered, so it does not self-conflict; the "materializing"
+	// occurrence already dedups this schedule's own projection.
+	if windowErr := tr.launchStartWindowErrorLocked(test, now, test.ID, schedule.ID); windowErr != nil {
+		schedule.ConflictSummary = windowErr.Error()
+		if err := tr.blockScheduleOccurrenceLocked(schedule, plannedAt, "schedule_conflict", schedule.ConflictSummary, "resolve_conflict", schedule.ConflictSummary, now, nil); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	// Bind the schedule's default capacity timeslot, if configured, to this
+	// occurrence's run (same atomic bind ad-hoc runs use). Lenient: if the slot is
+	// missing, unapproved, already bound, or doesn't fit, block this occurrence
+	// with a clear reason rather than failing the whole schedule — schedules are
+	// long-lived and the slot may be transiently unavailable.
+	if strings.TrimSpace(schedule.TimeslotID) != "" {
+		if bindErr := tr.validateAndBindTimeslotLocked(strings.TrimSpace(schedule.TimeslotID), test); bindErr != nil {
+			schedule.ConflictSummary = bindErr.Error()
+			if err := tr.blockScheduleOccurrenceLocked(schedule, plannedAt, "timeslot_unavailable", bindErr.Error(), "resolve_conflict", bindErr.Error(), now, nil); err != nil {
+				return nil, err
+			}
+			return nil, nil
+		}
+	}
 	tr.tests[test.ID] = test
 	tr.saveManagedTestRecord(test)
 	tr.broadcastEvent("test_created", test)
+	// The launch window was just evaluated above; skip the redundant re-check.
 	prepared, err := tr.prepareTestStartLocked(test.ID, StartTestOptions{SkipLaunchWindowPreflight: true})
 	if err != nil {
 		occurrence.Status = "failed"
@@ -718,6 +786,7 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 		CronExpr:        cronExpr,
 		Timezone:        strings.TrimSpace(req.Timezone),
 		ReleaseID:       strings.TrimSpace(req.ReleaseID),
+		TimeslotID:      strings.TrimSpace(req.TimeslotID),
 		RunNameTemplate: strings.TrimSpace(req.RunNameTemplate),
 		Enabled:         enabled,
 		ApprovalPolicy:  normalizeScenarioScheduleApprovalPolicy(req.ApprovalPolicy),

@@ -1435,6 +1435,7 @@ export interface ScenarioSchedule {
   cron_expr: string
   timezone?: string
   release_id?: string
+  timeslot_id?: string
   run_name_template?: string
   enabled: boolean
   revision?: number

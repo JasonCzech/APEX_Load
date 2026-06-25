@@ -129,7 +129,7 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 		blocking = append(blocking, conflicts...)
 	}
 
-	if conflicts := tr.launchWindowConflictsLocked(preview, window, now, ""); len(conflicts) > 0 {
+	if conflicts := tr.launchWindowConflictsLocked(preview, window, now, "", ""); len(conflicts) > 0 {
 		blocking = append(blocking, conflicts...)
 	}
 
@@ -344,7 +344,7 @@ func maxGroupRampDown(groups []TestGroup) time.Duration {
 	return maxRamp
 }
 
-func (tr *TestRunner) launchWindowConflictsLocked(test *ManagedTest, window LaunchWindow, now time.Time, excludeTestID string) []LaunchConflict {
+func (tr *TestRunner) launchWindowConflictsLocked(test *ManagedTest, window LaunchWindow, now time.Time, excludeTestID string, excludeScheduleID string) []LaunchConflict {
 	conflicts := make([]LaunchConflict, 0)
 	conflicts = append(conflicts, tr.launchGovernanceWindowConflictsLocked(test, window)...)
 
@@ -362,8 +362,8 @@ func (tr *TestRunner) launchWindowConflictsLocked(test *ManagedTest, window Laun
 		proposal.Generators = 1
 	}
 
-	events := tr.launchCapacityEventsLocked(window, now, excludeTestID)
-	sampleTimes := launchSampleTimes(window, events, tr.settings.CapacityPlanning.Reservations)
+	events := tr.launchCapacityEventsLocked(window, now, excludeTestID, excludeScheduleID)
+	sampleTimes := launchSampleTimes(window, events, tr.settings.CapacityPlanning.Reservations, tr.boundTimeslotBoundariesInWindowLocked(window))
 	for _, sample := range sampleTimes {
 		overlapping := overlappingLaunchEvents(events, sample)
 		if conflict := tr.launchCapacityConflictAtLocked(proposal, overlapping, sample); conflict != nil {
@@ -374,7 +374,7 @@ func (tr *TestRunner) launchWindowConflictsLocked(test *ManagedTest, window Laun
 	return conflicts
 }
 
-func (tr *TestRunner) launchCapacityEventsLocked(window LaunchWindow, now time.Time, excludeTestID string) []launchCapacityEvent {
+func (tr *TestRunner) launchCapacityEventsLocked(window LaunchWindow, now time.Time, excludeTestID string, excludeScheduleID string) []launchCapacityEvent {
 	events := make([]launchCapacityEvent, 0)
 	includeActiveTests := window.StartAt.After(now.Add(time.Minute))
 	for id, test := range tr.tests {
@@ -403,6 +403,13 @@ func (tr *TestRunner) launchCapacityEventsLocked(window LaunchWindow, now time.T
 	}
 	for _, schedule := range tr.listAllScenarioSchedulesLocked() {
 		if schedule == nil || !schedule.Enabled || schedule.NextRequiredAction == "approval_required" || strings.TrimSpace(schedule.ConflictSummary) != "" {
+			continue
+		}
+		// When evaluating a schedule's own materialization, exclude that schedule's
+		// projected occurrences: its imminent next occurrence coincides with the
+		// run being materialized and would otherwise double-count as a competing
+		// event (a self-conflict).
+		if excludeScheduleID != "" && schedule.ID == excludeScheduleID {
 			continue
 		}
 		scenario, ok := tr.scenarios[schedule.ScenarioID]
@@ -522,7 +529,7 @@ func (tr *TestRunner) launchCapacityEventForScenarioLocked(schedule *storage.Sce
 	}
 }
 
-func launchSampleTimes(window LaunchWindow, events []launchCapacityEvent, reservations []CapacityReservation) []time.Time {
+func launchSampleTimes(window LaunchWindow, events []launchCapacityEvent, reservations []CapacityReservation, extraBoundaries []time.Time) []time.Time {
 	values := []time.Time{window.StartAt, window.EndAt.Add(-time.Second)}
 	for _, event := range events {
 		if launchInstantInWindow(event.StartAt, window) {
@@ -538,6 +545,14 @@ func launchSampleTimes(window LaunchWindow, events []launchCapacityEvent, reserv
 		}
 		if reservation.EndsAt != nil && launchInstantInWindow(reservation.EndsAt.UTC(), window) {
 			values = append(values, reservation.EndsAt.UTC())
+		}
+	}
+	// Evaluate at the exact instants a bound capacity timeslot opens or closes
+	// inside the window so a short reservation that begins and ends between two
+	// other sample points is not missed.
+	for _, boundary := range extraBoundaries {
+		if launchInstantInWindow(boundary.UTC(), window) {
+			values = append(values, boundary.UTC())
 		}
 	}
 	sort.Slice(values, func(i, j int) bool { return values[i].Before(values[j]) })
@@ -726,12 +741,12 @@ func launchInstantInWindow(value time.Time, window LaunchWindow) bool {
 	return !value.Before(window.StartAt) && value.Before(window.EndAt)
 }
 
-func (tr *TestRunner) launchStartWindowErrorLocked(test *ManagedTest, start time.Time, excludeTestID string) error {
+func (tr *TestRunner) launchStartWindowErrorLocked(test *ManagedTest, start time.Time, excludeTestID string, excludeScheduleID string) error {
 	if test == nil {
 		return nil
 	}
 	window := launchWindowForTest(test, start.UTC())
-	conflicts := tr.launchWindowConflictsLocked(test, window, start.UTC(), excludeTestID)
+	conflicts := tr.launchWindowConflictsLocked(test, window, start.UTC(), excludeTestID, excludeScheduleID)
 	if len(conflicts) == 0 {
 		return nil
 	}

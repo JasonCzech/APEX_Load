@@ -89,7 +89,7 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 	}
 	if status == "RESERVED" && test.ScheduledStartAt != nil {
 		window := launchWindowForTest(test, test.ScheduledStartAt.UTC())
-		if conflicts := tr.launchWindowConflictsLocked(test, window, now.UTC(), ""); len(conflicts) > 0 {
+		if conflicts := tr.launchWindowConflictsLocked(test, window, now.UTC(), "", ""); len(conflicts) > 0 {
 			return nil, fmt.Errorf("launch window conflict: %s", conflicts[0].Message)
 		}
 	}

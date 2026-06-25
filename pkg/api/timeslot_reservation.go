@@ -94,6 +94,31 @@ func (tr *TestRunner) boundTimeslotsActiveAtLocked(at time.Time) ([]*storage.Cap
 	return out, nil
 }
 
+// boundTimeslotBoundariesInWindowLocked returns the start/end instants of the
+// approved, bound timeslots overlapping the launch window. They are fed into the
+// launch-window sample set so the reservation-aware capacity check is evaluated
+// at the exact instants a timeslot's capacity hold begins or ends, rather than
+// only at fixed event/window boundaries. A lookup failure degrades to no extra
+// boundaries — the per-sample reservation check still fails closed on its own.
+func (tr *TestRunner) boundTimeslotBoundariesInWindowLocked(window LaunchWindow) []time.Time {
+	if tr.reservationStore == nil {
+		return nil
+	}
+	slots, err := tr.reservationStore.ListCapacityReservationsByTimeRange("", window.StartAt, window.EndAt)
+	if err != nil {
+		slog.Warn("launch window: bound-timeslot boundary lookup failed", "error", err)
+		return nil
+	}
+	out := make([]time.Time, 0, len(slots)*2)
+	for _, ts := range slots {
+		if ts == nil || ts.ApprovalState != "approved" || ts.BoundTestID == nil || strings.TrimSpace(*ts.BoundTestID) == "" {
+			continue
+		}
+		out = append(out, ts.StartAt.UTC(), ts.EndAt.UTC())
+	}
+	return out
+}
+
 // reservationTotalsWithTimeslots returns (totalReserved, projectReserved)
 // generators at `at`, combining settings-based reservations with the supplied
 // active bound timeslots.
