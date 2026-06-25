@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import { useApi } from '../hooks/useApi'
 import { SortIndicator as SortIcon } from './SortIndicator'
 import {
+  DashboardAccessReviewResponse,
   DashboardAuditEvent,
   DashboardAuditEventFilter,
   DashboardServiceAccount,
@@ -21,7 +22,7 @@ import { useHasTopbarContributionProvider, useTopbarContribution } from '../hook
 type AccessTab = 'users' | 'service_accounts' | 'activity'
 type UserSubTab = 'existing' | 'onboard'
 type ServiceAccountSubTab = 'existing' | 'generate'
-type ActivitySubTab = 'events' | 'usage'
+type ActivitySubTab = 'events' | 'usage' | 'review'
 type SortDirection = 'asc' | 'desc'
 type UserSortField = 'user' | 'status' | 'email' | 'roles' | 'access' | 'last_seen' | 'created' | 'updated' | 'usage'
 type AccountSortField = 'account' | 'status' | 'roles' | 'access' | 'scopes' | 'last_used' | 'rotation_due' | 'expires' | 'updated'
@@ -641,6 +642,7 @@ export default function AccessPage({
   const [activitySubTab, setActivitySubTab] = useState<ActivitySubTab>('events')
   const [accounts, setAccounts] = useState<DashboardServiceAccount[]>([])
   const [users, setUsers] = useState<DashboardUser[]>([])
+  const [usersTotal, setUsersTotal] = useState(0)
   const [selectedUserID, setSelectedUserID] = useState('')
   const [selectedAccountID, setSelectedAccountID] = useState('')
   const [selectedActivityID, setSelectedActivityID] = useState('')
@@ -671,6 +673,9 @@ export default function AccessPage({
   })
   const [activityEvents, setActivityEvents] = useState<DashboardAuditEvent[]>([])
   const [activityUsage, setActivityUsage] = useState<Awaited<ReturnType<typeof api.getAuthUserActivity>>['usage'] | null>(null)
+  const [accessReview, setAccessReview] = useState<DashboardAccessReviewResponse | null>(null)
+  const [accessReviewLoading, setAccessReviewLoading] = useState(false)
+  const [accessReviewError, setAccessReviewError] = useState('')
   const [form, setForm] = useState<ServiceAccountForm>(() => buildPresetForm(presetByID('ci'), activeProject?.id))
   const [loading, setLoading] = useState(true)
   const [usersLoading, setUsersLoading] = useState(true)
@@ -697,7 +702,7 @@ export default function AccessPage({
       <div className="access-tab-row topbar-page-section-toggle" role="tablist" aria-label="Access workspace sections">
         {canUseUsers && (
           <button type="button" role="tab" aria-selected={activeTab === 'users'} className={`access-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
-            Users <strong>{users.length}</strong>
+            Users <strong>{usersTotal > users.length ? `${users.length} of ${usersTotal}` : users.length}</strong>
           </button>
         )}
         {canManageServiceAccounts && (
@@ -712,7 +717,7 @@ export default function AccessPage({
         )}
       </div>
     ) : null
-  ), [accessWorkspaceAvailable, accounts.length, activeTab, activityEvents.length, canManageServiceAccounts, canUseUsers, canViewUserActivity, users.length])
+  ), [accessWorkspaceAvailable, accounts.length, activeTab, activityEvents.length, canManageServiceAccounts, canUseUsers, canViewUserActivity, users.length, usersTotal])
 
   const accessTopbarContribution = useMemo(() => ({
     id: 'access-page',
@@ -900,10 +905,12 @@ export default function AccessPage({
     try {
       const response = await api.listAuthUsers({ limit: 100 })
       setUsers(response.users || [])
+      setUsersTotal(typeof response.total === 'number' ? response.total : (response.users || []).length)
       setUserActionError('')
     } catch (error: unknown) {
       setUserActionError(getErrorMessage(error, 'Unable to load users'))
       setUsers([])
+      setUsersTotal(0)
     } finally {
       setUsersLoading(false)
     }
@@ -930,6 +937,27 @@ export default function AccessPage({
       setActivityLoading(false)
     }
   }, [activityFilter, api, canViewUserActivity])
+
+  const loadAccessReview = useCallback(async () => {
+    if (!canViewUserActivity) return
+    setAccessReviewLoading(true)
+    try {
+      const response = await api.getAccessReview()
+      setAccessReview(response)
+      setAccessReviewError('')
+    } catch (error: unknown) {
+      setAccessReviewError(getErrorMessage(error, 'Unable to load access review'))
+      setAccessReview(null)
+    } finally {
+      setAccessReviewLoading(false)
+    }
+  }, [api, canViewUserActivity])
+
+  useEffect(() => {
+    if (activeTab === 'activity' && activitySubTab === 'review' && !accessReview && !accessReviewLoading) {
+      void loadAccessReview()
+    }
+  }, [activeTab, activitySubTab, accessReview, accessReviewLoading, loadAccessReview])
 
   useEffect(() => {
     setActiveTab(current => {
@@ -1114,6 +1142,39 @@ export default function AccessPage({
       await loadUsers()
     } catch (error: unknown) {
       setUserActionError(getErrorMessage(error, `Unable to ${active ? 'restore' : 'remove'} user access`))
+      setUserActionMessage('')
+    }
+  }
+
+  const revokeSessions = async (user: DashboardUser) => {
+    if (!canManageUserLifecycle) return
+    if (typeof window !== 'undefined' && !window.confirm(`Sign out all active sessions for ${user.display_name || user.subject}? Their account stays active but they must sign in again.`)) {
+      return
+    }
+    try {
+      await api.revokeAuthUserSessions(user.id)
+      setUserActionMessage(`Revoked active sessions for ${user.display_name || user.subject}.`)
+      setUserActionError('')
+      await loadUsers()
+    } catch (error: unknown) {
+      setUserActionError(getErrorMessage(error, 'Unable to revoke user sessions'))
+      setUserActionMessage('')
+    }
+  }
+
+  const deleteUser = async (user: DashboardUser) => {
+    if (!canManageUserLifecycle) return
+    if (typeof window !== 'undefined' && !window.confirm(`Permanently delete ${user.display_name || user.subject} and all of their role bindings? This cannot be undone. To preserve the audit trail, use Remove Access instead.`)) {
+      return
+    }
+    try {
+      await api.deleteAuthUser(user.id)
+      setUserActionMessage(`Deleted ${user.display_name || user.subject}.`)
+      setUserActionError('')
+      setSelectedUserID('')
+      await loadUsers()
+    } catch (error: unknown) {
+      setUserActionError(getErrorMessage(error, 'Unable to delete user'))
       setUserActionMessage('')
     }
   }
@@ -1418,6 +1479,12 @@ export default function AccessPage({
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => setUserActive(selectedUser, !selectedUser.active)} disabled={!canManageUserLifecycle}>
               {selectedUser.active ? 'Remove Access' : 'Restore Access'}
             </button>
+            <button className="btn btn-secondary btn-sm" type="button" onClick={() => revokeSessions(selectedUser)} disabled={!canManageUserLifecycle} title="Sign the user out of all active sessions without disabling the account">
+              Revoke Sessions
+            </button>
+            <button className="btn btn-danger btn-sm" type="button" onClick={() => deleteUser(selectedUser)} disabled={!canManageUserLifecycle} title="Permanently delete the user and their role bindings (prefer Remove Access to keep the audit trail)">
+              Delete User
+            </button>
           </div>
         </div>
 
@@ -1511,6 +1578,61 @@ export default function AccessPage({
           <button className="btn btn-ghost btn-sm access-danger-action" type="button" onClick={() => deleteAccount(selectedAccount)} disabled={!canManageServiceAccounts}>Delete</button>
         </div>
       </aside>
+    )
+  }
+
+  const renderAccessReview = () => {
+    if (accessReviewLoading) return <div className="access-empty">Loading access review…</div>
+    if (accessReviewError) return <div className="access-error">{accessReviewError}</div>
+    if (!accessReview) return <div className="access-empty">No access review data.</div>
+    const { users: reviewUsers, service_accounts: reviewAccounts, stale_after_days } = accessReview
+    if (reviewUsers.length === 0 && reviewAccounts.length === 0) {
+      return <div className="access-empty">Nothing to review — no stale, unbound, over-privileged, or expiring principals.</div>
+    }
+    return (
+      <div className="access-review">
+        <p className="setting-desc">
+          Principals worth a periodic look. Users are flagged stale after {stale_after_days} days without sign-in.
+          {' '}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => loadAccessReview()}>Refresh</button>
+        </p>
+        {reviewUsers.length > 0 && (
+          <section>
+            <h4>Users ({reviewUsers.length})</h4>
+            <table className="access-table">
+              <thead><tr><th>User</th><th>Global roles</th><th>Last seen</th><th>Flags</th></tr></thead>
+              <tbody>
+                {reviewUsers.map(u => (
+                  <tr key={u.id}>
+                    <td>{u.display_name || u.subject}</td>
+                    <td className="cell-mono">{(u.global_roles || []).join(', ') || '—'}</td>
+                    <td>{u.last_seen_at ? new Date(u.last_seen_at).toLocaleDateString() : 'never'}</td>
+                    <td>{u.flags.map(f => <span key={f} className="access-flag-badge">{f.replace(/_/g, ' ')}</span>)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
+        {reviewAccounts.length > 0 && (
+          <section>
+            <h4>Service Accounts ({reviewAccounts.length})</h4>
+            <table className="access-table">
+              <thead><tr><th>Account</th><th>Scopes</th><th>Last used</th><th>Flags</th></tr></thead>
+              <tbody>
+                {reviewAccounts.map(a => (
+                  <tr key={a.id}>
+                    <td>{a.name}</td>
+                    <td className="cell-mono">{(a.scopes || []).join(', ') || '—'}</td>
+                    <td>{a.last_used_at ? new Date(a.last_used_at).toLocaleDateString() : 'never'}</td>
+                    <td>{a.flags.map(f => <span key={f} className="access-flag-badge">{f.replace(/_/g, ' ')}</span>)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
+      </div>
     )
   }
 
@@ -2018,7 +2140,10 @@ export default function AccessPage({
             <div className="access-subtab-row" role="tablist" aria-label="Activity workspace views">
               <button type="button" role="tab" aria-selected={activitySubTab === 'events'} className={`access-subtab ${activitySubTab === 'events' ? 'active' : ''}`} onClick={() => setActivitySubTab('events')}>Events</button>
               <button type="button" role="tab" aria-selected={activitySubTab === 'usage'} className={`access-subtab ${activitySubTab === 'usage' ? 'active' : ''}`} onClick={() => setActivitySubTab('usage')}>Usage By User</button>
+              <button type="button" role="tab" aria-selected={activitySubTab === 'review'} className={`access-subtab ${activitySubTab === 'review' ? 'active' : ''}`} onClick={() => setActivitySubTab('review')}>Access Review</button>
             </div>
+
+            {activitySubTab === 'review' && renderAccessReview()}
 
             {activitySubTab === 'events' && (
               <>

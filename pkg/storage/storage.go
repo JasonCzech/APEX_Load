@@ -201,15 +201,31 @@ type Store interface {
 	GetUser(id string) (*User, error)
 	GetUserBySubject(subject string) (*User, error)
 	ListUsers(filter UserFilter) ([]*User, error)
+	// CountUsers returns the total number of users matching the filter's query/active
+	// predicates, ignoring limit/offset — used to report a real total for pagination.
+	CountUsers(filter UserFilter) (int, error)
 	UpdateUserActive(id string, active bool, updatedAt time.Time) error
+	// BumpUserSessionEpoch increments the user's session epoch (revoking existing OIDC
+	// sessions) and returns the new value.
+	BumpUserSessionEpoch(id string, updatedAt time.Time) (int, error)
 	DeleteUser(id string) error
+	// CountActiveGlobalRoleHolders returns the number of distinct active users holding
+	// the given role via a global-scope binding. Used to prevent removing the last
+	// system administrator (self-lockout protection).
+	CountActiveGlobalRoleHolders(role string) (int, error)
 	SaveUserRoleBinding(binding *UserRoleBinding) error
 	DeleteUserRoleBinding(id string) error
 	ListUserRoleBindings(userID string) ([]*UserRoleBinding, error)
 	SaveAuditEvent(event *AuditEvent) error
 	ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, error)
+	// DeleteAuditEventsBefore prunes audit rows created strictly before cutoff and
+	// returns how many were removed (retention enforcement).
+	DeleteAuditEventsBefore(cutoff time.Time) (int64, error)
 	SaveUsageAccountingSnapshot(snapshot *UsageAccountingSnapshot) error
 	ListUsageAccountingSnapshots(projectID string, limit int, offset int) ([]*UsageAccountingSnapshot, error)
+	// DeleteUsageAccountingSnapshotsBefore prunes snapshot rows created strictly
+	// before cutoff and returns how many were removed (retention enforcement).
+	DeleteUsageAccountingSnapshotsBefore(cutoff time.Time) (int64, error)
 
 	Close() error
 }
@@ -232,6 +248,11 @@ type User struct {
 	UpdatedAt   time.Time          `json:"updated_at"`
 	LastSeenAt  *time.Time         `json:"last_seen_at,omitempty"`
 	DisabledAt  *time.Time         `json:"disabled_at,omitempty"`
+	// SessionEpoch is a monotonic counter embedded in the user's OIDC session cookie
+	// at login and compared on each request; bumping it (BumpUserSessionEpoch) revokes
+	// that user's existing sessions without disabling the account or rotating the
+	// global session secret.
+	SessionEpoch int `json:"session_epoch,omitempty"`
 }
 
 type UserRoleBinding struct {
@@ -416,12 +437,17 @@ type GitHubEnterpriseStore interface {
 }
 
 type AuditEventFilter struct {
-	Limit         int
-	Offset        int
-	Action        string
-	ActorType     string
-	ActorSubject  string
-	ProjectID     string
+	Limit        int
+	Offset       int
+	Action       string
+	ActorType    string
+	ActorSubject string
+	ProjectID    string
+	// ProjectIDs, when non-empty, restricts results to events whose project_id is in
+	// the set — an authorization allow-list applied on top of the other filters. It is
+	// the load-bearing scope guard for non-global admins reading user activity; an
+	// empty slice means "no project allow-list" (global/unscoped read).
+	ProjectIDs    []string
 	DomainID      string
 	ResourceType  string
 	ResourceID    string
@@ -605,6 +631,7 @@ type ScenarioSchedule struct {
 	CronExpr            string                      `json:"cron_expr"`
 	Timezone            string                      `json:"timezone,omitempty"`
 	ReleaseID           string                      `json:"release_id,omitempty"`
+	TimeslotID          string                      `json:"timeslot_id,omitempty"`
 	RunNameTemplate     string                      `json:"run_name_template,omitempty"`
 	Enabled             bool                        `json:"enabled"`
 	ApprovalPolicy      string                      `json:"approval_policy,omitempty"`

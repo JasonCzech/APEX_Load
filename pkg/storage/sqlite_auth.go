@@ -335,6 +335,26 @@ func (s *SQLiteStore) ListUsers(filter UserFilter) ([]*User, error) {
 	return users, rows.Err()
 }
 
+func (s *SQLiteStore) CountUsers(filter UserFilter) (int, error) {
+	query := strings.Builder{}
+	query.WriteString(`SELECT COUNT(*) FROM users WHERE 1 = 1`)
+	args := []any{}
+	if q := strings.TrimSpace(filter.Query); q != "" {
+		query.WriteString(` AND (subject LIKE ? OR email LIKE ? OR display_name LIKE ?)`)
+		like := "%" + q + "%"
+		args = append(args, like, like, like)
+	}
+	if filter.Active != nil {
+		query.WriteString(` AND active = ?`)
+		args = append(args, s.boolValue(*filter.Active))
+	}
+	var count int
+	if err := s.db.QueryRow(query.String(), args...).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 func (s *SQLiteStore) UpdateUserActive(id string, active bool, updatedAt time.Time) error {
 	var disabledAt any
 	if !active {
@@ -342,6 +362,32 @@ func (s *SQLiteStore) UpdateUserActive(id string, active bool, updatedAt time.Ti
 	}
 	_, err := s.db.Exec(`UPDATE users SET active = ?, updated_at = ?, disabled_at = ? WHERE id = ?`, s.boolValue(active), updatedAt, disabledAt, id)
 	return err
+}
+
+func (s *SQLiteStore) CountActiveGlobalRoleHolders(role string) (int, error) {
+	normalized := strings.ToLower(strings.TrimSpace(role))
+	if normalized == "" {
+		return 0, nil
+	}
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(DISTINCT u.id) FROM users u
+		JOIN user_role_bindings b ON b.user_id = u.id
+		WHERE u.active = 1 AND b.scope_type = 'global' AND b.role = ?`, normalized).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (s *SQLiteStore) BumpUserSessionEpoch(id string, updatedAt time.Time) (int, error) {
+	if _, err := s.db.Exec(`UPDATE users SET session_epoch = session_epoch + 1, updated_at = ? WHERE id = ?`, updatedAt.UTC(), id); err != nil {
+		return 0, err
+	}
+	var epoch sql.NullInt64
+	if err := s.db.QueryRow(`SELECT COALESCE(session_epoch, 0) FROM users WHERE id = ?`, id).Scan(&epoch); err != nil {
+		return 0, err
+	}
+	return int(epoch.Int64), nil
 }
 
 func (s *SQLiteStore) DeleteUser(id string) error {
@@ -405,7 +451,7 @@ func (s *SQLiteStore) ListUserRoleBindings(userID string) ([]*UserRoleBinding, e
 }
 
 func userSelectColumns() string {
-	return `SELECT id, subject, COALESCE(email, ''), COALESCE(display_name, ''), active, created_at, updated_at, last_seen_at, disabled_at`
+	return `SELECT id, subject, COALESCE(email, ''), COALESCE(display_name, ''), active, created_at, updated_at, last_seen_at, disabled_at, COALESCE(session_epoch, 0)`
 }
 
 func (s *SQLiteStore) getUserByQuery(query string, args ...any) (*User, error) {
@@ -426,10 +472,14 @@ func scanUser(scanner userScanner) (*User, error) {
 	var active any
 	var lastSeenAt sql.NullTime
 	var disabledAt sql.NullTime
-	if err := scanner.Scan(&user.ID, &user.Subject, &user.Email, &user.DisplayName, &active, &user.CreatedAt, &user.UpdatedAt, &lastSeenAt, &disabledAt); err != nil {
+	var sessionEpoch sql.NullInt64
+	if err := scanner.Scan(&user.ID, &user.Subject, &user.Email, &user.DisplayName, &active, &user.CreatedAt, &user.UpdatedAt, &lastSeenAt, &disabledAt, &sessionEpoch); err != nil {
 		return nil, err
 	}
 	user.Active = sqlBool(active)
+	if sessionEpoch.Valid {
+		user.SessionEpoch = int(sessionEpoch.Int64)
+	}
 	if lastSeenAt.Valid {
 		user.LastSeenAt = &lastSeenAt.Time
 	}
@@ -465,6 +515,18 @@ func (s *SQLiteStore) SaveAuditEvent(event *AuditEvent) error {
 	return err
 }
 
+func (s *SQLiteStore) DeleteAuditEventsBefore(cutoff time.Time) (int64, error) {
+	result, err := s.db.Exec(`DELETE FROM audit_events WHERE created_at < ?`, cutoff.UTC())
+	if err != nil {
+		return 0, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, nil
+	}
+	return affected, nil
+}
+
 func (s *SQLiteStore) ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, error) {
 	if filter.Limit <= 0 {
 		filter.Limit = 100
@@ -491,6 +553,24 @@ func (s *SQLiteStore) ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, e
 	appendFilter("resource_type", filter.ResourceType)
 	appendFilter("resource_id", filter.ResourceID)
 	appendFilter("status", filter.Status)
+	if len(filter.ProjectIDs) > 0 {
+		placeholders := make([]string, 0, len(filter.ProjectIDs))
+		for _, id := range filter.ProjectIDs {
+			trimmed := strings.TrimSpace(id)
+			if trimmed == "" {
+				continue
+			}
+			placeholders = append(placeholders, "?")
+			args = append(args, trimmed)
+		}
+		if len(placeholders) == 0 {
+			// A non-nil-but-all-blank allow-list means "no authorized projects":
+			// match nothing rather than degrading to an unfiltered read.
+			query.WriteString(` AND 1 = 0`)
+		} else {
+			query.WriteString(` AND project_id IN (` + strings.Join(placeholders, ", ") + `)`)
+		}
+	}
 	if filter.CreatedAfter != nil {
 		query.WriteString(` AND created_at >= ?`)
 		args = append(args, *filter.CreatedAfter)

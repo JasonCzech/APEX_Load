@@ -37,6 +37,18 @@ func (s *SQLiteStore) SaveUsageAccountingSnapshot(snapshot *UsageAccountingSnaps
 	return err
 }
 
+func (s *SQLiteStore) DeleteUsageAccountingSnapshotsBefore(cutoff time.Time) (int64, error) {
+	result, err := s.db.Exec(`DELETE FROM usage_accounting_snapshots WHERE created_at < ?`, cutoff.UTC())
+	if err != nil {
+		return 0, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, nil
+	}
+	return affected, nil
+}
+
 func (s *SQLiteStore) ListUsageAccountingSnapshots(projectID string, limit int, offset int) ([]*UsageAccountingSnapshot, error) {
 	if limit <= 0 {
 		limit = 100

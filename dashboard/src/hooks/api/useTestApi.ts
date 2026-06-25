@@ -151,11 +151,13 @@ type ScenarioScheduleRequest = {
   cron_expr: string
   timezone?: string
   release_id?: string
+  timeslot_id?: string
   run_name_template?: string
   enabled?: boolean
   approval_policy?: string
   missed_run_policy?: string
   blackout_windows?: Array<{ name?: string, days_of_week?: number[], start_time: string, end_time: string, timezone?: string }>
+  maintenance_windows?: Array<{ name?: string, days_of_week?: number[], start_time: string, end_time: string, timezone?: string }>
   availability_windows?: Array<{ name?: string, days_of_week?: number[], start_time: string, end_time: string, timezone?: string }>
 }
 

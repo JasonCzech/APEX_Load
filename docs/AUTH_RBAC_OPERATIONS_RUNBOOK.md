@@ -33,18 +33,43 @@ The dashboard includes Microsoft Entra ID and Generic OIDC presets. Presets inte
 
 For `trusted_headers`, the authenticating gateway must strip any inbound spoofed auth headers before adding its trusted values.
 
+### Trusted-proxy gate (defense-in-depth)
+
+Stripping at the gateway is necessary but not sufficient: if the controller port is ever reachable
+directly (a port-forward, a NetworkPolicy gap, an SSRF pivot), a client can forge `X-Auth-Request-User`.
+Configure a trusted-proxy gate so identity headers are honored only from the real ingress:
+
+- `auth.trusted_proxy_cidrs`: list of CIDRs (or bare IPs) the request's immediate peer (`RemoteAddr`)
+  must fall within — typically your ingress/proxy pod CIDR. `X-Forwarded-For` is intentionally NOT
+  trusted for this check (it is client-controlled).
+- `auth.trusted_proxy_secret_env_var`: name of an environment variable holding a shared secret; the
+  gateway must inject it as the `X-APEXLoad-Proxy-Secret` header (compared in constant time).
+
+Configure at least one. **In production (`APEXLOAD_ENV=production`) the controller refuses to start in
+`trusted_headers` mode unless a gate is configured.** In non-production it starts with a loud warning.
+Auth Diagnostics shows a `Trusted Proxy Gate` check (pass / warn / fail).
+
 Default required headers:
 
 - `X-Auth-Request-User`: stable subject identifier.
-- `X-APEX Load-Roles`: comma or pipe separated global roles.
-- `X-APEX Load-Project-Roles`: semicolon separated project assignments, for example `checkout=viewer|editor;governance=project_admin`.
+- `X-APEXLoad-Roles`: comma or pipe separated global roles.
+- `X-APEXLoad-Project-Roles`: semicolon separated project assignments, for example `checkout=viewer|editor;governance=project_admin`.
 
 Optional identity headers:
 
 - `X-Auth-Request-Name`
 - `X-Auth-Request-Email`
 
-At least one role header is required. Human user and group lifecycle remains upstream-owned; APEX Load consumes the resulting claims and owns service-account principals for automation.
+**RBAC ownership (important):** APEX Load owns identity and RBAC as the source of truth once any
+user exists. The forwarded role headers (`X-APEXLoad-Roles`, `X-APEXLoad-Project-Roles`) are only
+honored to bootstrap the very first administrator while the user table is empty. After that, each
+request's subject (`X-Auth-Request-User`) is matched to a local APEX Load user record, and that
+user's roles are derived from APEX Load's **local role bindings** — the role headers are no longer
+consulted for onboarded users. In other words, the gateway authenticates *who* the user is; APEX
+Load decides *what* they may do. A subject with no local user record (after bootstrap) is rejected
+as "not onboarded", so provision users and bindings in Access & API Keys before relying on the
+gateway. APEX Load also owns service-account principals for automation. Provide at least one role
+header so first-admin bootstrap can succeed.
 
 ## Local Dev Admin/User Preview
 

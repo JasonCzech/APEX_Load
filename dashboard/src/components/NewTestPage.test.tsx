@@ -633,7 +633,7 @@ describe('NewTestPage', () => {
     expect(readinessCard.textContent).toContain('Run Summary')
     expect(readinessCard.querySelector('.readiness-list')).toBeNull()
     expect(readinessCard.querySelector('.new-test-summary-grid')).toBeNull()
-    expect(readinessCard.textContent).not.toContain('Reserve Timeslot')
+    expect(readinessCard.textContent).not.toContain('Hold for Manual Start')
     expect(readinessCard.textContent).not.toContain('Schedule Run')
     const summaryList = readinessCard.querySelector('.new-test-summary-list')
     expect(summaryList).toBeTruthy()
@@ -652,8 +652,8 @@ describe('NewTestPage', () => {
     expect(profileCard.querySelector('[data-testid="mock-responsive-container"]')).toBeTruthy()
     expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
     expect(profileCard.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
-    expect(launchCard.textContent).toContain('Reserve Timeslot / Schedule Run')
-    expect(launchCard.textContent).toContain('Reserve Timeslot')
+    expect(launchCard.textContent).toContain('Hold for Manual Start / Schedule Run')
+    expect(launchCard.textContent).toContain('Hold for Manual Start')
     expect(launchCard.textContent).toContain('Schedule Run')
     expect(profileCard.compareDocumentPosition(launchCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(launchCard.compareDocumentPosition(readinessCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -710,7 +710,7 @@ describe('NewTestPage', () => {
     expect(overriddenLogLevelCard?.textContent).toContain('Run override')
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Reserve Timeslot')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -842,7 +842,7 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('Run override')
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Reserve Timeslot')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -945,7 +945,7 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('1 sharded group')
 
     await flushDebouncedPreflight()
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Reserve Timeslot')
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -1042,7 +1042,7 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('Run override')
 
     await flushDebouncedPreflight()
-    const reserveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Reserve Timeslot')
+    const reserveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
     await act(async () => {
       reserveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -1242,7 +1242,7 @@ describe('NewTestPage', () => {
     await flushPromises()
     await flushDebouncedPreflight()
 
-    const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Reserve Timeslot') as HTMLButtonElement | undefined
+    const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start') as HTMLButtonElement | undefined
     expect(startNowButton).toBeTruthy()
     expect(startNowButton?.disabled).toBe(true)
     const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
@@ -1356,10 +1356,10 @@ describe('NewTestPage', () => {
     await flushPromises()
     await flushDebouncedPreflight()
 
-    expect(container.textContent).toContain('Reserve Timeslot')
+    expect(container.textContent).toContain('Hold for Manual Start')
     expect(container.textContent).toContain('Reserved Window')
 
-    const reserveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Reserve Timeslot')
+    const reserveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
     await act(async () => {
       reserveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -1482,7 +1482,7 @@ describe('NewTestPage', () => {
     await flushPromises()
 
     await flushDebouncedPreflight()
-    const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Reserve Timeslot') as HTMLButtonElement | undefined
+    const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start') as HTMLButtonElement | undefined
     const scheduleButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedule Run') as HTMLButtonElement | undefined
     expect(startNowButton?.disabled).toBe(true)
     expect(scheduleButton?.disabled).toBe(true)

@@ -22,6 +22,7 @@ const NAV_PAGES: NavPage[] = [
   'scripts',
   'results',
   'monitoring',
+  'schedules',
   'docs',
   'access',
   'settings',

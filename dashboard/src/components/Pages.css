@@ -8583,3 +8583,61 @@ col.results-actions-col {
     align-items: stretch;
   }
 }
+
+/* Scenario schedule window editors (blackout / maintenance / availability) */
+.schedule-window-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.schedule-window-empty {
+  font-style: italic;
+  opacity: 0.75;
+}
+.schedule-window-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.schedule-window-name {
+  flex: 1 1 140px;
+  min-width: 120px;
+}
+.schedule-window-time {
+  flex: 0 0 auto;
+  width: auto;
+}
+.schedule-window-sep {
+  opacity: 0.7;
+  font-size: 0.85em;
+}
+.schedule-window-days {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.schedule-day-toggle {
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.78em;
+  cursor: pointer;
+  line-height: 1;
+}
+.schedule-day-toggle:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.schedule-day-toggle.active {
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-secondary));
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.schedule-day-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

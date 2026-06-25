@@ -39,6 +39,7 @@ type oidcSessionToken struct {
 	ProjectRoles    map[string][]string `json:"project_roles,omitempty"`
 	DomainRoles     map[string][]string `json:"domain_roles,omitempty"`
 	RepositoryRoles map[string][]string `json:"application_repository_roles,omitempty"`
+	SessionEpoch    int                 `json:"sepoch,omitempty"`
 	ExpiresAt       time.Time           `json:"exp"`
 	IssuedAt        time.Time           `json:"iat"`
 }
@@ -106,6 +107,8 @@ func resolveOIDCSession(r *http.Request, settings AuthSettings) oidcSessionResol
 		ProjectRoles:    mapToProjectRoleSet(session.ProjectRoles),
 		DomainRoles:     mapToDomainRoleSet(session.DomainRoles),
 		RepositoryRoles: mapToRepositoryRoleSet(session.RepositoryRoles),
+		SessionScoped:   true,
+		SessionEpoch:    session.SessionEpoch,
 	}}
 }
 
@@ -223,6 +226,13 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		s.recordOIDCCallbackFailure(r, "claim_mapping_failed", map[string]any{"error": err.Error()})
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
+	}
+	// Stamp the user's current session epoch into the cookie so a later
+	// revoke-sessions (which bumps the stored epoch) invalidates this cookie.
+	if s.store != nil {
+		if local, lookupErr := s.store.GetUserBySubject(user.Subject); lookupErr == nil && local != nil {
+			session.SessionEpoch = local.SessionEpoch
+		}
 	}
 	encodedSession, err := encodeSignedCookieValue(session, runtime.sessionSecret)
 	if err != nil {

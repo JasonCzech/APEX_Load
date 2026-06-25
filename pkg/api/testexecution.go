@@ -105,7 +105,7 @@ func (tr *TestRunner) evaluateStartGatesLocked(id string, test *ManagedTest, opt
 		return false, err
 	}
 	if !opts.SkipLaunchWindowPreflight {
-		if err := tr.launchStartWindowErrorLocked(test, time.Now().UTC(), id); err != nil {
+		if err := tr.launchStartWindowErrorLocked(test, time.Now().UTC(), id, ""); err != nil {
 			return false, err
 		}
 	}

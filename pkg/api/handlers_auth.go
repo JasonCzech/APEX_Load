@@ -137,8 +137,20 @@ type AuthServiceAccountRequest struct {
 	RotationIntervalDays int                 `json:"rotation_interval_days,omitempty"`
 }
 
+// AuthServiceAccountUpdateRequest is a partial update: a nil field is left unchanged.
+// Role/scope maps and slices, when present (non-nil), replace the stored set. This lets
+// an admin tighten an over-scoped key in place instead of deleting and re-issuing it.
 type AuthServiceAccountUpdateRequest struct {
-	Active *bool `json:"active"`
+	Name                 *string              `json:"name,omitempty"`
+	Description          *string              `json:"description,omitempty"`
+	Active               *bool                `json:"active,omitempty"`
+	GlobalRoles          *[]string            `json:"global_roles,omitempty"`
+	ProjectRoles         *map[string][]string `json:"project_roles,omitempty"`
+	DomainRoles          *map[string][]string `json:"domain_roles,omitempty"`
+	RepositoryRoles      *map[string][]string `json:"application_repository_roles,omitempty"`
+	Scopes               *[]string            `json:"scopes,omitempty"`
+	ExpiresAt            *string              `json:"expires_at,omitempty"`
+	RotationIntervalDays *int                 `json:"rotation_interval_days,omitempty"`
 }
 
 type AuthServiceAccountCreateResponse struct {
@@ -174,6 +186,12 @@ type AuthUserBindingRequest struct {
 type AuthUserListResponse struct {
 	Users []*storage.User `json:"users"`
 	Count int             `json:"count"`
+	// Total is the number of users matching the filter across all pages (vs Count, the
+	// number returned in this page). HasMore indicates more pages beyond this offset.
+	Total   int  `json:"total"`
+	Limit   int  `json:"limit"`
+	Offset  int  `json:"offset"`
+	HasMore bool `json:"has_more"`
 }
 
 type AuthUserActivityResponse struct {
@@ -428,6 +446,7 @@ func buildAuthDiagnosticsResponse(r *http.Request, settings AuthSettings, store 
 		response.Checks = append(response.Checks,
 			buildTrustedHeaderConfiguredCheck("subject_header", "Subject Header", settings.UserHeader != "", settings.UserHeader, "APEX Load needs a subject header to resolve the authenticated user."),
 			buildTrustedHeaderConfiguredCheck("role_headers", "Role Header Mapping", settings.RolesHeader != "" || settings.ProjectRolesHeader != "", strings.TrimSpace(settings.RolesHeader)+" | "+strings.TrimSpace(settings.ProjectRolesHeader), "Configure at least one global or project role header so RBAC can grant access."),
+			buildTrustedProxyGateCheck(settings),
 			buildOptionalOperatorCheck("provider_label", "Provider Label", settings.ProviderName, "Add a provider label so the sign-in gate points operators at the right upstream gateway."),
 			buildOptionalOperatorCheck("login_url", "Login Entry Point", settings.LoginURL, "Set an upstream login URL so blocked users have a clear path back into the authenticating gateway."),
 		)
@@ -579,7 +598,24 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, AuthUserListResponse{Users: s.visibleUsersForRequest(r, users), Count: len(users)})
+	total, err := s.store.CountUsers(filter)
+	if err != nil {
+		total = len(users)
+	}
+	if filter.Limit <= 0 {
+		filter.Limit = 100
+	}
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	writeJSON(w, http.StatusOK, AuthUserListResponse{
+		Users:   s.visibleUsersForRequest(r, users),
+		Count:   len(users),
+		Total:   total,
+		Limit:   filter.Limit,
+		Offset:  filter.Offset,
+		HasMore: filter.Offset+len(users) < total,
+	})
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -594,6 +630,14 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.currentRequestCanManageUserLifecycle(r) {
 		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	if existing, err := s.store.GetUserBySubject(subject); err == nil && existing != nil {
+		writeError(w, http.StatusConflict, "a user with this subject already exists")
 		return
 	}
 	now := time.Now().UTC()
@@ -638,6 +682,9 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	if req.Active != nil && !*req.Active && user.Active && !s.guardSystemAdminLockout(w, r, user, "disable") {
+		return
+	}
 	if strings.TrimSpace(req.Subject) != "" {
 		user.Subject = strings.TrimSpace(req.Subject)
 	}
@@ -675,20 +722,61 @@ func (s *Server) handleCreateUserBinding(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "scope_type and role are required")
 		return
 	}
+	if !isCanonicalRole(binding.Role) {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unsupported role %q (expected one of viewer, editor, project_admin, system_admin)", binding.Role))
+		return
+	}
 	if !s.canManageUserBinding(r, binding) {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
+	// The storage upsert keys on (user_id, scope_type, scope_id, role) and does NOT
+	// change an existing row's id/created_at. So preserve the existing identity when the
+	// grant already exists (a no-op re-grant), mint a fresh one otherwise, and report
+	// 200 vs 201 honestly instead of always returning a brand-new (non-canonical) id.
 	now := time.Now().UTC()
-	binding.ID = uuid.New().String()
-	binding.CreatedAt = now
+	existing := findMatchingBinding(user.Bindings, binding)
+	if existing != nil {
+		binding.ID = existing.ID
+		binding.CreatedAt = existing.CreatedAt
+	} else {
+		binding.ID = uuid.New().String()
+		binding.CreatedAt = now
+	}
 	binding.UpdatedAt = now
 	if err := s.store.SaveUserRoleBinding(binding); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Return the authoritative stored row so the client never receives an id that does
+	// not match persisted state.
+	stored := binding
+	if refreshed, err := s.store.ListUserRoleBindings(user.ID); err == nil {
+		if match := findMatchingBinding(refreshed, binding); match != nil {
+			stored = match
+		}
+	}
+	status := http.StatusCreated
+	if existing != nil {
+		status = http.StatusOK
+	}
 	s.recordAuditEvent(r, "auth.user.binding.create", "success", "user", user.ID, projectIDForBinding(binding), map[string]any{"subject": user.Subject, "scope_type": binding.ScopeType, "scope_id": binding.ScopeID, "role": binding.Role})
-	writeJSON(w, http.StatusCreated, binding)
+	writeJSON(w, status, stored)
+}
+
+func findMatchingBinding(bindings []*storage.UserRoleBinding, target *storage.UserRoleBinding) *storage.UserRoleBinding {
+	if target == nil {
+		return nil
+	}
+	for _, candidate := range bindings {
+		if candidate == nil {
+			continue
+		}
+		if candidate.ScopeType == target.ScopeType && candidate.ScopeID == target.ScopeID && strings.EqualFold(candidate.Role, target.Role) {
+			return candidate
+		}
+	}
+	return nil
 }
 
 func (s *Server) handleDeleteUserBinding(w http.ResponseWriter, r *http.Request) {
@@ -712,12 +800,60 @@ func (s *Server) handleDeleteUserBinding(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
+	if binding.ScopeType == "global" && strings.EqualFold(strings.TrimSpace(binding.Role), RoleSystemAdmin) &&
+		!s.guardSystemAdminLockout(w, r, user, "revoke") {
+		return
+	}
 	if err := s.store.DeleteUserRoleBinding(bindingID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.recordAuditEvent(r, "auth.user.binding.delete", "success", "user", user.ID, projectIDForBinding(binding), map[string]any{"subject": user.Subject, "scope_type": binding.ScopeType, "scope_id": binding.ScopeID, "role": binding.Role})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": bindingID})
+}
+
+func (s *Server) handleRevokeUserSessions(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.loadUserForRequest(w, r)
+	if !ok {
+		return
+	}
+	if !s.currentRequestCanManageUserLifecycle(r) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	updatedAt := time.Now().UTC()
+	epoch, err := s.store.BumpUserSessionEpoch(user.ID, updatedAt)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	user.SessionEpoch = epoch
+	user.UpdatedAt = updatedAt
+	s.recordAuditEvent(r, "auth.user.sessions.revoke", "success", "user", user.ID, "", map[string]any{"subject": user.Subject, "session_epoch": epoch})
+	writeJSON(w, http.StatusOK, user)
+}
+
+func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.loadUserForRequest(w, r)
+	if !ok {
+		return
+	}
+	if !s.currentRequestCanManageUserLifecycle(r) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	// Hard delete removes the user and (explicitly) their role bindings. Guard against
+	// self-deletion and deleting the last system administrator, same as disable. For an
+	// audit-trail-preserving lifecycle, prefer disable; this is the GDPR/offboarding path.
+	if !s.guardSystemAdminLockout(w, r, user, "delete") {
+		return
+	}
+	if err := s.store.DeleteUser(user.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.recordAuditEvent(r, "auth.user.delete", "success", "user", user.ID, "", map[string]any{"subject": user.Subject})
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": user.ID})
 }
 
 func (s *Server) handleDisableUser(w http.ResponseWriter, r *http.Request) {
@@ -735,6 +871,9 @@ func (s *Server) setUserActive(w http.ResponseWriter, r *http.Request, active bo
 	}
 	if !s.currentRequestCanManageUserLifecycle(r) {
 		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	if !active && !s.guardSystemAdminLockout(w, r, user, "disable") {
 		return
 	}
 	updatedAt := time.Now().UTC()
@@ -755,6 +894,75 @@ func (s *Server) setUserActive(w http.ResponseWriter, r *http.Request, active bo
 	}
 	s.recordAuditEvent(r, action, "success", "user", user.ID, "", map[string]any{"subject": user.Subject})
 	writeJSON(w, http.StatusOK, user)
+}
+
+// guardSystemAdminLockout blocks a destructive change (action is "disable" or "revoke")
+// that would either (a) target the caller's own account/grant, or (b) leave the platform
+// with zero active system administrators. It writes a 409 and returns false when blocked.
+func (s *Server) guardSystemAdminLockout(w http.ResponseWriter, r *http.Request, target *storage.User, action string) bool {
+	// noun describes what the destructive action removes, for the 409 messages.
+	selfMsg, orphanMsg := "you cannot disable your own account", "cannot disable the last active system administrator"
+	switch action {
+	case "revoke":
+		selfMsg, orphanMsg = "you cannot remove your own system administrator grant", "cannot remove the last active system administrator grant"
+	case "delete":
+		selfMsg, orphanMsg = "you cannot delete your own account", "cannot delete the last active system administrator"
+	}
+	if s.isSelfRequest(r, target) {
+		writeError(w, http.StatusConflict, selfMsg)
+		return false
+	}
+	if s.wouldOrphanSystemAdmins(target) {
+		writeError(w, http.StatusConflict, orphanMsg)
+		return false
+	}
+	return true
+}
+
+func (s *Server) isSelfRequest(r *http.Request, target *storage.User) bool {
+	if target == nil {
+		return false
+	}
+	user, ok := AuthenticatedUserFromContext(r.Context())
+	if !ok || user == nil {
+		return false
+	}
+	if user.ID != "" && user.ID == target.ID {
+		return true
+	}
+	subject := strings.TrimSpace(user.Subject)
+	return subject != "" && strings.EqualFold(subject, strings.TrimSpace(target.Subject))
+}
+
+func userHasActiveGlobalSystemAdmin(user *storage.User) bool {
+	if user == nil || !user.Active {
+		return false
+	}
+	for _, binding := range user.Bindings {
+		if binding == nil {
+			continue
+		}
+		if strings.TrimSpace(binding.ScopeType) == "global" && strings.EqualFold(strings.TrimSpace(binding.Role), RoleSystemAdmin) {
+			return true
+		}
+	}
+	return false
+}
+
+// wouldOrphanSystemAdmins reports whether removing the target's global system-admin
+// access (by disabling them or deleting their global admin binding) would leave the
+// platform with zero active system administrators.
+func (s *Server) wouldOrphanSystemAdmins(target *storage.User) bool {
+	if s.store == nil || !userHasActiveGlobalSystemAdmin(target) {
+		return false
+	}
+	count, err := s.store.CountActiveGlobalRoleHolders(RoleSystemAdmin)
+	if err != nil {
+		// Be conservative: if we cannot confirm another admin exists, block the
+		// destructive change rather than risk a permanent lockout.
+		return true
+	}
+	return count <= 1
 }
 
 func (s *Server) loadUserForRequest(w http.ResponseWriter, r *http.Request) (*storage.User, bool) {
@@ -778,6 +986,15 @@ func queryInt(r *http.Request, key string, fallback int) int {
 		}
 	}
 	return value
+}
+
+func isCanonicalRole(role string) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin:
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeUserBindingRequest(userID string, req AuthUserBindingRequest) *storage.UserRoleBinding {
@@ -884,6 +1101,82 @@ func canManageBinding(r *http.Request, store storage.Store, binding *storage.Use
 	return false
 }
 
+// administeredProjectScope returns the set of project IDs whose user-activity and
+// usage the current caller may read, plus whether the caller has unrestricted (global)
+// visibility. Global system_admin / project_admin (and auth-bypass mode) see everything;
+// scoped admins are limited to projects they administer directly, via their domain, or
+// via that domain's application repository — mirroring canManageBinding's project logic.
+// This is the load-bearing guard against a single-scope admin reading the whole tenant's
+// audit trail and usage through /auth/user-activity.
+func (s *Server) administeredProjectScope(r *http.Request) (map[string]struct{}, bool) {
+	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+		return nil, true
+	}
+	user, ok := AuthenticatedUserFromContext(r.Context())
+	if !ok || user == nil {
+		return map[string]struct{}{}, false
+	}
+	if user.hasGlobalRole(RoleSystemAdmin, RoleProjectAdmin) {
+		return nil, true
+	}
+	scope := map[string]struct{}{}
+	if s.store == nil {
+		return scope, false
+	}
+	projects, err := s.store.ListProjects()
+	if err != nil {
+		return scope, false
+	}
+	repoIDByDomain := map[string]string{}
+	repoIDForDomain := func(domainID string) string {
+		domainID = normalizeDomainID(domainID)
+		if domainID == "" {
+			return ""
+		}
+		if cached, ok := repoIDByDomain[domainID]; ok {
+			return cached
+		}
+		id := ""
+		if repo, err := s.store.GetApplicationRepository(domainID); err == nil && repo != nil {
+			id = strings.TrimSpace(repo.ID)
+		}
+		repoIDByDomain[domainID] = id
+		return id
+	}
+	for _, project := range projects {
+		if project == nil {
+			continue
+		}
+		pid := normalizeProjectID(project.ID)
+		if user.hasProjectRole(pid, RoleProjectAdmin) ||
+			user.hasDomainRole(project.DomainID, RoleProjectAdmin) ||
+			user.hasRepositoryRole(repoIDForDomain(project.DomainID), RoleProjectAdmin) {
+			scope[pid] = struct{}{}
+		}
+	}
+	return scope, false
+}
+
+// applyActivityScope constrains an audit/usage filter to the caller's administered
+// project set when they lack global visibility. It returns false (after writing a 403)
+// if the caller explicitly requested a project_id outside their scope.
+func applyActivityScope(w http.ResponseWriter, filter *storage.AuditEventFilter, scope map[string]struct{}) bool {
+	if filter.ProjectID != "" {
+		if _, ok := scope[normalizeProjectID(filter.ProjectID)]; !ok {
+			writeError(w, http.StatusForbidden, "forbidden")
+			return false
+		}
+		return true
+	}
+	ids := make([]string, 0, len(scope))
+	for id := range scope {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	filter.ProjectIDs = ids
+	return true
+}
+
 func hasAnyScopedProjectAdmin(user *AuthenticatedUser, store storage.Store) bool {
 	for _, roles := range user.ProjectRoles {
 		if _, ok := roles[RoleProjectAdmin]; ok {
@@ -954,12 +1247,16 @@ func (s *Server) handleGetUserActivity(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	scope, all := s.administeredProjectScope(r)
+	if !all && !applyActivityScope(w, &filter, scope) {
+		return
+	}
 	events, err := s.store.ListAuditEvents(filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	usage := s.usageAccounting(strings.TrimSpace(r.URL.Query().Get("project_id")))
+	usage := s.scopedUsageAccounting(filter.ProjectID, scope, all)
 	if filter.ActorSubject != "" {
 		usage = usageAccountingForActor(filter.ActorSubject, usage, s.runner.ListTests())
 	}
@@ -977,6 +1274,9 @@ func (s *Server) handleExportUserActivity(w http.ResponseWriter, r *http.Request
 	}
 	filter, ok := parseAuditEventFilter(w, r, 1000)
 	if !ok {
+		return
+	}
+	if scope, all := s.administeredProjectScope(r); !all && !applyActivityScope(w, &filter, scope) {
 		return
 	}
 	events, err := s.store.ListAuditEvents(filter)
@@ -1050,19 +1350,122 @@ func (s *Server) handleUpdateServiceAccount(w http.ResponseWriter, r *http.Reque
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if req.Active == nil {
-		writeError(w, http.StatusBadRequest, "active field is required")
+	before := serviceAccountAuditSummary(account)
+	if !applyServiceAccountUpdate(w, account, req) {
 		return
 	}
-	updatedAt := time.Now().UTC()
-	if err := s.store.UpdateServiceAccountActive(account.ID, *req.Active, updatedAt); err != nil {
+	account.UpdatedAt = time.Now().UTC()
+	if account.RotationIntervalDays > 0 {
+		anchor := account.CreatedAt
+		if account.KeyRotatedAt != nil {
+			anchor = *account.KeyRotatedAt
+		}
+		due := anchor.AddDate(0, 0, account.RotationIntervalDays)
+		account.RotationDueAt = &due
+	} else {
+		account.RotationDueAt = nil
+	}
+	if err := s.store.SaveServiceAccount(account); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	account.Active = *req.Active
-	account.UpdatedAt = updatedAt
-	s.recordAuditEvent(r, "auth.service_account.update", "success", "service_account", account.ID, "", map[string]any{"active": account.Active})
+	s.recordAuditEvent(r, "auth.service_account.update", "success", "service_account", account.ID, "", map[string]any{"before": before, "after": serviceAccountAuditSummary(account)})
 	writeJSON(w, http.StatusOK, account)
+}
+
+// applyServiceAccountUpdate mutates account with the provided (non-nil) fields,
+// re-running the shared role/scope normalizers so the same validation as creation
+// applies. It writes a 400 and returns false on invalid input; the key material is
+// never touched (metadata/permission edits keep the existing API key).
+func applyServiceAccountUpdate(w http.ResponseWriter, account *storage.ServiceAccount, req AuthServiceAccountUpdateRequest) bool {
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "service account name cannot be empty")
+			return false
+		}
+		account.Name = name
+	}
+	if req.Description != nil {
+		account.Description = strings.TrimSpace(*req.Description)
+	}
+	if req.Active != nil {
+		account.Active = *req.Active
+	}
+	if req.GlobalRoles != nil || req.ProjectRoles != nil || req.DomainRoles != nil || req.RepositoryRoles != nil {
+		global := account.GlobalRoles
+		if req.GlobalRoles != nil {
+			global = *req.GlobalRoles
+		}
+		project := account.ProjectRoles
+		if req.ProjectRoles != nil {
+			project = *req.ProjectRoles
+		}
+		domain := account.DomainRoles
+		if req.DomainRoles != nil {
+			domain = *req.DomainRoles
+		}
+		repository := account.RepositoryRoles
+		if req.RepositoryRoles != nil {
+			repository = *req.RepositoryRoles
+		}
+		normalizedGlobal, normalizedProject, normalizedDomain, normalizedRepository, err := normalizeServiceAccountRoles(global, project, domain, repository)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return false
+		}
+		account.GlobalRoles, account.ProjectRoles, account.DomainRoles, account.RepositoryRoles = normalizedGlobal, normalizedProject, normalizedDomain, normalizedRepository
+	}
+	if req.Scopes != nil {
+		scopes, err := normalizeServiceAccountScopes(*req.Scopes)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return false
+		}
+		account.Scopes = scopes
+	}
+	if req.ExpiresAt != nil {
+		raw := strings.TrimSpace(*req.ExpiresAt)
+		if raw == "" {
+			account.ExpiresAt = nil
+		} else {
+			parsed, err := time.Parse(time.RFC3339, raw)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "service account expires_at must be an RFC3339 timestamp")
+				return false
+			}
+			parsed = parsed.UTC()
+			if !parsed.After(time.Now().UTC()) {
+				writeError(w, http.StatusBadRequest, "service account expires_at must be in the future")
+				return false
+			}
+			account.ExpiresAt = &parsed
+		}
+	}
+	if req.RotationIntervalDays != nil {
+		if *req.RotationIntervalDays < 0 {
+			writeError(w, http.StatusBadRequest, "service account rotation_interval_days must be zero or greater")
+			return false
+		}
+		account.RotationIntervalDays = *req.RotationIntervalDays
+	}
+	return true
+}
+
+func serviceAccountAuditSummary(account *storage.ServiceAccount) map[string]any {
+	if account == nil {
+		return nil
+	}
+	summary := map[string]any{
+		"name":         account.Name,
+		"active":       account.Active,
+		"global_roles": account.GlobalRoles,
+		"scopes":       account.Scopes,
+	}
+	if account.ExpiresAt != nil {
+		summary["expires_at"] = account.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	return summary
 }
 
 func (s *Server) handleRotateServiceAccount(w http.ResponseWriter, r *http.Request) {
@@ -1311,7 +1714,7 @@ func normalizeServiceAccountScopes(scopes []string) ([]string, error) {
 		"audit:read":              {},
 	}
 	if len(scopes) == 0 {
-		return []string{"automation:*"}, nil
+		return nil, fmt.Errorf("at least one service account scope is required")
 	}
 	set := make(map[string]struct{})
 	out := make([]string, 0, len(scopes))
@@ -1333,7 +1736,7 @@ func normalizeServiceAccountScopes(scopes []string) ([]string, error) {
 		}
 	}
 	if len(out) == 0 {
-		return []string{"automation:*"}, nil
+		return nil, fmt.Errorf("at least one service account scope is required")
 	}
 	return out, nil
 }
@@ -1558,6 +1961,33 @@ func buildTrustedHeaderConfiguredCheck(id string, label string, configured bool,
 		Summary: "Missing required header mapping.",
 		Detail:  remediation,
 	}
+}
+
+func buildTrustedProxyGateCheck(settings AuthSettings) AuthDiagnosticsCheck {
+	const id, label = "trusted_proxy_gate", "Trusted Proxy Gate"
+	if trustedProxyGateConfigured(settings) {
+		details := make([]string, 0, 2)
+		cidrs := make([]string, 0, len(settings.TrustedProxyCIDRs))
+		for _, cidr := range settings.TrustedProxyCIDRs {
+			if trimmed := strings.TrimSpace(cidr); trimmed != "" {
+				cidrs = append(cidrs, trimmed)
+			}
+		}
+		if len(cidrs) > 0 {
+			details = append(details, "CIDRs: "+strings.Join(cidrs, ", "))
+		}
+		if env := strings.TrimSpace(settings.TrustedProxySecretEnvVar); env != "" {
+			if _, ok := os.LookupEnv(env); !ok {
+				return AuthDiagnosticsCheck{ID: id, Label: label, Status: "fail", Summary: "Shared-secret environment variable is not set on the controller.", Detail: env}
+			}
+			details = append(details, "shared secret env "+env+" set")
+		}
+		return AuthDiagnosticsCheck{ID: id, Label: label, Status: "pass", Summary: "Configured", Detail: strings.Join(details, "; ")}
+	}
+	if productionMode() {
+		return AuthDiagnosticsCheck{ID: id, Label: label, Status: "fail", Summary: "No trusted-proxy allowlist or shared secret; forwarded identity headers are trusted from any source.", Detail: "Set auth.trusted_proxy_cidrs or auth.trusted_proxy_secret_env_var."}
+	}
+	return AuthDiagnosticsCheck{ID: id, Label: label, Status: "warn", Summary: "No trusted-proxy gate; forwarded identity headers are trusted from any source.", Detail: "Configure auth.trusted_proxy_cidrs or auth.trusted_proxy_secret_env_var before production."}
 }
 
 func buildOptionalOperatorCheck(id string, label string, value string, remediation string) AuthDiagnosticsCheck {

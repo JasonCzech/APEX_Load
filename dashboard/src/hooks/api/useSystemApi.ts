@@ -21,6 +21,7 @@ import {
   DashboardUser,
   DashboardUserActivityResponse,
   DashboardUserListResponse,
+  DashboardAccessReviewResponse,
   APMIntegrationProfilesResponse,
   BrowserBenchmarkEvidenceResponse,
   ExternalResultImportsResponse,
@@ -105,6 +106,8 @@ export function useSystemApi() {
   )
   const enableAuthUser = useCallback((id: string) => request<DashboardUser>(`/auth/users/${encodeURIComponent(id)}/enable`, { method: 'POST' }), [])
   const disableAuthUser = useCallback((id: string) => request<DashboardUser>(`/auth/users/${encodeURIComponent(id)}/disable`, { method: 'POST' }), [])
+  const revokeAuthUserSessions = useCallback((id: string) => request<DashboardUser>(`/auth/users/${encodeURIComponent(id)}/revoke-sessions`, { method: 'POST' }), [])
+  const deleteAuthUser = useCallback((id: string) => request<{ deleted: string }>(`/auth/users/${encodeURIComponent(id)}`, { method: 'DELETE' }), [])
   const createAuthUserBinding = useCallback(
     (id: string, payload: DashboardCreateUserBindingRequest) => request(`/auth/users/${encodeURIComponent(id)}/bindings`, { method: 'POST', body: JSON.stringify(payload) }),
     [],
@@ -114,6 +117,7 @@ export function useSystemApi() {
     return request<DashboardUserActivityResponse>(`/auth/user-activity${buildQuery({ limit: 50, ...filter })}`)
   }, [])
   const downloadAuthUserActivity = useCallback((filter: DashboardAuditEventFilter = {}) => fetchBlob(`/auth/user-activity/export${buildQuery({ limit: 1000, ...filter })}`), [])
+  const getAccessReview = useCallback(() => request<DashboardAccessReviewResponse>('/auth/access-review'), [])
   const listAuthAuditEvents = useCallback((filter: DashboardAuditEventFilter = {}) => {
     return request<DashboardAuditEventListResponse>(`/auth/audit-events${buildQuery({ limit: 20, ...filter })}`)
   }, [])
@@ -189,10 +193,13 @@ export function useSystemApi() {
       updateAuthUser,
       enableAuthUser,
       disableAuthUser,
+      revokeAuthUserSessions,
+      deleteAuthUser,
       createAuthUserBinding,
       deleteAuthUserBinding,
       getAuthUserActivity,
       downloadAuthUserActivity,
+      getAccessReview,
       listAuthAuditEvents,
       downloadAuthAuditEvents,
       getHealth,
@@ -225,6 +232,6 @@ export function useSystemApi() {
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getConfigDefaults, getSystemInventory, getRestartCapabilities, executeRestart, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, revokeAuthUserSessions, deleteAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, getAccessReview, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getConfigDefaults, getSystemInventory, getRestartCapabilities, executeRestart, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
   )
 }

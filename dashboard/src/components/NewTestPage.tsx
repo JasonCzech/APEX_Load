@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Application, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, GeneratorAssignmentSettings, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario, SystemInventoryGenerator } from '../types'
+import { Application, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, GeneratorAssignmentSettings, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, ScenarioScheduleWindow, StoredScenario, SystemInventoryGenerator } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
@@ -77,19 +77,26 @@ interface Props {
   onOpenScenarioBuilder?: () => void
 }
 
+type ScheduleWindowDraft = {
+  name: string
+  days_of_week: number[]
+  start_time: string
+  end_time: string
+}
+
 type ScheduleDraft = {
   name: string
   cron_expr: string
   timezone: string
   release_id: string
+  timeslot_id: string
   run_name_template: string
   enabled: boolean
   approval_policy: string
   missed_run_policy: string
-  blackout_start_time: string
-  blackout_end_time: string
-  availability_start_time: string
-  availability_end_time: string
+  blackout_windows: ScheduleWindowDraft[]
+  maintenance_windows: ScheduleWindowDraft[]
+  availability_windows: ScheduleWindowDraft[]
 }
 
 const DEFAULT_SCHEDULE_DEFAULTS: Required<DashboardScheduleDefaultsSettings> = {
@@ -201,20 +208,99 @@ function buildDefaultScheduleDraft(
   defaults?: DashboardScheduleDefaultsSettings | null,
 ): ScheduleDraft {
   const scheduleDefaults = normalizeScheduleDefaults(defaults)
+  const blackoutWindows: ScheduleWindowDraft[] = scheduleDefaults.blackout_start_time && scheduleDefaults.blackout_end_time
+    ? [{ name: 'Default blackout', days_of_week: [], start_time: scheduleDefaults.blackout_start_time, end_time: scheduleDefaults.blackout_end_time }]
+    : []
+  const availabilityWindows: ScheduleWindowDraft[] = scheduleDefaults.availability_start_time && scheduleDefaults.availability_end_time
+    ? [{ name: 'Business hours', days_of_week: [1, 2, 3, 4, 5], start_time: scheduleDefaults.availability_start_time, end_time: scheduleDefaults.availability_end_time }]
+    : []
   return {
     name: scenario ? `${scenario.name} Schedule` : '',
     cron_expr: '0 9 * * 1-5',
     timezone: 'UTC',
     release_id: releaseId || '',
+    timeslot_id: '',
     run_name_template: scenario?.name || '',
     enabled: true,
     approval_policy: scheduleDefaults.approval_policy || 'auto',
     missed_run_policy: scheduleDefaults.missed_run_policy || 'skip',
-    blackout_start_time: scheduleDefaults.blackout_start_time || '',
-    blackout_end_time: scheduleDefaults.blackout_end_time || '',
-    availability_start_time: scheduleDefaults.availability_start_time || '',
-    availability_end_time: scheduleDefaults.availability_end_time || '',
+    blackout_windows: blackoutWindows,
+    maintenance_windows: [],
+    availability_windows: availabilityWindows,
   }
+}
+
+// scheduleWindowsToPayload drops incomplete windows (no start/end), applies the
+// schedule timezone, and returns undefined when empty so the field is omitted.
+function scheduleWindowsToPayload(windows: ScheduleWindowDraft[], timezone: string) {
+  const tz = timezone.trim() || 'UTC'
+  const out = windows
+    .filter(w => w.start_time && w.end_time)
+    .map(w => ({
+      name: w.name.trim() || undefined,
+      days_of_week: w.days_of_week.length ? w.days_of_week : undefined,
+      start_time: w.start_time,
+      end_time: w.end_time,
+      timezone: tz,
+    }))
+  return out.length ? out : undefined
+}
+
+function scheduleWindowsToDraft(windows?: ScenarioScheduleWindow[]): ScheduleWindowDraft[] {
+  return (windows || []).map(w => ({
+    name: w.name || '',
+    days_of_week: w.days_of_week || [],
+    start_time: w.start_time || '',
+    end_time: w.end_time || '',
+  }))
+}
+
+const SCHEDULE_WEEKDAYS: { value: number; label: string }[] = [
+  { value: 0, label: 'Sun' }, { value: 1, label: 'Mon' }, { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' }, { value: 4, label: 'Thu' }, { value: 5, label: 'Fri' }, { value: 6, label: 'Sat' },
+]
+
+function ScheduleWindowListEditor({ title, description, windows, onChange, disabled }: {
+  title: string
+  description: string
+  windows: ScheduleWindowDraft[]
+  onChange: (next: ScheduleWindowDraft[]) => void
+  disabled?: boolean
+}) {
+  const update = (i: number, patch: Partial<ScheduleWindowDraft>) => onChange(windows.map((w, idx) => (idx === i ? { ...w, ...patch } : w)))
+  const remove = (i: number) => onChange(windows.filter((_, idx) => idx !== i))
+  const add = () => onChange([...windows, { name: '', days_of_week: [], start_time: '09:00', end_time: '17:00' }])
+  const toggleDay = (i: number, day: number) => {
+    const w = windows[i]
+    const has = w.days_of_week.includes(day)
+    update(i, { days_of_week: has ? w.days_of_week.filter(d => d !== day) : [...w.days_of_week, day].sort((a, b) => a - b) })
+  }
+  return (
+    <div className="setting-row schedule-window-editor">
+      <div className="setting-info">
+        <span className="setting-label">{title}</span>
+        <span className="setting-desc">{description}</span>
+      </div>
+      <div className="schedule-window-list">
+        {windows.length === 0 && <span className="setting-desc schedule-window-empty">None configured.</span>}
+        {windows.map((w, i) => (
+          <div key={i} className="schedule-window-row">
+            <input className="settings-input schedule-window-name" placeholder="Name (optional)" value={w.name} disabled={disabled} onChange={e => update(i, { name: e.target.value })} />
+            <div className="schedule-window-days" role="group" aria-label={`${title} days of week`}>
+              {SCHEDULE_WEEKDAYS.map(d => (
+                <button type="button" key={d.value} className={`schedule-day-toggle ${w.days_of_week.includes(d.value) ? 'active' : ''}`} disabled={disabled} aria-pressed={w.days_of_week.includes(d.value)} onClick={() => toggleDay(i, d.value)}>{d.label}</button>
+              ))}
+            </div>
+            <input type="time" className="settings-input schedule-window-time" value={w.start_time} disabled={disabled} onChange={e => update(i, { start_time: e.target.value })} />
+            <span className="schedule-window-sep">to</span>
+            <input type="time" className="settings-input schedule-window-time" value={w.end_time} disabled={disabled} onChange={e => update(i, { end_time: e.target.value })} />
+            <button type="button" className="btn btn-ghost btn-sm" disabled={disabled} onClick={() => remove(i)} aria-label="Remove window">Remove</button>
+          </div>
+        ))}
+        <button type="button" className="btn btn-secondary btn-sm" disabled={disabled} onClick={add}>+ Add window</button>
+      </div>
+    </div>
+  )
 }
 
 function changedFieldClass(changed: boolean, base = '') {
@@ -1212,23 +1298,14 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	  cron_expr: scheduleDraft.cron_expr.trim(),
 	  timezone: scheduleDraft.timezone.trim() || 'UTC',
 	  release_id: scheduleDraft.release_id || undefined,
+	  timeslot_id: scheduleDraft.timeslot_id || undefined,
 	  run_name_template: scheduleDraft.run_name_template.trim() || undefined,
 	  enabled: scheduleDraft.enabled,
 	  approval_policy: scheduleDraft.approval_policy,
 	  missed_run_policy: scheduleDraft.missed_run_policy,
-	  blackout_windows: scheduleDraft.blackout_start_time && scheduleDraft.blackout_end_time ? [{
-	    name: 'dashboard-blackout',
-	    start_time: scheduleDraft.blackout_start_time,
-	    end_time: scheduleDraft.blackout_end_time,
-	    timezone: scheduleDraft.timezone.trim() || 'UTC',
-	  }] : undefined,
-	  availability_windows: scheduleDraft.availability_start_time && scheduleDraft.availability_end_time ? [{
-	    name: 'dashboard-availability',
-	    days_of_week: [1, 2, 3, 4, 5],
-	    start_time: scheduleDraft.availability_start_time,
-	    end_time: scheduleDraft.availability_end_time,
-	    timezone: scheduleDraft.timezone.trim() || 'UTC',
-	  }] : undefined,
+	  blackout_windows: scheduleWindowsToPayload(scheduleDraft.blackout_windows, scheduleDraft.timezone),
+	  maintenance_windows: scheduleWindowsToPayload(scheduleDraft.maintenance_windows, scheduleDraft.timezone),
+	  availability_windows: scheduleWindowsToPayload(scheduleDraft.availability_windows, scheduleDraft.timezone),
 	}
 	try {
 	  if (editingScheduleId) {
@@ -1253,14 +1330,14 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	  cron_expr: schedule.cron_expr,
 	  timezone: schedule.timezone || 'UTC',
 	  release_id: schedule.release_id || '',
+	  timeslot_id: schedule.timeslot_id || '',
 	  run_name_template: schedule.run_name_template || '',
 	  enabled: schedule.enabled,
 	  approval_policy: schedule.approval_policy || 'auto',
 	  missed_run_policy: schedule.missed_run_policy || 'skip',
-	  blackout_start_time: schedule.blackout_windows?.[0]?.start_time || '',
-	  blackout_end_time: schedule.blackout_windows?.[0]?.end_time || '',
-	  availability_start_time: schedule.availability_windows?.[0]?.start_time || '',
-	  availability_end_time: schedule.availability_windows?.[0]?.end_time || '',
+	  blackout_windows: scheduleWindowsToDraft(schedule.blackout_windows),
+	  maintenance_windows: scheduleWindowsToDraft(schedule.maintenance_windows),
+	  availability_windows: scheduleWindowsToDraft(schedule.availability_windows),
 	})
   }
 
@@ -1277,11 +1354,13 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	    cron_expr: schedule.cron_expr,
 	    timezone: schedule.timezone || 'UTC',
 	    release_id: schedule.release_id || undefined,
+	    timeslot_id: schedule.timeslot_id || undefined,
 	    run_name_template: schedule.run_name_template || undefined,
 	    enabled: !schedule.enabled,
 	    approval_policy: schedule.approval_policy || 'auto',
 	    missed_run_policy: schedule.missed_run_policy || 'skip',
 	    blackout_windows: schedule.blackout_windows,
+	    maintenance_windows: schedule.maintenance_windows,
 	    availability_windows: schedule.availability_windows,
 	  })
 	  await refreshSchedules(scenario.id)
@@ -1474,11 +1553,42 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
+                    <span className="setting-label">Default Timeslot</span>
+                    <span className="setting-desc">Optional approved capacity timeslot each scheduled run binds at materialization. If the slot is unavailable, that run is recorded as blocked instead of launching unprotected.</span>
+                  </div>
+                  <select className="settings-input" value={scheduleDraft.timeslot_id} onChange={(event) => setScheduleDraft(prev => ({ ...prev, timeslot_id: event.target.value }))}>
+                    <option value="">No timeslot</option>
+                    {bindableTimeslots.map(slot => <option key={slot.id} value={slot.id}>{formatTimeslotLabel(slot)}</option>)}
+                  </select>
+                </div>
+                <div className="setting-row">
+                  <div className="setting-info">
                     <span className="setting-label">Run Name Template</span>
                     <span className="setting-desc">Default run name used when the schedule fires</span>
                   </div>
                   <input className="settings-input" value={scheduleDraft.run_name_template} onChange={(event) => setScheduleDraft(prev => ({ ...prev, run_name_template: event.target.value }))} placeholder={scenario?.name || 'Scheduled run'} />
                 </div>
+                <ScheduleWindowListEditor
+                  title="Blackout windows"
+                  description="Runs never fire during these windows. Leave days unselected to apply every day."
+                  windows={scheduleDraft.blackout_windows}
+                  disabled={!canManageTests}
+                  onChange={next => setScheduleDraft(prev => ({ ...prev, blackout_windows: next }))}
+                />
+                <ScheduleWindowListEditor
+                  title="Maintenance windows"
+                  description="Shared maintenance windows that also block runs. Leave days unselected to apply every day."
+                  windows={scheduleDraft.maintenance_windows}
+                  disabled={!canManageTests}
+                  onChange={next => setScheduleDraft(prev => ({ ...prev, maintenance_windows: next }))}
+                />
+                <ScheduleWindowListEditor
+                  title="Availability windows"
+                  description="When set, runs fire only inside these windows. Leave days unselected to apply every day."
+                  windows={scheduleDraft.availability_windows}
+                  disabled={!canManageTests}
+                  onChange={next => setScheduleDraft(prev => ({ ...prev, availability_windows: next }))}
+                />
                 <label className="setting-row" style={{ alignItems: 'center', gap: 12 }}>
                   <input type="checkbox" checked={scheduleDraft.enabled} onChange={(event) => setScheduleDraft(prev => ({ ...prev, enabled: event.target.checked }))} />
                   <div className="setting-info">
@@ -2091,14 +2201,14 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
             )}
           </section>
 
-          <section className="new-test-launch-card" aria-label="Reserve Timeslot or Schedule Run">
-            <h3>Reserve Timeslot / Schedule Run</h3>
+          <section className="new-test-launch-card" aria-label="Hold for Manual Start or Schedule Run">
+            <h3>Hold for Manual Start / Schedule Run</h3>
             <div className="new-test-launch-actions">
               {immediatePreflightLoading && !immediatePreflight && (
-                <button className="btn btn-secondary" disabled>Checking Reservation</button>
+                <button className="btn btn-secondary" disabled>Checking Window</button>
               )}
               {showStartNow && (
-                <button className="btn btn-primary" onClick={() => createRun('reserve')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed}>Reserve Timeslot</button>
+                <button className="btn btn-primary" onClick={() => createRun('reserve')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} title="Holds a launch window for this run to be started manually later. This is not a capacity timeslot reservation.">Hold for Manual Start</button>
               )}
               {showQueueRun && (
                 <button className="btn btn-secondary" onClick={() => createRun('queue')} disabled={!canLaunch || immediatePreflightLoading}>Create Queued Run</button>

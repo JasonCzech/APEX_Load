@@ -7,10 +7,13 @@ package api
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -55,6 +58,13 @@ func resolveRequestAuth(r *http.Request, settings AuthSettings, store storage.St
 		}
 		return authResolution{User: localUser}, nil
 	}
+	// Trusted-headers mode: enforce the trusted-proxy gate before honoring any
+	// identity headers, so a client that reaches the controller directly cannot forge
+	// identity. When the gate is unconfigured we allow in dev but fail closed in
+	// production (startup also refuses to boot — see enforceAuthPosture).
+	if err := enforceTrustedProxyGate(r, settings); err != nil {
+		return authResolution{}, err
+	}
 	user, err := authenticatedUserFromHeaders(r, settings)
 	if err != nil {
 		return authResolution{}, err
@@ -64,6 +74,82 @@ func resolveRequestAuth(r *http.Request, settings AuthSettings, store storage.St
 		return authResolution{}, err
 	}
 	return authResolution{User: localUser}, nil
+}
+
+// trustedProxySecretHeader is the header a fronting gateway sets to a shared secret
+// to prove the request transited the trusted ingress (alternative to a CIDR allowlist).
+const trustedProxySecretHeader = "X-APEXLoad-Proxy-Secret"
+
+// trustedProxyGateConfigured reports whether any trust gate (CIDR allowlist or shared
+// secret) is configured for trusted_headers mode.
+func trustedProxyGateConfigured(settings AuthSettings) bool {
+	if strings.TrimSpace(settings.TrustedProxySecretEnvVar) != "" {
+		return true
+	}
+	for _, cidr := range settings.TrustedProxyCIDRs {
+		if strings.TrimSpace(cidr) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// enforceTrustedProxyGate denies a trusted-headers request that did not arrive through
+// the trusted ingress. When no gate is configured it allows in non-production (legacy
+// behavior) but denies in production as a defense-in-depth backstop.
+func enforceTrustedProxyGate(r *http.Request, settings AuthSettings) error {
+	if !trustedProxyGateConfigured(settings) {
+		if productionMode() {
+			return fmt.Errorf("trusted-headers auth requires a trusted-proxy allowlist or shared secret in production")
+		}
+		return nil
+	}
+	if trustedProxyRequestAllowed(r, settings) {
+		return nil
+	}
+	return fmt.Errorf("request did not arrive from a trusted proxy")
+}
+
+func trustedProxyRequestAllowed(r *http.Request, settings AuthSettings) bool {
+	if env := strings.TrimSpace(settings.TrustedProxySecretEnvVar); env != "" {
+		if expected := strings.TrimSpace(os.Getenv(env)); expected != "" {
+			provided := strings.TrimSpace(r.Header.Get(trustedProxySecretHeader))
+			if provided != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1 {
+				return true
+			}
+		}
+	}
+	if ip := requestSourceIP(r); ip != nil {
+		for _, raw := range settings.TrustedProxyCIDRs {
+			cidr := strings.TrimSpace(raw)
+			if cidr == "" {
+				continue
+			}
+			if _, network, err := net.ParseCIDR(cidr); err == nil && network.Contains(ip) {
+				return true
+			}
+			// Allow a bare IP (no mask) as a convenience.
+			if bare := net.ParseIP(cidr); bare != nil && bare.Equal(ip) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// requestSourceIP returns the immediate peer IP (r.RemoteAddr). Behind a
+// TLS-terminating proxy this is the proxy's address — exactly what the allowlist
+// should match. X-Forwarded-For is intentionally NOT trusted here (it is client-
+// controlled and would defeat the gate).
+func requestSourceIP(r *http.Request) net.IP {
+	host := strings.TrimSpace(r.RemoteAddr)
+	if host == "" {
+		return nil
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return net.ParseIP(strings.TrimSpace(host))
 }
 
 func applyLocalUserBindings(upstream *AuthenticatedUser, store storage.Store) (*AuthenticatedUser, error) {
@@ -86,6 +172,12 @@ func applyLocalUserBindings(upstream *AuthenticatedUser, store storage.Store) (*
 	}
 	if local == nil || !local.Active {
 		return nil, fmt.Errorf("user is disabled")
+	}
+	// Session revocation: an OIDC cookie minted before the user's epoch was bumped is
+	// rejected. Only applies to session-scoped identities (OIDC); trusted-header
+	// identities carry no epoch and are unaffected.
+	if upstream.SessionScoped && upstream.SessionEpoch < local.SessionEpoch {
+		return nil, fmt.Errorf("session revoked")
 	}
 	now := time.Now().UTC()
 	local.LastSeenAt = &now
@@ -321,9 +413,14 @@ func serviceAccountScopeForLibraryKind(kind string) string {
 	}
 }
 
+// normalizeAuthenticatedServiceAccountScopes de-duplicates a service account's stored
+// scopes for the auth path. Empty scopes are treated as DENY (an empty set), not
+// allow-all: an account with no scopes can only reach unscoped routes, never mutate.
+// Real accounts always carry explicit scopes (creation requires at least one), so this
+// only fail-closes accounts whose scope set is genuinely empty.
 func normalizeAuthenticatedServiceAccountScopes(scopes []string) []string {
 	if len(scopes) == 0 {
-		return []string{"automation:*"}
+		return nil
 	}
 	out := make([]string, 0, len(scopes))
 	seen := map[string]struct{}{}
@@ -337,9 +434,6 @@ func normalizeAuthenticatedServiceAccountScopes(scopes []string) []string {
 		}
 		seen[normalized] = struct{}{}
 		out = append(out, normalized)
-	}
-	if len(out) == 0 {
-		return []string{"automation:*"}
 	}
 	return out
 }

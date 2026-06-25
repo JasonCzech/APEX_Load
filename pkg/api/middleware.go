@@ -36,6 +36,12 @@ type AuthenticatedUser struct {
 	ProjectRoles    map[string]map[string]struct{}
 	DomainRoles     map[string]map[string]struct{}
 	RepositoryRoles map[string]map[string]struct{}
+	// SessionScoped is true when the identity came from an OIDC session cookie carrying
+	// a session epoch; SessionEpoch is that cookie's epoch. Used to enforce per-user
+	// session revocation (a stale epoch is rejected). Trusted-header identities are not
+	// session-scoped and are unaffected by epoch bumps.
+	SessionScoped bool
+	SessionEpoch  int
 }
 
 type AuthenticatedServiceAccount struct {
@@ -69,7 +75,34 @@ type authResolution struct {
 	ServiceAccount *AuthenticatedServiceAccount
 }
 
-func authMiddleware(settings func() AuthSettings, store storage.Store, coordination requestCoordinationStore) func(http.Handler) http.Handler {
+// authAuditRecorder records authentication/authorization events (denials and
+// trusted-header logins) for the audit log. *Server implements it; it is optional so
+// the middleware and its tests work without one.
+type authAuditRecorder interface {
+	recordAuthDenial(r *http.Request, resolution authResolution, status int, reason string)
+	recordAuthLogin(r *http.Request, resolution authResolution)
+}
+
+type authMiddlewareOptions struct {
+	recorder authAuditRecorder
+}
+
+type authMiddlewareOption func(*authMiddlewareOptions)
+
+func withAuthAuditRecorder(recorder authAuditRecorder) authMiddlewareOption {
+	return func(o *authMiddlewareOptions) { o.recorder = recorder }
+}
+
+func authMiddleware(settings func() AuthSettings, store storage.Store, coordination requestCoordinationStore, opts ...authMiddlewareOption) func(http.Handler) http.Handler {
+	options := authMiddlewareOptions{}
+	for _, opt := range opts {
+		opt(&options)
+	}
+	recordDenial := func(r *http.Request, resolution authResolution, status int, reason string) {
+		if options.recorder != nil {
+			options.recorder.recordAuthDenial(r, resolution, status, reason)
+		}
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodOptions || !strings.HasPrefix(r.URL.Path, "/api/v1/") {
@@ -84,6 +117,7 @@ func authMiddleware(settings func() AuthSettings, store storage.Store, coordinat
 				// TestGenericAuthAPIRoutesDeclareAccessRequirement guarantees every auth-wrapped
 				// /api/v1/ route is cataloged, so this only rejects unknown/forgotten paths
 				// rather than serving them without an access check.
+				recordDenial(r, authResolution{}, http.StatusForbidden, "no_access_policy")
 				writeError(w, http.StatusForbidden, "no access policy is configured for this route")
 				return
 			}
@@ -102,6 +136,7 @@ func authMiddleware(settings func() AuthSettings, store storage.Store, coordinat
 
 			resolution, err := resolveRequestAuth(r, current, store)
 			if err != nil {
+				recordDenial(r, authResolution{}, http.StatusUnauthorized, err.Error())
 				writeError(w, http.StatusUnauthorized, err.Error())
 				return
 			}
@@ -112,8 +147,19 @@ func authMiddleware(settings func() AuthSettings, store storage.Store, coordinat
 				if !enforceIdempotencyKey(w, r, coordination, resolution) {
 					return
 				}
+				if options.recorder != nil && current.Mode == authModeTrustedHeaders {
+					options.recorder.recordAuthLogin(r, resolution)
+				}
 				next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
+				return
 			}
+			// authorizeAccessRequirement already wrote the response; mirror its
+			// status (401 when unauthenticated, otherwise 403) for the audit trail.
+			deniedStatus := http.StatusForbidden
+			if resolution.User == nil {
+				deniedStatus = http.StatusUnauthorized
+			}
+			recordDenial(r, resolution, deniedStatus, "authorization_denied")
 		})
 	}
 }

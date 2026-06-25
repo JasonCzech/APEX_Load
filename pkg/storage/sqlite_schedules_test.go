@@ -25,6 +25,7 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 		Name:             "Nightly",
 		CronExpr:         "0 1 * * *",
 		Timezone:         "UTC",
+		TimeslotID:       "timeslot-42",
 		RunNameTemplate:  "Nightly Checkout",
 		Enabled:          true,
 		OwnerSubject:     "user:qa-lead",
@@ -77,6 +78,9 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 	}
 	if roundTrip == nil || roundTrip.CronExpr != schedule.CronExpr || roundTrip.NextRunAt == nil || !roundTrip.NextRunAt.Equal(nextRun) {
 		t.Fatalf("round trip schedule = %#v, want cron %q next run %s", roundTrip, schedule.CronExpr, nextRun)
+	}
+	if roundTrip.TimeslotID != "timeslot-42" {
+		t.Fatalf("round trip timeslot_id = %q, want timeslot-42", roundTrip.TimeslotID)
 	}
 	if roundTrip.ProjectID != "checkout" || roundTrip.OwnerSubject != "user:qa-lead" || roundTrip.Governance == nil || roundTrip.Governance.QuotaReview.ProjectMaxVUsers != 500 {
 		t.Fatalf("round trip governance = %#v, want owner/project/quota metadata", roundTrip)

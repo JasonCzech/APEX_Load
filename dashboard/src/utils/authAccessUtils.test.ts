@@ -21,8 +21,9 @@ describe('isEffectiveOperationAllowed', () => {
     expect(isEffectiveOperationAllowed(resources, 'manage_tests')).toBe(false)
   })
 
-  it('uses the requested fallback when an operation is missing', () => {
-    expect(isEffectiveOperationAllowed(resources, 'missing_operation')).toBe(true)
+  it('defaults to deny when an operation is missing, honoring an explicit fallback', () => {
+    expect(isEffectiveOperationAllowed(resources, 'missing_operation')).toBe(false)
     expect(isEffectiveOperationAllowed(resources, 'missing_operation', false)).toBe(false)
+    expect(isEffectiveOperationAllowed(resources, 'missing_operation', true)).toBe(true)
   })
 })

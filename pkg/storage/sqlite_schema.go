@@ -100,6 +100,7 @@ func schemaCreateTableStatements() []string {
 			cron_expr TEXT NOT NULL,
 			timezone TEXT,
 			release_id TEXT,
+			timeslot_id TEXT,
 			run_name_template TEXT,
 			enabled INTEGER DEFAULT 1,
 			approval_policy TEXT,
@@ -468,7 +469,8 @@ func schemaCreateTableStatements() []string {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
 			last_seen_at DATETIME,
-			disabled_at DATETIME
+			disabled_at DATETIME,
+			session_epoch INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE IF NOT EXISTS user_role_bindings (
 			id TEXT PRIMARY KEY,
@@ -680,6 +682,7 @@ func schemaCreateTableStatements() []string {
 // columns added here (e.g. boolean flags added to existing tables).
 func schemaColumnMigrations() []optionalSchemaMigration {
 	return []optionalSchemaMigration{
+		{name: "users.session_epoch", query: `ALTER TABLE users ADD COLUMN session_epoch INTEGER NOT NULL DEFAULT 0`},
 		{name: "tests.runtime_settings_json", query: `ALTER TABLE tests ADD COLUMN runtime_settings_json TEXT`},
 		{name: "tests.scenario_mode", query: `ALTER TABLE tests ADD COLUMN scenario_mode TEXT`},
 		{name: "tests.goal_config_json", query: `ALTER TABLE tests ADD COLUMN goal_config_json TEXT`},
@@ -739,6 +742,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "scenario_scripts.runtime_settings_json", query: `ALTER TABLE scenario_scripts ADD COLUMN runtime_settings_json TEXT`},
 		{name: "scenario_scripts.assignment_json", query: `ALTER TABLE scenario_scripts ADD COLUMN assignment_json TEXT`},
 		{name: "scenario_schedules.project_id", query: `ALTER TABLE scenario_schedules ADD COLUMN project_id TEXT`},
+		{name: "scenario_schedules.timeslot_id", query: `ALTER TABLE scenario_schedules ADD COLUMN timeslot_id TEXT`},
 		{name: "scenario_schedules.owner_subject", query: `ALTER TABLE scenario_schedules ADD COLUMN owner_subject TEXT`},
 		{name: "scenario_schedules.owner_display_name", query: `ALTER TABLE scenario_schedules ADD COLUMN owner_display_name TEXT`},
 		{name: "scenario_schedules.governance_json", query: `ALTER TABLE scenario_schedules ADD COLUMN governance_json TEXT`},
@@ -786,6 +790,14 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_correlation_rulesets_project ON correlation_rulesets(project_id)`, "idx_correlation_rulesets_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_monitoring_collectors_project ON monitoring_collectors(project_id)`, "idx_monitoring_collectors_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_reusable_blocks_project ON reusable_blocks(project_id)`, "idx_reusable_blocks_project"},
+	// audit_events and usage_accounting_snapshots grow unbounded on a long-lived
+	// controller; index the hot ListAuditEvents path (ORDER BY created_at DESC plus
+	// frequent project/actor filters) and the retention-prune scan.
+	{`CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(created_at)`, "idx_audit_events_created"},
+	{`CREATE INDEX IF NOT EXISTS idx_audit_events_project_created ON audit_events(project_id, created_at)`, "idx_audit_events_project_created"},
+	{`CREATE INDEX IF NOT EXISTS idx_audit_events_actor_created ON audit_events(actor_subject, created_at)`, "idx_audit_events_actor_created"},
+	{`CREATE INDEX IF NOT EXISTS idx_usage_snapshots_created ON usage_accounting_snapshots(created_at)`, "idx_usage_snapshots_created"},
+	{`CREATE INDEX IF NOT EXISTS idx_usage_snapshots_project_created ON usage_accounting_snapshots(project_id, created_at)`, "idx_usage_snapshots_project_created"},
 }
 
 func (s *SQLiteStore) init() error {

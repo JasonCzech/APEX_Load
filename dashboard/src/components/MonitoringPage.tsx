@@ -19,6 +19,7 @@ interface Props {
   telemetryDiagnostics?: TelemetryDiagnosticEntry[]
   onSelectTest?: (id: string) => void
   canManageSystem?: boolean
+  initialCategoryId?: MonitorCategoryId
 }
 
 const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
@@ -216,7 +217,7 @@ function restartErrorMessage(error: unknown): string {
   return 'Restart request failed.'
 }
 
-export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false }: Props) {
+export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, initialCategoryId = 'overview' }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [health, setHealth] = useState<HealthResponse | null>(null)
@@ -241,7 +242,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [restartLoading, setRestartLoading] = useState(false)
   const [isTelemetryModalOpen, setIsTelemetryModalOpen] = useState(false)
   const [isGeneratorsModalOpen, setIsGeneratorsModalOpen] = useState(false)
-  const [activeCategoryId, setActiveCategoryId] = useState<MonitorCategoryId>('overview')
+  const [activeCategoryId, setActiveCategoryId] = useState<MonitorCategoryId>(initialCategoryId)
   const [cardOrder, setCardOrder] = useState<string[]>(() => readStoredStringArray('apexload.monitoring.cardOrder'))
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
@@ -1769,13 +1770,15 @@ function RunCalendarPanel({
                 </div>
                 <div className="run-calendar-detail-grid">
                   <RunCalendarDetailRow label="Status" value={formatRunCalendarStatus(selectedEvent.status)} />
-                  <RunCalendarDetailRow label="When" value={`${formatCalendarDateTime(selectedEvent.start_at)} - ${selectedEvent.end_at ? formatCalendarTime(selectedEvent.end_at) : 'open'}`} />
+                  <RunCalendarDetailRow label="When" value={`${formatCalendarDateTime(selectedEvent.start_at, selectedEvent.timezone)} - ${selectedEvent.end_at ? formatCalendarTime(selectedEvent.end_at, selectedEvent.timezone) : 'open'}`} />
                   <RunCalendarDetailRow label="User" value={runCalendarUserLabel(selectedEvent)} />
                   <RunCalendarDetailRow label="Workload" value={`${(selectedEvent.workload.total_vusers ?? 0).toLocaleString()} VUsers / ${selectedEvent.workload.duration || 'duration pending'}`} />
                   <RunCalendarDetailRow label="Scenario" value={selectedEvent.scenario_name || selectedEvent.scenario_id || '-'} />
                   <RunCalendarDetailRow label="Schedule" value={selectedEvent.schedule_name || selectedEvent.cron_expr || (selectedEvent.source === 'ad_hoc' ? 'Ad-hoc' : '-')} />
                   {selectedEvent.cron_expr && <RunCalendarDetailRow label="Cron" value={`${selectedEvent.cron_expr}${selectedEvent.timezone ? ` / ${selectedEvent.timezone}` : ''}`} />}
                   {selectedEvent.test_ref_key || selectedEvent.test_id ? <RunCalendarDetailRow label="Test" value={selectedEvent.test_ref_key || selectedEvent.test_id || '-'} /> : null}
+                  {selectedEvent.reason_code && <RunCalendarDetailRow label="Reason" value={formatRunCalendarStatus(selectedEvent.reason_code)} />}
+                  {selectedEvent.conflict_summary && <RunCalendarDetailRow label="Conflict" value={selectedEvent.conflict_summary} />}
                 </div>
                 <div className="run-calendar-topology">
                   <div className="run-calendar-section-heading">
@@ -1836,7 +1839,7 @@ function RunCalendarMetric({ label, value }: { label: string; value: number }) {
 function RunCalendarEventButton({ event, selected, mode, onSelect }: { event: RunCalendarEvent; selected: boolean; mode: 'compact' | 'agenda'; onSelect: (event: RunCalendarEvent) => void }) {
   return (
     <button type="button" className={`run-calendar-event ${mode} ${runCalendarEventClass(event)} ${selected ? 'selected' : ''}`} onClick={() => onSelect(event)} title={`${event.title} / ${formatRunCalendarStatus(event.status)}`}>
-      <span className="run-calendar-event-time">{formatCalendarTime(event.start_at)}</span>
+      <span className="run-calendar-event-time">{formatCalendarTime(event.start_at, event.timezone)}</span>
       <span className="run-calendar-event-title">{event.title}</span>
       <span className="run-calendar-event-meta">{runCalendarSourceLabel(event)} / {formatRunCalendarStatus(event.status)}</span>
     </button>
@@ -1960,16 +1963,32 @@ function formatCalendarDate(value: Date | string) {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function formatCalendarDateTime(value: string) {
-  const date = new Date(value)
-  if (!Number.isFinite(date.getTime())) return '-'
-  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+// calendarZoneOptions renders a calendar time in the event's declared timezone
+// (with a short zone label) so the displayed time matches when the schedule
+// actually fires, instead of silently using the browser's local zone. An empty
+// or invalid IANA name falls back to browser-local formatting.
+function calendarZoneOptions(timezone?: string): Intl.DateTimeFormatOptions {
+  const tz = (timezone || '').trim()
+  if (!tz) return {}
+  try {
+    // Throws RangeError on an unknown IANA zone name.
+    new Intl.DateTimeFormat([], { timeZone: tz })
+    return { timeZone: tz, timeZoneName: 'short' }
+  } catch {
+    return {}
+  }
 }
 
-function formatCalendarTime(value: string) {
+function formatCalendarDateTime(value: string, timezone?: string) {
   const date = new Date(value)
   if (!Number.isFinite(date.getTime())) return '-'
-  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', ...calendarZoneOptions(timezone) })
+}
+
+function formatCalendarTime(value: string, timezone?: string) {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return '-'
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', ...calendarZoneOptions(timezone) })
 }
 
 function formatCalendarDayNumber(date: Date, view: RunCalendarView) {
