@@ -87,7 +87,6 @@ describe('settingsSectionLayout', () => {
       'availability',
       'generator',
       'reservations',
-      'timeslots',
       'retention',
     ])
     expect(PROJECT_SETTINGS_SUBSECTIONS.map(section => section.id)).toEqual([

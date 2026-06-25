@@ -19,6 +19,7 @@ interface Props {
   telemetryDiagnostics?: TelemetryDiagnosticEntry[]
   onSelectTest?: (id: string) => void
   canManageSystem?: boolean
+  initialCategoryId?: MonitorCategoryId
 }
 
 const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
@@ -216,7 +217,7 @@ function restartErrorMessage(error: unknown): string {
   return 'Restart request failed.'
 }
 
-export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false }: Props) {
+export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, initialCategoryId = 'overview' }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [health, setHealth] = useState<HealthResponse | null>(null)
@@ -241,7 +242,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [restartLoading, setRestartLoading] = useState(false)
   const [isTelemetryModalOpen, setIsTelemetryModalOpen] = useState(false)
   const [isGeneratorsModalOpen, setIsGeneratorsModalOpen] = useState(false)
-  const [activeCategoryId, setActiveCategoryId] = useState<MonitorCategoryId>('overview')
+  const [activeCategoryId, setActiveCategoryId] = useState<MonitorCategoryId>(initialCategoryId)
   const [cardOrder, setCardOrder] = useState<string[]>(() => readStoredStringArray('apexload.monitoring.cardOrder'))
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()

@@ -30,7 +30,6 @@ export const CAPACITY_SETTINGS_SUBSECTIONS = [
   { id: 'availability', title: 'Availability' },
   { id: 'generator', title: 'Generator Profile' },
   { id: 'reservations', title: 'Reservations' },
-  { id: 'timeslots', title: 'Timeslots' },
   { id: 'retention', title: 'Retention' },
 ] as const
 
